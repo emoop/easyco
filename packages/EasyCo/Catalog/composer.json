@@ -1,0 +1,29 @@
+{
+    "name": "easyco/catalog",
+    "description": "EasyCo Catalog domain package — Product/Variation aggregate, attributes, media and size-guide references shared across Web, POS, Social and AI channels.",
+    "type": "library",
+    "license": "MIT",
+    "require": {
+        "php": "^8.2"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^11.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "EasyCo\\Catalog\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "EasyCo\\Catalog\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "EasyCo\\Catalog\\Providers\\CatalogServiceProvider"
+            ]
+        }
+    }
+}

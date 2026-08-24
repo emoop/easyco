@@ -1,0 +1,38 @@
+*.log
+.DS_Store
+.env
+.env.backup
+.env.production
+.phpactor.json
+.phpunit.result.cache
+/.codex
+/.cursor/
+/.idea
+/.nova
+/.phpunit.cache
+/.vscode
+/.zed
+/auth.json
+/node_modules
+/public/build
+/public/fonts-manifest.dev.json
+/public/hot
+/public/storage
+/storage/*.key
+/storage/pail
+/vendor
+_ide_helper.php
+Homestead.json
+Homestead.yaml
+Thumbs.db
+
+# EasyCo sub-packages (packages/EasyCo/*) are Composer libraries — by
+# convention a library doesn't commit its own vendor/ or composer.lock;
+# only the root app's composer.lock (which resolves these via a path
+# repository) is authoritative for a reproducible install.
+/packages/EasyCo/*/vendor
+/packages/EasyCo/*/composer.lock
+
+# Looks like a backup/snapshot artifact (a zip of the whole packages/EasyCo/
+# tree), not a source file — see the setup notes for this repo.
+/packages/EasyCo.zip
