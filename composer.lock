@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "b8481543020e2bc61e5edbc2a8352f1d",
+    "content-hash": "c81662d5d7ebf6b5d93cb860b8eb0306",
     "packages": [
         {
             "name": "brick/math",
@@ -476,6 +476,46 @@
                 "MIT"
             ],
             "description": "EasyCo Catalog domain package — Product/Variation aggregate, attributes, media and size-guide references shared across Web, POS, Social and AI channels.",
+            "transport-options": {
+                "relative": true
+            }
+        },
+        {
+            "name": "easyco/extensibility",
+            "version": "dev-main",
+            "dist": {
+                "type": "path",
+                "url": "packages/EasyCo/Extensibility",
+                "reference": "719f5a11348a7573bae382d939776066282bf57f"
+            },
+            "require": {
+                "php": "^8.2"
+            },
+            "require-dev": {
+                "phpunit/phpunit": "^11.0"
+            },
+            "type": "library",
+            "extra": {
+                "laravel": {
+                    "providers": [
+                        "EasyCo\\Extensibility\\Providers\\HookServiceProvider"
+                    ]
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "EasyCo\\Extensibility\\": "src/"
+                }
+            },
+            "autoload-dev": {
+                "psr-4": {
+                    "EasyCo\\Extensibility\\Tests\\": "tests/"
+                }
+            },
+            "license": [
+                "MIT"
+            ],
+            "description": "EasyCo Extensibility package — a WordPress-style action/filter hook registry (HookRegistry) other domains can be extended through without modifying their source, plus a Laravel-facing Hook facade.",
             "transport-options": {
                 "relative": true
             }
@@ -8483,6 +8523,7 @@
     "minimum-stability": "stable",
     "stability-flags": {
         "easyco/catalog": 20,
+        "easyco/extensibility": 20,
         "easyco/pricing": 20
     },
     "prefer-stable": true,

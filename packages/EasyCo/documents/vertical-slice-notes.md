@@ -88,3 +88,11 @@ Media, category and tag tables have no models yet — not needed by this slice.
 3. **Only then, the next domain** — Inventory, Orders, or Cart, whichever the architect prioritizes. Nothing here should be extended further until 1–2 land; that's the entire point of §1.
 
 *(`VariationRepository` implementation was step 2 here originally — now done, see §2/§3.)*
+
+---
+
+## 6. Extensibility hooks — now proven, real SKU generation still pending
+
+`packages/EasyCo/Extensibility` (a new, separate foundational package — see `extensibility-design-and-hooks.md`) now exists and is wired into the app: `HookRegistry` (a pure PHP action/filter registry, zero Laravel dependency) plus the Laravel-facing `Hook` facade, auto-discovered via `HookServiceProvider`. It's proven end-to-end through this same vertical slice, not just in isolation: `ProductController::store()` applies the `catalog.product.base_sku` filter before calling `Product::createSimple()`, and one demo listener (`App\Providers\DemoHooksServiceProvider`, explicitly labelled a proof-of-concept, not a real feature) replaces the literal input `"1"` with a generated value from an in-memory counter. `tests/Feature/ProductBaseSkuHookTest.php` asserts this through the real HTTP path.
+
+This changes the shape of the "real SKU-generation strategy" item still listed as deferred in §3 above and in `catalog-domain-design.md` §6: `VariationCombinationGenerator::generate()`'s `$skuForCombination` callable parameter was the only available injection point when it was added, because no extension mechanism existed yet. Now that one does, once that work is picked up the real generator should be built as a proper `Hook` listener — e.g. a `catalog.variation.sku` filter that `app/` layer code registers, the same way `catalog.product.base_sku` works today — rather than continuing to grow a bespoke callable's contract. The callable parameter doesn't need to be ripped out pre-emptively; it still works today. But a real implementation should prefer the hook.

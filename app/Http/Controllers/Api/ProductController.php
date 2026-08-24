@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use EasyCo\Catalog\Contracts\ProductRepository;
 use EasyCo\Catalog\Product;
+use EasyCo\Extensibility\Hook;
 use EasyCo\Pricing\Contracts\PriceContext;
 use EasyCo\Pricing\Contracts\PriceResolver;
 use Illuminate\Http\JsonResponse;
@@ -32,7 +33,14 @@ class ProductController extends Controller
             'base_sku' => 'required|string|max:255',
         ]);
 
-        $product = Product::createSimple($validated['name'], $validated['base_sku']);
+        // Lets anything listening on this hook adjust the merchant-supplied
+        // base_sku before it becomes the Product's identity — see
+        // App\Providers\DemoHooksServiceProvider for the one demo listener
+        // currently registered. Not the real SKU-generator feature (see
+        // that provider's docblock).
+        $baseSku = Hook::apply('catalog.product.base_sku', $validated['base_sku']);
+
+        $product = Product::createSimple($validated['name'], $baseSku);
         $this->products->save($product);
 
         $priceableId = (string) $product->universalVariation()->priceableId();

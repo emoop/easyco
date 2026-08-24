@@ -7,8 +7,9 @@
     "license": "MIT",
     "require": {
         "php": "^8.3",
+        "easyco/catalog": "@dev",
+        "easyco/extensibility": "@dev",
         "easyco/pricing": "@dev",
-        "easyco/catalog": "@dev", 
         "laravel/framework": "^13.17",
         "laravel/tinker": "^3.0"
     },

@@ -1,0 +1,29 @@
+{
+    "name": "easyco/extensibility",
+    "description": "EasyCo Extensibility package — a WordPress-style action/filter hook registry (HookRegistry) other domains can be extended through without modifying their source, plus a Laravel-facing Hook facade.",
+    "type": "library",
+    "license": "MIT",
+    "require": {
+        "php": "^8.2"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^11.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "EasyCo\\Extensibility\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "EasyCo\\Extensibility\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "EasyCo\\Extensibility\\Providers\\HookServiceProvider"
+            ]
+        }
+    }
+}
