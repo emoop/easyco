@@ -31,6 +31,7 @@ class ProductController extends Controller
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'base_sku' => 'required|string|max:255',
+            'slug' => 'nullable|string|max:255',
         ]);
 
         // Lets anything listening on this hook adjust the merchant-supplied
@@ -40,7 +41,13 @@ class ProductController extends Controller
         // that provider's docblock).
         $baseSku = Hook::apply('catalog.product.base_sku', $validated['base_sku']);
 
-        $product = Product::createSimple($validated['name'], $baseSku);
+        // Same idea for slug, but with a real, production-intended
+        // listener — see App\Providers\CatalogSlugGeneratorServiceProvider.
+        // An empty string tells it to auto-generate from the name; a
+        // merchant-supplied slug still gets cleaned up and deduped.
+        $slug = Hook::apply('catalog.product.slug', $validated['slug'] ?? '', $validated['name']);
+
+        $product = Product::createSimple($validated['name'], $baseSku, $slug);
         $this->products->save($product);
 
         $priceableId = (string) $product->universalVariation()->priceableId();
@@ -55,6 +62,7 @@ class ProductController extends Controller
             return response()->json([
                 'product_id' => $product->id(),
                 'name' => $product->name(),
+                'slug' => $product->slug(),
                 'price' => $quote->final->gross()->decimalValue(),
             ]);
         } catch (OutOfBoundsException) {
@@ -70,6 +78,7 @@ class ProductController extends Controller
             return response()->json([
                 'product_id' => $product->id(),
                 'name' => $product->name(),
+                'slug' => $product->slug(),
                 'price' => null,
                 'price_unavailable' => true,
             ]);

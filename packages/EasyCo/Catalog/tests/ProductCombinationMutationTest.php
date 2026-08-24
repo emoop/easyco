@@ -22,7 +22,7 @@ final class ProductCombinationMutationTest extends TestCase
 
     private function colorAndSizeProduct(): Product
     {
-        $product = Product::createVariable('T-Shirt', 'SKU-1');
+        $product = Product::createVariable('T-Shirt', 'SKU-1', 't-shirt');
         $product->declareVariationAxes([
             $this->axis('1', 'color', ['5', '6']),
             $this->axis('2', 'size', ['9', '10']),
@@ -116,7 +116,7 @@ final class ProductCombinationMutationTest extends TestCase
 
     public function test_cannot_change_combination_of_the_universal_variation(): void
     {
-        $product = Product::createSimple('Nike Air Max', 'SKU-1');
+        $product = Product::createSimple('Nike Air Max', 'SKU-1', 'nike-air-max');
         $universal = $product->universalVariation();
 
         $this->expectException(\LogicException::class);

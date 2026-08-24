@@ -22,7 +22,7 @@ final class ProductTypeTransitionTest extends TestCase
 
     public function test_changing_simple_to_variable_archives_but_does_not_delete_the_universal_variation(): void
     {
-        $product = Product::createSimple('Nike Air Max', 'SKU-1');
+        $product = Product::createSimple('Nike Air Max', 'SKU-1', 'nike-air-max');
         $universalId = $product->universalVariation(); // keep reference before it's "gone" from the helper
 
         $product->changeToVariable();
@@ -36,7 +36,7 @@ final class ProductTypeTransitionTest extends TestCase
 
     public function test_archived_universal_variation_is_not_visible_or_purchasable(): void
     {
-        $product = Product::createSimple('Nike Air Max', 'SKU-1');
+        $product = Product::createSimple('Nike Air Max', 'SKU-1', 'nike-air-max');
         $product->changeToVariable();
 
         $archivedUniversal = $product->variations()[0];
@@ -46,7 +46,7 @@ final class ProductTypeTransitionTest extends TestCase
 
     public function test_changing_simple_to_variable_is_idempotent(): void
     {
-        $product = Product::createSimple('Nike Air Max', 'SKU-1');
+        $product = Product::createSimple('Nike Air Max', 'SKU-1', 'nike-air-max');
         $product->changeToVariable();
         $product->changeToVariable(); // should not throw or double-archive weirdly
 
@@ -56,7 +56,7 @@ final class ProductTypeTransitionTest extends TestCase
 
     public function test_attempt_convert_to_simple_succeeds_when_no_standard_variation_was_ever_created(): void
     {
-        $product = Product::createVariable('T-Shirt', 'SKU-1');
+        $product = Product::createVariable('T-Shirt', 'SKU-1', 't-shirt');
 
         $product->attemptConvertToSimple();
 
@@ -67,7 +67,7 @@ final class ProductTypeTransitionTest extends TestCase
 
     public function test_attempt_convert_to_simple_is_refused_once_a_standard_variation_exists(): void
     {
-        $product = Product::createVariable('T-Shirt', 'SKU-1');
+        $product = Product::createVariable('T-Shirt', 'SKU-1', 't-shirt');
         $product->declareVariationAxes([$this->colorAxis()]);
         $product->addStandardVariation([1 => 5], 'SKU-2');
 
@@ -80,7 +80,7 @@ final class ProductTypeTransitionTest extends TestCase
         // Archiving doesn't erase the fact that the id may already be
         // referenced by Orders/POS/Inventory — the refusal must not be
         // bypassable just by archiving first.
-        $product = Product::createVariable('T-Shirt', 'SKU-1');
+        $product = Product::createVariable('T-Shirt', 'SKU-1', 't-shirt');
         $product->declareVariationAxes([$this->colorAxis()]);
         $variation = $product->addStandardVariation([1 => 5], 'SKU-2');
         $variation->archive();
@@ -91,7 +91,7 @@ final class ProductTypeTransitionTest extends TestCase
 
     public function test_force_convert_to_simple_requires_explicit_true_confirmation(): void
     {
-        $product = Product::createVariable('T-Shirt', 'SKU-1');
+        $product = Product::createVariable('T-Shirt', 'SKU-1', 't-shirt');
         $product->declareVariationAxes([$this->colorAxis()]);
         $product->addStandardVariation([1 => 5], 'SKU-2');
 
@@ -101,7 +101,7 @@ final class ProductTypeTransitionTest extends TestCase
 
     public function test_force_convert_to_simple_archives_all_standard_variations_and_creates_a_fresh_universal(): void
     {
-        $product = Product::createVariable('T-Shirt', 'SKU-1');
+        $product = Product::createVariable('T-Shirt', 'SKU-1', 't-shirt');
         $product->declareVariationAxes([$this->colorAxis()]);
         $product->addStandardVariation([1 => 5], 'SKU-2');
         $product->addStandardVariation([1 => 6], 'SKU-3');
@@ -125,7 +125,7 @@ final class ProductTypeTransitionTest extends TestCase
 
     public function test_attempt_convert_to_simple_is_idempotent_when_already_simple(): void
     {
-        $product = Product::createSimple('Nike Air Max', 'SKU-1');
+        $product = Product::createSimple('Nike Air Max', 'SKU-1', 'nike-air-max');
 
         $product->attemptConvertToSimple();
 

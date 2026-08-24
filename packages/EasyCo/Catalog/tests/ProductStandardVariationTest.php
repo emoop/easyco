@@ -15,7 +15,7 @@ final class ProductStandardVariationTest extends TestCase
 
     private function colorOnlyProduct(): Product
     {
-        $product = Product::createVariable('Mug', 'SKU-1');
+        $product = Product::createVariable('Mug', 'SKU-1', 'чаша');
         $product->declareVariationAxes([$this->axis('1', 'color', ['5', '6'])]);
 
         return $product;
@@ -23,7 +23,7 @@ final class ProductStandardVariationTest extends TestCase
 
     private function colorAndSizeProduct(): Product
     {
-        $product = Product::createVariable('T-Shirt', 'SKU-1');
+        $product = Product::createVariable('T-Shirt', 'SKU-1', 't-shirt');
         $product->declareVariationAxes([
             $this->axis('1', 'color', ['5', '6']),
             $this->axis('2', 'size', ['9', '10']),
@@ -46,7 +46,7 @@ final class ProductStandardVariationTest extends TestCase
 
     public function test_cannot_add_standard_variation_to_a_simple_product(): void
     {
-        $product = Product::createSimple('Nike Air Max', 'SKU-1');
+        $product = Product::createSimple('Nike Air Max', 'SKU-1', 'nike-air-max');
 
         $this->expectException(LogicException::class);
         $product->addStandardVariation([1 => 5], 'SKU-2');

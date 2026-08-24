@@ -21,25 +21,25 @@ final class ProductBaseSkuAndVariationRevivalTest extends TestCase
     public function test_creating_a_simple_product_requires_a_non_empty_base_sku(): void
     {
         $this->expectException(InvalidArgumentException::class);
-        Product::createSimple('Nike Air Max', '');
+        Product::createSimple('Nike Air Max', '', 'nike-air-max');
     }
 
     public function test_creating_a_variable_product_requires_a_non_empty_base_sku(): void
     {
         $this->expectException(InvalidArgumentException::class);
-        Product::createVariable('T-Shirt', '');
+        Product::createVariable('T-Shirt', '', 't-shirt');
     }
 
     public function test_universal_variations_sku_is_exactly_the_base_sku_with_no_suffix(): void
     {
-        $product = Product::createSimple('Nike Air Max', 'NIKE-AIRMAX');
+        $product = Product::createSimple('Nike Air Max', 'NIKE-AIRMAX', 'nike-air-max');
 
         $this->assertSame('NIKE-AIRMAX', $product->universalVariation()->sku());
     }
 
     public function test_a_fresh_universal_variation_created_by_attempt_convert_to_simple_also_uses_the_base_sku(): void
     {
-        $product = Product::createVariable('T-Shirt', 'TSHIRT-BASE');
+        $product = Product::createVariable('T-Shirt', 'TSHIRT-BASE', 't-shirt');
 
         $product->attemptConvertToSimple();
 
@@ -48,7 +48,7 @@ final class ProductBaseSkuAndVariationRevivalTest extends TestCase
 
     public function test_adding_a_standard_variation_requires_a_non_empty_sku(): void
     {
-        $product = Product::createVariable('T-Shirt', 'SKU-1');
+        $product = Product::createVariable('T-Shirt', 'SKU-1', 't-shirt');
         $product->declareVariationAxes([$this->axis('1', 'color', ['5', '6'])]);
 
         $this->expectException(InvalidArgumentException::class);
@@ -57,7 +57,7 @@ final class ProductBaseSkuAndVariationRevivalTest extends TestCase
 
     public function test_reviving_a_directly_archived_variation_via_add_standard_variation_reuses_its_identity(): void
     {
-        $product = Product::createVariable('T-Shirt', 'SKU-1');
+        $product = Product::createVariable('T-Shirt', 'SKU-1', 't-shirt');
         $product->declareVariationAxes([$this->axis('1', 'color', ['5', '6'])]);
 
         $original = $product->addStandardVariation([1 => 5], 'ORIGINAL-SKU');
@@ -82,7 +82,7 @@ final class ProductBaseSkuAndVariationRevivalTest extends TestCase
         // A DRAFT/ACTIVE variation occupying this combination must still be
         // treated as a genuine in-memory duplicate, not something to
         // "revive" — revival is reserved for ARCHIVED variations only.
-        $product = Product::createVariable('T-Shirt', 'SKU-1');
+        $product = Product::createVariable('T-Shirt', 'SKU-1', 't-shirt');
         $product->declareVariationAxes([$this->axis('1', 'color', ['5', '6'])]);
         $product->addStandardVariation([1 => 5], 'SKU-2');
 
@@ -92,7 +92,7 @@ final class ProductBaseSkuAndVariationRevivalTest extends TestCase
 
     public function test_revive_from_archive_directly_transitions_archived_to_draft(): void
     {
-        $product = Product::createVariable('T-Shirt', 'SKU-1');
+        $product = Product::createVariable('T-Shirt', 'SKU-1', 't-shirt');
         $product->declareVariationAxes([$this->axis('1', 'color', ['5', '6'])]);
         $variation = $product->addStandardVariation([1 => 5], 'SKU-2');
         $variation->archive();
@@ -104,7 +104,7 @@ final class ProductBaseSkuAndVariationRevivalTest extends TestCase
 
     public function test_revive_from_archive_refuses_a_variation_that_is_not_archived(): void
     {
-        $product = Product::createVariable('T-Shirt', 'SKU-1');
+        $product = Product::createVariable('T-Shirt', 'SKU-1', 't-shirt');
         $product->declareVariationAxes([$this->axis('1', 'color', ['5', '6'])]);
         $variation = $product->addStandardVariation([1 => 5], 'SKU-2'); // DRAFT, never archived
 
@@ -117,7 +117,7 @@ final class ProductBaseSkuAndVariationRevivalTest extends TestCase
         // reviveFromArchive() is a distinct, separate operation from
         // activate() — activate() must keep refusing ARCHIVED -> ACTIVE
         // directly, exactly as before this change.
-        $product = Product::createVariable('T-Shirt', 'SKU-1');
+        $product = Product::createVariable('T-Shirt', 'SKU-1', 't-shirt');
         $product->declareVariationAxes([$this->axis('1', 'color', ['5', '6'])]);
         $variation = $product->addStandardVariation([1 => 5], 'SKU-2');
         $variation->activate();

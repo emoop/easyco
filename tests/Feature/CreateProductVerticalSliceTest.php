@@ -50,6 +50,11 @@ class CreateProductVerticalSliceTest extends TestCase
         $body = $response->json();
 
         self::assertSame('Nike Air Max', $body['name']);
+        // No slug was posted, so the 'catalog.product.slug' filter
+        // auto-generates one from the name via
+        // CatalogSlugGeneratorServiceProvider — see
+        // extensibility-design-and-hooks.md's Hook Reference.
+        self::assertSame('nike-air-max', $body['slug']);
         self::assertSame('49.99', $body['price']);
 
         if (array_key_exists('price_unavailable', $body)) {
@@ -62,6 +67,7 @@ class CreateProductVerticalSliceTest extends TestCase
         $this->assertDatabaseHas('catalog_products', [
             'id' => $productId,
             'name' => 'Nike Air Max',
+            'slug' => 'nike-air-max',
         ]);
 
         $variation = DB::table('catalog_variations')
@@ -99,6 +105,7 @@ class CreateProductVerticalSliceTest extends TestCase
         $body = $response->json();
 
         self::assertSame('Some Product', $body['name']);
+        self::assertSame('some-product', $body['slug']);
         self::assertNull($body['price']);
         self::assertTrue($body['price_unavailable'] ?? false);
 
@@ -108,6 +115,29 @@ class CreateProductVerticalSliceTest extends TestCase
         $this->assertDatabaseHas('catalog_products', [
             'id' => $productId,
             'name' => 'Some Product',
+            'slug' => 'some-product',
+        ]);
+    }
+
+    public function test_creating_a_product_without_a_slug_gets_a_sensible_auto_generated_slug(): void
+    {
+        $response = $this->postJson('/api/products', [
+            'name' => 'Wireless Mouse',
+            'base_sku' => 'TEST-SKU-3',
+        ]);
+
+        $response->assertStatus(200);
+
+        $slug = $response->json('slug');
+        self::assertSame('wireless-mouse', $slug);
+
+        $productId = $response->json('product_id');
+        self::assertNotNull($productId, 'response must include product_id');
+
+        $this->assertDatabaseHas('catalog_products', [
+            'id' => $productId,
+            'name' => 'Wireless Mouse',
+            'slug' => $slug,
         ]);
     }
 

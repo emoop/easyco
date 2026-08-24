@@ -39,11 +39,51 @@ final class Product
         private string $name,
         private ProductType $type,
         private string $baseSku,
+        private string $slug,
         private ProductStatus $status = ProductStatus::DRAFT,
         private CatalogVisibility $catalogVisibility = CatalogVisibility::HIDDEN,
     ) {
         if ($baseSku === '') {
             throw new \InvalidArgumentException('Product baseSku must not be empty.');
+        }
+
+        self::assertValidSlug($slug);
+    }
+
+    /**
+     * Validates a slug's format: lowercase Unicode letters from ANY script
+     * (Cyrillic, Turkish, etc. — not ASCII-only), combining marks, ASCII
+     * digits, and single hyphens between segments. No leading, trailing,
+     * or consecutive hyphens; never empty.
+     *
+     * Deliberately NOT forced to ASCII/Latin — following WordPress's
+     * sanitize_title() philosophy, a slug is a normalized, URL-safe form
+     * of the name in whatever script the name is actually written in, not
+     * a transliteration of it. ASCII transliteration (e.g. "червена" ->
+     * "chervena") is a separate, OPTIONAL concern for a future hook
+     * listener (see EasyCo\Extensibility / extensibility-design-and-hooks.md),
+     * never baked into this validation — a merchant whose product names
+     * are Cyrillic or Turkish gets correct, readable Cyrillic/Turkish
+     * slugs by default.
+     *
+     * Framework-agnostic on purpose, like every other validation in this
+     * class: plain PHP PCRE with Unicode property escapes (\p{Ll} for
+     * lowercase letters of any script, \p{M} for combining marks, the 'u'
+     * modifier for UTF-8 mode) — no Illuminate\Support\Str or any other
+     * Laravel helper. The single pattern below encodes every rule at
+     * once: it must start and end with an allowed letter/mark/digit
+     * segment, so a leading or trailing hyphen can never match, and each
+     * hyphen must be immediately followed by another such segment, so
+     * consecutive hyphens can never match either.
+     */
+    private static function assertValidSlug(string $slug): void
+    {
+        if (preg_match('/^[\p{Ll}\p{M}\d]+(-[\p{Ll}\p{M}\d]+)*$/u', $slug) !== 1) {
+            throw new \InvalidArgumentException(
+                "Product slug \"{$slug}\" is invalid: it must contain only lowercase letters ".
+                '(any script), combining marks, digits, and single hyphens between segments — '.
+                'no leading, trailing, or consecutive hyphens, and it must not be empty.'
+            );
         }
     }
 
@@ -55,9 +95,9 @@ final class Product
      * product has exactly one sellable thing, so a distinguishing suffix
      * would be meaningless.
      */
-    public static function createSimple(string $name, string $baseSku): self
+    public static function createSimple(string $name, string $baseSku, string $slug): self
     {
-        $product = new self(id: null, name: $name, type: ProductType::SIMPLE, baseSku: $baseSku);
+        $product = new self(id: null, name: $name, type: ProductType::SIMPLE, baseSku: $baseSku, slug: $slug);
         $universal = $product->newUniversalVariation();
         $product->variations[spl_object_id($universal)] = $universal;
 
@@ -87,9 +127,9 @@ final class Product
      * merchant adds them afterwards via addStandardVariation() or a
      * VariationCombinationGenerator run.
      */
-    public static function createVariable(string $name, string $baseSku): self
+    public static function createVariable(string $name, string $baseSku, string $slug): self
     {
-        return new self(id: null, name: $name, type: ProductType::VARIABLE, baseSku: $baseSku);
+        return new self(id: null, name: $name, type: ProductType::VARIABLE, baseSku: $baseSku, slug: $slug);
     }
 
     /**
@@ -119,6 +159,7 @@ final class Product
         string $name,
         ProductType $type,
         string $baseSku,
+        string $slug,
         ProductStatus $status,
         CatalogVisibility $catalogVisibility,
         array $variations = [],
@@ -128,6 +169,7 @@ final class Product
             name: $name,
             type: $type,
             baseSku: $baseSku,
+            slug: $slug,
             status: $status,
             catalogVisibility: $catalogVisibility,
         );
@@ -169,6 +211,28 @@ final class Product
     public function baseSku(): string
     {
         return $this->baseSku;
+    }
+
+    public function slug(): string
+    {
+        return $this->slug;
+    }
+
+    /**
+     * Renames the Product's slug after creation, subject to the same
+     * validation as construction (assertValidSlug()). Calling this with
+     * the exact current value is a harmless no-op: it returns immediately
+     * without even re-running validation, so it can never fail on an
+     * already-valid, unchanged slug.
+     */
+    public function changeSlug(string $newSlug): void
+    {
+        if ($newSlug === $this->slug) {
+            return;
+        }
+
+        self::assertValidSlug($newSlug);
+        $this->slug = $newSlug;
     }
 
     public function type(): ProductType

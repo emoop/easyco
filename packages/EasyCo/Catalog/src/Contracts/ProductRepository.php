@@ -34,4 +34,6 @@ interface ProductRepository
     public function findByBarcode(string $barcode): ?Product;
 
     public function findByBaseSku(string $baseSku): ?Product;
+
+    public function findBySlug(string $slug): ?Product;
 }

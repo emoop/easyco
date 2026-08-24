@@ -38,6 +38,11 @@ class ProductBaseSkuHookTest extends TestCase
 
         $response->assertStatus(200);
 
+        // No slug was posted either — the (independent, non-demo)
+        // 'catalog.product.slug' listener still auto-generates one from
+        // the name, unaffected by the base_sku demo listener.
+        self::assertSame('hook-demo-product', $response->json('slug'));
+
         $productId = $response->json('product_id');
         self::assertNotNull($productId, 'response must include product_id');
 
@@ -45,6 +50,7 @@ class ProductBaseSkuHookTest extends TestCase
             'id' => $productId,
             'name' => 'Hook Demo Product',
             'base_sku' => '100000',
+            'slug' => 'hook-demo-product',
         ]);
 
         $this->assertDatabaseMissing('catalog_products', [
@@ -62,6 +68,8 @@ class ProductBaseSkuHookTest extends TestCase
 
         $response->assertStatus(200);
 
+        self::assertSame('untouched-product', $response->json('slug'));
+
         $productId = $response->json('product_id');
         self::assertNotNull($productId, 'response must include product_id');
 
@@ -69,6 +77,7 @@ class ProductBaseSkuHookTest extends TestCase
             'id' => $productId,
             'name' => 'Untouched Product',
             'base_sku' => 'MY-REAL-SKU',
+            'slug' => 'untouched-product',
         ]);
     }
 
@@ -80,7 +89,13 @@ class ProductBaseSkuHookTest extends TestCase
         $first->assertStatus(200);
         $second->assertStatus(200);
 
-        $this->assertDatabaseHas('catalog_products', ['name' => 'First', 'base_sku' => '100000']);
-        $this->assertDatabaseHas('catalog_products', ['name' => 'Second', 'base_sku' => '100001']);
+        // Distinct names, so distinct auto-generated slugs — no collision,
+        // no numeric suffix needed (that path is covered separately in
+        // CatalogSlugGeneratorTest).
+        self::assertSame('first', $first->json('slug'));
+        self::assertSame('second', $second->json('slug'));
+
+        $this->assertDatabaseHas('catalog_products', ['name' => 'First', 'base_sku' => '100000', 'slug' => 'first']);
+        $this->assertDatabaseHas('catalog_products', ['name' => 'Second', 'base_sku' => '100001', 'slug' => 'second']);
     }
 }

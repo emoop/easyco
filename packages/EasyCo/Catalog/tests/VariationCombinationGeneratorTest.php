@@ -24,7 +24,7 @@ final class VariationCombinationGeneratorTest extends TestCase
 
     public function test_generates_cartesian_product_of_two_axes(): void
     {
-        $product = Product::createVariable('T-Shirt', 'SKU-1');
+        $product = Product::createVariable('T-Shirt', 'SKU-1', 't-shirt');
         $product->declareVariationAxes([
             $this->axis('1', 'color', ['5', '6']),
             $this->axis('2', 'size', ['9', '10']),
@@ -43,7 +43,7 @@ final class VariationCombinationGeneratorTest extends TestCase
 
     public function test_generates_cartesian_product_of_three_axes(): void
     {
-        $product = Product::createVariable('Phone Case', 'SKU-1');
+        $product = Product::createVariable('Phone Case', 'SKU-1', 'phone-case');
         $product->declareVariationAxes([
             $this->axis('1', 'color', ['5', '6']),
             $this->axis('2', 'material', ['11', '12', '13']),
@@ -63,7 +63,7 @@ final class VariationCombinationGeneratorTest extends TestCase
 
     public function test_single_axis_generates_one_variation_per_value(): void
     {
-        $product = Product::createVariable('Mug', 'SKU-1');
+        $product = Product::createVariable('Mug', 'SKU-1', 'mug');
         $product->declareVariationAxes([$this->axis('1', 'color', ['5', '6', '7'])]);
         $generator = new VariationCombinationGenerator();
 
@@ -74,7 +74,7 @@ final class VariationCombinationGeneratorTest extends TestCase
 
     public function test_running_generation_twice_skips_already_existing_combinations(): void
     {
-        $product = Product::createVariable('T-Shirt', 'SKU-1');
+        $product = Product::createVariable('T-Shirt', 'SKU-1', 't-shirt');
         $product->declareVariationAxes([
             $this->axis('1', 'color', ['5', '6']),
             $this->axis('2', 'size', ['9', '10']),
@@ -95,7 +95,7 @@ final class VariationCombinationGeneratorTest extends TestCase
 
     public function test_empty_axis_map_generates_nothing(): void
     {
-        $product = Product::createVariable('T-Shirt', 'SKU-1');
+        $product = Product::createVariable('T-Shirt', 'SKU-1', 't-shirt');
         $product->declareVariationAxes([$this->axis('1', 'color', ['5', '6'])]);
         $generator = new VariationCombinationGenerator();
 
@@ -107,7 +107,7 @@ final class VariationCombinationGeneratorTest extends TestCase
 
     public function test_undeclared_axis_is_rejected(): void
     {
-        $product = Product::createVariable('T-Shirt', 'SKU-1');
+        $product = Product::createVariable('T-Shirt', 'SKU-1', 't-shirt');
         $product->declareVariationAxes([$this->axis('1', 'color', ['5', '6'])]); // no "material" axis declared
         $generator = new VariationCombinationGenerator();
 
@@ -120,7 +120,7 @@ final class VariationCombinationGeneratorTest extends TestCase
 
     public function test_value_not_enabled_for_the_axis_is_rejected(): void
     {
-        $product = Product::createVariable('T-Shirt', 'SKU-1');
+        $product = Product::createVariable('T-Shirt', 'SKU-1', 't-shirt');
         // Merchant only enabled Black(5) and White(6) for this product,
         // even though "Red" might exist globally under the Color definition.
         $product->declareVariationAxes([$this->axis('1', 'color', ['5', '6'])]);
@@ -132,7 +132,7 @@ final class VariationCombinationGeneratorTest extends TestCase
 
     public function test_an_axis_with_an_empty_value_list_is_rejected(): void
     {
-        $product = Product::createVariable('T-Shirt', 'SKU-1');
+        $product = Product::createVariable('T-Shirt', 'SKU-1', 't-shirt');
         $product->declareVariationAxes([
             $this->axis('1', 'color', ['5', '6']),
             $this->axis('2', 'size', ['9', '10']),
@@ -145,7 +145,7 @@ final class VariationCombinationGeneratorTest extends TestCase
 
     public function test_duplicate_values_within_one_axis_are_deduplicated_deterministically(): void
     {
-        $product = Product::createVariable('Mug', 'SKU-1');
+        $product = Product::createVariable('Mug', 'SKU-1', 'mug');
         $product->declareVariationAxes([$this->axis('1', 'color', ['5', '6'])]);
         $generator = new VariationCombinationGenerator();
 
@@ -157,7 +157,7 @@ final class VariationCombinationGeneratorTest extends TestCase
 
     public function test_an_invalid_value_deep_in_the_list_does_not_leave_earlier_valid_combinations_behind(): void
     {
-        $product = Product::createVariable('Mug', 'SKU-1');
+        $product = Product::createVariable('Mug', 'SKU-1', 'mug');
         $product->declareVariationAxes([$this->axis('1', 'color', ['5', '6'])]);
         $generator = new VariationCombinationGenerator();
 
@@ -180,7 +180,7 @@ final class VariationCombinationGeneratorTest extends TestCase
         // includes an undeclared axis, the whole request is rejected — no
         // variations from the valid part of the input should be created
         // as a side effect of the rejected part.
-        $product = Product::createVariable('T-Shirt', 'SKU-1');
+        $product = Product::createVariable('T-Shirt', 'SKU-1', 't-shirt');
         $product->declareVariationAxes([
             $this->axis('1', 'color', ['5', '6']),
             $this->axis('2', 'size', ['9', '10']),
