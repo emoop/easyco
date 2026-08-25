@@ -2,7 +2,10 @@
 
 namespace EasyCo\Catalog\Persistence\Eloquent;
 
+use EasyCo\Catalog\AttributeDefinition;
+use EasyCo\Catalog\AttributeValue;
 use EasyCo\Catalog\Contracts\ProductRepository;
+use EasyCo\Catalog\Enums\AttributeType;
 use EasyCo\Catalog\Enums\CatalogVisibility;
 use EasyCo\Catalog\Enums\ProductStatus;
 use EasyCo\Catalog\Enums\ProductType;
@@ -11,6 +14,7 @@ use EasyCo\Catalog\Enums\VariationType;
 use EasyCo\Catalog\Exceptions\DuplicateVariationCombinationException;
 use EasyCo\Catalog\Product;
 use EasyCo\Catalog\Variation;
+use EasyCo\Catalog\VariationAxis;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -47,10 +51,75 @@ final class EloquentProductRepository implements ProductRepository
                 $product->assignId((string) $productModel->id);
             }
 
+            $this->persistVariationAxes($productModel, $product);
+
             foreach ($product->variations() as $variation) {
                 $this->saveVariation($productModel, $product, $variation);
             }
         });
+    }
+
+    /**
+     * Persists this Product's declared variation axes (catalog_product_attributes
+     * with is_variation_axis=true, plus catalog_product_axis_values for
+     * each axis's enabled values) — the storage-layer counterpart of
+     * Product::declareVariationAxes(), which is itself a full replace, not
+     * an incremental add (catalog-domain-design.md §3.5). Mirrors that
+     * semantics here: delete this product's existing axis-declaration and
+     * allowed-value rows, then reinsert exactly what's currently declared
+     * in memory. A no-op for a SIMPLE product or a VARIABLE product with
+     * no axes declared yet.
+     *
+     * Scoped deliberately to is_variation_axis=true rows only — generic
+     * descriptive attributes (is_variation_axis=false) have no domain
+     * representation on Product yet and this method never touches them.
+     */
+    private function persistVariationAxes(ProductModel $productModel, Product $product): void
+    {
+        DB::table('catalog_product_axis_values')
+            ->where('product_id', $productModel->id)
+            ->delete();
+
+        DB::table('catalog_product_attributes')
+            ->where('product_id', $productModel->id)
+            ->where('is_variation_axis', true)
+            ->delete();
+
+        $axes = $product->variationAxes();
+
+        if ($axes === []) {
+            return;
+        }
+
+        $now = now();
+        $attributeRows = [];
+        $axisValueRows = [];
+
+        foreach ($axes as $axis) {
+            $attributeRows[] = [
+                'product_id' => $productModel->id,
+                'attribute_definition_id' => $axis->attributeDefinitionId(),
+                'is_variation_axis' => true,
+                'text_value' => null,
+                'attribute_value_id' => null,
+                'sort_order' => 0,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ];
+
+            foreach ($axis->allowedValueIds() as $attributeValueId) {
+                $axisValueRows[] = [
+                    'product_id' => $productModel->id,
+                    'attribute_definition_id' => $axis->attributeDefinitionId(),
+                    'attribute_value_id' => $attributeValueId,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ];
+            }
+        }
+
+        DB::table('catalog_product_attributes')->insert($attributeRows);
+        DB::table('catalog_product_axis_values')->insert($axisValueRows);
     }
 
     public function findById(string $id): ?Product
@@ -322,16 +391,106 @@ final class EloquentProductRepository implements ProductRepository
             }
         }
 
+        $type = ProductType::from($model->type);
+        $variationAxes = $type === ProductType::VARIABLE ? $this->loadVariationAxes($model->id) : [];
+
         return Product::reconstituteFromStorage(
             id: (string) $model->id,
             name: $model->name,
-            type: ProductType::from($model->type),
+            type: $type,
             baseSku: $model->base_sku,
             slug: $model->slug,
             status: ProductStatus::from($model->status),
             catalogVisibility: CatalogVisibility::from($model->catalog_visibility),
             variations: $variations,
+            variationAxes: $variationAxes,
         );
+    }
+
+    /**
+     * Loads this Product's declared variation axes from
+     * catalog_product_attributes (is_variation_axis=true) joined with
+     * catalog_product_axis_values, and rebuilds the corresponding
+     * AttributeDefinition/AttributeValue/VariationAxis domain objects —
+     * the storage-layer counterpart of persistVariationAxes(). This is
+     * what closes the gap documented in catalog-domain-design.md §6 and
+     * vertical-slice-notes.md §2: a reloaded VARIABLE product can
+     * immediately call addStandardVariation()/changeVariationCombination()
+     * and have it validate correctly against its real declared axes,
+     * instead of silently accepting any combination because no axes were
+     * ever reloaded.
+     *
+     * @return VariationAxis[]
+     */
+    private function loadVariationAxes(int $productId): array
+    {
+        $axisDefinitionIds = DB::table('catalog_product_attributes')
+            ->where('product_id', $productId)
+            ->where('is_variation_axis', true)
+            ->pluck('attribute_definition_id');
+
+        if ($axisDefinitionIds->isEmpty()) {
+            return [];
+        }
+
+        $definitionModels = AttributeDefinitionModel::whereIn('id', $axisDefinitionIds)->get()->keyBy('id');
+
+        $axisValueRows = DB::table('catalog_product_axis_values')
+            ->where('product_id', $productId)
+            ->whereIn('attribute_definition_id', $axisDefinitionIds)
+            ->get(['attribute_definition_id', 'attribute_value_id']);
+
+        $valueIdsByDefinitionId = [];
+        foreach ($axisValueRows as $row) {
+            $valueIdsByDefinitionId[$row->attribute_definition_id][] = $row->attribute_value_id;
+        }
+
+        $valueModels = AttributeValueModel::whereIn('id', $axisValueRows->pluck('attribute_value_id')->unique())
+            ->get()
+            ->keyBy('id');
+
+        $axes = [];
+        foreach ($axisDefinitionIds as $definitionId) {
+            $definitionModel = $definitionModels->get($definitionId);
+            if ($definitionModel === null) {
+                continue;
+            }
+
+            $definition = new AttributeDefinition(
+                id: (string) $definitionModel->id,
+                code: $definitionModel->code,
+                name: $definitionModel->name,
+                type: AttributeType::from($definitionModel->type),
+            );
+
+            $allowedValues = [];
+            foreach ($valueIdsByDefinitionId[$definitionId] ?? [] as $valueId) {
+                $valueModel = $valueModels->get($valueId);
+                if ($valueModel === null) {
+                    continue;
+                }
+
+                $allowedValues[] = new AttributeValue(
+                    id: (string) $valueModel->id,
+                    attributeDefinitionId: (string) $valueModel->attribute_definition_id,
+                    value: $valueModel->value,
+                    sortOrder: $valueModel->sort_order,
+                );
+            }
+
+            if ($allowedValues === []) {
+                // Defensive only: persistVariationAxes() never writes an
+                // axis-declaration row without at least one allowed-value
+                // row, and VariationAxis's own constructor would reject an
+                // empty set anyway — skip rather than let a read throw on
+                // data that should never exist.
+                continue;
+            }
+
+            $axes[] = new VariationAxis($definition, $allowedValues);
+        }
+
+        return $axes;
     }
 
     private function toDomainVariation(VariationModel $model, array $attributeAssignments): Variation

@@ -9,6 +9,7 @@ use EasyCo\Catalog\Enums\VariationStatus;
 use EasyCo\Catalog\Enums\VariationType;
 use EasyCo\Catalog\Exceptions\DuplicateVariationCombinationException;
 use EasyCo\Catalog\Exceptions\InvalidVariationAxisException;
+use EasyCo\Catalog\Exceptions\UnsafeAxisRedeclarationException;
 use EasyCo\Catalog\Exceptions\UnsafeProductTypeTransitionException;
 
 /**
@@ -153,6 +154,19 @@ final class Product
      * @param Variation[] $variations Already-reconstituted Variations
      *   (e.g. via Variation::reconstituteFromStorage()), each with its
      *   real persisted id.
+     * @param VariationAxis[] $variationAxes This Product's declared
+     *   variation axes, already-reconstituted from storage
+     *   (catalog_product_attributes + catalog_product_axis_values — see
+     *   EloquentProductRepository). Passed through declareVariationAxes()
+     *   itself (so the normal within-set validation — SELECT-only axes,
+     *   no duplicate definition — still runs on the way in), but
+     *   deliberately called BEFORE $variations are attached below: at
+     *   that point this aggregate has no variations yet regardless of
+     *   how many are about to be attached, so declareVariationAxes()'s
+     *   STANDARD-variation guard (added to protect the live business
+     *   operation from silently orphaning existing variations) can never
+     *   fire here — reconstitution is restoring an already-consistent
+     *   prior state, not proposing a new one that might orphan anything.
      */
     public static function reconstituteFromStorage(
         string $id,
@@ -163,6 +177,7 @@ final class Product
         ProductStatus $status,
         CatalogVisibility $catalogVisibility,
         array $variations = [],
+        array $variationAxes = [],
     ): self {
         $product = new self(
             id: $id,
@@ -173,6 +188,10 @@ final class Product
             status: $status,
             catalogVisibility: $catalogVisibility,
         );
+
+        if ($variationAxes !== []) {
+            $product->declareVariationAxes($variationAxes);
+        }
 
         foreach ($variations as $variation) {
             $product->variations[$variation->id()] = $variation;
@@ -295,12 +314,27 @@ final class Product
      * (e.g. warning about now-orphaned combinations) intentionally left
      * to the application layer, not this aggregate.
      *
+     * GUARD: refuses to change the axis set once this Product has any
+     * STANDARD variation — checked by type, not current status, so an
+     * archived STANDARD variation still blocks it (same reasoning as
+     * attemptConvertToSimple()'s guard: archiving doesn't erase the fact
+     * that the variation's combination depended on the current axes).
+     * Throws UnsafeAxisRedeclarationException. v1 has no migration path
+     * for re-validating/updating existing combinations against a new
+     * axis set — the only way to change axes is for the Product to have
+     * zero STANDARD variations. See UnsafeAxisRedeclarationException's
+     * docblock.
+     *
      * @param VariationAxis[] $axes
      */
     public function declareVariationAxes(array $axes): void
     {
         if ($this->type !== ProductType::VARIABLE) {
             throw new \LogicException('Only a VARIABLE product can declare variation axes.');
+        }
+
+        if ($this->hasAnyStandardVariation()) {
+            throw UnsafeAxisRedeclarationException::becauseStandardVariationsExist($this->id ?? '(unsaved)');
         }
 
         $byDefinitionId = [];
@@ -321,6 +355,24 @@ final class Product
     public function variationAxes(): array
     {
         return array_values($this->variationAxes);
+    }
+
+    /**
+     * True if this Product has ever had a STANDARD variation created,
+     * regardless of its current status (ARCHIVED counts too — see
+     * declareVariationAxes()'s guard for why). Deliberately a small,
+     * separate helper rather than reusing attemptConvertToSimple()'s
+     * inline check: that method is untouched by this pass on purpose.
+     */
+    private function hasAnyStandardVariation(): bool
+    {
+        foreach ($this->variations as $variation) {
+            if ($variation->type() === VariationType::STANDARD) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
