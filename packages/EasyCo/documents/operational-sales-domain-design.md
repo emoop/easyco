@@ -1,8 +1,10 @@
 # Operational Sales Domain Design
 
-**Status:** v1.0 — approved model, not yet implemented.
-**Builds on:** `catalog-domain-design.md` (Product/Variation identity, `priceableId()`), `pricing-domain-design.md` (Money value object, reused here directly to eliminate a real float bug found in the source system).
+**Status:** v1.1 — domain layer implemented (`Client`, `Transaction`, `SaleLine`, `InstallmentPlan`); persistence layer and migrations not yet implemented. 61 tests passing (`packages/EasyCo/OperationalSales`).
+**Builds on:** `catalog-domain-design.md` (Product/Variation identity, `priceableId()`), `pricing-domain-design.md` (Money value object, reused here directly to eliminate a real float bug found in the source system; also `DefaultCurrency`, added during this implementation — see §3.11).
 **Origin:** derived from a line-by-line review of an existing, years-in-production WooCommerce POS plugin (internal codename `raf_pos`) — used as a **functional reference only, not architecture to copy**, same posture this project already takes toward WooCommerce/Bagisto/Aimeos elsewhere. Two real bugs found in that review directly shaped two of this domain's core decisions (§3.3, §3.5).
+
+**Implementation update (v1.0 → v1.1):** the domain layer described in §2/§3 below has now been built exactly as designed, across four focused implementation passes (one per aggregate) plus one corrective fix. §3.9–§3.11 document three things the original design left unspecified and that implementation had to resolve: `SaleLine`'s narrow `transactionId` backfill (§3.9), `InstallmentPlan`'s actual exception/settlement behavior (§3.10), and the `EasyCo\Pricing\DefaultCurrency` mechanism added to give `InstallmentPlan` a safe, non-hardcoded currency fallback for a zero-line plan (§3.11). See §5 for what's still deferred (persistence, migrations) and §6 for the updated next-steps state.
 
 ---
 
@@ -93,6 +95,35 @@ An earlier draft of this design proposed requiring lowercase Cyrillic client nam
 
 The source system's online-order tracking and delivery-reconciliation screens (`web-work.php`, `web-statistic.php`) turned out, on inspection, to be pure read-side queries over the same sales table, filtered by `channel` and `type` and grouped by `transaction`/order number — nothing that needed its own domain concept. The same holds here: "compare POS-register total vs. system total," "show combined POS+WEB revenue," "reconcile courier shipping costs for accounting" are all just differently-filtered queries over `Transaction`/`SaleLine`, not separate aggregates. `SHIPPING` lines are excluded from the default daily POS report (they're a courier cost, not POS revenue) but included in WEB-channel accounting reports, exactly matching the source system's existing split.
 
+### 3.9 `SaleLine.transactionId` backfill — not a §3.2 immutability violation
+
+Not specified in the original design and resolved during implementation: `Transaction` does not construct its `SaleLine`s (unlike `Product`, which is the only way a `Variation` is ever created) — a `SaleLine` is built directly by the caller, which means it may not yet know its owning `Transaction`'s real id at construction time, exactly the same problem `Variation::assignProductId()` already solves for a `Variation` built before its parent `Product` had an id. `SaleLine` accepts the empty string as a `transactionId` placeholder at construction, and exposes one narrow method, `assignTransactionId(string $transactionId): void`, that moves it from that placeholder to a real id exactly once (`LogicException` on a second call, or on a line that already has a real `transactionId`) — `Transaction::assignId()` calls it automatically on every attached line still holding the placeholder, mirroring `Product::assignId()` back-filling `Variation::assignProductId()`.
+
+This is deliberately **not** a violation of §3.2's immutability rule. `transactionId` is a structural/ownership reference — which `Transaction` this line currently belongs to — not a business fact like `amount`, `status`, or `type`. `Variation` already draws exactly this distinction: `attributeAssignments` is a business fact with no backfill or mutation path at all, while `productId` is a structural reference and gets a narrow, one-time `assignProductId()`. `transactionId` on `SaleLine` is the second kind, not the first — `assignTransactionId()` touches no other field and does not open the door to general mutation.
+
+### 3.10 `InstallmentPlan` as implemented: exceptions, overpayment, and settlement
+
+Four exception types guard `InstallmentPlan`'s two mutating operations (`attachReservedLine()`, `recordPayment()`) and `cancel()`, each covering a distinct failure reason:
+
+| Exception | Guards against |
+|---|---|
+| `InstallmentPlanNotActiveException` | Any of `attachReservedLine()` / `recordPayment()` / `cancel()` called on a plan that is already `COMPLETED` or `CANCELLED`. `cancel()` deliberately raises this on a second call too — see below. |
+| `ClientMismatchException` | A `SaleLine` belonging to a different client than the plan being attached (as a reserved line or a payment) — a plan tracks exactly one client's balance. |
+| `CurrencyMismatchException` | A `SaleLine` denominated in a different currency than the plan's other lines — required for `outstandingBalance()`'s `Money` subtraction to be computable at all (`Money` itself refuses to subtract across currencies). |
+| `OverpaymentException` | `recordPayment()` given an amount larger than the current `outstandingBalance()`. |
+
+**Overpayment is rejected outright, by deliberate scope decision, not an oversight.** Handling an overpayment — refunding the difference, crediting it toward a future purchase, or something else — is a real business decision this design does not make, so `recordPayment()` refuses the operation entirely rather than silently accepting a payment and producing a wrong resulting balance. Whoever eventually designs that policy should do so as a conscious extension of `recordPayment()`, not by discovering this gap in production.
+
+**Settlement, on exact payoff:** when a payment brings `outstandingBalance()` to exactly zero (`Money::isZero()` — see §3.1 for why this is exact where the source system's float check wasn't), the plan transitions to `COMPLETED` and `recordPayment()` returns one new `SaleLine` (not yet persisted — `id` and `transactionId` are placeholders, per §3.9) per reserved line on the plan, `type=SALE`, `status=SaleLineStatus::COMPLETED`, `originatingReservationLineId` set to the reserved line's id. Each settlement line's `effectiveAt` is copied from the **original reserved line's** `effectiveAt` — never "now" — directly implementing §3.5's `recorded_at`/`effective_at` distinction: `recordedAt` is genuinely "now" (when the settlement was written), while `effectiveAt` stays the original reservation date. As with `Product::attemptConvertToSimple()` building a fresh `Variation` for the caller to persist, `recordPayment()` only produces these lines — persisting them is the caller/repository's job, once a persistence layer exists (see §5).
+
+**The direct fix for the source system's marker-string bug (§3.3), confirmed by implementation:** `attachReservedLine()` appends a real `SaleLine` object reference onto the plan's own array. A second reserved line attached to an already-active plan (after a partial payment has already been recorded) works identically to the first — there is no independently-regenerated string that has to happen to match a prior one, so the class of bug the source system had is structurally impossible here, not merely mitigated.
+
+### 3.11 `EasyCo\Pricing\DefaultCurrency` — a fail-loud, non-hardcoded currency fallback
+
+`InstallmentPlan::outstandingBalance()` needs *some* `Currency` to return a zero `Money` for a plan with no lines attached yet (immediately after `open()`, before any `attachReservedLine()`/`recordPayment()` call has established one from a real line — a plan's currency is otherwise entirely emergent from whichever line, reserved or payment, it sees first; see §3.10). The first implementation of this fallback hardcoded `Currency::BGN()`, reasoning from this domain's Bulgarian-POS origin (§3.1's own "stotinka" reference). That hardcode became **factually wrong**, not just provisional, when Bulgaria adopted the euro on 2026-01-01 (with BGN ceasing to be legal tender on 2026-02-01 after a one-month dual-circulation period) — and hardcoding a replacement currency (EUR, or any other single currency) would only move the identical problem to the next currency/country this project eventually needs.
+
+The fix, `EasyCo\Pricing\DefaultCurrency`, belongs to **Pricing, not Operational Sales** — a project-wide default currency is a Pricing-owned concept any future domain might need, the same way `Money`/`Currency` themselves are Pricing-owned. It is a small, framework-agnostic static holder (`set()` / `get()` / `isConfigured()` / `reset()`), configured once by the host application (`PricingServiceProvider::boot()`, reading `config('services.pricing.default_currency')`) and consumed here as `DefaultCurrency::get()`. `get()` throws a `LogicException` rather than silently guessing if nothing was ever configured — the same fail-loud posture as `OverpaymentException` elsewhere in this domain. See `pricing-domain-design.md` for the full writeup; `InstallmentPlan` is its first real consumer.
+
 ---
 
 ## 4. Status taxonomy: source system → this model
@@ -117,6 +148,7 @@ The source system's online-order tracking and delivery-reconciliation screens (`
 
 ## 5. Explicitly deferred (documented, not accidental)
 
+- **Persistence layer and migrations for all four aggregates** (`Client`, `Transaction`, `SaleLine`, `InstallmentPlan`) — the domain layer is now fully implemented and tested in memory (61 tests, §3.9–§3.11 document what implementation resolved), but no Eloquent models, repositories, or migrations exist yet. This was implicit in §6's original next-steps ordering (domain layer, then persistence); now that the domain layer is done, it's the explicit next piece of work, following the same repository/reconstituteFromStorage() shape already proven in Catalog.
 - **Full report/query-layer implementation** (daily register comparison, period summaries, delivery reconciliation) — the data model in §2 is designed to support all of it, but the actual query/view layer is separate follow-up work, not part of this domain's core.
 - **`SkuGenerator`/`BarcodeGenerator`** (already deferred from earlier Catalog work) — unrelated to this domain, still queued behind it.
 - **Brand/channel-specific discount rules** (e.g. the source system's brand-specific POS discount button) belong to **Pricing**, implemented as Hook filters (`Hook::apply('pricing.discount.percentage', ...)`), not to this domain — Operational Sales only ever records the resulting `amount` as a fact, never decides it.
@@ -127,7 +159,7 @@ The source system's online-order tracking and delivery-reconciliation screens (`
 
 ## 6. Next steps
 
-1. Review of this document by the domain owner (in progress).
-2. Domain-layer implementation (`Client`, `Transaction`, `SaleLine`, `InstallmentPlan` as plain PHP, framework-agnostic, mirroring `Product`/`Variation`'s existing shape) — separate, focused prompts per aggregate, same rhythm as the Catalog build.
-3. Persistence layer, migrations, and the DB-constraint story for `InstallmentPlan` settlement — after the domain layer is tested in isolation.
+1. ~~Review of this document by the domain owner (in progress).~~ Done — this is v1.1.
+2. ~~Domain-layer implementation (`Client`, `Transaction`, `SaleLine`, `InstallmentPlan` as plain PHP, framework-agnostic, mirroring `Product`/`Variation`'s existing shape) — separate, focused prompts per aggregate, same rhythm as the Catalog build.~~ Done as of v1.1 — see §3.9–§3.11 for what implementation resolved beyond the original design; 61 tests passing.
+3. **Persistence layer, migrations, and the DB-constraint story for `InstallmentPlan` settlement** — now the next piece of work; see §5.
 4. Reporting/query layer — last, once the write model is solid.

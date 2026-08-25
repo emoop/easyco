@@ -182,7 +182,27 @@ interface CostPriceProvider
 }
 ```
 
-This — plus `PriceResolver`/`PriceContext`/`PriceQuote`, `CostPriceProvider`, and the already-public `Money`/`Currency`/`Price` — is the **entire** public surface other domains may depend on. `PriceList`, `PriceListItem`, `PriceRule`, `PriceRuleResult`, `ProductCost`, and their repositories are internal; no other domain package may `use` them directly.
+### 4.3 Cross-domain utility: `DefaultCurrency`
+
+```php
+namespace EasyCo\Pricing;
+
+final class DefaultCurrency
+{
+    public static function set(Currency $currency): void;
+    public static function get(): Currency;      // throws LogicException if never set
+    public static function isConfigured(): bool;
+    public static function reset(): void;         // test-only
+}
+```
+
+A small, framework-agnostic static holder for the host application's configured default `Currency` — for the rare case where some computation needs *a* currency before any real `Money` amount has established one. Added specifically because `EasyCo\OperationalSales\InstallmentPlan::outstandingBalance()` needs a currency to return a zero balance for a plan with no lines attached yet (right after it's opened); this is its first real consumer.
+
+**Fail-loud, not silently-guessing** — the same posture already established for `OverpaymentException` and the rest of Operational Sales: `get()` throws a `LogicException` if the host application never configured a default, rather than falling back to a hardcoded currency. That hardcode was tried first (`InstallmentPlan` originally defaulted to `Currency::BGN()`, reasoning from Operational Sales's Bulgarian-POS origin) and turned out to be a real bug, not just a provisional shortcut: BGN stopped being legal tender when Bulgaria adopted the euro on 2026-01-01. Hardcoding a replacement currency here — EUR, or any other single one — would only move the identical problem to the next currency/country this project eventually needs. `DefaultCurrency` exists so no domain has to hardcode a currency guess ever again; it configures once, in one place, for the whole application.
+
+**Configuration:** the host application sets it once, at boot, via `PricingServiceProvider::boot()`, which reads `config('services.pricing.default_currency')` (backed by `env('PRICING_DEFAULT_CURRENCY', 'EUR')` in `config/services.php`) and calls `DefaultCurrency::set()`. `DefaultCurrency` itself never touches `config()`, `Illuminate\Support\Facades\*`, or anything else Laravel-specific — exactly the same framework-agnostic-core-plus-thin-Laravel-adapter split already used for every other class in this package.
+
+This — plus `PriceResolver`/`PriceContext`/`PriceQuote`, `CostPriceProvider`, `DefaultCurrency`, and the already-public `Money`/`Currency`/`Price` — is the **entire** public surface other domains may depend on. `PriceList`, `PriceListItem`, `PriceRule`, `PriceRuleResult`, `ProductCost`, and their repositories are internal; no other domain package may `use` them directly.
 
 ---
 
@@ -232,12 +252,13 @@ Keeping these as two distinct route groups (not one endpoint with a permission f
 - **POS → Pricing:** calls both `PriceResolver` (sale price) and `CostPriceProvider` (cost) to compute margin at the point of sale — POS is an internal package, so both bindings are available to it; the storefront package only ever gets `PriceResolver` bound.
 - **Tax → Pricing:** Pricing depends on `TaxRateResolver`; Tax domain provides the binding once it exists.
 - **Promotions → Pricing:** not a dependency in either direction. Promotions sits *above* Cart, adjusting cart totals after Pricing has already resolved each line's catalog price.
+- **Operational Sales → Pricing:** depends on `Money` directly (a reused value object, not a domain aggregate — see `operational-sales-domain-design.md` §1) and on `DefaultCurrency` (§4.3), for `InstallmentPlan::outstandingBalance()`'s zero-line-plan fallback. Does **not** depend on `PriceResolver`/`PriceQuote`/anything else in this document — Operational Sales records prices as historical facts already decided elsewhere, it never resolves one itself.
 
 ---
 
 ## 8. Testing plan
 
-- **Already covered:** `Money`/`Currency`/`Price` unit tests (87 tests, existing).
+- **Already covered:** `Money`/`Currency`/`Price` unit tests (87 tests, existing) plus `DefaultCurrencyTest` (4 tests: `get()` throws when never configured, `set()`→`get()` round-trips, `reset()` clears the configured value, `isConfigured()` reflects state across both) — 91 tests total. `DefaultCurrency` is still exercised indirectly too, through `EasyCo\OperationalSales\InstallmentPlanTest`, but now has direct coverage of its own in this package as well.
 - **New for this design:**
   - `PriceResolver` resolution-precedence tests (no match → exception; quantity-tier selection; scheduled-price windows; rule-vs-special "lower wins" policy).
   - `PriceQuote::isDiscounted()` — true/false cases.

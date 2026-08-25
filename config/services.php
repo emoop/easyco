@@ -35,4 +35,15 @@ return [
         ],
     ],
 
+    'pricing' => [
+        // The store's default currency, used only where a Money-adjacent
+        // computation needs *some* currency before any real amount has
+        // established one (see EasyCo\Pricing\DefaultCurrency). Override
+        // via .env, not by editing this hardcoded value, if the store's
+        // currency ever changes — see EasyCo\Pricing\DefaultCurrency's
+        // docblock for why this must stay configurable rather than
+        // hardcoded in code.
+        'default_currency' => env('PRICING_DEFAULT_CURRENCY', 'EUR'),
+    ],
+
 ];
