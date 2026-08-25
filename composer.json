@@ -9,6 +9,7 @@
         "php": "^8.3",
         "easyco/catalog": "@dev",
         "easyco/extensibility": "@dev",
+        "easyco/operational-sales": "@dev",
         "easyco/pricing": "@dev",
         "laravel/framework": "^13.17",
         "laravel/tinker": "^3.0"

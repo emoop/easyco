@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "c81662d5d7ebf6b5d93cb860b8eb0306",
+    "content-hash": "5db140ee0ade9a14d1382448541670aa",
     "packages": [
         {
             "name": "brick/math",
@@ -516,6 +516,47 @@
                 "MIT"
             ],
             "description": "EasyCo Extensibility package — a WordPress-style action/filter hook registry (HookRegistry) other domains can be extended through without modifying their source, plus a Laravel-facing Hook facade.",
+            "transport-options": {
+                "relative": true
+            }
+        },
+        {
+            "name": "easyco/operational-sales",
+            "version": "dev-main",
+            "dist": {
+                "type": "path",
+                "url": "packages/EasyCo/OperationalSales",
+                "reference": "d5882802f085d60e668a9faaacf380690446e8be"
+            },
+            "require": {
+                "easyco/pricing": "@dev",
+                "php": "^8.2"
+            },
+            "require-dev": {
+                "phpunit/phpunit": "^11.0"
+            },
+            "type": "library",
+            "extra": {
+                "laravel": {
+                    "providers": [
+                        "EasyCo\\OperationalSales\\Providers\\OperationalSalesServiceProvider"
+                    ]
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "EasyCo\\OperationalSales\\": "src/"
+                }
+            },
+            "autoload-dev": {
+                "psr-4": {
+                    "EasyCo\\OperationalSales\\Tests\\": "tests/"
+                }
+            },
+            "license": [
+                "MIT"
+            ],
+            "description": "EasyCo Operational Sales domain package — Client/Transaction/SaleLine/InstallmentPlan, the historical record of what actually happened in a sale, reservation, refund, or installment payment across POS and Web channels.",
             "transport-options": {
                 "relative": true
             }
@@ -8524,6 +8565,7 @@
     "stability-flags": {
         "easyco/catalog": 20,
         "easyco/extensibility": 20,
+        "easyco/operational-sales": 20,
         "easyco/pricing": 20
     },
     "prefer-stable": true,
