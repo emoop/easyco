@@ -43,22 +43,39 @@ final class VariationCombinationGenerator
      * @param array<int|string, array<int, int|string>> $axisValueIdsByAttributeDefinitionId
      *   Map of attribute_definition_id => list of attribute_value_id
      *   selected by the merchant for that axis on this product.
-     * @param callable(array<int|string, int|string>): string $skuForCombination
-     *   Called once per combination to produce its sku, now that
-     *   Product::addStandardVariation() requires one. This is NOT the real
-     *   SKU-generation feature (still deferred, out of scope here) — it's
-     *   just the injection point that keeps this generator working now
-     *   that sku is a required argument; callers pass whatever strategy
-     *   they have today (a naming template, a counter, a placeholder).
+     * @param ?callable(array<int|string, int|string>): string $skuForCombination
+     *   Called once per combination to produce its sku. OPTIONAL — the
+     *   real sku-generation feature is now the 'catalog.variation.sku'
+     *   Hook filter (see App\Providers\CatalogSkuGeneratorServiceProvider
+     *   and catalog-domain-design.md §3.2), but THIS CLASS CANNOT CALL IT
+     *   ITSELF: Catalog is a domain package, and
+     *   extensibility-design-and-hooks.md §2 / CLAUDE.md's hard
+     *   architectural rules are explicit that domain packages must never
+     *   call Hook::apply() or depend on EasyCo\Extensibility at all —
+     *   only app/ layer code may. So when $skuForCombination is omitted,
+     *   this method does NOT silently reach for a default; it throws
+     *   (see below), and it is the CALLER's job (app/ layer code) to
+     *   build a closure that calls
+     *   Hook::apply('catalog.variation.sku', '', $product->baseSku(), $product)
+     *   and pass it in — exactly the same "wrap from outside, never call
+     *   from inside" pattern ProductController::store() already uses for
+     *   catalog.product.base_sku / catalog.product.slug. Still accepted
+     *   as an explicit override for any caller with custom sku logic.
      * @return Variation[] Newly created DRAFT variations (existing
      *   combinations are skipped, not returned).
+     *
+     * @throws \LogicException if $skuForCombination is null and at least
+     *   one combination needs to be generated (an empty axis map is a
+     *   no-op regardless, per the empty-map short-circuit below, so it
+     *   never needs a sku strategy at all).
      */
-    public function generate(Product $product, array $axisValueIdsByAttributeDefinitionId, callable $skuForCombination): array
+    public function generate(Product $product, array $axisValueIdsByAttributeDefinitionId, ?callable $skuForCombination = null): array
     {
         if ($axisValueIdsByAttributeDefinitionId === []) {
             // No axes supplied at all is a no-op, not an error — distinct
             // from a supplied axis with an empty value list (see below),
-            // which IS a rejected "empty/invalid axis definition".
+            // which IS a rejected "empty/invalid axis definition". No sku
+            // strategy is needed here either, since nothing is generated.
             return [];
         }
 
@@ -78,9 +95,21 @@ final class VariationCombinationGenerator
 
         $this->assertEveryAxisAndValueIsValidForProduct($product, $deduplicated);
 
+        $combinations = $this->cartesianProduct($deduplicated);
+
+        if ($skuForCombination === null) {
+            throw new \LogicException(
+                'VariationCombinationGenerator::generate() requires a sku strategy for '.
+                count($combinations).' combination(s), but none was given. This class cannot call '.
+                'Hook::apply() itself (Catalog is a domain package — see extensibility-design-and-hooks.md §2); '.
+                'pass an explicit $skuForCombination callable, or have app/ layer code build one via '.
+                "Hook::apply('catalog.variation.sku', '', \$product->baseSku(), \$product)."
+            );
+        }
+
         $created = [];
 
-        foreach ($this->cartesianProduct($deduplicated) as $combination) {
+        foreach ($combinations as $combination) {
             try {
                 $created[] = $product->addStandardVariation($combination, $skuForCombination($combination));
             } catch (DuplicateVariationCombinationException) {

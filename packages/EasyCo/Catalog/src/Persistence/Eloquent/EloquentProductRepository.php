@@ -256,7 +256,6 @@ final class EloquentProductRepository implements ProductRepository
         $variationModel->type = $variation->type()->value;
         $variationModel->status = $variation->status()->value;
         $variationModel->attribute_signature = $variation->attributeSignature()->value();
-        $variationModel->sku = $variation->sku();
         $variationModel->barcode = $variation->barcode();
         $variationModel->is_visible = $variation->isVisible();
         $variationModel->is_purchasable = $variation->isPurchasable();
@@ -267,18 +266,7 @@ final class EloquentProductRepository implements ProductRepository
         $variationModel->width_mm = $variation->widthMm();
         $variationModel->height_mm = $variation->heightMm();
 
-        try {
-            $variationModel->save();
-        } catch (QueryException $e) {
-            if ($this->isVariationSignatureUniqueViolation($e)) {
-                throw DuplicateVariationCombinationException::fromDatabaseConstraintViolation(
-                    $product->id() ?? '(unsaved)',
-                    $e
-                );
-            }
-
-            throw $e;
-        }
+        $this->saveVariationModelWithSkuCollisionRetry($variationModel, $product, $variation);
 
         if ($variation->id() === null) {
             $variation->assignId((string) $variationModel->id);
@@ -286,6 +274,91 @@ final class EloquentProductRepository implements ProductRepository
         }
 
         $this->syncVariationAttributeAssignments($variationModel, $variation);
+    }
+
+    /**
+     * Persists $variationModel, retrying up to 3 times on a sku UNIQUE
+     * constraint collision by appending an incrementing numeric suffix
+     * to the sku (e.g. "154215-2" -> "154215-2-1" -> "-2" -> "-3") before
+     * giving up and throwing. Mirrors
+     * saveProductModelWithSlugCollisionRetry() exactly — same shape, same
+     * reasoning: the 'catalog.variation.sku' Hook listener
+     * (App\Providers\CatalogSkuGeneratorServiceProvider) picks its
+     * candidate sku from count($product->variations()) + 1, a
+     * best-effort in-memory guess that can still collide (e.g. a
+     * variation was manually given a sku matching that exact pattern, or
+     * a gap from an archived variation coincides) — this retry, driven
+     * by the actual UNIQUE(sku) constraint, is the authoritative,
+     * race-condition-safe guarantee.
+     *
+     * A signature collision is NOT retried here — that means a genuine
+     * duplicate combination, not a sku-naming clash, so it's translated
+     * to DuplicateVariationCombinationException immediately, same as
+     * before this method existed.
+     *
+     * On success with an appended suffix, updates $variation's own sku
+     * via setSku() so the in-memory Variation reflects exactly what was
+     * actually persisted — same reasoning as the slug retry's
+     * $product->changeSlug() call.
+     */
+    private function saveVariationModelWithSkuCollisionRetry(VariationModel $variationModel, Product $product, Variation $variation): void
+    {
+        $baseSku = $variation->sku();
+        $maxRetries = 3;
+
+        for ($retry = 0; $retry <= $maxRetries; $retry++) {
+            $variationModel->sku = $retry === 0 ? $baseSku : $baseSku.'-'.$retry;
+
+            try {
+                $variationModel->save();
+
+                if ($retry > 0) {
+                    $variation->setSku($variationModel->sku);
+                }
+
+                return;
+            } catch (QueryException $e) {
+                if ($this->isVariationSignatureUniqueViolation($e)) {
+                    throw DuplicateVariationCombinationException::fromDatabaseConstraintViolation(
+                        $product->id() ?? '(unsaved)',
+                        $e
+                    );
+                }
+
+                if (! $this->isVariationSkuUniqueViolation($e)) {
+                    throw $e;
+                }
+
+                if ($retry === $maxRetries) {
+                    throw new RuntimeException(
+                        "Could not save Variation: sku \"{$baseSku}\" and its next {$maxRetries} numeric-suffix ".
+                        "variants (\"{$baseSku}-1\" .. \"{$baseSku}-{$maxRetries}\") are all already taken."
+                    );
+                }
+            }
+        }
+    }
+
+    /**
+     * Detects a violation of catalog_variations_sku_unique — the
+     * UNIQUE(sku) index from
+     * 2026_08_23_000006_create_catalog_variations_table.php. Same shared
+     * primary check as isVariationSignatureUniqueViolation() /
+     * isProductSlugUniqueViolation() (isPossibleUniqueConstraintViolation()),
+     * with errorInfo[2] checked for either MySQL's named index or
+     * SQLite's table.column pair — never $e->getMessage() string
+     * matching (catalog-domain-design.md §7).
+     */
+    private function isVariationSkuUniqueViolation(QueryException $e): bool
+    {
+        if (! $this->isPossibleUniqueConstraintViolation($e)) {
+            return false;
+        }
+
+        $driverErrorMessage = (string) ($e->errorInfo[2] ?? '');
+
+        return str_contains($driverErrorMessage, 'catalog_variations_sku_unique')
+            || str_contains($driverErrorMessage, 'catalog_variations.sku');
     }
 
     /**

@@ -46,4 +46,14 @@ return [
         'default_currency' => env('PRICING_DEFAULT_CURRENCY', 'EUR'),
     ],
 
+    'catalog' => [
+        // The first value the auto-generated Product::baseSku() sequence
+        // issues (see database/migrations/..._create_catalog_sku_sequence_table.php
+        // and App\Providers\CatalogSkuGeneratorServiceProvider). Read at
+        // migration time to seed the sequence, and available at runtime
+        // for reference — the sequence table itself, not this config
+        // value, is the actual source of truth once seeded.
+        'base_sku_sequence_start' => env('PRODUCT_SKU_SEQUENCE_START', 100000),
+    ],
+
 ];

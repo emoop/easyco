@@ -141,15 +141,27 @@ class CreateProductVerticalSliceTest extends TestCase
         ]);
     }
 
-    public function test_creating_a_product_without_a_base_sku_returns_a_validation_error(): void
+    /**
+     * Previously this test proved base_sku was a required field (422
+     * without one). That's no longer true: as of the real
+     * 'catalog.product.base_sku' generator
+     * (App\Providers\CatalogSkuGeneratorServiceProvider), omitting
+     * base_sku is the documented way to request an auto-generated
+     * sequence value — not an error. See
+     * tests/Feature/CatalogSkuGeneratorTest.php for that behavior's real
+     * coverage; this file's validation is now `nullable`, not `required`
+     * (see ProductController::store()).
+     */
+    public function test_creating_a_product_without_a_base_sku_still_succeeds_with_an_auto_generated_one(): void
     {
-        $response = $this->postJson('/api/products', ['name' => 'Missing Base Sku Product']);
+        $response = $this->postJson('/api/products', ['name' => 'No Base Sku Given']);
 
-        $response->assertStatus(422);
-        $response->assertJsonValidationErrors(['base_sku']);
+        $response->assertStatus(200);
 
-        $this->assertDatabaseMissing('catalog_products', [
-            'name' => 'Missing Base Sku Product',
+        $productId = $response->json('product_id');
+        $this->assertDatabaseHas('catalog_products', [
+            'id' => $productId,
+            'name' => 'No Base Sku Given',
         ]);
     }
 

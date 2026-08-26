@@ -105,6 +105,40 @@ final class VariationCombinationGeneratorTest extends TestCase
         $this->assertCount(0, $product->variations());
     }
 
+    /**
+     * $skuForCombination is optional (defaults to null) so app/ layer
+     * code can build a Hook-based closure and pass it in — but this
+     * class cannot call Hook::apply() itself (see generate()'s
+     * docblock), so omitting it when there's actually something to
+     * generate must fail loudly, not silently produce an invalid empty
+     * sku.
+     */
+    public function test_omitting_the_sku_strategy_throws_when_there_are_combinations_to_generate(): void
+    {
+        $product = Product::createVariable('T-Shirt', 'SKU-1', 't-shirt');
+        $product->declareVariationAxes([$this->axis('1', 'color', ['5', '6'])]);
+        $generator = new VariationCombinationGenerator();
+
+        $this->expectException(\LogicException::class);
+        $generator->generate($product, [1 => [5, 6]]);
+    }
+
+    /**
+     * The mirror image of the test above: an empty axis map never
+     * generates anything, so omitting the sku strategy is fine — there
+     * is nothing to need one for.
+     */
+    public function test_omitting_the_sku_strategy_with_an_empty_axis_map_does_not_throw(): void
+    {
+        $product = Product::createVariable('T-Shirt', 'SKU-1', 't-shirt');
+        $product->declareVariationAxes([$this->axis('1', 'color', ['5', '6'])]);
+        $generator = new VariationCombinationGenerator();
+
+        $created = $generator->generate($product, []);
+
+        $this->assertCount(0, $created);
+    }
+
     public function test_undeclared_axis_is_rejected(): void
     {
         $product = Product::createVariable('T-Shirt', 'SKU-1', 't-shirt');

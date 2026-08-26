@@ -30,16 +30,18 @@ class ProductController extends Controller
     {
         $validated = $request->validate([
             'name' => 'required|string|max:255',
-            'base_sku' => 'required|string|max:255',
+            'base_sku' => 'nullable|string|max:255',
             'slug' => 'nullable|string|max:255',
         ]);
 
         // Lets anything listening on this hook adjust the merchant-supplied
         // base_sku before it becomes the Product's identity — see
-        // App\Providers\DemoHooksServiceProvider for the one demo listener
-        // currently registered. Not the real SKU-generator feature (see
-        // that provider's docblock).
-        $baseSku = Hook::apply('catalog.product.base_sku', $validated['base_sku']);
+        // App\Providers\CatalogSkuGeneratorServiceProvider, the real
+        // generator. An empty string tells it to auto-generate the next
+        // value from the persistent sequence; a merchant-supplied value
+        // passes through completely unchanged (a SKU is an opaque
+        // identifier, not a URL-safe token, unlike slug).
+        $baseSku = Hook::apply('catalog.product.base_sku', $validated['base_sku'] ?? '');
 
         // Same idea for slug, but with a real, production-intended
         // listener — see App\Providers\CatalogSlugGeneratorServiceProvider.

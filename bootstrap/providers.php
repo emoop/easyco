@@ -1,11 +1,11 @@
 <?php
 
 use App\Providers\AppServiceProvider;
+use App\Providers\CatalogSkuGeneratorServiceProvider;
 use App\Providers\CatalogSlugGeneratorServiceProvider;
-use App\Providers\DemoHooksServiceProvider;
 
 return [
     AppServiceProvider::class,
-    DemoHooksServiceProvider::class,
+    CatalogSkuGeneratorServiceProvider::class,
     CatalogSlugGeneratorServiceProvider::class,
 ];
