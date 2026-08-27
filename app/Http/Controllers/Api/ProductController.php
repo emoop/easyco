@@ -32,6 +32,7 @@ class ProductController extends Controller
             'name' => 'required|string|max:255',
             'base_sku' => 'nullable|string|max:255',
             'slug' => 'nullable|string|max:255',
+            'barcode' => 'nullable|string|max:255',
         ]);
 
         // Lets anything listening on this hook adjust the merchant-supplied
@@ -50,6 +51,20 @@ class ProductController extends Controller
         $slug = Hook::apply('catalog.product.slug', $validated['slug'] ?? '', $validated['name']);
 
         $product = Product::createSimple($validated['name'], $baseSku, $slug);
+
+        // No default listener exists (or ever will, by design) for this
+        // hook — barcode format/length/checksum requirements vary too
+        // much per merchant for EasyCo to impose a default, unlike
+        // base_sku/slug above. With zero listeners registered this is a
+        // pure no-op: whatever was supplied (or "" if nothing was) comes
+        // back unchanged. See extensibility-design-and-hooks.md's Hook
+        // Reference entry for 'catalog.variation.barcode'.
+        $variation = $product->universalVariation();
+        $barcode = Hook::apply('catalog.variation.barcode', $validated['barcode'] ?? '', $variation);
+        if ($barcode !== '') {
+            $variation->setBarcode($barcode);
+        }
+
         $this->products->save($product);
 
         $priceableId = (string) $product->universalVariation()->priceableId();
