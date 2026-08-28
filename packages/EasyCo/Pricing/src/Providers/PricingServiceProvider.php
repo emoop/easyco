@@ -8,28 +8,21 @@ use EasyCo\Pricing\Contracts\PriceListScopeRepository;
 use EasyCo\Pricing\Contracts\PriceResolver;
 use EasyCo\Pricing\Currency;
 use EasyCo\Pricing\DefaultCurrency;
-use EasyCo\Pricing\Money;
 use EasyCo\Pricing\Persistence\Eloquent\EloquentPriceListItemRepository;
 use EasyCo\Pricing\Persistence\Eloquent\EloquentPriceListRepository;
 use EasyCo\Pricing\Persistence\Eloquent\EloquentPriceListScopeRepository;
-use EasyCo\Pricing\Persistence\InMemoryPriceResolver;
-use EasyCo\Pricing\Price;
+use EasyCo\Pricing\Persistence\Eloquent\EloquentPriceResolver;
 use Illuminate\Support\ServiceProvider;
 
 class PricingServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        // TEMPORARY — hardcoded single-price seed for the Catalog vertical
-        // slice. Replace with a real PriceList-backed resolver once Pricing
-        // persistence exists.
-        $this->app->singleton(PriceResolver::class, function () {
-            return new InMemoryPriceResolver([
-                '1' => Price::exclusiveOfTax(
-                    Money::fromMinorUnits(2399, Currency::EUR())
-                ),
-            ]);
-        });
+        $this->app->bind(PriceResolver::class, EloquentPriceResolver::class);
+        // bind(), not singleton(), mirroring the three repository bindings
+        // below — EloquentPriceResolver holds no state that needs to
+        // persist across a request, unlike InMemoryPriceResolver's
+        // constructed-once hardcoded seed array (which no longer exists).
 
         $this->app->bind(PriceListRepository::class, EloquentPriceListRepository::class);
         $this->app->bind(PriceListScopeRepository::class, EloquentPriceListScopeRepository::class);

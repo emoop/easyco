@@ -10,7 +10,7 @@ use EasyCo\Pricing\Contracts\PriceContext;
 use EasyCo\Pricing\Contracts\PriceResolver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use OutOfBoundsException;
+use RuntimeException;
 
 /**
  * Deliberately minimal — exists only to prove the Catalog -> Pricing
@@ -82,16 +82,17 @@ class ProductController extends Controller
                 'slug' => $product->slug(),
                 'price' => $quote->final->gross()->decimalValue(),
             ]);
-        } catch (OutOfBoundsException) {
-            // The current PriceResolver binding (InMemoryPriceResolver) is
-            // seeded with exactly one hardcoded priceableId ("1") — see
-            // PricingServiceProvider. Every other priceableId, including
-            // the one this brand-new product's Universal variation just
-            // got, has no seeded price. Returning a null price with a flag
-            // is preferable to guessing/hardcoding a second seeded id
-            // here: ids are auto-increment, so a hardcoded id would only
-            // ever coincidentally match one specific product and silently
-            // break for every other one.
+        } catch (RuntimeException) {
+            // The current PriceResolver binding (EloquentPriceResolver)
+            // throws RuntimeException in two cases: the reserved
+            // "Regular Prices" system PriceList has not been seeded yet
+            // (pricing-persistence-domain-design.md §8 item 3, not yet
+            // implemented), or it has been seeded but has no
+            // PriceListItem for this exact priceableId. Both are the same
+            // "no price configured for this product yet" situation from
+            // this controller's point of view — returning a null price
+            // with a flag is the correct graceful response either way,
+            // not a reason to fail the whole product-creation request.
             return response()->json([
                 'product_id' => $product->id(),
                 'name' => $product->name(),
