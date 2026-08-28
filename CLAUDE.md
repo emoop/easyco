@@ -126,12 +126,13 @@ packages/EasyCo/documents/{domain}-domain-design.md before working in it.
 
 ## Deferred, tracked (don't rebuild speculatively, don't lose track)
 
-- Real Pricing persistence (PriceList/PriceListItem) — InMemoryPriceResolver
-  is a deliberate temporary stand-in.
+- Pricing persistence: PriceList/PriceListScope/PriceListItem domain
+  layer implemented (see pricing-persistence-domain-design.md). Still
+  deferred: EloquentPriceResolver + migrations (replacing
+  InMemoryPriceResolver), the two reserved system PriceLists' seeding
+  mechanism, and the price-list health-check report — §8 items 2-4.
 - VariationRepository details / SKU & Barcode generators (as Hook
   listeners, per catalog-domain-design.md and vertical-slice-notes.md §6).
-- Operational Sales persistence beyond migrations (Eloquent models,
-  repositories) — migrations exist, models/repos do not yet.
 - Commerce Knowledge Layer — concept only, see
   commerce-knowledge-layer-concept.md.
 - i18n / localization strategy — not yet started, explicitly deferred by
@@ -139,6 +140,27 @@ packages/EasyCo/documents/{domain}-domain-design.md before working in it.
 - Admin UI (Filament/Livewire likely) — see
   performance-and-channel-strategy.md's explicit warning: must go through
   the domain layer, never raw Eloquent writes from admin resources.
+- Cart domain, including abandoned-cart recovery via a `cart.abandoned`
+  Hook — see cart-abandoned-recovery-note.md (also flags a Pricing-owned
+  single-use discount-code generation need, triggered by Cart, not owned
+  by Cart).
+- Checkout orchestration — performance/reliability risk where every
+  domain converges at once; needs a dedicated orchestration layer, async
+  non-blocking side effects, and explicit external-API timeouts — see
+  checkout-orchestration-performance-note.md.
+- Embedded AI setup/config assistant — must route every suggested
+  action through the domain layer like any other caller, never raw
+  Eloquent; suggest-then-confirm only — see
+  embedded-ai-assistant-note.md.
+- Product/Brand slider widget (dynamic, Catalog/Pricing-backed, distinct
+  from the static Hero Slider) — see
+  product-brand-slider-widget-note.md.
+- Barcode bulk-entry UX (scanner-driven, admin UI) — distinct from the
+  catalog.variation.barcode generation Hook — see
+  barcode-bulk-entry-ux-note.md.
+- Production hardening/deployment pass: rate limiting and bot-scanning
+  mitigation at the infrastructure layer — see
+  server-stability-observations.md.
 
 ## Do not touch without explicit instruction
 
