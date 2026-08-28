@@ -1,6 +1,6 @@
 # Operational Sales Domain Design
 
-**Status:** v1.1 — domain layer implemented (`Client`, `Transaction`, `SaleLine`, `InstallmentPlan`); persistence layer and migrations not yet implemented. 61 tests passing (`packages/EasyCo/OperationalSales`).
+**Status:** v1.2 — domain layer implemented (`Client`, `Transaction`, `SaleLine`, `InstallmentPlan`); persistence layer implemented (migrations, Eloquent repositories for Client/Transaction/InstallmentPlan — see be107f5), verified against a real MySQL database (SHOW CREATE TABLE, rollback/re-migrate round trip). 61 tests passing (`packages/EasyCo/OperationalSales`).
 **Builds on:** `catalog-domain-design.md` (Product/Variation identity, `priceableId()`), `pricing-domain-design.md` (Money value object, reused here directly to eliminate a real float bug found in the source system; also `DefaultCurrency`, added during this implementation — see §3.11).
 **Origin:** derived from a line-by-line review of an existing, years-in-production WooCommerce POS plugin (internal codename `raf_pos`) — used as a **functional reference only, not architecture to copy**, same posture this project already takes toward WooCommerce/Bagisto/Aimeos elsewhere. Two real bugs found in that review directly shaped two of this domain's core decisions (§3.3, §3.5).
 
