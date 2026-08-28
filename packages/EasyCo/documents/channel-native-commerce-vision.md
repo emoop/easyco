@@ -1,3 +1,15 @@
+# Channel-Native Commerce Vision — Foundational Discussion
+
+*Raw conversation transcript, not a formal design doc. Captures the
+architectural shift from "e-commerce platform + modules" to "Modular
+Commerce Platform with channel-native distribution" (Web/POS/Social/AI
+as first-class channels, not bolt-on integrations) — referenced by
+CLAUDE.md and later domain design docs. Kept close to its original
+form rather than rewritten, since the reasoning trail (why each
+conclusion was reached) is itself part of the value.*
+
+---
+
 Да. И това, което току-що описа, **променя една от основните ми постановки за EasyCo**.
 
 До момента мислехме:
