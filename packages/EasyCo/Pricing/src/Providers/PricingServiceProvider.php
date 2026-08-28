@@ -2,10 +2,16 @@
 
 namespace EasyCo\Pricing\Providers;
 
+use EasyCo\Pricing\Contracts\PriceListItemRepository;
+use EasyCo\Pricing\Contracts\PriceListRepository;
+use EasyCo\Pricing\Contracts\PriceListScopeRepository;
 use EasyCo\Pricing\Contracts\PriceResolver;
 use EasyCo\Pricing\Currency;
 use EasyCo\Pricing\DefaultCurrency;
 use EasyCo\Pricing\Money;
+use EasyCo\Pricing\Persistence\Eloquent\EloquentPriceListItemRepository;
+use EasyCo\Pricing\Persistence\Eloquent\EloquentPriceListRepository;
+use EasyCo\Pricing\Persistence\Eloquent\EloquentPriceListScopeRepository;
 use EasyCo\Pricing\Persistence\InMemoryPriceResolver;
 use EasyCo\Pricing\Price;
 use Illuminate\Support\ServiceProvider;
@@ -24,6 +30,10 @@ class PricingServiceProvider extends ServiceProvider
                 ),
             ]);
         });
+
+        $this->app->bind(PriceListRepository::class, EloquentPriceListRepository::class);
+        $this->app->bind(PriceListScopeRepository::class, EloquentPriceListScopeRepository::class);
+        $this->app->bind(PriceListItemRepository::class, EloquentPriceListItemRepository::class);
     }
 
     public function boot(): void
