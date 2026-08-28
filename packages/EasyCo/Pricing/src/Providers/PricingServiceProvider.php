@@ -28,6 +28,8 @@ class PricingServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        $this->loadMigrationsFrom(__DIR__.'/../../database/migrations');
+
         // The one piece of Laravel-specific wiring for EasyCo\Pricing\
         // DefaultCurrency (see that class's docblock): reads the host
         // application's configured default currency and hands it to the
