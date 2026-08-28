@@ -14,17 +14,25 @@ This project was originally scaffolded on top of [Bagisto](https://bagisto.com/)
 |---|---|---|
 | [`packages/EasyCo/Pricing`](packages/EasyCo/Pricing) | Currency-aware, tax-aware `Price` value object and price-resolution contracts, shared across Catalog, Cart, and Orders. | [pricing-domain-design.md](packages/EasyCo/documents/pricing-domain-design.md) |
 | [`packages/EasyCo/Catalog`](packages/EasyCo/Catalog) | The Product/Variation aggregate — attributes, variation axes, media and size-guide references — shared across Web, POS, Social, and AI channels. | [catalog-domain-design.md](packages/EasyCo/documents/catalog-domain-design.md) |
+| [`packages/EasyCo/Extensibility`](packages/EasyCo/Extensibility) | A WordPress-style hooks system (actions/filters). Foundational and framework-agnostic — no dependency on Catalog, Pricing, or Laravel in its core logic; consumed only by the `app/` layer, never by domain packages directly. | [extensibility-design-and-hooks.md](packages/EasyCo/documents/extensibility-design-and-hooks.md) |
+| [`packages/EasyCo/OperationalSales`](packages/EasyCo/OperationalSales) | The record-keeping side of a sale — `Client`, `Transaction`, immutable `SaleLine`, `InstallmentPlan`. Domain layer only for now; persistence layer and migrations aren't implemented yet. | [operational-sales-domain-design.md](packages/EasyCo/documents/operational-sales-domain-design.md) |
 
 See [vertical-slice-notes.md](packages/EasyCo/documents/vertical-slice-notes.md) for how Catalog and Pricing are wired together end-to-end today, and what's still temporary.
 
 ## Setup
+
+MySQL/MariaDB is required — this project doesn't run against SQLite outside its own automated test suite (which uses an in-memory database purely for speed). Create an empty database on your server first; `migrate` creates the tables, not the database itself.
 
 ```bash
 composer install
 
 cp .env.example .env
 php artisan key:generate
-# then set DB_* (and any other) values in .env for your environment
+# .env.example defaults to DB_CONNECTION=sqlite — change it to mysql and fill in
+# DB_HOST/DB_PORT/DB_DATABASE/DB_USERNAME/DB_PASSWORD
 
 php artisan migrate
+
+npm install && npm run build
+# compiles frontend assets — required for the default homepage to load (uses Vite)
 ```
