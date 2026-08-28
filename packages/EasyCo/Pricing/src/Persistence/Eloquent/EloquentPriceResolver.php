@@ -4,18 +4,16 @@ namespace EasyCo\Pricing\Persistence\Eloquent;
 
 use DateTimeImmutable;
 use EasyCo\Pricing\Contracts\PriceContext;
-use EasyCo\Pricing\Contracts\PriceListItemRepository;
 use EasyCo\Pricing\Contracts\PriceListRepository;
 use EasyCo\Pricing\Contracts\PriceListScopeRepository;
 use EasyCo\Pricing\Contracts\PriceQuote;
 use EasyCo\Pricing\Contracts\PriceResolver;
-use EasyCo\Pricing\Enums\PriceListItemTargetType;
 use EasyCo\Pricing\Enums\PriceListMode;
 use EasyCo\Pricing\Enums\PriceListScopeType;
+use EasyCo\Pricing\FixedItemsPriceLookup;
 use EasyCo\Pricing\Money;
 use EasyCo\Pricing\Price;
 use EasyCo\Pricing\PriceList;
-use EasyCo\Pricing\PriceListItem;
 use RuntimeException;
 
 /**
@@ -32,7 +30,7 @@ final class EloquentPriceResolver implements PriceResolver
     public function __construct(
         private readonly PriceListRepository $priceListRepository,
         private readonly PriceListScopeRepository $priceListScopeRepository,
-        private readonly PriceListItemRepository $priceListItemRepository,
+        private readonly FixedItemsPriceLookup $fixedItemsPriceLookup,
     ) {
     }
 
@@ -49,7 +47,7 @@ final class EloquentPriceResolver implements PriceResolver
             );
         }
 
-        $regular = $this->resolveFixedItemsPrice($regularList, $context);
+        $regular = $this->fixedItemsPriceLookup->forTarget($regularList, $context->priceableId, $context->productId, $context->quantity);
 
         if ($regular === null) {
             throw new RuntimeException(
@@ -72,7 +70,7 @@ final class EloquentPriceResolver implements PriceResolver
         // FIXED_ITEMS: winning by priority/scope, but no item row for this
         // exact target — §4.6 forbids falling through to the next-highest
         // priority list (no blending), so this falls back to regular.
-        $final = $this->resolveFixedItemsPrice($winningList, $context) ?? $regular;
+        $final = $this->fixedItemsPriceLookup->forTarget($winningList, $context->priceableId, $context->productId, $context->quantity) ?? $regular;
 
         return new PriceQuote(regular: $regular, final: $final);
     }
@@ -124,47 +122,6 @@ final class EloquentPriceResolver implements PriceResolver
         }
 
         return true;
-    }
-
-    /**
-     * §4.3's item-level fallback (VARIATION first, then PRODUCT) followed
-     * by §4.4's quantity-tier threshold lookup within whichever target
-     * was found. Returns null when the list has no item at all for this
-     * target — the caller decides what that means (regular-price
-     * fallback for a non-system list, a hard error for "Regular Prices"
-     * itself).
-     */
-    private function resolveFixedItemsPrice(PriceList $list, PriceContext $context): ?Price
-    {
-        $items = $this->priceListItemRepository->findByPriceListId($list->id());
-
-        $candidates = array_values(array_filter(
-            $items,
-            fn (PriceListItem $item) => $item->targetType() === PriceListItemTargetType::VARIATION
-                && $item->targetId() === $context->priceableId
-        ));
-
-        if ($candidates === [] && $context->productId !== null) {
-            $candidates = array_values(array_filter(
-                $items,
-                fn (PriceListItem $item) => $item->targetType() === PriceListItemTargetType::PRODUCT
-                    && $item->targetId() === $context->productId
-            ));
-        }
-
-        if ($candidates === []) {
-            return null;
-        }
-
-        usort($candidates, fn (PriceListItem $a, PriceListItem $b) => $b->minQuantity() <=> $a->minQuantity());
-
-        foreach ($candidates as $candidate) {
-            if ($candidate->minQuantity() <= $context->quantity) {
-                return $candidate->price();
-            }
-        }
-
-        return null;
     }
 
     /**

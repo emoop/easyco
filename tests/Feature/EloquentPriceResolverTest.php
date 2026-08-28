@@ -10,6 +10,7 @@ use EasyCo\Pricing\Contracts\PriceListScopeRepository;
 use EasyCo\Pricing\Enums\PriceListItemTargetType;
 use EasyCo\Pricing\Enums\PriceListMode;
 use EasyCo\Pricing\Enums\PriceListScopeType;
+use EasyCo\Pricing\FixedItemsPriceLookup;
 use EasyCo\Pricing\Money;
 use EasyCo\Pricing\Persistence\Eloquent\EloquentPriceResolver;
 use EasyCo\Pricing\Price;
@@ -26,10 +27,12 @@ class EloquentPriceResolverTest extends TestCase
 
     private function resolver(): EloquentPriceResolver
     {
+        $itemRepository = app(PriceListItemRepository::class);
+
         return new EloquentPriceResolver(
             app(PriceListRepository::class),
             app(PriceListScopeRepository::class),
-            app(PriceListItemRepository::class),
+            new FixedItemsPriceLookup($itemRepository),
         );
     }
 
