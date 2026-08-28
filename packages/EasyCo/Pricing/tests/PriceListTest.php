@@ -89,6 +89,30 @@ final class PriceListTest extends TestCase
         $this->assertSame(2000, $list->percentageBasisPoints());
     }
 
+    public function test_percentage_off_regular_rejects_a_percentage_over_100_percent(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        PriceList::create(
+            'Guess -150%',
+            PriceListMode::PERCENTAGE_OFF_REGULAR,
+            priority: 10,
+            percentageBasisPoints: 15000
+        );
+    }
+
+    public function test_percentage_off_regular_accepts_exactly_100_percent(): void
+    {
+        $list = PriceList::create(
+            'Guess -100%',
+            PriceListMode::PERCENTAGE_OFF_REGULAR,
+            priority: 10,
+            percentageBasisPoints: 10000
+        );
+
+        $this->assertSame(10000, $list->percentageBasisPoints());
+    }
+
     public function test_fixed_items_rejects_a_percentage_basis_points_value(): void
     {
         $this->expectException(InvalidArgumentException::class);

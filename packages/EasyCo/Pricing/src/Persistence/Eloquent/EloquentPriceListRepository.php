@@ -75,6 +75,31 @@ final class EloquentPriceListRepository implements PriceListRepository
         return $query->exists();
     }
 
+    public function findAllActiveAndValidAt(\DateTimeImmutable $at): array
+    {
+        return PriceListModel::where('status', PriceListStatus::ACTIVE->value)
+            ->where(function ($query) use ($at) {
+                $query->whereNull('valid_from')->orWhere('valid_from', '<=', $at);
+            })
+            ->where(function ($query) use ($at) {
+                $query->whereNull('valid_until')->orWhere('valid_until', '>=', $at);
+            })
+            ->orderByDesc('priority')
+            ->orderByDesc('id')
+            ->get()
+            ->map(fn (PriceListModel $model) => $this->toDomainPriceList($model))
+            ->all();
+    }
+
+    public function findSystemListByName(string $name): ?PriceList
+    {
+        $model = PriceListModel::where('is_system', true)
+            ->where('name', $name)
+            ->first();
+
+        return $model !== null ? $this->toDomainPriceList($model) : null;
+    }
+
     private function toDomainPriceList(PriceListModel $model): PriceList
     {
         return PriceList::reconstituteFromStorage(

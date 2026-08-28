@@ -69,6 +69,10 @@ final class PriceList
                 throw new InvalidArgumentException('percentageBasisPoints cannot be negative.');
             }
 
+            if ($percentageBasisPoints > 10000) {
+                throw new InvalidArgumentException('percentageBasisPoints cannot exceed 10000 (100%).');
+            }
+
             return;
         }
 
