@@ -24,8 +24,10 @@ use LogicException;
  * primary is done by reordering, not by flipping a separate flag that
  * could drift out of sync with the ordering.
  *
- * MAX-MEDIA-PER-VARIATION NOT ENFORCED HERE: the "10 photos by
- * default, configurable" limit is a repository/guard-level concern (a
+ * MAX-MEDIA-PER-VARIATION NOT ENFORCED HERE: a separate,
+ * not-yet-decided per-variation limit (lower than ProductMedia's 10 is
+ * the expected direction, but the exact number and any research behind
+ * it remain open) is a repository/guard-level concern (a
  * collection-wide count check, not something a single VariationMedia
  * instance has visibility into) — the same layering
  * RestrictedPriceWriteGuard already established above PriceListItem in
