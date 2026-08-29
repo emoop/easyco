@@ -1,0 +1,29 @@
+{
+    "name": "easyco/media",
+    "description": "EasyCo Media domain package — MediaAsset, the image/video processing pipeline, and the domain logic governing catalog_media and its pivots.",
+    "type": "library",
+    "license": "MIT",
+    "require": {
+        "php": "^8.3"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^11.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "EasyCo\\Media\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "EasyCo\\Media\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "EasyCo\\Media\\Providers\\MediaServiceProvider"
+            ]
+        }
+    }
+}
