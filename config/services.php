@@ -65,6 +65,13 @@ return [
         // config()).
         'max_photos_per_product' => env('MEDIA_MAX_PHOTOS_PER_PRODUCT', 10),
         'max_photos_per_variation' => env('MEDIA_MAX_PHOTOS_PER_VARIATION', 3),
+
+        // Which Laravel Filesystem disk LaravelMediaStorageAdapter writes to
+        // when no explicit disk is given — see media-domain-design.md §5.
+        // 'public' is a safe, harmless default (unlike DefaultCurrency's
+        // fail-loud posture, §5 explicitly notes a storage disk carries no
+        // silently-wrong risk), overridable via .env.
+        'default_disk' => env('MEDIA_DEFAULT_DISK', 'public'),
     ],
 
 ];

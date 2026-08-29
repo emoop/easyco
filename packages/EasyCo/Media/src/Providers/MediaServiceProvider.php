@@ -3,12 +3,14 @@
 namespace EasyCo\Media\Providers;
 
 use EasyCo\Media\Contracts\MediaAssetRepository;
+use EasyCo\Media\Contracts\MediaStorageAdapter;
 use EasyCo\Media\Contracts\ProductMediaRepository;
 use EasyCo\Media\Contracts\VariationMediaRepository;
 use EasyCo\Media\Persistence\Eloquent\EloquentMediaAssetRepository;
 use EasyCo\Media\Persistence\Eloquent\EloquentProductMediaRepository;
 use EasyCo\Media\Persistence\Eloquent\EloquentVariationMediaRepository;
 use EasyCo\Media\ProductMediaCountGuard;
+use EasyCo\Media\Storage\LaravelMediaStorageAdapter;
 use EasyCo\Media\VariationMediaCountGuard;
 use Illuminate\Support\ServiceProvider;
 
@@ -31,6 +33,12 @@ class MediaServiceProvider extends ServiceProvider
             return new VariationMediaCountGuard(
                 $app->make(VariationMediaRepository::class),
                 (int) config('services.media.max_photos_per_variation', 3),
+            );
+        });
+
+        $this->app->bind(MediaStorageAdapter::class, function ($app) {
+            return new LaravelMediaStorageAdapter(
+                config('services.media.default_disk', 'public'),
             );
         });
     }
