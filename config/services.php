@@ -56,4 +56,15 @@ return [
         'base_sku_sequence_start' => env('PRODUCT_SKU_SEQUENCE_START', 100000),
     ],
 
+    'media' => [
+        // Max photos allowed per Product/Variation before ProductMediaCountGuard/
+        // VariationMediaCountGuard reject a further attach — see
+        // media-domain-design.md §6 and EasyCo\Media\ProductMedia/VariationMedia's
+        // own docblocks. Configurable, never hardcoded in the guard classes
+        // themselves (they take a plain int; only MediaServiceProvider reads
+        // config()).
+        'max_photos_per_product' => env('MEDIA_MAX_PHOTOS_PER_PRODUCT', 10),
+        'max_photos_per_variation' => env('MEDIA_MAX_PHOTOS_PER_VARIATION', 3),
+    ],
+
 ];
