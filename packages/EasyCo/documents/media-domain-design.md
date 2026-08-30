@@ -48,7 +48,9 @@ Manually admin-curated homepage content — an admin uploads specific images (an
 
 **Conditionally accepted, driver-dependent:** AVIF and HEIC/HEIF. The GD driver decodes only JPG/PNG/GIF/BMP/WebP; AVIF requires GD compiled with libavif, and **HEIC/HEIF is not supported by GD at all** — it requires ImageMagick. This matters practically: iPhones shoot HEIC by default, so a merchant photographing products on a phone and uploading directly will hit this on a GD-only server.
 
-**Requirement:** support must be checked at runtime, never assumed — Intervention Image exposes `DriverInterface::supports()` for exactly this. An unsupported format must produce a clear, actionable message ("this format isn't supported on this server — install ImageMagick, or convert the image first"), never an obscure decode failure.
+**Requirement:** support must be checked at runtime, never assumed. **There is no capability-query method to do this with** — an earlier draft of this section assumed `DriverInterface::supports()` existed; implementation confirmed it does not (`Illuminate\Contracts\Image\Driver` exposes only `process()`/`dimensions()`/`dominantColor()`/`transformUsing()`). The only real signal is attempting a decode and catching whatever it throws — and it must catch `Throwable`, not a specific exception type, since a corrupt file can fail with a `ValueError` or another GD/Imagick-originated error that never gets wrapped. An unsupported format must produce a clear, actionable message ("this format isn't supported on this server — install ImageMagick, or convert the image first"), never an obscure decode failure.
+
+**`intervention/image` is a required Composer dependency, not merely an implementation detail.** `Illuminate\Image` is a thin Laravel wrapper over Intervention Image as its driver — the driver itself is a separate package that must be explicitly installed (`intervention/image ^4.0`, in `require`, not `require-dev`, since production image processing genuinely depends on it). This was discovered during implementation: the framework class exists without it, but nothing actually processes. Worth stating plainly here, since "first-party Laravel API" otherwise reads as "already available, nothing to install."
 
 **ImageMagick is recommended, not required.** It goes in `composer.json`'s `suggest` block, not `require` — mirroring the same posture as the SQLite/MySQL decision (§ installation docs): require what's genuinely necessary, don't block installation over an enhancement. JPEG/PNG/WebP work fine on GD; Imagick adds HEIC/AVIF. The installation documentation must state plainly what is lost without it.
 
@@ -90,6 +92,17 @@ The merchant picks one aspect ratio for their store at setup — **1:1, 4:5, 3:4
 If some variants generate successfully but a later one fails, **the already-generated variants are deleted** and the asset is marked `failed`. The merchant re-uploads.
 
 **Reasoning:** orphaned partial variants would consume storage indefinitely while the asset is unusable anyway. A clean failed state that prompts a re-upload is simpler and more honest than a partially-ready state the `ProcessingStatus` enum cannot express. This also means `markFailed()`'s existing "leaves variants untouched" behavior applies to the *domain object*; deleting the actual stored files is the pipeline job's responsibility, not the entity's.
+
+### 3.6 Who decides to dispatch the job — an open item for the upload endpoint
+
+`ProcessMediaAssetJob` assumes it is only ever dispatched for an image asset that is currently `PENDING`. It calls `markProcessing()` before its own try/catch, so two situations crash the job rather than exiting cleanly:
+
+- **A VIDEO/SOCIAL_VIDEO asset.** `markProcessing()` rejects video outright (§4 — video never enters the processing lifecycle), throwing immediately.
+- **An already-processed asset.** A duplicate or re-queued dispatch hits an asset already `READY`/`FAILED`, and `markProcessing()` only accepts `PENDING`.
+
+Neither is reachable today, because nothing dispatches this job yet. **The upload endpoint — not yet built — is the correct place to decide this:** it should simply not dispatch for video, since a video asset is created `READY` and has nothing to process. Recorded here so it isn't rediscovered as a mysterious queue failure once that endpoint exists.
+
+If a defensive guard inside the job is preferred later instead, it belongs at the very top of `handle()` (alongside the existing "asset was deleted" early return), not wrapped around `markProcessing()` — the early-return shape already established there is the right precedent.
 
 ---
 
