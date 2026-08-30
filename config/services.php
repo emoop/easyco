@@ -72,6 +72,20 @@ return [
         // fail-loud posture, §5 explicitly notes a storage disk carries no
         // silently-wrong risk), overridable via .env.
         'default_disk' => env('MEDIA_DEFAULT_DISK', 'public'),
+
+        // Variant tiers for the image processing pipeline — see
+        // media-domain-design.md §3.2. thumbnail/medium/large use scale()
+        // (fit inside the max bound, aspect ratio preserved, never crops —
+        // a single number per tier is enough); admin_grid is the only
+        // cover() tier (fixed 42x42, cropping permitted — a small admin
+        // product-table thumbnail, not customer-facing imagery). Every
+        // number here is configurable, never hardcoded in the processor.
+        'image_variants' => [
+            'thumbnail' => ['method' => 'scale', 'max' => 400, 'quality' => 80],
+            'medium' => ['method' => 'scale', 'max' => 900, 'quality' => 82],
+            'large' => ['method' => 'scale', 'max' => 1600, 'quality' => 85],
+            'admin_grid' => ['method' => 'cover', 'width' => 42, 'height' => 42, 'quality' => 80],
+        ],
     ],
 
 ];

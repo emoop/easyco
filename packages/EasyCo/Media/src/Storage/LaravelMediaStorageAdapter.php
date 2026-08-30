@@ -44,6 +44,18 @@ final class LaravelMediaStorageAdapter implements MediaStorageAdapter
         return new StoredFile($resolvedDisk, $path);
     }
 
+    public function storeAt(string $content, string $disk, string $path): StoredFile
+    {
+        Storage::disk($disk)->put($path, $content);
+
+        return new StoredFile($disk, $path);
+    }
+
+    public function get(string $disk, string $path): string
+    {
+        return Storage::disk($disk)->get($path);
+    }
+
     public function url(string $disk, string $path): string
     {
         return Storage::disk($disk)->url($path);

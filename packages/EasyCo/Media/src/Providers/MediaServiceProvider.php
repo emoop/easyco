@@ -3,9 +3,11 @@
 namespace EasyCo\Media\Providers;
 
 use EasyCo\Media\Contracts\MediaAssetRepository;
+use EasyCo\Media\Contracts\MediaImageProcessor;
 use EasyCo\Media\Contracts\MediaStorageAdapter;
 use EasyCo\Media\Contracts\ProductMediaRepository;
 use EasyCo\Media\Contracts\VariationMediaRepository;
+use EasyCo\Media\Image\LaravelMediaImageProcessor;
 use EasyCo\Media\Persistence\Eloquent\EloquentMediaAssetRepository;
 use EasyCo\Media\Persistence\Eloquent\EloquentProductMediaRepository;
 use EasyCo\Media\Persistence\Eloquent\EloquentVariationMediaRepository;
@@ -39,6 +41,13 @@ class MediaServiceProvider extends ServiceProvider
         $this->app->bind(MediaStorageAdapter::class, function ($app) {
             return new LaravelMediaStorageAdapter(
                 config('services.media.default_disk', 'public'),
+            );
+        });
+
+        $this->app->bind(MediaImageProcessor::class, function ($app) {
+            return new LaravelMediaImageProcessor(
+                $app->make(MediaStorageAdapter::class),
+                config('services.media.image_variants', []),
             );
         });
     }

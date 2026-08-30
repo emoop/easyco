@@ -26,6 +26,26 @@ interface MediaStorageAdapter
      */
     public function store(string $content, string $originalFilename, ?string $disk = null, ?DateTimeImmutable $at = null): StoredFile;
 
+    /**
+     * Writes to EXACTLY the given path — no UUID generation, unlike
+     * store(). Exists for generated variants (media-domain-design.md
+     * §3): a variant must live at a path derived from its original
+     * (e.g. "{original-without-extension}-{tier}.webp") so it's
+     * associated with — and deletable alongside — that original
+     * (§3.5's all-or-nothing cleanup on partial processing failure).
+     * store()'s UUID generation is exactly the wrong behavior for a
+     * variant: it would sever that derived-path relationship.
+     */
+    public function storeAt(string $content, string $disk, string $path): StoredFile;
+
+    /**
+     * Reads back raw content previously written by store()/storeAt() —
+     * needed by the processing pipeline to load an asset's original
+     * bytes before transforming them. A small, natural extension of
+     * the same infrastructure boundary storeAt() already established.
+     */
+    public function get(string $disk, string $path): string;
+
     public function url(string $disk, string $path): string;
 
     public function delete(string $disk, string $path): void;

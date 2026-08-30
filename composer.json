@@ -12,6 +12,7 @@
         "easyco/media": "@dev",
         "easyco/operational-sales": "@dev",
         "easyco/pricing": "@dev",
+        "intervention/image": "^4.0",
         "laravel/framework": "^13.17",
         "laravel/tinker": "^3.0"
     },
