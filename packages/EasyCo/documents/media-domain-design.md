@@ -40,14 +40,56 @@ Manually admin-curated homepage content — an admin uploads specific images (an
 
 **Decision:** built on Laravel's first-party `Illuminate\Image` API, which is driver-based on Intervention Image v4.
 
-**Explicit prerequisite, not silently assumed:** this project's `composer.json` currently constrains `laravel/framework` to `^13.17` (confirmed by reading the file). `Illuminate\Image` requires **Laravel 13.20 or later**. Upgrading that constraint (`composer require laravel/framework:^13.20` or later, followed by `composer update laravel/framework` and a full test-suite run) is a required prerequisite step for this work, called out here as its own action item — not something to discover mid-implementation.
+**Prerequisite — satisfied.** `composer.json` constrains `laravel/framework` to `^13.17`, but the actually-installed version (per the git-tracked `composer.lock`) is **13.25.0**, already above `Illuminate\Image`'s 13.20 minimum. No upgrade step is needed; this was verified by reading `composer.lock`, not assumed from the constraint alone.
 
-**Pipeline, in order:**
-1. **`orient()` first** — applies the image's EXIF orientation and strips the tag, so a photo taken on a phone held sideways renders right-side-up. This must run before any resizing: resizing an unoriented image can compound the visual error (e.g. cropping logic operating on the wrong effective axis).
-2. **Generate WebP variants at multiple sizes.** Target dimensions and quality are **configurable per size tier** (e.g. `thumbnail`, `medium`, `large`), never hardcoded pixel constants in application code — an explicit requirement from the domain owner. Config shape (illustrative, not final): an array keyed by tier name, each entry specifying a max width/height and a WebP quality level, read from `config('services.media.image_variants')` or equivalent.
-3. **Scaling is always downward-only — never upscale.** Mirrors Laravel's own `scale()`/`cover()` methods, which already refuse to enlarge past the source's native resolution. Concrete motivating example from the domain owner: a real product photo already delivered at 1000×1200px / ~200KB (pre-processed before upload) should not be artificially stretched to fill a "large" variant tier configured for e.g. 1600×1920 — the "large" variant for that image is simply its own original dimensions (or the largest size that still fits within the source), not a fabricated larger image with fabricated detail.
+### 3.1 Accepted input formats
 
-**Processing must run as a queued job, not synchronously during the upload request** — this is Laravel's own documented recommendation for any non-trivial image manipulation, and doubly relevant here since a single upload may need to produce several variants. The upload request's job is to validate, store the original, and create the `catalog_media` row in a `pending`/`processing` state (§9); a queued job then runs the pipeline and updates that row with the generated variants once done (or a `failed` state with a reason, so a stuck/broken upload is visible rather than silently missing thumbnails forever).
+**Always accepted** (both GD and Imagick drivers support them universally): JPEG, PNG, WebP. Note that `.jfif` is not a separate format — it is JPEG with a different file extension, and needs no special handling.
+
+**Conditionally accepted, driver-dependent:** AVIF and HEIC/HEIF. The GD driver decodes only JPG/PNG/GIF/BMP/WebP; AVIF requires GD compiled with libavif, and **HEIC/HEIF is not supported by GD at all** — it requires ImageMagick. This matters practically: iPhones shoot HEIC by default, so a merchant photographing products on a phone and uploading directly will hit this on a GD-only server.
+
+**Requirement:** support must be checked at runtime, never assumed — Intervention Image exposes `DriverInterface::supports()` for exactly this. An unsupported format must produce a clear, actionable message ("this format isn't supported on this server — install ImageMagick, or convert the image first"), never an obscure decode failure.
+
+**ImageMagick is recommended, not required.** It goes in `composer.json`'s `suggest` block, not `require` — mirroring the same posture as the SQLite/MySQL decision (§ installation docs): require what's genuinely necessary, don't block installation over an enhancement. JPEG/PNG/WebP work fine on GD; Imagick adds HEIC/AVIF. The installation documentation must state plainly what is lost without it.
+
+**Output is always WebP**, regardless of input format.
+
+### 3.2 Variant tiers
+
+Every tier's numbers are **configurable, never hardcoded** — an explicit requirement from the domain owner.
+
+| Tier | Bound | Method | Purpose |
+|---|---|---|---|
+| `thumbnail` | max 400px | `scale()` | Product lists, category grids |
+| `medium` | max 900px | `scale()` | Product page, standard view |
+| `large` | max 1600px | `scale()` | Zoom on hover/click |
+| `admin_grid` | 42×42 fixed | `cover()` | Admin product-table thumbnails only |
+
+The three customer-facing tiers use **`scale()`, which fits the image inside the bound while preserving its own aspect ratio and never crops.** A single number per tier is therefore sufficient: "max 400" yields 400×400 for a square source, 320×400 for a 4:5 source. `admin_grid` is the **only** tier using `cover()` (fixed square, cropping permitted) — it is a tiny UI affordance in the admin product table, not customer-facing imagery.
+
+### 3.3 Store-wide aspect ratio is a layout setting, NOT a processing input
+
+The merchant picks one aspect ratio for their store at setup — **1:1, 4:5, 3:4, or 2:3** — stored via the Site Settings mechanism (`site-settings-design.md`), default 1:1.
+
+**Critically: this setting does not affect image processing at all.** It is purely a layout hint for templates — how much space to reserve for a product image so the storefront looks consistent. The pipeline never crops to it. If a merchant selects 4:5 but uploads square photos, those photos stay square; they simply won't fill the reserved space.
+
+**Reasoning, from the domain owner, recorded so it isn't re-litigated:** cropping to force a ratio risks cutting off a detail that matters, and the system has no way to know which part of a given photo is important. Ensuring photos roughly match the chosen ratio is the merchant's responsibility, not something the platform should attempt to fix magically without context.
+
+**Why these four ratios:** 1:1 is the universal catalog/Instagram default and easiest to keep visually consistent; 4:5 and 3:4 both suit clothing and footwear well and use more vertical space on mobile (3:4 vertical is also exactly what phone cameras produce natively, since phone sensors shoot 4:3); 2:3 is the native ratio of DSLR/mirrorless cameras, for merchants shooting on real cameras rather than phones. 16:9 is deliberately excluded — too wide for product photography, useful for banners/hero images instead.
+
+### 3.4 Pipeline order
+
+1. **`orient()` first** — applies the image's EXIF orientation and strips the tag, so a photo taken on a phone held sideways renders right-side-up. This must run before any resizing: resizing an unoriented image can compound the visual error.
+2. **Generate WebP variants** per §3.2's tiers, all config-driven.
+3. **Scaling is always downward-only — never upscale.** Laravel's own `scale()`/`cover()` already refuse to enlarge past the source's native resolution. Concrete motivating example from the domain owner: a real product photo already delivered at 1000×1200px / ~200KB should not be artificially stretched to fill a 1600px `large` tier — that image's `large` variant is simply its own original dimensions, not a fabricated larger image with fabricated detail.
+
+**Processing runs as a queued job, not synchronously during the upload request** — Laravel's own documented recommendation for non-trivial image manipulation, doubly relevant when one upload produces several variants. The upload request validates, stores the original, and creates the `catalog_media` row in `pending` (§9); a queued job then runs the pipeline and marks the row `ready` with its variants, or `failed` with a reason.
+
+### 3.5 Partial failure: all-or-nothing
+
+If some variants generate successfully but a later one fails, **the already-generated variants are deleted** and the asset is marked `failed`. The merchant re-uploads.
+
+**Reasoning:** orphaned partial variants would consume storage indefinitely while the asset is unusable anyway. A clean failed state that prompts a re-upload is simpler and more honest than a partially-ready state the `ProcessingStatus` enum cannot express. This also means `markFailed()`'s existing "leaves variants untouched" behavior applies to the *domain object*; deleting the actual stored files is the pipeline job's responsibility, not the entity's.
 
 ---
 
@@ -80,6 +122,7 @@ Video is stored exactly as uploaded, on the configured disk (§5) — no thumbna
 **Proposed defaults, with reasoning (starting points, not fixed):**
 - **Images: 10 MB.** The domain owner's own real example (a pre-processed product photo at 1000×1200px, ~200KB) is nowhere near this — 10MB gives generous headroom for an *unprocessed* phone-camera photo (modern phone cameras commonly produce 8–15MB JPEGs at full resolution) without inviting arbitrarily large uncompressed source files.
 - **Video: 200 MB.** Even a short (30–90 second) 1080p or 4K product clip commonly lands in the tens-to-~150MB range depending on compression; 200MB leaves headroom for that real usage pattern (short, sparingly-used clips, already pre-processed by the domain owner per §4) without permitting multi-hour raw footage uploads through this endpoint.
+- **Minimum image dimensions: 600×600px.** Checked **at upload time**, not in the processing job — a too-small image should be rejected with a clear warning while the merchant is still in the upload flow, not silently accepted and discovered later as a blurry `large` variant (since §3.4's never-upscale rule means a 400px source simply stays 400px everywhere). The value comes from the domain owner's own experience: real product photos at 600×600 still display acceptably in several views. Configurable like everything else here.
 
 Both values must live in config (e.g. `config('services.media.max_image_size_kb')` / `max_video_size_kb`), not as inline validation-rule constants — consistent with every other "don't hardcode, make it configurable" decision in this document.
 

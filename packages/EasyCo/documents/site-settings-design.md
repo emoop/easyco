@@ -4,7 +4,7 @@
 
 **Builds on:** the config-driven, fail-appropriately pattern established by `EasyCo\Pricing\DefaultCurrency`; `catalog-domain-design.md` §3.3's "smallest model that satisfies the actual need" principle.
 
-**Relates to:** `media-domain-design.md` §2.2 (Hero Slider on/off toggle) and §2.3 (logo/favicon) — both explicitly deferred their storage to this concept rather than inventing their own. This document exists because a third, independent need (an admin-configurable aspect ratio for Media's admin-grid image tier) surfaced during Media pipeline work, making three confirmed consumers — enough to justify designing this properly rather than improvising it a third time.
+**Relates to:** `media-domain-design.md` §2.2 (Hero Slider on/off toggle) and §2.3 (logo/favicon) — both explicitly deferred their storage to this concept rather than inventing their own. This document exists because a third, independent need (a store-wide, admin-configurable product image aspect ratio) surfaced during Media pipeline work, making three confirmed consumers — enough to justify designing this properly rather than improvising it a third time.
 
 ---
 
@@ -15,7 +15,7 @@ A small, generic mechanism for **admin-editable, site-wide configuration values*
 **Confirmed initial consumers** (none implemented yet — this document only designs the mechanism itself):
 - Media's Hero Slider feature-wide on/off toggle (`media-domain-design.md` §2.2)
 - Site logo/favicon (`media-domain-design.md` §2.3)
-- Media's admin-grid image tier aspect ratio (surfaced during pipeline design, this session)
+- The store-wide product image aspect ratio — one of 1:1, 4:5, 3:4, 2:3 (`media-domain-design.md` §3.3), a layout hint for templates rather than a processing input
 
 ## 2. Prior art
 
