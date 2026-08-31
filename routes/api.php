@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\AttributeValueController;
 use App\Http\Controllers\Api\MediaController;
 use App\Http\Controllers\Api\ProductController;
 use App\Http\Controllers\Api\ProductMediaController;
+use App\Http\Controllers\Api\StockLevelController;
 use App\Http\Controllers\Api\VariableProductController;
 use App\Http\Controllers\Api\VariationMediaController;
 use Illuminate\Support\Facades\Route;
@@ -31,6 +32,9 @@ Route::post('/variations/{variationId}/media', [VariationMediaController::class,
 Route::get('/variations/{variationId}/media', [VariationMediaController::class, 'index']);
 Route::put('/variations/{variationId}/media/order', [VariationMediaController::class, 'reorder']);
 Route::delete('/variations/{variationId}/media/{variationMediaId}', [VariationMediaController::class, 'destroy']);
+
+Route::get('/variations/{variationId}/stock', [StockLevelController::class, 'show']);
+Route::put('/variations/{variationId}/stock', [StockLevelController::class, 'update']);
 
 Route::post('/media', [MediaController::class, 'store']);
 

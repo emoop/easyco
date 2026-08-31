@@ -10,6 +10,7 @@
         "easyco/account": "@dev",
         "easyco/catalog": "@dev",
         "easyco/extensibility": "@dev",
+        "easyco/inventory": "@dev",
         "easyco/media": "@dev",
         "easyco/operational-sales": "@dev",
         "easyco/pricing": "@dev",
