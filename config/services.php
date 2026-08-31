@@ -86,6 +86,25 @@ return [
             'large' => ['method' => 'scale', 'max' => 1600, 'quality' => 85],
             'admin_grid' => ['method' => 'cover', 'width' => 42, 'height' => 42, 'quality' => 80],
         ],
+
+        // Upload-time validation limits for POST /api/media — see
+        // media-domain-design.md §6. Separate caps for images vs. video
+        // (video files are naturally much larger); the minimum image
+        // dimension is checked at upload time, not in the processing job,
+        // so a too-small image is rejected while the merchant is still in
+        // the upload flow (§6's own reasoning). All configurable, never
+        // hardcoded in MediaController.
+        //
+        // max_video_size_kb default: the domain owner's own real usage is
+        // short, pre-processed product clips (§4) — 100MB matches Etsy's
+        // proven real-world listing-video cap (100MB, 5-15 second clips),
+        // a much closer comparison than Shopify's 1GB, since Shopify
+        // serves through its own CDN with transcoding and EasyCo is
+        // self-hosted with no CDN by default. Still fully
+        // env-overridable per merchant — this is only the default.
+        'max_image_size_kb' => env('MEDIA_MAX_IMAGE_SIZE_KB', 10240),
+        'max_video_size_kb' => env('MEDIA_MAX_VIDEO_SIZE_KB', 102400),
+        'min_image_dimension_px' => env('MEDIA_MIN_IMAGE_DIMENSION_PX', 600),
     ],
 
 ];
