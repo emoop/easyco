@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\User;
+use EasyCo\Account\Persistence\Eloquent\AccountModel;
 
 return [
 
@@ -42,6 +43,15 @@ return [
             'driver' => 'session',
             'provider' => 'users',
         ],
+
+        // Storefront customer login (account-domain-design.md §2) —
+        // deliberately separate from 'web'/'users' above, reserved for
+        // a possible future staff/admin login. Session-driven, backed
+        // by the 'accounts' provider below.
+        'customer' => [
+            'driver' => 'session',
+            'provider' => 'accounts',
+        ],
     ],
 
     /*
@@ -71,6 +81,13 @@ return [
         //     'driver' => 'database',
         //     'table' => 'users',
         // ],
+
+        // Backs the 'customer' guard above — storefront customers, a
+        // separate table/model from 'users' (account-domain-design.md §2).
+        'accounts' => [
+            'driver' => 'eloquent',
+            'model' => AccountModel::class,
+        ],
     ],
 
     /*

@@ -1,5 +1,7 @@
 <?php
 
+use App\Http\Controllers\Api\AccountRegistrationController;
+use App\Http\Controllers\Api\AccountSessionController;
 use App\Http\Controllers\Api\AttributeDefinitionController;
 use App\Http\Controllers\Api\AttributeValueController;
 use App\Http\Controllers\Api\MediaController;
@@ -8,6 +10,15 @@ use App\Http\Controllers\Api\ProductMediaController;
 use App\Http\Controllers\Api\VariableProductController;
 use App\Http\Controllers\Api\VariationMediaController;
 use Illuminate\Support\Facades\Route;
+
+Route::post('/account/register', [AccountRegistrationController::class, 'store']);
+Route::post('/account/login', [AccountSessionController::class, 'store'])
+    ->middleware('throttle:6,1');
+
+Route::middleware('auth:customer')->group(function () {
+    Route::post('/account/logout', [AccountSessionController::class, 'destroy']);
+    Route::get('/account/me', [AccountSessionController::class, 'show']);
+});
 
 Route::post('/products', [ProductController::class, 'store']);
 Route::post('/products/variable', [VariableProductController::class, 'store']);
