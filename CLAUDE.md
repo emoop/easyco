@@ -111,6 +111,15 @@ packages/EasyCo/documents/{domain}-domain-design.md before working in it.
 - Migrations, new columns, new unique constraints: run them against the
   real dev database and confirm (e.g. SHOW CREATE TABLE), don't just
   trust that the migration file "looks right."
+- **A persistent queue worker (`easyco-queue-worker`, an NSSM Windows
+  service) boots the app once and keeps running that same booted
+  state.** After changing any queued job class (ProcessMediaAssetJob
+  today, any future one), run `php artisan queue:restart` (or restart
+  the service directly) before considering the change live —
+  otherwise the running worker keeps executing the OLD code against
+  real uploads even though the test suite and the source file both
+  show the fix. State explicitly in the task report that this was
+  done; never assume it's implied.
 
 ## Build / test
 
