@@ -4,11 +4,15 @@ use App\Http\Controllers\Api\AttributeDefinitionController;
 use App\Http\Controllers\Api\AttributeValueController;
 use App\Http\Controllers\Api\MediaController;
 use App\Http\Controllers\Api\ProductController;
+use App\Http\Controllers\Api\ProductMediaController;
 use App\Http\Controllers\Api\VariableProductController;
+use App\Http\Controllers\Api\VariationMediaController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/products', [ProductController::class, 'store']);
 Route::post('/products/variable', [VariableProductController::class, 'store']);
+Route::post('/products/{productId}/media', [ProductMediaController::class, 'store']);
+Route::post('/variations/{variationId}/media', [VariationMediaController::class, 'store']);
 
 Route::post('/media', [MediaController::class, 'store']);
 
