@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\AccountRegistrationController;
 use App\Http\Controllers\Api\AccountSessionController;
 use App\Http\Controllers\Api\AttributeDefinitionController;
 use App\Http\Controllers\Api\AttributeValueController;
+use App\Http\Controllers\Api\CartController;
 use App\Http\Controllers\Api\MediaController;
 use App\Http\Controllers\Api\ProductController;
 use App\Http\Controllers\Api\ProductMediaController;
@@ -35,6 +36,11 @@ Route::delete('/variations/{variationId}/media/{variationMediaId}', [VariationMe
 
 Route::get('/variations/{variationId}/stock', [StockLevelController::class, 'show']);
 Route::put('/variations/{variationId}/stock', [StockLevelController::class, 'update']);
+
+Route::get('/cart', [CartController::class, 'index']);
+Route::post('/cart/lines', [CartController::class, 'store']);
+Route::patch('/cart/lines/{variationId}', [CartController::class, 'update']);
+Route::delete('/cart/lines/{variationId}', [CartController::class, 'destroy']);
 
 Route::post('/media', [MediaController::class, 'store']);
 
