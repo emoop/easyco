@@ -170,6 +170,13 @@ packages/EasyCo/documents/{domain}-domain-design.md before working in it.
 - Production hardening/deployment pass: rate limiting and bot-scanning
   mitigation at the infrastructure layer — see
   server-stability-observations.md.
+- Media cleanup: an Admin UI for finding/bulk-deleting orphaned
+  MediaAsset rows, plus an idea (not a decision) for SEO-driven variant
+  pruning on archived products — see
+  media-cleanup-and-storage-optimization-note.md.
+- Product archival strategy (Catalog domain): two distinct out-of-stock
+  archival modes ("Sold Out" page vs. redirect-to-category) — see
+  product-archival-strategy-note.md.
 
 ## Do not touch without explicit instruction
 
