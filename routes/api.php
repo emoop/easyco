@@ -8,8 +8,10 @@ use App\Http\Controllers\Api\BrandController;
 use App\Http\Controllers\Api\CartController;
 use App\Http\Controllers\Api\CategoryController;
 use App\Http\Controllers\Api\MediaController;
+use App\Http\Controllers\Api\ProductCategoryController;
 use App\Http\Controllers\Api\ProductController;
 use App\Http\Controllers\Api\ProductMediaController;
+use App\Http\Controllers\Api\ProductTagController;
 use App\Http\Controllers\Api\StockLevelController;
 use App\Http\Controllers\Api\TagController;
 use App\Http\Controllers\Api\VariableProductController;
@@ -32,6 +34,14 @@ Route::post('/products/{productId}/media', [ProductMediaController::class, 'stor
 Route::get('/products/{productId}/media', [ProductMediaController::class, 'index']);
 Route::put('/products/{productId}/media/order', [ProductMediaController::class, 'reorder']);
 Route::delete('/products/{productId}/media/{productMediaId}', [ProductMediaController::class, 'destroy']);
+
+Route::post('/products/{productId}/categories', [ProductCategoryController::class, 'store']);
+Route::get('/products/{productId}/categories', [ProductCategoryController::class, 'index']);
+Route::delete('/products/{productId}/categories/{categoryId}', [ProductCategoryController::class, 'destroy']);
+
+Route::post('/products/{productId}/tags', [ProductTagController::class, 'store']);
+Route::get('/products/{productId}/tags', [ProductTagController::class, 'index']);
+Route::delete('/products/{productId}/tags/{tagId}', [ProductTagController::class, 'destroy']);
 
 Route::post('/variations/{variationId}/media', [VariationMediaController::class, 'store']);
 Route::get('/variations/{variationId}/media', [VariationMediaController::class, 'index']);
