@@ -102,4 +102,37 @@ class ProductController extends Controller
             ]);
         }
     }
+
+    /**
+     * Sets or clears a Product's brand — the one Product field this
+     * prompt makes HTTP-editable, via the already-existing
+     * Product::assignBrand()/brandId() (see 7ae500d). No other field is
+     * editable via HTTP here.
+     */
+    public function updateBrand(Request $request, string $productId): JsonResponse
+    {
+        $request->merge(['product_id' => $productId]);
+        $validated = $request->validate([
+            'product_id' => 'required|exists:catalog_products,id',
+            // present, not required: an explicit null is a legitimate,
+            // meaningful request body ("clear the brand"), the same
+            // reasoning VariationMediaController's reorder endpoint uses
+            // for present|array.
+            'brand_id' => 'present|nullable|string|exists:catalog_brands,id',
+        ]);
+
+        $product = $this->products->findById($productId);
+
+        if ($product === null) {
+            return response()->json(['message' => "Product \"{$productId}\" not found."], 404);
+        }
+
+        $product->assignBrand($validated['brand_id']);
+        $this->products->save($product);
+
+        return response()->json([
+            'product_id' => $product->id(),
+            'brand_id' => $product->brandId(),
+        ]);
+    }
 }

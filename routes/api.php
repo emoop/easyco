@@ -27,6 +27,7 @@ Route::middleware('auth:customer')->group(function () {
 
 Route::post('/products', [ProductController::class, 'store']);
 Route::post('/products/variable', [VariableProductController::class, 'store']);
+Route::put('/products/{productId}/brand', [ProductController::class, 'updateBrand']);
 Route::post('/products/{productId}/media', [ProductMediaController::class, 'store']);
 Route::get('/products/{productId}/media', [ProductMediaController::class, 'index']);
 Route::put('/products/{productId}/media/order', [ProductMediaController::class, 'reorder']);
