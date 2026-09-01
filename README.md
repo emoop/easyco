@@ -2,7 +2,7 @@
 
 # EasyCo
 
-EasyCo is a modular Laravel commerce platform. Rather than one monolithic application, each business domain — Catalog, Pricing, Account, Inventory, Cart, and (planned) Checkout/Orders, Promotions — lives in its own independently developed, independently testable package under `packages/EasyCo/`, communicating through small, explicit contracts rather than shared internal state.
+EasyCo is a modular Laravel commerce platform. Rather than one monolithic application, each business domain — Catalog, Pricing, Account, Inventory, Cart, Promotions, and (planned) Checkout/Orders — lives in its own independently developed, independently testable package under `packages/EasyCo/`, communicating through small, explicit contracts rather than shared internal state.
 
 ## Architecture note
 
@@ -20,6 +20,7 @@ This project was originally scaffolded on top of [Bagisto](https://bagisto.com/)
 | [`packages/EasyCo/Inventory`](packages/EasyCo/Inventory) | A single stock quantity per Variation, atomic increase/decrease at the repository layer, and a soft availability check only — no reservation yet. | [inventory-domain-design.md](packages/EasyCo/documents/inventory-domain-design.md) |
 | [`packages/EasyCo/Cart`](packages/EasyCo/Cart) | Guest and logged-in shopping carts (session-token vs. `account_id`), pricing resolved live on every read (never snapshotted), a soft stock check at add-time, merge-on-login, and expiry with a `cart:prune` command. | [cart-domain-design.md](packages/EasyCo/documents/cart-domain-design.md) |
 | [`packages/EasyCo/Media`](packages/EasyCo/Media) | `MediaAsset` (image/video) with a queued image-processing pipeline (thumbnail/medium/large/admin_grid WebP variants), plus the full HTTP surface for upload and attach/list/reorder/detach on both Product and Variation media. | [media-domain-design.md](packages/EasyCo/documents/media-domain-design.md) |
+| [`packages/EasyCo/Promotions`](packages/EasyCo/Promotions) | Promotion/PromotionScope — customer-entered discount codes (percentage or fixed-amount), with extensible eligibility scoping (brand/category/tag/attribute/product/account, include or exclude) and usage-limit/validity-window fields. Domain and persistence layers only — no HTTP surface and no Cart integration yet. | [promotions-domain-design.md](packages/EasyCo/documents/promotions-domain-design.md) |
 
 See [vertical-slice-notes.md](packages/EasyCo/documents/vertical-slice-notes.md) for how Catalog and Pricing are wired together end-to-end today, and what's still temporary.
 
