@@ -44,6 +44,7 @@ final class EloquentProductRepository implements ProductRepository
             $productModel->base_sku = $product->baseSku();
             $productModel->status = $product->status()->value;
             $productModel->catalog_visibility = $product->catalogVisibility()->value;
+            $productModel->brand_id = $product->brandId();
 
             $this->saveProductModelWithSlugCollisionRetry($productModel, $product);
 
@@ -477,6 +478,7 @@ final class EloquentProductRepository implements ProductRepository
             catalogVisibility: CatalogVisibility::from($model->catalog_visibility),
             variations: $variations,
             variationAxes: $variationAxes,
+            brandId: $model->brand_id !== null ? (string) $model->brand_id : null,
         );
     }
 

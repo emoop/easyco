@@ -43,6 +43,7 @@ final class Product
         private string $slug,
         private ProductStatus $status = ProductStatus::DRAFT,
         private CatalogVisibility $catalogVisibility = CatalogVisibility::HIDDEN,
+        private ?string $brandId = null,
     ) {
         if ($baseSku === '') {
             throw new \InvalidArgumentException('Product baseSku must not be empty.');
@@ -178,6 +179,7 @@ final class Product
         CatalogVisibility $catalogVisibility,
         array $variations = [],
         array $variationAxes = [],
+        ?string $brandId = null,
     ): self {
         $product = new self(
             id: $id,
@@ -187,6 +189,7 @@ final class Product
             slug: $slug,
             status: $status,
             catalogVisibility: $catalogVisibility,
+            brandId: $brandId,
         );
 
         if ($variationAxes !== []) {
@@ -252,6 +255,23 @@ final class Product
 
         self::assertValidSlug($newSlug);
         $this->slug = $newSlug;
+    }
+
+    public function brandId(): ?string
+    {
+        return $this->brandId;
+    }
+
+    /**
+     * Sets or clears this Product's brand. A cross-domain-by-id
+     * reference only — Catalog does not verify the referenced Brand
+     * actually exists, same posture EasyCo\Promotions\PromotionScope
+     * takes toward the ids it references. Passing null is a valid,
+     * meaningful "remove this product's brand" operation, not an error.
+     */
+    public function assignBrand(?string $brandId): void
+    {
+        $this->brandId = $brandId;
     }
 
     public function type(): ProductType
