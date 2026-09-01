@@ -29,6 +29,16 @@
 - **Flag, don't fix**: if the coder discovers an issue outside the current prompt's scope, it gets reported back to the architect, not silently patched. Scope creep is avoided even when the fix would be easy.
 - MySQL/MariaDB is the source of truth for constraints and correctness — this project targets real MySQL from the start (via a dedicated `easyco_testing` database for the Feature suite), never SQLite outside the test suite's own in-memory speed optimization.
 
+## Diff delivery
+
+- When generating a diff or command output file intended for architect review, use `git --no-pager diff HEAD | Out-File -Encoding utf8 filename.txt` (or the analogous form for whatever's being captured).
+- **On Windows/PowerShell, `Out-File -Encoding utf8` alone is not sufficient** when the piped command's output contains non-ASCII characters (em dashes, Cyrillic, accented characters, colored/Unicode symbols like PHPUnit's ✔). PowerShell's console decodes that output through the system codepage before `Out-File` ever sees it, which can silently mangle those characters into mojibake in the resulting file — even though the actual source file on disk is untouched and correct. Before generating any review/diff file intended for architect review, run these two lines first, once, in that PowerShell session:
+  ```powershell
+  [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+  $OutputEncoding = [System.Text.Encoding]::UTF8
+  ```
+- If an architect ever reports mojibake in a reviewed diff/output file, the correct first move is to verify the real file directly (e.g. `Select-String -Path <file> -Pattern "—" -Encoding utf8`) before assuming the source is actually corrupted — the corruption is very often confined to the transport file, not the committed content, as happened once already on this project.
+
 ## Product principles (apply when making design decisions, not just when reminded)
 
 - **"От хиляди опции — само три"** — from thousands of options, only three. Keep merchant-facing choices minimal.
