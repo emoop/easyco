@@ -6,18 +6,24 @@ use EasyCo\Account\Account;
 use EasyCo\Account\Contracts\AccountRepository;
 use EasyCo\Account\Persistence\Eloquent\AccountModel;
 use EasyCo\Cart\Persistence\Eloquent\CartModel;
+use EasyCo\Catalog\Brand;
+use EasyCo\Catalog\Contracts\BrandRepository;
 use EasyCo\Catalog\Contracts\ProductRepository;
+use EasyCo\Catalog\Contracts\VariationRepository;
 use EasyCo\Catalog\Product;
 use EasyCo\Inventory\Contracts\StockLevelRepository;
 use EasyCo\Inventory\StockLevel;
 use EasyCo\Pricing\Contracts\PriceListItemRepository;
 use EasyCo\Pricing\Contracts\PriceListRepository;
+use EasyCo\Pricing\Contracts\PriceListScopeRepository;
 use EasyCo\Pricing\Enums\PriceListItemTargetType;
 use EasyCo\Pricing\Enums\PriceListMode;
+use EasyCo\Pricing\Enums\PriceListScopeType;
 use EasyCo\Pricing\Money;
 use EasyCo\Pricing\Price;
 use EasyCo\Pricing\PriceList;
 use EasyCo\Pricing\PriceListItem;
+use EasyCo\Pricing\PriceListScope;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -291,6 +297,56 @@ class CartControllerTest extends TestCase
 
         $accountGet = $this->getJson('/api/cart');
         $accountGet->assertJsonPath('lines', []);
+    }
+
+    /**
+     * Proves the real gap CatalogScopeResolver closes: a PriceList
+     * scoped to a Brand must actually win over the plain regular price
+     * once a Product carries that brand — this only works if
+     * CartController is really assembling productId/
+     * matchingScopeReferenceIds into PriceContext, not just quantity/
+     * currency/priceableId as before.
+     */
+    public function test_get_resolves_a_brand_scoped_price_over_the_plain_regular_price(): void
+    {
+        $variationId = $this->variationId();
+        $this->setPrice($variationId, '10.00');
+        $this->setStock($variationId, 10);
+
+        $product = app(ProductRepository::class)->findById(
+            app(VariationRepository::class)->findById($variationId)->productId()
+        );
+        $brand = new Brand(id: null, name: 'Nike', slug: 'nike-scoped-price-test');
+        app(BrandRepository::class)->save($brand);
+        $product->assignBrand($brand->id());
+        app(ProductRepository::class)->save($product);
+
+        $brandList = PriceList::create(
+            'Nike -20%',
+            PriceListMode::PERCENTAGE_OFF_REGULAR,
+            priority: 10,
+            percentageBasisPoints: 2000,
+        );
+        app(PriceListRepository::class)->save($brandList);
+
+        $scope = new PriceListScope(
+            id: null,
+            priceListId: $brandList->id(),
+            scopeType: PriceListScopeType::BRAND,
+            scopeReferenceId: $brand->id(),
+        );
+        app(PriceListScopeRepository::class)->attach($scope);
+
+        $this->postJson('/api/cart/lines', ['variation_id' => $variationId, 'quantity' => 1])->assertStatus(201);
+
+        $response = $this->getJson('/api/cart');
+
+        $response->assertStatus(200);
+        // 10.00 EUR regular, 20% off via the BRAND-scoped list = 8.00 EUR
+        // (800 minor units) — NOT the plain 1000 minor units the
+        // unscoped regular price alone would give.
+        $this->assertSame(800, $response->json('lines.0.unit_price.minor'));
+        $this->assertSame(800, $response->json('total.minor'));
     }
 
     public function test_a_write_refreshes_expires_at(): void

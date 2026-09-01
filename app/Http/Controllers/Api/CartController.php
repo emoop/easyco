@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Services\CatalogScopeResolver;
 use DateTimeImmutable;
 use EasyCo\Cart\Cart;
 use EasyCo\Cart\CartLineAdder;
@@ -49,6 +50,7 @@ class CartController extends Controller
         private readonly VariationRepository $variations,
         private readonly StockLevelRepository $stockLevels,
         private readonly PriceResolver $priceResolver,
+        private readonly CatalogScopeResolver $catalogScopeResolver,
     ) {
     }
 
@@ -77,12 +79,15 @@ class CartController extends Controller
         $cart->refreshExpiry($this->expiryFor($cart));
 
         $currency = DefaultCurrency::get();
+        $scope = $this->catalogScopeResolver->forVariation($variationId);
 
         try {
             $quote = $this->priceResolver->resolve(new PriceContext(
                 priceableId: $variation->priceableId(),
                 quantity: $validated['quantity'],
                 currency: $currency->code(),
+                productId: $scope['productId'],
+                matchingScopeReferenceIds: $scope['matchingScopeReferenceIds'],
             ));
         } catch (PriceNotConfiguredException) {
             return response()->json([
@@ -241,11 +246,15 @@ class CartController extends Controller
                 ? $this->moneyToArray(Money::fromMinorUnits($line->priceAtAddMinor(), $line->priceAtAddCurrency()))
                 : null;
 
+            $scope = $this->catalogScopeResolver->forVariation($line->variationId());
+
             try {
                 $quote = $this->priceResolver->resolve(new PriceContext(
                     priceableId: $line->variationId(),
                     quantity: $line->quantity(),
                     currency: $currency->code(),
+                    productId: $scope['productId'],
+                    matchingScopeReferenceIds: $scope['matchingScopeReferenceIds'],
                 ));
             } catch (PriceNotConfiguredException) {
                 // A line already sitting in the cart whose price has
