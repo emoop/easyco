@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\ProductCategoryController;
 use App\Http\Controllers\Api\ProductController;
 use App\Http\Controllers\Api\ProductMediaController;
 use App\Http\Controllers\Api\ProductTagController;
+use App\Http\Controllers\Api\PromotionController;
 use App\Http\Controllers\Api\StockLevelController;
 use App\Http\Controllers\Api\TagController;
 use App\Http\Controllers\Api\VariableProductController;
@@ -72,3 +73,6 @@ Route::get('/categories', [CategoryController::class, 'index']);
 
 Route::post('/tags', [TagController::class, 'store']);
 Route::get('/tags', [TagController::class, 'index']);
+
+Route::post('/promotions', [PromotionController::class, 'store']);
+Route::get('/promotions', [PromotionController::class, 'index']);

@@ -72,6 +72,14 @@ final class EloquentPromotionRepository implements PromotionRepository
         return $model !== null ? $this->toDomainPromotion($model) : null;
     }
 
+    /** @return Promotion[] */
+    public function all(): array
+    {
+        return PromotionModel::all()
+            ->map(fn (PromotionModel $model) => $this->toDomainPromotion($model))
+            ->all();
+    }
+
     /**
      * Detects a violation of promo_promotions_code_unique — SQLSTATE
      * 23000 + driver error code (MySQL 1062 / SQLite 19) is the primary

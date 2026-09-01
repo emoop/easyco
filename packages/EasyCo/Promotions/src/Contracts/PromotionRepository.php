@@ -22,4 +22,7 @@ interface PromotionRepository
      * trick).
      */
     public function findByCode(string $code): ?Promotion;
+
+    /** @return Promotion[] */
+    public function all(): array;
 }
