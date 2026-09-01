@@ -1,0 +1,30 @@
+{
+    "name": "easyco/promotions",
+    "description": "EasyCo Promotions domain package — Promotion/PromotionScope, customer-entered discount codes applied explicitly at cart level, layered on top of Pricing's resolved price.",
+    "type": "library",
+    "license": "MIT",
+    "require": {
+        "php": "^8.3",
+        "easyco/pricing": "@dev"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^11.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "EasyCo\\Promotions\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "EasyCo\\Promotions\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "EasyCo\\Promotions\\Providers\\PromotionsServiceProvider"
+            ]
+        }
+    }
+}
