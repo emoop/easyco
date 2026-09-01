@@ -49,7 +49,7 @@ class CartControllerTest extends TestCase
         return $product->variations()[0]->id();
     }
 
-    private function setPrice(string $variationId, string $decimalAmount): void
+    private function setPrice(string $variationId, string $decimalAmount): PriceListItem
     {
         if ($this->priceList === null) {
             $this->priceList = PriceList::createSystemList('Regular Prices', PriceListMode::FIXED_ITEMS, priority: 0);
@@ -64,6 +64,8 @@ class CartControllerTest extends TestCase
             Price::exclusiveOfTax(Money::fromDecimal($decimalAmount, 'EUR'), 0),
         );
         app(PriceListItemRepository::class)->save($item);
+
+        return $item;
     }
 
     private function setStock(string $variationId, int $quantity): void
@@ -152,6 +154,65 @@ class CartControllerTest extends TestCase
 
         $response->assertStatus(422);
         $this->assertSame(0, CartModel::count());
+    }
+
+    public function test_get_degrades_gracefully_when_an_existing_lines_price_is_later_fully_removed(): void
+    {
+        $pricedVariation = $this->pricedPurchasableVariation('10.00');
+        $unpricedVariation = $this->variationId();
+        $this->setStock($unpricedVariation, 10);
+        $item = $this->setPrice($unpricedVariation, '20.00');
+
+        $this->postJson('/api/cart/lines', ['variation_id' => $pricedVariation, 'quantity' => 1])->assertStatus(201);
+        $this->postJson('/api/cart/lines', ['variation_id' => $unpricedVariation, 'quantity' => 2])->assertStatus(201);
+
+        // The price existed at add-time (both lines got a real
+        // price_at_add) but is now fully removed — not just changed.
+        app(PriceListItemRepository::class)->remove($item->id());
+
+        $response = $this->getJson('/api/cart');
+
+        $response->assertStatus(200);
+        $lines = collect($response->json('lines'))->keyBy('variation_id');
+
+        $this->assertTrue($lines[$pricedVariation]['price_available']);
+        $this->assertNotNull($lines[$pricedVariation]['unit_price']);
+        $this->assertNotNull($lines[$pricedVariation]['line_total']);
+
+        $this->assertFalse($lines[$unpricedVariation]['price_available']);
+        $this->assertNull($lines[$unpricedVariation]['unit_price']);
+        $this->assertNull($lines[$unpricedVariation]['line_total']);
+        $this->assertFalse($lines[$unpricedVariation]['price_changed_since_add']);
+        $this->assertNotNull($lines[$unpricedVariation]['price_at_add']);
+
+        // total reflects only the priced line (10.00 EUR x 1 = 1000
+        // minor units) — the unpriced line is excluded, not zeroed.
+        $this->assertSame(1000, $response->json('total.minor'));
+    }
+
+    public function test_patch_on_a_priced_line_does_not_crash_when_a_different_line_is_unpriced(): void
+    {
+        $pricedVariation = $this->pricedPurchasableVariation('10.00');
+        $unpricedVariation = $this->variationId();
+        $this->setStock($unpricedVariation, 10);
+        $item = $this->setPrice($unpricedVariation, '20.00');
+
+        $this->postJson('/api/cart/lines', ['variation_id' => $pricedVariation, 'quantity' => 1])->assertStatus(201);
+        $this->postJson('/api/cart/lines', ['variation_id' => $unpricedVariation, 'quantity' => 1])->assertStatus(201);
+
+        app(PriceListItemRepository::class)->remove($item->id());
+
+        $response = $this->patchJson("/api/cart/lines/{$pricedVariation}", ['quantity' => 3]);
+
+        $response->assertStatus(200);
+        $lines = collect($response->json('lines'))->keyBy('variation_id');
+
+        $this->assertSame(3, $lines[$pricedVariation]['quantity']);
+        $this->assertTrue($lines[$pricedVariation]['price_available']);
+        $this->assertNotNull($lines[$pricedVariation]['unit_price']);
+
+        $this->assertFalse($lines[$unpricedVariation]['price_available']);
+        $this->assertNull($lines[$unpricedVariation]['unit_price']);
     }
 
     public function test_add_a_non_purchasable_variation_returns_422(): void

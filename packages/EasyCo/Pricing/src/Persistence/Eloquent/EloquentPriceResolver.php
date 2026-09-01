@@ -10,6 +10,7 @@ use EasyCo\Pricing\Contracts\PriceQuote;
 use EasyCo\Pricing\Contracts\PriceResolver;
 use EasyCo\Pricing\Enums\PriceListMode;
 use EasyCo\Pricing\Enums\PriceListScopeType;
+use EasyCo\Pricing\Exceptions\PriceNotConfiguredException;
 use EasyCo\Pricing\FixedItemsPriceLookup;
 use EasyCo\Pricing\Money;
 use EasyCo\Pricing\Price;
@@ -50,9 +51,7 @@ final class EloquentPriceResolver implements PriceResolver
         $regular = $this->fixedItemsPriceLookup->forTarget($regularList, $context->priceableId, $context->productId, $context->quantity);
 
         if ($regular === null) {
-            throw new RuntimeException(
-                "No \"Regular Prices\" price is set for priceableId \"{$context->priceableId}\"."
-            );
+            throw PriceNotConfiguredException::forPriceableId($context->priceableId);
         }
 
         $winningList = $this->findWinningList($at, $context);

@@ -26,18 +26,20 @@ use Illuminate\Support\Str;
  * PriceContext assembly (Catalog-reading) lives here rather than
  * inside the Cart package itself.
  *
- * PRICE-NOT-CONFIGURED HANDLING: store() catches
- * EasyCo\Pricing\Exceptions\PriceNotConfiguredException specifically
- * (never a broad RuntimeException — that would also swallow
- * EloquentPriceResolver's OTHER, genuinely system-misconfiguration
- * throw site, which must keep failing loudly) and returns a clean 422
- * — see cart-domain-design.md §12. NARROWER RESIDUAL GAP, still real:
- * this is only wired into the add-line flow. serializeCart() (used by
- * both index() and the response of every write) does not catch it —
- * a GET /api/cart for a cart that already holds a line whose price
- * was since unset would still surface an uncaught 500. Not fixed here
- * because it wasn't this task's scope; flagged, not silently left
- * undocumented.
+ * PRICE-NOT-CONFIGURED HANDLING, in two different places, on purpose
+ * (never a broad RuntimeException catch in either — that would also
+ * swallow EloquentPriceResolver's OTHER, genuinely
+ * system-misconfiguration throw site, which must keep failing loudly)
+ * — see cart-domain-design.md §12:
+ * - store() catches EasyCo\Pricing\Exceptions\PriceNotConfiguredException
+ *   around the line being actively added and returns a clean 422 —
+ *   you cannot add an unpriced variation to a cart.
+ * - serializeCart() catches it per line, individually, for lines
+ *   ALREADY in the cart whose price has since been fully removed — a
+ *   single unpriced line degrades gracefully (unit_price/line_total
+ *   null, price_available: false, excluded from the cart total)
+ *   rather than taking down the entire GET /api/cart response, or the
+ *   response body of any write.
  */
 class CartController extends Controller
 {
@@ -235,11 +237,34 @@ class CartController extends Controller
         $lines = [];
 
         foreach ($cart->lines() as $line) {
-            $quote = $this->priceResolver->resolve(new PriceContext(
-                priceableId: $line->variationId(),
-                quantity: $line->quantity(),
-                currency: $currency->code(),
-            ));
+            $priceAtAdd = $line->priceAtAddMinor() !== null
+                ? $this->moneyToArray(Money::fromMinorUnits($line->priceAtAddMinor(), $line->priceAtAddCurrency()))
+                : null;
+
+            try {
+                $quote = $this->priceResolver->resolve(new PriceContext(
+                    priceableId: $line->variationId(),
+                    quantity: $line->quantity(),
+                    currency: $currency->code(),
+                ));
+            } catch (PriceNotConfiguredException) {
+                // A line already sitting in the cart whose price has
+                // since been fully removed — must not take down the
+                // whole cart response (cart-domain-design.md §12).
+                // Excluded from $total entirely: treating it as 0
+                // would silently understate what the customer owes.
+                $lines[] = [
+                    'variation_id' => $line->variationId(),
+                    'quantity' => $line->quantity(),
+                    'price_at_add' => $priceAtAdd,
+                    'unit_price' => null,
+                    'line_total' => null,
+                    'price_changed_since_add' => false,
+                    'price_available' => false,
+                ];
+
+                continue;
+            }
 
             $unitPrice = $quote->final->gross();
             $lineTotal = $unitPrice->multiply($line->quantity());
@@ -253,12 +278,11 @@ class CartController extends Controller
             $lines[] = [
                 'variation_id' => $line->variationId(),
                 'quantity' => $line->quantity(),
-                'price_at_add' => $line->priceAtAddMinor() !== null
-                    ? $this->moneyToArray(Money::fromMinorUnits($line->priceAtAddMinor(), $line->priceAtAddCurrency()))
-                    : null,
+                'price_at_add' => $priceAtAdd,
                 'unit_price' => $this->moneyToArray($unitPrice),
                 'line_total' => $this->moneyToArray($lineTotal),
                 'price_changed_since_add' => $priceChanged,
+                'price_available' => true,
             ];
         }
 
