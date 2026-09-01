@@ -4,11 +4,14 @@ use App\Http\Controllers\Api\AccountRegistrationController;
 use App\Http\Controllers\Api\AccountSessionController;
 use App\Http\Controllers\Api\AttributeDefinitionController;
 use App\Http\Controllers\Api\AttributeValueController;
+use App\Http\Controllers\Api\BrandController;
 use App\Http\Controllers\Api\CartController;
+use App\Http\Controllers\Api\CategoryController;
 use App\Http\Controllers\Api\MediaController;
 use App\Http\Controllers\Api\ProductController;
 use App\Http\Controllers\Api\ProductMediaController;
 use App\Http\Controllers\Api\StockLevelController;
+use App\Http\Controllers\Api\TagController;
 use App\Http\Controllers\Api\VariableProductController;
 use App\Http\Controllers\Api\VariationMediaController;
 use Illuminate\Support\Facades\Route;
@@ -49,3 +52,12 @@ Route::get('/attribute-definitions', [AttributeDefinitionController::class, 'ind
 Route::get('/attribute-definitions/{id}/values', [AttributeValueController::class, 'index']);
 
 Route::post('/attribute-values', [AttributeValueController::class, 'store']);
+
+Route::post('/brands', [BrandController::class, 'store']);
+Route::get('/brands', [BrandController::class, 'index']);
+
+Route::post('/categories', [CategoryController::class, 'store']);
+Route::get('/categories', [CategoryController::class, 'index']);
+
+Route::post('/tags', [TagController::class, 'store']);
+Route::get('/tags', [TagController::class, 'index']);
