@@ -185,4 +185,38 @@ class EloquentCartRepositoryTest extends TestCase
         $this->assertSame(1, CartModel::count());
         $this->assertNotNull($this->repository()->findById($stillLive->id()));
     }
+
+    public function test_a_cart_with_an_applied_promotion_code_round_trips_it(): void
+    {
+        $cart = Cart::forGuest('token-abc', $this->expiry());
+        $cart->applyPromotionCode('SUMMER20');
+
+        $this->repository()->save($cart);
+
+        $reloaded = $this->repository()->findById($cart->id());
+        $this->assertSame('summer20', $reloaded->appliedPromotionCode());
+    }
+
+    public function test_a_cart_with_no_applied_promotion_code_round_trips_null(): void
+    {
+        $cart = Cart::forGuest('token-abc', $this->expiry());
+
+        $this->repository()->save($cart);
+
+        $reloaded = $this->repository()->findById($cart->id());
+        $this->assertNull($reloaded->appliedPromotionCode());
+    }
+
+    public function test_applying_then_clearing_a_promotion_code_and_saving_again_round_trips_null(): void
+    {
+        $cart = Cart::forGuest('token-abc', $this->expiry());
+        $cart->applyPromotionCode('summer20');
+        $this->repository()->save($cart);
+
+        $cart->clearPromotionCode();
+        $this->repository()->save($cart);
+
+        $reloaded = $this->repository()->findById($cart->id());
+        $this->assertNull($reloaded->appliedPromotionCode());
+    }
 }

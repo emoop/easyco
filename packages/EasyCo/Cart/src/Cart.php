@@ -33,6 +33,7 @@ final class Cart
         private readonly ?string $accountId,
         private readonly ?string $sessionToken,
         private DateTimeImmutable $expiresAt,
+        private ?string $appliedPromotionCode = null,
     ) {
         if (($accountId === null) === ($sessionToken === null)) {
             throw new InvalidArgumentException(
@@ -79,8 +80,15 @@ final class Cart
         ?string $sessionToken,
         DateTimeImmutable $expiresAt,
         array $lines = [],
+        ?string $appliedPromotionCode = null,
     ): self {
-        $cart = new self(id: $id, accountId: $accountId, sessionToken: $sessionToken, expiresAt: $expiresAt);
+        $cart = new self(
+            id: $id,
+            accountId: $accountId,
+            sessionToken: $sessionToken,
+            expiresAt: $expiresAt,
+            appliedPromotionCode: $appliedPromotionCode,
+        );
 
         foreach ($lines as $line) {
             $cart->lines[$line->variationId()] = $line;
@@ -130,6 +138,40 @@ final class Cart
     public function refreshExpiry(DateTimeImmutable $expiresAt): void
     {
         $this->expiresAt = $expiresAt;
+    }
+
+    public function appliedPromotionCode(): ?string
+    {
+        return $this->appliedPromotionCode;
+    }
+
+    /**
+     * Normalizes via strtolower(trim()) before storing — mirrors
+     * Promotion's own code normalization exactly (see
+     * Promotion::normalizeAndValidateCode()), so a later lookup via
+     * PromotionRepository::findByCode() (case-insensitive by that same
+     * normalization) behaves consistently regardless of how the
+     * customer typed it.
+     */
+    public function applyPromotionCode(string $code): void
+    {
+        $normalized = strtolower(trim($code));
+
+        if ($normalized === '') {
+            throw new InvalidArgumentException('Cart appliedPromotionCode must not be empty.');
+        }
+
+        $this->appliedPromotionCode = $normalized;
+    }
+
+    /**
+     * Always allowed, even when already null — clearing is a valid
+     * operation, not an error, same posture as
+     * Catalog\Product::assignBrand(null).
+     */
+    public function clearPromotionCode(): void
+    {
+        $this->appliedPromotionCode = null;
     }
 
     /** @return CartLine[] */

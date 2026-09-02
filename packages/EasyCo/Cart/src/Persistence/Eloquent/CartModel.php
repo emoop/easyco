@@ -9,7 +9,7 @@ class CartModel extends Model
 {
     protected $table = 'carts';
 
-    protected $fillable = ['account_id', 'session_token', 'expires_at'];
+    protected $fillable = ['account_id', 'session_token', 'expires_at', 'applied_promotion_code'];
 
     protected $casts = [
         'expires_at' => 'datetime',

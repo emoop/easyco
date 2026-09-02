@@ -31,6 +31,7 @@ final class EloquentCartRepository implements CartRepository
             $cartModel->account_id = $cart->accountId();
             $cartModel->session_token = $cart->sessionToken();
             $cartModel->expires_at = $cart->expiresAt();
+            $cartModel->applied_promotion_code = $cart->appliedPromotionCode();
             $cartModel->save();
 
             if ($cart->id() === null) {
@@ -175,6 +176,7 @@ final class EloquentCartRepository implements CartRepository
             sessionToken: $model->session_token,
             expiresAt: $model->expires_at->toDateTimeImmutable(),
             lines: $lines,
+            appliedPromotionCode: $model->applied_promotion_code,
         );
     }
 

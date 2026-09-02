@@ -175,4 +175,84 @@ final class CartTest extends TestCase
         $this->assertCount(1, $cart->lines());
         $this->assertSame('5', $cart->lines()[0]->variationId());
     }
+
+    public function test_applied_promotion_code_defaults_to_null_for_account_cart(): void
+    {
+        $cart = Cart::forAccount('7', $this->expiry());
+
+        $this->assertNull($cart->appliedPromotionCode());
+    }
+
+    public function test_applied_promotion_code_defaults_to_null_for_guest_cart(): void
+    {
+        $cart = Cart::forGuest('token-abc', $this->expiry());
+
+        $this->assertNull($cart->appliedPromotionCode());
+    }
+
+    public function test_apply_promotion_code_stores_it_lowercased(): void
+    {
+        $cart = Cart::forGuest('token-abc', $this->expiry());
+
+        $cart->applyPromotionCode('SUMMER20');
+
+        $this->assertSame('summer20', $cart->appliedPromotionCode());
+    }
+
+    public function test_apply_promotion_code_trims_and_lowercases_whitespace(): void
+    {
+        $cart = Cart::forGuest('token-abc', $this->expiry());
+
+        $cart->applyPromotionCode('  summer20  ');
+
+        $this->assertSame('summer20', $cart->appliedPromotionCode());
+    }
+
+    public function test_apply_promotion_code_with_an_empty_string_throws(): void
+    {
+        $cart = Cart::forGuest('token-abc', $this->expiry());
+
+        $this->expectException(InvalidArgumentException::class);
+        $cart->applyPromotionCode('');
+    }
+
+    public function test_apply_promotion_code_with_an_all_whitespace_string_throws(): void
+    {
+        $cart = Cart::forGuest('token-abc', $this->expiry());
+
+        $this->expectException(InvalidArgumentException::class);
+        $cart->applyPromotionCode('   ');
+    }
+
+    public function test_clear_promotion_code_resets_it_to_null(): void
+    {
+        $cart = Cart::forGuest('token-abc', $this->expiry());
+        $cart->applyPromotionCode('summer20');
+
+        $cart->clearPromotionCode();
+
+        $this->assertNull($cart->appliedPromotionCode());
+    }
+
+    public function test_clear_promotion_code_when_already_null_does_not_throw(): void
+    {
+        $cart = Cart::forGuest('token-abc', $this->expiry());
+
+        $cart->clearPromotionCode();
+
+        $this->assertNull($cart->appliedPromotionCode());
+    }
+
+    public function test_reconstitute_from_storage_round_trips_applied_promotion_code(): void
+    {
+        $cart = Cart::reconstituteFromStorage(
+            id: '42',
+            accountId: '7',
+            sessionToken: null,
+            expiresAt: $this->expiry(),
+            appliedPromotionCode: 'summer20',
+        );
+
+        $this->assertSame('summer20', $cart->appliedPromotionCode());
+    }
 }
