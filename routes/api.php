@@ -13,6 +13,7 @@ use App\Http\Controllers\Api\ProductController;
 use App\Http\Controllers\Api\ProductMediaController;
 use App\Http\Controllers\Api\ProductTagController;
 use App\Http\Controllers\Api\PromotionController;
+use App\Http\Controllers\Api\PromotionScopeController;
 use App\Http\Controllers\Api\StockLevelController;
 use App\Http\Controllers\Api\TagController;
 use App\Http\Controllers\Api\VariableProductController;
@@ -76,3 +77,7 @@ Route::get('/tags', [TagController::class, 'index']);
 
 Route::post('/promotions', [PromotionController::class, 'store']);
 Route::get('/promotions', [PromotionController::class, 'index']);
+
+Route::post('/promotions/{promotionId}/scopes', [PromotionScopeController::class, 'store']);
+Route::get('/promotions/{promotionId}/scopes', [PromotionScopeController::class, 'index']);
+Route::delete('/promotions/{promotionId}/scopes/{scopeId}', [PromotionScopeController::class, 'destroy']);
