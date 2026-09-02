@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Services\CatalogScopeResolver;
+use App\Services\PromotionValidator;
 use DateTimeImmutable;
 use EasyCo\Cart\Cart;
 use EasyCo\Cart\CartLineAdder;
@@ -16,6 +17,8 @@ use EasyCo\Pricing\Contracts\PriceResolver;
 use EasyCo\Pricing\DefaultCurrency;
 use EasyCo\Pricing\Exceptions\PriceNotConfiguredException;
 use EasyCo\Pricing\Money;
+use EasyCo\Promotions\Contracts\PromotionRepository;
+use EasyCo\Promotions\Contracts\PromotionScopeRepository;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -51,6 +54,9 @@ class CartController extends Controller
         private readonly StockLevelRepository $stockLevels,
         private readonly PriceResolver $priceResolver,
         private readonly CatalogScopeResolver $catalogScopeResolver,
+        private readonly PromotionRepository $promotions,
+        private readonly PromotionScopeRepository $promotionScopes,
+        private readonly PromotionValidator $promotionValidator,
     ) {
     }
 
@@ -166,6 +172,59 @@ class CartController extends Controller
         return response()->json(null, 204);
     }
 
+    /**
+     * Applies a promo code to the current cart — does NOT compute or
+     * reflect any discount amount; that's a separate, later prompt.
+     * This only confirms the code corresponds to a real Promotion and
+     * stores it on the Cart. Validity (is it still active, does the
+     * scope match, etc.) is always recomputed live by serializeCart(),
+     * never cached here.
+     */
+    public function applyPromotion(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'code' => 'required|string',
+        ]);
+
+        $cart = $this->findCurrentCart($request);
+
+        if ($cart === null) {
+            return response()->json(['message' => 'No cart to apply a promotion to.'], 404);
+        }
+
+        if ($this->promotions->findByCode($validated['code']) === null) {
+            return response()->json([
+                'message' => "No promotion with code \"{$validated['code']}\" exists.",
+            ], 422);
+        }
+
+        $cart->applyPromotionCode($validated['code']);
+        $cart->refreshExpiry($this->expiryFor($cart));
+        $this->carts->save($cart);
+
+        return response()->json($this->serializeCart($cart));
+    }
+
+    /**
+     * Clears whatever promo code is currently applied — always safe,
+     * even if nothing was applied, same no-op-safe posture
+     * Cart::clearPromotionCode() itself already has.
+     */
+    public function removePromotion(Request $request): JsonResponse
+    {
+        $cart = $this->findCurrentCart($request);
+
+        if ($cart === null) {
+            return response()->json(['message' => 'No cart to remove a promotion from.'], 404);
+        }
+
+        $cart->clearPromotionCode();
+        $cart->refreshExpiry($this->expiryFor($cart));
+        $this->carts->save($cart);
+
+        return response()->json($this->serializeCart($cart));
+    }
+
     private function cartHasLine(Cart $cart, string $variationId): bool
     {
         foreach ($cart->lines() as $line) {
@@ -235,11 +294,12 @@ class CartController extends Controller
         $currency = DefaultCurrency::get();
         $total = Money::fromMinorUnits(0, $currency);
 
-        if ($cart === null || $cart->isEmpty()) {
-            return ['lines' => [], 'total' => $this->moneyToArray($total)];
+        if ($cart === null) {
+            return ['lines' => [], 'total' => $this->moneyToArray($total), 'promotion' => null];
         }
 
         $lines = [];
+        $validatorLines = [];
 
         foreach ($cart->lines() as $line) {
             $priceAtAdd = $line->priceAtAddMinor() !== null
@@ -293,9 +353,66 @@ class CartController extends Controller
                 'price_changed_since_add' => $priceChanged,
                 'price_available' => true,
             ];
+
+            $validatorLines[] = [
+                'variationId' => $line->variationId(),
+                'lineTotal' => $lineTotal,
+                'productId' => $scope['productId'],
+                'matchingScopeReferenceIds' => $scope['matchingScopeReferenceIds'],
+                'isDiscounted' => $quote->isDiscounted(),
+            ];
         }
 
-        return ['lines' => $lines, 'total' => $this->moneyToArray($total)];
+        return [
+            'lines' => $lines,
+            'total' => $this->moneyToArray($total),
+            'promotion' => $this->serializePromotion($cart, $total, $validatorLines),
+        ];
+    }
+
+    /**
+     * Live-revalidates whatever promo code is currently stored on the
+     * Cart, freshly, every call — NEVER persists anything as a side
+     * effect (this is called from index()/serializeCart() on every
+     * GET, not just writes). An invalid applied code stays stored on
+     * the Cart; only an explicit DELETE /api/cart/promotion removes it
+     * — same graceful-degradation posture already established for a
+     * line whose price was fully removed (cart-domain-design.md §12).
+     *
+     * @param array<int, array{variationId: string, lineTotal: Money, productId: ?string, matchingScopeReferenceIds: array<string, string[]>, isDiscounted: bool}> $validatorLines
+     */
+    private function serializePromotion(Cart $cart, Money $cartSubtotal, array $validatorLines): ?array
+    {
+        $code = $cart->appliedPromotionCode();
+
+        if ($code === null) {
+            return null;
+        }
+
+        $promotion = $this->promotions->findByCode($code);
+
+        if ($promotion === null) {
+            // The Promotion was deleted after being applied — a real,
+            // if rare, edge case. Reported, not thrown.
+            return [
+                'code' => $code,
+                'valid' => false,
+                'reason' => 'not_found',
+                'applicable_variation_ids' => [],
+            ];
+        }
+
+        $scopes = $this->promotionScopes->findByPromotionId($promotion->id());
+        $accountId = Auth::guard('customer')->check() ? (string) Auth::guard('customer')->id() : null;
+
+        $result = $this->promotionValidator->validate($promotion, $scopes, $cartSubtotal, $accountId, $validatorLines);
+
+        return [
+            'code' => $code,
+            'valid' => $result->isValid(),
+            'reason' => $result->reason(),
+            'applicable_variation_ids' => $result->applicableVariationIds(),
+        ];
     }
 
     private function moneyToArray(Money $money): array

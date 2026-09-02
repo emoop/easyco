@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use DateTimeImmutable;
 use EasyCo\Account\Account;
 use EasyCo\Account\Contracts\AccountRepository;
 use EasyCo\Account\Persistence\Eloquent\AccountModel;
@@ -24,6 +25,13 @@ use EasyCo\Pricing\Price;
 use EasyCo\Pricing\PriceList;
 use EasyCo\Pricing\PriceListItem;
 use EasyCo\Pricing\PriceListScope;
+use EasyCo\Promotions\Contracts\PromotionRepository;
+use EasyCo\Promotions\Contracts\PromotionScopeRepository;
+use EasyCo\Promotions\Enums\PromotionDiscountType;
+use EasyCo\Promotions\Enums\PromotionScopeMode;
+use EasyCo\Promotions\Enums\PromotionScopeType;
+use EasyCo\Promotions\Promotion;
+use EasyCo\Promotions\PromotionScope;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -86,6 +94,33 @@ class CartControllerTest extends TestCase
         $this->setStock($variationId, $stock);
 
         return $variationId;
+    }
+
+    private function createPromotion(
+        string $code,
+        ?DateTimeImmutable $validFrom = null,
+        ?DateTimeImmutable $validUntil = null,
+    ): Promotion {
+        $promotion = Promotion::create(
+            code: $code,
+            discountType: PromotionDiscountType::PERCENTAGE,
+            percentageBasisPoints: 1000,
+            validFrom: $validFrom,
+            validUntil: $validUntil,
+        );
+        app(PromotionRepository::class)->save($promotion);
+
+        return $promotion;
+    }
+
+    private function attachScope(
+        Promotion $promotion,
+        PromotionScopeType $scopeType,
+        string $referenceId,
+        PromotionScopeMode $mode = PromotionScopeMode::INCLUDE,
+    ): void {
+        $scope = new PromotionScope(null, $promotion->id(), $scopeType, $referenceId, $mode);
+        app(PromotionScopeRepository::class)->attach($scope);
     }
 
     private function loggedInAccount(string $email = 'user@example.com'): AccountModel
@@ -363,5 +398,112 @@ class CartControllerTest extends TestCase
         $secondExpiry = CartModel::first()->expires_at;
 
         $this->assertTrue($secondExpiry->greaterThanOrEqualTo($firstExpiry));
+    }
+
+    public function test_applying_a_valid_code_returns_200_with_valid_true_and_the_correct_applicable_lines_and_unchanged_total(): void
+    {
+        $variationId = $this->pricedPurchasableVariation('10.00');
+        $this->postJson('/api/cart/lines', ['variation_id' => $variationId, 'quantity' => 1])->assertStatus(201);
+        $this->createPromotion('SUMMER20');
+
+        $response = $this->putJson('/api/cart/promotion', ['code' => 'SUMMER20']);
+
+        $response->assertStatus(200);
+        $response->assertJsonPath('promotion.code', 'summer20');
+        $response->assertJsonPath('promotion.valid', true);
+        $response->assertJsonPath('promotion.reason', null);
+        $this->assertSame([$variationId], $response->json('promotion.applicable_variation_ids'));
+
+        // No discount math happens here — the total is exactly what it
+        // was before the code was applied.
+        $this->assertSame(1000, $response->json('total.minor'));
+    }
+
+    public function test_applying_a_nonexistent_code_returns_422_and_does_not_get_set(): void
+    {
+        $variationId = $this->pricedPurchasableVariation();
+        $this->postJson('/api/cart/lines', ['variation_id' => $variationId, 'quantity' => 1])->assertStatus(201);
+
+        $response = $this->putJson('/api/cart/promotion', ['code' => 'NOPE']);
+
+        $response->assertStatus(422);
+
+        $get = $this->getJson('/api/cart');
+        $get->assertJsonPath('promotion', null);
+    }
+
+    public function test_applying_a_promotion_to_a_cart_that_does_not_exist_yet_returns_404(): void
+    {
+        $this->createPromotion('SUMMER20');
+
+        $response = $this->putJson('/api/cart/promotion', ['code' => 'SUMMER20']);
+
+        $response->assertStatus(404);
+    }
+
+    public function test_get_reflects_an_expired_applied_code_as_invalid_without_clearing_it(): void
+    {
+        $variationId = $this->pricedPurchasableVariation();
+        $this->postJson('/api/cart/lines', ['variation_id' => $variationId, 'quantity' => 1])->assertStatus(201);
+        $this->createPromotion('OLDCODE', validUntil: new DateTimeImmutable('-1 day'));
+
+        $this->putJson('/api/cart/promotion', ['code' => 'OLDCODE'])->assertStatus(200);
+
+        $first = $this->getJson('/api/cart');
+        $first->assertStatus(200);
+        $first->assertJsonPath('promotion.code', 'oldcode');
+        $first->assertJsonPath('promotion.valid', false);
+        $first->assertJsonPath('promotion.reason', 'expired');
+
+        // A second GET right after must show the exact same thing — the
+        // code is still there, never silently cleared by a read.
+        $second = $this->getJson('/api/cart');
+        $second->assertJsonPath('promotion.code', 'oldcode');
+        $second->assertJsonPath('promotion.valid', false);
+        $second->assertJsonPath('promotion.reason', 'expired');
+    }
+
+    public function test_delete_cart_promotion_clears_it(): void
+    {
+        $variationId = $this->pricedPurchasableVariation();
+        $this->postJson('/api/cart/lines', ['variation_id' => $variationId, 'quantity' => 1])->assertStatus(201);
+        $this->createPromotion('SUMMER20');
+        $this->putJson('/api/cart/promotion', ['code' => 'SUMMER20'])->assertStatus(200);
+
+        $response = $this->deleteJson('/api/cart/promotion');
+
+        $response->assertStatus(200);
+        $response->assertJsonPath('promotion', null);
+
+        $get = $this->getJson('/api/cart');
+        $get->assertJsonPath('promotion', null);
+    }
+
+    public function test_delete_cart_promotion_when_nothing_was_applied_is_a_clean_200(): void
+    {
+        $variationId = $this->pricedPurchasableVariation();
+        $this->postJson('/api/cart/lines', ['variation_id' => $variationId, 'quantity' => 1])->assertStatus(201);
+
+        $response = $this->deleteJson('/api/cart/promotion');
+
+        $response->assertStatus(200);
+        $response->assertJsonPath('promotion', null);
+    }
+
+    public function test_a_code_scoped_to_a_brand_not_in_the_cart_is_invalid_with_no_matching_lines(): void
+    {
+        $variationId = $this->pricedPurchasableVariation();
+        $this->postJson('/api/cart/lines', ['variation_id' => $variationId, 'quantity' => 1])->assertStatus(201);
+
+        $promotion = $this->createPromotion('BRANDONLY');
+        $this->attachScope($promotion, PromotionScopeType::BRAND, 'some-brand-not-in-cart');
+
+        $this->putJson('/api/cart/promotion', ['code' => 'BRANDONLY'])->assertStatus(200);
+
+        $response = $this->getJson('/api/cart');
+
+        $response->assertStatus(200);
+        $response->assertJsonPath('promotion.valid', false);
+        $response->assertJsonPath('promotion.reason', 'no_matching_lines');
     }
 }

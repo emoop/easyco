@@ -57,6 +57,8 @@ Route::get('/cart', [CartController::class, 'index']);
 Route::post('/cart/lines', [CartController::class, 'store']);
 Route::patch('/cart/lines/{variationId}', [CartController::class, 'update']);
 Route::delete('/cart/lines/{variationId}', [CartController::class, 'destroy']);
+Route::put('/cart/promotion', [CartController::class, 'applyPromotion']);
+Route::delete('/cart/promotion', [CartController::class, 'removePromotion']);
 
 Route::post('/media', [MediaController::class, 'store']);
 
