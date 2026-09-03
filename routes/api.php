@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\AccountRegistrationController;
 use App\Http\Controllers\Api\AccountSessionController;
+use App\Http\Controllers\Api\AddressController;
 use App\Http\Controllers\Api\AttributeDefinitionController;
 use App\Http\Controllers\Api\AttributeValueController;
 use App\Http\Controllers\Api\BrandController;
@@ -27,7 +28,11 @@ Route::post('/account/login', [AccountSessionController::class, 'store'])
 Route::middleware('auth:customer')->group(function () {
     Route::post('/account/logout', [AccountSessionController::class, 'destroy']);
     Route::get('/account/me', [AccountSessionController::class, 'show']);
+    Route::get('/addresses', [AddressController::class, 'index']);
+    Route::put('/addresses/{addressId}', [AddressController::class, 'update']);
 });
+
+Route::post('/addresses', [AddressController::class, 'store']);
 
 Route::post('/products', [ProductController::class, 'store']);
 Route::post('/products/variable', [VariableProductController::class, 'store']);

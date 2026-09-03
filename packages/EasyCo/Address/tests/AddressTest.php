@@ -288,6 +288,96 @@ final class AddressTest extends TestCase
         $this->streetAddress(['accountId' => '']);
     }
 
+    // --- update() ------------------------------------------------------------
+
+    public function test_update_overwrites_every_field_it_touches(): void
+    {
+        $address = $this->streetAddress(['accountId' => '42']);
+
+        $address->update(
+            deliveryType: AddressDeliveryType::STREET_ADDRESS,
+            recipientName: 'New Name',
+            phone: '+359888000000',
+            country: 'BG',
+            city: 'Plovdiv',
+            postalCode: '4000',
+            addressLine1: 'New St 1',
+            addressLine2: 'Floor 3',
+        );
+
+        $this->assertSame('New Name', $address->recipientName());
+        $this->assertSame('+359888000000', $address->phone());
+        $this->assertSame('Plovdiv', $address->city());
+        $this->assertSame('4000', $address->postalCode());
+        $this->assertSame('New St 1', $address->addressLine1());
+        $this->assertSame('Floor 3', $address->addressLine2());
+        // accountId never changes via update().
+        $this->assertSame('42', $address->accountId());
+    }
+
+    public function test_update_can_switch_delivery_type_from_street_address_to_pickup_point(): void
+    {
+        $address = $this->streetAddress();
+
+        $address->update(
+            deliveryType: AddressDeliveryType::PICKUP_POINT,
+            recipientName: 'Ivan Ivanov',
+            phone: '+359888123456',
+            carrierCode: 'speedy',
+            pickupPointReference: 'office-9999',
+            settlement: 'Varna',
+        );
+
+        $this->assertSame(AddressDeliveryType::PICKUP_POINT, $address->deliveryType());
+        $this->assertSame('speedy', $address->carrierCode());
+        $this->assertNull($address->country());
+        $this->assertNull($address->addressLine1());
+    }
+
+    public function test_update_rejecting_exclusivity_violation_leaves_the_address_unchanged(): void
+    {
+        $address = $this->streetAddress();
+
+        try {
+            $address->update(
+                deliveryType: AddressDeliveryType::STREET_ADDRESS,
+                recipientName: 'Ivan Ivanov',
+                phone: '+359888123456',
+                country: 'BG',
+                city: 'Sofia',
+                addressLine1: 'Vitosha Blvd 1',
+                carrierCode: 'econt',
+            );
+            $this->fail('Expected an InvalidArgumentException.');
+        } catch (InvalidArgumentException) {
+            // expected
+        }
+
+        $this->assertSame('BG', $address->country());
+        $this->assertNull($address->carrierCode());
+    }
+
+    public function test_update_with_empty_recipient_name_throws_and_leaves_the_address_unchanged(): void
+    {
+        $address = $this->streetAddress();
+
+        try {
+            $address->update(
+                deliveryType: AddressDeliveryType::STREET_ADDRESS,
+                recipientName: '',
+                phone: '+359888123456',
+                country: 'BG',
+                city: 'Sofia',
+                addressLine1: 'Vitosha Blvd 1',
+            );
+            $this->fail('Expected an InvalidArgumentException.');
+        } catch (InvalidArgumentException) {
+            // expected
+        }
+
+        $this->assertSame('Ivan Ivanov', $address->recipientName());
+    }
+
     // --- assignId() ------------------------------------------------------------
 
     public function test_id_can_only_be_assigned_once(): void

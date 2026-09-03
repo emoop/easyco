@@ -22,23 +22,33 @@ use LogicException;
  * FIELDS FROM THE OTHER TYPE — see assertFieldsMatchDeliveryType(),
  * mirroring the clarity of Cart's own accountId/sessionToken XOR guard
  * (Cart.php's constructor).
+ *
+ * MOSTLY IMMUTABLE, ONE MUTATOR — id/accountId are never rewritten after
+ * construction (id via the usual one-time assignId(); accountId doesn't
+ * change via this class at all, same posture Catalog\Product takes
+ * toward its own structural fields). Every other field can be rewritten
+ * via update(), a single mutator on an otherwise-immutable aggregate —
+ * same shape as Product::assignBrand() (a single mutator on an
+ * otherwise-mostly-immutable aggregate) and Cart::applyPromotionCode()
+ * (re-running the same construction-time validation on every mutation,
+ * never a separate, looser rule set for updates).
  */
 final class Address
 {
     private function __construct(
         private ?string $id,
         private readonly ?string $accountId,
-        private readonly AddressDeliveryType $deliveryType,
-        private readonly string $recipientName,
-        private readonly string $phone,
-        private readonly ?string $country,
-        private readonly ?string $city,
-        private readonly ?string $postalCode,
-        private readonly ?string $addressLine1,
-        private readonly ?string $addressLine2,
-        private readonly ?string $carrierCode,
-        private readonly ?string $pickupPointReference,
-        private readonly ?string $settlement,
+        private AddressDeliveryType $deliveryType,
+        private string $recipientName,
+        private string $phone,
+        private ?string $country,
+        private ?string $city,
+        private ?string $postalCode,
+        private ?string $addressLine1,
+        private ?string $addressLine2,
+        private ?string $carrierCode,
+        private ?string $pickupPointReference,
+        private ?string $settlement,
     ) {
         self::assertNotEmpty('recipientName', $recipientName);
         self::assertNotEmpty('phone', $phone);
@@ -211,6 +221,55 @@ final class Address
         }
 
         $this->id = $id;
+    }
+
+    /**
+     * Overwrites every field except id/accountId — ownership doesn't
+     * change via update(), that's a different operation. Re-runs the
+     * exact same validation create()'s constructor already runs (the
+     * same private assertion methods, not duplicated logic): an update
+     * that would violate STREET_ADDRESS/PICKUP_POINT exclusivity is
+     * rejected exactly like construction would reject it, and nothing
+     * on $this is overwritten unless every assertion passes first.
+     */
+    public function update(
+        AddressDeliveryType $deliveryType,
+        string $recipientName,
+        string $phone,
+        ?string $country = null,
+        ?string $city = null,
+        ?string $postalCode = null,
+        ?string $addressLine1 = null,
+        ?string $addressLine2 = null,
+        ?string $carrierCode = null,
+        ?string $pickupPointReference = null,
+        ?string $settlement = null,
+    ): void {
+        self::assertNotEmpty('recipientName', $recipientName);
+        self::assertNotEmpty('phone', $phone);
+        self::assertFieldsMatchDeliveryType(
+            deliveryType: $deliveryType,
+            country: $country,
+            city: $city,
+            postalCode: $postalCode,
+            addressLine1: $addressLine1,
+            addressLine2: $addressLine2,
+            carrierCode: $carrierCode,
+            pickupPointReference: $pickupPointReference,
+            settlement: $settlement,
+        );
+
+        $this->deliveryType = $deliveryType;
+        $this->recipientName = $recipientName;
+        $this->phone = $phone;
+        $this->country = $country;
+        $this->city = $city;
+        $this->postalCode = $postalCode;
+        $this->addressLine1 = $addressLine1;
+        $this->addressLine2 = $addressLine2;
+        $this->carrierCode = $carrierCode;
+        $this->pickupPointReference = $pickupPointReference;
+        $this->settlement = $settlement;
     }
 
     public function accountId(): ?string
