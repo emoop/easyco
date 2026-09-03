@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "12670c9568bcddf2a986e73840ecdb3a",
+    "content-hash": "2a7cda60923e039afeba85c5d99ea1c4",
     "packages": [
         {
             "name": "brick/math",
@@ -476,6 +476,46 @@
                 "MIT"
             ],
             "description": "EasyCo Account domain package — customer registration/login/logout/session, and the domain logic governing the accounts table.",
+            "transport-options": {
+                "relative": true
+            }
+        },
+        {
+            "name": "easyco/address",
+            "version": "dev-main",
+            "dist": {
+                "type": "path",
+                "url": "packages/EasyCo/Address",
+                "reference": "3b2ea08d01d1e335b79fed4f2ceafdb03934e19c"
+            },
+            "require": {
+                "php": "^8.3"
+            },
+            "require-dev": {
+                "phpunit/phpunit": "^11.0"
+            },
+            "type": "library",
+            "extra": {
+                "laravel": {
+                    "providers": [
+                        "EasyCo\\Address\\Providers\\AddressServiceProvider"
+                    ]
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "EasyCo\\Address\\": "src/"
+                }
+            },
+            "autoload-dev": {
+                "psr-4": {
+                    "EasyCo\\Address\\Tests\\": "tests/"
+                }
+            },
+            "license": [
+                "MIT"
+            ],
+            "description": "EasyCo Address domain package — a delivery destination (STREET_ADDRESS or carrier-agnostic PICKUP_POINT), capturable per-checkout by a guest or optionally saved into a logged-in customer's reusable address book.",
             "transport-options": {
                 "relative": true
             }
@@ -8973,6 +9013,7 @@
     "minimum-stability": "stable",
     "stability-flags": {
         "easyco/account": 20,
+        "easyco/address": 20,
         "easyco/cart": 20,
         "easyco/catalog": 20,
         "easyco/extensibility": 20,

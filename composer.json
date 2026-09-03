@@ -8,6 +8,7 @@
     "require": {
         "php": "^8.3",
         "easyco/account": "@dev",
+        "easyco/address": "@dev",
         "easyco/cart": "@dev",
         "easyco/catalog": "@dev",
         "easyco/extensibility": "@dev",
