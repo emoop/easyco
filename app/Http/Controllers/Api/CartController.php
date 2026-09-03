@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Services\CatalogScopeResolver;
+use App\Services\PromotionDiscountCalculator;
 use App\Services\PromotionValidator;
 use DateTimeImmutable;
 use EasyCo\Cart\Cart;
@@ -23,6 +24,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
+use LogicException;
 
 /**
  * The Cart HTTP surface — see cart-domain-design.md §4/§10 for the
@@ -57,6 +59,7 @@ class CartController extends Controller
         private readonly PromotionRepository $promotions,
         private readonly PromotionScopeRepository $promotionScopes,
         private readonly PromotionValidator $promotionValidator,
+        private readonly PromotionDiscountCalculator $promotionDiscountCalculator,
     ) {
     }
 
@@ -292,10 +295,15 @@ class CartController extends Controller
     private function serializeCart(?Cart $cart): array
     {
         $currency = DefaultCurrency::get();
-        $total = Money::fromMinorUnits(0, $currency);
+        $subtotal = Money::fromMinorUnits(0, $currency);
 
         if ($cart === null) {
-            return ['lines' => [], 'total' => $this->moneyToArray($total), 'promotion' => null];
+            return [
+                'lines' => [],
+                'subtotal' => $this->moneyToArray($subtotal),
+                'total' => $this->moneyToArray($subtotal),
+                'promotion' => null,
+            ];
         }
 
         $lines = [];
@@ -320,7 +328,7 @@ class CartController extends Controller
                 // A line already sitting in the cart whose price has
                 // since been fully removed — must not take down the
                 // whole cart response (cart-domain-design.md §12).
-                // Excluded from $total entirely: treating it as 0
+                // Excluded from $subtotal entirely: treating it as 0
                 // would silently understate what the customer owes.
                 $lines[] = [
                     'variation_id' => $line->variationId(),
@@ -337,7 +345,7 @@ class CartController extends Controller
 
             $unitPrice = $quote->final->gross();
             $lineTotal = $unitPrice->multiply($line->quantity());
-            $total = $total->add($lineTotal);
+            $subtotal = $subtotal->add($lineTotal);
 
             $priceChanged = $line->priceAtAddMinor() !== null && (
                 $line->priceAtAddMinor() !== $unitPrice->minorValue()
@@ -354,8 +362,15 @@ class CartController extends Controller
                 'price_available' => true,
             ];
 
+            // Carries both what PromotionValidator needs (productId/
+            // matchingScopeReferenceIds/isDiscounted) and what
+            // PromotionDiscountCalculator needs (quantity/unitPrice/
+            // lineTotal) — one array, extended rather than recomputed
+            // twice; each consumer reads only the keys it needs.
             $validatorLines[] = [
                 'variationId' => $line->variationId(),
+                'quantity' => $line->quantity(),
+                'unitPrice' => $unitPrice,
                 'lineTotal' => $lineTotal,
                 'productId' => $scope['productId'],
                 'matchingScopeReferenceIds' => $scope['matchingScopeReferenceIds'],
@@ -363,10 +378,28 @@ class CartController extends Controller
             ];
         }
 
+        ['promotion' => $promotion, 'discountAmount' => $discountAmount] = $this->resolvePromotion($cart, $subtotal, $validatorLines);
+
+        $total = $subtotal;
+
+        if ($discountAmount !== null) {
+            $total = $subtotal->subtract($discountAmount);
+
+            if ($total->isNegative()) {
+                // Structurally impossible given FIXED_AMOUNT capping at
+                // the eligible base (PromotionDiscountCalculator) — a
+                // real bug to surface loudly, not silently clamp away.
+                throw new LogicException(
+                    'Cart total went negative after applying a Promotion discount — this should never happen.'
+                );
+            }
+        }
+
         return [
             'lines' => $lines,
+            'subtotal' => $this->moneyToArray($subtotal),
             'total' => $this->moneyToArray($total),
-            'promotion' => $this->serializePromotion($cart, $total, $validatorLines),
+            'promotion' => $promotion,
         ];
     }
 
@@ -379,14 +412,20 @@ class CartController extends Controller
      * — same graceful-degradation posture already established for a
      * line whose price was fully removed (cart-domain-design.md §12).
      *
-     * @param array<int, array{variationId: string, lineTotal: Money, productId: ?string, matchingScopeReferenceIds: array<string, string[]>, isDiscounted: bool}> $validatorLines
+     * Discount computation only ever runs once the code is confirmed
+     * valid — PromotionDiscountCalculator has no opinion on validity,
+     * same separation PromotionValidator/PromotionDiscountCalculator
+     * keep from each other everywhere else.
+     *
+     * @param array<int, array{variationId: string, quantity: int, unitPrice: Money, lineTotal: Money, productId: ?string, matchingScopeReferenceIds: array<string, string[]>, isDiscounted: bool}> $validatorLines
+     * @return array{promotion: ?array, discountAmount: ?Money}
      */
-    private function serializePromotion(Cart $cart, Money $cartSubtotal, array $validatorLines): ?array
+    private function resolvePromotion(Cart $cart, Money $subtotal, array $validatorLines): array
     {
         $code = $cart->appliedPromotionCode();
 
         if ($code === null) {
-            return null;
+            return ['promotion' => null, 'discountAmount' => null];
         }
 
         $promotion = $this->promotions->findByCode($code);
@@ -395,23 +434,57 @@ class CartController extends Controller
             // The Promotion was deleted after being applied — a real,
             // if rare, edge case. Reported, not thrown.
             return [
-                'code' => $code,
-                'valid' => false,
-                'reason' => 'not_found',
-                'applicable_variation_ids' => [],
+                'promotion' => $this->invalidPromotionResponse($code, 'not_found'),
+                'discountAmount' => null,
             ];
         }
 
         $scopes = $this->promotionScopes->findByPromotionId($promotion->id());
         $accountId = Auth::guard('customer')->check() ? (string) Auth::guard('customer')->id() : null;
 
-        $result = $this->promotionValidator->validate($promotion, $scopes, $cartSubtotal, $accountId, $validatorLines);
+        $result = $this->promotionValidator->validate($promotion, $scopes, $subtotal, $accountId, $validatorLines);
+
+        if (! $result->isValid()) {
+            return [
+                'promotion' => $this->invalidPromotionResponse($code, $result->reason()),
+                'discountAmount' => null,
+            ];
+        }
+
+        $applicableIds = array_flip($result->applicableVariationIds());
+        $applicableLines = array_values(array_filter(
+            $validatorLines,
+            static fn (array $line) => isset($applicableIds[$line['variationId']])
+        ));
+
+        $discountResult = $this->promotionDiscountCalculator->calculate($promotion, $applicableLines);
 
         return [
+            'promotion' => [
+                'code' => $code,
+                'valid' => true,
+                'reason' => null,
+                'applicable_variation_ids' => $result->applicableVariationIds(),
+                'discount_amount' => $this->moneyToArray($discountResult->amount()),
+                'discount_capped' => $discountResult->discountCapped(),
+                'nominal_discount_amount' => $discountResult->nominalAmount() !== null
+                    ? $this->moneyToArray($discountResult->nominalAmount())
+                    : null,
+            ],
+            'discountAmount' => $discountResult->amount(),
+        ];
+    }
+
+    private function invalidPromotionResponse(string $code, ?string $reason): array
+    {
+        return [
             'code' => $code,
-            'valid' => $result->isValid(),
-            'reason' => $result->reason(),
-            'applicable_variation_ids' => $result->applicableVariationIds(),
+            'valid' => false,
+            'reason' => $reason,
+            'applicable_variation_ids' => [],
+            'discount_amount' => null,
+            'discount_capped' => false,
+            'nominal_discount_amount' => null,
         ];
     }
 

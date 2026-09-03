@@ -100,13 +100,28 @@ class CartControllerTest extends TestCase
         string $code,
         ?DateTimeImmutable $validFrom = null,
         ?DateTimeImmutable $validUntil = null,
+        int $percentageBasisPoints = 1000,
+        ?int $usageLimitItems = null,
     ): Promotion {
         $promotion = Promotion::create(
             code: $code,
             discountType: PromotionDiscountType::PERCENTAGE,
-            percentageBasisPoints: 1000,
+            percentageBasisPoints: $percentageBasisPoints,
             validFrom: $validFrom,
             validUntil: $validUntil,
+            usageLimitItems: $usageLimitItems,
+        );
+        app(PromotionRepository::class)->save($promotion);
+
+        return $promotion;
+    }
+
+    private function createFixedAmountPromotion(string $code, string $decimalAmount): Promotion
+    {
+        $promotion = Promotion::create(
+            code: $code,
+            discountType: PromotionDiscountType::FIXED_AMOUNT,
+            discountAmount: Money::fromDecimal($decimalAmount, 'EUR'),
         );
         app(PromotionRepository::class)->save($promotion);
 
@@ -400,11 +415,11 @@ class CartControllerTest extends TestCase
         $this->assertTrue($secondExpiry->greaterThanOrEqualTo($firstExpiry));
     }
 
-    public function test_applying_a_valid_code_returns_200_with_valid_true_and_the_correct_applicable_lines_and_unchanged_total(): void
+    public function test_applying_a_valid_percentage_code_reduces_total_by_the_exact_discount_leaving_subtotal_unchanged(): void
     {
         $variationId = $this->pricedPurchasableVariation('10.00');
         $this->postJson('/api/cart/lines', ['variation_id' => $variationId, 'quantity' => 1])->assertStatus(201);
-        $this->createPromotion('SUMMER20');
+        $this->createPromotion('SUMMER20'); // 10% (1000 basis points)
 
         $response = $this->putJson('/api/cart/promotion', ['code' => 'SUMMER20']);
 
@@ -414,9 +429,65 @@ class CartControllerTest extends TestCase
         $response->assertJsonPath('promotion.reason', null);
         $this->assertSame([$variationId], $response->json('promotion.applicable_variation_ids'));
 
-        // No discount math happens here — the total is exactly what it
-        // was before the code was applied.
-        $this->assertSame(1000, $response->json('total.minor'));
+        // 10% of 1000 minor units = 100 minor units, no rounding needed.
+        $this->assertSame(100, $response->json('promotion.discount_amount.minor'));
+        $this->assertFalse($response->json('promotion.discount_capped'));
+        $this->assertNull($response->json('promotion.nominal_discount_amount'));
+
+        // subtotal is the old pre-discount total, unchanged; total is
+        // subtotal minus the discount.
+        $this->assertSame(1000, $response->json('subtotal.minor'));
+        $this->assertSame(900, $response->json('total.minor'));
+    }
+
+    public function test_a_fixed_amount_code_exceeding_eligible_items_worth_is_capped_and_total_never_goes_negative(): void
+    {
+        $variationId = $this->pricedPurchasableVariation('10.00');
+        $this->postJson('/api/cart/lines', ['variation_id' => $variationId, 'quantity' => 1])->assertStatus(201);
+        $this->createFixedAmountPromotion('BIGDISCOUNT', '20.00');
+
+        $response = $this->putJson('/api/cart/promotion', ['code' => 'BIGDISCOUNT']);
+
+        $response->assertStatus(200);
+        $response->assertJsonPath('promotion.valid', true);
+        $response->assertJsonPath('promotion.discount_capped', true);
+
+        // Nominal face value is 20.00 EUR (2000 minor), but only 10.00
+        // EUR (1000 minor) of eligible items are in the cart — capped
+        // to exactly that, never below zero.
+        $this->assertSame(2000, $response->json('promotion.nominal_discount_amount.minor'));
+        $this->assertSame(1000, $response->json('promotion.discount_amount.minor'));
+
+        $this->assertSame(1000, $response->json('subtotal.minor'));
+        $this->assertSame(0, $response->json('total.minor'));
+    }
+
+    public function test_usage_limit_items_below_the_carts_applicable_quantity_reduces_total_by_only_the_partial_amount(): void
+    {
+        $variationA = $this->pricedPurchasableVariation('5.00', stock: 10);
+        $this->postJson('/api/cart/lines', ['variation_id' => $variationA, 'quantity' => 2])->assertStatus(201);
+        $variationB = $this->pricedPurchasableVariation('3.00', stock: 10);
+        $this->postJson('/api/cart/lines', ['variation_id' => $variationB, 'quantity' => 3])->assertStatus(201);
+
+        // 100% PERCENTAGE keeps this isolated to the usage_limit_items
+        // capping — the discount then equals the capped base exactly,
+        // nothing further to hand-verify on top.
+        $this->createPromotion('LIMITED', percentageBasisPoints: 10000, usageLimitItems: 3);
+
+        $response = $this->putJson('/api/cart/promotion', ['code' => 'LIMITED']);
+
+        $response->assertStatus(200);
+        // subtotal = (2 x 500) + (3 x 300) = 1000 + 900 = 1900.
+        $this->assertSame(1900, $response->json('subtotal.minor'));
+
+        // Walking lines in cart order: variationA (qty 2, lineTotal
+        // 1000) fits entirely within the limit of 3 -> full 1000
+        // contributed, 1 unit of headroom remains. variationB (qty 3,
+        // unitPrice 300) crosses the limit -> only unitPrice x 1 = 300
+        // contributed, not its full 900 lineTotal. Capped base =
+        // 1000 + 300 = 1300; at 100% the discount equals that exactly.
+        $this->assertSame(1300, $response->json('promotion.discount_amount.minor'));
+        $this->assertSame(600, $response->json('total.minor'));
     }
 
     public function test_applying_a_nonexistent_code_returns_422_and_does_not_get_set(): void
