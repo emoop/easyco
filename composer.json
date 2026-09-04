@@ -15,6 +15,7 @@
         "easyco/inventory": "@dev",
         "easyco/media": "@dev",
         "easyco/operational-sales": "@dev",
+        "easyco/payment": "@dev",
         "easyco/pricing": "@dev",
         "easyco/promotions": "@dev",
         "intervention/image": "^4.0",
