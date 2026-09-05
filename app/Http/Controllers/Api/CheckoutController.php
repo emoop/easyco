@@ -1,0 +1,258 @@
+<?php
+
+namespace App\Http\Controllers\Api;
+
+use App\Http\Controllers\Controller;
+use App\Services\CheckoutInput;
+use App\Services\CheckoutOrchestrator;
+use App\Services\Exceptions\AddressNotFoundForCheckoutException;
+use App\Services\Exceptions\CartNotFoundForCheckoutException;
+use App\Services\Exceptions\EmptyCartException;
+use App\Services\Exceptions\PromotionNoLongerValidException;
+use App\Services\Exceptions\UnknownPaymentMethodException;
+use App\Services\PaymentMethodAdapterResolver;
+use DateTimeImmutable;
+use EasyCo\Address\Enums\AddressDeliveryType;
+use EasyCo\Cart\Cart;
+use EasyCo\Cart\Contracts\CartRepository;
+use EasyCo\Inventory\Exceptions\InsufficientStockException;
+use EasyCo\Order\Order;
+use EasyCo\Payment\Payment;
+use EasyCo\Pricing\Exceptions\PriceNotConfiguredException;
+use EasyCo\Pricing\Money;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+
+/**
+ * The Checkout HTTP surface — the final piece over checkout-domain-
+ * design.md, now that CheckoutOrchestrator (domain assembly) is complete.
+ * No new domain logic lives here: validate input, resolve the current
+ * cart exactly the way CartController already does, call place(), map
+ * its documented exceptions onto clean HTTP responses.
+ *
+ * Available to guests AND logged-in customers alike (§8.1) — this route
+ * is deliberately NOT behind auth:customer, mirroring
+ * AddressController::store()'s own "works for either" posture.
+ */
+class CheckoutController extends Controller
+{
+    public function __construct(
+        private readonly CartRepository $carts,
+        private readonly CheckoutOrchestrator $orchestrator,
+        private readonly PaymentMethodAdapterResolver $adapterResolver,
+    ) {
+    }
+
+    /**
+     * IMPORTANT — the replay case: when the orchestrator reports
+     * isAlreadyPlaced() === true, this still returns 201 with the same
+     * order body, never an error. A double-clicked "Pay" button is a
+     * successful, idempotent outcome (checkout-domain-design.md §6),
+     * not a failure — do not "fix" this into a 409 later.
+     */
+    public function store(Request $request): JsonResponse
+    {
+        $validated = $request->validate($this->validationRules());
+
+        $cart = $this->findCurrentCart($request);
+
+        if ($cart === null) {
+            return response()->json(['message' => 'No cart to check out.'], 404);
+        }
+
+        // Validated BEFORE Phase 1 runs at all, deliberately duplicating
+        // the orchestrator's own UnknownPaymentMethodException throw
+        // site rather than relying on it: Phase 2 (the actual charge)
+        // runs AFTER Phase 1 has committed, so an unknown method
+        // discovered only inside place() would leave a real Order with
+        // no Payment and a claimed cart — and a retry hits the
+        // idempotent-replay fast path (payment: null), never
+        // re-attempting the charge. The result would be an order the
+        // customer can never pay for. Failing here, before place() is
+        // ever called, makes the whole request a clean no-op the
+        // customer can simply retry with a valid method. The
+        // orchestrator's own throw stays exactly as it is — it remains
+        // correct for any non-HTTP caller — and this is a guard in
+        // front of it, not a replacement.
+        try {
+            $this->adapterResolver->resolve($validated['payment_method']);
+        } catch (UnknownPaymentMethodException $e) {
+            return response()->json([
+                'message' => $e->getMessage(),
+                'reason' => 'unknown_payment_method',
+            ], 422);
+        }
+
+        $accountId = Auth::guard('customer')->check() ? (string) Auth::guard('customer')->id() : null;
+
+        $input = new CheckoutInput(
+            cartId: $cart->id(),
+            email: $validated['email'],
+            recipientName: $validated['recipient_name'],
+            phone: $validated['phone'],
+            paymentMethod: $validated['payment_method'],
+            accountId: $accountId,
+            addressId: $validated['address_id'] ?? null,
+            deliveryType: isset($validated['delivery_type']) ? AddressDeliveryType::from($validated['delivery_type']) : null,
+            country: $validated['country'] ?? null,
+            city: $validated['city'] ?? null,
+            postalCode: $validated['postal_code'] ?? null,
+            addressLine1: $validated['address_line_1'] ?? null,
+            addressLine2: $validated['address_line_2'] ?? null,
+            carrierCode: $validated['carrier_code'] ?? null,
+            pickupPointReference: $validated['pickup_point_reference'] ?? null,
+            settlement: $validated['settlement'] ?? null,
+        );
+
+        // Each caught explicitly — never a broad \Throwable/\RuntimeException
+        // catch, which would also swallow a genuine bug. InvalidArgumentException
+        // is deliberately NOT caught here: the orchestrator only throws it for
+        // caller-contract violations the validation rules below already
+        // prevent (e.g. address_id with no account), so it surfacing as a 500
+        // would mean a real bug in this controller, not bad user input.
+        try {
+            $result = $this->orchestrator->place($input, new DateTimeImmutable());
+        } catch (EmptyCartException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        } catch (PromotionNoLongerValidException $e) {
+            return response()->json([
+                'message' => $e->getMessage(),
+                'reason' => 'promotion_no_longer_valid',
+            ], 422);
+        } catch (InsufficientStockException $e) {
+            // 409, not 422 — the request was well-formed, the world
+            // changed underneath it.
+            return response()->json([
+                'message' => $e->getMessage(),
+                'reason' => 'insufficient_stock',
+            ], 409);
+        } catch (PriceNotConfiguredException $e) {
+            return response()->json([
+                'message' => $e->getMessage(),
+                'reason' => 'price_not_available',
+            ], 409);
+        } catch (AddressNotFoundForCheckoutException $e) {
+            // 404, not 403 — the posture that exception's own docblock
+            // documents; never "improved" to reveal existence.
+            return response()->json(['message' => $e->getMessage()], 404);
+        } catch (UnknownPaymentMethodException $e) {
+            // Unreachable via this controller now that the pre-check
+            // above rejects an unknown method before place() is ever
+            // called — kept, not deleted, as a genuine belt-and-braces:
+            // a resolver binding could in principle change between the
+            // pre-check and this call.
+            return response()->json([
+                'message' => $e->getMessage(),
+                'reason' => 'unknown_payment_method',
+            ], 422);
+        } catch (CartNotFoundForCheckoutException $e) {
+            // Belt-and-braces — findCurrentCart()'s own 404 above should
+            // already have caught this.
+            return response()->json(['message' => $e->getMessage()], 404);
+        }
+
+        return response()->json([
+            'order' => $this->orderToArray($result->order()),
+            'payment' => $result->payment() !== null ? $this->paymentToArray($result->payment()) : null,
+            'already_placed' => $result->isAlreadyPlaced(),
+        ], 201);
+    }
+
+    /**
+     * Same Auth::guard('customer') vs. session cart_token identification
+     * CartController::findCurrentCart() already uses — read-only, never
+     * creates a cart or a session token (a guest's cart token is only
+     * ever generated on a cart WRITE, per cart-domain-design.md §10).
+     * Never a client-supplied token.
+     */
+    private function findCurrentCart(Request $request): ?Cart
+    {
+        if (Auth::guard('customer')->check()) {
+            return $this->carts->findByAccountId((string) Auth::guard('customer')->id());
+        }
+
+        $token = $request->session()->get('cart_token');
+
+        return $token !== null ? $this->carts->findBySessionToken($token) : null;
+    }
+
+    /**
+     * The address fields are only required when NO address_id is given.
+     *
+     * NOTE ON prohibited_with: verified against this project's actual
+     * installed Laravel version (13.17) — vendor/laravel/framework's
+     * ValidatesAttributes has no validateProhibitedWith() method, so
+     * "prohibited_with" is not a real rule here despite one stray
+     * docblock reference to it elsewhere in the framework. The genuinely
+     * existing inverse-direction rule is `prohibits`: declared on
+     * address_id itself, it fails validation if address_id is present
+     * together with any of the listed delivery/address fields —
+     * achieving exactly the "address_id excludes the new-address fields"
+     * requirement with a rule that actually exists.
+     *
+     * Otherwise mirrors AddressController::validationRules()'s exact
+     * required_if/prohibited_if delivery-type conditional shape.
+     *
+     * @return array<string, string>
+     */
+    private function validationRules(): array
+    {
+        return [
+            'email' => 'required|email',
+            'recipient_name' => 'required|string',
+            'phone' => 'required|string',
+            'payment_method' => 'required|string',
+            'address_id' => 'nullable|string|prohibits:delivery_type,country,city,postal_code,address_line_1,address_line_2,carrier_code,pickup_point_reference,settlement',
+            'delivery_type' => 'required_without:address_id|in:street_address,pickup_point',
+            'country' => 'required_if:delivery_type,street_address|prohibited_if:delivery_type,pickup_point|string',
+            'city' => 'required_if:delivery_type,street_address|prohibited_if:delivery_type,pickup_point|string',
+            'address_line_1' => 'required_if:delivery_type,street_address|prohibited_if:delivery_type,pickup_point|string',
+            'postal_code' => 'nullable|prohibited_if:delivery_type,pickup_point|string',
+            'address_line_2' => 'nullable|prohibited_if:delivery_type,pickup_point|string',
+            'carrier_code' => 'required_if:delivery_type,pickup_point|prohibited_if:delivery_type,street_address|string',
+            'pickup_point_reference' => 'required_if:delivery_type,pickup_point|prohibited_if:delivery_type,street_address|string',
+            'settlement' => 'required_if:delivery_type,pickup_point|prohibited_if:delivery_type,street_address|string',
+        ];
+    }
+
+    private function orderToArray(Order $order): array
+    {
+        return [
+            'id' => $order->id(),
+            'email' => $order->email(),
+            'subtotal' => $this->moneyToArray($order->subtotal()),
+            'total' => $this->moneyToArray($order->total()),
+            'discount_amount' => $this->moneyToArray($order->discount()),
+            'status' => $order->status()->value,
+            'applied_promotion_code' => $order->appliedPromotionCode(),
+            'delivery_type' => $order->deliveryType()->value,
+            'recipient_name' => $order->recipientName(),
+            'phone' => $order->phone(),
+            'country' => $order->country(),
+            'city' => $order->city(),
+            'postal_code' => $order->postalCode(),
+            'address_line_1' => $order->addressLine1(),
+            'address_line_2' => $order->addressLine2(),
+            'carrier_code' => $order->carrierCode(),
+            'pickup_point_reference' => $order->pickupPointReference(),
+            'settlement' => $order->settlement(),
+        ];
+    }
+
+    private function paymentToArray(Payment $payment): array
+    {
+        return [
+            'id' => $payment->id(),
+            'method' => $payment->method(),
+            'status' => $payment->status()->value,
+            'amount' => $this->moneyToArray($payment->amount()),
+        ];
+    }
+
+    /** Same {minor, currency} shape CartController::moneyToArray() already produces. */
+    private function moneyToArray(Money $money): array
+    {
+        return ['minor' => $money->minorValue(), 'currency' => $money->currency()->code()];
+    }
+}

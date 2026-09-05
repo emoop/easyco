@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\AttributeValueController;
 use App\Http\Controllers\Api\BrandController;
 use App\Http\Controllers\Api\CartController;
 use App\Http\Controllers\Api\CategoryController;
+use App\Http\Controllers\Api\CheckoutController;
 use App\Http\Controllers\Api\MediaController;
 use App\Http\Controllers\Api\ProductCategoryController;
 use App\Http\Controllers\Api\ProductController;
@@ -64,6 +65,10 @@ Route::patch('/cart/lines/{variationId}', [CartController::class, 'update']);
 Route::delete('/cart/lines/{variationId}', [CartController::class, 'destroy']);
 Route::put('/cart/promotion', [CartController::class, 'applyPromotion']);
 Route::delete('/cart/promotion', [CartController::class, 'removePromotion']);
+
+// Checkout is available to guests AND logged-in customers, so it must
+// NOT go inside the auth:customer group above.
+Route::post('/checkout', [CheckoutController::class, 'store']);
 
 Route::post('/media', [MediaController::class, 'store']);
 
