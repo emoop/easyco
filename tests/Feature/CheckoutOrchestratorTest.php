@@ -7,6 +7,7 @@ use App\Services\CheckoutOrchestrator;
 use App\Services\Exceptions\CartNotFoundForCheckoutException;
 use App\Services\Exceptions\EmptyCartException;
 use App\Services\Exceptions\PromotionNoLongerValidException;
+use App\Services\Exceptions\UnknownPaymentMethodException;
 use DateTimeImmutable;
 use EasyCo\Account\Account;
 use EasyCo\Account\Contracts\AccountRepository;
@@ -19,6 +20,7 @@ use EasyCo\Cart\CartLineAdder;
 use EasyCo\Cart\Contracts\CartRepository;
 use EasyCo\Catalog\Contracts\ProductRepository;
 use EasyCo\Catalog\Product;
+use EasyCo\Extensibility\Hook;
 use EasyCo\Inventory\Contracts\StockLevelRepository;
 use EasyCo\Inventory\Exceptions\InsufficientStockException;
 use EasyCo\Inventory\StockLevel;
@@ -34,6 +36,8 @@ use EasyCo\Order\Contracts\OrderRepository;
 use EasyCo\Order\Enums\OrderDeliveryType;
 use EasyCo\Order\Order;
 use EasyCo\Order\Persistence\Eloquent\OrderModel;
+use EasyCo\Payment\Contracts\PaymentRepository;
+use EasyCo\Payment\Enums\PaymentStatus;
 use EasyCo\Pricing\Contracts\PriceListItemRepository;
 use EasyCo\Pricing\Contracts\PriceListRepository;
 use EasyCo\Pricing\Enums\PriceListItemTargetType;
@@ -221,6 +225,7 @@ class CheckoutOrchestratorTest extends TestCase
             email: $overrides['email'] ?? 'guest@example.com',
             recipientName: $overrides['recipientName'] ?? 'Guest Buyer',
             phone: $overrides['phone'] ?? '+359888000000',
+            paymentMethod: $overrides['paymentMethod'] ?? 'cash_on_delivery',
             accountId: null,
             addressId: null,
             deliveryType: AddressDeliveryType::STREET_ADDRESS,
@@ -291,6 +296,7 @@ class CheckoutOrchestratorTest extends TestCase
             email: $accountModel->email,
             recipientName: 'Ivan Ivanov',
             phone: '+359888111222',
+            paymentMethod: 'cash_on_delivery',
             accountId: $accountId,
             addressId: $savedAddress->id(),
         );
@@ -431,5 +437,114 @@ class CheckoutOrchestratorTest extends TestCase
         $this->expectException(CartNotFoundForCheckoutException::class);
 
         app(CheckoutOrchestrator::class)->place($this->guestCheckoutInput('999999'), new DateTimeImmutable());
+    }
+
+    public function test_cash_on_delivery_produces_a_real_pending_payment_for_the_order_total_not_subtotal(): void
+    {
+        $variationId = $this->pricedPurchasableVariation('10.00', 10);
+        $cart = $this->guestCart();
+        $this->addLine($cart, $variationId, 1);
+        $this->createPromotion('TENOFF', percentageBasisPoints: 1000);
+        $this->applyPromotion($cart, 'TENOFF');
+
+        $input = $this->guestCheckoutInput($cart->id(), ['paymentMethod' => 'cash_on_delivery']);
+        $result = app(CheckoutOrchestrator::class)->place($input, new DateTimeImmutable('2026-09-05 12:00:00'));
+        $order = $result->order();
+
+        // Subtotal 1000, discount 100, total 900 — the assertion below
+        // only proves something because subtotal and total genuinely
+        // differ here.
+        $this->assertSame(1000, $order->subtotal()->minorValue());
+        $this->assertSame(900, $order->total()->minorValue());
+
+        $payment = $result->payment();
+        $this->assertNotNull($payment);
+        $this->assertSame($order->id(), $payment->orderId());
+        $this->assertSame('cash_on_delivery', $payment->method());
+        $this->assertSame(900, $payment->amount()->minorValue());
+        $this->assertSame(PaymentStatus::PENDING, $payment->status());
+
+        $this->assertCount(1, app(PaymentRepository::class)->findByOrderId($order->id()));
+    }
+
+    public function test_bank_transfer_produces_a_real_pending_payment_for_the_order_total_not_subtotal(): void
+    {
+        $variationId = $this->pricedPurchasableVariation('10.00', 10);
+        $cart = $this->guestCart();
+        $this->addLine($cart, $variationId, 1);
+        $this->createPromotion('TENOFF', percentageBasisPoints: 1000);
+        $this->applyPromotion($cart, 'TENOFF');
+
+        $input = $this->guestCheckoutInput($cart->id(), ['paymentMethod' => 'bank_transfer']);
+        $result = app(CheckoutOrchestrator::class)->place($input, new DateTimeImmutable('2026-09-05 12:00:00'));
+        $order = $result->order();
+
+        $this->assertSame(1000, $order->subtotal()->minorValue());
+        $this->assertSame(900, $order->total()->minorValue());
+
+        $payment = $result->payment();
+        $this->assertNotNull($payment);
+        $this->assertSame($order->id(), $payment->orderId());
+        $this->assertSame('bank_transfer', $payment->method());
+        $this->assertSame(900, $payment->amount()->minorValue());
+        $this->assertSame(PaymentStatus::PENDING, $payment->status());
+    }
+
+    public function test_double_submit_never_produces_a_second_charge(): void
+    {
+        $variationId = $this->pricedPurchasableVariation('10.00', 10);
+        $cart = $this->guestCart();
+        $this->addLine($cart, $variationId, 3);
+
+        $input = $this->guestCheckoutInput($cart->id());
+        $placedAt = new DateTimeImmutable('2026-09-05 12:00:00');
+
+        $first = app(CheckoutOrchestrator::class)->place($input, $placedAt);
+        $second = app(CheckoutOrchestrator::class)->place($input, $placedAt);
+
+        $this->assertNotNull($first->payment());
+        $this->assertTrue($second->isAlreadyPlaced());
+        $this->assertNull($second->payment());
+        $this->assertCount(1, app(PaymentRepository::class)->findByOrderId($first->order()->id()));
+    }
+
+    public function test_an_unknown_payment_method_throws_but_phase_ones_committed_order_and_stock_decrement_survive(): void
+    {
+        $variationId = $this->pricedPurchasableVariation('10.00', 10);
+        $cart = $this->guestCart();
+        $this->addLine($cart, $variationId, 2);
+
+        $input = $this->guestCheckoutInput($cart->id(), ['paymentMethod' => 'bitcoin']);
+
+        try {
+            app(CheckoutOrchestrator::class)->place($input, new DateTimeImmutable('2026-09-05 12:00:00'));
+            $this->fail('Expected UnknownPaymentMethodException.');
+        } catch (UnknownPaymentMethodException) {
+            // expected
+        }
+
+        // Phase 2 runs AFTER Phase 1's transaction has already committed
+        // — this is the documented Phase-1/Phase-2 boundary, not a bug:
+        // the Order and stock decrement survive a Phase 2 failure.
+        $this->assertSame(1, OrderModel::count());
+        $this->assertSame(8, app(StockLevelRepository::class)->findByVariationId($variationId)->quantity());
+        $this->assertNotNull(app(CartRepository::class)->findOrderIdForCart($cart->id()));
+    }
+
+    public function test_order_placed_hook_fires_with_the_placed_order(): void
+    {
+        $variationId = $this->pricedPurchasableVariation('10.00', 10);
+        $cart = $this->guestCart();
+        $this->addLine($cart, $variationId, 1);
+
+        $received = null;
+        Hook::action('order.placed', function ($order) use (&$received): void {
+            $received = $order;
+        });
+
+        $result = app(CheckoutOrchestrator::class)->place($this->guestCheckoutInput($cart->id()), new DateTimeImmutable('2026-09-05 12:00:00'));
+
+        $this->assertNotNull($received);
+        $this->assertSame($result->order()->id(), $received->id());
     }
 }

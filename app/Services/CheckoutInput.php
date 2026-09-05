@@ -16,6 +16,10 @@ use EasyCo\Address\Enums\AddressDeliveryType;
  * $addressId NULL means a fresh address is being typed (guest always,
  * or a logged-in customer not using a saved one); $deliveryType and the
  * matching address fields are then required.
+ *
+ * $paymentMethod matches the Payment domain's own `method` string
+ * ('cash_on_delivery' / 'bank_transfer' in V1) — validating that it's one
+ * the merchant actually offers belongs to the future HTTP layer, not here.
  */
 final class CheckoutInput
 {
@@ -24,6 +28,7 @@ final class CheckoutInput
         public readonly string $email,
         public readonly string $recipientName,
         public readonly string $phone,
+        public readonly string $paymentMethod,
         public readonly ?string $accountId = null,
         public readonly ?string $addressId = null,
         public readonly ?AddressDeliveryType $deliveryType = null,

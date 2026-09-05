@@ -10,6 +10,7 @@ use DateTimeImmutable;
 use EasyCo\Address\Address;
 use EasyCo\Cart\Cart;
 use EasyCo\Cart\Contracts\CartRepository;
+use EasyCo\Extensibility\Hook;
 use EasyCo\Inventory\Contracts\StockLevelRepository;
 use EasyCo\Order\Contracts\OrderRepository;
 use EasyCo\Order\Enums\OrderDeliveryType;
@@ -20,6 +21,9 @@ use EasyCo\OperationalSales\Enums\SaleLineType;
 use EasyCo\OperationalSales\Contracts\TransactionRepository;
 use EasyCo\OperationalSales\SaleLine;
 use EasyCo\OperationalSales\Transaction;
+use EasyCo\Payment\Contracts\PaymentRepository;
+use EasyCo\Payment\Payment;
+use EasyCo\Payment\PaymentContext;
 use EasyCo\Pricing\DefaultCurrency;
 use EasyCo\Pricing\Money;
 use EasyCo\Promotions\Contracts\PromotionRedemptionRepository;
@@ -31,16 +35,28 @@ use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
 /**
- * The single transactional order-placement flow — checkout-domain-
- * design.md §8.3 Phase 1 (steps 1-12) ONLY. Payment adapter invocation
- * and Hook::fire('order.placed') are §8.3 Phase 2, deliberately OUTSIDE
- * this class — a future, separate caller's job, not built here.
+ * The full order-placement flow — checkout-domain-design.md §8.3, both
+ * phases:
+ * - Phase 1 (steps 1-12): the single DB transaction — load cart, price
+ *   lines, revalidate the promotion, resolve Address/Client, decrease
+ *   stock, write Transaction/SaleLines/Order, claim the cart, redeem the
+ *   promotion.
+ * - Phase 2 (steps 13-14), OUTSIDE that transaction — charge via the
+ *   resolved PaymentMethodAdapter, persist the Payment, then
+ *   Hook::fire('order.placed'). Per checkout-orchestration-performance-
+ *   note.md §2 (external calls need explicit handling, never block
+ *   inside a held DB transaction) and checkout-domain-design.md §8.3's
+ *   own restatement of it: a DB transaction is never held open across a
+ *   call to an external system, even though V1's two adapters are
+ *   synchronous and offline — this shape must already be correct for the
+ *   day a real provider adapter replaces them.
  *
  * Every building block this assembles already exists and is tested in
  * isolation: CheckoutLinePricer (pricing/profit), ClientResolver,
  * AddressResolver, PromotionValidator/PromotionDiscountCalculator/
- * PromotionUsageContext. This class's own job is purely the assembly
- * order and the transaction boundary, per §8.3's numbered steps.
+ * PromotionUsageContext, PaymentMethodAdapterResolver. This class's own
+ * job is purely the assembly order and the two-phase boundary, per
+ * §8.3's numbered steps.
  */
 final class CheckoutOrchestrator
 {
@@ -57,6 +73,8 @@ final class CheckoutOrchestrator
         private readonly AddressResolver $addressResolver,
         private readonly StockLevelRepository $stockLevels,
         private readonly TransactionRepository $transactions,
+        private readonly PaymentRepository $payments,
+        private readonly PaymentMethodAdapterResolver $adapterResolver,
     ) {
     }
 
@@ -68,6 +86,7 @@ final class CheckoutOrchestrator
      * @throws CartNotFoundForCheckoutException
      * @throws EmptyCartException
      * @throws PromotionNoLongerValidException
+     * @throws \App\Services\Exceptions\UnknownPaymentMethodException Propagates uncaught from Phase 2 — the Order/stock/Transaction from Phase 1 have already committed by this point (see this method's own inline note).
      * @throws \EasyCo\Pricing\Exceptions\PriceNotConfiguredException Propagates uncaught — aborts the transaction (§8.3 step 3).
      * @throws \EasyCo\Inventory\Exceptions\InsufficientStockException Propagates uncaught — aborts the transaction (§8.3 step 7).
      * @throws \App\Services\Exceptions\AddressNotFoundForCheckoutException Propagates uncaught from AddressResolver::resolveExisting().
@@ -84,7 +103,7 @@ final class CheckoutOrchestrator
         }
 
         try {
-            return DB::transaction(fn () => $this->placeWithinTransaction($input, $placedAt));
+            $result = DB::transaction(fn () => $this->placeWithinTransaction($input, $placedAt));
         } catch (CartClaimLostException) {
             // A concurrent request claimed this cart between the fast
             // path above and this attempt's own claim (step 10) —
@@ -93,6 +112,51 @@ final class CheckoutOrchestrator
 
             return CheckoutResult::alreadyPlaced($this->orders->findById($orderId));
         }
+
+        if ($result->isAlreadyPlaced()) {
+            // NEVER re-charge on a replay — this is the whole point of
+            // §6's idempotency. A double-clicked "Pay" button must not
+            // produce a second charge attempt against the same order.
+            return $result;
+        }
+
+        $order = $result->order();
+
+        // Step 13 — outside the transaction, per checkout-orchestration-
+        // performance-note.md §2: never hold a DB transaction open
+        // across a call to an external system, even though V1's two
+        // adapters are deterministic and offline. This shape must
+        // already be correct for the day a real provider adapter
+        // replaces them.
+        //
+        // A FAILED PaymentAttemptResult is still persisted as a real
+        // Payment row with FAILED status — the Order stands, stock stays
+        // decremented, nothing is compensated. §8.3 step 13 already
+        // flags compensation for a real online provider's synchronous
+        // failure as deliberately out of scope; both V1 adapters always
+        // return PENDING, so this branch is unreachable today but
+        // correct when it isn't.
+        $adapter = $this->adapterResolver->resolve($input->paymentMethod);
+        $attempt = $adapter->charge($order->total(), new PaymentContext($order->id()));
+        $payment = Payment::create(
+            orderId: $order->id(),
+            method: $input->paymentMethod,
+            amount: $order->total(),
+            status: $attempt->status(),
+            providerReference: $attempt->providerReference(),
+            failureReason: $attempt->failureReason(),
+        );
+        $this->payments->save($payment);
+
+        // Step 14 — the extension point extensibility-design-and-
+        // hooks.md §1 already names. Fires regardless of payment outcome
+        // — the event is 'order.placed', not 'order.paid': the order
+        // genuinely was placed. A future listener that cares about money
+        // should read the Payment, not assume this hook implies payment
+        // succeeded.
+        Hook::fire('order.placed', $order);
+
+        return CheckoutResult::placed($order, $payment);
     }
 
     private function placeWithinTransaction(CheckoutInput $input, DateTimeImmutable $placedAt): CheckoutResult
