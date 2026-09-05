@@ -1,0 +1,39 @@
+<?php
+
+namespace App\Services;
+
+/**
+ * Cross-domain usage facts PromotionValidator needs but never queries
+ * itself — assembled by the caller (CartController today,
+ * CheckoutOrchestrator later) from EasyCo\Order\Contracts\
+ * OrderRepository::hasAnyForAccount() and EasyCo\Promotions\Contracts\
+ * PromotionRedemptionRepository's count methods. PromotionValidator
+ * itself never queries anything, per its own documented posture.
+ */
+final class PromotionUsageContext
+{
+    public function __construct(
+        private readonly bool $customerHasPreviousOrders,
+        private readonly int $redemptionsTotal,
+        private readonly int $redemptionsForAccount,
+    ) {
+    }
+
+    /** false for a guest, always. */
+    public function customerHasPreviousOrders(): bool
+    {
+        return $this->customerHasPreviousOrders;
+    }
+
+    /** Existing redemptions of this Promotion, across all customers. */
+    public function redemptionsTotal(): int
+    {
+        return $this->redemptionsTotal;
+    }
+
+    /** Existing redemptions by THIS account; always 0 for a guest. */
+    public function redemptionsForAccount(): int
+    {
+        return $this->redemptionsForAccount;
+    }
+}

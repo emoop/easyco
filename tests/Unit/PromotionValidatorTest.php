@@ -2,6 +2,7 @@
 
 namespace Tests\Unit;
 
+use App\Services\PromotionUsageContext;
 use App\Services\PromotionValidator;
 use DateTimeImmutable;
 use EasyCo\Pricing\Money;
@@ -19,6 +20,15 @@ final class PromotionValidatorTest extends TestCase
         return new PromotionValidator();
     }
 
+    /** Neutral: no previous orders, zero redemptions anywhere — existing cases keep testing what they tested. */
+    private function usage(
+        bool $customerHasPreviousOrders = false,
+        int $redemptionsTotal = 0,
+        int $redemptionsForAccount = 0,
+    ): PromotionUsageContext {
+        return new PromotionUsageContext($customerHasPreviousOrders, $redemptionsTotal, $redemptionsForAccount);
+    }
+
     private function promotion(
         bool $active = true,
         ?DateTimeImmutable $validFrom = null,
@@ -27,6 +37,8 @@ final class PromotionValidatorTest extends TestCase
         ?Money $maximumSpend = null,
         bool $newCustomersOnly = false,
         bool $excludeSaleItems = false,
+        ?int $usageLimitTotal = null,
+        ?int $usageLimitPerCustomer = null,
     ): Promotion {
         $promotion = Promotion::create(
             code: 'test-'.uniqid(),
@@ -36,6 +48,8 @@ final class PromotionValidatorTest extends TestCase
             minimumSpend: $minimumSpend,
             maximumSpend: $maximumSpend,
             newCustomersOnly: $newCustomersOnly,
+            usageLimitTotal: $usageLimitTotal,
+            usageLimitPerCustomer: $usageLimitPerCustomer,
             validFrom: $validFrom,
             validUntil: $validUntil,
         );
@@ -84,6 +98,7 @@ final class PromotionValidatorTest extends TestCase
             $this->subtotal(),
             null,
             [$this->line('v1')],
+            $this->usage(),
         );
 
         $this->assertFalse($result->isValid());
@@ -98,6 +113,7 @@ final class PromotionValidatorTest extends TestCase
             $this->subtotal(),
             null,
             [$this->line('v1')],
+            $this->usage(),
         );
 
         $this->assertFalse($result->isValid());
@@ -112,6 +128,7 @@ final class PromotionValidatorTest extends TestCase
             $this->subtotal(),
             null,
             [$this->line('v1')],
+            $this->usage(),
         );
 
         $this->assertFalse($result->isValid());
@@ -128,6 +145,7 @@ final class PromotionValidatorTest extends TestCase
             $this->subtotal('49.99'),
             null,
             [$this->line('v1')],
+            $this->usage(),
         );
 
         $this->assertFalse($result->isValid());
@@ -142,6 +160,7 @@ final class PromotionValidatorTest extends TestCase
             $this->subtotal('50.00'),
             null,
             [$this->line('v1')],
+            $this->usage(),
         );
 
         $this->assertTrue($result->isValid());
@@ -155,6 +174,7 @@ final class PromotionValidatorTest extends TestCase
             $this->subtotal('100.01'),
             null,
             [$this->line('v1')],
+            $this->usage(),
         );
 
         $this->assertFalse($result->isValid());
@@ -169,6 +189,7 @@ final class PromotionValidatorTest extends TestCase
             $this->subtotal('100.00'),
             null,
             [$this->line('v1')],
+            $this->usage(),
         );
 
         $this->assertTrue($result->isValid());
@@ -184,13 +205,14 @@ final class PromotionValidatorTest extends TestCase
             $this->subtotal(),
             null,
             [$this->line('v1')],
+            $this->usage(),
         );
 
         $this->assertFalse($result->isValid());
         $this->assertSame('new_customers_only', $result->reason());
     }
 
-    public function test_new_customers_only_with_a_real_account_id_passes_this_check(): void
+    public function test_new_customers_only_with_a_real_account_id_and_no_previous_orders_passes_this_check(): void
     {
         $result = $this->validator()->validate(
             $this->promotion(newCustomersOnly: true),
@@ -198,9 +220,26 @@ final class PromotionValidatorTest extends TestCase
             $this->subtotal(),
             'account-1',
             [$this->line('v1')],
+            $this->usage(customerHasPreviousOrders: false),
         );
 
         $this->assertTrue($result->isValid());
+    }
+
+    /** The real gap this task closes: a logged-in account with fifty previous orders is not "new." */
+    public function test_new_customers_only_with_an_account_that_has_previous_orders_is_invalid(): void
+    {
+        $result = $this->validator()->validate(
+            $this->promotion(newCustomersOnly: true),
+            [],
+            $this->subtotal(),
+            'account-1',
+            [$this->line('v1')],
+            $this->usage(customerHasPreviousOrders: true),
+        );
+
+        $this->assertFalse($result->isValid());
+        $this->assertSame('new_customers_only', $result->reason());
     }
 
     // --- ACCOUNT scope: cart-level gate -----------------------------------
@@ -213,6 +252,7 @@ final class PromotionValidatorTest extends TestCase
             $this->subtotal(),
             'account-1',
             [$this->line('v1')],
+            $this->usage(),
         );
 
         $this->assertTrue($result->isValid());
@@ -226,6 +266,7 @@ final class PromotionValidatorTest extends TestCase
             $this->subtotal(),
             'account-2',
             [$this->line('v1')],
+            $this->usage(),
         );
 
         $this->assertFalse($result->isValid());
@@ -240,6 +281,7 @@ final class PromotionValidatorTest extends TestCase
             $this->subtotal(),
             null,
             [$this->line('v1')],
+            $this->usage(),
         );
 
         $this->assertFalse($result->isValid());
@@ -254,6 +296,7 @@ final class PromotionValidatorTest extends TestCase
             $this->subtotal(),
             'account-1',
             [$this->line('v1')],
+            $this->usage(),
         );
 
         $this->assertFalse($result->isValid());
@@ -268,6 +311,84 @@ final class PromotionValidatorTest extends TestCase
             $this->subtotal(),
             'account-2',
             [$this->line('v1')],
+            $this->usage(),
+        );
+
+        $this->assertTrue($result->isValid());
+    }
+
+    // --- usage limits (soft, non-locking) -----------------------------------
+
+    public function test_usage_limit_total_reached_is_invalid(): void
+    {
+        $result = $this->validator()->validate(
+            $this->promotion(usageLimitTotal: 5),
+            [],
+            $this->subtotal(),
+            null,
+            [$this->line('v1')],
+            $this->usage(redemptionsTotal: 5),
+        );
+
+        $this->assertFalse($result->isValid());
+        $this->assertSame('usage_limit_reached', $result->reason());
+    }
+
+    public function test_usage_limit_total_not_yet_reached_passes(): void
+    {
+        $result = $this->validator()->validate(
+            $this->promotion(usageLimitTotal: 5),
+            [],
+            $this->subtotal(),
+            null,
+            [$this->line('v1')],
+            $this->usage(redemptionsTotal: 4),
+        );
+
+        $this->assertTrue($result->isValid());
+    }
+
+    public function test_usage_limit_per_customer_reached_for_that_account_is_invalid(): void
+    {
+        $result = $this->validator()->validate(
+            $this->promotion(usageLimitPerCustomer: 1),
+            [],
+            $this->subtotal(),
+            'account-1',
+            [$this->line('v1')],
+            $this->usage(redemptionsForAccount: 1),
+        );
+
+        $this->assertFalse($result->isValid());
+        $this->assertSame('usage_limit_per_customer_reached', $result->reason());
+    }
+
+    public function test_usage_limit_per_customer_reached_for_a_different_account_still_passes(): void
+    {
+        // account-1 has already redeemed once (would be rejected), but
+        // this validate() call is for account-2 with zero redemptions.
+        $result = $this->validator()->validate(
+            $this->promotion(usageLimitPerCustomer: 1),
+            [],
+            $this->subtotal(),
+            'account-2',
+            [$this->line('v1')],
+            $this->usage(redemptionsForAccount: 0),
+        );
+
+        $this->assertTrue($result->isValid());
+    }
+
+    /** No reliable per-guest identity to count against — same reasoning new_customers_only already uses for guests. */
+    public function test_a_guest_is_never_rejected_by_the_per_customer_limit_even_with_a_nonzero_count(): void
+    {
+        $result = $this->validator()->validate(
+            $this->promotion(usageLimitPerCustomer: 1),
+            [],
+            $this->subtotal(),
+            null,
+            [$this->line('v1')],
+            $this->usage(redemptionsForAccount: 5),
         );
 
         $this->assertTrue($result->isValid());
@@ -283,6 +404,7 @@ final class PromotionValidatorTest extends TestCase
             $this->subtotal(),
             null,
             [$this->line('v1'), $this->line('v2')],
+            $this->usage(),
         );
 
         $this->assertTrue($result->isValid());
@@ -300,6 +422,7 @@ final class PromotionValidatorTest extends TestCase
                 $this->line('v1', matchingScopeReferenceIds: ['brand' => ['brand-nike']]),
                 $this->line('v2', matchingScopeReferenceIds: ['brand' => ['brand-adidas']]),
             ],
+            $this->usage(),
         );
 
         $this->assertTrue($result->isValid());
@@ -314,6 +437,7 @@ final class PromotionValidatorTest extends TestCase
             $this->subtotal(),
             null,
             [$this->line('v1', matchingScopeReferenceIds: ['brand' => ['brand-adidas']])],
+            $this->usage(),
         );
 
         $this->assertFalse($result->isValid());
@@ -331,6 +455,7 @@ final class PromotionValidatorTest extends TestCase
                 $this->line('v1', matchingScopeReferenceIds: ['category' => ['cat-shoes']]),
                 $this->line('v2', matchingScopeReferenceIds: ['category' => ['cat-bags']]),
             ],
+            $this->usage(),
         );
 
         $this->assertTrue($result->isValid());
@@ -348,6 +473,7 @@ final class PromotionValidatorTest extends TestCase
                 $this->line('v1', productId: 'product-1'),
                 $this->line('v2', productId: 'product-2'),
             ],
+            $this->usage(),
         );
 
         $this->assertTrue($result->isValid());
@@ -362,6 +488,7 @@ final class PromotionValidatorTest extends TestCase
             $this->subtotal(),
             null,
             [$this->line('v1', matchingScopeReferenceIds: ['brand' => ['brand-nike']], isDiscounted: true)],
+            $this->usage(),
         );
 
         $this->assertFalse($result->isValid());
@@ -379,6 +506,7 @@ final class PromotionValidatorTest extends TestCase
                 $this->line('v1', matchingScopeReferenceIds: ['brand' => ['brand-nike']], isDiscounted: true),
                 $this->line('v2', matchingScopeReferenceIds: ['brand' => ['brand-nike']], isDiscounted: false),
             ],
+            $this->usage(),
         );
 
         $this->assertTrue($result->isValid());
@@ -396,6 +524,7 @@ final class PromotionValidatorTest extends TestCase
                 $this->line('v1', matchingScopeReferenceIds: ['tag' => ['tag-summer']]),
                 $this->line('v2', matchingScopeReferenceIds: ['tag' => ['tag-winter']]),
             ],
+            $this->usage(),
         );
 
         $this->assertTrue($result->isValid());
@@ -413,6 +542,7 @@ final class PromotionValidatorTest extends TestCase
                 $this->line('v1', matchingScopeReferenceIds: ['category' => ['cat-shoes']]),
                 $this->line('v2', matchingScopeReferenceIds: ['category' => ['cat-shoes']]),
             ],
+            $this->usage(),
         );
 
         $this->assertFalse($result->isValid());

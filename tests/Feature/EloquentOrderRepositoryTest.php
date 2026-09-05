@@ -315,4 +315,70 @@ class EloquentOrderRepositoryTest extends TestCase
         $this->assertSame(500, $reloaded->subtotal()->minorValue());
         $this->assertSame($clientId, $reloaded->clientId());
     }
+
+    public function test_has_any_for_account_is_true_after_a_real_order(): void
+    {
+        $clientId = $this->clientId();
+        $transactionId = $this->transactionId($clientId);
+        $accountId = $this->accountId();
+
+        $order = Order::create(
+            clientId: $clientId,
+            transactionId: $transactionId,
+            email: 'buyer@example.com',
+            currency: 'EUR',
+            subtotal: Money::fromMinorUnits(500, 'EUR'),
+            discount: Money::fromMinorUnits(0, 'EUR'),
+            deliveryType: OrderDeliveryType::STREET_ADDRESS,
+            recipientName: 'Ivan Ivanov',
+            phone: '+359888123456',
+            placedAt: $this->placedAt(),
+            accountId: $accountId,
+            country: 'BG',
+            city: 'Sofia',
+            addressLine1: 'Vitosha Blvd 1',
+        );
+        $this->repository()->save($order);
+
+        $this->assertTrue($this->repository()->hasAnyForAccount($accountId));
+    }
+
+    public function test_has_any_for_account_is_false_for_an_account_with_no_orders(): void
+    {
+        $accountId = $this->accountId();
+
+        $this->assertFalse($this->repository()->hasAnyForAccount($accountId));
+    }
+
+    /**
+     * A guest order (account_id null) is invisible to this check — a
+     * customer who ordered as a guest and later registered counts as
+     * new, per §8.1's own deliberate no-guest-deduplication decision.
+     */
+    public function test_has_any_for_account_is_false_when_the_only_order_was_placed_as_a_guest(): void
+    {
+        $clientId = $this->clientId();
+        $transactionId = $this->transactionId($clientId);
+        $accountId = $this->accountId();
+
+        $guestOrder = Order::create(
+            clientId: $clientId,
+            transactionId: $transactionId,
+            email: 'guest@example.com',
+            currency: 'EUR',
+            subtotal: Money::fromMinorUnits(500, 'EUR'),
+            discount: Money::fromMinorUnits(0, 'EUR'),
+            deliveryType: OrderDeliveryType::STREET_ADDRESS,
+            recipientName: 'Guest Buyer',
+            phone: '+359888999999',
+            placedAt: $this->placedAt(),
+            accountId: null,
+            country: 'BG',
+            city: 'Sofia',
+            addressLine1: 'Vitosha Blvd 1',
+        );
+        $this->repository()->save($guestOrder);
+
+        $this->assertFalse($this->repository()->hasAnyForAccount($accountId));
+    }
 }

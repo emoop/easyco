@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Services\CatalogScopeResolver;
 use App\Services\PromotionDiscountCalculator;
+use App\Services\PromotionUsageContext;
 use App\Services\PromotionValidator;
 use DateTimeImmutable;
 use EasyCo\Cart\Cart;
@@ -13,11 +14,13 @@ use EasyCo\Cart\Contracts\CartRepository;
 use EasyCo\Cart\Exceptions\InsufficientStockForCartException;
 use EasyCo\Catalog\Contracts\VariationRepository;
 use EasyCo\Inventory\Contracts\StockLevelRepository;
+use EasyCo\Order\Contracts\OrderRepository;
 use EasyCo\Pricing\Contracts\PriceContext;
 use EasyCo\Pricing\Contracts\PriceResolver;
 use EasyCo\Pricing\DefaultCurrency;
 use EasyCo\Pricing\Exceptions\PriceNotConfiguredException;
 use EasyCo\Pricing\Money;
+use EasyCo\Promotions\Contracts\PromotionRedemptionRepository;
 use EasyCo\Promotions\Contracts\PromotionRepository;
 use EasyCo\Promotions\Contracts\PromotionScopeRepository;
 use Illuminate\Http\JsonResponse;
@@ -60,6 +63,8 @@ class CartController extends Controller
         private readonly PromotionScopeRepository $promotionScopes,
         private readonly PromotionValidator $promotionValidator,
         private readonly PromotionDiscountCalculator $promotionDiscountCalculator,
+        private readonly OrderRepository $orders,
+        private readonly PromotionRedemptionRepository $promotionRedemptions,
     ) {
     }
 
@@ -442,7 +447,15 @@ class CartController extends Controller
         $scopes = $this->promotionScopes->findByPromotionId($promotion->id());
         $accountId = Auth::guard('customer')->check() ? (string) Auth::guard('customer')->id() : null;
 
-        $result = $this->promotionValidator->validate($promotion, $scopes, $subtotal, $accountId, $validatorLines);
+        $usage = new PromotionUsageContext(
+            customerHasPreviousOrders: $accountId !== null && $this->orders->hasAnyForAccount($accountId),
+            redemptionsTotal: $this->promotionRedemptions->countForPromotion($promotion->id()),
+            redemptionsForAccount: $accountId !== null
+                ? $this->promotionRedemptions->countForPromotionAndAccount($promotion->id(), $accountId)
+                : 0,
+        );
+
+        $result = $this->promotionValidator->validate($promotion, $scopes, $subtotal, $accountId, $validatorLines, $usage);
 
         if (! $result->isValid()) {
             return [

@@ -14,6 +14,17 @@ use EasyCo\Catalog\Contracts\VariationRepository;
 use EasyCo\Catalog\Product;
 use EasyCo\Inventory\Contracts\StockLevelRepository;
 use EasyCo\Inventory\StockLevel;
+use EasyCo\OperationalSales\Client;
+use EasyCo\OperationalSales\Contracts\ClientRepository;
+use EasyCo\OperationalSales\Contracts\TransactionRepository;
+use EasyCo\OperationalSales\Enums\Channel;
+use EasyCo\OperationalSales\Enums\SaleLineStatus;
+use EasyCo\OperationalSales\Enums\SaleLineType;
+use EasyCo\OperationalSales\SaleLine;
+use EasyCo\OperationalSales\Transaction;
+use EasyCo\Order\Contracts\OrderRepository;
+use EasyCo\Order\Enums\OrderDeliveryType;
+use EasyCo\Order\Order;
 use EasyCo\Pricing\Contracts\PriceListItemRepository;
 use EasyCo\Pricing\Contracts\PriceListRepository;
 use EasyCo\Pricing\Contracts\PriceListScopeRepository;
@@ -25,12 +36,14 @@ use EasyCo\Pricing\Price;
 use EasyCo\Pricing\PriceList;
 use EasyCo\Pricing\PriceListItem;
 use EasyCo\Pricing\PriceListScope;
+use EasyCo\Promotions\Contracts\PromotionRedemptionRepository;
 use EasyCo\Promotions\Contracts\PromotionRepository;
 use EasyCo\Promotions\Contracts\PromotionScopeRepository;
 use EasyCo\Promotions\Enums\PromotionDiscountType;
 use EasyCo\Promotions\Enums\PromotionScopeMode;
 use EasyCo\Promotions\Enums\PromotionScopeType;
 use EasyCo\Promotions\Promotion;
+use EasyCo\Promotions\PromotionRedemption;
 use EasyCo\Promotions\PromotionScope;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -102,6 +115,7 @@ class CartControllerTest extends TestCase
         ?DateTimeImmutable $validUntil = null,
         int $percentageBasisPoints = 1000,
         ?int $usageLimitItems = null,
+        ?int $usageLimitTotal = null,
     ): Promotion {
         $promotion = Promotion::create(
             code: $code,
@@ -110,10 +124,65 @@ class CartControllerTest extends TestCase
             validFrom: $validFrom,
             validUntil: $validUntil,
             usageLimitItems: $usageLimitItems,
+            usageLimitTotal: $usageLimitTotal,
         );
         app(PromotionRepository::class)->save($promotion);
 
         return $promotion;
+    }
+
+    /** Same Client -> Transaction -> Order chain already used in Step 1b's/PromotionRedemption's own Feature tests. */
+    private function createOrder(): Order
+    {
+        $client = new Client(null, 'Ivan Ivanov');
+        app(ClientRepository::class)->save($client);
+
+        $transaction = new Transaction(null, Channel::WEB);
+        $transaction->addSaleLine(new SaleLine(
+            id: null,
+            transactionId: '',
+            clientId: $client->id(),
+            priceableId: 'variation-1',
+            type: SaleLineType::SALE,
+            status: SaleLineStatus::COMPLETED,
+            quantity: 1,
+            amount: Money::fromMinorUnits(1000, 'EUR'),
+            profit: Money::fromMinorUnits(200, 'EUR'),
+            recordedAt: new DateTimeImmutable('2026-01-01'),
+            effectiveAt: new DateTimeImmutable('2026-01-01'),
+        ));
+        app(TransactionRepository::class)->save($transaction);
+
+        $order = Order::create(
+            clientId: $client->id(),
+            transactionId: $transaction->id(),
+            email: 'buyer@example.com',
+            currency: 'EUR',
+            subtotal: Money::fromMinorUnits(1000, 'EUR'),
+            discount: Money::fromMinorUnits(0, 'EUR'),
+            deliveryType: OrderDeliveryType::STREET_ADDRESS,
+            recipientName: 'Ivan Ivanov',
+            phone: '+359888123456',
+            placedAt: new DateTimeImmutable('2026-01-01'),
+            country: 'BG',
+            city: 'Sofia',
+            addressLine1: 'Vitosha Blvd 1',
+        );
+        app(OrderRepository::class)->save($order);
+
+        return $order;
+    }
+
+    private function redeemPromotion(Promotion $promotion, ?string $accountId = null): void
+    {
+        $redemption = new PromotionRedemption(
+            id: null,
+            promotionId: $promotion->id(),
+            orderId: $this->createOrder()->id(),
+            accountId: $accountId,
+            redeemedAt: new DateTimeImmutable(),
+        );
+        app(PromotionRedemptionRepository::class)->save($redemption);
     }
 
     private function createFixedAmountPromotion(string $code, string $decimalAmount): Promotion
@@ -576,5 +645,32 @@ class CartControllerTest extends TestCase
         $response->assertStatus(200);
         $response->assertJsonPath('promotion.valid', false);
         $response->assertJsonPath('promotion.reason', 'no_matching_lines');
+    }
+
+    /**
+     * Closes GAP 2: a code whose usage_limit_total is already reached
+     * must be rejected gracefully and early, in the cart response
+     * itself, rather than only failing deep inside the future checkout
+     * transaction (design doc §7) — the same as every other invalid
+     * code case.
+     */
+    public function test_a_code_with_usage_limit_total_already_reached_is_invalid_not_silently_discounting(): void
+    {
+        $variationId = $this->pricedPurchasableVariation();
+        $this->postJson('/api/cart/lines', ['variation_id' => $variationId, 'quantity' => 1])->assertStatus(201);
+
+        $promotion = $this->createPromotion('MAXEDOUT', usageLimitTotal: 1);
+        $this->redeemPromotion($promotion);
+
+        $this->putJson('/api/cart/promotion', ['code' => 'MAXEDOUT'])->assertStatus(200);
+
+        $response = $this->getJson('/api/cart');
+
+        $response->assertStatus(200);
+        $response->assertJsonPath('promotion.valid', false);
+        $response->assertJsonPath('promotion.reason', 'usage_limit_reached');
+        $response->assertJsonPath('promotion.discount_amount', null);
+        // No discount silently applied — total must equal the plain subtotal.
+        $this->assertSame($response->json('subtotal.minor'), $response->json('total.minor'));
     }
 }

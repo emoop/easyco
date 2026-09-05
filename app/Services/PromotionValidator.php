@@ -28,15 +28,30 @@ use InvalidArgumentException;
  * - `expired` — now is after validUntil().
  * - `minimum_spend_not_met` — cart subtotal is below minimumSpend().
  * - `maximum_spend_exceeded` — cart subtotal is above maximumSpend().
- * - `new_customers_only` — newCustomersOnly() is true and the cart is a
- *   guest cart (accountId is null). This method decides only that one
- *   case strictly — it never attempts an OperationalSales lookup to
- *   determine whether a real accountId actually IS a new customer; per
- *   promotions-domain-design.md §2, that's a separate concern for
- *   whichever future caller has a real isNewCustomer fact to pass in.
+ * - `new_customers_only` — newCustomersOnly() is true and either the
+ *   cart is a guest cart (accountId is null) or the account has
+ *   $usage->customerHasPreviousOrders(). This method never queries
+ *   OperationalSales/Order itself to determine that fact — per
+ *   promotions-domain-design.md §2, the caller assembles it (via
+ *   EasyCo\Order\Contracts\OrderRepository::hasAnyForAccount()) into
+ *   PromotionUsageContext, the same "caller supplies the cross-domain
+ *   facts" posture this whole class already keeps.
  * - `account_scope_mismatch` — an ACCOUNT-type scope's cart-level gate
  *   rejected this cart (see the class-level ACCOUNT-vs-per-line
  *   distinction below).
+ * - `usage_limit_reached` — usageLimitTotal() is set and
+ *   $usage->redemptionsTotal() has already reached it. A SOFT,
+ *   non-locking check — the authoritative, locking check stays in
+ *   Checkout (checkout-domain-design.md §7); this one exists so an
+ *   already-exhausted code is rejected gracefully and early, the same
+ *   as every other invalid-code case, rather than only failing deep
+ *   inside the final checkout transaction.
+ * - `usage_limit_per_customer_reached` — usageLimitPerCustomer() is set,
+ *   the cart has a real accountId, and $usage->redemptionsForAccount()
+ *   has already reached it. Same soft/non-locking posture as above. A
+ *   guest is never rejected by this check — there is no reliable
+ *   per-guest identity to count against, the identical reasoning §7 and
+ *   new_customers_only already use for guests.
  * - `no_matching_lines` — every cart line was excluded (by scope
  *   mismatch or exclude_sale_items), leaving nothing for the discount
  *   to apply to.
@@ -66,6 +81,7 @@ final class PromotionValidator
         Money $cartSubtotal,
         ?string $accountId,
         array $cartLines,
+        PromotionUsageContext $usage,
     ): PromotionValidationResult {
         if (! $promotion->isActive()) {
             return PromotionValidationResult::invalid('inactive');
@@ -97,12 +113,24 @@ final class PromotionValidator
             }
         }
 
-        if ($promotion->newCustomersOnly() && $accountId === null) {
+        if ($promotion->newCustomersOnly() && ($accountId === null || $usage->customerHasPreviousOrders())) {
             return PromotionValidationResult::invalid('new_customers_only');
         }
 
         if (! $this->accountScopeGatePasses($scopes, $accountId)) {
             return PromotionValidationResult::invalid('account_scope_mismatch');
+        }
+
+        if ($promotion->usageLimitTotal() !== null && $usage->redemptionsTotal() >= $promotion->usageLimitTotal()) {
+            return PromotionValidationResult::invalid('usage_limit_reached');
+        }
+
+        if (
+            $promotion->usageLimitPerCustomer() !== null
+            && $accountId !== null
+            && $usage->redemptionsForAccount() >= $promotion->usageLimitPerCustomer()
+        ) {
+            return PromotionValidationResult::invalid('usage_limit_per_customer_reached');
         }
 
         $applicableVariationIds = $this->applicableLines($promotion, $scopes, $cartLines);

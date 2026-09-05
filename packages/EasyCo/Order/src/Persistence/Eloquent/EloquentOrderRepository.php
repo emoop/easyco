@@ -58,6 +58,11 @@ final class EloquentOrderRepository implements OrderRepository
         return $model !== null ? $this->toDomainOrder($model) : null;
     }
 
+    public function hasAnyForAccount(string $accountId): bool
+    {
+        return OrderModel::where('account_id', $accountId)->exists();
+    }
+
     private function toDomainOrder(OrderModel $model): Order
     {
         return Order::reconstituteFromStorage(
