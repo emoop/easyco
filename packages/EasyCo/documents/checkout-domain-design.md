@@ -64,11 +64,18 @@ Order                                          (aggregate root, package EasyCo\O
 │ Address snapshot — embedded, immutable copy, NOT a live reference. Same shape
 │ as Address's own entity (address-domain-design.md §2), duplicated deliberately —
 │ see below.
-├── addressId              nullable — back-reference to the source Address row (set
-│                          when a logged-in customer used a saved address; null for a
-│                          typed-fresh guest/one-off address). Purely informational —
+├── addressId              back-reference to the source Address row. Set on EVERY path,
+│                          not only for a saved address: §8.4 persists a real Address row
+│                          for a guest and a typed-fresh address too, so a real id always
+│                          exists by the time the Order is built. Kept nullable at the
+│                          column level for the nullOnDelete() FK (§3's own choice), not
+│                          because Checkout ever writes null here. Purely informational —
 │                          never re-read to render the order; the embedded fields below
 │                          are the only fields the order display ever uses.
+│                          (Corrected during implementation: an earlier draft of this line
+│                          said "null for a typed-fresh guest/one-off address," a leftover
+│                          from when guest addresses were briefly considered non-persisted.
+│                          That contradicted §8.4 in the same document; §8.4 is correct.)
 ├── deliveryType           STREET_ADDRESS | PICKUP_POINT
 ├── recipientName, phone
 ├── country, city, postalCode, addressLine1, addressLine2    (nullable; STREET_ADDRESS only)
@@ -195,6 +202,8 @@ Nothing in this project currently captures a contact email for a guest. `Address
 - **Logged-in customer, existing saved address chosen:** load it, copy its fields onto the `Order` snapshot, set `Order.addressId`.
 - **Logged-in customer, new address typed and (optionally) saved:** `AddressRepository::save()` with the real `accountId`, then snapshot as above.
 - **Guest checkout:** always construct and save a fresh `Address` row with `accountId: null` — one consistent path for both cases rather than a special-cased "guest addresses aren't really persisted" branch, mirroring `address-domain-design.md` §1's own "simplest structure that satisfies both cases" reasoning for the domain itself.
+
+**All three paths set `Order.addressId`** to the resolved `Address`'s real id — since every path above persists a real `Address`, a real id always exists, and deliberately discarding it would throw away real traceability for nothing. See §3's own corrected note on this line.
 
 ### 8.5 `SaleLine.status` is `COMPLETED` at placement, regardless of payment method — a decision, not a default
 
