@@ -10,6 +10,11 @@
 - **Coder (a separate Claude Code instance in VS Code)** — has direct filesystem and git access to the real repo. Implements exactly what the architect's prompt specifies, reports real command output (test runs, `git apply --check`, `SHOW CREATE TABLE`, etc.), flags anything unexpected instead of silently working around it, and commits — but does not push.
 - **Емо (owner)** — reviews the architect's summary and the coder's committed result, and is the only one who pushes to the remote.
 
+## Language
+
+- Conversation with Емо happens in Bulgarian. Respond to Емо in Bulgarian.
+- Everything written INTO the codebase or given to the coder is in English, matching the existing codebase's own convention: coder prompts, design docs, code comments, commit messages, docblocks. Never mix Bulgarian into a coder prompt or a design doc.
+
 ## Workflow, step by step
 
 1. Architect reads the actual current repo state — clone or fetch it, read real files, run `git log`, don't rely on memory of past sessions for anything that matters to the task at hand.
@@ -20,6 +25,12 @@
 6. Coder commits. Coder does not push.
 7. Емо reviews and pushes.
 
+## New domains: design doc before implementation
+
+For a substantial new domain (a new package under `packages/EasyCo/`, not a small addition to an existing one), the architect writes a `{domain}-domain-design.md` first — discussed and refined with Емо, committed and pushed on its own — before any implementation prompt is written. Implementation is then staged in its own separate, reviewed, committed steps: domain entities + persistence first, then HTTP surface (often its own follow-up prompt per sub-feature), matching how every domain on this project (Promotions, the Catalog taxonomy work, Address, Payment) has actually been built. Don't skip straight to code for something this size, even if the shape seems obvious.
+
+When designing a new domain, check 1-2 real-world platforms or APIs for precedent before finalizing the design, the same way this project already researched WooCommerce/Bagisto for Promotions and WooCommerce/Stripe for Payment — cite what was actually found, don't assume prior training knowledge is current or accurate without checking.
+
 ## Verification discipline — non-negotiable
 
 - Real test output only (actual `php artisan test` stdout), never assumed or summarized.
@@ -28,6 +39,12 @@
 - Never record an unconfirmed decision, figure, or citation as settled fact — if it wasn't verified, say so explicitly rather than presenting it as confirmed.
 - **Flag, don't fix**: if the coder discovers an issue outside the current prompt's scope, it gets reported back to the architect, not silently patched. Scope creep is avoided even when the fix would be easy.
 - MySQL/MariaDB is the source of truth for constraints and correctness — this project targets real MySQL from the start (via a dedicated `easyco_testing` database for the Feature suite), never SQLite outside the test suite's own in-memory speed optimization.
+- **Never approve based on a partial diff or a prose summary of files not shown.** If the coder's message describes changes to files whose content wasn't actually pasted, ask for those files explicitly before approving — a summary is not a substitute for reading the real content, no matter how detailed the summary is.
+- **Independently verify, don't just read.** Clone/pull the real repo, apply the diff to a real local checkout, run `git apply --check` yourself rather than trusting the coder's own report of it, and re-run any specific factual claim the coder makes (a cited CLAUDE.md rule number, a `SHOW CREATE TABLE` result, a "no other test reads this field" claim) with your own grep/query when it's cheap to do so and the claim matters.
+
+## When a diff won't apply — check your own transcription first
+
+When independently verifying a diff (per Verification discipline above), a `git apply` failure ("corrupt patch," bad hunk header) is very often the architect's OWN transcription error — abbreviating a docblock, dropping a trailing blank line, or otherwise not pasting the coder's diff byte-for-byte while reconstructing it for local testing — not a real problem in the coder's actual work. Before telling the coder something is wrong with their diff, check whether you faithfully reproduced every line, including blank ones and full comments, when you rebuilt it locally. This has happened repeatedly on this project and was the architect's mistake each time, not the coder's.
 
 ## Diff delivery
 
@@ -50,7 +67,7 @@
 
 ## Deferred-work queue
 
-A running list of explicitly deferred items lives across session summaries so nothing gets silently dropped or silently expanded without a decision. When something comes up that's out of scope for the current prompt, it gets added to that list rather than either being done anyway or forgotten. Check the current deferred list at the start of a session before assuming what's next.
+An explicitly out-of-scope decision or a discovered gap gets recorded in a dedicated, named file in `packages/EasyCo/documents/` — e.g. `checkout-prerequisites-note.md`, `admin-auth-gap-note.md`, `cart-abandoned-recovery-note.md` — not just left in a chat summary or an architect's own memory. This is what makes it visible to the coder and to a future architect session that has no memory of this one. Check for existing `*-note.md` files at the start of a session before assuming what's next.
 
 ## Prompt style for the coder
 
