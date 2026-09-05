@@ -46,6 +46,7 @@ use EasyCo\Promotions\Promotion;
 use EasyCo\Promotions\PromotionRedemption;
 use EasyCo\Promotions\PromotionScope;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 class CartControllerTest extends TestCase
@@ -672,5 +673,54 @@ class CartControllerTest extends TestCase
         $response->assertJsonPath('promotion.discount_amount', null);
         // No discount silently applied — total must equal the plain subtotal.
         $this->assertSame($response->json('subtotal.minor'), $response->json('total.minor'));
+    }
+
+    /**
+     * The actual regression guard for the resolvePromotion() query
+     * optimization: a Promotion with no newCustomersOnly and no usage
+     * limits at all must trigger zero queries against `orders` or
+     * `promotion_redemptions` — PromotionValidator never reads any of
+     * the three PromotionUsageContext facts in this case, so nothing
+     * should be queried to build them.
+     */
+    public function test_a_plain_code_with_no_usage_settings_queries_neither_orders_nor_promotion_redemptions(): void
+    {
+        $variationId = $this->pricedPurchasableVariation();
+        $this->postJson('/api/cart/lines', ['variation_id' => $variationId, 'quantity' => 1])->assertStatus(201);
+        $this->createPromotion('PLAIN20');
+        $this->putJson('/api/cart/promotion', ['code' => 'PLAIN20'])->assertStatus(200);
+
+        $queries = [];
+        DB::listen(function ($query) use (&$queries): void {
+            $queries[] = $query->sql;
+        });
+
+        $this->getJson('/api/cart')->assertStatus(200);
+
+        $touchedOrders = array_filter($queries, fn (string $sql) => str_contains($sql, '`orders`'));
+        $touchedRedemptions = array_filter($queries, fn (string $sql) => str_contains($sql, '`promotion_redemptions`'));
+
+        $this->assertSame([], array_values($touchedOrders), 'Expected no query against `orders`.');
+        $this->assertSame([], array_values($touchedRedemptions), 'Expected no query against `promotion_redemptions`.');
+    }
+
+    /** Proves the guard above doesn't over-suppress: a real usage-limited code still triggers the count query it needs. */
+    public function test_a_code_with_usage_limit_total_set_still_queries_promotion_redemptions(): void
+    {
+        $variationId = $this->pricedPurchasableVariation();
+        $this->postJson('/api/cart/lines', ['variation_id' => $variationId, 'quantity' => 1])->assertStatus(201);
+        $this->createPromotion('LIMITED20', usageLimitTotal: 100);
+        $this->putJson('/api/cart/promotion', ['code' => 'LIMITED20'])->assertStatus(200);
+
+        $queries = [];
+        DB::listen(function ($query) use (&$queries): void {
+            $queries[] = $query->sql;
+        });
+
+        $this->getJson('/api/cart')->assertStatus(200);
+
+        $touchedRedemptions = array_filter($queries, fn (string $sql) => str_contains($sql, '`promotion_redemptions`'));
+
+        $this->assertNotSame([], array_values($touchedRedemptions), 'Expected a query against `promotion_redemptions`.');
     }
 }

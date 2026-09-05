@@ -447,10 +447,22 @@ class CartController extends Controller
         $scopes = $this->promotionScopes->findByPromotionId($promotion->id());
         $accountId = Auth::guard('customer')->check() ? (string) Auth::guard('customer')->id() : null;
 
+        // Each fact is only queried when the Promotion actually has the
+        // setting that consumes it — PromotionValidator reads each
+        // getter exclusively inside a branch already gated by that same
+        // setting (see its own class docblock/checks), so a Promotion
+        // with none of these flags costs zero extra queries here. The
+        // false/0 values below in the unqueried case mean "not queried
+        // because no setting consumes it", NOT "genuinely zero" — see
+        // PromotionUsageContext's own docblock.
         $usage = new PromotionUsageContext(
-            customerHasPreviousOrders: $accountId !== null && $this->orders->hasAnyForAccount($accountId),
-            redemptionsTotal: $this->promotionRedemptions->countForPromotion($promotion->id()),
-            redemptionsForAccount: $accountId !== null
+            customerHasPreviousOrders: $promotion->newCustomersOnly()
+                && $accountId !== null
+                && $this->orders->hasAnyForAccount($accountId),
+            redemptionsTotal: $promotion->usageLimitTotal() !== null
+                ? $this->promotionRedemptions->countForPromotion($promotion->id())
+                : 0,
+            redemptionsForAccount: $promotion->usageLimitPerCustomer() !== null && $accountId !== null
                 ? $this->promotionRedemptions->countForPromotionAndAccount($promotion->id(), $accountId)
                 : 0,
         );
