@@ -19,5 +19,12 @@
         "psr-4": {
             "EasyCo\\Order\\Tests\\": "tests/"
         }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "EasyCo\\Order\\Providers\\OrderServiceProvider"
+            ]
+        }
     }
 }

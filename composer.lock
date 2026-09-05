@@ -768,7 +768,7 @@
             "dist": {
                 "type": "path",
                 "url": "packages/EasyCo/Order",
-                "reference": "e1e56600095d61834c8b5f7f4a71cdf0e633e6cb"
+                "reference": "ae67374528505a463c4a9b6c2fe2b68249394c6a"
             },
             "require": {
                 "easyco/pricing": "@dev",
@@ -778,6 +778,13 @@
                 "phpunit/phpunit": "^11.0"
             },
             "type": "library",
+            "extra": {
+                "laravel": {
+                    "providers": [
+                        "EasyCo\\Order\\Providers\\OrderServiceProvider"
+                    ]
+                }
+            },
             "autoload": {
                 "psr-4": {
                     "EasyCo\\Order\\": "src/"
