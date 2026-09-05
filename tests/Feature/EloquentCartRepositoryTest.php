@@ -12,6 +12,19 @@ use EasyCo\Cart\Persistence\Eloquent\CartLineModel;
 use EasyCo\Cart\Persistence\Eloquent\CartModel;
 use EasyCo\Catalog\Contracts\ProductRepository;
 use EasyCo\Catalog\Product;
+use EasyCo\OperationalSales\Client;
+use EasyCo\OperationalSales\Contracts\ClientRepository;
+use EasyCo\OperationalSales\Contracts\TransactionRepository;
+use EasyCo\OperationalSales\Enums\Channel;
+use EasyCo\OperationalSales\Enums\SaleLineStatus;
+use EasyCo\OperationalSales\Enums\SaleLineType;
+use EasyCo\OperationalSales\SaleLine;
+use EasyCo\OperationalSales\Transaction;
+use EasyCo\Order\Contracts\OrderRepository;
+use EasyCo\Order\Enums\OrderDeliveryType;
+use EasyCo\Order\Order;
+use EasyCo\Pricing\Money;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
@@ -49,6 +62,48 @@ class EloquentCartRepositoryTest extends TestCase
     private function expiry(): DateTimeImmutable
     {
         return new DateTimeImmutable('+10 days');
+    }
+
+    /** Same Client -> Transaction -> Order chain already used in Step 1b's/PromotionRedemption's own Feature tests. */
+    private function orderId(): string
+    {
+        $client = new Client(null, 'Ivan Ivanov');
+        app(ClientRepository::class)->save($client);
+
+        $transaction = new Transaction(null, Channel::WEB);
+        $transaction->addSaleLine(new SaleLine(
+            id: null,
+            transactionId: '',
+            clientId: $client->id(),
+            priceableId: 'variation-1',
+            type: SaleLineType::SALE,
+            status: SaleLineStatus::COMPLETED,
+            quantity: 1,
+            amount: Money::fromMinorUnits(1000, 'EUR'),
+            profit: Money::fromMinorUnits(200, 'EUR'),
+            recordedAt: new DateTimeImmutable('2026-01-01'),
+            effectiveAt: new DateTimeImmutable('2026-01-01'),
+        ));
+        app(TransactionRepository::class)->save($transaction);
+
+        $order = Order::create(
+            clientId: $client->id(),
+            transactionId: $transaction->id(),
+            email: 'buyer@example.com',
+            currency: 'EUR',
+            subtotal: Money::fromMinorUnits(1000, 'EUR'),
+            discount: Money::fromMinorUnits(0, 'EUR'),
+            deliveryType: OrderDeliveryType::STREET_ADDRESS,
+            recipientName: 'Ivan Ivanov',
+            phone: '+359888123456',
+            placedAt: new DateTimeImmutable('2026-01-01'),
+            country: 'BG',
+            city: 'Sofia',
+            addressLine1: 'Vitosha Blvd 1',
+        );
+        app(OrderRepository::class)->save($order);
+
+        return $order->id();
     }
 
     public function test_the_real_cart_line_composite_unique_constraint(): void
@@ -218,5 +273,86 @@ class EloquentCartRepositoryTest extends TestCase
 
         $reloaded = $this->repository()->findById($cart->id());
         $this->assertNull($reloaded->appliedPromotionCode());
+    }
+
+    public function test_claim_for_order_on_an_unclaimed_cart_succeeds_and_find_order_id_for_cart_returns_it(): void
+    {
+        $cart = Cart::forGuest('token-abc', $this->expiry());
+        $this->repository()->save($cart);
+        $orderId = $this->orderId();
+
+        $claimed = $this->repository()->claimForOrder($cart->id(), $orderId);
+
+        $this->assertTrue($claimed);
+        $this->assertSame($orderId, $this->repository()->findOrderIdForCart($cart->id()));
+    }
+
+    /**
+     * The real proof that "iff not already claimed" actually holds, not
+     * just that the method exists — a second claim attempt with a
+     * DIFFERENT orderId must be rejected and must never overwrite the
+     * first claim.
+     */
+    public function test_claiming_an_already_claimed_cart_a_second_time_with_a_different_order_id_fails_and_does_not_overwrite(): void
+    {
+        $cart = Cart::forGuest('token-abc', $this->expiry());
+        $this->repository()->save($cart);
+        $firstOrderId = $this->orderId();
+        $secondOrderId = $this->orderId();
+
+        $firstClaim = $this->repository()->claimForOrder($cart->id(), $firstOrderId);
+        $this->assertTrue($firstClaim);
+
+        $secondClaim = $this->repository()->claimForOrder($cart->id(), $secondOrderId);
+
+        $this->assertFalse($secondClaim);
+        $this->assertSame($firstOrderId, $this->repository()->findOrderIdForCart($cart->id()));
+    }
+
+    public function test_find_order_id_for_cart_on_a_never_claimed_cart_returns_null(): void
+    {
+        $cart = Cart::forGuest('token-abc', $this->expiry());
+        $this->repository()->save($cart);
+
+        $this->assertNull($this->repository()->findOrderIdForCart($cart->id()));
+    }
+
+    public function test_claiming_a_different_cart_with_an_already_claimed_order_id_is_rejected_by_the_database(): void
+    {
+        $firstCart = Cart::forGuest('token-first', $this->expiry());
+        $this->repository()->save($firstCart);
+        $orderId = $this->orderId();
+        $this->assertTrue($this->repository()->claimForOrder($firstCart->id(), $orderId));
+
+        $secondCart = Cart::forGuest('token-second', $this->expiry());
+        $this->repository()->save($secondCart);
+
+        $this->expectException(QueryException::class);
+
+        $this->repository()->claimForOrder($secondCart->id(), $orderId);
+    }
+
+    public function test_the_real_carts_order_id_unique_and_null_on_delete_constraint(): void
+    {
+        $createTable = DB::select('SHOW CREATE TABLE carts')[0]->{'Create Table'};
+
+        $this->assertStringContainsString('UNIQUE KEY `carts_order_id_unique`', $createTable);
+        $this->assertStringContainsString(
+            'CONSTRAINT `carts_order_id_foreign` FOREIGN KEY (`order_id`) REFERENCES `orders` (`id`) ON DELETE SET NULL',
+            $createTable
+        );
+    }
+
+    public function test_deleting_the_backing_order_nulls_the_carts_order_id_but_the_cart_row_survives(): void
+    {
+        $cart = Cart::forGuest('token-abc', $this->expiry());
+        $this->repository()->save($cart);
+        $orderId = $this->orderId();
+        $this->repository()->claimForOrder($cart->id(), $orderId);
+
+        DB::table('orders')->where('id', $orderId)->delete();
+
+        $this->assertNull($this->repository()->findOrderIdForCart($cart->id()));
+        $this->assertNotNull($this->repository()->findById($cart->id()));
     }
 }

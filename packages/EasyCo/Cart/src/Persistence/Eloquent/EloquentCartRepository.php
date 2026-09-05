@@ -140,6 +140,22 @@ final class EloquentCartRepository implements CartRepository
         return CartModel::where('expires_at', '<=', $now)->delete();
     }
 
+    public function claimForOrder(string $cartId, string $orderId): bool
+    {
+        $affected = CartModel::where('id', $cartId)
+            ->whereNull('order_id')
+            ->update(['order_id' => $orderId]);
+
+        return $affected > 0;
+    }
+
+    public function findOrderIdForCart(string $cartId): ?string
+    {
+        $orderId = CartModel::where('id', $cartId)->value('order_id');
+
+        return $orderId !== null ? (string) $orderId : null;
+    }
+
     /**
      * Detects a violation of cart_lines_cart_variation_unique,
      * confirmed via a real SHOW CREATE TABLE against the dev database
