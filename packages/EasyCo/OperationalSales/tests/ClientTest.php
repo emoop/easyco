@@ -81,4 +81,34 @@ final class ClientTest extends TestCase
         $this->assertSame('42', $client->id());
         $this->assertSame('Ivan Petrov', $client->name());
     }
+
+    // --- accountId -----------------------------------------------------------
+
+    public function test_null_account_id_succeeds_by_default(): void
+    {
+        $client = new Client(id: null, name: 'Ivan Petrov');
+
+        $this->assertNull($client->accountId());
+    }
+
+    public function test_a_real_account_id_succeeds(): void
+    {
+        $client = new Client(id: null, name: 'Ivan Petrov', accountId: '42');
+
+        $this->assertSame('42', $client->accountId());
+    }
+
+    public function test_empty_string_account_id_throws(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+
+        new Client(id: null, name: 'Ivan Petrov', accountId: '');
+    }
+
+    public function test_reconstitute_from_storage_round_trips_account_id(): void
+    {
+        $client = Client::reconstituteFromStorage('42', 'Ivan Petrov', '7');
+
+        $this->assertSame('7', $client->accountId());
+    }
 }

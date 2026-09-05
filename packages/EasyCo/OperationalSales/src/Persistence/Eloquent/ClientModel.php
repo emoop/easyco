@@ -16,5 +16,6 @@ class ClientModel extends Model
 
     protected $fillable = [
         'name',
+        'account_id',
     ];
 }

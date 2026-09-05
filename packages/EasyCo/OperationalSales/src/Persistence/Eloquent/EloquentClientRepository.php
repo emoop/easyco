@@ -22,6 +22,7 @@ final class EloquentClientRepository implements ClientRepository
             : new ClientModel();
 
         $model->name = $client->name();
+        $model->account_id = $client->accountId();
         $model->save();
 
         if ($client->id() === null) {
@@ -36,8 +37,19 @@ final class EloquentClientRepository implements ClientRepository
         return $model !== null ? $this->toDomainClient($model) : null;
     }
 
+    public function findByAccountId(string $accountId): ?Client
+    {
+        $model = ClientModel::where('account_id', $accountId)->first();
+
+        return $model !== null ? $this->toDomainClient($model) : null;
+    }
+
     private function toDomainClient(ClientModel $model): Client
     {
-        return Client::reconstituteFromStorage((string) $model->id, $model->name);
+        return Client::reconstituteFromStorage(
+            (string) $model->id,
+            $model->name,
+            $model->account_id !== null ? (string) $model->account_id : null,
+        );
     }
 }
