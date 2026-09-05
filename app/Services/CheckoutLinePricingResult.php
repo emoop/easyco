@@ -12,9 +12,13 @@ use EasyCo\Pricing\Money;
  */
 final class CheckoutLinePricingResult
 {
+    /** @param array<string, string[]> $matchingScopeReferenceIds */
     private function __construct(
         private readonly string $variationId,
         private readonly int $quantity,
+        private readonly ?string $productId,
+        private readonly array $matchingScopeReferenceIds,
+        private readonly bool $isDiscounted,
         private readonly Money $unitPrice,
         private readonly Money $amount,
         private readonly Money $profit,
@@ -22,15 +26,29 @@ final class CheckoutLinePricingResult
     ) {
     }
 
+    /** @param array<string, string[]> $matchingScopeReferenceIds */
     public static function create(
         string $variationId,
         int $quantity,
+        ?string $productId,
+        array $matchingScopeReferenceIds,
+        bool $isDiscounted,
         Money $unitPrice,
         Money $amount,
         Money $profit,
         bool $costRecorded,
     ): self {
-        return new self($variationId, $quantity, $unitPrice, $amount, $profit, $costRecorded);
+        return new self(
+            $variationId,
+            $quantity,
+            $productId,
+            $matchingScopeReferenceIds,
+            $isDiscounted,
+            $unitPrice,
+            $amount,
+            $profit,
+            $costRecorded,
+        );
     }
 
     public function variationId(): string
@@ -41,6 +59,42 @@ final class CheckoutLinePricingResult
     public function quantity(): int
     {
         return $this->quantity;
+    }
+
+    /**
+     * Carried for the Promotions path (PromotionValidator/
+     * PromotionDiscountCalculator), not used by the SaleLine/profit
+     * path — mirrors CartController::serializeCart()'s own
+     * one-array-for-both-consumers approach rather than resolving the
+     * same scope twice.
+     */
+    public function productId(): ?string
+    {
+        return $this->productId;
+    }
+
+    /**
+     * Carried for the Promotions path, not used by the SaleLine/profit
+     * path — mirrors CartController::serializeCart()'s own
+     * one-array-for-both-consumers approach rather than resolving the
+     * same scope twice.
+     *
+     * @return array<string, string[]>
+     */
+    public function matchingScopeReferenceIds(): array
+    {
+        return $this->matchingScopeReferenceIds;
+    }
+
+    /**
+     * Carried for the Promotions path, not used by the SaleLine/profit
+     * path — mirrors CartController::serializeCart()'s own
+     * one-array-for-both-consumers approach rather than resolving the
+     * same scope twice.
+     */
+    public function isDiscounted(): bool
+    {
+        return $this->isDiscounted;
     }
 
     public function unitPrice(): Money

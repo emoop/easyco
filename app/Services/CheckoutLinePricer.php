@@ -22,6 +22,15 @@ use EasyCo\Pricing\Money;
  * task's own commit message for the full explanation). amount is
  * already unitPrice × quantity, so the cost side of the subtraction
  * must be too, or profit would be wrong for any quantity > 1.
+ *
+ * $scope/$quote ALSO CARRY productId/matchingScopeReferenceIds/
+ * isDiscounted THROUGH TO THE RESULT — not used by this class's own
+ * price/profit math, but the Promotions path (PromotionValidator/
+ * PromotionDiscountCalculator) needs exactly these per line, same
+ * "one array, extended rather than recomputed twice" pattern
+ * CartController::serializeCart() already established. Without this,
+ * a Checkout orchestrator would have to call
+ * CatalogScopeResolver::forVariation() a second time per line.
  */
 class CheckoutLinePricer
 {
@@ -61,6 +70,9 @@ class CheckoutLinePricer
         return CheckoutLinePricingResult::create(
             variationId: $variationId,
             quantity: $quantity,
+            productId: $scope['productId'],
+            matchingScopeReferenceIds: $scope['matchingScopeReferenceIds'],
+            isDiscounted: $quote->isDiscounted(),
             unitPrice: $unitPrice,
             amount: $amount,
             profit: $profit,
