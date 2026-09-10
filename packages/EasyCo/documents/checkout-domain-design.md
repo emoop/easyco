@@ -55,6 +55,10 @@ Order                                          (aggregate root, package EasyCo\O
 │                         stores order-level discount_total/cart_tax alongside line
 │                         items: fast, direct read for confirmation/receipt/admin-list
 │                         display without re-summing a ledger every time.
+│                         NO SHIPPING COMPONENT: totalMinor is exactly
+│                         subtotalMinor - discountMinor. Shipping is not priced anywhere
+│                         in the system yet — see §10's shipping entry for the full list
+│                         of what adding it would touch.
 ├── appliedPromotionCode   nullable string — display/audit snapshot of the code used.
 │                         The actual usage-tracking fact of record is Promotions'
 │                         PromotionRedemption (§7), not this field.
@@ -277,6 +281,7 @@ profit = amount - (unitCost × quantity)
 - **Order status transitions and their side effects** — §3's `PLACED`/`FULFILLED`/`CANCELLED` column exists in V1, but no endpoint changes it and no side effect (restock on cancel, refund trigger, etc.) is built. Domain-owner instruction: build this together with the future admin UI, as one piece, not guessed at in isolation now.
 - **The admin/staff auth guard's actual design** — §9.2 confirms it needs real roles (full-access, product-entry-only operator, ...), not a binary second guard; deserves its own design pass when picked up, not designed here.
 - **Shipping/Tax integration** — no such domains exist yet; `checkout-orchestration-performance-note.md`'s external-API-timeout/fallback principle (§2 there) has nothing to apply to yet in V1, but the thin-orchestrator shape this document builds is what that future integration will slot into.
+  **The concrete consequence, stated plainly rather than left to inference** (raised in review, where "Shipping/Tax integration" was reasonably read as meaning only carrier API wiring): **`Order.total` is exactly `subtotal - discount`, and does NOT include any shipping charge.** The delivery *destination* is fully modelled — `deliveryType`, `carrierCode`, `pickupPointReference`, the whole address snapshot — but its *price* is not part of the amount the customer is charged, because no shipping-price concept exists anywhere in the system yet. For a V1 boutique where delivery is free or settled in cash with the courier, that is a coherent position. It stops being one the moment shipping is charged: adding it later means a new `shippingMinor` column on `Order`, a change to `total`'s definition (and to `Order::create()`'s computation of it, which today deliberately refuses to accept a separately-supplied total), and a decision about whether a promotion may discount shipping. Recorded now so that whoever adds shipping finds the full list rather than rediscovering it.
 - **Confirmation email itself** — the `order.placed` hook point exists (§8.3 step 14); no listener is registered in this task, matching this project's own "purely the extension point" precedent.
 - **Any Checkout/Order HTTP surface** — this document is domain design; HTTP is its own later, separate implementation prompt, per protocol.
 - **`ProductCost`'s HTTP surface specifically** — §9.2's decided path (a); the domain+persistence layer is not deferred, only its HTTP exposure.
