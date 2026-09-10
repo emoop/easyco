@@ -34,6 +34,7 @@ final class EloquentPaymentRepository implements PaymentRepository
         $model->status = $payment->status()->value;
         $model->provider_reference = $payment->providerReference();
         $model->failure_reason = $payment->failureReason();
+        $model->attempted_at = $payment->attemptedAt();
 
         $model->save();
 
@@ -68,6 +69,7 @@ final class EloquentPaymentRepository implements PaymentRepository
             status: PaymentStatus::from($model->status),
             providerReference: $model->provider_reference,
             failureReason: $model->failure_reason,
+            attemptedAt: $model->attempted_at,
         );
     }
 }

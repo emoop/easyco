@@ -14,6 +14,8 @@ This document defines the **Payment domain**: recording payment attempts against
 
 **Decision: `Payment` is a separate entity from `Order`.** A failed attempt must be retryable without corrupting the order it belongs to — a second attempt is a new `Payment` row, not an in-place rewrite of a failed one. This mirrors the same "history is append-only, never silently rewritten" principle `operational-sales-domain-design.md` §3.2 already established for `SaleLine`.
 
+**Amendment, found during Checkout implementation, not part of the original design: `Payment.status`/`providerReference`/`failureReason` are mutable exactly once, via `recordAttemptResult()`.** This does NOT contradict the append-only rule just stated — the distinction is real and worth being explicit about, not left to inference. A RETRY is still a brand-new `Payment` row; that rule is untouched. What this adds is recording the OUTCOME OF THE SAME ATTEMPT that is already underway: Checkout now writes the `Payment` row as `PENDING` inside its own transaction, before the charge is even attempted (see `checkout-domain-design.md` §8.3 step 10), so that a crash between commit and the actual charge leaves a real, findable row instead of none at all. `recordAttemptResult()` is how the already-in-flight attempt's real result gets written, once, when it becomes known — one attempt, one row, its outcome written once, never a second write.
+
 **Decision: double-capture prevention is DB-enforced, not app-level check-then-act.** At most one `Payment` per order may ever reach `CAPTURED` status — enforced at the database engine level (§5.1), immune to two concurrent requests racing past an application-level check. This is the direct answer to the domain owner's explicit requirement: a customer must never be charged twice for the same order.
 
 **Decision: `PaymentRefund` is in V1 scope**, deliberately, after reconsideration — see Origin above.
@@ -44,11 +46,31 @@ Payment
 │                       adapter processed it (e.g. a real future
 │                       Stripe charge id); null for offline methods,
 │                       which have none
-└── failureReason       nullable string — populated only when
-                        status = FAILED
+├── failureReason       nullable string — populated only when
+│                       status = FAILED
+└── attemptedAt         nullable DateTimeImmutable — ADDED during
+                        Checkout implementation, not part of the
+                        original design (see the amendment note in §1).
+                        Records WHEN THE ADAPTER ANSWERED — deliberately
+                        the narrower, honest claim: "resolved" would
+                        imply the payment is finished, but for cash-on-
+                        delivery/bank-transfer nothing is finished the
+                        moment the adapter answers, the money still
+                        hasn't arrived. Null from creation until
+                        recordAttemptResult() runs. This is NOT merely
+                        crash-detection scaffolding — it answers a real
+                        support question no other field can: "when did
+                        we learn this payment failed?" Separates two
+                        states status alone cannot: status PENDING +
+                        attemptedAt NULL means the charge attempt never
+                        completed (crash, timeout, a Phase 2 that never
+                        ran) and needs a retry; status PENDING +
+                        attemptedAt SET means a normal offline order
+                        genuinely awaiting the customer's money and
+                        needs a merchant confirmation (§7), not a retry.
 ```
 
-No `priority`/reservation concept here — mirrors how `inventory-domain-design.md` deliberately has none either; a `Payment` attempt either captures or it doesn't, no holding state beyond `PENDING`.
+No `priority`/reservation concept here — mirrors how `inventory-domain-design.md` deliberately has none either; a `Payment` attempt either captures or it doesn't, no holding state beyond `PENDING`. **This remains true even with `attemptedAt` added** — `attemptedAt` records *when* an attempt's outcome became known, not a new outcome an attempt can reach; the attempt itself still only ever captures or doesn't, exactly as this sentence originally said.
 
 ---
 

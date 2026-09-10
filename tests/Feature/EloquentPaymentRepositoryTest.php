@@ -2,9 +2,11 @@
 
 namespace Tests\Feature;
 
+use DateTimeImmutable;
 use EasyCo\Payment\Contracts\PaymentRepository;
 use EasyCo\Payment\Enums\PaymentStatus;
 use EasyCo\Payment\Payment;
+use EasyCo\Payment\Persistence\Eloquent\PaymentModel;
 use EasyCo\Pricing\Money;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -105,5 +107,45 @@ class EloquentPaymentRepositoryTest extends TestCase
 
         $results = $this->repository()->findByOrderId('order-multi-attempt');
         $this->assertCount(2, $results);
+    }
+
+    public function test_attempted_at_round_trips_as_a_real_datetimeimmutable(): void
+    {
+        $payment = Payment::create('order-1', 'cash_on_delivery', $this->amount(), PaymentStatus::PENDING);
+        $this->repository()->save($payment);
+
+        $attemptedAt = new DateTimeImmutable('2026-09-10 12:34:56');
+        $payment->recordAttemptResult(PaymentStatus::PENDING, null, null, $attemptedAt);
+        $this->repository()->save($payment);
+
+        $reloaded = $this->repository()->findById($payment->id());
+        $this->assertInstanceOf(DateTimeImmutable::class, $reloaded->attemptedAt());
+        $this->assertSame($attemptedAt->format('Y-m-d H:i:s'), $reloaded->attemptedAt()->format('Y-m-d H:i:s'));
+    }
+
+    public function test_a_freshly_created_payment_round_trips_a_null_attempted_at(): void
+    {
+        $payment = Payment::create('order-1', 'cash_on_delivery', $this->amount(), PaymentStatus::PENDING);
+        $this->repository()->save($payment);
+
+        $reloaded = $this->repository()->findById($payment->id());
+        $this->assertNull($reloaded->attemptedAt());
+    }
+
+    public function test_saving_a_payment_that_already_has_an_id_updates_the_existing_row_rather_than_inserting_a_second_one(): void
+    {
+        $payment = Payment::create('order-update-in-place', 'cash_on_delivery', $this->amount(), PaymentStatus::PENDING);
+        $this->repository()->save($payment);
+        $id = $payment->id();
+
+        $payment->recordAttemptResult(PaymentStatus::CAPTURED, 'ch_999', null, new DateTimeImmutable('2026-09-10 12:00:00'));
+        $this->repository()->save($payment);
+
+        $this->assertSame($id, $payment->id());
+        $this->assertSame(1, PaymentModel::where('order_id', 'order-update-in-place')->count());
+
+        $reloaded = $this->repository()->findById($id);
+        $this->assertSame(PaymentStatus::CAPTURED, $reloaded->status());
+        $this->assertSame('ch_999', $reloaded->providerReference());
     }
 }

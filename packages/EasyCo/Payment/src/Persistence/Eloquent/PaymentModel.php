@@ -24,5 +24,10 @@ class PaymentModel extends Model
         'status',
         'provider_reference',
         'failure_reason',
+        'attempted_at',
+    ];
+
+    protected $casts = [
+        'attempted_at' => 'immutable_datetime',
     ];
 }

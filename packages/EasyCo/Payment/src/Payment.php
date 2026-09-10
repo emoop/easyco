@@ -2,6 +2,7 @@
 
 namespace EasyCo\Payment;
 
+use DateTimeImmutable;
 use EasyCo\Payment\Enums\PaymentStatus;
 use EasyCo\Pricing\Money;
 use InvalidArgumentException;
@@ -24,6 +25,48 @@ use LogicException;
  * amount->isPositive() itself, the same way every other consumer of
  * Money that needs a strictly-positive value must (see
  * assertPositiveAmount()).
+ *
+ * $status, $providerReference AND $failureReason ARE THE ONLY MUTABLE
+ * FIELDS — deliberately, via recordAttemptResult() below, and for
+ * exactly one reason: CheckoutOrchestrator now writes this row INSIDE
+ * Phase 1 (checkout-domain-design.md §8.3) as PENDING, before the actual
+ * charge is even attempted, so that a crash between commit and the
+ * external call leaves a real, findable row rather than nothing at all.
+ * recordAttemptResult() is how Phase 2 fills in what the adapter actually
+ * said, once it's known. Every other field stays readonly and set once
+ * at construction — this is NOT a general mutation door.
+ *
+ * THIS DOES NOT VIOLATE payment-domain-design.md §1'S APPEND-ONLY RULE —
+ * a real distinction, not a loophole, worth stating explicitly: a RETRY
+ * is still a brand-new Payment row, untouched by this change. What
+ * recordAttemptResult() adds is recording the outcome of THE SAME
+ * ATTEMPT that is already underway — one attempt, one row, whose result
+ * is written exactly once, when it becomes known.
+ *
+ * $attemptedAt RECORDS WHEN THE ADAPTER ANSWERED — not when the payment
+ * "resolved" or "finished": for cash-on-delivery/bank-transfer nothing
+ * is finished the moment the adapter answers, the money still hasn't
+ * arrived. This is deliberately the narrower, honest claim. It also
+ * answers a real, standing support question this entity previously had
+ * no way to answer at all — "when did we learn this payment failed?" —
+ * not merely crash-detection scaffolding.
+ *
+ * THE TWO PREVIOUSLY-INDISTINGUISHABLE STATES THIS FIELD SEPARATES:
+ * - status PENDING + attemptedAt NULL — the charge attempt never
+ *   completed (a crash, a timeout, a Phase 2 that never ran). Needs a
+ *   retry.
+ * - status PENDING + attemptedAt SET — a normal offline order genuinely
+ *   awaiting the customer's money. Needs a merchant confirmation later
+ *   (payment-domain-design.md §7), not a retry.
+ *
+ * A KNOWN, STATED LIMIT — not hidden: if a crash happens AFTER the
+ * adapter has answered but BEFORE recordAttemptResult()'s save()
+ * completes, $attemptedAt stays null and the row still looks like "never
+ * attempted." For V1's two adapters this risk is nil — they call no
+ * external system, so nothing can have half-happened. For a future real
+ * online provider this is the classic unsolvable case without a
+ * provider-side idempotency key; whoever adds that adapter must handle
+ * it there, not here.
  */
 final class Payment
 {
@@ -32,9 +75,10 @@ final class Payment
         private readonly string $orderId,
         private readonly string $method,
         private readonly Money $amount,
-        private readonly PaymentStatus $status,
-        private readonly ?string $providerReference,
-        private readonly ?string $failureReason,
+        private PaymentStatus $status,
+        private ?string $providerReference,
+        private ?string $failureReason,
+        private ?DateTimeImmutable $attemptedAt,
     ) {
         self::assertNotEmpty('orderId', $orderId);
         self::assertNotEmpty('method', $method);
@@ -70,6 +114,10 @@ final class Payment
         }
     }
 
+    /**
+     * attemptedAt always starts null — a freshly created Payment has not
+     * yet had an adapter answer for it (see class docblock).
+     */
     public static function create(
         string $orderId,
         string $method,
@@ -86,6 +134,7 @@ final class Payment
             status: $status,
             providerReference: $providerReference,
             failureReason: $failureReason,
+            attemptedAt: null,
         );
     }
 
@@ -106,6 +155,7 @@ final class Payment
         PaymentStatus $status,
         ?string $providerReference,
         ?string $failureReason,
+        ?DateTimeImmutable $attemptedAt,
     ): self {
         return new self(
             id: $id,
@@ -115,6 +165,7 @@ final class Payment
             status: $status,
             providerReference: $providerReference,
             failureReason: $failureReason,
+            attemptedAt: $attemptedAt,
         );
     }
 
@@ -160,5 +211,51 @@ final class Payment
     public function failureReason(): ?string
     {
         return $this->failureReason;
+    }
+
+    public function attemptedAt(): ?DateTimeImmutable
+    {
+        return $this->attemptedAt;
+    }
+
+    /**
+     * Records the outcome of THIS attempt, once. Only ever called after
+     * this Payment was created as the "we are about to charge, result
+     * not yet known" placeholder (checkout-domain-design.md §8.3) —
+     * calling it a second time throws: re-recording an already-recorded
+     * attempt would silently rewrite history.
+     *
+     * THE GUARD IS ON attemptedAt, NOT ON status — deliberately.
+     * PENDING is a legitimate, final answer for an offline method (both
+     * V1 adapters always return it), so status alone can never tell a
+     * resolved attempt from an unresolved one; that indistinguishability
+     * is exactly the gap $attemptedAt exists to close. There is
+     * therefore no restriction here on which PaymentStatus may be
+     * recorded — PENDING, CAPTURED and FAILED are all valid outcomes of
+     * an attempt that genuinely happened.
+     *
+     * NOT A RETRY MECHANISM — a retry is a NEW Payment row, per
+     * payment-domain-design.md §1's own append-only rule (see class
+     * docblock). This only fills in the result of an attempt that was
+     * already recorded as in-flight.
+     */
+    public function recordAttemptResult(
+        PaymentStatus $status,
+        ?string $providerReference,
+        ?string $failureReason,
+        DateTimeImmutable $attemptedAt,
+    ): void {
+        if ($this->attemptedAt !== null) {
+            throw new LogicException(
+                "Payment attempt already recorded at {$this->attemptedAt->format(DATE_ATOM)}; recordAttemptResult() is a one-time operation."
+            );
+        }
+
+        self::assertFailureReasonMatchesStatus($status, $failureReason);
+
+        $this->status = $status;
+        $this->providerReference = $providerReference;
+        $this->failureReason = $failureReason;
+        $this->attemptedAt = $attemptedAt;
     }
 }
