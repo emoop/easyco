@@ -83,6 +83,7 @@ final class CheckoutOrchestrator
         private readonly PromotionValidator $promotionValidator,
         private readonly PromotionDiscountCalculator $promotionDiscountCalculator,
         private readonly PromotionRedemptionRepository $promotionRedemptions,
+        private readonly PromotionUsageContextAssembler $usageContextAssembler,
         private readonly OrderRepository $orders,
         private readonly ClientResolver $clientResolver,
         private readonly AddressResolver $addressResolver,
@@ -304,9 +305,10 @@ final class CheckoutOrchestrator
     }
 
     /**
-     * Mirrors CartController::resolvePromotion()'s PromotionUsageContext
-     * assembly exactly (same per-setting query guards) — do not write a
-     * second, differently-guarded assembly.
+     * PromotionUsageContext assembly is delegated to
+     * PromotionUsageContextAssembler — the same instance
+     * CartController::resolvePromotion() calls, so the per-setting query
+     * guards live in exactly one place, not two.
      *
      * @param array<int, CheckoutLinePricingResult> $pricingResults
      * @return array{0: ?Promotion, 1: Money} [appliedPromotion, discount]
@@ -331,17 +333,12 @@ final class CheckoutOrchestrator
 
         $scopes = $this->promotionScopes->findByPromotionId($promotion->id());
 
-        $usage = new PromotionUsageContext(
-            customerHasPreviousOrders: $promotion->newCustomersOnly()
-                && $accountId !== null
-                && $this->orders->hasAnyForAccount($accountId),
-            redemptionsTotal: $promotion->usageLimitTotal() !== null
-                ? $this->promotionRedemptions->countForPromotion($promotion->id())
-                : 0,
-            redemptionsForAccount: $promotion->usageLimitPerCustomer() !== null && $accountId !== null
-                ? $this->promotionRedemptions->countForPromotionAndAccount($promotion->id(), $accountId)
-                : 0,
-        );
+        // Per-setting query guards live in PromotionUsageContextAssembler
+        // — see its own class docblock for why a Promotion with none of
+        // newCustomersOnly/usageLimitTotal/usageLimitPerCustomer costs
+        // zero extra queries here, and for what a false/0 value on the
+        // result can and can't be taken to mean.
+        $usage = $this->usageContextAssembler->assemble($promotion, $accountId);
 
         $validatorLines = array_map(static fn (CheckoutLinePricingResult $result) => [
             'variationId' => $result->variationId(),

@@ -5,7 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Services\CatalogScopeResolver;
 use App\Services\PromotionDiscountCalculator;
-use App\Services\PromotionUsageContext;
+use App\Services\PromotionUsageContextAssembler;
 use App\Services\PromotionValidator;
 use DateTimeImmutable;
 use EasyCo\Cart\Cart;
@@ -14,13 +14,11 @@ use EasyCo\Cart\Contracts\CartRepository;
 use EasyCo\Cart\Exceptions\InsufficientStockForCartException;
 use EasyCo\Catalog\Contracts\VariationRepository;
 use EasyCo\Inventory\Contracts\StockLevelRepository;
-use EasyCo\Order\Contracts\OrderRepository;
 use EasyCo\Pricing\Contracts\PriceContext;
 use EasyCo\Pricing\Contracts\PriceResolver;
 use EasyCo\Pricing\DefaultCurrency;
 use EasyCo\Pricing\Exceptions\PriceNotConfiguredException;
 use EasyCo\Pricing\Money;
-use EasyCo\Promotions\Contracts\PromotionRedemptionRepository;
 use EasyCo\Promotions\Contracts\PromotionRepository;
 use EasyCo\Promotions\Contracts\PromotionScopeRepository;
 use Illuminate\Http\JsonResponse;
@@ -63,8 +61,7 @@ class CartController extends Controller
         private readonly PromotionScopeRepository $promotionScopes,
         private readonly PromotionValidator $promotionValidator,
         private readonly PromotionDiscountCalculator $promotionDiscountCalculator,
-        private readonly OrderRepository $orders,
-        private readonly PromotionRedemptionRepository $promotionRedemptions,
+        private readonly PromotionUsageContextAssembler $usageContextAssembler,
     ) {
     }
 
@@ -447,25 +444,12 @@ class CartController extends Controller
         $scopes = $this->promotionScopes->findByPromotionId($promotion->id());
         $accountId = Auth::guard('customer')->check() ? (string) Auth::guard('customer')->id() : null;
 
-        // Each fact is only queried when the Promotion actually has the
-        // setting that consumes it — PromotionValidator reads each
-        // getter exclusively inside a branch already gated by that same
-        // setting (see its own class docblock/checks), so a Promotion
-        // with none of these flags costs zero extra queries here. The
-        // false/0 values below in the unqueried case mean "not queried
-        // because no setting consumes it", NOT "genuinely zero" — see
-        // PromotionUsageContext's own docblock.
-        $usage = new PromotionUsageContext(
-            customerHasPreviousOrders: $promotion->newCustomersOnly()
-                && $accountId !== null
-                && $this->orders->hasAnyForAccount($accountId),
-            redemptionsTotal: $promotion->usageLimitTotal() !== null
-                ? $this->promotionRedemptions->countForPromotion($promotion->id())
-                : 0,
-            redemptionsForAccount: $promotion->usageLimitPerCustomer() !== null && $accountId !== null
-                ? $this->promotionRedemptions->countForPromotionAndAccount($promotion->id(), $accountId)
-                : 0,
-        );
+        // Per-setting query guards live in PromotionUsageContextAssembler
+        // — see its own class docblock for why a Promotion with none of
+        // newCustomersOnly/usageLimitTotal/usageLimitPerCustomer costs
+        // zero extra queries here, and for what a false/0 value on the
+        // result can and can't be taken to mean.
+        $usage = $this->usageContextAssembler->assemble($promotion, $accountId);
 
         $result = $this->promotionValidator->validate($promotion, $scopes, $subtotal, $accountId, $validatorLines, $usage);
 
