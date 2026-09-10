@@ -36,8 +36,13 @@ use EasyCo\Order\Contracts\OrderRepository;
 use EasyCo\Order\Enums\OrderDeliveryType;
 use EasyCo\Order\Order;
 use EasyCo\Order\Persistence\Eloquent\OrderModel;
+use EasyCo\Payment\Contracts\PaymentMethodAdapter;
 use EasyCo\Payment\Contracts\PaymentRepository;
 use EasyCo\Payment\Enums\PaymentStatus;
+use EasyCo\Payment\Payment;
+use EasyCo\Payment\PaymentAttemptResult;
+use EasyCo\Payment\PaymentContext;
+use EasyCo\Payment\PaymentRefundAttemptResult;
 use EasyCo\Pricing\Contracts\PriceListItemRepository;
 use EasyCo\Pricing\Contracts\PriceListRepository;
 use EasyCo\Pricing\Enums\PriceListItemTargetType;
@@ -53,6 +58,7 @@ use EasyCo\Promotions\Promotion;
 use EasyCo\Promotions\PromotionRedemption;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
+use RuntimeException;
 use Tests\TestCase;
 
 /**
@@ -546,5 +552,70 @@ class CheckoutOrchestratorTest extends TestCase
 
         $this->assertNotNull($received);
         $this->assertSame($result->order()->id(), $received->id());
+    }
+
+    public function test_a_successful_checkout_leaves_exactly_one_pending_payment_row_with_a_non_null_attempted_at(): void
+    {
+        $variationId = $this->pricedPurchasableVariation('10.00', 10);
+        $cart = $this->guestCart();
+        $this->addLine($cart, $variationId, 1);
+
+        $result = app(CheckoutOrchestrator::class)->place($this->guestCheckoutInput($cart->id()), new DateTimeImmutable('2026-09-05 12:00:00'));
+
+        $rows = app(PaymentRepository::class)->findByOrderId($result->order()->id());
+        $this->assertCount(1, $rows);
+        $this->assertSame(PaymentStatus::PENDING, $rows[0]->status());
+        $this->assertNotNull($rows[0]->attemptedAt());
+
+        // The in-memory result carries the exact same, already-recorded
+        // Payment — not a second, separate one.
+        $this->assertSame($rows[0]->id(), $result->payment()->id());
+        $this->assertNotNull($result->payment()->attemptedAt());
+    }
+
+    /**
+     * The entire point of moving the Payment write into Phase 1
+     * (checkout-domain-design.md §8.3, see CheckoutOrchestrator's own
+     * class docblock): a crash/exception between Phase 1's commit and
+     * Phase 2's adapter call must NOT leave the Order with no Payment
+     * record at all. Simulated here honestly, not skipped, by binding a
+     * PaymentMethodAdapter that throws when charge() is called — the
+     * closest real stand-in for "the process died mid-Phase-2" that a
+     * synchronous test can produce.
+     */
+    public function test_an_exception_from_the_payment_adapter_leaves_a_real_pending_payment_row_with_a_null_attempted_at(): void
+    {
+        $this->app->bind('payment.adapter.cash_on_delivery', fn () => new class implements PaymentMethodAdapter {
+            public function charge(Money $amount, PaymentContext $context): PaymentAttemptResult
+            {
+                throw new RuntimeException('Simulated crash mid-Phase-2, before the adapter ever answered.');
+            }
+
+            public function refund(Payment $original, Money $amount, PaymentContext $context): PaymentRefundAttemptResult
+            {
+                throw new RuntimeException('Not exercised by this test.');
+            }
+        });
+
+        $variationId = $this->pricedPurchasableVariation('10.00', 10);
+        $cart = $this->guestCart();
+        $this->addLine($cart, $variationId, 1);
+
+        try {
+            app(CheckoutOrchestrator::class)->place($this->guestCheckoutInput($cart->id()), new DateTimeImmutable('2026-09-05 12:00:00'));
+            $this->fail('Expected the simulated adapter exception to propagate.');
+        } catch (RuntimeException $e) {
+            $this->assertSame('Simulated crash mid-Phase-2, before the adapter ever answered.', $e->getMessage());
+        }
+
+        $orderId = OrderModel::sole()->id;
+        $rows = app(PaymentRepository::class)->findByOrderId((string) $orderId);
+
+        // This row — real, findable, PENDING with a NULL attemptedAt —
+        // is the entire point of this change. Without it there would be
+        // no record at all that a charge was ever supposed to happen.
+        $this->assertCount(1, $rows);
+        $this->assertSame(PaymentStatus::PENDING, $rows[0]->status());
+        $this->assertNull($rows[0]->attemptedAt());
     }
 }

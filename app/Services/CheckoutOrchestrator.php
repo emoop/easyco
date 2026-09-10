@@ -22,6 +22,7 @@ use EasyCo\OperationalSales\Contracts\TransactionRepository;
 use EasyCo\OperationalSales\SaleLine;
 use EasyCo\OperationalSales\Transaction;
 use EasyCo\Payment\Contracts\PaymentRepository;
+use EasyCo\Payment\Enums\PaymentStatus;
 use EasyCo\Payment\Payment;
 use EasyCo\Payment\PaymentContext;
 use EasyCo\Pricing\DefaultCurrency;
@@ -39,17 +40,31 @@ use InvalidArgumentException;
  * phases:
  * - Phase 1 (steps 1-12): the single DB transaction — load cart, price
  *   lines, revalidate the promotion, resolve Address/Client, decrease
- *   stock, write Transaction/SaleLines/Order, claim the cart, redeem the
- *   promotion.
+ *   stock, write Transaction/SaleLines/Order, WRITE A PENDING Payment
+ *   row, claim the cart, redeem the promotion.
  * - Phase 2 (steps 13-14), OUTSIDE that transaction — charge via the
- *   resolved PaymentMethodAdapter, persist the Payment, then
- *   Hook::fire('order.placed'). Per checkout-orchestration-performance-
- *   note.md §2 (external calls need explicit handling, never block
- *   inside a held DB transaction) and checkout-domain-design.md §8.3's
- *   own restatement of it: a DB transaction is never held open across a
- *   call to an external system, even though V1's two adapters are
- *   synchronous and offline — this shape must already be correct for the
- *   day a real provider adapter replaces them.
+ *   resolved PaymentMethodAdapter, RECORD ITS ANSWER onto the already-
+ *   committed Payment row, then Hook::fire('order.placed'). Per
+ *   checkout-orchestration-performance-note.md §2 (external calls need
+ *   explicit handling, never block inside a held DB transaction) and
+ *   checkout-domain-design.md §8.3's own restatement of it: a DB
+ *   transaction is never held open across a call to an external system,
+ *   even though V1's two adapters are synchronous and offline — this
+ *   shape must already be correct for the day a real provider adapter
+ *   replaces them.
+ *
+ * THE PAYMENT ROW MOVED INTO PHASE 1 — found in review, not part of the
+ * original design: a crash (or any uncaught exception) between Phase 1's
+ * commit and the old Phase 2 Payment::create()/save() left a real Order
+ * with NO Payment row at all — not FAILED, not PENDING, nothing — and a
+ * retry hit the idempotent-replay fast path (§6) and never re-ran Phase
+ * 2, producing an order the customer could never pay for. Writing the
+ * Payment as PENDING inside Phase 1, then having Phase 2 call
+ * Payment::recordAttemptResult() to fill in what the adapter actually
+ * said, means every committed Order now has a Payment row by
+ * construction — a crash in Phase 2 leaves it at PENDING with a NULL
+ * attemptedAt, a real, findable state a future reconciliation job can
+ * act on, per EasyCo\Payment\Payment's own class docblock.
  *
  * Every building block this assembles already exists and is tested in
  * isolation: CheckoutLinePricer (pricing/profit), ClientResolver,
@@ -86,7 +101,7 @@ final class CheckoutOrchestrator
      * @throws CartNotFoundForCheckoutException
      * @throws EmptyCartException
      * @throws PromotionNoLongerValidException
-     * @throws \App\Services\Exceptions\UnknownPaymentMethodException Propagates uncaught from Phase 2 — the Order/stock/Transaction from Phase 1 have already committed by this point (see this method's own inline note).
+     * @throws \App\Services\Exceptions\UnknownPaymentMethodException Propagates uncaught from Phase 2 — the Order/stock/Transaction/Payment(PENDING) from Phase 1 have already committed by this point (see this method's own inline note).
      * @throws \EasyCo\Pricing\Exceptions\PriceNotConfiguredException Propagates uncaught — aborts the transaction (§8.3 step 3).
      * @throws \EasyCo\Inventory\Exceptions\InsufficientStockException Propagates uncaught — aborts the transaction (§8.3 step 7).
      * @throws \App\Services\Exceptions\AddressNotFoundForCheckoutException Propagates uncaught from AddressResolver::resolveExisting().
@@ -121,6 +136,7 @@ final class CheckoutOrchestrator
         }
 
         $order = $result->order();
+        $payment = $result->payment();
 
         // Step 13 — outside the transaction, per checkout-orchestration-
         // performance-note.md §2: never hold a DB transaction open
@@ -129,22 +145,31 @@ final class CheckoutOrchestrator
         // already be correct for the day a real provider adapter
         // replaces them.
         //
-        // A FAILED PaymentAttemptResult is still persisted as a real
-        // Payment row with FAILED status — the Order stands, stock stays
-        // decremented, nothing is compensated. §8.3 step 13 already
-        // flags compensation for a real online provider's synchronous
-        // failure as deliberately out of scope; both V1 adapters always
-        // return PENDING, so this branch is unreachable today but
-        // correct when it isn't.
+        // $payment already exists as a real, committed PENDING row from
+        // Phase 1 (see class docblock) — this call records THIS
+        // attempt's actual outcome onto it, never creates a second row.
+        // If charge() itself throws, or the process dies before the
+        // save() below completes, $payment is left exactly as Phase 1
+        // committed it: PENDING with a NULL attemptedAt — the real,
+        // findable "attempt never completed" state this whole change
+        // exists to produce, instead of no row at all.
+        //
+        // A FAILED PaymentAttemptResult is recorded as-is — the Order
+        // stands, stock stays decremented, nothing is compensated. §8.3
+        // step 13 already flags compensation for a real online
+        // provider's synchronous failure as deliberately out of scope.
+        // Both V1 adapters always return PENDING — a legitimate final
+        // answer for an offline method, not an edge case — so
+        // recordAttemptResult() is written to accept it, not reject it;
+        // see Payment's own class docblock for why the "already
+        // recorded" guard lives on attemptedAt rather than on status.
         $adapter = $this->adapterResolver->resolve($input->paymentMethod);
         $attempt = $adapter->charge($order->total(), new PaymentContext($order->id()));
-        $payment = Payment::create(
-            orderId: $order->id(),
-            method: $input->paymentMethod,
-            amount: $order->total(),
+        $payment->recordAttemptResult(
             status: $attempt->status(),
             providerReference: $attempt->providerReference(),
             failureReason: $attempt->failureReason(),
+            attemptedAt: new DateTimeImmutable(),
         );
         $this->payments->save($payment);
 
@@ -247,6 +272,20 @@ final class CheckoutOrchestrator
 
         $this->orders->save($order);
 
+        // Write the Payment row NOW, as PENDING with no attempt outcome
+        // yet — see class docblock for why this moved into Phase 1. A
+        // crash before the cart claim below rolls this back along with
+        // everything else in the transaction, exactly like the Order
+        // itself; that's the whole point of writing it here, before the
+        // claim, rather than after.
+        $payment = Payment::create(
+            orderId: $order->id(),
+            method: $input->paymentMethod,
+            amount: $order->total(),
+            status: PaymentStatus::PENDING,
+        );
+        $this->payments->save($payment);
+
         // Step 10: claim the cart — zero-affected-rows means a
         // concurrent request already claimed it; unwind via rollback
         // and resolve idempotently outside the transaction.
@@ -261,7 +300,7 @@ final class CheckoutOrchestrator
             $this->redeemPromotionAtomically($appliedPromotion, $order->id(), $input->accountId, $placedAt);
         }
 
-        return CheckoutResult::placed($order);
+        return CheckoutResult::placed($order, $payment);
     }
 
     /**
