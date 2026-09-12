@@ -19,6 +19,7 @@
         "easyco/payment": "@dev",
         "easyco/pricing": "@dev",
         "easyco/promotions": "@dev",
+        "easyco/staff": "@dev",
         "intervention/image": "^4.0",
         "laravel/framework": "^13.17",
         "laravel/sanctum": "^4.3",
