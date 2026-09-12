@@ -2,6 +2,7 @@
 
 use App\Models\User;
 use EasyCo\Account\Persistence\Eloquent\AccountModel;
+use EasyCo\Staff\Persistence\Eloquent\StaffModel;
 
 return [
 
@@ -45,12 +46,30 @@ return [
         ],
 
         // Storefront customer login (account-domain-design.md §2) —
-        // deliberately separate from 'web'/'users' above, reserved for
-        // a possible future staff/admin login. Session-driven, backed
-        // by the 'accounts' provider below.
+        // deliberately separate from 'web'/'users' above. Also
+        // deliberately separate from 'staff' below, per
+        // staff-access-domain-design.md §2: a customer session must
+        // never double as a staff session, and vice versa — a staff
+        // member must not be discoverable, enumerable or
+        // password-resettable through the storefront's own
+        // customer-facing endpoints, and a customer must never be able
+        // to reach the merchant surface via their own session. Session-
+        // driven, backed by the 'accounts' provider below.
         'customer' => [
             'driver' => 'session',
             'provider' => 'accounts',
+        ],
+
+        // Merchant-surface login (staff-access-domain-design.md §2) —
+        // the "possible future staff/admin login" the 'customer' guard's
+        // own comment used to anticipate; that future has now arrived.
+        // Deliberately separate from both 'web' and 'customer' above,
+        // for the same reasoning stated on 'customer': a staff session
+        // must never double as anything else. Session-driven, backed by
+        // the 'staff' provider below.
+        'staff' => [
+            'driver' => 'session',
+            'provider' => 'staff',
         ],
     ],
 
@@ -87,6 +106,14 @@ return [
         'accounts' => [
             'driver' => 'eloquent',
             'model' => AccountModel::class,
+        ],
+
+        // Backs the 'staff' guard above — merchant-surface identities, a
+        // separate table/model from both 'users' and 'accounts'
+        // (staff-access-domain-design.md §2).
+        'staff' => [
+            'driver' => 'eloquent',
+            'model' => StaffModel::class,
         ],
     ],
 

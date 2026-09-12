@@ -21,6 +21,13 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->api(prepend: [
             \Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful::class,
         ]);
+
+        // The merchant-surface permission-enforcement point —
+        // staff-access-domain-design.md §1/§5. Used as
+        // `staff.can:product_manage` alongside `auth:staff` on a route.
+        $middleware->alias([
+            'staff.can' => \App\Http\Middleware\EnsureStaffHasPermission::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(
