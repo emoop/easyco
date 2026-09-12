@@ -20,6 +20,12 @@ class CatalogVariationBarcodeHookTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->actingAsAdministrator();
+    }
+
     public function test_a_supplied_barcode_passes_through_unchanged_with_no_listeners_registered(): void
     {
         $response = $this->postJson('/api/products', [

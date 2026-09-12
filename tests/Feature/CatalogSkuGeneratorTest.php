@@ -29,6 +29,12 @@ class CatalogSkuGeneratorTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->actingAsAdministrator();
+    }
+
     private function configuredSequenceStart(): int
     {
         return (int) config('services.catalog.base_sku_sequence_start');

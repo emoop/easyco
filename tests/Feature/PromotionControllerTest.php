@@ -10,6 +10,12 @@ class PromotionControllerTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->actingAsAdministrator();
+    }
+
     public function test_happy_path_store_for_a_percentage_promotion_returns_201_and_persists(): void
     {
         $response = $this->postJson('/api/promotions', [

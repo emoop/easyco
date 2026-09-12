@@ -14,6 +14,12 @@ class AttributeValueControllerTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->actingAsAdministrator();
+    }
+
     private function createDefinition(string $code, string $type = 'select'): string
     {
         $response = $this->postJson('/api/attribute-definitions', [

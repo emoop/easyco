@@ -33,6 +33,8 @@ class CreateProductVerticalSliceTest extends TestCase
     {
         parent::setUp();
 
+        $this->actingAsAdministrator();
+
         $this->fixedPrice = Price::exclusiveOfTax(
             Money::fromMinorUnits(4999, Currency::EUR())
         );

@@ -13,6 +13,12 @@ class BrandControllerTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->actingAsAdministrator();
+    }
+
     public function test_creating_a_brand_succeeds_and_persists(): void
     {
         $response = $this->postJson('/api/brands', [

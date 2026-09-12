@@ -13,6 +13,12 @@ class CategoryControllerTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->actingAsAdministrator();
+    }
+
     public function test_creating_a_category_with_no_parent_succeeds_and_persists(): void
     {
         $response = $this->postJson('/api/categories', [

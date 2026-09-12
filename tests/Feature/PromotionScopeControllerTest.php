@@ -18,6 +18,12 @@ class PromotionScopeControllerTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->actingAsAdministrator();
+    }
+
     private static int $counter = 0;
 
     private function promotionId(): string

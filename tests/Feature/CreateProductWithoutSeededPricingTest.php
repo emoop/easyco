@@ -19,6 +19,12 @@ class CreateProductWithoutSeededPricingTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->actingAsAdministrator();
+    }
+
     public function test_creating_a_product_against_the_real_resolver_with_no_regular_prices_list_seeded_yet(): void
     {
         $response = $this->postJson('/api/products', ['name' => 'Unseeded Pricing Product', 'base_sku' => 'TEST-SKU-UNSEEDED']);

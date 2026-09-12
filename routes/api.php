@@ -35,30 +35,6 @@ Route::middleware('auth:customer')->group(function () {
 
 Route::post('/addresses', [AddressController::class, 'store']);
 
-Route::post('/products', [ProductController::class, 'store']);
-Route::post('/products/variable', [VariableProductController::class, 'store']);
-Route::put('/products/{productId}/brand', [ProductController::class, 'updateBrand']);
-Route::post('/products/{productId}/media', [ProductMediaController::class, 'store']);
-Route::get('/products/{productId}/media', [ProductMediaController::class, 'index']);
-Route::put('/products/{productId}/media/order', [ProductMediaController::class, 'reorder']);
-Route::delete('/products/{productId}/media/{productMediaId}', [ProductMediaController::class, 'destroy']);
-
-Route::post('/products/{productId}/categories', [ProductCategoryController::class, 'store']);
-Route::get('/products/{productId}/categories', [ProductCategoryController::class, 'index']);
-Route::delete('/products/{productId}/categories/{categoryId}', [ProductCategoryController::class, 'destroy']);
-
-Route::post('/products/{productId}/tags', [ProductTagController::class, 'store']);
-Route::get('/products/{productId}/tags', [ProductTagController::class, 'index']);
-Route::delete('/products/{productId}/tags/{tagId}', [ProductTagController::class, 'destroy']);
-
-Route::post('/variations/{variationId}/media', [VariationMediaController::class, 'store']);
-Route::get('/variations/{variationId}/media', [VariationMediaController::class, 'index']);
-Route::put('/variations/{variationId}/media/order', [VariationMediaController::class, 'reorder']);
-Route::delete('/variations/{variationId}/media/{variationMediaId}', [VariationMediaController::class, 'destroy']);
-
-Route::get('/variations/{variationId}/stock', [StockLevelController::class, 'show']);
-Route::put('/variations/{variationId}/stock', [StockLevelController::class, 'update']);
-
 Route::get('/cart', [CartController::class, 'index']);
 Route::post('/cart/lines', [CartController::class, 'store']);
 Route::patch('/cart/lines/{variationId}', [CartController::class, 'update']);
@@ -70,26 +46,110 @@ Route::delete('/cart/promotion', [CartController::class, 'removePromotion']);
 // NOT go inside the auth:customer group above.
 Route::post('/checkout', [CheckoutController::class, 'store']);
 
-Route::post('/media', [MediaController::class, 'store']);
+// ─────────────────────────────────────────────────────────────────
+// Merchant surface — everything below requires auth:staff plus a
+// declared staff.can:* permission on every route. See
+// staff-access-domain-design.md §1/§5.
+// tests/Feature/MerchantRoutesRequirePermissionTest.php audits this
+// at the route-table level: a route added below without both
+// requirements fails that test — deliberately, per §5 rule 1.
+// ─────────────────────────────────────────────────────────────────
+Route::middleware('auth:staff')->group(function () {
+    Route::post('/products', [ProductController::class, 'store'])
+        ->middleware('staff.can:product_manage');
+    Route::post('/products/variable', [VariableProductController::class, 'store'])
+        ->middleware('staff.can:product_manage');
+    Route::put('/products/{productId}/brand', [ProductController::class, 'updateBrand'])
+        ->middleware('staff.can:product_manage');
+    Route::post('/products/{productId}/media', [ProductMediaController::class, 'store'])
+        ->middleware('staff.can:product_manage');
+    Route::get('/products/{productId}/media', [ProductMediaController::class, 'index'])
+        ->middleware('staff.can:product_view');
+    Route::put('/products/{productId}/media/order', [ProductMediaController::class, 'reorder'])
+        ->middleware('staff.can:product_manage');
+    Route::delete('/products/{productId}/media/{productMediaId}', [ProductMediaController::class, 'destroy'])
+        ->middleware('staff.can:product_manage');
 
-Route::post('/attribute-definitions', [AttributeDefinitionController::class, 'store']);
-Route::get('/attribute-definitions', [AttributeDefinitionController::class, 'index']);
-Route::get('/attribute-definitions/{id}/values', [AttributeValueController::class, 'index']);
+    Route::post('/products/{productId}/categories', [ProductCategoryController::class, 'store'])
+        ->middleware('staff.can:product_manage');
+    Route::get('/products/{productId}/categories', [ProductCategoryController::class, 'index'])
+        ->middleware('staff.can:product_view');
+    Route::delete('/products/{productId}/categories/{categoryId}', [ProductCategoryController::class, 'destroy'])
+        ->middleware('staff.can:product_manage');
 
-Route::post('/attribute-values', [AttributeValueController::class, 'store']);
+    Route::post('/products/{productId}/tags', [ProductTagController::class, 'store'])
+        ->middleware('staff.can:product_manage');
+    Route::get('/products/{productId}/tags', [ProductTagController::class, 'index'])
+        ->middleware('staff.can:product_view');
+    Route::delete('/products/{productId}/tags/{tagId}', [ProductTagController::class, 'destroy'])
+        ->middleware('staff.can:product_manage');
 
-Route::post('/brands', [BrandController::class, 'store']);
-Route::get('/brands', [BrandController::class, 'index']);
+    Route::post('/variations/{variationId}/media', [VariationMediaController::class, 'store'])
+        ->middleware('staff.can:product_manage');
+    Route::get('/variations/{variationId}/media', [VariationMediaController::class, 'index'])
+        ->middleware('staff.can:product_view');
+    Route::put('/variations/{variationId}/media/order', [VariationMediaController::class, 'reorder'])
+        ->middleware('staff.can:product_manage');
+    Route::delete('/variations/{variationId}/media/{variationMediaId}', [VariationMediaController::class, 'destroy'])
+        ->middleware('staff.can:product_manage');
 
-Route::post('/categories', [CategoryController::class, 'store']);
-Route::get('/categories', [CategoryController::class, 'index']);
+    // No dedicated stock/inventory permission exists in the current
+    // Permission vocabulary (§3) — stock is treated as part of product
+    // management until/unless a dedicated permission is introduced.
+    // Flagged for the domain owner; not this task's call to add one.
+    Route::get('/variations/{variationId}/stock', [StockLevelController::class, 'show'])
+        ->middleware('staff.can:product_view');
+    Route::put('/variations/{variationId}/stock', [StockLevelController::class, 'update'])
+        ->middleware('staff.can:product_manage');
 
-Route::post('/tags', [TagController::class, 'store']);
-Route::get('/tags', [TagController::class, 'index']);
+    Route::post('/media', [MediaController::class, 'store'])
+        ->middleware('staff.can:product_manage');
 
-Route::post('/promotions', [PromotionController::class, 'store']);
-Route::get('/promotions', [PromotionController::class, 'index']);
+    Route::post('/attribute-definitions', [AttributeDefinitionController::class, 'store'])
+        ->middleware('staff.can:taxonomy_manage');
+    // Read access deliberately broadened to product_view rather than
+    // taxonomy_manage: a Product Entry staff member (product_view +
+    // product_manage only, no taxonomy_manage) must still be able to
+    // list attribute definitions/values while building a variable
+    // product — that is the entire reason that role exists. Flagged
+    // for the domain owner as an explicit architectural call, not an
+    // oversight.
+    Route::get('/attribute-definitions', [AttributeDefinitionController::class, 'index'])
+        ->middleware('staff.can:product_view');
+    Route::get('/attribute-definitions/{id}/values', [AttributeValueController::class, 'index'])
+        ->middleware('staff.can:product_view');
+    Route::post('/attribute-values', [AttributeValueController::class, 'store'])
+        ->middleware('staff.can:taxonomy_manage');
 
-Route::post('/promotions/{promotionId}/scopes', [PromotionScopeController::class, 'store']);
-Route::get('/promotions/{promotionId}/scopes', [PromotionScopeController::class, 'index']);
-Route::delete('/promotions/{promotionId}/scopes/{scopeId}', [PromotionScopeController::class, 'destroy']);
+    Route::post('/brands', [BrandController::class, 'store'])
+        ->middleware('staff.can:taxonomy_manage');
+    Route::get('/brands', [BrandController::class, 'index'])
+        ->middleware('staff.can:product_view');
+
+    Route::post('/categories', [CategoryController::class, 'store'])
+        ->middleware('staff.can:taxonomy_manage');
+    Route::get('/categories', [CategoryController::class, 'index'])
+        ->middleware('staff.can:product_view');
+
+    Route::post('/tags', [TagController::class, 'store'])
+        ->middleware('staff.can:taxonomy_manage');
+    Route::get('/tags', [TagController::class, 'index'])
+        ->middleware('staff.can:product_view');
+
+    // No promotion_view permission exists in the current vocabulary —
+    // GET is gated identically to mutation. Real, visible consequence:
+    // Manager (no promotion_manage per §4.1) cannot browse promotions
+    // at all under this scheme. Not fixed here — inventing a new
+    // permission is out of scope for this task. Flagged for the
+    // domain owner.
+    Route::post('/promotions', [PromotionController::class, 'store'])
+        ->middleware('staff.can:promotion_manage');
+    Route::get('/promotions', [PromotionController::class, 'index'])
+        ->middleware('staff.can:promotion_manage');
+    Route::post('/promotions/{promotionId}/scopes', [PromotionScopeController::class, 'store'])
+        ->middleware('staff.can:promotion_manage');
+    Route::get('/promotions/{promotionId}/scopes', [PromotionScopeController::class, 'index'])
+        ->middleware('staff.can:promotion_manage');
+    Route::delete('/promotions/{promotionId}/scopes/{scopeId}', [PromotionScopeController::class, 'destroy'])
+        ->middleware('staff.can:promotion_manage');
+});

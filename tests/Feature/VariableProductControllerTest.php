@@ -16,6 +16,12 @@ class VariableProductControllerTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->actingAsAdministrator();
+    }
+
     private function createDefinition(string $code): string
     {
         return (string) $this->postJson('/api/attribute-definitions', [

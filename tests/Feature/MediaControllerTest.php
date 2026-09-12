@@ -20,6 +20,8 @@ class MediaControllerTest extends TestCase
     {
         parent::setUp();
 
+        $this->actingAsAdministrator();
+
         Storage::fake('public');
         Queue::fake();
     }

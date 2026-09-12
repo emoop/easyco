@@ -18,6 +18,12 @@ class VariationMediaControllerTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->actingAsAdministrator();
+    }
+
     private static int $productCounter = 0;
 
     private function variationId(): string

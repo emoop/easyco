@@ -14,6 +14,12 @@ class AttributeDefinitionControllerTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->actingAsAdministrator();
+    }
+
     public static function validTypeProvider(): array
     {
         return [
