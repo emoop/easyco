@@ -8,7 +8,28 @@ Checkout itself is deliberately **not** a domain package. It is an orchestration
 
 ## Not deployable yet
 
-**No merchant-facing endpoint is protected.** Every admin route — creating products, editing stock, managing promotions — is currently reachable by anyone who can reach the server. This is a known, tracked gap, not an oversight: see [admin-auth-gap-note.md](packages/EasyCo/documents/admin-auth-gap-note.md). A role-based staff guard is the next planned work, and it blocks anything resembling a real deployment. The customer-facing surfaces (cart, checkout, account) *are* correctly scoped by session token or the `customer` guard.
+Every merchant-facing endpoint is now protected — `routes/api.php` sits
+entirely behind the `staff` auth guard plus a declared `staff.can:*`
+permission per route (see
+[staff-access-domain-design.md](packages/EasyCo/documents/staff-access-domain-design.md)),
+audited by a test that scans the real route table so a future
+unprotected route fails the suite rather than shipping. What's still
+missing before a real deployment:
+
+- **No staff login/logout HTTP endpoint yet.** The
+  `staff:create-administrator` artisan command bootstraps the first
+  administrator directly on the server, and the guard itself is fully
+  functional — but there's no browser-session login endpoint yet for
+  staff, only for the customer-facing `Account` guard.
+- **No admin UI or storefront UI yet.** See
+  [production-requirements.md](packages/EasyCo/documents/production-requirements.md)
+  for what a server needs to actually run EasyCo once those exist, and
+  `performance-and-channel-strategy.md` for the planned direction
+  (Filament/Livewire for admin, server-rendered Blade+Alpine for the
+  storefront).
+
+The customer-facing surfaces (cart, checkout, account) are, and always
+have been, correctly scoped by session token or the `customer` guard.
 
 ## Architecture note
 
@@ -23,6 +44,7 @@ This project was originally scaffolded on top of [Bagisto](https://bagisto.com/)
 | [`packages/EasyCo/Extensibility`](packages/EasyCo/Extensibility) | A WordPress-style hooks system (actions/filters). Foundational and framework-agnostic — no dependency on Catalog, Pricing, or Laravel in its core logic; consumed only by the `app/` layer, never by domain packages directly. `order.placed` is the first hook fired by real production code. | [extensibility-design-and-hooks.md](packages/EasyCo/documents/extensibility-design-and-hooks.md) |
 | [`packages/EasyCo/OperationalSales`](packages/EasyCo/OperationalSales) | The record-keeping side of a sale — `Client`, `Transaction`, immutable `SaleLine`, `InstallmentPlan` — shared identically by POS and Web. A `Client` may link to an `Account` (`account_id`), set once at first checkout and never re-synced afterwards. | [operational-sales-domain-design.md](packages/EasyCo/documents/operational-sales-domain-design.md) |
 | [`packages/EasyCo/Account`](packages/EasyCo/Account) | Customer registration, login (rate-limited), logout, and session — a separate `customer` auth guard from Laravel's default. | [account-domain-design.md](packages/EasyCo/documents/account-domain-design.md) |
+| [`packages/EasyCo/Staff`](packages/EasyCo/Staff) | Merchant-surface identities (`Staff`) and role-based permissions (`Role`, the `Permission` vocabulary) — structurally separate from `Account`, backed by its own `staff` auth guard. Three shipped roles (Administrator, Manager, Product Entry) ship via an idempotent seeder; `php artisan staff:create-administrator` bootstraps the first one. Every existing merchant route in `routes/api.php` is enforced by `staff.can:*` middleware, audited by a route-table test. | [staff-access-domain-design.md](packages/EasyCo/documents/staff-access-domain-design.md) |
 | [`packages/EasyCo/Address`](packages/EasyCo/Address) | Delivery addresses in two mutually exclusive shapes — a street address, or a courier pickup point (`carrierCode`/`pickupPointReference`/`settlement`, deliberately carrier-agnostic). Belongs to an Account or to nobody (a guest's one-off address). | [address-domain-design.md](packages/EasyCo/documents/address-domain-design.md) |
 | [`packages/EasyCo/Inventory`](packages/EasyCo/Inventory) | A single stock quantity per Variation, atomic increase/decrease at the repository layer, and a soft availability check only — no reservation, by deliberate decision. Stock is committed hard at checkout finalization. | [inventory-domain-design.md](packages/EasyCo/documents/inventory-domain-design.md) |
 | [`packages/EasyCo/Cart`](packages/EasyCo/Cart) | Guest and logged-in shopping carts (session-token vs. `account_id`), pricing resolved live on every read (never snapshotted), a soft stock check at add-time, merge-on-login, and expiry with a `cart:prune` command. Also carries `order_id`, the atomic claim that makes checkout idempotent. | [cart-domain-design.md](packages/EasyCo/documents/cart-domain-design.md) |
@@ -45,7 +67,7 @@ Two decisions worth knowing before reading the code: an invalid promotion code *
 
 ## Other documents
 
-Beyond the per-package design docs above, `packages/EasyCo/documents/` holds the project's decision record: [ai-collaboration-protocol.md](packages/EasyCo/documents/ai-collaboration-protocol.md) (how changes are proposed, reviewed and verified), [channel-native-commerce-vision.md](packages/EasyCo/documents/channel-native-commerce-vision.md), [performance-and-channel-strategy.md](packages/EasyCo/documents/performance-and-channel-strategy.md), and a set of `*-note.md` files acting as the deferred-work queue.
+Beyond the per-package design docs above, `packages/EasyCo/documents/` holds the project's decision record: [ai-collaboration-protocol.md](packages/EasyCo/documents/ai-collaboration-protocol.md) (how changes are proposed, reviewed and verified), [channel-native-commerce-vision.md](packages/EasyCo/documents/channel-native-commerce-vision.md), [performance-and-channel-strategy.md](packages/EasyCo/documents/performance-and-channel-strategy.md), [production-requirements.md](packages/EasyCo/documents/production-requirements.md) (what a real server needs beyond local dev — required and recommended, host-agnostic), and a set of `*-note.md` files acting as the deferred-work queue.
 
 **Site Settings** — a generic, admin-editable key-value store — lives in `app/Settings/` rather than under `packages/EasyCo/`, since it's app-level infrastructure rather than its own business domain. See [site-settings-design.md](packages/EasyCo/documents/site-settings-design.md). It's infrastructure only right now: nothing in the app actually reads or writes through it yet.
 
@@ -77,6 +99,16 @@ php artisan storage:link
 npm install && npm run build
 # compiles frontend assets — required for the default homepage to load (uses Vite)
 ```
+
+## Production deployment
+
+The steps above get EasyCo running for local development. Actually
+serving real traffic needs more — a persistent queue worker as a
+system service, Redis, and a full-page cache layer, none of which are
+optional for anything beyond a first local try-out. None of this ties
+EasyCo to a specific hosting provider — see
+[production-requirements.md](packages/EasyCo/documents/production-requirements.md)
+for the full, host-agnostic checklist.
 
 ## Tests
 
