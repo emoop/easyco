@@ -8,6 +8,7 @@ use App\Filament\Resources\RoleResource\Pages\EditRole;
 use App\Filament\Resources\RoleResource\Pages\ListRoles;
 use App\Filament\Resources\RoleResource\Pages\ViewRole;
 use App\Filament\StaffPanelUser;
+use App\Settings\Contracts\SiteSettingsRepository;
 use EasyCo\Staff\Contracts\PasswordHasher;
 use EasyCo\Staff\Contracts\RoleRepository;
 use EasyCo\Staff\Contracts\StaffRepository;
@@ -295,5 +296,37 @@ class RoleResourceTest extends TestCase
         session()->forget('password_hash_staff');
         $this->get(RoleResource::getUrl('index'))->assertForbidden();
         $this->get(RoleResource::getUrl('create'))->assertForbidden();
+    }
+
+    /**
+     * Real, end-to-end proof of the lang-file retrofit — not just that
+     * __() calls exist syntactically, but that a real HTTP request
+     * through the actual pipeline (site.locale -> ApplyStoreLocale ->
+     * App::setLocale() -> this Resource's __() calls) renders real
+     * Bulgarian text. Set via SiteSettingsRepository directly, not
+     * through the LocaleSettings page — this is a unit-level locale
+     * check on RoleResource, not a settings-page test (that's
+     * LocaleSettingsPageTest's job).
+     */
+    public function test_the_create_form_renders_in_bulgarian_when_the_site_locale_is_bulgarian(): void
+    {
+        $this->actingAsPanelAdministrator();
+        app(SiteSettingsRepository::class)->set('site.locale', 'bg');
+
+        $response = $this->get(RoleResource::getUrl('create'));
+
+        $response->assertOk();
+        $response->assertSee(__('roles.fields.name', [], 'bg'));
+    }
+
+    public function test_the_create_form_renders_in_english_when_the_site_locale_is_english(): void
+    {
+        $this->actingAsPanelAdministrator();
+        app(SiteSettingsRepository::class)->set('site.locale', 'en');
+
+        $response = $this->get(RoleResource::getUrl('create'));
+
+        $response->assertOk();
+        $response->assertSee(__('roles.fields.name', [], 'en'));
     }
 }

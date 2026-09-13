@@ -6,6 +6,8 @@ use App\Filament\Resources\StaffResource;
 use App\Filament\Resources\StaffResource\Pages\CreateStaff;
 use App\Filament\Resources\StaffResource\Pages\EditStaff;
 use App\Filament\StaffPanelUser;
+use App\Http\Middleware\ApplyStoreLocale;
+use App\Settings\Contracts\SiteSettingsRepository;
 use EasyCo\Staff\Contracts\PasswordHasher;
 use EasyCo\Staff\Contracts\RoleRepository;
 use EasyCo\Staff\Contracts\StaffRepository;
@@ -175,6 +177,33 @@ class StaffResourceTest extends TestCase
             ->fillForm(['is_active' => false, 'role_id' => $adminRoleId])
             ->call('save')
             ->assertNotified();
+
+        $reloaded = app(StaffRepository::class)->findById((string) $admin->id);
+        $this->assertTrue($reloaded->isActive());
+    }
+
+    /**
+     * Real, end-to-end proof of the lang-file retrofit on this
+     * notification specifically — set via SiteSettingsRepository
+     * directly, then apply it exactly the way a real request's
+     * ApplyStoreLocale middleware would (Livewire::test(...) never runs
+     * that middleware itself, since it never traverses the HTTP kernel —
+     * this mirrors the manual dev-DB check already used for
+     * ApplyStoreLocale itself: invoking handle() directly to get the
+     * real, production behavior without a full HTTP round trip).
+     */
+    public function test_the_last_active_staff_notification_is_translated(): void
+    {
+        $admin = $this->actingAsPanelAdministrator();
+        $adminRoleId = (string) $admin->role_id;
+
+        app(SiteSettingsRepository::class)->set('site.locale', 'bg');
+        app(ApplyStoreLocale::class)->handle(request(), fn ($request) => response(''));
+
+        Livewire::test(EditStaff::class, ['record' => $admin->id])
+            ->fillForm(['is_active' => false, 'role_id' => $adminRoleId])
+            ->call('save')
+            ->assertNotified(__('staff.notifications.cannot_deactivate_last_active', [], 'bg'));
 
         $reloaded = app(StaffRepository::class)->findById((string) $admin->id);
         $this->assertTrue($reloaded->isActive());

@@ -40,7 +40,7 @@ class EditStaff extends EditRecord
 
             if ($activeCount <= 1) {
                 Notification::make()
-                    ->title('Cannot deactivate the last active staff member — you would be locked out of the panel. If this is ever needed anyway, run `php artisan staff:create-administrator --force` from the server.')
+                    ->title(__('staff.notifications.cannot_deactivate_last_active'))
                     ->danger()
                     ->send();
 

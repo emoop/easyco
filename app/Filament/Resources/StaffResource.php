@@ -47,9 +47,17 @@ class StaffResource extends Resource
 
     // Same fix as RoleResource — without these, Filament derives the
     // label from StaffModel's own name, rendering as "Staff Models".
-    protected static ?string $modelLabel = 'Staff Member';
+    // Overridden as methods, not the $modelLabel/$pluralModelLabel
+    // static properties — see RoleResource's identical override for why.
+    public static function getModelLabel(): string
+    {
+        return __('staff.label');
+    }
 
-    protected static ?string $pluralModelLabel = 'Staff';
+    public static function getPluralModelLabel(): string
+    {
+        return __('staff.plural_label');
+    }
 
     protected static function viewAnyPermission(): ?Permission
     {
@@ -70,6 +78,7 @@ class StaffResource extends Resource
     {
         return $schema->components([
             TextInput::make('name')
+                ->label(__('staff.fields.name'))
                 ->required()
                 // No Staff::changeName() mutator exists — a real,
                 // deliberate gap this task surfaced, not an oversight.
@@ -79,20 +88,23 @@ class StaffResource extends Resource
                 // "complete".
                 ->disabledOn('edit'),
             TextInput::make('email')
+                ->label(__('staff.fields.email'))
                 ->required()
                 ->email()
                 // Same reasoning as name — no Staff::changeEmail()
                 // mutator exists either.
                 ->disabledOn('edit'),
             TextInput::make('password')
+                ->label(__('staff.fields.password'))
                 ->password()
                 ->required(fn (string $operation): bool => $operation === 'create')
-                ->helperText(fn (string $operation): ?string => $operation === 'edit' ? 'Leave blank to keep the current password' : null),
+                ->helperText(fn (string $operation): ?string => $operation === 'edit' ? __('staff.fields.password_help_edit') : null),
             Select::make('role_id')
-                ->label('Role')
+                ->label(__('staff.fields.role'))
                 ->options(fn () => RoleModel::pluck('name', 'id'))
                 ->required(),
             Toggle::make('is_active')
+                ->label(__('staff.fields.is_active'))
                 // Staff::create() always starts active — a toggle that
                 // can only ever be "on" at creation time is confusing,
                 // not useful. Shown only on the Edit form.
@@ -105,13 +117,15 @@ class StaffResource extends Resource
         return $table
             ->columns([
                 TextColumn::make('name')
+                    ->label(__('staff.fields.name'))
                     ->searchable(),
                 TextColumn::make('email')
+                    ->label(__('staff.fields.email'))
                     ->searchable(),
                 TextColumn::make('role.name')
-                    ->label('Role'),
+                    ->label(__('staff.fields.role')),
                 IconColumn::make('is_active')
-                    ->label('Active')
+                    ->label(__('staff.fields.is_active'))
                     ->boolean(),
                 TextColumn::make('created_at')
                     ->dateTime()

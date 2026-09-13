@@ -47,10 +47,22 @@ class RoleResource extends Resource
     // Without these, Filament derives the label from the model class's
     // own name (RoleModel) rather than the domain concept, rendering as
     // "Role Models" in navigation/breadcrumbs — a real, confirmed
-    // cosmetic bug found via this task's manual smoke test.
-    protected static ?string $modelLabel = 'Role';
+    // cosmetic bug found via this task's manual smoke test. Overridden
+    // as methods, not the $modelLabel/$pluralModelLabel static
+    // properties — those are plain ?string, so they can't hold a __()
+    // call result (evaluated once at class-load time, before a request's
+    // locale is even known); HasLabels::getModelLabel()/
+    // getPluralModelLabel() are real methods Filament calls at render
+    // time and are the confirmed, correct override point instead.
+    public static function getModelLabel(): string
+    {
+        return __('roles.label');
+    }
 
-    protected static ?string $pluralModelLabel = 'Roles';
+    public static function getPluralModelLabel(): string
+    {
+        return __('roles.plural_label');
+    }
 
     protected static function viewAnyPermission(): ?Permission
     {
@@ -99,8 +111,10 @@ class RoleResource extends Resource
     {
         return $schema->components([
             TextInput::make('name')
+                ->label(__('roles.fields.name'))
                 ->required(),
             CheckboxList::make('permissions')
+                ->label(__('roles.fields.permissions'))
                 ->options(self::permissionOptions())
                 // Not required — an empty selection is valid
                 // (staff-access-domain-design.md §11: "an empty role"
@@ -117,14 +131,14 @@ class RoleResource extends Resource
                     ->searchable()
                     ->sortable(),
                 IconColumn::make('is_system')
-                    ->label('Type')
+                    ->label(__('roles.table.type'))
                     ->boolean()
                     ->trueIcon('heroicon-o-lock-closed')
                     ->falseIcon('heroicon-o-pencil')
                     ->trueColor('warning')
                     ->falseColor('success'),
                 TextColumn::make('permissions')
-                    ->label('Permissions')
+                    ->label(__('roles.fields.permissions'))
                     ->state(fn (RoleModel $record): string => count($record->permissions).' permissions'),
                 TextColumn::make('created_at')
                     ->dateTime()
@@ -166,10 +180,8 @@ class RoleResource extends Resource
             $entries = [];
 
             foreach ($permissions as $permission) {
-                $label = ucfirst(strtolower(str_replace('_', ' ', $permission->name)));
-
                 $entries[] = IconEntry::make($permission->value)
-                    ->label($label)
+                    ->label(self::permissionLabel($permission))
                     ->state(fn (RoleModel $record): bool => in_array($permission->value, $record->permissions, true))
                     ->boolean()
                     ->trueIcon('heroicon-o-check-circle')
@@ -178,16 +190,17 @@ class RoleResource extends Resource
                     ->falseColor('gray');
             }
 
-            $sections[] = Section::make($groupLabel)
+            $sections[] = Section::make(__("roles.permission_groups.{$groupLabel}"))
                 ->schema($entries)
                 ->columns(2);
         }
 
         return $schema->components([
-            TextEntry::make('name'),
+            TextEntry::make('name')
+                ->label(__('roles.fields.name')),
             TextEntry::make('is_system')
-                ->label('Role type')
-                ->formatStateUsing(fn (bool $state): string => $state ? 'System role' : 'Custom role'),
+                ->label(__('roles.table.type'))
+                ->formatStateUsing(fn (bool $state): string => $state ? __('roles.type.system') : __('roles.type.custom')),
             ...$sections,
         ]);
     }
@@ -231,10 +244,6 @@ class RoleResource extends Resource
     }
 
     /**
-     * Derives every option's label programmatically from the
-     * Permission case's own name (PRODUCT_VIEW -> "Product view") so a
-     * future 18th Permission needs zero UI changes here.
-     *
      * @return array<string, string>
      */
     private static function permissionOptions(): array
@@ -242,10 +251,21 @@ class RoleResource extends Resource
         $options = [];
 
         foreach (Permission::cases() as $permission) {
-            $label = ucfirst(strtolower(str_replace('_', ' ', $permission->name)));
-            $options[$permission->value] = $label;
+            $options[$permission->value] = self::permissionLabel($permission);
         }
 
         return $options;
+    }
+
+    /**
+     * The single call site for a Permission's translated display label —
+     * used by both permissionOptions() (the create/edit checklist) and
+     * infolist()'s per-permission entries, so the two can never drift
+     * from each other the way two separate ucfirst/str_replace call
+     * sites once could have.
+     */
+    private static function permissionLabel(Permission $permission): string
+    {
+        return __("roles.permissions.{$permission->value}");
     }
 }
