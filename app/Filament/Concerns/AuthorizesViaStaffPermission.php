@@ -41,6 +41,11 @@ trait AuthorizesViaStaffPermission
         return static::staffCanForAction(static::editPermission());
     }
 
+    public static function canView(Model $record): bool
+    {
+        return static::staffCanForAction(static::viewPermission());
+    }
+
     public static function canDelete(Model $record): bool
     {
         return static::staffCanForAction(static::deletePermission());
@@ -52,7 +57,9 @@ trait AuthorizesViaStaffPermission
      * Deliberately NOT abstract: a read-only Resource (e.g. a future
      * Order Resource, per admin-panel-design.md §6) legitimately never
      * overrides createPermission()/editPermission()/deletePermission()
-     * at all.
+     * at all. viewPermission() added when RoleResource's ViewRole page
+     * became this trait's first real View-page consumer — not a
+     * speculative addition.
      */
     protected static function viewAnyPermission(): ?Permission
     {
@@ -65,6 +72,11 @@ trait AuthorizesViaStaffPermission
     }
 
     protected static function editPermission(): ?Permission
+    {
+        return null;
+    }
+
+    protected static function viewPermission(): ?Permission
     {
         return null;
     }

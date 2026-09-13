@@ -6,6 +6,7 @@ use App\Filament\Resources\RoleResource;
 use App\Filament\Resources\RoleResource\Pages\CreateRole;
 use App\Filament\Resources\RoleResource\Pages\EditRole;
 use App\Filament\Resources\RoleResource\Pages\ListRoles;
+use App\Filament\Resources\RoleResource\Pages\ViewRole;
 use App\Filament\StaffPanelUser;
 use EasyCo\Staff\Contracts\PasswordHasher;
 use EasyCo\Staff\Contracts\RoleRepository;
@@ -17,6 +18,7 @@ use EasyCo\Staff\Seeders\StaffSystemRolesSeeder;
 use EasyCo\Staff\Staff;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
+use ReflectionMethod;
 use Tests\TestCase;
 
 /**
@@ -141,18 +143,13 @@ class RoleResourceTest extends TestCase
     }
 
     /**
-     * The real bug this pair of tests closes: Filament's own default
-     * row-click URL (built in ListRecords::makeTable(), confirmed
-     * directly against the installed v5.8.1 source) resolved the
-     * EditAction's own getUrl() before ever consulting canEdit()
-     * directly — it only skipped the action if it was isHidden(). An
-     * EditAction with no ->visible() override is never hidden, so a
-     * system role's entire row (including the "Type" is_system icon
-     * column, which has no columnUrl of its own and falls back to the
-     * same recordUrl) stayed clickable straight into a 403, even though
-     * RoleResource::canEdit() itself already correctly returned false.
+     * Supersedes the previous "no clickable row" behavior now that
+     * ViewRole exists: every row navigates somewhere again, but a
+     * system role's row goes to View (read-only, never 403s) and never
+     * to Edit — the Edit action itself stays hidden for it, exactly as
+     * canEdit() already dictates.
      */
-    public function test_a_system_role_has_no_clickable_row_or_edit_action_in_the_table(): void
+    public function test_a_system_roles_row_now_navigates_to_view_not_nowhere(): void
     {
         $this->actingAsPanelAdministrator();
 
@@ -163,11 +160,18 @@ class RoleResourceTest extends TestCase
 
         $component->assertTableActionHidden('edit', $systemRoleModel);
 
-        $this->assertNull($component->instance()->getTable()->getRecordUrl($systemRoleModel));
+        $recordUrl = $component->instance()->getTable()->getRecordUrl($systemRoleModel);
+        $this->assertSame(RoleResource::getUrl('view', ['record' => $systemRoleModel]), $recordUrl);
+
+        $this->get($recordUrl)->assertOk();
     }
 
-    /** The inverse — confirms the fix above didn't accidentally break editing for non-system roles. */
-    public function test_a_custom_role_still_has_a_clickable_edit_action(): void
+    /**
+     * The inverse — confirms the row's recordUrl (-> view) and the
+     * separate, visible EditAction (-> edit) coexist correctly for a
+     * non-system role, and neither one 403s.
+     */
+    public function test_a_custom_roles_row_still_navigates_correctly_and_its_edit_button_remains_separate(): void
     {
         $this->actingAsPanelAdministrator();
 
@@ -179,7 +183,87 @@ class RoleResourceTest extends TestCase
 
         $component->assertTableActionVisible('edit', $customModel);
 
-        $this->assertNotNull($component->instance()->getTable()->getRecordUrl($customModel));
+        $recordUrl = $component->instance()->getTable()->getRecordUrl($customModel);
+        $this->assertSame(RoleResource::getUrl('view', ['record' => $customModel]), $recordUrl);
+
+        $this->get($recordUrl)->assertOk();
+        $this->get(RoleResource::getUrl('edit', ['record' => $customModel]))->assertOk();
+    }
+
+    /**
+     * A real regression test for permissionGroups()'s hand-maintained-
+     * map tradeoff (RoleResource's own docblock explains why it can't
+     * derive itself from the enum): a future 18th Permission added to
+     * the enum but forgotten in this map should fail the suite rather
+     * than silently vanishing from the View page.
+     */
+    public function test_permission_groups_account_for_every_real_permission_exactly_once(): void
+    {
+        $method = new ReflectionMethod(RoleResource::class, 'permissionGroups');
+        $method->setAccessible(true);
+        $groups = $method->invoke(null);
+
+        $flattened = array_merge(...array_values($groups));
+
+        $this->assertEqualsCanonicalizing(Permission::cases(), $flattened);
+        $this->assertCount(count(Permission::cases()), $flattened, 'permissionGroups() must not list any permission more than once.');
+    }
+
+    public function test_viewing_a_system_role_shows_its_full_permission_set(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        $systemRole = app(RoleRepository::class)->findSystemRoleByName('Administrator');
+
+        $component = Livewire::test(ViewRole::class, ['record' => $systemRole->id()]);
+
+        foreach (Permission::cases() as $permission) {
+            $component->assertSchemaComponentStateSet($permission->value, true);
+        }
+    }
+
+    public function test_viewing_a_custom_role_shows_which_permissions_are_granted_and_which_are_not(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        $custom = Role::create('Limited', [Permission::PRODUCT_VIEW, Permission::COST_VIEW]);
+        app(RoleRepository::class)->save($custom);
+
+        $component = Livewire::test(ViewRole::class, ['record' => $custom->id()]);
+
+        $component->assertSchemaComponentStateSet(Permission::PRODUCT_VIEW->value, true);
+        $component->assertSchemaComponentStateSet(Permission::COST_VIEW->value, true);
+        $component->assertSchemaComponentStateSet(Permission::PRODUCT_MANAGE->value, false);
+        $component->assertSchemaComponentStateSet(Permission::COST_MANAGE->value, false);
+        $component->assertSchemaComponentStateSet(Permission::STAFF_MANAGE->value, false);
+    }
+
+    /**
+     * Viewing uses viewAnyPermission() directly (viewPermission() ===
+     * viewAnyPermission() === Permission::STAFF_MANAGE), the exact same
+     * gate the list itself uses — so Administrator (the only shipped
+     * role holding STAFF_MANAGE, per §4.1) can view, and Manager/Product
+     * Entry are forbidden, identically to
+     * test_the_real_permission_matrix_across_all_three_shipped_roles's
+     * own index/create assertions. Confirmed explicitly here for the
+     * View route specifically, rather than assumed from that test.
+     */
+    public function test_the_real_permission_matrix_for_viewing(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        $systemRole = app(RoleRepository::class)->findSystemRoleByName('Administrator');
+        $this->get(RoleResource::getUrl('view', ['record' => $systemRole->id()]))->assertOk();
+
+        $manager = $this->staffWithRole('Manager');
+        $this->actingAs($manager, 'staff');
+        session()->forget('password_hash_staff');
+        $this->get(RoleResource::getUrl('view', ['record' => $systemRole->id()]))->assertForbidden();
+
+        $productEntry = $this->staffWithRole('Product Entry');
+        $this->actingAs($productEntry, 'staff');
+        session()->forget('password_hash_staff');
+        $this->get(RoleResource::getUrl('view', ['record' => $systemRole->id()]))->assertForbidden();
     }
 
     public function test_the_real_permission_matrix_across_all_three_shipped_roles(): void

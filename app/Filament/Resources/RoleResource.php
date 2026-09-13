@@ -6,13 +6,18 @@ use App\Filament\Concerns\AuthorizesViaStaffPermission;
 use App\Filament\Resources\RoleResource\Pages\CreateRole;
 use App\Filament\Resources\RoleResource\Pages\EditRole;
 use App\Filament\Resources\RoleResource\Pages\ListRoles;
+use App\Filament\Resources\RoleResource\Pages\ViewRole;
 use BackedEnum;
 use EasyCo\Staff\Enums\Permission;
 use EasyCo\Staff\Persistence\Eloquent\RoleModel;
 use Filament\Actions\EditAction;
+use Filament\Actions\ViewAction;
 use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\TextInput;
+use Filament\Infolists\Components\IconEntry;
+use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
+use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
@@ -60,6 +65,17 @@ class RoleResource extends Resource
     protected static function editPermission(): ?Permission
     {
         return Permission::STAFF_MANAGE;
+    }
+
+    /**
+     * Viewing a role uses the same permission as viewing the list —
+     * anyone who can reach the Roles table at all can view any
+     * individual role's full detail. There is no separate "view detail"
+     * permission in the vocabulary and none is invented here.
+     */
+    protected static function viewPermission(): ?Permission
+    {
+        return static::viewAnyPermission();
     }
 
     /**
@@ -114,27 +130,66 @@ class RoleResource extends Resource
                     ->dateTime()
                     ->sortable(),
             ])
-            // Filament's own default row-click URL (built in
-            // ListRecords::makeTable(), confirmed directly against the
-            // installed v5.8.1 source) resolves the EditAction's own
-            // getUrl() BEFORE ever consulting canEdit() directly — it
-            // only skips that action if it is isHidden(). Without the
-            // ->visible() below, the action is never hidden, so a
-            // system role's row (and its "Type" icon column
-            // specifically, which has no columnUrl of its own and so
-            // falls back to this same recordUrl) stayed clickable
-            // straight into a 403, even though canEdit() itself already
-            // correctly returned false. Both fixes below are required:
-            // ->visible() fixes the button AND restores Filament's own
-            // fallback logic's second check (which does call canEdit()
-            // directly); the explicit ->recordUrl() makes the row-level
-            // behavior unambiguous rather than relying on that fallback
-            // chain.
+            // Every row (system or custom) now navigates to the
+            // read-only View page — reachable by anyone who can see this
+            // table at all (viewPermission() === viewAnyPermission()),
+            // so the row-click destination is no longer conditional on
+            // canEdit() the way it was before ViewRole existed. Edit
+            // stays a separate, explicitly-gated button next to it,
+            // visible only for non-system roles — see canEdit()'s own
+            // docblock and this class's earlier "Filament's own default
+            // row-click URL" finding for why ->visible() on EditAction
+            // is still required regardless of ->recordUrl() below.
             ->recordActions([
+                ViewAction::make(),
                 EditAction::make()
                     ->visible(fn (RoleModel $record): bool => static::canEdit($record)),
             ])
-            ->recordUrl(fn (RoleModel $record): ?string => static::canEdit($record) ? static::getUrl('edit', ['record' => $record]) : null);
+            ->recordUrl(fn (RoleModel $record): string => static::getUrl('view', ['record' => $record]));
+    }
+
+    /**
+     * Read-only — every group from permissionGroups() below, each
+     * listing all Permission cases in that group with a clear
+     * granted/not-granted visual distinction. Deliberately shows the
+     * FULL 17-permission picture, not just what this role grants:
+     * per the domain owner's own question after using the panel ("how
+     * does a new admin know which role fits which purpose, if all they
+     * see is a permission count?"), an admin comparing two roles side
+     * by side needs to see both what's granted and what's withheld.
+     */
+    public static function infolist(Schema $schema): Schema
+    {
+        $sections = [];
+
+        foreach (self::permissionGroups() as $groupLabel => $permissions) {
+            $entries = [];
+
+            foreach ($permissions as $permission) {
+                $label = ucfirst(strtolower(str_replace('_', ' ', $permission->name)));
+
+                $entries[] = IconEntry::make($permission->value)
+                    ->label($label)
+                    ->state(fn (RoleModel $record): bool => in_array($permission->value, $record->permissions, true))
+                    ->boolean()
+                    ->trueIcon('heroicon-o-check-circle')
+                    ->falseIcon('heroicon-o-x-circle')
+                    ->trueColor('success')
+                    ->falseColor('gray');
+            }
+
+            $sections[] = Section::make($groupLabel)
+                ->schema($entries)
+                ->columns(2);
+        }
+
+        return $schema->components([
+            TextEntry::make('name'),
+            TextEntry::make('is_system')
+                ->label('Role type')
+                ->formatStateUsing(fn (bool $state): string => $state ? 'System role' : 'Custom role'),
+            ...$sections,
+        ]);
     }
 
     public static function getPages(): array
@@ -142,7 +197,36 @@ class RoleResource extends Resource
         return [
             'index' => ListRoles::route('/'),
             'create' => CreateRole::route('/create'),
+            'view' => ViewRole::route('/{record}'),
             'edit' => EditRole::route('/{record}/edit'),
+        ];
+    }
+
+    /**
+     * Mirrors Permission.php's own comment groupings exactly (Catalog /
+     * Cost and pricing / Orders / Point of sale / Marketing / Reporting
+     * / System). This is a static, hand-maintained map rather than a
+     * method on the enum itself — Permission.php's own docblock states
+     * "No methods on this enum — pure vocabulary," and that boundary is
+     * kept here: a future 18th Permission needs this mapping updated by
+     * hand (unlike permissionOptions() above, which derives itself
+     * automatically), a real accepted maintenance tradeoff, not an
+     * oversight. test_permission_groups_account_for_every_real_permission_exactly_once
+     * (RoleResourceTest) is the regression test that catches a forgotten
+     * update.
+     *
+     * @return array<string, Permission[]>
+     */
+    private static function permissionGroups(): array
+    {
+        return [
+            'Catalog' => [Permission::PRODUCT_VIEW, Permission::PRODUCT_MANAGE, Permission::TAXONOMY_MANAGE],
+            'Cost and pricing' => [Permission::COST_VIEW, Permission::COST_MANAGE, Permission::PRICE_MANAGE],
+            'Orders' => [Permission::ORDER_VIEW, Permission::ORDER_MANAGE, Permission::REFUND_CASH, Permission::REFUND_BANK],
+            'Point of sale' => [Permission::POS_OPERATE, Permission::POS_DISCOUNT],
+            'Marketing' => [Permission::PROMOTION_MANAGE],
+            'Reporting' => [Permission::REPORT_VIEW],
+            'System' => [Permission::SETTINGS_MANAGE, Permission::STAFF_MANAGE, Permission::AI_MANAGE],
         ];
     }
 
