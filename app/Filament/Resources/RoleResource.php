@@ -114,9 +114,27 @@ class RoleResource extends Resource
                     ->dateTime()
                     ->sortable(),
             ])
+            // Filament's own default row-click URL (built in
+            // ListRecords::makeTable(), confirmed directly against the
+            // installed v5.8.1 source) resolves the EditAction's own
+            // getUrl() BEFORE ever consulting canEdit() directly — it
+            // only skips that action if it is isHidden(). Without the
+            // ->visible() below, the action is never hidden, so a
+            // system role's row (and its "Type" icon column
+            // specifically, which has no columnUrl of its own and so
+            // falls back to this same recordUrl) stayed clickable
+            // straight into a 403, even though canEdit() itself already
+            // correctly returned false. Both fixes below are required:
+            // ->visible() fixes the button AND restores Filament's own
+            // fallback logic's second check (which does call canEdit()
+            // directly); the explicit ->recordUrl() makes the row-level
+            // behavior unambiguous rather than relying on that fallback
+            // chain.
             ->recordActions([
-                EditAction::make(),
-            ]);
+                EditAction::make()
+                    ->visible(fn (RoleModel $record): bool => static::canEdit($record)),
+            ])
+            ->recordUrl(fn (RoleModel $record): ?string => static::canEdit($record) ? static::getUrl('edit', ['record' => $record]) : null);
     }
 
     public static function getPages(): array

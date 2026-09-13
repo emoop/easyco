@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Filament\Resources\RoleResource;
 use App\Filament\Resources\RoleResource\Pages\CreateRole;
 use App\Filament\Resources\RoleResource\Pages\EditRole;
+use App\Filament\Resources\RoleResource\Pages\ListRoles;
 use App\Filament\StaffPanelUser;
 use EasyCo\Staff\Contracts\PasswordHasher;
 use EasyCo\Staff\Contracts\RoleRepository;
@@ -137,6 +138,48 @@ class RoleResourceTest extends TestCase
         $response = $this->get(RoleResource::getUrl('edit', ['record' => $systemRole->id()]));
 
         $response->assertForbidden();
+    }
+
+    /**
+     * The real bug this pair of tests closes: Filament's own default
+     * row-click URL (built in ListRecords::makeTable(), confirmed
+     * directly against the installed v5.8.1 source) resolved the
+     * EditAction's own getUrl() before ever consulting canEdit()
+     * directly — it only skipped the action if it was isHidden(). An
+     * EditAction with no ->visible() override is never hidden, so a
+     * system role's entire row (including the "Type" is_system icon
+     * column, which has no columnUrl of its own and falls back to the
+     * same recordUrl) stayed clickable straight into a 403, even though
+     * RoleResource::canEdit() itself already correctly returned false.
+     */
+    public function test_a_system_role_has_no_clickable_row_or_edit_action_in_the_table(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        $systemRole = app(RoleRepository::class)->findSystemRoleByName('Administrator');
+        $systemRoleModel = RoleModel::find($systemRole->id());
+
+        $component = Livewire::test(ListRoles::class);
+
+        $component->assertTableActionHidden('edit', $systemRoleModel);
+
+        $this->assertNull($component->instance()->getTable()->getRecordUrl($systemRoleModel));
+    }
+
+    /** The inverse — confirms the fix above didn't accidentally break editing for non-system roles. */
+    public function test_a_custom_role_still_has_a_clickable_edit_action(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        $custom = Role::create('Custom', [Permission::PRODUCT_VIEW]);
+        app(RoleRepository::class)->save($custom);
+        $customModel = RoleModel::find($custom->id());
+
+        $component = Livewire::test(ListRoles::class);
+
+        $component->assertTableActionVisible('edit', $customModel);
+
+        $this->assertNotNull($component->instance()->getTable()->getRecordUrl($customModel));
     }
 
     public function test_the_real_permission_matrix_across_all_three_shipped_roles(): void
