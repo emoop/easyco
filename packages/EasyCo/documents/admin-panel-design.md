@@ -219,6 +219,25 @@ Answering the original question directly, now that the mechanism
   domain layer's own category/tag *writes* still go exclusively through
   the repositories (§5); this relationship is never used for writing,
   only for `SelectFilter`s and a filtered listing.
+- **Selections larger than one batch are queued, not processed inline.**
+  Confirmed against the domain owner's own real-world precedent (a
+  WooCommerce bulk-edit plugin already in use, batching at 50 products
+  per save — "a bit slow for 200-300 products, two-three minutes, but the
+  alternative is days of one-by-one editing"): any bulk action (toggle,
+  category/tag add or remove) selecting **50 or fewer** records processes
+  synchronously, inline, in the same request. Selections **above 50** are
+  split into batches of 50 and dispatched as `Bus::batch()` queued jobs —
+  Laravel's own batch-job primitive, not a third-party Filament plugin,
+  reusing the same queue-worker infrastructure `ProcessMediaAssetJob`
+  already requires in production (`production-requirements.md`). Each
+  batch's job still calls the real domain repository once per record
+  within it (§5, this section's own idempotent-skip rule unchanged) —
+  batching changes only how many records are processed per queue-worker
+  execution, never how a single record is validated or saved. A
+  `->finally()` callback on the batch notifies the initiating staff
+  member via Filament's own (persisted, not ephemeral) notification
+  system once every batch completes, summarizing the aggregate result
+  (e.g. "added to 342 products across 7 batches; 12 already had it").
 - **Cost price field** — a real form field bound to
   `EasyCo\Pricing\ProductCost`/`CostPriceProvider` (already exists,
   `checkout-domain-design.md` §9) via the write-interception hook — not
@@ -296,6 +315,11 @@ convention here rather than improvising per resource, mirroring how
   against a mixed selection (some products already have the category,
   some don't) succeeds for all of them, with the already-assigned ones
   left unchanged and no duplicate row created for any of them.
+- **Batching threshold tests**: a selection of exactly 50 processes
+  inline (no job dispatched); a selection of 51 dispatches real
+  `Bus::batch()` jobs (confirmed via `Bus::fake()`, not assumed); a
+  batch's `->finally()` notification fires exactly once per bulk
+  action, not once per batch.
 
 ---
 

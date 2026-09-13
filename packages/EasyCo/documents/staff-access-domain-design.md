@@ -243,7 +243,7 @@ The actions that must be audited when their features exist:
 
 The last two are worth stating plainly, because they are how a compromised admin account does real damage: a very common e-commerce fraud is not a technical breach at all but an intruder who logs in and quietly changes the bank account that receives the money. An audit entry does not prevent that, but it makes it discoverable rather than mysterious.
 
-**Not built in this task.** Two of the four triggers (POS discounts, refunds) have no HTTP surface yet, so building the log now would mean writing a table nothing writes to. What *is* required now is that this section exists, so that whoever builds POS or refunds finds it rather than inventing something narrower. A future `staff-audit-log-note.md` in the deferred-work queue should carry it forward.
+**Not built in this task.** Two of the four triggers (POS discounts, refunds) have no HTTP surface yet, so building the log now would mean writing a table nothing writes to. What *is* required now is that this section exists, so that whoever builds POS or refunds finds it rather than inventing something narrower. A future `staff-audit-log-note.md` in the deferred-work queue should carry it forward. Of the two triggers already backed by real behavior (payment-configuration changes, and staff role-change/creation/deactivation), the staff-related one now has concrete methods for all three of its sub-events — `Staff::create()` already existed (Part 1); `Staff::changeRole()`/`deactivate()`/`reactivate()` are added here (§12). Payment-configuration-change auditing remains unaddressed by this pass.
 
 ---
 
@@ -290,3 +290,84 @@ Stated honestly rather than implied: this design gives a staff account **the sam
 - A real audit of `routes/api.php` asserting **every** merchant route sits behind `auth:staff` plus a declared permission — written as a test that enumerates the route table, so a future unprotected route fails the suite rather than shipping. `admin-auth-gap-note.md` existed because this had to be found by hand; it should not have to be found by hand twice.
 - `COST_VIEW` boundary tests: a Product Entry staff member calling every cost-bearing endpoint is denied, and any endpoint that could include cost in its response genuinely omits the field for them — confirmed against the real response body, not the view layer.
 - `staff:create-administrator` tests: creates a working administrator; refuses to run when staff already exist unless forced.
+
+---
+
+## 12. Role and Staff mutators — resolved for the admin panel
+
+Part 1 deliberately shipped `Role` and `Staff` with no mutators at all
+("no consumer calls one... if you think one is needed, STOP and tell
+me instead of adding it" — the coder prompt's own words at the time).
+`admin-panel-design.md` is that consumer: a Role/Staff edit screen
+cannot exist without something to call. Resolved here, not improvised
+during that implementation.
+
+### 12.1 `Role`
+
+Two new methods, both guarded identically:
+
+- `Role::rename(string $newName): void`
+- `Role::updatePermissions(array $permissions): void` — same
+  `assertValidPermissions()` validation the constructor already runs
+  (§4's "an empty array is valid" rule still applies; a non-`Permission`
+  element still throws)
+
+**Both throw `CannotModifySystemRoleException` if `isSystem() === true`.**
+Mirrors `EasyCo\Pricing\PriceList`'s existing `CannotModifySystemPriceListException`
+guard exactly, and for the identical reason stated in §4.1's own text:
+the three shipped roles' permission sets are load-bearing — `Administrator`
+specifically is looked up by exact name (`findSystemRoleByName('Administrator')`)
+by `staff:create-administrator` (§8). Renaming it, or editing its
+permissions down to something incomplete, would either break bootstrap
+silently or quietly weaken the one role every other permission decision
+in this document assumes is complete. A merchant's own custom roles
+(`isSystem() === false`) have no such restriction — renaming or
+re-permissioning a role they created themselves is exactly the
+flexibility §4 already promises ("the domain owner's three roles are a
+good default set, not a ceiling").
+
+No `delete()` — not asked for by `admin-panel-design.md`, and deleting
+a role currently assigned to a `Staff` member raises questions (reassign
+first? refuse?) this document has no reason to answer speculatively.
+Add it if a real need surfaces, per this project's own "smallest model
+that satisfies the actual need" discipline.
+
+### 12.2 `Staff`
+
+Three new methods:
+
+- `Staff::deactivate(): void` / `Staff::reactivate(): void` — flip
+  `isActive`. Idempotent: calling `deactivate()` on an already-inactive
+  `Staff` is a no-op, not an error — matches how a toggle control in
+  the admin UI naturally behaves, and there is no invariant an
+  already-deactivated `Staff` could violate by being told to deactivate
+  again.
+- `Staff::changeRole(Role $newRole): void` — same `assertRoleIsPersisted()`
+  guard the constructor already runs (a `Staff` can only ever be handed
+  an already-saved `Role`). Reassigning to the `Staff`'s current role is
+  a harmless no-op, not an error.
+- `Staff::changePasswordHash(string $newPasswordHash): void` — same
+  `assertValidPasswordHash()` guard the constructor already runs. This
+  is §10's own already-stated V1 answer to password reset ("an
+  Administrator resets a colleague's password through `STAFF_MANAGE`")
+  finally given something to call — not new scope, just the
+  implementation of a decision already on record.
+
+**Deliberately not solved here, flagged rather than ignored:** no guard
+exists anywhere preventing `deactivate()` from being called on the last
+remaining active `Staff` holding the Administrator role — which would
+lock every human out of the system with no way back in short of direct
+database access. `Staff` itself cannot guard against this (it has no
+visibility into other `Staff` records — that is a repository/
+orchestration-layer concern, not a single aggregate's own boundary,
+same reasoning `EloquentStaffRepository::any()` already established for
+a related but different check). Left for `admin-panel-design.md`'s
+implementation to decide: a repository-level count check before allowing
+the action through the UI, a confirmation warning, or both. Not this
+document's decision to make in the abstract.
+
+**Audit note:** these five methods (`Role::rename()`/`updatePermissions()`,
+`Staff::deactivate()`/`reactivate()`/`changeRole()`) are the concrete
+hook points §7's still-unbuilt audit log should attach to when it exists
+— "any change to a staff member's role, or creation/deactivation of a
+staff member" (§7) now names real methods, not a future abstraction.
