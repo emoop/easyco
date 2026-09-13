@@ -15,6 +15,21 @@ use Illuminate\Database\Eloquent\Model;
  * JSON API — never Filament's own policy conventions, never a
  * third-party plugin (`filament-shield` explicitly ruled out).
  *
+ * DELIBERATELY NO `canAccess()` HOOK HERE, even though a plain custom
+ * Filament Page (like the Site Settings locale page) needs exactly this
+ * shape of check too — a real, confirmed regression this session: a
+ * `Resource` already inherits a working `canAccess(): bool { return
+ * static::canViewAny(); }` from Filament's own `HasAuthorization` trait,
+ * and a `canAccess()` defined here would silently override that with a
+ * version keyed to `accessPermission()` — which no Resource ever
+ * declares — permanently returning `false` for every Resource using
+ * this trait. `accessPermission()` stays here as a hook (harmless, no
+ * collision), but each consuming Page defines its own local
+ * `canAccess(): bool { return static::staffCanForAction(static::
+ * accessPermission()); }` directly, reusing `staffCanForAction()` below
+ * (a private trait method is still callable from the consuming class's
+ * own methods) without shadowing Resource's inherited one.
+ *
  * THIS IS A THIRD CALL SITE reloading the full domain `Staff` via the
  * repository on every authorization check — the same "reload on every
  * check" cost already flagged twice before this: once in `Staff`'s own
@@ -82,6 +97,12 @@ trait AuthorizesViaStaffPermission
     }
 
     protected static function deletePermission(): ?Permission
+    {
+        return null;
+    }
+
+    /** For a consuming Page's own local canAccess() — see this trait's class docblock for why it isn't defined here. */
+    protected static function accessPermission(): ?Permission
     {
         return null;
     }

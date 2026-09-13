@@ -1,6 +1,6 @@
 # Site Settings Design
 
-**Status:** v1.1 — a fourth confirmed consumer (`checkout-domain-design.md` §12.3) has arrived from outside Media — still design-only until the first implementation prompt is written, but no longer a purely speculative mechanism.
+**Status:** v1.2 — ~~still design-only until the first implementation prompt is written~~ — **done as of v1.2**: the mechanism itself (`site_settings` migration, `SiteSettingModel`, `EloquentSiteSettingsRepository`, `SiteSettingsServiceProvider`) is implemented and tested exactly as designed below. Its first real consumer — a merchant-changeable storefront locale (`site.locale`, BG/EN) — is now live too, via `ApplyStoreLocale` middleware and an admin panel settings page. The other three confirmed consumers (§1) remain unbuilt.
 
 **Builds on:** the config-driven, fail-appropriately pattern established by `EasyCo\Pricing\DefaultCurrency`; `catalog-domain-design.md` §3.3's "smallest model that satisfies the actual need" principle.
 

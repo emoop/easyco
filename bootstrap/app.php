@@ -22,6 +22,18 @@ return Application::configure(basePath: dirname(__DIR__))
             \Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful::class,
         ]);
 
+        // Site Settings' first real consumer (site-settings-design.md)
+        // — applies the merchant-configured storefront locale on every
+        // 'web'-group request (the future storefront). This is a
+        // SEPARATE registration from AdminPanelProvider's own
+        // ->middleware([...]) array — confirmed directly against the
+        // installed Filament v5.8.1 source that panel routes never run
+        // through this 'web' group at all, so the admin panel needs its
+        // own copy of this middleware to get the same locale applied.
+        $middleware->web(append: [
+            \App\Http\Middleware\ApplyStoreLocale::class,
+        ]);
+
         // The merchant-surface permission-enforcement point —
         // staff-access-domain-design.md §1/§5. Used as
         // `staff.can:product_manage` alongside `auth:staff` on a route.

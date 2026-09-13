@@ -58,6 +58,16 @@ class AdminPanelProvider extends PanelProvider
                 SubstituteBindings::class,
                 DisableBladeIconComponents::class,
                 DispatchServingFilamentEvent::class,
+                // Site Settings' first real consumer — confirmed
+                // directly against the installed Filament v5.8.1
+                // source that this panel's routes never run through
+                // Laravel's global 'web' middleware group at all (they
+                // use exactly this array instead), so this must be
+                // registered here too, separately from
+                // bootstrap/app.php's own 'web'-group registration, for
+                // the admin panel to see the same merchant-configured
+                // locale a future storefront request would.
+                \App\Http\Middleware\ApplyStoreLocale::class,
             ])
             ->authMiddleware([
                 Authenticate::class,
