@@ -96,4 +96,91 @@ final class StaffTest extends TestCase
         $this->expectException(LogicException::class);
         $staff->assignId('2');
     }
+
+    public function test_deactivate_sets_is_active_false(): void
+    {
+        $staff = Staff::create('petar@example.com', 'a-hash', 'Petar', $this->persistedRole());
+
+        $staff->deactivate();
+
+        $this->assertFalse($staff->isActive());
+    }
+
+    public function test_deactivate_twice_is_a_no_op_not_an_error(): void
+    {
+        $staff = Staff::create('petar@example.com', 'a-hash', 'Petar', $this->persistedRole());
+
+        $staff->deactivate();
+        $staff->deactivate();
+
+        $this->assertFalse($staff->isActive());
+    }
+
+    public function test_reactivate_sets_is_active_true(): void
+    {
+        $staff = Staff::reconstituteFromStorage('1', 'petar@example.com', 'a-hash', 'Petar', $this->persistedRole(), false);
+
+        $staff->reactivate();
+
+        $this->assertTrue($staff->isActive());
+    }
+
+    public function test_reactivate_twice_is_a_no_op_not_an_error(): void
+    {
+        $staff = Staff::reconstituteFromStorage('1', 'petar@example.com', 'a-hash', 'Petar', $this->persistedRole(), false);
+
+        $staff->reactivate();
+        $staff->reactivate();
+
+        $this->assertTrue($staff->isActive());
+    }
+
+    public function test_change_role_updates_the_role(): void
+    {
+        $originalRole = $this->persistedRole();
+        $staff = Staff::create('petar@example.com', 'a-hash', 'Petar', $originalRole);
+
+        $newRole = Role::reconstituteFromStorage('2', 'Manager', [Permission::COST_VIEW], false);
+        $staff->changeRole($newRole);
+
+        $this->assertSame($newRole, $staff->role());
+    }
+
+    public function test_change_role_to_an_unpersisted_role_throws(): void
+    {
+        $staff = Staff::create('petar@example.com', 'a-hash', 'Petar', $this->persistedRole());
+        $unpersistedRole = Role::create('Custom', [Permission::PRODUCT_VIEW]);
+
+        $this->expectException(InvalidArgumentException::class);
+
+        $staff->changeRole($unpersistedRole);
+    }
+
+    public function test_change_role_to_the_current_role_is_a_no_op_not_an_error(): void
+    {
+        $role = $this->persistedRole();
+        $staff = Staff::create('petar@example.com', 'a-hash', 'Petar', $role);
+
+        $staff->changeRole($role);
+
+        $this->assertSame($role, $staff->role());
+    }
+
+    public function test_change_password_hash_updates_it(): void
+    {
+        $staff = Staff::create('petar@example.com', 'a-hash', 'Petar', $this->persistedRole());
+
+        $staff->changePasswordHash('a-new-hash');
+
+        $this->assertSame('a-new-hash', $staff->passwordHash());
+    }
+
+    public function test_change_password_hash_with_empty_string_throws(): void
+    {
+        $staff = Staff::create('petar@example.com', 'a-hash', 'Petar', $this->persistedRole());
+
+        $this->expectException(InvalidArgumentException::class);
+
+        $staff->changePasswordHash('');
+    }
 }

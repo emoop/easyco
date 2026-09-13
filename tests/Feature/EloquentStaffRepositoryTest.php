@@ -135,4 +135,47 @@ class EloquentStaffRepositoryTest extends TestCase
         $this->assertNotNull(StaffModel::withTrashed()->find($staff->id())?->deleted_at);
         $this->assertTrue($this->repository()->any());
     }
+
+    public function test_deactivate_then_save_persists_is_active_false(): void
+    {
+        $role = $this->persistedRole();
+        $staff = Staff::create('petar@example.com', 'a-hash', 'Petar', $role);
+        $this->repository()->save($staff);
+
+        $staff->deactivate();
+        $this->repository()->save($staff);
+
+        $reloaded = $this->repository()->findById($staff->id());
+
+        $this->assertFalse($reloaded->isActive());
+    }
+
+    public function test_change_role_then_save_persists_the_new_role_id(): void
+    {
+        $originalRole = $this->persistedRole('Manager', [Permission::PRODUCT_VIEW]);
+        $staff = Staff::create('petar@example.com', 'a-hash', 'Petar', $originalRole);
+        $this->repository()->save($staff);
+
+        $newRole = $this->persistedRole('Product Entry', [Permission::PRODUCT_VIEW, Permission::PRODUCT_MANAGE]);
+        $staff->changeRole($newRole);
+        $this->repository()->save($staff);
+
+        $reloaded = $this->repository()->findById($staff->id());
+
+        $this->assertSame($newRole->id(), $reloaded->role()->id());
+    }
+
+    public function test_change_password_hash_then_save_persists_the_new_hash(): void
+    {
+        $role = $this->persistedRole();
+        $staff = Staff::create('petar@example.com', 'original-hash', 'Petar', $role);
+        $this->repository()->save($staff);
+
+        $staff->changePasswordHash('new-hash');
+        $this->repository()->save($staff);
+
+        $reloaded = $this->repository()->findById($staff->id());
+
+        $this->assertSame('new-hash', $reloaded->passwordHash());
+    }
 }

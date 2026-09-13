@@ -3,6 +3,7 @@
 namespace EasyCo\Staff;
 
 use EasyCo\Staff\Enums\Permission;
+use EasyCo\Staff\Exceptions\CannotModifySystemRoleException;
 use InvalidArgumentException;
 use LogicException;
 
@@ -36,7 +37,7 @@ final class Role
     private function __construct(
         private ?string $id,
         private string $name,
-        private readonly array $permissions,
+        private array $permissions,
         private readonly bool $isSystem,
     ) {
         self::assertValidName($name);
@@ -140,5 +141,40 @@ final class Role
     public function grants(Permission $permission): bool
     {
         return in_array($permission, $this->permissions, true);
+    }
+
+    /**
+     * §12.1: guarded identically to updatePermissions() below — a
+     * reserved system Role can never be renamed. The isSystem check
+     * runs BEFORE assertValidName() so a caller always sees the real
+     * reason (system role), never a coincidentally-also-true validation
+     * error on the new name.
+     */
+    public function rename(string $newName): void
+    {
+        if ($this->isSystem) {
+            throw CannotModifySystemRoleException::cannotRename((string) $this->id);
+        }
+
+        self::assertValidName($newName);
+        $this->name = $newName;
+    }
+
+    /**
+     * §12.1: same guard shape as rename() above, same ordering
+     * reasoning. Reuses the exact existing assertValidPermissions() the
+     * constructor already runs — an empty array is still valid, a
+     * non-Permission element still throws.
+     *
+     * @param Permission[] $permissions
+     */
+    public function updatePermissions(array $permissions): void
+    {
+        if ($this->isSystem) {
+            throw CannotModifySystemRoleException::cannotUpdatePermissions((string) $this->id);
+        }
+
+        self::assertValidPermissions($permissions);
+        $this->permissions = $permissions;
     }
 }

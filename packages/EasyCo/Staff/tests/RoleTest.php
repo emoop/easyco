@@ -3,6 +3,7 @@
 namespace EasyCo\Staff\Tests;
 
 use EasyCo\Staff\Enums\Permission;
+use EasyCo\Staff\Exceptions\CannotModifySystemRoleException;
 use EasyCo\Staff\Role;
 use InvalidArgumentException;
 use LogicException;
@@ -83,5 +84,50 @@ final class RoleTest extends TestCase
 
         $this->expectException(LogicException::class);
         $role->assignId('2');
+    }
+
+    public function test_rename_changes_the_name(): void
+    {
+        $role = Role::create('Custom', [Permission::PRODUCT_VIEW]);
+
+        $role->rename('Renamed');
+
+        $this->assertSame('Renamed', $role->name());
+    }
+
+    public function test_rename_on_a_system_role_throws_cannot_modify_system_role_exception(): void
+    {
+        $role = Role::reconstituteFromStorage('1', 'Administrator', [Permission::PRODUCT_VIEW], true);
+
+        $this->expectException(CannotModifySystemRoleException::class);
+
+        $role->rename('New Name');
+    }
+
+    public function test_update_permissions_changes_the_permission_set(): void
+    {
+        $role = Role::create('Custom', [Permission::PRODUCT_VIEW]);
+
+        $role->updatePermissions([Permission::COST_VIEW, Permission::COST_MANAGE]);
+
+        $this->assertEqualsCanonicalizing([Permission::COST_VIEW, Permission::COST_MANAGE], $role->permissions());
+    }
+
+    public function test_update_permissions_on_a_system_role_throws(): void
+    {
+        $role = Role::reconstituteFromStorage('1', 'Administrator', [Permission::PRODUCT_VIEW], true);
+
+        $this->expectException(CannotModifySystemRoleException::class);
+
+        $role->updatePermissions([Permission::COST_VIEW]);
+    }
+
+    public function test_update_permissions_still_validates_like_the_constructor(): void
+    {
+        $role = Role::create('Custom', [Permission::PRODUCT_VIEW]);
+
+        $this->expectException(InvalidArgumentException::class);
+
+        $role->updatePermissions([Permission::PRODUCT_VIEW, 'not_a_permission']);
     }
 }

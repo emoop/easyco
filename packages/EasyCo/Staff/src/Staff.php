@@ -36,7 +36,7 @@ final class Staff
     private function __construct(
         private ?string $id,
         private string $email,
-        private readonly string $passwordHash,
+        private string $passwordHash,
         private string $name,
         private Role $role,
         private bool $isActive,
@@ -161,5 +161,53 @@ final class Staff
         }
 
         return $this->role->grants($permission);
+    }
+
+    /**
+     * §12.2: idempotent by design — calling this on an already-inactive
+     * Staff is a no-op, not an error. There is no invariant an
+     * already-deactivated Staff could violate by being told to
+     * deactivate again.
+     *
+     * DELIBERATELY NOT GUARDED against deactivating the last remaining
+     * active Administrator — Staff has no visibility into other Staff
+     * records to check that, and §12.2 explicitly leaves this decision
+     * to admin-panel-design.md's implementation (a repository-level
+     * count check, a confirmation warning, or both). Not this method's
+     * job.
+     */
+    public function deactivate(): void
+    {
+        $this->isActive = false;
+    }
+
+    /** §12.2: idempotent, mirrors deactivate() above. */
+    public function reactivate(): void
+    {
+        $this->isActive = true;
+    }
+
+    /**
+     * §12.2: reuses the exact existing assertRoleIsPersisted() the
+     * constructor already runs. Idempotent — reassigning to the Staff's
+     * current Role is a harmless no-op, not an error.
+     */
+    public function changeRole(Role $newRole): void
+    {
+        self::assertRoleIsPersisted($newRole);
+        $this->role = $newRole;
+    }
+
+    /**
+     * §12.2: this is §10's own already-stated V1 answer to password
+     * reset ("an Administrator resets a colleague's password through
+     * `STAFF_MANAGE`") finally given something to call. Reuses the
+     * exact existing assertValidPasswordHash() the constructor already
+     * runs.
+     */
+    public function changePasswordHash(string $newPasswordHash): void
+    {
+        self::assertValidPasswordHash($newPasswordHash);
+        $this->passwordHash = $newPasswordHash;
     }
 }

@@ -86,4 +86,31 @@ class EloquentRoleRepositoryTest extends TestCase
         $this->assertSame($system->id(), $found->id());
         $this->assertTrue($found->isSystem());
     }
+
+    public function test_rename_then_save_persists_the_new_name(): void
+    {
+        $role = Role::create('Original Name', [Permission::PRODUCT_VIEW]);
+        $this->repository()->save($role);
+
+        $role->rename('Renamed');
+        $this->repository()->save($role);
+
+        $reloaded = $this->repository()->findById($role->id());
+
+        $this->assertSame('Renamed', $reloaded->name());
+    }
+
+    public function test_update_permissions_then_save_persists_the_new_set(): void
+    {
+        $role = Role::create('Custom Role', [Permission::PRODUCT_VIEW]);
+        $this->repository()->save($role);
+
+        $newPermissions = [Permission::COST_VIEW, Permission::COST_MANAGE];
+        $role->updatePermissions($newPermissions);
+        $this->repository()->save($role);
+
+        $reloaded = $this->repository()->findById($role->id());
+
+        $this->assertEqualsCanonicalizing($newPermissions, $reloaded->permissions());
+    }
 }
