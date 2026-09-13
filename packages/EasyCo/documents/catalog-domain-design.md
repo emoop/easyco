@@ -8,7 +8,7 @@
 
 **Changes in this pass (v1.1 → v1.2):** driven by building the first real Catalog↔Pricing vertical slice end-to-end (see `vertical-slice-notes.md`), which surfaced that neither `Product` nor `Variation` had a caller-facing identifier a human can type. Added: mandatory, unique `Product::baseSku()` and mandatory `Variation::sku()` (§3.8); archived-variation revival via `Variation::reviveFromArchive()` so re-adding a previously-archived combination reuses its identity instead of creating a new row (§3.9); `VariationCombinationGenerator::generate()`'s required `$skuForCombination` injection point (§3.2); `Contracts\ProductRepository::findByBaseSku()`; and `EloquentProductRepository`/`EloquentVariationRepository`, the first concrete implementations of both repository contracts, now wired into `easyco-main` (§6, §7).
 
-**Changes in this pass (v1.2 → v1.3):** a targeted corrective pass, not a redesign — closes the one gap v1.2 explicitly documented as deferred rather than accidental: `Product::reconstituteFromStorage()` previously skipped axis-declaration rehydration entirely, so a reloaded VARIABLE product silently accepted any combination instead of validating against its real declared axes. Added: axis rehydration in `EloquentProductRepository` (§3.10) and the new `UnsafeAxisRedeclarationException` invariant (§3.10). Explicitly *not* touched: the Product/Variation model itself, `VariationSignature`, the Pricing boundary, SKU/barcode/slug handling, DB uniqueness constraints, the SIMPLE↔VARIABLE transition methods, or descriptive (non-axis) product attributes (still no domain representation on `Product` — see §3.10's closing note and §6).
+**Changes in this pass (v1.2 → v1.3):** a targeted corrective pass, not a redesign — closes the one gap v1.2 explicitly documented as deferred rather than accidental: `Product::reconstituteFromStorage()` previously skipped axis-declaration rehydration entirely, so a reloaded VARIABLE product silently accepted any combination instead of validating against its real declared axes. Added: axis rehydration in `EloquentProductRepository` (§3.10) and the new `UnsafeAxisRedeclarationException` invariant (§3.10). Explicitly *not* touched: the Product/Variation model itself, `VariationSignature`, the Pricing boundary, SKU/barcode/slug handling, DB uniqueness constraints, the SIMPLE↔VARIABLE transition methods, or descriptive (non-axis) product attributes (at the time of this v1.3 pass, still no domain representation on `Product` — later resolved, see §3.11).
 
 **Changes in this pass (v1.3 → v1.4):** closes the "real SKU-generation strategy" item §6 explicitly listed as deferred. `App\Providers\CatalogSkuGeneratorServiceProvider` (app/ layer, mirroring `CatalogSlugGeneratorServiceProvider`'s exact shape) now backs both `catalog.product.base_sku` and the new `catalog.variation.sku` Hook filter (`{baseSku}-{n}`, deliberately not attribute-value-based — see §3.2). The persistent, concurrency-safe base_sku sequence itself — `catalog_sku_sequence`, configurable start via `PRODUCT_SKU_SEQUENCE_START` — lives **inside the Catalog package** (`Contracts\SkuSequenceRepository` / `Persistence\Eloquent\EloquentSkuSequenceRepository`, migration in `packages/EasyCo/Catalog/database/migrations/`), the same boundary already established for `EasyCo\Pricing\DefaultCurrency`: the state-holder lives in the owning domain package, only the Laravel-specific wiring (registering the listener, reading the config value at migration time) lives in app/. (An earlier version of this table shipped directly in the root app's migrations and was corrected to this location as an immediate follow-up — see the migration's own docblock.) `CatalogSkuGeneratorServiceProvider::variationSkuStrategy(Product $product): callable` is a convenience factory returning the `catalog.variation.sku`-wired closure ready to pass as `generate()`'s `$skuForCombination` — the one canonical place to get it from, so the hook name/signature isn't re-derived at every future call site. `VariationCombinationGenerator::generate()`'s `$skuForCombination` parameter is now optional (§3.2) rather than required, but the class still cannot call `Hook::apply()` itself — the architectural boundary from `extensibility-design-and-hooks.md` §2 held throughout this pass, not relaxed for convenience. `EloquentProductRepository` gained a third implementation of the SQLSTATE-23000 unique-constraint-collision-retry pattern (§7), for `catalog_variations_sku_unique`. `DemoHooksServiceProvider`, the proof-of-concept this replaces, is deleted.
 
@@ -160,7 +160,49 @@ A Variation's defining combination can legitimately need to change post-creation
 
 **New invariant: `Product::declareVariationAxes()` now refuses to change the axis set once the Product has any STANDARD variation** — checked by **type**, not current status, so an archived STANDARD variation still blocks it. Same reasoning as the existing SIMPLE→VARIABLE transition guard (§3.4): archiving a variation doesn't erase the fact that its combination depended on the axes declared at the time it was created, so silently allowing the axis set to change out from under it risks orphaning that combination. Throws the dedicated `UnsafeAxisRedeclarationException` — a distinct invariant from `UnsafeProductTypeTransitionException`, not a reuse of it. v1 has no migration path for re-validating or updating existing combinations against a new axis set (that would be new scope, not this fix); the only way to change axes remains a Product with zero STANDARD variations.
 
-**Explicitly not resolved by this pass:** descriptive (non-axis) product attributes — `catalog_product_attributes` rows with `is_variation_axis = false` — still have **no domain representation on `Product` at all**. This pass only ever touched `is_variation_axis = true` rows; `Product` exposes no accessor for a descriptive attribute value and none is read or written anywhere in the domain or persistence layers. Adding that is new scope, not a fix, and remains a separate, real deferred item — see §6.
+**Explicitly not resolved by this pass:** descriptive (non-axis) product attributes — `catalog_product_attributes` rows with `is_variation_axis = false` — still have **no domain representation on `Product` at all**. This pass only ever touched `is_variation_axis = true` rows; `Product` exposes no accessor for a descriptive attribute value and none is read or written anywhere in the domain or persistence layers. Adding that is new scope, not a fix, and remained a separate, real deferred item until resolved — see §3.11.
+
+### 3.11 Descriptive (non-axis) attribute representation — resolved
+
+**Decision:** `Product` gains two new methods closing the gap §6 previously
+flagged ("Descriptive (non-axis) product attributes have no domain
+representation on `Product` at all... Adding this is new scope, not a fix"):
+
+- `Product::setDescriptiveAttribute(AttributeDefinition $definition, string|AttributeValue $value): void`
+- `Product::descriptiveAttributes(): array` — returns `array<string, string|AttributeValue>`
+  keyed by `AttributeDefinition->code()`.
+
+**Validation, at the point `setDescriptiveAttribute()` is called:**
+- Throws `InvalidArgumentException` if `$definition` is currently declared
+  as one of this Product's variation axes (`$this->hasVariationAxis($definition)`,
+  per §3.5) — the same `AttributeDefinition` cannot be both an axis and a
+  descriptive value on the same Product simultaneously; the underlying row
+  is one or the other, never both (§4.3's schema comment already says
+  this: "per-product: descriptive OR axis").
+- If `$definition->type() === AttributeType::SELECT`: `$value` must be an
+  `AttributeValue` instance whose `attributeDefinitionId()` matches
+  `$definition->id()` — throws `InvalidArgumentException` otherwise. This
+  is the only type where `$value` is not a plain string.
+- If `$definition->type()` is `TEXT`, `NUMBER`, or `BOOLEAN`: `$value`
+  must be a `string` — throws `InvalidArgumentException` if an
+  `AttributeValue` is passed for one of these types. (`NUMBER`/`BOOLEAN`
+  are stored and validated as their string representation at this layer;
+  numeric-format or `'1'`/`'0'` normalization is a persistence-layer
+  concern, not asserted again here.)
+- If `$definition->type() === AttributeType::MULTISELECT`: throws
+  `InvalidArgumentException` unconditionally — still explicitly deferred
+  (§6), not silently accepted as if it worked.
+
+**Persistence:** `EloquentProductRepository` reads/writes
+`catalog_product_attributes` rows with `is_variation_axis = false` exactly
+as it already does for `is_variation_axis = true` rows (§3.10's
+precedent) — same table, same `toDomainProduct()` reconstruction path,
+filtered on the opposite flag value.
+
+**What stays deferred, unchanged from §6:** true multiselect descriptive
+attributes (more than one value per definition per product) —
+`UNIQUE(product_id, attribute_definition_id)` is untouched by this
+decision.
 
 ## 4. Entities
 
@@ -259,7 +301,7 @@ A product can be `catalog_visibility = HIDDEN` and still have an `isEffectivelyP
 - Category hierarchy beyond a single nullable `parent_id` (no materialized path / nested set yet — add only if query patterns actually need it).
 - ~~Eloquent model classes and concrete repository implementations~~ — **done as of v1.2**: `EloquentProductRepository` and `EloquentVariationRepository` (`src/Persistence/Eloquent/`) implement both `Contracts\ProductRepository` and `Contracts\VariationRepository` and are wired into `easyco-main` via `CatalogServiceProvider` — see `vertical-slice-notes.md`. Still not modeled: Eloquent models for `catalog_media`/`catalog_categories`/`catalog_tags` and their pivots.
 - ~~Reloading a Product's `VariationAxis` declarations from storage~~ — **done as of v1.3**: see §3.10. `Product::reconstituteFromStorage()`/`EloquentProductRepository` no longer skip axis-declaration rehydration.
-- **Descriptive (non-axis) product attributes have no domain representation on `Product` at all.** `catalog_product_attributes` rows with `is_variation_axis = false` are neither read nor written anywhere in the domain or persistence layers. Explicitly separate from, and not resolved by, the v1.3 axis-rehydration work (§3.10) — that only ever touched `is_variation_axis = true` rows. Adding this is new scope, not a fix.
+- ~~Descriptive (non-axis) product attributes have no domain representation on `Product` at all.~~ — **done as of v1.5**: see §3.11. `Product::setDescriptiveAttribute()`/`descriptiveAttributes()` now exist; `EloquentProductRepository` reads/writes `is_variation_axis = false` rows. Still deferred, unchanged: true multiselect descriptive attributes (below).
 - ~~A real SKU-generation strategy (deterministic templates, sequence-based, collision-retry, etc.)~~ — **done as of v1.4**: see §3.2. `Product::baseSku()` auto-generates from a persistent sequence (`catalog.product.base_sku` Hook filter); `Variation::sku()` auto-generates as `{baseSku}-{n}` (`catalog.variation.sku` Hook filter), both with DB-constraint-driven collision retry in `EloquentProductRepository`.
 - A barcode-collision-avoidance strategy. `barcode` has no generation logic at all today; every value is caller-supplied, and `catalog_variations_barcode_unique` is the only thing preventing a collision, enforced at insert time, after the fact.
 

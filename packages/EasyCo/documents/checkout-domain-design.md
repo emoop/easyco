@@ -301,3 +301,63 @@ profit = amount - (unitCost × quantity)
 - Full Checkout orchestration Feature tests: a real end-to-end guest checkout and a real end-to-end logged-in checkout, each asserting: stock genuinely decremented (re-read from DB, not from the in-memory result), a real `Transaction`+`SaleLine`s exist with the right snapshotted amounts, a real `Order` exists with the right Address snapshot, a real `Payment` exists in `PENDING` with the right `orderId`, and — critically — a double-submitted request (same cart, sent twice, simulating a double-clicked "pay" button) produces exactly one `Order`, not two.
 - `ProductCost`/`CostPriceProvider` tests: `costFor()` returns `null` for a priceable with no recorded row (not zero, not an exception); returns the right `Money` once one exists; a real Feature test confirming no route/binding path connects it to any storefront-facing service (mirroring `pricing-domain-design.md`'s own testing-plan language for this exact concern); Checkout's own `profit = amount - (unitCost × quantity)` computation covered for both the cost-known and cost-unknown cases, and for quantity > 1 specifically (the quantity-scaling correction).
 - Insufficient-stock-at-finalization test: a cart whose stock was sufficient at add-time but was sold out by another concurrent transaction before this checkout's own `decrease()` call gets a clean rejection, and — confirmed directly against the DB, not assumed — no `Order`, `Transaction`, `SaleLine`, or stock decrement survives from the failed attempt.
+
+## 12. Checkout field extensibility — explicit fields and hook points (added post-launch, domain-owner requested)
+
+Two concrete, real-world checkout requirements, plus a documented
+extension point for anything not yet imagined — researched against the
+domain owner's own retail experience running WooCommerce/Bagisto-class
+stores, not invented speculatively.
+
+### 12.1 Two new `Order` fields
+
+- `termsAccepted: bool` — **always mandatory, not settings-controlled.**
+  Checkout fails (the same way a missing email already does, §8.2) if
+  this is not `true` at submission. Most jurisdictions require explicit
+  terms acceptance at the point of sale; this is a legal floor, not a UX
+  preference, so no Site Setting ever toggles it off.
+- `requiresPhoneCallBeforeShipping: bool` — optional, customer-set at
+  checkout. Whether the *field itself* is shown at all is controlled by
+  a Site Setting (§12.3) — a merchant who never wants this workflow can
+  turn the field off entirely, not just leave it unchecked by default.
+
+Both fields live on `Order` (§3) alongside the existing snapshotted
+fields — captured once, at placement, never re-derived or re-synced
+afterward, consistent with how every other Order field already behaves.
+
+### 12.2 Two new hooks — the "anything not yet imagined" extension point
+
+Per `extensibility-design-and-hooks.md` §3's Hook Reference convention,
+mirroring `catalog.variation.barcode`/`account.registered`'s
+already-established "zero listeners, purely the extension point"
+posture — these ship with **no default listener**, on purpose:
+
+| Hook | Type | Fired from | Signature | Purpose |
+|---|---|---|---|---|
+| `checkout.form.fields` | Filter | The storefront checkout page controller (`app/Http/Controllers/Web/`, per `storefront-frontend-design.md`) | `(array $fields): array` | The field definitions rendered on the checkout page. The default set includes `terms_accepted` (always present) and `requires_phone_call` (present only if `checkout.phone_call_field_enabled` — §12.3 — is on). A listener may add a field definition nobody at EasyCo has imagined yet, or remove a built-in one a specific merchant wants to simplify away. |
+| `checkout.request.data` | Filter | `App\Http\Controllers\Api\CheckoutController`, immediately before the validated payload is handed to `CheckoutOrchestrator` | `(array $data): array` | The raw, already-validated checkout submission. A listener can inspect or transform a value belonging to a field it added via `checkout.form.fields` before order placement proceeds — the point where an extension's own custom field's *value* is actually seen, since `CheckoutOrchestrator` has no knowledge of any field it doesn't already model. |
+
+Both fired from `app/` layer code only, per `extensibility-design-and-hooks.md`
+§2's boundary — never from `Order` itself, which remains a plain
+data-holding entity with no knowledge a hook system exists.
+
+**What happens to a value an extension adds via these hooks:** EasyCo
+does not persist it anywhere on its own — no generic "order_meta" table
+is introduced by this decision. An extension wanting to keep its own
+field's value persists it in its own table, keyed by the placed
+`Order`'s id, using the existing `order.placed` action
+(`Hook::fire('order.placed', $order)`, already fired after Phase 2
+completes per §8.3) as the point to do so.
+
+### 12.3 One new Site Settings key
+
+Per `site-settings-design.md` — this is that document's fourth
+confirmed consumer, and the first from outside Media:
+
+- `checkout.phone_call_field_enabled` — `'true'`/`'false'` string,
+  default `'false'` if absent (a merchant opts in, not opts out — the
+  safer default for a feature most stores don't need). Read by the
+  storefront checkout controller before building the default
+  `checkout.form.fields` array (§12.2); not read anywhere else. No
+  equivalent setting exists for `terms_accepted` — see §12.1, it is
+  never optional.

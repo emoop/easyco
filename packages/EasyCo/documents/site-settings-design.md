@@ -1,6 +1,6 @@
 # Site Settings Design
 
-**Status:** v1.0 — design only; nothing in this document is implemented yet. Same framing as `media-domain-design.md`/`performance-and-channel-strategy.md`: records decisions and constraints before the corresponding code is written.
+**Status:** v1.1 — a fourth confirmed consumer (`checkout-domain-design.md` §12.3) has arrived from outside Media — still design-only until the first implementation prompt is written, but no longer a purely speculative mechanism.
 
 **Builds on:** the config-driven, fail-appropriately pattern established by `EasyCo\Pricing\DefaultCurrency`; `catalog-domain-design.md` §3.3's "smallest model that satisfies the actual need" principle.
 
@@ -16,6 +16,7 @@ A small, generic mechanism for **admin-editable, site-wide configuration values*
 - Media's Hero Slider feature-wide on/off toggle (`media-domain-design.md` §2.2)
 - Site logo/favicon (`media-domain-design.md` §2.3)
 - The store-wide product image aspect ratio — one of 1:1, 4:5, 3:4, 2:3 (`media-domain-design.md` §3.3), a layout hint for templates rather than a processing input
+- Checkout's optional phone-call-required field visibility (`checkout-domain-design.md` §12.3) — the first non-Media consumer, confirming this is a genuinely reusable mechanism, not Media-specific config in disguise.
 
 ## 2. Prior art
 
