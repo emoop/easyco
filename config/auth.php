@@ -1,8 +1,8 @@
 <?php
 
+use App\Filament\StaffPanelUser;
 use App\Models\User;
 use EasyCo\Account\Persistence\Eloquent\AccountModel;
-use EasyCo\Staff\Persistence\Eloquent\StaffModel;
 
 return [
 
@@ -110,10 +110,15 @@ return [
 
         // Backs the 'staff' guard above — merchant-surface identities, a
         // separate table/model from both 'users' and 'accounts'
-        // (staff-access-domain-design.md §2).
+        // (staff-access-domain-design.md §2). Points at
+        // App\Filament\StaffPanelUser (a thin subclass of the package's
+        // own StaffModel) rather than the package model directly, purely
+        // so the resolved user implements Filament\Models\Contracts\
+        // FilamentUser — see that class's own docblock for why this is
+        // required, not optional (admin-panel-design.md §3).
         'staff' => [
             'driver' => 'eloquent',
-            'model' => StaffModel::class,
+            'model' => StaffPanelUser::class,
         ],
     ],
 
