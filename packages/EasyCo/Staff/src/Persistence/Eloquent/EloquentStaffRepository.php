@@ -63,6 +63,11 @@ final class EloquentStaffRepository implements StaffRepository
         return StaffModel::withTrashed()->exists();
     }
 
+    public function countActive(): int
+    {
+        return StaffModel::where('is_active', true)->count();
+    }
+
     /**
      * Detects a violation of staff_email_unique — SQLSTATE 23000 +
      * driver error code (MySQL 1062 / SQLite 19) is the primary check,

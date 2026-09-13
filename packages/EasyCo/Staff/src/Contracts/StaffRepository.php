@@ -29,4 +29,17 @@ interface StaffRepository
      * not a bug.)
      */
     public function any(): bool;
+
+    /**
+     * Count of Staff rows where isActive() is true (soft-deleted rows
+     * excluded — the normal query scope, unlike any()). Used only by the
+     * admin panel's Staff Edit page to guard against deactivating the
+     * last active staff member, per staff-access-domain-design.md §12.2's
+     * own "deliberately not solved here... left for admin-panel-design.md's
+     * implementation to decide" — this is that decision, made at the
+     * app/Filament layer, not the domain layer, since Staff itself has no
+     * visibility into other Staff records (same reasoning already
+     * established for any()).
+     */
+    public function countActive(): int;
 }
