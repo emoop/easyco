@@ -1,0 +1,232 @@
+<?php
+
+namespace Tests\Feature;
+
+use App\Filament\Resources\CategoryResource;
+use App\Filament\Resources\CategoryResource\Pages\CreateCategory;
+use App\Filament\Resources\CategoryResource\Pages\EditCategory;
+use App\Filament\Resources\CategoryResource\Pages\ListCategories;
+use App\Filament\StaffPanelUser;
+use EasyCo\Catalog\Category;
+use EasyCo\Catalog\Contracts\CategoryRepository;
+use EasyCo\Catalog\Persistence\Eloquent\CategoryModel;
+use EasyCo\Staff\Contracts\PasswordHasher;
+use EasyCo\Staff\Contracts\RoleRepository;
+use EasyCo\Staff\Contracts\StaffRepository;
+use EasyCo\Staff\Seeders\StaffSystemRolesSeeder;
+use EasyCo\Staff\Staff;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Livewire\Livewire;
+use Tests\TestCase;
+
+class CategoryResourceTest extends TestCase
+{
+    use RefreshDatabase;
+
+    private function staffWithRole(string $roleName): StaffPanelUser
+    {
+        $roleRepository = app(RoleRepository::class);
+        $role = $roleRepository->findSystemRoleByName($roleName);
+
+        if ($role === null) {
+            app(StaffSystemRolesSeeder::class)->run($roleRepository);
+            $role = $roleRepository->findSystemRoleByName($roleName);
+        }
+
+        $email = strtolower(str_replace(' ', '.', $roleName)).'@example.com';
+        $staff = Staff::create($email, app(PasswordHasher::class)->hash('password123'), $roleName, $role);
+        app(StaffRepository::class)->save($staff);
+
+        return StaffPanelUser::find($staff->id());
+    }
+
+    private function actingAsPanelAdministrator(): StaffPanelUser
+    {
+        $model = $this->staffWithRole('Administrator');
+        $this->actingAs($model, 'staff');
+
+        return $model;
+    }
+
+    public function test_creating_a_category_persists_it_through_the_domain_layer(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        Livewire::test(CreateCategory::class)
+            ->fillForm(['name' => 'Shoes', 'slug' => 'shoes'])
+            ->call('create')
+            ->assertHasNoFormErrors();
+
+        $category = app(CategoryRepository::class)->all()[0] ?? null;
+
+        $this->assertNotNull($category);
+        $this->assertSame('Shoes', $category->name());
+        $this->assertSame('shoes', $category->slug());
+        $this->assertNull($category->parentId());
+    }
+
+    public function test_creating_a_category_with_a_real_parent_persists_it(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        $parent = new Category(id: null, parentId: null, name: 'Shoes', slug: 'shoes');
+        app(CategoryRepository::class)->save($parent);
+
+        Livewire::test(CreateCategory::class)
+            ->fillForm(['name' => 'Running Shoes', 'slug' => 'running-shoes', 'parent_id' => $parent->id()])
+            ->call('create')
+            ->assertHasNoFormErrors();
+
+        $child = CategoryModel::where('slug', 'running-shoes')->first();
+        $reloaded = app(CategoryRepository::class)->findById((string) $child->id);
+
+        $this->assertSame($parent->id(), $reloaded->parentId());
+    }
+
+    public function test_editing_a_category_updates_it_through_the_domain_layer(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        $category = new Category(id: null, parentId: null, name: 'Shoes', slug: 'shoes');
+        app(CategoryRepository::class)->save($category);
+
+        Livewire::test(EditCategory::class, ['record' => $category->id()])
+            ->fillForm(['name' => 'Footwear', 'slug' => 'footwear'])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $reloaded = app(CategoryRepository::class)->findById($category->id());
+
+        $this->assertSame('Footwear', $reloaded->name());
+        $this->assertSame('footwear', $reloaded->slug());
+    }
+
+    public function test_editing_a_category_can_change_its_parent(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        $originalParent = new Category(id: null, parentId: null, name: 'Shoes', slug: 'shoes');
+        app(CategoryRepository::class)->save($originalParent);
+
+        $newParent = new Category(id: null, parentId: null, name: 'Bags', slug: 'bags');
+        app(CategoryRepository::class)->save($newParent);
+
+        $child = new Category(id: null, parentId: $originalParent->id(), name: 'Running Shoes', slug: 'running-shoes');
+        app(CategoryRepository::class)->save($child);
+
+        Livewire::test(EditCategory::class, ['record' => $child->id()])
+            ->fillForm(['name' => 'Running Shoes', 'slug' => 'running-shoes', 'parent_id' => $newParent->id()])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $reloaded = app(CategoryRepository::class)->findById($child->id());
+
+        $this->assertSame($newParent->id(), $reloaded->parentId());
+    }
+
+    /**
+     * The one UI-layer cycle-avoidance piece this task calls for: a
+     * category's own id is excluded from its own parent_id options list
+     * on the Edit form.
+     */
+    public function test_a_categorys_own_id_is_excluded_from_its_parent_options_on_edit(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        $category = new Category(id: null, parentId: null, name: 'Shoes', slug: 'shoes');
+        app(CategoryRepository::class)->save($category);
+
+        $component = Livewire::test(EditCategory::class, ['record' => $category->id()]);
+
+        $options = $component->instance()->form->getComponent('parent_id')->getOptions();
+
+        $this->assertArrayNotHasKey($category->id(), $options);
+    }
+
+    public function test_a_duplicate_slug_is_rejected_on_create(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        app(CategoryRepository::class)->save(new Category(id: null, parentId: null, name: 'Shoes', slug: 'colliding-slug'));
+
+        Livewire::test(CreateCategory::class)
+            ->fillForm(['name' => 'Not Shoes', 'slug' => 'colliding-slug'])
+            ->call('create')
+            ->assertHasFormErrors(['slug']);
+    }
+
+    public function test_a_duplicate_slug_is_rejected_on_edit(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        app(CategoryRepository::class)->save(new Category(id: null, parentId: null, name: 'Shoes', slug: 'shoes'));
+        $bags = new Category(id: null, parentId: null, name: 'Bags', slug: 'bags');
+        app(CategoryRepository::class)->save($bags);
+
+        Livewire::test(EditCategory::class, ['record' => $bags->id()])
+            ->fillForm(['slug' => 'shoes'])
+            ->call('save')
+            ->assertHasFormErrors(['slug']);
+    }
+
+    public function test_editing_a_category_with_its_own_unchanged_slug_does_not_false_positive(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        $category = new Category(id: null, parentId: null, name: 'Shoes', slug: 'shoes');
+        app(CategoryRepository::class)->save($category);
+
+        Livewire::test(EditCategory::class, ['record' => $category->id()])
+            ->fillForm(['name' => 'Shoes', 'slug' => 'shoes'])
+            ->call('save')
+            ->assertHasNoFormErrors();
+    }
+
+    public function test_the_real_permission_matrix_across_all_three_shipped_roles(): void
+    {
+        $this->actingAsPanelAdministrator();
+        $this->get(CategoryResource::getUrl('index'))->assertOk();
+        $this->get(CategoryResource::getUrl('create'))->assertOk();
+
+        $manager = $this->staffWithRole('Manager');
+        $this->actingAs($manager, 'staff');
+        session()->forget('password_hash_staff');
+        $this->get(CategoryResource::getUrl('index'))->assertOk();
+        $this->get(CategoryResource::getUrl('create'))->assertOk();
+
+        $productEntry = $this->staffWithRole('Product Entry');
+        $this->actingAs($productEntry, 'staff');
+        session()->forget('password_hash_staff');
+        $this->get(CategoryResource::getUrl('index'))->assertOk();
+        $this->get(CategoryResource::getUrl('create'))->assertForbidden();
+    }
+
+    public function test_a_categorys_row_navigates_to_view_and_edit_button_visibility_matches_permission(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        $category = new Category(id: null, parentId: null, name: 'Shoes', slug: 'shoes');
+        app(CategoryRepository::class)->save($category);
+        $categoryModel = CategoryModel::find($category->id());
+
+        $component = Livewire::test(ListCategories::class);
+
+        $component->assertTableActionVisible('edit', $categoryModel);
+
+        $recordUrl = $component->instance()->getTable()->getRecordUrl($categoryModel);
+        $this->assertSame(CategoryResource::getUrl('view', ['record' => $categoryModel]), $recordUrl);
+
+        $this->get($recordUrl)->assertOk();
+        $this->get(CategoryResource::getUrl('edit', ['record' => $categoryModel]))->assertOk();
+
+        $productEntry = $this->staffWithRole('Product Entry');
+        $this->actingAs($productEntry, 'staff');
+        session()->forget('password_hash_staff');
+
+        $componentAsProductEntry = Livewire::test(ListCategories::class);
+        $componentAsProductEntry->assertTableActionHidden('edit', $categoryModel);
+
+        $this->get(CategoryResource::getUrl('view', ['record' => $categoryModel]))->assertOk();
+        $this->get(CategoryResource::getUrl('edit', ['record' => $categoryModel]))->assertForbidden();
+    }
+}

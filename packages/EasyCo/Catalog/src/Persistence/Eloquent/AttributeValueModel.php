@@ -3,6 +3,7 @@
 namespace EasyCo\Catalog\Persistence\Eloquent;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
  * Eloquent read/write model for catalog_attribute_values — see
@@ -19,4 +20,16 @@ class AttributeValueModel extends Model
         'value',
         'sort_order',
     ];
+
+    /**
+     * Read-only convenience for the admin panel's table/infolist
+     * columns (AttributeValueResource's `attributeDefinition.name`
+     * dot-notation) — an infrastructure-layer Eloquent relationship,
+     * not a domain concept; EasyCo\Catalog\AttributeValue itself only
+     * ever exposes attributeDefinitionId() as a plain string.
+     */
+    public function attributeDefinition(): BelongsTo
+    {
+        return $this->belongsTo(AttributeDefinitionModel::class, 'attribute_definition_id');
+    }
 }
