@@ -6,19 +6,26 @@ use App\Filament\Resources\AttributeValueResource;
 use App\Filament\Resources\AttributeValueResource\Pages\CreateAttributeValue;
 use App\Filament\Resources\AttributeValueResource\Pages\EditAttributeValue;
 use App\Filament\Resources\AttributeValueResource\Pages\ListAttributeValues;
+use App\Filament\Resources\AttributeValueResource\Pages\RelatedProductsAxis;
+use App\Filament\Resources\AttributeValueResource\Pages\RelatedProductsDescriptive;
 use App\Filament\StaffPanelUser;
 use EasyCo\Catalog\AttributeDefinition;
 use EasyCo\Catalog\AttributeValue;
 use EasyCo\Catalog\Contracts\AttributeDefinitionRepository;
 use EasyCo\Catalog\Contracts\AttributeValueRepository;
+use EasyCo\Catalog\Contracts\ProductRepository;
 use EasyCo\Catalog\Enums\AttributeType;
 use EasyCo\Catalog\Persistence\Eloquent\AttributeValueModel;
+use EasyCo\Catalog\Persistence\Eloquent\ProductModel;
+use EasyCo\Catalog\Product;
+use EasyCo\Catalog\VariationAxis;
 use EasyCo\Staff\Contracts\PasswordHasher;
 use EasyCo\Staff\Contracts\RoleRepository;
 use EasyCo\Staff\Contracts\StaffRepository;
 use EasyCo\Staff\Seeders\StaffSystemRolesSeeder;
 use EasyCo\Staff\Staff;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -198,5 +205,198 @@ class AttributeValueResourceTest extends TestCase
 
         $this->get(AttributeValueResource::getUrl('view', ['record' => $valueModel]))->assertOk();
         $this->get(AttributeValueResource::getUrl('edit', ['record' => $valueModel]))->assertForbidden();
+    }
+
+    private function attachDescriptively(AttributeValue $value, Product $product): void
+    {
+        DB::table('catalog_product_attributes')->insert([
+            'product_id' => $product->id(),
+            'attribute_definition_id' => $value->attributeDefinitionId(),
+            'is_variation_axis' => false,
+            'text_value' => null,
+            'attribute_value_id' => $value->id(),
+            'sort_order' => 0,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    }
+
+    public function test_the_count_columns_show_the_real_independent_descriptive_and_axis_numbers(): void
+    {
+        $this->actingAsPanelAdministrator();
+        $definition = $this->persistedSelectDefinition();
+
+        $descriptiveValue = new AttributeValue(id: null, attributeDefinitionId: $definition->id(), value: 'Black');
+        app(AttributeValueRepository::class)->save($descriptiveValue);
+
+        for ($i = 1; $i <= 3; $i++) {
+            $product = Product::createSimple("Descriptive {$i}", "SKU-D{$i}", "descriptive-{$i}");
+            app(ProductRepository::class)->save($product);
+            $this->attachDescriptively($descriptiveValue, $product);
+        }
+
+        $axisValue = new AttributeValue(id: null, attributeDefinitionId: $definition->id(), value: 'Red');
+        app(AttributeValueRepository::class)->save($axisValue);
+
+        for ($i = 1; $i <= 3; $i++) {
+            $product = Product::createVariable("Axis {$i}", "SKU-A{$i}", "axis-{$i}");
+            $product->declareVariationAxes([new VariationAxis($definition, [$axisValue])]);
+            $product->addStandardVariation([$definition->id() => $axisValue->id()], "SKU-A{$i}-RED");
+            app(ProductRepository::class)->save($product);
+        }
+
+        $component = Livewire::test(ListAttributeValues::class);
+        $component->assertTableColumnStateSet('descriptive_count', 3, record: AttributeValueModel::find($descriptiveValue->id()));
+        $component->assertTableColumnStateSet('axis_count', 3, record: AttributeValueModel::find($axisValue->id()));
+        $component->assertTableColumnStateSet('descriptive_count', 0, record: AttributeValueModel::find($axisValue->id()));
+        $component->assertTableColumnStateSet('axis_count', 0, record: AttributeValueModel::find($descriptiveValue->id()));
+    }
+
+    public function test_delete_is_blocked_when_only_axis_usage_is_nonzero(): void
+    {
+        $this->actingAsPanelAdministrator();
+        $definition = $this->persistedSelectDefinition();
+
+        $value = new AttributeValue(id: null, attributeDefinitionId: $definition->id(), value: 'Black');
+        app(AttributeValueRepository::class)->save($value);
+
+        $product = Product::createVariable('T-Shirt', 'SKU-1', 't-shirt');
+        $product->declareVariationAxes([new VariationAxis($definition, [$value])]);
+        $product->addStandardVariation([$definition->id() => $value->id()], 'SKU-1-BLACK');
+        app(ProductRepository::class)->save($product);
+
+        Livewire::test(ListAttributeValues::class)
+            ->callTableAction('delete', AttributeValueModel::find($value->id()))
+            ->assertNotified();
+
+        $this->assertNotNull(app(AttributeValueRepository::class)->findById($value->id()));
+    }
+
+    public function test_delete_is_blocked_when_only_descriptive_usage_is_nonzero(): void
+    {
+        $this->actingAsPanelAdministrator();
+        $definition = $this->persistedSelectDefinition();
+
+        $value = new AttributeValue(id: null, attributeDefinitionId: $definition->id(), value: 'Black');
+        app(AttributeValueRepository::class)->save($value);
+
+        $product = Product::createSimple('Plain Shirt', 'SKU-1', 'plain-shirt');
+        app(ProductRepository::class)->save($product);
+        $this->attachDescriptively($value, $product);
+
+        Livewire::test(ListAttributeValues::class)
+            ->callTableAction('delete', AttributeValueModel::find($value->id()))
+            ->assertNotified();
+
+        $this->assertNotNull(app(AttributeValueRepository::class)->findById($value->id()));
+    }
+
+    public function test_delete_succeeds_when_the_value_is_genuinely_unused(): void
+    {
+        $this->actingAsPanelAdministrator();
+        $definition = $this->persistedSelectDefinition();
+
+        $value = new AttributeValue(id: null, attributeDefinitionId: $definition->id(), value: 'Black');
+        app(AttributeValueRepository::class)->save($value);
+
+        Livewire::test(ListAttributeValues::class)
+            ->callTableAction('delete', AttributeValueModel::find($value->id()));
+
+        $this->assertNull(app(AttributeValueRepository::class)->findById($value->id()));
+    }
+
+    public function test_bulk_unlink_on_the_descriptive_drill_down_actually_detaches_the_selected_products(): void
+    {
+        $this->actingAsPanelAdministrator();
+        $definition = $this->persistedSelectDefinition();
+
+        $value = new AttributeValue(id: null, attributeDefinitionId: $definition->id(), value: 'Black');
+        app(AttributeValueRepository::class)->save($value);
+
+        $productIds = [];
+        for ($i = 1; $i <= 3; $i++) {
+            $product = Product::createSimple("Product {$i}", "SKU-{$i}", "product-{$i}");
+            app(ProductRepository::class)->save($product);
+            $this->attachDescriptively($value, $product);
+            $productIds[] = $product->id();
+        }
+
+        Livewire::test(RelatedProductsDescriptive::class, ['record' => $value->id()])
+            ->callTableBulkAction('detach', $productIds);
+
+        $counts = app(AttributeValueRepository::class)->countProductsUsing($value->id());
+        $this->assertSame(0, $counts['descriptive']);
+    }
+
+    public function test_bulk_unlink_skips_an_already_detached_product_without_erroring(): void
+    {
+        $this->actingAsPanelAdministrator();
+        $definition = $this->persistedSelectDefinition();
+
+        $value = new AttributeValue(id: null, attributeDefinitionId: $definition->id(), value: 'Black');
+        app(AttributeValueRepository::class)->save($value);
+
+        $stillAttached = Product::createSimple('Still Attached', 'SKU-1', 'still-attached');
+        app(ProductRepository::class)->save($stillAttached);
+        $this->attachDescriptively($value, $stillAttached);
+
+        $neverAttached = Product::createSimple('Never Attached', 'SKU-2', 'never-attached');
+        app(ProductRepository::class)->save($neverAttached);
+
+        Livewire::test(RelatedProductsDescriptive::class, ['record' => $value->id()])
+            ->callTableBulkAction('detach', [$stillAttached->id(), $neverAttached->id()]);
+
+        $counts = app(AttributeValueRepository::class)->countProductsUsing($value->id());
+        $this->assertSame(0, $counts['descriptive']);
+    }
+
+    /**
+     * Same real paranoia as AttributeDefinitionResourceTest's identical
+     * test — axis usage is never bulk-unlinkable, full stop. Forces a
+     * selection of an axis-using product's id through the DESCRIPTIVE
+     * drill-down's own bulk action.
+     */
+    public function test_axis_usage_cannot_be_bulk_unlinked_even_by_forcing_a_request_through_the_descriptive_action(): void
+    {
+        $this->actingAsPanelAdministrator();
+        $definition = $this->persistedSelectDefinition();
+
+        $value = new AttributeValue(id: null, attributeDefinitionId: $definition->id(), value: 'Black');
+        app(AttributeValueRepository::class)->save($value);
+
+        $axisProduct = Product::createVariable('T-Shirt', 'SKU-1', 't-shirt');
+        $axisProduct->declareVariationAxes([new VariationAxis($definition, [$value])]);
+        $axisProduct->addStandardVariation([$definition->id() => $value->id()], 'SKU-1-BLACK');
+        app(ProductRepository::class)->save($axisProduct);
+
+        Livewire::test(RelatedProductsDescriptive::class, ['record' => $value->id()])
+            ->callTableBulkAction('detach', [$axisProduct->id()]);
+
+        $reloadedAxisProduct = app(ProductRepository::class)->findByIdWithVariations($axisProduct->id());
+        $this->assertTrue($reloadedAxisProduct->hasVariationAxis($definition));
+        $this->assertCount(1, $reloadedAxisProduct->variations());
+
+        $counts = app(AttributeValueRepository::class)->countProductsUsing($value->id());
+        $this->assertSame(1, $counts['axis']);
+    }
+
+    public function test_the_axis_drill_down_shows_the_product_with_no_selection_or_bulk_action_available(): void
+    {
+        $this->actingAsPanelAdministrator();
+        $definition = $this->persistedSelectDefinition();
+
+        $value = new AttributeValue(id: null, attributeDefinitionId: $definition->id(), value: 'Black');
+        app(AttributeValueRepository::class)->save($value);
+
+        $axisProduct = Product::createVariable('T-Shirt', 'SKU-1', 't-shirt');
+        $axisProduct->declareVariationAxes([new VariationAxis($definition, [$value])]);
+        $axisProduct->addStandardVariation([$definition->id() => $value->id()], 'SKU-1-BLACK');
+        app(ProductRepository::class)->save($axisProduct);
+
+        $component = Livewire::test(RelatedProductsAxis::class, ['record' => $value->id()]);
+
+        $productModel = ProductModel::find($axisProduct->id());
+        $this->assertFalse($component->instance()->getTable()->isRecordSelectable($productModel));
+        $this->assertSame([], $component->instance()->getTable()->getToolbarActions());
     }
 }

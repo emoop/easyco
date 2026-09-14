@@ -6,9 +6,14 @@ use App\Filament\Resources\TagResource;
 use App\Filament\Resources\TagResource\Pages\CreateTag;
 use App\Filament\Resources\TagResource\Pages\EditTag;
 use App\Filament\Resources\TagResource\Pages\ListTags;
+use App\Filament\Resources\TagResource\Pages\RelatedProducts;
 use App\Filament\StaffPanelUser;
+use EasyCo\Catalog\Contracts\ProductRepository;
+use EasyCo\Catalog\Contracts\ProductTagRepository;
 use EasyCo\Catalog\Contracts\TagRepository;
 use EasyCo\Catalog\Persistence\Eloquent\TagModel;
+use EasyCo\Catalog\Product;
+use EasyCo\Catalog\ProductTag;
 use EasyCo\Catalog\Tag;
 use EasyCo\Staff\Contracts\PasswordHasher;
 use EasyCo\Staff\Contracts\RoleRepository;
@@ -167,5 +172,95 @@ class TagResourceTest extends TestCase
 
         $this->get(TagResource::getUrl('view', ['record' => $tagModel]))->assertOk();
         $this->get(TagResource::getUrl('edit', ['record' => $tagModel]))->assertForbidden();
+    }
+
+    public function test_the_count_column_shows_the_real_number_of_products_using_this_tag(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        $tag = new Tag(id: null, name: 'Summer', slug: 'summer');
+        app(TagRepository::class)->save($tag);
+
+        for ($i = 1; $i <= 3; $i++) {
+            $product = Product::createSimple("Product {$i}", "SKU-{$i}", "product-{$i}");
+            app(ProductRepository::class)->save($product);
+            app(ProductTagRepository::class)->save(new ProductTag(id: null, productId: $product->id(), tagId: $tag->id()));
+        }
+
+        $component = Livewire::test(ListTags::class);
+
+        $component->assertTableColumnStateSet('products_count', 3, record: TagModel::find($tag->id()));
+    }
+
+    public function test_delete_is_blocked_when_the_tag_is_still_in_use(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        $tag = new Tag(id: null, name: 'Summer', slug: 'summer');
+        app(TagRepository::class)->save($tag);
+
+        $product = Product::createSimple('Air Max', 'SKU-1', 'air-max');
+        app(ProductRepository::class)->save($product);
+        app(ProductTagRepository::class)->save(new ProductTag(id: null, productId: $product->id(), tagId: $tag->id()));
+
+        Livewire::test(ListTags::class)
+            ->callTableAction('delete', TagModel::find($tag->id()))
+            ->assertNotified();
+
+        $this->assertNotNull(app(TagRepository::class)->findById($tag->id()));
+    }
+
+    public function test_delete_succeeds_when_the_tag_is_genuinely_unused(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        $tag = new Tag(id: null, name: 'Summer', slug: 'summer');
+        app(TagRepository::class)->save($tag);
+
+        Livewire::test(ListTags::class)
+            ->callTableAction('delete', TagModel::find($tag->id()));
+
+        $this->assertNull(app(TagRepository::class)->findById($tag->id()));
+    }
+
+    public function test_bulk_unlink_actually_detaches_the_selected_products(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        $tag = new Tag(id: null, name: 'Summer', slug: 'summer');
+        app(TagRepository::class)->save($tag);
+
+        $productIds = [];
+        for ($i = 1; $i <= 3; $i++) {
+            $product = Product::createSimple("Product {$i}", "SKU-{$i}", "product-{$i}");
+            app(ProductRepository::class)->save($product);
+            app(ProductTagRepository::class)->save(new ProductTag(id: null, productId: $product->id(), tagId: $tag->id()));
+            $productIds[] = $product->id();
+        }
+
+        Livewire::test(RelatedProducts::class, ['record' => $tag->id()])
+            ->callTableBulkAction('detach', $productIds);
+
+        $this->assertSame(0, app(TagRepository::class)->countProductsUsing($tag->id()));
+    }
+
+    public function test_bulk_unlink_skips_an_already_detached_product_without_erroring(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        $tag = new Tag(id: null, name: 'Summer', slug: 'summer');
+        app(TagRepository::class)->save($tag);
+
+        $stillAttached = Product::createSimple('Still Attached', 'SKU-1', 'still-attached');
+        app(ProductRepository::class)->save($stillAttached);
+        app(ProductTagRepository::class)->save(new ProductTag(id: null, productId: $stillAttached->id(), tagId: $tag->id()));
+
+        $neverAttached = Product::createSimple('Never Attached', 'SKU-2', 'never-attached');
+        app(ProductRepository::class)->save($neverAttached);
+
+        Livewire::test(RelatedProducts::class, ['record' => $tag->id()])
+            ->callTableBulkAction('detach', [$stillAttached->id(), $neverAttached->id()]);
+
+        $this->assertSame(0, app(TagRepository::class)->countProductsUsing($tag->id()));
     }
 }

@@ -64,6 +64,11 @@ final class EloquentAttributeDefinitionRepository implements AttributeDefinition
         return ['descriptive' => $descriptive, 'axis' => $axis];
     }
 
+    public function delete(string $id): void
+    {
+        AttributeDefinitionModel::findOrFail($id)->delete();
+    }
+
     private function toDomain(AttributeDefinitionModel $model): AttributeDefinition
     {
         return new AttributeDefinition(

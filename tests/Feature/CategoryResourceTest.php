@@ -6,10 +6,15 @@ use App\Filament\Resources\CategoryResource;
 use App\Filament\Resources\CategoryResource\Pages\CreateCategory;
 use App\Filament\Resources\CategoryResource\Pages\EditCategory;
 use App\Filament\Resources\CategoryResource\Pages\ListCategories;
+use App\Filament\Resources\CategoryResource\Pages\RelatedProducts;
 use App\Filament\StaffPanelUser;
 use EasyCo\Catalog\Category;
 use EasyCo\Catalog\Contracts\CategoryRepository;
+use EasyCo\Catalog\Contracts\ProductCategoryRepository;
+use EasyCo\Catalog\Contracts\ProductRepository;
 use EasyCo\Catalog\Persistence\Eloquent\CategoryModel;
+use EasyCo\Catalog\Product;
+use EasyCo\Catalog\ProductCategory;
 use EasyCo\Staff\Contracts\PasswordHasher;
 use EasyCo\Staff\Contracts\RoleRepository;
 use EasyCo\Staff\Contracts\StaffRepository;
@@ -228,5 +233,95 @@ class CategoryResourceTest extends TestCase
 
         $this->get(CategoryResource::getUrl('view', ['record' => $categoryModel]))->assertOk();
         $this->get(CategoryResource::getUrl('edit', ['record' => $categoryModel]))->assertForbidden();
+    }
+
+    public function test_the_count_column_shows_the_real_number_of_products_using_this_category(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        $category = new Category(id: null, parentId: null, name: 'Shoes', slug: 'shoes');
+        app(CategoryRepository::class)->save($category);
+
+        for ($i = 1; $i <= 3; $i++) {
+            $product = Product::createSimple("Product {$i}", "SKU-{$i}", "product-{$i}");
+            app(ProductRepository::class)->save($product);
+            app(ProductCategoryRepository::class)->save(new ProductCategory(id: null, productId: $product->id(), categoryId: $category->id()));
+        }
+
+        $component = Livewire::test(ListCategories::class);
+
+        $component->assertTableColumnStateSet('products_count', 3, record: CategoryModel::find($category->id()));
+    }
+
+    public function test_delete_is_blocked_when_the_category_is_still_in_use(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        $category = new Category(id: null, parentId: null, name: 'Shoes', slug: 'shoes');
+        app(CategoryRepository::class)->save($category);
+
+        $product = Product::createSimple('Air Max', 'SKU-1', 'air-max');
+        app(ProductRepository::class)->save($product);
+        app(ProductCategoryRepository::class)->save(new ProductCategory(id: null, productId: $product->id(), categoryId: $category->id()));
+
+        Livewire::test(ListCategories::class)
+            ->callTableAction('delete', CategoryModel::find($category->id()))
+            ->assertNotified();
+
+        $this->assertNotNull(app(CategoryRepository::class)->findById($category->id()));
+    }
+
+    public function test_delete_succeeds_when_the_category_is_genuinely_unused(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        $category = new Category(id: null, parentId: null, name: 'Shoes', slug: 'shoes');
+        app(CategoryRepository::class)->save($category);
+
+        Livewire::test(ListCategories::class)
+            ->callTableAction('delete', CategoryModel::find($category->id()));
+
+        $this->assertNull(app(CategoryRepository::class)->findById($category->id()));
+    }
+
+    public function test_bulk_unlink_actually_detaches_the_selected_products(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        $category = new Category(id: null, parentId: null, name: 'Shoes', slug: 'shoes');
+        app(CategoryRepository::class)->save($category);
+
+        $productIds = [];
+        for ($i = 1; $i <= 3; $i++) {
+            $product = Product::createSimple("Product {$i}", "SKU-{$i}", "product-{$i}");
+            app(ProductRepository::class)->save($product);
+            app(ProductCategoryRepository::class)->save(new ProductCategory(id: null, productId: $product->id(), categoryId: $category->id()));
+            $productIds[] = $product->id();
+        }
+
+        Livewire::test(RelatedProducts::class, ['record' => $category->id()])
+            ->callTableBulkAction('detach', $productIds);
+
+        $this->assertSame(0, app(CategoryRepository::class)->countProductsUsing($category->id()));
+    }
+
+    public function test_bulk_unlink_skips_an_already_detached_product_without_erroring(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        $category = new Category(id: null, parentId: null, name: 'Shoes', slug: 'shoes');
+        app(CategoryRepository::class)->save($category);
+
+        $stillAttached = Product::createSimple('Still Attached', 'SKU-1', 'still-attached');
+        app(ProductRepository::class)->save($stillAttached);
+        app(ProductCategoryRepository::class)->save(new ProductCategory(id: null, productId: $stillAttached->id(), categoryId: $category->id()));
+
+        $neverAttached = Product::createSimple('Never Attached', 'SKU-2', 'never-attached');
+        app(ProductRepository::class)->save($neverAttached);
+
+        Livewire::test(RelatedProducts::class, ['record' => $category->id()])
+            ->callTableBulkAction('detach', [$stillAttached->id(), $neverAttached->id()]);
+
+        $this->assertSame(0, app(CategoryRepository::class)->countProductsUsing($category->id()));
     }
 }

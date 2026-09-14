@@ -26,4 +26,17 @@ interface BrandRepository
      * catalog_products, one row per Product.
      */
     public function countProductsUsing(string $brandId): int;
+
+    /**
+     * Plain infrastructure-level delete — no business invariant of its
+     * own beyond what countProductsUsing() already exists to let a
+     * caller check first (admin-panel-design.md's Part B "delete,
+     * safety-gated" work). Brand has no domain-layer delete() method
+     * (nothing to protect at that layer — a Brand has no lifecycle),
+     * so this is the repository's own operation: findOrFail()->delete(),
+     * mirroring save()'s own fail-loud posture for an id that should
+     * exist — throws ModelNotFoundException if $id doesn't, rather
+     * than silently no-op-ing.
+     */
+    public function delete(string $id): void;
 }

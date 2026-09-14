@@ -26,4 +26,7 @@ interface SeasonRepository
      * column on catalog_products, one row per Product.
      */
     public function countProductsUsing(string $seasonId): int;
+
+    /** Plain infrastructure-level delete — see BrandRepository::delete()'s identical reasoning. */
+    public function delete(string $id): void;
 }

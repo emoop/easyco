@@ -63,6 +63,11 @@ final class EloquentAttributeValueRepository implements AttributeValueRepository
         return ['descriptive' => $descriptive, 'axis' => $axis];
     }
 
+    public function delete(string $id): void
+    {
+        AttributeValueModel::findOrFail($id)->delete();
+    }
+
     private function toDomain(AttributeValueModel $model): AttributeValue
     {
         return new AttributeValue(

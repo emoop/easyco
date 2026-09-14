@@ -9,4 +9,11 @@ use Filament\Resources\Pages\ViewRecord;
 class ViewAttributeValue extends ViewRecord
 {
     protected static string $resource = AttributeValueResource::class;
+
+    protected function getHeaderActions(): array
+    {
+        return [
+            AttributeValueResource::deleteAction(),
+        ];
+    }
 }

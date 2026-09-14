@@ -53,6 +53,11 @@ final class EloquentTagRepository implements TagRepository
             ->count();
     }
 
+    public function delete(string $id): void
+    {
+        TagModel::findOrFail($id)->delete();
+    }
+
     private function toDomain(TagModel $model): Tag
     {
         return new Tag(

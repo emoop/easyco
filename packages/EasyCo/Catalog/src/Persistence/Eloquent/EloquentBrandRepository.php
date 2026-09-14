@@ -52,6 +52,11 @@ final class EloquentBrandRepository implements BrandRepository
         return ProductModel::where('brand_id', $brandId)->count();
     }
 
+    public function delete(string $id): void
+    {
+        BrandModel::findOrFail($id)->delete();
+    }
+
     private function toDomain(BrandModel $model): Brand
     {
         return new Brand(

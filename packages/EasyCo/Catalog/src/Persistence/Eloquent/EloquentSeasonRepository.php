@@ -50,6 +50,11 @@ final class EloquentSeasonRepository implements SeasonRepository
         return ProductModel::where('season_id', $seasonId)->count();
     }
 
+    public function delete(string $id): void
+    {
+        SeasonModel::findOrFail($id)->delete();
+    }
+
     private function toDomain(SeasonModel $model): Season
     {
         return new Season(

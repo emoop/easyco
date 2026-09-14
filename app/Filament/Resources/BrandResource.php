@@ -6,8 +6,10 @@ use App\Filament\Concerns\AuthorizesViaStaffPermission;
 use App\Filament\Resources\BrandResource\Pages\CreateBrand;
 use App\Filament\Resources\BrandResource\Pages\EditBrand;
 use App\Filament\Resources\BrandResource\Pages\ListBrands;
+use App\Filament\Resources\BrandResource\Pages\RelatedProducts;
 use App\Filament\Resources\BrandResource\Pages\ViewBrand;
 use BackedEnum;
+use EasyCo\Catalog\Contracts\BrandRepository;
 use EasyCo\Catalog\Persistence\Eloquent\BrandModel;
 use EasyCo\Media\Contracts\MediaAssetRepository;
 use EasyCo\Media\Contracts\MediaStorageAdapter;
@@ -16,17 +18,20 @@ use EasyCo\Media\Jobs\ProcessMediaAssetJob;
 use EasyCo\Media\MediaAsset;
 use EasyCo\Media\Persistence\Eloquent\MediaAssetModel;
 use EasyCo\Staff\Enums\Permission;
+use Filament\Actions\DeleteAction;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\TextInput;
 use Filament\Infolists\Components\ImageEntry;
 use Filament\Infolists\Components\TextEntry;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\ImageColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
+use Illuminate\Database\QueryException;
 use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 
 /**
@@ -78,6 +83,18 @@ class BrandResource extends Resource
         return Permission::TAXONOMY_MANAGE;
     }
 
+    /**
+     * Delete is now real (admin-panel-design.md's Part B) — same
+     * TAXONOMY_MANAGE gate as create/edit. The actual protection
+     * against deleting an in-use Brand is the countProductsUsing()
+     * check inside deleteAction() below, not this permission gate —
+     * this only controls who can attempt it at all.
+     */
+    protected static function deletePermission(): ?Permission
+    {
+        return Permission::TAXONOMY_MANAGE;
+    }
+
     public static function form(Schema $schema): Schema
     {
         return $schema->components([
@@ -121,6 +138,11 @@ class BrandResource extends Resource
                     ->sortable(),
                 TextColumn::make('slug')
                     ->searchable(),
+                TextColumn::make('products_count')
+                    ->label(__('brands.fields.products_count'))
+                    ->state(fn (BrandModel $record): int => app(BrandRepository::class)->countProductsUsing((string) $record->id))
+                    ->formatStateUsing(fn (int $state): string => trans_choice('brands.products_count.count', $state, ['count' => $state]))
+                    ->url(fn (BrandModel $record, int $state): ?string => $state > 0 ? static::getUrl('products', ['record' => $record]) : null),
                 TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable(),
@@ -129,6 +151,7 @@ class BrandResource extends Resource
                 ViewAction::make(),
                 EditAction::make()
                     ->visible(fn (BrandModel $record): bool => static::canEdit($record)),
+                static::deleteAction(),
             ])
             ->recordUrl(fn (BrandModel $record): string => static::getUrl('view', ['record' => $record]));
     }
@@ -159,7 +182,54 @@ class BrandResource extends Resource
             'create' => CreateBrand::route('/create'),
             'view' => ViewBrand::route('/{record}'),
             'edit' => EditBrand::route('/{record}/edit'),
+            'products' => RelatedProducts::route('/{record}/products'),
         ];
+    }
+
+    /**
+     * Shared by table() and ViewBrand's header actions — cancels the
+     * delete and shows a friendly, translated notification instead of
+     * letting it proceed whenever countProductsUsing() > 0. brand_id's
+     * real FK is nullOnDelete() (confirmed in the prior task), so
+     * nothing at the DB level itself would actually block this delete
+     * — this app-layer check is the real, only protection, not a
+     * backstop. Any other, genuinely unexpected QueryException is
+     * still converted to the same friendly message rather than a raw
+     * 500.
+     */
+    public static function deleteAction(): DeleteAction
+    {
+        return DeleteAction::make()
+            ->visible(fn (BrandModel $record): bool => static::canDelete($record))
+            ->action(function (BrandModel $record): void {
+                $repository = app(BrandRepository::class);
+                $inUseCount = $repository->countProductsUsing((string) $record->id);
+
+                if ($inUseCount > 0) {
+                    Notification::make()
+                        ->title(__('brands.delete_blocked', ['name' => $record->name, 'count' => $inUseCount]))
+                        ->danger()
+                        ->send();
+
+                    return;
+                }
+
+                try {
+                    $repository->delete((string) $record->id);
+                } catch (QueryException) {
+                    Notification::make()
+                        ->title(__('brands.delete_blocked', ['name' => $record->name, 'count' => $inUseCount]))
+                        ->danger()
+                        ->send();
+
+                    return;
+                }
+
+                Notification::make()
+                    ->title(__('brands.deleted'))
+                    ->success()
+                    ->send();
+            });
     }
 
     /**

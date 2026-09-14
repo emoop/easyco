@@ -5,9 +5,14 @@ namespace Tests\Feature;
 use App\Filament\Resources\BrandResource;
 use App\Filament\Resources\BrandResource\Pages\CreateBrand;
 use App\Filament\Resources\BrandResource\Pages\EditBrand;
+use App\Filament\Resources\BrandResource\Pages\ListBrands;
+use App\Filament\Resources\BrandResource\Pages\RelatedProducts;
 use App\Filament\StaffPanelUser;
 use EasyCo\Catalog\Brand;
 use EasyCo\Catalog\Contracts\BrandRepository;
+use EasyCo\Catalog\Contracts\ProductRepository;
+use EasyCo\Catalog\Persistence\Eloquent\BrandModel;
+use EasyCo\Catalog\Product;
 use EasyCo\Media\Contracts\MediaAssetRepository;
 use EasyCo\Staff\Contracts\PasswordHasher;
 use EasyCo\Staff\Contracts\RoleRepository;
@@ -230,5 +235,101 @@ class BrandResourceTest extends TestCase
 
         $this->get(BrandResource::getUrl('view', ['record' => $brandModel]))->assertOk();
         $this->get(BrandResource::getUrl('edit', ['record' => $brandModel]))->assertForbidden();
+    }
+
+    public function test_the_count_column_shows_the_real_number_of_products_using_this_brand(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        $brand = new Brand(id: null, name: 'Nike', slug: 'nike');
+        app(BrandRepository::class)->save($brand);
+
+        for ($i = 1; $i <= 3; $i++) {
+            $product = Product::createSimple("Product {$i}", "SKU-{$i}", "product-{$i}");
+            $product->assignBrand($brand->id());
+            app(ProductRepository::class)->save($product);
+        }
+
+        $component = Livewire::test(ListBrands::class);
+
+        $component->assertTableColumnStateSet('products_count', 3, record: BrandModel::find($brand->id()));
+    }
+
+    public function test_delete_is_blocked_when_the_brand_is_still_in_use(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        $brand = new Brand(id: null, name: 'Nike', slug: 'nike');
+        app(BrandRepository::class)->save($brand);
+
+        $product = Product::createSimple('Air Max', 'SKU-1', 'air-max');
+        $product->assignBrand($brand->id());
+        app(ProductRepository::class)->save($product);
+
+        Livewire::test(ListBrands::class)
+            ->callTableAction('delete', BrandModel::find($brand->id()))
+            ->assertNotified();
+
+        $this->assertNotNull(app(BrandRepository::class)->findById($brand->id()));
+    }
+
+    public function test_delete_succeeds_when_the_brand_is_genuinely_unused(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        $brand = new Brand(id: null, name: 'Nike', slug: 'nike');
+        app(BrandRepository::class)->save($brand);
+
+        Livewire::test(ListBrands::class)
+            ->callTableAction('delete', BrandModel::find($brand->id()));
+
+        $this->assertNull(app(BrandRepository::class)->findById($brand->id()));
+    }
+
+    public function test_bulk_unlink_actually_detaches_the_selected_products(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        $brand = new Brand(id: null, name: 'Nike', slug: 'nike');
+        app(BrandRepository::class)->save($brand);
+
+        $productIds = [];
+        for ($i = 1; $i <= 3; $i++) {
+            $product = Product::createSimple("Product {$i}", "SKU-{$i}", "product-{$i}");
+            $product->assignBrand($brand->id());
+            app(ProductRepository::class)->save($product);
+            $productIds[] = $product->id();
+        }
+
+        Livewire::test(RelatedProducts::class, ['record' => $brand->id()])
+            ->callTableBulkAction('detach', $productIds);
+
+        foreach ($productIds as $productId) {
+            $reloaded = app(ProductRepository::class)->findById($productId);
+            $this->assertNull($reloaded->brandId());
+        }
+
+        $this->assertSame(0, app(BrandRepository::class)->countProductsUsing($brand->id()));
+    }
+
+    public function test_bulk_unlink_skips_an_already_detached_product_without_erroring(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        $brand = new Brand(id: null, name: 'Nike', slug: 'nike');
+        app(BrandRepository::class)->save($brand);
+
+        $stillAttached = Product::createSimple('Still Attached', 'SKU-1', 'still-attached');
+        $stillAttached->assignBrand($brand->id());
+        app(ProductRepository::class)->save($stillAttached);
+
+        $alreadyDetached = Product::createSimple('Already Detached', 'SKU-2', 'already-detached');
+        app(ProductRepository::class)->save($alreadyDetached);
+
+        Livewire::test(RelatedProducts::class, ['record' => $brand->id()])
+            ->callTableBulkAction('detach', [$stillAttached->id(), $alreadyDetached->id()]);
+
+        $reloadedAttached = app(ProductRepository::class)->findById($stillAttached->id());
+        $this->assertNull($reloadedAttached->brandId());
     }
 }

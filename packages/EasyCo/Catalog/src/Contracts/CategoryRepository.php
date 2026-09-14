@@ -29,4 +29,7 @@ interface CategoryRepository
      * most one row per product for a given category.
      */
     public function countProductsUsing(string $categoryId): int;
+
+    /** Plain infrastructure-level delete — see BrandRepository::delete()'s identical reasoning. */
+    public function delete(string $id): void;
 }

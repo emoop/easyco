@@ -5,27 +5,32 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\CategoryResource\Pages\CreateCategory;
 use App\Filament\Resources\CategoryResource\Pages\EditCategory;
 use App\Filament\Resources\CategoryResource\Pages\ListCategories;
+use App\Filament\Resources\CategoryResource\Pages\RelatedProducts;
 use App\Filament\Resources\CategoryResource\Pages\ViewCategory;
 use App\Filament\Concerns\AuthorizesViaStaffPermission;
 use BackedEnum;
+use EasyCo\Catalog\Contracts\CategoryRepository;
 use EasyCo\Catalog\Persistence\Eloquent\CategoryModel;
 use EasyCo\Staff\Enums\Permission;
+use Filament\Actions\DeleteAction;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Infolists\Components\TextEntry;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\QueryException;
 
 /**
- * Category management — admin-panel-design.md §10, catalog-domain-
- * design.md §3.12. Same shape as BrandResource; no logo field. Gated
- * identically: PRODUCT_VIEW to browse/view, TAXONOMY_MANAGE to create/
- * edit. No delete action — Category has no delete() domain method.
+ * Category management — admin-panel-design.md §10/Part B, catalog-
+ * domain-design.md §3.12/§3.13. Same shape as BrandResource; no logo
+ * field. Gated identically: PRODUCT_VIEW to browse/view,
+ * TAXONOMY_MANAGE to create/edit/delete.
  */
 class CategoryResource extends Resource
 {
@@ -61,6 +66,11 @@ class CategoryResource extends Resource
     }
 
     protected static function editPermission(): ?Permission
+    {
+        return Permission::TAXONOMY_MANAGE;
+    }
+
+    protected static function deletePermission(): ?Permission
     {
         return Permission::TAXONOMY_MANAGE;
     }
@@ -105,6 +115,11 @@ class CategoryResource extends Resource
                     ->label(__('categories.fields.parent_id')),
                 TextColumn::make('slug')
                     ->searchable(),
+                TextColumn::make('products_count')
+                    ->label(__('categories.fields.products_count'))
+                    ->state(fn (CategoryModel $record): int => app(CategoryRepository::class)->countProductsUsing((string) $record->id))
+                    ->formatStateUsing(fn (int $state): string => trans_choice('categories.products_count.count', $state, ['count' => $state]))
+                    ->url(fn (CategoryModel $record, int $state): ?string => $state > 0 ? static::getUrl('products', ['record' => $record]) : null),
                 TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable(),
@@ -113,6 +128,7 @@ class CategoryResource extends Resource
                 ViewAction::make(),
                 EditAction::make()
                     ->visible(fn (CategoryModel $record): bool => static::canEdit($record)),
+                static::deleteAction(),
             ])
             ->recordUrl(fn (CategoryModel $record): string => static::getUrl('view', ['record' => $record]));
     }
@@ -138,6 +154,49 @@ class CategoryResource extends Resource
             'create' => CreateCategory::route('/create'),
             'view' => ViewCategory::route('/{record}'),
             'edit' => EditCategory::route('/{record}/edit'),
+            'products' => RelatedProducts::route('/{record}/products'),
         ];
+    }
+
+    /**
+     * See BrandResource::deleteAction()'s identical reasoning —
+     * catalog_product_categories' own FK is cascadeOnDelete() (deletes
+     * the pivot row, not the Category), so nothing at the DB level
+     * blocks a Category delete either; this app-layer check is the
+     * real protection.
+     */
+    public static function deleteAction(): DeleteAction
+    {
+        return DeleteAction::make()
+            ->visible(fn (CategoryModel $record): bool => static::canDelete($record))
+            ->action(function (CategoryModel $record): void {
+                $repository = app(CategoryRepository::class);
+                $inUseCount = $repository->countProductsUsing((string) $record->id);
+
+                if ($inUseCount > 0) {
+                    Notification::make()
+                        ->title(__('categories.delete_blocked', ['name' => $record->name, 'count' => $inUseCount]))
+                        ->danger()
+                        ->send();
+
+                    return;
+                }
+
+                try {
+                    $repository->delete((string) $record->id);
+                } catch (QueryException) {
+                    Notification::make()
+                        ->title(__('categories.delete_blocked', ['name' => $record->name, 'count' => $inUseCount]))
+                        ->danger()
+                        ->send();
+
+                    return;
+                }
+
+                Notification::make()
+                    ->title(__('categories.deleted'))
+                    ->success()
+                    ->send();
+            });
     }
 }

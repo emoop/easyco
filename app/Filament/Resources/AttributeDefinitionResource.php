@@ -6,26 +6,32 @@ use App\Filament\Concerns\AuthorizesViaStaffPermission;
 use App\Filament\Resources\AttributeDefinitionResource\Pages\CreateAttributeDefinition;
 use App\Filament\Resources\AttributeDefinitionResource\Pages\EditAttributeDefinition;
 use App\Filament\Resources\AttributeDefinitionResource\Pages\ListAttributeDefinitions;
+use App\Filament\Resources\AttributeDefinitionResource\Pages\RelatedProductsAxis;
+use App\Filament\Resources\AttributeDefinitionResource\Pages\RelatedProductsDescriptive;
 use App\Filament\Resources\AttributeDefinitionResource\Pages\ViewAttributeDefinition;
 use BackedEnum;
+use EasyCo\Catalog\Contracts\AttributeDefinitionRepository;
 use EasyCo\Catalog\Enums\AttributeType;
 use EasyCo\Catalog\Persistence\Eloquent\AttributeDefinitionModel;
 use EasyCo\Staff\Enums\Permission;
+use Filament\Actions\DeleteAction;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Infolists\Components\TextEntry;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
+use Illuminate\Database\QueryException;
 
 /**
- * AttributeDefinition management — admin-panel-design.md §10, catalog-
- * domain-design.md §3.12. Gated identically to Brand/Category/Tag:
- * PRODUCT_VIEW to browse/view, TAXONOMY_MANAGE to create/edit. No
- * delete action — AttributeDefinition has no delete() domain method.
+ * AttributeDefinition management — admin-panel-design.md §10/Part B,
+ * catalog-domain-design.md §3.12/§3.13. Gated identically to Brand/
+ * Category/Tag: PRODUCT_VIEW to browse/view, TAXONOMY_MANAGE to
+ * create/edit/delete.
  *
  * `code` and `type` are NOT editable on the Edit form — no
  * changeCode()/no mutator for `type` exists on the domain class at
@@ -74,6 +80,11 @@ class AttributeDefinitionResource extends Resource
         return Permission::TAXONOMY_MANAGE;
     }
 
+    protected static function deletePermission(): ?Permission
+    {
+        return Permission::TAXONOMY_MANAGE;
+    }
+
     public static function form(Schema $schema): Schema
     {
         return $schema->components([
@@ -112,6 +123,16 @@ class AttributeDefinitionResource extends Resource
                     ->badge()
                     ->formatStateUsing(fn (string $state): string => __("attribute_definitions.types.{$state}"))
                     ->color(fn (string $state): string => self::typeColor(AttributeType::from($state))),
+                TextColumn::make('descriptive_count')
+                    ->label(__('attribute_definitions.fields.descriptive_count'))
+                    ->state(fn (AttributeDefinitionModel $record): int => app(AttributeDefinitionRepository::class)->countProductsUsing((string) $record->id)['descriptive'])
+                    ->formatStateUsing(fn (int $state): string => trans_choice('attribute_definitions.products_count.descriptive', $state, ['count' => $state]))
+                    ->url(fn (AttributeDefinitionModel $record, int $state): ?string => $state > 0 ? static::getUrl('products-descriptive', ['record' => $record]) : null),
+                TextColumn::make('axis_count')
+                    ->label(__('attribute_definitions.fields.axis_count'))
+                    ->state(fn (AttributeDefinitionModel $record): int => app(AttributeDefinitionRepository::class)->countProductsUsing((string) $record->id)['axis'])
+                    ->formatStateUsing(fn (int $state): string => trans_choice('attribute_definitions.products_count.axis', $state, ['count' => $state]))
+                    ->url(fn (AttributeDefinitionModel $record, int $state): ?string => $state > 0 ? static::getUrl('products-axis', ['record' => $record]) : null),
                 TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable(),
@@ -120,6 +141,7 @@ class AttributeDefinitionResource extends Resource
                 ViewAction::make(),
                 EditAction::make()
                     ->visible(fn (AttributeDefinitionModel $record): bool => static::canEdit($record)),
+                static::deleteAction(),
             ])
             ->recordUrl(fn (AttributeDefinitionModel $record): string => static::getUrl('view', ['record' => $record]));
     }
@@ -148,7 +170,59 @@ class AttributeDefinitionResource extends Resource
             'create' => CreateAttributeDefinition::route('/create'),
             'view' => ViewAttributeDefinition::route('/{record}'),
             'edit' => EditAttributeDefinition::route('/{record}/edit'),
+            'products-descriptive' => RelatedProductsDescriptive::route('/{record}/products-descriptive'),
+            'products-axis' => RelatedProductsAxis::route('/{record}/products-axis'),
         ];
+    }
+
+    /**
+     * Blocks delete whenever EITHER descriptive or axis usage is
+     * nonzero, explicitly distinguishing which in the message — real
+     * DB-level restrictOnDelete() protection already exists underneath
+     * (confirmed in the prior task) for both catalog_product_attributes
+     * and catalog_variation_attribute_values, so this app-layer check
+     * exists to give a friendly message before ever hitting that DB
+     * exception, not because the DB itself is unsafe without it.
+     */
+    public static function deleteAction(): DeleteAction
+    {
+        return DeleteAction::make()
+            ->visible(fn (AttributeDefinitionModel $record): bool => static::canDelete($record))
+            ->action(function (AttributeDefinitionModel $record): void {
+                $repository = app(AttributeDefinitionRepository::class);
+                $counts = $repository->countProductsUsing((string) $record->id);
+
+                if ($counts['descriptive'] > 0 || $counts['axis'] > 0) {
+                    $key = match (true) {
+                        $counts['descriptive'] > 0 && $counts['axis'] > 0 => 'attribute_definitions.delete_blocked.both',
+                        $counts['descriptive'] > 0 => 'attribute_definitions.delete_blocked.descriptive_only',
+                        default => 'attribute_definitions.delete_blocked.axis_only',
+                    };
+
+                    Notification::make()
+                        ->title(__($key, ['name' => $record->name, 'descriptive' => $counts['descriptive'], 'axis' => $counts['axis']]))
+                        ->danger()
+                        ->send();
+
+                    return;
+                }
+
+                try {
+                    $repository->delete((string) $record->id);
+                } catch (QueryException) {
+                    Notification::make()
+                        ->title(__('attribute_definitions.delete_blocked.both', ['name' => $record->name, 'descriptive' => $counts['descriptive'], 'axis' => $counts['axis']]))
+                        ->danger()
+                        ->send();
+
+                    return;
+                }
+
+                Notification::make()
+                    ->title(__('attribute_definitions.deleted'))
+                    ->success()
+                    ->send();
+            });
     }
 
     /**

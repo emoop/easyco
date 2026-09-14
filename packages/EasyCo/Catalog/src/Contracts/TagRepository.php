@@ -26,4 +26,7 @@ interface TagRepository
      * product count, no DISTINCT needed.
      */
     public function countProductsUsing(string $tagId): int;
+
+    /** Plain infrastructure-level delete — see BrandRepository::delete()'s identical reasoning. */
+    public function delete(string $id): void;
 }

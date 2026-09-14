@@ -8,6 +8,7 @@ use EasyCo\Catalog\Enums\ProductStatus;
 use EasyCo\Catalog\Enums\ProductType;
 use EasyCo\Catalog\Enums\VariationStatus;
 use EasyCo\Catalog\Enums\VariationType;
+use EasyCo\Catalog\Exceptions\CannotRemoveVariationAxisAttributeException;
 use EasyCo\Catalog\Exceptions\DuplicateVariationCombinationException;
 use EasyCo\Catalog\Exceptions\InvalidVariationAxisException;
 use EasyCo\Catalog\Exceptions\UnsafeAxisRedeclarationException;
@@ -496,6 +497,31 @@ final class Product
     public function descriptiveAttributes(): array
     {
         return $this->descriptiveAttributes;
+    }
+
+    /**
+     * The inverse of setDescriptiveAttribute() — catalog-domain-
+     * design.md §3.13. Idempotent: calling this for a definition that
+     * was never set on this Product at all (no descriptive value, no
+     * axis) is a no-op, not an error, same "no invariant violated by
+     * doing this twice" reasoning Staff::deactivate() already
+     * established — unset() on a key that was never present is already
+     * a harmless no-op in PHP, so no explicit isset() guard is needed
+     * to get that behavior.
+     *
+     * Guarded against axis usage — see
+     * CannotRemoveVariationAxisAttributeException's own docblock for
+     * why: a variation axis in real use has real Variation rows
+     * depending on it, and this method only ever touches
+     * is_variation_axis=false rows.
+     */
+    public function removeDescriptiveAttribute(AttributeDefinition $definition): void
+    {
+        if ($this->hasVariationAxis($definition)) {
+            throw CannotRemoveVariationAxisAttributeException::forDefinition($definition->code());
+        }
+
+        unset($this->descriptiveAttributes[(string) $definition->id()]);
     }
 
     /**

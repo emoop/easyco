@@ -5,6 +5,7 @@ namespace EasyCo\Catalog\Tests;
 use EasyCo\Catalog\AttributeDefinition;
 use EasyCo\Catalog\AttributeValue;
 use EasyCo\Catalog\Enums\AttributeType;
+use EasyCo\Catalog\Exceptions\CannotRemoveVariationAxisAttributeException;
 use EasyCo\Catalog\Product;
 use InvalidArgumentException;
 use PHPUnit\Framework\TestCase;
@@ -145,5 +146,49 @@ final class ProductDescriptiveAttributeTest extends TestCase
         $color = $this->selectAttribute('1', 'color');
 
         $this->assertTrue($product->hasVariationAxis($color));
+    }
+
+    public function test_remove_descriptive_attribute_removes_a_genuinely_descriptive_attribute(): void
+    {
+        $product = Product::createSimple('Plain Shirt', 'SKU-1', 'plain-shirt');
+        $material = new AttributeDefinition(id: '1', code: 'material', name: 'Material', type: AttributeType::TEXT);
+        $product->setDescriptiveAttribute($material, 'Cotton');
+
+        $product->removeDescriptiveAttribute($material);
+
+        $this->assertSame([], $product->descriptiveAttributes());
+    }
+
+    public function test_remove_descriptive_attribute_for_one_currently_used_as_a_variation_axis_throws(): void
+    {
+        $product = Product::createVariable('T-Shirt', 'SKU-1', 't-shirt');
+        $product->declareVariationAxes([$this->axis('1', 'color', ['5', '6'])]);
+        $color = $this->selectAttribute('1', 'color');
+
+        $this->expectException(CannotRemoveVariationAxisAttributeException::class);
+        $product->removeDescriptiveAttribute($color);
+    }
+
+    public function test_remove_descriptive_attribute_for_one_never_set_at_all_is_a_no_op(): void
+    {
+        $product = Product::createSimple('Plain Shirt', 'SKU-1', 'plain-shirt');
+        $material = new AttributeDefinition(id: '1', code: 'material', name: 'Material', type: AttributeType::TEXT);
+
+        $product->removeDescriptiveAttribute($material);
+
+        $this->assertSame([], $product->descriptiveAttributes());
+    }
+
+    public function test_remove_descriptive_attribute_leaves_other_descriptive_attributes_untouched(): void
+    {
+        $product = Product::createSimple('Plain Shirt', 'SKU-1', 'plain-shirt');
+        $material = new AttributeDefinition(id: '1', code: 'material', name: 'Material', type: AttributeType::TEXT);
+        $weight = new AttributeDefinition(id: '2', code: 'weight', name: 'Weight', type: AttributeType::NUMBER);
+        $product->setDescriptiveAttribute($material, 'Cotton');
+        $product->setDescriptiveAttribute($weight, '200');
+
+        $product->removeDescriptiveAttribute($material);
+
+        $this->assertSame(['2' => '200'], $product->descriptiveAttributes());
     }
 }

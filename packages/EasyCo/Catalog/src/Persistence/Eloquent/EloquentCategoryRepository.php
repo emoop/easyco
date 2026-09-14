@@ -54,6 +54,11 @@ final class EloquentCategoryRepository implements CategoryRepository
             ->count();
     }
 
+    public function delete(string $id): void
+    {
+        CategoryModel::findOrFail($id)->delete();
+    }
+
     private function toDomain(CategoryModel $model): Category
     {
         return new Category(

@@ -43,4 +43,7 @@ interface AttributeValueRepository
      * @return array{descriptive: int, axis: int}
      */
     public function countProductsUsing(string $valueId): array;
+
+    /** Plain infrastructure-level delete — see BrandRepository::delete()'s identical reasoning. */
+    public function delete(string $id): void;
 }
