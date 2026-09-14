@@ -70,4 +70,72 @@ final class BrandTest extends TestCase
         $this->expectException(LogicException::class);
         $brand->assignId('2');
     }
+
+    public function test_rename_changes_the_name(): void
+    {
+        $brand = new Brand(id: null, name: 'Nike', slug: 'nike');
+
+        $brand->rename('Nike Inc.');
+
+        $this->assertSame('Nike Inc.', $brand->name());
+    }
+
+    public function test_rename_reuses_the_constructors_own_empty_name_validation(): void
+    {
+        $brand = new Brand(id: null, name: 'Nike', slug: 'nike');
+
+        $this->expectException(InvalidArgumentException::class);
+        $brand->rename('');
+    }
+
+    public function test_change_slug_changes_the_slug(): void
+    {
+        $brand = new Brand(id: null, name: 'Nike', slug: 'nike');
+
+        $brand->changeSlug('nike-inc');
+
+        $this->assertSame('nike-inc', $brand->slug());
+    }
+
+    public function test_change_slug_reuses_the_constructors_own_slug_format_validation(): void
+    {
+        $brand = new Brand(id: null, name: 'Nike', slug: 'nike');
+
+        $this->expectException(InvalidArgumentException::class);
+        $brand->changeSlug('Not A Valid Slug');
+    }
+
+    public function test_a_brand_has_no_logo_by_default(): void
+    {
+        $brand = new Brand(id: null, name: 'Nike', slug: 'nike');
+
+        $this->assertNull($brand->logoMediaAssetId());
+    }
+
+    public function test_set_logo_with_an_empty_id_throws(): void
+    {
+        $brand = new Brand(id: null, name: 'Nike', slug: 'nike');
+
+        $this->expectException(InvalidArgumentException::class);
+        $brand->setLogo('');
+    }
+
+    public function test_set_logo_with_a_real_id_succeeds(): void
+    {
+        $brand = new Brand(id: null, name: 'Nike', slug: 'nike');
+
+        $brand->setLogo('42');
+
+        $this->assertSame('42', $brand->logoMediaAssetId());
+    }
+
+    public function test_remove_logo_sets_it_back_to_null(): void
+    {
+        $brand = new Brand(id: null, name: 'Nike', slug: 'nike');
+        $brand->setLogo('42');
+
+        $brand->removeLogo();
+
+        $this->assertNull($brand->logoMediaAssetId());
+    }
 }

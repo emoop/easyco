@@ -4,6 +4,9 @@ namespace Tests\Feature;
 
 use EasyCo\Catalog\Brand;
 use EasyCo\Catalog\Contracts\BrandRepository;
+use EasyCo\Media\Contracts\MediaAssetRepository;
+use EasyCo\Media\Enums\MediaType;
+use EasyCo\Media\MediaAsset;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -75,5 +78,74 @@ class CatalogBrandRepositoryTest extends TestCase
         $this->expectException(QueryException::class);
 
         $repository->save(new Brand(id: null, name: 'Not Nike', slug: 'colliding-slug'));
+    }
+
+    public function test_rename_then_save_persists_the_new_name(): void
+    {
+        $repository = app(BrandRepository::class);
+
+        $brand = new Brand(id: null, name: 'Nike', slug: 'nike');
+        $repository->save($brand);
+
+        $brand->rename('Nike Inc.');
+        $repository->save($brand);
+
+        $reloaded = $repository->findById($brand->id());
+
+        $this->assertSame('Nike Inc.', $reloaded->name());
+    }
+
+    public function test_change_slug_then_save_persists_the_new_slug(): void
+    {
+        $repository = app(BrandRepository::class);
+
+        $brand = new Brand(id: null, name: 'Nike', slug: 'nike');
+        $repository->save($brand);
+
+        $brand->changeSlug('nike-inc');
+        $repository->save($brand);
+
+        $reloaded = $repository->findById($brand->id());
+
+        $this->assertSame('nike-inc', $reloaded->slug());
+    }
+
+    public function test_set_logo_then_save_persists_a_real_logo_media_asset_id(): void
+    {
+        $brandRepository = app(BrandRepository::class);
+        $mediaAssetRepository = app(MediaAssetRepository::class);
+
+        $logo = MediaAsset::create(MediaType::IMAGE, 'public', 'uploads/2026/09/nike-logo.png');
+        $mediaAssetRepository->save($logo);
+
+        $brand = new Brand(id: null, name: 'Nike', slug: 'nike');
+        $brandRepository->save($brand);
+
+        $brand->setLogo($logo->id());
+        $brandRepository->save($brand);
+
+        $reloaded = $brandRepository->findById($brand->id());
+
+        $this->assertSame($logo->id(), $reloaded->logoMediaAssetId());
+    }
+
+    public function test_remove_logo_then_save_persists_null(): void
+    {
+        $brandRepository = app(BrandRepository::class);
+        $mediaAssetRepository = app(MediaAssetRepository::class);
+
+        $logo = MediaAsset::create(MediaType::IMAGE, 'public', 'uploads/2026/09/nike-logo.png');
+        $mediaAssetRepository->save($logo);
+
+        $brand = new Brand(id: null, name: 'Nike', slug: 'nike');
+        $brand->setLogo($logo->id());
+        $brandRepository->save($brand);
+
+        $brand->removeLogo();
+        $brandRepository->save($brand);
+
+        $reloaded = $brandRepository->findById($brand->id());
+
+        $this->assertNull($reloaded->logoMediaAssetId());
     }
 }

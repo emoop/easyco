@@ -76,4 +76,34 @@ class CatalogTagRepositoryTest extends TestCase
 
         $repository->save(new Tag(id: null, name: 'Not Summer', slug: 'colliding-slug'));
     }
+
+    public function test_rename_then_save_persists_the_new_name(): void
+    {
+        $repository = app(TagRepository::class);
+
+        $tag = new Tag(id: null, name: 'Summer', slug: 'summer');
+        $repository->save($tag);
+
+        $tag->rename('Summer Sale');
+        $repository->save($tag);
+
+        $reloaded = $repository->findById($tag->id());
+
+        $this->assertSame('Summer Sale', $reloaded->name());
+    }
+
+    public function test_change_slug_then_save_persists_the_new_slug(): void
+    {
+        $repository = app(TagRepository::class);
+
+        $tag = new Tag(id: null, name: 'Summer', slug: 'summer');
+        $repository->save($tag);
+
+        $tag->changeSlug('summer-sale');
+        $repository->save($tag);
+
+        $reloaded = $repository->findById($tag->id());
+
+        $this->assertSame('summer-sale', $reloaded->slug());
+    }
 }

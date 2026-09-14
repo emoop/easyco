@@ -78,4 +78,56 @@ final class CategoryTest extends TestCase
         $this->expectException(LogicException::class);
         $category->assignId('2');
     }
+
+    public function test_rename_changes_the_name(): void
+    {
+        $category = new Category(id: null, parentId: null, name: 'Shoes', slug: 'shoes');
+
+        $category->rename('Footwear');
+
+        $this->assertSame('Footwear', $category->name());
+    }
+
+    public function test_rename_reuses_the_constructors_own_empty_name_validation(): void
+    {
+        $category = new Category(id: null, parentId: null, name: 'Shoes', slug: 'shoes');
+
+        $this->expectException(InvalidArgumentException::class);
+        $category->rename('');
+    }
+
+    public function test_change_slug_changes_the_slug(): void
+    {
+        $category = new Category(id: null, parentId: null, name: 'Shoes', slug: 'shoes');
+
+        $category->changeSlug('footwear');
+
+        $this->assertSame('footwear', $category->slug());
+    }
+
+    public function test_change_slug_reuses_the_constructors_own_slug_format_validation(): void
+    {
+        $category = new Category(id: null, parentId: null, name: 'Shoes', slug: 'shoes');
+
+        $this->expectException(InvalidArgumentException::class);
+        $category->changeSlug('Not A Valid Slug');
+    }
+
+    public function test_change_parent_to_a_real_id_succeeds(): void
+    {
+        $category = new Category(id: null, parentId: null, name: 'Running Shoes', slug: 'running-shoes');
+
+        $category->changeParent('7');
+
+        $this->assertSame('7', $category->parentId());
+    }
+
+    public function test_change_parent_to_null_succeeds(): void
+    {
+        $category = new Category(id: null, parentId: '7', name: 'Running Shoes', slug: 'running-shoes');
+
+        $category->changeParent(null);
+
+        $this->assertNull($category->parentId());
+    }
 }

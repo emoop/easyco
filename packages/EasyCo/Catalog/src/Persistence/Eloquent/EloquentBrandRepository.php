@@ -24,6 +24,7 @@ final class EloquentBrandRepository implements BrandRepository
 
         $model->name = $brand->name();
         $model->slug = $brand->slug();
+        $model->logo_media_asset_id = $brand->logoMediaAssetId();
         $model->save();
 
         if ($brand->id() === null) {
@@ -52,6 +53,7 @@ final class EloquentBrandRepository implements BrandRepository
             id: (string) $model->id,
             name: $model->name,
             slug: $model->slug,
+            logoMediaAssetId: $model->logo_media_asset_id !== null ? (string) $model->logo_media_asset_id : null,
         );
     }
 }

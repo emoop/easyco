@@ -92,4 +92,73 @@ class CatalogCategoryRepositoryTest extends TestCase
 
         $repository->save(new Category(id: null, parentId: null, name: 'Not Shoes', slug: 'colliding-slug'));
     }
+
+    public function test_rename_then_save_persists_the_new_name(): void
+    {
+        $repository = app(CategoryRepository::class);
+
+        $category = new Category(id: null, parentId: null, name: 'Shoes', slug: 'shoes');
+        $repository->save($category);
+
+        $category->rename('Footwear');
+        $repository->save($category);
+
+        $reloaded = $repository->findById($category->id());
+
+        $this->assertSame('Footwear', $reloaded->name());
+    }
+
+    public function test_change_slug_then_save_persists_the_new_slug(): void
+    {
+        $repository = app(CategoryRepository::class);
+
+        $category = new Category(id: null, parentId: null, name: 'Shoes', slug: 'shoes');
+        $repository->save($category);
+
+        $category->changeSlug('footwear');
+        $repository->save($category);
+
+        $reloaded = $repository->findById($category->id());
+
+        $this->assertSame('footwear', $reloaded->slug());
+    }
+
+    public function test_change_parent_then_save_persists_the_new_parent(): void
+    {
+        $repository = app(CategoryRepository::class);
+
+        $originalParent = new Category(id: null, parentId: null, name: 'Shoes', slug: 'shoes');
+        $repository->save($originalParent);
+
+        $newParent = new Category(id: null, parentId: null, name: 'Bags', slug: 'bags');
+        $repository->save($newParent);
+
+        $child = new Category(id: null, parentId: $originalParent->id(), name: 'Running Shoes', slug: 'running-shoes');
+        $repository->save($child);
+
+        $child->changeParent($newParent->id());
+        $repository->save($child);
+
+        $reloaded = $repository->findById($child->id());
+
+        $this->assertSame($newParent->id(), $reloaded->parentId());
+    }
+
+    public function test_change_parent_to_null_then_save_persists_null(): void
+    {
+        $repository = app(CategoryRepository::class);
+
+        $parent = new Category(id: null, parentId: null, name: 'Shoes', slug: 'shoes');
+        $repository->save($parent);
+
+        $child = new Category(id: null, parentId: $parent->id(), name: 'Running Shoes', slug: 'running-shoes');
+        $repository->save($child);
+
+        $child->changeParent(null);
+        $repository->save($child);
+
+        $reloaded = $repository->findById($child->id());
+
+        $this->assertNull($reloaded->parentId());
+    }
 }

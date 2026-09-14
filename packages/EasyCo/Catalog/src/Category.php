@@ -22,15 +22,19 @@ final class Category
 {
     public function __construct(
         private ?string $id,
-        private readonly ?string $parentId,
-        private readonly string $name,
-        private readonly string $slug,
+        private ?string $parentId,
+        private string $name,
+        private string $slug,
     ) {
+        self::assertValidName($name);
+        self::assertValidSlug($slug);
+    }
+
+    private static function assertValidName(string $name): void
+    {
         if ($name === '') {
             throw new InvalidArgumentException('Category name must not be empty.');
         }
-
-        self::assertValidSlug($slug);
     }
 
     /**
@@ -76,5 +80,28 @@ final class Category
     public function slug(): string
     {
         return $this->slug;
+    }
+
+    public function rename(string $newName): void
+    {
+        self::assertValidName($newName);
+        $this->name = $newName;
+    }
+
+    public function changeSlug(string $newSlug): void
+    {
+        self::assertValidSlug($newSlug);
+        $this->slug = $newSlug;
+    }
+
+    /**
+     * No cycle detection here — matches this class's own constructor,
+     * which already has none (see this class's docblock: deliberately
+     * deferred per catalog-domain-design.md §6). Not this method's job
+     * to add validation the constructor itself doesn't have.
+     */
+    public function changeParent(?string $newParentId): void
+    {
+        $this->parentId = $newParentId;
     }
 }

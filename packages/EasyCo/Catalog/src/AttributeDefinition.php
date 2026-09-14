@@ -24,7 +24,7 @@ final class AttributeDefinition
     public function __construct(
         private ?string $id,
         private readonly string $code,
-        private readonly string $name,
+        private string $name,
         private readonly AttributeType $type,
     ) {
     }
@@ -51,6 +51,21 @@ final class AttributeDefinition
     public function name(): string
     {
         return $this->name;
+    }
+
+    /**
+     * `code` and `type` deliberately have no mutator — §3.12's own
+     * reasoning: `code` is the stable machine identifier other things
+     * key against and `type` drives assertUsableAsVariationAxis()'s
+     * hard rule, so changing either after creation is a bigger decision
+     * than this pass is scoped to make. Only `name` (the display label)
+     * gets one here. No assertion to reuse — the constructor itself
+     * validates nothing about `name` (unlike Brand/Category/Tag's own
+     * empty-name checks), so none is invented here either.
+     */
+    public function rename(string $newName): void
+    {
+        $this->name = $newName;
     }
 
     public function type(): AttributeType

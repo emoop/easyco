@@ -45,4 +45,23 @@ final class AttributeDefinitionTest extends TestCase
         $this->expectException(\LogicException::class);
         $attribute->assignId('10');
     }
+
+    public function test_rename_changes_the_name(): void
+    {
+        $attribute = new AttributeDefinition(id: null, code: 'color', name: 'Color', type: AttributeType::SELECT);
+
+        $attribute->rename('Colour');
+
+        $this->assertSame('Colour', $attribute->name());
+    }
+
+    public function test_code_and_type_are_unaffected_by_rename(): void
+    {
+        $attribute = new AttributeDefinition(id: null, code: 'color', name: 'Color', type: AttributeType::SELECT);
+
+        $attribute->rename('Colour');
+
+        $this->assertSame('color', $attribute->code());
+        $this->assertSame(AttributeType::SELECT, $attribute->type());
+    }
 }

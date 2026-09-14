@@ -16,14 +16,18 @@ final class Tag
 {
     public function __construct(
         private ?string $id,
-        private readonly string $name,
-        private readonly string $slug,
+        private string $name,
+        private string $slug,
     ) {
+        self::assertValidName($name);
+        self::assertValidSlug($slug);
+    }
+
+    private static function assertValidName(string $name): void
+    {
         if ($name === '') {
             throw new InvalidArgumentException('Tag name must not be empty.');
         }
-
-        self::assertValidSlug($slug);
     }
 
     /**
@@ -64,5 +68,17 @@ final class Tag
     public function slug(): string
     {
         return $this->slug;
+    }
+
+    public function rename(string $newName): void
+    {
+        self::assertValidName($newName);
+        $this->name = $newName;
+    }
+
+    public function changeSlug(string $newSlug): void
+    {
+        self::assertValidSlug($newSlug);
+        $this->slug = $newSlug;
     }
 }

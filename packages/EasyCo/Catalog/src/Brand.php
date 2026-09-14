@@ -12,19 +12,34 @@ use LogicException;
  * reconstituteFromStorage() distinction — AttributeDefinition doesn't
  * use one either, so this doesn't invent one). Domain + persistence
  * layer only for now: not yet wired into Product, no HTTP surface yet.
+ *
+ * logoMediaAssetId is a plain string reference to an
+ * EasyCo\Media\MediaAsset row — CLAUDE.md rule 9: cross-domain
+ * references are always by id/string, never a direct package
+ * dependency, unless the referenced thing is a pure value object
+ * (Money, not an aggregate). MediaAsset has its own identity and
+ * lifecycle, so it does not qualify; Brand never imports
+ * EasyCo\Media\MediaAsset at all, mirroring how ProductMedia/
+ * VariationMedia handle the same relationship (plain media_id, no
+ * domain-layer MediaAsset reference anywhere in Catalog).
  */
 final class Brand
 {
     public function __construct(
         private ?string $id,
-        private readonly string $name,
-        private readonly string $slug,
+        private string $name,
+        private string $slug,
+        private ?string $logoMediaAssetId = null,
     ) {
+        self::assertValidName($name);
+        self::assertValidSlug($slug);
+    }
+
+    private static function assertValidName(string $name): void
+    {
         if ($name === '') {
             throw new InvalidArgumentException('Brand name must not be empty.');
         }
-
-        self::assertValidSlug($slug);
     }
 
     /**
@@ -70,5 +85,46 @@ final class Brand
     public function slug(): string
     {
         return $this->slug;
+    }
+
+    public function rename(string $newName): void
+    {
+        self::assertValidName($newName);
+        $this->name = $newName;
+    }
+
+    public function changeSlug(string $newSlug): void
+    {
+        self::assertValidSlug($newSlug);
+        $this->slug = $newSlug;
+    }
+
+    public function logoMediaAssetId(): ?string
+    {
+        return $this->logoMediaAssetId;
+    }
+
+    /**
+     * Takes a plain string id, not a MediaAsset instance — see this
+     * class's own docblock for why (rule 9: no direct package
+     * dependency on EasyCo\Media). The caller (application layer) is
+     * responsible for having already persisted the MediaAsset and
+     * passing its real id() here; an empty string is rejected as the
+     * one thing this layer CAN verify without importing MediaAsset
+     * itself — mirroring Staff::assertRoleIsPersisted()'s "must already
+     * be persisted" reasoning as closely as a plain string allows.
+     */
+    public function setLogo(string $mediaAssetId): void
+    {
+        if ($mediaAssetId === '') {
+            throw new InvalidArgumentException('A Brand\'s logo media asset id must not be empty.');
+        }
+
+        $this->logoMediaAssetId = $mediaAssetId;
+    }
+
+    public function removeLogo(): void
+    {
+        $this->logoMediaAssetId = null;
     }
 }

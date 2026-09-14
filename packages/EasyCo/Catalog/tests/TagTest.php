@@ -70,4 +70,38 @@ final class TagTest extends TestCase
         $this->expectException(LogicException::class);
         $tag->assignId('2');
     }
+
+    public function test_rename_changes_the_name(): void
+    {
+        $tag = new Tag(id: null, name: 'Summer', slug: 'summer');
+
+        $tag->rename('Summer Sale');
+
+        $this->assertSame('Summer Sale', $tag->name());
+    }
+
+    public function test_rename_reuses_the_constructors_own_empty_name_validation(): void
+    {
+        $tag = new Tag(id: null, name: 'Summer', slug: 'summer');
+
+        $this->expectException(InvalidArgumentException::class);
+        $tag->rename('');
+    }
+
+    public function test_change_slug_changes_the_slug(): void
+    {
+        $tag = new Tag(id: null, name: 'Summer', slug: 'summer');
+
+        $tag->changeSlug('summer-sale');
+
+        $this->assertSame('summer-sale', $tag->slug());
+    }
+
+    public function test_change_slug_reuses_the_constructors_own_slug_format_validation(): void
+    {
+        $tag = new Tag(id: null, name: 'Summer', slug: 'summer');
+
+        $this->expectException(InvalidArgumentException::class);
+        $tag->changeSlug('Not A Valid Slug');
+    }
 }

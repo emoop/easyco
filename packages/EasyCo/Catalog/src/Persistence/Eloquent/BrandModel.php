@@ -17,5 +17,6 @@ class BrandModel extends Model
     protected $fillable = [
         'name',
         'slug',
+        'logo_media_asset_id',
     ];
 }
