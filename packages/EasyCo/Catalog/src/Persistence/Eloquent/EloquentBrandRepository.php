@@ -47,6 +47,11 @@ final class EloquentBrandRepository implements BrandRepository
             ->all();
     }
 
+    public function countProductsUsing(string $brandId): int
+    {
+        return ProductModel::where('brand_id', $brandId)->count();
+    }
+
     private function toDomain(BrandModel $model): Brand
     {
         return new Brand(

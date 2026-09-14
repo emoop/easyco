@@ -5,6 +5,7 @@ namespace EasyCo\Catalog\Persistence\Eloquent;
 use EasyCo\Catalog\AttributeDefinition;
 use EasyCo\Catalog\Contracts\AttributeDefinitionRepository;
 use EasyCo\Catalog\Enums\AttributeType;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Maps AttributeDefinition onto catalog_attribute_definitions via
@@ -46,6 +47,21 @@ final class EloquentAttributeDefinitionRepository implements AttributeDefinition
         return AttributeDefinitionModel::all()
             ->map(fn (AttributeDefinitionModel $model) => $this->toDomain($model))
             ->all();
+    }
+
+    public function countProductsUsing(string $definitionId): array
+    {
+        $descriptive = DB::table('catalog_product_attributes')
+            ->where('attribute_definition_id', $definitionId)
+            ->where('is_variation_axis', false)
+            ->count();
+
+        $axis = DB::table('catalog_product_attributes')
+            ->where('attribute_definition_id', $definitionId)
+            ->where('is_variation_axis', true)
+            ->count();
+
+        return ['descriptive' => $descriptive, 'axis' => $axis];
     }
 
     private function toDomain(AttributeDefinitionModel $model): AttributeDefinition

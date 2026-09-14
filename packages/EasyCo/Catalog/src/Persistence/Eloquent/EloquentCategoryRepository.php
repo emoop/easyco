@@ -4,6 +4,7 @@ namespace EasyCo\Catalog\Persistence\Eloquent;
 
 use EasyCo\Catalog\Category;
 use EasyCo\Catalog\Contracts\CategoryRepository;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Maps Category onto catalog_categories via CategoryModel. Mirrors
@@ -44,6 +45,13 @@ final class EloquentCategoryRepository implements CategoryRepository
         return CategoryModel::all()
             ->map(fn (CategoryModel $model) => $this->toDomain($model))
             ->all();
+    }
+
+    public function countProductsUsing(string $categoryId): int
+    {
+        return DB::table('catalog_product_categories')
+            ->where('category_id', $categoryId)
+            ->count();
     }
 
     private function toDomain(CategoryModel $model): Category

@@ -4,6 +4,10 @@ namespace Tests\Feature;
 
 use EasyCo\Catalog\Category;
 use EasyCo\Catalog\Contracts\CategoryRepository;
+use EasyCo\Catalog\Contracts\ProductCategoryRepository;
+use EasyCo\Catalog\Contracts\ProductRepository;
+use EasyCo\Catalog\Product;
+use EasyCo\Catalog\ProductCategory;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -160,5 +164,40 @@ class CatalogCategoryRepositoryTest extends TestCase
         $reloaded = $repository->findById($child->id());
 
         $this->assertNull($reloaded->parentId());
+    }
+
+    public function test_count_products_using_is_zero_when_unused(): void
+    {
+        $repository = app(CategoryRepository::class);
+
+        $category = new Category(id: null, parentId: null, name: 'Shoes', slug: 'shoes');
+        $repository->save($category);
+
+        $this->assertSame(0, $repository->countProductsUsing($category->id()));
+    }
+
+    public function test_count_products_using_counts_every_product_attached_to_this_category(): void
+    {
+        $categoryRepository = app(CategoryRepository::class);
+        $productRepository = app(ProductRepository::class);
+        $productCategoryRepository = app(ProductCategoryRepository::class);
+
+        $shoes = new Category(id: null, parentId: null, name: 'Shoes', slug: 'shoes');
+        $categoryRepository->save($shoes);
+
+        $bags = new Category(id: null, parentId: null, name: 'Bags', slug: 'bags');
+        $categoryRepository->save($bags);
+
+        for ($i = 1; $i <= 3; $i++) {
+            $product = Product::createSimple("Product {$i}", "SKU-{$i}", "product-{$i}");
+            $productRepository->save($product);
+            $productCategoryRepository->save(new ProductCategory(id: null, productId: $product->id(), categoryId: $shoes->id()));
+        }
+
+        $unrelated = Product::createSimple('Unrelated', 'SKU-unrelated', 'unrelated');
+        $productRepository->save($unrelated);
+        $productCategoryRepository->save(new ProductCategory(id: null, productId: $unrelated->id(), categoryId: $bags->id()));
+
+        $this->assertSame(3, $categoryRepository->countProductsUsing($shoes->id()));
     }
 }

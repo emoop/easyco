@@ -19,4 +19,14 @@ interface CategoryRepository
 
     /** @return Category[] */
     public function all(): array;
+
+    /**
+     * Count of DISTINCT products attached to this Category via
+     * catalog_product_categories — catalog-domain-design.md §3.13's
+     * "is this Category still in use" check. A plain count() is
+     * already a product count here, no DISTINCT needed: the table's
+     * own unique(product_id, category_id) constraint guarantees at
+     * most one row per product for a given category.
+     */
+    public function countProductsUsing(string $categoryId): int;
 }

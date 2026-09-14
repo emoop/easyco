@@ -4,6 +4,7 @@ namespace EasyCo\Catalog\Persistence\Eloquent;
 
 use EasyCo\Catalog\Contracts\TagRepository;
 use EasyCo\Catalog\Tag;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Maps Tag onto catalog_tags via TagModel. Mirrors
@@ -43,6 +44,13 @@ final class EloquentTagRepository implements TagRepository
         return TagModel::all()
             ->map(fn (TagModel $model) => $this->toDomain($model))
             ->all();
+    }
+
+    public function countProductsUsing(string $tagId): int
+    {
+        return DB::table('catalog_product_tags')
+            ->where('tag_id', $tagId)
+            ->count();
     }
 
     private function toDomain(TagModel $model): Tag

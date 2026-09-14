@@ -2,7 +2,11 @@
 
 namespace Tests\Feature;
 
+use EasyCo\Catalog\Contracts\ProductRepository;
+use EasyCo\Catalog\Contracts\ProductTagRepository;
 use EasyCo\Catalog\Contracts\TagRepository;
+use EasyCo\Catalog\Product;
+use EasyCo\Catalog\ProductTag;
 use EasyCo\Catalog\Tag;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -105,5 +109,40 @@ class CatalogTagRepositoryTest extends TestCase
         $reloaded = $repository->findById($tag->id());
 
         $this->assertSame('summer-sale', $reloaded->slug());
+    }
+
+    public function test_count_products_using_is_zero_when_unused(): void
+    {
+        $repository = app(TagRepository::class);
+
+        $tag = new Tag(id: null, name: 'Summer', slug: 'summer');
+        $repository->save($tag);
+
+        $this->assertSame(0, $repository->countProductsUsing($tag->id()));
+    }
+
+    public function test_count_products_using_counts_every_product_attached_to_this_tag(): void
+    {
+        $tagRepository = app(TagRepository::class);
+        $productRepository = app(ProductRepository::class);
+        $productTagRepository = app(ProductTagRepository::class);
+
+        $summer = new Tag(id: null, name: 'Summer', slug: 'summer');
+        $tagRepository->save($summer);
+
+        $winter = new Tag(id: null, name: 'Winter', slug: 'winter');
+        $tagRepository->save($winter);
+
+        for ($i = 1; $i <= 3; $i++) {
+            $product = Product::createSimple("Product {$i}", "SKU-{$i}", "product-{$i}");
+            $productRepository->save($product);
+            $productTagRepository->save(new ProductTag(id: null, productId: $product->id(), tagId: $summer->id()));
+        }
+
+        $unrelated = Product::createSimple('Unrelated', 'SKU-unrelated', 'unrelated');
+        $productRepository->save($unrelated);
+        $productTagRepository->save(new ProductTag(id: null, productId: $unrelated->id(), tagId: $winter->id()));
+
+        $this->assertSame(3, $tagRepository->countProductsUsing($summer->id()));
     }
 }

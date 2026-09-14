@@ -2,6 +2,7 @@
 
 namespace EasyCo\Catalog;
 
+use EasyCo\Catalog\Enums\AttributeType;
 use EasyCo\Catalog\Enums\CatalogVisibility;
 use EasyCo\Catalog\Enums\ProductStatus;
 use EasyCo\Catalog\Enums\ProductType;
@@ -35,6 +36,17 @@ final class Product
     /** @var array<string, VariationAxis> keyed by attribute_definition_id. Only meaningful for VARIABLE. */
     private array $variationAxes = [];
 
+    /**
+     * @var array<string, string|AttributeValue> keyed by
+     *   attribute_definition_id — mirrors $variationAxes's own keying
+     *   convention exactly (catalog-domain-design.md §3.11's own text
+     *   said "keyed by AttributeDefinition->code()", but that turned out
+     *   to be a documentation-only claim never implemented; keying by
+     *   id here instead, consistent with the one real precedent this
+     *   class already has for the same kind of per-definition map).
+     */
+    private array $descriptiveAttributes = [];
+
     public function __construct(
         private ?string $id,
         private string $name,
@@ -44,6 +56,7 @@ final class Product
         private ProductStatus $status = ProductStatus::DRAFT,
         private CatalogVisibility $catalogVisibility = CatalogVisibility::HIDDEN,
         private ?string $brandId = null,
+        private ?string $seasonId = null,
     ) {
         if ($baseSku === '') {
             throw new \InvalidArgumentException('Product baseSku must not be empty.');
@@ -168,6 +181,15 @@ final class Product
      *   operation from silently orphaning existing variations) can never
      *   fire here — reconstitution is restoring an already-consistent
      *   prior state, not proposing a new one that might orphan anything.
+     * @param array<int, array{definition: AttributeDefinition, value: string|AttributeValue}> $descriptiveAttributes
+     *   This Product's descriptive (non-axis) attributes, already-
+     *   reconstituted from storage (catalog_product_attributes,
+     *   is_variation_axis=false — see EloquentProductRepository). Passed
+     *   through setDescriptiveAttribute() itself, same reasoning as
+     *   $variationAxes above — this also happens AFTER
+     *   declareVariationAxes() runs, so setDescriptiveAttribute()'s own
+     *   hasVariationAxis() guard sees the real, final axis set rather
+     *   than an empty one.
      */
     public static function reconstituteFromStorage(
         string $id,
@@ -180,6 +202,8 @@ final class Product
         array $variations = [],
         array $variationAxes = [],
         ?string $brandId = null,
+        ?string $seasonId = null,
+        array $descriptiveAttributes = [],
     ): self {
         $product = new self(
             id: $id,
@@ -190,10 +214,15 @@ final class Product
             status: $status,
             catalogVisibility: $catalogVisibility,
             brandId: $brandId,
+            seasonId: $seasonId,
         );
 
         if ($variationAxes !== []) {
             $product->declareVariationAxes($variationAxes);
+        }
+
+        foreach ($descriptiveAttributes as $entry) {
+            $product->setDescriptiveAttribute($entry['definition'], $entry['value']);
         }
 
         foreach ($variations as $variation) {
@@ -272,6 +301,22 @@ final class Product
     public function assignBrand(?string $brandId): void
     {
         $this->brandId = $brandId;
+    }
+
+    public function seasonId(): ?string
+    {
+        return $this->seasonId;
+    }
+
+    /**
+     * Sets or clears this Product's season — byte-for-byte the same
+     * shape as assignBrand() above, same reasoning: a cross-domain-by-id
+     * reference only, no existence check, null is a valid "remove this
+     * product's season" operation.
+     */
+    public function assignSeason(?string $seasonId): void
+    {
+        $this->seasonId = $seasonId;
     }
 
     public function type(): ProductType
@@ -375,6 +420,82 @@ final class Product
     public function variationAxes(): array
     {
         return array_values($this->variationAxes);
+    }
+
+    /**
+     * True if $definition is currently declared as one of this
+     * Product's variation axes — the same "is one or the other, never
+     * both" check setDescriptiveAttribute() below relies on (§4.3's
+     * schema comment: "per-product: descriptive OR axis").
+     */
+    public function hasVariationAxis(AttributeDefinition $definition): bool
+    {
+        return isset($this->variationAxes[(string) $definition->id()]);
+    }
+
+    /**
+     * Sets a descriptive (non-axis) value for $definition on this
+     * Product — catalog-domain-design.md §3.11. Keyed internally by
+     * attribute_definition_id, the same convention $variationAxes
+     * already uses (see that property's own docblock for why this
+     * deviates from §3.11's own — incorrect — "keyed by code()" text).
+     *
+     * Validation, in this order:
+     *  1. $definition must not currently be one of this Product's
+     *     declared variation axes — the same underlying
+     *     catalog_product_attributes row is one or the other, never
+     *     both.
+     *  2. SELECT: $value must be an AttributeValue belonging to
+     *     $definition.
+     *  3. TEXT/NUMBER/BOOLEAN: $value must be a plain string.
+     *  4. MULTISELECT: unconditionally rejected — still explicitly
+     *     deferred (§6), not silently accepted as if it worked.
+     */
+    public function setDescriptiveAttribute(AttributeDefinition $definition, string|AttributeValue $value): void
+    {
+        if ($this->hasVariationAxis($definition)) {
+            throw new \InvalidArgumentException(
+                "Attribute definition \"{$definition->code()}\" is currently declared as a variation axis ".
+                'of this Product and cannot also be set as a descriptive attribute.'
+            );
+        }
+
+        $type = $definition->type();
+
+        if ($type === AttributeType::MULTISELECT) {
+            throw new \InvalidArgumentException(
+                "Attribute definition \"{$definition->code()}\" is MULTISELECT-typed — true multiselect ".
+                'descriptive attributes are not supported yet (catalog-domain-design.md §6).'
+            );
+        }
+
+        if ($type === AttributeType::SELECT) {
+            if (! $value instanceof AttributeValue) {
+                throw new \InvalidArgumentException(
+                    "Attribute definition \"{$definition->code()}\" is SELECT-typed and requires an ".
+                    'AttributeValue, not a plain string.'
+                );
+            }
+
+            if ($value->attributeDefinitionId() !== $definition->id()) {
+                throw new \InvalidArgumentException(
+                    "The given AttributeValue does not belong to attribute definition \"{$definition->code()}\"."
+                );
+            }
+        } elseif (! is_string($value)) {
+            throw new \InvalidArgumentException(
+                "Attribute definition \"{$definition->code()}\" is {$type->value}-typed and requires a plain ".
+                'string value, not an AttributeValue.'
+            );
+        }
+
+        $this->descriptiveAttributes[(string) $definition->id()] = $value;
+    }
+
+    /** @return array<string, string|AttributeValue> keyed by attribute_definition_id */
+    public function descriptiveAttributes(): array
+    {
+        return $this->descriptiveAttributes;
     }
 
     /**

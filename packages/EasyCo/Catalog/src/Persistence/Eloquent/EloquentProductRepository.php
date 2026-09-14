@@ -45,6 +45,7 @@ final class EloquentProductRepository implements ProductRepository
             $productModel->status = $product->status()->value;
             $productModel->catalog_visibility = $product->catalogVisibility()->value;
             $productModel->brand_id = $product->brandId();
+            $productModel->season_id = $product->seasonId();
 
             $this->saveProductModelWithSlugCollisionRetry($productModel, $product);
 
@@ -53,6 +54,7 @@ final class EloquentProductRepository implements ProductRepository
             }
 
             $this->persistVariationAxes($productModel, $product);
+            $this->persistDescriptiveAttributes($productModel, $product);
 
             foreach ($product->variations() as $variation) {
                 $this->saveVariation($productModel, $product, $variation);
@@ -71,9 +73,9 @@ final class EloquentProductRepository implements ProductRepository
      * in memory. A no-op for a SIMPLE product or a VARIABLE product with
      * no axes declared yet.
      *
-     * Scoped deliberately to is_variation_axis=true rows only — generic
-     * descriptive attributes (is_variation_axis=false) have no domain
-     * representation on Product yet and this method never touches them.
+     * Scoped deliberately to is_variation_axis=true rows only —
+     * persistDescriptiveAttributes() below is this method's exact
+     * counterpart for is_variation_axis=false rows.
      */
     private function persistVariationAxes(ProductModel $productModel, Product $product): void
     {
@@ -121,6 +123,51 @@ final class EloquentProductRepository implements ProductRepository
 
         DB::table('catalog_product_attributes')->insert($attributeRows);
         DB::table('catalog_product_axis_values')->insert($axisValueRows);
+    }
+
+    /**
+     * Persists this Product's descriptive (non-axis) attributes
+     * (catalog_product_attributes with is_variation_axis=false) — the
+     * storage-layer counterpart of Product::setDescriptiveAttribute()
+     * (catalog-domain-design.md §3.11). Mirrors persistVariationAxes()'s
+     * exact full-replace semantics: delete every existing
+     * is_variation_axis=false row for this product, then reinsert
+     * exactly what's currently set in memory.
+     *
+     * TEXT/NUMBER/BOOLEAN values go in text_value; SELECT values (a
+     * real AttributeValue) go in attribute_value_id — the same split
+     * catalog_product_attributes' own migration docblock documents.
+     */
+    private function persistDescriptiveAttributes(ProductModel $productModel, Product $product): void
+    {
+        DB::table('catalog_product_attributes')
+            ->where('product_id', $productModel->id)
+            ->where('is_variation_axis', false)
+            ->delete();
+
+        $descriptiveAttributes = $product->descriptiveAttributes();
+
+        if ($descriptiveAttributes === []) {
+            return;
+        }
+
+        $now = now();
+        $rows = [];
+
+        foreach ($descriptiveAttributes as $attributeDefinitionId => $value) {
+            $rows[] = [
+                'product_id' => $productModel->id,
+                'attribute_definition_id' => $attributeDefinitionId,
+                'is_variation_axis' => false,
+                'text_value' => $value instanceof AttributeValue ? null : $value,
+                'attribute_value_id' => $value instanceof AttributeValue ? $value->id() : null,
+                'sort_order' => 0,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ];
+        }
+
+        DB::table('catalog_product_attributes')->insert($rows);
     }
 
     public function findById(string $id): ?Product
@@ -467,6 +514,7 @@ final class EloquentProductRepository implements ProductRepository
 
         $type = ProductType::from($model->type);
         $variationAxes = $type === ProductType::VARIABLE ? $this->loadVariationAxes($model->id) : [];
+        $descriptiveAttributes = $this->loadDescriptiveAttributes($model->id);
 
         return Product::reconstituteFromStorage(
             id: (string) $model->id,
@@ -479,6 +527,8 @@ final class EloquentProductRepository implements ProductRepository
             variations: $variations,
             variationAxes: $variationAxes,
             brandId: $model->brand_id !== null ? (string) $model->brand_id : null,
+            seasonId: $model->season_id !== null ? (string) $model->season_id : null,
+            descriptiveAttributes: $descriptiveAttributes,
         );
     }
 
@@ -566,6 +616,75 @@ final class EloquentProductRepository implements ProductRepository
         }
 
         return $axes;
+    }
+
+    /**
+     * Loads this Product's descriptive (non-axis) attributes from
+     * catalog_product_attributes (is_variation_axis=false) — the
+     * storage-layer counterpart of persistDescriptiveAttributes(),
+     * mirroring loadVariationAxes()'s exact shape/pattern with the flag
+     * value flipped. Called for every Product regardless of type
+     * (unlike loadVariationAxes(), which is VARIABLE-only): a
+     * descriptive attribute is meaningful on a SIMPLE product too.
+     *
+     * @return array<int, array{definition: AttributeDefinition, value: string|AttributeValue}>
+     */
+    private function loadDescriptiveAttributes(int $productId): array
+    {
+        $rows = DB::table('catalog_product_attributes')
+            ->where('product_id', $productId)
+            ->where('is_variation_axis', false)
+            ->get(['attribute_definition_id', 'text_value', 'attribute_value_id']);
+
+        if ($rows->isEmpty()) {
+            return [];
+        }
+
+        $definitionModels = AttributeDefinitionModel::whereIn('id', $rows->pluck('attribute_definition_id'))
+            ->get()
+            ->keyBy('id');
+
+        $valueIds = $rows->pluck('attribute_value_id')->filter()->unique();
+        $valueModels = $valueIds->isNotEmpty()
+            ? AttributeValueModel::whereIn('id', $valueIds)->get()->keyBy('id')
+            : collect();
+
+        $result = [];
+        foreach ($rows as $row) {
+            $definitionModel = $definitionModels->get($row->attribute_definition_id);
+            if ($definitionModel === null) {
+                continue;
+            }
+
+            $definition = new AttributeDefinition(
+                id: (string) $definitionModel->id,
+                code: $definitionModel->code,
+                name: $definitionModel->name,
+                type: AttributeType::from($definitionModel->type),
+            );
+
+            if ($row->attribute_value_id !== null) {
+                $valueModel = $valueModels->get($row->attribute_value_id);
+                if ($valueModel === null) {
+                    // Defensive only: an FK-constrained attribute_value_id
+                    // should always resolve to a real row.
+                    continue;
+                }
+
+                $value = new AttributeValue(
+                    id: (string) $valueModel->id,
+                    attributeDefinitionId: (string) $valueModel->attribute_definition_id,
+                    value: $valueModel->value,
+                    sortOrder: $valueModel->sort_order,
+                );
+            } else {
+                $value = (string) $row->text_value;
+            }
+
+            $result[] = ['definition' => $definition, 'value' => $value];
+        }
+
+        return $result;
     }
 
     private function toDomainVariation(VariationModel $model, array $attributeAssignments): Variation

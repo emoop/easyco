@@ -4,6 +4,8 @@ namespace Tests\Feature;
 
 use EasyCo\Catalog\Brand;
 use EasyCo\Catalog\Contracts\BrandRepository;
+use EasyCo\Catalog\Contracts\ProductRepository;
+use EasyCo\Catalog\Product;
 use EasyCo\Media\Contracts\MediaAssetRepository;
 use EasyCo\Media\Enums\MediaType;
 use EasyCo\Media\MediaAsset;
@@ -147,5 +149,39 @@ class CatalogBrandRepositoryTest extends TestCase
         $reloaded = $brandRepository->findById($brand->id());
 
         $this->assertNull($reloaded->logoMediaAssetId());
+    }
+
+    public function test_count_products_using_is_zero_when_unused(): void
+    {
+        $repository = app(BrandRepository::class);
+
+        $brand = new Brand(id: null, name: 'Nike', slug: 'nike');
+        $repository->save($brand);
+
+        $this->assertSame(0, $repository->countProductsUsing($brand->id()));
+    }
+
+    public function test_count_products_using_counts_every_product_referencing_this_brand(): void
+    {
+        $brandRepository = app(BrandRepository::class);
+        $productRepository = app(ProductRepository::class);
+
+        $nike = new Brand(id: null, name: 'Nike', slug: 'nike');
+        $brandRepository->save($nike);
+
+        $adidas = new Brand(id: null, name: 'Adidas', slug: 'adidas');
+        $brandRepository->save($adidas);
+
+        for ($i = 1; $i <= 3; $i++) {
+            $product = Product::createSimple("Product {$i}", "SKU-{$i}", "product-{$i}");
+            $product->assignBrand($nike->id());
+            $productRepository->save($product);
+        }
+
+        $unrelated = Product::createSimple('Unrelated', 'SKU-unrelated', 'unrelated');
+        $unrelated->assignBrand($adidas->id());
+        $productRepository->save($unrelated);
+
+        $this->assertSame(3, $brandRepository->countProductsUsing($nike->id()));
     }
 }

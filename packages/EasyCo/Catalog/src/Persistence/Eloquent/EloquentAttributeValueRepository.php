@@ -4,6 +4,7 @@ namespace EasyCo\Catalog\Persistence\Eloquent;
 
 use EasyCo\Catalog\AttributeValue;
 use EasyCo\Catalog\Contracts\AttributeValueRepository;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Maps AttributeValue onto catalog_attribute_values via
@@ -45,6 +46,21 @@ final class EloquentAttributeValueRepository implements AttributeValueRepository
             ->get()
             ->map(fn (AttributeValueModel $model) => $this->toDomain($model))
             ->all();
+    }
+
+    public function countProductsUsing(string $valueId): array
+    {
+        $descriptive = DB::table('catalog_product_attributes')
+            ->where('attribute_value_id', $valueId)
+            ->count();
+
+        $axis = DB::table('catalog_variation_attribute_values')
+            ->join('catalog_variations', 'catalog_variations.id', '=', 'catalog_variation_attribute_values.variation_id')
+            ->where('catalog_variation_attribute_values.attribute_value_id', $valueId)
+            ->distinct()
+            ->count('catalog_variations.product_id');
+
+        return ['descriptive' => $descriptive, 'axis' => $axis];
     }
 
     private function toDomain(AttributeValueModel $model): AttributeValue
