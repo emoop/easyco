@@ -28,6 +28,7 @@ return [
         'tags' => 'Етикети',
         'is_purchasable' => 'Продаваем',
         'photos' => 'Снимки',
+        'thumbnail' => 'Снимка',
     ],
 
     'status_options' => [
@@ -42,5 +43,8 @@ return [
     ],
 
     'base_sku_change_warning' => 'Промяната на вече използван основен SKU може да не съответства на вече отпечатани етикети/баркодове.',
+
+    'duplicate_action' => 'Дублирай',
+    'duplicate_suffix' => 'копие',
 
 ];

@@ -17,6 +17,7 @@ use EasyCo\Catalog\Contracts\AttributeValueRepository;
 use EasyCo\Catalog\Contracts\BrandRepository;
 use EasyCo\Catalog\Contracts\CategoryRepository;
 use EasyCo\Catalog\Contracts\ProductCategoryRepository;
+use EasyCo\Catalog\Contracts\ProductGroupRepository;
 use EasyCo\Catalog\Contracts\ProductRepository;
 use EasyCo\Catalog\Contracts\ProductTagRepository;
 use EasyCo\Catalog\Contracts\SeasonRepository;
@@ -25,15 +26,22 @@ use EasyCo\Catalog\Enums\AttributeType;
 use EasyCo\Catalog\Enums\CatalogVisibility;
 use EasyCo\Catalog\Enums\ProductStatus;
 use EasyCo\Catalog\Persistence\Eloquent\ProductModel;
+use EasyCo\Catalog\Product;
+use EasyCo\Catalog\ProductCategory;
+use EasyCo\Catalog\ProductGroup;
+use EasyCo\Catalog\ProductTag;
 use EasyCo\Catalog\Season;
 use EasyCo\Catalog\Tag;
+use EasyCo\Catalog\VariationAxis;
 use EasyCo\Media\Contracts\ProductMediaRepository;
 use EasyCo\Media\Exceptions\MediaLimitExceededException;
+use EasyCo\Media\Persistence\Eloquent\MediaAssetModel;
 use EasyCo\Staff\Contracts\PasswordHasher;
 use EasyCo\Staff\Contracts\RoleRepository;
 use EasyCo\Staff\Contracts\StaffRepository;
 use EasyCo\Staff\Seeders\StaffSystemRolesSeeder;
 use EasyCo\Staff\Staff;
+use Filament\Actions\ActionGroup;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
@@ -89,6 +97,14 @@ class ProductResourceTest extends TestCase
         app(SeasonRepository::class)->save($season);
 
         return $season;
+    }
+
+    private function persistedProductGroup(string $code = 'shoes', string $name = 'Обувки'): ProductGroup
+    {
+        $group = new ProductGroup(id: null, code: $code, name: $name);
+        app(ProductGroupRepository::class)->save($group);
+
+        return $group;
     }
 
     private function persistedCategory(string $name): Category
@@ -491,11 +507,20 @@ class ProductResourceTest extends TestCase
         $component = Livewire::test(ListProducts::class);
         $table = $component->instance()->getTable();
 
+        // Record actions are grouped into a single ActionGroup
+        // (View/Edit/Duplicate) — getFlatActions() is the real
+        // ActionGroup method for flattening back to a plain action
+        // list, confirmed against the installed source.
         foreach ($table->getRecords() as $record) {
-            $actionNames = array_map(
-                fn ($action) => $action->getName(),
-                $table->getRecordActions($record)
-            );
+            $actionNames = [];
+            foreach ($table->getRecordActions($record) as $action) {
+                $actionNames = [
+                    ...$actionNames,
+                    ...($action instanceof ActionGroup
+                        ? array_map(fn ($a) => $a->getName(), $action->getFlatActions())
+                        : [$action->getName()]),
+                ];
+            }
             $this->assertNotContains('delete', $actionNames);
         }
 
@@ -538,5 +563,176 @@ class ProductResourceTest extends TestCase
             ->assertHasErrors(['data.product_group_id' => 'required']);
 
         $this->assertNull(ProductModel::where('slug', 'group-required')->first());
+    }
+
+    public function test_the_thumbnail_column_shows_the_lowest_sort_order_photos_real_path(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        Storage::fake(config('services.media.default_disk', 'public'));
+
+        Livewire::test(CreateProduct::class)
+            ->fillForm([
+                'name' => 'Thumbnail Product',
+                'slug' => 'thumbnail-product',
+                'base_sku' => 'SKU-THUMB',
+                'status' => ProductStatus::DRAFT->value,
+                'catalog_visibility' => CatalogVisibility::HIDDEN->value,
+                'photos' => [UploadedFile::fake()->image('first.jpg'), UploadedFile::fake()->image('second.jpg')],
+            ])
+            ->call('create')
+            ->assertHasNoFormErrors();
+
+        $productModel = ProductModel::where('slug', 'thumbnail-product')->firstOrFail();
+        $pivots = app(ProductMediaRepository::class)->findByProductId((string) $productModel->id);
+        $firstPivot = $pivots[0];
+        $expectedPath = MediaAssetModel::find($firstPivot->mediaId())->path;
+
+        Livewire::test(ListProducts::class)
+            ->assertTableColumnStateSet('thumbnail_path', $expectedPath, record: $productModel);
+    }
+
+    public function test_the_thumbnail_column_renders_without_error_for_a_product_with_no_photos(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        Livewire::test(CreateProduct::class)
+            ->fillForm(['name' => 'No Photo Product', 'slug' => 'no-photo-product', 'base_sku' => 'SKU-NOPHOTO', 'status' => ProductStatus::DRAFT->value, 'catalog_visibility' => CatalogVisibility::HIDDEN->value])
+            ->call('create')
+            ->assertHasNoFormErrors();
+
+        $productModel = ProductModel::where('slug', 'no-photo-product')->firstOrFail();
+
+        Livewire::test(ListProducts::class)
+            ->assertTableColumnStateSet('thumbnail_path', null, record: $productModel);
+    }
+
+    public function test_duplicating_a_simple_product_persists_a_real_new_product_with_every_rule_applied(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        $brand = $this->persistedBrand();
+        $season = $this->persistedSeason();
+        $group = $this->persistedProductGroup();
+        $sneakers = $this->persistedCategory('Sneakers');
+        $summer = $this->persistedTag('Summer');
+        $material = $this->persistedTextDefinition('material');
+        [$color, $black] = $this->persistedSelectDefinitionWithValues('color');
+
+        $source = Product::createSimple('Air Max', 'SKU-SOURCE', 'air-max');
+        $source->publish();
+        $source->setCatalogVisibility(CatalogVisibility::VISIBLE);
+        $source->assignBrand($brand->id());
+        $source->assignSeason($season->id());
+        $source->assignProductGroup($group->id());
+        $source->changeDescription('A classic silhouette.');
+        $source->setDescriptiveAttribute($material, 'Leather');
+        $source->setDescriptiveAttribute($color, $black);
+        $source->universalVariation()->setBarcode('1112223334445');
+        $source->universalVariation()->setPurchasable(false);
+        app(ProductRepository::class)->save($source);
+
+        app(ProductCategoryRepository::class)->save(new ProductCategory(id: null, productId: $source->id(), categoryId: $sneakers->id()));
+        app(ProductTagRepository::class)->save(new ProductTag(id: null, productId: $source->id(), tagId: $summer->id()));
+
+        Livewire::test(ListProducts::class)
+            ->callTableAction('duplicate', ProductModel::find($source->id()));
+
+        $duplicateModel = ProductModel::where('slug', '!=', 'air-max')->where('name', 'like', 'Air Max%')->firstOrFail();
+        $duplicate = app(ProductRepository::class)->findByIdWithVariations((string) $duplicateModel->id);
+
+        $this->assertSame("Air Max ({$this->translatedDuplicateSuffix()})", $duplicate->name());
+        $this->assertNotSame('air-max', $duplicate->slug());
+        $this->assertNotSame('SKU-SOURCE', $duplicate->baseSku());
+        $this->assertNotSame('', $duplicate->baseSku());
+        $this->assertSame(ProductStatus::DRAFT, $duplicate->status());
+        $this->assertSame(CatalogVisibility::VISIBLE, $duplicate->catalogVisibility());
+        $this->assertSame($brand->id(), $duplicate->brandId());
+        $this->assertSame($season->id(), $duplicate->seasonId());
+        $this->assertSame($group->id(), $duplicate->productGroupId());
+        $this->assertSame('A classic silhouette.', $duplicate->description());
+
+        $attributes = $duplicate->descriptiveAttributes();
+        $this->assertSame('Leather', $attributes[(string) $material->id()]);
+        $this->assertSame($black->id(), $attributes[(string) $color->id()]->id());
+
+        $categoryIds = array_map(fn ($c) => $c->categoryId(), app(ProductCategoryRepository::class)->findByProductId($duplicate->id()));
+        $this->assertSame([$sneakers->id()], $categoryIds);
+
+        $tagIds = array_map(fn ($t) => $t->tagId(), app(ProductTagRepository::class)->findByProductId($duplicate->id()));
+        $this->assertSame([$summer->id()], $tagIds);
+
+        // Barcode/is_purchasable NOT copied — flagged assumption, not
+        // explicitly confirmed by §13.2's own text (see DuplicateProduct's docblock).
+        $this->assertNull($duplicate->universalVariation()->barcode());
+        $this->assertTrue($duplicate->universalVariation()->isPurchasable());
+
+        // Photos explicitly NOT copied.
+        $this->assertCount(0, app(ProductMediaRepository::class)->findByProductId($duplicate->id()));
+    }
+
+    public function test_duplicating_a_simple_product_redirects_to_the_new_products_real_edit_url(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        $source = Product::createSimple('Air Force 1', 'SKU-AF1', 'air-force-1');
+        app(ProductRepository::class)->save($source);
+
+        $component = Livewire::test(ListProducts::class)
+            ->callTableAction('duplicate', ProductModel::find($source->id()));
+
+        $duplicateModel = ProductModel::where('name', 'like', 'Air Force 1%')
+            ->where('id', '!=', $source->id())
+            ->firstOrFail();
+
+        $component->assertRedirect(ProductResource::getUrl('edit', ['record' => $duplicateModel->id]));
+    }
+
+    /**
+     * Supersedes an earlier, now-invalid version of this test that
+     * asserted the duplicate action was merely HIDDEN on a VARIABLE
+     * row (assertTableActionHidden) — that assertion itself requires
+     * the record to still be resolvable within the table's own query,
+     * which no longer holds true given the real fix below (the row is
+     * excluded from the query entirely, not just given a hidden
+     * action), so it started throwing "Record no longer exists"
+     * instead of proving anything.
+     *
+     * The real fix for the real bug this confirms: a VARIABLE
+     * product's row used to still appear in this table (SIMPLE-only by
+     * this Resource's own scope), with a live Edit button that crashed
+     * on $product->universalVariation()->barcode() — a VARIABLE
+     * Product genuinely has no universal Variation. Filtered at the
+     * table's own query level (->where('type', SIMPLE)), not just via
+     * a hidden action, so the row is absent from the list entirely —
+     * proven here via the real Filament assertCanNotSeeTableRecords()
+     * assertion, which strictly subsumes "no action on it is visible
+     * either," since there is no row to check an action against at all.
+     */
+    public function test_a_variable_product_does_not_appear_anywhere_in_the_list(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        $definition = new AttributeDefinition(id: null, code: 'size', name: 'Size', type: AttributeType::SELECT);
+        app(AttributeDefinitionRepository::class)->save($definition);
+        $medium = new AttributeValue(id: null, attributeDefinitionId: $definition->id(), value: 'M');
+        app(AttributeValueRepository::class)->save($medium);
+
+        $variableProduct = Product::createVariable('Variable Shirt', 'SKU-VAR', 'variable-shirt');
+        $variableProduct->declareVariationAxes([new VariationAxis($definition, [$medium])]);
+        $variableProduct->addStandardVariation([$definition->id() => $medium->id()], 'SKU-VAR-M');
+        app(ProductRepository::class)->save($variableProduct);
+
+        $simpleProduct = Product::createSimple('Simple Shirt', 'SKU-SIMPLE', 'simple-shirt');
+        app(ProductRepository::class)->save($simpleProduct);
+
+        Livewire::test(ListProducts::class)
+            ->assertCanNotSeeTableRecords([ProductModel::find($variableProduct->id())])
+            ->assertCanSeeTableRecords([ProductModel::find($simpleProduct->id())]);
+    }
+
+    private function translatedDuplicateSuffix(): string
+    {
+        return __('products.duplicate_suffix');
     }
 }

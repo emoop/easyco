@@ -28,6 +28,7 @@ return [
         'tags' => 'Tags',
         'is_purchasable' => 'Purchasable',
         'photos' => 'Photos',
+        'thumbnail' => 'Photo',
     ],
 
     'status_options' => [
@@ -42,5 +43,8 @@ return [
     ],
 
     'base_sku_change_warning' => 'Changing an already-in-use base SKU may no longer match already-printed labels/barcodes.',
+
+    'duplicate_action' => 'Duplicate',
+    'duplicate_suffix' => 'copy',
 
 ];

@@ -8,6 +8,7 @@ use App\Filament\Resources\ProductResource\Pages\CreateProduct;
 use App\Filament\Resources\ProductResource\Pages\EditProduct;
 use App\Filament\Resources\ProductResource\Pages\ListProducts;
 use App\Filament\Resources\ProductResource\Pages\ViewProduct;
+use App\Services\DuplicateProduct;
 use App\Settings\Contracts\SiteSettingsRepository;
 use BackedEnum;
 use EasyCo\Catalog\AttributeDefinition;
@@ -15,6 +16,7 @@ use EasyCo\Catalog\AttributeValue;
 use EasyCo\Catalog\Enums\AttributeType;
 use EasyCo\Catalog\Enums\CatalogVisibility;
 use EasyCo\Catalog\Enums\ProductStatus;
+use EasyCo\Catalog\Enums\ProductType;
 use EasyCo\Catalog\Persistence\Eloquent\AttributeDefinitionModel;
 use EasyCo\Catalog\Persistence\Eloquent\AttributeValueModel;
 use EasyCo\Catalog\Persistence\Eloquent\BrandModel;
@@ -30,6 +32,8 @@ use EasyCo\Media\Enums\MediaType;
 use EasyCo\Media\Jobs\ProcessMediaAssetJob;
 use EasyCo\Media\MediaAsset;
 use EasyCo\Staff\Enums\Permission;
+use Filament\Actions\Action;
+use Filament\Actions\ActionGroup;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
 use Filament\Forms\Components\FileUpload;
@@ -43,11 +47,14 @@ use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\Tabs;
 use Filament\Schemas\Components\Tabs\Tab;
 use Filament\Schemas\Schema;
+use Filament\Tables\Columns\ImageColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 
 /**
@@ -282,7 +289,47 @@ class ProductResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            // Single subquery-select, not a formal Eloquent relation on
+            // Catalog's own ProductModel: EasyCo\Catalog has no
+            // composer/package dependency on EasyCo\Media anywhere
+            // (confirmed — grep found zero existing cross-references),
+            // and a HasOne relation to EasyCo\Media\Persistence\Eloquent\
+            // ProductMediaModel would be the first one, a genuine new
+            // package-boundary coupling CLAUDE.md rule 9 warns against
+            // ("cross-domain references are always by id/string
+            // contract, never a direct package dependency"). This raw,
+            // correlated subquery lives entirely in the app/ layer
+            // (already a legitimate composition point spanning both
+            // packages) and resolves every row's thumbnail in the
+            // table's one query, avoiding N+1 without the coupling.
+            //
+            // ->where('type', SIMPLE) is the real fix for a real bug
+            // found in production use: a VARIABLE product's row used
+            // to still appear here (this Resource is SIMPLE-only by
+            // scope, per this class's own docblock), with a live Edit
+            // button that crashed EditProduct on
+            // $product->universalVariation()->barcode() — a VARIABLE
+            // Product genuinely has no universal Variation, by design.
+            // Filtering the query itself, not just EditAction's own
+            // ->visible(), removes the row from the list entirely, so
+            // recordUrl()'s own identical gap (routing a VARIABLE row
+            // to View) is closed as the same side effect, not a
+            // separate fix.
+            ->modifyQueryUsing(fn (Builder $query): Builder => $query
+                ->where('type', ProductType::SIMPLE->value)
+                ->addSelect([
+                    'thumbnail_path' => DB::table('catalog_product_media')
+                        ->join('catalog_media', 'catalog_media.id', '=', 'catalog_product_media.media_id')
+                        ->whereColumn('catalog_product_media.product_id', 'catalog_products.id')
+                        ->orderBy('catalog_product_media.sort_order')
+                        ->limit(1)
+                        ->select('catalog_media.path'),
+                ]))
             ->columns([
+                ImageColumn::make('thumbnail_path')
+                    ->label(__('products.fields.thumbnail'))
+                    ->disk(config('services.media.default_disk', 'public'))
+                    ->square(),
                 TextColumn::make('name')
                     ->searchable()
                     ->sortable(),
@@ -337,9 +384,12 @@ class ProductResource extends Resource
                     ->options(fn (): array => ProductGroupModel::pluck('name', 'id')->all()),
             ])
             ->recordActions([
-                ViewAction::make(),
-                EditAction::make()
-                    ->visible(fn (ProductModel $record): bool => static::canEdit($record)),
+                ActionGroup::make([
+                    ViewAction::make(),
+                    EditAction::make()
+                        ->visible(fn (ProductModel $record): bool => static::canEdit($record)),
+                    static::duplicateAction(),
+                ]),
             ])
             ->recordUrl(fn (ProductModel $record): string => static::getUrl('view', ['record' => $record]));
     }
@@ -378,6 +428,33 @@ class ProductResource extends Resource
             'view' => ViewProduct::route('/{record}'),
             'edit' => EditProduct::route('/{record}/edit'),
         ];
+    }
+
+    /**
+     * "Duplicate" — admin-panel-design.md §13.2. SIMPLE products only:
+     * hidden entirely for a VARIABLE row (the VARIABLE creation wizard
+     * this would need to feed into doesn't exist yet — see
+     * DuplicateProduct's own docblock). Gated by createPermission(),
+     * not editPermission() — duplicating is really "creating with
+     * prefilled values," the same permission a plain Create already
+     * requires. On success, redirects straight into the new product's
+     * real Edit page (§13.2: "not a prefilled Create form awaiting a
+     * first save") — $livewire is a real, named-parameter-injectable
+     * closure argument on Filament\Actions\Action (confirmed against
+     * the installed source), giving access to Livewire's own
+     * redirect().
+     */
+    public static function duplicateAction(): Action
+    {
+        return Action::make('duplicate')
+            ->label(__('products.duplicate_action'))
+            ->icon('heroicon-o-document-duplicate')
+            ->visible(fn (ProductModel $record): bool => static::canCreate() && $record->type === ProductType::SIMPLE->value)
+            ->action(function (ProductModel $record, $livewire): void {
+                $duplicate = app(DuplicateProduct::class)->duplicate((string) $record->id);
+
+                $livewire->redirect(static::getUrl('edit', ['record' => $duplicate->id()]));
+            });
     }
 
     /**
