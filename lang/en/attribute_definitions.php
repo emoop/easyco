@@ -2,8 +2,8 @@
 
 return [
 
-    'label' => 'Attribute Definition',
-    'plural_label' => 'Attribute Definitions',
+    'label' => 'Attribute',
+    'plural_label' => 'Attributes',
 
     'fields' => [
         'code' => 'Code',

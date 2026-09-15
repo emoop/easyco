@@ -3,6 +3,7 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Concerns\AuthorizesViaStaffPermission;
+use App\Filament\NavigationGroup;
 use App\Filament\Resources\TagResource\Pages\CreateTag;
 use App\Filament\Resources\TagResource\Pages\EditTag;
 use App\Filament\Resources\TagResource\Pages\ListTags;
@@ -46,6 +47,17 @@ class TagResource extends Resource
     public static function getPluralModelLabel(): string
     {
         return __('tags.plural_label');
+    }
+
+    /** See CategoryResource::getNavigationGroup()'s docblock for the group/sort reasoning. */
+    public static function getNavigationGroup(): NavigationGroup
+    {
+        return NavigationGroup::CATALOG;
+    }
+
+    public static function getNavigationSort(): ?int
+    {
+        return 30;
     }
 
     protected static function viewAnyPermission(): ?Permission

@@ -3,6 +3,7 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Concerns\AuthorizesViaStaffPermission;
+use App\Filament\NavigationGroup;
 use App\Filament\Resources\SeasonResource\Pages\CreateSeason;
 use App\Filament\Resources\SeasonResource\Pages\EditSeason;
 use App\Filament\Resources\SeasonResource\Pages\ListSeasons;
@@ -48,6 +49,17 @@ class SeasonResource extends Resource
     public static function getPluralModelLabel(): string
     {
         return __('seasons.plural_label');
+    }
+
+    /** See CategoryResource::getNavigationGroup()'s docblock for the group/sort reasoning. */
+    public static function getNavigationGroup(): NavigationGroup
+    {
+        return NavigationGroup::CATALOG;
+    }
+
+    public static function getNavigationSort(): ?int
+    {
+        return 70;
     }
 
     protected static function viewAnyPermission(): ?Permission

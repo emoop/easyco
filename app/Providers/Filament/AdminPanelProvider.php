@@ -73,6 +73,16 @@ class AdminPanelProvider extends PanelProvider
                 Authenticate::class,
             ])
             ->favicon(asset('favicon.svg'))
-            ->brandLogo(asset('images/logo.svg'));
+            ->brandLogo(asset('images/logo.svg'))
+            // Narrower than Filament's own 20rem default, plus
+            // desktop collapse-to-icon-only with expand-on-demand —
+            // both real, direct fluent Panel methods (confirmed
+            // against the installed v5.8.1 source; no CSS custom-
+            // property override needed). sidebarCollapsibleOnDesktop()
+            // specifically (not sidebarFullyCollapsibleOnDesktop(),
+            // which hides the sidebar completely) — this task's own
+            // "collapses to icon-only" requirement.
+            ->sidebarWidth('17rem')
+            ->sidebarCollapsibleOnDesktop();
     }
 }

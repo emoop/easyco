@@ -3,6 +3,7 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Concerns\AuthorizesViaStaffPermission;
+use App\Filament\NavigationGroup;
 use App\Filament\Resources\AttributeDefinitionResource\Pages\CreateAttributeDefinition;
 use App\Filament\Resources\AttributeDefinitionResource\Pages\EditAttributeDefinition;
 use App\Filament\Resources\AttributeDefinitionResource\Pages\ListAttributeDefinitions;
@@ -58,6 +59,17 @@ class AttributeDefinitionResource extends Resource
     public static function getPluralModelLabel(): string
     {
         return __('attribute_definitions.plural_label');
+    }
+
+    /** See CategoryResource::getNavigationGroup()'s docblock for the group/sort reasoning. */
+    public static function getNavigationGroup(): NavigationGroup
+    {
+        return NavigationGroup::CATALOG;
+    }
+
+    public static function getNavigationSort(): ?int
+    {
+        return 40;
     }
 
     protected static function viewAnyPermission(): ?Permission

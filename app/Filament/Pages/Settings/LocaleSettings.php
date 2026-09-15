@@ -3,6 +3,7 @@
 namespace App\Filament\Pages\Settings;
 
 use App\Filament\Concerns\AuthorizesViaStaffPermission;
+use App\Filament\NavigationGroup;
 use App\Settings\Contracts\SiteSettingsRepository;
 use BackedEnum;
 use EasyCo\Staff\Enums\Permission;
@@ -15,7 +16,6 @@ use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\EmbeddedSchema;
 use Filament\Schemas\Components\Form;
 use Filament\Schemas\Schema;
-use UnitEnum;
 
 /**
  * Site Settings' first real admin-panel consumer
@@ -41,16 +41,37 @@ class LocaleSettings extends Page
 
     protected static string | BackedEnum | null $navigationIcon = 'heroicon-o-globe-alt';
 
-    protected static string | UnitEnum | null $navigationGroup = 'Settings';
-
     public function getTitle(): string
     {
         return __('settings.locale.title');
     }
 
+    /**
+     * Navigation grouping — admin-panel-design.md's stated top-level
+     * structure (this task). See RoleResource::getNavigationGroup()'s
+     * docblock for the group/sort reasoning; sort 30 places Settings
+     * after Role (10) and Staff (20) within the Admin group.
+     */
+    public static function getNavigationGroup(): NavigationGroup
+    {
+        return NavigationGroup::ADMIN;
+    }
+
+    public static function getNavigationSort(): ?int
+    {
+        return 30;
+    }
+
+    /**
+     * Generalized sidebar label — reads settings.navigation_label
+     * ("Настройки"/"Settings"), not the page's own
+     * settings.locale.navigation_label (now removed from that nest).
+     * Only the sidebar link generalizes; the page's own heading
+     * (getTitle() above) still reads settings.locale.title ("Език").
+     */
     public static function getNavigationLabel(): string
     {
-        return __('settings.locale.navigation_label');
+        return __('settings.navigation_label');
     }
 
     protected static function accessPermission(): ?Permission

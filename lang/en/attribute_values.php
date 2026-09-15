@@ -4,6 +4,9 @@ return [
 
     'label' => 'Attribute Value',
     'plural_label' => 'Attribute Values',
+    // Sidebar-only — the resource's own label above stays unchanged
+    // for page titles/breadcrumbs/delete confirmations.
+    'navigation_label' => 'Attribute Values',
 
     'fields' => [
         'attribute_definition_id' => 'Attribute',

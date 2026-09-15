@@ -3,6 +3,7 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Concerns\AuthorizesViaStaffPermission;
+use App\Filament\NavigationGroup;
 use App\Filament\Resources\StaffResource\Pages\CreateStaff;
 use App\Filament\Resources\StaffResource\Pages\EditStaff;
 use App\Filament\Resources\StaffResource\Pages\ListStaff;
@@ -57,6 +58,17 @@ class StaffResource extends Resource
     public static function getPluralModelLabel(): string
     {
         return __('staff.plural_label');
+    }
+
+    /** See RoleResource::getNavigationGroup()'s docblock for the group/sort reasoning. */
+    public static function getNavigationGroup(): NavigationGroup
+    {
+        return NavigationGroup::ADMIN;
+    }
+
+    public static function getNavigationSort(): ?int
+    {
+        return 20;
     }
 
     protected static function viewAnyPermission(): ?Permission

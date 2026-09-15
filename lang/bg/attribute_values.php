@@ -4,6 +4,9 @@ return [
 
     'label' => 'Стойност на атрибут',
     'plural_label' => 'Стойности на атрибути',
+    // Sidebar-only — the resource's own label above stays unchanged
+    // for page titles/breadcrumbs/delete confirmations.
+    'navigation_label' => 'Атрибути стойности',
 
     'fields' => [
         'attribute_definition_id' => 'Атрибут',

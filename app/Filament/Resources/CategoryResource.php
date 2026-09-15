@@ -2,12 +2,13 @@
 
 namespace App\Filament\Resources;
 
+use App\Filament\Concerns\AuthorizesViaStaffPermission;
+use App\Filament\NavigationGroup;
 use App\Filament\Resources\CategoryResource\Pages\CreateCategory;
 use App\Filament\Resources\CategoryResource\Pages\EditCategory;
 use App\Filament\Resources\CategoryResource\Pages\ListCategories;
 use App\Filament\Resources\CategoryResource\Pages\RelatedProducts;
 use App\Filament\Resources\CategoryResource\Pages\ViewCategory;
-use App\Filament\Concerns\AuthorizesViaStaffPermission;
 use BackedEnum;
 use EasyCo\Catalog\Contracts\CategoryRepository;
 use EasyCo\Catalog\Persistence\Eloquent\CategoryModel;
@@ -48,6 +49,27 @@ class CategoryResource extends Resource
     public static function getPluralModelLabel(): string
     {
         return __('categories.plural_label');
+    }
+
+    /**
+     * Navigation grouping — admin-panel-design.md's stated top-level
+     * structure (this task). Sort values leave 10 open for a future
+     * ProductResource to slot in above everything else; Tag (30) sits
+     * right after Category as the other simple, flat taxonomy concept
+     * merchants think of alongside it.
+     *
+     * Returns the App\Filament\NavigationGroup enum case, not a raw
+     * translated string — see that enum's own docblock for why (group
+     * RENDER ORDER across the sidebar depends on it).
+     */
+    public static function getNavigationGroup(): NavigationGroup
+    {
+        return NavigationGroup::CATALOG;
+    }
+
+    public static function getNavigationSort(): ?int
+    {
+        return 20;
     }
 
     protected static function viewAnyPermission(): ?Permission

@@ -3,6 +3,7 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Concerns\AuthorizesViaStaffPermission;
+use App\Filament\NavigationGroup;
 use App\Filament\Resources\RoleResource\Pages\CreateRole;
 use App\Filament\Resources\RoleResource\Pages\EditRole;
 use App\Filament\Resources\RoleResource\Pages\ListRoles;
@@ -62,6 +63,21 @@ class RoleResource extends Resource
     public static function getPluralModelLabel(): string
     {
         return __('roles.plural_label');
+    }
+
+    /**
+     * Navigation grouping — admin-panel-design.md's stated top-level
+     * structure (this task). Sort 10/20/30 orders Role, Staff, then
+     * Settings within the Admin group.
+     */
+    public static function getNavigationGroup(): NavigationGroup
+    {
+        return NavigationGroup::ADMIN;
+    }
+
+    public static function getNavigationSort(): ?int
+    {
+        return 10;
     }
 
     protected static function viewAnyPermission(): ?Permission

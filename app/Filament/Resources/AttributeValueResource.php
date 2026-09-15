@@ -3,6 +3,7 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Concerns\AuthorizesViaStaffPermission;
+use App\Filament\NavigationGroup;
 use App\Filament\Resources\AttributeValueResource\Pages\CreateAttributeValue;
 use App\Filament\Resources\AttributeValueResource\Pages\EditAttributeValue;
 use App\Filament\Resources\AttributeValueResource\Pages\ListAttributeValues;
@@ -54,6 +55,36 @@ class AttributeValueResource extends Resource
     public static function getPluralModelLabel(): string
     {
         return __('attribute_values.plural_label');
+    }
+
+    /**
+     * navigation_label (below) overrides what shows in the sidebar
+     * itself; this method still controls which group/position it
+     * appears within. See CategoryResource::getNavigationGroup()'s
+     * docblock for the group/sort reasoning.
+     */
+    public static function getNavigationGroup(): NavigationGroup
+    {
+        return NavigationGroup::CATALOG;
+    }
+
+    public static function getNavigationSort(): ?int
+    {
+        return 50;
+    }
+
+    /**
+     * Navigation-only label — reads a dedicated
+     * attribute_values.navigation_label key, separate from
+     * getPluralModelLabel(). The resource's own label stays "Стойност
+     * на атрибут"/"Стойности на атрибути" for page titles,
+     * breadcrumbs, and delete confirmations — this override is
+     * deliberately scoped to the sidebar only, not a rename of the
+     * resource itself.
+     */
+    public static function getNavigationLabel(): string
+    {
+        return __('attribute_values.navigation_label');
     }
 
     protected static function viewAnyPermission(): ?Permission
