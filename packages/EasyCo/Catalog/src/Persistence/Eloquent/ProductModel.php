@@ -29,6 +29,7 @@ class ProductModel extends Model
         'description',
         'brand_id',
         'season_id',
+        'product_group_id',
         'size_guide_id',
         'status',
         'catalog_visibility',

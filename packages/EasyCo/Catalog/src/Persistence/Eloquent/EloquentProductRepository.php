@@ -47,6 +47,7 @@ final class EloquentProductRepository implements ProductRepository
             $productModel->catalog_visibility = $product->catalogVisibility()->value;
             $productModel->brand_id = $product->brandId();
             $productModel->season_id = $product->seasonId();
+            $productModel->product_group_id = $product->productGroupId();
 
             $this->saveProductModelWithSlugCollisionRetry($productModel, $product);
 
@@ -531,6 +532,7 @@ final class EloquentProductRepository implements ProductRepository
             seasonId: $model->season_id !== null ? (string) $model->season_id : null,
             descriptiveAttributes: $descriptiveAttributes,
             description: $model->description,
+            productGroupId: $model->product_group_id !== null ? (string) $model->product_group_id : null,
         );
     }
 

@@ -60,6 +60,7 @@ final class Product
         private ?string $brandId = null,
         private ?string $seasonId = null,
         private ?string $description = null,
+        private ?string $productGroupId = null,
     ) {
         self::assertValidName($name);
         self::assertValidBaseSku($baseSku);
@@ -220,6 +221,7 @@ final class Product
         ?string $seasonId = null,
         array $descriptiveAttributes = [],
         ?string $description = null,
+        ?string $productGroupId = null,
     ): self {
         $product = new self(
             id: $id,
@@ -232,6 +234,7 @@ final class Product
             brandId: $brandId,
             seasonId: $seasonId,
             description: $description,
+            productGroupId: $productGroupId,
         );
 
         if ($variationAxes !== []) {
@@ -356,6 +359,22 @@ final class Product
     public function assignSeason(?string $seasonId): void
     {
         $this->seasonId = $seasonId;
+    }
+
+    public function productGroupId(): ?string
+    {
+        return $this->productGroupId;
+    }
+
+    /**
+     * Sets or clears this Product's group — byte-for-byte the same
+     * shape as assignSeason() above, same reasoning: a cross-domain-by-id
+     * reference only, no existence check, null is a valid "remove this
+     * product's group" operation.
+     */
+    public function assignProductGroup(?string $productGroupId): void
+    {
+        $this->productGroupId = $productGroupId;
     }
 
     public function description(): ?string

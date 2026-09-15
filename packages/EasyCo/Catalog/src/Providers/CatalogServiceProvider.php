@@ -7,8 +7,10 @@ use EasyCo\Catalog\Contracts\AttributeValueRepository;
 use EasyCo\Catalog\Contracts\BrandRepository;
 use EasyCo\Catalog\Contracts\CategoryRepository;
 use EasyCo\Catalog\Contracts\ProductCategoryRepository;
+use EasyCo\Catalog\Contracts\ProductGroupRepository;
 use EasyCo\Catalog\Contracts\ProductRepository;
 use EasyCo\Catalog\Contracts\ProductTagRepository;
+use EasyCo\Catalog\Contracts\ProductTemplateRepository;
 use EasyCo\Catalog\Contracts\SeasonRepository;
 use EasyCo\Catalog\Contracts\SkuSequenceRepository;
 use EasyCo\Catalog\Contracts\TagRepository;
@@ -18,8 +20,10 @@ use EasyCo\Catalog\Persistence\Eloquent\EloquentAttributeValueRepository;
 use EasyCo\Catalog\Persistence\Eloquent\EloquentBrandRepository;
 use EasyCo\Catalog\Persistence\Eloquent\EloquentCategoryRepository;
 use EasyCo\Catalog\Persistence\Eloquent\EloquentProductCategoryRepository;
+use EasyCo\Catalog\Persistence\Eloquent\EloquentProductGroupRepository;
 use EasyCo\Catalog\Persistence\Eloquent\EloquentProductRepository;
 use EasyCo\Catalog\Persistence\Eloquent\EloquentProductTagRepository;
+use EasyCo\Catalog\Persistence\Eloquent\EloquentProductTemplateRepository;
 use EasyCo\Catalog\Persistence\Eloquent\EloquentSeasonRepository;
 use EasyCo\Catalog\Persistence\Eloquent\EloquentSkuSequenceRepository;
 use EasyCo\Catalog\Persistence\Eloquent\EloquentTagRepository;
@@ -41,6 +45,8 @@ class CatalogServiceProvider extends ServiceProvider
         $this->app->bind(TagRepository::class, EloquentTagRepository::class);
         $this->app->bind(ProductCategoryRepository::class, EloquentProductCategoryRepository::class);
         $this->app->bind(ProductTagRepository::class, EloquentProductTagRepository::class);
+        $this->app->bind(ProductGroupRepository::class, EloquentProductGroupRepository::class);
+        $this->app->bind(ProductTemplateRepository::class, EloquentProductTemplateRepository::class);
     }
 
     public function boot(): void
