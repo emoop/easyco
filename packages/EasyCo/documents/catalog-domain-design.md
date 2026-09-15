@@ -341,6 +341,45 @@ an already-in-use `base_sku` may orphan printed labels/barcodes is a
 UI-layer concern for the admin panel to handle — this method itself is
 a plain, unguarded mutator.
 
+### 3.15 ProductGroup entity — designed, not yet implemented
+
+**Status:** design only until the implementation prompt lands.
+
+**New entity: `ProductGroup`.** A merchant-defined internal merchandise/
+reporting group ("Обувки" = 4, "Комплекти" = 6) — explicitly distinct
+from a future, legally-mandated VAT tax group (Наредба Н-18), which
+remains out of scope until v2. Not tied to Category (a dress and a
+dress+blouse set can share a category but belong to different groups),
+mirrors `AttributeDefinition`'s shape (`code` + `name`, plain public
+constructor, `rename()` only — `code` stays immutable after creation,
+same "stable machine identifier" reasoning §3.12 already established
+for `AttributeDefinition::code`).
+
+`Product` gains a nullable `productGroupId` column and
+`assignProductGroup(?string $productGroupId): void`, byte-for-byte
+mirroring `assignSeason()`.
+
+### 3.16 ProductTemplate entity — designed, not yet implemented
+
+**Status:** design only until the implementation prompt lands.
+
+A named, reusable default-value bag for Product creation — NOT a live
+link: applying a template pre-fills a Create form's brand/season/
+product group/categories/tags once, all fields remain fully editable
+afterward, and editing the template later never retroactively touches
+any product already created from it.
+
+Plain public constructor: `name`, `brandId` (nullable), `seasonId`
+(nullable), `productGroupId` (nullable), `categoryIds` (array of
+string ids), `tagIds` (array of string ids). `categoryIds`/`tagIds`
+stored as a JSON column directly on `catalog_product_templates`, not
+two new pivot tables — a template's category/tag list needs no
+relational integrity guarantee beyond "these ids existed when the
+template was saved" (§3.3's own "smallest model" precedent). `rename()`
+and `changeDefaults(...)` (replacing all five default fields at once —
+no reason to expose five separate single-field mutators for a bag of
+suggestions with no invariants between them).
+
 ## 4. Entities
 
 ### 4.1 Product (aggregate root)
