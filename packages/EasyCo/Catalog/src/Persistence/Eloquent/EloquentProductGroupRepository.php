@@ -45,6 +45,16 @@ final class EloquentProductGroupRepository implements ProductGroupRepository
             ->all();
     }
 
+    public function countProductsUsing(string $productGroupId): int
+    {
+        return ProductModel::where('product_group_id', $productGroupId)->count();
+    }
+
+    public function delete(string $id): void
+    {
+        ProductGroupModel::findOrFail($id)->delete();
+    }
+
     private function toDomain(ProductGroupModel $model): ProductGroup
     {
         return new ProductGroup(

@@ -17,4 +17,5 @@ enum CatalogLookupKind: string
     case TAG = 'tag';
     case ATTRIBUTE_DEFINITION = 'attribute_definition';
     case ATTRIBUTE_VALUE = 'attribute_value';
+    case PRODUCT_GROUP = 'product_group';
 }

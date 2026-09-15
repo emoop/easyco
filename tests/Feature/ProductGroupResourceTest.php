@@ -6,9 +6,12 @@ use App\Filament\Resources\ProductGroupResource;
 use App\Filament\Resources\ProductGroupResource\Pages\CreateProductGroup;
 use App\Filament\Resources\ProductGroupResource\Pages\EditProductGroup;
 use App\Filament\Resources\ProductGroupResource\Pages\ListProductGroups;
+use App\Filament\Resources\ProductGroupResource\Pages\RelatedProducts;
 use App\Filament\StaffPanelUser;
 use EasyCo\Catalog\Contracts\ProductGroupRepository;
+use EasyCo\Catalog\Contracts\ProductRepository;
 use EasyCo\Catalog\Persistence\Eloquent\ProductGroupModel;
+use EasyCo\Catalog\Product;
 use EasyCo\Catalog\ProductGroup;
 use EasyCo\Staff\Contracts\PasswordHasher;
 use EasyCo\Staff\Contracts\RoleRepository;
@@ -21,9 +24,8 @@ use Tests\TestCase;
 
 /**
  * Exercises the real, production ProductGroupResource. Mirrors
- * SeasonResourceTest's structure minus every Part B (product-count/
- * drill-down/delete) test — ProductGroupRepository has none of that
- * machinery at all.
+ * SeasonResourceTest's structure exactly, including its Part B
+ * (product-count/drill-down/delete) tests.
  */
 class ProductGroupResourceTest extends TestCase
 {
@@ -187,5 +189,101 @@ class ProductGroupResourceTest extends TestCase
 
         $this->get(ProductGroupResource::getUrl('view', ['record' => $groupModel]))->assertOk();
         $this->get(ProductGroupResource::getUrl('edit', ['record' => $groupModel]))->assertForbidden();
+    }
+
+    public function test_the_count_column_shows_the_real_number_of_products_using_this_group(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        $group = new ProductGroup(id: null, code: 'shoes', name: 'Обувки');
+        app(ProductGroupRepository::class)->save($group);
+
+        for ($i = 1; $i <= 3; $i++) {
+            $product = Product::createSimple("Product {$i}", "SKU-{$i}", "product-{$i}");
+            $product->assignProductGroup($group->id());
+            app(ProductRepository::class)->save($product);
+        }
+
+        $component = Livewire::test(ListProductGroups::class);
+
+        $component->assertTableColumnStateSet('products_count', 3, record: ProductGroupModel::find($group->id()));
+    }
+
+    public function test_delete_is_blocked_when_the_group_is_still_in_use(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        $group = new ProductGroup(id: null, code: 'shoes', name: 'Обувки');
+        app(ProductGroupRepository::class)->save($group);
+
+        $product = Product::createSimple('Air Max', 'SKU-1', 'air-max');
+        $product->assignProductGroup($group->id());
+        app(ProductRepository::class)->save($product);
+
+        Livewire::test(ListProductGroups::class)
+            ->callTableAction('delete', ProductGroupModel::find($group->id()))
+            ->assertNotified();
+
+        $this->assertNotNull(app(ProductGroupRepository::class)->findById($group->id()));
+    }
+
+    public function test_delete_succeeds_when_the_group_is_genuinely_unused(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        $group = new ProductGroup(id: null, code: 'shoes', name: 'Обувки');
+        app(ProductGroupRepository::class)->save($group);
+
+        Livewire::test(ListProductGroups::class)
+            ->callTableAction('delete', ProductGroupModel::find($group->id()));
+
+        $this->assertNull(app(ProductGroupRepository::class)->findById($group->id()));
+    }
+
+    public function test_bulk_unlink_actually_detaches_the_selected_products(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        $group = new ProductGroup(id: null, code: 'shoes', name: 'Обувки');
+        app(ProductGroupRepository::class)->save($group);
+
+        $productIds = [];
+        for ($i = 1; $i <= 3; $i++) {
+            $product = Product::createSimple("Product {$i}", "SKU-{$i}", "product-{$i}");
+            $product->assignProductGroup($group->id());
+            app(ProductRepository::class)->save($product);
+            $productIds[] = $product->id();
+        }
+
+        Livewire::test(RelatedProducts::class, ['record' => $group->id()])
+            ->callTableBulkAction('detach', $productIds);
+
+        foreach ($productIds as $productId) {
+            $reloaded = app(ProductRepository::class)->findById($productId);
+            $this->assertNull($reloaded->productGroupId());
+        }
+
+        $this->assertSame(0, app(ProductGroupRepository::class)->countProductsUsing($group->id()));
+    }
+
+    public function test_bulk_unlink_skips_an_already_detached_product_without_erroring(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        $group = new ProductGroup(id: null, code: 'shoes', name: 'Обувки');
+        app(ProductGroupRepository::class)->save($group);
+
+        $stillAttached = Product::createSimple('Still Attached', 'SKU-1', 'still-attached');
+        $stillAttached->assignProductGroup($group->id());
+        app(ProductRepository::class)->save($stillAttached);
+
+        $alreadyDetached = Product::createSimple('Already Detached', 'SKU-2', 'already-detached');
+        app(ProductRepository::class)->save($alreadyDetached);
+
+        Livewire::test(RelatedProducts::class, ['record' => $group->id()])
+            ->callTableBulkAction('detach', [$stillAttached->id(), $alreadyDetached->id()]);
+
+        $reloadedAttached = app(ProductRepository::class)->findById($stillAttached->id());
+        $this->assertNull($reloadedAttached->productGroupId());
     }
 }

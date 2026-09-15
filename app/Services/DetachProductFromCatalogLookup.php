@@ -44,6 +44,7 @@ final class DetachProductFromCatalogLookup
             CatalogLookupKind::TAG => $this->detachTag($productId, $entityId),
             CatalogLookupKind::ATTRIBUTE_DEFINITION => $this->detachAttributeDefinition($productId, $entityId),
             CatalogLookupKind::ATTRIBUTE_VALUE => $this->detachAttributeValue($productId, $entityId),
+            CatalogLookupKind::PRODUCT_GROUP => $this->detachProductGroup($productId),
         };
     }
 
@@ -70,6 +71,20 @@ final class DetachProductFromCatalogLookup
         }
 
         $product->assignSeason(null);
+        $this->products->save($product);
+
+        return true;
+    }
+
+    private function detachProductGroup(string $productId): bool
+    {
+        $product = $this->products->findById($productId);
+
+        if ($product === null || $product->productGroupId() === null) {
+            return false;
+        }
+
+        $product->assignProductGroup(null);
         $this->products->save($product);
 
         return true;

@@ -7,18 +7,23 @@ use App\Filament\NavigationGroup;
 use App\Filament\Resources\ProductGroupResource\Pages\CreateProductGroup;
 use App\Filament\Resources\ProductGroupResource\Pages\EditProductGroup;
 use App\Filament\Resources\ProductGroupResource\Pages\ListProductGroups;
+use App\Filament\Resources\ProductGroupResource\Pages\RelatedProducts;
 use App\Filament\Resources\ProductGroupResource\Pages\ViewProductGroup;
 use BackedEnum;
+use EasyCo\Catalog\Contracts\ProductGroupRepository;
 use EasyCo\Catalog\Persistence\Eloquent\ProductGroupModel;
 use EasyCo\Staff\Enums\Permission;
+use Filament\Actions\DeleteAction;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
 use Filament\Forms\Components\TextInput;
 use Filament\Infolists\Components\TextEntry;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
+use Illuminate\Database\QueryException;
 
 /**
  * ProductGroup management — admin-panel-design.md §10/Part B,
@@ -81,6 +86,11 @@ class ProductGroupResource extends Resource
         return Permission::TAXONOMY_MANAGE;
     }
 
+    protected static function deletePermission(): ?Permission
+    {
+        return Permission::TAXONOMY_MANAGE;
+    }
+
     public static function form(Schema $schema): Schema
     {
         return $schema->components([
@@ -110,6 +120,11 @@ class ProductGroupResource extends Resource
                 TextColumn::make('name')
                     ->searchable()
                     ->sortable(),
+                TextColumn::make('products_count')
+                    ->label(__('product_groups.fields.products_count'))
+                    ->state(fn (ProductGroupModel $record): int => app(ProductGroupRepository::class)->countProductsUsing((string) $record->id))
+                    ->formatStateUsing(fn (int $state): string => trans_choice('product_groups.products_count.count', $state, ['count' => $state]))
+                    ->url(fn (ProductGroupModel $record, int $state): ?string => $state > 0 ? static::getUrl('products', ['record' => $record]) : null),
                 TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable(),
@@ -118,6 +133,7 @@ class ProductGroupResource extends Resource
                 ViewAction::make(),
                 EditAction::make()
                     ->visible(fn (ProductGroupModel $record): bool => static::canEdit($record)),
+                static::deleteAction(),
             ])
             ->recordUrl(fn (ProductGroupModel $record): string => static::getUrl('view', ['record' => $record]));
     }
@@ -141,6 +157,43 @@ class ProductGroupResource extends Resource
             'create' => CreateProductGroup::route('/create'),
             'view' => ViewProductGroup::route('/{record}'),
             'edit' => EditProductGroup::route('/{record}/edit'),
+            'products' => RelatedProducts::route('/{record}/products'),
         ];
+    }
+
+    /** See SeasonResource::deleteAction()'s identical reasoning — product_group_id is also nullOnDelete(). */
+    public static function deleteAction(): DeleteAction
+    {
+        return DeleteAction::make()
+            ->visible(fn (ProductGroupModel $record): bool => static::canDelete($record))
+            ->action(function (ProductGroupModel $record): void {
+                $repository = app(ProductGroupRepository::class);
+                $inUseCount = $repository->countProductsUsing((string) $record->id);
+
+                if ($inUseCount > 0) {
+                    Notification::make()
+                        ->title(__('product_groups.delete_blocked', ['name' => $record->name, 'count' => $inUseCount]))
+                        ->danger()
+                        ->send();
+
+                    return;
+                }
+
+                try {
+                    $repository->delete((string) $record->id);
+                } catch (QueryException) {
+                    Notification::make()
+                        ->title(__('product_groups.delete_blocked', ['name' => $record->name, 'count' => $inUseCount]))
+                        ->danger()
+                        ->send();
+
+                    return;
+                }
+
+                Notification::make()
+                    ->title(__('product_groups.deleted'))
+                    ->success()
+                    ->send();
+            });
     }
 }
