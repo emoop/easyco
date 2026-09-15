@@ -59,6 +59,25 @@ VPS you administer yourself.
     cacheable routes get separated from stateful ones. Cart, checkout,
     and account pages must never be cached, full stop — a page carrying
     someone's session could otherwise be served to a different visitor.
+- **Object storage for media (product photos, category/brand images,
+  banners, carousels, video), not local disk, once a store's media
+  library grows.** EasyCo's own Media domain already writes through a
+  storage abstraction (`MediaStorageAdapter`) precisely so this is a
+  configuration choice, not an application-code change — any
+  S3-compatible object storage (DigitalOcean Spaces, AWS S3, or a
+  self-hosted MinIO) works via Laravel's standard `filesystems.php`
+  disk configuration. How much storage a given store needs varies
+  enormously by merchant — a handful of products with a few photos
+  each looks nothing like a catalog of tens of thousands of items,
+  each with several images, on top of category imagery, homepage
+  banners/carousels, and video — so no specific figure is prescribed
+  here. The risk isn't that local disk is invalid for a small store;
+  it's that a store which starts small and never migrates off local
+  disk risks real growing pains later (disk exhaustion, slower
+  backups, harder server migration) that object storage sidesteps
+  entirely by being effectively unbounded and provider-managed.
+  Deciding this before a media library grows large, not after, avoids
+  a disruptive later migration.
 
 ## Explicitly not required
 

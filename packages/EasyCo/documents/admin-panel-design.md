@@ -385,3 +385,106 @@ begin migrating or entering products.
    be verified against the real installed v4/v5 version at
    implementation time — a version-specific detail, not a design
    decision to make now.
+
+---
+
+## §13. Product: VARIABLE wizard, Duplicate, Templates, and the product-group setting
+
+Four related pieces of Part 6 (VARIABLE products), informed by real
+ecosystem research (WooCommerce's own documented pain point: "Generate
+variations, then expand every single row to type price/SKU/stock —
+twelve forms, one at a time" — the proven fix, confirmed across
+multiple real WooCommerce-ecosystem tools, is a single-screen grid
+editor, never a per-variation form) and by the domain owner's own
+daily WooCommerce workflow.
+
+### 13.1 VARIABLE product creation — a Wizard, ending in a grid
+
+A Filament `Wizard` (§6's own "evaluated during implementation" note,
+now resolved: yes), three steps:
+
+1. **General** — same fields as SIMPLE's General tab minus
+   barcode/is_purchasable (those live per-Variation for a VARIABLE
+   product, not on Product itself).
+2. **Axes** — pick `AttributeDefinition`s (SELECT-type only, the
+   existing constraint) as axes, then which `AttributeValue`s to
+   include per axis.
+3. **Variations** — `VariationCombinationGenerator::generate()` (already
+   idempotent — re-running after adding one more axis value only
+   creates the new combinations) produces every combination as a GRID
+   ROW, not a separate form: attribute combination label, SKU
+   (pre-filled via the real `catalog.variation.sku` hook, editable),
+   barcode (optional), an individual Active/Draft toggle per row, plus
+   an "Activate all" bulk control above the grid — the domain owner's
+   own confirmed choice: DRAFT by default (a real safety default, not
+   friction for its own sake), one click to activate everything, or
+   toggle individually. **A likely Filament `Repeater`, not a `Table`**
+   — these rows are transient, generated-but-unsaved combinations, not
+   persisted Eloquent records a `Table`/`InteractsWithTable` is built
+   to query; confirm the real component choice at implementation time,
+   don't assume.
+
+### 13.2 Duplicate — an app-layer service, not a domain method
+
+No real domain invariant is being protected here (copying field values
+into a new entity, not enforcing a business rule) — lives as
+`App\Services\DuplicateProduct`, mirroring
+`DetachProductFromCatalogLookup`'s own precedent for "app-layer
+orchestration, not a Product method." A "Duplicate" action (row action
+on the list, header action on View) immediately creates a real,
+persisted new Product and redirects straight into its Edit page — not
+a prefilled Create form awaiting a first save.
+
+**Confirmed by the domain owner:**
+- Name: `"{original} ({duplicate_suffix})"` (translated suffix, e.g.
+  "копие"/"copy") — slug re-derived via the real `catalog.product.slug`
+  hook from this new name, never copied (would collide).
+- `base_sku`: cleared, triggers the real `catalog.product.base_sku`
+  hook generation — identical to Create's own empty-string behavior.
+- Photos: explicitly NOT copied — a duplicate is assumed to need its
+  own real photos.
+- Status: always starts DRAFT regardless of the source's status — a
+  duplicate must never accidentally go live copying an ACTIVE source.
+- Brand/season/product group/categories/tags: copied — the specific
+  "tedious to re-enter" fields named directly.
+- VARIABLE products: axis DECLARATIONS (which definitions/values were
+  selected) are copied; the actual Variations are NOT — the merchant
+  reviews/adjusts the copied axis selection, then re-runs generation
+  via §13.1's own wizard step. **Explicit fallback, stated now rather
+  than discovered mid-implementation:** if copying axis declarations
+  cleanly turns out to be materially harder than the rest of this
+  method, drop that one piece — the duplicate becomes a VARIABLE
+  product with zero axes declared, and the merchant starts axis
+  declaration fresh. The category/tag/brand/season/group copying (the
+  actual named pain point) stands either way.
+
+**Assumed, not explicitly confirmed — flagging rather than guessing
+silently:** `description` and any set descriptive attributes are
+copied too, matching "start close to identical, edit what's different"
+— easy to reverse if that turns out wrong once real use surfaces it,
+per the domain owner's own "most things will be adjusted in motion"
+expectation for this whole section.
+
+### 13.3 Templates — a simple, standalone Filament resource
+
+`ProductTemplateResource`, same shape/simplicity as `SeasonResource`
+(List/Create/Edit/View, `TAXONOMY_MANAGE`-gated create/edit,
+`PRODUCT_VIEW`-gated browse — merchandising configuration, same
+permission family as Brand/Category/Tag). Product's own Create form
+(SIMPLE and VARIABLE's General step alike) gains a "Start from
+template" `Select` at the top, applying the chosen template's five
+default fields into the form on selection — a one-time pre-fill, not a
+persisted link; every field stays independently editable afterward.
+
+### 13.4 New Site Setting: whether ProductGroup is required
+
+`site.catalog.product_group_required` (boolean, default `false`) — the
+first real Site Settings consumer beyond locale (`site-settings-
+design.md` §1's own "confirmed future consumers" list, now one item
+shorter). A `LocaleSettings`-shaped small admin page (or a shared
+"Catalog Settings" page if a natural second setting arrives around the
+same time — not decided here). When on, `ProductResource`'s
+`product_group_id` field becomes `->required()`; when off, it stays
+optional exactly as it is today. This is the mechanism the domain
+owner specifically wants for a group that "may never be needed, but if
+used, should be enforceable."
