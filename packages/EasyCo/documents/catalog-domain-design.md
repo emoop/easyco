@@ -206,6 +206,141 @@ attributes (more than one value per definition per product) —
 `UNIQUE(product_id, attribute_definition_id)` is untouched by this
 decision.
 
+### 3.12 Mutators for Brand, Category, Tag, AttributeDefinition, AttributeValue — resolved for the admin panel
+
+Mirrors §3.11's own reasoning — these five entities shipped fully
+immutable after creation (no `reconstituteFromStorage()` distinction,
+plain public constructor, no mutators at all) because nothing consumed
+an edit capability. `admin-panel-design.md`'s Filament resources for
+them are that consumer now.
+
+**`Brand`:** `rename(string $newName): void`, `changeSlug(string
+$newSlug): void`. Also gains a nullable `logoMediaAssetId` field and
+`setLogo(string $mediaAssetId): void` / `removeLogo(): void` — a
+brand's logo, used in navigation menus, brand-filter carousels, and
+sometimes alongside its products in the catalog, per the domain
+owner's own stated use cases. A plain string reference, not a
+`MediaAsset` instance — cross-domain references are always by id,
+never a direct package dependency (CLAUDE.md rule 9); Brand never
+imports `EasyCo\Media\MediaAsset`, mirroring how `ProductMedia`/
+`VariationMedia` handle the same relationship. Deliberately a single
+nullable reference, not a `ProductMedia`-style pivot with a gallery/
+count-guard system — a brand has one logo, not a gallery.
+
+**`Category`:** `rename(string $newName): void`, `changeSlug(string
+$newSlug): void`, `changeParent(?string $newParentId): void` —
+inherits the exact same "no cycle detection in v1" limitation the
+constructor's own docblock already states.
+
+**`Tag`:** `rename(string $newName): void`, `changeSlug(string
+$newSlug): void`.
+
+**`AttributeDefinition`:** `rename(string $newName): void` only —
+deliberately NOT `code` or `type`. Changing `type` after a definition
+has been used as a variation axis or has real `AttributeValue` rows
+against it is a genuine invariant risk (e.g. SELECT→TEXT after it has
+already generated real variation combinations) that would need
+cross-referencing validation this pass does not attempt to design.
+
+**`AttributeValue`:** `rename(string $newValue): void` (renaming the
+value's own display text) and `changeSortOrder(int $newSortOrder):
+void`. Renaming is confirmed safe by `VariationSignature`'s own
+existing docblock: hashing is by the value's id, never its label, so
+renaming never changes any variation's identity.
+
+**Real, flagged risk, not solved here:** changing a `Brand`/`Category`/
+`Tag`'s `slug` after `storefront-frontend-design.md`'s URL scheme is
+live breaks whatever was already indexed/linked at the old URL. Not a
+reason to withhold the mutator, but the admin UI consuming this should
+treat a slug change as a deliberate, not casual, action.
+
+### 3.13 Season entity, descriptive-attribute removal, and product-count/bulk-unlink safety (resolved for the admin panel)
+
+Three related additions, all surfaced by real admin-panel usage.
+
+**New entity: `Season`.** Structurally identical to `Brand` minus the
+logo field — plain public constructor, `name`/`slug`, no
+`reconstituteFromStorage()` distinction, `rename()`/`changeSlug()`
+mutators mirroring §3.12's Brand treatment exactly. `Product` gains a
+nullable `seasonId` column and `assignSeason(?string $seasonId): void`,
+mirroring `assignBrand(?string $brandId)` exactly. Used for storefront
+filtering/sorting ("Summer 2026") — single-select per product, same as
+Brand, not a multi-value concept like Tag.
+
+**New mutator: `Product::removeDescriptiveAttribute(AttributeDefinition
+$definition): void`.** `setDescriptiveAttribute()` (§3.11) had no
+inverse. Removes the `catalog_product_attributes` row for that
+definition only when it is NOT currently this product's variation
+axis — throws `CannotRemoveVariationAxisAttributeException` if it is,
+rather than silently doing nothing or reaching into axis/Variation
+territory it has no business touching. The only safe path to actually
+removing an axis is resolving/removing the Variations that depend on
+it first — separate, future work this method does not attempt.
+Idempotent: removing a definition that was never set at all is a
+no-op.
+
+**Repository count methods, one per entity, for the product-count/
+drill-down/delete-safety feature:**
+- `BrandRepository::countProductsUsing(string $brandId): int`
+- `SeasonRepository::countProductsUsing(string $seasonId): int`
+- `CategoryRepository::countProductsUsing(string $categoryId): int`
+- `TagRepository::countProductsUsing(string $tagId): int`
+- `AttributeDefinitionRepository::countProductsUsing(string
+  $definitionId): array{descriptive: int, axis: int}` — returns BOTH
+  counts, not a single total, since the admin panel's bulk-unlink
+  feature treats them completely differently (descriptive:
+  bulk-unlinkable; axis: not, ever, by that mechanism).
+- `AttributeValueRepository::countProductsUsing(string $valueId):
+  array{descriptive: int, axis: int}` — same shape, since a SELECT
+  value can be used descriptively on one product and as a real axis
+  choice on another.
+
+**Explicitly NOT built here, by deliberate design:** any mechanism —
+bulk or single — for removing an `AttributeDefinition`/
+`AttributeValue`'s **axis** usage from a product. A variation axis in
+real use has real, possibly-already-sold `Variation` rows depending on
+it; the only safe order is resolving those variations first, then the
+axis usage becomes removable via already-existing, correctly-gated
+machinery (§3.4/§3.10's guard on `declareVariationAxes()`), which
+needs no new capability once variations are actually gone.
+
+### 3.14 Product mutators: rename, status transitions, description, base_sku — resolved
+
+Mirrors §3.11's own reasoning exactly — `Product` shipped without these
+because nothing consumed an edit capability for them yet. The admin
+panel's Product Edit page is that consumer now.
+
+**`rename(string $newName): void`** — reuses the constructor's own
+name validation (extracted into `assertValidName()` as part of this
+pass — `Product`'s constructor had no such reusable assertion at all
+before this, unlike every sibling lookup entity).
+
+**Status transitions — three named methods, not a generic
+`setStatus()`:** `publish()`, `markAsDraft()`, `archive()`. Matches
+this codebase's own established convention (`Staff::deactivate()`/
+`reactivate()`, not a raw enum setter). All three are idempotent.
+`publish()` alone is guarded: throws
+`CannotPublishEmptyVariableProductException` for a VARIABLE product
+with zero non-archived `STANDARD` variations — structurally
+unreachable for a SIMPLE product, whose Universal variation always
+exists from `createSimple()` onward.
+
+**`description()`/`changeDescription(?string $newDescription): void`**
+— a new, dedicated nullable field. Deliberately NOT routed through
+`descriptiveAttributes()` (§3.11): that mechanism is for flexible,
+merchant-specific flags added without new domain code; a product
+description is universal, near-mandatory core content every product
+has, not a merchant-specific extension point.
+
+**`changeBaseSku(string $newBaseSku): void`** — reuses the
+constructor's own `assertValidBaseSku()`. The real
+`catalog_products_base_sku_unique` constraint protects an UPDATE the
+same way it already protected an INSERT (confirmed empirically, not
+assumed, via a real collision test). Warning a merchant that changing
+an already-in-use `base_sku` may orphan printed labels/barcodes is a
+UI-layer concern for the admin panel to handle — this method itself is
+a plain, unguarded mutator.
+
 ## 4. Entities
 
 ### 4.1 Product (aggregate root)
