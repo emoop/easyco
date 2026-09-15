@@ -42,6 +42,7 @@ final class EloquentProductRepository implements ProductRepository
             $productModel->type = $product->type()->value;
             $productModel->name = $product->name();
             $productModel->base_sku = $product->baseSku();
+            $productModel->description = $product->description();
             $productModel->status = $product->status()->value;
             $productModel->catalog_visibility = $product->catalogVisibility()->value;
             $productModel->brand_id = $product->brandId();
@@ -529,6 +530,7 @@ final class EloquentProductRepository implements ProductRepository
             brandId: $model->brand_id !== null ? (string) $model->brand_id : null,
             seasonId: $model->season_id !== null ? (string) $model->season_id : null,
             descriptiveAttributes: $descriptiveAttributes,
+            description: $model->description,
         );
     }
 

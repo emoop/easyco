@@ -8,6 +8,7 @@ use EasyCo\Catalog\Enums\ProductStatus;
 use EasyCo\Catalog\Enums\ProductType;
 use EasyCo\Catalog\Enums\VariationStatus;
 use EasyCo\Catalog\Enums\VariationType;
+use EasyCo\Catalog\Exceptions\CannotPublishEmptyVariableProductException;
 use EasyCo\Catalog\Exceptions\CannotRemoveVariationAxisAttributeException;
 use EasyCo\Catalog\Exceptions\DuplicateVariationCombinationException;
 use EasyCo\Catalog\Exceptions\InvalidVariationAxisException;
@@ -58,12 +59,25 @@ final class Product
         private CatalogVisibility $catalogVisibility = CatalogVisibility::HIDDEN,
         private ?string $brandId = null,
         private ?string $seasonId = null,
+        private ?string $description = null,
     ) {
+        self::assertValidName($name);
+        self::assertValidBaseSku($baseSku);
+        self::assertValidSlug($slug);
+    }
+
+    private static function assertValidName(string $name): void
+    {
+        if ($name === '') {
+            throw new \InvalidArgumentException('Product name must not be empty.');
+        }
+    }
+
+    private static function assertValidBaseSku(string $baseSku): void
+    {
         if ($baseSku === '') {
             throw new \InvalidArgumentException('Product baseSku must not be empty.');
         }
-
-        self::assertValidSlug($slug);
     }
 
     /**
@@ -205,6 +219,7 @@ final class Product
         ?string $brandId = null,
         ?string $seasonId = null,
         array $descriptiveAttributes = [],
+        ?string $description = null,
     ): self {
         $product = new self(
             id: $id,
@@ -216,6 +231,7 @@ final class Product
             catalogVisibility: $catalogVisibility,
             brandId: $brandId,
             seasonId: $seasonId,
+            description: $description,
         );
 
         if ($variationAxes !== []) {
@@ -260,9 +276,31 @@ final class Product
         return $this->name;
     }
 
+    public function rename(string $newName): void
+    {
+        self::assertValidName($newName);
+        $this->name = $newName;
+    }
+
     public function baseSku(): string
     {
         return $this->baseSku;
+    }
+
+    /**
+     * Changes this Product's base_sku after creation, subject to the
+     * same validation as construction (assertValidBaseSku()) — mirrors
+     * changeSlug()'s shape. Deliberately does NOT touch a SIMPLE
+     * product's Universal variation sku (which happens to equal
+     * baseSku at creation time, per createSimple()'s own docblock) —
+     * the two are only coupled at the moment of creation; changing one
+     * afterward does not retroactively rename the other. A caller that
+     * wants both changed makes both calls explicitly.
+     */
+    public function changeBaseSku(string $newBaseSku): void
+    {
+        self::assertValidBaseSku($newBaseSku);
+        $this->baseSku = $newBaseSku;
     }
 
     public function slug(): string
@@ -320,6 +358,24 @@ final class Product
         $this->seasonId = $seasonId;
     }
 
+    public function description(): ?string
+    {
+        return $this->description;
+    }
+
+    /**
+     * Sets or clears this Product's description. Passing null is a
+     * valid, meaningful "clear the description" operation, not an
+     * error — same posture as assignBrand()/assignSeason() above. No
+     * validation beyond the string|null type itself: unlike name/
+     * baseSku/slug, an empty or missing description is always a valid
+     * state (it is simply not shown), never an invariant violation.
+     */
+    public function changeDescription(?string $newDescription): void
+    {
+        $this->description = $newDescription;
+    }
+
     public function type(): ProductType
     {
         return $this->type;
@@ -328,6 +384,72 @@ final class Product
     public function status(): ProductStatus
     {
         return $this->status;
+    }
+
+    /**
+     * DRAFT/ARCHIVED -> ACTIVE. Guarded for a VARIABLE product only: a
+     * SIMPLE product's single Universal variation always exists from
+     * the moment createSimple() runs (it is never deleted, only
+     * archived alongside the whole product elsewhere), so this branch
+     * can structurally never fire for one. A VARIABLE product with no
+     * variations at all, or only ARCHIVED ones, would put an empty
+     * listing in front of customers — see
+     * CannotPublishEmptyVariableProductException's own docblock.
+     * Idempotent: calling this while already ACTIVE simply re-asserts
+     * the same status (still subject to the same guard).
+     */
+    public function publish(): void
+    {
+        if ($this->type === ProductType::VARIABLE && ! $this->hasAnyNonArchivedStandardVariation()) {
+            throw CannotPublishEmptyVariableProductException::forProduct($this);
+        }
+
+        $this->status = ProductStatus::ACTIVE;
+    }
+
+    /**
+     * Any status -> DRAFT. Unconditional: taking a Product offline back
+     * to draft is always safe regardless of its variations, unlike
+     * publish() — idempotent from DRAFT itself too.
+     */
+    public function markAsDraft(): void
+    {
+        $this->status = ProductStatus::DRAFT;
+    }
+
+    /**
+     * Any status -> ARCHIVED. Unconditional, same reasoning as
+     * markAsDraft() — idempotent from ARCHIVED itself too. Deliberately
+     * does not cascade to this Product's own Variations (unlike
+     * forceConvertToSimple(), which archives them as part of a type
+     * change) — archiving the Product record itself and archiving its
+     * individual Variations are separate operations left to the caller.
+     */
+    public function archive(): void
+    {
+        $this->status = ProductStatus::ARCHIVED;
+    }
+
+    /**
+     * True if this Product has at least one STANDARD variation whose
+     * status is not ARCHIVED — the "has something sellable" check
+     * publish() relies on. A separate, purpose-built helper from
+     * hasAnyStandardVariation() above (which checks by TYPE only,
+     * regardless of status, for declareVariationAxes()'s different
+     * concern) and from forceConvertToSimple()'s own inline
+     * STANDARD-and-not-ARCHIVED loop (which mutates rather than
+     * reports) — no existing helper already matched this exact boolean
+     * check, so this is new, not a duplicate of one.
+     */
+    private function hasAnyNonArchivedStandardVariation(): bool
+    {
+        foreach ($this->variations as $variation) {
+            if ($variation->type() === VariationType::STANDARD && $variation->status() !== VariationStatus::ARCHIVED) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public function catalogVisibility(): CatalogVisibility
