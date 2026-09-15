@@ -23,6 +23,7 @@ return [
         'catalog_visibility' => 'Catalog visibility',
         'brand_id' => 'Brand',
         'season_id' => 'Season',
+        'product_group_id' => 'Product group',
         'categories' => 'Categories',
         'tags' => 'Tags',
         'is_purchasable' => 'Purchasable',

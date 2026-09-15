@@ -55,6 +55,11 @@ class ProductModel extends Model
         return $this->belongsTo(SeasonModel::class, 'season_id');
     }
 
+    public function productGroup(): BelongsTo
+    {
+        return $this->belongsTo(ProductGroupModel::class, 'product_group_id');
+    }
+
     /**
      * Read-only — admin-panel-design.md §7's own explicit instruction:
      * added purely so Filament's table filters/SelectFilters have

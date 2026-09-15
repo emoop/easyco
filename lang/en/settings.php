@@ -15,4 +15,12 @@ return [
         'saved_notification' => 'Settings saved',
     ],
 
+    'catalog' => [
+        'title' => 'Catalog',
+        'field_label' => 'Require product group',
+        'field_help' => 'When on, the "Product group" field becomes required when creating/editing a product.',
+        'save_label' => 'Save',
+        'saved_notification' => 'Settings saved',
+    ],
+
 ];

@@ -83,6 +83,7 @@ class CreateProduct extends CreateRecord
         $product->setCatalogVisibility(CatalogVisibility::from($data['catalog_visibility'] ?? CatalogVisibility::HIDDEN->value));
         $product->assignBrand($data['brand_id'] ?? null);
         $product->assignSeason($data['season_id'] ?? null);
+        $product->assignProductGroup($data['product_group_id'] ?? null);
 
         $universal = $product->universalVariation();
 
@@ -155,7 +156,7 @@ class CreateProduct extends CreateRecord
                     ->danger()
                     ->send();
 
-                throw (new Halt())->rollBackDatabaseTransaction();
+                throw (new Halt)->rollBackDatabaseTransaction();
             }
 
             $asset = ProductResource::createMediaAsset($storedPath);

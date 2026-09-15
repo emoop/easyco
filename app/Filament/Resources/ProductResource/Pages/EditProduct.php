@@ -133,6 +133,11 @@ class EditProduct extends EditRecord
             $product->assignSeason($newSeasonId);
         }
 
+        $newProductGroupId = $data['product_group_id'] ?? null;
+        if ($product->productGroupId() !== $newProductGroupId) {
+            $product->assignProductGroup($newProductGroupId);
+        }
+
         $universal = $product->universalVariation();
 
         $newBarcode = filled($data['barcode'] ?? null) ? $data['barcode'] : null;
@@ -276,7 +281,7 @@ class EditProduct extends EditRecord
                     ->danger()
                     ->send();
 
-                throw (new Halt())->rollBackDatabaseTransaction();
+                throw (new Halt)->rollBackDatabaseTransaction();
             }
 
             $asset = ProductResource::createMediaAsset($path);

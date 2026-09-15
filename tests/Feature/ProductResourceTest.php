@@ -7,6 +7,7 @@ use App\Filament\Resources\ProductResource\Pages\CreateProduct;
 use App\Filament\Resources\ProductResource\Pages\EditProduct;
 use App\Filament\Resources\ProductResource\Pages\ListProducts;
 use App\Filament\StaffPanelUser;
+use App\Settings\Contracts\SiteSettingsRepository;
 use EasyCo\Catalog\AttributeDefinition;
 use EasyCo\Catalog\AttributeValue;
 use EasyCo\Catalog\Brand;
@@ -36,6 +37,7 @@ use EasyCo\Staff\Staff;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -342,7 +344,7 @@ class ProductResourceTest extends TestCase
     {
         $this->actingAsPanelAdministrator();
 
-        \Illuminate\Support\Facades\Storage::fake(config('services.media.default_disk', 'public'));
+        Storage::fake(config('services.media.default_disk', 'public'));
 
         $file1 = UploadedFile::fake()->image('photo1.jpg');
         $file2 = UploadedFile::fake()->image('photo2.jpg');
@@ -371,7 +373,7 @@ class ProductResourceTest extends TestCase
     {
         $this->actingAsPanelAdministrator();
 
-        \Illuminate\Support\Facades\Storage::fake(config('services.media.default_disk', 'public'));
+        Storage::fake(config('services.media.default_disk', 'public'));
 
         $max = (int) config('services.media.max_photos_per_product', 10);
         $files = [];
@@ -498,5 +500,43 @@ class ProductResourceTest extends TestCase
         }
 
         $this->assertArrayNotHasKey('delete', ProductResource::getPages());
+    }
+
+    public function test_creating_without_a_group_succeeds_when_the_setting_is_off_by_default(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        Livewire::test(CreateProduct::class)
+            ->fillForm([
+                'name' => 'No Group Required',
+                'slug' => 'no-group-required',
+                'base_sku' => 'SKU-NOGROUP',
+                'status' => ProductStatus::DRAFT->value,
+                'catalog_visibility' => CatalogVisibility::HIDDEN->value,
+            ])
+            ->call('create')
+            ->assertHasNoFormErrors();
+
+        $this->assertNotNull(ProductModel::where('slug', 'no-group-required')->first());
+    }
+
+    public function test_creating_without_a_group_fails_form_validation_when_the_setting_is_on(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        app(SiteSettingsRepository::class)->set('catalog.product_group_required', '1');
+
+        Livewire::test(CreateProduct::class)
+            ->fillForm([
+                'name' => 'Group Required',
+                'slug' => 'group-required',
+                'base_sku' => 'SKU-GROUPREQ',
+                'status' => ProductStatus::DRAFT->value,
+                'catalog_visibility' => CatalogVisibility::HIDDEN->value,
+            ])
+            ->call('create')
+            ->assertHasErrors(['data.product_group_id' => 'required']);
+
+        $this->assertNull(ProductModel::where('slug', 'group-required')->first());
     }
 }

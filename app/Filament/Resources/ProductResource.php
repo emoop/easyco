@@ -8,6 +8,7 @@ use App\Filament\Resources\ProductResource\Pages\CreateProduct;
 use App\Filament\Resources\ProductResource\Pages\EditProduct;
 use App\Filament\Resources\ProductResource\Pages\ListProducts;
 use App\Filament\Resources\ProductResource\Pages\ViewProduct;
+use App\Settings\Contracts\SiteSettingsRepository;
 use BackedEnum;
 use EasyCo\Catalog\AttributeDefinition;
 use EasyCo\Catalog\AttributeValue;
@@ -18,6 +19,7 @@ use EasyCo\Catalog\Persistence\Eloquent\AttributeDefinitionModel;
 use EasyCo\Catalog\Persistence\Eloquent\AttributeValueModel;
 use EasyCo\Catalog\Persistence\Eloquent\BrandModel;
 use EasyCo\Catalog\Persistence\Eloquent\CategoryModel;
+use EasyCo\Catalog\Persistence\Eloquent\ProductGroupModel;
 use EasyCo\Catalog\Persistence\Eloquent\ProductModel;
 use EasyCo\Catalog\Persistence\Eloquent\SeasonModel;
 use EasyCo\Catalog\Persistence\Eloquent\TagModel;
@@ -37,6 +39,7 @@ use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
+use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\Tabs;
 use Filament\Schemas\Components\Tabs\Tab;
 use Filament\Schemas\Schema;
@@ -67,7 +70,7 @@ class ProductResource extends Resource
 
     protected static ?string $model = ProductModel::class;
 
-    protected static string | BackedEnum | null $navigationIcon = 'heroicon-o-cube';
+    protected static string|BackedEnum|null $navigationIcon = 'heroicon-o-cube';
 
     public static function getModelLabel(): string
     {
@@ -124,7 +127,7 @@ class ProductResource extends Resource
         ]);
     }
 
-    /** @return array<int, \Filament\Schemas\Components\Component> */
+    /** @return array<int, Component> */
     protected static function generalTabComponents(): array
     {
         return [
@@ -173,6 +176,14 @@ class ProductResource extends Resource
                 ->label(__('products.fields.season_id'))
                 ->options(fn (): array => SeasonModel::pluck('name', 'id')->all())
                 ->searchable(),
+            Select::make('product_group_id')
+                ->label(__('products.fields.product_group_id'))
+                ->options(fn (): array => ProductGroupModel::pluck('name', 'id')->all())
+                ->searchable()
+                // Read fresh on each render, not cached at class-load
+                // time — mirrors why getModelLabel() etc. are methods,
+                // not static properties (admin-panel-design.md §13.4).
+                ->required(fn (): bool => (bool) (app(SiteSettingsRepository::class)->get('catalog.product_group_required') ?? false)),
             Select::make('categories')
                 ->label(__('products.fields.categories'))
                 ->multiple()
@@ -195,7 +206,7 @@ class ProductResource extends Resource
      * itself throws for that type, so rendering a field that could never
      * successfully submit would be worse than not offering it.
      *
-     * @return array<int, \Filament\Schemas\Components\Component>
+     * @return array<int, Component>
      */
     protected static function attributesTabComponents(): array
     {
@@ -233,7 +244,7 @@ class ProductResource extends Resource
         return AttributeDefinitionModel::where('type', '!=', AttributeType::MULTISELECT->value)->get();
     }
 
-    /** @return array<int, \Filament\Schemas\Components\Component> */
+    /** @return array<int, Component> */
     protected static function mediaTabComponents(): array
     {
         return [
@@ -321,6 +332,9 @@ class ProductResource extends Resource
                 SelectFilter::make('season_id')
                     ->label(__('products.fields.season_id'))
                     ->options(fn (): array => SeasonModel::pluck('name', 'id')->all()),
+                SelectFilter::make('product_group_id')
+                    ->label(__('products.fields.product_group_id'))
+                    ->options(fn (): array => ProductGroupModel::pluck('name', 'id')->all()),
             ])
             ->recordActions([
                 ViewAction::make(),
@@ -349,6 +363,8 @@ class ProductResource extends Resource
                 ->label(__('products.fields.brand_id')),
             TextEntry::make('season.name')
                 ->label(__('products.fields.season_id')),
+            TextEntry::make('productGroup.name')
+                ->label(__('products.fields.product_group_id')),
             TextEntry::make('created_at')
                 ->dateTime(),
         ]);

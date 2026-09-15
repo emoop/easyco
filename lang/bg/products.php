@@ -23,6 +23,7 @@ return [
         'catalog_visibility' => 'Видимост в каталога',
         'brand_id' => 'Марка',
         'season_id' => 'Сезон',
+        'product_group_id' => 'Артикулна група',
         'categories' => 'Категории',
         'tags' => 'Етикети',
         'is_purchasable' => 'Продаваем',
