@@ -393,7 +393,15 @@ class ProductResource extends Resource
                     static::duplicateAction(),
                 ]),
             ])
-            ->recordUrl(fn (ProductModel $record): string => static::getUrl('view', ['record' => $record]));
+            // Edit by default on row click — the most-used action on
+            // this list — falling back to View only for a staff member
+            // without edit rights (canEdit() is the same real
+            // Staff::can(Permission) check EditAction's own ->visible()
+            // above already uses, so this never routes a click
+            // somewhere the three-dot menu itself would refuse).
+            ->recordUrl(fn (ProductModel $record): string => static::canEdit($record)
+                ? static::getUrl('edit', ['record' => $record])
+                : static::getUrl('view', ['record' => $record]));
     }
 
     public static function infolist(Schema $schema): Schema

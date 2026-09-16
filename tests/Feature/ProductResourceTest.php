@@ -39,6 +39,8 @@ use EasyCo\Media\Persistence\Eloquent\MediaAssetModel;
 use EasyCo\Staff\Contracts\PasswordHasher;
 use EasyCo\Staff\Contracts\RoleRepository;
 use EasyCo\Staff\Contracts\StaffRepository;
+use EasyCo\Staff\Enums\Permission;
+use EasyCo\Staff\Role;
 use EasyCo\Staff\Seeders\StaffSystemRolesSeeder;
 use EasyCo\Staff\Staff;
 use Filament\Actions\ActionGroup;
@@ -474,7 +476,12 @@ class ProductResourceTest extends TestCase
         $this->get(ProductResource::getUrl('edit', ['record' => $productModel->id]))->assertOk();
     }
 
-    public function test_a_products_row_navigates_to_view_and_edit_button_is_visible(): void
+    /**
+     * Edit is the most-used action on this list, so a row click routes
+     * there by default for anyone who can edit — the three-dot
+     * ActionGroup (View/Edit/Duplicate) stays available regardless.
+     */
+    public function test_a_products_row_navigates_to_edit_by_default_for_a_staff_member_who_can_edit(): void
     {
         $this->actingAsPanelAdministrator();
 
@@ -488,10 +495,45 @@ class ProductResourceTest extends TestCase
         $component->assertTableActionVisible('edit', $productModel);
 
         $recordUrl = $component->instance()->getTable()->getRecordUrl($productModel);
+        $this->assertSame(ProductResource::getUrl('edit', ['record' => $productModel]), $recordUrl);
+
+        $this->get($recordUrl)->assertOk();
+        $this->get(ProductResource::getUrl('view', ['record' => $productModel]))->assertOk();
+    }
+
+    /**
+     * A real regression guard for the recordUrl() ternary itself: every
+     * shipped system role (Administrator/Manager/Product Entry) happens
+     * to hold PRODUCT_MANAGE, so this proves the View-only fallback
+     * branch with a custom Role that deliberately does NOT — otherwise
+     * a swapped ternary (or one hardcoded to always resolve 'edit')
+     * would pass every other test in this file undetected.
+     */
+    public function test_a_products_row_falls_back_to_view_for_a_staff_member_who_cannot_edit(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        Livewire::test(CreateProduct::class)
+            ->fillForm(['name' => 'View Only Product', 'slug' => 'view-only-product', 'base_sku' => 'SKU-VIEWONLY', 'status' => ProductStatus::DRAFT->value, 'catalog_visibility' => CatalogVisibility::HIDDEN->value])
+            ->call('create')
+            ->assertHasNoFormErrors();
+        $productModel = ProductModel::where('slug', 'view-only-product')->firstOrFail();
+
+        $viewOnlyRole = Role::create('View Only', [Permission::PRODUCT_VIEW]);
+        app(RoleRepository::class)->save($viewOnlyRole);
+
+        $staff = Staff::create('view.only@example.com', app(PasswordHasher::class)->hash('password123'), 'View Only', $viewOnlyRole);
+        app(StaffRepository::class)->save($staff);
+        $this->actingAs(StaffPanelUser::find($staff->id()), 'staff');
+
+        $component = Livewire::test(ListProducts::class);
+        $component->assertTableActionHidden('edit', $productModel);
+
+        $recordUrl = $component->instance()->getTable()->getRecordUrl($productModel);
         $this->assertSame(ProductResource::getUrl('view', ['record' => $productModel]), $recordUrl);
 
         $this->get($recordUrl)->assertOk();
-        $this->get(ProductResource::getUrl('edit', ['record' => $productModel]))->assertOk();
+        $this->get(ProductResource::getUrl('edit', ['record' => $productModel]))->assertForbidden();
     }
 
     public function test_no_delete_action_exists_anywhere_on_this_resource(): void
