@@ -63,7 +63,13 @@ class EditProduct extends EditRecord
             app(ProductTagRepository::class)->findByProductId($productId)
         );
 
-        $product = app(ProductRepository::class)->findById($productId);
+        // findByIdWithVariations(), not findById(): universalVariation()
+        // below needs the real $variations array loaded — findById()
+        // alone always leaves it empty, which would make
+        // universalVariation() return null unconditionally (not just
+        // for a non-SIMPLE product) and crash the very seeding this
+        // method exists to do.
+        $product = app(ProductRepository::class)->findByIdWithVariations($productId);
 
         $descriptive = [];
         foreach ($product->descriptiveAttributes() as $definitionId => $value) {
@@ -75,6 +81,14 @@ class EditProduct extends EditRecord
             fn ($pivot) => MediaAssetModel::find($pivot->mediaId())?->path,
             app(ProductMediaRepository::class)->findByProductId($productId)
         );
+
+        // barcode/is_purchasable live on the universal Variation, not
+        // ProductModel — without this, every Edit form open silently
+        // fell back to the field's own ->default() regardless of the
+        // real saved value (the real bug this fixes).
+        $universal = $product->universalVariation();
+        $data['is_purchasable'] = $universal->isPurchasable();
+        $data['barcode'] = $universal->barcode();
 
         return $data;
     }

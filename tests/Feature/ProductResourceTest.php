@@ -735,4 +735,31 @@ class ProductResourceTest extends TestCase
     {
         return __('products.duplicate_suffix');
     }
+
+    /**
+     * Regression test for a real bug: mutateFormDataBeforeFill() never
+     * seeded is_purchasable/barcode (both live on the universal
+     * Variation, not ProductModel), so every Edit form open silently
+     * fell back to the field's own ->default() regardless of the real
+     * saved value — this must fail against the pre-fix code (the form
+     * would show is_purchasable=true, barcode=null instead of the real
+     * saved false/'9998887776665') and pass after it.
+     */
+    public function test_the_edit_form_is_seeded_with_the_products_real_saved_barcode_and_is_purchasable(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        $product = Product::createSimple('Seeded Values Product', 'SKU-SEEDED', 'seeded-values-product');
+        $product->universalVariation()->setBarcode('9998887776665');
+        $product->universalVariation()->setPurchasable(false);
+        app(ProductRepository::class)->save($product);
+
+        $productModel = ProductModel::where('slug', 'seeded-values-product')->firstOrFail();
+
+        Livewire::test(EditProduct::class, ['record' => $productModel->id])
+            ->assertFormSet([
+                'barcode' => '9998887776665',
+                'is_purchasable' => false,
+            ]);
+    }
 }
