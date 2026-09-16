@@ -43,6 +43,9 @@ use Filament\Forms\Components\Toggle;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Component;
+use Filament\Schemas\Components\Grid;
+use Filament\Schemas\Components\Group;
+use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Tabs;
 use Filament\Schemas\Components\Tabs\Tab;
 use Filament\Schemas\Schema;
@@ -118,17 +121,53 @@ class ProductResource extends Resource
         return Permission::PRODUCT_MANAGE;
     }
 
+    /**
+     * Two columns, per admin-panel-design.md's own "the user scrolls a
+     * lot" complaint about the old single-column, three-tab layout:
+     * Media/Categories/Tags/Season sat in an otherwise-empty Media tab
+     * or buried at the bottom of General, both well below the fold.
+     * Main column (2/3): the same Tabs as before, minus the Media tab
+     * (General/Attributes only — General itself also lost
+     * categories/tags/season_id, now in the sidebar). Sidebar (1/3):
+     * Media/Categories/Tags/Season as their own Sections, always
+     * visible without a tab click or a scroll — the real fix for the
+     * "empty space, lots of scrolling" complaint.
+     *
+     * ->columns(1) ON THE ROOT $schema ITSELF — real, confirmed cause of
+     * a second bug found while checking this in a real browser: Filament
+     * EditRecord/CreateRecord's own EditRecord::defaultForm() calls
+     * $schema->columns(2) automatically whenever hasCustomColumns() is
+     * still false (vendor/filament/filament/src/Resources/Pages/
+     * EditRecord.php), i.e. whenever nothing has called ->columns() on
+     * the ROOT schema. That silently wrapped this whole Grid(3) —
+     * despite Grid(3) itself being correct — inside ONE half of an
+     * outer, framework-imposed 2-column grid, leaving the other half
+     * empty (confirmed in real rendered HTML: an extra "fi-grid
+     * lg:fi-grid-cols" ancestor with --cols-lg: repeat(2, minmax(0,
+     * 1fr)) sitting above Grid(3)'s own). Declaring ->columns(1) here
+     * makes hasCustomColumns() true and suppresses that default, so
+     * Grid(3) is the outermost column split and gets the full page
+     * width.
+     */
     public static function form(Schema $schema): Schema
     {
-        return $schema->components([
-            Tabs::make('Product')
-                ->tabs([
-                    Tab::make(__('products.tabs.general'))
-                        ->schema(static::generalTabComponents()),
-                    Tab::make(__('products.tabs.attributes'))
-                        ->schema(static::attributesTabComponents()),
-                    Tab::make(__('products.tabs.media'))
-                        ->schema(static::mediaTabComponents()),
+        return $schema->columns(1)->components([
+            Grid::make(3)
+                ->schema([
+                    Group::make()
+                        ->columnSpan(2)
+                        ->schema([
+                            Tabs::make('Product')
+                                ->tabs([
+                                    Tab::make(__('products.tabs.general'))
+                                        ->schema(static::generalTabComponents()),
+                                    Tab::make(__('products.tabs.attributes'))
+                                        ->schema(static::attributesTabComponents()),
+                                ]),
+                        ]),
+                    Group::make()
+                        ->columnSpan(1)
+                        ->schema(static::sidebarComponents()),
                 ]),
         ]);
     }
@@ -178,10 +217,6 @@ class ProductResource extends Resource
                 ->label(__('products.fields.brand_id'))
                 ->options(fn (): array => BrandModel::pluck('name', 'id')->all())
                 ->searchable(),
-            Select::make('season_id')
-                ->label(__('products.fields.season_id'))
-                ->options(fn (): array => SeasonModel::pluck('name', 'id')->all())
-                ->searchable(),
             Select::make('product_group_id')
                 ->label(__('products.fields.product_group_id'))
                 ->options(fn (): array => ProductGroupModel::pluck('name', 'id')->all())
@@ -190,19 +225,49 @@ class ProductResource extends Resource
                 // time — mirrors why getModelLabel() etc. are methods,
                 // not static properties (admin-panel-design.md §13.4).
                 ->required(fn (): bool => (bool) (app(SiteSettingsRepository::class)->get('catalog.product_group_required') ?? false)),
-            Select::make('categories')
-                ->label(__('products.fields.categories'))
-                ->multiple()
-                // Tree order/indentation, not a flat pluck() — reuses
-                // CategoryResource's own hierarchicalOptions() rather
-                // than duplicating the tree walk here.
-                ->options(fn (): array => CategoryResource::hierarchicalOptions())
-                ->searchable(),
-            Select::make('tags')
-                ->label(__('products.fields.tags'))
-                ->multiple()
-                ->options(fn (): array => TagModel::pluck('name', 'id')->all())
-                ->searchable(),
+        ];
+    }
+
+    /**
+     * The sidebar column — see form()'s own docblock. Each field keeps
+     * its own real name (categories/tags/season_id) exactly as before;
+     * only where it renders moved, not the underlying form data shape
+     * CreateProduct/EditProduct already read.
+     *
+     * @return array<int, Component>
+     */
+    protected static function sidebarComponents(): array
+    {
+        return [
+            Section::make(__('products.tabs.media'))
+                ->schema(static::mediaComponents()),
+            Section::make(__('products.fields.categories'))
+                ->schema([
+                    Select::make('categories')
+                        ->hiddenLabel()
+                        ->multiple()
+                        // Tree order/indentation, not a flat pluck() —
+                        // reuses CategoryResource's own
+                        // hierarchicalOptions() rather than duplicating
+                        // the tree walk here.
+                        ->options(fn (): array => CategoryResource::hierarchicalOptions())
+                        ->searchable(),
+                ]),
+            Section::make(__('products.fields.tags'))
+                ->schema([
+                    Select::make('tags')
+                        ->hiddenLabel()
+                        ->multiple()
+                        ->options(fn (): array => TagModel::pluck('name', 'id')->all())
+                        ->searchable(),
+                ]),
+            Section::make(__('products.fields.season_id'))
+                ->schema([
+                    Select::make('season_id')
+                        ->hiddenLabel()
+                        ->options(fn (): array => SeasonModel::pluck('name', 'id')->all())
+                        ->searchable(),
+                ]),
         ];
     }
 
@@ -254,7 +319,7 @@ class ProductResource extends Resource
     }
 
     /** @return array<int, Component> */
-    protected static function mediaTabComponents(): array
+    protected static function mediaComponents(): array
     {
         return [
             FileUpload::make('photos')
