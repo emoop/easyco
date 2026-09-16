@@ -14,11 +14,12 @@ final class EloquentProductMediaRepository implements ProductMediaRepository
     {
         $model = $productMedia->id() !== null
             ? ProductMediaModel::findOrFail($productMedia->id())
-            : new ProductMediaModel();
+            : new ProductMediaModel;
 
         $model->product_id = $productMedia->productId();
         $model->media_id = $productMedia->mediaId();
         $model->sort_order = $productMedia->sortOrder();
+        $model->autoplay = $productMedia->autoplay();
 
         try {
             $model->save();
@@ -97,6 +98,7 @@ final class EloquentProductMediaRepository implements ProductMediaRepository
             productId: (string) $model->product_id,
             mediaId: (string) $model->media_id,
             sortOrder: $model->sort_order,
+            autoplay: (bool) $model->autoplay,
         );
     }
 }

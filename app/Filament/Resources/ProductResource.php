@@ -229,9 +229,11 @@ class ProductResource extends Resource
     }
 
     /**
-     * The sidebar column — see form()'s own docblock. Each field keeps
-     * its own real name (categories/tags/season_id) exactly as before;
-     * only where it renders moved, not the underlying form data shape
+     * The sidebar column — see form()'s own docblock. Order (Categories,
+     * Tags, Season, Main Photo, Gallery Photos, Video) is this task's
+     * own explicit requirement. Each taxonomy field keeps its own real
+     * name (categories/tags/season_id) exactly as before; only where it
+     * renders moved, not the underlying form data shape
      * CreateProduct/EditProduct already read.
      *
      * @return array<int, Component>
@@ -239,8 +241,6 @@ class ProductResource extends Resource
     protected static function sidebarComponents(): array
     {
         return [
-            Section::make(__('products.tabs.media'))
-                ->schema(static::mediaComponents()),
             Section::make(__('products.fields.categories'))
                 ->schema([
                     Select::make('categories')
@@ -268,6 +268,12 @@ class ProductResource extends Resource
                         ->options(fn (): array => SeasonModel::pluck('name', 'id')->all())
                         ->searchable(),
                 ]),
+            Section::make(__('products.fields.main_photo'))
+                ->schema(static::mainPhotoComponents()),
+            Section::make(__('products.fields.gallery_photos'))
+                ->schema(static::galleryPhotoComponents()),
+            Section::make(__('products.fields.video'))
+                ->schema(static::videoComponents()),
         ];
     }
 
@@ -318,28 +324,42 @@ class ProductResource extends Resource
         return AttributeDefinitionModel::where('type', '!=', AttributeType::MULTISELECT->value)->get();
     }
 
-    /** @return array<int, Component> */
-    protected static function mediaComponents(): array
+    /**
+     * The single featured/representative photo — a real, separate
+     * FileUpload field for this task's own WooCommerce-style split, but
+     * NOT a separate underlying concept: ProductMedia's own class
+     * docblock records a deliberate "NO is_primary field — the item at
+     * sortOrder = 0 is implicitly the primary photo" decision. This
+     * field is edited independently for a cleaner admin UI, but is
+     * merged with galleryPhotoComponents()'s own array into ONE ordered
+     * MediaType::IMAGE collection before ever reaching
+     * CreateProduct::attachMedia()/EditProduct::syncMedia() — this
+     * field's value always becomes sort_order 0, never a second,
+     * competing "is primary" concept.
+     *
+     * @return array<int, Component>
+     */
+    protected static function mainPhotoComponents(): array
     {
         return [
-            FileUpload::make('photos')
-                ->label(__('products.fields.photos'))
-                ->multiple()
-                ->reorderable()
+            FileUpload::make('main_photo')
+                ->hiddenLabel()
                 ->image()
-                // Deliberately NO ->maxFiles(): confirmed against a real
-                // failing test that Filament's own maxFiles() is hard,
-                // blocking Livewire field validation — it would reject
-                // an over-limit submission with its own generic message
-                // ("must not have more than N items") before
-                // handleRecordCreation() ever runs, making
-                // ProductMediaCountGuard's real, specific
-                // MediaLimitExceededException message (what this task
-                // explicitly requires the user to see) unreachable. The
-                // guard inside CreateProduct::attachPhotos()/
-                // EditProduct::syncPhotos() is the one and only real
-                // enforcement point now, matching the API's own
-                // ProductMediaController::store() behavior exactly.
+                // extraAttributes() class hook — admin-product-media.css
+                // targets `.ec-product-main-photo`/`.ec-product-video`
+                // to add horizontal padding around this single large
+                // preview tile, which Filament's own FileUpload panel
+                // otherwise renders edge-to-edge.
+                ->extraAttributes(['class' => 'ec-product-main-photo'])
+                ->placeholder(static::mediaUploadPlaceholder('services.media.max_image_size_kb', 10240))
+                // Real enforcement, not just informational placeholder
+                // text — unlike ->maxFiles() on gallery_photos below,
+                // ->maxSize() has no MediaLimitExceededException-style
+                // domain message it could shadow; Filament's own
+                // "must not be greater than X KB" error is the real,
+                // only enforcement here, same config key as the
+                // placeholder text above so the two can never disagree.
+                ->maxSize((int) config('services.media.max_image_size_kb', 10240))
                 ->disk(config('services.media.default_disk', 'public'))
                 // Mirrors BrandResource's own createLogoMediaAsset()
                 // sequence exactly — routes every uploaded file through
@@ -351,6 +371,117 @@ class ProductResource extends Resource
                         ->path;
                 }),
         ];
+    }
+
+    /**
+     * The rest of the product's photos — small thumbnails, 3 per row
+     * (Filament's own 'grid' panelLayout already renders 3 columns at
+     * the 'lg' breakpoint, confirmed against its shipped CSS; no custom
+     * grid math needed). See mainPhotoComponents()'s own docblock for
+     * why this is still just the SAME underlying MediaType::IMAGE
+     * collection as the main photo, split at the UI layer only.
+     *
+     * @return array<int, Component>
+     */
+    protected static function galleryPhotoComponents(): array
+    {
+        return [
+            FileUpload::make('gallery_photos')
+                ->hiddenLabel()
+                ->multiple()
+                ->reorderable()
+                ->image()
+                ->panelLayout('grid')
+                ->placeholder(static::mediaUploadPlaceholder('services.media.max_image_size_kb', 10240))
+                ->maxSize((int) config('services.media.max_image_size_kb', 10240))
+                // Deliberately NO ->maxFiles(): confirmed against a real
+                // failing test that Filament's own maxFiles() is hard,
+                // blocking Livewire field validation — it would reject
+                // an over-limit submission with its own generic message
+                // ("must not have more than N items") before
+                // handleRecordCreation() ever runs, making
+                // ProductMediaCountGuard's real, specific
+                // MediaLimitExceededException message (what this task
+                // explicitly requires the user to see) unreachable. The
+                // guard inside CreateProduct::attachMedia()/
+                // EditProduct::syncMedia() is the one and only real
+                // enforcement point now, matching the API's own
+                // ProductMediaController::store() behavior exactly.
+                ->disk(config('services.media.default_disk', 'public'))
+                ->saveUploadedFileUsing(function (TemporaryUploadedFile $file): string {
+                    return app(MediaStorageAdapter::class)
+                        ->store($file->get(), $file->getClientOriginalName())
+                        ->path;
+                }),
+        ];
+    }
+
+    /**
+     * media-domain-design.md §4/§8: VIDEO is a real, supported
+     * MediaAsset type — stored exactly as uploaded, no processing
+     * pipeline (§4, a deliberate v1 scope decision, not a gap). Shares
+     * the SAME catalog_product_media pivot as photos (§2.1/§8 — the
+     * pivot isn't photo-specific), only ever created as
+     * MediaType::VIDEO — see EditProduct::syncMedia()/
+     * CreateProduct::attachMedia(). Single video per product (this
+     * task's own explicit scope, matching real usage — see this
+     * class's docblock/media-domain-design.md §4's "video is used
+     * sparingly" note) — video_autoplay below applies to this one
+     * attachment, stored on ITS OWN ProductMedia pivot row (§2.1: the
+     * per-attachment record, not MediaAsset itself — see that class's
+     * own docblock).
+     *
+     * @return array<int, Component>
+     */
+    protected static function videoComponents(): array
+    {
+        return [
+            FileUpload::make('video')
+                ->hiddenLabel()
+                ->acceptedFileTypes(['video/*'])
+                ->extraAttributes(['class' => 'ec-product-video'])
+                ->placeholder(static::mediaUploadPlaceholder('services.media.max_video_size_kb', 102400))
+                ->maxSize((int) config('services.media.max_video_size_kb', 102400))
+                ->disk(config('services.media.default_disk', 'public'))
+                ->saveUploadedFileUsing(function (TemporaryUploadedFile $file): string {
+                    return app(MediaStorageAdapter::class)
+                        ->store($file->get(), $file->getClientOriginalName())
+                        ->path;
+                }),
+            Toggle::make('video_autoplay')
+                ->label(__('products.fields.video_autoplay'))
+                ->default(false),
+        ];
+    }
+
+    /**
+     * "Drag & Drop your files or Browse (max N MB)" — Filament's own
+     * FileUpload ->placeholder() maps directly to FilePond's own
+     * labelIdle option (confirmed against the installed JS source,
+     * vendor/filament/forms/resources/js/components/file-upload.js),
+     * the text shown ABOVE the drag/drop button only while the field is
+     * empty — exactly this task's own request, and FilePond's default
+     * labelIdle already embeds the "Browse" action as this same
+     * `filepond--label-action`-classed span, replicated here so
+     * providing a custom placeholder doesn't silently lose that
+     * click-to-browse behavior.
+     */
+    protected static function mediaUploadPlaceholder(string $configKey, int $defaultKb): string
+    {
+        $maxMb = round(config($configKey, $defaultKb) / 1024, 1);
+
+        // number_format(), not a bare (string) cast, before trimming
+        // trailing zeros — a real, confirmed bug caught in a live
+        // browser check: rtrim(..., '0') on a plain "10"/"100" string
+        // (no decimal point at all, since PHP casts a whole float like
+        // 10.0 to "10") strips a trailing zero from the INTEGER part
+        // itself, silently turning 10 MB / 100 MB into "1". Forcing one
+        // decimal place first (number_format($maxMb, 1, '.', '')
+        // -> "10.0"/"100.0") gives rtrim() an actual fractional zero to
+        // trim, protecting the integer digits.
+        $formatted = rtrim(rtrim(number_format($maxMb, 1, '.', ''), '0'), '.');
+
+        return __('products.fields.media_upload_hint', ['max' => $formatted]);
     }
 
     public static function table(Table $table): Table
@@ -622,17 +753,29 @@ class ProductResource extends Resource
      * Creates a real MediaAsset for an already-stored file path — mirrors
      * BrandResource::createLogoMediaAsset()'s exact sequence
      * (MediaAsset::create() -> MediaAssetRepository::save() ->
-     * ProcessMediaAssetJob::dispatch()), reused here per uploaded photo
-     * instead of once for a single logo.
+     * ProcessMediaAssetJob::dispatch()), reused here per uploaded
+     * photo/video instead of once for a single logo.
+     *
+     * $type defaults to IMAGE (every existing photo call site is
+     * unaffected). Dispatch is gated to IMAGE only — mirrors
+     * MediaController::store()'s identical guard exactly
+     * (media-domain-design.md §3.6): VIDEO/SOCIAL_VIDEO have no
+     * processing pipeline at all (§4), and ProcessMediaAssetJob's own
+     * markProcessing() unconditionally rejects them
+     * (InvalidMediaStateTransitionException, uncaught by the job) — a
+     * dispatch for video would crash a queue worker, not merely waste
+     * one.
      */
-    public static function createMediaAsset(string $storedPath): MediaAsset
+    public static function createMediaAsset(string $storedPath, MediaType $type = MediaType::IMAGE): MediaAsset
     {
         $disk = config('services.media.default_disk', 'public');
 
-        $asset = MediaAsset::create(MediaType::IMAGE, $disk, $storedPath);
+        $asset = MediaAsset::create($type, $disk, $storedPath);
         app(MediaAssetRepository::class)->save($asset);
 
-        ProcessMediaAssetJob::dispatch($asset->id());
+        if ($type === MediaType::IMAGE) {
+            ProcessMediaAssetJob::dispatch($asset->id());
+        }
 
         return $asset;
     }

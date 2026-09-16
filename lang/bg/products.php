@@ -8,7 +8,6 @@ return [
     'tabs' => [
         'general' => 'Основни',
         'attributes' => 'Атрибути',
-        'media' => 'Снимки',
     ],
 
     'fields' => [
@@ -27,8 +26,12 @@ return [
         'categories' => 'Категории',
         'tags' => 'Етикети',
         'is_purchasable' => 'Продаваем',
-        'photos' => 'Снимки',
+        'main_photo' => 'Главна снимка',
+        'gallery_photos' => 'Малки снимки',
+        'video' => 'Видео',
+        'video_autoplay' => 'Автоматично стартиране на витрината',
         'thumbnail' => 'Снимка',
+        'media_upload_hint' => 'Провлачете файлове тук или <span class="filepond--label-action">разгледайте</span> (макс. :max MB)',
     ],
 
     'status_options' => [

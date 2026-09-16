@@ -2,6 +2,7 @@
 
 namespace App\Providers\Filament;
 
+use App\Http\Middleware\ApplyStoreLocale;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
@@ -9,7 +10,9 @@ use Filament\Http\Middleware\DispatchServingFilamentEvent;
 use Filament\Pages\Dashboard;
 use Filament\Panel;
 use Filament\PanelProvider;
+use Filament\Support\Assets\Css;
 use Filament\Support\Colors\Color;
+use Filament\Support\Facades\FilamentAsset;
 use Filament\Widgets\AccountWidget;
 use Filament\Widgets\FilamentInfoWidget;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
@@ -21,6 +24,23 @@ use Illuminate\View\Middleware\ShareErrorsFromSession;
 
 class AdminPanelProvider extends PanelProvider
 {
+    /**
+     * A plain static file under public/, not a Vite-built/published
+     * asset — no `php artisan filament:assets` publish step needed.
+     * Currently just horizontal padding for ProductResource's own main
+     * photo/video "hero" upload tiles (see
+     * ProductResource::mainPhotoComponents()/videoComponents()'s
+     * `.ec-product-main-photo`/`.ec-product-video` class hooks) — small
+     * enough that a dedicated panel-wide CSS file isn't warranted yet;
+     * revisit if more panel-level style overrides accumulate.
+     */
+    public function boot(): void
+    {
+        FilamentAsset::register([
+            Css::make('admin-product-media-gallery', asset('css/admin/product-media-gallery.css')),
+        ]);
+    }
+
     public function panel(Panel $panel): Panel
     {
         return $panel
@@ -67,7 +87,7 @@ class AdminPanelProvider extends PanelProvider
                 // bootstrap/app.php's own 'web'-group registration, for
                 // the admin panel to see the same merchant-configured
                 // locale a future storefront request would.
-                \App\Http\Middleware\ApplyStoreLocale::class,
+                ApplyStoreLocale::class,
             ])
             ->authMiddleware([
                 Authenticate::class,

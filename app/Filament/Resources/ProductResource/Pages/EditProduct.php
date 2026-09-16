@@ -13,6 +13,7 @@ use EasyCo\Catalog\ProductCategory;
 use EasyCo\Catalog\ProductTag;
 use EasyCo\Extensibility\Hook;
 use EasyCo\Media\Contracts\ProductMediaRepository;
+use EasyCo\Media\Enums\MediaType;
 use EasyCo\Media\Exceptions\MediaLimitExceededException;
 use EasyCo\Media\Persistence\Eloquent\MediaAssetModel;
 use EasyCo\Media\ProductMedia;
@@ -44,10 +45,11 @@ class EditProduct extends EditRecord
     protected static string $resource = ProductResource::class;
 
     /**
-     * Seeds categories/tags/descriptive_attributes/photos with their
-     * real current state — mirrors EditBrand::mutateFormDataBeforeFill()'s
-     * "FileUpload's own state is always a disk path" reasoning, extended
-     * to an array of paths for the multi-photo field.
+     * Seeds categories/tags/descriptive_attributes/main_photo/
+     * gallery_photos/video/video_autoplay with their real current state
+     * — mirrors EditBrand::mutateFormDataBeforeFill()'s "FileUpload's
+     * own state is always a disk path" reasoning, extended to an array
+     * of paths for the gallery field.
      */
     protected function mutateFormDataBeforeFill(array $data): array
     {
@@ -77,10 +79,38 @@ class EditProduct extends EditRecord
         }
         $data['descriptive_attributes'] = $descriptive;
 
-        $data['photos'] = array_map(
-            fn ($pivot) => MediaAssetModel::find($pivot->mediaId())?->path,
-            app(ProductMediaRepository::class)->findByProductId($productId)
-        );
+        // findByProductId() returns every attached pivot regardless of
+        // the underlying MediaAsset's type, ordered by sort_order asc.
+        // ProductMedia's own class docblock: "NO is_primary field...
+        // the item at sortOrder = 0 is implicitly the primary photo" —
+        // so the FIRST image pivot encountered here (the lowest
+        // sort_order) is main_photo, every image pivot after it is
+        // gallery_photos. Only one video pivot is ever expected (this
+        // task's own single-video-per-product scope); its own
+        // autoplay() is seeded alongside it.
+        $data['main_photo'] = null;
+        $data['gallery_photos'] = [];
+        $data['video'] = null;
+        $data['video_autoplay'] = false;
+
+        foreach (app(ProductMediaRepository::class)->findByProductId($productId) as $pivot) {
+            $asset = MediaAssetModel::find($pivot->mediaId());
+
+            if ($asset === null) {
+                continue;
+            }
+
+            if ($asset->type === MediaType::IMAGE->value) {
+                if ($data['main_photo'] === null) {
+                    $data['main_photo'] = $asset->path;
+                } else {
+                    $data['gallery_photos'][] = $asset->path;
+                }
+            } elseif ($asset->type === MediaType::VIDEO->value) {
+                $data['video'] = $asset->path;
+                $data['video_autoplay'] = $pivot->autoplay();
+            }
+        }
 
         // barcode/is_purchasable live on the universal Variation, not
         // ProductModel — without this, every Edit form open silently
@@ -192,7 +222,23 @@ class EditProduct extends EditRecord
 
         $this->syncCategories($product->id(), $data['categories'] ?? []);
         $this->syncTags($product->id(), $data['tags'] ?? []);
-        $this->syncPhotos($product->id(), $data['photos'] ?? []);
+
+        // main_photo always sort_order 0, gallery_photos fill in after
+        // — see mutateFormDataBeforeFill()'s own comment for why (no
+        // separate "is primary" concept; these are still ONE ordered
+        // MediaType::IMAGE collection underneath the two Filament
+        // fields).
+        $photoPaths = [];
+        if (filled($data['main_photo'] ?? null)) {
+            $photoPaths[] = $data['main_photo'];
+        }
+        foreach ($data['gallery_photos'] ?? [] as $path) {
+            $photoPaths[] = $path;
+        }
+        $this->syncMedia($product->id(), $photoPaths, MediaType::IMAGE);
+
+        $videoPaths = filled($data['video'] ?? null) ? [$data['video']] : [];
+        $this->syncMedia($product->id(), $videoPaths, MediaType::VIDEO, (bool) ($data['video_autoplay'] ?? false));
 
         return ProductModel::find($product->id());
     }
@@ -246,28 +292,37 @@ class EditProduct extends EditRecord
     }
 
     /**
-     * Diffs the submitted `photos` array of stored paths against the
-     * currently-attached pivots' own resolved paths: a path present in
-     * both is a KEPT photo (only its sort_order may need updating to
-     * match the submitted order); a submitted path with no matching
-     * existing pivot is a NEW upload (attached exactly like Create's
-     * own attachPhotos()); an existing pivot whose path is no longer
+     * Diffs the submitted array of stored paths (main_photo +
+     * gallery_photos merged into one, or the single video wrapped in a
+     * 0-or-1-element array — see updateProduct()'s own comment) against
+     * the currently-attached pivots of THIS SAME $type's own resolved
+     * paths — scoped to $type, not every pivot the product has, since
+     * findByProductId() returns photos and the video together
+     * (media-domain-design.md §2.1/§8: one generic pivot, not
+     * photo-specific) and a video path must never be diffed against the
+     * photos submission or vice versa: a path present in both is KEPT
+     * (its sort_order and/or autoplay may still need updating to match
+     * the submission); a submitted path with no matching existing pivot
+     * is a NEW upload (attached exactly like Create's own
+     * attachMedia()); an existing pivot whose path is no longer
      * anywhere in the submission was REMOVED by the user — detached via
      * ProductMediaRepository::remove(), confirmed the real method
      * (ProductMediaController::destroy()'s own call), never touching
      * the underlying MediaAsset row itself (mirrors BrandResource's own
-     * "never touch the old asset" posture).
+     * "never touch the old asset" posture). $autoplay is only ever
+     * meaningful for the video call — see ProductMedia's own class
+     * docblock for why passing it for photos too is harmless.
      */
-    protected function syncPhotos(string $productId, array $submittedPaths): void
+    protected function syncMedia(string $productId, array $submittedPaths, MediaType $type, bool $autoplay = false): void
     {
         $repository = app(ProductMediaRepository::class);
         $current = $repository->findByProductId($productId);
 
         $pivotByPath = [];
         foreach ($current as $pivot) {
-            $path = MediaAssetModel::find($pivot->mediaId())?->path;
-            if ($path !== null) {
-                $pivotByPath[$path] = $pivot;
+            $asset = MediaAssetModel::find($pivot->mediaId());
+            if ($asset !== null && $asset->type === $type->value) {
+                $pivotByPath[$asset->path] = $pivot;
             }
         }
 
@@ -278,9 +333,19 @@ class EditProduct extends EditRecord
             if (isset($pivotByPath[$path])) {
                 $pivot = $pivotByPath[$path];
                 $keptPaths[] = $path;
+                $changed = false;
 
                 if ($pivot->sortOrder() !== $sortOrder) {
                     $pivot->updateSortOrder($sortOrder);
+                    $changed = true;
+                }
+
+                if ($pivot->autoplay() !== $autoplay) {
+                    $pivot->updateAutoplay($autoplay);
+                    $changed = true;
+                }
+
+                if ($changed) {
                     $repository->save($pivot);
                 }
 
@@ -298,13 +363,14 @@ class EditProduct extends EditRecord
                 throw (new Halt)->rollBackDatabaseTransaction();
             }
 
-            $asset = ProductResource::createMediaAsset($path);
+            $asset = ProductResource::createMediaAsset($path, $type);
 
             $repository->save(new ProductMedia(
                 id: null,
                 productId: $productId,
                 mediaId: $asset->id(),
                 sortOrder: $sortOrder,
+                autoplay: $autoplay,
             ));
 
             $keptPaths[] = $path;

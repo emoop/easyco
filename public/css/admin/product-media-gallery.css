@@ -1,0 +1,19 @@
+/*
+ * Adds horizontal breathing room around a single, large preview tile —
+ * ProductResource's own main photo and video fields (the
+ * `.ec-product-main-photo`/`.ec-product-video` class hooks — see
+ * ProductResource::mainPhotoComponents()/videoComponents()). Filament's
+ * own FileUpload panel otherwise renders a single item edge-to-edge,
+ * which looks cramped for a large "hero" style preview; gallery_photos
+ * (small grid thumbnails) deliberately gets no such padding.
+ *
+ * Targets FilePond's own DOM via its documented `.filepond--item`
+ * class — part of FilePond/Filament's own public rendering contract,
+ * not a private implementation detail reached into blindly. Verified
+ * against the real rendered admin page, not assumed from source alone.
+ */
+.ec-product-main-photo .filepond--item,
+.ec-product-video .filepond--item {
+    padding-left: 1rem;
+    padding-right: 1rem;
+}

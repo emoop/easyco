@@ -358,14 +358,21 @@ class ProductResourceTest extends TestCase
         $this->assertArrayNotHasKey((string) $color->id(), $reloadedAttributes);
     }
 
-    public function test_uploading_photos_on_create_results_in_real_media_asset_and_product_media_rows(): void
+    /**
+     * main_photo and gallery_photos are two separate Filament fields
+     * (this task's own WooCommerce-style split), but still merge into
+     * ONE ordered MediaType::IMAGE collection underneath — main_photo
+     * always sort_order 0, per ProductMedia's own "no is_primary field,
+     * sortOrder = 0 is implicitly primary" decision.
+     */
+    public function test_uploading_a_main_photo_and_gallery_photos_on_create_results_in_real_media_asset_and_product_media_rows(): void
     {
         $this->actingAsPanelAdministrator();
 
         Storage::fake(config('services.media.default_disk', 'public'));
 
-        $file1 = UploadedFile::fake()->image('photo1.jpg');
-        $file2 = UploadedFile::fake()->image('photo2.jpg');
+        $mainPhoto = UploadedFile::fake()->image('main.jpg');
+        $galleryPhoto = UploadedFile::fake()->image('gallery.jpg');
 
         Livewire::test(CreateProduct::class)
             ->fillForm([
@@ -374,7 +381,8 @@ class ProductResourceTest extends TestCase
                 'base_sku' => 'SKU-PHOTO',
                 'status' => ProductStatus::DRAFT->value,
                 'catalog_visibility' => CatalogVisibility::HIDDEN->value,
-                'photos' => [$file1, $file2],
+                'main_photo' => $mainPhoto,
+                'gallery_photos' => [$galleryPhoto],
             ])
             ->call('create')
             ->assertHasNoFormErrors();
@@ -385,6 +393,166 @@ class ProductResourceTest extends TestCase
         $this->assertCount(2, $pivots);
         $this->assertSame(0, $pivots[0]->sortOrder());
         $this->assertSame(1, $pivots[1]->sortOrder());
+    }
+
+    /**
+     * A real regression test for a real bug caught in a live browser
+     * check: the empty-state placeholder text ("Drag & Drop... max N
+     * MB") showed "1 MB" for BOTH a 10 MB image limit and a 100 MB
+     * video limit — rtrim(..., '0') on a bare (string) cast of a whole
+     * float (10.0 casts to "10", no decimal point at all) strips a
+     * trailing zero from the INTEGER part itself, not a fractional one.
+     * Must show the real configured MB values, not "1" for both.
+     */
+    public function test_the_media_upload_placeholders_show_the_real_configured_max_sizes_in_mb(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        config(['services.media.max_image_size_kb' => 10240, 'services.media.max_video_size_kb' => 102400]);
+
+        $form = Livewire::test(CreateProduct::class)->instance()->form;
+
+        $this->assertStringContainsString('10 MB', (string) $form->getComponent('main_photo')->getPlaceholder());
+        $this->assertStringContainsString('10 MB', (string) $form->getComponent('gallery_photos')->getPlaceholder());
+        $this->assertStringContainsString('100 MB', (string) $form->getComponent('video')->getPlaceholder());
+    }
+
+    /**
+     * A real, confirmed gap: overriding Livewire's own global 12MB
+     * temporary-upload rule (config/livewire.php — the actual, real
+     * cause of a "must not be greater than 12288 kilobytes" error a
+     * real video upload hit in practice, well below this field's own
+     * intended 100MB) up to the larger of the two real media limits
+     * ALSO removed the incidental ceiling that used to (accidentally)
+     * cap oversized photos too. ->maxSize() on each field is the real,
+     * intentional replacement — must actually reject a file over its
+     * own configured limit, not just show informational text about it.
+     */
+    public function test_a_main_photo_larger_than_the_real_configured_image_limit_is_rejected(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        Storage::fake(config('services.media.default_disk', 'public'));
+
+        $maxImageKb = (int) config('services.media.max_image_size_kb', 10240);
+        $maxVideoKb = (int) config('services.media.max_video_size_kb', 102400);
+
+        // Deliberately between the two limits, not just $maxImageKb + 1:
+        // config/livewire.php's own global temporary-upload rule is set
+        // to the LARGER of the two real media limits (max_video_size_kb
+        // here), so a file only slightly over the image limit could
+        // still be swallowed by that earlier, coarser layer before ever
+        // reaching this field's own ->maxSize() — asserting a genuinely
+        // different, real "form has errors" outcome than that layer's
+        // own (untestable via this harness — see this test's sibling
+        // video-upload-limit note). Using the midpoint isolates THIS
+        // field's own maxSize() specifically.
+        $oversizeKb = intdiv($maxImageKb + $maxVideoKb, 2);
+        $this->assertGreaterThan($maxImageKb, $oversizeKb);
+        $this->assertLessThan($maxVideoKb, $oversizeKb);
+
+        Livewire::test(CreateProduct::class)
+            ->fillForm([
+                'name' => 'Oversized Photo Product',
+                'slug' => 'oversized-photo-product',
+                'base_sku' => 'SKU-BIGPHOTO',
+                'status' => ProductStatus::DRAFT->value,
+                'catalog_visibility' => CatalogVisibility::HIDDEN->value,
+                'main_photo' => UploadedFile::fake()->create('too-big.jpg', $oversizeKb, 'image/jpeg'),
+            ])
+            ->call('create')
+            // Not ->assertHasFormErrors(['main_photo' => 'max']): the
+            // FileUpload field validates file size via its own nested
+            // Validator::make() call internally (BaseFileUpload's real
+            // source), surfacing only that nested validator's rendered
+            // message string on the outer schema, not a bare 'max' rule
+            // name Livewire's own failedRules() could match — confirmed
+            // by running this exact assertion and reading the real
+            // failure output. Presence of any error on the field is
+            // still a real, meaningful assertion that ->maxSize() did
+            // reject the file, not a false positive from a coincidence.
+            ->assertHasFormErrors(['main_photo']);
+
+        $this->assertNull(ProductModel::where('slug', 'oversized-photo-product')->first());
+    }
+
+    /**
+     * Single video per product (this task's own explicit scope) — the
+     * autoplay toggle's value must land on the video's own
+     * ProductMedia pivot row (media-domain-design.md §2.1: the
+     * per-attachment record, not MediaAsset itself).
+     */
+    public function test_uploading_a_video_with_autoplay_persists_a_real_media_asset_and_pivot_row(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        Storage::fake(config('services.media.default_disk', 'public'));
+
+        Livewire::test(CreateProduct::class)
+            ->fillForm([
+                'name' => 'Video Product',
+                'slug' => 'video-product',
+                'base_sku' => 'SKU-VIDEO',
+                'status' => ProductStatus::DRAFT->value,
+                'catalog_visibility' => CatalogVisibility::HIDDEN->value,
+                'video' => UploadedFile::fake()->create('clip.mp4', 500, 'video/mp4'),
+                'video_autoplay' => true,
+            ])
+            ->call('create')
+            ->assertHasNoFormErrors();
+
+        $productModel = ProductModel::where('slug', 'video-product')->firstOrFail();
+        $pivots = app(ProductMediaRepository::class)->findByProductId((string) $productModel->id);
+
+        $this->assertCount(1, $pivots);
+        $this->assertTrue($pivots[0]->autoplay());
+
+        $asset = MediaAssetModel::find($pivots[0]->mediaId());
+        $this->assertSame('video', $asset->type);
+        // §3.6: video has no processing pipeline — never dispatched
+        // into PENDING/PROCESSING, straight to ready.
+        $this->assertSame('ready', $asset->processing_status);
+    }
+
+    /**
+     * Real edit round-trip: the form must be seeded with the real saved
+     * video path and its real autoplay value (not silently defaulted —
+     * the exact class of bug EditProduct's barcode/is_purchasable fix
+     * addressed earlier this session), and toggling autoplay off must
+     * actually persist.
+     */
+    public function test_editing_can_change_the_video_and_toggle_autoplay(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        Storage::fake(config('services.media.default_disk', 'public'));
+
+        Livewire::test(CreateProduct::class)
+            ->fillForm([
+                'name' => 'Video Edit Product',
+                'slug' => 'video-edit-product',
+                'base_sku' => 'SKU-VIDEDIT',
+                'status' => ProductStatus::DRAFT->value,
+                'catalog_visibility' => CatalogVisibility::HIDDEN->value,
+                'video' => UploadedFile::fake()->create('original.mp4', 500, 'video/mp4'),
+                'video_autoplay' => true,
+            ])
+            ->call('create')
+            ->assertHasNoFormErrors();
+
+        $productModel = ProductModel::where('slug', 'video-edit-product')->firstOrFail();
+
+        $editComponent = Livewire::test(EditProduct::class, ['record' => $productModel->id])
+            ->assertFormSet(['video_autoplay' => true]);
+
+        $editComponent
+            ->fillForm(['video' => UploadedFile::fake()->create('replacement.mp4', 500, 'video/mp4'), 'video_autoplay' => false])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $pivots = app(ProductMediaRepository::class)->findByProductId((string) $productModel->id);
+        $this->assertCount(1, $pivots, 'the old video must be detached when replaced, not left attached alongside the new one');
+        $this->assertFalse($pivots[0]->autoplay());
     }
 
     public function test_exceeding_the_real_configured_max_photo_count_is_rejected_with_the_real_message(): void
@@ -424,7 +592,7 @@ class ProductResourceTest extends TestCase
                 'base_sku' => 'SKU-MANY',
                 'status' => ProductStatus::DRAFT->value,
                 'catalog_visibility' => CatalogVisibility::HIDDEN->value,
-                'photos' => $files,
+                'gallery_photos' => $files,
             ])
             ->call('create')
             ->assertNotified(
@@ -607,7 +775,7 @@ class ProductResourceTest extends TestCase
         $this->assertNull(ProductModel::where('slug', 'group-required')->first());
     }
 
-    public function test_the_thumbnail_column_shows_the_lowest_sort_order_photos_real_path(): void
+    public function test_the_thumbnail_column_shows_the_main_photos_real_path(): void
     {
         $this->actingAsPanelAdministrator();
 
@@ -620,7 +788,8 @@ class ProductResourceTest extends TestCase
                 'base_sku' => 'SKU-THUMB',
                 'status' => ProductStatus::DRAFT->value,
                 'catalog_visibility' => CatalogVisibility::HIDDEN->value,
-                'photos' => [UploadedFile::fake()->image('first.jpg'), UploadedFile::fake()->image('second.jpg')],
+                'main_photo' => UploadedFile::fake()->image('first.jpg'),
+                'gallery_photos' => [UploadedFile::fake()->image('second.jpg')],
             ])
             ->call('create')
             ->assertHasNoFormErrors();

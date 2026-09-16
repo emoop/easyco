@@ -23,6 +23,16 @@ use LogicException;
  * instance has visibility into) — the same layering
  * RestrictedPriceWriteGuard already established above PriceListItem in
  * `EasyCo\Pricing`. Not yet implemented; a later step.
+ *
+ * AUTOPLAY — whether THIS product's attachment of a video should
+ * autoplay on the (not-yet-built) storefront. Lives here, on the
+ * per-attachment pivot, not on MediaAsset itself: the same video could
+ * in principle be attached to more than one product, each wanting a
+ * different autoplay preference. Meaningless for a photo attachment —
+ * nothing here rejects setting it on one anyway (no real invariant to
+ * protect; a photo's autoplay flag is simply never read by anything),
+ * mirroring this class's own "not this class's job to add validation
+ * the constructor doesn't already have" posture elsewhere.
  */
 final class ProductMedia
 {
@@ -31,6 +41,7 @@ final class ProductMedia
         private readonly string $productId,
         private readonly string $mediaId,
         private int $sortOrder = 0,
+        private bool $autoplay = false,
     ) {
         if ($productId === '') {
             throw new InvalidArgumentException('ProductMedia productId must not be empty.');
@@ -57,12 +68,14 @@ final class ProductMedia
         string $productId,
         string $mediaId,
         int $sortOrder,
+        bool $autoplay = false,
     ): self {
         return new self(
             id: $id,
             productId: $productId,
             mediaId: $mediaId,
             sortOrder: $sortOrder,
+            autoplay: $autoplay,
         );
     }
 
@@ -99,6 +112,16 @@ final class ProductMedia
     {
         self::assertValidSortOrder($sortOrder);
         $this->sortOrder = $sortOrder;
+    }
+
+    public function autoplay(): bool
+    {
+        return $this->autoplay;
+    }
+
+    public function updateAutoplay(bool $autoplay): void
+    {
+        $this->autoplay = $autoplay;
     }
 
     private static function assertValidSortOrder(int $sortOrder): void

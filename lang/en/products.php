@@ -8,7 +8,6 @@ return [
     'tabs' => [
         'general' => 'General',
         'attributes' => 'Attributes',
-        'media' => 'Media',
     ],
 
     'fields' => [
@@ -27,8 +26,12 @@ return [
         'categories' => 'Categories',
         'tags' => 'Tags',
         'is_purchasable' => 'Purchasable',
-        'photos' => 'Photos',
+        'main_photo' => 'Main photo',
+        'gallery_photos' => 'Gallery photos',
+        'video' => 'Video',
+        'video_autoplay' => 'Autoplay on the storefront',
         'thumbnail' => 'Photo',
+        'media_upload_hint' => 'Drag & Drop your files or <span class="filepond--label-action">Browse</span> (max :max MB)',
     ],
 
     'status_options' => [

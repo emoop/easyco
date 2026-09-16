@@ -14,6 +14,7 @@ use EasyCo\Catalog\ProductCategory;
 use EasyCo\Catalog\ProductTag;
 use EasyCo\Extensibility\Hook;
 use EasyCo\Media\Contracts\ProductMediaRepository;
+use EasyCo\Media\Enums\MediaType;
 use EasyCo\Media\Exceptions\MediaLimitExceededException;
 use EasyCo\Media\ProductMedia;
 use EasyCo\Media\ProductMediaCountGuard;
@@ -121,28 +122,60 @@ class CreateProduct extends CreateRecord
             );
         }
 
-        $this->attachPhotos($productId, $data['photos'] ?? []);
+        // main_photo (if any) is always sort_order 0, gallery_photos
+        // fill in after it — ProductMedia's own class docblock: "NO
+        // is_primary field... the item at sortOrder = 0 is implicitly
+        // the primary photo." These are two separate Filament fields
+        // for a cleaner admin UI (this task's own WooCommerce-style
+        // split), but still just ONE ordered MediaType::IMAGE
+        // collection underneath — never a second, competing "is
+        // primary" concept.
+        $photoPaths = [];
+        if (filled($data['main_photo'] ?? null)) {
+            $photoPaths[] = $data['main_photo'];
+        }
+        foreach ($data['gallery_photos'] ?? [] as $path) {
+            $photoPaths[] = $path;
+        }
+        $this->attachMedia($productId, $photoPaths, MediaType::IMAGE);
+
+        // Single video per product (this task's own explicit scope) —
+        // wrapped in a 0-or-1-element array so it can still go through
+        // the same generalized attachMedia() as photos, rather than a
+        // parallel single-item code path.
+        $videoPaths = filled($data['video'] ?? null) ? [$data['video']] : [];
+        $this->attachMedia($productId, $videoPaths, MediaType::VIDEO, (bool) ($data['video_autoplay'] ?? false));
 
         return ProductModel::find($productId);
     }
 
     /**
-     * Shared by Create and Edit's "newly added photo" branch. Each
-     * stored path becomes a real MediaAsset (mirroring
+     * Shared by Create and Edit's "newly added photo/video" branch, and
+     * by every media field (main photo, gallery photos, video —
+     * media-domain-design.md §2.1/§8: ProductMedia is one generic
+     * pivot, not photo-specific — a video attaches through it exactly
+     * like a photo, distinguished only by the underlying MediaAsset's
+     * own type). Each stored path becomes a real MediaAsset (mirroring
      * ProductResource::createMediaAsset()'s BrandResource-derived
      * sequence) and a real ProductMedia pivot row, sort_order following
-     * the array's own order (the FileUpload field's ->reorderable()
-     * state). Guarded per-attach via the real ProductMediaCountGuard —
-     * on a genuine limit breach, surfaces the exact same
-     * MediaLimitExceededException message the API gives, via a Filament
-     * notification, then throws Halt to stop processing. The actual
-     * rollback of everything already written this request (the Product,
-     * its universal Variation, any already-attached photos) is done by
-     * this class's own DB::transaction() wrap in handleRecordCreation()
-     * — see that method's docblock for why Halt's own
+     * the array's own order — independently per type, so photos and the
+     * video each have their own 0-based sort_order sequence rather than
+     * sharing one combined ordering (there is no unique constraint on
+     * sort_order itself, only on (parent_id, media_id), so this is
+     * safe). $autoplay is only ever meaningful for the video call —
+     * see ProductMedia's own class docblock for why passing it for
+     * photos too is harmless, not a real cross-concern. Guarded
+     * per-attach via the real ProductMediaCountGuard — on a genuine
+     * limit breach, surfaces the exact same MediaLimitExceededException
+     * message the API gives, via a Filament notification, then throws
+     * Halt to stop processing. The actual rollback of everything
+     * already written this request (the Product, its universal
+     * Variation, any already-attached media) is done by this class's
+     * own DB::transaction() wrap in handleRecordCreation() — see that
+     * method's docblock for why Halt's own
      * rollBackDatabaseTransaction() alone cannot be relied on here.
      */
-    protected function attachPhotos(string $productId, array $storedPaths): void
+    protected function attachMedia(string $productId, array $storedPaths, MediaType $type, bool $autoplay = false): void
     {
         $guard = app(ProductMediaCountGuard::class);
         $repository = app(ProductMediaRepository::class);
@@ -159,13 +192,14 @@ class CreateProduct extends CreateRecord
                 throw (new Halt)->rollBackDatabaseTransaction();
             }
 
-            $asset = ProductResource::createMediaAsset($storedPath);
+            $asset = ProductResource::createMediaAsset($storedPath, $type);
 
             $repository->save(new ProductMedia(
                 id: null,
                 productId: $productId,
                 mediaId: $asset->id(),
                 sortOrder: $sortOrder,
+                autoplay: $autoplay,
             ));
         }
     }

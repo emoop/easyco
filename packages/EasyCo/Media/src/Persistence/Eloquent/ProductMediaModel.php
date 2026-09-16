@@ -20,5 +20,10 @@ class ProductMediaModel extends Model
         'product_id',
         'media_id',
         'sort_order',
+        'autoplay',
+    ];
+
+    protected $casts = [
+        'autoplay' => 'boolean',
     ];
 }
