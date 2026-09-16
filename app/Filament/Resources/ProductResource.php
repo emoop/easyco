@@ -20,7 +20,6 @@ use EasyCo\Catalog\Enums\ProductType;
 use EasyCo\Catalog\Persistence\Eloquent\AttributeDefinitionModel;
 use EasyCo\Catalog\Persistence\Eloquent\AttributeValueModel;
 use EasyCo\Catalog\Persistence\Eloquent\BrandModel;
-use EasyCo\Catalog\Persistence\Eloquent\CategoryModel;
 use EasyCo\Catalog\Persistence\Eloquent\ProductGroupModel;
 use EasyCo\Catalog\Persistence\Eloquent\ProductModel;
 use EasyCo\Catalog\Persistence\Eloquent\SeasonModel;
@@ -194,7 +193,10 @@ class ProductResource extends Resource
             Select::make('categories')
                 ->label(__('products.fields.categories'))
                 ->multiple()
-                ->options(fn (): array => CategoryModel::pluck('name', 'id')->all())
+                // Tree order/indentation, not a flat pluck() — reuses
+                // CategoryResource's own hierarchicalOptions() rather
+                // than duplicating the tree walk here.
+                ->options(fn (): array => CategoryResource::hierarchicalOptions())
                 ->searchable(),
             Select::make('tags')
                 ->label(__('products.fields.tags'))

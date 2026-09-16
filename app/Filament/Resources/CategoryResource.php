@@ -24,6 +24,7 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\QueryException;
 
@@ -39,7 +40,7 @@ class CategoryResource extends Resource
 
     protected static ?string $model = CategoryModel::class;
 
-    protected static string | BackedEnum | null $navigationIcon = 'heroicon-o-rectangle-stack';
+    protected static string|BackedEnum|null $navigationIcon = 'heroicon-o-rectangle-stack';
 
     public static function getModelLabel(): string
     {
@@ -108,13 +109,14 @@ class CategoryResource extends Resource
                 // (catalog-domain-design.md §6, Category's own class
                 // docblock). Excludes the record's own id from the
                 // options list on Edit; there is no record yet on Create,
-                // so nothing to exclude there.
-                ->options(function (?Model $record): array {
-                    return CategoryModel::query()
-                        ->when($record !== null, fn ($query) => $query->whereKeyNot($record->getKey()))
-                        ->pluck('name', 'id')
-                        ->all();
-                })
+                // so nothing to exclude there. hierarchicalOptions() also
+                // excludes every descendant of $record, not just $record
+                // itself — picking a descendant as the new parent would
+                // create a cycle, which Category::changeParent() has no
+                // protection against (see this class's own docblock).
+                ->options(fn (?Model $record): array => static::hierarchicalOptions(
+                    $record !== null ? (string) $record->getKey() : null
+                ))
                 ->searchable(),
             TextInput::make('name')
                 ->label(__('categories.fields.name'))
@@ -128,9 +130,35 @@ class CategoryResource extends Resource
 
     public static function table(Table $table): Table
     {
+        // Walked ONCE per table render, not once per row — captured by
+        // the formatStateUsing/modifyQueryUsing closures below via
+        // `use ()`, not re-queried through a per-row static call (which
+        // would otherwise re-run the whole tree walk N times over for N
+        // rows).
+        ['orderedIds' => $orderedIds, 'depthById' => $depthById] = static::walkCategoryTree();
+
         return $table
+            // Default row order is the tree order (parent immediately
+            // followed by its own children, depth-first) rather than
+            // Eloquent's default id/created_at order. A user explicitly
+            // sorting by clicking a column header (->sortable() on
+            // name/created_at) still works and replaces this ordering,
+            // same as any other Filament table default sort.
+            ->modifyQueryUsing(function (Builder $query) use ($orderedIds): Builder {
+                // FIELD() with no arguments is invalid SQL — only true
+                // when the table is genuinely empty, in which case
+                // there is nothing to order anyway.
+                if ($orderedIds === []) {
+                    return $query;
+                }
+
+                $placeholders = implode(',', array_fill(0, count($orderedIds), '?'));
+
+                return $query->orderByRaw("FIELD(id, {$placeholders})", $orderedIds);
+            })
             ->columns([
                 TextColumn::make('name')
+                    ->formatStateUsing(fn (CategoryModel $record, string $state): string => str_repeat('— ', $depthById[$record->id] ?? 0).$state)
                     ->searchable()
                     ->sortable(),
                 TextColumn::make('parent.name')
@@ -220,5 +248,115 @@ class CategoryResource extends Resource
                     ->success()
                     ->send();
             });
+    }
+
+    /**
+     * Depth-first walk from every root category (parent_id === null)
+     * down through its own children, by name within each level — this
+     * IS the tree view: this task's own real requirement, both on this
+     * Resource's own list/edit and reused by ProductResource's
+     * categories field. One query, walked in memory (a merchant's
+     * category count is realistically small; no pagination concern here
+     * the way ProductResource's own product list has).
+     *
+     * @return array{orderedIds: array<int, string>, depthById: array<string, int>}
+     */
+    private static function walkCategoryTree(): array
+    {
+        $all = CategoryModel::query()->orderBy('name')->get(['id', 'parent_id']);
+
+        $childrenByParentId = [];
+        foreach ($all as $category) {
+            $childrenByParentId[$category->parent_id ?? '']["{$category->id}"] = true;
+        }
+
+        $orderedIds = [];
+        $depthById = [];
+        $visited = [];
+
+        $visit = function (string $parentKey, int $depth) use (&$visit, &$orderedIds, &$depthById, &$visited, $childrenByParentId): void {
+            foreach (array_keys($childrenByParentId[$parentKey] ?? []) as $id) {
+                // Defensive only — Category::changeParent() itself has no
+                // cycle protection at all (this class's own docblock, per
+                // catalog-domain-design.md §6). Without this, a
+                // manually-created cycle in the data would turn this walk
+                // into an infinite loop and crash the whole admin panel;
+                // this simply stops descending into an already-visited
+                // node rather than attempting to validate/fix the cycle.
+                if (isset($visited[$id])) {
+                    continue;
+                }
+                $visited[$id] = true;
+
+                $orderedIds[] = $id;
+                $depthById[$id] = $depth;
+
+                $visit($id, $depth + 1);
+            }
+        };
+
+        $visit('', 0);
+
+        return ['orderedIds' => $orderedIds, 'depthById' => $depthById];
+    }
+
+    /**
+     * [id => indented name] in tree order, for any Select that should
+     * present categories hierarchically — this Resource's own parent_id
+     * field and ProductResource's categories field both use this same
+     * method, rather than each building its own flat pluck().
+     *
+     * $excludeId also excludes every DESCENDANT of $excludeId, not just
+     * $excludeId itself — used only by this Resource's own parent_id
+     * field (never by ProductResource's, which has no self-reference
+     * concern): picking a descendant as the new parent would create a
+     * cycle, which Category::changeParent() has no protection against
+     * (see this class's own docblock).
+     *
+     * @return array<string, string>
+     */
+    public static function hierarchicalOptions(?string $excludeId = null): array
+    {
+        $all = CategoryModel::query()->orderBy('name')->get(['id', 'parent_id', 'name']);
+
+        $childrenByParentId = [];
+        $nameById = [];
+        foreach ($all as $category) {
+            $childrenByParentId[$category->parent_id ?? '']["{$category->id}"] = true;
+            $nameById["{$category->id}"] = $category->name;
+        }
+
+        $excludedIds = [];
+        if ($excludeId !== null) {
+            $collectDescendants = function (string $id) use (&$collectDescendants, &$excludedIds, $childrenByParentId): void {
+                $excludedIds[$id] = true;
+                foreach (array_keys($childrenByParentId[$id] ?? []) as $childId) {
+                    $collectDescendants($childId);
+                }
+            };
+            $collectDescendants($excludeId);
+        }
+
+        $options = [];
+        $visited = [];
+
+        $visit = function (string $parentKey, int $depth) use (&$visit, &$options, &$visited, $childrenByParentId, $nameById, $excludedIds): void {
+            foreach (array_keys($childrenByParentId[$parentKey] ?? []) as $id) {
+                if (isset($visited[$id])) {
+                    continue;
+                }
+                $visited[$id] = true;
+
+                if (! isset($excludedIds[$id])) {
+                    $options[$id] = str_repeat('— ', $depth).$nameById[$id];
+                }
+
+                $visit($id, $depth + 1);
+            }
+        };
+
+        $visit('', 0);
+
+        return $options;
     }
 }

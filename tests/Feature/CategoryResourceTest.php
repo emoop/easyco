@@ -324,4 +324,96 @@ class CategoryResourceTest extends TestCase
 
         $this->assertSame(0, app(CategoryRepository::class)->countProductsUsing($category->id()));
     }
+
+    /**
+     * A descendant, not just $record itself, must be excluded from its
+     * own parent_id options — picking a descendant as the new parent
+     * would create a cycle, which Category::changeParent() has no
+     * protection against (CategoryResource::hierarchicalOptions()'s own
+     * docblock).
+     */
+    public function test_a_categorys_own_descendant_is_also_excluded_from_its_parent_options_on_edit(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        $repository = app(CategoryRepository::class);
+
+        $shoes = new Category(id: null, parentId: null, name: 'Shoes', slug: 'shoes');
+        $repository->save($shoes);
+
+        $sneakers = new Category(id: null, parentId: $shoes->id(), name: 'Sneakers', slug: 'sneakers');
+        $repository->save($sneakers);
+
+        $highTops = new Category(id: null, parentId: $sneakers->id(), name: 'High Tops', slug: 'high-tops');
+        $repository->save($highTops);
+
+        $component = Livewire::test(EditCategory::class, ['record' => $shoes->id()]);
+        $options = $component->instance()->form->getComponent('parent_id')->getOptions();
+
+        $this->assertArrayNotHasKey($shoes->id(), $options);
+        $this->assertArrayNotHasKey($sneakers->id(), $options);
+        $this->assertArrayNotHasKey($highTops->id(), $options);
+    }
+
+    /**
+     * The tree view itself: default list order is depth-first
+     * (parent immediately followed by its own children), and each
+     * name is indented by its real depth — this task's own real
+     * requirement, not just a data-shape assertion.
+     */
+    public function test_the_list_shows_categories_in_tree_order_with_depth_indentation(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        $repository = app(CategoryRepository::class);
+
+        $clothing = new Category(id: null, parentId: null, name: 'Clothing', slug: 'clothing');
+        $repository->save($clothing);
+
+        $shoes = new Category(id: null, parentId: null, name: 'Shoes', slug: 'shoes');
+        $repository->save($shoes);
+
+        $sneakers = new Category(id: null, parentId: $shoes->id(), name: 'Sneakers', slug: 'sneakers');
+        $repository->save($sneakers);
+
+        $highTops = new Category(id: null, parentId: $sneakers->id(), name: 'High Tops', slug: 'high-tops');
+        $repository->save($highTops);
+
+        $component = Livewire::test(ListCategories::class);
+
+        $orderedNames = array_map(
+            fn (CategoryModel $record) => $record->name,
+            $component->instance()->getTable()->getRecords()->all()
+        );
+        $this->assertSame(['Clothing', 'Shoes', 'Sneakers', 'High Tops'], $orderedNames);
+
+        $component->assertTableColumnFormattedStateSet('name', 'Clothing', CategoryModel::find($clothing->id()));
+        $component->assertTableColumnFormattedStateSet('name', 'Shoes', CategoryModel::find($shoes->id()));
+        $component->assertTableColumnFormattedStateSet('name', '— Sneakers', CategoryModel::find($sneakers->id()));
+        $component->assertTableColumnFormattedStateSet('name', '— — High Tops', CategoryModel::find($highTops->id()));
+    }
+
+    /**
+     * ProductResource's own categories field reuses this same
+     * hierarchicalOptions() method — no self-reference/exclusion
+     * concern there (a Product isn't a Category), but the tree
+     * indentation must still show up.
+     */
+    public function test_product_resources_categories_field_shows_the_same_tree_indentation(): void
+    {
+        $repository = app(CategoryRepository::class);
+
+        $shoes = new Category(id: null, parentId: null, name: 'Shoes', slug: 'shoes');
+        $repository->save($shoes);
+
+        $sneakers = new Category(id: null, parentId: $shoes->id(), name: 'Sneakers', slug: 'sneakers');
+        $repository->save($sneakers);
+
+        $options = CategoryResource::hierarchicalOptions();
+
+        $this->assertSame([
+            (string) $shoes->id() => 'Shoes',
+            (string) $sneakers->id() => '— Sneakers',
+        ], $options);
+    }
 }
