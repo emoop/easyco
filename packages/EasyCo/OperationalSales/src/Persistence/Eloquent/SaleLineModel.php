@@ -31,6 +31,8 @@ class SaleLineModel extends Model
         'transaction_id',
         'client_id',
         'priceable_id',
+        'product_name',
+        'sku',
         'type',
         'status',
         'quantity',

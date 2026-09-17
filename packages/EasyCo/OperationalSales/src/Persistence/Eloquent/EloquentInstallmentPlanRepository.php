@@ -241,6 +241,8 @@ final class EloquentInstallmentPlanRepository implements InstallmentPlanReposito
             effectiveAt: $model->effective_at->toDateTimeImmutable(),
             originatingSaleLineId: $model->originating_sale_line_id !== null ? (string) $model->originating_sale_line_id : null,
             originatingReservationLineId: $model->originating_reservation_line_id !== null ? (string) $model->originating_reservation_line_id : null,
+            productName: $model->product_name,
+            sku: $model->sku,
         );
     }
 }

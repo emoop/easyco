@@ -70,6 +70,13 @@ final class InstallmentPlanTest extends TestCase
             profit: $this->money((int) round($amountMinorUnits * 0.2), $currency),
             recordedAt: $this->now(),
             effectiveAt: $effectiveAt ?? $this->now(),
+            // RESERVATION is unconstrained on productName/sku (§3.12), but
+            // a snapshot is included anyway: recordPayment() settling a
+            // plan turns each reservedLine into a SALE-type settlement
+            // line via buildSettlementSaleLines(), which DOES require one
+            // — see that method's own inline note.
+            productName: 'Product One',
+            sku: 'SKU-1',
         );
 
         if ($id !== null) {
@@ -160,6 +167,8 @@ final class InstallmentPlanTest extends TestCase
             profit: $this->money(200),
             recordedAt: $this->now(),
             effectiveAt: $this->now(),
+            productName: 'Product One',
+            sku: 'SKU-1',
         );
 
         $this->expectException(\InvalidArgumentException::class);

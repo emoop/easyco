@@ -241,6 +241,8 @@ final class CheckoutOrchestrator
                 profit: $result->profit(),
                 recordedAt: $placedAt,
                 effectiveAt: $placedAt,
+                productName: $result->productName(),
+                sku: $result->sku(),
             ));
         }
 

@@ -347,6 +347,18 @@ final class InstallmentPlan
                 // deliberately NOT $recordedAt/"now".
                 effectiveAt: $reservedLine->effectiveAt(),
                 originatingReservationLineId: $reservedLine->id(),
+                // This settlement line is SaleLineType::SALE, which
+                // requires a non-null productName/sku per §3.12 — carried
+                // through from the reservedLine's own snapshot. RESERVATION
+                // lines are themselves unconstrained on these two fields
+                // (reservation-recording isn't wired end-to-end yet), so a
+                // reservedLine created without them will make settlement
+                // throw here — a real, correct failure: this domain rule
+                // means whoever eventually builds reservation-recording
+                // must capture productName/sku at reservation time, not
+                // defer it to settlement.
+                productName: $reservedLine->productName(),
+                sku: $reservedLine->sku(),
             );
         }
 

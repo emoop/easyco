@@ -61,6 +61,8 @@ final class EloquentTransactionRepository implements TransactionRepository
         $model->transaction_id = $transactionModel->id;
         $model->client_id = $saleLine->clientId();
         $model->priceable_id = $saleLine->priceableId();
+        $model->product_name = $saleLine->productName();
+        $model->sku = $saleLine->sku();
         $model->type = $saleLine->type()->value;
         $model->status = $saleLine->status()->value;
         $model->quantity = $saleLine->quantity();
@@ -115,6 +117,8 @@ final class EloquentTransactionRepository implements TransactionRepository
             effectiveAt: $model->effective_at->toDateTimeImmutable(),
             originatingSaleLineId: $model->originating_sale_line_id !== null ? (string) $model->originating_sale_line_id : null,
             originatingReservationLineId: $model->originating_reservation_line_id !== null ? (string) $model->originating_reservation_line_id : null,
+            productName: $model->product_name,
+            sku: $model->sku,
         );
     }
 }

@@ -17,6 +17,14 @@ use EasyCo\Catalog\ProductTag;
  * why this assembly must happen in the caller, not inside Pricing:
  * Pricing must never depend on Catalog directly, CLAUDE.md rule 9).
  *
+ * ALSO returns productName/sku — resolved from the same $variation/
+ * $product this method already loads for scope matching, no extra query
+ * — for CheckoutOrchestrator to snapshot onto a SALE-type SaleLine per
+ * operational-sales-domain-design.md §3.12. A missing variation returns
+ * both as null, same as productId above; CheckoutOrchestrator's own
+ * callers already handle a missing/unpurchasable variation before ever
+ * reaching pricing.
+ *
  * Deliberately not tied to Cart specifically — a small, reusable,
  * app-layer service any future caller (Promotions' own eventual Cart
  * integration, an Orders checkout flow, ...) can call the same way.
@@ -32,7 +40,7 @@ class CatalogScopeResolver
     }
 
     /**
-     * @return array{productId: ?string, matchingScopeReferenceIds: array<string, string[]>}
+     * @return array{productId: ?string, matchingScopeReferenceIds: array<string, string[]>, productName: ?string, sku: ?string}
      */
     public function forVariation(string $variationId): array
     {
@@ -42,7 +50,7 @@ class CatalogScopeResolver
             // A missing variation is the caller's problem — both existing
             // CartController call sites already handle a missing/
             // unpurchasable variation before ever reaching pricing.
-            return ['productId' => null, 'matchingScopeReferenceIds' => []];
+            return ['productId' => null, 'matchingScopeReferenceIds' => [], 'productName' => null, 'sku' => null];
         }
 
         $productId = $variation->productId();
@@ -84,6 +92,8 @@ class CatalogScopeResolver
         return [
             'productId' => $productId,
             'matchingScopeReferenceIds' => $matchingScopeReferenceIds,
+            'productName' => $product?->name(),
+            'sku' => $variation->sku(),
         ];
     }
 }

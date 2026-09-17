@@ -125,6 +125,9 @@ class CatalogScopeResolverTest extends TestCase
     {
         $result = app(CatalogScopeResolver::class)->forVariation('999999');
 
-        $this->assertSame(['productId' => null, 'matchingScopeReferenceIds' => []], $result);
+        $this->assertSame(
+            ['productId' => null, 'matchingScopeReferenceIds' => [], 'productName' => null, 'sku' => null],
+            $result
+        );
     }
 }

@@ -63,6 +63,8 @@ final class SaleLine
         private DateTimeImmutable $effectiveAt,
         private ?string $originatingSaleLineId = null,
         private ?string $originatingReservationLineId = null,
+        private ?string $productName = null,
+        private ?string $sku = null,
     ) {
         if ($clientId === '') {
             throw new \InvalidArgumentException('SaleLine clientId must not be empty.');
@@ -75,6 +77,7 @@ final class SaleLine
         self::assertPriceableIdMatchesType($priceableId, $type);
         self::assertOriginatingSaleLineIdMatchesType($originatingSaleLineId, $type);
         self::assertOriginatingReservationLineIdMatchesType($originatingReservationLineId, $type);
+        self::assertProductNameAndSkuMatchType($productName, $sku, $type);
     }
 
     /**
@@ -130,6 +133,47 @@ final class SaleLine
     }
 
     /**
+     * Per operational-sales-domain-design.md §3.12: a productName/sku
+     * snapshot is required only for SALE — the one type a real, live
+     * checkout produces today. REFUND resolves the same information
+     * through originatingSaleLineId rather than duplicating it.
+     * RESERVATION is left unconstrained (either state acceptable) because
+     * reservation-recording isn't wired end-to-end in production yet
+     * (see inventory-domain-design.md) — forcing a requirement here would
+     * only demand placeholder values for a flow that doesn't exist.
+     * SHIPPING/INSTALLMENT_PAYMENT keep the original reasoning: both must
+     * be null, no real product involved.
+     */
+    private static function assertProductNameAndSkuMatchType(?string $productName, ?string $sku, SaleLineType $type): void
+    {
+        if ($type === SaleLineType::SALE) {
+            if ($productName === null || $productName === '') {
+                throw new \InvalidArgumentException(
+                    "SaleLine productName must be a non-empty string for type {$type->value}."
+                );
+            }
+
+            if ($sku === null || $sku === '') {
+                throw new \InvalidArgumentException(
+                    "SaleLine sku must be a non-empty string for type {$type->value}."
+                );
+            }
+
+            return;
+        }
+
+        $mustBeNull = in_array($type, [SaleLineType::SHIPPING, SaleLineType::INSTALLMENT_PAYMENT], true);
+
+        if ($mustBeNull && ($productName !== null || $sku !== null)) {
+            throw new \InvalidArgumentException(
+                "SaleLine productName/sku must be null for type {$type->value}."
+            );
+        }
+
+        // RESERVATION/REFUND: unconstrained, either state acceptable.
+    }
+
+    /**
      * Reconstitutes a SaleLine exactly as it exists in storage.
      *
      * PERSISTENCE-LAYER ONLY — trusts that every argument already passed
@@ -167,6 +211,8 @@ final class SaleLine
         DateTimeImmutable $effectiveAt,
         ?string $originatingSaleLineId = null,
         ?string $originatingReservationLineId = null,
+        ?string $productName = null,
+        ?string $sku = null,
     ): self {
         return new self(
             id: $id,
@@ -182,6 +228,8 @@ final class SaleLine
             effectiveAt: $effectiveAt,
             originatingSaleLineId: $originatingSaleLineId,
             originatingReservationLineId: $originatingReservationLineId,
+            productName: $productName,
+            sku: $sku,
         );
     }
 
@@ -274,5 +322,15 @@ final class SaleLine
     public function originatingReservationLineId(): ?string
     {
         return $this->originatingReservationLineId;
+    }
+
+    public function productName(): ?string
+    {
+        return $this->productName;
+    }
+
+    public function sku(): ?string
+    {
+        return $this->sku;
     }
 }

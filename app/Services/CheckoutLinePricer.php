@@ -77,6 +77,8 @@ class CheckoutLinePricer
             amount: $amount,
             profit: $profit,
             costRecorded: $costRecorded,
+            productName: $scope['productName'],
+            sku: $scope['sku'],
         );
     }
 }

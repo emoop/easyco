@@ -37,6 +37,8 @@ final class TransactionTest extends TestCase
             profit: $this->money(200),
             recordedAt: $this->now(),
             effectiveAt: $this->now(),
+            productName: 'Product One',
+            sku: 'SKU-1',
         );
 
         if ($id !== null) {

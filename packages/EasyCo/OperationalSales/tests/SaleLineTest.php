@@ -23,7 +23,7 @@ final class SaleLineTest extends TestCase
     }
 
     /**
-     * @return array{priceableId: ?string, type: SaleLineType}
+     * @return array{priceableId: ?string, type: SaleLineType, productName: ?string, sku: ?string}
      */
     private function baseArgsFor(SaleLineType $type): array
     {
@@ -31,7 +31,11 @@ final class SaleLineTest extends TestCase
             ? null
             : 'priceable-1';
 
-        return ['priceableId' => $priceableId, 'type' => $type];
+        // Per §3.12: productName/sku required only for SALE.
+        $productName = $type === SaleLineType::SALE ? 'Product One' : null;
+        $sku = $type === SaleLineType::SALE ? 'SKU-1' : null;
+
+        return ['priceableId' => $priceableId, 'type' => $type, 'productName' => $productName, 'sku' => $sku];
     }
 
     public static function allTypesProvider(): array
@@ -62,10 +66,14 @@ final class SaleLineTest extends TestCase
             profit: $this->money(200),
             recordedAt: $this->now(),
             effectiveAt: $this->now(),
+            productName: $args['productName'],
+            sku: $args['sku'],
         );
 
         $this->assertSame($type, $line->type());
         $this->assertSame($args['priceableId'], $line->priceableId());
+        $this->assertSame($args['productName'], $line->productName());
+        $this->assertSame($args['sku'], $line->sku());
     }
 
     public static function priceableIdRequiredTypesProvider(): array
@@ -264,6 +272,8 @@ final class SaleLineTest extends TestCase
             recordedAt: $this->now(),
             effectiveAt: $this->now(),
             originatingReservationLineId: 'reservation-line-1',
+            productName: 'Product One',
+            sku: 'SKU-1',
         );
 
         $this->assertSame('reservation-line-1', $line->originatingReservationLineId());
@@ -283,6 +293,8 @@ final class SaleLineTest extends TestCase
             profit: $this->money(200),
             recordedAt: $this->now(),
             effectiveAt: $this->now(),
+            productName: 'Product One',
+            sku: 'SKU-1',
         );
     }
 
@@ -318,6 +330,8 @@ final class SaleLineTest extends TestCase
             profit: $this->money(200),
             recordedAt: $this->now(),
             effectiveAt: $this->now(),
+            productName: 'Product One',
+            sku: 'SKU-1',
         );
 
         $this->expectException(\LogicException::class);
@@ -338,6 +352,8 @@ final class SaleLineTest extends TestCase
             profit: $this->money(200),
             recordedAt: $this->now(),
             effectiveAt: $this->now(),
+            productName: 'Product One',
+            sku: 'SKU-1',
         );
 
         $line->assignId('line-1');
@@ -411,6 +427,8 @@ final class SaleLineTest extends TestCase
             'effectiveAt',
             'originatingSaleLineId',
             'originatingReservationLineId',
+            'productName',
+            'sku',
         ];
 
         $actualPublicMethods = array_map(
@@ -422,5 +440,172 @@ final class SaleLineTest extends TestCase
         sort($actualPublicMethods);
 
         $this->assertSame($expectedPublicMethods, $actualPublicMethods);
+    }
+
+    /**
+     * operational-sales-domain-design.md §3.12: productName/sku required
+     * only for SaleLineType::SALE.
+     */
+    public function test_sale_type_with_real_product_name_and_sku_succeeds(): void
+    {
+        $line = new SaleLine(
+            id: null,
+            transactionId: 'txn-1',
+            clientId: 'client-1',
+            priceableId: 'priceable-1',
+            type: SaleLineType::SALE,
+            status: SaleLineStatus::COMPLETED,
+            quantity: 1,
+            amount: $this->money(),
+            profit: $this->money(200),
+            recordedAt: $this->now(),
+            effectiveAt: $this->now(),
+            productName: 'Product One',
+            sku: 'SKU-1',
+        );
+
+        $this->assertSame('Product One', $line->productName());
+        $this->assertSame('SKU-1', $line->sku());
+    }
+
+    public static function nullProductNameOrSkuProvider(): array
+    {
+        return [
+            'null productName' => [null, 'SKU-1'],
+            'null sku' => ['Product One', null],
+            'both null' => [null, null],
+        ];
+    }
+
+    #[DataProvider('nullProductNameOrSkuProvider')]
+    public function test_sale_type_with_a_null_product_name_or_sku_throws(?string $productName, ?string $sku): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+
+        new SaleLine(
+            id: null,
+            transactionId: 'txn-1',
+            clientId: 'client-1',
+            priceableId: 'priceable-1',
+            type: SaleLineType::SALE,
+            status: SaleLineStatus::COMPLETED,
+            quantity: 1,
+            amount: $this->money(),
+            profit: $this->money(200),
+            recordedAt: $this->now(),
+            effectiveAt: $this->now(),
+            productName: $productName,
+            sku: $sku,
+        );
+    }
+
+    public static function nonNullProductNameOrSkuProvider(): array
+    {
+        return [
+            'non-null productName' => ['Product One', null],
+            'non-null sku' => [null, 'SKU-1'],
+            'both non-null' => ['Product One', 'SKU-1'],
+        ];
+    }
+
+    #[DataProvider('nonNullProductNameOrSkuProvider')]
+    public function test_shipping_type_with_a_non_null_product_name_or_sku_throws(?string $productName, ?string $sku): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+
+        new SaleLine(
+            id: null,
+            transactionId: 'txn-1',
+            clientId: 'client-1',
+            priceableId: null,
+            type: SaleLineType::SHIPPING,
+            status: SaleLineStatus::COMPLETED,
+            quantity: 1,
+            amount: $this->money(),
+            profit: $this->money(200),
+            recordedAt: $this->now(),
+            effectiveAt: $this->now(),
+            productName: $productName,
+            sku: $sku,
+        );
+    }
+
+    public function test_shipping_type_with_both_null_succeeds(): void
+    {
+        $line = new SaleLine(
+            id: null,
+            transactionId: 'txn-1',
+            clientId: 'client-1',
+            priceableId: null,
+            type: SaleLineType::SHIPPING,
+            status: SaleLineStatus::COMPLETED,
+            quantity: 1,
+            amount: $this->money(),
+            profit: $this->money(200),
+            recordedAt: $this->now(),
+            effectiveAt: $this->now(),
+            productName: null,
+            sku: null,
+        );
+
+        $this->assertNull($line->productName());
+        $this->assertNull($line->sku());
+    }
+
+    public function test_reservation_type_is_unconstrained_on_product_name_and_sku(): void
+    {
+        $withoutSnapshot = new SaleLine(
+            id: null,
+            transactionId: 'txn-1',
+            clientId: 'client-1',
+            priceableId: 'priceable-1',
+            type: SaleLineType::RESERVATION,
+            status: SaleLineStatus::PENDING,
+            quantity: 1,
+            amount: $this->money(),
+            profit: $this->money(200),
+            recordedAt: $this->now(),
+            effectiveAt: $this->now(),
+        );
+
+        $withSnapshot = new SaleLine(
+            id: null,
+            transactionId: 'txn-1',
+            clientId: 'client-1',
+            priceableId: 'priceable-1',
+            type: SaleLineType::RESERVATION,
+            status: SaleLineStatus::PENDING,
+            quantity: 1,
+            amount: $this->money(),
+            profit: $this->money(200),
+            recordedAt: $this->now(),
+            effectiveAt: $this->now(),
+            productName: 'Product One',
+            sku: 'SKU-1',
+        );
+
+        $this->assertNull($withoutSnapshot->productName());
+        $this->assertSame('Product One', $withSnapshot->productName());
+    }
+
+    public function test_refund_type_is_unconstrained_on_product_name_and_sku(): void
+    {
+        $withoutSnapshot = new SaleLine(
+            id: null,
+            transactionId: 'txn-1',
+            clientId: 'client-1',
+            priceableId: 'priceable-1',
+            type: SaleLineType::REFUND,
+            status: SaleLineStatus::COMPLETED,
+            quantity: 1,
+            amount: $this->money(),
+            profit: $this->money(200),
+            recordedAt: $this->now(),
+            effectiveAt: $this->now(),
+            originatingSaleLineId: 'sale-line-1',
+        );
+
+        $this->assertNull($withoutSnapshot->productName());
+        $this->assertNull($withoutSnapshot->sku());
     }
 }

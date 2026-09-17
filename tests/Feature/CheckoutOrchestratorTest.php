@@ -160,6 +160,8 @@ class CheckoutOrchestratorTest extends TestCase
             profit: Money::fromMinorUnits(200, 'EUR'),
             recordedAt: new DateTimeImmutable('2026-01-01'),
             effectiveAt: new DateTimeImmutable('2026-01-01'),
+            productName: 'Product One',
+            sku: 'SKU-1',
         ));
         app(TransactionRepository::class)->save($transaction);
 
@@ -244,6 +246,7 @@ class CheckoutOrchestratorTest extends TestCase
     public function test_a_full_guest_checkout_places_a_real_order(): void
     {
         $variationId = $this->pricedPurchasableVariation('10.00', 10);
+        $productSuffix = self::$productCounter;
         $cart = $this->guestCart();
         $this->addLine($cart, $variationId, 2);
 
@@ -275,6 +278,12 @@ class CheckoutOrchestratorTest extends TestCase
         $this->assertSame(2000, $saleLines[0]->amount()->minorValue());
         $this->assertSame(2000, $saleLines[0]->profit()->minorValue());
         $this->assertSame(SaleLineStatus::COMPLETED, $saleLines[0]->status());
+
+        // operational-sales-domain-design.md §3.12: the SaleLine snapshots
+        // the REAL product's name/sku at checkout time, resolved via
+        // CatalogScopeResolver — not a placeholder, not the variationId.
+        $this->assertSame("Product {$productSuffix}", $saleLines[0]->productName());
+        $this->assertSame("SKU-{$productSuffix}", $saleLines[0]->sku());
     }
 
     public function test_a_full_logged_in_checkout_with_a_saved_address_places_a_real_order(): void

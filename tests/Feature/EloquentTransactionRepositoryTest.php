@@ -52,6 +52,8 @@ class EloquentTransactionRepositoryTest extends TestCase
             profit: $this->money(400),
             recordedAt: $recordedAt,
             effectiveAt: $effectiveAt,
+            productName: 'Product One',
+            sku: 'SKU-1',
         );
         $transaction->addSaleLine($saleLine);
 
@@ -82,6 +84,8 @@ class EloquentTransactionRepositoryTest extends TestCase
         $this->assertEquals($effectiveAt, $reloadedLine->effectiveAt());
         $this->assertNull($reloadedLine->originatingSaleLineId());
         $this->assertNull($reloadedLine->originatingReservationLineId());
+        $this->assertSame('Product One', $reloadedLine->productName());
+        $this->assertSame('SKU-1', $reloadedLine->sku());
     }
 
     public function test_a_shipping_line_with_null_priceable_id_round_trips_correctly(): void
@@ -129,6 +133,8 @@ class EloquentTransactionRepositoryTest extends TestCase
             profit: $this->money(200),
             recordedAt: new DateTimeImmutable(),
             effectiveAt: new DateTimeImmutable(),
+            productName: 'Product One',
+            sku: 'SKU-1',
         );
         $transaction->addSaleLine($originalSale);
         $this->repository()->save($transaction);

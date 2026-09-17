@@ -68,6 +68,8 @@ class EloquentOrderRepositoryTest extends TestCase
             profit: Money::fromMinorUnits(200, 'EUR'),
             recordedAt: new DateTimeImmutable('2026-01-01'),
             effectiveAt: new DateTimeImmutable('2026-01-01'),
+            productName: 'Product One',
+            sku: 'SKU-1',
         ));
 
         app(TransactionRepository::class)->save($transaction);

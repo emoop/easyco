@@ -128,7 +128,13 @@ The fix, `EasyCo\Pricing\DefaultCurrency`, belongs to **Pricing, not Operational
 
 **The gap:** `SaleLine.amount`/`profit` are already real point-in-time snapshots ("historical fact, never recomputed" — §2's own language), but nothing on `SaleLine` captures *what* was actually sold in human-readable form — only `priceableId`, a plain reference. If the underlying Product/Variation's name is later changed, or archived, a historical report or reprinted invoice has no way to show what the customer actually bought.
 
-**Decision:** `SaleLine` gains two new nullable fields — `productName` and `sku` — following the exact same "required for real priceable types, must be null for the two pseudo-line types" rule `assertPriceableIdMatchesType()` already establishes for `priceableId` itself (SHIPPING and INSTALLMENT_PAYMENT lines reference no real product, so a name/SKU snapshot for them is meaningless, not merely optional). A new `assertProductNameAndSkuMatchType()` mirrors that existing method's exact shape and reasoning.
+**Decision:** `SaleLine` gains two new nullable fields — `productName` and `sku` — required only for `SaleLineType::SALE`, not mirroring `assertPriceableIdMatchesType()`'s full type list. Two types are deliberately excluded from the requirement, for different reasons, both stated here rather than left implicit:
+
+- **REFUND** already carries `originatingSaleLineId`, linking back to the SALE line being refunded — once that line has its own productName/sku snapshot, a REFUND line resolves the same information through that existing link rather than duplicating it. No new field needed on REFUND itself.
+- **RESERVATION** has no requirement for now — reservation-recording isn't wired end-to-end in production yet (`inventory-domain-design.md`'s own note), so requiring a snapshot here would only force placeholder values into flows that don't exist practically. Revisit when reservation-recording is actually built.
+- **SHIPPING/INSTALLMENT_PAYMENT** keep the original reasoning — both must be null, no real product involved.
+
+A new `assertProductNameAndSkuMatchType()` enforces exactly this: required for SALE, must be null for SHIPPING/INSTALLMENT_PAYMENT, unconstrained (either state acceptable) for RESERVATION/REFUND.
 
 **Captured once, at construction, never updated** — the same immutability rule (§3.2) that already governs every other fact on this class. A product renamed *after* the sale does not retroactively change what a past receipt says was sold; that is the entire point of a snapshot.
 

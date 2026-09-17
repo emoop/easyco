@@ -67,6 +67,13 @@ class EloquentInstallmentPlanRepositoryTest extends TestCase
             profit: $this->money((int) round($amountMinorUnits * 0.2)),
             recordedAt: new DateTimeImmutable(),
             effectiveAt: new DateTimeImmutable('2020-01-01 00:00:00'),
+            // RESERVATION is unconstrained on productName/sku (§3.12), but
+            // a snapshot is included anyway: recordPayment() settling a
+            // plan turns each reservedLine into a SALE-type settlement
+            // line via InstallmentPlan::buildSettlementSaleLines(), which
+            // DOES require one.
+            productName: 'Product One',
+            sku: 'SKU-1',
         );
         $transaction->addSaleLine($line);
         $this->transactionRepository()->save($transaction);

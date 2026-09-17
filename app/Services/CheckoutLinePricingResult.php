@@ -23,6 +23,8 @@ final class CheckoutLinePricingResult
         private readonly Money $amount,
         private readonly Money $profit,
         private readonly bool $costRecorded,
+        private readonly ?string $productName,
+        private readonly ?string $sku,
     ) {
     }
 
@@ -37,6 +39,8 @@ final class CheckoutLinePricingResult
         Money $amount,
         Money $profit,
         bool $costRecorded,
+        ?string $productName,
+        ?string $sku,
     ): self {
         return new self(
             $variationId,
@@ -48,6 +52,8 @@ final class CheckoutLinePricingResult
             $amount,
             $profit,
             $costRecorded,
+            $productName,
+            $sku,
         );
     }
 
@@ -123,5 +129,19 @@ final class CheckoutLinePricingResult
     public function costRecorded(): bool
     {
         return $this->costRecorded;
+    }
+
+    /**
+     * Snapshotted for CheckoutOrchestrator to pass into a SALE-type
+     * SaleLine — see operational-sales-domain-design.md §3.12.
+     */
+    public function productName(): ?string
+    {
+        return $this->productName;
+    }
+
+    public function sku(): ?string
+    {
+        return $this->sku;
     }
 }
