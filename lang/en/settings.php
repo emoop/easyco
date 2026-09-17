@@ -23,4 +23,17 @@ return [
         'saved_notification' => 'Settings saved',
     ],
 
+    'activity_log' => [
+        'tab_label' => 'Activity Log',
+        'enabled_label' => 'Enable the activity log',
+        'enabled_help' => 'When on, every product change (created, edited) is recorded in the log.',
+        'retention_label' => 'Keep entries for',
+        'retention_help' => 'Older entries are deleted automatically at the next scheduled cleanup.',
+        'retention_options' => [
+            '6' => '6 months',
+            '12' => '12 months',
+            '18' => '18 months',
+        ],
+    ],
+
 ];

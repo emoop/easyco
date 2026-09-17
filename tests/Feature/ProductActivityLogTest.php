@@ -8,6 +8,7 @@ use App\Filament\Resources\ProductResource\Pages\EditProduct;
 use App\Filament\Resources\ProductResource\Pages\ProductActivityLog;
 use App\Filament\StaffPanelUser;
 use App\Models\ActivityLogModel;
+use App\Settings\Contracts\SiteSettingsRepository;
 use EasyCo\Catalog\Category;
 use EasyCo\Catalog\Contracts\BrandRepository;
 use EasyCo\Catalog\Contracts\CategoryRepository;
@@ -36,6 +37,19 @@ use Tests\TestCase;
 class ProductActivityLogTest extends TestCase
 {
     use RefreshDatabase;
+
+    /**
+     * The log is OFF by default (LocaleSettings' own Activity Log tab)
+     * — every test in this file except the dedicated "disabled" one
+     * below is specifically exercising logging mechanics, so it's
+     * turned on here rather than repeated in each test.
+     */
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        app(SiteSettingsRepository::class)->set('admin.activity_log_enabled', '1');
+    }
 
     private function staffWithRole(string $roleName): StaffPanelUser
     {
@@ -271,5 +285,27 @@ class ProductActivityLogTest extends TestCase
         session()->forget('password_hash_staff');
 
         $this->get(ProductResource::getUrl('activity-log', ['record' => $product->id]))->assertForbidden();
+    }
+
+    /**
+     * Overrides setUp()'s own opt-in for this one test — the real
+     * default-off state (nothing has ever called ->set() on the key).
+     */
+    public function test_creating_and_editing_a_product_logs_nothing_while_the_setting_is_off_by_default(): void
+    {
+        app(SiteSettingsRepository::class)->forget('admin.activity_log_enabled');
+
+        $this->actingAsPanelAdministrator();
+
+        $product = $this->createSimpleProduct('Disabled Log Product', 'disabled-log-product');
+
+        Livewire::test(EditProduct::class, ['record' => $product->id])
+            ->fillForm(['name' => 'Disabled Log Product Renamed'])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $entries = ActivityLogModel::where('entity_type', 'product')->where('entity_id', $product->id)->get();
+
+        $this->assertCount(0, $entries);
     }
 }

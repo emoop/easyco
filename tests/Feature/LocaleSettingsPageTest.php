@@ -85,4 +85,53 @@ class LocaleSettingsPageTest extends TestCase
         session()->forget('password_hash_staff');
         $this->get(LocaleSettings::getUrl())->assertForbidden();
     }
+
+    public function test_the_activity_log_tab_defaults_to_off_with_a_twelve_month_retention(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        Livewire::test(LocaleSettings::class)
+            ->assertSchemaStateSet([
+                'activity_log_enabled' => false,
+                'activity_log_retention_months' => 12,
+            ]);
+    }
+
+    public function test_enabling_the_activity_log_and_changing_retention_persists_both_settings(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        Livewire::test(LocaleSettings::class)
+            ->fillForm([
+                'activity_log_enabled' => true,
+                'activity_log_retention_months' => 18,
+            ])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $settings = app(SiteSettingsRepository::class);
+        $this->assertSame('1', $settings->get('admin.activity_log_enabled'));
+        $this->assertSame('18', $settings->get('admin.activity_log_retention_months'));
+    }
+
+    /**
+     * A real, confirmed Filament behavior this task's own implementation
+     * had to work around: a component hidden by ->visible() is not
+     * dehydrated into getState() at all — so saving while the toggle is
+     * off (the retention Select hidden) must not blow up, and must fall
+     * back to a sane retention value rather than persisting nothing.
+     */
+    public function test_saving_with_the_activity_log_toggle_off_does_not_error_and_keeps_a_real_retention_value(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        Livewire::test(LocaleSettings::class)
+            ->fillForm(['locale' => 'en'])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $settings = app(SiteSettingsRepository::class);
+        $this->assertSame('0', $settings->get('admin.activity_log_enabled'));
+        $this->assertSame('12', $settings->get('admin.activity_log_retention_months'));
+    }
 }

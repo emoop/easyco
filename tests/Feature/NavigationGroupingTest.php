@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Filament\NavigationGroup;
+use App\Filament\Pages\ActivityLogJournal;
 use App\Filament\Pages\Settings\LocaleSettings;
 use App\Filament\Resources\AttributeDefinitionResource;
 use App\Filament\Resources\AttributeValueResource;
@@ -101,11 +102,14 @@ class NavigationGroupingTest extends TestCase
         $this->assertSame(70, SeasonResource::getNavigationSort());
     }
 
-    public function test_the_three_admin_group_items_sort_in_the_exact_stated_order(): void
+    public function test_the_four_admin_group_items_sort_in_the_exact_stated_order(): void
     {
         $this->assertSame(10, RoleResource::getNavigationSort());
         $this->assertSame(20, StaffResource::getNavigationSort());
         $this->assertSame(30, LocaleSettings::getNavigationSort());
+        // Right after Settings — this task's own stated position.
+        $this->assertSame(40, ActivityLogJournal::getNavigationSort());
+        $this->assertSame(NavigationGroup::ADMIN, ActivityLogJournal::getNavigationGroup());
     }
 
     public function test_attribute_definition_navigation_label_matches_its_own_plural_model_label_everywhere(): void
