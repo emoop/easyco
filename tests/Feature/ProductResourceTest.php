@@ -161,7 +161,7 @@ class ProductResourceTest extends TestCase
                 'slug' => 'air-max',
                 'base_sku' => 'SKU-1',
                 'barcode' => '1234567890123',
-                'description' => 'A classic silhouette.',
+                'description' => '<p>A <strong>classic</strong> silhouette.</p>',
                 'status' => ProductStatus::ACTIVE->value,
                 'catalog_visibility' => CatalogVisibility::VISIBLE->value,
                 'is_purchasable' => false,
@@ -177,7 +177,12 @@ class ProductResourceTest extends TestCase
         $this->assertSame('Air Max', $product->name());
         $this->assertSame('air-max', $product->slug());
         $this->assertSame('SKU-1', $product->baseSku());
-        $this->assertSame('A classic silhouette.', $product->description());
+        // RichEditor's real output — confirmed against
+        // RichEditorStateCast::get() (a plain HTML string via
+        // getHtml(), not JSON, since ProductModel doesn't implement
+        // HasRichContent), round-tripped through the domain layer
+        // exactly as submitted.
+        $this->assertSame('<p>A <strong>classic</strong> silhouette.</p>', $product->description());
         $this->assertSame(ProductStatus::ACTIVE, $product->status());
         $this->assertSame(CatalogVisibility::VISIBLE, $product->catalogVisibility());
         $this->assertSame($brand->id(), $product->brandId());
@@ -241,7 +246,7 @@ class ProductResourceTest extends TestCase
                 'name' => 'Stan Smith Classic',
                 'slug' => 'stan-smith-classic',
                 'base_sku' => 'SKU-STAN-2',
-                'description' => 'Now with a real description.',
+                'description' => '<p>Now with a <strong>real</strong> description.</p>',
                 'status' => ProductStatus::ACTIVE->value,
                 'catalog_visibility' => CatalogVisibility::VISIBLE->value,
                 'brand_id' => $brand->id(),
@@ -257,7 +262,7 @@ class ProductResourceTest extends TestCase
         $this->assertSame('Stan Smith Classic', $reloaded->name());
         $this->assertSame('stan-smith-classic', $reloaded->slug());
         $this->assertSame('SKU-STAN-2', $reloaded->baseSku());
-        $this->assertSame('Now with a real description.', $reloaded->description());
+        $this->assertSame('<p>Now with a <strong>real</strong> description.</p>', $reloaded->description());
         $this->assertSame(ProductStatus::ACTIVE, $reloaded->status());
         $this->assertSame(CatalogVisibility::VISIBLE, $reloaded->catalogVisibility());
         $this->assertSame($brand->id(), $reloaded->brandId());

@@ -37,8 +37,8 @@ use Filament\Actions\ActionGroup;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
 use Filament\Forms\Components\FileUpload;
+use Filament\Forms\Components\RichEditor;
 use Filament\Forms\Components\Select;
-use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Infolists\Components\TextEntry;
@@ -193,8 +193,28 @@ class ProductResource extends Resource
                 ->required(fn (string $operation): bool => $operation === 'edit'),
             TextInput::make('barcode')
                 ->label(__('products.fields.barcode')),
-            Textarea::make('description')
-                ->label(__('products.fields.description')),
+            // Native RichEditor (Filament v5.8.1), no third-party
+            // package — confirmed sufficient by the domain owner over
+            // a plain Textarea (headings for size, bold, no px-level
+            // font-size control needed). h1 deliberately excluded: a
+            // product description shouldn't contain a page-level
+            // heading; h2/h3 already give real size differentiation.
+            // Output is a plain HTML string, not JSON — confirmed
+            // against RichEditorStateCast::get(): it returns
+            // getHtml() unless ->json() is called or the field is
+            // bound to a Model implementing HasRichContent (neither
+            // applies here), and description is already a nullable
+            // TEXT column (catalog-domain-design.md §3.14), wide
+            // enough for real HTML content.
+            RichEditor::make('description')
+                ->label(__('products.fields.description'))
+                ->toolbarButtons([
+                    ['bold', 'italic', 'underline', 'strike', 'link'],
+                    ['h2', 'h3'],
+                    ['bulletList', 'orderedList'],
+                    ['textColor'],
+                    ['undo', 'redo'],
+                ]),
             Select::make('status')
                 ->label(__('products.fields.status'))
                 ->options([
