@@ -1020,4 +1020,69 @@ class ProductResourceTest extends TestCase
         Livewire::test(CreateProduct::class)
             ->assertSee(__('products.fields.status_archive_warning'));
     }
+
+    public function test_the_list_shows_each_products_real_categories_instead_of_the_created_at_date(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        $sneakers = $this->persistedCategory('Sneakers');
+
+        Livewire::test(CreateProduct::class)
+            ->fillForm([
+                'name' => 'Categorized Product',
+                'slug' => 'categorized-product',
+                'base_sku' => 'SKU-CATLIST',
+                'status' => ProductStatus::DRAFT->value,
+                'catalog_visibility' => CatalogVisibility::HIDDEN->value,
+                'categories' => [$sneakers->id()],
+            ])
+            ->call('create')
+            ->assertHasNoFormErrors();
+
+        $productModel = ProductModel::where('slug', 'categorized-product')->firstOrFail();
+
+        Livewire::test(ListProducts::class)
+            ->assertTableColumnStateSet('categories.name', ['Sneakers'], record: $productModel)
+            ->assertTableColumnDoesNotExist('created_at');
+    }
+
+    public function test_the_categories_filter_shows_only_products_in_the_selected_category(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        $sneakers = $this->persistedCategory('Sneakers');
+        $boots = $this->persistedCategory('Boots');
+
+        Livewire::test(CreateProduct::class)
+            ->fillForm([
+                'name' => 'Sneaker Product',
+                'slug' => 'sneaker-product',
+                'base_sku' => 'SKU-SNEAKER',
+                'status' => ProductStatus::DRAFT->value,
+                'catalog_visibility' => CatalogVisibility::HIDDEN->value,
+                'categories' => [$sneakers->id()],
+            ])
+            ->call('create')
+            ->assertHasNoFormErrors();
+
+        Livewire::test(CreateProduct::class)
+            ->fillForm([
+                'name' => 'Boot Product',
+                'slug' => 'boot-product',
+                'base_sku' => 'SKU-BOOT-FILTER',
+                'status' => ProductStatus::DRAFT->value,
+                'catalog_visibility' => CatalogVisibility::HIDDEN->value,
+                'categories' => [$boots->id()],
+            ])
+            ->call('create')
+            ->assertHasNoFormErrors();
+
+        $sneakerModel = ProductModel::where('slug', 'sneaker-product')->firstOrFail();
+        $bootModel = ProductModel::where('slug', 'boot-product')->firstOrFail();
+
+        Livewire::test(ListProducts::class)
+            ->filterTable('categories', $sneakers->id())
+            ->assertCanSeeTableRecords([$sneakerModel])
+            ->assertCanNotSeeTableRecords([$bootModel]);
+    }
 }

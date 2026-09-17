@@ -588,9 +588,16 @@ class ProductResource extends Resource
                     ->color(fn (string $state): string => $state === CatalogVisibility::VISIBLE->value ? 'success' : 'gray'),
                 TextColumn::make('brand.name')
                     ->label(__('products.fields.brand_id')),
-                TextColumn::make('created_at')
-                    ->dateTime()
-                    ->sortable(),
+                // ProductModel::categories() — a real, read-only
+                // BelongsToMany added specifically so Filament's table
+                // columns/filters have something to query against (see
+                // that relation's own docblock); the domain layer's own
+                // category writes still go exclusively through
+                // ProductCategoryRepository.
+                TextColumn::make('categories.name')
+                    ->label(__('products.fields.categories'))
+                    ->bulleted()
+                    ->limitList(3),
             ])
             ->filters([
                 // A dedicated "archived only" view, not a toggle that
@@ -630,6 +637,34 @@ class ProductResource extends Resource
                 SelectFilter::make('product_group_id')
                     ->label(__('products.fields.product_group_id'))
                     ->options(fn (): array => ProductGroupModel::pluck('name', 'id')->all()),
+                // NOT ->relationship(): a real, confirmed gap found in
+                // a live check — SelectFilter::relationship() builds its
+                // OWN options from the relationship internally and
+                // silently ignores any ->options() also set (confirmed
+                // against the installed v5.8.1 source,
+                // SelectFilter::getFormField()'s query-vs-plain branch),
+                // and without ->preload() that relationship-driven
+                // Select shows NOTHING until the user types a search
+                // term — exactly the "empty dropdown" this replaces. A
+                // plain ->options() (this task's own real, tree-ordered
+                // hierarchicalOptions(), eagerly evaluated, no
+                // preload/search-typing gap) plus a manual ->query()
+                // whereHas() against the same read-only
+                // ProductModel::categories() the column above displays.
+                SelectFilter::make('categories')
+                    ->label(__('products.fields.categories'))
+                    ->options(fn (): array => CategoryResource::hierarchicalOptions())
+                    ->searchable()
+                    ->query(function (Builder $query, array $data): Builder {
+                        if (blank($data['value'] ?? null)) {
+                            return $query;
+                        }
+
+                        return $query->whereHas(
+                            'categories',
+                            fn (Builder $categoriesQuery): Builder => $categoriesQuery->where('catalog_categories.id', $data['value'])
+                        );
+                    }),
             ])
             ->recordActions([
                 ActionGroup::make([
