@@ -5,6 +5,7 @@ namespace App\Filament\Resources\ProductResource\Pages;
 use App\Filament\Resources\ProductResource;
 use App\Services\ActivityLogger;
 use App\Services\ArchiveProductMediaCleaner;
+use App\Services\ProductPricingAndStock;
 use EasyCo\Catalog\Contracts\ProductCategoryRepository;
 use EasyCo\Catalog\Contracts\ProductRepository;
 use EasyCo\Catalog\Contracts\ProductTagRepository;
@@ -23,6 +24,7 @@ use EasyCo\Media\Persistence\Eloquent\MediaAssetModel;
 use EasyCo\Media\ProductMedia;
 use EasyCo\Media\ProductMediaCountGuard;
 use EasyCo\Media\VideoCountGuard;
+use EasyCo\Staff\Enums\Permission;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\EditRecord;
 use Filament\Support\Exceptions\Halt;
@@ -124,6 +126,18 @@ class EditProduct extends EditRecord
         $universal = $product->universalVariation();
         $data['is_purchasable'] = $universal->isPurchasable();
         $data['barcode'] = $universal->barcode();
+
+        // Phase 2 — Price + Stock: regular_price/sale_price/cost read as
+        // display decimal strings (null when unset — a missing
+        // PriceListItem/ProductCost is a real, legitimate "not priced
+        // yet" state, not zero). stockQuantity() never returns null
+        // (StockLevelRepository::findByVariationId()'s own contract).
+        $pricingAndStock = app(ProductPricingAndStock::class);
+        $priceableId = $universal->priceableId();
+        $data['regular_price'] = $pricingAndStock->regularPriceDisplay($priceableId);
+        $data['sale_price'] = $pricingAndStock->salePriceDisplay($priceableId);
+        $data['cost'] = $pricingAndStock->costDisplay($priceableId);
+        $data['stock_quantity'] = $pricingAndStock->stockQuantity($priceableId);
 
         return $data;
     }
@@ -288,7 +302,82 @@ class EditProduct extends EditRecord
             app(ArchiveProductMediaCleaner::class)->clean($product->id());
         }
 
+        $this->updatePricingAndStock($universal->priceableId(), $data, $logger, $product->id());
+
         return ProductModel::find($product->id());
+    }
+
+    /**
+     * Diff-then-write, matching every other field in this class's own
+     * established pattern — but gated FIRST by PRICE_MANAGE/COST_MANAGE,
+     * independent of whatever the submitted $data actually contains: a
+     * REAL, CONFIRMED GAP found while building this (see
+     * ProductResource::priceStockTabComponents()'s own docblock) means a
+     * merely-disabled field's value still dehydrates into $data on
+     * submit — so a value present in $data from a non-PRICE_MANAGE/
+     * COST_MANAGE staff member (the field was disabled, never hidden)
+     * must never be trusted, let alone diffed and written. Checking the
+     * permission BEFORE even reading $data['regular_price'] etc. is
+     * what actually enforces this, not the diff itself.
+     *
+     * Stock has no dedicated inventory permission (PRODUCT_MANAGE is
+     * the closest fit — see priceStockTabComponents()'s own docblock);
+     * PRODUCT_MANAGE is already this whole page's base edit permission,
+     * so in practice this branch is always taken whenever this method
+     * runs at all — checked explicitly anyway, not assumed.
+     */
+    private function updatePricingAndStock(string $priceableId, array $data, ActivityLogger $logger, string $productId): void
+    {
+        $pricingAndStock = app(ProductPricingAndStock::class);
+
+        if (ProductResource::staffHasPermission(Permission::PRICE_MANAGE)) {
+            $currentRegularPrice = $pricingAndStock->regularPriceDisplay($priceableId);
+            // normalizeDecimalDisplay(), not a raw (string) cast — a
+            // REAL, CONFIRMED GAP found while testing: TextInput::
+            // numeric() registers a NumberStateCast on the field
+            // (installed v5.8.1 source), which reformats a submitted
+            // "80.00" down to "80" before it ever reaches $data —
+            // comparing that raw value directly against
+            // regularPriceDisplay()'s own fixed "80.00" format would
+            // treat an UNCHANGED price as changed. See
+            // ProductPricingAndStock::normalizeDecimalDisplay()'s own
+            // docblock.
+            $newRegularPrice = $pricingAndStock->normalizeDecimalDisplay($data['regular_price'] ?? null);
+            if ($currentRegularPrice !== $newRegularPrice) {
+                $logger->logFieldChanged('product', $productId, 'regular_price', $currentRegularPrice, $newRegularPrice);
+                $pricingAndStock->writeRegularPrice($priceableId, $newRegularPrice);
+            }
+
+            $currentSalePrice = $pricingAndStock->salePriceDisplay($priceableId);
+            $newSalePrice = $pricingAndStock->normalizeDecimalDisplay($data['sale_price'] ?? null);
+            if ($currentSalePrice !== $newSalePrice) {
+                $logger->logFieldChanged('product', $productId, 'sale_price', $currentSalePrice, $newSalePrice);
+                $pricingAndStock->writeSalePrice($priceableId, $newSalePrice);
+            }
+        }
+
+        if (ProductResource::staffHasPermission(Permission::COST_MANAGE)) {
+            $currentCost = $pricingAndStock->costDisplay($priceableId);
+            $newCost = $pricingAndStock->normalizeDecimalDisplay($data['cost'] ?? null);
+
+            // writeCost() itself is a no-op on a blank value (see
+            // ProductPricingAndStock's own docblock — ProductCostRepository
+            // has no removal path), so the diff-guard here only needs to
+            // cover the "genuinely different, non-blank" case.
+            if ($newCost !== null && $currentCost !== $newCost) {
+                $logger->logFieldChanged('product', $productId, 'cost', $currentCost, $newCost);
+                $pricingAndStock->writeCost($priceableId, $newCost);
+            }
+        }
+
+        if (ProductResource::staffHasPermission(Permission::PRODUCT_MANAGE)) {
+            $currentStock = $pricingAndStock->stockQuantity($priceableId);
+            $newStock = (int) ($data['stock_quantity'] ?? 0);
+            if ($currentStock !== $newStock) {
+                $logger->logFieldChanged('product', $productId, 'stock_quantity', (string) $currentStock, (string) $newStock);
+                $pricingAndStock->writeStockQuantity($priceableId, $newStock);
+            }
+        }
     }
 
     protected function syncCategories(string $productId, array $submittedCategoryIds): void

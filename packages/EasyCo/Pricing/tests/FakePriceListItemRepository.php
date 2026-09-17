@@ -3,6 +3,7 @@
 namespace EasyCo\Pricing\Tests;
 
 use EasyCo\Pricing\Contracts\PriceListItemRepository;
+use EasyCo\Pricing\Enums\PriceListItemTargetType;
 use EasyCo\Pricing\PriceListItem;
 
 /**
@@ -42,5 +43,16 @@ final class FakePriceListItemRepository implements PriceListItemRepository
             $this->items,
             fn (PriceListItem $item) => $item->priceListId() === $priceListId
         ));
+    }
+
+    public function findByPriceListIdAndTarget(string $priceListId, PriceListItemTargetType $targetType, string $targetId): ?PriceListItem
+    {
+        foreach ($this->items as $item) {
+            if ($item->priceListId() === $priceListId && $item->targetType() === $targetType && $item->targetId() === $targetId) {
+                return $item;
+            }
+        }
+
+        return null;
     }
 }

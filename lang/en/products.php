@@ -8,6 +8,7 @@ return [
     'tabs' => [
         'general' => 'General',
         'attributes' => 'Attributes',
+        'price_stock' => 'Price & Stock',
     ],
 
     'fields' => [
@@ -33,6 +34,10 @@ return [
         'thumbnail' => 'Photo',
         'media_upload_hint' => 'Drag & Drop your files or <span class="filepond--label-action">Browse</span> (max :max MB)',
         'status_archive_warning' => 'Archiving permanently deletes the gallery photos and video, keeping only a small thumbnail of the main photo.',
+        'regular_price' => 'Regular price',
+        'sale_price' => 'Sale price',
+        'cost' => 'Cost',
+        'stock_quantity' => 'Stock quantity',
     ],
 
     'filters' => [

@@ -10,6 +10,7 @@ use App\Filament\Resources\ProductResource\Pages\ListProducts;
 use App\Filament\Resources\ProductResource\Pages\ProductActivityLog;
 use App\Filament\Resources\ProductResource\Pages\ViewProduct;
 use App\Services\DuplicateProduct;
+use App\Services\ProductPricingAndStock;
 use App\Settings\Contracts\SiteSettingsRepository;
 use BackedEnum;
 use EasyCo\Catalog\AttributeDefinition;
@@ -124,6 +125,24 @@ class ProductResource extends Resource
     }
 
     /**
+     * A real, public wrapper around AuthorizesViaStaffPermission's own
+     * private staffCanForAction() — needed because Create/EditProduct
+     * (separate classes, neither `use`s that trait itself) must
+     * server-side-recheck PRICE_MANAGE/COST_MANAGE before writing
+     * price/cost, independent of the form's own ->disabled() state —
+     * see priceStockTabComponents()'s own docblock for why ->disabled()
+     * alone is not the real enforcement. staffCanForAction() itself
+     * stays private on the trait (unrelated call sites should keep
+     * using the five named canX() methods); this is the one, deliberate,
+     * arbitrary-permission escape hatch for this Resource's own writer
+     * pages.
+     */
+    public static function staffHasPermission(Permission $permission): bool
+    {
+        return static::staffCanForAction($permission);
+    }
+
+    /**
      * Two columns, per admin-panel-design.md's own "the user scrolls a
      * lot" complaint about the old single-column, three-tab layout:
      * Media/Categories/Tags/Season sat in an otherwise-empty Media tab
@@ -165,6 +184,8 @@ class ProductResource extends Resource
                                         ->schema(static::generalTabComponents()),
                                     Tab::make(__('products.tabs.attributes'))
                                         ->schema(static::attributesTabComponents()),
+                                    Tab::make(__('products.tabs.price_stock'))
+                                        ->schema(static::priceStockTabComponents()),
                                 ]),
                         ]),
                     Group::make()
@@ -354,6 +375,78 @@ class ProductResource extends Resource
     public static function descriptiveAttributeDefinitions(): Collection
     {
         return AttributeDefinitionModel::where('type', '!=', AttributeType::MULTISELECT->value)->get();
+    }
+
+    /**
+     * Phase 2 — Price + Stock for SIMPLE products (this task). Values
+     * are read/written entirely through App\Services\
+     * ProductPricingAndStock (CreateProduct/EditProduct/infolist all
+     * share it) — this method only builds the form fields themselves.
+     *
+     * PERMISSION GATING, CONFIRMED PER-FIELD (the domain owner's own
+     * explicit split): Regular/Sale Price are ordinary catalog info any
+     * PRODUCT_VIEW holder should SEE (visible, just not editable
+     * without PRICE_MANAGE) — ->disabled() only, never ->visible().
+     * Cost is hidden ENTIRELY without COST_VIEW (->visible()), editable
+     * only with COST_MANAGE (->disabled()) — two separate gates on the
+     * same field, not one. Stock has no dedicated inventory permission
+     * in Permission's enum (confirmed against its full case list) —
+     * PRODUCT_MANAGE is the closest real fit, already this whole page's
+     * own base edit permission.
+     *
+     * static::staffCanForAction() — AuthorizesViaStaffPermission's own
+     * private trait method — is still callable here: a trait's private
+     * methods become genuinely private members OF the consuming class
+     * once `use`d (confirmed against real PHP trait semantics, not
+     * merely inherited-and-restricted), so ProductResource's own
+     * methods (this one included) can call it directly, exactly as
+     * that trait's own docblock already establishes for canAccess()
+     * overrides elsewhere in this codebase.
+     *
+     * ->disabled() ALONE IS NOT THE REAL ENFORCEMENT — a REAL, CONFIRMED
+     * GAP found while building this: Filament's own isDehydrated()
+     * (Components\Concerns\HasState, installed v5.8.1 source) checks
+     * hidden-state, never isDisabled() — a merely-disabled field's
+     * value DOES still dehydrate into getState() on submit, unlike a
+     * genuinely hidden one (already-confirmed precedent elsewhere in
+     * this codebase, which does NOT extend to "disabled"). EditProduct's
+     * own updateProduct() therefore re-checks PRICE_MANAGE/COST_MANAGE
+     * again, server-side, before ever writing — this form-level
+     * ->disabled() is a real UX aid (a staff member literally cannot
+     * type into the field), not the security boundary.
+     *
+     * @return array<int, Component>
+     */
+    protected static function priceStockTabComponents(): array
+    {
+        return [
+            TextInput::make('regular_price')
+                ->label(__('products.fields.regular_price'))
+                ->numeric()
+                ->minValue(0)
+                ->step(0.01)
+                ->disabled(fn (): bool => ! static::staffCanForAction(Permission::PRICE_MANAGE)),
+            TextInput::make('sale_price')
+                ->label(__('products.fields.sale_price'))
+                ->numeric()
+                ->minValue(0)
+                ->step(0.01)
+                ->disabled(fn (): bool => ! static::staffCanForAction(Permission::PRICE_MANAGE)),
+            TextInput::make('cost')
+                ->label(__('products.fields.cost'))
+                ->numeric()
+                ->minValue(0)
+                ->step(0.01)
+                ->visible(fn (): bool => static::staffCanForAction(Permission::COST_VIEW))
+                ->disabled(fn (): bool => ! static::staffCanForAction(Permission::COST_MANAGE)),
+            TextInput::make('stock_quantity')
+                ->label(__('products.fields.stock_quantity'))
+                ->numeric()
+                ->integer()
+                ->minValue(0)
+                ->default(0)
+                ->disabled(fn (): bool => ! static::staffCanForAction(Permission::PRODUCT_MANAGE)),
+        ];
     }
 
     /**
@@ -726,9 +819,37 @@ class ProductResource extends Resource
                 ->label(__('products.fields.season_id')),
             TextEntry::make('productGroup.name')
                 ->label(__('products.fields.product_group_id')),
+            // Same COST_VIEW visibility gate as the form's own cost
+            // field — confirmed explicitly by the domain owner as a
+            // both-surfaces requirement, not form-only.
+            TextEntry::make('regular_price')
+                ->label(__('products.fields.regular_price'))
+                ->getStateUsing(fn (ProductModel $record): ?string => app(ProductPricingAndStock::class)->regularPriceDisplay(static::universalVariationId($record))),
+            TextEntry::make('sale_price')
+                ->label(__('products.fields.sale_price'))
+                ->getStateUsing(fn (ProductModel $record): ?string => app(ProductPricingAndStock::class)->salePriceDisplay(static::universalVariationId($record))),
+            TextEntry::make('cost')
+                ->label(__('products.fields.cost'))
+                ->visible(fn (): bool => static::staffCanForAction(Permission::COST_VIEW))
+                ->getStateUsing(fn (ProductModel $record): ?string => app(ProductPricingAndStock::class)->costDisplay(static::universalVariationId($record))),
+            TextEntry::make('stock_quantity')
+                ->label(__('products.fields.stock_quantity'))
+                ->getStateUsing(fn (ProductModel $record): int => app(ProductPricingAndStock::class)->stockQuantity(static::universalVariationId($record))),
             TextEntry::make('created_at')
                 ->dateTime(),
         ]);
+    }
+
+    /**
+     * Shared by infolist()'s four price/stock entries above — the
+     * SIMPLE product's one universal Variation, by its own priceableId()
+     * (== id(), per that accessor's own docblock). A single, named
+     * lookup rather than repeating `$record->variations()->value('id')`
+     * four times inline.
+     */
+    protected static function universalVariationId(ProductModel $record): string
+    {
+        return (string) $record->variations()->value('id');
     }
 
     public static function getPages(): array

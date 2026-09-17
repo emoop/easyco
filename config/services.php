@@ -44,6 +44,15 @@ return [
         // docblock for why this must stay configurable rather than
         // hardcoded in code.
         'default_currency' => env('PRICING_DEFAULT_CURRENCY', 'EUR'),
+
+        // A single, flat tax rate applied to every Regular/Sale Price
+        // entered via ProductResource's Price & Stock tab — a simple
+        // interim default, deliberately NOT a tax-rate-selection UI or
+        // per-product tax class/group ("данъчна група"), which is
+        // separately deferred v2 work. 0 = no tax added on top of the
+        // merchant-entered (already VAT-inclusive, Bulgarian retail
+        // convention) price. 1 basis point = 0.01%; 2000 = 20%.
+        'default_tax_rate_basis_points' => env('PRICING_DEFAULT_TAX_RATE_BASIS_POINTS', 0),
     ],
 
     'catalog' => [

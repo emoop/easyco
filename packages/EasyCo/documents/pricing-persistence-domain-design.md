@@ -1,6 +1,6 @@
 # Pricing Persistence Domain Design
 
-**Status:** v1.0 — approved model, not yet implemented.
+**Status:** v1.0 — implemented (domain layer, EloquentPriceResolver, the two reserved system PriceLists' seeder, the health-check report all exist and are wired); the Phase 2 admin-UI task (Regular/Sale Price, Cost, Stock on ProductResource) is this design's first real admin-UI consumer.
 **Builds on:** `pricing-domain-design.md` (Money, Price, Currency, DefaultCurrency, the existing `PriceResolver`/`PriceContext`/`PriceQuote` contract — this document finally implements a real resolver behind that contract, replacing `InMemoryPriceResolver`), `catalog-domain-design.md` (cross-domain-by-id reference to Product/Variation/Brand/Category/Tag/AttributeValue, never a package dependency), `operational-sales-domain-design.md` §7 (this is the fix for the largest gap that domain's persistence work exposed — every `SaleLine.amount` and `InstallmentPlan` balance so far has been computed against a single hardcoded price seed).
 **Origin:** designed through a structured, example-by-example conversation covering wholesale pricing, POS brand-specific discounts, seasonal collection pricing, and simple WooCommerce-style regular/sale price entry — each real scenario resolved against the same underlying mechanism, one at a time, rather than four separate features.
 

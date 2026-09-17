@@ -8,6 +8,7 @@ return [
     'tabs' => [
         'general' => 'Основни',
         'attributes' => 'Атрибути',
+        'price_stock' => 'Цена и наличност',
     ],
 
     'fields' => [
@@ -33,6 +34,10 @@ return [
         'thumbnail' => 'Снимка',
         'media_upload_hint' => 'Провлачете файлове тук или <span class="filepond--label-action">разгледайте</span> (макс. :max MB)',
         'status_archive_warning' => 'Архивирането изтрива за постоянно снимките от галерията и видеото, като запазва само малка миниатюра на главната снимка.',
+        'regular_price' => 'Редовна цена',
+        'sale_price' => 'Промоционална цена',
+        'cost' => 'Себестойност',
+        'stock_quantity' => 'Наличност',
     ],
 
     'filters' => [

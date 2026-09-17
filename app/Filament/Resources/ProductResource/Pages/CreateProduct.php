@@ -4,6 +4,7 @@ namespace App\Filament\Resources\ProductResource\Pages;
 
 use App\Filament\Resources\ProductResource;
 use App\Services\ActivityLogger;
+use App\Services\ProductPricingAndStock;
 use EasyCo\Catalog\Contracts\ProductCategoryRepository;
 use EasyCo\Catalog\Contracts\ProductRepository;
 use EasyCo\Catalog\Contracts\ProductTagRepository;
@@ -20,6 +21,7 @@ use EasyCo\Media\Exceptions\MediaLimitExceededException;
 use EasyCo\Media\ProductMedia;
 use EasyCo\Media\ProductMediaCountGuard;
 use EasyCo\Media\VideoCountGuard;
+use EasyCo\Staff\Enums\Permission;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\CreateRecord;
 use Filament\Support\Exceptions\Halt;
@@ -147,6 +149,32 @@ class CreateProduct extends CreateRecord
         // parallel single-item code path.
         $videoPaths = filled($data['video'] ?? null) ? [$data['video']] : [];
         $this->attachMedia($productId, $videoPaths, MediaType::VIDEO, (bool) ($data['video_autoplay'] ?? false));
+
+        // Phase 2 — Price + Stock, keyed by the universal Variation's
+        // own priceableId(), which only exists now that save() above
+        // has run. Presence-based, not diff-based (there is no "current
+        // value" to diff against on a brand-new product) — mirrors how
+        // descriptive attributes are handled above: submit-if-present.
+        // PRICE_MANAGE/COST_MANAGE re-checked here explicitly, not
+        // trusted from the form's own ->disabled() state alone — see
+        // ProductResource::priceStockTabComponents()'s own docblock for
+        // the real, confirmed reason a merely-disabled Filament field
+        // still dehydrates its submitted value.
+        $priceableId = $universal->priceableId();
+        $pricingAndStock = app(ProductPricingAndStock::class);
+
+        if (ProductResource::staffHasPermission(Permission::PRICE_MANAGE)) {
+            $pricingAndStock->writeRegularPrice($priceableId, $data['regular_price'] ?? null);
+            $pricingAndStock->writeSalePrice($priceableId, $data['sale_price'] ?? null);
+        }
+
+        if (ProductResource::staffHasPermission(Permission::COST_MANAGE)) {
+            $pricingAndStock->writeCost($priceableId, $data['cost'] ?? null);
+        }
+
+        if (filled($data['stock_quantity'] ?? null)) {
+            $pricingAndStock->writeStockQuantity($priceableId, (int) $data['stock_quantity']);
+        }
 
         app(ActivityLogger::class)->logCreated('product', $productId);
 

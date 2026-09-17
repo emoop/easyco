@@ -2,6 +2,7 @@
 
 namespace EasyCo\Pricing\Contracts;
 
+use EasyCo\Pricing\Enums\PriceListItemTargetType;
 use EasyCo\Pricing\PriceListItem;
 
 interface PriceListItemRepository
@@ -13,4 +14,17 @@ interface PriceListItemRepository
 
     /** @return PriceListItem[] */
     public function findByPriceListId(string $priceListId): array;
+
+    /**
+     * A real, minimal addition — not filtering findByPriceListId()'s
+     * full result set client-side, since a system PriceList
+     * ("Regular Prices"/"Manual Sale") can accumulate one row per
+     * priced Variation/Product store-wide, and the admin-UI "does THIS
+     * target already have a price here" lookup this exists for
+     * (products.php's own regular/sale price fields) runs on every
+     * Create/Edit/View of a single product — loading every item in the
+     * whole list just to find one would be real, avoidable N+1-at-scale
+     * waste.
+     */
+    public function findByPriceListIdAndTarget(string $priceListId, PriceListItemTargetType $targetType, string $targetId): ?PriceListItem;
 }
