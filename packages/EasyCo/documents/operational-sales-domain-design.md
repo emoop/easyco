@@ -124,6 +124,16 @@ Four exception types guard `InstallmentPlan`'s two mutating operations (`attachR
 
 The fix, `EasyCo\Pricing\DefaultCurrency`, belongs to **Pricing, not Operational Sales** — a project-wide default currency is a Pricing-owned concept any future domain might need, the same way `Money`/`Currency` themselves are Pricing-owned. It is a small, framework-agnostic static holder (`set()` / `get()` / `isConfigured()` / `reset()`), configured once by the host application (`PricingServiceProvider::boot()`, reading `config('services.pricing.default_currency')`) and consumed here as `DefaultCurrency::get()`. `get()` throws a `LogicException` rather than silently guessing if nothing was ever configured — the same fail-loud posture as `OverpaymentException` elsewhere in this domain. See `pricing-domain-design.md` for the full writeup; `InstallmentPlan` is its first real consumer.
 
+### 3.12 `SaleLine` gains a name/SKU snapshot — resolved
+
+**The gap:** `SaleLine.amount`/`profit` are already real point-in-time snapshots ("historical fact, never recomputed" — §2's own language), but nothing on `SaleLine` captures *what* was actually sold in human-readable form — only `priceableId`, a plain reference. If the underlying Product/Variation's name is later changed, or archived, a historical report or reprinted invoice has no way to show what the customer actually bought.
+
+**Decision:** `SaleLine` gains two new nullable fields — `productName` and `sku` — following the exact same "required for real priceable types, must be null for the two pseudo-line types" rule `assertPriceableIdMatchesType()` already establishes for `priceableId` itself (SHIPPING and INSTALLMENT_PAYMENT lines reference no real product, so a name/SKU snapshot for them is meaningless, not merely optional). A new `assertProductNameAndSkuMatchType()` mirrors that existing method's exact shape and reasoning.
+
+**Captured once, at construction, never updated** — the same immutability rule (§3.2) that already governs every other fact on this class. A product renamed *after* the sale does not retroactively change what a past receipt says was sold; that is the entire point of a snapshot.
+
+**Not this section's job:** deciding how the caller obtains the name/SKU to pass in (loading the real Product/Variation at the point of sale) — that is `CheckoutOrchestrator`'s own concern (and POS's, once built), an application-layer detail, not a domain rule.
+
 ---
 
 ## 4. Status taxonomy: source system → this model
