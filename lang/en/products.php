@@ -50,4 +50,19 @@ return [
     'duplicate_action' => 'Duplicate',
     'duplicate_suffix' => 'copy',
 
+    'activity_log' => [
+        'title' => 'History',
+        'history_button' => 'History',
+        'action_created' => 'Created',
+        'system_actor' => 'System',
+        'columns' => [
+            'occurred_at' => 'Date',
+            'action' => 'Action',
+            'field' => 'Field',
+            'old_value' => 'Old value',
+            'new_value' => 'New value',
+            'staff_name' => 'Staff member',
+        ],
+    ],
+
 ];

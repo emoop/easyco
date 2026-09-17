@@ -50,4 +50,19 @@ return [
     'duplicate_action' => 'Дублирай',
     'duplicate_suffix' => 'копие',
 
+    'activity_log' => [
+        'title' => 'История',
+        'history_button' => 'История',
+        'action_created' => 'Създаден',
+        'system_actor' => 'Система',
+        'columns' => [
+            'occurred_at' => 'Дата',
+            'action' => 'Действие',
+            'field' => 'Поле',
+            'old_value' => 'Стара стойност',
+            'new_value' => 'Нова стойност',
+            'staff_name' => 'Служител',
+        ],
+    ],
+
 ];

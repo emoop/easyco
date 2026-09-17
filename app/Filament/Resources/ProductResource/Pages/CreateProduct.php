@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\ProductResource\Pages;
 
 use App\Filament\Resources\ProductResource;
+use App\Services\ActivityLogger;
 use EasyCo\Catalog\Contracts\ProductCategoryRepository;
 use EasyCo\Catalog\Contracts\ProductRepository;
 use EasyCo\Catalog\Contracts\ProductTagRepository;
@@ -146,6 +147,8 @@ class CreateProduct extends CreateRecord
         // parallel single-item code path.
         $videoPaths = filled($data['video'] ?? null) ? [$data['video']] : [];
         $this->attachMedia($productId, $videoPaths, MediaType::VIDEO, (bool) ($data['video_autoplay'] ?? false));
+
+        app(ActivityLogger::class)->logCreated('product', $productId);
 
         return ProductModel::find($productId);
     }

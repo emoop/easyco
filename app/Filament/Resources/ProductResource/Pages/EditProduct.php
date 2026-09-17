@@ -3,12 +3,15 @@
 namespace App\Filament\Resources\ProductResource\Pages;
 
 use App\Filament\Resources\ProductResource;
+use App\Services\ActivityLogger;
 use EasyCo\Catalog\Contracts\ProductCategoryRepository;
 use EasyCo\Catalog\Contracts\ProductRepository;
 use EasyCo\Catalog\Contracts\ProductTagRepository;
 use EasyCo\Catalog\Enums\CatalogVisibility;
 use EasyCo\Catalog\Enums\ProductStatus;
+use EasyCo\Catalog\Persistence\Eloquent\CategoryModel;
 use EasyCo\Catalog\Persistence\Eloquent\ProductModel;
+use EasyCo\Catalog\Persistence\Eloquent\TagModel;
 use EasyCo\Catalog\ProductCategory;
 use EasyCo\Catalog\ProductTag;
 use EasyCo\Extensibility\Hook;
@@ -137,25 +140,32 @@ class EditProduct extends EditRecord
             throw new RuntimeException("Product \"{$record->id}\" could not be reloaded from the domain layer.");
         }
 
+        $logger = app(ActivityLogger::class);
+
         if ($product->name() !== $data['name']) {
+            $logger->logFieldChanged('product', $product->id(), 'name', $product->name(), $data['name']);
             $product->rename($data['name']);
         }
 
         if ($product->slug() !== $data['slug']) {
+            $logger->logFieldChanged('product', $product->id(), 'slug', $product->slug(), $data['slug']);
             $product->changeSlug($data['slug']);
         }
 
         if ($product->baseSku() !== $data['base_sku']) {
+            $logger->logFieldChanged('product', $product->id(), 'base_sku', $product->baseSku(), $data['base_sku']);
             $product->changeBaseSku($data['base_sku']);
         }
 
         $newDescription = filled($data['description'] ?? null) ? $data['description'] : null;
         if ($product->description() !== $newDescription) {
+            $logger->logFieldChanged('product', $product->id(), 'description', $product->description(), $newDescription);
             $product->changeDescription($newDescription);
         }
 
         $newStatus = $data['status'] ?? ProductStatus::DRAFT->value;
         if ($product->status()->value !== $newStatus) {
+            $logger->logFieldChanged('product', $product->id(), 'status', $product->status()->value, $newStatus);
             match ($newStatus) {
                 ProductStatus::ACTIVE->value => $product->publish(),
                 ProductStatus::ARCHIVED->value => $product->archive(),
@@ -165,21 +175,25 @@ class EditProduct extends EditRecord
 
         $newVisibility = CatalogVisibility::from($data['catalog_visibility'] ?? CatalogVisibility::HIDDEN->value);
         if ($product->catalogVisibility() !== $newVisibility) {
+            $logger->logFieldChanged('product', $product->id(), 'catalog_visibility', $product->catalogVisibility()->value, $newVisibility->value);
             $product->setCatalogVisibility($newVisibility);
         }
 
         $newBrandId = $data['brand_id'] ?? null;
         if ($product->brandId() !== $newBrandId) {
+            $logger->logFieldChanged('product', $product->id(), 'brand_id', $product->brandId(), $newBrandId);
             $product->assignBrand($newBrandId);
         }
 
         $newSeasonId = $data['season_id'] ?? null;
         if ($product->seasonId() !== $newSeasonId) {
+            $logger->logFieldChanged('product', $product->id(), 'season_id', $product->seasonId(), $newSeasonId);
             $product->assignSeason($newSeasonId);
         }
 
         $newProductGroupId = $data['product_group_id'] ?? null;
         if ($product->productGroupId() !== $newProductGroupId) {
+            $logger->logFieldChanged('product', $product->id(), 'product_group_id', $product->productGroupId(), $newProductGroupId);
             $product->assignProductGroup($newProductGroupId);
         }
 
@@ -187,12 +201,14 @@ class EditProduct extends EditRecord
 
         $newBarcode = filled($data['barcode'] ?? null) ? $data['barcode'] : null;
         if ($universal->barcode() !== $newBarcode) {
+            $logger->logFieldChanged('product', $product->id(), 'barcode', $universal->barcode(), $newBarcode);
             $barcode = Hook::apply('catalog.variation.barcode', $newBarcode ?? '', $universal);
             $universal->setBarcode($barcode !== '' ? $barcode : null);
         }
 
         $newIsPurchasable = (bool) ($data['is_purchasable'] ?? true);
         if ($universal->isPurchasable() !== $newIsPurchasable) {
+            $logger->logFieldChanged('product', $product->id(), 'is_purchasable', $universal->isPurchasable() ? '1' : '0', $newIsPurchasable ? '1' : '0');
             $universal->setPurchasable($newIsPurchasable);
         }
 
@@ -207,6 +223,8 @@ class EditProduct extends EditRecord
             if ($submittedNormalized === $currentNormalized) {
                 continue;
             }
+
+            $logger->logFieldChanged('product', $product->id(), $definitionModel->code, $currentNormalized, $submittedNormalized);
 
             $definition = ProductResource::toDomainAttributeDefinition($definitionModel);
 
@@ -258,12 +276,33 @@ class EditProduct extends EditRecord
         foreach ($submitted as $categoryId) {
             if (! isset($currentByCategoryId[$categoryId])) {
                 $repository->save(new ProductCategory(id: null, productId: $productId, categoryId: $categoryId));
+
+                $categoryName = CategoryModel::find($categoryId)?->name;
+                app(ActivityLogger::class)->logFieldChanged('product', $productId, 'categories', null, $categoryName);
             }
         }
 
         foreach ($currentByCategoryId as $categoryId => $pivot) {
+            // A REAL, PRE-EXISTING BUG FOUND WHILE ADDING THIS TASK'S OWN
+            // LOGGING (not introduced by it — this diffing logic itself
+            // is otherwise unchanged): PHP always silently casts a
+            // numeric-string array key (categoryId() returns e.g. '1')
+            // to an int — this happens at the array itself, so casting
+            // the value BEFORE using it as a key (further up) cannot
+            // prevent it. $categoryId here therefore comes back as an
+            // INT, and the strict in_array($categoryId, $submitted, true)
+            // below — $submitted is always strings, via
+            // array_map('strval', ...) above — never matched, so an
+            // already-attached category was silently detached on every
+            // edit that also added a DIFFERENT one. Casting back to
+            // string HERE, on read, is the actual fix.
+            $categoryId = (string) $categoryId;
+
             if (! in_array($categoryId, $submitted, true)) {
                 $repository->remove($pivot->id());
+
+                $categoryName = CategoryModel::find($categoryId)?->name;
+                app(ActivityLogger::class)->logFieldChanged('product', $productId, 'categories', $categoryName, null);
             }
         }
     }
@@ -282,12 +321,23 @@ class EditProduct extends EditRecord
         foreach ($submitted as $tagId) {
             if (! isset($currentByTagId[$tagId])) {
                 $repository->save(new ProductTag(id: null, productId: $productId, tagId: $tagId));
+
+                $tagName = TagModel::find($tagId)?->name;
+                app(ActivityLogger::class)->logFieldChanged('product', $productId, 'tags', null, $tagName);
             }
         }
 
         foreach ($currentByTagId as $tagId => $pivot) {
+            // Same real, pre-existing bug as syncCategories() above, same
+            // fix — see that method's own inline note for the full
+            // explanation.
+            $tagId = (string) $tagId;
+
             if (! in_array($tagId, $submitted, true)) {
                 $repository->remove($pivot->id());
+
+                $tagName = TagModel::find($tagId)?->name;
+                app(ActivityLogger::class)->logFieldChanged('product', $productId, 'tags', $tagName, null);
             }
         }
     }

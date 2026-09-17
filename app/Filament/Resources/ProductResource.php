@@ -7,6 +7,7 @@ use App\Filament\NavigationGroup;
 use App\Filament\Resources\ProductResource\Pages\CreateProduct;
 use App\Filament\Resources\ProductResource\Pages\EditProduct;
 use App\Filament\Resources\ProductResource\Pages\ListProducts;
+use App\Filament\Resources\ProductResource\Pages\ProductActivityLog;
 use App\Filament\Resources\ProductResource\Pages\ViewProduct;
 use App\Services\DuplicateProduct;
 use App\Settings\Contracts\SiteSettingsRepository;
@@ -633,6 +634,7 @@ class ProductResource extends Resource
             'create' => CreateProduct::route('/create'),
             'view' => ViewProduct::route('/{record}'),
             'edit' => EditProduct::route('/{record}/edit'),
+            'activity-log' => ProductActivityLog::route('/{record}/activity-log'),
         ];
     }
 
@@ -661,6 +663,24 @@ class ProductResource extends Resource
 
                 $livewire->redirect(static::getUrl('edit', ['record' => $duplicate->id()]));
             });
+    }
+
+    /**
+     * "History" — links to ProductActivityLog, a real page navigation
+     * (->url(), not ->action()) mirroring the "products" count column's
+     * own ->url(fn (...$record...) => static::getUrl(...)) pattern used
+     * throughout the other Resources' drill-down links. Gated by
+     * viewPermission()/PRODUCT_VIEW — browsing history is a read
+     * operation, same as this Resource's own canView(), not
+     * canEdit()/createPermission() like duplicateAction() above.
+     */
+    public static function historyAction(): Action
+    {
+        return Action::make('history')
+            ->label(__('products.activity_log.history_button'))
+            ->icon('heroicon-o-clock')
+            ->visible(fn (ProductModel $record): bool => static::canView($record))
+            ->url(fn (ProductModel $record): string => static::getUrl('activity-log', ['record' => $record]));
     }
 
     /**
