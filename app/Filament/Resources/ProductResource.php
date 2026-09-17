@@ -32,6 +32,10 @@ use EasyCo\Media\Contracts\MediaStorageAdapter;
 use EasyCo\Media\Enums\MediaType;
 use EasyCo\Media\Jobs\ProcessMediaAssetJob;
 use EasyCo\Media\MediaAsset;
+use EasyCo\Pricing\Contracts\PriceListRepository;
+use EasyCo\Pricing\DefaultCurrency;
+use EasyCo\Pricing\Enums\PriceListItemTargetType;
+use EasyCo\Pricing\Money;
 use EasyCo\Staff\Enums\Permission;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
@@ -663,6 +667,15 @@ class ProductResource extends Resource
                     $query->where('status', '!=', ProductStatus::ARCHIVED->value);
                 }
 
+                // Both system list ids resolved ONCE here, outside the
+                // per-row subqueries below — findSystemListByName() is a
+                // real query itself, and this closure runs once per table
+                // render, not once per row (see priceMinorSubquery()'s own
+                // docblock for the null-list, unseeded-store case).
+                $priceLists = app(PriceListRepository::class);
+                $regularPricesListId = $priceLists->findSystemListByName('Regular Prices')?->id();
+                $manualSaleListId = $priceLists->findSystemListByName('Manual Sale')?->id();
+
                 return $query
                     ->where('type', ProductType::SIMPLE->value)
                     ->addSelect([
@@ -672,6 +685,8 @@ class ProductResource extends Resource
                             ->orderBy('catalog_product_media.sort_order')
                             ->limit(1)
                             ->select('catalog_media.path'),
+                        'regular_price_minor' => static::priceMinorSubquery($regularPricesListId),
+                        'sale_price_minor' => static::priceMinorSubquery($manualSaleListId),
                     ]);
             })
             ->columns([
@@ -682,6 +697,10 @@ class ProductResource extends Resource
                 TextColumn::make('name')
                     ->searchable()
                     ->sortable(),
+                TextColumn::make('price_display')
+                    ->label(__('products.fields.price_display'))
+                    ->html()
+                    ->getStateUsing(fn (ProductModel $record): string => static::priceDisplayHtml($record)),
                 TextColumn::make('base_sku')
                     ->label(__('products.fields.base_sku'))
                     ->searchable(),
@@ -695,7 +714,14 @@ class ProductResource extends Resource
                         ProductStatus::ARCHIVED => 'danger',
                     }),
                 TextColumn::make('catalog_visibility')
-                    ->label(__('products.fields.catalog_visibility'))
+                    // Shorter, table-only label — the full
+                    // "products.fields.catalog_visibility" label stays as
+                    // it is everywhere else (form, infolist, the
+                    // TernaryFilter below); this column alone is tight on
+                    // horizontal space next to the new price column, and
+                    // the badge's own color already makes the visible/
+                    // hidden meaning clear without the longer wording.
+                    ->label(__('products.fields.catalog_visibility_column'))
                     ->badge()
                     ->formatStateUsing(fn (string $state): string => __("products.visibility_options.{$state}"))
                     ->color(fn (string $state): string => $state === CatalogVisibility::VISIBLE->value ? 'success' : 'gray'),
@@ -850,6 +876,76 @@ class ProductResource extends Resource
     protected static function universalVariationId(ProductModel $record): string
     {
         return (string) $record->variations()->value('id');
+    }
+
+    /**
+     * The table's own combined price display — reads regular_price_minor/
+     * sale_price_minor, the two raw minor-unit ints modifyQueryUsing()
+     * already resolved via ONE correlated subquery per row (no N+1
+     * ProductPricingAndStock lookup here — that service is right for a
+     * single-record Edit/View page, wrong for a many-row list). Same
+     * Money::fromMinorUnits()->decimalValue() conversion Phase 2 already
+     * established, no currency symbol — matches
+     * ProductPricingAndStock::regularPriceDisplay()'s own plain-decimal
+     * convention exactly, just read from the pre-selected column instead
+     * of a fresh repository call.
+     */
+    public static function priceDisplayHtml(ProductModel $record): string
+    {
+        $regularMinor = $record->getAttribute('regular_price_minor');
+
+        if ($regularMinor === null) {
+            return '—';
+        }
+
+        $currency = DefaultCurrency::get();
+        $regular = e(Money::fromMinorUnits((int) $regularMinor, $currency)->decimalValue());
+
+        $saleMinor = $record->getAttribute('sale_price_minor');
+
+        if ($saleMinor === null) {
+            return $regular;
+        }
+
+        $sale = e(Money::fromMinorUnits((int) $saleMinor, $currency)->decimalValue());
+
+        return "<s>{$regular}</s> {$sale}";
+    }
+
+    /**
+     * ONE correlated subquery per system list, resolved against the
+     * already-resolved list id (never a per-row findSystemListByName()
+     * call — see modifyQueryUsing()'s own comment). $priceListId is null
+     * on a fresh/unseeded store (neither reserved system list exists
+     * yet, per pricing-persistence-domain-design.md §4.5/§4.6) — that is
+     * a legitimate "nothing priced yet" state on READ, not a setup
+     * error (see ProductPricingAndStock's own identical read-side
+     * posture), so this returns a raw NULL expression rather than
+     * building a subquery against a list id that doesn't exist.
+     *
+     * Joined through catalog_variations exactly as the domain schema
+     * requires: pricing_price_list_items.target_id is a plain string
+     * column (never a foreign key, by design — see that table's own
+     * migration comment), holding a Catalog Variation's id as a string;
+     * catalog_variations.id is the real integer PK. This is a SIMPLE-
+     * product-only Resource (the query is already filtered to
+     * type=SIMPLE), so joining without a further "type=universal" filter
+     * is safe — a SIMPLE product has exactly one Variation, always
+     * universal, by Catalog's own invariant.
+     */
+    protected static function priceMinorSubquery(?string $priceListId): mixed
+    {
+        if ($priceListId === null) {
+            return DB::raw('NULL');
+        }
+
+        return DB::table('pricing_price_list_items')
+            ->join('catalog_variations', 'catalog_variations.id', '=', 'pricing_price_list_items.target_id')
+            ->where('pricing_price_list_items.price_list_id', $priceListId)
+            ->where('pricing_price_list_items.target_type', PriceListItemTargetType::VARIATION->value)
+            ->whereColumn('catalog_variations.product_id', 'catalog_products.id')
+            ->limit(1)
+            ->select('pricing_price_list_items.price_amount_minor');
     }
 
     public static function getPages(): array

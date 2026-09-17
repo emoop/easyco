@@ -21,6 +21,7 @@ return [
         'description' => 'Description',
         'status' => 'Status',
         'catalog_visibility' => 'Catalog visibility',
+        'catalog_visibility_column' => 'Catalog',
         'brand_id' => 'Brand',
         'season_id' => 'Season',
         'product_group_id' => 'Product group',
@@ -38,6 +39,7 @@ return [
         'sale_price' => 'Sale price',
         'cost' => 'Cost',
         'stock_quantity' => 'Stock quantity',
+        'price_display' => 'Price',
     ],
 
     'filters' => [

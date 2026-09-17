@@ -21,6 +21,7 @@ return [
         'description' => 'Описание',
         'status' => 'Статус',
         'catalog_visibility' => 'Видимост в каталога',
+        'catalog_visibility_column' => 'Каталог',
         'brand_id' => 'Марка',
         'season_id' => 'Сезон',
         'product_group_id' => 'Артикулна група',
@@ -38,6 +39,7 @@ return [
         'sale_price' => 'Промоционална цена',
         'cost' => 'Себестойност',
         'stock_quantity' => 'Наличност',
+        'price_display' => 'Цена',
     ],
 
     'filters' => [
