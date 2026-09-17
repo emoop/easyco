@@ -52,6 +52,7 @@ use Filament\Schemas\Components\Tabs\Tab;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\ImageColumn;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
@@ -202,6 +203,16 @@ class ProductResource extends Resource
                     ProductStatus::ARCHIVED->value => __('products.status_options.archived'),
                 ])
                 ->default(ProductStatus::DRAFT->value)
+                // Always visible, not a reactive/conditional helperText
+                // tied to ->live() — a real photo-deletion warning
+                // (App\Services\ArchiveProductMediaCleaner, wired into
+                // EditProduct's own status-change block) is not worth
+                // the extra debounced round-trip a live-reactive field
+                // would add just to hide this text while 'archived'
+                // isn't selected; the domain owner's own requirement is
+                // that the merchant SEES the warning before deciding,
+                // not that it stays hidden otherwise.
+                ->helperText(__('products.fields.status_archive_warning'))
                 ->required(),
             Select::make('catalog_visibility')
                 ->label(__('products.fields.catalog_visibility'))
@@ -514,16 +525,42 @@ class ProductResource extends Resource
             // recordUrl()'s own identical gap (routing a VARIABLE row
             // to View) is closed as the same side effect, not a
             // separate fix.
-            ->modifyQueryUsing(fn (Builder $query): Builder => $query
-                ->where('type', ProductType::SIMPLE->value)
-                ->addSelect([
-                    'thumbnail_path' => DB::table('catalog_product_media')
-                        ->join('catalog_media', 'catalog_media.id', '=', 'catalog_product_media.media_id')
-                        ->whereColumn('catalog_product_media.product_id', 'catalog_products.id')
-                        ->orderBy('catalog_product_media.sort_order')
-                        ->limit(1)
-                        ->select('catalog_media.path'),
-                ]))
+            //
+            // ARCHIVED PRODUCTS HIDDEN BY DEFAULT: modifyQueryUsing()
+            // runs BEFORE filters in Filament's own query pipeline
+            // (confirmed against HasRecords::getFilteredTableQuery() —
+            // getTable()->getQuery() applies this closure first, THEN
+            // filterTableQuery() applies the "archived_only" Filter
+            // below on top of it), so this closure cannot simply add an
+            // unconditional `status != archived` — the "archived_only"
+            // filter's own `status = archived` would then always
+            // contradict it, returning zero rows even when that filter
+            // is active. $livewire is injected BY NAME, not type — a
+            // real, confirmed mechanism (Table::
+            // resolveDefaultClosureDependencyForEvaluationByName()
+            // resolves the 'livewire' parameter name specifically,
+            // checked directly against the installed v5.8.1 source),
+            // giving this closure the one thing it needs:
+            // getTableFilterState() to see whether "archived_only" is
+            // currently active and skip its own exclusion when it is.
+            ->modifyQueryUsing(function (Builder $query, $livewire): Builder {
+                $showArchivedOnly = (bool) ($livewire?->getTableFilterState('archived_only')['isActive'] ?? false);
+
+                if (! $showArchivedOnly) {
+                    $query->where('status', '!=', ProductStatus::ARCHIVED->value);
+                }
+
+                return $query
+                    ->where('type', ProductType::SIMPLE->value)
+                    ->addSelect([
+                        'thumbnail_path' => DB::table('catalog_product_media')
+                            ->join('catalog_media', 'catalog_media.id', '=', 'catalog_product_media.media_id')
+                            ->whereColumn('catalog_product_media.product_id', 'catalog_products.id')
+                            ->orderBy('catalog_product_media.sort_order')
+                            ->limit(1)
+                            ->select('catalog_media.path'),
+                    ]);
+            })
             ->columns([
                 ImageColumn::make('thumbnail_path')
                     ->label(__('products.fields.thumbnail'))
@@ -556,6 +593,18 @@ class ProductResource extends Resource
                     ->sortable(),
             ])
             ->filters([
+                // A dedicated "archived only" view, not a toggle that
+                // ADDS archived into the normal list — confirmed
+                // requirement. Inactive by default (matches
+                // modifyQueryUsing()'s own default exclusion above);
+                // when active, ->query() below is the ONLY status
+                // constraint applied (modifyQueryUsing() detects this
+                // via getTableFilterState() and skips its own exclusion
+                // — see that closure's own comment for why).
+                Filter::make('archived_only')
+                    ->label(__('products.filters.archived_only'))
+                    ->toggle()
+                    ->query(fn (Builder $query): Builder => $query->where('status', ProductStatus::ARCHIVED->value)),
                 TernaryFilter::make('catalog_visibility')
                     ->label(__('products.fields.catalog_visibility'))
                     ->queries(

@@ -4,6 +4,7 @@ namespace App\Filament\Resources\ProductResource\Pages;
 
 use App\Filament\Resources\ProductResource;
 use App\Services\ActivityLogger;
+use App\Services\ArchiveProductMediaCleaner;
 use EasyCo\Catalog\Contracts\ProductCategoryRepository;
 use EasyCo\Catalog\Contracts\ProductRepository;
 use EasyCo\Catalog\Contracts\ProductTagRepository;
@@ -164,8 +165,28 @@ class EditProduct extends EditRecord
         }
 
         $newStatus = $data['status'] ?? ProductStatus::DRAFT->value;
-        if ($product->status()->value !== $newStatus) {
-            $logger->logFieldChanged('product', $product->id(), 'status', $product->status()->value, $newStatus);
+        $oldStatus = $product->status()->value;
+        // Detected here (this "if changed" block already guarantees
+        // $oldStatus !== $newStatus when true; re-saving an
+        // already-archived product never re-enters this block at all,
+        // so this is naturally a one-time, no-op-on-repeat condition
+        // without any extra guard needed) — but NOT ACTED ON until
+        // after syncMedia() runs, near the end of this method. Acting
+        // on it here, immediately, would be a real ordering bug: the
+        // submitted $data['main_photo']/gallery_photos/video values
+        // seeded by mutateFormDataBeforeFill() still reflect the OLD,
+        // pre-cleanup media state (the admin didn't touch those fields
+        // this request), so syncMedia() running AFTER an early cleanup
+        // would see its own freshly-deleted pivots as "missing" and the
+        // stale submitted paths as "new uploads" — re-creating
+        // MediaAsset rows that point at files cleanup just deleted from
+        // disk. See ArchiveProductMediaCleaner's own docblock for what
+        // "cleanup" really does — real deletion, not detach-only,
+        // confirmed by the domain owner.
+        $shouldCleanArchivedMedia = $oldStatus !== $newStatus && $newStatus === ProductStatus::ARCHIVED->value;
+
+        if ($oldStatus !== $newStatus) {
+            $logger->logFieldChanged('product', $product->id(), 'status', $oldStatus, $newStatus);
             match ($newStatus) {
                 ProductStatus::ACTIVE->value => $product->publish(),
                 ProductStatus::ARCHIVED->value => $product->archive(),
@@ -258,6 +279,14 @@ class EditProduct extends EditRecord
 
         $videoPaths = filled($data['video'] ?? null) ? [$data['video']] : [];
         $this->syncMedia($product->id(), $videoPaths, MediaType::VIDEO, (bool) ($data['video_autoplay'] ?? false));
+
+        // ONLY after the normal media sync above has already reconciled
+        // the submitted (unchanged) media fields against the DB — see
+        // $shouldCleanArchivedMedia's own comment for why running this
+        // any earlier would be a real ordering bug.
+        if ($shouldCleanArchivedMedia) {
+            app(ArchiveProductMediaCleaner::class)->clean($product->id());
+        }
 
         return ProductModel::find($product->id());
     }

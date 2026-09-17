@@ -32,6 +32,11 @@ return [
         'video_autoplay' => 'Автоматично стартиране на витрината',
         'thumbnail' => 'Снимка',
         'media_upload_hint' => 'Провлачете файлове тук или <span class="filepond--label-action">разгледайте</span> (макс. :max MB)',
+        'status_archive_warning' => 'Архивирането изтрива за постоянно снимките от галерията и видеото, като запазва само малка миниатюра на главната снимка.',
+    ],
+
+    'filters' => [
+        'archived_only' => 'Покажи само архивирани',
     ],
 
     'status_options' => [

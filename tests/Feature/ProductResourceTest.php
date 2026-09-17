@@ -973,4 +973,51 @@ class ProductResourceTest extends TestCase
                 'is_purchasable' => false,
             ]);
     }
+
+    public function test_archived_products_are_hidden_from_the_default_list_query(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        $active = Product::createSimple('Active Product', 'SKU-ACTIVE', 'active-product');
+        app(ProductRepository::class)->save($active);
+
+        $archived = Product::createSimple('Archived Product', 'SKU-ARCHIVED', 'archived-product');
+        $archived->archive();
+        app(ProductRepository::class)->save($archived);
+
+        $activeModel = ProductModel::where('slug', 'active-product')->firstOrFail();
+        $archivedModel = ProductModel::where('slug', 'archived-product')->firstOrFail();
+
+        Livewire::test(ListProducts::class)
+            ->assertCanSeeTableRecords([$activeModel])
+            ->assertCanNotSeeTableRecords([$archivedModel]);
+    }
+
+    public function test_the_archived_only_filter_shows_only_archived_products_and_excludes_the_rest(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        $active = Product::createSimple('Active Product Two', 'SKU-ACTIVE-2', 'active-product-two');
+        app(ProductRepository::class)->save($active);
+
+        $archived = Product::createSimple('Archived Product Two', 'SKU-ARCHIVED-2', 'archived-product-two');
+        $archived->archive();
+        app(ProductRepository::class)->save($archived);
+
+        $activeModel = ProductModel::where('slug', 'active-product-two')->firstOrFail();
+        $archivedModel = ProductModel::where('slug', 'archived-product-two')->firstOrFail();
+
+        Livewire::test(ListProducts::class)
+            ->filterTable('archived_only', true)
+            ->assertCanSeeTableRecords([$archivedModel])
+            ->assertCanNotSeeTableRecords([$activeModel]);
+    }
+
+    public function test_the_status_fields_help_text_mentions_the_real_archive_consequence(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        Livewire::test(CreateProduct::class)
+            ->assertSee(__('products.fields.status_archive_warning'));
+    }
 }

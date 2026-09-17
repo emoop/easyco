@@ -59,6 +59,11 @@ final class EloquentMediaAssetRepository implements MediaAssetRepository
         return $model !== null ? $this->toDomainAsset($model) : null;
     }
 
+    public function delete(string $id): void
+    {
+        MediaAssetModel::destroy($id);
+    }
+
     private function toDomainAsset(MediaAssetModel $model): MediaAsset
     {
         $variants = array_map(

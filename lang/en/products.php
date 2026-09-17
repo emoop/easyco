@@ -32,6 +32,11 @@ return [
         'video_autoplay' => 'Autoplay on the storefront',
         'thumbnail' => 'Photo',
         'media_upload_hint' => 'Drag & Drop your files or <span class="filepond--label-action">Browse</span> (max :max MB)',
+        'status_archive_warning' => 'Archiving permanently deletes the gallery photos and video, keeping only a small thumbnail of the main photo.',
+    ],
+
+    'filters' => [
+        'archived_only' => 'Show archived only',
     ],
 
     'status_options' => [
