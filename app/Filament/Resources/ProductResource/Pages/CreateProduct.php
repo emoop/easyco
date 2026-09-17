@@ -18,6 +18,7 @@ use EasyCo\Media\Enums\MediaType;
 use EasyCo\Media\Exceptions\MediaLimitExceededException;
 use EasyCo\Media\ProductMedia;
 use EasyCo\Media\ProductMediaCountGuard;
+use EasyCo\Media\VideoCountGuard;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\CreateRecord;
 use Filament\Support\Exceptions\Halt;
@@ -165,8 +166,10 @@ class CreateProduct extends CreateRecord
      * safe). $autoplay is only ever meaningful for the video call —
      * see ProductMedia's own class docblock for why passing it for
      * photos too is harmless, not a real cross-concern. Guarded
-     * per-attach via the real ProductMediaCountGuard — on a genuine
-     * limit breach, surfaces the exact same MediaLimitExceededException
+     * per-attach via the real ProductMediaCountGuard (both calls) and,
+     * for the video call only, also VideoCountGuard's own separate "at
+     * most one video" invariant — on a genuine limit breach from
+     * either, surfaces the exact same MediaLimitExceededException
      * message the API gives, via a Filament notification, then throws
      * Halt to stop processing. The actual rollback of everything
      * already written this request (the Product, its universal
@@ -178,11 +181,18 @@ class CreateProduct extends CreateRecord
     protected function attachMedia(string $productId, array $storedPaths, MediaType $type, bool $autoplay = false): void
     {
         $guard = app(ProductMediaCountGuard::class);
+        // Only for the video call — see VideoCountGuard's own class
+        // docblock for why this is a separate guard, not a branch
+        // inside ProductMediaCountGuard. Nothing to reorder around here
+        // unlike EditProduct::syncMedia() — a brand-new product never
+        // has pre-existing pivots to worry about detaching first.
+        $videoGuard = $type === MediaType::VIDEO ? app(VideoCountGuard::class) : null;
         $repository = app(ProductMediaRepository::class);
 
         foreach (array_values($storedPaths) as $sortOrder => $storedPath) {
             try {
                 $guard->assertCanAttach($productId);
+                $videoGuard?->assertCanAttach($productId);
             } catch (MediaLimitExceededException $e) {
                 Notification::make()
                     ->title($e->getMessage())

@@ -488,3 +488,22 @@ same time — not decided here). When on, `ProductResource`'s
 optional exactly as it is today. This is the mechanism the domain
 owner specifically wants for a group that "may never be needed, but if
 used, should be enforceable."
+
+### 13.5 Row click navigates to Edit, not View — a ProductResource-only exception
+
+**Implemented, retroactive record** — this is not a new decision being
+made here. Every other Resource in this project — `RoleResource`, `BrandResource`,
+and the rest — follows one convention: a table row's `recordUrl()`
+navigates to View, with Edit reachable via the row's own action menu.
+`ProductResource` deliberately breaks that convention: its row
+`recordUrl()` navigates straight to Edit, falling back to View only for
+a staff member without edit permission (`canEdit()` — the same real
+`Staff::can(Permission)` check the row's own Edit action already uses,
+so this never routes a click somewhere the action menu itself would
+refuse). Justified by Product being this admin panel's highest-edit-
+frequency resource — Edit is overwhelmingly the action a staff member
+wants on a click, not a detour through View first. **Scoped to
+`ProductResource` only.** This is not a project-wide convention change
+— a future Resource should still default its row click to View unless
+it has this same specific justification (a resource whose real usage
+pattern is dominated by immediate editing, not browsing).

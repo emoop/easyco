@@ -18,6 +18,7 @@ use EasyCo\Media\Exceptions\MediaLimitExceededException;
 use EasyCo\Media\Persistence\Eloquent\MediaAssetModel;
 use EasyCo\Media\ProductMedia;
 use EasyCo\Media\ProductMediaCountGuard;
+use EasyCo\Media\VideoCountGuard;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\EditRecord;
 use Filament\Support\Exceptions\Halt;
@@ -312,6 +313,18 @@ class EditProduct extends EditRecord
      * "never touch the old asset" posture). $autoplay is only ever
      * meaningful for the video call — see ProductMedia's own class
      * docblock for why passing it for photos too is harmless.
+     *
+     * ORPHANS ARE DETACHED BEFORE ANY NEW ATTACH IS ATTEMPTED — not
+     * after, and this ordering is a real correctness requirement, not
+     * cosmetic: once VideoCountGuard's own "at most one video" invariant
+     * exists, replacing the single video (a new path submitted while
+     * the old one is dropped) would otherwise transiently look like
+     * attaching a SECOND video — the old pivot still present in the DB
+     * at the moment the guard checks — and be wrongly rejected. Freeing
+     * the slot first, then attaching, is also simply the more correct
+     * causal order for the combined photo/video guard too, even though
+     * that one has enough headroom (default 10) that the ordering bug
+     * was never actually observable there.
      */
     protected function syncMedia(string $productId, array $submittedPaths, MediaType $type, bool $autoplay = false): void
     {
@@ -326,13 +339,24 @@ class EditProduct extends EditRecord
             }
         }
 
-        $guard = app(ProductMediaCountGuard::class);
-        $keptPaths = [];
+        $submittedValues = array_values($submittedPaths);
 
-        foreach (array_values($submittedPaths) as $sortOrder => $path) {
+        foreach ($pivotByPath as $path => $pivot) {
+            if (! in_array($path, $submittedValues, true)) {
+                $repository->remove($pivot->id());
+                unset($pivotByPath[$path]);
+            }
+        }
+
+        $guard = app(ProductMediaCountGuard::class);
+        // Only for the video call — see VideoCountGuard's own class
+        // docblock for why this is a separate guard, not a branch
+        // inside ProductMediaCountGuard.
+        $videoGuard = $type === MediaType::VIDEO ? app(VideoCountGuard::class) : null;
+
+        foreach ($submittedValues as $sortOrder => $path) {
             if (isset($pivotByPath[$path])) {
                 $pivot = $pivotByPath[$path];
-                $keptPaths[] = $path;
                 $changed = false;
 
                 if ($pivot->sortOrder() !== $sortOrder) {
@@ -354,6 +378,7 @@ class EditProduct extends EditRecord
 
             try {
                 $guard->assertCanAttach($productId);
+                $videoGuard?->assertCanAttach($productId);
             } catch (MediaLimitExceededException $e) {
                 Notification::make()
                     ->title($e->getMessage())
@@ -372,14 +397,6 @@ class EditProduct extends EditRecord
                 sortOrder: $sortOrder,
                 autoplay: $autoplay,
             ));
-
-            $keptPaths[] = $path;
-        }
-
-        foreach ($pivotByPath as $path => $pivot) {
-            if (! in_array($path, $keptPaths, true)) {
-                $repository->remove($pivot->id());
-            }
         }
     }
 }

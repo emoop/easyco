@@ -14,6 +14,7 @@ use EasyCo\Media\Persistence\Eloquent\EloquentVariationMediaRepository;
 use EasyCo\Media\ProductMediaCountGuard;
 use EasyCo\Media\Storage\LaravelMediaStorageAdapter;
 use EasyCo\Media\VariationMediaCountGuard;
+use EasyCo\Media\VideoCountGuard;
 use Illuminate\Support\ServiceProvider;
 
 class MediaServiceProvider extends ServiceProvider
@@ -36,6 +37,13 @@ class MediaServiceProvider extends ServiceProvider
                 $app->make(VariationMediaRepository::class),
                 (int) config('services.media.max_photos_per_variation', 3),
             );
+        });
+
+        // No config() read here, unlike its two siblings above — see
+        // VideoCountGuard's own class docblock for why "at most one
+        // video" has no merchant-configurable number to inject.
+        $this->app->bind(VideoCountGuard::class, function ($app) {
+            return new VideoCountGuard($app->make(ProductMediaRepository::class));
         });
 
         $this->app->bind(MediaStorageAdapter::class, function ($app) {

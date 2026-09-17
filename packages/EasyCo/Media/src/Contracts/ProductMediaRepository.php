@@ -2,6 +2,7 @@
 
 namespace EasyCo\Media\Contracts;
 
+use EasyCo\Media\Enums\MediaType;
 use EasyCo\Media\ProductMedia;
 
 /**
@@ -24,8 +25,8 @@ interface ProductMediaRepository
 
     /**
      * @return ProductMedia[] Ordered by sort_order ASC — required for
-     *   the "sort_order = 0 is the primary photo" convention (§8) to be
-     *   usable by a caller at all.
+     *                        the "sort_order = 0 is the primary photo" convention (§8) to be
+     *                        usable by a caller at all.
      */
     public function findByProductId(string $productId): array;
 
@@ -35,4 +36,13 @@ interface ProductMediaRepository
      * implemented) so the contract doesn't need to widen again later.
      */
     public function countByProductId(string $productId): int;
+
+    /**
+     * Same shape as countByProductId(), scoped to one MediaType — for
+     * VideoCountGuard's own "at most one video per product" invariant
+     * (media-domain-design.md's retroactive video/autoplay addendum),
+     * a SEPARATE count from countByProductId()'s combined photo/video
+     * slot total, not a filtered view of it.
+     */
+    public function countByProductIdAndType(string $productId, MediaType $type): int;
 }

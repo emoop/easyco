@@ -3,6 +3,7 @@
 namespace EasyCo\Media\Persistence\Eloquent;
 
 use EasyCo\Media\Contracts\ProductMediaRepository;
+use EasyCo\Media\Enums\MediaType;
 use EasyCo\Media\Exceptions\MediaAlreadyAttachedException;
 use EasyCo\Media\ProductMedia;
 use Illuminate\Database\QueryException;
@@ -89,6 +90,19 @@ final class EloquentProductMediaRepository implements ProductMediaRepository
     public function countByProductId(string $productId): int
     {
         return ProductMediaModel::where('product_id', $productId)->count();
+    }
+
+    /**
+     * A subquery on catalog_media's own type column, not a formal
+     * Eloquent relation between ProductMediaModel and MediaAssetModel —
+     * neither model currently declares one to the other, and one query
+     * here doesn't warrant introducing that relation just for this.
+     */
+    public function countByProductIdAndType(string $productId, MediaType $type): int
+    {
+        return ProductMediaModel::where('product_id', $productId)
+            ->whereIn('media_id', MediaAssetModel::where('type', $type->value)->select('id'))
+            ->count();
     }
 
     private function toDomainProductMedia(ProductMediaModel $model): ProductMedia
