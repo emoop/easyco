@@ -116,4 +116,31 @@ class ActivityLogJournalTest extends TestCase
             $rows->pluck('entity_type')->sort()->values()->all(),
         );
     }
+
+    public function test_searching_by_entity_id_returns_only_that_products_rows(): void
+    {
+        app(SiteSettingsRepository::class)->set('admin.activity_log_enabled', '1');
+        $this->actingAsStaffRole('Administrator');
+
+        ActivityLogModel::create([
+            'entity_type' => 'product',
+            'entity_id' => 'product-aaa',
+            'action' => 'created',
+            'occurred_at' => now(),
+        ]);
+        ActivityLogModel::create([
+            'entity_type' => 'product',
+            'entity_id' => 'product-bbb',
+            'action' => 'created',
+            'occurred_at' => now(),
+        ]);
+
+        $component = Livewire::test(ActivityLogJournal::class)
+            ->searchTable('product-aaa');
+
+        $rows = $component->instance()->getTable()->getRecords();
+
+        $this->assertCount(1, $rows);
+        $this->assertSame('product-aaa', $rows->first()->entity_id);
+    }
 }

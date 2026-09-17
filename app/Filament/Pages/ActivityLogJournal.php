@@ -137,7 +137,8 @@ class ActivityLogJournal extends Page implements HasTable
                 TextColumn::make('entity_type')
                     ->label(__('journal.columns.entity_type')),
                 TextColumn::make('entity_id')
-                    ->label(__('journal.columns.entity_id')),
+                    ->label(__('journal.columns.entity_id'))
+                    ->searchable(),
                 TextColumn::make('action')
                     ->label(__('journal.columns.action'))
                     ->formatStateUsing(fn (ActivityLogModel $record): string => static::actionLabel($record)),
