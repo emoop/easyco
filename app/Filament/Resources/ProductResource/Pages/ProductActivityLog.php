@@ -5,6 +5,7 @@ namespace App\Filament\Resources\ProductResource\Pages;
 use App\Filament\Resources\ProductResource;
 use App\Models\ActivityLogModel;
 use EasyCo\Catalog\Persistence\Eloquent\AttributeDefinitionModel;
+use EasyCo\Staff\Enums\Permission;
 use Filament\Resources\Pages\Concerns\InteractsWithRecord;
 use Filament\Resources\Pages\Page;
 use Filament\Schemas\Components\EmbeddedTable;
@@ -36,9 +37,19 @@ class ProductActivityLog extends Page implements HasTable
         $this->record = $this->resolveRecord($record);
 
         // Browsing history is a read operation, not an edit one — the
-        // same viewPermission()/PRODUCT_VIEW check as ViewProduct
-        // itself, not editPermission().
-        abort_unless(ProductResource::canView($this->record), 403);
+        // same viewPermission()/PRODUCT_VIEW check as ViewProduct itself,
+        // not editPermission(). ALSO requires COST_VIEW — the activity
+        // log records every changed field, cost included, so a staff
+        // member without COST_VIEW must 403 on a direct URL hit even
+        // though PRODUCT_VIEW alone would satisfy canView(); the header
+        // "History" action's own ->visible() (historyAction()'s docblock)
+        // checks the same combined condition, but that's UX only — this
+        // is the real enforcement, same "never trust nav/action
+        // visibility alone" posture as ActivityLogJournal's own mount().
+        abort_unless(
+            ProductResource::canView($this->record) && ProductResource::staffHasPermission(Permission::COST_VIEW),
+            403
+        );
     }
 
     public function getTitle(): string

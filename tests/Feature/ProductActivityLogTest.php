@@ -6,6 +6,7 @@ use App\Filament\Resources\ProductResource;
 use App\Filament\Resources\ProductResource\Pages\CreateProduct;
 use App\Filament\Resources\ProductResource\Pages\EditProduct;
 use App\Filament\Resources\ProductResource\Pages\ProductActivityLog;
+use App\Filament\Resources\ProductResource\Pages\ViewProduct;
 use App\Filament\StaffPanelUser;
 use App\Models\ActivityLogModel;
 use App\Settings\Contracts\SiteSettingsRepository;
@@ -267,22 +268,61 @@ class ProductActivityLogTest extends TestCase
         session()->forget('password_hash_staff');
         $this->get(ProductResource::getUrl('activity-log', ['record' => $product->id]))->assertOk();
 
+        // Product Entry holds PRODUCT_VIEW but NOT COST_VIEW
+        // (StaffSystemRolesSeeder's own real permission list) — the real
+        // gap this gate closes: the activity log records every changed
+        // field including cost, so PRODUCT_VIEW alone must no longer be
+        // enough to reach it.
         $productEntry = $this->staffWithRole('Product Entry');
         $this->actingAs($productEntry, 'staff');
         session()->forget('password_hash_staff');
-        $this->get(ProductResource::getUrl('activity-log', ['record' => $product->id]))->assertOk();
+        $this->get(ProductResource::getUrl('activity-log', ['record' => $product->id]))->assertForbidden();
 
-        // Same viewPermission()/PRODUCT_VIEW gate as the rest of this
-        // Resource — a staff member holding neither PRODUCT_VIEW nor
-        // PRODUCT_MANAGE is genuinely denied, mirroring
-        // ProductResourceTest's own "View Only" role regression guard,
-        // inverted (a role with NO product permission at all).
+        // Same viewPermission()/PRODUCT_VIEW (+ COST_VIEW) gate as the
+        // rest of this Resource — a staff member holding neither is
+        // genuinely denied, mirroring ProductResourceTest's own
+        // "View Only" role regression guard, inverted (a role with NO
+        // product permission at all).
         $noAccessRole = Role::create('No Product Access', []);
         app(RoleRepository::class)->save($noAccessRole);
         $noAccessStaff = Staff::create('no.access@example.com', app(PasswordHasher::class)->hash('password123'), 'No Product Access', $noAccessRole);
         app(StaffRepository::class)->save($noAccessStaff);
         $this->actingAs(StaffPanelUser::find($noAccessStaff->id()), 'staff');
         session()->forget('password_hash_staff');
+
+        $this->get(ProductResource::getUrl('activity-log', ['record' => $product->id]))->assertForbidden();
+    }
+
+    /**
+     * The real, direct scenario this task closes: History is correctly
+     * hidden from the live Cost field for a COST_VIEW-less staff member
+     * everywhere already (Phase 2's own gate) — this confirms the
+     * SAME staff member also can't reach past cost values through the
+     * "History" header action, on both surfaces (action hidden, direct
+     * URL 403s), while both COST_VIEW-holding roles (Administrator,
+     * Manager) retain full access.
+     */
+    public function test_a_cost_view_less_staff_member_sees_no_history_action_and_a_direct_url_hit_403s(): void
+    {
+        $this->actingAsPanelAdministrator();
+        $product = $this->createSimpleProduct('History Gate Product', 'history-gate-product');
+
+        Livewire::test(ViewProduct::class, ['record' => $product->id])
+            ->assertActionVisible('history');
+
+        $manager = $this->staffWithRole('Manager');
+        $this->actingAs($manager, 'staff');
+        session()->forget('password_hash_staff');
+
+        Livewire::test(ViewProduct::class, ['record' => $product->id])
+            ->assertActionVisible('history');
+
+        $productEntry = $this->staffWithRole('Product Entry');
+        $this->actingAs($productEntry, 'staff');
+        session()->forget('password_hash_staff');
+
+        Livewire::test(ViewProduct::class, ['record' => $product->id])
+            ->assertActionHidden('history');
 
         $this->get(ProductResource::getUrl('activity-log', ['record' => $product->id]))->assertForbidden();
     }

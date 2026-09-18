@@ -991,16 +991,25 @@ class ProductResource extends Resource
      * (->url(), not ->action()) mirroring the "products" count column's
      * own ->url(fn (...$record...) => static::getUrl(...)) pattern used
      * throughout the other Resources' drill-down links. Gated by
-     * viewPermission()/PRODUCT_VIEW — browsing history is a read
+     * viewPermission()/PRODUCT_VIEW (browsing history is a read
      * operation, same as this Resource's own canView(), not
-     * canEdit()/createPermission() like duplicateAction() above.
+     * canEdit()/createPermission() like duplicateAction() above) AND
+     * COST_VIEW — a real gap closed by this check: the activity log
+     * records every changed field, cost included, so a staff member
+     * without COST_VIEW could read past cost values through History even
+     * though the live Cost field is correctly hidden from them
+     * everywhere else (priceStockTabComponents()'s own COST_VIEW gate).
+     * ProductActivityLog::mount() re-checks the same combined condition
+     * server-side — this ->visible() alone is a UX aid, not the real
+     * enforcement, same "never trust nav/action visibility alone"
+     * posture as ActivityLogJournal's own isAccessible().
      */
     public static function historyAction(): Action
     {
         return Action::make('history')
             ->label(__('products.activity_log.history_button'))
             ->icon('heroicon-o-clock')
-            ->visible(fn (ProductModel $record): bool => static::canView($record))
+            ->visible(fn (ProductModel $record): bool => static::canView($record) && static::staffHasPermission(Permission::COST_VIEW))
             ->url(fn (ProductModel $record): string => static::getUrl('activity-log', ['record' => $record]));
     }
 
