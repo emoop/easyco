@@ -16,6 +16,18 @@ return [
 
     'axis_note' => 'Used as a variation option — manage this product\'s variations directly.',
 
+    // Tooltips on the linked product-count columns (Brand/Category/Season/
+    // Tag/ProductGroup/AttributeDefinition/AttributeValue) — one shared
+    // string per destination, not per resource. 'filtered_list' is for
+    // links into ProductResource's own list (hides archived by default,
+    // never shows VARIABLE); 'axis_list' is for the two axis_count
+    // columns, whose own page shows every counted product, archived
+    // included, so the filtered-list caveat would be wrong there.
+    'count_tooltip' => [
+        'filtered_list' => 'The count includes archived and VARIABLE products, which are not shown in this filtered list.',
+        'axis_list' => 'The count includes archived products; the linked list shows all of them.',
+    ],
+
     'bulk_unlink' => [
         'button' => 'Remove :entity from selected',
         'confirmation_heading' => 'Remove :entity from the selected products?',

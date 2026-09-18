@@ -6,12 +6,14 @@ use App\Filament\Resources\TagResource;
 use App\Filament\Resources\TagResource\Pages\CreateTag;
 use App\Filament\Resources\TagResource\Pages\EditTag;
 use App\Filament\Resources\TagResource\Pages\ListTags;
-use App\Filament\Resources\TagResource\Pages\RelatedProducts;
+use App\Filament\Resources\ProductResource;
+use App\Filament\Resources\ProductResource\Pages\ListProducts;
 use App\Filament\StaffPanelUser;
 use EasyCo\Catalog\Contracts\ProductRepository;
 use EasyCo\Catalog\Contracts\ProductTagRepository;
 use EasyCo\Catalog\Contracts\TagRepository;
 use EasyCo\Catalog\Persistence\Eloquent\TagModel;
+use EasyCo\Catalog\Persistence\Eloquent\ProductModel;
 use EasyCo\Catalog\Product;
 use EasyCo\Catalog\ProductTag;
 use EasyCo\Catalog\Tag;
@@ -223,44 +225,66 @@ class TagResourceTest extends TestCase
         $this->assertNull(app(TagRepository::class)->findById($tag->id()));
     }
 
-    public function test_bulk_unlink_actually_detaches_the_selected_products(): void
+    /**
+     * The drill-down page is retired — products_count's ->url() now
+     * redirects into ProductResource's own real list, pre-filtered via
+     * the NEW 'tags' SelectFilter (Filament's real #[Url(as: 'filters')]
+     * binding on ListRecords::$tableFilters). Only this tag's own
+     * products may appear. Also exercises the filter directly as a
+     * normal, manually-usable one (options list included).
+     */
+    public function test_the_products_count_link_redirects_into_products_filtered_to_that_tag_only(): void
     {
         $this->actingAsPanelAdministrator();
 
-        $tag = new Tag(id: null, name: 'Summer', slug: 'summer');
-        app(TagRepository::class)->save($tag);
+        $summer = new Tag(id: null, name: 'Summer', slug: 'summer');
+        app(TagRepository::class)->save($summer);
+        $winter = new Tag(id: null, name: 'Winter', slug: 'winter');
+        app(TagRepository::class)->save($winter);
 
-        $productIds = [];
-        for ($i = 1; $i <= 3; $i++) {
-            $product = Product::createSimple("Product {$i}", "SKU-{$i}", "product-{$i}");
-            app(ProductRepository::class)->save($product);
-            app(ProductTagRepository::class)->save(new ProductTag(id: null, productId: $product->id(), tagId: $tag->id()));
-            $productIds[] = $product->id();
-        }
+        $summerProduct = Product::createSimple('Light Summer Dress', 'SKU-SUMMER', 'light-summer-dress');
+        app(ProductRepository::class)->save($summerProduct);
+        app(ProductTagRepository::class)->save(new ProductTag(id: null, productId: $summerProduct->id(), tagId: $summer->id()));
 
-        Livewire::test(RelatedProducts::class, ['record' => $tag->id()])
-            ->callTableBulkAction('detach', $productIds);
+        $winterProduct = Product::createSimple('Heavy Winter Parka', 'SKU-WINTER', 'heavy-winter-parka');
+        app(ProductRepository::class)->save($winterProduct);
+        app(ProductTagRepository::class)->save(new ProductTag(id: null, productId: $winterProduct->id(), tagId: $winter->id()));
 
-        $this->assertSame(0, app(TagRepository::class)->countProductsUsing($tag->id()));
+        $untagged = Product::createSimple('Plain Untagged Glove', 'SKU-NONE', 'plain-untagged-glove');
+        app(ProductRepository::class)->save($untagged);
+
+        $summerModel = TagModel::find($summer->id());
+        $component = Livewire::test(ListTags::class);
+        $component->assertTableColumnStateSet('products_count', 1, record: $summerModel);
+
+        $column = $component->instance()->getTable()->getColumn('products_count')->record($summerModel);
+        $generatedUrl = $column->getUrl($column->getState());
+        $this->assertNotNull($generatedUrl);
+        $this->assertStringContainsString(ProductResource::getUrl('index'), $generatedUrl);
+
+        Livewire::test(ListProducts::class)
+            ->filterTable('tags', $summer->id())
+            ->assertCanSeeTableRecords([ProductModel::find($summerProduct->id())])
+            ->assertCanNotSeeTableRecords([
+                ProductModel::find($winterProduct->id()),
+                ProductModel::find($untagged->id()),
+            ]);
+
+        $this->get($generatedUrl)
+            ->assertOk()
+            ->assertSee('Light Summer Dress')
+            ->assertDontSee('Heavy Winter Parka')
+            ->assertDontSee('Plain Untagged Glove');
     }
 
-    public function test_bulk_unlink_skips_an_already_detached_product_without_erroring(): void
+    /** The retired route genuinely no longer exists — not silently still reachable. */
+    public function test_the_old_products_drill_down_route_no_longer_exists(): void
     {
         $this->actingAsPanelAdministrator();
 
         $tag = new Tag(id: null, name: 'Summer', slug: 'summer');
         app(TagRepository::class)->save($tag);
 
-        $stillAttached = Product::createSimple('Still Attached', 'SKU-1', 'still-attached');
-        app(ProductRepository::class)->save($stillAttached);
-        app(ProductTagRepository::class)->save(new ProductTag(id: null, productId: $stillAttached->id(), tagId: $tag->id()));
-
-        $neverAttached = Product::createSimple('Never Attached', 'SKU-2', 'never-attached');
-        app(ProductRepository::class)->save($neverAttached);
-
-        Livewire::test(RelatedProducts::class, ['record' => $tag->id()])
-            ->callTableBulkAction('detach', [$stillAttached->id(), $neverAttached->id()]);
-
-        $this->assertSame(0, app(TagRepository::class)->countProductsUsing($tag->id()));
+        $this->get('/admin/tags/'.$tag->id().'/products')->assertNotFound();
     }
 }

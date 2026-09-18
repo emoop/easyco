@@ -6,11 +6,13 @@ use App\Filament\Resources\ProductGroupResource;
 use App\Filament\Resources\ProductGroupResource\Pages\CreateProductGroup;
 use App\Filament\Resources\ProductGroupResource\Pages\EditProductGroup;
 use App\Filament\Resources\ProductGroupResource\Pages\ListProductGroups;
-use App\Filament\Resources\ProductGroupResource\Pages\RelatedProducts;
+use App\Filament\Resources\ProductResource;
+use App\Filament\Resources\ProductResource\Pages\ListProducts;
 use App\Filament\StaffPanelUser;
 use EasyCo\Catalog\Contracts\ProductGroupRepository;
 use EasyCo\Catalog\Contracts\ProductRepository;
 use EasyCo\Catalog\Persistence\Eloquent\ProductGroupModel;
+use EasyCo\Catalog\Persistence\Eloquent\ProductModel;
 use EasyCo\Catalog\Product;
 use EasyCo\Catalog\ProductGroup;
 use EasyCo\Staff\Contracts\PasswordHasher;
@@ -240,50 +242,65 @@ class ProductGroupResourceTest extends TestCase
         $this->assertNull(app(ProductGroupRepository::class)->findById($group->id()));
     }
 
-    public function test_bulk_unlink_actually_detaches_the_selected_products(): void
+    /**
+     * The drill-down page is retired — products_count's ->url() now
+     * redirects into ProductResource's own real list, pre-filtered via
+     * its existing 'product_group_id' SelectFilter (Filament's real
+     * #[Url(as: 'filters')] binding on ListRecords::$tableFilters). Only
+     * this group's own products may appear.
+     */
+    public function test_the_products_count_link_redirects_into_products_filtered_to_that_group_only(): void
     {
         $this->actingAsPanelAdministrator();
 
-        $group = new ProductGroup(id: null, code: 'shoes', name: 'Обувки');
-        app(ProductGroupRepository::class)->save($group);
+        $shoes = new ProductGroup(id: null, code: 'shoes', name: 'Обувки');
+        app(ProductGroupRepository::class)->save($shoes);
+        $shirts = new ProductGroup(id: null, code: 'shirts', name: 'Ризи');
+        app(ProductGroupRepository::class)->save($shirts);
 
-        $productIds = [];
-        for ($i = 1; $i <= 3; $i++) {
-            $product = Product::createSimple("Product {$i}", "SKU-{$i}", "product-{$i}");
-            $product->assignProductGroup($group->id());
-            app(ProductRepository::class)->save($product);
-            $productIds[] = $product->id();
-        }
+        $shoeProduct = Product::createSimple('Leather Oxford Shoe', 'SKU-SHOE', 'leather-oxford-shoe');
+        $shoeProduct->assignProductGroup($shoes->id());
+        app(ProductRepository::class)->save($shoeProduct);
 
-        Livewire::test(RelatedProducts::class, ['record' => $group->id()])
-            ->callTableBulkAction('detach', $productIds);
+        $shirtProduct = Product::createSimple('Cotton Dress Shirt', 'SKU-SHIRT', 'cotton-dress-shirt');
+        $shirtProduct->assignProductGroup($shirts->id());
+        app(ProductRepository::class)->save($shirtProduct);
 
-        foreach ($productIds as $productId) {
-            $reloaded = app(ProductRepository::class)->findById($productId);
-            $this->assertNull($reloaded->productGroupId());
-        }
+        $groupless = Product::createSimple('Plain Groupless Scarf', 'SKU-NONE', 'plain-groupless-scarf');
+        app(ProductRepository::class)->save($groupless);
 
-        $this->assertSame(0, app(ProductGroupRepository::class)->countProductsUsing($group->id()));
+        $shoesModel = ProductGroupModel::find($shoes->id());
+        $component = Livewire::test(ListProductGroups::class);
+        $component->assertTableColumnStateSet('products_count', 1, record: $shoesModel);
+
+        $column = $component->instance()->getTable()->getColumn('products_count')->record($shoesModel);
+        $generatedUrl = $column->getUrl($column->getState());
+        $this->assertNotNull($generatedUrl);
+        $this->assertStringContainsString(ProductResource::getUrl('index'), $generatedUrl);
+
+        Livewire::test(ListProducts::class)
+            ->filterTable('product_group_id', $shoes->id())
+            ->assertCanSeeTableRecords([ProductModel::find($shoeProduct->id())])
+            ->assertCanNotSeeTableRecords([
+                ProductModel::find($shirtProduct->id()),
+                ProductModel::find($groupless->id()),
+            ]);
+
+        $this->get($generatedUrl)
+            ->assertOk()
+            ->assertSee('Leather Oxford Shoe')
+            ->assertDontSee('Cotton Dress Shirt')
+            ->assertDontSee('Plain Groupless Scarf');
     }
 
-    public function test_bulk_unlink_skips_an_already_detached_product_without_erroring(): void
+    /** The retired route genuinely no longer exists — not silently still reachable. */
+    public function test_the_old_products_drill_down_route_no_longer_exists(): void
     {
         $this->actingAsPanelAdministrator();
 
         $group = new ProductGroup(id: null, code: 'shoes', name: 'Обувки');
         app(ProductGroupRepository::class)->save($group);
 
-        $stillAttached = Product::createSimple('Still Attached', 'SKU-1', 'still-attached');
-        $stillAttached->assignProductGroup($group->id());
-        app(ProductRepository::class)->save($stillAttached);
-
-        $alreadyDetached = Product::createSimple('Already Detached', 'SKU-2', 'already-detached');
-        app(ProductRepository::class)->save($alreadyDetached);
-
-        Livewire::test(RelatedProducts::class, ['record' => $group->id()])
-            ->callTableBulkAction('detach', [$stillAttached->id(), $alreadyDetached->id()]);
-
-        $reloadedAttached = app(ProductRepository::class)->findById($stillAttached->id());
-        $this->assertNull($reloadedAttached->productGroupId());
+        $this->get('/admin/product-groups/'.$group->id().'/products')->assertNotFound();
     }
 }

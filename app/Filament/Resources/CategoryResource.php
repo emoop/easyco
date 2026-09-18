@@ -7,8 +7,8 @@ use App\Filament\NavigationGroup;
 use App\Filament\Resources\CategoryResource\Pages\CreateCategory;
 use App\Filament\Resources\CategoryResource\Pages\EditCategory;
 use App\Filament\Resources\CategoryResource\Pages\ListCategories;
-use App\Filament\Resources\CategoryResource\Pages\RelatedProducts;
 use App\Filament\Resources\CategoryResource\Pages\ViewCategory;
+use App\Filament\Resources\ProductResource;
 use BackedEnum;
 use EasyCo\Catalog\Contracts\CategoryRepository;
 use EasyCo\Catalog\Persistence\Eloquent\CategoryModel;
@@ -169,7 +169,15 @@ class CategoryResource extends Resource
                     ->label(__('categories.fields.products_count'))
                     ->state(fn (CategoryModel $record): int => app(CategoryRepository::class)->countProductsUsing((string) $record->id))
                     ->formatStateUsing(fn (int $state): string => trans_choice('categories.products_count.count', $state, ['count' => $state]))
-                    ->url(fn (CategoryModel $record, int $state): ?string => $state > 0 ? static::getUrl('products', ['record' => $record]) : null),
+                    ->color(fn (int $state): ?string => $state > 0 ? 'info' : null)
+                    ->tooltip(fn (int $state): ?string => $state > 0 ? __('related_products.count_tooltip.filtered_list') : null)
+                    // Redirects into ProductResource's own real list, pre-filtered
+                    // via its existing 'categories' SelectFilter (Filament's real
+                    // #[Url(as: 'filters')] binding on ListRecords::$tableFilters)
+                    // — not a custom drill-down table anymore.
+                    ->url(fn (CategoryModel $record, int $state): ?string => $state > 0
+                        ? ProductResource::getUrl('index', ['filters' => ['categories' => ['value' => $record->id]]])
+                        : null),
                 TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable(),
@@ -204,7 +212,8 @@ class CategoryResource extends Resource
             'create' => CreateCategory::route('/create'),
             'view' => ViewCategory::route('/{record}'),
             'edit' => EditCategory::route('/{record}/edit'),
-            'products' => RelatedProducts::route('/{record}/products'),
+            // 'products' retired — products_count now redirects straight into
+            // ProductResource's own list (see that column's own comment).
         ];
     }
 

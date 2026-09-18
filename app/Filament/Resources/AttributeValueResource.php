@@ -159,6 +159,8 @@ class AttributeValueResource extends Resource
                     ->label(__('attribute_values.fields.descriptive_count'))
                     ->state(fn (AttributeValueModel $record): int => app(AttributeValueRepository::class)->countProductsUsing((string) $record->id)['descriptive'])
                     ->formatStateUsing(fn (int $state): string => trans_choice('attribute_values.products_count.descriptive', $state, ['count' => $state]))
+                    ->color(fn (int $state): ?string => $state > 0 ? 'info' : null)
+                    ->tooltip(fn (int $state): ?string => $state > 0 ? __('related_products.count_tooltip.filtered_list') : null)
                     // Same redirect as AttributeDefinitionResource's own
                     // descriptive_count column — also sets
                     // attribute_value_id, which narrows the same Filter
@@ -175,6 +177,8 @@ class AttributeValueResource extends Resource
                     ->label(__('attribute_values.fields.axis_count'))
                     ->state(fn (AttributeValueModel $record): int => app(AttributeValueRepository::class)->countProductsUsing((string) $record->id)['axis'])
                     ->formatStateUsing(fn (int $state): string => trans_choice('attribute_values.products_count.axis', $state, ['count' => $state]))
+                    ->color(fn (int $state): ?string => $state > 0 ? 'info' : null)
+                    ->tooltip(fn (int $state): ?string => $state > 0 ? __('related_products.count_tooltip.axis_list') : null)
                     ->url(fn (AttributeValueModel $record, int $state): ?string => $state > 0 ? static::getUrl('products-axis', ['record' => $record]) : null),
                 TextColumn::make('created_at')
                     ->dateTime()

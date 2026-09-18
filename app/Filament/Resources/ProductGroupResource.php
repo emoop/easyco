@@ -7,8 +7,8 @@ use App\Filament\NavigationGroup;
 use App\Filament\Resources\ProductGroupResource\Pages\CreateProductGroup;
 use App\Filament\Resources\ProductGroupResource\Pages\EditProductGroup;
 use App\Filament\Resources\ProductGroupResource\Pages\ListProductGroups;
-use App\Filament\Resources\ProductGroupResource\Pages\RelatedProducts;
 use App\Filament\Resources\ProductGroupResource\Pages\ViewProductGroup;
+use App\Filament\Resources\ProductResource;
 use BackedEnum;
 use EasyCo\Catalog\Contracts\ProductGroupRepository;
 use EasyCo\Catalog\Persistence\Eloquent\ProductGroupModel;
@@ -124,7 +124,15 @@ class ProductGroupResource extends Resource
                     ->label(__('product_groups.fields.products_count'))
                     ->state(fn (ProductGroupModel $record): int => app(ProductGroupRepository::class)->countProductsUsing((string) $record->id))
                     ->formatStateUsing(fn (int $state): string => trans_choice('product_groups.products_count.count', $state, ['count' => $state]))
-                    ->url(fn (ProductGroupModel $record, int $state): ?string => $state > 0 ? static::getUrl('products', ['record' => $record]) : null),
+                    ->color(fn (int $state): ?string => $state > 0 ? 'info' : null)
+                    ->tooltip(fn (int $state): ?string => $state > 0 ? __('related_products.count_tooltip.filtered_list') : null)
+                    // Redirects into ProductResource's own real list, pre-filtered
+                    // via its existing 'product_group_id' SelectFilter (Filament's
+                    // real #[Url(as: 'filters')] binding on ListRecords::$tableFilters)
+                    // — not a custom drill-down table anymore.
+                    ->url(fn (ProductGroupModel $record, int $state): ?string => $state > 0
+                        ? ProductResource::getUrl('index', ['filters' => ['product_group_id' => ['value' => $record->id]]])
+                        : null),
                 TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable(),
@@ -157,7 +165,8 @@ class ProductGroupResource extends Resource
             'create' => CreateProductGroup::route('/create'),
             'view' => ViewProductGroup::route('/{record}'),
             'edit' => EditProductGroup::route('/{record}/edit'),
-            'products' => RelatedProducts::route('/{record}/products'),
+            // 'products' retired — products_count now redirects straight into
+            // ProductResource's own list (see that column's own comment).
         ];
     }
 

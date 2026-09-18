@@ -7,8 +7,8 @@ use App\Filament\NavigationGroup;
 use App\Filament\Resources\TagResource\Pages\CreateTag;
 use App\Filament\Resources\TagResource\Pages\EditTag;
 use App\Filament\Resources\TagResource\Pages\ListTags;
-use App\Filament\Resources\TagResource\Pages\RelatedProducts;
 use App\Filament\Resources\TagResource\Pages\ViewTag;
+use App\Filament\Resources\ProductResource;
 use BackedEnum;
 use EasyCo\Catalog\Contracts\TagRepository;
 use EasyCo\Catalog\Persistence\Eloquent\TagModel;
@@ -111,7 +111,15 @@ class TagResource extends Resource
                     ->label(__('tags.fields.products_count'))
                     ->state(fn (TagModel $record): int => app(TagRepository::class)->countProductsUsing((string) $record->id))
                     ->formatStateUsing(fn (int $state): string => trans_choice('tags.products_count.count', $state, ['count' => $state]))
-                    ->url(fn (TagModel $record, int $state): ?string => $state > 0 ? static::getUrl('products', ['record' => $record]) : null),
+                    ->color(fn (int $state): ?string => $state > 0 ? 'info' : null)
+                    ->tooltip(fn (int $state): ?string => $state > 0 ? __('related_products.count_tooltip.filtered_list') : null)
+                    // Redirects into ProductResource's own real list, pre-filtered
+                    // via its 'tags' SelectFilter (Filament's real
+                    // #[Url(as: 'filters')] binding on ListRecords::$tableFilters)
+                    // — not a custom drill-down table anymore.
+                    ->url(fn (TagModel $record, int $state): ?string => $state > 0
+                        ? ProductResource::getUrl('index', ['filters' => ['tags' => ['value' => $record->id]]])
+                        : null),
                 TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable(),
@@ -144,7 +152,8 @@ class TagResource extends Resource
             'create' => CreateTag::route('/create'),
             'view' => ViewTag::route('/{record}'),
             'edit' => EditTag::route('/{record}/edit'),
-            'products' => RelatedProducts::route('/{record}/products'),
+            // 'products' retired — products_count now redirects straight into
+            // ProductResource's own list (see that column's own comment).
         ];
     }
 

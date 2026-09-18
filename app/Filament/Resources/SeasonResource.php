@@ -7,8 +7,8 @@ use App\Filament\NavigationGroup;
 use App\Filament\Resources\SeasonResource\Pages\CreateSeason;
 use App\Filament\Resources\SeasonResource\Pages\EditSeason;
 use App\Filament\Resources\SeasonResource\Pages\ListSeasons;
-use App\Filament\Resources\SeasonResource\Pages\RelatedProducts;
 use App\Filament\Resources\SeasonResource\Pages\ViewSeason;
+use App\Filament\Resources\ProductResource;
 use BackedEnum;
 use EasyCo\Catalog\Contracts\SeasonRepository;
 use EasyCo\Catalog\Persistence\Eloquent\SeasonModel;
@@ -113,7 +113,15 @@ class SeasonResource extends Resource
                     ->label(__('seasons.fields.products_count'))
                     ->state(fn (SeasonModel $record): int => app(SeasonRepository::class)->countProductsUsing((string) $record->id))
                     ->formatStateUsing(fn (int $state): string => trans_choice('seasons.products_count.count', $state, ['count' => $state]))
-                    ->url(fn (SeasonModel $record, int $state): ?string => $state > 0 ? static::getUrl('products', ['record' => $record]) : null),
+                    ->color(fn (int $state): ?string => $state > 0 ? 'info' : null)
+                    ->tooltip(fn (int $state): ?string => $state > 0 ? __('related_products.count_tooltip.filtered_list') : null)
+                    // Redirects into ProductResource's own real list, pre-filtered
+                    // via its existing 'season_id' SelectFilter (Filament's real
+                    // #[Url(as: 'filters')] binding on ListRecords::$tableFilters)
+                    // — not a custom drill-down table anymore.
+                    ->url(fn (SeasonModel $record, int $state): ?string => $state > 0
+                        ? ProductResource::getUrl('index', ['filters' => ['season_id' => ['value' => $record->id]]])
+                        : null),
                 TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable(),
@@ -146,7 +154,8 @@ class SeasonResource extends Resource
             'create' => CreateSeason::route('/create'),
             'view' => ViewSeason::route('/{record}'),
             'edit' => EditSeason::route('/{record}/edit'),
-            'products' => RelatedProducts::route('/{record}/products'),
+            // 'products' retired — products_count now redirects straight into
+            // ProductResource's own list (see that column's own comment).
         ];
     }
 

@@ -139,6 +139,8 @@ class AttributeDefinitionResource extends Resource
                     ->label(__('attribute_definitions.fields.descriptive_count'))
                     ->state(fn (AttributeDefinitionModel $record): int => app(AttributeDefinitionRepository::class)->countProductsUsing((string) $record->id)['descriptive'])
                     ->formatStateUsing(fn (int $state): string => trans_choice('attribute_definitions.products_count.descriptive', $state, ['count' => $state]))
+                    ->color(fn (int $state): ?string => $state > 0 ? 'info' : null)
+                    ->tooltip(fn (int $state): ?string => $state > 0 ? __('related_products.count_tooltip.filtered_list') : null)
                     // Redirects into ProductResource's own real list,
                     // pre-filtered via the new 'attribute_usage' Filter
                     // (ProductResource::table()'s own docblock) — not a
@@ -151,6 +153,8 @@ class AttributeDefinitionResource extends Resource
                     ->label(__('attribute_definitions.fields.axis_count'))
                     ->state(fn (AttributeDefinitionModel $record): int => app(AttributeDefinitionRepository::class)->countProductsUsing((string) $record->id)['axis'])
                     ->formatStateUsing(fn (int $state): string => trans_choice('attribute_definitions.products_count.axis', $state, ['count' => $state]))
+                    ->color(fn (int $state): ?string => $state > 0 ? 'info' : null)
+                    ->tooltip(fn (int $state): ?string => $state > 0 ? __('related_products.count_tooltip.axis_list') : null)
                     ->url(fn (AttributeDefinitionModel $record, int $state): ?string => $state > 0 ? static::getUrl('products-axis', ['record' => $record]) : null),
                 TextColumn::make('created_at')
                     ->dateTime()

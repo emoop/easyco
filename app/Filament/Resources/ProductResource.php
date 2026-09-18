@@ -805,6 +805,28 @@ class ProductResource extends Resource
                             fn (Builder $categoriesQuery): Builder => $categoriesQuery->where('catalog_categories.id', $data['value'])
                         );
                     }),
+                // Mirrors the 'categories' filter above exactly, against
+                // the same kind of read-only many-to-many
+                // (ProductModel::tags(), catalog_product_tags) — and, like
+                // 'brand_id'/'season_id'/'product_group_id'/'categories',
+                // it is also the deep-link target of TagResource's
+                // products_count column (?filters[tags][value]=<id>), so
+                // it is a real, visible, manually-usable filter rather
+                // than a hidden-fields-only one like 'attribute_usage'.
+                SelectFilter::make('tags')
+                    ->label(__('products.fields.tags'))
+                    ->options(fn (): array => TagModel::pluck('name', 'id')->all())
+                    ->searchable()
+                    ->query(function (Builder $query, array $data): Builder {
+                        if (blank($data['value'] ?? null)) {
+                            return $query;
+                        }
+
+                        return $query->whereHas(
+                            'tags',
+                            fn (Builder $tagsQuery): Builder => $tagsQuery->where('catalog_tags.id', $data['value'])
+                        );
+                    }),
                 // Deep-link-only, driven entirely by AttributeDefinition
                 // Resource/AttributeValueResource's own descriptive_count
                 // column ->url() callbacks via Filament's real

@@ -6,12 +6,14 @@ use App\Filament\Resources\BrandResource;
 use App\Filament\Resources\BrandResource\Pages\CreateBrand;
 use App\Filament\Resources\BrandResource\Pages\EditBrand;
 use App\Filament\Resources\BrandResource\Pages\ListBrands;
-use App\Filament\Resources\BrandResource\Pages\RelatedProducts;
+use App\Filament\Resources\ProductResource;
+use App\Filament\Resources\ProductResource\Pages\ListProducts;
 use App\Filament\StaffPanelUser;
 use EasyCo\Catalog\Brand;
 use EasyCo\Catalog\Contracts\BrandRepository;
 use EasyCo\Catalog\Contracts\ProductRepository;
 use EasyCo\Catalog\Persistence\Eloquent\BrandModel;
+use EasyCo\Catalog\Persistence\Eloquent\ProductModel;
 use EasyCo\Catalog\Product;
 use EasyCo\Media\Contracts\MediaAssetRepository;
 use EasyCo\Staff\Contracts\PasswordHasher;
@@ -286,50 +288,112 @@ class BrandResourceTest extends TestCase
         $this->assertNull(app(BrandRepository::class)->findById($brand->id()));
     }
 
-    public function test_bulk_unlink_actually_detaches_the_selected_products(): void
+    /**
+     * The drill-down page is retired — products_count's ->url() now
+     * redirects into ProductResource's own real list, pre-filtered via
+     * its existing 'brand_id' SelectFilter (Filament's real
+     * #[Url(as: 'filters')] binding on ListRecords::$tableFilters). Only
+     * this brand's own products may appear — not another brand's, not an
+     * unbranded product.
+     */
+    public function test_the_products_count_link_redirects_into_products_filtered_to_that_brand_only(): void
     {
         $this->actingAsPanelAdministrator();
 
-        $brand = new Brand(id: null, name: 'Nike', slug: 'nike');
-        app(BrandRepository::class)->save($brand);
+        $nike = new Brand(id: null, name: 'Nike', slug: 'nike');
+        app(BrandRepository::class)->save($nike);
+        $adidas = new Brand(id: null, name: 'Adidas', slug: 'adidas');
+        app(BrandRepository::class)->save($adidas);
 
-        $productIds = [];
-        for ($i = 1; $i <= 3; $i++) {
-            $product = Product::createSimple("Product {$i}", "SKU-{$i}", "product-{$i}");
-            $product->assignBrand($brand->id());
-            app(ProductRepository::class)->save($product);
-            $productIds[] = $product->id();
-        }
+        $nikeProduct = Product::createSimple('Air Zoom Runner', 'SKU-NIKE', 'air-zoom-runner');
+        $nikeProduct->assignBrand($nike->id());
+        app(ProductRepository::class)->save($nikeProduct);
 
-        Livewire::test(RelatedProducts::class, ['record' => $brand->id()])
-            ->callTableBulkAction('detach', $productIds);
+        $adidasProduct = Product::createSimple('Ultraboost Trainer', 'SKU-ADIDAS', 'ultraboost-trainer');
+        $adidasProduct->assignBrand($adidas->id());
+        app(ProductRepository::class)->save($adidasProduct);
 
-        foreach ($productIds as $productId) {
-            $reloaded = app(ProductRepository::class)->findById($productId);
-            $this->assertNull($reloaded->brandId());
-        }
+        $unbranded = Product::createSimple('Plain Unbranded Sock', 'SKU-NONE', 'plain-unbranded-sock');
+        app(ProductRepository::class)->save($unbranded);
 
-        $this->assertSame(0, app(BrandRepository::class)->countProductsUsing($brand->id()));
+        // The real column ->url() callback, bound to its real record and
+        // evaluated exactly as Filament does when rendering the row.
+        $nikeModel = BrandModel::find($nike->id());
+        $component = Livewire::test(ListBrands::class);
+        $component->assertTableColumnStateSet('products_count', 1, record: $nikeModel);
+
+        $column = $component->instance()->getTable()->getColumn('products_count')->record($nikeModel);
+        $generatedUrl = $column->getUrl($column->getState());
+        $this->assertNotNull($generatedUrl);
+        $this->assertStringContainsString(ProductResource::getUrl('index'), $generatedUrl);
+
+        Livewire::test(ListProducts::class)
+            ->filterTable('brand_id', $nike->id())
+            ->assertCanSeeTableRecords([ProductModel::find($nikeProduct->id())])
+            ->assertCanNotSeeTableRecords([
+                ProductModel::find($adidasProduct->id()),
+                ProductModel::find($unbranded->id()),
+            ]);
+
+        // The real click-through: a genuine HTTP GET against that exact
+        // generated URL, confirming Livewire's own #[Url] hydration
+        // actually filters the rendered list.
+        $this->get($generatedUrl)
+            ->assertOk()
+            ->assertSee('Air Zoom Runner')
+            ->assertDontSee('Ultraboost Trainer')
+            ->assertDontSee('Plain Unbranded Sock');
     }
 
-    public function test_bulk_unlink_skips_an_already_detached_product_without_erroring(): void
+    /**
+     * The shared count tooltip (lang key related_products.count_tooltip.
+     * filtered_list) warns that the linked, filtered list hides archived
+     * and VARIABLE products the count includes — shown only while the
+     * count is > 0 (the same condition as the column's own ->color()/
+     * ->url()), never on a zero count, which has no link to explain.
+     */
+    public function test_the_products_count_tooltip_shows_only_when_the_count_is_above_zero(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        $used = new Brand(id: null, name: 'Nike', slug: 'nike');
+        app(BrandRepository::class)->save($used);
+        $unused = new Brand(id: null, name: 'Adidas', slug: 'adidas');
+        app(BrandRepository::class)->save($unused);
+
+        $product = Product::createSimple('Air Zoom Runner', 'SKU-NIKE', 'air-zoom-runner');
+        $product->assignBrand($used->id());
+        app(ProductRepository::class)->save($product);
+
+        $expected = __('related_products.count_tooltip.filtered_list');
+
+        $component = Livewire::test(ListBrands::class);
+        $column = $component->instance()->getTable()->getColumn('products_count');
+
+        $usedModel = BrandModel::find($used->id());
+        $withCount = $column->record($usedModel);
+        $this->assertSame($expected, $withCount->getTooltip($withCount->getState()));
+
+        $unusedModel = BrandModel::find($unused->id());
+        $withoutCount = $column->record($unusedModel);
+        $this->assertNull($withoutCount->getTooltip($withoutCount->getState()));
+
+        // The real rendered page: the tooltip text appears exactly once
+        // (the one row with a count) and the row's link is still intact
+        // alongside it.
+        $html = $this->get(BrandResource::getUrl('index'))->assertOk()->getContent();
+        $this->assertSame(1, substr_count($html, $expected));
+        $this->assertStringContainsString('filters%5Bbrand_id%5D%5Bvalue%5D='.$used->id(), $html);
+    }
+
+    /** The retired route genuinely no longer exists — not silently still reachable. */
+    public function test_the_old_products_drill_down_route_no_longer_exists(): void
     {
         $this->actingAsPanelAdministrator();
 
         $brand = new Brand(id: null, name: 'Nike', slug: 'nike');
         app(BrandRepository::class)->save($brand);
 
-        $stillAttached = Product::createSimple('Still Attached', 'SKU-1', 'still-attached');
-        $stillAttached->assignBrand($brand->id());
-        app(ProductRepository::class)->save($stillAttached);
-
-        $alreadyDetached = Product::createSimple('Already Detached', 'SKU-2', 'already-detached');
-        app(ProductRepository::class)->save($alreadyDetached);
-
-        Livewire::test(RelatedProducts::class, ['record' => $brand->id()])
-            ->callTableBulkAction('detach', [$stillAttached->id(), $alreadyDetached->id()]);
-
-        $reloadedAttached = app(ProductRepository::class)->findById($stillAttached->id());
-        $this->assertNull($reloadedAttached->brandId());
+        $this->get('/admin/brands/'.$brand->id().'/products')->assertNotFound();
     }
 }

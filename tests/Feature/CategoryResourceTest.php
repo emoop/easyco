@@ -6,13 +6,15 @@ use App\Filament\Resources\CategoryResource;
 use App\Filament\Resources\CategoryResource\Pages\CreateCategory;
 use App\Filament\Resources\CategoryResource\Pages\EditCategory;
 use App\Filament\Resources\CategoryResource\Pages\ListCategories;
-use App\Filament\Resources\CategoryResource\Pages\RelatedProducts;
+use App\Filament\Resources\ProductResource;
+use App\Filament\Resources\ProductResource\Pages\ListProducts;
 use App\Filament\StaffPanelUser;
 use EasyCo\Catalog\Category;
 use EasyCo\Catalog\Contracts\CategoryRepository;
 use EasyCo\Catalog\Contracts\ProductCategoryRepository;
 use EasyCo\Catalog\Contracts\ProductRepository;
 use EasyCo\Catalog\Persistence\Eloquent\CategoryModel;
+use EasyCo\Catalog\Persistence\Eloquent\ProductModel;
 use EasyCo\Catalog\Product;
 use EasyCo\Catalog\ProductCategory;
 use EasyCo\Staff\Contracts\PasswordHasher;
@@ -284,45 +286,67 @@ class CategoryResourceTest extends TestCase
         $this->assertNull(app(CategoryRepository::class)->findById($category->id()));
     }
 
-    public function test_bulk_unlink_actually_detaches_the_selected_products(): void
+    /**
+     * The drill-down page is retired — products_count's ->url() now
+     * redirects into ProductResource's own real list, pre-filtered via
+     * its EXISTING 'categories' SelectFilter (Filament's real
+     * #[Url(as: 'filters')] binding on ListRecords::$tableFilters — no
+     * new Filter was needed). Only this category's own products may
+     * appear.
+     */
+    public function test_the_products_count_link_redirects_into_products_filtered_to_that_category_only(): void
     {
         $this->actingAsPanelAdministrator();
 
-        $category = new Category(id: null, parentId: null, name: 'Shoes', slug: 'shoes');
-        app(CategoryRepository::class)->save($category);
+        $sneakers = new Category(id: null, parentId: null, name: 'Sneakers', slug: 'sneakers');
+        app(CategoryRepository::class)->save($sneakers);
+        $boots = new Category(id: null, parentId: null, name: 'Boots', slug: 'boots');
+        app(CategoryRepository::class)->save($boots);
 
-        $productIds = [];
-        for ($i = 1; $i <= 3; $i++) {
-            $product = Product::createSimple("Product {$i}", "SKU-{$i}", "product-{$i}");
-            app(ProductRepository::class)->save($product);
-            app(ProductCategoryRepository::class)->save(new ProductCategory(id: null, productId: $product->id(), categoryId: $category->id()));
-            $productIds[] = $product->id();
-        }
+        $sneakerProduct = Product::createSimple('Canvas Court Sneaker', 'SKU-SNEAKER', 'canvas-court-sneaker');
+        app(ProductRepository::class)->save($sneakerProduct);
+        app(ProductCategoryRepository::class)->save(new ProductCategory(id: null, productId: $sneakerProduct->id(), categoryId: $sneakers->id()));
 
-        Livewire::test(RelatedProducts::class, ['record' => $category->id()])
-            ->callTableBulkAction('detach', $productIds);
+        $bootProduct = Product::createSimple('Chelsea Ankle Boot', 'SKU-BOOT', 'chelsea-ankle-boot');
+        app(ProductRepository::class)->save($bootProduct);
+        app(ProductCategoryRepository::class)->save(new ProductCategory(id: null, productId: $bootProduct->id(), categoryId: $boots->id()));
 
-        $this->assertSame(0, app(CategoryRepository::class)->countProductsUsing($category->id()));
+        $uncategorised = Product::createSimple('Plain Uncategorised Lace', 'SKU-NONE', 'plain-uncategorised-lace');
+        app(ProductRepository::class)->save($uncategorised);
+
+        $sneakersModel = CategoryModel::find($sneakers->id());
+        $component = Livewire::test(ListCategories::class);
+        $component->assertTableColumnStateSet('products_count', 1, record: $sneakersModel);
+
+        $column = $component->instance()->getTable()->getColumn('products_count')->record($sneakersModel);
+        $generatedUrl = $column->getUrl($column->getState());
+        $this->assertNotNull($generatedUrl);
+        $this->assertStringContainsString(ProductResource::getUrl('index'), $generatedUrl);
+
+        Livewire::test(ListProducts::class)
+            ->filterTable('categories', $sneakers->id())
+            ->assertCanSeeTableRecords([ProductModel::find($sneakerProduct->id())])
+            ->assertCanNotSeeTableRecords([
+                ProductModel::find($bootProduct->id()),
+                ProductModel::find($uncategorised->id()),
+            ]);
+
+        $this->get($generatedUrl)
+            ->assertOk()
+            ->assertSee('Canvas Court Sneaker')
+            ->assertDontSee('Chelsea Ankle Boot')
+            ->assertDontSee('Plain Uncategorised Lace');
     }
 
-    public function test_bulk_unlink_skips_an_already_detached_product_without_erroring(): void
+    /** The retired route genuinely no longer exists — not silently still reachable. */
+    public function test_the_old_products_drill_down_route_no_longer_exists(): void
     {
         $this->actingAsPanelAdministrator();
 
         $category = new Category(id: null, parentId: null, name: 'Shoes', slug: 'shoes');
         app(CategoryRepository::class)->save($category);
 
-        $stillAttached = Product::createSimple('Still Attached', 'SKU-1', 'still-attached');
-        app(ProductRepository::class)->save($stillAttached);
-        app(ProductCategoryRepository::class)->save(new ProductCategory(id: null, productId: $stillAttached->id(), categoryId: $category->id()));
-
-        $neverAttached = Product::createSimple('Never Attached', 'SKU-2', 'never-attached');
-        app(ProductRepository::class)->save($neverAttached);
-
-        Livewire::test(RelatedProducts::class, ['record' => $category->id()])
-            ->callTableBulkAction('detach', [$stillAttached->id(), $neverAttached->id()]);
-
-        $this->assertSame(0, app(CategoryRepository::class)->countProductsUsing($category->id()));
+        $this->get('/admin/categories/'.$category->id().'/products')->assertNotFound();
     }
 
     /**

@@ -6,11 +6,13 @@ use App\Filament\Resources\SeasonResource;
 use App\Filament\Resources\SeasonResource\Pages\CreateSeason;
 use App\Filament\Resources\SeasonResource\Pages\EditSeason;
 use App\Filament\Resources\SeasonResource\Pages\ListSeasons;
-use App\Filament\Resources\SeasonResource\Pages\RelatedProducts;
+use App\Filament\Resources\ProductResource;
+use App\Filament\Resources\ProductResource\Pages\ListProducts;
 use App\Filament\StaffPanelUser;
 use EasyCo\Catalog\Contracts\ProductRepository;
 use EasyCo\Catalog\Contracts\SeasonRepository;
 use EasyCo\Catalog\Persistence\Eloquent\SeasonModel;
+use EasyCo\Catalog\Persistence\Eloquent\ProductModel;
 use EasyCo\Catalog\Product;
 use EasyCo\Catalog\Season;
 use EasyCo\Staff\Contracts\PasswordHasher;
@@ -226,50 +228,65 @@ class SeasonResourceTest extends TestCase
         $this->assertNull(app(SeasonRepository::class)->findById($season->id()));
     }
 
-    public function test_bulk_unlink_actually_detaches_the_selected_products(): void
+    /**
+     * The drill-down page is retired — products_count's ->url() now
+     * redirects into ProductResource's own real list, pre-filtered via
+     * its existing 'season_id' SelectFilter (Filament's real
+     * #[Url(as: 'filters')] binding on ListRecords::$tableFilters). Only
+     * this season's own products may appear.
+     */
+    public function test_the_products_count_link_redirects_into_products_filtered_to_that_season_only(): void
     {
         $this->actingAsPanelAdministrator();
 
-        $season = new Season(id: null, name: 'Spring/Summer 2026', slug: 'spring-summer-2026');
-        app(SeasonRepository::class)->save($season);
+        $summer = new Season(id: null, name: 'Spring/Summer 2026', slug: 'spring-summer-2026');
+        app(SeasonRepository::class)->save($summer);
+        $winter = new Season(id: null, name: 'Autumn/Winter 2026', slug: 'autumn-winter-2026');
+        app(SeasonRepository::class)->save($winter);
 
-        $productIds = [];
-        for ($i = 1; $i <= 3; $i++) {
-            $product = Product::createSimple("Product {$i}", "SKU-{$i}", "product-{$i}");
-            $product->assignSeason($season->id());
-            app(ProductRepository::class)->save($product);
-            $productIds[] = $product->id();
-        }
+        $summerProduct = Product::createSimple('Linen Beach Shirt', 'SKU-SUMMER', 'linen-beach-shirt');
+        $summerProduct->assignSeason($summer->id());
+        app(ProductRepository::class)->save($summerProduct);
 
-        Livewire::test(RelatedProducts::class, ['record' => $season->id()])
-            ->callTableBulkAction('detach', $productIds);
+        $winterProduct = Product::createSimple('Wool Winter Coat', 'SKU-WINTER', 'wool-winter-coat');
+        $winterProduct->assignSeason($winter->id());
+        app(ProductRepository::class)->save($winterProduct);
 
-        foreach ($productIds as $productId) {
-            $reloaded = app(ProductRepository::class)->findById($productId);
-            $this->assertNull($reloaded->seasonId());
-        }
+        $seasonless = Product::createSimple('Plain Seasonless Belt', 'SKU-NONE', 'plain-seasonless-belt');
+        app(ProductRepository::class)->save($seasonless);
 
-        $this->assertSame(0, app(SeasonRepository::class)->countProductsUsing($season->id()));
+        $summerModel = SeasonModel::find($summer->id());
+        $component = Livewire::test(ListSeasons::class);
+        $component->assertTableColumnStateSet('products_count', 1, record: $summerModel);
+
+        $column = $component->instance()->getTable()->getColumn('products_count')->record($summerModel);
+        $generatedUrl = $column->getUrl($column->getState());
+        $this->assertNotNull($generatedUrl);
+        $this->assertStringContainsString(ProductResource::getUrl('index'), $generatedUrl);
+
+        Livewire::test(ListProducts::class)
+            ->filterTable('season_id', $summer->id())
+            ->assertCanSeeTableRecords([ProductModel::find($summerProduct->id())])
+            ->assertCanNotSeeTableRecords([
+                ProductModel::find($winterProduct->id()),
+                ProductModel::find($seasonless->id()),
+            ]);
+
+        $this->get($generatedUrl)
+            ->assertOk()
+            ->assertSee('Linen Beach Shirt')
+            ->assertDontSee('Wool Winter Coat')
+            ->assertDontSee('Plain Seasonless Belt');
     }
 
-    public function test_bulk_unlink_skips_an_already_detached_product_without_erroring(): void
+    /** The retired route genuinely no longer exists — not silently still reachable. */
+    public function test_the_old_products_drill_down_route_no_longer_exists(): void
     {
         $this->actingAsPanelAdministrator();
 
         $season = new Season(id: null, name: 'Spring/Summer 2026', slug: 'spring-summer-2026');
         app(SeasonRepository::class)->save($season);
 
-        $stillAttached = Product::createSimple('Still Attached', 'SKU-1', 'still-attached');
-        $stillAttached->assignSeason($season->id());
-        app(ProductRepository::class)->save($stillAttached);
-
-        $alreadyDetached = Product::createSimple('Already Detached', 'SKU-2', 'already-detached');
-        app(ProductRepository::class)->save($alreadyDetached);
-
-        Livewire::test(RelatedProducts::class, ['record' => $season->id()])
-            ->callTableBulkAction('detach', [$stillAttached->id(), $alreadyDetached->id()]);
-
-        $reloadedAttached = app(ProductRepository::class)->findById($stillAttached->id());
-        $this->assertNull($reloadedAttached->seasonId());
+        $this->get('/admin/seasons/'.$season->id().'/products')->assertNotFound();
     }
 }

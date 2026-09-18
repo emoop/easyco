@@ -7,8 +7,8 @@ use App\Filament\NavigationGroup;
 use App\Filament\Resources\BrandResource\Pages\CreateBrand;
 use App\Filament\Resources\BrandResource\Pages\EditBrand;
 use App\Filament\Resources\BrandResource\Pages\ListBrands;
-use App\Filament\Resources\BrandResource\Pages\RelatedProducts;
 use App\Filament\Resources\BrandResource\Pages\ViewBrand;
+use App\Filament\Resources\ProductResource;
 use BackedEnum;
 use EasyCo\Catalog\Contracts\BrandRepository;
 use EasyCo\Catalog\Persistence\Eloquent\BrandModel;
@@ -154,7 +154,15 @@ class BrandResource extends Resource
                     ->label(__('brands.fields.products_count'))
                     ->state(fn (BrandModel $record): int => app(BrandRepository::class)->countProductsUsing((string) $record->id))
                     ->formatStateUsing(fn (int $state): string => trans_choice('brands.products_count.count', $state, ['count' => $state]))
-                    ->url(fn (BrandModel $record, int $state): ?string => $state > 0 ? static::getUrl('products', ['record' => $record]) : null),
+                    ->color(fn (int $state): ?string => $state > 0 ? 'info' : null)
+                    ->tooltip(fn (int $state): ?string => $state > 0 ? __('related_products.count_tooltip.filtered_list') : null)
+                    // Redirects into ProductResource's own real list, pre-filtered
+                    // via its existing 'brand_id' SelectFilter (Filament's real
+                    // #[Url(as: 'filters')] binding on ListRecords::$tableFilters)
+                    // — not a custom drill-down table anymore.
+                    ->url(fn (BrandModel $record, int $state): ?string => $state > 0
+                        ? ProductResource::getUrl('index', ['filters' => ['brand_id' => ['value' => $record->id]]])
+                        : null),
                 TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable(),
@@ -194,7 +202,8 @@ class BrandResource extends Resource
             'create' => CreateBrand::route('/create'),
             'view' => ViewBrand::route('/{record}'),
             'edit' => EditBrand::route('/{record}/edit'),
-            'products' => RelatedProducts::route('/{record}/products'),
+            // 'products' retired — products_count now redirects straight into
+            // ProductResource's own list (see that column's own comment).
         ];
     }
 
