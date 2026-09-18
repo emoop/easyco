@@ -7,7 +7,8 @@ use App\Filament\Resources\AttributeValueResource\Pages\CreateAttributeValue;
 use App\Filament\Resources\AttributeValueResource\Pages\EditAttributeValue;
 use App\Filament\Resources\AttributeValueResource\Pages\ListAttributeValues;
 use App\Filament\Resources\AttributeValueResource\Pages\RelatedProductsAxis;
-use App\Filament\Resources\AttributeValueResource\Pages\RelatedProductsDescriptive;
+use App\Filament\Resources\ProductResource;
+use App\Filament\Resources\ProductResource\Pages\ListProducts;
 use App\Filament\StaffPanelUser;
 use EasyCo\Catalog\AttributeDefinition;
 use EasyCo\Catalog\AttributeValue;
@@ -305,58 +306,60 @@ class AttributeValueResourceTest extends TestCase
         $this->assertNull(app(AttributeValueRepository::class)->findById($value->id()));
     }
 
-    public function test_bulk_unlink_on_the_descriptive_drill_down_actually_detaches_the_selected_products(): void
-    {
-        $this->actingAsPanelAdministrator();
-        $definition = $this->persistedSelectDefinition();
-
-        $value = new AttributeValue(id: null, attributeDefinitionId: $definition->id(), value: 'Black');
-        app(AttributeValueRepository::class)->save($value);
-
-        $productIds = [];
-        for ($i = 1; $i <= 3; $i++) {
-            $product = Product::createSimple("Product {$i}", "SKU-{$i}", "product-{$i}");
-            app(ProductRepository::class)->save($product);
-            $this->attachDescriptively($value, $product);
-            $productIds[] = $product->id();
-        }
-
-        Livewire::test(RelatedProductsDescriptive::class, ['record' => $value->id()])
-            ->callTableBulkAction('detach', $productIds);
-
-        $counts = app(AttributeValueRepository::class)->countProductsUsing($value->id());
-        $this->assertSame(0, $counts['descriptive']);
-    }
-
-    public function test_bulk_unlink_skips_an_already_detached_product_without_erroring(): void
-    {
-        $this->actingAsPanelAdministrator();
-        $definition = $this->persistedSelectDefinition();
-
-        $value = new AttributeValue(id: null, attributeDefinitionId: $definition->id(), value: 'Black');
-        app(AttributeValueRepository::class)->save($value);
-
-        $stillAttached = Product::createSimple('Still Attached', 'SKU-1', 'still-attached');
-        app(ProductRepository::class)->save($stillAttached);
-        $this->attachDescriptively($value, $stillAttached);
-
-        $neverAttached = Product::createSimple('Never Attached', 'SKU-2', 'never-attached');
-        app(ProductRepository::class)->save($neverAttached);
-
-        Livewire::test(RelatedProductsDescriptive::class, ['record' => $value->id()])
-            ->callTableBulkAction('detach', [$stillAttached->id(), $neverAttached->id()]);
-
-        $counts = app(AttributeValueRepository::class)->countProductsUsing($value->id());
-        $this->assertSame(0, $counts['descriptive']);
-    }
-
     /**
-     * Same real paranoia as AttributeDefinitionResourceTest's identical
-     * test — axis usage is never bulk-unlinkable, full stop. Forces a
-     * selection of an axis-using product's id through the DESCRIPTIVE
-     * drill-down's own bulk action.
+     * The descriptive drill-down is retired — mirrors
+     * AttributeDefinitionResourceTest's identical replacement test, plus
+     * the one thing specific to AttributeValueResource's own link:
+     * attribute_value_id further narrows a definition shared by TWO
+     * different values down to exactly the one value's own products.
      */
-    public function test_axis_usage_cannot_be_bulk_unlinked_even_by_forcing_a_request_through_the_descriptive_action(): void
+    public function test_the_descriptive_count_link_redirects_into_products_filtered_to_that_specific_values_usage_only(): void
+    {
+        $this->actingAsPanelAdministrator();
+        $definition = $this->persistedSelectDefinition();
+
+        $black = new AttributeValue(id: null, attributeDefinitionId: $definition->id(), value: 'Black');
+        app(AttributeValueRepository::class)->save($black);
+        $white = new AttributeValue(id: null, attributeDefinitionId: $definition->id(), value: 'White');
+        app(AttributeValueRepository::class)->save($white);
+
+        $usingBlack = Product::createSimple('Using Black', 'SKU-BLACK', 'using-black');
+        app(ProductRepository::class)->save($usingBlack);
+        $this->attachDescriptively($black, $usingBlack);
+
+        $usingWhite = Product::createSimple('Using White', 'SKU-WHITE', 'using-white');
+        app(ProductRepository::class)->save($usingWhite);
+        $this->attachDescriptively($white, $usingWhite);
+
+        $blackModel = AttributeValueModel::find($black->id());
+        $component = Livewire::test(ListAttributeValues::class);
+        $component->assertTableColumnStateSet('descriptive_count', 1, record: $blackModel);
+
+        $column = $component->instance()->getTable()->getColumn('descriptive_count')->record($blackModel);
+        $generatedUrl = $column->getUrl($column->getState());
+        $this->assertNotNull($generatedUrl);
+        $this->assertStringContainsString(ProductResource::getUrl('index'), $generatedUrl);
+
+        // The SAME definition, but narrowed to Black's own products only
+        // — White's product (a different value, same definition) must
+        // stay excluded, confirming attribute_value_id genuinely narrows
+        // beyond what attribute_definition_id alone would return.
+        Livewire::test(ListProducts::class)
+            ->filterTable('attribute_usage', [
+                'attribute_definition_id' => $definition->id(),
+                'attribute_value_id' => $black->id(),
+            ])
+            ->assertCanSeeTableRecords([ProductModel::find($usingBlack->id())])
+            ->assertCanNotSeeTableRecords([ProductModel::find($usingWhite->id())]);
+
+        $this->get($generatedUrl)
+            ->assertOk()
+            ->assertSee('Using Black')
+            ->assertDontSee('Using White');
+    }
+
+    /** Mirrors AttributeDefinitionResourceTest's identical route-retirement confirmation. */
+    public function test_the_old_products_descriptive_route_no_longer_exists(): void
     {
         $this->actingAsPanelAdministrator();
         $definition = $this->persistedSelectDefinition();
@@ -364,20 +367,8 @@ class AttributeValueResourceTest extends TestCase
         $value = new AttributeValue(id: null, attributeDefinitionId: $definition->id(), value: 'Black');
         app(AttributeValueRepository::class)->save($value);
 
-        $axisProduct = Product::createVariable('T-Shirt', 'SKU-1', 't-shirt');
-        $axisProduct->declareVariationAxes([new VariationAxis($definition, [$value])]);
-        $axisProduct->addStandardVariation([$definition->id() => $value->id()], 'SKU-1-BLACK');
-        app(ProductRepository::class)->save($axisProduct);
-
-        Livewire::test(RelatedProductsDescriptive::class, ['record' => $value->id()])
-            ->callTableBulkAction('detach', [$axisProduct->id()]);
-
-        $reloadedAxisProduct = app(ProductRepository::class)->findByIdWithVariations($axisProduct->id());
-        $this->assertTrue($reloadedAxisProduct->hasVariationAxis($definition));
-        $this->assertCount(1, $reloadedAxisProduct->variations());
-
-        $counts = app(AttributeValueRepository::class)->countProductsUsing($value->id());
-        $this->assertSame(1, $counts['axis']);
+        $this->get('/admin/attribute-values/'.$value->id().'/products-descriptive')
+            ->assertNotFound();
     }
 
     public function test_the_axis_drill_down_shows_the_product_with_no_selection_or_bulk_action_available(): void

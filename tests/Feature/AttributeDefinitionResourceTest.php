@@ -7,7 +7,8 @@ use App\Filament\Resources\AttributeDefinitionResource\Pages\CreateAttributeDefi
 use App\Filament\Resources\AttributeDefinitionResource\Pages\EditAttributeDefinition;
 use App\Filament\Resources\AttributeDefinitionResource\Pages\ListAttributeDefinitions;
 use App\Filament\Resources\AttributeDefinitionResource\Pages\RelatedProductsAxis;
-use App\Filament\Resources\AttributeDefinitionResource\Pages\RelatedProductsDescriptive;
+use App\Filament\Resources\ProductResource;
+use App\Filament\Resources\ProductResource\Pages\ListProducts;
 use App\Filament\StaffPanelUser;
 use EasyCo\Catalog\AttributeDefinition;
 use EasyCo\Catalog\AttributeValue;
@@ -16,6 +17,7 @@ use EasyCo\Catalog\Contracts\AttributeValueRepository;
 use EasyCo\Catalog\Contracts\ProductRepository;
 use EasyCo\Catalog\Enums\AttributeType;
 use EasyCo\Catalog\Persistence\Eloquent\AttributeDefinitionModel;
+use EasyCo\Catalog\Persistence\Eloquent\ProductModel;
 use EasyCo\Catalog\Product;
 use EasyCo\Catalog\VariationAxis;
 use EasyCo\Staff\Contracts\PasswordHasher;
@@ -283,102 +285,97 @@ class AttributeDefinitionResourceTest extends TestCase
         $this->assertNull(app(AttributeDefinitionRepository::class)->findById($definition->id()));
     }
 
-    public function test_bulk_unlink_on_the_descriptive_drill_down_actually_detaches_the_selected_products(): void
+    /**
+     * The descriptive drill-down is retired — this now confirms the
+     * real replacement: descriptive_count's ->url() redirects into
+     * ProductResource's own real list, pre-filtered via its
+     * 'attribute_usage' Filter, showing exactly the products using this
+     * definition descriptively and nothing else (a product using an
+     * unrelated definition, and a VARIABLE product using the SAME
+     * definition as an AXIS — not descriptively — must both stay
+     * excluded, confirming the is_variation_axis=false branch of that
+     * Filter's own query).
+     */
+    public function test_the_descriptive_count_link_redirects_into_products_filtered_to_real_descriptive_usage_only(): void
     {
         $this->actingAsPanelAdministrator();
 
         $definition = new AttributeDefinition(id: null, code: 'material', name: 'Material', type: AttributeType::TEXT);
         app(AttributeDefinitionRepository::class)->save($definition);
 
-        $productIds = [];
-        for ($i = 1; $i <= 3; $i++) {
-            $product = Product::createSimple("Product {$i}", "SKU-{$i}", "product-{$i}");
-            app(ProductRepository::class)->save($product);
-            $this->attachDescriptively($definition, $product);
-            $productIds[] = $product->id();
-        }
+        $usingDescriptively = Product::createSimple('Using Descriptively', 'SKU-USING', 'using-descriptively');
+        app(ProductRepository::class)->save($usingDescriptively);
+        $this->attachDescriptively($definition, $usingDescriptively);
 
-        Livewire::test(RelatedProductsDescriptive::class, ['record' => $definition->id()])
-            ->callTableBulkAction('detach', $productIds);
+        $notUsing = Product::createSimple('Not Using', 'SKU-NOT-USING', 'not-using');
+        app(ProductRepository::class)->save($notUsing);
 
-        foreach ($productIds as $productId) {
-            $reloaded = app(ProductRepository::class)->findById($productId);
-            $this->assertArrayNotHasKey($definition->id(), $reloaded->descriptiveAttributes());
-        }
+        $axisDefinition = new AttributeDefinition(id: null, code: 'color', name: 'Color', type: AttributeType::SELECT);
+        app(AttributeDefinitionRepository::class)->save($axisDefinition);
+        $black = new AttributeValue(id: null, attributeDefinitionId: $axisDefinition->id(), value: 'Black');
+        app(AttributeValueRepository::class)->save($black);
+        $axisProduct = Product::createVariable('Axis Product', 'SKU-AXIS', 'axis-product');
+        $axisProduct->declareVariationAxes([new VariationAxis($axisDefinition, [$black])]);
+        $axisProduct->addStandardVariation([$axisDefinition->id() => $black->id()], 'SKU-AXIS-BLACK');
+        app(ProductRepository::class)->save($axisProduct);
 
-        $counts = app(AttributeDefinitionRepository::class)->countProductsUsing($definition->id());
-        $this->assertSame(0, $counts['descriptive']);
-    }
+        // The real column ->url() callback, bound to its real record and
+        // evaluated exactly as Filament does when rendering the row —
+        // not a hand-built URL, the actual computed one a real click
+        // follows.
+        $definitionModel = AttributeDefinitionModel::find($definition->id());
+        $component = Livewire::test(ListAttributeDefinitions::class);
+        $component->assertTableColumnStateSet('descriptive_count', 1, record: $definitionModel);
 
-    public function test_bulk_unlink_skips_an_already_detached_product_without_erroring(): void
-    {
-        $this->actingAsPanelAdministrator();
+        $column = $component->instance()->getTable()->getColumn('descriptive_count')->record($definitionModel);
+        $generatedUrl = $column->getUrl($column->getState());
+        $this->assertNotNull($generatedUrl);
+        $this->assertStringContainsString(ProductResource::getUrl('index'), $generatedUrl);
+        $this->assertStringContainsString('attribute_usage', $generatedUrl);
 
-        $definition = new AttributeDefinition(id: null, code: 'material', name: 'Material', type: AttributeType::TEXT);
-        app(AttributeDefinitionRepository::class)->save($definition);
+        Livewire::test(ListProducts::class)
+            ->filterTable('attribute_usage', ['attribute_definition_id' => $definition->id()])
+            ->assertCanSeeTableRecords([ProductModel::find($usingDescriptively->id())])
+            ->assertCanNotSeeTableRecords([
+                ProductModel::find($notUsing->id()),
+                ProductModel::find($axisProduct->id()),
+            ]);
 
-        $stillAttached = Product::createSimple('Still Attached', 'SKU-1', 'still-attached');
-        app(ProductRepository::class)->save($stillAttached);
-        $this->attachDescriptively($definition, $stillAttached);
-
-        $neverAttached = Product::createSimple('Never Attached', 'SKU-2', 'never-attached');
-        app(ProductRepository::class)->save($neverAttached);
-
-        Livewire::test(RelatedProductsDescriptive::class, ['record' => $definition->id()])
-            ->callTableBulkAction('detach', [$stillAttached->id(), $neverAttached->id()]);
-
-        $counts = app(AttributeDefinitionRepository::class)->countProductsUsing($definition->id());
-        $this->assertSame(0, $counts['descriptive']);
+        // The real click-through: a genuine HTTP GET against that exact
+        // generated URL, confirming Livewire's own #[Url] hydration
+        // actually filters the rendered list, not just the filter's
+        // logic in isolation.
+        $this->get($generatedUrl)
+            ->assertOk()
+            ->assertSee('Using Descriptively')
+            ->assertDontSee('Not Using')
+            ->assertDontSee('Axis Product');
     }
 
     /**
-     * The one test in this whole task worth real paranoia about — axis
-     * usage is never bulk-unlinkable, full stop. The axis drill-down
-     * itself registers no bulk action at all (nothing to even try to
-     * call), so the real attack surface is: select an axis-using
-     * product's id via the DESCRIPTIVE page's own bulk action instead
-     * (bypassing the UI, since that page's own table would never
-     * display it) — server-side, DetachProductFromCatalogLookup must
-     * still refuse to touch it.
+     * The retired route genuinely no longer exists — not silently still
+     * reachable. AttributeDefinitionResource::getPages() no longer
+     * registers 'products-descriptive' at all (confirmed via a real
+     * `php artisan route:list`), so hitting its old URL directly 404s.
      */
-    public function test_axis_usage_cannot_be_bulk_unlinked_even_by_forcing_a_request_through_the_descriptive_action(): void
+    public function test_the_old_products_descriptive_route_no_longer_exists(): void
     {
         $this->actingAsPanelAdministrator();
 
-        $definition = new AttributeDefinition(id: null, code: 'color', name: 'Color', type: AttributeType::SELECT);
+        $definition = new AttributeDefinition(id: null, code: 'material', name: 'Material', type: AttributeType::TEXT);
         app(AttributeDefinitionRepository::class)->save($definition);
-        $black = new AttributeValue(id: null, attributeDefinitionId: $definition->id(), value: 'Black');
-        app(AttributeValueRepository::class)->save($black);
 
-        $axisProduct = Product::createVariable('T-Shirt', 'SKU-1', 't-shirt');
-        $axisProduct->declareVariationAxes([new VariationAxis($definition, [$black])]);
-        $axisProduct->addStandardVariation([$definition->id() => $black->id()], 'SKU-1-BLACK');
-        app(ProductRepository::class)->save($axisProduct);
-
-        // A real product genuinely in the descriptive drill-down's own
-        // scope, for a different attribute definition, to prove the
-        // bulk action still works normally for the one it legitimately
-        // does apply to.
-        $unrelatedDescriptiveDefinition = new AttributeDefinition(id: null, code: 'material', name: 'Material', type: AttributeType::TEXT);
-        app(AttributeDefinitionRepository::class)->save($unrelatedDescriptiveDefinition);
-
-        // Force-select the axis product's id on the AXIS definition's
-        // own descriptive drill-down page — this id would never appear
-        // in that page's real query results (it has no descriptive row
-        // for this definition at all), but the test selects it
-        // directly, bypassing the UI.
-        Livewire::test(RelatedProductsDescriptive::class, ['record' => $definition->id()])
-            ->callTableBulkAction('detach', [$axisProduct->id()]);
-
-        // The axis declaration and the Variation must be completely
-        // untouched — not corrupted, not silently skipped-but-broken.
-        $reloadedAxisProduct = app(ProductRepository::class)->findByIdWithVariations($axisProduct->id());
-        $this->assertTrue($reloadedAxisProduct->hasVariationAxis($definition));
-        $this->assertCount(1, $reloadedAxisProduct->variations());
-
-        $counts = app(AttributeDefinitionRepository::class)->countProductsUsing($definition->id());
-        $this->assertSame(1, $counts['axis']);
+        $this->get('/admin/attribute-definitions/'.$definition->id().'/products-descriptive')
+            ->assertNotFound();
     }
+
+    /**
+     * RelatedProductsAxis stays completely untouched by this task — the
+     * only place in the admin panel a VARIABLE product's row is
+     * viewable at all (see that page's own docblock). No forced-bulk-
+     * unlink paranoia test is needed anymore for it: the descriptive
+     * drill-down it used to be forced through no longer exists.
+     */
 
     public function test_the_axis_drill_down_shows_the_product_with_no_selection_or_bulk_action_available(): void
     {

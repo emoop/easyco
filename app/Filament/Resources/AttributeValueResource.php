@@ -8,8 +8,8 @@ use App\Filament\Resources\AttributeValueResource\Pages\CreateAttributeValue;
 use App\Filament\Resources\AttributeValueResource\Pages\EditAttributeValue;
 use App\Filament\Resources\AttributeValueResource\Pages\ListAttributeValues;
 use App\Filament\Resources\AttributeValueResource\Pages\RelatedProductsAxis;
-use App\Filament\Resources\AttributeValueResource\Pages\RelatedProductsDescriptive;
 use App\Filament\Resources\AttributeValueResource\Pages\ViewAttributeValue;
+use App\Filament\Resources\ProductResource;
 use BackedEnum;
 use EasyCo\Catalog\Contracts\AttributeValueRepository;
 use EasyCo\Catalog\Enums\AttributeType;
@@ -159,7 +159,18 @@ class AttributeValueResource extends Resource
                     ->label(__('attribute_values.fields.descriptive_count'))
                     ->state(fn (AttributeValueModel $record): int => app(AttributeValueRepository::class)->countProductsUsing((string) $record->id)['descriptive'])
                     ->formatStateUsing(fn (int $state): string => trans_choice('attribute_values.products_count.descriptive', $state, ['count' => $state]))
-                    ->url(fn (AttributeValueModel $record, int $state): ?string => $state > 0 ? static::getUrl('products-descriptive', ['record' => $record]) : null),
+                    // Same redirect as AttributeDefinitionResource's own
+                    // descriptive_count column — also sets
+                    // attribute_value_id, which narrows the same Filter
+                    // down to exactly this value's own products (see
+                    // ProductResource::table()'s 'attribute_usage' Filter
+                    // docblock for the exact query branch this takes).
+                    ->url(fn (AttributeValueModel $record, int $state): ?string => $state > 0
+                        ? ProductResource::getUrl('index', ['filters' => ['attribute_usage' => [
+                            'attribute_definition_id' => $record->attribute_definition_id,
+                            'attribute_value_id' => $record->id,
+                        ]]])
+                        : null),
                 TextColumn::make('axis_count')
                     ->label(__('attribute_values.fields.axis_count'))
                     ->state(fn (AttributeValueModel $record): int => app(AttributeValueRepository::class)->countProductsUsing((string) $record->id)['axis'])
@@ -199,7 +210,9 @@ class AttributeValueResource extends Resource
             'create' => CreateAttributeValue::route('/create'),
             'view' => ViewAttributeValue::route('/{record}'),
             'edit' => EditAttributeValue::route('/{record}/edit'),
-            'products-descriptive' => RelatedProductsDescriptive::route('/{record}/products-descriptive'),
+            // 'products-descriptive' retired — see
+            // AttributeDefinitionResource::getPages()'s identical note.
+            // 'products-axis' stays untouched.
             'products-axis' => RelatedProductsAxis::route('/{record}/products-axis'),
         ];
     }

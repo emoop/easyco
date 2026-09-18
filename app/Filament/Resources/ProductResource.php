@@ -42,6 +42,7 @@ use Filament\Actions\ActionGroup;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
 use Filament\Forms\Components\FileUpload;
+use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\RichEditor;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
@@ -803,6 +804,86 @@ class ProductResource extends Resource
                             'categories',
                             fn (Builder $categoriesQuery): Builder => $categoriesQuery->where('catalog_categories.id', $data['value'])
                         );
+                    }),
+                // Deep-link-only, driven entirely by AttributeDefinition
+                // Resource/AttributeValueResource's own descriptive_count
+                // column ->url() callbacks via Filament's real
+                // ListRecords::$tableFilters URL binding (#[Url(as:
+                // 'filters')], confirmed against the installed v5.8.1
+                // source — vendor/filament/filament/src/Resources/Pages/
+                // ListRecords.php).
+                //
+                // DELIBERATELY NOT ->hidden() — a real, confirmed gap
+                // found while testing: Table\Concerns\HasFilters::
+                // getFilters() defaults to $withHidden = false, and
+                // Livewire\Concerns\HasFilters::applyFiltersToTableQuery()
+                // calls that SAME no-args getFilters() for BOTH building
+                // the Filters panel AND applying every filter's ->query()
+                // to the table's query — so ->hidden() would have
+                // silently excluded this filter from ever actually
+                // running, not just from the UI (this was tried first;
+                // a real test confirmed it filtered nothing). This
+                // Filter therefore stays registered normally — it DOES
+                // appear in the FiltersAction panel, but with no visible
+                // controls (->schema() is Hidden fields only, and
+                // ->label('') suppresses its heading), so the practical
+                // footprint is minimal. Flagged as a known, minor,
+                // accepted UI quirk rather than silently worked around.
+                //
+                // Replaces RelatedProductsDescriptive on BOTH resources
+                // ONLY — the two DESCRIPTIVE drill-down pages, not the
+                // two AXIS ones. RelatedProductsAxis stays untouched: it
+                // is currently the ONLY place in this admin panel a
+                // VARIABLE product's row is viewable at all (this
+                // Resource's own query below is hard-scoped to
+                // type=SIMPLE, and axis usage — confirmed against
+                // Product::setVariationAxes(), which throws for any
+                // non-VARIABLE product — can only ever exist on a
+                // VARIABLE product). Redirecting axis_count here would
+                // make that link always show zero results. See this
+                // task's own report for the flagged follow-up: axis
+                // usage gets its own proper redirect once a real
+                // VARIABLE-product admin view exists.
+                //
+                // Query mirrors the two retired pages' own real,
+                // proven subqueries EXACTLY, not re-derived: when
+                // attribute_value_id is set (AttributeValueResource's
+                // own link), filter by attribute_value_id alone — no
+                // explicit is_variation_axis check, because that column
+                // is only ever populated on a descriptive
+                // (is_variation_axis=false) row in the first place (see
+                // catalog_product_attributes' own migration comment).
+                // When only attribute_definition_id is set
+                // (AttributeDefinitionResource's own link), filter by
+                // attribute_definition_id AND is_variation_axis=false
+                // explicitly, since a definition can have BOTH
+                // descriptive and axis rows across different products.
+                Filter::make('attribute_usage')
+                    ->label('')
+                    ->schema([
+                        Hidden::make('attribute_definition_id'),
+                        Hidden::make('attribute_value_id'),
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        $definitionId = $data['attribute_definition_id'] ?? null;
+                        $valueId = $data['attribute_value_id'] ?? null;
+
+                        if (blank($definitionId) && blank($valueId)) {
+                            return $query;
+                        }
+
+                        return $query->whereIn('id', function ($subQuery) use ($definitionId, $valueId): void {
+                            $subQuery->select('product_id')->from('catalog_product_attributes');
+
+                            if (filled($valueId)) {
+                                $subQuery->where('attribute_value_id', $valueId);
+
+                                return;
+                            }
+
+                            $subQuery->where('attribute_definition_id', $definitionId)
+                                ->where('is_variation_axis', false);
+                        });
                     }),
             ])
             ->recordActions([

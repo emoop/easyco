@@ -8,8 +8,8 @@ use App\Filament\Resources\AttributeDefinitionResource\Pages\CreateAttributeDefi
 use App\Filament\Resources\AttributeDefinitionResource\Pages\EditAttributeDefinition;
 use App\Filament\Resources\AttributeDefinitionResource\Pages\ListAttributeDefinitions;
 use App\Filament\Resources\AttributeDefinitionResource\Pages\RelatedProductsAxis;
-use App\Filament\Resources\AttributeDefinitionResource\Pages\RelatedProductsDescriptive;
 use App\Filament\Resources\AttributeDefinitionResource\Pages\ViewAttributeDefinition;
+use App\Filament\Resources\ProductResource;
 use BackedEnum;
 use EasyCo\Catalog\Contracts\AttributeDefinitionRepository;
 use EasyCo\Catalog\Enums\AttributeType;
@@ -139,7 +139,14 @@ class AttributeDefinitionResource extends Resource
                     ->label(__('attribute_definitions.fields.descriptive_count'))
                     ->state(fn (AttributeDefinitionModel $record): int => app(AttributeDefinitionRepository::class)->countProductsUsing((string) $record->id)['descriptive'])
                     ->formatStateUsing(fn (int $state): string => trans_choice('attribute_definitions.products_count.descriptive', $state, ['count' => $state]))
-                    ->url(fn (AttributeDefinitionModel $record, int $state): ?string => $state > 0 ? static::getUrl('products-descriptive', ['record' => $record]) : null),
+                    // Redirects into ProductResource's own real list,
+                    // pre-filtered via the new 'attribute_usage' Filter
+                    // (ProductResource::table()'s own docblock) — not a
+                    // custom drill-down table anymore. Real row actions
+                    // (View/Edit/Duplicate), not a stripped-down set.
+                    ->url(fn (AttributeDefinitionModel $record, int $state): ?string => $state > 0
+                        ? ProductResource::getUrl('index', ['filters' => ['attribute_usage' => ['attribute_definition_id' => $record->id]]])
+                        : null),
                 TextColumn::make('axis_count')
                     ->label(__('attribute_definitions.fields.axis_count'))
                     ->state(fn (AttributeDefinitionModel $record): int => app(AttributeDefinitionRepository::class)->countProductsUsing((string) $record->id)['axis'])
@@ -182,7 +189,13 @@ class AttributeDefinitionResource extends Resource
             'create' => CreateAttributeDefinition::route('/create'),
             'view' => ViewAttributeDefinition::route('/{record}'),
             'edit' => EditAttributeDefinition::route('/{record}/edit'),
-            'products-descriptive' => RelatedProductsDescriptive::route('/{record}/products-descriptive'),
+            // 'products-descriptive' retired — descriptive_count now
+            // redirects straight into ProductResource's own list (see
+            // that column's own comment). 'products-axis' stays: see
+            // RelatedProductsAxis's own docblock for why it is NOT
+            // migrated (axis usage is VARIABLE-only; ProductResource is
+            // SIMPLE-only; no other admin view can show a VARIABLE
+            // product yet).
             'products-axis' => RelatedProductsAxis::route('/{record}/products-axis'),
         ];
     }
