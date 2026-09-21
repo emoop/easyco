@@ -11,6 +11,12 @@ return [
         'price_stock' => 'Цена и наличност',
     ],
 
+    'wizard' => [
+        'steps' => [
+            'general' => 'Основни данни',
+        ],
+    ],
+
     'fields' => [
         'name' => 'Име',
         'slug' => 'Слъг',
@@ -61,6 +67,9 @@ return [
 
     'duplicate_action' => 'Дублирай',
     'duplicate_suffix' => 'копие',
+
+    'create_simple_action' => 'Добави обикновен продукт',
+    'create_variable_action' => 'Добави продукт с варианти',
 
     'activity_log' => [
         'title' => 'История',

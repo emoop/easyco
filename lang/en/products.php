@@ -11,6 +11,12 @@ return [
         'price_stock' => 'Price & Stock',
     ],
 
+    'wizard' => [
+        'steps' => [
+            'general' => 'General',
+        ],
+    ],
+
     'fields' => [
         'name' => 'Name',
         'slug' => 'Slug',
@@ -61,6 +67,9 @@ return [
 
     'duplicate_action' => 'Duplicate',
     'duplicate_suffix' => 'copy',
+
+    'create_simple_action' => 'Add simple product',
+    'create_variable_action' => 'Add variable product',
 
     'activity_log' => [
         'title' => 'History',

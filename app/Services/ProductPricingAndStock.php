@@ -125,8 +125,28 @@ final class ProductPricingAndStock
         return $cost?->cost()->decimalValue();
     }
 
+    /**
+     * A blank $priceableId (ProductResource::universalVariationId()
+     * degrades to '' for a VARIABLE product with zero variations —
+     * newly reachable once the VARIABLE creation wizard exists) is a
+     * real, legitimate "nothing to report" case, mirroring
+     * regularPriceDisplay()/salePriceDisplay()/costDisplay()'s own
+     * identical read-side posture — never reached the repository at
+     * all before those callers existed, since a SIMPLE product's
+     * universal Variation always has a real, non-blank id by
+     * construction. Short-circuited here rather than in
+     * StockLevelRepository/StockLevel: StockLevel::forVariation('', 0)
+     * genuinely, deliberately rejects a blank variationId (a real
+     * domain invariant, confirmed against StockLevel's own
+     * constructor) — that invariant is correct and untouched; this is
+     * the one caller that must never reach it with a blank id.
+     */
     public function stockQuantity(string $priceableId): int
     {
+        if ($priceableId === '') {
+            return 0;
+        }
+
         return $this->stockLevels->findByVariationId($priceableId)->quantity();
     }
 

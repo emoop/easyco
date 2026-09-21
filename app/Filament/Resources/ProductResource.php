@@ -5,6 +5,7 @@ namespace App\Filament\Resources;
 use App\Filament\Concerns\AuthorizesViaStaffPermission;
 use App\Filament\NavigationGroup;
 use App\Filament\Resources\ProductResource\Pages\CreateProduct;
+use App\Filament\Resources\ProductResource\Pages\CreateVariableProduct;
 use App\Filament\Resources\ProductResource\Pages\EditProduct;
 use App\Filament\Resources\ProductResource\Pages\ListProducts;
 use App\Filament\Resources\ProductResource\Pages\ProductActivityLog;
@@ -1056,6 +1057,14 @@ class ProductResource extends Resource
         return [
             'index' => ListProducts::route('/'),
             'create' => CreateProduct::route('/create'),
+            // Positioned before 'view' for the same reason 'create'
+            // already is: 'view' is registered as the wildcard
+            // '/{record}', and Laravel's router matches routes in
+            // registration order — a static '/create-variable' segment
+            // registered AFTER '/{record}' would never be reached
+            // (it would match '/{record}' first, with record =
+            // "create-variable").
+            'create-variable' => CreateVariableProduct::route('/create-variable'),
             'view' => ViewProduct::route('/{record}'),
             'edit' => EditProduct::route('/{record}/edit'),
             'activity-log' => ProductActivityLog::route('/{record}/activity-log'),
