@@ -154,25 +154,25 @@ class CreateVariableProductTest extends TestCase
     }
 
     /**
-     * A REAL, FLAGGED GAP this task's own testing surfaced, reported
-     * rather than silently patched: the "General" step offers all 3
-     * ProductStatus options (this task's own explicit requirement,
-     * mirroring SIMPLE), but Product::publish() deliberately throws
-     * CannotPublishEmptyVariableProductException for a VARIABLE product
-     * with zero active variations — a real, correct, pre-existing
-     * domain invariant. Nothing in CreateVariableProduct currently
-     * catches it (unlike CreateProduct::attachMedia()'s own real
-     * Notification+Halt precedent for a different domain exception), so
-     * selecting "Active" here today is an unhandled 500, not a friendly
-     * validation message. This test exists to document the exact
-     * current behavior, not to endorse it — see this task's own final
-     * report.
+     * UPDATED BY STEP C (the "Variations" step task): the real gap this
+     * test originally documented — CannotPublishEmptyVariableProductException
+     * propagating uncaught as a 500 — is now genuinely fixed, not just
+     * differently described. Step C moves the status match() to run
+     * AFTER Variations are persisted and wraps it in the same
+     * Notification+Halt pattern already established elsewhere in this
+     * file, closing the gap Step A flagged and deferred. This test's
+     * old assertion (`expectException`, an unhandled 500) is now
+     * factually false — left in place it would assert a bug that no
+     * longer exists — so it is updated here to assert the real, fixed
+     * behavior instead: a friendly notification and a full rollback,
+     * the same established pattern as every other rejection in this
+     * file. This is the ONE test out of Steps A+B's existing 12 that
+     * Step C's own task genuinely required changing — see this task's
+     * own final report.
      */
-    public function test_selecting_active_status_currently_surfaces_the_real_unhandled_publish_exception(): void
+    public function test_selecting_active_status_with_zero_variations_is_rejected_with_the_real_message_and_rolls_back(): void
     {
         $this->actingAsPanelAdministrator();
-
-        $this->expectException(\EasyCo\Catalog\Exceptions\CannotPublishEmptyVariableProductException::class);
 
         Livewire::test(CreateVariableProduct::class)
             ->fillForm([
@@ -181,7 +181,20 @@ class CreateVariableProductTest extends TestCase
                 'base_sku' => 'VAR-SKU-ACTIVE',
                 'status' => ProductStatus::ACTIVE->value,
             ])
-            ->call('create');
+            ->call('create')
+            // The product is never saved (id() stays null) at the exact
+            // moment publish() throws — the rollback discards it
+            // entirely — so the real message always reads with an
+            // empty id, confirmed against
+            // CannotPublishEmptyVariableProductException::forProduct()'s
+            // own real "Product \"{$product->id()}\" cannot be
+            // published..." format.
+            ->assertNotified('Product "" cannot be published — it is a VARIABLE product with no active variations.');
+
+        $this->assertNull(
+            ProductModel::where('slug', 'active-variable-product')->first(),
+            'the whole creation must roll back on a publish rejection'
+        );
     }
 
     public function test_leaving_slug_and_base_sku_blank_triggers_the_real_hook_based_generation(): void

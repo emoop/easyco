@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\ProductResource\Pages;
 
 use App\Filament\Resources\ProductResource;
+use App\Providers\CatalogSkuGeneratorServiceProvider;
 use App\Services\ActivityLogger;
 use App\Settings\Contracts\SiteSettingsRepository;
 use EasyCo\Catalog\Contracts\AttributeDefinitionRepository;
@@ -11,6 +12,8 @@ use EasyCo\Catalog\Contracts\ProductRepository;
 use EasyCo\Catalog\Enums\AttributeType;
 use EasyCo\Catalog\Enums\CatalogVisibility;
 use EasyCo\Catalog\Enums\ProductStatus;
+use EasyCo\Catalog\Exceptions\CannotPublishEmptyVariableProductException;
+use EasyCo\Catalog\Exceptions\DuplicateVariationCombinationException;
 use EasyCo\Catalog\Exceptions\InvalidVariationAxisException;
 use EasyCo\Catalog\Persistence\Eloquent\AttributeDefinitionModel;
 use EasyCo\Catalog\Persistence\Eloquent\AttributeValueModel;
@@ -18,12 +21,14 @@ use EasyCo\Catalog\Persistence\Eloquent\BrandModel;
 use EasyCo\Catalog\Persistence\Eloquent\ProductGroupModel;
 use EasyCo\Catalog\Persistence\Eloquent\ProductModel;
 use EasyCo\Catalog\Product;
+use EasyCo\Catalog\Services\VariationCombinationGenerator;
 use EasyCo\Catalog\VariationAxis;
 use EasyCo\Extensibility\Hook;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\RichEditor;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\CreateRecord;
 use Filament\Resources\Pages\CreateRecord\Concerns\HasWizard;
@@ -36,11 +41,24 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * VARIABLE product creation wizard (admin-panel-design.md §13.1) —
- * Step A's "General" step plus Step B's "Axes" step. Ends in a real,
- * persisted VARIABLE Product with its declared axes (if any)
- * persisted via the real domain layer — but still zero
- * catalog_variations rows: generating actual Variations from the
- * declared axes is Step C, not attempted here.
+ * complete: General (Step A), Axes (Step B), Variations (Step C).
+ * Ends in a real, persisted VARIABLE Product with its declared axes
+ * and real, correctly-statused Variations — functionally complete per
+ * §13.1.
+ *
+ * PREVIEW GENERATION HAPPENS IN THE AXES STEP'S OWN
+ * ->afterValidation(), NOT THE VARIATIONS STEP — the cartesian product
+ * is built once, the moment the merchant leaves Axes (confirmed
+ * against Wizard::nextStep()'s real source: callBeforeValidation() ->
+ * getChildSchema()->validate() -> callAfterValidation() ->
+ * $nextStep?->fillStateWithNull() — that ordering is exactly why this
+ * is safe: fillStateWithNull() only nulls a field when
+ * Arr::has($livewire->data, $path) is false, and afterValidation()'s
+ * own $set('variations', ...) has already populated that path by the
+ * time fillStateWithNull() runs on the Variations step immediately
+ * after). ->hasSkippableSteps() is deliberately left at HasWizard's
+ * own default (false) — the "regenerate exactly once, via Next" design
+ * depends on steps only being reachable in order.
  *
  * `form()` is already wired by HasWizard (it builds the Wizard schema
  * component from getSteps() itself) — no manual form()/Wizard
@@ -189,8 +207,159 @@ class CreateVariableProduct extends CreateRecord
                         ->itemLabel(fn (array $state): ?string => filled($state['attribute_definition_id'] ?? null)
                             ? AttributeDefinitionModel::find($state['attribute_definition_id'])?->name
                             : null),
+                ])
+                ->afterValidation(fn (Get $get, Set $set) => $this->generateVariationPreview($get, $set)),
+            Step::make(__('products.wizard.steps.variations'))
+                ->schema([
+                    Toggle::make('activate_all')
+                        ->label(__('products.wizard.variations.activate_all'))
+                        ->default(false)
+                        // Never part of $data['variations'] itself — a
+                        // pure UI convenience that writes into each
+                        // row's own is_active via $set() below, not a
+                        // real field submitted on its own.
+                        ->dehydrated(false)
+                        ->live()
+                        ->afterStateUpdated(function (bool $state, Get $get, Set $set): void {
+                            foreach (array_keys($get('variations') ?? []) as $key) {
+                                $set("variations.{$key}.is_active", $state);
+                            }
+                        }),
+                    // Same defaultItems(0) fix as Step B's own axes
+                    // Repeater, and the same real, confirmed cause —
+                    // Filament's Repeater::setUp() always defaults to
+                    // defaultItems(1) regardless of instance. Verified
+                    // separately for THIS Repeater (not just assumed
+                    // from Step B's own fix) via a real test: without
+                    // this, a phantom row appears even when no axes
+                    // were ever declared (generateVariationPreview()
+                    // would set 'variations' to [] for a no-axes
+                    // product, but the phantom default row still shows
+                    // up underneath it on initial mount, before any
+                    // afterValidation() has run).
+                    Repeater::make('variations')
+                        ->hiddenLabel()
+                        ->defaultItems(0)
+                        // Rows only ever come from generation
+                        // (afterValidation() on the Axes step) — a
+                        // merchant never manually adds one.
+                        ->addable(false)
+                        // Left at Filament's own default (true) —
+                        // deleting a row means "don't create this
+                        // specific variation," which needs no extra
+                        // logic: a deleted row is simply absent from
+                        // $data['variations'] at submit.
+                        ->deletable()
+                        ->reorderable(false)
+                        ->schema([
+                            TextInput::make('label')
+                                ->label(__('products.wizard.variations.combination_label'))
+                                ->disabled()
+                                ->dehydrated(false),
+                            TextInput::make('sku')
+                                ->label(__('products.wizard.variations.sku_label'))
+                                ->required(),
+                            TextInput::make('barcode')
+                                ->label(__('products.fields.barcode')),
+                            Toggle::make('is_active')
+                                ->label(__('products.wizard.variations.active_label'))
+                                ->default(false),
+                        ]),
                 ]),
         ];
+    }
+
+    /**
+     * The Axes step's own ->afterValidation() — NOT the Variations
+     * step. Locks in base_sku/slug right now (not just at final
+     * submit): without this, SKU previews would be built against a
+     * possibly-blank base_sku, then a DIFFERENT base_sku could get
+     * generated at final submit, making the previewed SKUs wrong/
+     * stale. Safe to do here — Hook::apply('catalog.product.base_sku',
+     * $nonEmptyValue) already returns non-empty input unchanged
+     * (CatalogSkuGeneratorServiceProvider's own real listener), so
+     * createProduct()'s own existing resolution call downstream simply
+     * becomes a no-op the second time; Steps A/B's own existing tests
+     * (which fillForm()+call('create') directly, never navigating the
+     * wizard) never trigger this closure at all, so they are
+     * completely unaffected.
+     *
+     * Builds a THROWAWAY, never-saved Product purely to run the real
+     * VariationCombinationGenerator against it — reused as-is, not
+     * reimplemented, per this task's own instruction. The real,
+     * persisted Product and its real Variations are built fresh again
+     * in createProduct() at final submit; this throwaway is discarded
+     * the moment this method returns.
+     *
+     * Deliberately NOT wrapped in its own Notification+Halt —
+     * InvalidVariationAxisException here would mean the Axes step's
+     * own SELECT-only, per-row-scoped, all-required() UI somehow
+     * produced an invalid axis anyway, a near-impossible edge case
+     * given those constraints. Left uncaught, same risk tolerance
+     * already accepted for Step A's own flagged gaps — not a new
+     * pattern.
+     */
+    private function generateVariationPreview(Get $get, Set $set): void
+    {
+        $baseSku = Hook::apply('catalog.product.base_sku', $get('base_sku') ?? '');
+        $slug = Hook::apply('catalog.product.slug', $get('slug') ?? '', $get('name') ?? '');
+        $set('base_sku', $baseSku);
+        $set('slug', $slug);
+
+        $axes = $this->buildVariationAxes($get('axes') ?? []);
+
+        $throwaway = Product::createVariable($get('name') ?? '', $baseSku, $slug);
+        $throwaway->declareVariationAxes($axes);
+
+        $axisValueIdsByAttributeDefinitionId = [];
+        $definitionNames = [];
+        $valueNames = [];
+
+        foreach ($axes as $axis) {
+            $definitionId = $axis->attributeDefinitionId();
+            $axisValueIdsByAttributeDefinitionId[$definitionId] = $axis->allowedValueIds();
+            // VariationAxis only exposes attributeDefinitionCode(), not
+            // the real human name — confirmed against that class's own
+            // source. AttributeDefinitionModel::find() is the real
+            // name; the code is kept as a last-resort fallback only if
+            // the row were somehow gone by now (a real, if unlikely,
+            // TOCTOU gap — flagged, not solved, mirroring this
+            // wizard's existing risk posture elsewhere).
+            $definitionNames[$definitionId] = AttributeDefinitionModel::find($definitionId)?->name ?? $axis->attributeDefinitionCode();
+
+            foreach ($axis->allowedValues() as $value) {
+                $valueNames[$value->id()] = $value->value();
+            }
+        }
+
+        $variations = (new VariationCombinationGenerator())->generate(
+            $throwaway,
+            $axisValueIdsByAttributeDefinitionId,
+            CatalogSkuGeneratorServiceProvider::variationSkuStrategy($throwaway)
+        );
+
+        $rows = [];
+
+        foreach ($variations as $variation) {
+            $labelParts = [];
+
+            foreach ($variation->attributeAssignments() as $definitionId => $valueId) {
+                $definitionName = $definitionNames[(string) $definitionId] ?? (string) $definitionId;
+                $valueName = $valueNames[(string) $valueId] ?? (string) $valueId;
+                $labelParts[] = "{$definitionName}: {$valueName}";
+            }
+
+            $rows[] = [
+                'combination_json' => json_encode($variation->attributeAssignments()),
+                'label' => implode(', ', $labelParts),
+                'sku' => $variation->sku(),
+                'barcode' => '',
+                'is_active' => false,
+            ];
+        }
+
+        $set('variations', $rows);
+        $set('activate_all', false);
     }
 
     protected function handleRecordCreation(array $data): Model
@@ -209,17 +378,45 @@ class CreateVariableProduct extends CreateRecord
             $product->changeDescription($data['description']);
         }
 
-        match ($data['status'] ?? ProductStatus::DRAFT->value) {
-            ProductStatus::ACTIVE->value => $product->publish(),
-            ProductStatus::ARCHIVED->value => $product->archive(),
-            default => $product->markAsDraft(),
-        };
-
         $product->setCatalogVisibility(CatalogVisibility::from($data['catalog_visibility'] ?? CatalogVisibility::HIDDEN->value));
         $product->assignBrand($data['brand_id'] ?? null);
         $product->assignProductGroup($data['product_group_id'] ?? null);
 
+        // Must run before addStandardVariation() below — those calls
+        // validate every combination against $product's own declared
+        // axes.
         $this->declareAxes($product, $data['axes'] ?? []);
+
+        $this->addStandardVariations($product, $data['variations'] ?? []);
+
+        // MOVED here from right after createVariable() — a real,
+        // load-bearing reorder, not cosmetic: Product::publish()'s own
+        // guard (CannotPublishEmptyVariableProductException) requires
+        // at least one real, non-archived STANDARD variation to
+        // already exist on a VARIABLE product, which is only true once
+        // addStandardVariations() above has run. This is the Step A
+        // gap flagged and deferred at the time — closed here now that
+        // real Variations exist to check against. Wrapping the WHOLE
+        // match(), not just the ACTIVE branch: archive()/markAsDraft()
+        // never throw this exception (confirmed against Product::
+        // publish()'s own real guard — only that one method has it),
+        // so a single try/catch around the whole statement behaves
+        // identically to one scoped to only the ACTIVE branch, with
+        // less branching to read.
+        try {
+            match ($data['status'] ?? ProductStatus::DRAFT->value) {
+                ProductStatus::ACTIVE->value => $product->publish(),
+                ProductStatus::ARCHIVED->value => $product->archive(),
+                default => $product->markAsDraft(),
+            };
+        } catch (CannotPublishEmptyVariableProductException $e) {
+            Notification::make()
+                ->title($e->getMessage())
+                ->danger()
+                ->send();
+
+            throw (new Halt)->rollBackDatabaseTransaction();
+        }
 
         app(ProductRepository::class)->save($product);
 
@@ -234,14 +431,16 @@ class CreateVariableProduct extends CreateRecord
      * Mirrors VariableProductController::store()'s own real axis-
      * construction + declareVariationAxes() sequence exactly — same
      * two-tier catch (InvalidVariationAxisException around the whole
-     * construction loop; a nested catch(\LogicException) scoped to
-     * ONLY the declareVariationAxes() call itself, for the "same
-     * definition declared twice" case — see that controller's own
-     * docblock for why this catch must stay narrowly scoped rather
-     * than widened). The one real difference: this is a Filament page,
-     * not a JSON API, so a caught exception becomes a Notification +
-     * Halt (CreateProduct::attachMedia()'s own established precedent
-     * in this same panel), never a 422 response.
+     * construction loop, via buildVariationAxes() below — shared with
+     * generateVariationPreview()'s own identical needs — plus a nested
+     * catch(\LogicException) scoped to ONLY the declareVariationAxes()
+     * call itself, for the "same definition declared twice" case — see
+     * that controller's own docblock for why this catch must stay
+     * narrowly scoped rather than widened). The one real difference:
+     * this is a Filament page, not a JSON API, so a caught exception
+     * becomes a Notification + Halt (CreateProduct::attachMedia()'s
+     * own established precedent in this same panel), never a 422
+     * response.
      *
      * Safe to call unconditionally, even with $axesInput === [] — an
      * empty $axes array passed to declareVariationAxes() is equivalent
@@ -254,20 +453,8 @@ class CreateVariableProduct extends CreateRecord
      */
     private function declareAxes(Product $product, array $axesInput): void
     {
-        $axes = [];
-
         try {
-            foreach ($axesInput as $axisInput) {
-                $attributeDefinitionId = (string) ($axisInput['attribute_definition_id'] ?? '');
-
-                $definition = app(AttributeDefinitionRepository::class)->findById($attributeDefinitionId);
-                $values = array_map(
-                    fn ($valueId) => app(AttributeValueRepository::class)->findById((string) $valueId),
-                    $axisInput['value_ids'] ?? []
-                );
-
-                $axes[] = new VariationAxis($definition, $values);
-            }
+            $axes = $this->buildVariationAxes($axesInput);
 
             try {
                 $product->declareVariationAxes($axes);
@@ -286,6 +473,77 @@ class CreateVariableProduct extends CreateRecord
                 ->send();
 
             throw (new Halt)->rollBackDatabaseTransaction();
+        }
+    }
+
+    /**
+     * Extracted from declareAxes() — the raw-input-to-VariationAxis[]
+     * construction loop only, shared verbatim between declareAxes()
+     * (final submit, catches InvalidVariationAxisException itself) and
+     * generateVariationPreview() (Axes step's own afterValidation(),
+     * deliberately left uncaught there — see that method's own
+     * docblock). Throws InvalidVariationAxisException uncaught by
+     * design; every caller is responsible for its own handling.
+     *
+     * @param array<int, array{attribute_definition_id?: mixed, value_ids?: array<int, mixed>}> $axesInput
+     * @return VariationAxis[]
+     */
+    private function buildVariationAxes(array $axesInput): array
+    {
+        $axes = [];
+
+        foreach ($axesInput as $axisInput) {
+            $attributeDefinitionId = (string) ($axisInput['attribute_definition_id'] ?? '');
+
+            $definition = app(AttributeDefinitionRepository::class)->findById($attributeDefinitionId);
+            $values = array_map(
+                fn ($valueId) => app(AttributeValueRepository::class)->findById((string) $valueId),
+                $axisInput['value_ids'] ?? []
+            );
+
+            $axes[] = new VariationAxis($definition, $values);
+        }
+
+        return $axes;
+    }
+
+    /**
+     * Persists the real, final Variations from the Variations step's
+     * own $data['variations'] rows — independent of how those rows
+     * got there (the real generation flow via
+     * generateVariationPreview(), or a row submitted directly, e.g. in
+     * a test that bypasses wizard navigation entirely). Mirrors this
+     * same file's own barcode-hook-wrapping precedent already
+     * established for the SIMPLE flow (CreateProduct::createProduct()
+     * — 'catalog.variation.barcode', applied here per row instead of
+     * once for the single universal Variation).
+     *
+     * @param array<int, array{combination_json?: mixed, sku?: mixed, barcode?: mixed, is_active?: mixed}> $rows
+     */
+    private function addStandardVariations(Product $product, array $rows): void
+    {
+        foreach ($rows as $row) {
+            $combination = json_decode((string) ($row['combination_json'] ?? '[]'), true) ?? [];
+
+            try {
+                $variation = $product->addStandardVariation($combination, (string) ($row['sku'] ?? ''));
+            } catch (DuplicateVariationCombinationException $e) {
+                Notification::make()
+                    ->title($e->getMessage())
+                    ->danger()
+                    ->send();
+
+                throw (new Halt)->rollBackDatabaseTransaction();
+            }
+
+            $barcode = Hook::apply('catalog.variation.barcode', $row['barcode'] ?? '', $variation);
+            if ($barcode !== '') {
+                $variation->setBarcode($barcode);
+            }
+
+            if ($row['is_active'] ?? false) {
+                $variation->activate();
+            }
         }
     }
 }

@@ -15,11 +15,18 @@ return [
         'steps' => [
             'general' => 'General',
             'axes' => 'Axes',
+            'variations' => 'Variations',
         ],
         'axes' => [
             'attribute_label' => 'Attribute',
             'values_label' => 'Values',
             'add_axis' => 'Add axis',
+        ],
+        'variations' => [
+            'activate_all' => 'Activate all',
+            'combination_label' => 'Combination',
+            'sku_label' => 'SKU',
+            'active_label' => 'Active',
         ],
     ],
 

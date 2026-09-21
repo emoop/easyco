@@ -15,11 +15,18 @@ return [
         'steps' => [
             'general' => 'Основни данни',
             'axes' => 'Оси',
+            'variations' => 'Варианти',
         ],
         'axes' => [
             'attribute_label' => 'Атрибут',
             'values_label' => 'Стойности',
             'add_axis' => 'Добави ос',
+        ],
+        'variations' => [
+            'activate_all' => 'Активирай всички',
+            'combination_label' => 'Комбинация',
+            'sku_label' => 'SKU',
+            'active_label' => 'Активен',
         ],
     ],
 
