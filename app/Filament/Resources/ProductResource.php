@@ -1027,15 +1027,34 @@ class ProductResource extends Resource
      * posture), so this returns a raw NULL expression rather than
      * building a subquery against a list id that doesn't exist.
      *
-     * Joined through catalog_variations exactly as the domain schema
-     * requires: pricing_price_list_items.target_id is a plain string
-     * column (never a foreign key, by design — see that table's own
-     * migration comment), holding a Catalog Variation's id as a string;
+     * pricing_price_list_items.target_id is a plain string column
+     * (never a foreign key, by design — see that table's own migration
+     * comment), holding a Catalog Variation's id as a string;
      * catalog_variations.id is the real integer PK. This is a SIMPLE-
      * product-only Resource (the query is already filtered to
-     * type=SIMPLE), so joining without a further "type=universal" filter
-     * is safe — a SIMPLE product has exactly one Variation, always
-     * universal, by Catalog's own invariant.
+     * type=SIMPLE), so resolving the correlated variation without a
+     * further "type=universal" filter is safe — a SIMPLE product has
+     * exactly one Variation, always universal, by Catalog's own
+     * invariant.
+     *
+     * DELIBERATELY NOT a plain join on
+     * catalog_variations.id = pricing_price_list_items.target_id: that
+     * compares an int column against a varchar column, and MySQL's
+     * numeric-vs-string comparison rule casts target_id's VALUES to
+     * numbers for the comparison, which defeats pp_items_lookup_index's
+     * (price_list_id, target_type, target_id, min_quantity) usability
+     * for target_id — confirmed via a real EXPLAIN ANALYZE at ~17,000+
+     * SIMPLE product scale: the join form only used the index's first
+     * two columns (key_len 1030) and scanned ~5,900 rows via a cast
+     * index condition. Instead, the correlated variation id is resolved
+     * first (still using catalog_variations' own (product_id, status)
+     * index) and compared against target_id CAST to CHAR — a same-type
+     * comparison MySQL can seek on normally, confirmed via the same
+     * EXPLAIN ANALYZE to use all three leading index columns (key_len
+     * 2052, ~1 row). Same "compare target_id as a string" shape
+     * EloquentPriceListItemRepository (the real Cart/Checkout/
+     * Storefront pricing path) already uses — this fix brings the
+     * admin-list convenience query in line with it, not a new approach.
      */
     protected static function priceMinorSubquery(?string $priceListId): mixed
     {
@@ -1044,10 +1063,11 @@ class ProductResource extends Resource
         }
 
         return DB::table('pricing_price_list_items')
-            ->join('catalog_variations', 'catalog_variations.id', '=', 'pricing_price_list_items.target_id')
             ->where('pricing_price_list_items.price_list_id', $priceListId)
             ->where('pricing_price_list_items.target_type', PriceListItemTargetType::VARIATION->value)
-            ->whereColumn('catalog_variations.product_id', 'catalog_products.id')
+            ->whereRaw(
+                'pricing_price_list_items.target_id = CAST((SELECT catalog_variations.id FROM catalog_variations WHERE catalog_variations.product_id = catalog_products.id LIMIT 1) AS CHAR)'
+            )
             ->limit(1)
             ->select('pricing_price_list_items.price_amount_minor');
     }

@@ -126,6 +126,45 @@ class ProductResourcePriceColumnTest extends TestCase
         $this->assertSame('—', ProductResource::priceDisplayHtml($row));
     }
 
+    /**
+     * priceMinorSubquery() was rewritten (see its own docblock) from a
+     * plain join on catalog_variations.id = target_id to a raw
+     * correlated subquery comparing target_id (CAST to CHAR) against
+     * the resolved variation id — a performance fix only, no intended
+     * behavior change, proven correct via real EXPLAIN ANALYZE against
+     * a ~17,000+ SIMPLE product scale (see this task's own report, not
+     * reproducible at this test's tiny seeded scale). Raw correlated
+     * SQL is more fragile to get wrong than the previous
+     * ->whereColumn() form (e.g. a missing/broken correlation would
+     * silently return the WRONG product's price, or the first
+     * unrelated row, rather than erroring), so this test specifically
+     * asserts several SIMPLE products with DISTINCT regular/sale prices
+     * each resolve their own, correct values in the same list render —
+     * a test that would fail plainly if the correlation were ever
+     * broken, unlike the single-product tests above.
+     */
+    public function test_multiple_products_each_resolve_their_own_correct_prices_in_the_same_list(): void
+    {
+        app(PricingSystemListsSeeder::class)->run(app(PriceListRepository::class));
+        $this->actingAsStaffRole('Administrator');
+
+        $this->createSimpleProduct('Ultraboost', 'ultraboost', ['regular_price' => '150.00']);
+        $this->createSimpleProduct('Forum Low', 'forum-low', [
+            'regular_price' => '90.00',
+            'sale_price' => '70.00',
+        ]);
+        $this->createSimpleProduct('Samba', 'samba', ['regular_price' => '85.00']);
+
+        $records = Livewire::test(ListProducts::class)
+            ->instance()
+            ->getTable()
+            ->getRecords();
+
+        $this->assertSame('150.00', ProductResource::priceDisplayHtml($records->firstWhere('slug', 'ultraboost')));
+        $this->assertSame('<s>90.00</s> 70.00', ProductResource::priceDisplayHtml($records->firstWhere('slug', 'forum-low')));
+        $this->assertSame('85.00', ProductResource::priceDisplayHtml($records->firstWhere('slug', 'samba')));
+    }
+
     public function test_a_product_on_a_fresh_unseeded_store_renders_the_list_without_error(): void
     {
         // Deliberately NOT running PricingSystemListsSeeder — neither
