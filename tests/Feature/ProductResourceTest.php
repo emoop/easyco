@@ -6,6 +6,7 @@ use App\Filament\Resources\ProductResource;
 use App\Filament\Resources\ProductResource\Pages\CreateProduct;
 use App\Filament\Resources\ProductResource\Pages\EditProduct;
 use App\Filament\Resources\ProductResource\Pages\ListProducts;
+use App\Filament\Resources\ProductResource\Pages\ViewProduct;
 use App\Filament\StaffPanelUser;
 use App\Settings\Contracts\SiteSettingsRepository;
 use EasyCo\Catalog\AttributeDefinition;
@@ -905,27 +906,22 @@ class ProductResourceTest extends TestCase
     }
 
     /**
-     * Supersedes an earlier, now-invalid version of this test that
-     * asserted the duplicate action was merely HIDDEN on a VARIABLE
-     * row (assertTableActionHidden) — that assertion itself requires
-     * the record to still be resolvable within the table's own query,
-     * which no longer holds true given the real fix below (the row is
-     * excluded from the query entirely, not just given a hidden
-     * action), so it started throwing "Record no longer exists"
-     * instead of proving anything.
-     *
-     * The real fix for the real bug this confirms: a VARIABLE
-     * product's row used to still appear in this table (SIMPLE-only by
-     * this Resource's own scope), with a live Edit button that crashed
-     * on $product->universalVariation()->barcode() — a VARIABLE
-     * Product genuinely has no universal Variation. Filtered at the
-     * table's own query level (->where('type', SIMPLE)), not just via
-     * a hidden action, so the row is absent from the list entirely —
-     * proven here via the real Filament assertCanNotSeeTableRecords()
-     * assertion, which strictly subsumes "no action on it is visible
-     * either," since there is no row to check an action against at all.
+     * UPDATED: this test previously asserted the opposite
+     * (assertCanNotSeeTableRecords for the VARIABLE row) — that was the
+     * real behavior of an earlier, deliberately narrower fix
+     * (->where('type', SIMPLE) in modifyQueryUsing()), which has since
+     * been superseded by a later task's own requirement: both SIMPLE
+     * and VARIABLE products now show in the list by default. The real
+     * crash this test's own history is about
+     * ($product->universalVariation()->barcode() on null — a VARIABLE
+     * Product genuinely has no universal Variation) is now kept
+     * unreachable at the action/routing level instead of by excluding
+     * the row — see test_a_variable_products_edit_action_is_hidden_...
+     * and test_a_variable_products_record_url_always_points_to_view
+     * below, which are the real regression coverage for that crash
+     * now. Renamed and rewritten in place, not left stale/false.
      */
-    public function test_a_variable_product_does_not_appear_anywhere_in_the_list(): void
+    public function test_both_simple_and_variable_products_appear_in_the_list(): void
     {
         $this->actingAsPanelAdministrator();
 
@@ -943,8 +939,123 @@ class ProductResourceTest extends TestCase
         app(ProductRepository::class)->save($simpleProduct);
 
         Livewire::test(ListProducts::class)
-            ->assertCanNotSeeTableRecords([ProductModel::find($variableProduct->id())])
+            ->assertCanSeeTableRecords([ProductModel::find($variableProduct->id())])
             ->assertCanSeeTableRecords([ProductModel::find($simpleProduct->id())]);
+    }
+
+    /**
+     * The real crash-avoidance this task exists for: EditProduct has no
+     * real VARIABLE support yet and crashes on
+     * $product->universalVariation()->barcode() — a VARIABLE Product
+     * genuinely has no universal Variation. recordUrl() must always
+     * route a VARIABLE row to 'view', never 'edit', even for an
+     * Administrator who genuinely has edit rights (canEdit() true) —
+     * this proves the type guard, not just the permission guard.
+     */
+    public function test_a_variable_products_record_url_always_points_to_view(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        $definition = new AttributeDefinition(id: null, code: 'size', name: 'Size', type: AttributeType::SELECT);
+        app(AttributeDefinitionRepository::class)->save($definition);
+        $medium = new AttributeValue(id: null, attributeDefinitionId: $definition->id(), value: 'M');
+        app(AttributeValueRepository::class)->save($medium);
+
+        $variableProduct = Product::createVariable('Variable Shirt', 'SKU-VAR', 'variable-shirt');
+        $variableProduct->declareVariationAxes([new VariationAxis($definition, [$medium])]);
+        $variableProduct->addStandardVariation([$definition->id() => $medium->id()], 'SKU-VAR-M');
+        app(ProductRepository::class)->save($variableProduct);
+
+        $variableModel = ProductModel::find($variableProduct->id());
+
+        $table = Livewire::test(ListProducts::class)->instance()->getTable();
+        $recordUrl = $table->getRecordUrl($variableModel);
+
+        $this->assertSame(ProductResource::getUrl('view', ['record' => $variableModel]), $recordUrl);
+    }
+
+    /**
+     * Same crash-avoidance, at the row-actions level: EditAction must
+     * be hidden on a VARIABLE row and visible on a SIMPLE row, for the
+     * same staff member (Administrator — canEdit() true for both),
+     * isolating the type guard from the permission guard.
+     *
+     * NOT using ->assertTableActionHidden()/->assertTableActionVisible()
+     * here — confirmed via direct tracing against the installed
+     * Filament v5.8.1 source that those helpers are unreliable for an
+     * action nested in an ActionGroup (EditAction is, via the
+     * ViewAction/EditAction/duplicateAction ActionGroup in table())
+     * when more than one row exists: resolveTableAction() only sets the
+     * new record on the action's ActionGroup
+     * (getRootGroup()?->record($record)), but a real prior full-table
+     * Blade render already left the CHILD action's own $record property
+     * populated directly (from the LAST row rendered) — and
+     * Action::getRecord() checks its own $record before ever falling
+     * back to its group's, so the group-level update is silently
+     * ignored and the stale, last-rendered-row record wins. Confirmed
+     * by direct trace: with both a VARIABLE and a SIMPLE product
+     * seeded, asserting on the row that was NOT rendered last returned
+     * the wrong record's evaluation. Setting ->record() directly on the
+     * resolved Action (not the group) is what the underlying Blade
+     * per-row render loop itself actually does, and reproduces the real
+     * rendering behavior correctly and reliably — confirmed by tracing
+     * getRecord()->id() matches the intended record after doing so.
+     */
+    public function test_edit_action_is_hidden_on_a_variable_row_and_visible_on_a_simple_row(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        $definition = new AttributeDefinition(id: null, code: 'size', name: 'Size', type: AttributeType::SELECT);
+        app(AttributeDefinitionRepository::class)->save($definition);
+        $medium = new AttributeValue(id: null, attributeDefinitionId: $definition->id(), value: 'M');
+        app(AttributeValueRepository::class)->save($medium);
+
+        $variableProduct = Product::createVariable('Variable Shirt', 'SKU-VAR', 'variable-shirt');
+        $variableProduct->declareVariationAxes([new VariationAxis($definition, [$medium])]);
+        $variableProduct->addStandardVariation([$definition->id() => $medium->id()], 'SKU-VAR-M');
+        app(ProductRepository::class)->save($variableProduct);
+
+        $simpleProduct = Product::createSimple('Simple Shirt', 'SKU-SIMPLE', 'simple-shirt');
+        app(ProductRepository::class)->save($simpleProduct);
+
+        $editAction = Livewire::test(ListProducts::class)->instance()->getTable()->getAction('edit');
+
+        $editAction->record(ProductModel::find($variableProduct->id()));
+        $this->assertTrue($editAction->isHidden());
+
+        $editAction->record(ProductModel::find($simpleProduct->id()));
+        $this->assertTrue($editAction->isVisible());
+    }
+
+    /**
+     * Already proven safe in Step A/C's own CreateVariableProductTest
+     * (test_after_creation_the_redirect_lands_on_view_and_it_renders_
+     * for_a_variation_less_product, and a variation-bearing equivalent)
+     * — a quick reconfirmation here, since a VARIABLE product now
+     * routes here from the list itself too, not just after creation.
+     */
+    public function test_view_page_still_renders_for_a_variable_product_with_a_real_variation(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        $definition = new AttributeDefinition(id: null, code: 'size', name: 'Size', type: AttributeType::SELECT);
+        app(AttributeDefinitionRepository::class)->save($definition);
+        $medium = new AttributeValue(id: null, attributeDefinitionId: $definition->id(), value: 'M');
+        app(AttributeValueRepository::class)->save($medium);
+
+        $variableProduct = Product::createVariable('Variable Shirt', 'SKU-VAR', 'variable-shirt');
+        $variableProduct->declareVariationAxes([new VariationAxis($definition, [$medium])]);
+        $variableProduct->addStandardVariation([$definition->id() => $medium->id()], 'SKU-VAR-M');
+        app(ProductRepository::class)->save($variableProduct);
+
+        $variableModel = ProductModel::find($variableProduct->id());
+
+        $this->get(ProductResource::getUrl('view', ['record' => $variableModel]))
+            ->assertOk()
+            ->assertSee('Variable Shirt');
+
+        Livewire::test(ViewProduct::class, ['record' => $variableModel->id])
+            ->assertSuccessful();
     }
 
     private function translatedDuplicateSuffix(): string

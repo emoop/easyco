@@ -632,18 +632,17 @@ class ProductResource extends Resource
             // packages) and resolves every row's thumbnail in the
             // table's one query, avoiding N+1 without the coupling.
             //
-            // ->where('type', SIMPLE) is the real fix for a real bug
-            // found in production use: a VARIABLE product's row used
-            // to still appear here (this Resource is SIMPLE-only by
-            // scope, per this class's own docblock), with a live Edit
-            // button that crashed EditProduct on
-            // $product->universalVariation()->barcode() — a VARIABLE
-            // Product genuinely has no universal Variation, by design.
-            // Filtering the query itself, not just EditAction's own
-            // ->visible(), removes the row from the list entirely, so
-            // recordUrl()'s own identical gap (routing a VARIABLE row
-            // to View) is closed as the same side effect, not a
-            // separate fix.
+            // BOTH SIMPLE and VARIABLE products are shown here by
+            // default — this Resource's list is no longer SIMPLE-only
+            // by scope. A VARIABLE row's real Edit-page crash
+            // ($product->universalVariation()->barcode() on null — a
+            // VARIABLE Product genuinely has no universal Variation) is
+            // instead kept unreachable at the action/routing level:
+            // EditAction::make()->visible() and recordUrl() below both
+            // additionally require type===SIMPLE, so a VARIABLE row is
+            // always routed to (and only ever offers) View, never Edit.
+            // This Resource still does not offer a real VARIABLE edit
+            // experience — that remains separate, undesigned scope.
             //
             // ARCHIVED PRODUCTS HIDDEN BY DEFAULT: modifyQueryUsing()
             // runs BEFORE filters in Filament's own query pipeline
@@ -679,7 +678,6 @@ class ProductResource extends Resource
                 $manualSaleListId = $priceLists->findSystemListByName('Manual Sale')?->id();
 
                 return $query
-                    ->where('type', ProductType::SIMPLE->value)
                     ->addSelect([
                         'thumbnail_path' => DB::table('catalog_product_media')
                             ->join('catalog_media', 'catalog_media.id', '=', 'catalog_product_media.media_id')
@@ -913,17 +911,23 @@ class ProductResource extends Resource
                 ActionGroup::make([
                     ViewAction::make(),
                     EditAction::make()
-                        ->visible(fn (ProductModel $record): bool => static::canEdit($record)),
+                        ->visible(fn (ProductModel $record): bool => static::canEdit($record)
+                            && $record->type === ProductType::SIMPLE->value),
                     static::duplicateAction(),
                 ]),
             ])
             // Edit by default on row click — the most-used action on
             // this list — falling back to View only for a staff member
-            // without edit rights (canEdit() is the same real
-            // Staff::can(Permission) check EditAction's own ->visible()
-            // above already uses, so this never routes a click
-            // somewhere the three-dot menu itself would refuse).
-            ->recordUrl(fn (ProductModel $record): string => static::canEdit($record)
+            // without edit rights, OR for a VARIABLE row regardless of
+            // edit rights (same reasoning as EditAction's own
+            // ->visible() above: EditProduct has no real VARIABLE
+            // support yet and would crash on
+            // universalVariation()->barcode() — a VARIABLE Product has
+            // no universal Variation, by design). canEdit() is the same
+            // real Staff::can(Permission) check EditAction's own
+            // ->visible() above already uses, so this never routes a
+            // click somewhere the three-dot menu itself would refuse.
+            ->recordUrl(fn (ProductModel $record): string => static::canEdit($record) && $record->type === ProductType::SIMPLE->value
                 ? static::getUrl('edit', ['record' => $record])
                 : static::getUrl('view', ['record' => $record]));
     }
