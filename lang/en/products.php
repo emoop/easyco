@@ -14,6 +14,12 @@ return [
     'wizard' => [
         'steps' => [
             'general' => 'General',
+            'axes' => 'Axes',
+        ],
+        'axes' => [
+            'attribute_label' => 'Attribute',
+            'values_label' => 'Values',
+            'add_axis' => 'Add axis',
         ],
     ],
 

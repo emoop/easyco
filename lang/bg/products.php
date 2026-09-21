@@ -14,6 +14,12 @@ return [
     'wizard' => [
         'steps' => [
             'general' => 'Основни данни',
+            'axes' => 'Оси',
+        ],
+        'axes' => [
+            'attribute_label' => 'Атрибут',
+            'values_label' => 'Стойности',
+            'add_axis' => 'Добави ос',
         ],
     ],
 
