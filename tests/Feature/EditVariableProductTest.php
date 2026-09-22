@@ -23,6 +23,8 @@ use EasyCo\Catalog\Contracts\TagRepository;
 use EasyCo\Catalog\Enums\AttributeType;
 use EasyCo\Catalog\Enums\CatalogVisibility;
 use EasyCo\Catalog\Enums\ProductStatus;
+use EasyCo\Catalog\Enums\VariationStatus;
+use EasyCo\Catalog\Exceptions\CannotPublishEmptyVariableProductException;
 use EasyCo\Catalog\Persistence\Eloquent\AttributeDefinitionModel;
 use EasyCo\Catalog\Persistence\Eloquent\AttributeValueModel;
 use EasyCo\Catalog\Persistence\Eloquent\ProductModel;
@@ -1714,5 +1716,336 @@ class EditVariableProductTest extends TestCase
 
         $this->get(ProductResource::getUrl('edit-variable', ['record' => $productModel]))
             ->assertForbidden();
+    }
+
+    /**
+     * The real, resolved Action itself — same rigor as
+     * test_the_real_save_action_requires_confirmation_only_when_base_sku_is_genuinely_changing()'s
+     * own Reflection-based inspection, adapted to the Repeater's own
+     * per-item delete Action instead of a page-level one. Unlike Save,
+     * getDeleteAction() is `public`, so no Reflection is needed to
+     * reach it — HasActions::getAction('delete') already resolves the
+     * cached Action, and calling it as
+     * $action(['item' => $itemKey]) reproduces EXACTLY the same real
+     * binding Repeater's own view does per row (confirmed against
+     * HasMountableArguments::__invoke(), the mechanism behind
+     * $deleteAction(['item' => $itemKey]) in the installed source),
+     * not a simulated click but a real inspection of the actual bound
+     * Action object Filament renders for that row.
+     */
+    public function test_the_real_archive_action_always_requires_confirmation_with_the_real_combination_label_interpolated(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        [$product] = $this->persistedVariableProductWithOneVariation();
+        $productModel = ProductModel::find($product->id());
+
+        $component = Livewire::test(EditVariableProduct::class, ['record' => $productModel->id]);
+        $repeater = $component->instance()->form->getComponent('existing_variations');
+        $rowKeys = array_keys($component->get('data.existing_variations'));
+
+        $deleteAction = ($repeater->getAction('delete'))(['item' => $rowKeys[0]]);
+
+        $this->assertSame(__('products.variation_archive.button_label'), (string) $deleteAction->getLabel());
+        $this->assertTrue($deleteAction->isConfirmationRequired());
+        $this->assertTrue($deleteAction->shouldOpenModal());
+        $this->assertSame(__('products.variation_archive.confirm_heading'), (string) $deleteAction->getModalHeading());
+        $this->assertSame(
+            __('products.variation_archive.confirm_description', ['label' => 'Color: Black']),
+            (string) $deleteAction->getModalDescription()
+        );
+    }
+
+    /**
+     * The real, domain-level effect of removing a row and saving:
+     * archive(), not a UI-only removal — proven via a real domain
+     * reload (ProductRepository::findByIdWithVariations()), not merely
+     * "the row disappeared from Livewire state." Removing a row from
+     * $data['existing_variations'] and submitting is functionally
+     * identical to what the delete action's own real ->action()
+     * closure does (Repeater::getDeleteAction(), confirmed against its
+     * installed source: unset($items[$arguments['item']]);
+     * $component->rawState($items)) — a real, working simulation of
+     * the user interaction, not a synthetic shortcut.
+     */
+    public function test_removing_a_variation_row_and_saving_genuinely_archives_the_real_variation(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        [$product, $blackId, $whiteId] = $this->persistedVariableProductWithTwoVariations();
+        $productModel = ProductModel::find($product->id());
+
+        $component = Livewire::test(EditVariableProduct::class, ['record' => $productModel->id]);
+        $rows = $component->get('data.existing_variations');
+        $blackKey = null;
+        foreach ($rows as $key => $row) {
+            if ($row['variation_id'] === $blackId) {
+                $blackKey = $key;
+            }
+        }
+        $this->assertNotNull($blackKey);
+        unset($rows[$blackKey]);
+
+        $component->set('data.existing_variations', $rows)
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $reloaded = app(ProductRepository::class)->findByIdWithVariations((string) $productModel->id);
+        $byId = [];
+        foreach ($reloaded->variations() as $variation) {
+            $byId[$variation->id()] = $variation;
+        }
+
+        $this->assertSame(VariationStatus::ARCHIVED, $byId[$blackId]->status());
+        // The remaining, still-submitted variation is untouched.
+        $this->assertSame(VariationStatus::DRAFT, $byId[$whiteId]->status());
+    }
+
+    /**
+     * Archiving is deliberately NOT a cleanup pass — this task's own
+     * explicit instruction, verified here rather than assumed: a
+     * variation's real price/cost/stock/media rows must survive its
+     * own archiving completely untouched (still real, queryable
+     * domain/DB state), since a later, separate "revive" feature needs
+     * that state to still be there.
+     */
+    public function test_archiving_a_variation_leaves_its_price_cost_stock_and_media_rows_alone(): void
+    {
+        $this->seedPricingSystemLists();
+        $this->actingAsPanelAdministrator();
+
+        Storage::fake(config('services.media.default_disk', 'public'));
+
+        [$product, $blackId] = $this->persistedVariableProductWithOneVariation();
+        $productModel = ProductModel::find($product->id());
+
+        // First save: populate real price/cost/stock/media on the row.
+        $component = Livewire::test(EditVariableProduct::class, ['record' => $productModel->id]);
+        $rowKeys = array_keys($component->get('data.existing_variations'));
+
+        $component->set("data.existing_variations.{$rowKeys[0]}.regular_price", '42.00')
+            ->set("data.existing_variations.{$rowKeys[0]}.cost", '10.00')
+            ->set("data.existing_variations.{$rowKeys[0]}.stock_quantity", 7)
+            ->set("data.existing_variations.{$rowKeys[0]}.variation_photos", [UploadedFile::fake()->image('photo.jpg')])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $pricingAndStock = app(ProductPricingAndStock::class);
+        $this->assertSame('42.00', $pricingAndStock->regularPriceDisplay($blackId));
+        $this->assertSame('10.00', $pricingAndStock->costDisplay($blackId));
+        $this->assertSame(7, $pricingAndStock->stockQuantity($blackId));
+        $variationMediaRepository = app(VariationMediaRepository::class);
+        $this->assertCount(1, $variationMediaRepository->findByVariationId($blackId));
+
+        // Second save: remove the row — archives it.
+        $component2 = Livewire::test(EditVariableProduct::class, ['record' => $productModel->id]);
+        $rows2 = $component2->get('data.existing_variations');
+        $rowKey2 = array_key_first($rows2);
+        unset($rows2[$rowKey2]);
+
+        $component2->set('data.existing_variations', $rows2)
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $reloaded = app(ProductRepository::class)->findByIdWithVariations((string) $productModel->id);
+        $this->assertSame(VariationStatus::ARCHIVED, $reloaded->variations()[0]->status());
+
+        // Every one of these must still be there, completely untouched.
+        $this->assertSame('42.00', $pricingAndStock->regularPriceDisplay($blackId));
+        $this->assertSame('10.00', $pricingAndStock->costDisplay($blackId));
+        $this->assertSame(7, $pricingAndStock->stockQuantity($blackId));
+        $this->assertCount(1, $variationMediaRepository->findByVariationId($blackId));
+    }
+
+    /**
+     * mutateFormDataBeforeFill() must NOT resurrect an archived
+     * variation into the form on the next page load — confirmed this
+     * was a REAL gap before this task (every variation, any status,
+     * used to reappear unconditionally) by first observing the OLD
+     * behavior, then adding the array_filter() fix; this test proves
+     * the fixed behavior specifically, not merely that nothing crashes.
+     */
+    public function test_an_archived_variation_is_excluded_from_the_form_on_the_next_page_load(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        [$product, $blackId, $whiteId] = $this->persistedVariableProductWithTwoVariations();
+        $productModel = ProductModel::find($product->id());
+
+        $component = Livewire::test(EditVariableProduct::class, ['record' => $productModel->id]);
+        $rows = $component->get('data.existing_variations');
+        $blackKey = null;
+        foreach ($rows as $key => $row) {
+            if ($row['variation_id'] === $blackId) {
+                $blackKey = $key;
+            }
+        }
+        unset($rows[$blackKey]);
+
+        $component->set('data.existing_variations', $rows)
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $freshComponent = Livewire::test(EditVariableProduct::class, ['record' => $productModel->id]);
+        $freshRows = $freshComponent->get('data.existing_variations');
+
+        $this->assertCount(1, $freshRows);
+        $this->assertSame($whiteId, array_values($freshRows)[0]['variation_id']);
+    }
+
+    /**
+     * THE REAL GAP point 3 closes, proven — not assumed: a product
+     * that is ALREADY Active (from an earlier, separate save — the
+     * status FIELD ITSELF does not change in the submission under
+     * test) has its last non-archived variation archived in THIS
+     * submission. Before this task's restructuring, publish() was only
+     * ever invoked when $oldStatus !== $newStatus, so this exact case
+     * — status unchanged, but the variation set underneath it just
+     * became empty — would have silently succeeded, leaving a real,
+     * live inconsistency (an Active VARIABLE product with nothing
+     * sellable). Full rollback: the archiving itself must not survive
+     * either.
+     */
+    public function test_archiving_the_last_non_archived_variation_on_an_already_active_product_is_rejected_and_rolls_back(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        [$product, $blackId] = $this->persistedVariableProductWithOneVariation();
+        $productModel = ProductModel::find($product->id());
+
+        // First save: make the product genuinely Active, with its one
+        // variation still present and non-archived.
+        Livewire::test(EditVariableProduct::class, ['record' => $productModel->id])
+            ->fillForm(['status' => ProductStatus::ACTIVE->value])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $afterFirstSave = app(ProductRepository::class)->findByIdWithVariations((string) $productModel->id);
+        $this->assertSame(ProductStatus::ACTIVE, $afterFirstSave->status());
+
+        // Second save: status field is NOT touched (stays 'active',
+        // exactly as seeded) — only the variation row is removed.
+        $component = Livewire::test(EditVariableProduct::class, ['record' => $productModel->id]);
+        $this->assertSame(ProductStatus::ACTIVE->value, $component->get('data.status'));
+
+        $rows = $component->get('data.existing_variations');
+        $rowKey = array_key_first($rows);
+        unset($rows[$rowKey]);
+
+        $component->set('data.existing_variations', $rows)
+            ->set('data.name', 'Should Not Be Saved Either')
+            ->call('save')
+            ->assertNotified(
+                CannotPublishEmptyVariableProductException::forProduct($product)->getMessage()
+            );
+
+        $reloaded = app(ProductRepository::class)->findByIdWithVariations((string) $productModel->id);
+        $this->assertSame(ProductStatus::ACTIVE, $reloaded->status());
+        $this->assertSame('Variable Shirt', $reloaded->name(), 'the whole submission must roll back, not just the archiving');
+        $this->assertSame(VariationStatus::DRAFT, $reloaded->variations()[0]->status(), 'the archiving itself must not survive the rollback');
+    }
+
+    /**
+     * The other, non-broken side of the same gap: archiving one of
+     * SEVERAL variations on an Active product succeeds normally, since
+     * at least one non-archived STANDARD variation remains — publish()
+     * is still invoked (status stays Active, unconditionally
+     * re-attempted per this task's restructuring) but its own guard
+     * has nothing to reject.
+     */
+    public function test_archiving_one_of_several_variations_on_an_active_product_succeeds_when_others_remain(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        [$product, $blackId, $whiteId] = $this->persistedVariableProductWithTwoVariations();
+        $productModel = ProductModel::find($product->id());
+
+        Livewire::test(EditVariableProduct::class, ['record' => $productModel->id])
+            ->fillForm(['status' => ProductStatus::ACTIVE->value])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $component = Livewire::test(EditVariableProduct::class, ['record' => $productModel->id]);
+        $rows = $component->get('data.existing_variations');
+        $blackKey = null;
+        foreach ($rows as $key => $row) {
+            if ($row['variation_id'] === $blackId) {
+                $blackKey = $key;
+            }
+        }
+        unset($rows[$blackKey]);
+
+        $component->set('data.existing_variations', $rows)
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $reloaded = app(ProductRepository::class)->findByIdWithVariations((string) $productModel->id);
+        $this->assertSame(ProductStatus::ACTIVE, $reloaded->status());
+
+        $byId = [];
+        foreach ($reloaded->variations() as $variation) {
+            $byId[$variation->id()] = $variation;
+        }
+        $this->assertSame(VariationStatus::ARCHIVED, $byId[$blackId]->status());
+        $this->assertSame(VariationStatus::DRAFT, $byId[$whiteId]->status());
+    }
+
+    /**
+     * Point 4's own real DB/domain check: the base_sku cascade must
+     * skip an ARCHIVED variation's sku entirely, even though its sku
+     * still literally starts with the old base_sku prefix — its sku is
+     * historical (Variation::archive()'s own docblock) and must stay
+     * stable. Archived in an EARLIER save (not the same submission as
+     * the base_sku change — the simpler, unambiguous case; the
+     * "archived in the SAME submission" case is exercised structurally
+     * by archiveRemovedVariationRows() running before the cascade, see
+     * that call site's own comment) so this test isolates specifically
+     * the skip-if-already-archived branch.
+     */
+    public function test_the_base_sku_cascade_skips_an_already_archived_variations_sku(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        [$product, $blackId, $whiteId] = $this->persistedVariableProductWithTwoVariations();
+        $productModel = ProductModel::find($product->id());
+
+        // First save: archive Black.
+        $component = Livewire::test(EditVariableProduct::class, ['record' => $productModel->id]);
+        $rows = $component->get('data.existing_variations');
+        $blackKey = null;
+        foreach ($rows as $key => $row) {
+            if ($row['variation_id'] === $blackId) {
+                $blackKey = $key;
+            }
+        }
+        unset($rows[$blackKey]);
+
+        $component->set('data.existing_variations', $rows)
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $afterArchive = app(ProductRepository::class)->findByIdWithVariations((string) $productModel->id);
+        $byIdBefore = [];
+        foreach ($afterArchive->variations() as $variation) {
+            $byIdBefore[$variation->id()] = $variation;
+        }
+        $this->assertSame(VariationStatus::ARCHIVED, $byIdBefore[$blackId]->status());
+        $this->assertSame('SKU-VAR-BLACK', $byIdBefore[$blackId]->sku());
+
+        // Second save: change base_sku — White (still present, still
+        // non-archived) must cascade; archived Black must not.
+        Livewire::test(EditVariableProduct::class, ['record' => $productModel->id])
+            ->fillForm(['base_sku' => 'SKU-VAR-2'])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $reloaded = app(ProductRepository::class)->findByIdWithVariations((string) $productModel->id);
+        $byIdAfter = [];
+        foreach ($reloaded->variations() as $variation) {
+            $byIdAfter[$variation->id()] = $variation;
+        }
+
+        $this->assertSame('SKU-VAR-BLACK', $byIdAfter[$blackId]->sku(), 'an archived variations sku must never be touched by the cascade');
+        $this->assertSame('SKU-VAR-2-WHITE', $byIdAfter[$whiteId]->sku());
     }
 }

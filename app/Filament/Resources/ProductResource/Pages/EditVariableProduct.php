@@ -12,6 +12,7 @@ use EasyCo\Catalog\Contracts\ProductRepository;
 use EasyCo\Catalog\Contracts\ProductTagRepository;
 use EasyCo\Catalog\Enums\CatalogVisibility;
 use EasyCo\Catalog\Enums\ProductStatus;
+use EasyCo\Catalog\Enums\VariationStatus;
 use EasyCo\Catalog\Exceptions\CannotPublishEmptyVariableProductException;
 use EasyCo\Catalog\Persistence\Eloquent\AttributeDefinitionModel;
 use EasyCo\Catalog\Persistence\Eloquent\AttributeValueModel;
@@ -586,7 +587,64 @@ class EditVariableProduct extends EditRecord
             Repeater::make('existing_variations')
                 ->hiddenLabel()
                 ->addable(false)
-                ->deletable(false)
+                // Re-enabled (was ->deletable(false) through Step 1) —
+                // this IS the real archive mechanism now: Repeater::
+                // getDeleteAction()'s own real ->action() closure
+                // (confirmed against its installed source) simply
+                // unset()s the row from the Repeater's own live raw
+                // state and re-renders — it never touches the domain
+                // layer itself. That is exactly the detection signal
+                // updateProduct() below needs: a variation absent from
+                // THIS submission's own existing_variations is the one
+                // and only trigger for archiving it server-side (see
+                // that method's own docblock) — never an in-browser-
+                // only deletion. No hasFormWrapper()/canSubmitForm()
+                // workaround needed here, unlike the Save button:
+                // confirmed against CanSubmitForm's installed source
+                // that isLivewireClickHandlerEnabled() only ever
+                // returns false for an action that called ->submit(),
+                // and getDeleteAction() never does — it is already a
+                // genuine ->action() click handler.
+                ->deletable()
+                ->deleteAction(function (Action $action): Action {
+                    return $action
+                        // Honest wording — this is an archive, not a
+                        // destructive delete (CLAUDE.md rule 4: no hard
+                        // delete of anything another domain might
+                        // reference by id). Filament's own default
+                        // "Delete" label/icon would overstate what
+                        // actually happens.
+                        ->label(__('products.variation_archive.button_label'))
+                        ->requiresConfirmation()
+                        ->modalHeading(__('products.variation_archive.confirm_heading'))
+                        // array $arguments ('item' => the real Repeater
+                        // item key — confirmed against
+                        // HasMountableArguments::__invoke(), which is
+                        // how Repeater's own blade-embedded view binds
+                        // $deleteAction(['item' => $itemKey]) per row)
+                        // + Repeater $component (named 'component',
+                        // confirmed bound via HasActions::
+                        // prepareAction() -> ->schemaComponent($this)
+                        // at cacheActions() time, where $this is THIS
+                        // Repeater) — together the same real, working
+                        // mechanism itemLabel() already uses
+                        // (->getChildSchema($key)->getRawState()), NOT
+                        // Get $get (which — confirmed the identical way
+                        // itemLabel()'s own docblock already
+                        // documents — would resolve relative to the
+                        // REPEATER's own state path, not this specific
+                        // item's, and silently return blank).
+                        ->modalDescription(function (array $arguments, Repeater $component): string {
+                            $itemKey = $arguments['item'] ?? null;
+                            $label = $itemKey !== null
+                                ? ($component->getChildSchema($itemKey)?->getRawState()['label'] ?? '')
+                                : '';
+
+                            return __('products.variation_archive.confirm_description', ['label' => $label]);
+                        })
+                        ->modalSubmitActionLabel(__('products.variation_archive.confirm_submit'))
+                        ->modalCancelActionLabel(__('products.variation_archive.confirm_cancel'));
+                })
                 ->reorderable(false)
                 ->collapsible()
                 // NEITHER Get $get NOR array $state — both tried and
@@ -811,7 +869,21 @@ class EditVariableProduct extends EditRecord
 
         $variationMediaRepository = app(VariationMediaRepository::class);
 
-        $data['existing_variations'] = array_map(
+        // ARCHIVED variations are deliberately excluded from this
+        // list — confirmed this was NOT already the case before this
+        // task (every variation, any status, used to resurface here
+        // unconditionally) via a real failing test before adding this
+        // filter. An archived row has nothing to edit in this Repeater
+        // (the delete button that archived it in the first place is
+        // the ONLY sanctioned write path here — reviving one is a
+        // separate, later feature, not this page), so it must not
+        // silently reappear on the next page load as if nothing
+        // happened. array_values() after array_filter(): a Repeater's
+        // own row keys come from array iteration, not from
+        // variation_id, so a gap left by array_filter() (e.g. the
+        // second of three variations archived) must not leak through
+        // as a non-sequential key.
+        $data['existing_variations'] = array_values(array_map(
             fn (Variation $variation): array => [
                 'variation_id' => $variation->id(),
                 'label' => $this->variationLabel($variation),
@@ -826,8 +898,11 @@ class EditVariableProduct extends EditRecord
                 'sale_price_placeholder' => $productSalePrice,
                 'variation_photos' => $this->variationPhotoPaths($variationMediaRepository, $variation->id()),
             ],
-            $product->variations()
-        );
+            array_filter(
+                $product->variations(),
+                fn (Variation $variation): bool => $variation->status() !== VariationStatus::ARCHIVED
+            )
+        ));
 
         return $data;
     }
@@ -1051,33 +1126,34 @@ class EditVariableProduct extends EditRecord
         // argument, unchanged here.
         $shouldCleanArchivedMedia = $oldStatus !== $newStatus && $newStatus === ProductStatus::ARCHIVED->value;
 
+        // RESTRUCTURED for the variation-archiving consistency guard
+        // (this class's own docblock point 3 / archiveRemovedVariationRows()
+        // below): ARCHIVED/DRAFT transitions are still applied HERE,
+        // immediately, exactly as before — only ACTIVE is pulled out of
+        // this match() entirely. publish() is NOT called from this
+        // block anymore, even on a real DRAFT/ARCHIVED -> ACTIVE
+        // transition this submission — it is instead attempted
+        // UNCONDITIONALLY-WHENEVER-newStatus-IS-ACTIVE further below,
+        // AFTER archiveRemovedVariationRows() has run. This is the one
+        // and only real fix this restructuring exists for: the OLD
+        // code could never catch "this submission's own variation
+        // archiving left an ACTIVE product with nothing sellable"
+        // because publish() was only ever invoked when the STATUS
+        // FIELD ITSELF changed — an unchanged-Active product silently
+        // stayed (wrongly) Active even after its last sellable
+        // variation was archived in the very same request. The
+        // ActivityLogger call stays HERE, unconditionally on a real
+        // status-field change, regardless of which branch (including
+        // ACTIVE) ends up applying it — logging what the merchant
+        // asked for is correct the moment they ask for it, independent
+        // of publish()'s own later, separate validation outcome.
         if ($oldStatus !== $newStatus) {
             $logger->logFieldChanged('product', $product->id(), 'status', $oldStatus, $newStatus);
 
-            // Product::publish()'s own real guard
-            // (CannotPublishEmptyVariableProductException) requires at
-            // least one non-archived STANDARD variation — always true
-            // right after this product's own creation, but a merchant
-            // could later archive every variation and then try to
-            // reactivate the product here. Same Notification+Halt
-            // pattern CreateVariableProduct::createProduct() already
-            // established; archive()/markAsDraft() never throw this
-            // exception (only publish() has this guard), so wrapping
-            // the whole match() behaves identically to scoping the
-            // catch to only the ACTIVE branch, with less branching.
-            try {
-                match ($newStatus) {
-                    ProductStatus::ACTIVE->value => $product->publish(),
-                    ProductStatus::ARCHIVED->value => $product->archive(),
-                    default => $product->markAsDraft(),
-                };
-            } catch (CannotPublishEmptyVariableProductException $e) {
-                Notification::make()
-                    ->title($e->getMessage())
-                    ->danger()
-                    ->send();
-
-                throw (new Halt)->rollBackDatabaseTransaction();
+            if ($newStatus === ProductStatus::ARCHIVED->value) {
+                $product->archive();
+            } elseif ($newStatus !== ProductStatus::ACTIVE->value) {
+                $product->markAsDraft();
             }
         }
 
@@ -1116,12 +1192,45 @@ class EditVariableProduct extends EditRecord
         // above AND these per-row changes together.
         $this->updateVariationRows($product, $data['existing_variations'] ?? [], $logger);
 
+        // Right after updateVariationRows() above for readability —
+        // ordering between these two does not structurally matter,
+        // unlike the cascade below: they operate on disjoint sets
+        // (submitted rows vs. rows genuinely absent from this
+        // submission), so neither can affect the other's outcome.
+        $this->archiveRemovedVariationRows($product, array_keys($submittedSkusByVariationId), $logger);
+
         // AFTER updateVariationRows() above, not before — ordering is
         // load-bearing: an explicit per-row sku edit in the SAME
         // submission must win over this cascade, not get silently
         // overwritten by it.
         if ($baseSkuChanged) {
             $this->cascadeBaseSkuToVariationSkus($product, $oldBaseSku, $newBaseSku, $logger);
+        }
+
+        // AFTER archiveRemovedVariationRows() above — see the status
+        // block's own comment (near $oldStatus/$newStatus) for why
+        // publish() moved out of that block entirely: attempted
+        // whenever the FINAL status is ACTIVE, not only on a real
+        // status-field change this submission, specifically so this
+        // submission's own variation archiving above gets re-validated
+        // against "does this product still have anything sellable"
+        // BEFORE it is ever persisted. publish() is confirmed
+        // idempotent (Product::publish()'s own docblock: "calling this
+        // while already ACTIVE simply re-asserts the same status,
+        // still subject to the same guard") — reusing its own real
+        // guard here, not duplicating hasAnyNonArchivedStandardVariation()'s
+        // logic (private to Product, and rightly so).
+        if ($newStatus === ProductStatus::ACTIVE->value) {
+            try {
+                $product->publish();
+            } catch (CannotPublishEmptyVariableProductException $e) {
+                Notification::make()
+                    ->title($e->getMessage())
+                    ->danger()
+                    ->send();
+
+                throw (new Halt)->rollBackDatabaseTransaction();
+            }
         }
 
         app(ProductRepository::class)->save($product);
@@ -1223,6 +1332,18 @@ class EditVariableProduct extends EditRecord
         $prefix = $oldBaseSku.'-';
 
         foreach ($product->variations() as $variation) {
+            // An ARCHIVED variation's sku is historical (Variation::
+            // archive()'s own docblock — "historical references...
+            // must remain valid forever") and must stay stable, never
+            // touched by a base_sku rename — this deliberately also
+            // catches a variation archiveRemovedVariationRows() just
+            // archived earlier in THIS SAME submission (that call runs
+            // BEFORE this one — see the call site's own comment), not
+            // only one already archived on an earlier request.
+            if ($variation->status() === VariationStatus::ARCHIVED) {
+                continue;
+            }
+
             $currentSku = $variation->sku();
 
             if (! str_starts_with($currentSku, $prefix)) {
@@ -1407,6 +1528,60 @@ class EditVariableProduct extends EditRecord
                 $logger->logFieldChanged('product', $product->id(), "variation[{$variationId}].is_purchasable", $variation->isPurchasable() ? '1' : '0', $newIsPurchasable ? '1' : '0');
                 $variation->setPurchasable($newIsPurchasable);
             }
+        }
+    }
+
+    /**
+     * The real archive mechanism behind the Repeater's own delete
+     * button (existingVariationsComponents()'s own docblock) — a
+     * variation present on $product (the full set, loaded BEFORE this
+     * submission's own removals) but absent from
+     * $submittedVariationIds (captured in updateProduct() BEFORE any
+     * mutation, from the exact same $data['existing_variations'] this
+     * page's own Repeater just submitted) was removed from the form
+     * client-side this request, and that removal IS the real archive
+     * trigger — the same "absence from submission = no longer applies"
+     * detection shape ProductResource::syncCategories()/syncTags()
+     * already use, scoped to this Repeater instead of a pivot table.
+     *
+     * NEVER a hard delete — Variation::archive()'s own docblock
+     * ("historical references... must remain valid forever", CLAUDE.md
+     * rule 4) — and deliberately NOT a cleanup pass: this method does
+     * not touch price/cost/stock/media rows for the archived
+     * variation at all, on purpose (see this task's own report for the
+     * full reasoning) — a later, separate "revive" feature needs that
+     * state to still be there if the merchant re-adds the exact same
+     * combination.
+     *
+     * Skips a variation ALREADY ARCHIVED — both one archived on an
+     * earlier request, and (just as importantly) one this SAME
+     * updateProduct() call already archived moments ago via this exact
+     * method on an earlier invocation... which cannot actually happen
+     * (this method runs once per submission), but the guard is what
+     * makes this call genuinely idempotent/safe to reason about in
+     * isolation, and avoids a spurious "archived -> archived" log
+     * entry for a row that was already archived before this submission
+     * even started (e.g. stale form state).
+     *
+     * @param array<int, string> $submittedVariationIds
+     */
+    private function archiveRemovedVariationRows(Product $product, array $submittedVariationIds, ActivityLogger $logger): void
+    {
+        $submittedIds = array_flip($submittedVariationIds);
+
+        foreach ($product->variations() as $variation) {
+            $variationId = (string) $variation->id();
+
+            if (isset($submittedIds[$variationId])) {
+                continue;
+            }
+
+            if ($variation->status() === VariationStatus::ARCHIVED) {
+                continue;
+            }
+
+            $logger->logFieldChanged('product', $product->id(), "variation[{$variationId}].status", $variation->status()->value, VariationStatus::ARCHIVED->value);
+            $variation->archive();
         }
     }
 

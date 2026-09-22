@@ -108,6 +108,14 @@ return [
         'clear_sale_help' => ':count variants currently have their own sale price and will keep it unless you check this.',
     ],
 
+    'variation_archive' => [
+        'button_label' => 'Archive variation',
+        'confirm_heading' => 'Archive this variation?',
+        'confirm_description' => 'Archiving ":label" removes it from the storefront and checkout immediately, once you save. It is not deleted — re-adding the exact same combination later restores its original identity, SKU and history.',
+        'confirm_submit' => 'Archive',
+        'confirm_cancel' => 'Cancel',
+    ],
+
     'duplicate_action' => 'Duplicate',
     'duplicate_suffix' => 'copy',
 
