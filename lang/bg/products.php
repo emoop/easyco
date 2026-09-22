@@ -12,6 +12,12 @@ return [
         'variations' => 'Варианти',
     ],
 
+    'attributes_picker' => [
+        'add_attribute' => 'Добави атрибут',
+        'attribute_label' => 'Атрибут',
+        'value_label' => 'Стойност',
+    ],
+
     'wizard' => [
         'steps' => [
             'general' => 'Основни данни',

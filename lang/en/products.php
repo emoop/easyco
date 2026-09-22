@@ -12,6 +12,12 @@ return [
         'variations' => 'Variations',
     ],
 
+    'attributes_picker' => [
+        'add_attribute' => 'Add attribute',
+        'attribute_label' => 'Attribute',
+        'value_label' => 'Value',
+    ],
+
     'wizard' => [
         'steps' => [
             'general' => 'General',

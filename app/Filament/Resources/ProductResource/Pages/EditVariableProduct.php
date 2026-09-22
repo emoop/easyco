@@ -24,6 +24,7 @@ use EasyCo\Catalog\Product;
 use EasyCo\Catalog\ProductCategory;
 use EasyCo\Catalog\ProductTag;
 use EasyCo\Catalog\Variation;
+use EasyCo\Catalog\VariationAxis;
 use EasyCo\Extensibility\Hook;
 use EasyCo\Media\Contracts\ProductMediaRepository;
 use EasyCo\Media\Enums\MediaType;
@@ -89,10 +90,12 @@ use RuntimeException;
  * minus barcode/is_purchasable — authored fresh here, same as
  * CreateVariableProduct's own General step, since that source method is
  * `protected` and already excludes-then-reincludes those two fields
- * inline rather than as a separable chunk), Attributes
- * (ProductResource::attributesTabComponents(), unmodified — widened to
- * `public` for this reuse, a pure visibility change, see that method's
- * own docblock), a third read-only "Variations" tab (this class's own
+ * inline rather than as a separable chunk), Attributes (this class's
+ * own attributesTabComponents(), NOT ProductResource::
+ * attributesTabComponents() — see that private method's own docblock
+ * for why this page needs its own axis-exclusion wrapper around
+ * ProductResource::descriptiveAttributesPickerComponents() instead), a
+ * third "Variations" tab (this class's own
  * existingVariationsComponents()), and the sidebar
  * (ProductResource::sidebarComponents(), unmodified — same public
  * widening, see that method's own docblock).
@@ -150,7 +153,7 @@ class EditVariableProduct extends EditRecord
                                     Tab::make(__('products.tabs.general'))
                                         ->schema($this->generalTabComponents()),
                                     Tab::make(__('products.tabs.attributes'))
-                                        ->schema(ProductResource::attributesTabComponents()),
+                                        ->schema($this->attributesTabComponents()),
                                     Tab::make(__('products.tabs.variations'))
                                         ->schema($this->existingVariationsComponents()),
                                 ]),
@@ -227,6 +230,36 @@ class EditVariableProduct extends EditRecord
                 ->searchable()
                 ->required(fn (): bool => (bool) (app(SiteSettingsRepository::class)->get('catalog.product_group_required') ?? false)),
         ];
+    }
+
+    /**
+     * NOT ProductResource::attributesTabComponents() — that method
+     * calls descriptiveAttributesPickerComponents() with NO exclusions
+     * (correct for SIMPLE/Create, which never have declared variation
+     * axes), and a VARIABLE product genuinely can. This product's own
+     * declared axis definitions are excluded from the picker's own
+     * options here — offering one as a pickable descriptive attribute
+     * would make Product::setDescriptiveAttribute()'s real
+     * InvalidArgumentException ("...currently declared as a variation
+     * axis...") newly reachable from this form otherwise.
+     *
+     * $product->variationAxes() returns VariationAxis[] — a plain,
+     * reindexed LIST (array_values() internally, confirmed against
+     * Product's own real source), NOT keyed by attribute_definition_id.
+     * array_keys() on it would therefore give sequential integers
+     * (0, 1, 2...), not real definition ids — each axis's own real id
+     * is read via VariationAxis::attributeDefinitionId() instead.
+     */
+    private function attributesTabComponents(): array
+    {
+        $product = app(ProductRepository::class)->findByIdWithVariations((string) $this->record->id);
+
+        $excludedDefinitionIds = array_map(
+            fn (VariationAxis $axis): string => $axis->attributeDefinitionId(),
+            $product->variationAxes()
+        );
+
+        return ProductResource::descriptiveAttributesPickerComponents($excludedDefinitionIds);
     }
 
     /**
@@ -402,11 +435,12 @@ class EditVariableProduct extends EditRecord
 
     /**
      * Mirrors EditProduct::mutateFormDataBeforeFill()'s own seeding for
-     * categories/tags/descriptive_attributes/main_photo/gallery_photos/
-     * video/video_autoplay exactly (same logic, this product's own id)
-     * — see that method's own docblock for the reasoning behind each.
-     * findByIdWithVariations() (not findById()): the real $variations
-     * array is what existing_variations below is built from.
+     * categories/tags/descriptive_attributes_picker/main_photo/
+     * gallery_photos/video/video_autoplay exactly (same logic, this
+     * product's own id) — see that method's own docblock for the
+     * reasoning behind each. findByIdWithVariations() (not findById()):
+     * the real $variations array is what existing_variations below is
+     * built from.
      */
     protected function mutateFormDataBeforeFill(array $data): array
     {
@@ -424,11 +458,7 @@ class EditVariableProduct extends EditRecord
 
         $product = app(ProductRepository::class)->findByIdWithVariations($productId);
 
-        $descriptive = [];
-        foreach ($product->descriptiveAttributes() as $definitionId => $value) {
-            $descriptive[$definitionId] = ProductResource::normalizeCurrentDescriptiveValue($value);
-        }
-        $data['descriptive_attributes'] = $descriptive;
+        $data['descriptive_attributes_picker'] = ProductResource::seedDescriptiveAttributesPickerRows($product);
 
         $data['main_photo'] = null;
         $data['gallery_photos'] = [];
@@ -611,30 +641,7 @@ class EditVariableProduct extends EditRecord
             $product->assignProductGroup($newProductGroupId);
         }
 
-        foreach (ProductResource::descriptiveAttributeDefinitions() as $definitionModel) {
-            $definitionId = (string) $definitionModel->id;
-            $currentRaw = $product->descriptiveAttributes()[$definitionId] ?? null;
-            $currentNormalized = ProductResource::normalizeCurrentDescriptiveValue($currentRaw);
-
-            $submittedRaw = $data['descriptive_attributes'][$definitionId] ?? null;
-            $submittedNormalized = ProductResource::normalizeSubmittedDescriptiveValue($definitionModel, $submittedRaw);
-
-            if ($submittedNormalized === $currentNormalized) {
-                continue;
-            }
-
-            $logger->logFieldChanged('product', $product->id(), $definitionModel->code, $currentNormalized, $submittedNormalized);
-
-            $definition = ProductResource::toDomainAttributeDefinition($definitionModel);
-
-            if ($submittedNormalized === null) {
-                $product->removeDescriptiveAttribute($definition);
-
-                continue;
-            }
-
-            ProductResource::applyDescriptiveAttribute($product, $definitionModel, $submittedRaw);
-        }
+        ProductResource::syncDescriptiveAttributesFromPickerRows($product, $data['descriptive_attributes_picker'] ?? [], $logger);
 
         // BEFORE save() below, not after — EloquentProductRepository::save()
         // itself iterates $product->variations() and persists each one

@@ -99,16 +99,16 @@ class CreateProduct extends CreateRecord
 
         $universal->setPurchasable((bool) ($data['is_purchasable'] ?? true));
 
-        foreach (ProductResource::descriptiveAttributeDefinitions() as $definitionModel) {
-            $rawValue = $data['descriptive_attributes'][$definitionModel->id] ?? null;
-            $normalized = ProductResource::normalizeSubmittedDescriptiveValue($definitionModel, $rawValue);
-
-            if ($normalized === null) {
-                continue;
-            }
-
-            ProductResource::applyDescriptiveAttribute($product, $definitionModel, $rawValue);
-        }
+        // Must run BEFORE save() below — setDescriptiveAttribute() is
+        // purely in-memory (see this class's own "single save()" docblock).
+        // $product->id() is still null here; ProductResource::
+        // syncDescriptiveAttributesFromPickerRows() itself skips its own
+        // logFieldChanged() calls in that case (a real TypeError found
+        // and fixed while testing this — see that method's own
+        // docblock), which also correctly preserves this page's
+        // original behavior: no per-field descriptive-attribute log
+        // entries on creation, only logCreated() below.
+        ProductResource::syncDescriptiveAttributesFromPickerRows($product, $data['descriptive_attributes_picker'] ?? [], app(ActivityLogger::class));
 
         app(ProductRepository::class)->save($product);
 

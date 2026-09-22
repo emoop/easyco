@@ -52,11 +52,15 @@ class EditProduct extends EditRecord
     protected static string $resource = ProductResource::class;
 
     /**
-     * Seeds categories/tags/descriptive_attributes/main_photo/
+     * Seeds categories/tags/descriptive_attributes_picker/main_photo/
      * gallery_photos/video/video_autoplay with their real current state
      * — mirrors EditBrand::mutateFormDataBeforeFill()'s "FileUpload's
      * own state is always a disk path" reasoning, extended to an array
-     * of paths for the gallery field.
+     * of paths for the gallery field. descriptive_attributes_picker's
+     * own Repeater rows are built by
+     * ProductResource::seedDescriptiveAttributesPickerRows() — the
+     * shared read-side counterpart of syncDescriptiveAttributesFromPickerRows()
+     * below.
      */
     protected function mutateFormDataBeforeFill(array $data): array
     {
@@ -80,11 +84,7 @@ class EditProduct extends EditRecord
         // method exists to do.
         $product = app(ProductRepository::class)->findByIdWithVariations($productId);
 
-        $descriptive = [];
-        foreach ($product->descriptiveAttributes() as $definitionId => $value) {
-            $descriptive[$definitionId] = ProductResource::normalizeCurrentDescriptiveValue($value);
-        }
-        $data['descriptive_attributes'] = $descriptive;
+        $data['descriptive_attributes_picker'] = ProductResource::seedDescriptiveAttributesPickerRows($product);
 
         // findByProductId() returns every attached pivot regardless of
         // the underlying MediaAsset's type, ordered by sort_order asc.
@@ -247,30 +247,7 @@ class EditProduct extends EditRecord
             $universal->setPurchasable($newIsPurchasable);
         }
 
-        foreach (ProductResource::descriptiveAttributeDefinitions() as $definitionModel) {
-            $definitionId = (string) $definitionModel->id;
-            $currentRaw = $product->descriptiveAttributes()[$definitionId] ?? null;
-            $currentNormalized = ProductResource::normalizeCurrentDescriptiveValue($currentRaw);
-
-            $submittedRaw = $data['descriptive_attributes'][$definitionId] ?? null;
-            $submittedNormalized = ProductResource::normalizeSubmittedDescriptiveValue($definitionModel, $submittedRaw);
-
-            if ($submittedNormalized === $currentNormalized) {
-                continue;
-            }
-
-            $logger->logFieldChanged('product', $product->id(), $definitionModel->code, $currentNormalized, $submittedNormalized);
-
-            $definition = ProductResource::toDomainAttributeDefinition($definitionModel);
-
-            if ($submittedNormalized === null) {
-                $product->removeDescriptiveAttribute($definition);
-
-                continue;
-            }
-
-            ProductResource::applyDescriptiveAttribute($product, $definitionModel, $submittedRaw);
-        }
+        ProductResource::syncDescriptiveAttributesFromPickerRows($product, $data['descriptive_attributes_picker'] ?? [], $logger);
 
         app(ProductRepository::class)->save($product);
 

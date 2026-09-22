@@ -11,6 +11,7 @@ use App\Filament\Resources\ProductResource\Pages\EditVariableProduct;
 use App\Filament\Resources\ProductResource\Pages\ListProducts;
 use App\Filament\Resources\ProductResource\Pages\ProductActivityLog;
 use App\Filament\Resources\ProductResource\Pages\ViewProduct;
+use App\Services\ActivityLogger;
 use App\Services\DuplicateProduct;
 use App\Services\ProductPricingAndStock;
 use App\Settings\Contracts\SiteSettingsRepository;
@@ -45,6 +46,7 @@ use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Hidden;
+use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\RichEditor;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
@@ -57,6 +59,8 @@ use Filament\Schemas\Components\Group;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Tabs;
 use Filament\Schemas\Components\Tabs\Tab;
+use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\ImageColumn;
 use Filament\Tables\Columns\TextColumn;
@@ -346,49 +350,326 @@ class ProductResource extends Resource
 
     /**
      * The dynamic descriptive-attributes form (admin-panel-design.md
-     * §7): one field per real AttributeDefinition not used as this
-     * product's variation axis — trivially every definition for a
-     * SIMPLE product, since one never has a variation axis at all.
-     * MULTISELECT is skipped entirely — Product::setDescriptiveAttribute()
-     * itself throws for that type, so rendering a field that could never
-     * successfully submit would be worse than not offering it.
+     * §7) — a Repeater-based picker: the merchant chooses WHICH
+     * AttributeDefinitions apply to this product, one Select+value pair
+     * per row, mirroring CreateVariableProduct's own Axes step
+     * Select→dependent-value pattern exactly (attribute_definition_id
+     * ->live()->afterStateUpdated() clearing all three stale value
+     * fields, a value field's own ->visible()/->options() scoped via
+     * Get() to the picked definition — same proven mechanism, not a new
+     * one). Delegates to descriptiveAttributesPickerComponents() below,
+     * with no exclusions — SIMPLE and a brand-new Create never have
+     * declared variation axes to guard against (only a VARIABLE
+     * product, mid-edit, can have any).
      *
-     * PUBLIC (not protected): widened for EditVariableProduct, which
-     * reuses this method as-is — genuinely correct there unmodified,
-     * not just convenient: this method already lists every real
-     * AttributeDefinition regardless of any product's own variation
-     * axes (a VARIABLE product's axis definitions are a separate,
-     * per-product declaration on catalog_product_attributes, never
-     * filtered out of AttributeDefinitionModel's own global list here).
+     * PUBLIC (not protected): kept public — EditVariableProduct does
+     * NOT call this method (it needs its own axis exclusions, which
+     * this method's own empty-exclusions call can never provide; see
+     * that page's own attributesTabComponents() instead), but
+     * CreateProduct/EditProduct still reach the picker only through
+     * this SIMPLE-appropriate entry point, and nothing prevents calling
+     * it directly if ever needed elsewhere.
      *
      * @return array<int, Component>
      */
     public static function attributesTabComponents(): array
     {
-        $components = [];
+        return static::descriptiveAttributesPickerComponents();
+    }
 
-        foreach (static::descriptiveAttributeDefinitions() as $definitionModel) {
-            $key = "descriptive_attributes.{$definitionModel->id}";
-            $type = AttributeType::from($definitionModel->type);
-
-            $components[] = match ($type) {
-                AttributeType::TEXT, AttributeType::NUMBER => TextInput::make($key)
-                    ->label($definitionModel->name),
-                AttributeType::BOOLEAN => Toggle::make($key)
-                    ->label($definitionModel->name),
-                AttributeType::SELECT => Select::make($key)
-                    ->label($definitionModel->name)
-                    ->options(
-                        fn (): array => AttributeValueModel::where('attribute_definition_id', $definitionModel->id)
+    /**
+     * The real, shared picker schema — one Repeater, 'descriptive_
+     * attributes_picker'. $excludedDefinitionIds is how EditVariableProduct
+     * keeps this product's own declared variation axis definitions out
+     * of the pickable options: Product::setDescriptiveAttribute() throws
+     * InvalidArgumentException if $definition is currently one of this
+     * Product's declared axes (§4.3's own "descriptive OR axis, never
+     * both" schema comment) — offering an axis definition as a pickable
+     * descriptive-attribute option would make that real, live exception
+     * newly reachable from this form.
+     *
+     * The type filter is inlined directly (type != MULTISELECT) rather
+     * than querying descriptiveAttributeDefinitions() a second time and
+     * pluck()ing its ids for a whereIn() — simpler, one query, and does
+     * not depend on Eloquent's Arrayable-coercion behavior for
+     * whereIn() against a Collection (confirmed that DOES work against
+     * the installed Laravel version's real Builder::whereIn() source,
+     * but there was no reason to rely on it when a single inline
+     * condition does the same job more plainly).
+     *
+     * Cross-row "exclude an attribute already picked in another row"
+     * is DELIBERATELY NOT implemented — same discretionary call the
+     * Axes step already made for its own attribute_definition_id
+     * options (CreateVariableProduct's own docblock explains why: no
+     * confirmed, tested-in-this-codebase Get() syntax for reaching a
+     * SIBLING repeater item's own state, only a sibling field within
+     * the SAME item). The real backend backstop here is even stronger
+     * than the Axes step's: catalog_product_attributes has a genuine
+     * UNIQUE(product_id, attribute_definition_id) database constraint
+     * (catalog-domain-design.md §7), so a merchant who does pick the
+     * same definition twice hits a real, if unfriendly, DB error on
+     * save — not a silently-accepted duplicate.
+     *
+     * @return array<int, Component>
+     */
+    public static function descriptiveAttributesPickerComponents(array $excludedDefinitionIds = []): array
+    {
+        return [
+            Repeater::make('descriptive_attributes_picker')
+                ->hiddenLabel()
+                // Filament's own Repeater::setUp() defaults to
+                // ->defaultItems(1) — a real, three-times-now-confirmed
+                // regression in this codebase (CreateVariableProduct's
+                // own Axes and Variations Repeaters hit the identical
+                // bug): a phantom, empty row appears on every fresh
+                // mount, tripping this row's own attribute_definition_id
+                // ->required() on submit even when the merchant never
+                // touched this Repeater at all. Confirmed here again by
+                // running the full pre-existing suite against this
+                // change — every SIMPLE-flow Create/Edit test failed on
+                // exactly this until ->defaultItems(0) was added.
+                ->defaultItems(0)
+                ->addActionLabel(__('products.attributes_picker.add_attribute'))
+                ->schema([
+                    Select::make('attribute_definition_id')
+                        ->label(__('products.attributes_picker.attribute_label'))
+                        ->options(fn (): array => AttributeDefinitionModel::where('type', '!=', AttributeType::MULTISELECT->value)
+                            ->whereNotIn('id', $excludedDefinitionIds)
+                            ->pluck('name', 'id')
+                            ->all())
+                        ->searchable()
+                        ->required()
+                        ->live()
+                        // Same "stale value from the previous definition"
+                        // correctness requirement CreateVariableProduct's
+                        // own Axes step already established for its
+                        // value_ids field — all three value fields
+                        // cleared, not just whichever one happened to be
+                        // visible before the switch.
+                        ->afterStateUpdated(function (Set $set): void {
+                            $set('text_value', null);
+                            $set('boolean_value', false);
+                            $set('select_value', null);
+                        }),
+                    TextInput::make('text_value')
+                        ->label(__('products.attributes_picker.value_label'))
+                        ->visible(fn (Get $get): bool => static::descriptiveAttributeValueFieldType($get('attribute_definition_id')) === 'text'),
+                    Toggle::make('boolean_value')
+                        ->label(__('products.attributes_picker.value_label'))
+                        ->visible(fn (Get $get): bool => static::descriptiveAttributeValueFieldType($get('attribute_definition_id')) === 'boolean'),
+                    Select::make('select_value')
+                        ->label(__('products.attributes_picker.value_label'))
+                        ->searchable()
+                        ->options(fn (Get $get): array => AttributeValueModel::where('attribute_definition_id', $get('attribute_definition_id'))
                             ->pluck('value', 'id')
-                            ->all()
-                    )
-                    ->searchable(),
-                AttributeType::MULTISELECT => null,
-            };
+                            ->all())
+                        ->visible(fn (Get $get): bool => static::descriptiveAttributeValueFieldType($get('attribute_definition_id')) === 'select'),
+                ]),
+        ];
+    }
+
+    /**
+     * Shared by the three value fields above — avoids repeating the
+     * AttributeDefinitionModel::find() lookup four times. Returns null
+     * for "no definition picked yet" (a brand-new, still-empty row) —
+     * every visible() closure above then correctly hides all three
+     * value fields until a definition is actually chosen.
+     */
+    private static function descriptiveAttributeValueFieldType(mixed $definitionId): ?string
+    {
+        if (blank($definitionId)) {
+            return null;
         }
 
-        return array_values(array_filter($components));
+        $definitionModel = AttributeDefinitionModel::find($definitionId);
+
+        if ($definitionModel === null) {
+            return null;
+        }
+
+        return match (AttributeType::from($definitionModel->type)) {
+            AttributeType::TEXT, AttributeType::NUMBER => 'text',
+            AttributeType::BOOLEAN => 'boolean',
+            AttributeType::SELECT => 'select',
+            AttributeType::MULTISELECT => null,
+        };
+    }
+
+    /**
+     * Builds 'descriptive_attributes_picker' Repeater rows from a real
+     * Product's current descriptiveAttributes() — the read-side
+     * counterpart of syncDescriptiveAttributesFromPickerRows() below,
+     * shared by EditProduct/EditVariableProduct's own
+     * mutateFormDataBeforeFill() (CreateProduct has no read side at
+     * all — a brand-new product starts with zero descriptive
+     * attributes, so an empty Repeater is already correct with no
+     * seeding call needed).
+     *
+     * A definitionId with no matching AttributeDefinitionModel any more
+     * is skipped silently, not thrown — a genuinely stale, defensive
+     * case (the definition was deleted after this value was set), not
+     * expected in normal use; surfacing a real Filament error over a
+     * data-integrity edge case this far removed from the merchant's own
+     * action would be worse than simply omitting that one row.
+     *
+     * @return array<int, array{attribute_definition_id: string, text_value: ?string, boolean_value: bool, select_value: ?string}>
+     */
+    public static function seedDescriptiveAttributesPickerRows(Product $product): array
+    {
+        $rows = [];
+
+        foreach ($product->descriptiveAttributes() as $definitionId => $value) {
+            $definitionModel = AttributeDefinitionModel::find($definitionId);
+
+            if ($definitionModel === null) {
+                continue;
+            }
+
+            $type = AttributeType::from($definitionModel->type);
+
+            $textValue = null;
+            $booleanValue = false;
+            $selectValue = null;
+
+            if ($type === AttributeType::TEXT || $type === AttributeType::NUMBER) {
+                $textValue = (string) $value;
+            } elseif ($type === AttributeType::BOOLEAN) {
+                $booleanValue = $value === '1';
+            } elseif ($type === AttributeType::SELECT && $value instanceof AttributeValue) {
+                $selectValue = (string) $value->id();
+            }
+
+            $rows[] = [
+                'attribute_definition_id' => (string) $definitionId,
+                'text_value' => $textValue,
+                'boolean_value' => $booleanValue,
+                'select_value' => $selectValue,
+            ];
+        }
+
+        return $rows;
+    }
+
+    /**
+     * The write-side counterpart, shared by all three of Create/Edit/
+     * EditVariableProduct's own write paths. For each submitted row:
+     * resolves the real definition, extracts the type-appropriate raw
+     * value, diffs via normalizeSubmittedDescriptiveValue()/
+     * normalizeCurrentDescriptiveValue() exactly as the old per-
+     * definition loops already did, applies via applyDescriptiveAttribute()
+     * (unchanged) when different, logs via the same
+     * ActivityLogger::logFieldChanged() pattern every other field in
+     * these pages already uses (field name = $definitionModel->code,
+     * unchanged).
+     *
+     * THEN — the real, new-with-this-redesign requirement: any
+     * definitionId currently in $product->descriptiveAttributes() that
+     * is NOT present in ANY submitted row at all is removed via
+     * removeDescriptiveAttribute(). A deleted Repeater row means "this
+     * attribute no longer applies to this product," not "leave it
+     * untouched" — the old per-definition-field design had no
+     * equivalent case (every definition always had its own field,
+     * always submitted, never simply absent).
+     *
+     * A row with no resolvable attribute_definition_id (blank, or a
+     * definition since deleted) is skipped silently, same defensive
+     * posture as seedDescriptiveAttributesPickerRows() above — but
+     * importantly is NOT counted as "submitted" for the removal pass
+     * below, so it cannot accidentally protect some OTHER, unrelated
+     * definitionId from removal.
+     *
+     * ON CreateProduct SPECIFICALLY — A REAL BUG FOUND WHILE TESTING
+     * THIS METHOD, NOT ANTICIPATED IN ADVANCE: CreateProduct's own
+     * "single save()" design (see that class's own docblock) requires
+     * every descriptiveAttributes() mutation to happen entirely
+     * in-memory BEFORE the one real save() call — $product->id() is
+     * still null at that point (Product::assignId() only runs inside
+     * EloquentProductRepository::save()). Calling logFieldChanged()
+     * unconditionally there threw a real TypeError
+     * (logFieldChanged()'s own $entityId parameter is a non-nullable
+     * string) — caught by running the full pre-existing suite against
+     * this change, not assumed safe. Every logFieldChanged() call below
+     * is therefore skipped when $product->id() is null, which has a
+     * second, correct consequence: it exactly PRESERVES CreateProduct's
+     * own original behavior (that old per-definition loop never logged
+     * descriptive attributes at all — only logCreated('product', ...)
+     * at the very end), rather than introducing new log entries on
+     * creation as an unplanned side effect of sharing one method across
+     * all three pages. EditProduct/EditVariableProduct are unaffected —
+     * their own $product is always already-persisted, with a real id,
+     * by the time this method runs.
+     */
+    public static function syncDescriptiveAttributesFromPickerRows(Product $product, array $rows, ActivityLogger $logger): void
+    {
+        $submittedDefinitionIds = [];
+
+        foreach ($rows as $row) {
+            $definitionId = (string) ($row['attribute_definition_id'] ?? '');
+
+            if ($definitionId === '') {
+                continue;
+            }
+
+            $definitionModel = AttributeDefinitionModel::find($definitionId);
+
+            if ($definitionModel === null) {
+                continue;
+            }
+
+            $submittedDefinitionIds[] = $definitionId;
+
+            $type = AttributeType::from($definitionModel->type);
+
+            $rawValue = match (true) {
+                $type === AttributeType::TEXT || $type === AttributeType::NUMBER => $row['text_value'] ?? null,
+                $type === AttributeType::BOOLEAN => $row['boolean_value'] ?? false,
+                $type === AttributeType::SELECT => $row['select_value'] ?? null,
+                default => null,
+            };
+
+            $currentRaw = $product->descriptiveAttributes()[$definitionId] ?? null;
+            $currentNormalized = static::normalizeCurrentDescriptiveValue($currentRaw);
+            $submittedNormalized = static::normalizeSubmittedDescriptiveValue($definitionModel, $rawValue);
+
+            if ($submittedNormalized === $currentNormalized) {
+                continue;
+            }
+
+            if ($product->id() !== null) {
+                $logger->logFieldChanged('product', $product->id(), $definitionModel->code, $currentNormalized, $submittedNormalized);
+            }
+
+            $definition = static::toDomainAttributeDefinition($definitionModel);
+
+            if ($submittedNormalized === null) {
+                $product->removeDescriptiveAttribute($definition);
+
+                continue;
+            }
+
+            static::applyDescriptiveAttribute($product, $definitionModel, $rawValue);
+        }
+
+        foreach (array_keys($product->descriptiveAttributes()) as $definitionId) {
+            $definitionId = (string) $definitionId;
+
+            if (in_array($definitionId, $submittedDefinitionIds, true)) {
+                continue;
+            }
+
+            $definitionModel = AttributeDefinitionModel::find($definitionId);
+
+            if ($definitionModel === null) {
+                continue;
+            }
+
+            if ($product->id() !== null) {
+                $currentNormalized = static::normalizeCurrentDescriptiveValue($product->descriptiveAttributes()[$definitionId] ?? null);
+                $logger->logFieldChanged('product', $product->id(), $definitionModel->code, $currentNormalized, null);
+            }
+
+            $product->removeDescriptiveAttribute(static::toDomainAttributeDefinition($definitionModel));
+        }
     }
 
     /**

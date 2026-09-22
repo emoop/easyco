@@ -149,6 +149,22 @@ class ProductResourceTest extends TestCase
         return [$definition, $black, $white];
     }
 
+    private function persistedNumberDefinition(string $code = 'weight'): AttributeDefinition
+    {
+        $definition = new AttributeDefinition(id: null, code: $code, name: ucfirst($code), type: AttributeType::NUMBER);
+        app(AttributeDefinitionRepository::class)->save($definition);
+
+        return $definition;
+    }
+
+    private function persistedBooleanDefinition(string $code = 'is_waterproof'): AttributeDefinition
+    {
+        $definition = new AttributeDefinition(id: null, code: $code, name: ucfirst($code), type: AttributeType::BOOLEAN);
+        app(AttributeDefinitionRepository::class)->save($definition);
+
+        return $definition;
+    }
+
     public function test_creating_a_simple_product_persists_it_through_the_domain_layer(): void
     {
         $this->actingAsPanelAdministrator();
@@ -318,11 +334,27 @@ class ProductResourceTest extends TestCase
         $this->assertSame([], $tagIdsAfter);
     }
 
-    public function test_setting_descriptive_attributes_on_create_then_changing_and_clearing_on_edit(): void
+    /**
+     * UPDATED for the Repeater-based descriptive-attributes picker
+     * redesign: 'descriptive_attributes' (one always-rendered field per
+     * definition) is replaced by 'descriptive_attributes_picker' (a
+     * Repeater of {attribute_definition_id, text_value, boolean_value,
+     * select_value} rows — the merchant now explicitly picks which
+     * attributes apply, rather than every definition always having its
+     * own field). Rewritten here in place, not left stale/false —
+     * extended to cover all four real value types (TEXT/NUMBER/
+     * BOOLEAN/SELECT) in one flow, since the picker now genuinely
+     * treats all four identically (one row schema, ->visible() scoped
+     * per row to the picked definition's type), unlike the old
+     * per-definition-field design.
+     */
+    public function test_picking_descriptive_attributes_of_every_type_on_create_then_changing_and_removing_on_edit(): void
     {
         $this->actingAsPanelAdministrator();
 
         $material = $this->persistedTextDefinition('material');
+        $weight = $this->persistedNumberDefinition('weight');
+        $waterproof = $this->persistedBooleanDefinition('is_waterproof');
         [$color, $black, $white] = $this->persistedSelectDefinitionWithValues('color');
 
         Livewire::test(CreateProduct::class)
@@ -332,9 +364,11 @@ class ProductResourceTest extends TestCase
                 'base_sku' => 'SKU-TEE',
                 'status' => ProductStatus::DRAFT->value,
                 'catalog_visibility' => CatalogVisibility::HIDDEN->value,
-                'descriptive_attributes' => [
-                    $material->id() => 'Cotton',
-                    $color->id() => $black->id(),
+                'descriptive_attributes_picker' => [
+                    ['attribute_definition_id' => $material->id(), 'text_value' => 'Cotton'],
+                    ['attribute_definition_id' => $weight->id(), 'text_value' => '250'],
+                    ['attribute_definition_id' => $waterproof->id(), 'boolean_value' => true],
+                    ['attribute_definition_id' => $color->id(), 'select_value' => $black->id()],
                 ],
             ])
             ->call('create')
@@ -345,14 +379,25 @@ class ProductResourceTest extends TestCase
         $product = app(ProductRepository::class)->findByIdWithVariations((string) $productModel->id);
         $attributes = $product->descriptiveAttributes();
         $this->assertSame('Cotton', $attributes[(string) $material->id()]);
+        $this->assertSame('250', $attributes[(string) $weight->id()]);
+        $this->assertSame('1', $attributes[(string) $waterproof->id()]);
         $this->assertSame($black->id(), $attributes[(string) $color->id()]->id());
 
-        // Change material, clear color.
+        // The picker seeds back correctly too — real read-side proof,
+        // not just the write side.
+        $seededRows = Livewire::test(EditProduct::class, ['record' => $productModel->id])
+            ->get('data.descriptive_attributes_picker');
+        $this->assertCount(4, $seededRows);
+
+        // Change material and weight, remove the boolean row entirely
+        // (deleting a Repeater row is the new "clear this attribute"),
+        // keep color unchanged by simply re-submitting its own row.
         Livewire::test(EditProduct::class, ['record' => $productModel->id])
             ->fillForm([
-                'descriptive_attributes' => [
-                    $material->id() => 'Polyester',
-                    $color->id() => null,
+                'descriptive_attributes_picker' => [
+                    ['attribute_definition_id' => $material->id(), 'text_value' => 'Polyester'],
+                    ['attribute_definition_id' => $weight->id(), 'text_value' => '300'],
+                    ['attribute_definition_id' => $color->id(), 'select_value' => $white->id()],
                 ],
             ])
             ->call('save')
@@ -361,7 +406,12 @@ class ProductResourceTest extends TestCase
         $reloaded = app(ProductRepository::class)->findByIdWithVariations((string) $productModel->id);
         $reloadedAttributes = $reloaded->descriptiveAttributes();
         $this->assertSame('Polyester', $reloadedAttributes[(string) $material->id()]);
-        $this->assertArrayNotHasKey((string) $color->id(), $reloadedAttributes);
+        $this->assertSame('300', $reloadedAttributes[(string) $weight->id()]);
+        $this->assertSame($white->id(), $reloadedAttributes[(string) $color->id()]->id());
+        // The removed row's attribute is genuinely gone, not just
+        // "untouched" — the real point of the "deleted row = no longer
+        // applies" requirement.
+        $this->assertArrayNotHasKey((string) $waterproof->id(), $reloadedAttributes);
     }
 
     /**

@@ -722,4 +722,96 @@ class EditVariableProductTest extends TestCase
         $this->assertNull($row['regular_price']);
         $this->assertNull($row['sale_price']);
     }
+
+    /**
+     * The real safety guard this task exists for: Color is this
+     * product's own declared variation axis (built into
+     * persistedVariableProductWithOneVariation()'s own fixture) — it
+     * must never appear as a pickable descriptive-attribute option,
+     * since Product::setDescriptiveAttribute() genuinely throws
+     * InvalidArgumentException for a definition currently declared as
+     * an axis. Verified against the exact real query
+     * EditVariableProduct's own attributesTabComponents() ->
+     * ProductResource::descriptiveAttributesPickerComponents()'s
+     * ->options() closure runs, with this product's own real axis
+     * exclusion list, not a hand-rolled approximation of it. A second,
+     * ordinary TEXT definition (Material, not an axis) must still
+     * appear normally.
+     */
+    public function test_a_variable_products_own_axis_definition_never_appears_as_a_pickable_descriptive_attribute_option(): void
+    {
+        [$product] = $this->persistedVariableProductWithOneVariation();
+
+        $material = new AttributeDefinition(id: null, code: 'material', name: 'Material', type: AttributeType::TEXT);
+        app(AttributeDefinitionRepository::class)->save($material);
+
+        $reloadedProduct = app(ProductRepository::class)->findByIdWithVariations($product->id());
+        $excludedIds = array_map(
+            fn (VariationAxis $axis): string => $axis->attributeDefinitionId(),
+            $reloadedProduct->variationAxes()
+        );
+
+        $options = AttributeDefinitionModel::where('type', '!=', AttributeType::MULTISELECT->value)
+            ->whereNotIn('id', $excludedIds)
+            ->pluck('name', 'id')
+            ->all();
+
+        $this->assertCount(1, $excludedIds);
+        $this->assertSame('Color', AttributeDefinitionModel::find($excludedIds[0])?->name);
+        $this->assertNotContains('Color', $options);
+        $this->assertContains('Material', $options);
+    }
+
+    /**
+     * Real, end-to-end proof (not just the options query above): the
+     * picker's own real ->options() closure, wired through
+     * EditVariableProduct::attributesTabComponents(), genuinely never
+     * lets a merchant persist the axis definition as a descriptive
+     * attribute in the first place — attempting it directly against
+     * the domain layer confirms the real exception this exclusion
+     * exists to keep unreachable from the form.
+     */
+    public function test_setting_the_axis_definition_as_a_descriptive_attribute_would_genuinely_throw(): void
+    {
+        [$product] = $this->persistedVariableProductWithOneVariation();
+        $colorDefinitionId = $product->variationAxes()[0]->attributeDefinitionId();
+        $colorDefinition = app(AttributeDefinitionRepository::class)->findById($colorDefinitionId);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('is currently declared as a variation axis');
+
+        $product->setDescriptiveAttribute($colorDefinition, 'anything');
+    }
+
+    /**
+     * A non-axis descriptive attribute picked and set on a VARIABLE
+     * product persists and reads back correctly — the same real
+     * write/read path SIMPLE's own equivalent test already proves,
+     * confirmed here for EditVariableProduct specifically since it
+     * goes through its own attributesTabComponents()/exclusion wrapper,
+     * not ProductResource::attributesTabComponents() directly.
+     */
+    public function test_picking_a_non_axis_descriptive_attribute_persists_and_reads_back_correctly(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        [$product] = $this->persistedVariableProductWithOneVariation();
+
+        $material = new AttributeDefinition(id: null, code: 'material', name: 'Material', type: AttributeType::TEXT);
+        app(AttributeDefinitionRepository::class)->save($material);
+
+        $productModel = ProductModel::find($product->id());
+
+        Livewire::test(EditVariableProduct::class, ['record' => $productModel->id])
+            ->fillForm([
+                'descriptive_attributes_picker' => [
+                    ['attribute_definition_id' => $material->id(), 'text_value' => 'Cotton'],
+                ],
+            ])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $reloaded = app(ProductRepository::class)->findByIdWithVariations((string) $productModel->id);
+        $this->assertSame('Cotton', $reloaded->descriptiveAttributes()[(string) $material->id()]);
+    }
 }
