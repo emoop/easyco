@@ -636,16 +636,27 @@ class EditVariableProduct extends EditRecord
                 // while collapsed) but never forced.
                 ->schema([
                     Hidden::make('variation_id'),
-                    TextInput::make('label')
-                        ->label(__('products.wizard.variations.combination_label'))
-                        ->disabled()
-                        ->dehydrated(false),
+                    // Purely a layout grouping — label/is_purchasable's
+                    // own ->disabled()/->dehydrated(false)/permission
+                    // config is completely unchanged, only their
+                    // position moves. 3:1 read well in practice (label
+                    // text is the longer of the two, the toggle needs
+                    // only enough room for its switch).
+                    Grid::make(4)
+                        ->schema([
+                            TextInput::make('label')
+                                ->label(__('products.wizard.variations.combination_label'))
+                                ->disabled()
+                                ->dehydrated(false)
+                                ->columnSpan(3),
+                            Toggle::make('is_purchasable')
+                                ->label(__('products.fields.is_purchasable'))
+                                ->columnSpan(1),
+                        ]),
                     TextInput::make('sku')
                         ->label(__('products.wizard.variations.sku_label')),
                     TextInput::make('barcode')
                         ->label(__('products.fields.barcode')),
-                    Toggle::make('is_purchasable')
-                        ->label(__('products.fields.is_purchasable')),
                     TextInput::make('cost')
                         ->label(__('products.fields.cost'))
                         ->numeric()
