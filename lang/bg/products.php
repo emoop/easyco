@@ -69,6 +69,7 @@ return [
         'cost' => 'Себестойност',
         'stock_quantity' => 'Наличност',
         'price_display' => 'Цена',
+        'variation_photos' => 'Снимки',
     ],
 
     'filters' => [

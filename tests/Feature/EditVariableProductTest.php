@@ -34,6 +34,10 @@ use EasyCo\Catalog\Season;
 use EasyCo\Catalog\Tag;
 use EasyCo\Catalog\Variation;
 use EasyCo\Catalog\VariationAxis;
+use EasyCo\Media\Contracts\VariationMediaRepository;
+use EasyCo\Media\Exceptions\MediaLimitExceededException;
+use EasyCo\Media\Persistence\Eloquent\MediaAssetModel;
+use EasyCo\Media\Persistence\Eloquent\VariationMediaModel;
 use EasyCo\Pricing\Contracts\PriceListRepository;
 use EasyCo\Pricing\Persistence\Eloquent\PriceListItemModel;
 use EasyCo\Pricing\Seeders\PricingSystemListsSeeder;
@@ -43,6 +47,8 @@ use EasyCo\Staff\Contracts\StaffRepository;
 use EasyCo\Staff\Seeders\StaffSystemRolesSeeder;
 use EasyCo\Staff\Staff;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -1467,5 +1473,246 @@ class EditVariableProductTest extends TestCase
 
         $reloaded = app(ProductRepository::class)->findByIdWithVariations((string) $productModel->id);
         $this->assertSame('variable-shirt', $reloaded->slug());
+    }
+
+    /**
+     * Collapsible rows — the real combination label ("Color: Black"),
+     * not a generic "Item 1", must be what the row shows while
+     * collapsed. Reads the Repeater component's own real
+     * isCollapsible()/getItemLabel() directly (the same "inspect the
+     * real resolved component" technique this file already uses for
+     * getSaveFormAction() via Reflection) rather than assuming — see
+     * existingVariationsComponents()'s own docblock for why itemLabel()
+     * ends up using `Schema $container`, not `Get $get` NOR `array
+     * $state` (both tried first and both confirmed broken by an
+     * earlier real run of THIS SAME test — Get resolves against the
+     * wrong (Repeater's own) state path, and $state is dehydration-
+     * filtered and silently drops 'label').
+     */
+    public function test_a_variation_row_is_collapsible_and_shows_the_real_combination_label(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        [$product] = $this->persistedVariableProductWithOneVariation();
+        $productModel = ProductModel::find($product->id());
+
+        $component = Livewire::test(EditVariableProduct::class, ['record' => $productModel->id]);
+
+        $repeater = $component->instance()->form->getComponent('existing_variations');
+        $this->assertNotNull($repeater);
+        $this->assertTrue($repeater->isCollapsible());
+
+        $rowKeys = array_keys($component->get('data.existing_variations'));
+        $this->assertSame('Color: Black', $repeater->getItemLabel($rowKeys[0]));
+    }
+
+    /**
+     * The real write side: a photo uploaded to ONE variation's own
+     * 'variation_photos' field persists a real VariationMedia row
+     * scoped to THAT variation only — never leaking onto a sibling
+     * variation's own media, and never onto the product-level
+     * ProductMediaRepository either (a genuinely separate pivot table,
+     * catalog_variation_media vs. catalog_product_media).
+     */
+    public function test_uploading_a_photo_to_one_variation_persists_a_real_variation_media_row_scoped_to_that_variation(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        Storage::fake(config('services.media.default_disk', 'public'));
+
+        [$product, $blackId, $whiteId] = $this->persistedVariableProductWithTwoVariations();
+        $productModel = ProductModel::find($product->id());
+
+        $component = Livewire::test(EditVariableProduct::class, ['record' => $productModel->id]);
+        $rows = $component->get('data.existing_variations');
+        $blackKey = null;
+        foreach ($rows as $key => $row) {
+            if ($row['variation_id'] === $blackId) {
+                $blackKey = $key;
+            }
+        }
+        $this->assertNotNull($blackKey);
+
+        $component->set("data.existing_variations.{$blackKey}.variation_photos", [UploadedFile::fake()->image('black.jpg')])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $variationMediaRepository = app(VariationMediaRepository::class);
+
+        $blackPivots = $variationMediaRepository->findByVariationId($blackId);
+        $this->assertCount(1, $blackPivots);
+
+        $asset = MediaAssetModel::find($blackPivots[0]->mediaId());
+        $this->assertNotNull($asset);
+        $this->assertSame('image', $asset->type);
+
+        // Never leaks onto the sibling variation...
+        $this->assertCount(0, $variationMediaRepository->findByVariationId($whiteId));
+
+        // ...nor onto the product-level media collection.
+        $this->assertSame(
+            0,
+            \EasyCo\Media\Persistence\Eloquent\ProductMediaModel::where('product_id', $product->id())->count()
+        );
+    }
+
+    /** Removing a variation's own previously-uploaded photo detaches it — a real, persisted removal, not merely client-side state. */
+    public function test_removing_a_variations_own_photo_detaches_the_real_variation_media_row(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        Storage::fake(config('services.media.default_disk', 'public'));
+
+        [$product, $blackId] = $this->persistedVariableProductWithOneVariation();
+        $productModel = ProductModel::find($product->id());
+
+        $component = Livewire::test(EditVariableProduct::class, ['record' => $productModel->id]);
+        $rowKeys = array_keys($component->get('data.existing_variations'));
+
+        $component->set("data.existing_variations.{$rowKeys[0]}.variation_photos", [UploadedFile::fake()->image('photo.jpg')])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $variationMediaRepository = app(VariationMediaRepository::class);
+        $this->assertCount(1, $variationMediaRepository->findByVariationId($blackId));
+
+        $component2 = Livewire::test(EditVariableProduct::class, ['record' => $productModel->id]);
+        $rowKeys2 = array_keys($component2->get('data.existing_variations'));
+
+        $component2->set("data.existing_variations.{$rowKeys2[0]}.variation_photos", [])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $this->assertCount(0, $variationMediaRepository->findByVariationId($blackId));
+    }
+
+    /**
+     * Reordering persists the new sort_order — real diff-then-write
+     * behavior, mirroring syncMedia()'s own already-proven reorder
+     * logic (product-level main_photo/gallery_photos), same shape here
+     * for syncVariationMedia().
+     */
+    public function test_reordering_a_variations_photos_persists_the_new_sort_order(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        Storage::fake(config('services.media.default_disk', 'public'));
+
+        [$product, $blackId] = $this->persistedVariableProductWithOneVariation();
+        $productModel = ProductModel::find($product->id());
+
+        $first = UploadedFile::fake()->image('first.jpg');
+        $second = UploadedFile::fake()->image('second.jpg');
+
+        $component = Livewire::test(EditVariableProduct::class, ['record' => $productModel->id]);
+        $rowKeys = array_keys($component->get('data.existing_variations'));
+
+        $component->set("data.existing_variations.{$rowKeys[0]}.variation_photos", [$first, $second])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $variationMediaRepository = app(VariationMediaRepository::class);
+        $pivotsBefore = $variationMediaRepository->findByVariationId($blackId);
+        $this->assertCount(2, $pivotsBefore);
+
+        $pathByAssetId = [];
+        foreach ($pivotsBefore as $pivot) {
+            $pathByAssetId[$pivot->mediaId()] = MediaAssetModel::find($pivot->mediaId())->path;
+        }
+        $firstPath = $pathByAssetId[$pivotsBefore[0]->mediaId()];
+        $secondPath = $pathByAssetId[$pivotsBefore[1]->mediaId()];
+        $this->assertSame(0, $pivotsBefore[0]->sortOrder());
+        $this->assertSame(1, $pivotsBefore[1]->sortOrder());
+
+        // Submit the SAME two real, already-stored paths, reversed.
+        $component2 = Livewire::test(EditVariableProduct::class, ['record' => $productModel->id]);
+        $rowKeys2 = array_keys($component2->get('data.existing_variations'));
+
+        $component2->set("data.existing_variations.{$rowKeys2[0]}.variation_photos", [$secondPath, $firstPath])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $pivotsAfter = $variationMediaRepository->findByVariationId($blackId);
+        $this->assertCount(2, $pivotsAfter);
+        $this->assertSame($secondPath, MediaAssetModel::find($pivotsAfter[0]->mediaId())->path);
+        $this->assertSame($firstPath, MediaAssetModel::find($pivotsAfter[1]->mediaId())->path);
+    }
+
+    /**
+     * Exceeding max_photos_per_variation is rejected with the real
+     * MediaLimitExceededException::forVariation() message, full
+     * rollback — same shape as ProductResourceTest's own
+     * max_photos_per_product test, scoped to ONE variation here.
+     */
+    public function test_exceeding_the_real_configured_max_photos_per_variation_is_rejected_with_the_real_message_and_rolls_back(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        Storage::fake(config('services.media.default_disk', 'public'));
+
+        [$product, $blackId] = $this->persistedVariableProductWithOneVariation();
+        $productModel = ProductModel::find($product->id());
+
+        $max = (int) config('services.media.max_photos_per_variation', 3);
+        $files = [];
+        for ($i = 0; $i < $max + 1; $i++) {
+            $files[] = UploadedFile::fake()->image("photo{$i}.jpg");
+        }
+
+        $component = Livewire::test(EditVariableProduct::class, ['record' => $productModel->id]);
+        $rowKeys = array_keys($component->get('data.existing_variations'));
+
+        $component->set("data.existing_variations.{$rowKeys[0]}.variation_photos", $files)
+            ->call('save')
+            ->assertNotified(
+                MediaLimitExceededException::forVariation($blackId, $max, $max)->getMessage()
+            );
+
+        $this->assertCount(0, app(VariationMediaRepository::class)->findByVariationId($blackId));
+
+        // Full rollback: an unrelated field change in the SAME
+        // submission must not have survived either.
+        $reloaded = app(ProductRepository::class)->findByIdWithVariations((string) $productModel->id);
+        $this->assertSame('Variable Shirt', $reloaded->name());
+    }
+
+    /**
+     * A REAL DISCREPANCY WITH THE TASK'S OWN LITERAL WORDING, flagged
+     * explicitly rather than silently worked around: variation_photos'
+     * ->disabled() gate reads PRODUCT_MANAGE — but ALL THREE shipped
+     * roles (Administrator/Manager/Product Entry — confirmed against
+     * StaffSystemRolesSeeder's own real, installed source) grant
+     * PRODUCT_VIEW and PRODUCT_MANAGE together, never one without the
+     * other, and EditRecord::authorizeAccess() (confirmed against its
+     * installed source) already aborts with a 403 at mount() —
+     * BEFORE the form is ever filled — for anyone lacking
+     * ProductResource::editPermission() (PRODUCT_MANAGE itself). So
+     * unlike COST_MANAGE/PRICE_MANAGE (narrower capabilities
+     * 'Product Entry' genuinely lacks while still holding
+     * PRODUCT_MANAGE — the real, reachable two-tier gap those tests
+     * exploit), there is no shipped role, and no real staff member,
+     * who can reach this field disabled-but-visible: they are turned
+     * away at the page boundary first. The real, reachable proof of
+     * "a PRODUCT_MANAGE-lacking staff member cannot upload" is
+     * therefore THIS — a custom role holding PRODUCT_VIEW without
+     * PRODUCT_MANAGE (Role::create(), the same non-system factory a
+     * real merchant's own custom role would use) gets a real 403 the
+     * moment it tries to mount this page at all, never reaching
+     * variation_photos (or any other field) in any state.
+     */
+    public function test_a_staff_member_without_product_manage_is_turned_away_at_the_page_boundary_before_reaching_any_field(): void
+    {
+        $role = \EasyCo\Staff\Role::create('View Only', [\EasyCo\Staff\Enums\Permission::PRODUCT_VIEW]);
+        app(RoleRepository::class)->save($role);
+        $staff = Staff::create('view.only@example.com', app(PasswordHasher::class)->hash('password123'), 'View Only', $role);
+        app(StaffRepository::class)->save($staff);
+
+        [$product] = $this->persistedVariableProductWithOneVariation();
+        $productModel = ProductModel::find($product->id());
+
+        $this->actingAs(StaffPanelUser::find($staff->id()), 'staff');
+
+        $this->get(ProductResource::getUrl('edit-variable', ['record' => $productModel]))
+            ->assertForbidden();
     }
 }

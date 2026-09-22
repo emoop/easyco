@@ -26,15 +26,20 @@ use EasyCo\Catalog\ProductTag;
 use EasyCo\Catalog\Variation;
 use EasyCo\Catalog\VariationAxis;
 use EasyCo\Extensibility\Hook;
+use EasyCo\Media\Contracts\MediaStorageAdapter;
 use EasyCo\Media\Contracts\ProductMediaRepository;
+use EasyCo\Media\Contracts\VariationMediaRepository;
 use EasyCo\Media\Enums\MediaType;
 use EasyCo\Media\Exceptions\MediaLimitExceededException;
 use EasyCo\Media\Persistence\Eloquent\MediaAssetModel;
 use EasyCo\Media\ProductMedia;
 use EasyCo\Media\ProductMediaCountGuard;
+use EasyCo\Media\VariationMedia;
+use EasyCo\Media\VariationMediaCountGuard;
 use EasyCo\Media\VideoCountGuard;
 use EasyCo\Staff\Enums\Permission;
 use Filament\Actions\Action;
+use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\RichEditor;
@@ -53,6 +58,7 @@ use Filament\Schemas\Schema;
 use Filament\Support\Exceptions\Halt;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
+use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 use RuntimeException;
 
 /**
@@ -582,6 +588,52 @@ class EditVariableProduct extends EditRecord
                 ->addable(false)
                 ->deletable(false)
                 ->reorderable(false)
+                ->collapsible()
+                // NEITHER Get $get NOR array $state — both tried and
+                // BOTH confirmed broken by a real, failing test before
+                // landing on this:
+                //
+                // Get $get: Repeater::getItemLabel() calls
+                // $this->evaluate($this->itemLabel, [...]) where $this
+                // is the REPEATER component itself, so a Get $get
+                // parameter resolves via Component::makeGetUtility()
+                // bound to the REPEATER's own statePath, not this
+                // specific item's — it searches for a sibling field at
+                // "existing_variations.label", not
+                // "existing_variations.{itemKey}.label", and silently
+                // returns null for every row.
+                //
+                // array $state (the 'state' named injection,
+                // $container->getStateSnapshot()): this DOES scope to
+                // the right item, but getStateSnapshot() itself calls
+                // dehydrateState() before returning (confirmed against
+                // its installed source), which STRIPS any component
+                // whose own isDehydrated() is false — exactly 'label'
+                // here (->dehydrated(false), deliberately never
+                // submitted). $state['label'] is therefore always
+                // absent, not merely falsy — reproduced by a real
+                // failing test asserting the real "Color: Black" label
+                // (got null instead) before this fix.
+                //
+                // Schema $container (the SAME object as 'item'/
+                // 'state' were built from, named 'container' to match
+                // getItemLabel()'s own named injection): its own
+                // ->getRawState() (HasState, confirmed used by Schema)
+                // reads directly off the live Livewire state via
+                // statePath, with NO dehydration filtering at all —
+                // 'label' is still genuinely present in the FORM's own
+                // live state (dehydrated(false) only ever affects what
+                // reaches $data on SUBMIT, never what Livewire tracks
+                // for display). Confirmed correct by the same
+                // real test, now passing.
+                ->itemLabel(fn (Schema $container): ?string => $container->getRawState()['label'] ?? null)
+                // Expanded by default (->collapsed() left unset,
+                // per-item ->isCollapsed() defaults to false) — a
+                // merchant editing THIS product's variations right
+                // after opening the tab should see every row's fields
+                // immediately, same as before this revision; collapsing
+                // is now available (and each row's own label is shown
+                // while collapsed) but never forced.
                 ->schema([
                     Hidden::make('variation_id'),
                     TextInput::make('label')
@@ -625,6 +677,45 @@ class EditVariableProduct extends EditRecord
                         ->dehydrated(false),
                     Hidden::make('sale_price_placeholder')
                         ->dehydrated(false),
+                    // Per-variation photos — a SEPARATE MediaType::IMAGE
+                    // collection from the product-level main_photo/
+                    // gallery_photos in the sidebar (ProductResource::
+                    // sidebarComponents()), backed by
+                    // catalog_variation_media (VariationMedia), not
+                    // catalog_product_media. VariationMedia has no
+                    // type/autoplay concept at all (confirmed against
+                    // its own real constructor) — image-only, full
+                    // stop, unlike the product-level video field.
+                    // Reuses the SAME real config-driven maxSize()/
+                    // disk()/saveUploadedFileUsing() as
+                    // ProductResource::galleryPhotoComponents() — see
+                    // that method's own docblock for why there is
+                    // deliberately no ->maxFiles() here either: the
+                    // real enforcement point is
+                    // VariationMediaCountGuard inside
+                    // syncVariationMedia() below, whose own
+                    // MediaLimitExceededException message this field
+                    // must not shadow with a generic Filament one.
+                    FileUpload::make('variation_photos')
+                        ->label(__('products.fields.variation_photos'))
+                        ->multiple()
+                        ->reorderable()
+                        ->image()
+                        ->panelLayout('grid')
+                        ->placeholder(ProductResource::mediaUploadPlaceholder('services.media.max_image_size_kb', 10240))
+                        ->maxSize((int) config('services.media.max_image_size_kb', 10240))
+                        ->disk(config('services.media.default_disk', 'public'))
+                        ->saveUploadedFileUsing(function (TemporaryUploadedFile $file): string {
+                            return app(MediaStorageAdapter::class)
+                                ->store($file->get(), $file->getClientOriginalName())
+                                ->path;
+                        })
+                        // Same base PRODUCT_MANAGE permission every
+                        // other per-row field in this class already
+                        // uses (sku/barcode/is_purchasable/
+                        // stock_quantity) — no dedicated media
+                        // permission exists for variation photos.
+                        ->disabled(fn (): bool => ! ProductResource::staffHasPermission(Permission::PRODUCT_MANAGE)),
                 ]),
         ];
     }
@@ -707,6 +798,8 @@ class EditVariableProduct extends EditRecord
         $data['regular_price_override_count'] = $regularOverrideCount;
         $data['sale_price_override_count'] = $saleOverrideCount;
 
+        $variationMediaRepository = app(VariationMediaRepository::class);
+
         $data['existing_variations'] = array_map(
             fn (Variation $variation): array => [
                 'variation_id' => $variation->id(),
@@ -720,6 +813,7 @@ class EditVariableProduct extends EditRecord
                 'sale_price' => $pricingAndStock->salePriceDisplay($variation->id()),
                 'regular_price_placeholder' => $productRegularPrice,
                 'sale_price_placeholder' => $productSalePrice,
+                'variation_photos' => $this->variationPhotoPaths($variationMediaRepository, $variation->id()),
             ],
             $product->variations()
         );
@@ -746,6 +840,32 @@ class EditVariableProduct extends EditRecord
         }
 
         return implode(', ', $parts);
+    }
+
+    /**
+     * Real, persisted paths for one variation's own photos, ordered by
+     * VariationMediaRepository::findByVariationId()'s own real
+     * sort_order ASC — a pivot whose asset is somehow gone is silently
+     * skipped, same defensive posture already established for the
+     * PRODUCT-level media loop above.
+     *
+     * @return array<int, string>
+     */
+    private function variationPhotoPaths(VariationMediaRepository $variationMediaRepository, string $variationId): array
+    {
+        $paths = [];
+
+        foreach ($variationMediaRepository->findByVariationId($variationId) as $pivot) {
+            $asset = MediaAssetModel::find($pivot->mediaId());
+
+            if ($asset === null) {
+                continue;
+            }
+
+            $paths[] = $asset->path;
+        }
+
+        return $paths;
     }
 
     protected function handleRecordUpdate(Model $record, array $data): Model
@@ -1012,6 +1132,29 @@ class EditVariableProduct extends EditRecord
 
         if ($shouldCleanArchivedMedia) {
             app(ArchiveProductMediaCleaner::class)->clean($product->id());
+        }
+
+        // Per-variation photos — a SEPARATE persistence concern from
+        // ProductRepository::save() above (VariationMediaRepository,
+        // not an in-memory Variation mutation), same "independent of
+        // save(), can run after it" reasoning as syncCategories()/
+        // syncTags()/syncMedia() above. $variationsById (not
+        // $product->variations() re-walked) so a submitted row whose
+        // variation_id doesn't resolve to a real Variation on THIS
+        // product is silently skipped, same defensive posture as
+        // updateVariationRows().
+        $variationsById = [];
+        foreach ($product->variations() as $variation) {
+            $variationsById[(string) $variation->id()] = $variation;
+        }
+        foreach ($data['existing_variations'] ?? [] as $row) {
+            $variationId = (string) ($row['variation_id'] ?? '');
+
+            if (! isset($variationsById[$variationId])) {
+                continue;
+            }
+
+            $this->syncVariationMedia($variationId, $row['variation_photos'] ?? []);
         }
 
         // cost/stock_quantity/regular_price/sale_price, AFTER the
@@ -1488,6 +1631,87 @@ class EditVariableProduct extends EditRecord
                 mediaId: $asset->id(),
                 sortOrder: $sortOrder,
                 autoplay: $autoplay,
+            ));
+        }
+    }
+
+    /**
+     * The per-VARIATION counterpart of syncMedia() above — same real
+     * diff-then-write logic (detach removed, reorder kept, attach new,
+     * MediaLimitExceededException -> Notification+Halt), simplified:
+     * no $type parameter (VariationMedia is always MediaType::IMAGE —
+     * confirmed against its own real constructor, which has no type
+     * field at all) and no $autoplay (no video concept either).
+     *
+     * No PRODUCT_MANAGE re-check here, unlike PRICE_MANAGE/COST_MANAGE
+     * in updateVariationPricingAndStock() — same real reasoning
+     * updateVariationRows()'s own docblock already establishes for
+     * sku/barcode/is_purchasable: PRODUCT_MANAGE is this whole page's
+     * own base edit permission (ProductResource::editPermission()),
+     * already enforced by EditRecord::authorizeAccess() at mount() —
+     * confirmed against its installed source (abort_unless(canEdit(),
+     * 403) before the form is ever filled). Unlike COST_MANAGE/
+     * PRICE_MANAGE, which gate a NARROWER capability a staff member can
+     * genuinely lack while still holding PRODUCT_MANAGE (the real,
+     * reachable two-tier gap the 'Product Entry' role's own tests
+     * exploit), there is no staff member who can reach this method at
+     * all without ALREADY holding PRODUCT_MANAGE — a redundant check
+     * here would be unreachable dead code, not a real second gate.
+     */
+    private function syncVariationMedia(string $variationId, array $submittedPaths): void
+    {
+        $repository = app(VariationMediaRepository::class);
+        $current = $repository->findByVariationId($variationId);
+
+        $pivotByPath = [];
+        foreach ($current as $pivot) {
+            $asset = MediaAssetModel::find($pivot->mediaId());
+            if ($asset !== null) {
+                $pivotByPath[$asset->path] = $pivot;
+            }
+        }
+
+        $submittedValues = array_values($submittedPaths);
+
+        foreach ($pivotByPath as $path => $pivot) {
+            if (! in_array($path, $submittedValues, true)) {
+                $repository->remove($pivot->id());
+                unset($pivotByPath[$path]);
+            }
+        }
+
+        $guard = app(VariationMediaCountGuard::class);
+
+        foreach ($submittedValues as $sortOrder => $path) {
+            if (isset($pivotByPath[$path])) {
+                $pivot = $pivotByPath[$path];
+
+                if ($pivot->sortOrder() !== $sortOrder) {
+                    $pivot->updateSortOrder($sortOrder);
+                    $repository->save($pivot);
+                }
+
+                continue;
+            }
+
+            try {
+                $guard->assertCanAttach($variationId);
+            } catch (MediaLimitExceededException $e) {
+                Notification::make()
+                    ->title($e->getMessage())
+                    ->danger()
+                    ->send();
+
+                throw (new Halt)->rollBackDatabaseTransaction();
+            }
+
+            $asset = ProductResource::createMediaAsset($path);
+
+            $repository->save(new VariationMedia(
+                id: null,
+                variationId: $variationId,
+                mediaId: $asset->id(),
+                sortOrder: $sortOrder,
             ));
         }
     }

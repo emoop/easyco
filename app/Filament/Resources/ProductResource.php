@@ -891,8 +891,14 @@ class ProductResource extends Resource
      * `filepond--label-action`-classed span, replicated here so
      * providing a custom placeholder doesn't silently lose that
      * click-to-browse behavior.
+     *
+     * public (not protected): EditVariableProduct's own per-variation
+     * photo field (variation_photos, existingVariationsComponents())
+     * reuses this SAME real config-driven text verbatim rather than
+     * duplicating the logic — that class is a Page, not a subclass of
+     * this Resource, so `protected` would be unreachable from it.
      */
-    protected static function mediaUploadPlaceholder(string $configKey, int $defaultKb): string
+    public static function mediaUploadPlaceholder(string $configKey, int $defaultKb): string
     {
         $maxMb = round(config($configKey, $defaultKb) / 1024, 1);
 

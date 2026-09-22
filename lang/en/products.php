@@ -69,6 +69,7 @@ return [
         'cost' => 'Cost',
         'stock_quantity' => 'Stock quantity',
         'price_display' => 'Price',
+        'variation_photos' => 'Photos',
     ],
 
     'filters' => [
