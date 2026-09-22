@@ -162,14 +162,42 @@ class EditProduct extends EditRecord
             $product->rename($data['name']);
         }
 
-        if ($product->slug() !== $data['slug']) {
-            $logger->logFieldChanged('product', $product->id(), 'slug', $product->slug(), $data['slug']);
-            $product->changeSlug($data['slug']);
+        // Blank slug/base_sku on submit triggers real auto-generation,
+        // exactly like Create already does — ->required() no longer
+        // blocks a blank submission here (see ProductResource::
+        // generalTabComponents()'s own field definitions).
+        //
+        // slug's own real 'catalog.product.slug' Hook listener
+        // (confirmed against its installed source,
+        // CatalogSlugGeneratorServiceProvider) runs cleanup()+
+        // deduplicate() even on NON-blank input — unlike base_sku's own
+        // listener, which returns non-empty input completely unchanged.
+        // Calling it unconditionally on every edit (matching base_sku's
+        // own call shape) would be a REAL, CONFIRMED REGRESSION found
+        // while testing this — verified directly via tinker before
+        // writing this guard, not assumed: resubmitting an unchanged,
+        // already-valid slug makes deduplicate() find THIS SAME
+        // product's own existing row and silently append "-1" to it, a
+        // false "collision" against itself. Only invoked when the
+        // submission is genuinely blank; a non-blank submitted slug is
+        // used verbatim, same as before this fix.
+        $newSlug = filled($data['slug'] ?? null)
+            ? $data['slug']
+            : Hook::apply('catalog.product.slug', '', $data['name']);
+
+        if ($product->slug() !== $newSlug) {
+            $logger->logFieldChanged('product', $product->id(), 'slug', $product->slug(), $newSlug);
+            $product->changeSlug($newSlug);
         }
 
-        if ($product->baseSku() !== $data['base_sku']) {
-            $logger->logFieldChanged('product', $product->id(), 'base_sku', $product->baseSku(), $data['base_sku']);
-            $product->changeBaseSku($data['base_sku']);
+        // base_sku's own real Hook listener returns non-empty input
+        // completely unchanged (confirmed against its installed
+        // source) — safe to call unconditionally, unlike slug's above.
+        $newBaseSku = Hook::apply('catalog.product.base_sku', $data['base_sku'] ?? '');
+
+        if ($product->baseSku() !== $newBaseSku) {
+            $logger->logFieldChanged('product', $product->id(), 'base_sku', $product->baseSku(), $newBaseSku);
+            $product->changeBaseSku($newBaseSku);
         }
 
         $newDescription = filled($data['description'] ?? null) ? $data['description'] : null;

@@ -34,6 +34,7 @@ use EasyCo\Media\ProductMedia;
 use EasyCo\Media\ProductMediaCountGuard;
 use EasyCo\Media\VideoCountGuard;
 use EasyCo\Staff\Enums\Permission;
+use Filament\Actions\Action;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\RichEditor;
@@ -60,15 +61,19 @@ use RuntimeException;
  * mirroring EditProduct.php's General+Attributes tabs and sidebar. Step
  * 2a extended the "Variations" tab from read-only to genuinely
  * editable per-row: sku/barcode/is_purchasable/cost/stock_quantity,
- * plus a bulk-set convenience for cost and stock. Step 2b (this
- * revision) adds regular_price/sale_price, BOTH at the PRODUCT level
- * (always-visible, always-editable "Product Regular/Sale Price"
- * fields — no toggle/checkbox, per §4.5's own explicit "leave this UX
- * choice to the Admin UI" allowance) AND per row (an explicit
- * VARIATION-level override, empty by default, falling back to the
- * PRODUCT-level value per §4.3's own real item-level resolution order
- * — see existingVariationsComponents()'s own docblock for the full
- * shape, and updateProduct()'s own for how each is diff-written).
+ * plus a bulk-set convenience for cost and stock. Step 2b adds
+ * regular_price/sale_price, BOTH at the PRODUCT level ("Product
+ * Regular/Sale Price" fields, writing a real PRODUCT-level
+ * PriceListItem) AND per row (an explicit VARIATION-level override,
+ * empty by default, falling back to the PRODUCT-level value per
+ * §4.3's own real item-level resolution order). A later revision
+ * groups all four mass-edit fields — product_regular_price,
+ * product_sale_price, bulk_cost, bulk_stock_quantity — behind a
+ * single "Edit all" Toggle, hidden by default; see
+ * existingVariationsComponents()'s own docblock for the full shape
+ * (and for the ->dehydratedWhenHidden() a hidden product-level price
+ * field genuinely needs), and updateProduct()'s own for how each is
+ * diff-written.
  *
  * EXPLICITLY NOT HERE (separate, later steps, each needing its own
  * design — see this class's own git history / task notes, not
@@ -130,6 +135,116 @@ class EditVariableProduct extends EditRecord
     protected static string $resource = ProductResource::class;
 
     /**
+     * Captured in updateProduct(), read in afterSave() — this page's
+     * own "here's what actually changed" notification compares each
+     * row's ORIGINALLY-SUBMITTED sku against that same variation's
+     * REAL, final sku after save() (covers both sku-collision-retry
+     * suffixing and the base_sku cascade below with ONE comparison).
+     * afterSave() has no parameters of its own (confirmed against
+     * CanCallHooks::callHook()'s installed source — it invokes
+     * $this->afterSave() by name, with none), so this state has to
+     * live on the instance between the two calls. Keyed by
+     * variation_id.
+     *
+     * @var array<string, string>
+     */
+    private array $submittedVariationSkus = [];
+
+    /** @var array<string, string> */
+    private array $finalVariationSkus = [];
+
+    /**
+     * ->requiresConfirmation() takes bool|Closure (confirmed against
+     * the installed CanRequireConfirmation trait source) — the closure
+     * reads $this->data['base_sku'] directly rather than relying on
+     * Get() injection into an Action's own closure, which — unlike a
+     * Field's own closures (->options()/->afterStateUpdated() etc.,
+     * used throughout this codebase) — was never confirmed working
+     * here; a plain instance-method closure capturing $this is simpler
+     * and equally correct for reading the CURRENT (unsaved) form state
+     * at the moment Save is clicked. $this->data is a real, public
+     * property on EditRecord itself (confirmed against its installed
+     * source) kept live by Livewire's own two-way binding to the
+     * form's statePath('data') — the same $data this page's own tests
+     * already reach via ->set('data.xxx', ...).
+     *
+     * Cancel is Filament's own real modal-cancel behavior — confirmed
+     * it simply closes the modal without submitting anything; no
+     * custom handling needed or added here.
+     */
+    public function hasFormWrapper(): bool
+    {
+        return false;
+    }
+
+    protected function getSaveFormAction(): Action
+    {
+        return parent::getSaveFormAction()
+            ->requiresConfirmation(fn (): bool => $this->baseSkuIsChanging())
+            // A REAL BUG FOUND WHILE TESTING THIS, NOT ANTICIPATED IN
+            // ADVANCE: CanOpenModal::shouldOpenModal() does NOT check
+            // isConfirmationRequired() directly — it falls back to
+            // hasCustomModalHeading() || hasModalDescription() || ... ,
+            // and BOTH of those are satisfied unconditionally the
+            // moment ->modalHeading()/->modalDescription() are ever
+            // set to a non-blank value, regardless of
+            // requiresConfirmation()'s own boolean (confirmed against
+            // the installed CanOpenModal source, and reproduced via a
+            // direct reflection test: shouldOpenModal() returned true
+            // even with isConfirmationRequired() false). A static or
+            // always-truthy modalHeading()/modalDescription() would
+            // therefore show this modal on EVERY save, not just a real
+            // base_sku change. Fixed by making all four modal-text
+            // closures themselves return blank when
+            // baseSkuIsChanging() is false — verified via the same
+            // reflection test afterward: shouldOpenModal() now
+            // correctly tracks isConfirmationRequired().
+            ->modalHeading(fn (): ?string => $this->baseSkuIsChanging()
+                ? __('products.base_sku_cascade.confirm_heading')
+                : null)
+            ->modalDescription(fn (): ?string => $this->baseSkuIsChanging()
+                ? __('products.base_sku_cascade.confirm_description', [
+                    'old' => $this->record->base_sku,
+                    'new' => $this->data['base_sku'] ?? $this->record->base_sku,
+                ])
+                : null)
+            ->modalSubmitActionLabel(fn (): ?string => $this->baseSkuIsChanging()
+                ? __('products.base_sku_cascade.confirm_continue')
+                : null)
+            ->modalCancelActionLabel(fn (): ?string => $this->baseSkuIsChanging()
+                ? __('products.base_sku_cascade.confirm_cancel')
+                : null);
+    }
+
+    /**
+     * True only when there is something real to confirm: a genuinely
+     * different base_sku (or one about to be auto-generated from a
+     * blank submission — see updateProduct()'s own comment for why a
+     * blank field counts as "this will change" here too, not just a
+     * literal string difference) on a product that actually HAS
+     * variations to cascade to. $this->record->variations() is the
+     * real Eloquent HasMany relation on ProductModel (confirmed against
+     * its installed source — the same relation this whole Resource
+     * already uses elsewhere) — ->count() runs a real query, not a
+     * loaded-collection count, so this stays correct even though
+     * $this->record itself is never refreshed mid-request.
+     */
+    private function baseSkuIsChanging(): bool
+    {
+        if ($this->record->variations()->count() === 0) {
+            return false;
+        }
+
+        $submittedBaseSku = $this->data['base_sku'] ?? null;
+
+        if (blank($submittedBaseSku)) {
+            return true;
+        }
+
+        return $submittedBaseSku !== $this->record->base_sku;
+    }
+
+    /**
      * Reuses ProductResource::form()'s own real Grid(3)/Tabs/sidebar
      * layout structure — same shape, different field set (see class
      * docblock for exactly which methods are reused vs. authored
@@ -185,14 +300,12 @@ class EditVariableProduct extends EditRecord
                 ->required(),
             TextInput::make('slug')
                 ->label(__('products.fields.slug'))
-                ->helperText(__('products.fields.slug_help'))
-                ->required(fn (string $operation): bool => $operation === 'edit'),
+                ->helperText(__('products.fields.slug_help')),
             TextInput::make('base_sku')
                 ->label(__('products.fields.base_sku'))
                 ->helperText(fn (string $operation): string => $operation === 'edit'
                     ? __('products.base_sku_change_warning')
-                    : __('products.fields.base_sku_help'))
-                ->required(fn (string $operation): bool => $operation === 'edit'),
+                    : __('products.fields.base_sku_help')),
             RichEditor::make('description')
                 ->label(__('products.fields.description'))
                 ->toolbarButtons([
@@ -305,9 +418,35 @@ class EditVariableProduct extends EditRecord
      * its target column — a staff member who cannot edit cost/stock
      * per-row must not be able to bulk-set it either.
      *
+     * EDIT_ALL TOGGLE (this revision): the four bulk/mass fields in
+     * this block — product_regular_price, product_sale_price,
+     * bulk_cost, bulk_stock_quantity — are hidden behind a single
+     * "Edit all" Toggle, ->default(false), so the tab opens compact
+     * and only expands into the mass-edit controls when the merchant
+     * explicitly opts in. This is NOT the §4.5 "mode switch" the PRICE
+     * paragraph below deliberately leaves out: turning it on reveals
+     * the exact same always-both-levels fields, never a different
+     * write path. ->dehydrated(false) on the toggle matches
+     * CreateVariableProduct's own activate_all precedent — it is pure
+     * UI state, never a real submitted field.
+     *
+     * product_regular_price/product_sale_price NEED
+     * ->dehydratedWhenHidden() — a REAL, CONFIRMED data-loss hazard
+     * found while planning this, not assumed: Filament's own
+     * isDehydrated() (HasState::isHiddenAndNotDehydratedWhenHidden(),
+     * installed v5.8.1 source) defaults dehydratedWhenHidden to FALSE,
+     * so a merely-hidden field does NOT dehydrate. Without this,
+     * saving while the toggle is off would submit null for both,
+     * updateProductLevelPricing()'s own diff would read null as a real
+     * change, and writeRegularPriceForProduct()/
+     * writeSalePriceForProduct() would DELETE the existing
+     * PRODUCT-level PriceListItem on an entirely unrelated save.
+     * bulk_cost/bulk_stock_quantity are already ->dehydrated(false),
+     * so hiding them carries no such risk.
+     *
      * PRICE (Step 2b) — no toggle/checkbox between "one price" and
      * "per-variation pricing": product_regular_price/product_sale_price
-     * are always-visible, always-editable REAL fields (unlike
+     * are always-editable REAL fields (unlike
      * bulk_cost/bulk_stock_quantity, these two dehydrate into $data —
      * they write a real PRODUCT-level PriceListItem every submission,
      * not a per-row broadcast convenience). Each row's own
@@ -342,17 +481,69 @@ class EditVariableProduct extends EditRecord
     private function existingVariationsComponents(): array
     {
         return [
+            // Pure UI state — never a real submitted field, exactly like
+            // CreateVariableProduct's own activate_all. ->live() so the
+            // four mass-edit fields below react to it immediately; the
+            // visibility closures read its own 'edit_all' path via Get().
+            Toggle::make('edit_all')
+                ->label(__('products.wizard.variations.edit_all'))
+                ->default(false)
+                ->dehydrated(false)
+                ->live(),
             TextInput::make('product_regular_price')
                 ->label(__('products.fields.regular_price'))
                 ->numeric()
                 ->minValue(0)
                 ->step(0.01)
+                ->visible(fn (Get $get): bool => (bool) $get('edit_all'))
+                // See this method's own docblock: without this, hiding
+                // the field drops it from $data entirely and
+                // updateProductLevelPricing()'s diff would read the
+                // null as "clear the price" on every unrelated save.
+                ->dehydratedWhenHidden()
                 ->disabled(fn (): bool => ! ProductResource::staffHasPermission(Permission::PRICE_MANAGE)),
             TextInput::make('product_sale_price')
                 ->label(__('products.fields.sale_price'))
                 ->numeric()
                 ->minValue(0)
                 ->step(0.01)
+                ->visible(fn (Get $get): bool => (bool) $get('edit_all'))
+                ->dehydratedWhenHidden()
+                ->disabled(fn (): bool => ! ProductResource::staffHasPermission(Permission::PRICE_MANAGE)),
+            // Pure display state, seeded once in mutateFormDataBeforeFill()
+            // — never itself submitted, same posture as label/the two
+            // placeholder fields inside the Repeater below. Read via
+            // Get() by the two "clear overrides" toggles' own
+            // ->visible()/->helperText() closures.
+            Hidden::make('regular_price_override_count')
+                ->dehydrated(false),
+            Hidden::make('sale_price_override_count')
+                ->dehydrated(false),
+            // Explicit, opt-in flatten of every VARIATION-level override
+            // back to the PRODUCT-level price — §4.3's own structural
+            // priority otherwise keeps a variation's own override
+            // regardless of what product_regular_price above is changed
+            // to. Only shown when there is real work for it to do
+            // (regular_price_override_count > 0) — an always-visible,
+            // always-a-no-op checkbox would be noise. Written in
+            // updateProductLevelPricing() — see that method's own
+            // docblock for the write-side and the ordering decision
+            // relative to the per-row regular_price/sale_price diff loop.
+            Toggle::make('clear_regular_price_overrides')
+                ->label(__('products.price_overrides.clear_regular_label'))
+                ->helperText(fn (Get $get): string => __('products.price_overrides.clear_regular_help', [
+                    'count' => (int) $get('regular_price_override_count'),
+                ]))
+                ->default(false)
+                ->visible(fn (Get $get): bool => ((int) $get('regular_price_override_count')) > 0)
+                ->disabled(fn (): bool => ! ProductResource::staffHasPermission(Permission::PRICE_MANAGE)),
+            Toggle::make('clear_sale_price_overrides')
+                ->label(__('products.price_overrides.clear_sale_label'))
+                ->helperText(fn (Get $get): string => __('products.price_overrides.clear_sale_help', [
+                    'count' => (int) $get('sale_price_override_count'),
+                ]))
+                ->default(false)
+                ->visible(fn (Get $get): bool => ((int) $get('sale_price_override_count')) > 0)
                 ->disabled(fn (): bool => ! ProductResource::staffHasPermission(Permission::PRICE_MANAGE)),
             TextInput::make('bulk_cost')
                 ->label(__('products.wizard.variations.bulk_cost'))
@@ -360,7 +551,11 @@ class EditVariableProduct extends EditRecord
                 ->minValue(0)
                 ->step(0.01)
                 ->dehydrated(false)
-                ->visible(fn (): bool => ProductResource::staffHasPermission(Permission::COST_VIEW))
+                // AND, not OR — both the merchant's own edit_all opt-in
+                // AND the real COST_VIEW permission must hold for this
+                // field to appear; a staff member without COST_VIEW must
+                // never see it even with edit_all on.
+                ->visible(fn (Get $get): bool => (bool) $get('edit_all') && ProductResource::staffHasPermission(Permission::COST_VIEW))
                 ->disabled(fn (): bool => ! ProductResource::staffHasPermission(Permission::COST_MANAGE))
                 ->live()
                 ->afterStateUpdated(function ($state, Get $get, Set $set): void {
@@ -374,6 +569,7 @@ class EditVariableProduct extends EditRecord
                 ->integer()
                 ->minValue(0)
                 ->dehydrated(false)
+                ->visible(fn (Get $get): bool => (bool) $get('edit_all'))
                 ->disabled(fn (): bool => ! ProductResource::staffHasPermission(Permission::PRODUCT_MANAGE))
                 ->live()
                 ->afterStateUpdated(function ($state, Get $get, Set $set): void {
@@ -491,6 +687,26 @@ class EditVariableProduct extends EditRecord
         $data['product_regular_price'] = $productRegularPrice;
         $data['product_sale_price'] = $productSalePrice;
 
+        // Seeded ONCE here, same "read via Get(), dehydrated(false)"
+        // posture as regular_price_placeholder/sale_price_placeholder
+        // below — a real count of this product's own variations that
+        // currently carry a VARIATION-level override, used only to
+        // decide whether the "clear overrides" toggle is worth showing
+        // at all and to interpolate a real number into its own helper
+        // text (see existingVariationsComponents()'s own docblock).
+        $regularOverrideCount = 0;
+        $saleOverrideCount = 0;
+        foreach ($product->variations() as $variation) {
+            if ($pricingAndStock->regularPriceDisplay($variation->id()) !== null) {
+                $regularOverrideCount++;
+            }
+            if ($pricingAndStock->salePriceDisplay($variation->id()) !== null) {
+                $saleOverrideCount++;
+            }
+        }
+        $data['regular_price_override_count'] = $regularOverrideCount;
+        $data['sale_price_override_count'] = $saleOverrideCount;
+
         $data['existing_variations'] = array_map(
             fn (Variation $variation): array => [
                 'variation_id' => $variation->id(),
@@ -538,6 +754,76 @@ class EditVariableProduct extends EditRecord
     }
 
     /**
+     * Filament's own real hook point — EditRecord::save() calls
+     * $this->callHook('afterSave') AFTER handleRecordUpdate() completes
+     * and BEFORE the — confirmed absent, see class docblock — redirect
+     * (confirmed against its installed source); CanCallHooks::
+     * callHook() invokes $this->afterSave() by plain method name, no
+     * parameters of its own, which is why updateProduct() captures
+     * $submittedVariationSkus/$finalVariationSkus on the instance
+     * instead of returning them.
+     *
+     * ONE comparison, not two separate mechanisms — a row differing
+     * here can only be explained by either the sku-collision-retry
+     * suffixing mechanism or the base_sku cascade (both already
+     * resolved by the time this runs), so a single itemized
+     * notification covers both.
+     *
+     * $this->record IS STALE HERE without the explicit reassignment —
+     * EditRecord::save() never writes handleRecordUpdate()'s own return
+     * value back into $this->record (confirmed against its installed
+     * source: the return value is discarded at the call site), and
+     * this page's own getRedirectUrl() is the framework default (no
+     * panel-wide redirect is configured — confirmed no redirect means
+     * no automatic form refresh either). $this->fillForm() re-runs
+     * mutateFormDataBeforeFill() against $this->getRecord() (confirmed
+     * against fillFormWithDataAndCallHooks()'s installed source) —
+     * reassigning $this->record first is what makes that re-seed
+     * genuinely reflect the just-saved state.
+     */
+    protected function afterSave(): void
+    {
+        $this->record = ProductModel::find($this->record->id);
+
+        $changedRows = [];
+
+        foreach ($this->submittedVariationSkus as $variationId => $submittedSku) {
+            $finalSku = $this->finalVariationSkus[$variationId] ?? null;
+
+            if ($finalSku === null || $finalSku === $submittedSku) {
+                continue;
+            }
+
+            $changedRows[] = __('products.sku_adjustment.item', [
+                'submitted' => $submittedSku,
+                'final' => $finalSku,
+            ]);
+        }
+
+        if ($changedRows !== []) {
+            Notification::make()
+                ->title(__('products.sku_adjustment.notification_title'))
+                ->body(implode("\n", $changedRows))
+                ->warning()
+                ->send();
+        }
+
+        // UNCONDITIONAL, not only when a sku actually differed — a
+        // REAL BUG found after the fact, not just the sku case this
+        // method was originally built for: regular_price_placeholder/
+        // sale_price_placeholder (and every other value seeded fresh
+        // by mutateFormDataBeforeFill() — categories/tags/media/
+        // descriptive attributes/product-level price) go stale after
+        // ANY successful save that happens not to touch a sku, since
+        // nothing else ever re-runs mutateFormDataBeforeFill() on this
+        // page (no redirect — see class docblock). A merchant who only
+        // changes product_regular_price, for instance, would otherwise
+        // keep seeing the OLD product-level price as every empty row's
+        // placeholder until the next full page load.
+        $this->fillForm();
+    }
+
+    /**
      * Mirrors EditProduct::updateProduct()'s own diff-then-write pattern
      * exactly, for the fields this page's own form actually has. Parent
      * fields first (unchanged from Step 1), then per-variation sku/
@@ -558,19 +844,66 @@ class EditVariableProduct extends EditRecord
 
         $logger = app(ActivityLogger::class);
 
+        // Captured from $data (never mutated by anything below) BEFORE
+        // updateVariationRows()/the base_sku cascade can touch a real
+        // Variation's own sku — this is the "what the merchant actually
+        // typed" side of the post-save notification comparison in
+        // afterSave().
+        $submittedSkusByVariationId = [];
+        foreach ($data['existing_variations'] ?? [] as $row) {
+            $variationId = (string) ($row['variation_id'] ?? '');
+
+            if ($variationId !== '') {
+                $submittedSkusByVariationId[$variationId] = (string) ($row['sku'] ?? '');
+            }
+        }
+
         if ($product->name() !== $data['name']) {
             $logger->logFieldChanged('product', $product->id(), 'name', $product->name(), $data['name']);
             $product->rename($data['name']);
         }
 
-        if ($product->slug() !== $data['slug']) {
-            $logger->logFieldChanged('product', $product->id(), 'slug', $product->slug(), $data['slug']);
-            $product->changeSlug($data['slug']);
+        // Blank slug/base_sku on submit triggers real auto-generation,
+        // exactly like Create already does — ->required() no longer
+        // blocks a blank submission here (see this class's own
+        // generalTabComponents()).
+        //
+        // slug's own real 'catalog.product.slug' Hook listener
+        // (confirmed against its installed source,
+        // CatalogSlugGeneratorServiceProvider) runs cleanup()+
+        // deduplicate() even on NON-blank input — unlike base_sku's own
+        // listener, which returns non-empty input completely unchanged.
+        // Calling it unconditionally on every edit (matching base_sku's
+        // own call shape) would be a REAL, CONFIRMED REGRESSION found
+        // while testing this — verified directly via tinker before
+        // writing this guard, not assumed: resubmitting an unchanged,
+        // already-valid slug makes deduplicate() find THIS SAME
+        // product's own existing row and silently append "-1" to it, a
+        // false "collision" against itself. Only invoked when the
+        // submission is genuinely blank; a non-blank submitted slug is
+        // used verbatim, same as before this fix.
+        $newSlug = filled($data['slug'] ?? null)
+            ? $data['slug']
+            : Hook::apply('catalog.product.slug', '', $data['name']);
+
+        if ($product->slug() !== $newSlug) {
+            $logger->logFieldChanged('product', $product->id(), 'slug', $product->slug(), $newSlug);
+            $product->changeSlug($newSlug);
         }
 
-        if ($product->baseSku() !== $data['base_sku']) {
-            $logger->logFieldChanged('product', $product->id(), 'base_sku', $product->baseSku(), $data['base_sku']);
-            $product->changeBaseSku($data['base_sku']);
+        // base_sku's own real Hook listener returns non-empty input
+        // completely unchanged (confirmed against its installed
+        // source) — safe to call unconditionally, unlike slug's above.
+        // $oldBaseSku/$baseSkuChanged feed the cascade below, run AFTER
+        // updateVariationRows() — see that call site's own comment for
+        // why the ordering matters.
+        $oldBaseSku = $product->baseSku();
+        $newBaseSku = Hook::apply('catalog.product.base_sku', $data['base_sku'] ?? '');
+        $baseSkuChanged = $oldBaseSku !== $newBaseSku;
+
+        if ($baseSkuChanged) {
+            $logger->logFieldChanged('product', $product->id(), 'base_sku', $oldBaseSku, $newBaseSku);
+            $product->changeBaseSku($newBaseSku);
         }
 
         $newDescription = filled($data['description'] ?? null) ? $data['description'] : null;
@@ -652,6 +985,14 @@ class EditVariableProduct extends EditRecord
         // above AND these per-row changes together.
         $this->updateVariationRows($product, $data['existing_variations'] ?? [], $logger);
 
+        // AFTER updateVariationRows() above, not before — ordering is
+        // load-bearing: an explicit per-row sku edit in the SAME
+        // submission must win over this cascade, not get silently
+        // overwritten by it.
+        if ($baseSkuChanged) {
+            $this->cascadeBaseSkuToVariationSkus($product, $oldBaseSku, $newBaseSku, $logger);
+        }
+
         app(ProductRepository::class)->save($product);
 
         $this->syncCategories($product->id(), $data['categories'] ?? []);
@@ -683,7 +1024,62 @@ class EditVariableProduct extends EditRecord
         $this->updateProductLevelPricing($product->id(), $data, $logger);
         $this->updateVariationPricingAndStock($product->variations(), $data['existing_variations'] ?? [], $logger, $product->id());
 
+        // AFTER updateVariationPricingAndStock() above — see this
+        // method's own docblock for the deliberate ordering decision
+        // (the checkbox wins a same-submission conflict against a new
+        // per-row override, the opposite of the base_sku cascade's own
+        // "explicit edit wins" precedent).
+        $this->clearVariationPriceOverrides($product->variations(), $data, $logger, $product->id());
+
+        // The REAL, final side of the afterSave() comparison —
+        // $product->variations() reflects any sku-collision-retry
+        // correction (EloquentProductRepository::
+        // saveVariationModelWithSkuCollisionRetry() calls
+        // $variation->setSku() on the in-memory Variation the moment a
+        // retry actually happens — confirmed against its installed
+        // source) AND the cascade above, since save() has already run.
+        // Scoped to exactly the variation_ids that were submitted this
+        // request (mirrors $submittedSkusByVariationId's own keys),
+        // not every variation on the product.
+        foreach ($product->variations() as $variation) {
+            $variationId = (string) $variation->id();
+
+            if (isset($submittedSkusByVariationId[$variationId])) {
+                $this->finalVariationSkus[$variationId] = $variation->sku();
+            }
+        }
+        $this->submittedVariationSkus = $submittedSkusByVariationId;
+
         return ProductModel::find($product->id());
+    }
+
+    /**
+     * Cascades a real base_sku rename to every variant sku that still
+     * starts with the OLD base_sku prefix. str_starts_with($sku,
+     * $oldBaseSku.'-') — the trailing hyphen, not a bare substring
+     * match — so an unrelated sku that merely CONTAINS the old
+     * base_sku (e.g. old base_sku "1544", an unrelated sku
+     * "9-1544-X") is never false-matched. A variant sku that does NOT
+     * start with the old prefix (already manually customized to
+     * something unrelated) is deliberately left alone — an unrelated
+     * manual sku must never be silently touched by a base_sku rename.
+     */
+    private function cascadeBaseSkuToVariationSkus(Product $product, string $oldBaseSku, string $newBaseSku, ActivityLogger $logger): void
+    {
+        $prefix = $oldBaseSku.'-';
+
+        foreach ($product->variations() as $variation) {
+            $currentSku = $variation->sku();
+
+            if (! str_starts_with($currentSku, $prefix)) {
+                continue;
+            }
+
+            $newSku = $newBaseSku.'-'.substr($currentSku, strlen($prefix));
+
+            $logger->logFieldChanged('product', $product->id(), "variation[{$variation->id()}].sku", $currentSku, $newSku);
+            $variation->setSku($newSku);
+        }
     }
 
     /**
@@ -718,6 +1114,79 @@ class EditVariableProduct extends EditRecord
         if ($currentSalePrice !== $newSalePrice) {
             $logger->logFieldChanged('product', $productId, 'product_sale_price', $currentSalePrice, $newSalePrice);
             $pricingAndStock->writeSalePriceForProduct($productId, $newSalePrice);
+        }
+    }
+
+    /**
+     * The write side of the "clear variation-level price overrides"
+     * toggles (existingVariationsComponents()'s own docblock) — an
+     * explicit, opt-in flatten of every VARIATION-level override for
+     * that price type back to the PRODUCT-level value. Gated by the
+     * SAME PRICE_MANAGE permission as every other price write in this
+     * class, checked BEFORE either $data key is read, same discipline
+     * as updateVariationPricingAndStock()'s own regular_price/sale_price
+     * block — a tampered ->set() on the toggle from a staff member
+     * lacking PRICE_MANAGE can never trigger a real clear.
+     *
+     * ORDERING, EXPLICITLY DECIDED, NOT DEFAULTED INTO: called AFTER
+     * updateVariationPricingAndStock() (not folded into
+     * updateProductLevelPricing(), which runs BEFORE it in
+     * updateProduct()) — so in the genuinely ambiguous case of a
+     * merchant typing a NEW per-row override into a row in the SAME
+     * submission they also check "clear overrides" for, the checkbox
+     * wins: whatever was just written is cleared right back out. This
+     * is the OPPOSITE of the base_sku cascade's own "explicit per-row
+     * edit wins" precedent (cascadeBaseSkuToVariationSkus() runs AFTER
+     * updateVariationRows() for exactly that reason) — deliberately,
+     * per this task's own explicit instruction, not an oversight:
+     * checking the box is itself an explicit, deliberate act ("flatten
+     * every override of this type"), distinct from a base_sku rename
+     * (which is a PARENT field change that merely CASCADES to rows,
+     * never something a merchant is deliberately clicking specifically
+     * to override a row edit). A merchant who both types a new override
+     * AND checks the box in one submission has given two contradictory
+     * instructions in the same request; the checkbox — the more
+     * sweeping, more explicit of the two — wins. Each cleared row is
+     * logged individually, old value = the real override that existed,
+     * new value = null — same "variation[{id}].regular_price"/
+     * "variation[{id}].sale_price" ActivityLogger field-name pattern as
+     * every other per-variation price write in this class.
+     *
+     * @param Variation[] $variations
+     */
+    private function clearVariationPriceOverrides(array $variations, array $data, ActivityLogger $logger, string $productId): void
+    {
+        if (! ProductResource::staffHasPermission(Permission::PRICE_MANAGE)) {
+            return;
+        }
+
+        $clearRegular = (bool) ($data['clear_regular_price_overrides'] ?? false);
+        $clearSale = (bool) ($data['clear_sale_price_overrides'] ?? false);
+
+        if (! $clearRegular && ! $clearSale) {
+            return;
+        }
+
+        $pricingAndStock = app(ProductPricingAndStock::class);
+
+        foreach ($variations as $variation) {
+            $variationId = (string) $variation->id();
+
+            if ($clearRegular) {
+                $currentRegularPrice = $pricingAndStock->regularPriceDisplay($variationId);
+                if ($currentRegularPrice !== null) {
+                    $logger->logFieldChanged('product', $productId, "variation[{$variationId}].regular_price", $currentRegularPrice, null);
+                    $pricingAndStock->writeRegularPrice($variationId, null);
+                }
+            }
+
+            if ($clearSale) {
+                $currentSalePrice = $pricingAndStock->salePriceDisplay($variationId);
+                if ($currentSalePrice !== null) {
+                    $logger->logFieldChanged('product', $productId, "variation[{$variationId}].sale_price", $currentSalePrice, null);
+                    $pricingAndStock->writeSalePrice($variationId, null);
+                }
+            }
         }
     }
 

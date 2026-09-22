@@ -288,6 +288,112 @@ class ProductResourceTest extends TestCase
         $this->assertFalse($reloaded->universalVariation()->isPurchasable());
     }
 
+    /**
+     * Clearing base_sku/slug on EDIT must trigger real auto-generation,
+     * exactly like Create already does — not a validation block.
+     * ->required() no longer blocks a blank submission here (see
+     * ProductResource::generalTabComponents()'s own field definitions);
+     * the write side resolves a blank value through the same real
+     * Hook::apply() calls CreateProduct already uses, rather than
+     * trading a friendly validation message for a raw
+     * InvalidArgumentException from Product::assertValidBaseSku()/
+     * assertValidSlug() (confirmed both genuinely reject an empty
+     * value, by reading their real source).
+     */
+    public function test_clearing_base_sku_and_slug_on_edit_triggers_real_auto_generation(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        Livewire::test(CreateProduct::class)
+            ->fillForm([
+                'name' => 'Clear Sku Test',
+                'slug' => 'clear-sku-test',
+                'base_sku' => 'SKU-CLEAR',
+                'status' => ProductStatus::DRAFT->value,
+                'catalog_visibility' => CatalogVisibility::HIDDEN->value,
+            ])
+            ->call('create')
+            ->assertHasNoFormErrors();
+
+        $productModel = ProductModel::where('slug', 'clear-sku-test')->firstOrFail();
+
+        Livewire::test(EditProduct::class, ['record' => $productModel->id])
+            ->fillForm(['base_sku' => '', 'slug' => ''])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $reloaded = app(ProductRepository::class)->findByIdWithVariations((string) $productModel->id);
+
+        $this->assertNotSame('', $reloaded->baseSku());
+        $this->assertNotSame('SKU-CLEAR', $reloaded->baseSku());
+        $this->assertNotSame('', $reloaded->slug());
+    }
+
+    /** An explicitly-typed base_sku/slug on edit is used verbatim, unchanged — same as before this fix. */
+    public function test_an_explicitly_typed_base_sku_and_slug_on_edit_are_used_verbatim(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        Livewire::test(CreateProduct::class)
+            ->fillForm([
+                'name' => 'Verbatim Sku Test',
+                'slug' => 'verbatim-sku-test',
+                'base_sku' => 'SKU-VERBATIM',
+                'status' => ProductStatus::DRAFT->value,
+                'catalog_visibility' => CatalogVisibility::HIDDEN->value,
+            ])
+            ->call('create')
+            ->assertHasNoFormErrors();
+
+        $productModel = ProductModel::where('slug', 'verbatim-sku-test')->firstOrFail();
+
+        Livewire::test(EditProduct::class, ['record' => $productModel->id])
+            ->fillForm(['base_sku' => 'MY-EXPLICIT-SKU', 'slug' => 'my-explicit-slug'])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $reloaded = app(ProductRepository::class)->findByIdWithVariations((string) $productModel->id);
+
+        $this->assertSame('MY-EXPLICIT-SKU', $reloaded->baseSku());
+        $this->assertSame('my-explicit-slug', $reloaded->slug());
+    }
+
+    /**
+     * Resubmitting an UNCHANGED, already-valid slug must never be
+     * silently corrupted — the real, confirmed bug this task's own
+     * verification found in slug's own Hook listener (deduplicate()
+     * self-colliding against the SAME product's own existing row) if
+     * Hook::apply() were called unconditionally on every edit, the way
+     * base_sku's own call is. This is why slug's own resolution is
+     * guarded to blank-only in EditProduct::updateProduct(), unlike
+     * base_sku's unconditional call.
+     */
+    public function test_resubmitting_an_unchanged_slug_on_edit_does_not_corrupt_it(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        Livewire::test(CreateProduct::class)
+            ->fillForm([
+                'name' => 'Slug Stability Test',
+                'slug' => 'slug-stability-test',
+                'base_sku' => 'SKU-STABLE',
+                'status' => ProductStatus::DRAFT->value,
+                'catalog_visibility' => CatalogVisibility::HIDDEN->value,
+            ])
+            ->call('create')
+            ->assertHasNoFormErrors();
+
+        $productModel = ProductModel::where('slug', 'slug-stability-test')->firstOrFail();
+
+        Livewire::test(EditProduct::class, ['record' => $productModel->id])
+            ->fillForm(['name' => 'Renamed, Slug Untouched'])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $reloaded = app(ProductRepository::class)->findByIdWithVariations((string) $productModel->id);
+        $this->assertSame('slug-stability-test', $reloaded->slug());
+    }
+
     public function test_assigning_categories_and_tags_on_create_then_changing_the_selection_on_edit(): void
     {
         $this->actingAsPanelAdministrator();

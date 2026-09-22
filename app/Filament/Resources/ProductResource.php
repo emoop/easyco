@@ -215,14 +215,12 @@ class ProductResource extends Resource
                 ->required(),
             TextInput::make('slug')
                 ->label(__('products.fields.slug'))
-                ->helperText(__('products.fields.slug_help'))
-                ->required(fn (string $operation): bool => $operation === 'edit'),
+                ->helperText(__('products.fields.slug_help')),
             TextInput::make('base_sku')
                 ->label(__('products.fields.base_sku'))
                 ->helperText(fn (string $operation): string => $operation === 'edit'
                     ? __('products.base_sku_change_warning')
-                    : __('products.fields.base_sku_help'))
-                ->required(fn (string $operation): bool => $operation === 'edit'),
+                    : __('products.fields.base_sku_help')),
             TextInput::make('barcode')
                 ->label(__('products.fields.barcode')),
             // Native RichEditor (Filament v5.8.1), no third-party

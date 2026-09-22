@@ -185,6 +185,23 @@ class EditVariableProductTest extends TestCase
             ->assertSuccessful();
     }
 
+    /**
+     * UPDATED for the base_sku-cascade feature: this fixture's own
+     * single variation ("SKU-VAR-BLACK") genuinely starts with the old
+     * base_sku prefix ("SKU-VAR-"), so changing base_sku to "SKU-VAR-2"
+     * now correctly cascades it to "SKU-VAR-2-BLACK" — the real, new,
+     * intended behavior, not a regression. ->call('save') (used here
+     * and throughout this test file) invokes EditRecord::save() the
+     * plain public method directly, a completely separate code path
+     * from getSaveFormAction()'s own mounted-Action/modal-confirmation
+     * flow (confirmed: the save BUTTON's Action is only reached via a
+     * real click, or ->callAction()/->mountAction() in a test) — so
+     * this direct call bypasses the confirmation requirement entirely,
+     * exactly like every other ->call('save') test in this file, while
+     * still exercising the real, unconditional server-side cascade
+     * logic in updateProduct(). The confirmation-modal requirement
+     * itself has its own dedicated test elsewhere in this file.
+     */
     public function test_editing_updates_only_the_parent_fields_that_actually_changed(): void
     {
         $this->actingAsPanelAdministrator();
@@ -223,12 +240,13 @@ class EditVariableProductTest extends TestCase
         $this->assertSame($season->id(), $reloaded->seasonId());
         $this->assertSame($group->id(), $reloaded->productGroupId());
 
-        // The one real Variation this product started with is
-        // completely untouched — its own row round-trips unchanged
-        // (this test never edits it), so the real per-row diff-write
-        // correctly produces no writes at all.
+        // The one real Variation this product started with has its
+        // barcode untouched (this test never edits it) but its sku
+        // genuinely cascaded — "SKU-VAR-BLACK" starts with the OLD
+        // base_sku's own real prefix ("SKU-VAR-"), so the rename to
+        // "SKU-VAR-2" correctly cascades it to "SKU-VAR-2-BLACK".
         $this->assertCount(1, $reloaded->variations());
-        $this->assertSame('SKU-VAR-BLACK', $reloaded->variations()[0]->sku());
+        $this->assertSame('SKU-VAR-2-BLACK', $reloaded->variations()[0]->sku());
         $this->assertSame('1112223334445', $reloaded->variations()[0]->barcode());
     }
 
@@ -446,6 +464,93 @@ class EditVariableProductTest extends TestCase
             $this->assertEquals(19.99, $row['cost']);
             $this->assertEquals(15, $row['stock_quantity']);
         }
+    }
+
+    /**
+     * The "Edit all" Toggle gates the four mass-edit fields:
+     * product_regular_price, product_sale_price, bulk_cost,
+     * bulk_stock_quantity. All four start HIDDEN (the toggle's own
+     * ->default(false)) and only become visible once the merchant turns
+     * it on — asserted via Filament's own assertFormFieldHidden()/
+     * assertFormFieldVisible() against the real rendered schema, not a
+     * raw ->get() of the field's own closure.
+     *
+     * The bulk_cost case is deliberately checked with the
+     * PANEL-ADMINISTRATOR role (holds COST_VIEW), i.e. its own
+     * permission gate is already satisfied — so what this test proves
+     * is the edit_all gate alone, isolating the new behavior from the
+     * pre-existing COST_VIEW gate checked separately above.
+     */
+    public function test_the_edit_all_toggle_hides_and_reveals_the_four_mass_edit_fields(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        [$product] = $this->persistedVariableProductWithOneVariation();
+        $productModel = ProductModel::find($product->id());
+
+        $component = Livewire::test(EditVariableProduct::class, ['record' => $productModel->id])
+            ->assertFormFieldHidden('product_regular_price')
+            ->assertFormFieldHidden('product_sale_price')
+            ->assertFormFieldHidden('bulk_cost')
+            ->assertFormFieldHidden('bulk_stock_quantity');
+
+        $component->set('data.edit_all', true)
+            ->assertFormFieldVisible('product_regular_price')
+            ->assertFormFieldVisible('product_sale_price')
+            ->assertFormFieldVisible('bulk_cost')
+            ->assertFormFieldVisible('bulk_stock_quantity');
+
+        $component->set('data.edit_all', false)
+            ->assertFormFieldHidden('product_regular_price')
+            ->assertFormFieldHidden('product_sale_price')
+            ->assertFormFieldHidden('bulk_cost')
+            ->assertFormFieldHidden('bulk_stock_quantity');
+    }
+
+    /**
+     * The REAL data-loss hazard the ->dehydratedWhenHidden() on
+     * product_regular_price/product_sale_price exists to prevent,
+     * proven end to end: save a PRODUCT-level price, then save AGAIN
+     * with the "Edit all" toggle left OFF (the default) and an
+     * unrelated field changed. Without dehydratedWhenHidden(), the two
+     * hidden price fields would drop out of $data, updateProductLevel
+     * Pricing()'s own diff would read the null as "clear it", and the
+     * PriceListItem would be deleted by a save that had nothing to do
+     * with pricing.
+     */
+    public function test_a_saved_product_level_price_survives_a_save_with_the_edit_all_toggle_off(): void
+    {
+        $this->seedPricingSystemLists();
+        $this->actingAsPanelAdministrator();
+
+        [$product] = $this->persistedVariableProductWithOneVariation();
+        $productModel = ProductModel::find($product->id());
+
+        // First save: toggle ON, set a real PRODUCT-level regular price.
+        Livewire::test(EditVariableProduct::class, ['record' => $productModel->id])
+            ->set('data.edit_all', true)
+            ->set('data.product_regular_price', '89.99')
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $pricingAndStock = app(ProductPricingAndStock::class);
+        $this->assertSame('89.99', $pricingAndStock->regularPriceDisplayForProduct($product->id()));
+
+        // Second save: toggle untouched (default false), only the name
+        // changed. The price must survive intact.
+        Livewire::test(EditVariableProduct::class, ['record' => $productModel->id])
+            ->fillForm(['name' => 'Renamed, Price Untouched'])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $this->assertSame('89.99', $pricingAndStock->regularPriceDisplayForProduct($product->id()));
+        $this->assertSame(
+            1,
+            PriceListItemModel::where('target_type', 'product')->where('target_id', $product->id())->count()
+        );
+
+        $reloaded = app(ProductRepository::class)->findByIdWithVariations((string) $productModel->id);
+        $this->assertSame('Renamed, Price Untouched', $reloaded->name());
     }
 
     /**
@@ -690,6 +795,210 @@ class EditVariableProductTest extends TestCase
     }
 
     /**
+     * "Clear variation-level price overrides" — the checkbox itself must
+     * not appear at all when this product genuinely has no real
+     * VARIATION-level override of either type (a fresh, no-override
+     * product from persistedVariableProductWithOneVariation()): an
+     * always-visible, always-a-no-op toggle would be noise. Confirms
+     * both the toggle's own ->visible() gate AND the real, seeded
+     * regular_price_override_count/sale_price_override_count that gate
+     * reads.
+     */
+    public function test_the_clear_overrides_toggles_are_hidden_when_no_variation_has_an_override(): void
+    {
+        $this->seedPricingSystemLists();
+        $this->actingAsPanelAdministrator();
+
+        [$product] = $this->persistedVariableProductWithOneVariation();
+        $productModel = ProductModel::find($product->id());
+
+        $component = Livewire::test(EditVariableProduct::class, ['record' => $productModel->id])
+            ->assertFormFieldHidden('clear_regular_price_overrides')
+            ->assertFormFieldHidden('clear_sale_price_overrides');
+
+        $this->assertSame(0, $component->get('data.regular_price_override_count'));
+        $this->assertSame(0, $component->get('data.sale_price_override_count'));
+    }
+
+    /**
+     * With real overrides present (two variations, a regular-price
+     * override on both, a sale-price override on only one), both
+     * toggles become visible AND each one's own helper text carries the
+     * REAL, distinct count for its own price type — not a generic
+     * message, and not the other type's count.
+     */
+    public function test_the_clear_overrides_toggles_are_visible_with_the_real_count_in_their_own_helper_text(): void
+    {
+        $this->seedPricingSystemLists();
+        $this->actingAsPanelAdministrator();
+
+        [$product, $blackId, $whiteId] = $this->persistedVariableProductWithTwoVariations();
+
+        $pricingAndStock = app(ProductPricingAndStock::class);
+        $pricingAndStock->writeRegularPrice($blackId, '10.00');
+        $pricingAndStock->writeRegularPrice($whiteId, '12.00');
+        $pricingAndStock->writeSalePrice($blackId, '9.00');
+
+        $productModel = ProductModel::find($product->id());
+
+        $component = Livewire::test(EditVariableProduct::class, ['record' => $productModel->id])
+            ->assertFormFieldVisible('clear_regular_price_overrides')
+            ->assertFormFieldVisible('clear_sale_price_overrides');
+
+        $this->assertSame(2, $component->get('data.regular_price_override_count'));
+        $this->assertSame(1, $component->get('data.sale_price_override_count'));
+
+        $component->assertSee(__('products.price_overrides.clear_regular_help', ['count' => 2]));
+        $component->assertSee(__('products.price_overrides.clear_sale_help', ['count' => 1]));
+    }
+
+    /**
+     * The real write side, real DB row count check — not just a domain
+     * read: checking "clear regular price overrides" removes every
+     * VARIATION-level PriceListItem in the "Regular Prices" system list
+     * for THIS product's variations, while leaving that same product's
+     * PRODUCT-level regular price (which has nothing to do with a
+     * per-row override) and the untouched sale-price side completely
+     * alone.
+     */
+    public function test_checking_clear_regular_price_overrides_removes_every_variation_level_regular_price_row(): void
+    {
+        $this->seedPricingSystemLists();
+        $this->actingAsPanelAdministrator();
+
+        [$product, $blackId, $whiteId] = $this->persistedVariableProductWithTwoVariations();
+
+        $pricingAndStock = app(ProductPricingAndStock::class);
+        $pricingAndStock->writeRegularPriceForProduct($product->id(), '50.00');
+        $pricingAndStock->writeRegularPrice($blackId, '10.00');
+        $pricingAndStock->writeRegularPrice($whiteId, '12.00');
+        $pricingAndStock->writeSalePrice($blackId, '9.00');
+
+        $regularListId = app(PriceListRepository::class)->findSystemListByName('Regular Prices')->id();
+
+        $productModel = ProductModel::find($product->id());
+
+        Livewire::test(EditVariableProduct::class, ['record' => $productModel->id])
+            ->set('data.clear_regular_price_overrides', true)
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        // Real DB row count check, not just the domain read.
+        $this->assertSame(
+            0,
+            PriceListItemModel::where('price_list_id', $regularListId)
+                ->where('target_type', 'variation')
+                ->whereIn('target_id', [$blackId, $whiteId])
+                ->count()
+        );
+
+        $this->assertNull($pricingAndStock->regularPriceDisplay($blackId));
+        $this->assertNull($pricingAndStock->regularPriceDisplay($whiteId));
+
+        // Unaffected: the PRODUCT-level price and the untouched sale-price override.
+        $this->assertSame('50.00', $pricingAndStock->regularPriceDisplayForProduct($product->id()));
+        $this->assertSame('9.00', $pricingAndStock->salePriceDisplay($blackId));
+    }
+
+    /**
+     * A variation with only a regular-price override is genuinely
+     * unaffected by checking sale's own checkbox (independent gates —
+     * a merchant may check only one), and vice versa — the same
+     * fixture, checking BOTH checkboxes independently across two
+     * separate assertions on the SAME underlying override state.
+     */
+    public function test_clearing_one_price_types_overrides_never_touches_the_other_types_overrides(): void
+    {
+        $this->seedPricingSystemLists();
+        $this->actingAsPanelAdministrator();
+
+        [$product, $blackId] = $this->persistedVariableProductWithOneVariation();
+
+        $pricingAndStock = app(ProductPricingAndStock::class);
+        $pricingAndStock->writeRegularPrice($blackId, '10.00');
+        $pricingAndStock->writeSalePrice($blackId, '9.00');
+
+        $productModel = ProductModel::find($product->id());
+
+        // Only the sale checkbox is checked — the regular override must survive.
+        Livewire::test(EditVariableProduct::class, ['record' => $productModel->id])
+            ->set('data.clear_sale_price_overrides', true)
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $this->assertSame('10.00', $pricingAndStock->regularPriceDisplay($blackId));
+        $this->assertNull($pricingAndStock->salePriceDisplay($blackId));
+    }
+
+    /**
+     * The real gap this task's own instruction flags explicitly, same
+     * shape as the established price-write tamper-proof test above: a
+     * 'Product Entry' staff member (no PRICE_MANAGE) who tampers the
+     * clear-overrides toggle via ->set() must never have triggered a
+     * real clear — clearVariationPriceOverrides() checks the same
+     * permission before either $data key is even read.
+     */
+    public function test_a_staff_member_without_price_manage_can_never_trigger_a_clear_even_when_tampered(): void
+    {
+        $this->seedPricingSystemLists();
+
+        $roleRepository = app(RoleRepository::class);
+        app(StaffSystemRolesSeeder::class)->run($roleRepository);
+        $role = $roleRepository->findSystemRoleByName('Product Entry');
+        $staff = Staff::create('product.entry.clear@example.com', app(PasswordHasher::class)->hash('password123'), 'Product Entry', $role);
+        app(StaffRepository::class)->save($staff);
+
+        [$product, $blackId] = $this->persistedVariableProductWithOneVariation();
+
+        $pricingAndStock = app(ProductPricingAndStock::class);
+        $pricingAndStock->writeRegularPrice($blackId, '10.00');
+
+        $productModel = ProductModel::find($product->id());
+
+        $this->actingAs(StaffPanelUser::find($staff->id()), 'staff');
+
+        Livewire::test(EditVariableProduct::class, ['record' => $productModel->id])
+            ->set('data.clear_regular_price_overrides', true)
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $this->assertSame('10.00', $pricingAndStock->regularPriceDisplay($blackId));
+    }
+
+    /**
+     * The genuinely ambiguous conflict case this task's own instruction
+     * asked to be explicitly resolved: a merchant types a NEW per-row
+     * override into a row AND checks "clear regular price overrides" in
+     * the SAME submission. Resolved so the checkbox wins (see
+     * clearVariationPriceOverrides()'s own docblock for the full
+     * reasoning) — the freshly-typed override is written by
+     * updateVariationPricingAndStock() first, then immediately cleared
+     * back out by the clear-pass that runs after it.
+     */
+    public function test_the_clear_checkbox_wins_over_a_new_per_row_override_typed_in_the_same_submission(): void
+    {
+        $this->seedPricingSystemLists();
+        $this->actingAsPanelAdministrator();
+
+        [$product, $blackId] = $this->persistedVariableProductWithOneVariation();
+
+        $pricingAndStock = app(ProductPricingAndStock::class);
+        $pricingAndStock->writeRegularPrice($blackId, '10.00');
+
+        $productModel = ProductModel::find($product->id());
+
+        $component = Livewire::test(EditVariableProduct::class, ['record' => $productModel->id]);
+        $rowKeys = array_keys($component->get('data.existing_variations'));
+
+        $component->set("data.existing_variations.{$rowKeys[0]}.regular_price", '77.77')
+            ->set('data.clear_regular_price_overrides', true)
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $this->assertNull($pricingAndStock->regularPriceDisplay($blackId));
+    }
+
+    /**
      * Placeholder text on an empty row shows the real, currently-
      * resolved PRODUCT-level price — verified via the row's own seeded
      * 'regular_price_placeholder'/'sale_price_placeholder' state (what
@@ -721,6 +1030,44 @@ class EditVariableProductTest extends TestCase
         // still a pure fallback hint, not a pre-filled override.
         $this->assertNull($row['regular_price']);
         $this->assertNull($row['sale_price']);
+    }
+
+    /**
+     * A REQUIRED FIX, not optional: afterSave() must call
+     * $this->fillForm() UNCONDITIONALLY, not only when a sku actually
+     * differed. Without this, regular_price_placeholder/
+     * sale_price_placeholder (seeded fresh by mutateFormDataBeforeFill()
+     * — same "no redirect means no automatic refresh" reasoning
+     * documented on afterSave() itself) go stale after ANY successful
+     * save that happens not to touch a sku — here, changing ONLY the
+     * product-level regular price with no sku involved at all. Proven
+     * by changing the product-level price, then confirming the SAME
+     * live component's own placeholder state reflects the NEW price
+     * immediately, without a fresh page load.
+     */
+    public function test_the_placeholder_refreshes_after_a_save_that_changes_no_sku_at_all(): void
+    {
+        $this->seedPricingSystemLists();
+        $this->actingAsPanelAdministrator();
+
+        [$product] = $this->persistedVariableProductWithOneVariation();
+
+        app(ProductPricingAndStock::class)->writeRegularPriceForProduct($product->id(), '54.00');
+
+        $productModel = ProductModel::find($product->id());
+        $component = Livewire::test(EditVariableProduct::class, ['record' => $productModel->id]);
+
+        $rowsBefore = $component->get('data.existing_variations');
+        $this->assertSame('54.00', array_values($rowsBefore)[0]['regular_price_placeholder']);
+
+        $component->set('data.edit_all', true)
+            ->set('data.product_regular_price', '99.00')
+            ->call('save')
+            ->assertHasNoFormErrors()
+            ->assertNotNotified(__('products.sku_adjustment.notification_title'));
+
+        $rowsAfter = $component->get('data.existing_variations');
+        $this->assertSame('99.00', array_values($rowsAfter)[0]['regular_price_placeholder']);
     }
 
     /**
@@ -813,5 +1160,312 @@ class EditVariableProductTest extends TestCase
 
         $reloaded = app(ProductRepository::class)->findByIdWithVariations((string) $productModel->id);
         $this->assertSame('Cotton', $reloaded->descriptiveAttributes()[(string) $material->id()]);
+    }
+
+    /**
+     * The real save-confirmation mechanism, verified directly against
+     * the resolved Action object's own state — NOT via a simulated
+     * click/mountAction() flow. A real, honest limitation found while
+     * building this: this page overrides form() directly (unlike
+     * EditProduct.php, which relies on EditRecord's own default), and
+     * no working ->mountAction()/TestAction schema-addressing
+     * combination could be confirmed to correctly resolve this page's
+     * own form-embedded 'save' action within reasonable effort — every
+     * attempt left $livewire->mountedActions empty (the action never
+     * resolves), which is a Filament testing-infrastructure question,
+     * not a question about this feature's own correctness. What IS
+     * proven here, directly and reliably: getSaveFormAction() (called
+     * via Reflection, since it's protected — the same real method
+     * Filament itself calls to build the actual rendered Save button)
+     * genuinely returns isConfirmationRequired()=true only when
+     * base_sku is genuinely changing, and — a REAL BUG this task's own
+     * testing found and fixed (see getSaveFormAction()'s own docblock)
+     * — shouldOpenModal() (the actual gate Filament's real mountAction()
+     * checks before showing a modal, confirmed against its installed
+     * source) correctly tracks that same condition, not an
+     * unconditionally-true default from a merely non-blank
+     * ->modalHeading()/->modalDescription().
+     *
+     * "Cancelling leaves everything unchanged" is not separately
+     * simulated here either, for the same honest reason — it follows
+     * directly from the same confirmed source-level guarantee: Filament's
+     * own mountAction() (installed source, read in full while building
+     * this) only calls the action's handler (callMountedAction(), which
+     * is what would run save()) when shouldOpenModal() is false OR the
+     * action is explicitly confirmed; a real click on Cancel never
+     * reaches that call at all.
+     */
+    public function test_the_real_save_action_requires_confirmation_only_when_base_sku_is_genuinely_changing(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        [$product] = $this->persistedVariableProductWithOneVariation();
+        $productModel = ProductModel::find($product->id());
+
+        $resolveSaveAction = function ($component) {
+            $reflection = new \ReflectionMethod($component->instance(), 'getSaveFormAction');
+            $reflection->setAccessible(true);
+
+            return $reflection->invoke($component->instance());
+        };
+
+        // Case 1: base_sku unchanged — no confirmation, no modal.
+        $unchanged = Livewire::test(EditVariableProduct::class, ['record' => $productModel->id]);
+        $unchangedAction = $resolveSaveAction($unchanged);
+        $this->assertFalse($unchangedAction->isConfirmationRequired());
+        $this->assertFalse($unchangedAction->shouldOpenModal());
+
+        // Case 2: base_sku genuinely changed — confirmation required,
+        // modal shown, with the real old/new values in the description.
+        $changed = Livewire::test(EditVariableProduct::class, ['record' => $productModel->id])
+            ->fillForm(['base_sku' => 'SKU-VAR-NEW']);
+        $changedAction = $resolveSaveAction($changed);
+        $this->assertTrue($changedAction->isConfirmationRequired());
+        $this->assertTrue($changedAction->shouldOpenModal());
+        $this->assertSame(
+            'Changing the base SKU from "SKU-VAR" to "SKU-VAR-NEW" will also update every variant SKU that still starts with "SKU-VAR-" to start with "SKU-VAR-NEW-" instead. A variant SKU you already customized to something else will not be touched.',
+            (string) $changedAction->getModalDescription()
+        );
+
+        // Case 3: base_sku cleared to blank — still counts as "this
+        // will change" (it's about to auto-generate a new one), per
+        // this task's own explicit "don't under-detect this" requirement.
+        $blanked = Livewire::test(EditVariableProduct::class, ['record' => $productModel->id])
+            ->fillForm(['base_sku' => '']);
+        $blankedAction = $resolveSaveAction($blanked);
+        $this->assertTrue($blankedAction->isConfirmationRequired());
+
+        // Case 4: a product with zero variations never needs confirming
+        // at all, even with a genuinely different base_sku — nothing to
+        // cascade to.
+        $emptyProduct = Product::createVariable('Empty Variable', 'SKU-EMPTY', 'empty-variable');
+        app(ProductRepository::class)->save($emptyProduct);
+        $emptyProductModel = ProductModel::find($emptyProduct->id());
+
+        $emptyChanged = Livewire::test(EditVariableProduct::class, ['record' => $emptyProductModel->id])
+            ->fillForm(['base_sku' => 'SKU-EMPTY-NEW']);
+        $emptyChangedAction = $resolveSaveAction($emptyChanged);
+        $this->assertFalse($emptyChangedAction->isConfirmationRequired());
+    }
+
+    /**
+     * The real cascade: every variant sku that starts with the OLD
+     * base_sku prefix is renamed to the new one; a variant sku that
+     * does NOT start with that prefix (already manually customized) is
+     * deliberately left alone. Uses ->call('save') — confirmed
+     * elsewhere in this file to bypass the confirmation modal entirely
+     * (a direct Livewire method call, a separate code path from the
+     * Action's own mounted-action flow) while still exercising the
+     * real, unconditional server-side cascade logic.
+     */
+    public function test_confirming_a_base_sku_change_cascades_every_prefix_matching_variant_and_leaves_a_customized_one_alone(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        [$product, $blackId, $whiteId] = $this->persistedVariableProductWithTwoVariations();
+        $productModel = ProductModel::find($product->id());
+
+        // Manually customize the White variation's sku to something
+        // that does NOT start with the old base_sku prefix.
+        $component = Livewire::test(EditVariableProduct::class, ['record' => $productModel->id]);
+        $rows = $component->get('data.existing_variations');
+        $rowKeyByVariationId = [];
+        foreach ($rows as $key => $row) {
+            $rowKeyByVariationId[$row['variation_id']] = $key;
+        }
+
+        $component->set("data.existing_variations.{$rowKeyByVariationId[$whiteId]}.sku", 'CUSTOM-UNRELATED-SKU')
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        // Now change base_sku — the still-default-prefixed Black
+        // variation must cascade; the just-customized White one must not.
+        Livewire::test(EditVariableProduct::class, ['record' => $productModel->id])
+            ->fillForm(['base_sku' => 'SKU-VAR-2'])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $reloaded = app(ProductRepository::class)->findByIdWithVariations((string) $productModel->id);
+        $skusById = [];
+        foreach ($reloaded->variations() as $variation) {
+            $skusById[$variation->id()] = $variation->sku();
+        }
+
+        $this->assertSame('SKU-VAR-2-BLACK', $skusById[$blackId]);
+        $this->assertSame('CUSTOM-UNRELATED-SKU', $skusById[$whiteId]);
+    }
+
+    /**
+     * An explicit, same-submission per-row sku edit wins over the
+     * cascade — ordering this task's own instruction called out
+     * explicitly as load-bearing (updateVariationRows() runs BEFORE
+     * the cascade in updateProduct()).
+     */
+    public function test_an_explicit_per_row_sku_edit_in_the_same_submission_wins_over_the_cascade(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        [$product, $variationId] = $this->persistedVariableProductWithOneVariation();
+        $productModel = ProductModel::find($product->id());
+
+        $component = Livewire::test(EditVariableProduct::class, ['record' => $productModel->id]);
+        $rowKeys = array_keys($component->get('data.existing_variations'));
+
+        $component->set("data.existing_variations.{$rowKeys[0]}.sku", 'MY-OWN-EXPLICIT-SKU')
+            ->set('data.base_sku', 'SKU-VAR-2')
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $reloaded = app(ProductRepository::class)->findByIdWithVariations((string) $productModel->id);
+        $this->assertSame('MY-OWN-EXPLICIT-SKU', $reloaded->variations()[0]->sku());
+    }
+
+    /**
+     * The real, itemized "here's what actually changed" notification —
+     * a genuine sku UNIQUE-constraint collision (seeded deliberately: a
+     * real, unrelated variation already has the exact sku this
+     * submission also tries to save), triggering
+     * EloquentProductRepository's own real collision-retry suffixing.
+     * Confirms BOTH halves this task's own instruction requires: the
+     * notification itself (real title, matching this task's own
+     * itemized-list intent), AND — the part a notification alone does
+     * NOT prove — that afterSave()'s $this->fillForm() call genuinely
+     * refreshes the LIVE component's own state to the real, corrected
+     * sku, not what was typed.
+     */
+    public function test_a_real_sku_collision_produces_the_notification_and_the_live_form_shows_the_corrected_sku(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        // A second, unrelated SIMPLE product's own universal Variation
+        // already owns this exact sku — a real UNIQUE constraint
+        // collision waiting to happen, not a simulated one. SIMPLE (not
+        // a second VARIABLE product) deliberately, so it needs no
+        // second "color" AttributeDefinition/axis of its own at all.
+        $otherProduct = Product::createSimple('Other Product', 'TAKEN-SKU', 'other-product');
+        app(ProductRepository::class)->save($otherProduct);
+
+        [$product, $variationId] = $this->persistedVariableProductWithOneVariation();
+        $productModel = ProductModel::find($product->id());
+
+        $component = Livewire::test(EditVariableProduct::class, ['record' => $productModel->id]);
+        $rowKeys = array_keys($component->get('data.existing_variations'));
+
+        $component->set("data.existing_variations.{$rowKeys[0]}.sku", 'TAKEN-SKU')
+            ->call('save')
+            ->assertHasNoFormErrors()
+            ->assertNotified(__('products.sku_adjustment.notification_title'));
+
+        $reloaded = app(ProductRepository::class)->findByIdWithVariations((string) $productModel->id);
+        $realFinalSku = $reloaded->variations()[0]->sku();
+
+        // The real collision-retry mechanism did its job — the real
+        // final sku is NOT the one that was submitted.
+        $this->assertNotSame('TAKEN-SKU', $realFinalSku);
+        $this->assertStringStartsWith('TAKEN-SKU-', $realFinalSku);
+
+        // The real point: the LIVE component's own state now shows the
+        // real, corrected value — not the typed one — proving
+        // afterSave()'s $this->fillForm() call genuinely re-seeded the
+        // form, not just that the DB row is correct.
+        $liveRows = $component->get('data.existing_variations');
+        $liveRow = array_values($liveRows)[0];
+        $this->assertSame($realFinalSku, $liveRow['sku']);
+    }
+
+    /**
+     * The negative case: a submission with no sku changes at all (no
+     * base_sku change, no per-row edits, no collision) shows no
+     * notification — afterSave() correctly finds zero differing rows
+     * and returns early.
+     */
+    public function test_a_submission_with_no_sku_changes_shows_no_notification(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        [$product] = $this->persistedVariableProductWithOneVariation();
+        $productModel = ProductModel::find($product->id());
+
+        Livewire::test(EditVariableProduct::class, ['record' => $productModel->id])
+            ->fillForm(['name' => 'Renamed, Nothing SKU-Related'])
+            ->call('save')
+            ->assertHasNoFormErrors()
+            ->assertNotNotified(__('products.sku_adjustment.notification_title'));
+    }
+
+    /**
+     * The other half of this task: clearing base_sku (and slug) on
+     * EDIT must trigger real auto-generation — ->required() no longer
+     * blocks a blank submission (see this class's own
+     * generalTabComponents()), and the write side resolves a blank
+     * value through the same real Hook::apply() calls Create already
+     * uses, rather than trading a friendly validation message for a
+     * raw InvalidArgumentException from Product::assertValidBaseSku()/
+     * assertValidSlug() (confirmed both genuinely reject an empty
+     * value, by reading their real source).
+     */
+    public function test_clearing_base_sku_and_slug_on_edit_triggers_real_auto_generation(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        [$product] = $this->persistedVariableProductWithOneVariation();
+        $productModel = ProductModel::find($product->id());
+
+        Livewire::test(EditVariableProduct::class, ['record' => $productModel->id])
+            ->fillForm(['base_sku' => '', 'slug' => ''])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $reloaded = app(ProductRepository::class)->findByIdWithVariations((string) $productModel->id);
+
+        $this->assertNotSame('', $reloaded->baseSku());
+        $this->assertNotSame('SKU-VAR', $reloaded->baseSku());
+        $this->assertNotSame('', $reloaded->slug());
+    }
+
+    /** An explicitly-typed base_sku/slug on edit is used verbatim, unchanged — same as before this fix. */
+    public function test_an_explicitly_typed_base_sku_and_slug_on_edit_are_used_verbatim(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        [$product] = $this->persistedVariableProductWithOneVariation();
+        $productModel = ProductModel::find($product->id());
+
+        Livewire::test(EditVariableProduct::class, ['record' => $productModel->id])
+            ->fillForm(['base_sku' => 'MY-EXPLICIT-SKU', 'slug' => 'my-explicit-slug'])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $reloaded = app(ProductRepository::class)->findByIdWithVariations((string) $productModel->id);
+
+        $this->assertSame('MY-EXPLICIT-SKU', $reloaded->baseSku());
+        $this->assertSame('my-explicit-slug', $reloaded->slug());
+    }
+
+    /**
+     * Resubmitting an UNCHANGED, already-valid slug must never be
+     * silently corrupted — the real, confirmed bug this task's own
+     * verification found in slug's own Hook listener (deduplicate()
+     * self-colliding against the SAME product's own existing row) if
+     * Hook::apply() were called unconditionally on every edit, the way
+     * base_sku's own call is. Proven here specifically because it is
+     * the one case the "clearing triggers generation" fix could have
+     * silently regressed if slug's own Hook::apply() call were not
+     * guarded to blank-only.
+     */
+    public function test_resubmitting_an_unchanged_slug_on_edit_does_not_corrupt_it(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        [$product] = $this->persistedVariableProductWithOneVariation();
+        $productModel = ProductModel::find($product->id());
+
+        Livewire::test(EditVariableProduct::class, ['record' => $productModel->id])
+            ->fillForm(['name' => 'Renamed, Slug Untouched'])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $reloaded = app(ProductRepository::class)->findByIdWithVariations((string) $productModel->id);
+        $this->assertSame('variable-shirt', $reloaded->slug());
     }
 }
