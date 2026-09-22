@@ -57,21 +57,25 @@ use RuntimeException;
  * VARIABLE-product edit scaffold — Step 1 ("real VARIABLE editing"
  * series, admin-panel-design.md §13.1's own follow-on): parent fields,
  * mirroring EditProduct.php's General+Attributes tabs and sidebar. Step
- * 2a (this revision) extends the "Variations" tab from read-only to
- * genuinely editable per-row: sku/barcode/is_purchasable/cost/
- * stock_quantity, plus a bulk-set convenience for cost and stock —
- * see existingVariationsComponents()'s own docblock for the full
- * shape, and updateProduct()'s own for how each is diff-written.
+ * 2a extended the "Variations" tab from read-only to genuinely
+ * editable per-row: sku/barcode/is_purchasable/cost/stock_quantity,
+ * plus a bulk-set convenience for cost and stock. Step 2b (this
+ * revision) adds regular_price/sale_price, BOTH at the PRODUCT level
+ * (always-visible, always-editable "Product Regular/Sale Price"
+ * fields — no toggle/checkbox, per §4.5's own explicit "leave this UX
+ * choice to the Admin UI" allowance) AND per row (an explicit
+ * VARIATION-level override, empty by default, falling back to the
+ * PRODUCT-level value per §4.3's own real item-level resolution order
+ * — see existingVariationsComponents()'s own docblock for the full
+ * shape, and updateProduct()'s own for how each is diff-written).
  *
  * EXPLICITLY NOT HERE (separate, later steps, each needing its own
  * design — see this class's own git history / task notes, not
- * repeated per-field below): regular_price/sale_price and the
- * PRODUCT/VARIATION pricing-scope toggle (Step 2b — needs new domain-
- * service work ProductPricingAndStock doesn't have yet); per-variation
- * media (Step 3); adding new variations or extending declared axes
- * (Step 4 — needs declareVariationAxes()'s own redeclaration guard
- * worked out first). size_guide_id is out of scope too — not wired
- * into SIMPLE's own admin UI either.
+ * repeated per-field below): per-variation media (Step 3); adding new
+ * variations or extending declared axes (Step 4 — needs
+ * declareVariationAxes()'s own redeclaration guard worked out first).
+ * size_guide_id is out of scope too — not wired into SIMPLE's own
+ * admin UI either.
  *
  * form() IS OVERRIDDEN (unlike EditProduct.php, which relies on
  * EditRecord's own default `form() => static::getResource()::form()`
@@ -268,11 +272,55 @@ class EditVariableProduct extends EditRecord
      * its target column — a staff member who cannot edit cost/stock
      * per-row must not be able to bulk-set it either.
      *
+     * PRICE (Step 2b) — no toggle/checkbox between "one price" and
+     * "per-variation pricing": product_regular_price/product_sale_price
+     * are always-visible, always-editable REAL fields (unlike
+     * bulk_cost/bulk_stock_quantity, these two dehydrate into $data —
+     * they write a real PRODUCT-level PriceListItem every submission,
+     * not a per-row broadcast convenience). Each row's own
+     * regular_price/sale_price stays empty by default (no
+     * VARIATION-level override — pricing-persistence-domain-design.md
+     * §4.3's own real fallback then resolves the PRODUCT-level value at
+     * read time) or gets filled in for an explicit per-row override.
+     * §4.5 explicitly leaves this exact UX choice — mode-switch vs.
+     * always-both-levels-available — to the Admin UI, not the domain;
+     * this is the simpler of the two.
+     *
+     * regular_price/sale_price mirror
+     * ProductResource::priceStockTabComponents()'s own real price
+     * posture exactly: ->disabled() only when lacking PRICE_MANAGE,
+     * NEVER ->visible()-gated — ordinary catalog info any PRODUCT_VIEW
+     * holder should see, distinct from cost's own two-gate posture
+     * above. ->placeholder() takes string|Closure (confirmed against
+     * the installed HasPlaceholder trait source) and resolves a
+     * closure's named Get $get parameter the same way ->options()/
+     * ->afterStateUpdated() already do elsewhere in this codebase — an
+     * empty row's placeholder shows the real, currently-resolved
+     * PRODUCT-level price, not a generic hint, so the merchant can see
+     * what price is actually in effect before typing an override.
+     * regular_price_placeholder/sale_price_placeholder are seeded per
+     * row in mutateFormDataBeforeFill() (same "seeded once, read via
+     * Get(), never itself submitted" posture as 'label') —
+     * ->dehydrated(false), since they are a display value only, never
+     * a real field this step writes anywhere.
+     *
      * @return array<int, \Filament\Schemas\Components\Component>
      */
     private function existingVariationsComponents(): array
     {
         return [
+            TextInput::make('product_regular_price')
+                ->label(__('products.fields.regular_price'))
+                ->numeric()
+                ->minValue(0)
+                ->step(0.01)
+                ->disabled(fn (): bool => ! ProductResource::staffHasPermission(Permission::PRICE_MANAGE)),
+            TextInput::make('product_sale_price')
+                ->label(__('products.fields.sale_price'))
+                ->numeric()
+                ->minValue(0)
+                ->step(0.01)
+                ->disabled(fn (): bool => ! ProductResource::staffHasPermission(Permission::PRICE_MANAGE)),
             TextInput::make('bulk_cost')
                 ->label(__('products.wizard.variations.bulk_cost'))
                 ->numeric()
@@ -330,6 +378,24 @@ class EditVariableProduct extends EditRecord
                         ->integer()
                         ->minValue(0)
                         ->disabled(fn (): bool => ! ProductResource::staffHasPermission(Permission::PRODUCT_MANAGE)),
+                    TextInput::make('regular_price')
+                        ->label(__('products.fields.regular_price'))
+                        ->numeric()
+                        ->minValue(0)
+                        ->step(0.01)
+                        ->disabled(fn (): bool => ! ProductResource::staffHasPermission(Permission::PRICE_MANAGE))
+                        ->placeholder(fn (Get $get): ?string => $get('regular_price_placeholder')),
+                    TextInput::make('sale_price')
+                        ->label(__('products.fields.sale_price'))
+                        ->numeric()
+                        ->minValue(0)
+                        ->step(0.01)
+                        ->disabled(fn (): bool => ! ProductResource::staffHasPermission(Permission::PRICE_MANAGE))
+                        ->placeholder(fn (Get $get): ?string => $get('sale_price_placeholder')),
+                    Hidden::make('regular_price_placeholder')
+                        ->dehydrated(false),
+                    Hidden::make('sale_price_placeholder')
+                        ->dehydrated(false),
                 ]),
         ];
     }
@@ -390,6 +456,11 @@ class EditVariableProduct extends EditRecord
 
         $pricingAndStock = app(ProductPricingAndStock::class);
 
+        $productRegularPrice = $pricingAndStock->regularPriceDisplayForProduct($productId);
+        $productSalePrice = $pricingAndStock->salePriceDisplayForProduct($productId);
+        $data['product_regular_price'] = $productRegularPrice;
+        $data['product_sale_price'] = $productSalePrice;
+
         $data['existing_variations'] = array_map(
             fn (Variation $variation): array => [
                 'variation_id' => $variation->id(),
@@ -399,6 +470,10 @@ class EditVariableProduct extends EditRecord
                 'is_purchasable' => $variation->isPurchasable(),
                 'cost' => $pricingAndStock->costDisplay($variation->id()),
                 'stock_quantity' => $pricingAndStock->stockQuantity($variation->id()),
+                'regular_price' => $pricingAndStock->regularPriceDisplay($variation->id()),
+                'sale_price' => $pricingAndStock->salePriceDisplay($variation->id()),
+                'regular_price_placeholder' => $productRegularPrice,
+                'sale_price_placeholder' => $productSalePrice,
             ],
             $product->variations()
         );
@@ -591,15 +666,52 @@ class EditVariableProduct extends EditRecord
             app(ArchiveProductMediaCleaner::class)->clean($product->id());
         }
 
-        // cost/stock_quantity, AFTER the product/variation save() above
-        // — ProductPricingAndStock composes separate EasyCo\Pricing/
-        // EasyCo\Inventory repositories, entirely independent of
-        // ProductRepository::save(), same ordering EditProduct's own
+        // cost/stock_quantity/regular_price/sale_price, AFTER the
+        // product/variation save() above — ProductPricingAndStock
+        // composes separate EasyCo\Pricing/EasyCo\Inventory
+        // repositories, entirely independent of ProductRepository::
+        // save(), same ordering EditProduct's own
         // updatePricingAndStock() already establishes for the SIMPLE
         // flow.
+        $this->updateProductLevelPricing($product->id(), $data, $logger);
         $this->updateVariationPricingAndStock($product->variations(), $data['existing_variations'] ?? [], $logger, $product->id());
 
         return ProductModel::find($product->id());
+    }
+
+    /**
+     * The PRODUCT-level counterpart of updateVariationPricingAndStock()'s
+     * own regular_price/sale_price handling — ONCE per submission (a
+     * single PRODUCT-level PriceListItem per system list, not one per
+     * row). Same permission-gate-BEFORE-reading-$data discipline: the
+     * PRICE_MANAGE check gates the whole method, before either
+     * product_regular_price or product_sale_price is ever read out of
+     * $data. ActivityLogger field names are NOT per-id scoped (unlike
+     * every per-variation field in this class) — there is only ever one
+     * PRODUCT-level record per product, so no row to disambiguate
+     * against.
+     */
+    private function updateProductLevelPricing(string $productId, array $data, ActivityLogger $logger): void
+    {
+        if (! ProductResource::staffHasPermission(Permission::PRICE_MANAGE)) {
+            return;
+        }
+
+        $pricingAndStock = app(ProductPricingAndStock::class);
+
+        $currentRegularPrice = $pricingAndStock->regularPriceDisplayForProduct($productId);
+        $newRegularPrice = $pricingAndStock->normalizeDecimalDisplay($data['product_regular_price'] ?? null);
+        if ($currentRegularPrice !== $newRegularPrice) {
+            $logger->logFieldChanged('product', $productId, 'product_regular_price', $currentRegularPrice, $newRegularPrice);
+            $pricingAndStock->writeRegularPriceForProduct($productId, $newRegularPrice);
+        }
+
+        $currentSalePrice = $pricingAndStock->salePriceDisplayForProduct($productId);
+        $newSalePrice = $pricingAndStock->normalizeDecimalDisplay($data['product_sale_price'] ?? null);
+        if ($currentSalePrice !== $newSalePrice) {
+            $logger->logFieldChanged('product', $productId, 'product_sale_price', $currentSalePrice, $newSalePrice);
+            $pricingAndStock->writeSalePriceForProduct($productId, $newSalePrice);
+        }
     }
 
     /**
@@ -677,10 +789,13 @@ class EditVariableProduct extends EditRecord
      * isDehydrated() — see priceStockTabComponents()'s own docblock for
      * the full, already-found gap this guards against), not the diff
      * itself. Applied per row now instead of once for a single
-     * universal Variation.
+     * universal Variation. Step 2b extends this with regular_price/
+     * sale_price (PRICE_MANAGE-gated, same as cost/stock above) — each
+     * row's own VARIATION-level override via the existing, unchanged
+     * writeRegularPrice()/writeSalePrice().
      *
      * @param Variation[] $variations
-     * @param array<int, array{variation_id?: mixed, cost?: mixed, stock_quantity?: mixed}> $rows
+     * @param array<int, array{variation_id?: mixed, cost?: mixed, stock_quantity?: mixed, regular_price?: mixed, sale_price?: mixed}> $rows
      */
     private function updateVariationPricingAndStock(array $variations, array $rows, ActivityLogger $logger, string $productId): void
     {
@@ -713,6 +828,32 @@ class EditVariableProduct extends EditRecord
                 if ($currentStock !== $newStock) {
                     $logger->logFieldChanged('product', $productId, "variation[{$variationId}].stock_quantity", (string) $currentStock, (string) $newStock);
                     $pricingAndStock->writeStockQuantity($variationId, $newStock);
+                }
+            }
+
+            // Same permission-gate-BEFORE-reading-$data discipline as
+            // cost/stock above — but no "!== null" guard here, unlike
+            // cost: writeRegularPrice()/writeSalePrice() (unchanged,
+            // reused verbatim) genuinely remove the PriceListItem on a
+            // blank value (pricing-persistence-domain-design.md §4.5:
+            // "active only while populated"), the real, intended
+            // behavior for clearing a per-row override back to the
+            // PRODUCT-level fallback — unlike ProductCostRepository,
+            // which has no removal path at all (see writeCost()'s own
+            // docblock).
+            if (ProductResource::staffHasPermission(Permission::PRICE_MANAGE)) {
+                $currentRegularPrice = $pricingAndStock->regularPriceDisplay($variationId);
+                $newRegularPrice = $pricingAndStock->normalizeDecimalDisplay($row['regular_price'] ?? null);
+                if ($currentRegularPrice !== $newRegularPrice) {
+                    $logger->logFieldChanged('product', $productId, "variation[{$variationId}].regular_price", $currentRegularPrice, $newRegularPrice);
+                    $pricingAndStock->writeRegularPrice($variationId, $newRegularPrice);
+                }
+
+                $currentSalePrice = $pricingAndStock->salePriceDisplay($variationId);
+                $newSalePrice = $pricingAndStock->normalizeDecimalDisplay($row['sale_price'] ?? null);
+                if ($currentSalePrice !== $newSalePrice) {
+                    $logger->logFieldChanged('product', $productId, "variation[{$variationId}].sale_price", $currentSalePrice, $newSalePrice);
+                    $pricingAndStock->writeSalePrice($variationId, $newSalePrice);
                 }
             }
         }

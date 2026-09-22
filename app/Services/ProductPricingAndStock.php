@@ -16,14 +16,24 @@ use EasyCo\Pricing\ProductCost;
 use RuntimeException;
 
 /**
- * Phase 2 (Price + Stock for SIMPLE products) — the single place
- * ProductResource/CreateProduct/EditProduct read and write Regular
- * Price, Sale Price, Cost, and Stock quantity, all keyed by the
- * universal Variation's own priceableId(). App/ layer, mirroring
- * DetachProductFromCatalogLookup's own "cross-package composition
- * lives in app/" precedent — this composes three separate EasyCo\*
- * packages (Pricing twice over, Inventory once), none of which may
- * depend on each other or on Catalog directly (CLAUDE.md rule 9).
+ * Phase 2 (Price + Stock for SIMPLE products) + Step 2b (VARIABLE
+ * products' own PRODUCT/VARIATION price mechanism) — the single place
+ * ProductResource/CreateProduct/EditProduct/EditVariableProduct read
+ * and write Regular Price, Sale Price, Cost, and Stock quantity. The
+ * four original methods are keyed by a Variation's own priceableId()
+ * (SIMPLE's universal Variation, or a VARIABLE product's own per-row
+ * override); the four *ForProduct() methods are keyed by a Product's
+ * own id directly (pricing-persistence-domain-design.md §4.3's
+ * PRODUCT-level item — covers every current and future Variation of
+ * that product unless a VARIATION-level override exists; the item-
+ * level fallback itself is resolved by the real PriceResolver at read
+ * time, not by this class, which only ever reads/writes exactly the
+ * target it's given — see regularPriceDisplayForProduct()'s own
+ * docblock). App/ layer, mirroring DetachProductFromCatalogLookup's
+ * own "cross-package composition lives in app/" precedent — this
+ * composes three separate EasyCo\* packages (Pricing twice over,
+ * Inventory once), none of which may depend on each other or on
+ * Catalog directly (CLAUDE.md rule 9).
  *
  * ProductCostRepository/PriceListItemRepository/PriceList are
  * documented INTERNAL to EasyCo\Pricing (pricing-domain-design.md
@@ -33,10 +43,10 @@ use RuntimeException;
  *
  * REGULAR/SALE PRICE WRITE VIA THE TWO RESERVED SYSTEM PriceLists
  * ("Regular Prices"/"Manual Sale" — pricing-persistence-domain-
- * design.md §4.5), always as a VARIATION-level PriceListItem keyed to
- * the SIMPLE product's universal Variation — never PRODUCT-level (that
- * is the VARIABLE-product wizard's own future job, out of this task's
- * scope). A missing system list is a genuine setup error on WRITE
+ * design.md §4.5), as either a VARIATION-level or PRODUCT-level
+ * PriceListItem depending on which set of methods is called — the
+ * caller decides the target, this class has no mode-switch of its
+ * own. A missing system list is a genuine setup error on WRITE
  * (fail loud, RuntimeException — §4.6's own documented failure mode
  * for "pricing isn't configured at all") but never on READ (a missing
  * list simply has nothing to display yet).
@@ -109,12 +119,34 @@ final class ProductPricingAndStock
 
     public function regularPriceDisplay(string $priceableId): ?string
     {
-        return $this->priceDisplayInSystemList(self::REGULAR_PRICES_LIST, $priceableId);
+        return $this->priceDisplayInSystemList(self::REGULAR_PRICES_LIST, $priceableId, PriceListItemTargetType::VARIATION);
     }
 
     public function salePriceDisplay(string $priceableId): ?string
     {
-        return $this->priceDisplayInSystemList(self::MANUAL_SALE_LIST, $priceableId);
+        return $this->priceDisplayInSystemList(self::MANUAL_SALE_LIST, $priceableId, PriceListItemTargetType::VARIATION);
+    }
+
+    /**
+     * PRODUCT-level counterpart of regularPriceDisplay() — a VARIABLE
+     * product's own single "Product Regular Price" field
+     * (EditVariableProduct's own admin-panel-design.md §13.1 follow-on),
+     * covering every current and future Variation of that product
+     * automatically unless a VARIATION-level override exists
+     * (pricing-persistence-domain-design.md §4.3's own item-level
+     * fallback — resolved by the real PriceResolver at read time, not
+     * by this display-only method, which only ever reads exactly the
+     * target it's given).
+     */
+    public function regularPriceDisplayForProduct(string $productId): ?string
+    {
+        return $this->priceDisplayInSystemList(self::REGULAR_PRICES_LIST, $productId, PriceListItemTargetType::PRODUCT);
+    }
+
+    /** PRODUCT-level counterpart of salePriceDisplay() — see regularPriceDisplayForProduct()'s own docblock. */
+    public function salePriceDisplayForProduct(string $productId): ?string
+    {
+        return $this->priceDisplayInSystemList(self::MANUAL_SALE_LIST, $productId, PriceListItemTargetType::PRODUCT);
     }
 
     public function costDisplay(string $priceableId): ?string
@@ -153,13 +185,25 @@ final class ProductPricingAndStock
     /** @throws RuntimeException If the "Regular Prices" system list is missing. */
     public function writeRegularPrice(string $priceableId, ?string $decimal): void
     {
-        $this->writePriceInSystemList(self::REGULAR_PRICES_LIST, $priceableId, $decimal);
+        $this->writePriceInSystemList(self::REGULAR_PRICES_LIST, $priceableId, $decimal, PriceListItemTargetType::VARIATION);
     }
 
     /** @throws RuntimeException If the "Manual Sale" system list is missing. */
     public function writeSalePrice(string $priceableId, ?string $decimal): void
     {
-        $this->writePriceInSystemList(self::MANUAL_SALE_LIST, $priceableId, $decimal);
+        $this->writePriceInSystemList(self::MANUAL_SALE_LIST, $priceableId, $decimal, PriceListItemTargetType::VARIATION);
+    }
+
+    /** PRODUCT-level counterpart of writeRegularPrice() — see regularPriceDisplayForProduct()'s own docblock. @throws RuntimeException If the "Regular Prices" system list is missing. */
+    public function writeRegularPriceForProduct(string $productId, ?string $decimal): void
+    {
+        $this->writePriceInSystemList(self::REGULAR_PRICES_LIST, $productId, $decimal, PriceListItemTargetType::PRODUCT);
+    }
+
+    /** PRODUCT-level counterpart of writeSalePrice() — see regularPriceDisplayForProduct()'s own docblock. @throws RuntimeException If the "Manual Sale" system list is missing. */
+    public function writeSalePriceForProduct(string $productId, ?string $decimal): void
+    {
+        $this->writePriceInSystemList(self::MANUAL_SALE_LIST, $productId, $decimal, PriceListItemTargetType::PRODUCT);
     }
 
     /** See this class's own docblock — a blank $decimal is a genuine no-op, not a removal; ProductCostRepository has no delete path. */
@@ -190,7 +234,7 @@ final class ProductPricingAndStock
         $this->stockLevels->save($stockLevel);
     }
 
-    private function priceDisplayInSystemList(string $listName, string $priceableId): ?string
+    private function priceDisplayInSystemList(string $listName, string $targetId, PriceListItemTargetType $targetType): ?string
     {
         $list = $this->priceLists->findSystemListByName($listName);
 
@@ -198,7 +242,7 @@ final class ProductPricingAndStock
             return null;
         }
 
-        $item = $this->priceListItems->findByPriceListIdAndTarget($list->id(), PriceListItemTargetType::VARIATION, $priceableId);
+        $item = $this->priceListItems->findByPriceListIdAndTarget($list->id(), $targetType, $targetId);
 
         return $item?->price()->gross()->decimalValue();
     }
@@ -218,7 +262,7 @@ final class ProductPricingAndStock
      * path, exactly like priceDisplayInSystemList()'s own read-side
      * posture.
      */
-    private function writePriceInSystemList(string $listName, string $priceableId, ?string $decimal): void
+    private function writePriceInSystemList(string $listName, string $targetId, ?string $decimal, PriceListItemTargetType $targetType): void
     {
         if (! filled($decimal)) {
             $list = $this->priceLists->findSystemListByName($listName);
@@ -227,7 +271,7 @@ final class ProductPricingAndStock
                 return;
             }
 
-            $existing = $this->priceListItems->findByPriceListIdAndTarget($list->id(), PriceListItemTargetType::VARIATION, $priceableId);
+            $existing = $this->priceListItems->findByPriceListIdAndTarget($list->id(), $targetType, $targetId);
 
             if ($existing !== null) {
                 $this->priceListItems->remove($existing->id());
@@ -237,7 +281,7 @@ final class ProductPricingAndStock
         }
 
         $list = $this->requireSystemList($listName);
-        $existing = $this->priceListItems->findByPriceListIdAndTarget($list->id(), PriceListItemTargetType::VARIATION, $priceableId);
+        $existing = $this->priceListItems->findByPriceListIdAndTarget($list->id(), $targetType, $targetId);
 
         $money = Money::fromDecimal($decimal, DefaultCurrency::get());
         $taxRateBasisPoints = (int) config('services.pricing.default_tax_rate_basis_points', 0);
@@ -253,8 +297,8 @@ final class ProductPricingAndStock
         $this->priceListItems->save(new PriceListItem(
             id: null,
             priceListId: $list->id(),
-            targetType: PriceListItemTargetType::VARIATION,
-            targetId: $priceableId,
+            targetType: $targetType,
+            targetId: $targetId,
             price: $price,
         ));
     }
