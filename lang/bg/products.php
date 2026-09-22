@@ -28,6 +28,8 @@ return [
             'combination_label' => 'Комбинация',
             'sku_label' => 'SKU',
             'active_label' => 'Активен',
+            'bulk_cost' => 'Задай себестойност за всички варианти',
+            'bulk_stock_quantity' => 'Задай наличност за всички варианти',
         ],
     ],
 

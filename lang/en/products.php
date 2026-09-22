@@ -28,6 +28,8 @@ return [
             'combination_label' => 'Combination',
             'sku_label' => 'SKU',
             'active_label' => 'Active',
+            'bulk_cost' => 'Set cost for all variations',
+            'bulk_stock_quantity' => 'Set stock for all variations',
         ],
     ],
 

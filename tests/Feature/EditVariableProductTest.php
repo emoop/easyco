@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Filament\Resources\ProductResource;
 use App\Filament\Resources\ProductResource\Pages\EditVariableProduct;
 use App\Filament\StaffPanelUser;
+use App\Services\ProductPricingAndStock;
 use EasyCo\Catalog\AttributeDefinition;
 use EasyCo\Catalog\AttributeValue;
 use EasyCo\Catalog\Brand;
@@ -22,6 +23,8 @@ use EasyCo\Catalog\Contracts\TagRepository;
 use EasyCo\Catalog\Enums\AttributeType;
 use EasyCo\Catalog\Enums\CatalogVisibility;
 use EasyCo\Catalog\Enums\ProductStatus;
+use EasyCo\Catalog\Persistence\Eloquent\AttributeDefinitionModel;
+use EasyCo\Catalog\Persistence\Eloquent\AttributeValueModel;
 use EasyCo\Catalog\Persistence\Eloquent\ProductModel;
 use EasyCo\Catalog\Product;
 use EasyCo\Catalog\ProductCategory;
@@ -29,6 +32,7 @@ use EasyCo\Catalog\ProductGroup;
 use EasyCo\Catalog\ProductTag;
 use EasyCo\Catalog\Season;
 use EasyCo\Catalog\Tag;
+use EasyCo\Catalog\Variation;
 use EasyCo\Catalog\VariationAxis;
 use EasyCo\Staff\Contracts\PasswordHasher;
 use EasyCo\Staff\Contracts\RoleRepository;
@@ -40,8 +44,9 @@ use Livewire\Livewire;
 use Tests\TestCase;
 
 /**
- * EditVariableProduct — Step 1 of "real VARIABLE editing" (parent
- * fields + a read-only Variations list). Fixture helpers mirror
+ * EditVariableProduct — Step 1 (parent fields) + Step 2a (per-
+ * variation sku/barcode/is_purchasable/cost/stock_quantity, editable,
+ * plus a bulk-set convenience for cost/stock). Fixture helpers mirror
  * ProductResourceTest's own established shapes deliberately (same
  * staff/role/brand/season/group/category/tag/attribute construction),
  * duplicated here rather than shared — same reasoning
@@ -141,6 +146,20 @@ class EditVariableProductTest extends TestCase
         return [$product, (string) $variation->id()];
     }
 
+    /** @return array{0: Product, 1: string, 2: string} the persisted VARIABLE product and its two real Variation ids (Black, White) */
+    private function persistedVariableProductWithTwoVariations(): array
+    {
+        [$definition, $black, $white] = $this->persistedColorDefinition();
+
+        $product = Product::createVariable('Variable Shirt', 'SKU-VAR', 'variable-shirt');
+        $product->declareVariationAxes([new VariationAxis($definition, [$black, $white])]);
+        $blackVariation = $product->addStandardVariation([$definition->id() => $black->id()], 'SKU-VAR-BLACK');
+        $whiteVariation = $product->addStandardVariation([$definition->id() => $white->id()], 'SKU-VAR-WHITE');
+        app(ProductRepository::class)->save($product);
+
+        return [$product, (string) $blackVariation->id(), (string) $whiteVariation->id()];
+    }
+
     public function test_get_on_edit_variable_renders_for_a_real_variable_product_with_real_variations(): void
     {
         $this->actingAsPanelAdministrator();
@@ -195,8 +214,9 @@ class EditVariableProductTest extends TestCase
         $this->assertSame($group->id(), $reloaded->productGroupId());
 
         // The one real Variation this product started with is
-        // completely untouched — this step's form has no field that
-        // could have written to it at all.
+        // completely untouched — its own row round-trips unchanged
+        // (this test never edits it), so the real per-row diff-write
+        // correctly produces no writes at all.
         $this->assertCount(1, $reloaded->variations());
         $this->assertSame('SKU-VAR-BLACK', $reloaded->variations()[0]->sku());
         $this->assertSame('1112223334445', $reloaded->variations()[0]->barcode());
@@ -265,15 +285,15 @@ class EditVariableProductTest extends TestCase
     }
 
     /**
-     * The read-only Repeater accepts no edits — proven here by directly
-     * setting the live component's own state (bypassing the disabled
-     * inputs a real browser would refuse to let a user type into) and
-     * confirming the submit still leaves the real Variation completely
-     * unchanged, because ->dehydrated(false) keeps
-     * 'existing_variations' out of $data entirely and updateProduct()
-     * never reads it.
+     * Step 2a's own real point: sku/barcode/is_purchasable/cost/
+     * stock_quantity are now genuinely editable per row (unlike Step
+     * 1's fully read-only Repeater) — proven here via real ->set()
+     * calls on the live component's own state (the same mechanism a
+     * real browser interaction produces), then a real submit, then
+     * reloading through the domain layer to confirm every one of the
+     * five fields actually persisted.
      */
-    public function test_directly_mutating_existing_variations_state_has_no_effect_on_submit(): void
+    public function test_editing_sku_barcode_is_purchasable_cost_and_stock_per_row_persists_correctly(): void
     {
         $this->actingAsPanelAdministrator();
 
@@ -283,8 +303,45 @@ class EditVariableProductTest extends TestCase
         $component = Livewire::test(EditVariableProduct::class, ['record' => $productModel->id]);
         $rowKeys = array_keys($component->get('data.existing_variations'));
 
-        $component->set("data.existing_variations.{$rowKeys[0]}.sku", 'TAMPERED-SKU')
-            ->set("data.existing_variations.{$rowKeys[0]}.barcode", '0000000000000')
+        $component->set("data.existing_variations.{$rowKeys[0]}.sku", 'SKU-VAR-BLACK-2')
+            ->set("data.existing_variations.{$rowKeys[0]}.barcode", '9998887776665')
+            ->set("data.existing_variations.{$rowKeys[0]}.is_purchasable", false)
+            ->set("data.existing_variations.{$rowKeys[0]}.cost", '12.50')
+            ->set("data.existing_variations.{$rowKeys[0]}.stock_quantity", '42')
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $reloaded = app(ProductRepository::class)->findByIdWithVariations((string) $productModel->id);
+        $variation = $reloaded->variations()[0];
+        $pricingAndStock = app(ProductPricingAndStock::class);
+
+        $this->assertSame($variationId, $variation->id());
+        $this->assertSame('SKU-VAR-BLACK-2', $variation->sku());
+        $this->assertSame('9998887776665', $variation->barcode());
+        $this->assertFalse($variation->isPurchasable());
+        $this->assertSame('12.50', $pricingAndStock->costDisplay($variationId));
+        $this->assertSame(42, $pricingAndStock->stockQuantity($variationId));
+    }
+
+    /**
+     * The one field this Repeater still keeps genuinely read-only:
+     * 'label' stays ->dehydrated(false) even now — tampering it via
+     * ->set() (the same mechanism a real browser could never actually
+     * reach, since the field itself is ->disabled()) must have zero
+     * effect on submit, proving the dehydrated(false) guard still
+     * works for the one field that still needs it.
+     */
+    public function test_the_label_field_remains_read_only_and_has_no_effect_on_submit(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        [$product, $variationId] = $this->persistedVariableProductWithOneVariation();
+        $productModel = ProductModel::find($product->id());
+
+        $component = Livewire::test(EditVariableProduct::class, ['record' => $productModel->id]);
+        $rowKeys = array_keys($component->get('data.existing_variations'));
+
+        $component->set("data.existing_variations.{$rowKeys[0]}.label", 'Tampered: Label')
             ->call('save')
             ->assertHasNoFormErrors();
 
@@ -292,8 +349,93 @@ class EditVariableProductTest extends TestCase
         $variation = $reloaded->variations()[0];
 
         $this->assertSame($variationId, $variation->id());
-        $this->assertSame('SKU-VAR-BLACK', $variation->sku());
-        $this->assertSame('1112223334445', $variation->barcode());
+        // The real label is derived fresh from attributeAssignments() on
+        // every mount — never stored anywhere the tampered value could
+        // have landed.
+        $this->assertSame(['Color' => 'Black'], $this->realAttributeAssignmentNames($variation));
+    }
+
+    /** @return array<string, string> */
+    private function realAttributeAssignmentNames(Variation $variation): array
+    {
+        $names = [];
+        foreach ($variation->attributeAssignments() as $definitionId => $valueId) {
+            $definitionName = AttributeDefinitionModel::find($definitionId)?->name;
+            $valueName = AttributeValueModel::find($valueId)?->value;
+            $names[$definitionName] = $valueName;
+        }
+
+        return $names;
+    }
+
+    /**
+     * The real gap this task's own instruction flags explicitly:
+     * cost is permission-gated BEFORE $data is even read, not just
+     * diffed — a 'Product Entry' staff member (PRODUCT_VIEW +
+     * PRODUCT_MANAGE only, no COST_VIEW/COST_MANAGE — the real shipped
+     * role, StaffSystemRolesSeeder's own definition) who tampers the
+     * cost field via ->set() (bypassing the real form, where the field
+     * would not even be ->visible()) must still never have that value
+     * written — mirrors this same file's own established tamper-proof
+     * test shape for the one field that still needs it.
+     */
+    public function test_a_staff_member_without_cost_permissions_can_never_write_cost_even_when_tampered(): void
+    {
+        $roleRepository = app(RoleRepository::class);
+        app(StaffSystemRolesSeeder::class)->run($roleRepository);
+        $role = $roleRepository->findSystemRoleByName('Product Entry');
+        $staff = Staff::create('product.entry@example.com', app(PasswordHasher::class)->hash('password123'), 'Product Entry', $role);
+        app(StaffRepository::class)->save($staff);
+        $this->actingAs(StaffPanelUser::find($staff->id()), 'staff');
+
+        [$product, $variationId] = $this->persistedVariableProductWithOneVariation();
+        $productModel = ProductModel::find($product->id());
+
+        $component = Livewire::test(EditVariableProduct::class, ['record' => $productModel->id]);
+        $rowKeys = array_keys($component->get('data.existing_variations'));
+
+        $component->set("data.existing_variations.{$rowKeys[0]}.cost", '999.99')
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $pricingAndStock = app(ProductPricingAndStock::class);
+        $this->assertNull($pricingAndStock->costDisplay($variationId));
+    }
+
+    /**
+     * bulk_cost/bulk_stock_quantity are pure UI convenience —
+     * ->live()->afterStateUpdated() writing into every row's own
+     * cost/stock_quantity via $set() immediately, proven here directly
+     * against the live component's own state (before any submit at
+     * all) across TWO real variations, confirming both rows are
+     * updated, not just the first.
+     */
+    public function test_the_bulk_set_fields_populate_every_rows_cost_and_stock_quantity_in_live_state(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        [$product] = $this->persistedVariableProductWithTwoVariations();
+        $productModel = ProductModel::find($product->id());
+
+        $component = Livewire::test(EditVariableProduct::class, ['record' => $productModel->id]);
+
+        $component->set('data.bulk_cost', '19.99')
+            ->set('data.bulk_stock_quantity', '15');
+
+        $rows = $component->get('data.existing_variations');
+        $this->assertCount(2, $rows);
+
+        // assertEquals, not assertSame: bulk_cost/bulk_stock_quantity
+        // are themselves ->numeric() fields, so Livewire's real state
+        // cast turns the submitted "19.99"/"15" strings into a
+        // float/int $state before afterStateUpdated() ever runs — the
+        // same value, propagated correctly into every row, just not
+        // the same PHP type. What this test proves is the propagation
+        // itself, not a type round-trip.
+        foreach ($rows as $row) {
+            $this->assertEquals(19.99, $row['cost']);
+            $this->assertEquals(15, $row['stock_quantity']);
+        }
     }
 
     /**

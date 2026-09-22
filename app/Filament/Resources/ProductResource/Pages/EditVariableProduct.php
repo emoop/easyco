@@ -5,6 +5,7 @@ namespace App\Filament\Resources\ProductResource\Pages;
 use App\Filament\Resources\ProductResource;
 use App\Services\ActivityLogger;
 use App\Services\ArchiveProductMediaCleaner;
+use App\Services\ProductPricingAndStock;
 use App\Settings\Contracts\SiteSettingsRepository;
 use EasyCo\Catalog\Contracts\ProductCategoryRepository;
 use EasyCo\Catalog\Contracts\ProductRepository;
@@ -19,9 +20,11 @@ use EasyCo\Catalog\Persistence\Eloquent\CategoryModel;
 use EasyCo\Catalog\Persistence\Eloquent\ProductGroupModel;
 use EasyCo\Catalog\Persistence\Eloquent\ProductModel;
 use EasyCo\Catalog\Persistence\Eloquent\TagModel;
+use EasyCo\Catalog\Product;
 use EasyCo\Catalog\ProductCategory;
 use EasyCo\Catalog\ProductTag;
 use EasyCo\Catalog\Variation;
+use EasyCo\Extensibility\Hook;
 use EasyCo\Media\Contracts\ProductMediaRepository;
 use EasyCo\Media\Enums\MediaType;
 use EasyCo\Media\Exceptions\MediaLimitExceededException;
@@ -29,17 +32,21 @@ use EasyCo\Media\Persistence\Eloquent\MediaAssetModel;
 use EasyCo\Media\ProductMedia;
 use EasyCo\Media\ProductMediaCountGuard;
 use EasyCo\Media\VideoCountGuard;
+use EasyCo\Staff\Enums\Permission;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\RichEditor;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\EditRecord;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Group;
 use Filament\Schemas\Components\Tabs;
 use Filament\Schemas\Components\Tabs\Tab;
+use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Filament\Support\Exceptions\Halt;
 use Illuminate\Database\Eloquent\Model;
@@ -47,18 +54,24 @@ use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
 /**
- * VARIABLE-product edit scaffold — Step 1 of the "real VARIABLE
- * editing" series (admin-panel-design.md §13.1's own follow-on). Parent
- * fields only, mirroring EditProduct.php's General+Attributes tabs and
- * sidebar, PLUS a read-only list of this product's existing Variations.
+ * VARIABLE-product edit scaffold — Step 1 ("real VARIABLE editing"
+ * series, admin-panel-design.md §13.1's own follow-on): parent fields,
+ * mirroring EditProduct.php's General+Attributes tabs and sidebar. Step
+ * 2a (this revision) extends the "Variations" tab from read-only to
+ * genuinely editable per-row: sku/barcode/is_purchasable/cost/
+ * stock_quantity, plus a bulk-set convenience for cost and stock —
+ * see existingVariationsComponents()'s own docblock for the full
+ * shape, and updateProduct()'s own for how each is diff-written.
  *
  * EXPLICITLY NOT HERE (separate, later steps, each needing its own
  * design — see this class's own git history / task notes, not
- * repeated per-field below): per-variation price/cost/stock/barcode/
- * is_purchasable; per-variation media; adding new variations or
- * extending declared axes (needs declareVariationAxes()'s own
- * redeclaration guard worked out first). size_guide_id is out of scope
- * too — not wired into SIMPLE's own admin UI either.
+ * repeated per-field below): regular_price/sale_price and the
+ * PRODUCT/VARIATION pricing-scope toggle (Step 2b — needs new domain-
+ * service work ProductPricingAndStock doesn't have yet); per-variation
+ * media (Step 3); adding new variations or extending declared axes
+ * (Step 4 — needs declareVariationAxes()'s own redeclaration guard
+ * worked out first). size_guide_id is out of scope too — not wired
+ * into SIMPLE's own admin UI either.
  *
  * form() IS OVERRIDDEN (unlike EditProduct.php, which relies on
  * EditRecord's own default `form() => static::getResource()::form()`
@@ -213,47 +226,110 @@ class EditVariableProduct extends EditRecord
     }
 
     /**
-     * A read-only display of this product's real, persisted Variations
-     * — NOT a preview, NOT editable from this step (per-variation
-     * price/cost/stock/barcode/is_purchasable editing and adding new
-     * variations are separate, later steps). Every field disabled;
-     * ->dehydrated(false) on the whole Repeater — this step's own
-     * submit never needs to read 'existing_variations' back at all (see
-     * updateProduct()'s own docblock: it only ever reads the parent-
-     * level $data keys this class's own form defines), so keeping it
-     * out of the dehydrated payload entirely is both the simplest
-     * choice and a real guard against ever accidentally trusting a
-     * round-tripped copy of this data over the real domain object.
+     * A per-row editable display of this product's real, persisted
+     * Variations — Step 2a: sku/barcode/is_purchasable/cost/
+     * stock_quantity, editable; regular/sale price and the PRODUCT/
+     * VARIATION pricing toggle remain out of scope (Step 2b, needs new
+     * domain-service work). 'variation_id' stays a Hidden, real
+     * persisted id (never recomputed); 'label' stays disabled and
+     * ->dehydrated(false) — still purely informational, not writable,
+     * not read anywhere on submit.
      *
-     * The Hidden 'variation_id' carries the real persisted id forward
-     * for a later step to key off of — not recomputed from the
-     * combination the way CreateVariableProduct's own wizard preview
-     * has to (that page has no persisted ids yet at preview time; this
-     * page always does).
+     * THE REPEATER ITSELF IS NO LONGER ->disabled()/->dehydrated(false)
+     * — unlike Step 1, this row's own data now genuinely needs to reach
+     * $data on submit for updateProduct() to diff-write. Only 'label'
+     * keeps its own ->dehydrated(false); 'variation_id' stays a real,
+     * dehydrated Hidden field — updateProduct() below uses it to
+     * resolve which real Variation each submitted row belongs to.
+     *
+     * cost/stock_quantity mirror ProductResource::priceStockTabComponents()'s
+     * own real permission-gating shape exactly (per-field ->visible()/
+     * ->disabled(), not a single page-level gate) — see that method's
+     * own docblock for the full reasoning, including the "->disabled()
+     * alone is not the real enforcement, a merely-disabled field's
+     * value still dehydrates" gap already found and fixed there; the
+     * same real re-check happens server-side in updateProduct() below.
+     * ProductResource::staffHasPermission() (public), NOT
+     * staffCanForAction() — that trait method is `private static` on
+     * AuthorizesViaStaffPermission (confirmed against its own real
+     * source), genuinely private to consuming classes once `use`d, so
+     * it is not callable from this class at all, unlike from
+     * ProductResource's own methods.
+     *
+     * BULK-SET FIELDS (bulk_cost/bulk_stock_quantity): pure UI
+     * convenience, never part of $data themselves
+     * (->dehydrated(false), same reasoning as CreateVariableProduct's
+     * own activate_all toggle) — ->live()->afterStateUpdated() writes
+     * into every row's own cost/stock_quantity via $set() immediately
+     * on every change, the same proven live()+Set mechanism already
+     * established twice in this codebase (CreateVariableProduct's
+     * activate_all, and its own generateVariationPreview()), not a new,
+     * unverified Action-based one. Each gated by the SAME permission as
+     * its target column — a staff member who cannot edit cost/stock
+     * per-row must not be able to bulk-set it either.
      *
      * @return array<int, \Filament\Schemas\Components\Component>
      */
     private function existingVariationsComponents(): array
     {
         return [
+            TextInput::make('bulk_cost')
+                ->label(__('products.wizard.variations.bulk_cost'))
+                ->numeric()
+                ->minValue(0)
+                ->step(0.01)
+                ->dehydrated(false)
+                ->visible(fn (): bool => ProductResource::staffHasPermission(Permission::COST_VIEW))
+                ->disabled(fn (): bool => ! ProductResource::staffHasPermission(Permission::COST_MANAGE))
+                ->live()
+                ->afterStateUpdated(function ($state, Get $get, Set $set): void {
+                    foreach (array_keys($get('existing_variations') ?? []) as $key) {
+                        $set("existing_variations.{$key}.cost", $state);
+                    }
+                }),
+            TextInput::make('bulk_stock_quantity')
+                ->label(__('products.wizard.variations.bulk_stock_quantity'))
+                ->numeric()
+                ->integer()
+                ->minValue(0)
+                ->dehydrated(false)
+                ->disabled(fn (): bool => ! ProductResource::staffHasPermission(Permission::PRODUCT_MANAGE))
+                ->live()
+                ->afterStateUpdated(function ($state, Get $get, Set $set): void {
+                    foreach (array_keys($get('existing_variations') ?? []) as $key) {
+                        $set("existing_variations.{$key}.stock_quantity", $state);
+                    }
+                }),
             Repeater::make('existing_variations')
                 ->hiddenLabel()
                 ->addable(false)
                 ->deletable(false)
                 ->reorderable(false)
-                ->disabled()
-                ->dehydrated(false)
                 ->schema([
                     Hidden::make('variation_id'),
                     TextInput::make('label')
                         ->label(__('products.wizard.variations.combination_label'))
-                        ->disabled(),
+                        ->disabled()
+                        ->dehydrated(false),
                     TextInput::make('sku')
-                        ->label(__('products.wizard.variations.sku_label'))
-                        ->disabled(),
+                        ->label(__('products.wizard.variations.sku_label')),
                     TextInput::make('barcode')
-                        ->label(__('products.fields.barcode'))
-                        ->disabled(),
+                        ->label(__('products.fields.barcode')),
+                    Toggle::make('is_purchasable')
+                        ->label(__('products.fields.is_purchasable')),
+                    TextInput::make('cost')
+                        ->label(__('products.fields.cost'))
+                        ->numeric()
+                        ->minValue(0)
+                        ->step(0.01)
+                        ->visible(fn (): bool => ProductResource::staffHasPermission(Permission::COST_VIEW))
+                        ->disabled(fn (): bool => ! ProductResource::staffHasPermission(Permission::COST_MANAGE)),
+                    TextInput::make('stock_quantity')
+                        ->label(__('products.fields.stock_quantity'))
+                        ->numeric()
+                        ->integer()
+                        ->minValue(0)
+                        ->disabled(fn (): bool => ! ProductResource::staffHasPermission(Permission::PRODUCT_MANAGE)),
                 ]),
         ];
     }
@@ -312,12 +388,17 @@ class EditVariableProduct extends EditRecord
             }
         }
 
+        $pricingAndStock = app(ProductPricingAndStock::class);
+
         $data['existing_variations'] = array_map(
             fn (Variation $variation): array => [
                 'variation_id' => $variation->id(),
                 'label' => $this->variationLabel($variation),
                 'sku' => $variation->sku(),
                 'barcode' => $variation->barcode(),
+                'is_purchasable' => $variation->isPurchasable(),
+                'cost' => $pricingAndStock->costDisplay($variation->id()),
+                'stock_quantity' => $pricingAndStock->stockQuantity($variation->id()),
             ],
             $product->variations()
         );
@@ -353,11 +434,12 @@ class EditVariableProduct extends EditRecord
 
     /**
      * Mirrors EditProduct::updateProduct()'s own diff-then-write pattern
-     * exactly, for the fields this page's own form actually has — no
-     * universalVariation()/barcode/is_purchasable/price/cost/stock
-     * reads or writes at all (a VARIABLE product has no universal
-     * Variation; that data isn't in this step's form to begin with).
-     * declareAxes()/addStandardVariation()/per-variation edits are
+     * exactly, for the fields this page's own form actually has. Parent
+     * fields first (unchanged from Step 1), then per-variation sku/
+     * barcode/is_purchasable/cost/stock_quantity — see
+     * updateVariationRows()'s own docblock for that part. Still no
+     * regular_price/sale_price reads or writes (Step 2b), and
+     * declareAxes()/addStandardVariation()/adding new variations are
      * likewise untouched here — separate, later steps, per this class's
      * own docblock.
      */
@@ -479,6 +561,15 @@ class EditVariableProduct extends EditRecord
             ProductResource::applyDescriptiveAttribute($product, $definitionModel, $submittedRaw);
         }
 
+        // BEFORE save() below, not after — EloquentProductRepository::save()
+        // itself iterates $product->variations() and persists each one
+        // (confirmed against its own real source), the same cascading
+        // save CreateVariableProduct::addStandardVariations() already
+        // relies on. Mutating the in-memory Variation objects here means
+        // this single save() call below persists both the parent fields
+        // above AND these per-row changes together.
+        $this->updateVariationRows($product, $data['existing_variations'] ?? [], $logger);
+
         app(ProductRepository::class)->save($product);
 
         $this->syncCategories($product->id(), $data['categories'] ?? []);
@@ -500,7 +591,131 @@ class EditVariableProduct extends EditRecord
             app(ArchiveProductMediaCleaner::class)->clean($product->id());
         }
 
+        // cost/stock_quantity, AFTER the product/variation save() above
+        // — ProductPricingAndStock composes separate EasyCo\Pricing/
+        // EasyCo\Inventory repositories, entirely independent of
+        // ProductRepository::save(), same ordering EditProduct's own
+        // updatePricingAndStock() already establishes for the SIMPLE
+        // flow.
+        $this->updateVariationPricingAndStock($product->variations(), $data['existing_variations'] ?? [], $logger, $product->id());
+
         return ProductModel::find($product->id());
+    }
+
+    /**
+     * sku/barcode/is_purchasable — no permission gate needed for these
+     * three (per this task's own instruction: PRODUCT_MANAGE is already
+     * this whole page's base edit permission, gating canEdit() itself).
+     * Diff-then-write, same ActivityLogger::logFieldChanged() pattern
+     * as every other field in this class — but with field names scoped
+     * per variation ("variation[{id}].sku" etc.), unlike every other
+     * call in this class: this is the first field set here where
+     * multiple rows of the SAME field name are genuinely possible in
+     * one submission (a VARIABLE product's several variations) — an
+     * unscoped field name would make two different variations' sku
+     * changes indistinguishable in the activity log.
+     *
+     * barcode is filled()-normalized through the same
+     * 'catalog.variation.barcode' Hook EditProduct's own universal-
+     * variation barcode write already uses — a blank submission still
+     * gets a real chance to auto-generate, exactly like the SIMPLE
+     * flow.
+     *
+     * A row whose variation_id doesn't resolve to a real Variation on
+     * this product (should never happen via this form — the Hidden
+     * field is always seeded from a real persisted id — but a
+     * genuinely stale, concurrent-edit row is possible) is silently
+     * skipped, not thrown: this update is about every OTHER row and
+     * field this same request also legitimately changes, and the real,
+     * current state of the skipped variation is simply left untouched,
+     * not corrupted.
+     *
+     * @param array<int, array{variation_id?: mixed, sku?: mixed, barcode?: mixed, is_purchasable?: mixed}> $rows
+     */
+    private function updateVariationRows(Product $product, array $rows, ActivityLogger $logger): void
+    {
+        $variationsById = [];
+        foreach ($product->variations() as $variation) {
+            $variationsById[(string) $variation->id()] = $variation;
+        }
+
+        foreach ($rows as $row) {
+            $variationId = (string) ($row['variation_id'] ?? '');
+            $variation = $variationsById[$variationId] ?? null;
+
+            if ($variation === null) {
+                continue;
+            }
+
+            $newSku = (string) ($row['sku'] ?? '');
+            if ($variation->sku() !== $newSku) {
+                $logger->logFieldChanged('product', $product->id(), "variation[{$variationId}].sku", $variation->sku(), $newSku);
+                $variation->setSku($newSku);
+            }
+
+            $newBarcode = filled($row['barcode'] ?? null) ? $row['barcode'] : null;
+            if ($variation->barcode() !== $newBarcode) {
+                $logger->logFieldChanged('product', $product->id(), "variation[{$variationId}].barcode", $variation->barcode(), $newBarcode);
+                $barcode = Hook::apply('catalog.variation.barcode', $newBarcode ?? '', $variation);
+                $variation->setBarcode($barcode !== '' ? $barcode : null);
+            }
+
+            $newIsPurchasable = (bool) ($row['is_purchasable'] ?? true);
+            if ($variation->isPurchasable() !== $newIsPurchasable) {
+                $logger->logFieldChanged('product', $product->id(), "variation[{$variationId}].is_purchasable", $variation->isPurchasable() ? '1' : '0', $newIsPurchasable ? '1' : '0');
+                $variation->setPurchasable($newIsPurchasable);
+            }
+        }
+    }
+
+    /**
+     * Mirrors EditProduct::updatePricingAndStock()'s own real
+     * permission-gate-BEFORE-reading-$data pattern exactly — checking
+     * the permission before ever reading that row's own $data value is
+     * what actually matters (a merely-disabled field's value still
+     * dehydrates into $data on submit, confirmed against Filament's own
+     * isDehydrated() — see priceStockTabComponents()'s own docblock for
+     * the full, already-found gap this guards against), not the diff
+     * itself. Applied per row now instead of once for a single
+     * universal Variation.
+     *
+     * @param Variation[] $variations
+     * @param array<int, array{variation_id?: mixed, cost?: mixed, stock_quantity?: mixed}> $rows
+     */
+    private function updateVariationPricingAndStock(array $variations, array $rows, ActivityLogger $logger, string $productId): void
+    {
+        $pricingAndStock = app(ProductPricingAndStock::class);
+
+        $variationIds = array_map(fn (Variation $variation): string => (string) $variation->id(), $variations);
+        $validVariationIds = array_flip($variationIds);
+
+        foreach ($rows as $row) {
+            $variationId = (string) ($row['variation_id'] ?? '');
+
+            if (! isset($validVariationIds[$variationId])) {
+                continue;
+            }
+
+            if (ProductResource::staffHasPermission(Permission::COST_MANAGE)) {
+                $currentCost = $pricingAndStock->costDisplay($variationId);
+                $newCost = $pricingAndStock->normalizeDecimalDisplay($row['cost'] ?? null);
+
+                if ($newCost !== null && $currentCost !== $newCost) {
+                    $logger->logFieldChanged('product', $productId, "variation[{$variationId}].cost", $currentCost, $newCost);
+                    $pricingAndStock->writeCost($variationId, $newCost);
+                }
+            }
+
+            if (ProductResource::staffHasPermission(Permission::PRODUCT_MANAGE)) {
+                $currentStock = $pricingAndStock->stockQuantity($variationId);
+                $newStock = (int) ($row['stock_quantity'] ?? 0);
+
+                if ($currentStock !== $newStock) {
+                    $logger->logFieldChanged('product', $productId, "variation[{$variationId}].stock_quantity", (string) $currentStock, (string) $newStock);
+                    $pricingAndStock->writeStockQuantity($variationId, $newStock);
+                }
+            }
+        }
     }
 
     /**
