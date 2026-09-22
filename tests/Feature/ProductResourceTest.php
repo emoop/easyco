@@ -944,17 +944,42 @@ class ProductResourceTest extends TestCase
     }
 
     /**
-     * The real crash-avoidance this task exists for: EditProduct has no
-     * real VARIABLE support yet and crashes on
-     * $product->universalVariation()->barcode() — a VARIABLE Product
-     * genuinely has no universal Variation. recordUrl() must always
-     * route a VARIABLE row to 'view', never 'edit', even for an
-     * Administrator who genuinely has edit rights (canEdit() true) —
-     * this proves the type guard, not just the permission guard.
+     * UPDATED: now that EditVariableProduct exists, recordUrl() no
+     * longer routes a VARIABLE row away from editing entirely — a
+     * staff member who can genuinely edit (canEdit() true) is routed
+     * to 'edit-variable', mirroring exactly how a SIMPLE row routes to
+     * 'edit'. A view-only staff member still always falls back to
+     * 'view', for both types, unchanged.
      */
-    public function test_a_variable_products_record_url_always_points_to_view(): void
+    public function test_a_variable_products_record_url_points_to_edit_variable_for_a_staff_member_who_can_edit(): void
     {
         $this->actingAsPanelAdministrator();
+
+        $definition = new AttributeDefinition(id: null, code: 'size', name: 'Size', type: AttributeType::SELECT);
+        app(AttributeDefinitionRepository::class)->save($definition);
+        $medium = new AttributeValue(id: null, attributeDefinitionId: $definition->id(), value: 'M');
+        app(AttributeValueRepository::class)->save($medium);
+
+        $variableProduct = Product::createVariable('Variable Shirt', 'SKU-VAR', 'variable-shirt');
+        $variableProduct->declareVariationAxes([new VariationAxis($definition, [$medium])]);
+        $variableProduct->addStandardVariation([$definition->id() => $medium->id()], 'SKU-VAR-M');
+        app(ProductRepository::class)->save($variableProduct);
+
+        $variableModel = ProductModel::find($variableProduct->id());
+
+        $table = Livewire::test(ListProducts::class)->instance()->getTable();
+        $recordUrl = $table->getRecordUrl($variableModel);
+
+        $this->assertSame(ProductResource::getUrl('edit-variable', ['record' => $variableModel]), $recordUrl);
+    }
+
+    public function test_a_variable_products_record_url_still_falls_back_to_view_for_a_staff_member_without_edit_rights(): void
+    {
+        $viewOnlyRole = Role::create('View Only For Record Url', [Permission::PRODUCT_VIEW]);
+        app(RoleRepository::class)->save($viewOnlyRole);
+        $viewOnlyStaff = Staff::create('view.only.recordurl@example.com', app(PasswordHasher::class)->hash('password123'), 'View Only For Record Url', $viewOnlyRole);
+        app(StaffRepository::class)->save($viewOnlyStaff);
+        $this->actingAs(StaffPanelUser::find($viewOnlyStaff->id()), 'staff');
 
         $definition = new AttributeDefinition(id: null, code: 'size', name: 'Size', type: AttributeType::SELECT);
         app(AttributeDefinitionRepository::class)->save($definition);
@@ -975,35 +1000,67 @@ class ProductResourceTest extends TestCase
     }
 
     /**
-     * Same crash-avoidance, at the row-actions level: EditAction must
-     * be hidden on a VARIABLE row and visible on a SIMPLE row, for the
-     * same staff member (Administrator — canEdit() true for both),
-     * isolating the type guard from the permission guard.
+     * UPDATED: EditAction is now VISIBLE for both a VARIABLE row and a
+     * SIMPLE row (canEdit() is the only gate now that EditVariableProduct
+     * exists) — what differs per type is the URL it routes to, checked
+     * here directly via ->getUrl() rather than visibility.
      *
-     * NOT using ->assertTableActionHidden()/->assertTableActionVisible()
-     * here — confirmed via direct tracing against the installed
-     * Filament v5.8.1 source that those helpers are unreliable for an
-     * action nested in an ActionGroup (EditAction is, via the
-     * ViewAction/EditAction/duplicateAction ActionGroup in table())
-     * when more than one row exists: resolveTableAction() only sets the
-     * new record on the action's ActionGroup
-     * (getRootGroup()?->record($record)), but a real prior full-table
-     * Blade render already left the CHILD action's own $record property
-     * populated directly (from the LAST row rendered) — and
-     * Action::getRecord() checks its own $record before ever falling
-     * back to its group's, so the group-level update is silently
-     * ignored and the stale, last-rendered-row record wins. Confirmed
-     * by direct trace: with both a VARIABLE and a SIMPLE product
-     * seeded, asserting on the row that was NOT rendered last returned
-     * the wrong record's evaluation. Setting ->record() directly on the
-     * resolved Action (not the group) is what the underlying Blade
-     * per-row render loop itself actually does, and reproduces the real
-     * rendering behavior correctly and reliably — confirmed by tracing
-     * getRecord()->id() matches the intended record after doing so.
+     * NOT using ->assertTableActionVisible() here — confirmed via
+     * direct tracing against the installed Filament v5.8.1 source that
+     * this helper is unreliable for an action nested in an ActionGroup
+     * (EditAction is, via the ViewAction/EditAction/duplicateAction
+     * ActionGroup in table()) once more than one table row exists:
+     * resolveTableAction() only sets the new record on the action's
+     * ActionGroup (getRootGroup()?->record($record)), but a real prior
+     * full-table Blade render already left the CHILD action's own
+     * $record property populated directly (from the LAST row
+     * rendered) — and Action::getRecord() checks its own $record
+     * before ever falling back to its group's, so the group-level
+     * update is silently ignored and the stale, last-rendered-row
+     * record wins. Setting ->record() directly on the resolved Action
+     * (not the group) is what the underlying Blade per-row render loop
+     * itself actually does, and reproduces the real rendering behavior
+     * correctly and reliably — confirmed by tracing getRecord()->id()
+     * matches the intended record after doing so.
      */
-    public function test_edit_action_is_hidden_on_a_variable_row_and_visible_on_a_simple_row(): void
+    public function test_edit_action_is_visible_for_both_types_and_routes_to_the_right_edit_page(): void
     {
         $this->actingAsPanelAdministrator();
+
+        $definition = new AttributeDefinition(id: null, code: 'size', name: 'Size', type: AttributeType::SELECT);
+        app(AttributeDefinitionRepository::class)->save($definition);
+        $medium = new AttributeValue(id: null, attributeDefinitionId: $definition->id(), value: 'M');
+        app(AttributeValueRepository::class)->save($medium);
+
+        $variableProduct = Product::createVariable('Variable Shirt', 'SKU-VAR', 'variable-shirt');
+        $variableProduct->declareVariationAxes([new VariationAxis($definition, [$medium])]);
+        $variableProduct->addStandardVariation([$definition->id() => $medium->id()], 'SKU-VAR-M');
+        app(ProductRepository::class)->save($variableProduct);
+
+        $simpleProduct = Product::createSimple('Simple Shirt', 'SKU-SIMPLE', 'simple-shirt');
+        app(ProductRepository::class)->save($simpleProduct);
+
+        $variableModel = ProductModel::find($variableProduct->id());
+        $simpleModel = ProductModel::find($simpleProduct->id());
+
+        $editAction = Livewire::test(ListProducts::class)->instance()->getTable()->getAction('edit');
+
+        $editAction->record($variableModel);
+        $this->assertTrue($editAction->isVisible());
+        $this->assertSame(ProductResource::getUrl('edit-variable', ['record' => $variableModel]), $editAction->getUrl());
+
+        $editAction->record($simpleModel);
+        $this->assertTrue($editAction->isVisible());
+        $this->assertSame(ProductResource::getUrl('edit', ['record' => $simpleModel]), $editAction->getUrl());
+    }
+
+    public function test_edit_action_is_hidden_on_both_types_for_a_staff_member_without_edit_rights(): void
+    {
+        $viewOnlyRole = Role::create('View Only For Edit Action', [Permission::PRODUCT_VIEW]);
+        app(RoleRepository::class)->save($viewOnlyRole);
+        $viewOnlyStaff = Staff::create('view.only.editaction@example.com', app(PasswordHasher::class)->hash('password123'), 'View Only For Edit Action', $viewOnlyRole);
+        app(StaffRepository::class)->save($viewOnlyStaff);
+        $this->actingAs(StaffPanelUser::find($viewOnlyStaff->id()), 'staff');
 
         $definition = new AttributeDefinition(id: null, code: 'size', name: 'Size', type: AttributeType::SELECT);
         app(AttributeDefinitionRepository::class)->save($definition);
@@ -1024,7 +1081,7 @@ class ProductResourceTest extends TestCase
         $this->assertTrue($editAction->isHidden());
 
         $editAction->record(ProductModel::find($simpleProduct->id()));
-        $this->assertTrue($editAction->isVisible());
+        $this->assertTrue($editAction->isHidden());
     }
 
     /**

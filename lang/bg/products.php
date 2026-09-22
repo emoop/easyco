@@ -9,6 +9,7 @@ return [
         'general' => 'Основни',
         'attributes' => 'Атрибути',
         'price_stock' => 'Цена и наличност',
+        'variations' => 'Варианти',
     ],
 
     'wizard' => [

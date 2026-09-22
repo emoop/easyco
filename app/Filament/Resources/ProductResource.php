@@ -7,6 +7,7 @@ use App\Filament\NavigationGroup;
 use App\Filament\Resources\ProductResource\Pages\CreateProduct;
 use App\Filament\Resources\ProductResource\Pages\CreateVariableProduct;
 use App\Filament\Resources\ProductResource\Pages\EditProduct;
+use App\Filament\Resources\ProductResource\Pages\EditVariableProduct;
 use App\Filament\Resources\ProductResource\Pages\ListProducts;
 use App\Filament\Resources\ProductResource\Pages\ProductActivityLog;
 use App\Filament\Resources\ProductResource\Pages\ViewProduct;
@@ -295,9 +296,16 @@ class ProductResource extends Resource
      * renders moved, not the underlying form data shape
      * CreateProduct/EditProduct already read.
      *
+     * PUBLIC (not protected): widened for EditVariableProduct, which
+     * reuses this exact PRODUCT-level media/taxonomy section as-is (no
+     * VARIABLE-specific branching needed here) — a pure visibility
+     * change, same body, zero behavior change for the existing SIMPLE
+     * flow. Duplicating ~150 lines of already-tested FileUpload/guard
+     * logic across two classes was judged the worse tradeoff.
+     *
      * @return array<int, Component>
      */
-    protected static function sidebarComponents(): array
+    public static function sidebarComponents(): array
     {
         return [
             Section::make(__('products.fields.categories'))
@@ -345,9 +353,17 @@ class ProductResource extends Resource
      * itself throws for that type, so rendering a field that could never
      * successfully submit would be worse than not offering it.
      *
+     * PUBLIC (not protected): widened for EditVariableProduct, which
+     * reuses this method as-is — genuinely correct there unmodified,
+     * not just convenient: this method already lists every real
+     * AttributeDefinition regardless of any product's own variation
+     * axes (a VARIABLE product's axis definitions are a separate,
+     * per-product declaration on catalog_product_attributes, never
+     * filtered out of AttributeDefinitionModel's own global list here).
+     *
      * @return array<int, Component>
      */
-    protected static function attributesTabComponents(): array
+    public static function attributesTabComponents(): array
     {
         $components = [];
 
@@ -634,15 +650,14 @@ class ProductResource extends Resource
             //
             // BOTH SIMPLE and VARIABLE products are shown here by
             // default — this Resource's list is no longer SIMPLE-only
-            // by scope. A VARIABLE row's real Edit-page crash
-            // ($product->universalVariation()->barcode() on null — a
-            // VARIABLE Product genuinely has no universal Variation) is
-            // instead kept unreachable at the action/routing level:
-            // EditAction::make()->visible() and recordUrl() below both
-            // additionally require type===SIMPLE, so a VARIABLE row is
-            // always routed to (and only ever offers) View, never Edit.
-            // This Resource still does not offer a real VARIABLE edit
-            // experience — that remains separate, undesigned scope.
+            // by scope. EditAction::make()->url() and recordUrl() below
+            // route each type to its own real edit page (EditProduct /
+            // EditVariableProduct) — a VARIABLE row is no longer routed
+            // away from editing entirely, now that
+            // EditVariableProduct's own parent-fields-only scaffold
+            // exists (per-variation price/cost/stock/barcode/
+            // is_purchasable and adding new variations are still
+            // separate, later steps — see that page's own docblock).
             //
             // ARCHIVED PRODUCTS HIDDEN BY DEFAULT: modifyQueryUsing()
             // runs BEFORE filters in Filament's own query pipeline
@@ -911,25 +926,39 @@ class ProductResource extends Resource
                 ActionGroup::make([
                     ViewAction::make(),
                     EditAction::make()
-                        ->visible(fn (ProductModel $record): bool => static::canEdit($record)
-                            && $record->type === ProductType::SIMPLE->value),
+                        // Both types visible now — EditVariableProduct
+                        // exists, so the type guard this ->visible()
+                        // used to need (excluding VARIABLE entirely,
+                        // back when only EditProduct/SIMPLE existed) is
+                        // gone. ->url() below is what actually routes
+                        // each type correctly; Filament's own default
+                        // action URL (Page::getDefaultActionUrl())
+                        // always resolves an EditAction to the 'edit'
+                        // page unconditionally, so leaving ->url()
+                        // unset here would send a VARIABLE row to
+                        // EditProduct and crash it — confirmed against
+                        // that real source, not assumed.
+                        ->visible(fn (ProductModel $record): bool => static::canEdit($record))
+                        ->url(fn (ProductModel $record): string => $record->type === ProductType::SIMPLE->value
+                            ? static::getUrl('edit', ['record' => $record])
+                            : static::getUrl('edit-variable', ['record' => $record])),
                     static::duplicateAction(),
                 ]),
             ])
             // Edit by default on row click — the most-used action on
             // this list — falling back to View only for a staff member
-            // without edit rights, OR for a VARIABLE row regardless of
-            // edit rights (same reasoning as EditAction's own
-            // ->visible() above: EditProduct has no real VARIABLE
-            // support yet and would crash on
-            // universalVariation()->barcode() — a VARIABLE Product has
-            // no universal Variation, by design). canEdit() is the same
-            // real Staff::can(Permission) check EditAction's own
-            // ->visible() above already uses, so this never routes a
-            // click somewhere the three-dot menu itself would refuse.
-            ->recordUrl(fn (ProductModel $record): string => static::canEdit($record) && $record->type === ProductType::SIMPLE->value
-                ? static::getUrl('edit', ['record' => $record])
-                : static::getUrl('view', ['record' => $record]));
+            // without edit rights. canEdit() is the same real
+            // Staff::can(Permission) check EditAction's own ->visible()
+            // above already uses, so this never routes a click
+            // somewhere the three-dot menu itself would refuse. A
+            // VARIABLE row with edit rights now routes to
+            // 'edit-variable' — EditVariableProduct exists — matching
+            // EditAction's own ->url() above exactly.
+            ->recordUrl(fn (ProductModel $record): string => match (true) {
+                ! static::canEdit($record) => static::getUrl('view', ['record' => $record]),
+                $record->type === ProductType::SIMPLE->value => static::getUrl('edit', ['record' => $record]),
+                default => static::getUrl('edit-variable', ['record' => $record]),
+            });
     }
 
     public static function infolist(Schema $schema): Schema
@@ -1091,6 +1120,17 @@ class ProductResource extends Resource
             'create-variable' => CreateVariableProduct::route('/create-variable'),
             'view' => ViewProduct::route('/{record}'),
             'edit' => EditProduct::route('/{record}/edit'),
+            // Registered AFTER the 'view' wildcard, unlike
+            // 'create-variable' above — safe here (and for 'edit'/
+            // 'activity-log' too) because Laravel's router matches on
+            // full segment count, not just registration order: '/
+            // {record}' only matches a ONE-segment path, so it can
+            // never swallow a TWO-segment path like
+            // '/{record}/edit-variable' regardless of which is
+            // registered first. Only a route that is itself a bare,
+            // single dynamic/static segment (like '/create-variable')
+            // risks being shadowed by '/{record}'.
+            'edit-variable' => EditVariableProduct::route('/{record}/edit-variable'),
             'activity-log' => ProductActivityLog::route('/{record}/activity-log'),
         ];
     }

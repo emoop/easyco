@@ -9,6 +9,7 @@ return [
         'general' => 'General',
         'attributes' => 'Attributes',
         'price_stock' => 'Price & Stock',
+        'variations' => 'Variations',
     ],
 
     'wizard' => [
