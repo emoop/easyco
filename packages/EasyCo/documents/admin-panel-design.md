@@ -424,6 +424,37 @@ now resolved: yes), three steps:
    to query; confirm the real component choice at implementation time,
    don't assume.
 
+**Where the wizard ends, and what follows.** The wizard deliberately
+creates no prices and no stock — those are configured per variation
+afterward — so this flow's natural end is the price & stock screen,
+which IS `EditVariableProduct`'s own Variations tab (the bulk
+cost/stock fields plus each row's own cost/stock/regular/sale price).
+`CreateVariableProduct::getRedirectUrl()` therefore overrides Filament's
+default and lands the merchant there, not on the read-only View page:
+Filament's default sends a Create page to 'view' whenever the resource
+has that page and `canView()` holds (confirmed against the installed
+source), which for this wizard meant a product with nothing to click on
+it and a merchant walking back to the product list to find what they had
+just created. The tab is activated by a query-string deep link —
+`Tabs::persistTabInQueryString('tab')` on the page plus an EXPLICIT
+`->id()` on each tab, because `Tab::getId()` otherwise falls back to a
+label-derived key and the link would change with the panel's language
+(Filament's own client-side `tabs.js` writes its own key-based value
+when the merchant switches tabs — read back by the client itself — so
+the redirect deliberately passes the id, which is what the server
+matches for a correct first paint),
+with the Variations id itself owned by a single constant
+(`ProductResource::VARIATIONS_TAB_ID`) so the tab definition and the
+redirect can never drift apart. Two smaller pieces serve the same end:
+the created-notification is replaced with one that names the next step
+and links straight to the new product's View page (the overview this
+redirect skips stays one click away), and the last wizard step carries
+that same expectation as its own description, so the landing page is
+never a surprise. **Deliberately NOT done:** a pricing/stock step inside
+the wizard itself (§13.1's own scope keeps creation and per-variation
+pricing on separate screens, where the bulk fields already live), and
+any notification action beyond the plain View link.
+
 ### 13.2 Duplicate — an app-layer service, not a domain method
 
 No real domain invariant is being protected here (copying field values
