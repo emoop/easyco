@@ -1068,6 +1068,18 @@ class EditVariableProduct extends EditRecord
     private function archivedVariationsComponents(): Section
     {
         return Section::make(__('products.variation_restore.section_label'))
+            // Hidden entirely when there is nothing to restore — same
+            // precedent as clear_regular_price_overrides/
+            // clear_sale_price_overrides above (an always-visible,
+            // always-a-no-op control is noise). 'archived_variations'
+            // has no write path of its own (only ever WRITTEN by
+            // mutateFormDataBeforeFill()/refreshVariationRows(), never
+            // read in updateProduct()), so hiding this Section cannot
+            // drop any value the Save flow depends on — the same
+            // "hidden components are excluded from $data, safe only
+            // when nothing on submit reads that key" reasoning already
+            // documented on this class's own price-field docblocks.
+            ->visible(fn (): bool => $this->hasArchivedVariations())
             ->schema([
                 Repeater::make('archived_variations')
                     ->hiddenLabel()
@@ -1152,6 +1164,32 @@ class EditVariableProduct extends EditRecord
         return DB::table('catalog_product_attributes')
             ->where('product_id', $this->record->id)
             ->where('is_variation_axis', true)
+            ->exists();
+    }
+
+    /**
+     * Gates archivedVariationsComponents()'s own ->visible() — same
+     * real-query posture as hasDeclaredAxes() above, not a loaded-
+     * collection count. Scoped identically to archivedVariationRows()'s
+     * own filter: STANDARD type (a UNIVERSAL variation is never
+     * restorable/never shown here) and ARCHIVED status, compared
+     * against the enums' own ->value, never a literal string.
+     */
+    private function hasArchivedVariations(): bool
+    {
+        return DB::table('catalog_variations')
+            ->where('product_id', $this->record->id)
+            ->where('type', VariationType::STANDARD->value)
+            ->where('status', VariationStatus::ARCHIVED->value)
+            // Same soft-delete blind spot as the raw 'exists' rule
+            // VariationController::restore() had (FIX 4): this is a raw
+            // DB::table() query, not scoped by VariationModel's own
+            // SoftDeletes global scope. Without this, a soft-deleted
+            // archived row would count here even though
+            // archivedVariationRows() (reading from the domain
+            // aggregate, which IS scope-aware) would show none — the
+            // Section would render visible with an empty list.
+            ->whereNull('deleted_at')
             ->exists();
     }
 
@@ -1598,6 +1636,29 @@ class EditVariableProduct extends EditRecord
                 ->title($e->getMessage())
                 ->danger()
                 ->send();
+
+            return;
+        } catch (\LogicException $e) {
+            // Reachable only through a stale page — another staff
+            // member re-activated/re-archived this variation, or the
+            // axis set changed, while this page stayed open.
+            // restoreArchivedVariation()'s own \LogicException covers
+            // "not ARCHIVED anymore"/"UNIVERSAL"/"no longer belongs to
+            // this product" — same danger-notification-with-the-
+            // domain's-own-message posture as the branch above
+            // (VariableProductController's identical \LogicException ->
+            // 422 mapping is the same principle at the HTTP layer). The
+            // refresh IS the deliberate difference from the branch
+            // above: nothing changed there, but here the page's own row
+            // lists are genuinely stale, so refreshing is what stops
+            // the merchant from clicking a button that no longer
+            // applies.
+            Notification::make()
+                ->title($e->getMessage())
+                ->danger()
+                ->send();
+
+            $this->refreshVariationRows();
 
             return;
         }

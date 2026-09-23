@@ -486,6 +486,60 @@ class EditVariableProductAxesAndRestoreTest extends TestCase
         $this->assertSame('draft', VariationModel::find($whiteId)->status);
     }
 
+    /**
+     * FIX 2: restoreArchivedVariation()'s own \LogicException ("only
+     * applies to an ARCHIVED variation") for a LIVE (ACTIVE) variation
+     * must surface as a danger notification, not an uncaught 500.
+     */
+    public function test_restore_on_a_live_variation_shows_a_danger_notification_carrying_the_domain_message_and_leaves_it_active(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        [$product, $definition, $black] = $this->persistedVariableProductWithOneLiveVariation();
+        $productModel = \EasyCo\Catalog\Persistence\Eloquent\ProductModel::find($product->id());
+
+        $liveVariationId = $this->liveVariationId($product);
+
+        Livewire::test(EditVariableProduct::class, ['record' => $productModel->id])
+            ->call('restoreArchivedVariationById', $liveVariationId)
+            ->assertNotified('restoreArchivedVariation() only applies to an ARCHIVED variation.');
+
+        $this->assertSame('active', VariationModel::find($liveVariationId)->status);
+    }
+
+    /**
+     * FIX 1's own real behavior: once the only archived variation is
+     * restored, the archived section has nothing left to show (hidden
+     * via hasArchivedVariations()) while the restored row appears in
+     * existing_variations.
+     */
+    public function test_after_a_successful_restore_the_archived_section_is_no_longer_visible(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        [$definition, $black, $white] = $this->persistedColorDefinition();
+        $product = Product::createVariable('Variable Shirt', 'SKU-VAR', 'variable-shirt');
+        $product->declareVariationAxes([new VariationAxis($definition, [$black, $white])]);
+        $blackVariation = $product->addStandardVariation([$definition->id() => $black->id()], 'SKU-VAR-BLACK');
+        $blackVariation->activate();
+        $whiteVariation = $product->addStandardVariation([$definition->id() => $white->id()], 'SKU-VAR-WHITE');
+        $whiteVariation->activate();
+        $whiteVariation->archive();
+        app(ProductRepository::class)->save($product);
+        $whiteId = (string) $whiteVariation->id();
+
+        $productModel = \EasyCo\Catalog\Persistence\Eloquent\ProductModel::find($product->id());
+
+        $component = Livewire::test(EditVariableProduct::class, ['record' => $productModel->id]);
+        $component->assertSeeHtml(__('products.variation_restore.section_label'));
+
+        $component->call('restoreArchivedVariationById', $whiteId);
+
+        $component->assertDontSeeHtml(__('products.variation_restore.section_label'));
+        $existingIds = array_column($component->get('data.existing_variations'), 'variation_id');
+        $this->assertContains($whiteId, $existingIds);
+    }
+
     public function test_a_staff_member_without_product_manage_sees_no_axes_tab_and_cannot_trigger_restore_or_generate(): void
     {
         $role = Role::create('View Only', [Permission::PRODUCT_VIEW]);

@@ -570,7 +570,18 @@ merchant has in progress elsewhere on the page. Restoration fails loud
 refresh at all) when the archived variation's own combination no
 longer matches the product's current declared axes — the axes may have
 drifted while it sat archived, since an archived variation never
-blocks an axis change itself (§3.17's own trade-off).
+blocks an axis change itself (§3.17's own trade-off). A second,
+subsequent \LogicException (the archived variation belongs to another
+product, is UNIVERSAL, or was already restored/re-archived by someone
+else since the page loaded) is handled the same way, PLUS a refresh of
+those same two keys — unlike the not-restorable case, the page's own
+row lists are genuinely stale here, so the refresh is what stops the
+merchant from clicking a button that no longer applies. The whole
+section is hidden entirely when the product currently has no archived
+STANDARD variation (a real, scoped `exists()` query, not a loaded-
+collection count) — an always-visible, always-empty list was pure
+noise, the same reasoning already applied to the price-override
+toggles elsewhere on this page.
 
 **Save-time ordering, in `updateProduct()`:** declare axes (only when
 the submitted set genuinely differs from the current one — an

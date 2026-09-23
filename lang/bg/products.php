@@ -146,7 +146,6 @@ return [
         'confirm_submit' => 'Възстанови',
         'confirm_cancel' => 'Отказ',
         'notification_success' => 'Вариантът беше възстановен.',
-        'no_restorable_variations' => 'Няма архивирани варианти.',
     ],
 
     'duplicate_action' => 'Дублирай',

@@ -146,7 +146,6 @@ return [
         'confirm_submit' => 'Restore',
         'confirm_cancel' => 'Cancel',
         'notification_success' => 'Variation restored.',
-        'no_restorable_variations' => 'No archived variations.',
     ],
 
     'duplicate_action' => 'Duplicate',
