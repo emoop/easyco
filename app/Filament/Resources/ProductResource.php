@@ -13,7 +13,9 @@ use App\Filament\Resources\ProductResource\Pages\ProductActivityLog;
 use App\Filament\Resources\ProductResource\Pages\ViewProduct;
 use App\Services\ActivityLogger;
 use App\Services\DuplicateProduct;
+use App\Services\PriceDisplayFormatter;
 use App\Services\ProductPricingAndStock;
+use App\Services\ProductPriceRangeProvider;
 use App\Settings\Contracts\SiteSettingsRepository;
 use BackedEnum;
 use EasyCo\Catalog\AttributeDefinition;
@@ -40,10 +42,7 @@ use EasyCo\Media\Contracts\MediaStorageAdapter;
 use EasyCo\Media\Enums\MediaType;
 use EasyCo\Media\Jobs\ProcessMediaAssetJob;
 use EasyCo\Media\MediaAsset;
-use EasyCo\Pricing\Contracts\PriceListRepository;
-use EasyCo\Pricing\DefaultCurrency;
-use EasyCo\Pricing\Enums\PriceListItemTargetType;
-use EasyCo\Pricing\Money;
+use EasyCo\Pricing\PriceRange;
 use EasyCo\Staff\Enums\Permission;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
@@ -69,6 +68,7 @@ use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\ImageColumn;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TernaryFilter;
@@ -973,15 +973,6 @@ class ProductResource extends Resource
                     $query->where('status', '!=', ProductStatus::ARCHIVED->value);
                 }
 
-                // Both system list ids resolved ONCE here, outside the
-                // per-row subqueries below — findSystemListByName() is a
-                // real query itself, and this closure runs once per table
-                // render, not once per row (see priceMinorSubquery()'s own
-                // docblock for the null-list, unseeded-store case).
-                $priceLists = app(PriceListRepository::class);
-                $regularPricesListId = $priceLists->findSystemListByName('Regular Prices')?->id();
-                $manualSaleListId = $priceLists->findSystemListByName('Manual Sale')?->id();
-
                 return $query
                     ->addSelect([
                         'thumbnail_path' => DB::table('catalog_product_media')
@@ -990,8 +981,6 @@ class ProductResource extends Resource
                             ->orderBy('catalog_product_media.sort_order')
                             ->limit(1)
                             ->select('catalog_media.path'),
-                        'regular_price_minor' => static::priceMinorSubquery($regularPricesListId),
-                        'sale_price_minor' => static::priceMinorSubquery($manualSaleListId),
                     ]);
             })
             ->columns([
@@ -1005,7 +994,16 @@ class ProductResource extends Resource
                 TextColumn::make('price_display')
                     ->label(__('products.fields.price_display'))
                     ->html()
-                    ->getStateUsing(fn (ProductModel $record): string => static::priceDisplayHtml($record)),
+                    // NOT sortable — a PriceRange has no single scalar
+                    // column to ORDER BY (its "lowest final" is computed
+                    // per-page, in memory, from a batched resolve — see
+                    // priceRangeHtml()'s own docblock); sorting by price
+                    // would need a real, indexed price-range column this
+                    // Resource does not maintain, a separate future task
+                    // if ever needed.
+                    ->getStateUsing(fn (ProductModel $record, $livewire): string => static::priceRangeHtml(
+                        static::priceRangeForRecord($record, $livewire)
+                    )),
                 TextColumn::make('base_sku')
                     ->label(__('products.fields.base_sku'))
                     ->searchable(),
@@ -1306,93 +1304,104 @@ class ProductResource extends Resource
     }
 
     /**
-     * The table's own combined price display — reads regular_price_minor/
-     * sale_price_minor, the two raw minor-unit ints modifyQueryUsing()
-     * already resolved via ONE correlated subquery per row (no N+1
-     * ProductPricingAndStock lookup here — that service is right for a
-     * single-record Edit/View page, wrong for a many-row list). Same
-     * Money::fromMinorUnits()->decimalValue() conversion Phase 2 already
-     * established, no currency symbol — matches
-     * ProductPricingAndStock::regularPriceDisplay()'s own plain-decimal
-     * convention exactly, just read from the pre-selected column instead
-     * of a fresh repository call.
+     * Resolves one record's PriceRange for the 'price_display' column,
+     * BATCHING THE WHOLE CURRENT PAGE, ONCE, NOT ONE CALL PER ROW when
+     * $livewire is a real table-bearing component — two real, confirmed
+     * Filament internals make this safe (installed v5.8.1 source):
+     * 1. Filament\Tables\Columns\Column::
+     *    resolveDefaultClosureDependencyForEvaluationByName():
+     *    "'livewire' => [$this->getLivewire()]" — a column closure's
+     *    $livewire parameter is injected BY NAME, giving this method the
+     *    live table/page component itself, not a per-column value.
+     * 2. Filament\Tables\Concerns\HasRecords::getTableRecords():
+     *    "if ($this->cachedTableRecords) { return $this->cachedTableRecords; }"
+     *    — the page's own records are memoized on FIRST call and simply
+     *    returned again on every subsequent one, so calling it here on
+     *    every row of the SAME render never re-runs the table's own
+     *    query.
+     * Combined with ProductPriceRangeProvider's own per-instance
+     * memoization (a scoped() binding), the FIRST row to reach this
+     * method triggers one real batched resolve for the whole page;
+     * every later row on that same page is a pure in-memory cache hit.
+     *
+     * FALLS BACK TO A SINGLE-PRODUCT RESOLVE when $livewire is not
+     * table-bearing (no getTableRecords() method) — keeps this method
+     * correct if the column is ever reused OUTSIDE ListProducts (a
+     * relation manager, an export) where $livewire would not carry this
+     * column's own page. Extracted as its own testable method rather
+     * than inlined in the column closure specifically so this fallback
+     * branch has a real, direct test independent of Filament's table
+     * rendering pipeline.
      */
-    public static function priceDisplayHtml(ProductModel $record): string
+    public static function priceRangeForRecord(ProductModel $record, mixed $livewire): ?PriceRange
     {
-        $regularMinor = $record->getAttribute('regular_price_minor');
+        $isTableBearing = $livewire instanceof HasTable
+            || method_exists($livewire, 'getTableRecords');
 
-        if ($regularMinor === null) {
-            return '—';
+        if (! $isTableBearing) {
+            return app(ProductPriceRangeProvider::class)->forProduct((string) $record->id);
         }
 
-        $currency = DefaultCurrency::get();
-        $regular = e(Money::fromMinorUnits((int) $regularMinor, $currency)->decimalValue());
+        $productIds = $livewire->getTableRecords()
+            ->pluck('id')
+            ->map(static fn ($id): string => (string) $id)
+            ->all();
 
-        $saleMinor = $record->getAttribute('sale_price_minor');
-
-        if ($saleMinor === null) {
-            return $regular;
-        }
-
-        $sale = e(Money::fromMinorUnits((int) $saleMinor, $currency)->decimalValue());
-
-        return "<s>{$regular}</s> {$sale}";
+        return app(ProductPriceRangeProvider::class)->forProducts($productIds)[(string) $record->id] ?? null;
     }
 
     /**
-     * ONE correlated subquery per system list, resolved against the
-     * already-resolved list id (never a per-row findSystemListByName()
-     * call — see modifyQueryUsing()'s own comment). $priceListId is null
-     * on a fresh/unseeded store (neither reserved system list exists
-     * yet, per pricing-persistence-domain-design.md §4.5/§4.6) — that is
-     * a legitimate "nothing priced yet" state on READ, not a setup
-     * error (see ProductPricingAndStock's own identical read-side
-     * posture), so this returns a raw NULL expression rather than
-     * building a subquery against a list id that doesn't exist.
+     * The table's own price-range display — replaces the old
+     * priceDisplayHtml()/priceMinorSubquery() pair (a correlated,
+     * un-ordered LIMIT 1 subquery over the FIRST variation's
+     * VARIATION-level item only, which is exactly why a VARIABLE
+     * product — and any product priced at PRODUCT level rather than
+     * VARIATION level — always showed "—", a real, confirmed defect,
+     * not a deliberate SIMPLE-only scope). Now backed by
+     * EasyCo\Pricing\PriceRange, resolved for the whole page in one
+     * batch via App\Services\ProductPriceRangeProvider (see the
+     * 'price_display' column's own ->getStateUsing() closure) — the
+     * same resolver-backed range both a VARIABLE and a SIMPLE product
+     * now render through identically, no more special-cased column.
      *
-     * pricing_price_list_items.target_id is a plain string column
-     * (never a foreign key, by design — see that table's own migration
-     * comment), holding a Catalog Variation's id as a string;
-     * catalog_variations.id is the real integer PK. This is a SIMPLE-
-     * product-only Resource (the query is already filtered to
-     * type=SIMPLE), so resolving the correlated variation without a
-     * further "type=universal" filter is safe — a SIMPLE product has
-     * exactly one Variation, always universal, by Catalog's own
-     * invariant.
+     * DISPLAY RULES (D1), exact:
+     * - an empty range (nothing resolvable) → '—';
+     * - otherwise render $priceRange->lowestFinalQuote(): the plain
+     *   amount, or struck-through regular + final when that same quote
+     *   isDiscounted();
+     * - prefixed with __('products.price_from').' ' whenever
+     *   hasUniformFinalPrice() is false — i.e. this product's
+     *   variations do NOT all currently resolve to the same final
+     *   price, so the rendered amount is only a "starting from" figure,
+     *   not necessarily what every variation costs.
+     * - no min-max range, no "Sale!" badge, no extra colouring — all
+     *   explicitly deferred (see admin-panel-design.md's own §13.x
+     *   entry for this pass).
      *
-     * DELIBERATELY NOT a plain join on
-     * catalog_variations.id = pricing_price_list_items.target_id: that
-     * compares an int column against a varchar column, and MySQL's
-     * numeric-vs-string comparison rule casts target_id's VALUES to
-     * numbers for the comparison, which defeats pp_items_lookup_index's
-     * (price_list_id, target_type, target_id, min_quantity) usability
-     * for target_id — confirmed via a real EXPLAIN ANALYZE at ~17,000+
-     * SIMPLE product scale: the join form only used the index's first
-     * two columns (key_len 1030) and scanned ~5,900 rows via a cast
-     * index condition. Instead, the correlated variation id is resolved
-     * first (still using catalog_variations' own (product_id, status)
-     * index) and compared against target_id CAST to CHAR — a same-type
-     * comparison MySQL can seek on normally, confirmed via the same
-     * EXPLAIN ANALYZE to use all three leading index columns (key_len
-     * 2052, ~1 row). Same "compare target_id as a string" shape
-     * EloquentPriceListItemRepository (the real Cart/Checkout/
-     * Storefront pricing path) already uses — this fix brings the
-     * admin-list convenience query in line with it, not a new approach.
+     * Every amount is escaped (e()) exactly like the old
+     * priceDisplayHtml() did — ->html() on the column means this
+     * string is rendered unescaped by Filament, so anything
+     * interpolated into it must already be safe.
      */
-    protected static function priceMinorSubquery(?string $priceListId): mixed
+    public static function priceRangeHtml(?PriceRange $priceRange): string
     {
-        if ($priceListId === null) {
-            return DB::raw('NULL');
+        if ($priceRange === null || $priceRange->isEmpty()) {
+            return '—';
         }
 
-        return DB::table('pricing_price_list_items')
-            ->where('pricing_price_list_items.price_list_id', $priceListId)
-            ->where('pricing_price_list_items.target_type', PriceListItemTargetType::VARIATION->value)
-            ->whereRaw(
-                'pricing_price_list_items.target_id = CAST((SELECT catalog_variations.id FROM catalog_variations WHERE catalog_variations.product_id = catalog_products.id LIMIT 1) AS CHAR)'
-            )
-            ->limit(1)
-            ->select('pricing_price_list_items.price_amount_minor');
+        $lowestFinalQuote = $priceRange->lowestFinalQuote();
+        $formatter = app(PriceDisplayFormatter::class);
+
+        $regular = e($formatter->format($lowestFinalQuote->regular->gross()->decimalValue(), $lowestFinalQuote->regular->gross()->currency()));
+        $final = e($formatter->format($lowestFinalQuote->final->gross()->decimalValue(), $lowestFinalQuote->final->gross()->currency()));
+
+        $html = $lowestFinalQuote->isDiscounted() ? "<s>{$regular}</s> {$final}" : $final;
+
+        if (! $priceRange->hasUniformFinalPrice()) {
+            $html = e(__('products.price_from')).' '.$html;
+        }
+
+        return $html;
     }
 
     public static function getPages(): array

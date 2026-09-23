@@ -79,6 +79,13 @@ return [
         'variation_photos' => 'Photos',
     ],
 
+    // Prefix for a non-uniform PriceRange (list column/View page,
+    // PriceRange::hasUniformFinalPrice()/hasUniformRegularPrice()/
+    // hasUniformDiscountedFinalPrice() false) — "from 49.99 €" /
+    // "от 49.99 €". Top-level, not under 'fields': it prefixes a
+    // rendered VALUE, it is not itself a field label.
+    'price_from' => 'from',
+
     'filters' => [
         'archived_only' => 'Show archived only',
     ],

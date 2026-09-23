@@ -79,6 +79,11 @@ return [
         'variation_photos' => 'Снимки',
     ],
 
+    // Prefix for a non-uniform PriceRange (list column/View page) —
+    // "от 49.99 €". Top-level, not under 'fields': it prefixes a
+    // rendered VALUE, it is not itself a field label.
+    'price_from' => 'от',
+
     'filters' => [
         'archived_only' => 'Покажи само архивирани',
     ],

@@ -54,9 +54,28 @@ use EasyCo\Pricing\PriceRange;
  * per product or per variation. Proven with a real query-count
  * measurement (5 vs. 25 products, equal counts) in this class's own
  * test.
+ *
+ * PER-INSTANCE MEMOIZATION (Prompt B): $cachedRangesByProductId caches
+ * every PriceRange this instance has ever resolved, keyed by product
+ * id. forProducts() only ever queries for ids NOT already in the cache;
+ * forProduct() is unchanged (a thin wrapper over forProducts()) and so
+ * automatically benefits too. THE CACHE'S LIFETIME IS EXACTLY THE
+ * scoped() CONTAINER INSTANCE THIS CLASS IS BOUND AS
+ * (AppServiceProvider::register()) — ONE REQUEST OR JOB, NEVER LONGER.
+ * This is what makes the cache safe: a scoped() instance is discarded
+ * at the end of the request/job, so a price change between two
+ * unrelated requests can never be served stale by this cache — a
+ * singleton() would risk exactly that (see AppServiceProvider's own
+ * comment on why scoped() was chosen). Never write to this cache
+ * anywhere outside forProducts() below — a second write path would be
+ * a second, harder-to-audit way for it to go stale within its own
+ * request.
  */
 final class ProductPriceRangeProvider
 {
+    /** @var array<string, PriceRange> */
+    private array $cachedRangesByProductId = [];
+
     public function __construct(
         private readonly CatalogScopeResolver $catalogScopeResolver,
         private readonly PriceRangeResolver $priceRangeResolver,
@@ -81,6 +100,34 @@ final class ProductPriceRangeProvider
             return [];
         }
 
+        $uncachedProductIds = array_values(array_filter(
+            array_unique($productIds),
+            fn (string $productId): bool => ! array_key_exists($productId, $this->cachedRangesByProductId)
+        ));
+
+        if ($uncachedProductIds !== []) {
+            foreach ($this->resolveUncachedProducts($uncachedProductIds) as $productId => $range) {
+                $this->cachedRangesByProductId[$productId] = $range;
+            }
+        }
+
+        $result = [];
+        foreach ($productIds as $productId) {
+            $result[$productId] = $this->cachedRangesByProductId[$productId];
+        }
+
+        return $result;
+    }
+
+    /**
+     * The real resolution work — only ever called by forProducts() above,
+     * and only ever with ids that are NOT already cached.
+     *
+     * @param string[] $productIds
+     * @return array<string, PriceRange> keyed by product id
+     */
+    private function resolveUncachedProducts(array $productIds): array
+    {
         $variationIdsByProductId = $this->nonArchivedVariationIdsByProductId($productIds);
 
         $allVariationIds = array_merge([], ...array_values($variationIdsByProductId));

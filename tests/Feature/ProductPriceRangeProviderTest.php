@@ -142,6 +142,78 @@ class ProductPriceRangeProviderTest extends TestCase
         );
     }
 
+    /**
+     * Step 0's own per-instance memoization: two consecutive calls for
+     * the SAME product ids, on the SAME provider instance, must issue
+     * queries only on the first — the cache's whole reason to exist for
+     * a scoped() instance being asked for the same page's ranges more
+     * than once within one request.
+     */
+    public function test_a_second_call_for_the_same_product_ids_issues_zero_queries(): void
+    {
+        $regularList = $this->seedRegularPricesList();
+
+        $productIds = [];
+        for ($i = 1; $i <= 5; $i++) {
+            $product = Product::createSimple("Memo Product {$i}", "SKU-MEMO-{$i}", "memo-product-{$i}");
+            app(ProductRepository::class)->save($product);
+            $this->addItem($regularList, PriceListItemTargetType::VARIATION, $product->variations()[0]->id(), '9.99');
+            $productIds[] = $product->id();
+        }
+
+        // Deliberately the SAME PHP object across both calls, not a
+        // fresh app(ProductPriceRangeProvider::class) resolution each
+        // time — the memoization is a property of THIS instance, and a
+        // real request only ever resolves one instance per scoped()
+        // lifetime anyway.
+        $provider = $this->provider();
+
+        $countQueries = function (callable $callback): int {
+            $count = 0;
+            DB::listen(function () use (&$count): void {
+                $count++;
+            });
+
+            $callback();
+
+            DB::flushQueryLog();
+
+            return $count;
+        };
+
+        $queriesForFirstCall = $countQueries(fn () => $provider->forProducts($productIds));
+        $queriesForSecondCall = $countQueries(fn () => $provider->forProducts($productIds));
+
+        fwrite(STDERR, "\n[query-count] first call: {$queriesForFirstCall} queries, second call (same ids): {$queriesForSecondCall} queries\n");
+
+        $this->assertGreaterThan(0, $queriesForFirstCall, 'sanity check: the first call must actually query something');
+        $this->assertSame(0, $queriesForSecondCall, 'a repeat call for already-cached ids must issue zero queries');
+    }
+
+    /** A mix of already-cached and new ids must only query for the new ones. */
+    public function test_a_call_mixing_cached_and_new_product_ids_only_queries_for_the_new_ones(): void
+    {
+        $regularList = $this->seedRegularPricesList();
+
+        $cachedProduct = Product::createSimple('Cached', 'SKU-MIX-CACHED', 'mix-cached');
+        app(ProductRepository::class)->save($cachedProduct);
+        $this->addItem($regularList, PriceListItemTargetType::VARIATION, $cachedProduct->variations()[0]->id(), '9.99');
+
+        $newProduct = Product::createSimple('New', 'SKU-MIX-NEW', 'mix-new');
+        app(ProductRepository::class)->save($newProduct);
+        $this->addItem($regularList, PriceListItemTargetType::VARIATION, $newProduct->variations()[0]->id(), '14.99');
+
+        $provider = $this->provider();
+        $provider->forProducts([$cachedProduct->id()]);
+
+        DB::enableQueryLog();
+        $ranges = $provider->forProducts([$cachedProduct->id(), $newProduct->id()]);
+        DB::disableQueryLog();
+
+        $this->assertFalse($ranges[$cachedProduct->id()]->isEmpty());
+        $this->assertFalse($ranges[$newProduct->id()]->isEmpty());
+    }
+
     public function test_query_count_for_5_vs_25_products_is_equal(): void
     {
         $regularList = $this->seedRegularPricesList();

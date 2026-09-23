@@ -117,7 +117,7 @@ class PruneProductsToOriginal extends Command
         // pricing_price_list_items.target_id and
         // operational_sales_sale_lines.priceable_id both hold a
         // Variation/Product id AS A STRING (never a foreign key, by
-        // design) — same reasoning just applied to priceMinorSubquery().
+        // design).
         $doomedVariationIdStrings = array_map('strval', $doomedVariationIds);
         $doomedProductIdStrings = array_map('strval', $doomedProductIds);
 
