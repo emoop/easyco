@@ -10,6 +10,13 @@ return [
         'attributes' => 'Attributes',
         'price_stock' => 'Price & Stock',
         'variations' => 'Variations',
+        'axes' => 'Axes',
+    ],
+
+    'axes' => [
+        'attribute_label' => 'Attribute',
+        'values_label' => 'Values',
+        'add_axis' => 'Add axis',
     ],
 
     'attributes_picker' => [
@@ -114,6 +121,32 @@ return [
         'confirm_description' => 'Archiving ":label" removes it from the storefront and checkout immediately, once you save. It is not deleted — re-adding the exact same combination later restores its original identity, SKU and history.',
         'confirm_submit' => 'Archive',
         'confirm_cancel' => 'Cancel',
+    ],
+
+    'variations_generate' => [
+        'button_label' => 'Generate missing variations',
+        'confirm_heading' => 'Generate every missing combination?',
+        'confirm_description' => 'This creates a new draft variation for every combination of the declared axis values that does not already exist. An archived combination whose axis values are still enabled is restored with its original SKU, not recreated — the same behavior as re-adding it manually.',
+        'notification_title' => 'Variations generated',
+        'notification_body' => ':created created, :restored restored.',
+    ],
+
+    'new_variations' => [
+        'section_label' => 'Add a variation',
+        'sku_label' => 'SKU',
+        'add_variation' => 'Add variation',
+        'combination_help' => 'Choose one value for each declared axis to add exactly that combination.',
+    ],
+
+    'variation_restore' => [
+        'section_label' => 'Archived variations',
+        'button_label' => 'Restore',
+        'confirm_heading' => 'Restore this variation?',
+        'confirm_description' => 'Restoring ":label" brings it back as a draft, with its original SKU, barcode and history intact. It will not be visible or purchasable until you activate it again.',
+        'confirm_submit' => 'Restore',
+        'confirm_cancel' => 'Cancel',
+        'notification_success' => 'Variation restored.',
+        'no_restorable_variations' => 'No archived variations.',
     ],
 
     'duplicate_action' => 'Duplicate',

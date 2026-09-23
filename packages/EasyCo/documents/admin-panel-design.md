@@ -507,3 +507,84 @@ wants on a click, not a detour through View first. **Scoped to
 — a future Resource should still default its row click to View unless
 it has this same specific justification (a resource whose real usage
 pattern is dominated by immediate editing, not browsing).
+
+### 13.6 Editing a VARIABLE product's axes, adding variations, and restoring archived ones
+
+**Implemented, retroactive record.** Closes §13.1's own Step 4 gap
+(`EditVariableProduct`'s class docblock used to list "adding new
+variations or extending declared axes" as explicitly not-yet-possible,
+pending `declareVariationAxes()`'s own redeclaration guard being worked
+out) — now possible because `catalog-domain-design.md` §3.17 replaced
+the old blanket "any axis change refused once a STANDARD variation
+exists" guard with a directional compatibility check, and added
+`Product::restoreArchivedVariation()`.
+
+**A new "Axes" tab**, between Attributes and Variations, mirrors
+`CreateVariableProduct`'s own Axes wizard step field-for-field (same
+`attribute_definition_id`/`value_ids` Repeater shape). Its own options
+exclude this product's current descriptive-attribute definitions (the
+mirror image of the Attributes tab's own axis exclusion) — the
+underlying `UNIQUE(product_id, attribute_definition_id)` constraint
+makes a definition being both at once impossible, so the UI never
+offers it. **Deliberate limit, not an oversight:** moving a definition
+from descriptive to axis (or back) in one submission is not supported
+— both pickers read the product's CURRENTLY PERSISTED set at render
+time, not each other's unsaved edits, so a merchant who wants to move
+one must remove it from the descriptive picker and save first, then
+declare it as an axis in a separate, later save.
+
+**Two add-paths inside the Variations tab, both reusing
+`VariationCombinationGenerator`/`Product::addStandardVariation()`
+exactly as the Create wizard already does, no reimplementation:**
+
+- **"Generate missing variations"** — a header action (a `Section`
+  wraps the existing-variations `Repeater` specifically so it has a
+  real `headerActions()` mechanism to attach to; `Repeater` itself does
+  not implement `HasHeaderActions`, confirmed against the installed
+  source) that runs the generator against every declared axis's every
+  enabled value, ->disabled() when the product has no declared axes.
+  Reports two REAL, separate counts — created (a genuinely new
+  variation) and restored (an archived combination whose values are
+  still enabled, revived with its ORIGINAL sku via
+  `addStandardVariation()`'s own already-existing §3.9 behavior, not a
+  new rule) — never one combined number.
+- **"Add variation"** — one row = one explicitly-chosen combination,
+  a `Select` per currently-declared axis (built from a closure, so it
+  reflects the product's real axis set at render time) plus sku/
+  barcode/an active toggle. Processed as part of the normal Save
+  submission (`updateProduct()`), not a separate action.
+
+**The archived-variations list** — a separate, display-only `Repeater`
+(never the existing-variations one) listing this product's ARCHIVED
+STANDARD variations, each with a per-row Restore action
+(`->extraItemActions()`) that calls `Product::restoreArchivedVariation()`
+through the repository, logs the status change, and — the one real
+subtlety — refreshes ONLY the two affected form keys
+(`existing_variations`/`archived_variations`) via
+`$this->form->fill($this->data)`, never a full `fillForm()`: the
+latter re-derives EVERY field via `mutateFormDataBeforeFill()` again
+(confirmed against `fillFormWithDataAndCallHooks()`'s installed
+source), which would silently discard any OTHER unsaved edit the
+merchant has in progress elsewhere on the page. Restoration fails loud
+(`VariationNotRestorableException`, a danger notification with no data
+refresh at all) when the archived variation's own combination no
+longer matches the product's current declared axes — the axes may have
+drifted while it sat archived, since an archived variation never
+blocks an axis change itself (§3.17's own trade-off).
+
+**Save-time ordering, in `updateProduct()`:** declare axes (only when
+the submitted set genuinely differs from the current one — an
+identical-set no-op resubmit is now allowed by the domain but still
+skipped here to avoid an unnecessary write and a spurious activity-log
+entry) → descriptive attributes → per-row updates → archive removed
+rows → add new variations (from the "Add variation" Repeater) →
+publish() re-validation. "Generate missing variations" and Restore are
+their own independent side-actions, entirely outside this flow — each
+reloads, mutates, and saves through the repository immediately on
+click, not deferred to the page's own Save button.
+
+**Remaining deliberate limits, unchanged from before this pass:** no
+bulk variation-edit spreadsheet-style UI (still a possible future
+step, not scoped here); per-variation media was already closed by an
+earlier pass, unrelated to this one; `size_guide_id` remains unwired
+into either admin flow.

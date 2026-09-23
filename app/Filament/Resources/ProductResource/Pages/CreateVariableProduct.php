@@ -6,8 +6,6 @@ use App\Filament\Resources\ProductResource;
 use App\Providers\CatalogSkuGeneratorServiceProvider;
 use App\Services\ActivityLogger;
 use App\Settings\Contracts\SiteSettingsRepository;
-use EasyCo\Catalog\Contracts\AttributeDefinitionRepository;
-use EasyCo\Catalog\Contracts\AttributeValueRepository;
 use EasyCo\Catalog\Contracts\ProductRepository;
 use EasyCo\Catalog\Enums\AttributeType;
 use EasyCo\Catalog\Enums\CatalogVisibility;
@@ -22,7 +20,6 @@ use EasyCo\Catalog\Persistence\Eloquent\ProductGroupModel;
 use EasyCo\Catalog\Persistence\Eloquent\ProductModel;
 use EasyCo\Catalog\Product;
 use EasyCo\Catalog\Services\VariationCombinationGenerator;
-use EasyCo\Catalog\VariationAxis;
 use EasyCo\Extensibility\Hook;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\RichEditor;
@@ -306,7 +303,7 @@ class CreateVariableProduct extends CreateRecord
         $set('base_sku', $baseSku);
         $set('slug', $slug);
 
-        $axes = $this->buildVariationAxes($get('axes') ?? []);
+        $axes = ProductResource::buildVariationAxesFromInput($get('axes') ?? []);
 
         $throwaway = Product::createVariable($get('name') ?? '', $baseSku, $slug);
         $throwaway->declareVariationAxes($axes);
@@ -454,7 +451,11 @@ class CreateVariableProduct extends CreateRecord
     private function declareAxes(Product $product, array $axesInput): void
     {
         try {
-            $axes = $this->buildVariationAxes($axesInput);
+            // ProductResource::buildVariationAxesFromInput() — extracted
+            // from this method's own former private buildVariationAxes()
+            // so EditVariableProduct's own Axes-tab write path shares the
+            // exact same construction loop, not a second copy of it.
+            $axes = ProductResource::buildVariationAxesFromInput($axesInput);
 
             try {
                 $product->declareVariationAxes($axes);
@@ -477,37 +478,6 @@ class CreateVariableProduct extends CreateRecord
     }
 
     /**
-     * Extracted from declareAxes() — the raw-input-to-VariationAxis[]
-     * construction loop only, shared verbatim between declareAxes()
-     * (final submit, catches InvalidVariationAxisException itself) and
-     * generateVariationPreview() (Axes step's own afterValidation(),
-     * deliberately left uncaught there — see that method's own
-     * docblock). Throws InvalidVariationAxisException uncaught by
-     * design; every caller is responsible for its own handling.
-     *
-     * @param array<int, array{attribute_definition_id?: mixed, value_ids?: array<int, mixed>}> $axesInput
-     * @return VariationAxis[]
-     */
-    private function buildVariationAxes(array $axesInput): array
-    {
-        $axes = [];
-
-        foreach ($axesInput as $axisInput) {
-            $attributeDefinitionId = (string) ($axisInput['attribute_definition_id'] ?? '');
-
-            $definition = app(AttributeDefinitionRepository::class)->findById($attributeDefinitionId);
-            $values = array_map(
-                fn ($valueId) => app(AttributeValueRepository::class)->findById((string) $valueId),
-                $axisInput['value_ids'] ?? []
-            );
-
-            $axes[] = new VariationAxis($definition, $values);
-        }
-
-        return $axes;
-    }
-
-    /**
      * Persists the real, final Variations from the Variations step's
      * own $data['variations'] rows — independent of how those rows
      * got there (the real generation flow via
@@ -526,7 +496,22 @@ class CreateVariableProduct extends CreateRecord
             $combination = json_decode((string) ($row['combination_json'] ?? '[]'), true) ?? [];
 
             try {
-                $variation = $product->addStandardVariation($combination, (string) ($row['sku'] ?? ''));
+                // ProductResource::writeStandardVariation() — the shared
+                // addStandardVariation()+barcode-Hook+activate() core,
+                // now also used by EditVariableProduct's own "Add
+                // variation" write path. Only DuplicateVariationCombinationException
+                // is caught here (unchanged from before this
+                // extraction): this row's own combination already
+                // passed generateVariationPreview()'s own upfront
+                // validation, so InvalidVariationAxisException is not a
+                // realistically reachable case for this specific caller.
+                ProductResource::writeStandardVariation(
+                    $product,
+                    $combination,
+                    (string) ($row['sku'] ?? ''),
+                    $row['barcode'] ?? '',
+                    (bool) ($row['is_active'] ?? false)
+                );
             } catch (DuplicateVariationCombinationException $e) {
                 Notification::make()
                     ->title($e->getMessage())
@@ -534,15 +519,6 @@ class CreateVariableProduct extends CreateRecord
                     ->send();
 
                 throw (new Halt)->rollBackDatabaseTransaction();
-            }
-
-            $barcode = Hook::apply('catalog.variation.barcode', $row['barcode'] ?? '', $variation);
-            if ($barcode !== '') {
-                $variation->setBarcode($barcode);
-            }
-
-            if ($row['is_active'] ?? false) {
-                $variation->activate();
             }
         }
     }

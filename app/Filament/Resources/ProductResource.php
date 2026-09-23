@@ -18,6 +18,8 @@ use App\Settings\Contracts\SiteSettingsRepository;
 use BackedEnum;
 use EasyCo\Catalog\AttributeDefinition;
 use EasyCo\Catalog\AttributeValue;
+use EasyCo\Catalog\Contracts\AttributeDefinitionRepository;
+use EasyCo\Catalog\Contracts\AttributeValueRepository;
 use EasyCo\Catalog\Enums\AttributeType;
 use EasyCo\Catalog\Enums\CatalogVisibility;
 use EasyCo\Catalog\Enums\ProductStatus;
@@ -30,6 +32,9 @@ use EasyCo\Catalog\Persistence\Eloquent\ProductModel;
 use EasyCo\Catalog\Persistence\Eloquent\SeasonModel;
 use EasyCo\Catalog\Persistence\Eloquent\TagModel;
 use EasyCo\Catalog\Product;
+use EasyCo\Catalog\Variation;
+use EasyCo\Catalog\VariationAxis;
+use EasyCo\Extensibility\Hook;
 use EasyCo\Media\Contracts\MediaAssetRepository;
 use EasyCo\Media\Contracts\MediaStorageAdapter;
 use EasyCo\Media\Enums\MediaType;
@@ -1589,5 +1594,75 @@ class ProductResource extends Resource
         }
 
         return $asset;
+    }
+
+    /**
+     * Extracted from CreateVariableProduct::buildVariationAxes() — the
+     * raw-input-to-VariationAxis[] construction loop, now shared
+     * verbatim between CreateVariableProduct (declareAxes()/
+     * generateVariationPreview()) and EditVariableProduct's own Axes
+     * tab write path, so there is exactly one copy of this loop in the
+     * codebase, not two drifting independently. Throws
+     * InvalidVariationAxisException uncaught by design — every caller
+     * is responsible for its own Notification+Halt handling, since the
+     * two pages catch it differently (see each page's own call site).
+     *
+     * @param array<int, array{attribute_definition_id?: mixed, value_ids?: array<int, mixed>}> $axesInput
+     * @return VariationAxis[]
+     */
+    public static function buildVariationAxesFromInput(array $axesInput): array
+    {
+        $axes = [];
+
+        foreach ($axesInput as $axisInput) {
+            $attributeDefinitionId = (string) ($axisInput['attribute_definition_id'] ?? '');
+
+            $definition = app(AttributeDefinitionRepository::class)->findById($attributeDefinitionId);
+            $values = array_map(
+                fn ($valueId) => app(AttributeValueRepository::class)->findById((string) $valueId),
+                $axisInput['value_ids'] ?? []
+            );
+
+            $axes[] = new VariationAxis($definition, $values);
+        }
+
+        return $axes;
+    }
+
+    /**
+     * The real "create one STANDARD variation" core shared by
+     * CreateVariableProduct::addStandardVariations() and
+     * EditVariableProduct's own "Add variation" write path — both
+     * pages need the exact same addStandardVariation() +
+     * 'catalog.variation.barcode' Hook wrapping + optional activate()
+     * sequence; this is that one shared core.
+     *
+     * Uniqueness/validity exceptions (InvalidVariationAxisException,
+     * DuplicateVariationCombinationException — both real,
+     * uncaught-by-design here) are NOT caught in this method: each
+     * caller wraps its own call in its own Notification+Halt, because
+     * the two pages catch a genuinely different exception set —
+     * CreateVariableProduct's own combinations already came from
+     * generateVariationPreview()'s own upfront validation, so only a
+     * duplicate is realistically reachable there; EditVariableProduct's
+     * own combination is built directly from per-axis Select input, so
+     * it catches more broadly (see that page's own call site).
+     *
+     * @param array<int|string, int|string> $combination
+     */
+    public static function writeStandardVariation(Product $product, array $combination, string $sku, mixed $barcodeInput, bool $activate): Variation
+    {
+        $variation = $product->addStandardVariation($combination, $sku);
+
+        $barcode = Hook::apply('catalog.variation.barcode', filled($barcodeInput) ? $barcodeInput : '', $variation);
+        if ($barcode !== '') {
+            $variation->setBarcode($barcode);
+        }
+
+        if ($activate) {
+            $variation->activate();
+        }
+
+        return $variation;
     }
 }

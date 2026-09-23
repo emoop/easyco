@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\ProductResource\Pages;
 
 use App\Filament\Resources\ProductResource;
+use App\Providers\CatalogSkuGeneratorServiceProvider;
 use App\Services\ActivityLogger;
 use App\Services\ArchiveProductMediaCleaner;
 use App\Services\ProductPricingAndStock;
@@ -10,10 +11,16 @@ use App\Settings\Contracts\SiteSettingsRepository;
 use EasyCo\Catalog\Contracts\ProductCategoryRepository;
 use EasyCo\Catalog\Contracts\ProductRepository;
 use EasyCo\Catalog\Contracts\ProductTagRepository;
+use EasyCo\Catalog\Enums\AttributeType;
 use EasyCo\Catalog\Enums\CatalogVisibility;
 use EasyCo\Catalog\Enums\ProductStatus;
 use EasyCo\Catalog\Enums\VariationStatus;
+use EasyCo\Catalog\Enums\VariationType;
 use EasyCo\Catalog\Exceptions\CannotPublishEmptyVariableProductException;
+use EasyCo\Catalog\Exceptions\DuplicateVariationCombinationException;
+use EasyCo\Catalog\Exceptions\InvalidVariationAxisException;
+use EasyCo\Catalog\Exceptions\UnsafeAxisRedeclarationException;
+use EasyCo\Catalog\Exceptions\VariationNotRestorableException;
 use EasyCo\Catalog\Persistence\Eloquent\AttributeDefinitionModel;
 use EasyCo\Catalog\Persistence\Eloquent\AttributeValueModel;
 use EasyCo\Catalog\Persistence\Eloquent\BrandModel;
@@ -24,6 +31,7 @@ use EasyCo\Catalog\Persistence\Eloquent\TagModel;
 use EasyCo\Catalog\Product;
 use EasyCo\Catalog\ProductCategory;
 use EasyCo\Catalog\ProductTag;
+use EasyCo\Catalog\Services\VariationCombinationGenerator;
 use EasyCo\Catalog\Variation;
 use EasyCo\Catalog\VariationAxis;
 use EasyCo\Extensibility\Hook;
@@ -51,6 +59,7 @@ use Filament\Notifications\Notification;
 use Filament\Resources\Pages\EditRecord;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Group;
+use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Tabs;
 use Filament\Schemas\Components\Tabs\Tab;
 use Filament\Schemas\Components\Utilities\Get;
@@ -82,13 +91,22 @@ use RuntimeException;
  * field genuinely needs), and updateProduct()'s own for how each is
  * diff-written.
  *
- * EXPLICITLY NOT HERE (separate, later steps, each needing its own
- * design — see this class's own git history / task notes, not
- * repeated per-field below): per-variation media (Step 3); adding new
- * variations or extending declared axes (Step 4 — needs
- * declareVariationAxes()'s own redeclaration guard worked out first).
- * size_guide_id is out of scope too — not wired into SIMPLE's own
- * admin UI either.
+ * Step 3 (per-variation media) and Step 4 (a new "Axes" tab for
+ * extending declared axes, "Generate missing variations"/"Add
+ * variation" write paths, and an archived-variations Restore list —
+ * catalog-domain-design.md §3.17's directional axis guard and
+ * Product::restoreArchivedVariation() are what finally made Step 4
+ * possible) are now BOTH real — see axesTabComponents()/
+ * archivedVariationRows()/generateMissingVariationsAction()'s own
+ * docblocks. admin-panel-design.md §13.6 has the full design.
+ *
+ * STILL EXPLICITLY NOT HERE, deliberate limits, not oversights: moving
+ * a definition from descriptive-attribute to variation-axis (or back)
+ * in one submission — a merchant must remove it from the descriptive
+ * picker and save first, then declare it as an axis in a later,
+ * separate save (see axesTabComponents()'s own comment for why); a
+ * bulk variation-edit spreadsheet-style UI; size_guide_id (still not
+ * wired into SIMPLE's own admin UI either).
  *
  * form() IS OVERRIDDEN (unlike EditProduct.php, which relies on
  * EditRecord's own default `form() => static::getResource()::form()`
@@ -276,6 +294,30 @@ class EditVariableProduct extends EditRecord
                                         ->schema($this->generalTabComponents()),
                                     Tab::make(__('products.tabs.attributes'))
                                         ->schema($this->attributesTabComponents()),
+                                    // PRODUCT_MANAGE-gated at ->visible()
+                                    // level (not just per-field
+                                    // ->disabled()) — this whole tab is
+                                    // a write surface (declaring axes),
+                                    // unlike the Attributes tab's own
+                                    // descriptive-attribute picker,
+                                    // which stays visible to any
+                                    // PRODUCT_VIEW holder. In practice
+                                    // this is defense-in-depth, not the
+                                    // real enforcement boundary: every
+                                    // staff member who can reach this
+                                    // PAGE AT ALL already holds
+                                    // PRODUCT_MANAGE (it is this page's
+                                    // own editPermission(), enforced by
+                                    // EditRecord::authorizeAccess() at
+                                    // mount() before the form is ever
+                                    // filled — confirmed against its
+                                    // installed source, same finding
+                                    // already documented on
+                                    // syncVariationMedia()'s own
+                                    // docblock).
+                                    Tab::make(__('products.tabs.axes'))
+                                        ->schema($this->axesTabComponents())
+                                        ->visible(fn (): bool => ProductResource::staffHasPermission(Permission::PRODUCT_MANAGE)),
                                     Tab::make(__('products.tabs.variations'))
                                         ->schema($this->existingVariationsComponents()),
                                 ]),
@@ -380,6 +422,75 @@ class EditVariableProduct extends EditRecord
         );
 
         return ProductResource::descriptiveAttributesPickerComponents($excludedDefinitionIds);
+    }
+
+    /**
+     * Mirrors CreateVariableProduct's own Axes step component-for-
+     * component (same field keys/labels/->defaultItems(0)/->live()+
+     * ->afterStateUpdated() value-clearing) — see that class's own
+     * docblock for the ->defaultItems(0) phantom-row fix this reuses
+     * unchanged. The one real difference: attribute_definition_id's
+     * own ->options() here EXCLUDE this product's current descriptive-
+     * attribute definitions — the mirror image of
+     * attributesTabComponents()'s own $excludedDefinitionIds (which
+     * excludes axis definitions from the descriptive picker). The same
+     * DB UNIQUE(product_id, attribute_definition_id) on
+     * catalog_product_attributes that motivates that exclusion applies
+     * here too: a definition cannot be both a descriptive attribute AND
+     * an axis on the same product at once.
+     *
+     * MOVING A DEFINITION FROM DESCRIPTIVE TO AXIS IN ONE SUBMIT IS
+     * DELIBERATELY NOT SUPPORTED — both pickers are independent
+     * Repeaters on independent tabs, each excluding the other's
+     * CURRENTLY PERSISTED set (read fresh from the domain Product at
+     * render time), not each other's UNSAVED in-progress edits. A
+     * merchant who removes a definition from the descriptive picker AND
+     * adds it as an axis in the SAME submission would still see it
+     * excluded from this tab's own options at render time (since
+     * nothing has been saved yet) — the real fix is to remove it from
+     * the picker and save first, then declare it as an axis in a
+     * separate, later save. This mirrors admin-panel-design.md §13.6's
+     * own explicit "deliberate limit" for exactly this reason.
+     *
+     * @return array<int, \Filament\Schemas\Components\Component>
+     */
+    private function axesTabComponents(): array
+    {
+        $product = app(ProductRepository::class)->findByIdWithVariations((string) $this->record->id);
+
+        $excludedDefinitionIds = array_keys($product->descriptiveAttributes());
+
+        return [
+            Repeater::make('axes')
+                ->hiddenLabel()
+                ->defaultItems(0)
+                ->addActionLabel(__('products.axes.add_axis'))
+                ->reorderable(false)
+                ->collapsible()
+                ->schema([
+                    Select::make('attribute_definition_id')
+                        ->label(__('products.axes.attribute_label'))
+                        ->options(fn (): array => AttributeDefinitionModel::where('type', AttributeType::SELECT->value)
+                            ->whereNotIn('id', $excludedDefinitionIds)
+                            ->pluck('name', 'id')
+                            ->all())
+                        ->searchable()
+                        ->required()
+                        ->live()
+                        ->afterStateUpdated(fn (Set $set) => $set('value_ids', [])),
+                    Select::make('value_ids')
+                        ->label(__('products.axes.values_label'))
+                        ->multiple()
+                        ->searchable()
+                        ->required()
+                        ->options(fn (Get $get): array => AttributeValueModel::where('attribute_definition_id', $get('attribute_definition_id'))
+                            ->pluck('value', 'id')
+                            ->all()),
+                ])
+                ->itemLabel(fn (array $state): ?string => filled($state['attribute_definition_id'] ?? null)
+                    ? AttributeDefinitionModel::find($state['attribute_definition_id'])?->name
+                    : null),
+        ];
     }
 
     /**
@@ -584,9 +695,25 @@ class EditVariableProduct extends EditRecord
                         $set("existing_variations.{$key}.stock_quantity", $state);
                     }
                 }),
-            Repeater::make('existing_variations')
-                ->hiddenLabel()
-                ->addable(false)
+            // Section, not a bare Repeater — "Generate missing
+            // variations" (generateMissingVariationsAction()'s own
+            // docblock) needs a REAL Filament header-action mechanism
+            // to attach to. CONFIRMED AGAINST THE INSTALLED SOURCE,
+            // NOT ASSUMED: Repeater does NOT implement
+            // Filament\Schemas\Components\Contracts\HasHeaderActions —
+            // only Filament\Schemas\Components\Section does (via
+            // Concerns\HasHeaderActions). A literal "header action on
+            // the Repeater itself" is not a real, reachable Filament
+            // mechanism — wrapping the Repeater in a Section is the
+            // faithful adaptation that keeps the exact same visual
+            // result (the button sits directly above the variations
+            // list) without inventing a different UX.
+            Section::make()
+                ->headerActions([$this->generateMissingVariationsAction()])
+                ->schema([
+                    Repeater::make('existing_variations')
+                        ->hiddenLabel()
+                        ->addable(false)
                 // Re-enabled (was ->deletable(false) through Step 1) —
                 // this IS the real archive mechanism now: Repeater::
                 // getDeleteAction()'s own real ->action() closure
@@ -786,7 +913,246 @@ class EditVariableProduct extends EditRecord
                         // permission exists for variation photos.
                         ->disabled(fn (): bool => ! ProductResource::staffHasPermission(Permission::PRODUCT_MANAGE)),
                 ]),
+                ]),
+            $this->newVariationComponents(),
+            $this->archivedVariationsComponents(),
         ];
+    }
+
+    /**
+     * "Add variation" — B2's own explicit, one-row-at-a-time
+     * alternative to "Generate missing variations": a merchant who
+     * only wants exactly ONE specific combination, not every missing
+     * one. Rows never come pre-filled (unlike CreateVariableProduct's
+     * own 'variations' Repeater, which is populated entirely by
+     * generateVariationPreview()) — ->addable() so a merchant explicitly
+     * adds a row, one per intended new variation.
+     *
+     * One Select PER CURRENTLY DECLARED AXIS, keyed
+     * "axis_value_{definitionId}" — built via ->schema(fn (): array =>
+     * ...) (confirmed supported: Filament\Schemas\Components\Concerns\
+     * HasChildComponents::schema() accepts array|Schema|Closure). The
+     * axis set is read once per render (this product's declared axes
+     * do not change mid-render — only a full Save can change them, and
+     * that reloads the whole page), so a closure re-evaluated on every
+     * Livewire request update is correct without needing to react to
+     * any live() state.
+     *
+     * Combination-building/write-side lives in addNewVariationRows()
+     * (called from updateProduct() — this Repeater's own rows are
+     * submitted and processed as part of the normal Save flow, NOT a
+     * separate Action, unlike "Generate missing variations"/Restore).
+     */
+    private function newVariationComponents(): Section
+    {
+        $product = app(ProductRepository::class)->findByIdWithVariations((string) $this->record->id);
+        $axes = $product->variationAxes();
+
+        return Section::make(__('products.new_variations.section_label'))
+            ->schema([
+                Repeater::make('new_variations')
+                    ->hiddenLabel()
+                    ->defaultItems(0)
+                    ->addActionLabel(__('products.new_variations.add_variation'))
+                    ->deletable()
+                    ->reorderable(false)
+                    ->collapsible()
+                    ->helperText(__('products.new_variations.combination_help'))
+                    ->schema(function () use ($axes): array {
+                        $components = [];
+
+                        foreach ($axes as $axis) {
+                            $definitionId = $axis->attributeDefinitionId();
+                            $definitionName = AttributeDefinitionModel::find($definitionId)?->name ?? $axis->attributeDefinitionCode();
+
+                            $components[] = Select::make("axis_value_{$definitionId}")
+                                ->label($definitionName)
+                                // A REAL, CONFIRMED GAP FOUND VIA A
+                                // FAILING TEST, NOT ASSUMED SAFE: a bare
+                                // ->options($axis->allowedValueIds())
+                                // snapshot (this product's PERSISTED
+                                // axes at render time) makes Filament's
+                                // own implicit "in:" validation reject a
+                                // value the merchant just enabled on the
+                                // SAME Axes tab in the SAME submission —
+                                // "The selected {label} is invalid.",
+                                // server-side, before updateProduct() is
+                                // ever reached. Merged in here via an
+                                // ABSOLUTE Get() path ('/data.axes' —
+                                // confirmed working against
+                                // HasState::resolveRelativeStatePath()'s
+                                // own installed source: a leading '/'
+                                // forces isAbsolute=true, read from the
+                                // form root regardless of which
+                                // Repeater/Section this Select is
+                                // nested under) so a value enabled on
+                                // the Axes tab in THIS SAME save is
+                                // immediately usable here too, not only
+                                // after a page reload — this is exactly
+                                // what proves the real save-time
+                                // ordering (axes declared before new
+                                // variations are validated).
+                                ->options(function (Get $get) use ($axis, $definitionId): array {
+                                    $valueIds = $axis->allowedValueIds();
+
+                                    foreach ($get('/data.axes') ?? [] as $axisRow) {
+                                        if ((string) ($axisRow['attribute_definition_id'] ?? '') === $definitionId) {
+                                            $valueIds = array_unique(array_merge($valueIds, $axisRow['value_ids'] ?? []));
+                                        }
+                                    }
+
+                                    return AttributeValueModel::whereIn('id', $valueIds)
+                                        ->pluck('value', 'id')
+                                        ->all();
+                                })
+                                ->required()
+                                ->searchable();
+                        }
+
+                        $components[] = TextInput::make('sku')
+                            ->label(__('products.new_variations.sku_label'))
+                            ->required();
+                        $components[] = TextInput::make('barcode')
+                            ->label(__('products.fields.barcode'));
+                        $components[] = Toggle::make('is_active')
+                            ->label(__('products.wizard.variations.active_label'))
+                            ->default(false);
+
+                        return $components;
+                    })
+                    ->disabled(fn (): bool => ! ProductResource::staffHasPermission(Permission::PRODUCT_MANAGE)),
+            ]);
+    }
+
+    /**
+     * "C" — the archived-variations restore list. A SEPARATE Repeater
+     * from existing_variations (never the same one — an archived row
+     * has nothing editable in it), display-only: every field
+     * ->disabled()->dehydrated(false), 'variation_id' a plain Hidden
+     * (still dehydrated — its own value is never read at Save time
+     * either, since this whole Repeater carries no real write path of
+     * its own, but leaving it dehydrated is harmless and keeps the
+     * field shape consistent with the others in this class). The
+     * per-row Restore Action uses ->extraItemActions() (Concerns\
+     * HasExtraItemActions, confirmed present on Repeater in the
+     * installed v5.8.1), NOT ->deleteAction() — restoring is not a
+     * deletion, and this Repeater's own ->deletable(false)/->addable(false)
+     * mean the merchant has no OTHER way to add/remove a row here at
+     * all; the only interaction is Restore.
+     *
+     * ->requiresConfirmation()/->modalDescription() reads the row's
+     * own real combination label via the SAME confirmed-working
+     * mechanism existingVariationsComponents()'s own ->deleteAction()
+     * already established: array $arguments['item'] (the real
+     * Repeater item key, bound via HasMountableArguments::__invoke() —
+     * confirmed the Repeater's own view calls
+     * $action(['item' => $itemKey]) for BOTH deleteAction() and
+     * extraItemActions() identically) + Repeater $component (named
+     * 'component', bound via HasActions::prepareAction() at
+     * cacheActions()/cacheExtraItemActions() time) ->
+     * getChildSchema($itemKey)->getRawState() — NOT Get $get, which
+     * would resolve relative to the REPEATER's own state path, not
+     * this specific item's (identical documented gap as itemLabel()'s
+     * own docblock elsewhere in this class).
+     *
+     * The actual restore WORK happens in
+     * $this->restoreArchivedVariationById() — resolved via named
+     * $livewire injection (ProductResource::duplicateAction()'s own
+     * confirmed-working precedent for reaching Livewire's own page
+     * instance from inside an Action closure), kept as a public method
+     * rather than inlined in this closure so it stays independently
+     * readable/testable. See that method's own docblock for why it
+     * refreshes via $this->form->fill($this->data) rather than a full
+     * fillForm().
+     */
+    private function archivedVariationsComponents(): Section
+    {
+        return Section::make(__('products.variation_restore.section_label'))
+            ->schema([
+                Repeater::make('archived_variations')
+                    ->hiddenLabel()
+                    ->addable(false)
+                    ->deletable(false)
+                    ->reorderable(false)
+                    ->extraItemActions([
+                        Action::make('restore_variation')
+                            ->label(__('products.variation_restore.button_label'))
+                            ->requiresConfirmation()
+                            ->modalHeading(__('products.variation_restore.confirm_heading'))
+                            ->modalDescription(function (array $arguments, Repeater $component): string {
+                                $itemKey = $arguments['item'] ?? null;
+                                $label = $itemKey !== null
+                                    ? ($component->getChildSchema($itemKey)?->getRawState()['label'] ?? '')
+                                    : '';
+
+                                return __('products.variation_restore.confirm_description', ['label' => $label]);
+                            })
+                            ->modalSubmitActionLabel(__('products.variation_restore.confirm_submit'))
+                            ->modalCancelActionLabel(__('products.variation_restore.confirm_cancel'))
+                            ->disabled(fn (): bool => ! ProductResource::staffHasPermission(Permission::PRODUCT_MANAGE))
+                            ->action(function (array $arguments, Repeater $component, $livewire): void {
+                                $itemKey = $arguments['item'] ?? null;
+                                $variationId = $itemKey !== null
+                                    ? ($component->getChildSchema($itemKey)?->getRawState()['variation_id'] ?? null)
+                                    : null;
+
+                                if ($variationId === null) {
+                                    return;
+                                }
+
+                                $livewire->restoreArchivedVariationById((string) $variationId);
+                            }),
+                    ])
+                    ->schema([
+                        Hidden::make('variation_id'),
+                        TextInput::make('label')
+                            ->label(__('products.wizard.variations.combination_label'))
+                            ->disabled()
+                            ->dehydrated(false),
+                        TextInput::make('sku')
+                            ->label(__('products.wizard.variations.sku_label'))
+                            ->disabled()
+                            ->dehydrated(false),
+                        TextInput::make('barcode')
+                            ->label(__('products.fields.barcode'))
+                            ->disabled()
+                            ->dehydrated(false),
+                    ]),
+            ]);
+    }
+
+    /**
+     * "Generate missing variations" — B1's own header Action, attached
+     * via Section::headerActions() (see existingVariationsComponents()'s
+     * own comment for why a Section wraps the existing_variations
+     * Repeater specifically to host this). ->disabled() whenever this
+     * product currently has zero declared axes — nothing to generate.
+     * The confirmation text is explicit that a still-enabled archived
+     * combination is RESTORED with its ORIGINAL sku, not recreated —
+     * Product::addStandardVariation()'s own real §3.9 revival-by-
+     * signature behavior, not a new rule invented for this button.
+     *
+     * The real work is generateMissingVariations() — resolved via
+     * named $livewire injection, same precedent as the Restore action.
+     */
+    private function generateMissingVariationsAction(): Action
+    {
+        return Action::make('generate_missing_variations')
+            ->label(__('products.variations_generate.button_label'))
+            ->requiresConfirmation()
+            ->modalHeading(__('products.variations_generate.confirm_heading'))
+            ->modalDescription(__('products.variations_generate.confirm_description'))
+            ->disabled(fn (): bool => ! $this->hasDeclaredAxes() || ! ProductResource::staffHasPermission(Permission::PRODUCT_MANAGE))
+            ->action(fn ($livewire) => $livewire->generateMissingVariations());
+    }
+
+    /** A real query, not a loaded-collection count — same reasoning as baseSkuIsChanging()'s own identical posture. */
+    private function hasDeclaredAxes(): bool
+    {
+        return DB::table('catalog_product_attributes')
+            ->where('product_id', $this->record->id)
+            ->where('is_variation_axis', true)
+            ->exists();
     }
 
     /**
@@ -867,23 +1233,63 @@ class EditVariableProduct extends EditRecord
         $data['regular_price_override_count'] = $regularOverrideCount;
         $data['sale_price_override_count'] = $saleOverrideCount;
 
+        // Seeded from the domain Product's own real variationAxes() so
+        // an UNTOUCHED Axes tab resubmits the identical set — which
+        // the new directional guard (catalog-domain-design.md §3.17)
+        // now allows as a genuine no-op, unlike the old blanket
+        // refusal. allowedValueIds() already returns string[] (see
+        // that method's own real source), matching value_ids' own
+        // multiple-Select shape exactly.
+        $data['axes'] = array_map(
+            fn (VariationAxis $axis): array => [
+                'attribute_definition_id' => $axis->attributeDefinitionId(),
+                'value_ids' => $axis->allowedValueIds(),
+            ],
+            $product->variationAxes()
+        );
+
+        // Both use the SAME two shared row-shape builders this class's
+        // own restoreArchivedVariationById()/generateMissingVariations()
+        // reuse for their own partial refresh (see those methods' own
+        // docblocks for why — NOT a full fillForm() there) — exactly
+        // one place each row shape is built, not two.
+        $data['existing_variations'] = $this->existingVariationRows($product);
+        $data['archived_variations'] = $this->archivedVariationRows($product);
+
+        // 'new_variations' has no seed — it is a page ONLY the
+        // merchant fills in per save, never populated from persisted
+        // state (there is nothing persisted to seed it FROM: every row
+        // here becomes a brand-new Variation the moment it's saved).
+        $data['new_variations'] = [];
+
+        return $data;
+    }
+
+    /**
+     * The real row shape for 'existing_variations' — extracted so
+     * mutateFormDataBeforeFill() (a full page load) and
+     * generateMissingVariations()/restoreArchivedVariationById() (an
+     * independent side-action's own partial refresh — see those
+     * methods' own docblocks) share exactly one place this shape is
+     * built, never two. ARCHIVED variations are deliberately excluded
+     * — see the historical comment this replaced (git blame) for the
+     * original reasoning, unchanged: an archived row has nothing to
+     * edit in this Repeater, so it must not silently reappear here.
+     * array_values() after array_filter(): a Repeater's own row keys
+     * come from array iteration, not from variation_id, so a gap left
+     * by array_filter() must not leak through as a non-sequential key.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function existingVariationRows(Product $product): array
+    {
+        $pricingAndStock = app(ProductPricingAndStock::class);
         $variationMediaRepository = app(VariationMediaRepository::class);
 
-        // ARCHIVED variations are deliberately excluded from this
-        // list — confirmed this was NOT already the case before this
-        // task (every variation, any status, used to resurface here
-        // unconditionally) via a real failing test before adding this
-        // filter. An archived row has nothing to edit in this Repeater
-        // (the delete button that archived it in the first place is
-        // the ONLY sanctioned write path here — reviving one is a
-        // separate, later feature, not this page), so it must not
-        // silently reappear on the next page load as if nothing
-        // happened. array_values() after array_filter(): a Repeater's
-        // own row keys come from array iteration, not from
-        // variation_id, so a gap left by array_filter() (e.g. the
-        // second of three variations archived) must not leak through
-        // as a non-sequential key.
-        $data['existing_variations'] = array_values(array_map(
+        $productRegularPrice = $pricingAndStock->regularPriceDisplayForProduct($product->id());
+        $productSalePrice = $pricingAndStock->salePriceDisplayForProduct($product->id());
+
+        return array_values(array_map(
             fn (Variation $variation): array => [
                 'variation_id' => $variation->id(),
                 'label' => $this->variationLabel($variation),
@@ -903,8 +1309,35 @@ class EditVariableProduct extends EditRecord
                 fn (Variation $variation): bool => $variation->status() !== VariationStatus::ARCHIVED
             )
         ));
+    }
 
-        return $data;
+    /**
+     * The real row shape for 'archived_variations' — display-only
+     * (see archivedVariationsComponents()'s own docblock for why every
+     * field in that Repeater is ->disabled()->dehydrated(false)).
+     * Scoped to STANDARD variations only: a UNIVERSAL variation is
+     * never customer-selectable and Product::restoreArchivedVariation()
+     * itself refuses one outright, so it must never appear in a list
+     * whose entire purpose is offering a Restore button. Same two
+     * callers as existingVariationRows() above.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function archivedVariationRows(Product $product): array
+    {
+        return array_values(array_map(
+            fn (Variation $variation): array => [
+                'variation_id' => $variation->id(),
+                'label' => $this->variationLabel($variation),
+                'sku' => $variation->sku(),
+                'barcode' => $variation->barcode(),
+            ],
+            array_filter(
+                $product->variations(),
+                fn (Variation $variation): bool => $variation->status() === VariationStatus::ARCHIVED
+                    && $variation->type() === VariationType::STANDARD
+            )
+        ));
     }
 
     /**
@@ -1030,15 +1463,190 @@ class EditVariableProduct extends EditRecord
     }
 
     /**
+     * "Generate missing variations" (B1) — the real work behind
+     * generateMissingVariationsAction()'s own header Action, resolved
+     * via that Action's named $livewire injection (ProductResource::
+     * duplicateAction()'s own confirmed-working precedent). A real,
+     * independent side-action, NOT part of the normal Save submission
+     * — it reloads the aggregate, runs the generator, and saves
+     * immediately on click, exactly like restoreArchivedVariationById()
+     * below.
+     *
+     * VariationCombinationGenerator::generate() and
+     * CatalogSkuGeneratorServiceProvider::variationSkuStrategy() are
+     * both reused completely as-is (this task's own explicit
+     * instruction) — no cartesian-product logic is reimplemented here.
+     *
+     * TWO REAL, SEPARATE COUNTS, not one combined number:
+     * generate()'s own real source confirms $created only ever
+     * contains a row with a null id() (a genuinely NEW Variation,
+     * never yet persisted) or a non-null id() (which can ONLY be a
+     * just-revived ARCHIVED variation here — generate() itself catches
+     * DuplicateVariationCombinationException and skips it, so an
+     * already-LIVE variation's combination can never reach $created at
+     * all). Checked BEFORE save() below, while a genuinely-new
+     * Variation's id() is still null.
+     */
+    public function generateMissingVariations(): void
+    {
+        $product = app(ProductRepository::class)->findByIdWithVariations((string) $this->record->id);
+
+        $valuesByAxis = [];
+        foreach ($product->variationAxes() as $axis) {
+            $valuesByAxis[$axis->attributeDefinitionId()] = $axis->allowedValueIds();
+        }
+
+        $variations = (new VariationCombinationGenerator())->generate(
+            $product,
+            $valuesByAxis,
+            CatalogSkuGeneratorServiceProvider::variationSkuStrategy($product)
+        );
+
+        $createdCount = 0;
+        $restoredCount = 0;
+
+        foreach ($variations as $variation) {
+            if ($variation->id() === null) {
+                $createdCount++;
+            } else {
+                $restoredCount++;
+            }
+        }
+
+        app(ProductRepository::class)->save($product);
+
+        Notification::make()
+            ->title(__('products.variations_generate.notification_title'))
+            ->body(__('products.variations_generate.notification_body', [
+                'created' => $createdCount,
+                'restored' => $restoredCount,
+            ]))
+            ->success()
+            ->send();
+
+        // Same partial-refresh reasoning as restoreArchivedVariationById()
+        // below — freshly generated/restored rows must actually appear
+        // without discarding any other unsaved edit in progress
+        // elsewhere on the page. Not explicitly required by this
+        // task's own B1 wording, but a necessary consequence of it:
+        // newly generated rows genuinely need to show up somehow, and
+        // the SAME careful mechanism C already established for exactly
+        // this reason is the correct one to reuse here too, not a full
+        // fillForm().
+        $this->refreshVariationRows();
+    }
+
+    /**
+     * The real work behind archivedVariationsComponents()'s own
+     * per-row Restore Action — see that method's own docblock for the
+     * full mechanism (named $livewire injection, why it's a public
+     * method). Reloads the aggregate fresh (this page's own $product
+     * from a normal Save is not involved at all — this is a
+     * completely independent action), locates the variation by id,
+     * calls the real Product::restoreArchivedVariation(), and saves
+     * through the repository (EloquentProductRepository::save() wraps
+     * its own DB::transaction() internally — confirmed against its
+     * installed source — so no extra transaction wrapping is needed
+     * here).
+     *
+     * On VariationNotRestorableException: a danger notification
+     * carrying the exception's OWN message (never a generic string),
+     * no data refresh at all (nothing changed — the guard fired before
+     * $product->restoreArchivedVariation() mutated anything, and this
+     * method returns immediately after sending the notification).
+     *
+     * REFRESH, NOT fillForm() — confirmed against
+     * EditRecord::fillFormWithDataAndCallHooks()'s own installed
+     * source: $this->fillForm() re-runs mutateFormDataBeforeFill()
+     * against EVERY field, then $this->form->fill($data) with that
+     * entirely fresh array. That would silently discard any OTHER
+     * unsaved edit the merchant has in progress elsewhere on the page
+     * (name, base_sku, a not-yet-saved row edit) — Restore is an
+     * independent side-action, not a full-form Save, and must not have
+     * that side effect. Recomputing ONLY $this->data['existing_variations']/
+     * $this->data['archived_variations'] via the two shared row-shape
+     * builders (mutateFormDataBeforeFill()'s own callers), then calling
+     * $this->form->fill($this->data) — WITHOUT going through
+     * mutateFormDataBeforeFill() again — pushes the CURRENT $this->data
+     * (now correct for just these two keys, everything else exactly as
+     * the merchant last left it) back through the schema's own real
+     * state, with no re-derivation step at all.
+     */
+    public function restoreArchivedVariationById(string $variationId): void
+    {
+        $product = app(ProductRepository::class)->findByIdWithVariations((string) $this->record->id);
+
+        $variation = null;
+        foreach ($product->variations() as $candidate) {
+            if ((string) $candidate->id() === $variationId) {
+                $variation = $candidate;
+
+                break;
+            }
+        }
+
+        if ($variation === null) {
+            return;
+        }
+
+        $oldStatus = $variation->status()->value;
+
+        try {
+            $product->restoreArchivedVariation($variation);
+        } catch (VariationNotRestorableException $e) {
+            Notification::make()
+                ->title($e->getMessage())
+                ->danger()
+                ->send();
+
+            return;
+        }
+
+        app(ProductRepository::class)->save($product);
+
+        app(ActivityLogger::class)->logFieldChanged(
+            'product',
+            $product->id(),
+            "variation[{$variationId}].status",
+            $oldStatus,
+            'draft'
+        );
+
+        Notification::make()
+            ->title(__('products.variation_restore.notification_success'))
+            ->success()
+            ->send();
+
+        $this->refreshVariationRows();
+    }
+
+    /**
+     * Shared by generateMissingVariations()/restoreArchivedVariationById()
+     * — see either method's own docblock for why this is
+     * $this->form->fill($this->data), never $this->fillForm().
+     */
+    private function refreshVariationRows(): void
+    {
+        $product = app(ProductRepository::class)->findByIdWithVariations((string) $this->record->id);
+
+        $this->data['existing_variations'] = $this->existingVariationRows($product);
+        $this->data['archived_variations'] = $this->archivedVariationRows($product);
+
+        $this->form->fill($this->data);
+    }
+
+    /**
      * Mirrors EditProduct::updateProduct()'s own diff-then-write pattern
      * exactly, for the fields this page's own form actually has. Parent
      * fields first (unchanged from Step 1), then per-variation sku/
      * barcode/is_purchasable/cost/stock_quantity — see
-     * updateVariationRows()'s own docblock for that part. Still no
-     * regular_price/sale_price reads or writes (Step 2b), and
-     * declareAxes()/addStandardVariation()/adding new variations are
-     * likewise untouched here — separate, later steps, per this class's
-     * own docblock.
+     * updateVariationRows()'s own docblock for that part. Axis
+     * re-declaration (see the axesDiffer()/declareVariationAxes() call
+     * site below) and "Add variation" (addNewVariationRows()) are now
+     * both real, part of this same submission; "Generate missing
+     * variations" and archived-variation Restore are their own
+     * independent side-actions instead (generateMissingVariations()/
+     * restoreArchivedVariationById() above), never part of this method.
      */
     private function updateProduct(Model $record, array $data): Model
     {
@@ -1181,6 +1789,60 @@ class EditVariableProduct extends EditRecord
             $product->assignProductGroup($newProductGroupId);
         }
 
+        // BEFORE syncDescriptiveAttributesFromPickerRows() below AND
+        // before any variation write (updateVariationRows()/
+        // addNewVariationRows()/the generator) — every one of those
+        // validates its own combinations against $product's REAL,
+        // FINAL axis set, so the axes themselves must be settled
+        // first. Declared ONLY when the submitted set genuinely
+        // differs from $product->variationAxes() (axesDiffer()'s own
+        // order-insensitive set comparison) — the new directional
+        // guard (catalog-domain-design.md §3.17) would ALLOW an
+        // identical-set no-op redeclare too (R1), but calling
+        // declareVariationAxes() unconditionally on every save would
+        // still mean an unnecessary catalog_product_attributes/
+        // catalog_product_axis_values delete+reinsert AND a spurious
+        // "nothing really changed" activity-log entry on every
+        // ordinary save — skipped here for exactly those two reasons,
+        // not because the domain itself would reject it.
+        try {
+            $newAxes = ProductResource::buildVariationAxesFromInput($data['axes'] ?? []);
+        } catch (InvalidVariationAxisException $e) {
+            Notification::make()
+                ->title($e->getMessage())
+                ->danger()
+                ->send();
+
+            throw (new Halt)->rollBackDatabaseTransaction();
+        }
+
+        if ($this->axesDiffer($product->variationAxes(), $newAxes)) {
+            // Logged BEFORE declareVariationAxes() runs, so the log
+            // entry's own old value is the real pre-change summary —
+            // human-readable real definition/value NAMES (e.g. "Color:
+            // Black, White; Size: S, M"), not raw ids, same posture as
+            // syncCategories()/syncTags()'s own name-not-id logging
+            // elsewhere in this class.
+            $logger->logFieldChanged(
+                'product',
+                $product->id(),
+                'variation_axes',
+                $this->axesSummary($product->variationAxes()),
+                $this->axesSummary($newAxes)
+            );
+
+            try {
+                $product->declareVariationAxes($newAxes);
+            } catch (UnsafeAxisRedeclarationException|InvalidVariationAxisException|\LogicException $e) {
+                Notification::make()
+                    ->title($e->getMessage())
+                    ->danger()
+                    ->send();
+
+                throw (new Halt)->rollBackDatabaseTransaction();
+            }
+        }
+
         ProductResource::syncDescriptiveAttributesFromPickerRows($product, $data['descriptive_attributes_picker'] ?? [], $logger);
 
         // BEFORE save() below, not after — EloquentProductRepository::save()
@@ -1206,6 +1868,14 @@ class EditVariableProduct extends EditRecord
         if ($baseSkuChanged) {
             $this->cascadeBaseSkuToVariationSkus($product, $oldBaseSku, $newBaseSku, $logger);
         }
+
+        // AFTER archiveRemovedVariationRows()/the cascade above, BEFORE
+        // the publish() check below — a brand-new variation added in
+        // THIS SAME submission must already exist by the time
+        // publish()'s own hasAnyNonArchivedStandardVariation() guard
+        // runs, so a merchant adding the product's very first variation
+        // AND setting status to Active in one save genuinely succeeds.
+        $this->addNewVariationRows($product, $data['new_variations'] ?? [], $logger);
 
         // AFTER archiveRemovedVariationRows() above — see the status
         // block's own comment (near $oldStatus/$newStatus) for why
@@ -1582,6 +2252,141 @@ class EditVariableProduct extends EditRecord
 
             $logger->logFieldChanged('product', $product->id(), "variation[{$variationId}].status", $variation->status()->value, VariationStatus::ARCHIVED->value);
             $variation->archive();
+        }
+    }
+
+    /**
+     * "Genuinely differs" per updateProduct()'s own comment: same
+     * attribute_definition_id keys AND, per definition, the same
+     * allowed-value id set — order never matters, either of axes or of
+     * values. Mirrors Product::assertAxisChangeIsSafe()'s own R1 "is
+     * this identical" check exactly (same normalize-then-compare
+     * shape, see normalizedIdSet() below), but lives here at the app
+     * layer rather than reusing a private domain method — this
+     * comparison decides whether to call declareVariationAxes() AT
+     * ALL (to avoid an unnecessary write + a spurious log entry, see
+     * that call site's own comment), which is a genuinely different
+     * question from the domain's own "is this specific change safe."
+     *
+     * @param VariationAxis[] $currentAxes
+     * @param VariationAxis[] $newAxes
+     */
+    private function axesDiffer(array $currentAxes, array $newAxes): bool
+    {
+        $current = [];
+        foreach ($currentAxes as $axis) {
+            $current[$axis->attributeDefinitionId()] = $this->normalizedIdSet($axis->allowedValueIds());
+        }
+
+        $new = [];
+        foreach ($newAxes as $axis) {
+            $new[$axis->attributeDefinitionId()] = $this->normalizedIdSet($axis->allowedValueIds());
+        }
+
+        if ($this->normalizedIdSet(array_keys($current)) !== $this->normalizedIdSet(array_keys($new))) {
+            return true;
+        }
+
+        foreach ($current as $definitionId => $valueIds) {
+            if ($valueIds !== $new[$definitionId]) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param string[] $ids
+     * @return string[]
+     */
+    private function normalizedIdSet(array $ids): array
+    {
+        $unique = array_values(array_unique(array_map('strval', $ids)));
+        sort($unique, SORT_STRING);
+
+        return $unique;
+    }
+
+    /**
+     * A compact, human-readable summary for the 'variation_axes'
+     * ActivityLogger entry — real definition/value NAMES (e.g. "Color:
+     * Black, White; Size: S, M"), not raw ids, matching every other
+     * logFieldChanged() call in this class that logs a name rather
+     * than an id (syncCategories()/syncTags()). A definition/value
+     * whose model has since been deleted falls back to its own raw id,
+     * same defensive posture as variationLabel() above.
+     *
+     * @param VariationAxis[] $axes
+     */
+    private function axesSummary(array $axes): string
+    {
+        $parts = [];
+
+        foreach ($axes as $axis) {
+            $definitionId = $axis->attributeDefinitionId();
+            $definitionName = AttributeDefinitionModel::find($definitionId)?->name ?? $axis->attributeDefinitionCode();
+
+            $valueNames = array_map(
+                fn (string $valueId): string => AttributeValueModel::find($valueId)?->value ?? $valueId,
+                $axis->allowedValueIds()
+            );
+
+            $parts[] = "{$definitionName}: ".implode(', ', $valueNames);
+        }
+
+        return implode('; ', $parts);
+    }
+
+    /**
+     * "Add variation" (B2) — writes every row from the new_variations
+     * Repeater, each one an explicitly-chosen combination (unlike
+     * generateMissingVariations()'s own cartesian sweep). Each row's
+     * own "axis_value_{definitionId}" fields (built dynamically per
+     * this product's CURRENTLY DECLARED axes — see
+     * newVariationComponents()'s own docblock) are collected back into
+     * a [definitionId => valueId] combination map here, keyed exactly
+     * the way Product::addStandardVariation() expects.
+     *
+     * ProductResource::writeStandardVariation() is the SAME shared
+     * addStandardVariation()+barcode-Hook+activate() core
+     * CreateVariableProduct::addStandardVariations() uses — see that
+     * method's own docblock for why this page catches a broader
+     * exception set than Create's own call site does.
+     *
+     * @param array<int, array<string, mixed>> $rows
+     */
+    private function addNewVariationRows(Product $product, array $rows, ActivityLogger $logger): void
+    {
+        $axes = $product->variationAxes();
+
+        foreach ($rows as $row) {
+            $combination = [];
+            foreach ($axes as $axis) {
+                $definitionId = $axis->attributeDefinitionId();
+                $valueId = $row["axis_value_{$definitionId}"] ?? null;
+
+                if ($valueId !== null) {
+                    $combination[$definitionId] = $valueId;
+                }
+            }
+
+            try {
+                ProductResource::writeStandardVariation(
+                    $product,
+                    $combination,
+                    (string) ($row['sku'] ?? ''),
+                    $row['barcode'] ?? '',
+                    (bool) ($row['is_active'] ?? false)
+                );
+            } catch (InvalidVariationAxisException|DuplicateVariationCombinationException $e) {
+                Notification::make()
+                    ->title($e->getMessage())
+                    ->danger()
+                    ->send();
+
+                throw (new Halt)->rollBackDatabaseTransaction();
+            }
         }
     }
 
