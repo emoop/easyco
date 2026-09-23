@@ -6,6 +6,7 @@ use EasyCo\Pricing\Contracts\CostPriceProvider;
 use EasyCo\Pricing\Contracts\PriceListItemRepository;
 use EasyCo\Pricing\Contracts\PriceListRepository;
 use EasyCo\Pricing\Contracts\PriceListScopeRepository;
+use EasyCo\Pricing\Contracts\PriceRangeResolver;
 use EasyCo\Pricing\Contracts\PriceResolver;
 use EasyCo\Pricing\Contracts\ProductCostRepository;
 use EasyCo\Pricing\Currency;
@@ -14,8 +15,10 @@ use EasyCo\Pricing\Persistence\Eloquent\EloquentCostPriceProvider;
 use EasyCo\Pricing\Persistence\Eloquent\EloquentPriceListItemRepository;
 use EasyCo\Pricing\Persistence\Eloquent\EloquentPriceListRepository;
 use EasyCo\Pricing\Persistence\Eloquent\EloquentPriceListScopeRepository;
+use EasyCo\Pricing\Persistence\Eloquent\EloquentPriceRangeResolver;
 use EasyCo\Pricing\Persistence\Eloquent\EloquentPriceResolver;
 use EasyCo\Pricing\Persistence\Eloquent\EloquentProductCostRepository;
+use EasyCo\Pricing\Persistence\Eloquent\PriceListResolutionEngine;
 use Illuminate\Support\ServiceProvider;
 
 class PricingServiceProvider extends ServiceProvider
@@ -27,6 +30,17 @@ class PricingServiceProvider extends ServiceProvider
         // below — EloquentPriceResolver holds no state that needs to
         // persist across a request, unlike InMemoryPriceResolver's
         // constructed-once hardcoded seed array (which no longer exists).
+
+        $this->app->bind(PriceRangeResolver::class, EloquentPriceRangeResolver::class);
+
+        // PriceListResolutionEngine is internal (not in Contracts/), but
+        // still resolved through the container by both resolvers above
+        // (constructor-typed, no explicit bind needed for Laravel's
+        // auto-resolution to work) — bind() explicitly anyway so a fresh
+        // engine (and therefore a fresh, empty item cache — see its own
+        // docblock) is guaranteed every time either resolver is
+        // resolved, never an accidentally-shared, staling instance.
+        $this->app->bind(PriceListResolutionEngine::class);
 
         $this->app->bind(PriceListRepository::class, EloquentPriceListRepository::class);
         $this->app->bind(PriceListScopeRepository::class, EloquentPriceListScopeRepository::class);

@@ -64,7 +64,16 @@ final class EloquentPriceListScopeRepository implements PriceListScopeRepository
     /** @return PriceListScope[] */
     public function findByPriceListId(string $priceListId): array
     {
-        return PriceListScopeModel::where('price_list_id', $priceListId)
+        return $this->findByPriceListIds([$priceListId]);
+    }
+
+    public function findByPriceListIds(array $priceListIds): array
+    {
+        if ($priceListIds === []) {
+            return [];
+        }
+
+        return PriceListScopeModel::whereIn('price_list_id', $priceListIds)
             ->get()
             ->map(fn (PriceListScopeModel $model) => $this->toDomainScope($model))
             ->all();

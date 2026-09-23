@@ -204,6 +204,51 @@ A small, framework-agnostic static holder for the host application's configured 
 
 This — plus `PriceResolver`/`PriceContext`/`PriceQuote`, `CostPriceProvider`, `DefaultCurrency`, and the already-public `Money`/`Currency`/`Price` — is the **entire** public surface other domains may depend on. `PriceList`, `PriceListItem`, `PriceRule`, `PriceRuleResult`, `ProductCost`, and their repositories are internal; no other domain package may `use` them directly.
 
+### 4.4 Price ranges: `PriceRange` + `PriceRangeResolver`
+
+Added for the admin product listing's "from X" / range display across a VARIABLE product's variations — deliberately a domain-core-only pass (no UI change): the range concept, its batched resolution, and the "which variations count" grouping rule, so a later UI task builds strictly on top rather than re-deriving any of it.
+
+```php
+namespace EasyCo\Pricing;
+
+final class PriceRange
+{
+    public static function fromQuotes(array $quotesByPriceableId): self; // array<string, PriceQuote>
+
+    public function isEmpty(): bool;
+    public function hasUniformFinalPrice(): bool;
+    public function hasUniformRegularPrice(): bool;
+    public function hasUniformDiscountedFinalPrice(): bool;
+    public function lowestFinalQuote(): ?PriceQuote;
+    public function lowestRegularPrice(): ?Price;
+    public function lowestDiscountedFinalQuote(): ?PriceQuote;
+}
+```
+
+A pure, framework-agnostic value object built entirely from already-resolved `PriceQuote`s — it never resolves anything itself. Deterministic by construction: every "lowest" accessor ties-break on lowest amount, then lowest `priceableId` (string, ascending) — never on caller iteration order, SQL ordering, or `Variation::sort_order` (which the Catalog domain deliberately never exposes for this reason). Fails loud (`InvalidArgumentException`) on a currency or tax-basis mismatch across the input quotes; an empty input is legal.
+
+**Deliberately not included, a decision not an oversight:** no `highest*`/min-max accessor — min-max range display ("19.99 - 29.99 лв.") is a real, plausible future UI need, but purely additive later, not built speculatively ahead of it. No `isDiscounted()` — redundant with `lowestDiscountedFinalQuote() !== null`. No `pricedCount()` — no consumer needs it yet (a future "partially priced" badge is the one plausible one).
+
+```php
+namespace EasyCo\Pricing\Contracts;
+
+interface PriceRangeResolver
+{
+    /** @param PriceContext[] $contexts @return array<string, PriceQuote> keyed by priceableId */
+    public function resolveQuotes(array $contexts): array;
+}
+```
+
+`EloquentPriceRangeResolver` is the real implementation, sharing its entire resolution algorithm (§3's own precedence rules) with `EloquentPriceResolver` via one internal, persistence-layer-only engine (`PriceListResolutionEngine`) — no rule is ever implemented twice.
+
+**Omission, not fail-loud — a deliberate divergence from `PriceResolver::resolve()`'s single-target contract:** a target whose price cannot be resolved is simply left out of the returned array. A listing rendering many variations at once must not explode because one of them happens to be unpriced — the same "fail-soft at the display boundary" posture `App\Services\ProductPricingAndStock` already documents for reads. A missing "Regular Prices" system list (never seeded) returns an **empty array**, not a `RuntimeException` — `PriceResolver::resolve()` still throws for that same condition, so the fail-loud signal for genuine misconfiguration is not lost, just not this method's job.
+
+**Boundedness — the whole point of the batched form:** an implementation's query count must not grow with the number of contexts/products/variations in the batch. It may grow only with (a) the number of distinct `at` values present, and (b) the number of distinct **winning** `PriceList`s actually matched across the batch — bounded in practice by the store's own configured list count, typically a handful. Proven with real `DB::listen()` measurements (N=1 vs. N=50 contexts against the same store configuration → equal query counts; a 3-distinct-winning-list case measured separately), not asserted against a guessed magic number — see §8.
+
+**Equivalence guarantee:** for any single context, `resolveQuotes([$context])[$priceableId]` and `resolve($context)` must agree on both `regular` and `final` gross amounts — proven by a fixture matrix covering every branch of §3's precedence rules (product-level-only, variation override, `Manual Sale` wins, percentage-off wins, every scope type, quantity tiers, an unpriced target, a missing system list), not merely asserted for one happy-path case.
+
+**App-layer counterpart:** `App\Services\ProductPriceRangeProvider` (not in this package — Pricing must never depend on Catalog, §1/CLAUDE.md rule 9) assembles the real Catalog data (non-archived variations, brand/category/tag/attribute-value scope matching, reusing `App\Services\CatalogScopeResolver`'s existing single-target logic in a new batched form) and calls this resolver once per product-listing page, grouping the returned quotes back into one `PriceRange` per product.
+
 ---
 
 ## 5. API contract (sketch)
@@ -269,6 +314,7 @@ Keeping these as two distinct route groups (not one endpoint with a permission f
   - `CostPriceProvider` tests, including confirming no route/contract path connects it to any storefront-facing service.
   - `PriceRuleResult` precompute-job tests.
   - Cache-invalidation tests: only the correct keys invalidate per event.
+- **Price ranges (§4.4):** `PriceRangeTest` (empty/single/uniform/mixed quotes, order-independence, currency/tax-basis mismatch, all `hasUniform*` members); `EloquentPriceRangeResolverTest` — the equivalence matrix against `EloquentPriceResolverTest`'s own fixture shapes, plus real `DB::listen()` query-count measurements (N=1 vs. N=50 contexts, and a 3-distinct-winning-list case) proving the boundedness contract with real numbers, never a hardcoded assertion.
 
 ---
 
@@ -278,6 +324,7 @@ Keeping these as two distinct route groups (not one endpoint with a permission f
 - The `Promotions` domain.
 - Multi-warehouse/multi-supplier cost pricing (one `ProductCost` row per priceable/currency for now, not per-location).
 - Currency conversion between price lists.
+- **Price ranges (§4.4):** any min-max ("19.99 - 29.99 лв.") display — `PriceRange` deliberately has no `highest*` accessor yet, purely additive later. Storefront rendering of a range at all (§4.4's `PriceRangeResolver` is domain-core only; the admin grid/View-page UI consuming it is a separate, later task). A "partially priced" badge for a product where only some variations resolved a price (no `PriceRange::pricedCount()` yet, since nothing calls for it).
 
 ---
 
