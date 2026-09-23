@@ -5,7 +5,9 @@ namespace Tests\Feature;
 use App\Filament\Resources\ProductResource;
 use App\Filament\Resources\ProductResource\Pages\EditVariableProduct;
 use App\Filament\StaffPanelUser;
+use App\Models\ActivityLogModel;
 use App\Services\ProductPricingAndStock;
+use App\Settings\Contracts\SiteSettingsRepository;
 use EasyCo\Catalog\AttributeDefinition;
 use EasyCo\Catalog\AttributeValue;
 use EasyCo\Catalog\Brand;
@@ -50,6 +52,7 @@ use EasyCo\Staff\Seeders\StaffSystemRolesSeeder;
 use EasyCo\Staff\Staff;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
 use Tests\TestCase;
@@ -2047,5 +2050,167 @@ class EditVariableProductTest extends TestCase
 
         $this->assertSame('SKU-VAR-BLACK', $byIdAfter[$blackId]->sku(), 'an archived variations sku must never be touched by the cascade');
         $this->assertSame('SKU-VAR-2-WHITE', $byIdAfter[$whiteId]->sku());
+    }
+
+    /**
+     * The Variations Repeater is genuinely drag-and-drop reorderable —
+     * asserted on the real component's own state (isReorderable()/
+     * isReorderableWithDragAndDrop()), not on rendered HTML. This page
+     * used to disable it with ->reorderable(false) precisely because
+     * variations had no persisted order to reorder (see
+     * existingVariationsComponents()'s own comment); that is no longer
+     * true, so the reorder is on.
+     */
+    public function test_the_existing_variations_repeater_is_drag_and_drop_reorderable(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        [$product] = $this->persistedVariableProductWithTwoVariations();
+        $productModel = ProductModel::find($product->id());
+
+        $repeater = Livewire::test(EditVariableProduct::class, ['record' => $productModel->id])
+            ->instance()->form->getComponent('existing_variations');
+
+        $this->assertNotNull($repeater);
+        $this->assertTrue($repeater->isReorderable());
+        $this->assertTrue($repeater->isReorderableWithDragAndDrop());
+    }
+
+    /**
+     * The reorder's real write side: the ORDER the rows are submitted in
+     * becomes catalog_variations.sort_order (array index = sort_order,
+     * the same shape the media pivots' own reorder already uses), and the
+     * next read — the domain aggregate's own variations() order AND the
+     * live form's own refill after save — both come back in the new
+     * order. Also proves the reorder is logged with real combination
+     * labels, never raw variation ids.
+     */
+    public function test_reordering_the_existing_variation_rows_persists_the_new_order_and_reads_back_in_it(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        app(SiteSettingsRepository::class)->set('admin.activity_log_enabled', '1');
+
+        [$product, $blackId, $whiteId] = $this->persistedVariableProductWithTwoVariations();
+        $productModel = ProductModel::find($product->id());
+
+        // Creation order is the starting point — the real backfilled/
+        // assigned sort_order (Black created first).
+        $this->assertSame([$blackId, $whiteId], $this->persistedVariationOrder($product->id()));
+
+        $component = Livewire::test(EditVariableProduct::class, ['record' => $productModel->id]);
+        $rows = $component->get('data.existing_variations');
+        $this->assertSame([$blackId, $whiteId], array_column($rows, 'variation_id'));
+
+        // The SAME state change Filament's own drag handler produces on
+        // drop — Repeater::getReorderAction()'s own real action closure
+        // is `[...array_flip($arguments['items']), ...$component->
+        // getRawState()]`, i.e. a reordered raw-state array — driven
+        // through the live component here, as a real browser interaction
+        // would (same simulation posture as this file's own archive test).
+        $component->set('data.existing_variations', array_reverse($rows, true))
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        // Real DB truth.
+        $this->assertSame([$whiteId, $blackId], $this->persistedVariationOrder($product->id()));
+
+        // The read path the whole panel goes through.
+        $reloaded = app(ProductRepository::class)->findByIdWithVariations((string) $productModel->id);
+        $this->assertSame(
+            [$whiteId, $blackId],
+            array_map(static fn (Variation $variation): string => (string) $variation->id(), $reloaded->variations())
+        );
+
+        // The live form's own post-save refill reflects the new order too.
+        $this->assertSame(
+            [$whiteId, $blackId],
+            array_column($component->get('data.existing_variations'), 'variation_id')
+        );
+
+        $entries = ActivityLogModel::where('entity_type', 'product')
+            ->where('entity_id', $product->id())
+            ->where('field', 'variation_order')
+            ->get();
+
+        $this->assertCount(1, $entries);
+        $this->assertSame('Color: Black | Color: White', $entries[0]->old_value);
+        $this->assertSame('Color: White | Color: Black', $entries[0]->new_value);
+    }
+
+    /**
+     * A variation created AFTER the merchant has reordered the list is
+     * APPENDED to that order (max(sort_order) + 1), never inserted at the
+     * column's own default of 0 — which, with sort_order as the primary
+     * sort key, would have dropped every newly created variation at the
+     * very TOP of an already-reordered list. Proven end to end: drag
+     * White above Black, then create a genuinely new third combination
+     * through the domain layer (the same path CreateVariableProduct's own
+     * wizard and "Add variation" both take).
+     */
+    public function test_a_variation_created_after_a_reorder_is_appended_to_the_end(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        [$definition, $black, $white] = $this->persistedColorDefinition();
+
+        $blue = new AttributeValue(id: null, attributeDefinitionId: $definition->id(), value: 'Blue');
+        app(AttributeValueRepository::class)->save($blue);
+
+        $product = Product::createVariable('Variable Shirt', 'SKU-VAR', 'variable-shirt');
+        $product->declareVariationAxes([new VariationAxis($definition, [$black, $white])]);
+        $blackVariation = $product->addStandardVariation([$definition->id() => $black->id()], 'SKU-VAR-BLACK');
+        $whiteVariation = $product->addStandardVariation([$definition->id() => $white->id()], 'SKU-VAR-WHITE');
+        app(ProductRepository::class)->save($product);
+
+        $blackId = (string) $blackVariation->id();
+        $whiteId = (string) $whiteVariation->id();
+        $productModel = ProductModel::find($product->id());
+
+        // Drag White above Black and save.
+        $component = Livewire::test(EditVariableProduct::class, ['record' => $productModel->id]);
+        $rows = $component->get('data.existing_variations');
+        $component->set('data.existing_variations', array_reverse($rows, true))
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $this->assertSame([$whiteId, $blackId], $this->persistedVariationOrder($product->id()));
+
+        // A genuinely new third combination — extending an existing axis
+        // with a new value is always a safe axis change (catalog-domain-
+        // design.md §3.17, rule R2).
+        $reloaded = app(ProductRepository::class)->findByIdWithVariations((string) $product->id());
+        $reloaded->declareVariationAxes([new VariationAxis($definition, [$black, $white, $blue])]);
+        $blueVariation = $reloaded->addStandardVariation([$definition->id() => $blue->id()], 'SKU-VAR-BLUE');
+        app(ProductRepository::class)->save($reloaded);
+
+        $blueId = (string) $blueVariation->id();
+
+        $this->assertSame([$whiteId, $blackId, $blueId], $this->persistedVariationOrder($product->id()));
+
+        $readBack = app(ProductRepository::class)->findByIdWithVariations((string) $product->id());
+        $this->assertSame(
+            [$whiteId, $blackId, $blueId],
+            array_map(static fn (Variation $variation): string => (string) $variation->id(), $readBack->variations())
+        );
+    }
+
+    /**
+     * The real persisted display order of one product's variations, straight
+     * from the database — the exact (sort_order ASC, id ASC) pair both read
+     * paths use.
+     *
+     * @return array<int, string>
+     */
+    private function persistedVariationOrder(string $productId): array
+    {
+        return DB::table('catalog_variations')
+            ->where('product_id', $productId)
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->pluck('id')
+            ->map(static fn ($id): string => (string) $id)
+            ->values()
+            ->all();
     }
 }

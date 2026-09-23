@@ -181,7 +181,18 @@ final class EloquentProductRepository implements ProductRepository
 
     public function findByIdWithVariations(string $id): ?Product
     {
-        $model = ProductModel::with('variations')->find($id);
+        // Ordered by the merchant's own display order — the same
+        // sort_order ASC, id ASC pair EloquentVariationRepository::
+        // findByProductId() uses (see the 2026_09_23_000001 migration's
+        // docblock). This is load-bearing, not cosmetic: Product::
+        // reconstituteFromStorage() keeps the variations in the order it
+        // receives them, so this query order IS the order
+        // $product->variations() returns — which is what every
+        // merchant-facing list (and EditVariableProduct's own
+        // existing_variations Repeater) renders.
+        $model = ProductModel::with([
+            'variations' => fn ($query) => $query->orderBy('sort_order')->orderBy('id'),
+        ])->find($id);
 
         if ($model === null) {
             return null;
@@ -315,6 +326,21 @@ final class EloquentProductRepository implements ProductRepository
         $variationModel->length_mm = $variation->lengthMm();
         $variationModel->width_mm = $variation->widthMm();
         $variationModel->height_mm = $variation->heightMm();
+
+        if ($variation->id() === null) {
+            // A genuinely NEW variation is APPENDED to the merchant's own
+            // display order, never inserted at position 0: max+1, 0 for
+            // the product's very first variation. Without this, every new
+            // row would arrive at the column's own default of 0 and sort
+            // to the TOP of an already-reordered list (sort_order is the
+            // primary sort key — see findByIdWithVariations() above).
+            // Existing rows are deliberately left alone here: their
+            // sort_order is the merchant's, set by dragging rows in
+            // EditVariableProduct (VariationRepository::updateSortOrders())
+            // — a plain re-save must never rewrite it.
+            $maxSortOrder = VariationModel::where('product_id', $productModel->id)->max('sort_order');
+            $variationModel->sort_order = $maxSortOrder === null ? 0 : ((int) $maxSortOrder) + 1;
+        }
 
         $this->saveVariationModelWithSkuCollisionRetry($variationModel, $product, $variation);
 

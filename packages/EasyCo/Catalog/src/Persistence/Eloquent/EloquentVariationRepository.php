@@ -44,10 +44,22 @@ final class EloquentVariationRepository implements VariationRepository
         return $model !== null ? $this->toDomainVariation($model) : null;
     }
 
-    /** @return Variation[] */
+    /**
+     * Ordered by sort_order ASC, then id ASC — the merchant's own
+     * display order (catalog_variations.sort_order, set by dragging rows
+     * in EditVariableProduct's Variations tab), with the id tiebreak
+     * giving every never-reordered product the exact same order it had
+     * before sort_order existed. See the 2026_09_23_000001 migration's
+     * own docblock.
+     *
+     * @return Variation[] Ordered by sort_order ASC, then id ASC.
+     */
     public function findByProductId(string $productId): array
     {
-        $models = VariationModel::where('product_id', $productId)->get();
+        $models = VariationModel::where('product_id', $productId)
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->get();
 
         $assignmentsByVariationId = $this->loadAttributeAssignments($models->pluck('id')->all());
 
@@ -57,6 +69,55 @@ final class EloquentVariationRepository implements VariationRepository
                 $assignmentsByVariationId[$model->id] ?? null
             ))
             ->all();
+    }
+
+    /**
+     * See Contracts\VariationRepository::updateSortOrders()'s own
+     * docblock for the contract-level reasoning (full-array replace,
+     * unchanged rows untouched, fail-loud on a foreign id).
+     *
+     * @param array<int, string> $orderedVariationIds
+     */
+    public function updateSortOrders(string $productId, array $orderedVariationIds): void
+    {
+        $orderedVariationIds = array_values(array_map('strval', $orderedVariationIds));
+
+        if ($orderedVariationIds === []) {
+            return;
+        }
+
+        DB::transaction(function () use ($productId, $orderedVariationIds): void {
+            $ownedIds = VariationModel::where('product_id', $productId)
+                ->whereIn('id', $orderedVariationIds)
+                ->pluck('id')
+                ->map(static fn ($id): string => (string) $id)
+                ->all();
+
+            $foreignIds = array_values(array_diff($orderedVariationIds, $ownedIds));
+
+            if ($foreignIds !== []) {
+                throw new \InvalidArgumentException(
+                    'updateSortOrders() refuses variation ids that do not belong to product "'
+                    .$productId.'": '.implode(', ', $foreignIds)
+                );
+            }
+
+            $currentSortOrders = [];
+            foreach (VariationModel::whereIn('id', $orderedVariationIds)->get(['id', 'sort_order']) as $model) {
+                $currentSortOrders[(string) $model->id] = (int) $model->sort_order;
+            }
+
+            foreach ($orderedVariationIds as $sortOrder => $variationId) {
+                if (($currentSortOrders[$variationId] ?? null) === $sortOrder) {
+                    // Already where it belongs — deliberately no write,
+                    // so an ordinary save that happens to resubmit the
+                    // same order never bumps updated_at on every row.
+                    continue;
+                }
+
+                VariationModel::where('id', $variationId)->update(['sort_order' => $sortOrder]);
+            }
+        });
     }
 
     private function toDomainVariation(VariationModel $model, ?array $attributeAssignments = null): Variation

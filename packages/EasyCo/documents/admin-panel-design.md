@@ -594,6 +594,32 @@ their own independent side-actions, entirely outside this flow — each
 reloads, mutates, and saves through the repository immediately on
 click, not deferred to the page's own Save button.
 
+**Reordering the variations list** — the existing-variations
+`Repeater` is genuinely drag-and-drop reorderable (`->reorderable()`,
+Filament's own `Repeater` default) — this page used to disable it with
+`->reorderable(false)`, correct at the time precisely because variations
+had no persisted order to reorder. The submitted row order IS the
+merchant's intent, and it is now persisted as
+`catalog_variations.sort_order` by `applyVariationRowOrder()` (array
+index = `sort_order`, the exact shape `syncMedia()`/
+`syncVariationMedia()` already use for the media pivots) through
+`VariationRepository::updateSortOrders()`. The column is deliberately
+**not** a `Variation` domain field — order is a merchandising concern,
+the same category the media pivots' own `sort_order` already occupies —
+so `Variation.php` is untouched, and both read paths
+(`EloquentProductRepository::findByIdWithVariations()` and
+`EloquentVariationRepository::findByProductId()`) order by
+`sort_order ASC, id ASC`, which is what makes the admin list and the
+domain aggregate's own `variations()` order agree (the `id` tiebreak is
+also why every never-reordered product keeps exactly the order it had
+before the column existed). Two deliberate limits: a variation created
+*after* a reorder is **appended** (`max(sort_order) + 1`), never inserted
+at position 0, and an archived variation keeps whatever `sort_order` it
+already had — it is not part of the list being ordered. An ordinary save
+that didn't touch the row order writes nothing and logs nothing; a
+genuine reorder logs exactly one `variation_order` activity entry, with
+real combination labels (`"Color: Black | Color: White"`), not ids.
+
 **Remaining deliberate limits, unchanged from before this pass:** no
 bulk variation-edit spreadsheet-style UI (still a possible future
 step, not scoped here); per-variation media was already closed by an

@@ -11,6 +11,7 @@ use App\Settings\Contracts\SiteSettingsRepository;
 use EasyCo\Catalog\Contracts\ProductCategoryRepository;
 use EasyCo\Catalog\Contracts\ProductRepository;
 use EasyCo\Catalog\Contracts\ProductTagRepository;
+use EasyCo\Catalog\Contracts\VariationRepository;
 use EasyCo\Catalog\Enums\AttributeType;
 use EasyCo\Catalog\Enums\CatalogVisibility;
 use EasyCo\Catalog\Enums\ProductStatus;
@@ -772,7 +773,18 @@ class EditVariableProduct extends EditRecord
                         ->modalSubmitActionLabel(__('products.variation_archive.confirm_submit'))
                         ->modalCancelActionLabel(__('products.variation_archive.confirm_cancel'));
                 })
-                ->reorderable(false)
+                // Genuinely drag-and-drop reorderable — Filament's own
+                // Repeater default (confirmed against its installed
+                // source: $isReorderable = true,
+                // $isReorderableWithDragAndDrop = true), which this page
+                // deliberately disabled while variations had no persisted
+                // order at all. The submitted row ORDER is the merchant's
+                // intent: it is now written through
+                // applyVariationRowOrder() below (array index ->
+                // catalog_variations.sort_order, exactly how the media
+                // pivots' own reorder already works), so the order
+                // survives a save and a reload.
+                ->reorderable()
                 ->collapsible()
                 // NEITHER Get $get NOR array $state — both tried and
                 // BOTH confirmed broken by a real, failing test before
@@ -1922,6 +1934,14 @@ class EditVariableProduct extends EditRecord
         // submission), so neither can affect the other's outcome.
         $this->archiveRemovedVariationRows($product, array_keys($submittedSkusByVariationId), $logger);
 
+        // AFTER archiveRemovedVariationRows() above — $product's own
+        // non-archived set is settled by then, which is exactly the set
+        // this method compares the submitted row order against. BEFORE
+        // save() below, so a variation added in THIS SAME submission
+        // (addNewVariationRows(), further down) is appended AFTER the
+        // renumbering, not interleaved with it.
+        $this->applyVariationRowOrder($product, $data['existing_variations'] ?? [], $logger);
+
         // AFTER updateVariationRows() above, not before — ordering is
         // load-bearing: an explicit per-row sku edit in the SAME
         // submission must win over this cascade, not get silently
@@ -2260,6 +2280,102 @@ class EditVariableProduct extends EditRecord
                 $variation->setPurchasable($newIsPurchasable);
             }
         }
+    }
+
+    /**
+     * The real write side of the existing-variations Repeater's own
+     * drag-and-drop reorder: the order the rows were submitted in IS the
+     * merchant's own display order, so array index becomes
+     * catalog_variations.sort_order through
+     * VariationRepository::updateSortOrders() — the exact same
+     * "submitted array order = sort_order" shape syncMedia()/
+     * syncVariationMedia() already use for the media pivots, and the
+     * place the order genuinely persists (Variation itself carries no
+     * order field at all — see the 2026_09_23_000001 migration).
+     *
+     * NO-OP ON AN ORDINARY SAVE — the common case. The comparison is
+     * against the order these same rows are in TODAY, read straight off
+     * $product->variations() (already sort_order ASC, id ASC, because
+     * ProductRepository::findByIdWithVariations() loads it that way), so
+     * a save that never touched the row order writes nothing and logs
+     * nothing — not just "the same values written again".
+     *
+     * Restricted in two ways, both deliberate:
+     * - Only $product's own NON-ARCHIVED variations are considered. A row
+     *   removed from the form in this same submission was archived by
+     *   archiveRemovedVariationRows() above, and its absence is an
+     *   archive, never a reorder; an archived variation also keeps
+     *   whatever sort_order it already had (it isn't part of the list
+     *   the merchant is ordering).
+     * - A submitted row whose variation_id is empty or doesn't resolve to
+     *   one of this product's own live variations is skipped, the same
+     *   defensive posture updateVariationRows()/updateVariationPricingAndStock()
+     *   already take for a tampered form.
+     */
+    private function applyVariationRowOrder(Product $product, array $rows, ActivityLogger $logger): void
+    {
+        $liveVariationIds = [];
+        $labelsByVariationId = [];
+
+        foreach ($product->variations() as $variation) {
+            if ($variation->status() === VariationStatus::ARCHIVED) {
+                continue;
+            }
+
+            $variationId = (string) $variation->id();
+            $liveVariationIds[] = $variationId;
+            $labelsByVariationId[$variationId] = $this->variationLabel($variation);
+        }
+
+        $submittedVariationIds = [];
+        foreach ($rows as $row) {
+            $variationId = (string) ($row['variation_id'] ?? '');
+
+            if ($variationId !== '' && isset($labelsByVariationId[$variationId])) {
+                $submittedVariationIds[] = $variationId;
+            }
+        }
+
+        if ($submittedVariationIds === []) {
+            return;
+        }
+
+        $currentOrder = array_values(array_filter(
+            $liveVariationIds,
+            static fn (string $variationId): bool => in_array($variationId, $submittedVariationIds, true)
+        ));
+
+        if ($currentOrder === $submittedVariationIds) {
+            return;
+        }
+
+        // Real combination labels, not variation ids — same
+        // human-readable-logging posture as axesSummary() below.
+        $logger->logFieldChanged(
+            'product',
+            $product->id(),
+            'variation_order',
+            $this->variationOrderSummary($currentOrder, $labelsByVariationId),
+            $this->variationOrderSummary($submittedVariationIds, $labelsByVariationId)
+        );
+
+        app(VariationRepository::class)->updateSortOrders($product->id(), $submittedVariationIds);
+    }
+
+    /**
+     * "Color: Black | Color: White" — the activity-log summary of one
+     * variation order, built from the same real labels the rows
+     * themselves display.
+     *
+     * @param array<int, string> $orderedVariationIds
+     * @param array<string, string> $labelsByVariationId
+     */
+    private function variationOrderSummary(array $orderedVariationIds, array $labelsByVariationId): string
+    {
+        return implode(' | ', array_map(
+            static fn (string $variationId): string => $labelsByVariationId[$variationId] ?? $variationId,
+            $orderedVariationIds
+        ));
     }
 
     /**
