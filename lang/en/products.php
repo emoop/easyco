@@ -158,6 +158,21 @@ return [
     'duplicate_action' => 'Duplicate',
     'duplicate_suffix' => 'copy',
 
+    'actions' => [
+        'promote' => 'Move to front',
+        'promote_confirm_heading' => 'Move this product to the front?',
+        'promote_confirm_description' => '":name" will move to the front of the product timeline, ahead of every other product. This does not change when it was actually created.',
+        'promote_confirm_submit' => 'Move to front',
+        'promote_confirm_cancel' => 'Cancel',
+        'promote_done' => 'Product moved to the front of the timeline.',
+        'unpromote' => 'Undo move to front',
+        'unpromote_confirm_heading' => 'Undo this promotion?',
+        'unpromote_confirm_description' => '":name" will return to its natural position in the timeline, based on when it was actually created.',
+        'unpromote_confirm_submit' => 'Undo',
+        'unpromote_confirm_cancel' => 'Cancel',
+        'unpromote_done' => 'Product returned to its natural timeline position.',
+    ],
+
     'create_simple_action' => 'Add simple product',
     'create_variable_action' => 'Add variable product',
 

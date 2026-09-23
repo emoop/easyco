@@ -16,6 +16,8 @@ use App\Services\DuplicateProduct;
 use App\Services\PriceDisplayFormatter;
 use App\Services\ProductPricingAndStock;
 use App\Services\ProductPriceRangeProvider;
+use App\Services\ProductTimelinePromoter;
+use DateTimeImmutable;
 use App\Settings\Contracts\SiteSettingsRepository;
 use BackedEnum;
 use EasyCo\Catalog\AttributeDefinition;
@@ -56,6 +58,7 @@ use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Infolists\Components\TextEntry;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\Grid;
@@ -924,6 +927,32 @@ class ProductResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            // DEFAULT SORT: the product timeline (D5) — newest/most-
+            // recently-promoted first. Deliberately NOT added inside
+            // modifyQueryUsing() above/below (that closure only ever
+            // handles the archived-only filter's own query
+            // pre-conditioning, never ordering) — ->defaultSort() is
+            // Filament's own real mechanism for this, confirmed against
+            // the installed v5.8.1 source
+            // (Filament\Tables\Concerns\CanSortRecords::
+            // applySortingToTableQuery()): a user's own column sort is
+            // applied FIRST (line ~96, "$column->applySort($query,
+            // $sortDirection)"), and this default sort is then always
+            // ALSO applied (line ~112, guarded only by
+            // "$defaultSort !== $tableSortColumn") — so clicking a
+            // sortable column becomes the PRIMARY sort key, with
+            // timeline_at reduced to a secondary tie-break, never
+            // silently overridden or suppressed. The stable `id desc`
+            // tie-break is NOT added manually here: Filament's own
+            // Table::$hasDefaultKeySort defaults to true (confirmed:
+            // Filament\Tables\Table\Concerns\CanSortRecords::
+            // hasDefaultKeySort()), which the SAME method (lines
+            // ~119-140) uses to automatically append
+            // "ORDER BY catalog_products.id DESC" whenever the query
+            // doesn't already sort by the key column — matching the
+            // active sort direction, exactly the (timeline_at, id)
+            // pair the new composite index backs.
+            ->defaultSort('timeline_at', 'desc')
             // Single subquery-select, not a formal Eloquent relation on
             // Catalog's own ProductModel: EasyCo\Catalog has no
             // composer/package dependency on EasyCo\Media anywhere
@@ -1230,6 +1259,8 @@ class ProductResource extends Resource
                         ->url(fn (ProductModel $record): string => $record->type === ProductType::SIMPLE->value
                             ? static::getUrl('edit', ['record' => $record])
                             : static::getUrl('edit-variable', ['record' => $record])),
+                    static::promoteAction(),
+                    static::unpromoteAction(),
                     static::duplicateAction(),
                 ]),
             ])
@@ -1516,6 +1547,81 @@ class ProductResource extends Resource
                 $duplicate = app(DuplicateProduct::class)->duplicate((string) $record->id);
 
                 $livewire->redirect(static::getUrl('edit', ['record' => $duplicate->id()]));
+            });
+    }
+
+    /**
+     * "Избутай напред" ("Move to front") — the product timeline
+     * promotion row action, App\Services\ProductTimelinePromoter's real
+     * admin-panel entry point. $at is `new DateTimeImmutable()`, called
+     * HERE at the outermost Livewire-action edge (never inside the
+     * service — see that class's own "explicit required parameter,
+     * never internal now()" docblock).
+     *
+     * ->icon('heroicon-o-bars-arrow-up') reads as "move up/promote" —
+     * deliberately not an upload icon (heroicon-o-arrow-up-tray, easy
+     * to reach for by mistake, means something completely different).
+     *
+     * Gated by the SAME permission as EditAction (canEdit(), not a new
+     * dedicated permission) and hidden for an ARCHIVED product — an
+     * archived product is never shown in any merchant-facing timeline,
+     * so the action would be meaningless there; this is the real UX
+     * guard, ProductTimelinePromoter::promote()'s own
+     * CannotPromoteArchivedProductException is the defense-in-depth
+     * behind it, same "never trust the button's own visibility alone"
+     * posture already established elsewhere in this Resource
+     * (historyAction()'s own docblock).
+     */
+    public static function promoteAction(): Action
+    {
+        return Action::make('promote')
+            ->label(__('products.actions.promote'))
+            ->icon('heroicon-o-bars-arrow-up')
+            ->requiresConfirmation()
+            ->modalHeading(__('products.actions.promote_confirm_heading'))
+            ->modalDescription(fn (ProductModel $record): string => __('products.actions.promote_confirm_description', ['name' => $record->name]))
+            ->modalSubmitActionLabel(__('products.actions.promote_confirm_submit'))
+            ->modalCancelActionLabel(__('products.actions.promote_confirm_cancel'))
+            ->visible(fn (ProductModel $record): bool => static::canEdit($record) && $record->status !== ProductStatus::ARCHIVED->value)
+            ->action(function (ProductModel $record): void {
+                app(ProductTimelinePromoter::class)->promote((string) $record->id, new DateTimeImmutable());
+
+                Notification::make()
+                    ->title(__('products.actions.promote_done'))
+                    ->success()
+                    ->send();
+            });
+    }
+
+    /**
+     * "Undo move to front" — the counterpart of promoteAction() above.
+     * Visible only when the row is ACTUALLY promoted
+     * ($record->timeline_at > $record->created_at, the exact same
+     * strict comparison Product::isPromoted() itself uses — read
+     * directly off the already-loaded table row's own cast Carbon
+     * columns, not a fresh domain reload per row) — an un-promoted
+     * product has nothing for this action to undo.
+     */
+    public static function unpromoteAction(): Action
+    {
+        return Action::make('unpromote')
+            ->label(__('products.actions.unpromote'))
+            ->icon('heroicon-o-bars-arrow-down')
+            ->requiresConfirmation()
+            ->modalHeading(__('products.actions.unpromote_confirm_heading'))
+            ->modalDescription(fn (ProductModel $record): string => __('products.actions.unpromote_confirm_description', ['name' => $record->name]))
+            ->modalSubmitActionLabel(__('products.actions.unpromote_confirm_submit'))
+            ->modalCancelActionLabel(__('products.actions.unpromote_confirm_cancel'))
+            ->visible(fn (ProductModel $record): bool => static::canEdit($record)
+                && $record->status !== ProductStatus::ARCHIVED->value
+                && $record->timeline_at->gt($record->created_at))
+            ->action(function (ProductModel $record): void {
+                app(ProductTimelinePromoter::class)->unpromote((string) $record->id);
+
+                Notification::make()
+                    ->title(__('products.actions.unpromote_done'))
+                    ->success()
+                    ->send();
             });
     }
 

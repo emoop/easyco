@@ -156,6 +156,21 @@ return [
     'duplicate_action' => 'Дублирай',
     'duplicate_suffix' => 'копие',
 
+    'actions' => [
+        'promote' => 'Избутай напред',
+        'promote_confirm_heading' => 'Избутване на този продукт напред?',
+        'promote_confirm_description' => '":name" ще се премести най-отпред в продуктовия таймлайн, пред всички останали продукти. Това не променя реалната дата на създаване.',
+        'promote_confirm_submit' => 'Избутай напред',
+        'promote_confirm_cancel' => 'Отказ',
+        'promote_done' => 'Продуктът беше преместен най-отпред в таймлайна.',
+        'unpromote' => 'Отмени избутването',
+        'unpromote_confirm_heading' => 'Отмяна на избутването?',
+        'unpromote_confirm_description' => '":name" ще се върне на естествената си позиция в таймлайна, според реалната дата на създаване.',
+        'unpromote_confirm_submit' => 'Отмени',
+        'unpromote_confirm_cancel' => 'Отказ',
+        'unpromote_done' => 'Продуктът се върна на естествената си позиция в таймлайна.',
+    ],
+
     'create_simple_action' => 'Добави обикновен продукт',
     'create_variable_action' => 'Добави продукт с варианти',
 
