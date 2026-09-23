@@ -452,6 +452,11 @@ itself: flipping an *existing* row's status can never create a
 duplicate signature, so the DB `UNIQUE(product_id, attribute_signature)`
 index (§3.1) remains the sole authoritative guarantee, unaffected.
 
+This operation now also has an HTTP surface at
+`POST /api/variations/{variationId}/restore` (app layer,
+`staff.can:product_manage`, any domain refusal returned as a 422 carrying
+the exception's own message).
+
 **Deliberately not built:** partial/optional axis combinations
 (WooCommerce-style "any value" on an axis, where a variation need not
 supply every declared axis). `assertValidCombination()`'s "every

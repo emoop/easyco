@@ -19,6 +19,7 @@ use App\Http\Controllers\Api\PromotionScopeController;
 use App\Http\Controllers\Api\StockLevelController;
 use App\Http\Controllers\Api\TagController;
 use App\Http\Controllers\Api\VariableProductController;
+use App\Http\Controllers\Api\VariationController;
 use App\Http\Controllers\Api\VariationMediaController;
 use Illuminate\Support\Facades\Route;
 
@@ -100,6 +101,17 @@ Route::middleware('auth:staff')->group(function () {
     Route::get('/variations/{variationId}/stock', [StockLevelController::class, 'show'])
         ->middleware('staff.can:product_view');
     Route::put('/variations/{variationId}/stock', [StockLevelController::class, 'update'])
+        ->middleware('staff.can:product_manage');
+
+    // POST .../restore (a state transition on a sub-resource), matching
+    // this file's own nested-action precedent (POST .../media,
+    // PUT .../stock) — deliberately NOT a PATCH /variations/{id} with a
+    // status field, which would open a GENERAL status mutator with its
+    // own guardrails and its own review; not this task. Gated by
+    // product_manage since it's a write — see
+    // MerchantRoutesRequirePermissionTest, which audits this
+    // automatically.
+    Route::post('/variations/{variationId}/restore', [VariationController::class, 'restore'])
         ->middleware('staff.can:product_manage');
 
     Route::post('/media', [MediaController::class, 'store'])
