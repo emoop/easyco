@@ -26,6 +26,7 @@ use Filament\Forms\Components\RichEditor;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
+use Filament\Actions\Action;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\CreateRecord;
 use Filament\Resources\Pages\CreateRecord\Concerns\HasWizard;
@@ -42,6 +43,12 @@ use Illuminate\Support\Facades\DB;
  * Ends in a real, persisted VARIABLE Product with its declared axes
  * and real, correctly-statused Variations — functionally complete per
  * §13.1.
+ *
+ * WHERE IT ENDS IS DELIBERATE: the merchant is redirected into
+ * EditVariableProduct's own Variations tab (getRedirectUrl() below),
+ * never Filament's default 'view' page. The wizard deliberately creates
+ * no prices and no stock, so the price & stock screen — which IS that
+ * tab — is the only place this flow can sensibly stop.
  *
  * PREVIEW GENERATION HAPPENS IN THE AXES STEP'S OWN
  * ->afterValidation(), NOT THE VARIATIONS STEP — the cartesian product
@@ -84,6 +91,75 @@ class CreateVariableProduct extends CreateRecord
     use HasWizard;
 
     protected static string $resource = ProductResource::class;
+
+    /**
+     * WHERE CREATION ENDS: the Variations tab of the EDIT page, not
+     * Filament's own 'view' default.
+     *
+     * Filament's default (CreateRecord::getRedirectUrl()) sends the
+     * merchant to 'view' whenever the resource has that page and
+     * canView() holds — confirmed against the installed source. That is
+     * wrong for THIS wizard, and it was already wrong before this
+     * change: the wizard creates axes and variations only, so the View
+     * page shows a product with no price and no stock and nothing to
+     * click, and the merchant had to go back to the product list, find
+     * the product they had just created and reopen it before they could
+     * do the one thing left to do. The natural end of this flow is the
+     * price & stock screen, which IS EditVariableProduct's Variations
+     * tab (its bulk cost/stock fields plus every row's own
+     * cost/stock/regular/sale price and photos).
+     *
+     * $this->getRecord() is safe to read here: CreateRecord::create()
+     * assigns the record BEFORE asking for the redirect URL (installed
+     * source, confirmed).
+     *
+     * The canEdit() guard is defense-in-depth, not a second real
+     * boundary — this page's own createPermission() already implies
+     * PRODUCT_MANAGE — but redirecting into a page the user cannot open
+     * would be a worse failure than falling back to Filament's own
+     * default.
+     */
+    protected function getRedirectUrl(): string
+    {
+        if (! ProductResource::canEdit($this->getRecord())) {
+            return parent::getRedirectUrl();
+        }
+
+        return ProductResource::getUrl('edit-variable', [
+            'record' => $this->getRecord(),
+            'tab' => ProductResource::VARIATIONS_TAB_ID,
+        ]);
+    }
+
+    /**
+     * PUBLIC ONLY FOR ITS OWN TEST — the same visibility-widening
+     * precedent ProductResource::sidebarComponents() already
+     * established. No production caller reads this directly; Filament
+     * calls it itself, once the record has been created.
+     *
+     * Replaces Filament's plain "created" toast with one that says what
+     * the merchant still has to do and offers a direct link to the new
+     * product's read-only View page — so the overview stays one click
+     * away without leaving the price & stock screen this flow redirects
+     * to. The notification is sent BEFORE that redirect
+     * (CreateRecord::create()'s own order, confirmed against the
+     * installed source) and is therefore displayed on the page the
+     * merchant lands on.
+     */
+    public function getCreatedNotification(): ?Notification
+    {
+        return Notification::make()
+            ->title(__('products.created_notification.title'))
+            ->body(__('products.created_notification.body'))
+            ->success()
+            ->actions([
+                Action::make('view')
+                    ->label(__('products.created_notification.view_action'))
+                    ->url(ProductResource::getUrl('view', ['record' => $this->getRecord()]))
+                    ->button()
+                    ->markAsRead(),
+            ]);
+    }
 
     public function getSteps(): array
     {
@@ -207,6 +283,14 @@ class CreateVariableProduct extends CreateRecord
                 ])
                 ->afterValidation(fn (Get $get, Set $set) => $this->generateVariationPreview($get, $set)),
             Step::make(__('products.wizard.steps.variations'))
+                // The wizard ends here, but the PRODUCT is not finished:
+                // no price and no stock exists yet for any variation it
+                // creates (deliberately — see this class's own docblock
+                // and admin-panel-design.md §13.1). Saying so on the step
+                // itself, rather than only after the fact, is what makes
+                // the redirect below legible: the merchant knows before
+                // pressing Create where they will land next.
+                ->description(__('products.wizard.variations.after_create_help'))
                 ->schema([
                     Toggle::make('activate_all')
                         ->label(__('products.wizard.variations.activate_all'))

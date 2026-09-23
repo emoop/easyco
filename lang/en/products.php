@@ -44,6 +44,7 @@ return [
             'edit_all' => 'Edit all',
             'bulk_cost' => 'Set cost for all variations',
             'bulk_stock_quantity' => 'Set stock for all variations',
+            'after_create_help' => 'After creating → prices and stock for the variations',
         ],
     ],
 
@@ -175,6 +176,12 @@ return [
 
     'create_simple_action' => 'Add simple product',
     'create_variable_action' => 'Add variable product',
+
+    'created_notification' => [
+        'title' => 'Product created',
+        'body' => 'Next step: prices and stock for the variations.',
+        'view_action' => 'View',
+    ],
 
     'activity_log' => [
         'title' => 'History',
