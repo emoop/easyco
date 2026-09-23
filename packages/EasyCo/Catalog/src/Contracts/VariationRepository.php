@@ -30,6 +30,20 @@ interface VariationRepository
     public function findByProductId(string $productId): array;
 
     /**
+     * The set-based sibling of findById() — one whereIn lookup instead of
+     * N single-id round trips, for a caller (e.g.
+     * App\Services\ProductPriceRangeProvider) resolving many variations
+     * across several products at once. Silently omits any id that does
+     * not resolve to a real row — same "the caller decides what a
+     * missing entry means" posture as every other set-based Catalog
+     * lookup in this codebase, never a partial-failure exception.
+     *
+     * @param string[] $variationIds
+     * @return array<string, Variation> keyed by id
+     */
+    public function findByIds(array $variationIds): array;
+
+    /**
      * Rewrites this product's variation display order to exactly the
      * given sequence: array index becomes catalog_variations.sort_order.
      * A full-array replace, not a per-item position patch — the same

@@ -36,4 +36,22 @@ interface ProductRepository
     public function findByBaseSku(string $baseSku): ?Product;
 
     public function findBySlug(string $slug): ?Product;
+
+    /**
+     * Deliberately narrow, not a batched findById(): a full Product
+     * aggregate load is roughly 4 queries per product (the model itself,
+     * plus loadVariationAxes()/loadDescriptiveAttributes(), plus every
+     * one of its Variations' own attribute-assignment load) — for a
+     * caller that only needs brand_id for scope matching across a whole
+     * product listing (App\Services\CatalogScopeResolver::forVariations()),
+     * that would be 4N queries for something a single, plain column read
+     * answers. One whereIn against catalog_products instead.
+     *
+     * @param string[] $productIds
+     * @return array<string, ?string> keyed by product id; a product with
+     *   no brand assigned maps to null (present in the array, not
+     *   omitted — distinct from a productId that doesn't resolve at all,
+     *   which the caller must treat identically to "no brand").
+     */
+    public function findBrandIdsByProductIds(array $productIds): array;
 }

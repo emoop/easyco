@@ -89,6 +89,24 @@ final class EloquentProductTagRepository implements ProductTagRepository
             ->all();
     }
 
+    /**
+     * @param string[] $productIds
+     * @return ProductTag[] Ordered by id ASC — same reasoning as
+     *   findByProductId() above; the caller groups by productId itself.
+     */
+    public function findByProductIds(array $productIds): array
+    {
+        if ($productIds === []) {
+            return [];
+        }
+
+        return ProductTagModel::whereIn('product_id', $productIds)
+            ->orderBy('id', 'asc')
+            ->get()
+            ->map(fn (ProductTagModel $model) => $this->toDomainProductTag($model))
+            ->all();
+    }
+
     private function toDomainProductTag(ProductTagModel $model): ProductTag
     {
         return ProductTag::reconstituteFromStorage(

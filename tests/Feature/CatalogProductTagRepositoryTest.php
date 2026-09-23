@@ -113,4 +113,33 @@ class CatalogProductTagRepositoryTest extends TestCase
 
         $repository->save(new ProductTag(id: null, productId: $product->id(), tagId: $tag->id()));
     }
+
+    public function test_find_by_product_ids_returns_every_assignment_across_several_products_and_ignores_unrelated_ones(): void
+    {
+        $repository = app(ProductTagRepository::class);
+        $productA = $this->createProduct('air-max-6a');
+        $productB = $this->createProduct('air-max-6b');
+        $unrelatedProduct = $this->createProduct('air-max-6c');
+        $summer = $this->createTag('summer-6');
+        $sale = $this->createTag('sale-6');
+
+        $repository->save(new ProductTag(id: null, productId: $productA->id(), tagId: $summer->id()));
+        $repository->save(new ProductTag(id: null, productId: $productB->id(), tagId: $sale->id()));
+        $repository->save(new ProductTag(id: null, productId: $unrelatedProduct->id(), tagId: $summer->id()));
+
+        $found = $repository->findByProductIds([$productA->id(), $productB->id()]);
+
+        $this->assertCount(2, $found);
+        $byProductId = [];
+        foreach ($found as $pt) {
+            $byProductId[$pt->productId()] = $pt->tagId();
+        }
+        $this->assertSame($summer->id(), $byProductId[$productA->id()]);
+        $this->assertSame($sale->id(), $byProductId[$productB->id()]);
+    }
+
+    public function test_find_by_product_ids_returns_empty_array_for_an_empty_id_list(): void
+    {
+        $this->assertSame([], app(ProductTagRepository::class)->findByProductIds([]));
+    }
 }

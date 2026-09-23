@@ -130,4 +130,71 @@ class CatalogScopeResolverTest extends TestCase
             $result
         );
     }
+
+    /** Locks the delegation contract: forVariation() is a thin wrapper over forVariations(). */
+    public function test_for_variation_agrees_with_for_variations_for_the_same_id(): void
+    {
+        $suffix = $this->suffix();
+        $product = Product::createSimple("Product {$suffix}", "SKU-{$suffix}", "product-slug-{$suffix}");
+        app(ProductRepository::class)->save($product);
+        $variationId = $product->variations()[0]->id();
+
+        $brand = new Brand(id: null, name: 'Nike', slug: "nike-{$suffix}");
+        app(BrandRepository::class)->save($brand);
+        $product->assignBrand($brand->id());
+        app(ProductRepository::class)->save($product);
+
+        $viaSingular = app(CatalogScopeResolver::class)->forVariation($variationId);
+        $viaBatched = app(CatalogScopeResolver::class)->forVariations([$variationId])[$variationId];
+
+        $this->assertSame($viaSingular, $viaBatched);
+    }
+
+    /** A nonexistent id in the batch is simply OMITTED — forVariation() is what turns a miss into the null-shape. */
+    public function test_for_variations_omits_a_nonexistent_id(): void
+    {
+        $result = app(CatalogScopeResolver::class)->forVariations(['999999']);
+
+        $this->assertSame([], $result);
+    }
+
+    public function test_for_variations_batches_multiple_variations_across_multiple_products_correctly(): void
+    {
+        $suffixA = $this->suffix();
+        $productA = Product::createSimple("Product {$suffixA}", "SKU-{$suffixA}", "product-slug-{$suffixA}");
+        app(ProductRepository::class)->save($productA);
+        $variationA = $productA->variations()[0]->id();
+
+        $brand = new Brand(id: null, name: 'Nike', slug: "nike-{$suffixA}");
+        app(BrandRepository::class)->save($brand);
+        $productA->assignBrand($brand->id());
+        app(ProductRepository::class)->save($productA);
+
+        $categoryOne = new Category(id: null, parentId: null, name: 'Shoes', slug: "shoes-{$suffixA}");
+        app(CategoryRepository::class)->save($categoryOne);
+        app(ProductCategoryRepository::class)->save(new ProductCategory(null, $productA->id(), $categoryOne->id()));
+
+        $suffixB = $this->suffix();
+        $productB = Product::createSimple("Product {$suffixB}", "SKU-{$suffixB}", "product-slug-{$suffixB}");
+        app(ProductRepository::class)->save($productB);
+        $variationB = $productB->variations()[0]->id();
+
+        $tagOne = new Tag(id: null, name: 'Summer', slug: "summer-{$suffixB}");
+        app(TagRepository::class)->save($tagOne);
+        app(ProductTagRepository::class)->save(new ProductTag(null, $productB->id(), $tagOne->id()));
+
+        $results = app(CatalogScopeResolver::class)->forVariations([$variationA, $variationB]);
+
+        $this->assertCount(2, $results);
+
+        $this->assertSame($productA->id(), $results[$variationA]['productId']);
+        $this->assertSame([$brand->id()], $results[$variationA]['matchingScopeReferenceIds']['brand']);
+        $this->assertSame([$categoryOne->id()], $results[$variationA]['matchingScopeReferenceIds']['category']);
+        $this->assertArrayNotHasKey('tag', $results[$variationA]['matchingScopeReferenceIds']);
+
+        $this->assertSame($productB->id(), $results[$variationB]['productId']);
+        $this->assertArrayNotHasKey('brand', $results[$variationB]['matchingScopeReferenceIds']);
+        $this->assertArrayNotHasKey('category', $results[$variationB]['matchingScopeReferenceIds']);
+        $this->assertSame([$tagOne->id()], $results[$variationB]['matchingScopeReferenceIds']['tag']);
+    }
 }

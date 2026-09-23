@@ -72,6 +72,43 @@ final class EloquentVariationRepository implements VariationRepository
     }
 
     /**
+     * @param array<int|string> $variationIds
+     * @return array<string, Variation> keyed by id
+     */
+    public function findByIds(array $variationIds): array
+    {
+        if ($variationIds === []) {
+            return [];
+        }
+
+        $models = VariationModel::whereIn('id', $variationIds)->get();
+
+        $assignmentsByVariationId = $this->loadAttributeAssignments($models->pluck('id')->all());
+
+        $result = [];
+        foreach ($models as $model) {
+            // ?? [] (not null): a variation genuinely absent from
+            // $assignmentsByVariationId has zero attribute assignments
+            // (e.g. a SIMPLE product's universal variation) — passing
+            // null instead would trigger toDomainVariation()'s own
+            // ??= lazy-reload fallback, one extra single-id query PER
+            // SUCH VARIATION. A REAL, CONFIRMED N+1 CAUGHT BY THIS
+            // TASK'S OWN QUERY-COUNT TEST (5 vs. 25 products no longer
+            // equal until fixed) — not a hypothetical concern.
+            // findByProductId() above has this identical `?? null`
+            // pattern and the identical latent N+1 for the same reason;
+            // flagged, not silently fixed here — out of this task's
+            // authorized scope (D4: no other Catalog class change).
+            $result[(string) $model->id] = $this->toDomainVariation(
+                $model,
+                $assignmentsByVariationId[$model->id] ?? []
+            );
+        }
+
+        return $result;
+    }
+
+    /**
      * See Contracts\VariationRepository::updateSortOrders()'s own
      * docblock for the contract-level reasoning (full-array replace,
      * unchanged rows untouched, fail-loud on a foreign id).

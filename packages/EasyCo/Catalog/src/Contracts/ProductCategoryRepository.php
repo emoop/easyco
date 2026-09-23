@@ -20,4 +20,15 @@ interface ProductCategoryRepository
 
     /** @return ProductCategory[] */
     public function findByProductId(string $productId): array;
+
+    /**
+     * The set-based sibling of findByProductId() — one whereIn query for
+     * every category assignment across several products at once (e.g.
+     * App\Services\CatalogScopeResolver::forVariations()), grouped by the
+     * caller per productId. Never one findByProductId() call per product.
+     *
+     * @param string[] $productIds
+     * @return ProductCategory[]
+     */
+    public function findByProductIds(array $productIds): array;
 }

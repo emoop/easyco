@@ -20,4 +20,15 @@ interface ProductTagRepository
 
     /** @return ProductTag[] */
     public function findByProductId(string $productId): array;
+
+    /**
+     * The set-based sibling of findByProductId() — one whereIn query for
+     * every tag assignment across several products at once (e.g.
+     * App\Services\CatalogScopeResolver::forVariations()), grouped by the
+     * caller per productId. Never one findByProductId() call per product.
+     *
+     * @param string[] $productIds
+     * @return ProductTag[]
+     */
+    public function findByProductIds(array $productIds): array;
 }

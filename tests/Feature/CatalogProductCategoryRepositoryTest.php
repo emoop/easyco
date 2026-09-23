@@ -113,4 +113,33 @@ class CatalogProductCategoryRepositoryTest extends TestCase
 
         $repository->save(new ProductCategory(id: null, productId: $product->id(), categoryId: $category->id()));
     }
+
+    public function test_find_by_product_ids_returns_every_assignment_across_several_products_and_ignores_unrelated_ones(): void
+    {
+        $repository = app(ProductCategoryRepository::class);
+        $productA = $this->createProduct('air-max-6a');
+        $productB = $this->createProduct('air-max-6b');
+        $unrelatedProduct = $this->createProduct('air-max-6c');
+        $shoes = $this->createCategory('shoes-6');
+        $running = $this->createCategory('running-6');
+
+        $repository->save(new ProductCategory(id: null, productId: $productA->id(), categoryId: $shoes->id()));
+        $repository->save(new ProductCategory(id: null, productId: $productB->id(), categoryId: $running->id()));
+        $repository->save(new ProductCategory(id: null, productId: $unrelatedProduct->id(), categoryId: $shoes->id()));
+
+        $found = $repository->findByProductIds([$productA->id(), $productB->id()]);
+
+        $this->assertCount(2, $found);
+        $byProductId = [];
+        foreach ($found as $pc) {
+            $byProductId[$pc->productId()] = $pc->categoryId();
+        }
+        $this->assertSame($shoes->id(), $byProductId[$productA->id()]);
+        $this->assertSame($running->id(), $byProductId[$productB->id()]);
+    }
+
+    public function test_find_by_product_ids_returns_empty_array_for_an_empty_id_list(): void
+    {
+        $this->assertSame([], app(ProductCategoryRepository::class)->findByProductIds([]));
+    }
 }

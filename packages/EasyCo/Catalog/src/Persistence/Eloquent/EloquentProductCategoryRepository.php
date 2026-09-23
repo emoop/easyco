@@ -90,6 +90,24 @@ final class EloquentProductCategoryRepository implements ProductCategoryReposito
             ->all();
     }
 
+    /**
+     * @param string[] $productIds
+     * @return ProductCategory[] Ordered by id ASC — same reasoning as
+     *   findByProductId() above; the caller groups by productId itself.
+     */
+    public function findByProductIds(array $productIds): array
+    {
+        if ($productIds === []) {
+            return [];
+        }
+
+        return ProductCategoryModel::whereIn('product_id', $productIds)
+            ->orderBy('id', 'asc')
+            ->get()
+            ->map(fn (ProductCategoryModel $model) => $this->toDomainProductCategory($model))
+            ->all();
+    }
+
     private function toDomainProductCategory(ProductCategoryModel $model): ProductCategory
     {
         return ProductCategory::reconstituteFromStorage(

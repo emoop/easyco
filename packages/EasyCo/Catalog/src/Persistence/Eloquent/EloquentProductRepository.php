@@ -238,6 +238,24 @@ final class EloquentProductRepository implements ProductRepository
     }
 
     /**
+     * @param string[] $productIds
+     * @return array<string, ?string> keyed by product id
+     */
+    public function findBrandIdsByProductIds(array $productIds): array
+    {
+        if ($productIds === []) {
+            return [];
+        }
+
+        $result = [];
+        foreach (ProductModel::whereIn('id', $productIds)->get(['id', 'brand_id']) as $model) {
+            $result[(string) $model->id] = $model->brand_id !== null ? (string) $model->brand_id : null;
+        }
+
+        return $result;
+    }
+
+    /**
      * Persists $productModel, retrying up to 3 times on a slug UNIQUE
      * constraint collision by appending an incrementing numeric suffix to
      * the slug (e.g. "червена-рокля" -> "червена-рокля-1" -> "-2" ->
