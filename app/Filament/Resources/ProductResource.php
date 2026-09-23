@@ -99,6 +99,17 @@ class ProductResource extends Resource
 {
     use AuthorizesViaStaffPermission;
 
+    /**
+     * The Variations tab's stable id on EditVariableProduct — the one
+     * place this string is written, because TWO different classes depend
+     * on them agreeing: EditVariableProduct's own Tab::make(...)->id()
+     * (what Tabs::getActiveTab() matches the query string against) and
+     * CreateVariableProduct::getRedirectUrl() (which lands the merchant
+     * there straight after creation). A typo or a rename in only one of
+     * them would silently open the wrong tab, so neither re-writes it.
+     */
+    public const VARIATIONS_TAB_ID = 'variations';
+
     protected static ?string $model = ProductModel::class;
 
     protected static string|BackedEnum|null $navigationIcon = 'heroicon-o-cube';

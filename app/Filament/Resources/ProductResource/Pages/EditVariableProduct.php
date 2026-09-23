@@ -290,10 +290,35 @@ class EditVariableProduct extends EditRecord
                         ->columnSpan(2)
                         ->schema([
                             Tabs::make('Product')
+                                // Reads ?tab=<id> and activates the tab
+                                // whose own ->id() matches (confirmed
+                                // against the installed source:
+                                // Tabs::getActiveTab() compares
+                                // $tab->getId() against
+                                // request()->query('tab'), and Tab::getId()
+                                // is getCustomId() ?? getKey()) — which is
+                                // exactly why every tab below carries an
+                                // EXPLICIT id: left unset, getId() falls
+                                // back to a label-derived key
+                                // (Str::slug(Str::transliterate($label))),
+                                // so the deep link would change with the
+                                // merchant's language. The component also
+                                // WRITES the query string when the merchant
+                                // switches tabs (Filament's own tabs.js
+                                // updateQueryString(), writing a tab KEY,
+                                // not this id) — harmless here: the client
+                                // reads its own keys back, and the only
+                                // link this page is deep-linked FROM (the
+                                // creation wizard's redirect) builds its
+                                // URL from the id, which is what the
+                                // server matches for a correct first paint.
+                                ->persistTabInQueryString('tab')
                                 ->tabs([
                                     Tab::make(__('products.tabs.general'))
+                                        ->id('general')
                                         ->schema($this->generalTabComponents()),
                                     Tab::make(__('products.tabs.attributes'))
+                                        ->id('attributes')
                                         ->schema($this->attributesTabComponents()),
                                     // PRODUCT_MANAGE-gated at ->visible()
                                     // level (not just per-field
@@ -317,9 +342,17 @@ class EditVariableProduct extends EditRecord
                                     // syncVariationMedia()'s own
                                     // docblock).
                                     Tab::make(__('products.tabs.axes'))
+                                        ->id('axes')
                                         ->schema($this->axesTabComponents())
                                         ->visible(fn (): bool => ProductResource::staffHasPermission(Permission::PRODUCT_MANAGE)),
+                                    // THE id CreateVariableProduct's own
+                                    // getRedirectUrl() sends the merchant
+                                    // to, straight after the creation
+                                    // wizard — hence the shared constant
+                                    // rather than a literal here (see
+                                    // ProductResource::VARIATIONS_TAB_ID).
                                     Tab::make(__('products.tabs.variations'))
+                                        ->id(ProductResource::VARIATIONS_TAB_ID)
                                         ->schema($this->existingVariationsComponents()),
                                 ]),
                         ]),
