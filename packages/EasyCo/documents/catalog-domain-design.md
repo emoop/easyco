@@ -1,6 +1,6 @@
 # Catalog Domain Design
 
-**Status:** v1.4 — real SKU generation for both `Product::baseSku()` and `Variation::sku()` (v1.3 approved)
+**Status:** v1.5 — directional variation-axis re-declaration and explicit archived-variation restore (v1.4 approved)
 **Builds on:** `easyco/pricing` (Currency, Money, Price — Catalog references it by id only, never duplicates its fields)
 **Supersedes:** the earlier "Simple Product vs Variable Product as separate models" framing from the initial Catalog prompt
 
@@ -11,6 +11,8 @@
 **Changes in this pass (v1.2 → v1.3):** a targeted corrective pass, not a redesign — closes the one gap v1.2 explicitly documented as deferred rather than accidental: `Product::reconstituteFromStorage()` previously skipped axis-declaration rehydration entirely, so a reloaded VARIABLE product silently accepted any combination instead of validating against its real declared axes. Added: axis rehydration in `EloquentProductRepository` (§3.10) and the new `UnsafeAxisRedeclarationException` invariant (§3.10). Explicitly *not* touched: the Product/Variation model itself, `VariationSignature`, the Pricing boundary, SKU/barcode/slug handling, DB uniqueness constraints, the SIMPLE↔VARIABLE transition methods, or descriptive (non-axis) product attributes (at the time of this v1.3 pass, still no domain representation on `Product` — the design for resolving it lives in §3.11, not yet implemented as of this writing).
 
 **Changes in this pass (v1.3 → v1.4):** closes the "real SKU-generation strategy" item §6 explicitly listed as deferred. `App\Providers\CatalogSkuGeneratorServiceProvider` (app/ layer, mirroring `CatalogSlugGeneratorServiceProvider`'s exact shape) now backs both `catalog.product.base_sku` and the new `catalog.variation.sku` Hook filter (`{baseSku}-{n}`, deliberately not attribute-value-based — see §3.2). The persistent, concurrency-safe base_sku sequence itself — `catalog_sku_sequence`, configurable start via `PRODUCT_SKU_SEQUENCE_START` — lives **inside the Catalog package** (`Contracts\SkuSequenceRepository` / `Persistence\Eloquent\EloquentSkuSequenceRepository`, migration in `packages/EasyCo/Catalog/database/migrations/`), the same boundary already established for `EasyCo\Pricing\DefaultCurrency`: the state-holder lives in the owning domain package, only the Laravel-specific wiring (registering the listener, reading the config value at migration time) lives in app/. (An earlier version of this table shipped directly in the root app's migrations and was corrected to this location as an immediate follow-up — see the migration's own docblock.) `CatalogSkuGeneratorServiceProvider::variationSkuStrategy(Product $product): callable` is a convenience factory returning the `catalog.variation.sku`-wired closure ready to pass as `generate()`'s `$skuForCombination` — the one canonical place to get it from, so the hook name/signature isn't re-derived at every future call site. `VariationCombinationGenerator::generate()`'s `$skuForCombination` parameter is now optional (§3.2) rather than required, but the class still cannot call `Hook::apply()` itself — the architectural boundary from `extensibility-design-and-hooks.md` §2 held throughout this pass, not relaxed for convenience. `EloquentProductRepository` gained a third implementation of the SQLSTATE-23000 unique-constraint-collision-retry pattern (§7), for `catalog_variations_sku_unique`. `DemoHooksServiceProvider`, the proof-of-concept this replaces, is deleted.
+
+**Changes in this pass (v1.4 → v1.5):** replaces §3.10's coarse "refuse ANY axis re-declaration once a STANDARD variation has ever existed (by type, not status)" guard with a **directional compatibility check** (§3.17), because the old rule made two organic merchant operations structurally impossible: enabling a new value on an existing axis (e.g. adding "XL" to "Size"), and any explicit merchant-facing restoration of an archived variation (only `addStandardVariation()`'s implicit revive-by-signature existed, itself unreachable without re-declaring axes first). `Product::declareVariationAxes()` now calls the new private `assertAxisChangeIsSafe()`, which compares the proposed axis set against the current one and against every LIVE (non-ARCHIVED) STANDARD variation, evaluated as five ordered rules (§3.17): an identical set is always a no-op; a pure value addition to an existing axis is always safe; removing an axis, adding a new axis, or removing a value a live variation depends on is refused only while it would actually orphan that live variation's combination — never because of an ARCHIVED one. Added: `Product::restoreArchivedVariation(Variation $variation): void`, the new explicit counterpart to `addStandardVariation()`'s implicit revival branch (§3.9) — both are now documented as the only two callers of `Variation::reviveFromArchive()`. Added exception `VariationNotRestorableException`, thrown when a restore's own combination no longer validates against the current axes (the fail-loud check for axes that drifted while the variation sat archived, since archived variations never block an axis change themselves). `UnsafeAxisRedeclarationException` was rewritten from one factory (`becauseStandardVariationsExist()`, removed) to three, one per refusal rule. `Product::hasAnyStandardVariation()` (type-only, its one caller gone) is deleted; `assertAxisChangeIsSafe()` builds its own local live-variation collection instead. Explicitly *not* touched: the Product/Variation model itself, the "no partial combinations" invariant in `assertValidCombination()`, `VariationSignature`, `addStandardVariation()`'s existing revival branch, the SIMPLE↔VARIABLE transition methods, `UnsafeProductTypeTransitionException`, the DB schema (no migration — `EloquentProductRepository::persistVariationAxes()`'s existing full delete+reinsert already handles an extended or reduced axis set with no changes needed).
 
 ---
 
@@ -158,7 +160,7 @@ A Variation's defining combination can legitimately need to change post-creation
 
 **How the rehydrated axes reach the aggregate:** `Product::reconstituteFromStorage()` gained a `VariationAxis[] $variationAxes = []` parameter and passes it straight through the real `declareVariationAxes()` method — not a bypass, so the normal within-set validation (SELECT-only axes, no duplicate definition — §3.5) still runs even on trusted, already-persisted data. The one thing that makes this safe is ordering: `declareVariationAxes()` is called **before** `$variations` are attached, so at that point the aggregate genuinely has zero variations regardless of how many are about to be attached next — which matters because of the new guard immediately below, which would otherwise block exactly this call.
 
-**New invariant: `Product::declareVariationAxes()` now refuses to change the axis set once the Product has any STANDARD variation** — checked by **type**, not current status, so an archived STANDARD variation still blocks it. Same reasoning as the existing SIMPLE→VARIABLE transition guard (§3.4): archiving a variation doesn't erase the fact that its combination depended on the axes declared at the time it was created, so silently allowing the axis set to change out from under it risks orphaning that combination. Throws the dedicated `UnsafeAxisRedeclarationException` — a distinct invariant from `UnsafeProductTypeTransitionException`, not a reuse of it. v1 has no migration path for re-validating or updating existing combinations against a new axis set (that would be new scope, not this fix); the only way to change axes remains a Product with zero STANDARD variations.
+**New invariant (v1.4): `Product::declareVariationAxes()` refused to change the axis set at all once the Product had any STANDARD variation** — checked by **type**, not current status, so an archived STANDARD variation still blocked it. **Superseded as of v1.5 — see §3.17.** That blanket rule made two organic merchant operations structurally impossible (enabling a new value on an existing axis; explicitly restoring an archived variation), so it was replaced by a directional compatibility check: re-declaring an identical set, or adding a new value to an existing axis, is always safe regardless of existing variations; removing/adding an axis or removing a value is refused only while it would actually orphan a **live (non-archived)** STANDARD variation's combination. §3.17 has the full rule table and the new `Product::restoreArchivedVariation()` operation this change also introduces. `UnsafeAxisRedeclarationException` is still the exception thrown (now via three distinct factories instead of one) — still a distinct invariant from `UnsafeProductTypeTransitionException`, not a reuse of it.
 
 **Explicitly not resolved by this pass:** descriptive (non-axis) product attributes — `catalog_product_attributes` rows with `is_variation_axis = false` — still have **no domain representation on `Product` at all**. This pass only ever touched `is_variation_axis = true` rows; `Product` exposes no accessor for a descriptive attribute value and none is read or written anywhere in the domain or persistence layers. Adding that is new scope, not a fix, and remained a separate, real deferred item until resolved — see §3.11.
 
@@ -380,6 +382,85 @@ and `changeDefaults(...)` (replacing all five default fields at once —
 no reason to expose five separate single-field mutators for a bag of
 suggestions with no invariants between them).
 
+### 3.17 Directional axis re-declaration, value extension, and archived-variation restore
+
+**Numbering note:** this section is numbered 3.17, not 3.15, even
+though the implementation task that produced it asked for "3.15" —
+that number (and 3.16) were already in use by §3.15 ProductGroup and
+§3.16 ProductTemplate above (both real, design-only sections, unrelated
+to this change) by the time this pass started. Appended as the next
+free number instead of renumbering two unrelated, already-referenced
+sections.
+
+**Decision:** replaces §3.10's v1.4 blanket guard ("refuse ANY axis
+re-declaration once the Product has any STANDARD variation, by type
+not status") with a **directional compatibility check**,
+`Product::assertAxisChangeIsSafe(array $newAxesByDefinitionId): void`
+(private, called from `declareVariationAxes()` after the existing
+within-set validation — SELECT-only axes, no duplicate definition —
+has already built the candidate `$byDefinitionId` map). All scoping is
+by **LIVE STANDARD variations only** — type `STANDARD` **and** status
+`!== VariationStatus::ARCHIVED`. The rules are evaluated in this order;
+the first one that matches decides the whole operation:
+
+| Rule | Condition | Outcome |
+|---|---|---|
+| R1 | New set identical to the current one (same declared `attribute_definition_id` keys, and per definition the same allowed-value id set — order never matters, compared as `array_values(array_unique(...))` then `sort(..., SORT_STRING)`) | **ALLOW**, unconditionally — a no-op, even with live variations. Keeps `reconstituteFromStorage()`-style reloads and a plain admin re-save harmless. |
+| R2 | A currently-declared `attribute_definition_id` is absent from the new set (axis **removed**) | **REFUSE** while any live STANDARD variation exists (`UnsafeAxisRedeclarationException::becauseLiveVariationsWouldLoseAnAxis()`) — `assertValidCombination()`'s "every declared axis must be supplied" rule means any live variation necessarily already has a value for every currently-declared axis, so no per-variation filtering is needed here: existence of a live variation is itself sufficient. |
+| R3 | The new set introduces an `attribute_definition_id` not currently declared (axis **added**) | **REFUSE** while any live STANDARD variation exists (`becauseNewAxisWouldInvalidateLiveVariations()`) — the mirror-image reason: no existing live variation can have a value for a genuinely new axis, and v1 has no migration path that invents one. |
+| R4 | A definition present in **both** sets lost one or more of its allowed values (**value removed**) | **REFUSE** only if at least one live variation's own `attributeAssignments()` actually uses one of the specifically removed values (`becauseLiveVariationsUseRemovedValues()`) — unlike R2/R3 this one genuinely filters per-variation, since the axis itself is kept and most of its other values may still be fine. |
+| R5 | Otherwise (identical axes with a pure value **addition**, or removing an axis/value no live variation depends on — including a Product with zero live variations at all) | **ALLOW.** |
+
+**Implementation note on "the first one that matches decides":** R2/R3/R4
+are not mutually exclusive across one submission (e.g. one axis removed
+*and* a value removed from a different, still-present axis, in the same
+call) — the check does not collect every simultaneous violation before
+deciding; it refuses at the first one found (R2 checked across every
+currently-declared definition absent from the new set, then R3 across
+every newly-introduced definition, then R4 for definitions present in
+both), and the caller fixes that one and resubmits.
+
+**Why ARCHIVED variations never block R2/R3/R4:** an archived variation
+is a historical record that is never re-validated against a changing
+axis declaration, and its `catalog_variation_attribute_values` rows are
+never touched by an axis change (unaffected by
+`persistVariationAxes()`, which only ever touches
+`catalog_product_attributes`/`catalog_product_axis_values`). The
+trade-off this creates is deliberate: a merchant who retires a value by
+removing it from the axis simply cannot restore the variations that
+used it — fail-loud, not silent, and the check happens at the other end
+of the trade-off instead (see immediately below), not by blocking the
+axis change up front.
+
+**New operation: `Product::restoreArchivedVariation(Variation $variation): void`** (public, placed next to
+`addStandardVariation()`/`findArchivedVariationBySignature()`) — the
+explicit, merchant-facing "bring this archived variation back"
+counterpart to `addStandardVariation()`'s own **implicit**
+revival-by-signature branch (§3.9, triggered merely by re-submitting
+the same axis values). These two are now the **only** sanctioned
+callers of `Variation::reviveFromArchive()` anywhere in the codebase.
+Contract, in order:
+
+1. `$variation` must already belong to this Product (`\LogicException` otherwise).
+2. Only a `STANDARD` variation can be restored (`\LogicException` for `UNIVERSAL`).
+3. `$variation` must currently be `ARCHIVED` (`\LogicException` for `DRAFT`/`ACTIVE`).
+4. Its **current** `attributeAssignments()` are re-validated against the Product's **current** declared axes via the existing, unchanged `assertValidCombination()` — this is the fail-loud check for axes that drifted while the variation sat archived (exactly the risk R2–R4 deliberately don't block up front). A resulting `InvalidVariationAxisException` is translated into `VariationNotRestorableException::becauseItsCombinationIsNoLongerValid()`.
+5. `Variation::reviveFromArchive()` — ARCHIVED → DRAFT. `id`/`sku`/`barcode`/`attributeAssignments()`/`attributeSignature()` stay completely untouched; `is_visible`/`is_purchasable` **stay false** (`archive()` forced both false; revival does not silently restore them — the merchant re-enables them explicitly, e.g. via `activate()`).
+
+No uniqueness/signature check inside `restoreArchivedVariation()`
+itself: flipping an *existing* row's status can never create a
+duplicate signature, so the DB `UNIQUE(product_id, attribute_signature)`
+index (§3.1) remains the sole authoritative guarantee, unaffected.
+
+**Deliberately not built:** partial/optional axis combinations
+(WooCommerce-style "any value" on an axis, where a variation need not
+supply every declared axis). `assertValidCombination()`'s "every
+declared axis must be supplied" rule (§3.5) is unchanged by this pass —
+redefining it to allow partial combinations would also require
+redefining the uniqueness strategy (§3.1, `VariationSignature`'s
+determinism assumes a complete, fixed set of assignments per
+variation) and is out of scope here.
+
 ## 4. Entities
 
 ### 4.1 Product (aggregate root)
@@ -538,7 +619,7 @@ Foreign keys from child tables to `catalog_products`/`catalog_variations` use `r
 
 ## 9. Test coverage (`packages/EasyCo/Catalog/tests/`)
 
-86 tests, 128 assertions, all passing (plus `easyco/pricing`'s existing, untouched 87 tests — 173 total across the two packages):
+86 tests, 128 assertions, all passing (plus `easyco/pricing`'s existing, untouched 87 tests — 173 total across the two packages) *as of the v1.1 pass this count was first written for — not kept in sync every pass since; see the real, current count below instead.*
 
 - `VariationSignatureTest` — determinism, order-independence, the fixed Universal constant, empty-input rejection.
 - `ProductSimpleCreationTest` — the Universal-variation invariant, non-selectability, id back-fill on persistence.
@@ -551,6 +632,10 @@ Foreign keys from child tables to `catalog_products`/`catalog_variations` use `r
 - `VariationCombinationGeneratorTest` — cartesian product correctness, skip-existing-on-regeneration, undeclared-axis rejection, disallowed-value rejection, empty-axis-in-request rejection, deterministic deduplication of repeated values, and — the two tests specific to this hardening pass — that an invalid axis/value anywhere in the request rejects the *entire* generation with zero partial variations created.
 - `DatabaseUniquenessConstraintTest` — the actual DB-level guarantee, including a genuine concurrent-insert race (no check-then-insert), scoped-per-product uniqueness, and the Universal-variation-count side effect, against a real SQLite connection.
 - `ProductBaseSkuAndVariationRevivalTest` (v1.2) — mandatory `baseSku`/`sku` validation on both creation paths, the Universal variation's sku matching `baseSku` exactly (including after `attemptConvertToSimple()`), and the full archived-revival behavior: identity/sku preserved, the newly-supplied sku ignored, no duplicate row created, revival scoped to ARCHIVED only, and `activate()` unaffected.
+- `ProductAxisRedeclarationGuardTest` (v1.5, rewritten from v1.3's coarse-guard version) — every rule in §3.17's table: identical-set no-op with a live variation, identical-set no-op with only an archived variation, refusal on a genuinely different set while a live variation exists, value-addition to an existing axis leaving a live variation byte-for-byte unchanged, axis removal refused-then-allowed-once-archived (with the refusal message asserted to list the live variation's own id), new-axis-addition refused-then-allowed-once-archived, and value-removal refused/allowed/allowed depending on whether a *live* variation depends on the removed value.
+- `ProductVariationRestoreTest` (v1.5, new) — `Product::restoreArchivedVariation()`: the happy path (status DRAFT, id/sku/barcode/assignments/signature unchanged, visibility/purchasability still false, a following `activate()` works), `\LogicException` for another product's variation / a UNIVERSAL variation / a DRAFT or ACTIVE variation, `VariationNotRestorableException` for both axis-drift directions (an axis removed, or a new axis added, while only archived variations existed), and that a pure value extension of an existing axis never makes an archived variation unrestorable.
+
+**Real, current count as of this v1.5 pass:** `php vendor/bin/phpunit -c packages/EasyCo/Catalog/phpunit.xml` → **285 tests, 393 assertions**, all passing (277 before this pass's 8 new `ProductVariationRestoreTest` tests; `ProductAxisRedeclarationGuardTest` grew from 4 to 13 tests as part of that same 277, 2 of which replace — not add to — the old coarse-guard tests, per §3.17's own changelog).
 
 ---
 

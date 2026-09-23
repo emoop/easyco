@@ -363,10 +363,12 @@ final class Variation
      * keep refusing a directly-archived variation — a merchant explicitly
      * retiring a variation is not undone by casually reactivating it.
      * reviveFromArchive() is the one and only sanctioned ARCHIVED -> DRAFT
-     * transition, reserved for this specific "the system is reusing an
-     * existing identity for a regenerated combination" case — only
-     * Product::addStandardVariation() calls it, never application code
-     * directly.
+     * transition — never called by application code directly, reserved
+     * for exactly two sanctioned Product-level callers (catalog-domain-
+     * design.md §3.17): Product::addStandardVariation()'s own implicit
+     * "the system is reusing an existing identity for a regenerated
+     * combination" branch (§3.9), and the explicit, merchant-facing
+     * Product::restoreArchivedVariation().
      */
     public function reviveFromArchive(): void
     {

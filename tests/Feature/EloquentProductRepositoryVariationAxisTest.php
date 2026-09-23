@@ -10,9 +10,11 @@ use EasyCo\Catalog\Exceptions\InvalidVariationAxisException;
 use EasyCo\Catalog\Exceptions\UnsafeAxisRedeclarationException;
 use EasyCo\Catalog\Persistence\Eloquent\AttributeDefinitionModel;
 use EasyCo\Catalog\Persistence\Eloquent\AttributeValueModel;
+use EasyCo\Catalog\Persistence\Eloquent\VariationModel;
 use EasyCo\Catalog\Product;
 use EasyCo\Catalog\VariationAxis;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 /**
@@ -183,15 +185,27 @@ class EloquentProductRepositoryVariationAxisTest extends TestCase
     }
 
     /**
-     * The purely in-memory half of this guard (no save/reload involved at
-     * all) is tested in packages/EasyCo/Catalog/tests/ProductAxisRedeclarationGuardTest.php
-     * — it needs no DB, so it lives in the Catalog package's own fast
+     * The purely in-memory half of this directional guard (no save/
+     * reload involved at all) is tested in
+     * packages/EasyCo/Catalog/tests/ProductAxisRedeclarationGuardTest.php
+     * and packages/EasyCo/Catalog/tests/ProductVariationRestoreTest.php —
+     * neither needs a DB, so they live in the Catalog package's own fast
      * suite, consistent with how every other pure domain rule is tested
-     * there. This test covers the other half named in the acceptance
-     * criteria: the guard must still hold after a real save/reload round
-     * trip, which does need a real repository and DB.
+     * there. The four tests below cover the other half named in the
+     * acceptance criteria: the guard (and the new restore operation)
+     * must still hold, and persist correctly, after a real save/reload
+     * round trip, which does need a real repository and DB.
+     *
+     * REPLACES test_declare_variation_axes_is_rejected_after_a_save_reload_round_trip_too
+     * (deleted) — that test re-declared the IDENTICAL axis set and
+     * expected a refusal, encoding the OLD coarse "any re-declaration
+     * once a STANDARD variation exists is refused" rule. Under the new
+     * directional guard (catalog-domain-design.md §3.17), redeclaring an
+     * identical set is R1's own explicit no-op allowance, not a
+     * violation — this is a specified behaviour change, not a test being
+     * loosened to pass.
      */
-    public function test_declare_variation_axes_is_rejected_after_a_save_reload_round_trip_too(): void
+    public function test_an_axis_value_extension_survives_a_save_reload_round_trip(): void
     {
         $product = Product::createVariable('T-Shirt', 'SKU-7', 't-shirt-7');
         $product->declareVariationAxes([$this->colorAxis()]);
@@ -200,7 +214,146 @@ class EloquentProductRepositoryVariationAxisTest extends TestCase
 
         $reloaded = $this->repository()->findByIdWithVariations($product->id());
 
+        $red = AttributeValueModel::create([
+            'attribute_definition_id' => $this->colorDefinitionModel->id,
+            'value' => 'Red',
+            'sort_order' => 2,
+        ]);
+
+        // R5: identical axis, ONE more allowed value — safe even with the
+        // live Black variation already on file.
+        $extendedColorAxis = new VariationAxis(
+            new AttributeDefinition(
+                id: (string) $this->colorDefinitionModel->id,
+                code: $this->colorDefinitionModel->code,
+                name: $this->colorDefinitionModel->name,
+                type: AttributeType::SELECT,
+            ),
+            [
+                new AttributeValue((string) $this->black->id, (string) $this->colorDefinitionModel->id, 'Black'),
+                new AttributeValue((string) $this->white->id, (string) $this->colorDefinitionModel->id, 'White'),
+                new AttributeValue((string) $red->id, (string) $this->colorDefinitionModel->id, 'Red'),
+            ]
+        );
+        $reloaded->declareVariationAxes([$extendedColorAxis]);
+        $reloaded->addStandardVariation([(int) $this->colorDefinitionModel->id => (int) $red->id], 'SKU-RED');
+        $this->repository()->save($reloaded);
+
+        $reloadedAgain = $this->repository()->findByIdWithVariations($product->id());
+
+        $axes = $reloadedAgain->variationAxes();
+        self::assertCount(1, $axes);
+        $expectedValueIds = [(string) $this->black->id, (string) $this->white->id, (string) $red->id];
+        $actualValueIds = $axes[0]->allowedValueIds();
+        sort($expectedValueIds);
+        sort($actualValueIds);
+        self::assertSame($expectedValueIds, $actualValueIds);
+
+        $variations = $reloadedAgain->variations();
+        self::assertCount(2, $variations);
+        $skus = array_map(static fn ($v) => $v->sku(), $variations);
+        sort($skus);
+        self::assertSame(['SKU-BLACK', 'SKU-RED'], $skus);
+    }
+
+    public function test_adding_a_new_axis_after_a_save_reload_round_trip_is_still_refused_while_a_live_variation_exists(): void
+    {
+        $product = Product::createVariable('T-Shirt', 'SKU-8', 't-shirt-8');
+        $product->declareVariationAxes([$this->colorAxis()]);
+        $product->addStandardVariation([(int) $this->colorDefinitionModel->id => (int) $this->black->id], 'SKU-BLACK');
+        $this->repository()->save($product);
+
+        $reloaded = $this->repository()->findByIdWithVariations($product->id());
+
         $this->expectException(UnsafeAxisRedeclarationException::class);
-        $reloaded->declareVariationAxes([$this->colorAxis()]);
+        $reloaded->declareVariationAxes([$this->colorAxis(), $this->sizeAxis()]);
+    }
+
+    public function test_adding_a_new_axis_after_archiving_every_variation_succeeds_and_persists(): void
+    {
+        $product = Product::createVariable('T-Shirt', 'SKU-9', 't-shirt-9');
+        $product->declareVariationAxes([$this->colorAxis()]);
+        $variation = $product->addStandardVariation([(int) $this->colorDefinitionModel->id => (int) $this->black->id], 'SKU-BLACK');
+        $variation->activate();
+        $variation->archive();
+        $this->repository()->save($product);
+
+        $reloaded = $this->repository()->findByIdWithVariations($product->id());
+
+        // Zero LIVE variations remain (the one that exists is archived) —
+        // safe per R3.
+        $reloaded->declareVariationAxes([$this->colorAxis(), $this->sizeAxis()]);
+        $this->repository()->save($reloaded);
+
+        $reloadedAgain = $this->repository()->findByIdWithVariations($product->id());
+        self::assertCount(2, $reloadedAgain->variationAxes());
+    }
+
+    /**
+     * Real persistence, verified directly against catalog_variations —
+     * not just the domain read: EloquentProductRepository::saveVariation()
+     * writes `status` unconditionally, so a restored variation must land
+     * as 'draft', with its sku/barcode/attribute_signature and its
+     * catalog_variation_attribute_values rows completely untouched by
+     * the restore.
+     */
+    public function test_a_restored_archived_variation_persists_as_draft_after_a_save_reload_round_trip(): void
+    {
+        $product = Product::createVariable('T-Shirt', 'SKU-10', 't-shirt-10');
+        $product->declareVariationAxes([$this->colorAxis()]);
+        $variation = $product->addStandardVariation([(int) $this->colorDefinitionModel->id => (int) $this->black->id], 'SKU-BLACK');
+        $variation->activate();
+        $variation->archive();
+        $this->repository()->save($product);
+
+        $variationId = $variation->id();
+        $skuBefore = $variation->sku();
+        $signatureBefore = $variation->attributeSignature()->value();
+        $assignmentRowsBefore = DB::table('catalog_variation_attribute_values')
+            ->where('variation_id', $variationId)
+            ->orderBy('attribute_definition_id')
+            ->get(['attribute_definition_id', 'attribute_value_id'])
+            ->toArray();
+
+        $this->assertSame('archived', VariationModel::find($variationId)->status);
+
+        $reloaded = $this->repository()->findByIdWithVariations($product->id());
+        $reloadedVariation = $reloaded->variations()[0];
+        $reloaded->restoreArchivedVariation($reloadedVariation);
+        $this->repository()->save($reloaded);
+
+        $model = VariationModel::find($variationId);
+        $this->assertSame('draft', $model->status);
+        $this->assertSame($skuBefore, $model->sku);
+        $this->assertSame($signatureBefore, $model->attribute_signature);
+
+        $assignmentRowsAfter = DB::table('catalog_variation_attribute_values')
+            ->where('variation_id', $variationId)
+            ->orderBy('attribute_definition_id')
+            ->get(['attribute_definition_id', 'attribute_value_id'])
+            ->toArray();
+        $this->assertEquals($assignmentRowsBefore, $assignmentRowsAfter);
+    }
+
+    private function sizeAxis(): VariationAxis
+    {
+        $sizeDefinitionModel = AttributeDefinitionModel::firstOrCreate(
+            ['code' => 'size'],
+            ['name' => 'Size', 'type' => 'select']
+        );
+        $small = AttributeValueModel::firstOrCreate(
+            ['attribute_definition_id' => $sizeDefinitionModel->id, 'value' => 'Small'],
+            ['sort_order' => 0]
+        );
+
+        return new VariationAxis(
+            new AttributeDefinition(
+                id: (string) $sizeDefinitionModel->id,
+                code: $sizeDefinitionModel->code,
+                name: $sizeDefinitionModel->name,
+                type: AttributeType::SELECT,
+            ),
+            [new AttributeValue((string) $small->id, (string) $sizeDefinitionModel->id, 'Small')]
+        );
     }
 }

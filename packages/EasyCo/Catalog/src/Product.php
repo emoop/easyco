@@ -14,6 +14,7 @@ use EasyCo\Catalog\Exceptions\DuplicateVariationCombinationException;
 use EasyCo\Catalog\Exceptions\InvalidVariationAxisException;
 use EasyCo\Catalog\Exceptions\UnsafeAxisRedeclarationException;
 use EasyCo\Catalog\Exceptions\UnsafeProductTypeTransitionException;
+use EasyCo\Catalog\Exceptions\VariationNotRestorableException;
 
 /**
  * The Product aggregate root.
@@ -453,12 +454,14 @@ final class Product
      * True if this Product has at least one STANDARD variation whose
      * status is not ARCHIVED — the "has something sellable" check
      * publish() relies on. A separate, purpose-built helper from
-     * hasAnyStandardVariation() above (which checks by TYPE only,
-     * regardless of status, for declareVariationAxes()'s different
-     * concern) and from forceConvertToSimple()'s own inline
-     * STANDARD-and-not-ARCHIVED loop (which mutates rather than
-     * reports) — no existing helper already matched this exact boolean
-     * check, so this is new, not a duplicate of one.
+     * assertAxisChangeIsSafe()'s own local live-STANDARD-variation
+     * collection (built inline there for the directional axis-change
+     * guard, §3.17 — a different concern with a different shape: it
+     * also needs the actual variation id list, not just a boolean) and
+     * from forceConvertToSimple()'s own inline STANDARD-and-not-ARCHIVED
+     * loop (which mutates rather than reports) — no existing helper
+     * already matched this exact boolean check, so this is new, not a
+     * duplicate of one.
      */
     private function hasAnyNonArchivedStandardVariation(): bool
     {
@@ -521,16 +524,17 @@ final class Product
      * (e.g. warning about now-orphaned combinations) intentionally left
      * to the application layer, not this aggregate.
      *
-     * GUARD: refuses to change the axis set once this Product has any
-     * STANDARD variation — checked by type, not current status, so an
-     * archived STANDARD variation still blocks it (same reasoning as
-     * attemptConvertToSimple()'s guard: archiving doesn't erase the fact
-     * that the variation's combination depended on the current axes).
-     * Throws UnsafeAxisRedeclarationException. v1 has no migration path
-     * for re-validating/updating existing combinations against a new
-     * axis set — the only way to change axes is for the Product to have
-     * zero STANDARD variations. See UnsafeAxisRedeclarationException's
-     * docblock.
+     * GUARD (catalog-domain-design.md §3.17 — DIRECTIONAL, not a
+     * blanket refusal): assertAxisChangeIsSafe() compares the proposed
+     * set against the current one and against every LIVE (non-ARCHIVED)
+     * STANDARD variation. Re-declaring an identical set is always a
+     * no-op; adding a brand-new value to an existing axis is always
+     * safe; removing an axis or a value, or introducing a new axis, is
+     * refused only while it would actually orphan a live variation's
+     * combination — never because of an ARCHIVED one. See
+     * assertAxisChangeIsSafe()'s own docblock for the full rule table
+     * and UnsafeAxisRedeclarationException's docblock for what each of
+     * its three factories means.
      *
      * @param VariationAxis[] $axes
      */
@@ -538,10 +542,6 @@ final class Product
     {
         if ($this->type !== ProductType::VARIABLE) {
             throw new \LogicException('Only a VARIABLE product can declare variation axes.');
-        }
-
-        if ($this->hasAnyStandardVariation()) {
-            throw UnsafeAxisRedeclarationException::becauseStandardVariationsExist($this->id ?? '(unsaved)');
         }
 
         $byDefinitionId = [];
@@ -555,7 +555,197 @@ final class Product
             $byDefinitionId[$definitionId] = $axis;
         }
 
+        $this->assertAxisChangeIsSafe($byDefinitionId);
         $this->variationAxes = $byDefinitionId;
+    }
+
+    /**
+     * The directional compatibility check behind declareVariationAxes()'s
+     * guard — catalog-domain-design.md §3.17. $newAxesByDefinitionId is
+     * the already-validated (SELECT-only, no duplicate definition), keyed-
+     * by-attribute_definition_id map about to replace $this->variationAxes.
+     * Only LIVE (type STANDARD && status !== VariationStatus::ARCHIVED)
+     * variations are ever considered "at risk" — an ARCHIVED variation is
+     * a historical record that is never re-validated against a changing
+     * axis declaration, and its own combination rows are never touched by
+     * one; see restoreArchivedVariation() for the fail-loud check that
+     * applies instead, at the point someone actually tries to bring an
+     * archived variation back.
+     *
+     * Rules, evaluated in this order — the first one that matches decides
+     * the WHOLE operation (this does not attempt to collect every
+     * simultaneous violation across a submission that trips more than one
+     * rule for different definitions at once; the caller gets the first
+     * one found, fixes it, and resubmits):
+     *
+     *   R1. The new set is IDENTICAL to the current one (same declared
+     *       attribute_definition_id keys, and per definition the same
+     *       allowed-value id set, order-insensitive both times) => ALLOW
+     *       unconditionally, even with live variations — this is what
+     *       keeps Product::reconstituteFromStorage()-style reloads and a
+     *       plain admin re-save harmless.
+     *   R2. A currently-declared attribute_definition_id is absent from
+     *       the new set (an axis is being REMOVED) => refused while any
+     *       live STANDARD variation exists. assertValidCombination()
+     *       requires every declared axis to be supplied by every
+     *       variation, so if any live variation exists at all, it
+     *       necessarily has a value for every currently-declared axis —
+     *       removing one would make it an illegal partial combination.
+     *   R3. The new set introduces an attribute_definition_id this
+     *       Product never declared before (an axis is being ADDED) =>
+     *       refused while any live STANDARD variation exists, for the
+     *       mirror-image reason: no existing live variation can possibly
+     *       have a value for a genuinely new axis, and v1 has no
+     *       migration path that invents one for an existing combination.
+     *   R4. For a definition present in BOTH sets, one or more currently-
+     *       enabled value ids are absent from the new set (values are
+     *       being REMOVED from an otherwise-kept axis) => refused only if
+     *       at least one live variation's own attributeAssignments()
+     *       actually uses one of those specific removed values — unlike
+     *       R2/R3, this one really does check per-variation usage, since
+     *       the axis itself is being kept and most of its other values
+     *       may still be perfectly fine.
+     *   R5. Otherwise — identical axes with a pure value ADDITION, or
+     *       removing an axis/value that no LIVE variation depends on
+     *       (including a Product with zero live variations at all) =>
+     *       ALLOW.
+     *
+     * @param array<string, VariationAxis> $newAxesByDefinitionId
+     */
+    private function assertAxisChangeIsSafe(array $newAxesByDefinitionId): void
+    {
+        $currentAxes = $this->variationAxes;
+
+        if ($this->axisSetsAreIdentical($currentAxes, $newAxesByDefinitionId)) {
+            return;
+        }
+
+        $liveStandardVariations = [];
+        foreach ($this->variations as $variation) {
+            if ($variation->type() === VariationType::STANDARD && $variation->status() !== VariationStatus::ARCHIVED) {
+                $liveStandardVariations[] = $variation;
+            }
+        }
+
+        $liveVariationIds = array_map(
+            static fn (Variation $variation): string => $variation->id() ?? '(unsaved)',
+            $liveStandardVariations
+        );
+
+        // R2: a currently-declared axis is absent from the new set.
+        foreach (array_keys($currentAxes) as $definitionId) {
+            $definitionId = (string) $definitionId;
+
+            if (isset($newAxesByDefinitionId[$definitionId])) {
+                continue;
+            }
+
+            if ($liveVariationIds !== []) {
+                throw UnsafeAxisRedeclarationException::becauseLiveVariationsWouldLoseAnAxis(
+                    $this->id ?? '(unsaved)',
+                    $definitionId,
+                    $liveVariationIds
+                );
+            }
+        }
+
+        // R3: the new set introduces an axis not currently declared.
+        foreach (array_keys($newAxesByDefinitionId) as $definitionId) {
+            $definitionId = (string) $definitionId;
+
+            if (isset($currentAxes[$definitionId])) {
+                continue;
+            }
+
+            if ($liveVariationIds !== []) {
+                throw UnsafeAxisRedeclarationException::becauseNewAxisWouldInvalidateLiveVariations(
+                    $this->id ?? '(unsaved)',
+                    $definitionId,
+                    $liveVariationIds
+                );
+            }
+        }
+
+        // R4: a definition present in both sets had one or more of its
+        // allowed values removed, and a live variation actually uses one.
+        foreach ($currentAxes as $definitionId => $currentAxis) {
+            $newAxis = $newAxesByDefinitionId[$definitionId] ?? null;
+            if ($newAxis === null) {
+                // Absent entirely from the new set — R2's concern, not
+                // this one (and if we reached here, R2 already allowed it).
+                continue;
+            }
+
+            $removedValueIds = array_values(array_diff($currentAxis->allowedValueIds(), $newAxis->allowedValueIds()));
+            if ($removedValueIds === []) {
+                continue;
+            }
+
+            $dependentVariationIds = [];
+            foreach ($liveStandardVariations as $variation) {
+                $assignments = $variation->attributeAssignments();
+                $usedValueId = isset($assignments[$definitionId]) ? (string) $assignments[$definitionId] : null;
+
+                if ($usedValueId !== null && in_array($usedValueId, $removedValueIds, true)) {
+                    $dependentVariationIds[] = $variation->id() ?? '(unsaved)';
+                }
+            }
+
+            if ($dependentVariationIds !== []) {
+                throw UnsafeAxisRedeclarationException::becauseLiveVariationsUseRemovedValues(
+                    $this->id ?? '(unsaved)',
+                    $definitionId,
+                    $removedValueIds,
+                    $dependentVariationIds
+                );
+            }
+        }
+
+        // R5: nothing above tripped — allow.
+    }
+
+    /**
+     * "Identical set" per assertAxisChangeIsSafe()'s own R1: same
+     * declared attribute_definition_id keys AND, per definition, the
+     * same allowed-value id set — the order of axes and of values must
+     * never matter, only real set membership.
+     *
+     * @param array<string, VariationAxis> $currentAxes
+     * @param array<string, VariationAxis> $newAxes
+     */
+    private function axisSetsAreIdentical(array $currentAxes, array $newAxes): bool
+    {
+        $currentDefinitionIds = $this->normalizedIdSet(array_map(strval(...), array_keys($currentAxes)));
+        $newDefinitionIds = $this->normalizedIdSet(array_map(strval(...), array_keys($newAxes)));
+
+        if ($currentDefinitionIds !== $newDefinitionIds) {
+            return false;
+        }
+
+        foreach ($currentAxes as $definitionId => $currentAxis) {
+            $newAxis = $newAxes[$definitionId];
+
+            $currentValueIds = $this->normalizedIdSet($currentAxis->allowedValueIds());
+            $newValueIds = $this->normalizedIdSet($newAxis->allowedValueIds());
+
+            if ($currentValueIds !== $newValueIds) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * @param string[] $ids
+     * @return string[]
+     */
+    private function normalizedIdSet(array $ids): array
+    {
+        $unique = array_values(array_unique($ids));
+        sort($unique, SORT_STRING);
+
+        return $unique;
     }
 
     /** @return VariationAxis[] */
@@ -666,24 +856,6 @@ final class Product
     }
 
     /**
-     * True if this Product has ever had a STANDARD variation created,
-     * regardless of its current status (ARCHIVED counts too — see
-     * declareVariationAxes()'s guard for why). Deliberately a small,
-     * separate helper rather than reusing attemptConvertToSimple()'s
-     * inline check: that method is untouched by this pass on purpose.
-     */
-    private function hasAnyStandardVariation(): bool
-    {
-        foreach ($this->variations as $variation) {
-            if ($variation->type() === VariationType::STANDARD) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    /**
      * Adds a STANDARD variation for the given axis/value combination.
      *
      * Two independent layers of protection, both required:
@@ -764,6 +936,81 @@ final class Product
         }
 
         return null;
+    }
+
+    /**
+     * The EXPLICIT, merchant-facing "bring this archived variation back"
+     * operation — catalog-domain-design.md §3.17. This method and
+     * addStandardVariation()'s own archived-revival branch (via
+     * findArchivedVariationBySignature() above) are the ONLY two callers
+     * of Variation::reviveFromArchive() anywhere in this codebase:
+     * addStandardVariation()'s is the IMPLICIT case ("re-adding this
+     * exact combination reuses its identity", §3.9 — triggered merely by
+     * re-submitting the same axis values, no explicit "restore" intent
+     * required), while this one is the explicit operation of picking a
+     * specific, already-known archived Variation and asking for it back
+     * directly.
+     *
+     * No uniqueness/signature check here, unlike addStandardVariation():
+     * flipping the status of an EXISTING row can never create a
+     * duplicate signature — the DB UNIQUE(product_id, attribute_signature)
+     * index (§3.1) remains the sole authoritative guarantee, completely
+     * unaffected by this method.
+     *
+     * $variation's id/sku/barcode/attributeAssignments()/
+     * attributeSignature() are left completely untouched — the only
+     * thing that changes is status (ARCHIVED -> DRAFT, via
+     * reviveFromArchive() itself, step 5 below). is_visible/
+     * is_purchasable deliberately STAY false: Variation::archive() forced
+     * both false when this variation was retired, and revival does not
+     * silently restore them — the merchant re-enables them explicitly
+     * afterward (e.g. activate(), which also flips status to ACTIVE).
+     *
+     * Validation, in order:
+     *  1. $variation must already belong to this Product.
+     *  2. Only a STANDARD variation can be restored — a UNIVERSAL
+     *     variation is never customer-selectable and has no "restore"
+     *     concept.
+     *  3. $variation must actually be ARCHIVED — mirrors
+     *     reviveFromArchive()'s own guard, checked here first for a
+     *     clearer, Product-level error before ever reaching it.
+     *  4. The archived variation's CURRENT attributeAssignments() must
+     *     still validate against this Product's CURRENT declared axes
+     *     (assertValidCombination(), unchanged, reused as-is) — the
+     *     fail-loud check for axes that drifted since this variation was
+     *     archived (assertAxisChangeIsSafe() deliberately never blocks an
+     *     axis change on an ARCHIVED variation's behalf — see that
+     *     method's own docblock — so THIS is where that risk is finally
+     *     checked, at the point someone actually tries to bring it back).
+     *     A resulting InvalidVariationAxisException is translated into
+     *     the more specific VariationNotRestorableException.
+     *  5. Variation::reviveFromArchive().
+     */
+    public function restoreArchivedVariation(Variation $variation): void
+    {
+        if (! in_array($variation, $this->variations, true)) {
+            throw new \LogicException('This Variation does not belong to this Product.');
+        }
+
+        if ($variation->type() !== VariationType::STANDARD) {
+            throw new \LogicException('Only a STANDARD variation can be restored from the archive.');
+        }
+
+        if ($variation->status() !== VariationStatus::ARCHIVED) {
+            throw new \LogicException('restoreArchivedVariation() only applies to an ARCHIVED variation.');
+        }
+
+        try {
+            $this->assertValidCombination($variation->attributeAssignments());
+        } catch (InvalidVariationAxisException $e) {
+            throw VariationNotRestorableException::becauseItsCombinationIsNoLongerValid(
+                $variation->id() ?? '(unsaved)',
+                $variation->sku(),
+                $e->getMessage()
+            );
+        }
+
+        $variation->reviveFromArchive();
     }
 
     /**
