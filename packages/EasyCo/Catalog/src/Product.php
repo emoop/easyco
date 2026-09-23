@@ -62,10 +62,28 @@ final class Product
         private ?string $seasonId = null,
         private ?string $description = null,
         private ?string $productGroupId = null,
+        // Optional, defaulting to "now" — plain PHP DateTimeImmutable(),
+        // never Laravel's now() (CLAUDE.md rule 1: framework-agnostic).
+        // Every real creation path (createSimple()/createVariable(),
+        // and therefore CreateProduct/CreateVariableProduct/
+        // ProductController/VariableProductController/DuplicateProduct)
+        // never passes either argument, so this default is what makes
+        // "a new product starts with timelineAt = createdAt" true for
+        // every one of them with zero call-site changes — mirrors this
+        // exact codebase's own EloquentPriceResolver::resolve() ("$at =
+        // $context->at ?? new DateTimeImmutable()") default-fallback
+        // idiom, not OperationalSales\SaleLine's fully-required-param
+        // style (a financial/audit record, a materially higher-stakes
+        // case than "when was this product made").
+        private ?\DateTimeImmutable $createdAt = null,
+        private ?\DateTimeImmutable $timelineAt = null,
     ) {
         self::assertValidName($name);
         self::assertValidBaseSku($baseSku);
         self::assertValidSlug($slug);
+
+        $this->createdAt ??= new \DateTimeImmutable();
+        $this->timelineAt ??= $this->createdAt;
     }
 
     private static function assertValidName(string $name): void
@@ -216,6 +234,18 @@ final class Product
         string $slug,
         ProductStatus $status,
         CatalogVisibility $catalogVisibility,
+        // $createdAt/$timelineAt REQUIRED, not defaulted — unlike the
+        // constructor's own "now if not given" fallback (right for a
+        // brand-new Product), persisted storage always has a real value
+        // for both; a reconstituted Product must never silently invent
+        // "now" in their place. Positioned before the first defaulted
+        // param below (not appended at the end) so PHP's "no required
+        // parameter after an optional one" rule is never violated —
+        // every call site here already uses named arguments exclusively
+        // (confirmed: nothing outside this file constructs a Product
+        // positionally), so this reordering changes no call site at all.
+        \DateTimeImmutable $createdAt,
+        \DateTimeImmutable $timelineAt,
         array $variations = [],
         array $variationAxes = [],
         ?string $brandId = null,
@@ -236,6 +266,8 @@ final class Product
             seasonId: $seasonId,
             description: $description,
             productGroupId: $productGroupId,
+            createdAt: $createdAt,
+            timelineAt: $timelineAt,
         );
 
         if ($variationAxes !== []) {
@@ -273,6 +305,69 @@ final class Product
                 $variation->assignProductId($id);
             }
         }
+    }
+
+    public function createdAt(): \DateTimeImmutable
+    {
+        return $this->createdAt;
+    }
+
+    /**
+     * This Product's EFFECTIVE position in the merchant-facing product
+     * timeline — equal to createdAt() unless explicitly promote()d.
+     */
+    public function timelineAt(): \DateTimeImmutable
+    {
+        return $this->timelineAt;
+    }
+
+    /**
+     * True once this Product's timeline position has been moved later
+     * than its own createdAt — i.e. explicitly promote()d.
+     *
+     * EDGE CASE, documented deliberately: a promotion landing within
+     * the SAME SECOND as creation is indistinguishable from "not
+     * promoted" by this strict `>` comparison (timelineAt === createdAt
+     * in that narrow window) — harmless, since the timeline POSITION is
+     * identical either way; nothing about ordering or display behaves
+     * differently for that one-second case.
+     */
+    public function isPromoted(): bool
+    {
+        return $this->timelineAt > $this->createdAt;
+    }
+
+    /**
+     * Moves this Product's timeline position to $at — the merchant-
+     * facing "move to front" operation (App\Services\
+     * ProductTimelinePromoter is the only real caller). Fails loud
+     * rather than silently clamping: promoting to a point BEFORE this
+     * Product was created would place it timeline-BEHIND genuinely
+     * older products it should be shown ahead of — an obviously wrong
+     * result no caller could have intended, not a value worth
+     * tolerating.
+     *
+     * DELIBERATELY KNOWS ONLY *WHEN*, NEVER *WHY*: no reason/comment
+     * field exists or is accepted here — the merchandising motive for a
+     * promotion (a campaign, a restock, a merchant's own judgment call)
+     * is never this entity's concern, only the resulting position is.
+     */
+    public function promote(\DateTimeImmutable $at): void
+    {
+        if ($at < $this->createdAt) {
+            throw new \InvalidArgumentException(
+                "Cannot promote Product \"{$this->id}\" to {$at->format(\DATE_ATOM)}: ".
+                "that is before its own createdAt ({$this->createdAt->format(\DATE_ATOM)})."
+            );
+        }
+
+        $this->timelineAt = $at;
+    }
+
+    /** Resets this Product's timeline position back to its own createdAt — the merchant-facing "undo promote" operation. */
+    public function unpromote(): void
+    {
+        $this->timelineAt = $this->createdAt;
     }
 
     public function name(): string

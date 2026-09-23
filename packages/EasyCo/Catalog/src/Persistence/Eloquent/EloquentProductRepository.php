@@ -49,6 +49,27 @@ final class EloquentProductRepository implements ProductRepository
             $productModel->season_id = $product->seasonId();
             $productModel->product_group_id = $product->productGroupId();
 
+            if ($product->id() === null) {
+                // New product only: set created_at explicitly from the
+                // domain's own in-memory value (established at
+                // construction — Product::__construct()'s own
+                // "?? new DateTimeImmutable()" default) rather than
+                // leaving it to Eloquent's own freshTimestamp(). This is
+                // what guarantees timeline_at (set unconditionally
+                // below) is BYTE-IDENTICAL to created_at for a brand-new
+                // product, not merely "close enough" between two
+                // independently-computed `now()` instants a millisecond
+                // apart. Confirmed against the installed source
+                // (Illuminate\Database\Eloquent\Concerns\HasTimestamps::
+                // updateTimestamps(): "if (! $this->exists && ... &&
+                // ! $this->isDirty($createdAtColumn)) { $this->setCreatedAt($time); }")
+                // — setting created_at here first makes it dirty, so
+                // Eloquent's own INSERT-time auto-stamp is skipped in
+                // favour of this explicit value.
+                $productModel->created_at = $product->createdAt();
+            }
+            $productModel->timeline_at = $product->timelineAt();
+
             $this->saveProductModelWithSlugCollisionRetry($productModel, $product);
 
             if ($product->id() === null) {
@@ -570,6 +591,8 @@ final class EloquentProductRepository implements ProductRepository
             slug: $model->slug,
             status: ProductStatus::from($model->status),
             catalogVisibility: CatalogVisibility::from($model->catalog_visibility),
+            createdAt: $model->created_at->toDateTimeImmutable(),
+            timelineAt: $model->timeline_at->toDateTimeImmutable(),
             variations: $variations,
             variationAxes: $variationAxes,
             brandId: $model->brand_id !== null ? (string) $model->brand_id : null,

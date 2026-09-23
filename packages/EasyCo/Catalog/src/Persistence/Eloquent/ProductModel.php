@@ -38,6 +38,7 @@ class ProductModel extends Model
 
     protected $casts = [
         'is_featured' => 'boolean',
+        'timeline_at' => 'datetime',
     ];
 
     public function variations(): HasMany
