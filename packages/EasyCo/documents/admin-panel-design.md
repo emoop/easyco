@@ -712,3 +712,62 @@ accepted for now; no settings key or settings UI exists yet.
   space) — a typography question, not decided here.
 - Decimal-separator/locale formatting — the app keeps `49.99`, never
   `49,99`, in this pass.
+
+### 13.8 Product timeline — default sort and "Избутай напред" (promote/unpromote)
+
+**Implemented, retroactive record.** Closes a real gap: the product
+list had no meaningful default order at all (no `->defaultSort()`
+existed prior to this pass) — rows simply came back in whatever order
+MySQL happened to return them. The list now defaults to
+`catalog_products.timeline_at DESC` (catalog-domain-design.md §3.18) —
+newest, or most-recently-promoted, first.
+
+**Default sort mechanism:** `ProductResource::table()` calls
+`->defaultSort('timeline_at', 'desc')` on the `Table` builder itself —
+deliberately NOT folded into the existing `modifyQueryUsing()` closure,
+which is reserved for the archived-only filter's own query
+pre-conditioning and nothing else. Confirmed against the installed
+Filament v5.8.1 source
+(`Filament\Tables\Concerns\CanSortRecords::applySortingToTableQuery()`):
+a user's own column sort is applied to the query FIRST; the table's
+default sort is then ALSO applied afterward, guarded only by "is this
+the same column the user already sorted by" — so clicking a sortable
+column (e.g. `name`) becomes the PRIMARY sort key, with `timeline_at`
+reduced to a secondary tie-break, never silently suppressed or
+overridden outright. The stable `id DESC` tie-break required by D5
+needed no code of its own: `Table::$hasDefaultKeySort` defaults to
+`true`, and the same method automatically appends
+`ORDER BY catalog_products.id DESC` (matching whatever direction is
+active) whenever the query isn't already ordered by the key column —
+exactly the `(timeline_at, id)` pair the new composite index backs.
+
+**Two row actions**, in the existing `ActionGroup` alongside
+View/Edit/Duplicate, both gated by the SAME permission as Edit
+(`canEdit()`, no new dedicated permission) and hidden for an ARCHIVED
+product (an archived product has no timeline position worth moving —
+`ProductTimelinePromoter`'s own `CannotPromoteArchivedProductException`
+is the defense-in-depth behind this UI guard, never trusted alone):
+- **Promote** ("Избутай напред" / "Move to front",
+  `heroicon-o-bars-arrow-up` — deliberately not an upload icon) —
+  requires confirmation, calls `ProductTimelinePromoter::promote()`
+  with `new DateTimeImmutable()` taken at this exact Livewire-action
+  edge (never inside the service itself), success notification.
+- **Undo / unpromote** (`heroicon-o-bars-arrow-down`) — visible ONLY
+  when the row is actually promoted, checked directly off the already-
+  loaded table row's own cast Carbon columns
+  (`$record->timeline_at->gt($record->created_at)`, the identical
+  strict comparison `Product::isPromoted()` itself uses) rather than a
+  fresh per-row domain reload — requires confirmation, calls
+  `ProductTimelinePromoter::unpromote()`, success notification.
+
+**Duplicate needed no change at all:** `DuplicateProduct` already calls
+`Product::createSimple()` with no `createdAt`/`timelineAt` override, so
+the domain's own "defaults to now" construction (§3.18) already makes
+every duplicate start un-promoted, even when the source was promoted —
+confirmed with a real test, not merely asserted by inspection.
+
+**Deferred, explicitly:**
+- Storefront ordering by `timeline_at` — this pass is the admin panel
+  only.
+- A bulk "promote" action across multiple selected rows.
+- Any merchant-API exposure of promote/unpromote (JSON API surface).

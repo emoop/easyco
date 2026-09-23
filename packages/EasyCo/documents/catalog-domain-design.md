@@ -466,6 +466,93 @@ redefining the uniqueness strategy (§3.1, `VariationSignature`'s
 determinism assumes a complete, fixed set of assignments per
 variation) and is out of scope here.
 
+### 3.18 Product timeline: `timeline_at`, promote/unpromote ("Избутай напред")
+
+**Decision:** `catalog_products.timeline_at` is a product's EFFECTIVE
+position in the merchant-facing product timeline — the single column
+both the admin listing and a future storefront ordering will sort by.
+Always equal to `created_at` unless a merchant explicitly promotes the
+product; NOT NULL, indexed `(timeline_at, id)`. Ordering is always a
+plain `ORDER BY timeline_at DESC, id DESC` — no `COALESCE`, no second
+"is this promoted" source of truth to keep in sync.
+
+**Why not `updated_at`:** `updated_at` changes on every ordinary edit
+(a description tweak, a price change, a photo swap) — using it as a
+timeline signal would silently "bump" a product to the front every
+time a merchant fixes a typo, the opposite of the deliberate,
+merchant-chosen "move to front" this feature actually is (§D7-style
+rule: no automatic promotion, ever — see below).
+
+**Why not a nullable `promoted_at` + `COALESCE(promoted_at, created_at)`
+at read time:** two real, concrete costs, not a style preference.
+(1) `COALESCE(...)` is a non-indexable expression — MySQL cannot use a
+plain B-tree index to satisfy `ORDER BY COALESCE(promoted_at,
+created_at) DESC`, forcing a filesort on every listing render as the
+catalog grows, exactly the kind of query the `(timeline_at, id)` index
+here is built to avoid. (2) it is two columns that can, by construction,
+independently drift — a place `promoted_at` and `created_at` could end
+up mutually inconsistent with each other is a bug surface `timeline_at`
+alone (a single column, single source of truth) cannot have.
+
+**`Product` API (pure PHP, no framework import — CLAUDE.md rule 1):**
+- `createdAt(): DateTimeImmutable` — added as prerequisite
+  infrastructure; the entity did not previously expose this at all
+  (confirmed by reading the class before this pass, not assumed).
+- `timelineAt(): DateTimeImmutable`.
+- `isPromoted(): bool` — `timelineAt() > createdAt()`, strict. EDGE
+  CASE, deliberate: a promotion landing within the SAME SECOND as
+  creation is indistinguishable from "not promoted" by this comparison
+  — harmless, since the timeline POSITION is identical either way;
+  nothing about ordering or display behaves differently for that
+  one-second window.
+- `promote(DateTimeImmutable $at): void` — fails loud
+  (`InvalidArgumentException`) if `$at < createdAt()`: promoting to a
+  point before the product was created would place it timeline-BEHIND
+  genuinely older products it should be shown ahead of, an obviously
+  wrong result no caller could have intended.
+- `unpromote(): void` — resets `timelineAt` to `createdAt`,
+  unconditionally (idempotent; the caller, `App\Services\
+  ProductTimelinePromoter`, is what turns "already not promoted" into a
+  true no-op with no write and no log entry — see admin-panel-design.md).
+- The entity knows only **when** a promotion happened, never **why** —
+  no reason/comment field exists or is accepted. The merchandising
+  motive (a campaign, a restock, a merchant's own judgment call) is an
+  app-layer/display concern, never this entity's.
+
+**`createdAt`/`timelineAt` are optional constructor parameters,
+defaulting to "now"** (a plain `new DateTimeImmutable()`, never
+Laravel's `now()` — this codebase's own established
+`EloquentPriceResolver::resolve()` default-fallback idiom, `$at =
+$context->at ?? new DateTimeImmutable()`) — deliberately NOT
+`OperationalSales\SaleLine`'s fully-required-parameter style, which is
+right for a financial/audit record but unnecessarily heavy for "when
+was this product made." This is what makes "a new product starts with
+`timelineAt = createdAt`" true, with zero call-site changes, for every
+one of this project's real Product-creation paths
+(`CreateProduct`/`CreateVariableProduct`/`ProductController`/
+`VariableProductController`/`DuplicateProduct` — confirmed by grep, none
+of the five pass either argument). `reconstituteFromStorage()` takes
+both as REQUIRED parameters instead — persisted storage always has a
+real value for both, and reconstitution must never silently invent
+"now" in their place.
+
+**Persistence:** for a brand-new product, `EloquentProductRepository`
+sets `created_at` explicitly from the domain's own in-memory value
+before `save()` (making the attribute "dirty"), rather than leaving it
+to Eloquent's own auto-timestamp — confirmed against the installed
+Eloquent source (`HasTimestamps::updateTimestamps()` skips its own
+`freshTimestamp()` for an already-dirty `created_at`), which is what
+guarantees `timeline_at` is byte-identical to `created_at` for a new
+row, not merely "close enough" between two independently-computed
+`now()` calls milliseconds apart. `timeline_at` itself is written
+unconditionally on every `save()`, new or existing.
+
+**No automatic promotion, ever:** no observer, no hook, nothing fires
+`promote()` as a side effect of any other edit (an image upload, a
+price change, a status transition). The only caller is the explicit
+merchant action — see admin-panel-design.md's own entry for the row
+actions.
+
 ## 4. Entities
 
 ### 4.1 Product (aggregate root)
