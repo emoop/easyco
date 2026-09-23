@@ -1270,15 +1270,73 @@ class ProductResource extends Resource
                 ->label(__('products.fields.season_id')),
             TextEntry::make('productGroup.name')
                 ->label(__('products.fields.product_group_id')),
+            // regular_price/sale_price are now TWO DIMENSIONS OF THE
+            // SAME PriceRange, NOT a combined "struck-through +
+            // sale" rendering the way the list column's price_display
+            // is (see priceRangeHtml()'s own docblock for that
+            // distinction) — each reads its own PriceRange accessor and
+            // is prefixed independently.
+            //
+            // regular_price -> lowestRegularPrice(): the minimum regular
+            // (pre-discount) dimension across this product's priced,
+            // non-archived variations, prefixed with
+            // __('products.price_from').' ' whenever
+            // hasUniformRegularPrice() is false (i.e. the variations'
+            // regular prices genuinely differ). Blank when the product
+            // has no priced variation at all.
+            //
+            // sale_price -> lowestDiscountedFinalQuote()?->final: the
+            // minimum FINAL price among quotes that are currently
+            // discounted, prefixed the same way when
+            // hasUniformDiscountedFinalPrice() is false. BLANK WHEN
+            // NOTHING IS DISCOUNTED — this is what keeps the SIMPLE
+            // no-sale case identical to today apart from the symbol.
+            //
+            // ACCEPTED CONSEQUENCE, deliberate, not a bug: this field
+            // now shows the effective discounted price, which may come
+            // from a percentage-off campaign (PERCENTAGE_OFF_REGULAR)
+            // rather than specifically the "Manual Sale" system list —
+            // the same "show what the customer actually pays" principle
+            // already governing the list column's own price_display, no
+            // second, alternative definition kept in parallel.
+            //
             // Same COST_VIEW visibility gate as the form's own cost
             // field — confirmed explicitly by the domain owner as a
             // both-surfaces requirement, not form-only.
             TextEntry::make('regular_price')
                 ->label(__('products.fields.regular_price'))
-                ->getStateUsing(fn (ProductModel $record): ?string => app(ProductPricingAndStock::class)->regularPriceDisplay(static::universalVariationId($record))),
+                ->getStateUsing(function (ProductModel $record): ?string {
+                    $priceRange = app(ProductPriceRangeProvider::class)->forProduct((string) $record->id);
+                    $lowestRegular = $priceRange->lowestRegularPrice();
+
+                    if ($lowestRegular === null) {
+                        return null;
+                    }
+
+                    $formatted = app(PriceDisplayFormatter::class)->format(
+                        $lowestRegular->gross()->decimalValue(),
+                        $lowestRegular->gross()->currency()
+                    );
+
+                    return $priceRange->hasUniformRegularPrice() ? $formatted : __('products.price_from').' '.$formatted;
+                }),
             TextEntry::make('sale_price')
                 ->label(__('products.fields.sale_price'))
-                ->getStateUsing(fn (ProductModel $record): ?string => app(ProductPricingAndStock::class)->salePriceDisplay(static::universalVariationId($record))),
+                ->getStateUsing(function (ProductModel $record): ?string {
+                    $priceRange = app(ProductPriceRangeProvider::class)->forProduct((string) $record->id);
+                    $lowestDiscountedFinal = $priceRange->lowestDiscountedFinalQuote();
+
+                    if ($lowestDiscountedFinal === null) {
+                        return null;
+                    }
+
+                    $formatted = app(PriceDisplayFormatter::class)->format(
+                        $lowestDiscountedFinal->final->gross()->decimalValue(),
+                        $lowestDiscountedFinal->final->gross()->currency()
+                    );
+
+                    return $priceRange->hasUniformDiscountedFinalPrice() ? $formatted : __('products.price_from').' '.$formatted;
+                }),
             TextEntry::make('cost')
                 ->label(__('products.fields.cost'))
                 ->visible(fn (): bool => static::staffCanForAction(Permission::COST_VIEW))

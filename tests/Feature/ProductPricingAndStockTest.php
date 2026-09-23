@@ -279,4 +279,26 @@ class ProductPricingAndStockTest extends TestCase
         Livewire::test(ViewProduct::class, ['record' => $product->id])
             ->assertSchemaComponentHidden('cost');
     }
+
+    /**
+     * Prompt B's own View-page rendering: regular_price/sale_price are
+     * now two PriceRange dimensions. This is the SIMPLE-product half of
+     * the coverage the task asked for — a product with a regular price
+     * and NO sale must show a blank sale_price (the accepted-consequence
+     * rule: sale_price shows the effective discounted price, blank when
+     * nothing is discounted, keeping the no-sale case identical to
+     * before apart from the currency symbol).
+     */
+    public function test_view_page_shows_the_currency_symbol_and_a_blank_sale_price_when_nothing_is_discounted(): void
+    {
+        $this->actingAsStaffRole('Administrator');
+
+        $product = $this->createSimpleProduct('No Sale', 'no-sale', [
+            'regular_price' => '29.99',
+        ]);
+
+        Livewire::test(ViewProduct::class, ['record' => $product->id])
+            ->assertSchemaComponentStateSet('regular_price', '29.99 €')
+            ->assertSchemaComponentStateSet('sale_price', null);
+    }
 }

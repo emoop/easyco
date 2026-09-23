@@ -37,6 +37,13 @@ use EasyCo\Catalog\VariationAxis;
 use EasyCo\Media\Contracts\ProductMediaRepository;
 use EasyCo\Media\Exceptions\MediaLimitExceededException;
 use EasyCo\Media\Persistence\Eloquent\MediaAssetModel;
+use EasyCo\Pricing\Contracts\PriceListItemRepository;
+use EasyCo\Pricing\Contracts\PriceListRepository;
+use EasyCo\Pricing\Enums\PriceListItemTargetType;
+use EasyCo\Pricing\Money;
+use EasyCo\Pricing\Price;
+use EasyCo\Pricing\PriceListItem;
+use EasyCo\Pricing\Seeders\PricingSystemListsSeeder;
 use EasyCo\Staff\Contracts\PasswordHasher;
 use EasyCo\Staff\Contracts\RoleRepository;
 use EasyCo\Staff\Contracts\StaffRepository;
@@ -1269,6 +1276,54 @@ class ProductResourceTest extends TestCase
 
         Livewire::test(ViewProduct::class, ['record' => $variableModel->id])
             ->assertSuccessful();
+    }
+
+    /**
+     * Prompt B's own View-page rendering, the VARIABLE half of the
+     * task's required coverage: two differently-priced variations must
+     * show 'от …' on regular_price (hasUniformRegularPrice() false) —
+     * confirms the infolist reads a real, resolver-backed PriceRange,
+     * not the old universalVariationId()-only lookup a VARIABLE product
+     * never actually had a value for.
+     */
+    public function test_view_page_shows_from_prefix_for_a_variable_products_non_uniform_regular_price(): void
+    {
+        app(PricingSystemListsSeeder::class)->run(app(PriceListRepository::class));
+        $this->actingAsPanelAdministrator();
+
+        $definition = new AttributeDefinition(id: null, code: 'size-from', name: 'Size', type: AttributeType::SELECT);
+        app(AttributeDefinitionRepository::class)->save($definition);
+        $small = new AttributeValue(id: null, attributeDefinitionId: $definition->id(), value: 'S');
+        $medium = new AttributeValue(id: null, attributeDefinitionId: $definition->id(), value: 'M');
+        app(AttributeValueRepository::class)->save($small);
+        app(AttributeValueRepository::class)->save($medium);
+
+        $variableProduct = Product::createVariable('Variable From', 'SKU-VAR-FROM', 'variable-from');
+        $variableProduct->declareVariationAxes([new VariationAxis($definition, [$small, $medium])]);
+        $variationSmall = $variableProduct->addStandardVariation([$definition->id() => $small->id()], 'SKU-VAR-FROM-S');
+        $variationSmall->activate();
+        $variationMedium = $variableProduct->addStandardVariation([$definition->id() => $medium->id()], 'SKU-VAR-FROM-M');
+        $variationMedium->activate();
+        app(ProductRepository::class)->save($variableProduct);
+
+        $regularList = app(PriceListRepository::class)->findSystemListByName('Regular Prices');
+        $addItem = function (string $variationId, string $decimal) use ($regularList): void {
+            app(PriceListItemRepository::class)->save(new PriceListItem(
+                id: null,
+                priceListId: $regularList->id(),
+                targetType: PriceListItemTargetType::VARIATION,
+                targetId: $variationId,
+                price: Price::inclusiveOfTax(Money::fromDecimal($decimal, 'EUR'), 0),
+            ));
+        };
+        $addItem($variationSmall->id(), '49.99');
+        $addItem($variationMedium->id(), '69.99');
+
+        $variableModel = ProductModel::find($variableProduct->id());
+
+        Livewire::test(ViewProduct::class, ['record' => $variableModel->id])
+            ->assertSchemaComponentStateSet('regular_price', __('products.price_from').' 49.99 €')
+            ->assertSchemaComponentStateSet('sale_price', null);
     }
 
     private function translatedDuplicateSuffix(): string

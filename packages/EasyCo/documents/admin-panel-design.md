@@ -625,3 +625,90 @@ bulk variation-edit spreadsheet-style UI (still a possible future
 step, not scoped here); per-variation media was already closed by an
 earlier pass, unrelated to this one; `size_guide_id` remains unwired
 into either admin flow.
+
+### 13.7 Product list price column and View page — a resolver-backed price range
+
+**Implemented, retroactive record ("Prompt B").** Closes a real,
+confirmed defect: the list column's old `priceMinorSubquery()` was a
+correlated, un-ordered `LIMIT 1` subquery over a product's FIRST
+variation's own VARIATION-level system-list item only — no fallback to
+a PRODUCT-level item, no notion of "which variation" for a VARIABLE
+product at all. Any product priced at PRODUCT level, and every VARIABLE
+product, therefore always showed "—", regardless of whether it was
+actually priced. Both the list column and the View page's
+`regular_price`/`sale_price` entries now render through
+`EasyCo\Pricing\PriceRange`, resolved by `App\Services\
+ProductPriceRangeProvider` — the same resolver-backed range a future
+storefront will eventually reuse, one source of truth instead of two
+special-cased renderers (one per product type, as before).
+
+**List column (`price_display`), exact rule:** an empty range → `'—'`;
+otherwise the range's `lowestFinalQuote()` — a plain amount, or
+struck-through regular + final when that same quote `isDiscounted()`
+— prefixed with `от `/`from ` (`products.price_from`) whenever
+`hasUniformFinalPrice()` is false, i.e. this product's variations do
+not all currently resolve to the same final price. No min-max range
+display, no "Sale!" badge, no extra colouring — all deferred (see
+below). The column is **not sortable**: a `PriceRange` has no single
+scalar column to `ORDER BY` (its lowest-final is computed per page, in
+memory, from a batched resolve).
+
+**View page, `regular_price`/`sale_price` — two independent
+DIMENSIONS of the same `PriceRange`, not the combined struck-through
+rendering the list column uses:**
+- `regular_price` → `lowestRegularPrice()`, prefixed the same way
+  whenever `hasUniformRegularPrice()` is false; blank when nothing is
+  priced.
+- `sale_price` → `lowestDiscountedFinalQuote()`'s own `final`, prefixed
+  whenever `hasUniformDiscountedFinalPrice()` is false; **blank when
+  nothing is currently discounted** — keeps a SIMPLE product with no
+  sale rendering identically to before this pass, apart from the
+  currency symbol.
+- **Accepted consequence:** `sale_price` now shows the effective
+  discounted price regardless of *which* PriceList produced it — it may
+  come from a percentage-off campaign rather than specifically the
+  "Manual Sale" system list. Same "show what the customer actually
+  pays" principle already governing the list column; no second,
+  parallel definition was built to keep the field "Manual-Sale-only."
+- `cost`/`stock_quantity` are untouched by this pass.
+
+**Batching, not one query per row:** the list column resolves the
+WHOLE current page's ranges in one `ProductPriceRangeProvider::
+forProducts()` call, using two real, confirmed Filament v5.8.1
+internals — a column closure's `$livewire` parameter is injected BY
+NAME (`Column::resolveDefaultClosureDependencyForEvaluationByName()`),
+and `HasRecords::getTableRecords()` memoizes the page's own records
+(`$cachedTableRecords`) so calling it once per row never re-runs the
+table's own query. Combined with `ProductPriceRangeProvider`'s own
+per-request (`scoped()`) memoization, the first row on a page triggers
+one real batched resolve; every later row is a pure in-memory cache
+hit — proven by a real query-count test (a 5-row and a 25-row page
+issue the identical number of queries). A non-table-bearing `$livewire`
+(a relation manager, an export) falls back to a single-product resolve,
+kept correct but unbatched.
+
+**Currency symbol — `App\Services\PriceDisplayFormatter`, one
+temporary source.** A small, hardcoded currency-code → symbol map,
+suffix position (`"49.99 €"`), the symbol always taken from the
+resolved `Price`'s own currency, never a fresh `DefaultCurrency::get()`
+at render time. Deliberately temporary and stated as such in the
+class's own docblock: suffix position is atypical for USD/GBP,
+accepted for now; no settings key or settings UI exists yet.
+
+**Deferred, explicitly, not accidental:**
+- The currency-display settings task — an admin Settings toggle for
+  symbol on/off and a left/right position choice (suggested keys:
+  `site.currency_symbol_enabled` / `site.currency_symbol_position`),
+  which will move the source of both into `SiteSettingsRepository`
+  **inside `PriceDisplayFormatter` only**, with zero call-site changes.
+- Storefront rendering of a `PriceRange` at all — this pass is the
+  admin panel only.
+- A min-max range display (`"19.99 - 29.99 €"`) — `PriceRange` itself
+  has no `highest*` accessor yet (pricing-domain-design.md §4.4's own
+  explicit decision); purely additive later.
+- A "partially priced" badge for a product where only some variations
+  resolved a price.
+- NBSP between the amount and the symbol (currently one ordinary
+  space) — a typography question, not decided here.
+- Decimal-separator/locale formatting — the app keeps `49.99`, never
+  `49,99`, in this pass.
