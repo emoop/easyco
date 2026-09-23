@@ -217,17 +217,18 @@ class CreateVariableProductTest extends TestCase
     }
 
     /**
-     * The exact scenario this task's own goal calls out explicitly:
-     * submitting the wizard redirects to the real 'view' page (Filament's
-     * own default CreateRecord::getRedirectUrl(), not overridden here),
-     * and that page's infolist renders without error for a VARIABLE
-     * product with zero variations — regular_price/sale_price/cost/
-     * stock_quantity all resolve through
-     * ProductResource::universalVariationId(), which degrades to an
-     * empty-string variation id rather than throwing (confirmed here via
-     * a real HTTP GET, not trusted from the task description alone).
+     * WHERE THE WIZARD ENDS — the exact scenario this fix closes:
+     * submitting the wizard used to land on the 'view' page (Filament's
+     * own default CreateRecord::getRedirectUrl(), not overridden then),
+     * which shows a product with no prices and no stock and nothing to
+     * click, while the wizard itself deliberately creates no prices and
+     * no stock at all. The merchant's real next step is
+     * EditVariableProduct's Variations tab — the bulk cost/stock fields
+     * plus every row's own cost/stock/regular/sale price — so that is
+     * where getRedirectUrl() now sends them, with the tab activated by
+     * the same query string key that tab's own ->id() matches.
      */
-    public function test_after_creation_the_redirect_lands_on_view_and_it_renders_for_a_variation_less_product(): void
+    public function test_after_creation_the_redirect_lands_on_the_variations_tab_of_the_edit_page(): void
     {
         $this->actingAsPanelAdministrator();
 
@@ -242,7 +243,85 @@ class CreateVariableProductTest extends TestCase
 
         $productModel = ProductModel::where('slug', 'bare-variable-product')->firstOrFail();
 
-        $component->assertRedirect(ProductResource::getUrl('view', ['record' => $productModel]));
+        $component->assertRedirect(ProductResource::getUrl('edit-variable', [
+            'record' => $productModel,
+            'tab' => ProductResource::VARIATIONS_TAB_ID,
+        ]));
+
+        // The destination itself has to render for a product with zero
+        // variations at this point in its life. That the tab id in this
+        // URL is the id the Variations tab actually carries is asserted
+        // on the page itself —
+        // EditVariableProductTest::test_the_variations_tab_is_activated_by_the_url_query_string().
+        $this->get(ProductResource::getUrl('edit-variable', [
+            'record' => $productModel,
+            'tab' => ProductResource::VARIATIONS_TAB_ID,
+        ]))->assertOk();
+    }
+
+    /**
+     * Filament's own "created" toast is replaced by one that says what is
+     * still missing (prices/stock) and offers a direct link to the
+     * read-only View page — the merchant lands on the price & stock
+     * screen, but the overview stays one click away.
+     *
+     * Asserted on the real Notification object, which is why
+     * getCreatedNotification() is public (the same visibility-widening
+     * precedent ProductResource::sidebarComponents() already
+     * established) — the action's own label/URL cannot be asserted
+     * through assertNotified()'s title-only string form.
+     */
+    public function test_the_created_notification_says_what_is_next_and_links_to_the_view_page(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        $component = Livewire::test(CreateVariableProduct::class)
+            ->fillForm([
+                'name' => 'Notified Variable Product',
+                'slug' => 'notified-variable-product',
+                'base_sku' => 'VAR-SKU-NOTIFY',
+            ])
+            ->call('create')
+            ->assertHasNoFormErrors()
+            ->assertNotified(__('products.created_notification.title'));
+
+        $productModel = ProductModel::where('slug', 'notified-variable-product')->firstOrFail();
+
+        $actions = $component->instance()->getCreatedNotification()?->getActions();
+
+        $this->assertNotNull($actions);
+        $this->assertCount(1, $actions);
+        $this->assertSame(__('products.created_notification.view_action'), $actions[0]->getLabel());
+        $this->assertSame(
+            ProductResource::getUrl('view', ['record' => $productModel]),
+            $actions[0]->getUrl()
+        );
+    }
+
+    /**
+     * Still a real regression guard, just no longer the redirect's own
+     * subject: the View page renders without error for a VARIABLE product
+     * with zero variations — regular_price/sale_price/cost/
+     * stock_quantity all resolve through
+     * ProductResource::universalVariationId(), which degrades to an
+     * empty-string variation id rather than throwing (confirmed via a
+     * real HTTP GET and a real Livewire render, not trusted from the task
+     * description alone).
+     */
+    public function test_the_view_page_still_renders_for_a_variation_less_product(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        Livewire::test(CreateVariableProduct::class)
+            ->fillForm([
+                'name' => 'Bare Variable Product',
+                'slug' => 'bare-variable-product',
+                'base_sku' => 'VAR-SKU-BARE',
+            ])
+            ->call('create')
+            ->assertHasNoFormErrors();
+
+        $productModel = ProductModel::where('slug', 'bare-variable-product')->firstOrFail();
 
         $this->get(ProductResource::getUrl('view', ['record' => $productModel]))
             ->assertOk()

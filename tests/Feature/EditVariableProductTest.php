@@ -50,6 +50,7 @@ use EasyCo\Staff\Contracts\RoleRepository;
 use EasyCo\Staff\Contracts\StaffRepository;
 use EasyCo\Staff\Seeders\StaffSystemRolesSeeder;
 use EasyCo\Staff\Staff;
+use Filament\Schemas\Components\Tabs;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
@@ -2212,5 +2213,64 @@ class EditVariableProductTest extends TestCase
             ->map(static fn ($id): string => (string) $id)
             ->values()
             ->all();
+    }
+
+    /**
+     * The DEEP LINK the creation wizard's own getRedirectUrl() sends the
+     * merchant to: ?tab=variations activates the Variations tab, matched
+     * by that tab's own explicit ->id() — NOT by its label, which is what
+     * Tabs::getActiveTab() falls back to when no id is set (and which
+     * would make the link depend on the panel's language).
+     *
+     * Asserted on the real Tabs component's own public getActiveTab(),
+     * never on rendered HTML classes; the component is resolved through
+     * the form schema's own recursive getComponent() search.
+     */
+    public function test_the_variations_tab_is_activated_by_the_url_query_string(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        [$product] = $this->persistedVariableProductWithTwoVariations();
+        $productModel = ProductModel::find($product->id());
+
+        $tabs = Livewire::withQueryParams(['tab' => ProductResource::VARIATIONS_TAB_ID])
+            ->test(EditVariableProduct::class, ['record' => $productModel->id])
+            ->instance()->form->getComponent(fn ($component): bool => $component instanceof Tabs);
+
+        $this->assertInstanceOf(Tabs::class, $tabs);
+
+        // The 4th tab is Variations (General, Attributes, Axes, Variations)
+        // — asserted by its own id first, so the position assertion below
+        // cannot silently pass against a different tab.
+        $this->assertSame(
+            ProductResource::VARIATIONS_TAB_ID,
+            $tabs->getChildSchema()->getComponents()[3]->getId()
+        );
+
+        $this->assertSame(4, $tabs->getActiveTab());
+    }
+
+    /**
+     * The other half of the same mechanism: no tab parameter at all, and
+     * an unrecognized one, both fall back to the first tab rather than
+     * erroring — the URL is a deep link, never a required input.
+     */
+    public function test_an_absent_or_unknown_tab_query_string_falls_back_to_the_first_tab(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        [$product] = $this->persistedVariableProductWithTwoVariations();
+        $productModel = ProductModel::find($product->id());
+
+        $tabs = fn () => Livewire::test(EditVariableProduct::class, ['record' => $productModel->id])
+            ->instance()->form->getComponent(fn ($component): bool => $component instanceof Tabs);
+
+        $this->assertSame(1, $tabs()->getActiveTab());
+
+        $unknownTabTabs = Livewire::withQueryParams(['tab' => 'not-a-real-tab'])
+            ->test(EditVariableProduct::class, ['record' => $productModel->id])
+            ->instance()->form->getComponent(fn ($component): bool => $component instanceof Tabs);
+
+        $this->assertSame(1, $unknownTabTabs->getActiveTab());
     }
 }
