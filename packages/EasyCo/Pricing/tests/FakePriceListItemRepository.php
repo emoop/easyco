@@ -55,4 +55,14 @@ final class FakePriceListItemRepository implements PriceListItemRepository
 
         return null;
     }
+
+    public function findByPriceListIdAndTargets(string $priceListId, PriceListItemTargetType $targetType, array $targetIds): array
+    {
+        return array_values(array_filter(
+            $this->items,
+            fn (PriceListItem $item) => $item->priceListId() === $priceListId
+                && $item->targetType() === $targetType
+                && in_array($item->targetId(), $targetIds, true)
+        ));
+    }
 }

@@ -128,4 +128,96 @@ class EloquentPriceListItemRepositoryTest extends TestCase
 
         $this->assertSame([], $this->repository()->findByPriceListId($priceListId));
     }
+
+    public function test_find_by_price_list_id_and_targets_returns_empty_for_an_empty_id_list(): void
+    {
+        $priceListId = $this->persistedPriceListId();
+
+        $this->assertSame(
+            [],
+            $this->repository()->findByPriceListIdAndTargets($priceListId, PriceListItemTargetType::VARIATION, [])
+        );
+    }
+
+    public function test_find_by_price_list_id_and_targets_isolates_by_target_id_and_type(): void
+    {
+        $priceListId = $this->persistedPriceListId();
+
+        $variationItem = new PriceListItem(
+            id: null,
+            priceListId: $priceListId,
+            targetType: PriceListItemTargetType::VARIATION,
+            targetId: 'variation-1',
+            price: Price::exclusiveOfTax(Money::fromDecimal('9.99', 'EUR'), 2000),
+        );
+        $this->repository()->save($variationItem);
+
+        // Same targetId, different type — must never be returned by a
+        // VARIATION-scoped lookup.
+        $productItem = new PriceListItem(
+            id: null,
+            priceListId: $priceListId,
+            targetType: PriceListItemTargetType::PRODUCT,
+            targetId: 'variation-1',
+            price: Price::exclusiveOfTax(Money::fromDecimal('99.99', 'EUR'), 2000),
+        );
+        $this->repository()->save($productItem);
+
+        // A completely unrelated target — must never leak into results
+        // for the requested id set.
+        $otherItem = new PriceListItem(
+            id: null,
+            priceListId: $priceListId,
+            targetType: PriceListItemTargetType::VARIATION,
+            targetId: 'variation-2',
+            price: Price::exclusiveOfTax(Money::fromDecimal('19.99', 'EUR'), 2000),
+        );
+        $this->repository()->save($otherItem);
+
+        $results = $this->repository()->findByPriceListIdAndTargets(
+            $priceListId,
+            PriceListItemTargetType::VARIATION,
+            ['variation-1', 'variation-99-not-present']
+        );
+
+        $this->assertCount(1, $results);
+        $this->assertSame('variation-1', $results[0]->targetId());
+        $this->assertSame(PriceListItemTargetType::VARIATION, $results[0]->targetType());
+    }
+
+    public function test_find_by_price_list_id_and_targets_returns_every_min_quantity_row_for_a_target(): void
+    {
+        $priceListId = $this->persistedPriceListId();
+
+        $tierOne = new PriceListItem(
+            id: null,
+            priceListId: $priceListId,
+            targetType: PriceListItemTargetType::VARIATION,
+            targetId: 'variation-1',
+            price: Price::exclusiveOfTax(Money::fromDecimal('22.00', 'EUR'), 2000),
+            minQuantity: 1,
+        );
+        $this->repository()->save($tierOne);
+
+        $tierTen = new PriceListItem(
+            id: null,
+            priceListId: $priceListId,
+            targetType: PriceListItemTargetType::VARIATION,
+            targetId: 'variation-1',
+            price: Price::exclusiveOfTax(Money::fromDecimal('19.00', 'EUR'), 2000),
+            minQuantity: 10,
+        );
+        $this->repository()->save($tierTen);
+
+        $results = $this->repository()->findByPriceListIdAndTargets(
+            $priceListId,
+            PriceListItemTargetType::VARIATION,
+            ['variation-1']
+        );
+
+        $this->assertCount(2, $results);
+        $minQuantities = array_map(fn (PriceListItem $item) => $item->minQuantity(), $results);
+        sort($minQuantities);
+        $this->assertSame([1, 10], $minQuantities);
+    }
 }

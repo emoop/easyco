@@ -76,6 +76,20 @@ final class EloquentPriceListItemRepository implements PriceListItemRepository
         return $model !== null ? $this->toDomainItem($model) : null;
     }
 
+    public function findByPriceListIdAndTargets(string $priceListId, PriceListItemTargetType $targetType, array $targetIds): array
+    {
+        if ($targetIds === []) {
+            return [];
+        }
+
+        return PriceListItemModel::where('price_list_id', $priceListId)
+            ->where('target_type', $targetType->value)
+            ->whereIn('target_id', $targetIds)
+            ->get()
+            ->map(fn (PriceListItemModel $model) => $this->toDomainItem($model))
+            ->all();
+    }
+
     private function toDomainItem(PriceListItemModel $model): PriceListItem
     {
         $money = Money::fromMinorUnits($model->price_amount_minor, Currency::of($model->price_currency));

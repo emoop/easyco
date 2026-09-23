@@ -27,4 +27,19 @@ interface PriceListItemRepository
      * waste.
      */
     public function findByPriceListIdAndTarget(string $priceListId, PriceListItemTargetType $targetType, string $targetId): ?PriceListItem;
+
+    /**
+     * The set-based sibling of findByPriceListIdAndTarget() above — same
+     * reasoning, extended to a batch: FixedItemsPriceLookup::forTargets()
+     * needs "every item this list has for THESE N targets" without
+     * loading the whole list (which, for a system list like "Regular
+     * Prices", can hold one row per priced Variation/Product store-wide —
+     * unusable for a list/grid view resolving many targets at once). One
+     * whereIn query on the existing (price_list_id, target_type,
+     * target_id, min_quantity) lookup index.
+     *
+     * @param string[] $targetIds
+     * @return PriceListItem[]
+     */
+    public function findByPriceListIdAndTargets(string $priceListId, PriceListItemTargetType $targetType, array $targetIds): array;
 }
