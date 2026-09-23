@@ -52,6 +52,19 @@ final class EloquentVariationRepository implements VariationRepository
      * before sort_order existed. See the 2026_09_23_000001 migration's
      * own docblock.
      *
+     * ?? [] (not null): a model genuinely absent from
+     * $assignmentsByVariationId has zero attribute assignments (e.g.
+     * every UNIVERSAL variation, i.e. every SIMPLE product's variation)
+     * — [] and toDomainVariation()'s own lazy ??= reload fallback are
+     * semantically identical for that case (both end up with an empty
+     * assignments array), so this is a pure query-count fix, no
+     * behaviour change. Passing null instead was a REAL, CONFIRMED N+1
+     * (findByIds()'s own sibling comment already named this exact
+     * pattern): one extra single-id query PER VARIATION WITH NO
+     * ASSIGNMENTS, since null makes toDomainVariation() re-trigger its
+     * own lazy load instead of trusting the already-batched (and
+     * correctly empty) result computed two lines above.
+     *
      * @return Variation[] Ordered by sort_order ASC, then id ASC.
      */
     public function findByProductId(string $productId): array
@@ -66,7 +79,7 @@ final class EloquentVariationRepository implements VariationRepository
         return $models
             ->map(fn (VariationModel $model) => $this->toDomainVariation(
                 $model,
-                $assignmentsByVariationId[$model->id] ?? null
+                $assignmentsByVariationId[$model->id] ?? []
             ))
             ->all();
     }
@@ -95,10 +108,9 @@ final class EloquentVariationRepository implements VariationRepository
             // SUCH VARIATION. A REAL, CONFIRMED N+1 CAUGHT BY THIS
             // TASK'S OWN QUERY-COUNT TEST (5 vs. 25 products no longer
             // equal until fixed) — not a hypothetical concern.
-            // findByProductId() above has this identical `?? null`
-            // pattern and the identical latent N+1 for the same reason;
-            // flagged, not silently fixed here — out of this task's
-            // authorized scope (D4: no other Catalog class change).
+            // findByProductId() above had this identical `?? null`
+            // pattern and the identical latent N+1 — fixed there too,
+            // see that method's own docblock.
             $result[(string) $model->id] = $this->toDomainVariation(
                 $model,
                 $assignmentsByVariationId[$model->id] ?? []
