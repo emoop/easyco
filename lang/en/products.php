@@ -10,7 +10,7 @@ return [
         'attributes' => 'Attributes',
         'price_stock' => 'Price & Stock',
         'variations' => 'Variations',
-        'axes' => 'Axes',
+        'axes' => 'Variation axes',
     ],
 
     'axes' => [
@@ -28,7 +28,7 @@ return [
     'wizard' => [
         'steps' => [
             'general' => 'General',
-            'axes' => 'Axes',
+            'axes' => 'Variation axes',
             'variations' => 'Variations',
         ],
         'axes' => [

@@ -10,7 +10,7 @@ return [
         'attributes' => 'Атрибути',
         'price_stock' => 'Цена и наличност',
         'variations' => 'Варианти',
-        'axes' => 'Оси',
+        'axes' => 'Оси за вариации',
     ],
 
     'axes' => [
@@ -28,7 +28,7 @@ return [
     'wizard' => [
         'steps' => [
             'general' => 'Основни данни',
-            'axes' => 'Оси',
+            'axes' => 'Оси за вариации',
             'variations' => 'Варианти',
         ],
         'axes' => [
