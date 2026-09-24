@@ -117,7 +117,14 @@ final class OrderAdminReader
                 ->selectRaw('COALESCE(SUM(operational_sales_sale_lines.quantity), 0)')
                 ->whereColumn('operational_sales_sale_lines.transaction_id', 'orders.transaction_id')
                 ->where('operational_sales_sale_lines.type', SaleLineType::SALE->value)
-                ->where('operational_sales_sale_lines.status', SaleLineStatus::COMPLETED->value),
+                ->where('operational_sales_sale_lines.status', SaleLineStatus::COMPLETED->value)
+                // These are raw DB::table() reads, not Eloquent — SaleLineModel's
+                // own SoftDeletes global scope (softDeletes() migration column,
+                // "never hard-deleted... historical record", that model's own
+                // docblock) never applies here, so a soft-deleted line must be
+                // excluded explicitly or it would double-count against its own
+                // correction.
+                ->whereNull('operational_sales_sale_lines.deleted_at'),
             'payment_method' => $this->latestPaymentColumnSubquery('method'),
             'payment_status' => $this->latestPaymentColumnSubquery('status'),
             'payment_attempt_count' => DB::table('payments')
@@ -177,6 +184,10 @@ final class OrderAdminReader
             ->where('transaction_id', $order->transactionId())
             ->where('type', SaleLineType::SALE->value)
             ->where('status', SaleLineStatus::COMPLETED->value)
+            // Same reasoning as applyListAggregates()'s own item_count
+            // subquery above — a raw DB::table() read, so SaleLineModel's
+            // SoftDeletes scope does not apply automatically here.
+            ->whereNull('deleted_at')
             ->orderBy('id')
             ->get()
             ->map(fn (object $row): OrderAdminSaleLineView => $this->buildLineView($row))

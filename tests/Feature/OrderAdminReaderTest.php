@@ -302,6 +302,60 @@ class OrderAdminReaderTest extends TestCase
     }
 
     /**
+     * Both applyListAggregates()'s item_count subquery and forOrder()'s
+     * $lines read use raw DB::table(), not Eloquent — SaleLineModel's own
+     * SoftDeletes global scope never applies to either, so a soft-deleted
+     * SALE line (never hard-deleted per design doc §3.2/SaleLineModel's own
+     * docblock — a correction is a future new row, not an in-place rewrite)
+     * had to be excluded explicitly or it would keep counting/rendering
+     * after being "removed". TWO lines, only ONE soft-deleted — proves
+     * exactly the deleted line drops out and the surviving one is
+     * untouched, not just that "the count goes to zero" (which a broken
+     * query that excluded everything would also satisfy).
+     */
+    public function test_a_soft_deleted_sale_line_is_excluded_while_the_surviving_line_remains(): void
+    {
+        $variationA = $this->pricedPurchasableVariation('10.00', 10, 'Line A');
+        $variationB = $this->pricedPurchasableVariation('20.00', 10, 'Line B');
+
+        $cart = $this->guestCart();
+        $this->addLine($cart, $variationA, 1);
+        $this->addLine($cart, $variationB, 2);
+
+        $input = new CheckoutInput(
+            cartId: $cart->id(),
+            email: 'guest@example.com',
+            recipientName: 'Guest Buyer',
+            phone: '+359888000000',
+            paymentMethod: 'cash_on_delivery',
+            deliveryType: AddressDeliveryType::STREET_ADDRESS,
+            country: 'BG',
+            city: 'Sofia',
+            addressLine1: 'Vitosha Blvd 1',
+        );
+
+        $order = app(CheckoutOrchestrator::class)->place($input, new DateTimeImmutable('2026-09-20 10:00:00'))->order();
+
+        $lineAId = DB::table('operational_sales_sale_lines')
+            ->where('transaction_id', $order->transactionId())
+            ->where('priceable_id', $variationA)
+            ->value('id');
+
+        DB::table('operational_sales_sale_lines')->where('id', $lineAId)->update(['deleted_at' => now()]);
+
+        $row = app(OrderAdminReader::class)->applyListAggregates(OrderModel::query())
+            ->where('id', $order->id())
+            ->first();
+
+        // Line A's quantity (1) is gone; only Line B's quantity (2) remains.
+        $this->assertSame(2, (int) $row->item_count);
+
+        $view = app(OrderAdminReader::class)->forOrder($order->id());
+        $this->assertCount(1, $view->lines);
+        $this->assertStringContainsString('Line B', $view->lines[0]->productName);
+    }
+
+    /**
      * §3's own mandatory snapshot test: renaming the product, changing
      * its SKU and its price AFTER the order was placed must not change
      * anything this reader returns — D2's whole point.
