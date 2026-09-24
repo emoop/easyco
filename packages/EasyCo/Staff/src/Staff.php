@@ -24,12 +24,17 @@ use LogicException;
  * — see design doc §5's own usage examples ($staff->can(...),
  * $staff->role()), which only make sense against a real Role. The
  * repository is responsible for loading the real Role when
- * reconstituting a Staff from storage. Note for whoever works on Part 2:
- * this means EloquentStaffRepository issues a second query (via
- * RoleRepository) on every Staff load — acceptable for now, but the
- * permission middleware will hit this on every merchant request, so
- * it's a candidate for caching or a join later if it shows up as a real
- * cost. Not something to solve in this task.
+ * reconstituting a Staff from storage. This still means
+ * EloquentStaffRepository issues a second query (via RoleRepository) on
+ * every Staff load — that part is unchanged and still a candidate for a
+ * join if it ever shows up as its own cost. WHAT DID GET SOLVED (see
+ * `App\Services\AuthenticatedStaffResolver`, app-layer, not here): HOW
+ * OFTEN a Staff load happens at all per request. It used to happen once
+ * per permission check — a real, confirmed problem once a Filament
+ * Table started checking per row — and is now memoized to at most once
+ * per request by that resolver, which both the admin panel's own
+ * authorization trait and the JSON API's permission middleware go
+ * through.
  */
 final class Staff
 {

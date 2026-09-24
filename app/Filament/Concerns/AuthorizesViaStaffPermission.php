@@ -2,7 +2,7 @@
 
 namespace App\Filament\Concerns;
 
-use EasyCo\Staff\Contracts\StaffRepository;
+use App\Services\AuthenticatedStaffResolver;
 use EasyCo\Staff\Enums\Permission;
 use EasyCo\Staff\Persistence\Eloquent\StaffModel;
 use Illuminate\Database\Eloquent\Model;
@@ -30,14 +30,23 @@ use Illuminate\Database\Eloquent\Model;
  * (a private trait method is still callable from the consuming class's
  * own methods) without shadowing Resource's inherited one.
  *
- * THIS IS A THIRD CALL SITE reloading the full domain `Staff` via the
- * repository on every authorization check — the same "reload on every
- * check" cost already flagged twice before this: once in `Staff`'s own
- * class docblock (Part 1 of staff-access-domain-design.md) and once in
- * `EnsureStaffHasPermission`'s docblock (Part 2). admin-panel-design.md
- * §4 calls this out explicitly as a "known cost, flagged not hidden."
- * Do NOT cache or optimize this here — solving a cost flagged and
- * deliberately deferred twice already is out of scope for this trait.
+ * RESOLVED: THE "RELOAD STAFF ON EVERY CHECK" COST — flagged three
+ * times over (this trait's own previous docblock, `Staff`'s class
+ * docblock, `EnsureStaffHasPermission`'s docblock) and left
+ * deliberately unsolved while the admin panel had few, short lists.
+ * It stopped being negligible once a Filament Table started calling
+ * canView()/canEdit()-style checks PER ROW (confirmed by a real
+ * query-count test on the Orders list, admin-panel-design.md §14) — an
+ * N-row page reloaded the full Staff + Role pair N times over. Fixed
+ * by routing the reload through `App\Services\AuthenticatedStaffResolver`
+ * (bound `scoped()`, not `singleton()` — see its own docblock for why),
+ * which memoizes the result for the rest of the request: at most one
+ * real Staff load per request now, not one per check. A permission
+ * change (a role edit, a deactivation) is visible starting the NEXT
+ * request, never mid-request — already-accepted elsewhere in this
+ * codebase for every other `scoped()` binding, and explicitly fine per
+ * `EnsureStaffHasPermission`'s own rule 3 (denied "without waiting for
+ * their session to expire" — a session, not one in-flight request).
  */
 trait AuthorizesViaStaffPermission
 {
@@ -130,7 +139,7 @@ trait AuthorizesViaStaffPermission
             return false;
         }
 
-        $staff = app(StaffRepository::class)->findById((string) $authenticatedModel->getAuthIdentifier());
+        $staff = app(AuthenticatedStaffResolver::class)->resolveById((string) $authenticatedModel->getAuthIdentifier());
 
         if ($staff === null) {
             return false;

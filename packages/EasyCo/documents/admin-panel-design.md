@@ -69,9 +69,10 @@ tables), and never a second, parallel permission system.
 
 Concretely: a shared trait resolves the authenticated Filament user
 (`Filament::auth()->user()`, a `StaffModel`) into the real domain
-`Staff` via `StaffRepository::findById()` — exactly what
-`EnsureStaffHasPermission` middleware already does — then calls
-`$staff->can(Permission::X)`. Each Resource declares which `Permission`
+`Staff` via `App\Services\AuthenticatedStaffResolver::resolveById()` —
+the same `scoped()`, per-request-memoized resolver
+`EnsureStaffHasPermission` middleware now also goes through (see the
+paragraph below) — then calls `$staff->can(Permission::X)`. Each Resource declares which `Permission`
 case gates which action (`ProductResource::canViewAny()` checks
 `Permission::PRODUCT_VIEW`; `canCreate()`/`canEdit()`/`canDelete()`
 check `Permission::PRODUCT_MANAGE`).
@@ -84,10 +85,20 @@ truth, two enforcement points calling the same domain method.
 Reinforces `staff-access-domain-design.md` §5's own rule directly: "the
 check is on the permission, never on the role's name."
 
-**Known cost, flagged not hidden:** this is a third call site repeating
-the "reload Staff via repository on every check" cost already flagged
-twice (Part 1's `Staff` docblock, Part 2's middleware docblock). Still
-not a problem to solve in this task.
+**RESOLVED (was: "known cost, flagged not hidden"):** this trait was a
+third call site repeating the "reload Staff via repository on every
+check" cost already flagged twice (Part 1's `Staff` docblock, Part 2's
+middleware docblock) — accepted while the admin panel had few, short
+lists. It stopped being negligible once a Filament Table started
+calling `canView()`/`canEdit()`-style checks per row (confirmed by a
+real query-count test on the Orders list, §14) — an N-row page reloaded
+the full Staff + Role pair N times. Fixed by
+`App\Services\AuthenticatedStaffResolver` (`scoped()`, memoizes per
+request), which both this trait and `EnsureStaffHasPermission` now go
+through instead of calling `StaffRepository::findById()` directly. A
+permission change is visible starting the next request, never
+mid-request — the same tradeoff already accepted for every other
+`scoped()` binding in this codebase.
 
 ---
 
@@ -861,13 +872,17 @@ any order-editing UI exists. Confirmed decisions:
 - **D7 — List query count is independent of row count**, confirmed by
   a real test (`OrderAdminReaderTest`) that isolates
   `OrderAdminReader`'s own contribution: 1 query regardless of page
-  size. A SEPARATE, pre-existing cost does scale with row count once a
-  View page exists — Filament calls `canView($record)` per row to
-  decide whether it's clickable, and
-  `AuthorizesViaStaffPermission::staffCanForAction()` reloads the full
-  `Staff` aggregate on every single call (that trait's own docblock
-  already flags this as a known, deliberately deferred cost, twice
-  over — not something this task reopens or fixes).
+  size. A SEPARATE cost used to scale with row count once a View page
+  exists — Filament calls `canView($record)` per row to decide whether
+  it's clickable, and
+  `AuthorizesViaStaffPermission::staffCanForAction()` reloaded the full
+  `Staff` aggregate on every single call. That per-row reload is now
+  fixed (§4): `App\Services\AuthenticatedStaffResolver` memoizes the
+  resolved `Staff` per request, so the authorization cost no longer
+  grows with row count either. `OrderResourceTest`'s own query-count
+  test asserts the raw, unfiltered count for exactly this reason — it
+  previously had to exclude `staff`/`staff_roles` queries to stay
+  meaningful.
 - **D8 — Fail-soft display.** Missing optional data (no payment row, no
   promotion, a pickup-point order with no street fields) renders `'—'`,
   never an exception.

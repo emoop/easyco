@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Services\AuthenticatedStaffResolver;
 use App\Services\OrderAdminReader;
 use App\Services\PriceDisplayFormatter;
 use App\Services\ProductPriceRangeProvider;
@@ -47,6 +48,15 @@ class AppServiceProvider extends ServiceProvider
         // resolve the reader for the same order id (see that method's
         // own docblock).
         $this->app->scoped(OrderAdminReader::class);
+
+        // The fix for the "reload Staff via the repository on every
+        // permission check" cost flagged three times over (Staff's own
+        // class docblock, EnsureStaffHasPermission's docblock,
+        // AuthorizesViaStaffPermission's docblock) — see
+        // AuthenticatedStaffResolver's own docblock for the full
+        // reasoning, including why scoped() (not singleton()) is the
+        // only safe lifetime here too.
+        $this->app->scoped(AuthenticatedStaffResolver::class);
     }
 
     /**

@@ -2,8 +2,8 @@
 
 namespace App\Http\Middleware;
 
+use App\Services\AuthenticatedStaffResolver;
 use Closure;
-use EasyCo\Staff\Contracts\StaffRepository;
 use EasyCo\Staff\Enums\Permission;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -46,7 +46,7 @@ use Throwable;
 class EnsureStaffHasPermission
 {
     public function __construct(
-        private readonly StaffRepository $staffRepository,
+        private readonly AuthenticatedStaffResolver $staffResolver,
     ) {
     }
 
@@ -81,25 +81,31 @@ class EnsureStaffHasPermission
                 return $this->deny("This action requires the \"{$requiredPermission->value}\" permission.");
             }
 
-            // Step 4 — reload the FULL domain Staff via the repository,
-            // deliberately NOT just trusting the already-authenticated
-            // Eloquent model. This is a real query on every single
-            // request, not a redundant one to optimize away here: it is
-            // what guarantees isActive and the Role's current
-            // permission set are read fresh from the database every
-            // time, never from anything cached in the session — the
-            // actual mechanism behind §5 rule 3 ("a deactivated staff
-            // member is denied immediately, without waiting for their
-            // session to expire") and §11's identical requirement.
+            // Step 4 — reload the FULL domain Staff, deliberately NOT
+            // just trusting the already-authenticated Eloquent model.
+            // This still runs a real query on every single request (this
+            // middleware only ever runs once per request, never per
+            // row, so there was never a per-request multiplication cost
+            // here to fix) — what guarantees isActive and the Role's
+            // current permission set are read fresh from the database
+            // every time, never from anything cached in the session —
+            // the actual mechanism behind §5 rule 3 ("a deactivated
+            // staff member is denied immediately, without waiting for
+            // their session to expire") and §11's identical requirement.
             //
-            // NOTED TWICE NOW, NOT SOLVED HERE (first noted in Part 1's
-            // Staff::class docblock): this is a THIRD query per merchant
-            // request, on top of Laravel's own guard-authentication
-            // query for StaffModel and EloquentStaffRepository's
-            // Role-hydration query. A caching or join optimization is a
-            // legitimate future improvement if this shows up as a real
-            // cost — not something to solve in this task.
-            $staff = $this->staffRepository->findById((string) $authenticatedModel->getAuthIdentifier());
+            // RESOLVED VIA AuthenticatedStaffResolver, NOT A DIRECT
+            // StaffRepository CALL ANYMORE — see that class's own
+            // docblock for the full "reload on every check" finding this
+            // closes (a real per-ROW cost, confirmed on the Filament
+            // admin panel side, AuthorizesViaStaffPermission). Routing
+            // through the SAME scoped() resolver here too keeps one
+            // canonical mechanism rather than a second, independent
+            // reload path — this call site's own query count is
+            // unchanged (still exactly one load per request), but any
+            // future code sharing this request with the admin panel's
+            // own checks would now reuse the same resolved Staff instead
+            // of paying for a fourth reload.
+            $staff = $this->staffResolver->resolveById((string) $authenticatedModel->getAuthIdentifier());
 
             if ($staff === null) {
                 // An authenticated session pointing at a Staff row that

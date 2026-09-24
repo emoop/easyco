@@ -85,7 +85,20 @@ class AuthorizesViaStaffPermissionTest extends TestCase
         $this->assertFalse(TestOnlyNoPermissionResource::canCreate());
     }
 
-    public function test_a_deactivated_staff_member_is_denied_by_the_authorization_trait(): void
+    /**
+     * UPDATED — AuthenticatedStaffResolver now memoizes the resolved
+     * Staff per id for the rest of the request (see its own docblock
+     * for the full "reload on every check" finding this fixes): a
+     * deactivation is picked up on the NEXT request, not mid-request,
+     * an intentional, accepted tradeoff (the same one already governing
+     * every other scoped() binding in this codebase). This still proves
+     * the real, load-bearing guarantee — "denied without waiting for
+     * the session to expire" (EnsureStaffHasPermission's own rule 3) —
+     * by simulating that next request via forgetScopedInstances(),
+     * which is the actual mechanism a real new request gets for free
+     * from a fresh container.
+     */
+    public function test_a_deactivated_staff_member_is_denied_on_the_next_request(): void
     {
         $staff = $this->staffWithRole('Administrator');
         $this->actingAsStaff($staff);
@@ -93,6 +106,13 @@ class AuthorizesViaStaffPermissionTest extends TestCase
         $this->assertTrue(TestOnlyPermissionResource::canViewAny());
 
         StaffModel::find($staff->id())->update(['is_active' => false]);
+
+        // Mid-request: the already-memoized Staff is still what's
+        // used — deliberately, not a bug (see this test's own
+        // docblock).
+        $this->assertTrue(TestOnlyPermissionResource::canViewAny());
+
+        $this->app->forgetScopedInstances();
 
         $this->assertFalse(TestOnlyPermissionResource::canViewAny());
     }

@@ -32,17 +32,21 @@ use Filament\Panel;
  * staff-access-domain-design.md's permission enforcement lives. That
  * remains entirely App\Filament\Concerns\AuthorizesViaStaffPermission's
  * job: every Resource's canViewAny()/canCreate()/canEdit()/canDelete()
- * independently reloads the real domain Staff via StaffRepository and
- * calls Staff::can($permission) on every single check, exactly as
- * EnsureStaffHasPermission already does for the JSON API — that reload
- * is what actually guarantees "a deactivated staff member is denied
- * immediately" (staff-access-domain-design.md §5 rule 3), not this
- * method. Whether Filament re-invokes canAccessPanel() on every request
- * or only at login is Filament's own implementation detail, not
- * something this design relies on for correctness — treat this check as
- * a UX bonus (a deactivated staff member sees a clean 403 at the door
- * rather than an empty, everything-denied dashboard), never as the
- * enforcement boundary itself.
+ * resolves the real domain Staff via App\Services\
+ * AuthenticatedStaffResolver (memoized per request, bound scoped() — see
+ * that class's own docblock for the full "reload on every check" finding
+ * it fixes) and calls Staff::can($permission) on every single check,
+ * exactly as EnsureStaffHasPermission already does for the JSON API —
+ * that resolver is what guarantees "a deactivated staff member is denied
+ * without waiting for their session to expire" (staff-access-domain-
+ * design.md §5 rule 3) starting the NEXT request, not this method, and
+ * not necessarily mid-request (the resolver's own accepted tradeoff).
+ * Whether Filament re-invokes canAccessPanel() on every request or only
+ * at login is Filament's own implementation detail, not something this
+ * design relies on for correctness — treat this check as a UX bonus (a
+ * deactivated staff member sees a clean 403 at the door rather than an
+ * empty, everything-denied dashboard), never as the enforcement boundary
+ * itself.
  */
 class StaffPanelUser extends StaffModel implements FilamentUser
 {
