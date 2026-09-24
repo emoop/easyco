@@ -18,7 +18,9 @@ use EasyCo\Pricing\PriceListItem;
 use EasyCo\Promotions\Contracts\PromotionRepository;
 use EasyCo\Promotions\Contracts\PromotionScopeRepository;
 use EasyCo\Promotions\Enums\PromotionDiscountType;
+use EasyCo\Promotions\PromotionScope;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use RuntimeException;
 use Tests\TestCase;
 
 /**
@@ -130,6 +132,40 @@ class DemoPromotionsSeederTest extends TestCase
         $this->assertSame('include', $scopes[0]->mode()->value);
     }
 
+    /**
+     * seedScoped() is two separate writes (the Promotion save, then the
+     * PromotionScope attach) — before this fix, an attach() failure left a
+     * real, already-committed DEMOSCOPE promotion behind with no scope on
+     * it at all, silently breaking "scoped to one brand" (the entire reason
+     * DEMOSCOPE exists). Now both writes share one DB::transaction(), so a
+     * failing attach() rolls the promotion save back too. The failure is
+     * forced via a real, bound test fake — not a partial write simulated by
+     * hand.
+     */
+    public function test_if_the_scope_attach_fails_no_demoscope_promotion_is_left_behind(): void
+    {
+        $popular = new \EasyCo\Catalog\Brand(id: null, name: 'Popular Brand', slug: 'popular-brand');
+        app(\EasyCo\Catalog\Contracts\BrandRepository::class)->save($popular);
+
+        $product = Product::createSimple('Popular Product', 'SKU-POP', 'popular-product');
+        $product->assignBrand($popular->id());
+        app(ProductRepository::class)->save($product);
+
+        $this->app->bind(PromotionScopeRepository::class, ThrowingPromotionScopeRepositoryFake::class);
+
+        try {
+            app(DemoPromotionsSeeder::class)->run();
+            $this->fail('Expected the throwing PromotionScopeRepository fake to propagate.');
+        } catch (RuntimeException $e) {
+            $this->assertSame('simulated attach failure', $e->getMessage());
+        }
+
+        $this->assertNull(
+            app(PromotionRepository::class)->findByCode('DEMOSCOPE'),
+            'DB::transaction() must have rolled the Promotion save back along with the failed attach()'
+        );
+    }
+
     public function test_the_second_run_is_a_no_op(): void
     {
         app(DemoPromotionsSeeder::class)->run();
@@ -228,5 +264,24 @@ class DemoPromotionsSeederTest extends TestCase
         } catch (\App\Services\Exceptions\PromotionNoLongerValidException $e) {
             $this->assertStringContainsString('usage_limit_reached', $e->getMessage());
         }
+    }
+}
+
+/** Test-only fixture — forces seedScoped()'s attach() to fail, to prove the transaction wrap actually rolls back. */
+class ThrowingPromotionScopeRepositoryFake implements PromotionScopeRepository
+{
+    public function attach(PromotionScope $scope): void
+    {
+        throw new RuntimeException('simulated attach failure');
+    }
+
+    public function detach(string $scopeId): void
+    {
+    }
+
+    /** @return PromotionScope[] */
+    public function findByPromotionId(string $promotionId): array
+    {
+        return [];
     }
 }

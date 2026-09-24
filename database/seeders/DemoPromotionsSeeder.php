@@ -148,12 +148,17 @@ class DemoPromotionsSeeder extends Seeder
             return;
         }
 
+        // orderByDesc('product_count') alone leaves a tie (two brands with
+        // the same count) to whatever order MySQL happens to return grouped
+        // rows in — not guaranteed stable across runs/versions. brand_id ASC
+        // as the explicit tie-break makes the choice deterministic.
         $topBrandRow = DB::table('catalog_products')
             ->whereNotNull('brand_id')
             ->where('status', '!=', ProductStatus::ARCHIVED->value)
             ->select('brand_id', DB::raw('count(*) as product_count'))
             ->groupBy('brand_id')
             ->orderByDesc('product_count')
+            ->orderBy('brand_id')
             ->first();
 
         if ($topBrandRow === null) {
@@ -164,20 +169,27 @@ class DemoPromotionsSeeder extends Seeder
 
         $brandName = BrandModel::find($topBrandRow->brand_id)?->name ?? "brand #{$topBrandRow->brand_id}";
 
-        $promotion = Promotion::create(
-            code: $code,
-            discountType: PromotionDiscountType::PERCENTAGE,
-            percentageBasisPoints: 1500,
-        );
-        $promotions->save($promotion);
+        // WRAPPED IN ONE DB::transaction() — a real, confirmed gap: the
+        // promotion save and the scope attach are two separate writes, and
+        // without a transaction, an attach() failure (e.g. a DB error) left
+        // a real DEMOSCOPE promotion behind with no scope at all, silently
+        // breaking the "scoped to one brand" guarantee this code exists for.
+        DB::transaction(function () use ($promotions, $scopes, $code, $topBrandRow): void {
+            $promotion = Promotion::create(
+                code: $code,
+                discountType: PromotionDiscountType::PERCENTAGE,
+                percentageBasisPoints: 1500,
+            );
+            $promotions->save($promotion);
 
-        $scopes->attach(new PromotionScope(
-            id: null,
-            promotionId: $promotion->id(),
-            scopeType: PromotionScopeType::BRAND,
-            scopeReferenceId: (string) $topBrandRow->brand_id,
-            mode: PromotionScopeMode::INCLUDE,
-        ));
+            $scopes->attach(new PromotionScope(
+                id: null,
+                promotionId: $promotion->id(),
+                scopeType: PromotionScopeType::BRAND,
+                scopeReferenceId: (string) $topBrandRow->brand_id,
+                mode: PromotionScopeMode::INCLUDE,
+            ));
+        });
 
         $this->command?->info(
             "{$code}: created (1500 basis points, scoped to brand \"{$brandName}\" [{$topBrandRow->brand_id}], "
