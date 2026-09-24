@@ -207,4 +207,176 @@ final class MoneyTest extends TestCase
 
         $this->assertSame(1000, $original->minorValue());
     }
+
+    // --- allocate() (§3.13's largest-remainder method) --------------------
+
+    /** @return int[] */
+    private function minorValues(array $moneys): array
+    {
+        return array_map(static fn (Money $m) => $m->minorValue(), $moneys);
+    }
+
+    /**
+     * The exact counter-example that disproved the original "round each
+     * share, last line absorbs the remainder" rule
+     * (operational-sales-domain-design.md §3.13): that rule produced -1
+     * for the last line here. The largest-remainder method must not.
+     */
+    public function test_allocate_the_five_five_one_counter_example(): void
+    {
+        $shares = Money::fromMinorUnits(1, 'EUR')->allocate([5, 5, 1]);
+
+        $this->assertSame([1, 0, 0], $this->minorValues($shares));
+    }
+
+    public function test_allocate_when_total_equals_sum_of_weights_shares_equal_weights_exactly(): void
+    {
+        $shares = Money::fromMinorUnits(11, 'EUR')->allocate([5, 5, 1]);
+
+        $this->assertSame([5, 5, 1], $this->minorValues($shares));
+    }
+
+    public function test_allocate_zero_weight_always_gets_zero_share(): void
+    {
+        $shares = Money::fromMinorUnits(100, 'EUR')->allocate([0, 100]);
+
+        $this->assertSame([0, 100], $this->minorValues($shares));
+    }
+
+    public function test_allocate_zero_weights_with_zero_total_returns_all_zero(): void
+    {
+        $shares = Money::zero('EUR')->allocate([0, 0, 0]);
+
+        $this->assertSame([0, 0, 0], $this->minorValues($shares));
+    }
+
+    /**
+     * weights [1,1,1], total 2: each weight's exact share is 2/3 — no
+     * floor wins outright (all floor to 0), so BOTH leftover units go to
+     * the largest-remainder ties, broken by array order: index 0 then
+     * index 1, never index 2.
+     */
+    public function test_allocate_ties_are_broken_by_array_order(): void
+    {
+        $shares = Money::fromMinorUnits(2, 'EUR')->allocate([1, 1, 1]);
+
+        $this->assertSame([1, 1, 0], $this->minorValues($shares));
+    }
+
+    public function test_allocate_a_single_weight_receives_the_whole_amount(): void
+    {
+        $shares = Money::fromMinorUnits(777, 'EUR')->allocate([1]);
+
+        $this->assertSame([777], $this->minorValues($shares));
+    }
+
+    public function test_allocate_preserves_currency_on_every_share(): void
+    {
+        $shares = Money::fromMinorUnits(100, 'USD')->allocate([1, 1]);
+
+        $this->assertSame('USD', $shares[0]->currency()->code());
+        $this->assertSame('USD', $shares[1]->currency()->code());
+    }
+
+    public function test_allocate_rejects_empty_weights(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        Money::fromMinorUnits(10, 'EUR')->allocate([]);
+    }
+
+    public function test_allocate_rejects_a_negative_weight(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        Money::fromMinorUnits(10, 'EUR')->allocate([-1, 5]);
+    }
+
+    public function test_allocate_rejects_a_negative_total(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        Money::fromMinorUnits(-10, 'EUR')->allocate([1, 1]);
+    }
+
+    public function test_allocate_rejects_zero_weights_with_a_nonzero_total(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        Money::fromMinorUnits(100, 'EUR')->allocate([0, 0]);
+    }
+
+    public function test_allocate_rejects_a_weight_that_would_overflow_when_multiplied_by_the_amount(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        Money::fromMinorUnits(PHP_INT_MAX, 'EUR')->allocate([PHP_INT_MAX, 1]);
+    }
+
+    public function test_allocate_rejects_a_sum_of_weights_that_overflows(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        Money::fromMinorUnits(1, 'EUR')->allocate([PHP_INT_MAX, PHP_INT_MAX]);
+    }
+
+    /**
+     * A seeded randomized property test — deterministic across runs (the
+     * seed is fixed), not a real source of flakiness. Proves the three
+     * guarantees allocate()'s own docblock claims hold across a wide
+     * spread of random (total, weights) combinations, not just the
+     * handful of hand-picked cases above.
+     *
+     * A LOCAL \Random\Randomizer, not mt_srand()/mt_rand() — the latter
+     * reseeds PHP's own GLOBAL RNG state for the rest of THIS PROCESS,
+     * which would leak into any later test in the same run that also
+     * happens to use rand()/mt_rand() (directly, or via some dependency)
+     * without reseeding itself first — a real, if subtle, form of
+     * test-order-dependent flakiness this suite has no business
+     * introducing. A locally-scoped, explicitly-seeded engine affects
+     * nothing outside this one test method.
+     */
+    public function test_allocate_properties_hold_across_many_random_cases(): void
+    {
+        $randomizer = new \Random\Randomizer(new \Random\Engine\Mt19937(20260924));
+
+        for ($case = 0; $case < 1000; $case++) {
+            $weightCount = $randomizer->getInt(1, 8);
+            $weights = [];
+            for ($i = 0; $i < $weightCount; $i++) {
+                $weights[] = $randomizer->getInt(0, 1000);
+            }
+
+            $sumOfWeights = array_sum($weights);
+
+            if ($sumOfWeights === 0) {
+                // Covered by its own dedicated tests above; skip this
+                // draw rather than special-casing it here too.
+                continue;
+            }
+
+            // Never exceeds sum(weights) — the one real precondition
+            // every actual caller in this codebase already guarantees
+            // (a discount can never exceed its own eligible base).
+            $total = $randomizer->getInt(0, $sumOfWeights);
+
+            $money = Money::fromMinorUnits($total, 'EUR');
+            $shares = $money->allocate($weights);
+
+            $this->assertCount($weightCount, $shares, "case {$case}: share count must match weight count");
+
+            $sumOfShares = array_sum($this->minorValues($shares));
+            $this->assertSame($total, $sumOfShares, "case {$case}: shares must sum exactly to the total");
+
+            foreach ($shares as $index => $share) {
+                $this->assertGreaterThanOrEqual(0, $share->minorValue(), "case {$case}, share {$index}: must not be negative");
+                $this->assertLessThanOrEqual($weights[$index], $share->minorValue(), "case {$case}, share {$index}: must not exceed its own weight");
+            }
+
+            // Determinism: the same input allocated again produces the
+            // identical output.
+            $repeat = $money->allocate($weights);
+            $this->assertSame($this->minorValues($shares), $this->minorValues($repeat), "case {$case}: must be deterministic");
+        }
+    }
 }

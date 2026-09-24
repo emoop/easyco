@@ -134,6 +134,140 @@ final class Money
         return $this->minorValue < 0;
     }
 
+    /**
+     * Splits THIS amount into count($weights) shares, in the same
+     * currency, proportional to $weights, via the largest-remainder
+     * method — operational-sales-domain-design.md §3.13's own "Promotion
+     * allocation rule". Introduced for splitting a promotion discount
+     * across cart lines (App\Services\PromotionDiscountCalculator) and a
+     * future POS bill-level discretionary discount split — one
+     * implementation, every caller that needs "divide this exact amount
+     * by these weights" reuses it, rather than each caller re-deriving
+     * its own (previously-buggy) rounding rule.
+     *
+     * WHY THIS IS A MONEY OPERATION, NOT A "FRACTION/PERCENTAGE" ONE
+     * multiply()'s own docblock rules out: multiplying by a fraction or
+     * percentage APPLIES NEW INFORMATION (a rate) to an amount — a
+     * genuine pricing/discount concern (Price's own tax math, a future
+     * Discount domain). allocate() applies no rate at all: it exactly
+     * redistributes an ALREADY-KNOWN total across integer weights, with
+     * the one guarantee that matters specifically for money — the parts
+     * sum back to the whole, to the minor unit, every time. That is the
+     * same class of operation as add()/subtract() (exact, no
+     * rounding-introduced value), not the same class as "apply a 10%
+     * discount."
+     *
+     * ALGORITHM — the largest-remainder method. A naive "round each
+     * share independently, let the last one absorb the remainder"
+     * approach was tried first and rejected: a real counter-example (10%
+     * over eligible amounts 5, 5, 1 minor units) produces a NEGATIVE
+     * share for the last line under that rule (operational-sales-
+     * domain-design.md §3.13's own worked example). This method never
+     * can:
+     *  1. floor[i] = intdiv(weights[i] x $this->minorValue, sum(weights))
+     *     for every i.
+     *  2. leftover = $this->minorValue - sum(floor) (an integer,
+     *     0 <= leftover < count(weights), by construction).
+     *  3. leftover minor units go one each to the weights with the
+     *     LARGEST fractional remainder (weights[i] x $this->minorValue
+     *     mod sum(weights)), largest first; ties broken by array order
+     *     — EXPLICITLY, via a secondary `$a <=> $b` comparison on the
+     *     original index, not by relying on usort()'s own stability
+     *     (stable since PHP 8.0.0, which this method could have leaned
+     *     on, but an explicit tie-break makes the ordering guarantee
+     *     visible at the call site instead of depending on a runtime
+     *     property of the sort implementation).
+     *
+     * GUARANTEES: Σ result == $this, exactly, always. Deterministic —
+     * the same ($this, $weights) always produces the same output.
+     * When $this->minorValue <= sum(weights) (true for every caller in
+     * this codebase today — a discount can never exceed its own
+     * eligible base), 0 <= result[i] <= weights[i] for every i. A zero
+     * weight always receives a zero share (its fractional remainder is
+     * always 0, so it can never win a largest-remainder tie against a
+     * genuinely weighted line).
+     *
+     * @param int[] $weights Non-negative integers, in the order the
+     *   result is returned in. Not necessarily minor units of anything
+     *   in particular — any non-negative integer weighting works.
+     * @return self[] Same count and order as $weights, same currency as
+     *   $this.
+     *
+     * @throws InvalidArgumentException Empty $weights; a negative
+     *   weight; a negative amount being allocated; weights summing to
+     *   zero while the amount is non-zero (nothing to allocate it to —
+     *   summing to zero while the amount is ALSO zero returns an
+     *   all-zero result instead, a real and valid case); the running sum
+     *   of $weights overflowing a PHP integer; or a weight x amount
+     *   product that would overflow a PHP integer.
+     */
+    public function allocate(array $weights): array
+    {
+        if ($weights === []) {
+            throw new InvalidArgumentException('Money::allocate(): $weights must not be empty.');
+        }
+
+        if ($this->minorValue < 0) {
+            throw new InvalidArgumentException('Money::allocate(): the amount being allocated must not be negative.');
+        }
+
+        $weights = array_values($weights);
+        $sumOfWeights = 0;
+
+        foreach ($weights as $index => $weight) {
+            if (! is_int($weight) || $weight < 0) {
+                throw new InvalidArgumentException(
+                    "Money::allocate(): weights[{$index}] must be a non-negative integer."
+                );
+            }
+
+            if ($sumOfWeights > PHP_INT_MAX - $weight) {
+                throw new InvalidArgumentException(
+                    'Money::allocate(): the sum of $weights overflows a PHP integer.'
+                );
+            }
+
+            $sumOfWeights += $weight;
+        }
+
+        if ($sumOfWeights === 0) {
+            if ($this->minorValue !== 0) {
+                throw new InvalidArgumentException(
+                    'Money::allocate(): weights sum to zero but the amount to allocate is not zero — '.
+                    'there is nothing to allocate it to.'
+                );
+            }
+
+            return array_map(fn (): self => new self(0, $this->currency), $weights);
+        }
+
+        $floors = [];
+        $remainders = [];
+
+        foreach ($weights as $index => $weight) {
+            if ($weight !== 0 && $this->minorValue > intdiv(PHP_INT_MAX, $weight)) {
+                throw new InvalidArgumentException(
+                    "Money::allocate(): weights[{$index}] x amount overflows a PHP integer."
+                );
+            }
+
+            $product = $weight * $this->minorValue;
+            $floors[$index] = intdiv($product, $sumOfWeights);
+            $remainders[$index] = $product - ($floors[$index] * $sumOfWeights);
+        }
+
+        $leftover = $this->minorValue - array_sum($floors);
+
+        $order = array_keys($remainders);
+        usort($order, static fn (int $a, int $b): int => ($remainders[$b] <=> $remainders[$a]) ?: ($a <=> $b));
+
+        for ($i = 0; $i < $leftover; $i++) {
+            $floors[$order[$i]]++;
+        }
+
+        return array_map(fn (int $minorValue): self => new self($minorValue, $this->currency), $floors);
+    }
+
     private function assertSameCurrency(self $other): void
     {
         if (! $this->currency->equals($other->currency)) {
