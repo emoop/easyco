@@ -190,7 +190,7 @@ Nothing in this project currently captures a contact email for a guest. `Address
 5. Resolve or create the `Address` row (§8.4) and hold its fields for the snapshot.
 6. Resolve or create the `Client` (§8.1).
 7. For every `CartLine`, call `StockLevelRepository::decrease()` (§5) — atomic, and any `InsufficientStockException` aborts the whole transaction.
-8. Build a new `Transaction` (`channel: WEB`) and one `SaleLine` per line (`type: SALE`, `status: COMPLETED` — see §8.5 for why `COMPLETED` regardless of payment method — `profit`: computed per §9.3), `TransactionRepository::save()`.
+8. Build a new `Transaction` (`channel: WEB`) and one `SaleLine` per line (`type: SALE`, `status: COMPLETED` — see §8.5 for why `COMPLETED` regardless of payment method — `profit`: computed per §9.3), `TransactionRepository::save()`. **Once `operational-sales-domain-design.md` §3.13 is implemented** (designed, not yet built — full price-level/discount/attribute/cost snapshot, needed for returns), this step calls §3.13 E-D4's one-service-two-channels snapshot builder instead of constructing each `SaleLine` inline as it does today, and `profit` is computed on net rather than pre-promotion (§3.13, "Profit, computed on net").
 9. Insert the new `Order` row (§3), referencing the just-created `transactionId`/`clientId`, with the Address snapshot from step 5.
 10. **Write the `Payment` row itself, as `PENDING`, with no attempt outcome recorded yet** (`orderId` = the just-inserted `Order.id`, `method` = the chosen method, `amount` = `Order.total`) — see the note immediately below this list for why this step exists and wasn't part of the original design.
 11. Claim the cart via the atomic `order_id` update (§6). Zero-affected-rows here rolls back everything above (including the `Payment` row from step 10) and returns the pre-existing order instead.
@@ -272,6 +272,8 @@ profit = amount - (unitCost × quantity)
 **Corrected during implementation, not as originally drafted here:** the first version of this formula was `profit = amount - cost`, with no quantity scaling on the cost side — wrong for any `quantity > 1`, since `amount` is already `unitPrice × quantity`. Caught and fixed while building `App\Services\CheckoutLinePricer`, proven with a real test (quantity 3, unit price €10.00, unit cost €4.00 → correct profit €18.00, explicitly asserted as NOT €26.00, the wrong answer the unscaled formula would have given).
 
 **This is a known, visible distortion for any priceable with no recorded cost, not a hidden one:** such a line shows 100%-margin profit until the merchant fills in its cost — the same "visible enough to prompt a fix, not silently wrong forever" posture, rather than either blocking checkout entirely (a missing cost price should never stop a sale) or lying invisibly. Genuine per-line cost-unknown tracking (e.g. a flag distinguishing "verified zero margin" from "cost never set") would require changing `SaleLine` itself — out of scope here, and not something to slip into this prompt; flagged, not built.
+
+**Now designed, still not built:** `operational-sales-domain-design.md` §3.13 Q2 picks this gap up directly — a nullable `unitCost` snapshot field on `SaleLine` itself (`null` = genuinely unknown, distinct from zero), recommended for inclusion, reusing `CheckoutLinePricingResult::costRecorded()`'s existing real-vs-zero-fallback distinction rather than inventing a new one. Not implemented by this document; see §3.13's own implementation stages (its §6).
 
 ---
 

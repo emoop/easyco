@@ -44,9 +44,29 @@ SaleLine                                    (immutable once recorded)
 │                                             date — see §3.6)
 ├── originating_sale_line_id                 nullable — set on a REFUND line,
 │                                             points at the SaleLine it refunds
-└── originating_reservation_line_id          nullable — set when a
-                                              reservation is paid off, points
-                                              at the RESERVATION line it settles
+├── originating_reservation_line_id          nullable — set when a
+│                                             reservation is paid off, points
+│                                             at the RESERVATION line it settles
+│
+│ §3.13 — DESIGNED, NOT YET IMPLEMENTED. Required for a freshly-created SALE
+│ line (via the new SaleLine::create(), §3.12/§3.13); NULL on any row written
+│ before this shipped (reconstituteFromStorage() keeps accepting NULL, §3.13
+│ E-D5) — never backfilled.
+├── regularUnitPrice: ?Money                 level 2 (§3.13 E-D1), regular
+├── finalUnitPrice:   ?Money                 level 2 (§3.13 E-D1), final —
+│                                             replaces dividing amount/quantity
+├── promotionDiscountShare: ?Money           this line's share of the order's
+│                                             promotion-code discount (§3.13)
+├── discretionaryDiscount:  ?Money           register-applied courtesy
+│                                             discount, POS only, always zero
+│                                             on a WEB line (§3.13 E-D3)
+├── netPaidAmount: ?Money                    level 3 (§3.13 E-D1) — actually
+│                                             paid; what a return refunds
+├── soldAttributes: ?array                   ordered {definitionCode,
+│                                             definitionName, valueId, value}
+│                                             list, [] for a SIMPLE line
+└── unitCost: ?Money                         cost snapshot at sale time; NULL
+                                              = genuinely unknown (§3.13 Q2)
 
 InstallmentPlan
 ├── id, client_id
@@ -75,9 +95,18 @@ The source system groups a client's reserved items and their partial payments to
 
 `InstallmentPlan` here is a real aggregate with a real id. Adding an item to an active plan is `$plan->attachReservedLine($newLine)` — a direct reference, not a hope that two independently-generated strings happen to match. This bug class is not mitigated; it's structurally impossible.
 
-### 3.4 Refund provenance is explicit, and never mutates Catalog/Pricing
+### 3.4 Refund provenance is explicit, and never mutates Catalog/Pricing — REVISED per §3.13 E-D2, still not implemented
 
-A `REFUND` `SaleLine` carries three separate Money fields: `regularPriceAtReturn`, `salePriceAtReturn` (nullable — not every product was ever on sale), and `actualRefundAmount` (what was actually handed back — may differ from both, at the operator's discretion, e.g. a goodwill rounding-down). This mirrors the source system's actual fallback behavior (`refund_price` → `sale_price` → `regular_price`, confirmed directly in its refund handler) but makes every value an explicit, recorded fact rather than three optional request fields with implicit fallback logic buried in application code. Per §1, none of this ever writes back into the Variation's own price fields — the source system's refund handler did exactly that as a side effect, which this design deliberately does not carry forward.
+**This section originally proposed `regularPriceAtReturn`/`salePriceAtReturn`/`actualRefundAmount` — never implemented in code (confirmed directly against `SaleLine.php`: no such fields exist), and now superseded by §3.13's fuller design.** The original proposal mirrored the source system's own refund fallback (`refund_price` → `sale_price` → `regular_price`) — a **live re-read of what the item is worth at the moment of the return**. That is exactly the mistake §1's "a sale is a frozen fact, never re-derived" rule (and §3.13 E-D1's three-level model) exists to rule out: the *display* price on the return date has nothing to do with what the customer actually paid, and must never drive a refund amount.
+
+**Corrected design (§3.13 E-D2), not yet implemented:** a `REFUND` line does not duplicate the original SALE line's prices at all — it resolves `productName`/`sku`/`soldAttributes`/`regularUnitPrice`/`finalUnitPrice` through `originatingSaleLineId`, the same link-not-duplicate pattern §3.12 already established for `productName`/`sku`. A `REFUND` line records, on itself:
+
+- **`quantityReturned`** — how many units of the original line this refund covers (§3.13 item 4 — a line can be returned across more than one `REFUND` event; "how many already refunded" is a query over prior `REFUND` lines sharing the same `originatingSaleLineId`, not a stored running counter, matching this document's append-only-history posture, §3.2).
+- **`defaultRefundAmount`** — computed from the ORIGINAL line's `netPaidAmount` via §3.13 item 4's deterministic cumulative-share rule. Informational/audit — shows what the system would have refunded before any operator override.
+- **`actualRefundAmount`** — what was actually handed back. Defaults to `defaultRefundAmount`; the register operator (holding `Permission::REFUND_CASH` or `Permission::REFUND_BANK`, per `staff-access-domain-design.md`) may consciously set a different value — a goodwill over- or under-payment — and that override is what's recorded as fact, never silently reconciled back to the default.
+- **`displayPriceAtReturn`** — nullable, informational only, a live `PriceResolver` read taken at the moment of the return. Never used in the `actualRefundAmount` computation — kept purely so the operator (and a later report) can see "this item is now selling at X" alongside what was actually refunded, the one legitimate use for a live price read this section has.
+
+Per §1, none of this ever writes back into `Variation`'s or `Price`'s own fields — the source system's refund handler did exactly that as a side effect, which this design still deliberately does not carry forward.
 
 ### 3.5 `recorded_at` vs. `effective_at`
 
@@ -140,6 +169,139 @@ A new `assertProductNameAndSkuMatchType()` enforces exactly this: required for S
 
 **Not this section's job:** deciding how the caller obtains the name/SKU to pass in (loading the real Product/Variation at the point of sale) — that is `CheckoutOrchestrator`'s own concern (and POS's, once built), an application-layer detail, not a domain rule.
 
+**Amended by §3.13 E-D5 — a real defect in this section's own original design, found during Prompt Г (`admin-panel-design.md` §14) and fixed here, not yet in code:** `reconstituteFromStorage()` delegates to the same private constructor as fresh construction, so the "required for SALE" assertion above ran on BOTH paths — a legacy row written before this section shipped, with a genuinely NULL `product_name`, throws the moment it is read back from storage, not just when someone tries to write an invalid one. That is backwards: "required" should govern what a NEW row may look like, never what an OLD row is allowed to have been.
+
+**The fix (applies retroactively to `productName`/`sku`, and governs every new §3.13 field the same way):** split validation into two tiers. Tier A — structural, e.g. "must be null for SHIPPING/INSTALLMENT_PAYMENT" — is a fact about the line's TYPE, true regardless of when it was written, and stays in the constructor, enforced on every path including reconstitution. Tier B — "required for SALE" — is a fact about how this codebase now insists a *fresh* line be built, and moves into a new named factory, `SaleLine::create(...)` (mirroring `Client::create()`/`Promotion::create()`/`Product::createSimple()`'s existing naming precedent), which every fresh-construction call site must use instead of `new SaleLine(...)` directly. `reconstituteFromStorage()` keeps calling the bare constructor — Tier A only — so a legacy NULL reads back exactly as stored, no throw, no invented value.
+
+### 3.13 Full sale-line snapshot for returns — designed, not yet implemented
+
+**Status of this whole section: design only, approved decisions from the domain owner (E-D1–E-D5), not yet built.** See §6 for the implementation stages this becomes once picked up. No code, migration, or test referenced below exists yet.
+
+**The gap this closes:** `amount` (§2) is the pre-promotion unit price × quantity (`CheckoutLinePricer`) — the promotion discount exists only as one order-level total (`orders.discount_minor`), never allocated per line. Building a real return on top of today's `SaleLine` means guessing how much of a given line's money to hand back; `profit` is computed the same pre-promotion way, silently overstating margin on every promoted order. This section designs the fix; it does not build it.
+
+#### E-D1 — Three price levels, never mixed
+
+1. **Display price** (Pricing, live) — changes over time; a sale never writes back into it (§1).
+2. **Price at the moment of sale** (snapshot) — the regular and final unit price as the store showed it, frozen the instant the sale happened.
+3. **Actually paid** — level 2 minus the promotion-code share minus a discretionary (register) discount. Exists ONLY on the sale record.
+
+**Worked example (stated verbatim — it is what keeps the field names below straight):** a POS item displayed at 51.10 is sold for 50.00 as a courtesy to a regular client. A later return refunds 50.00 — the actually-paid amount — never 51.10. The admin panel and the storefront keep showing 51.10 throughout; the courtesy discount never reaches back into Pricing or Catalog.
+
+#### E-D2 — Returns refund the actually-paid amount, by default
+
+A return refunds the actually-paid amount (level 3) of the returned units by default. The operator may consciously refund a different amount, but that is an explicit override, never the default computation. The display price on the return date is recorded for information only and never drives the refund amount. §3.4 above is rewritten to match.
+
+#### E-D3 — Two separate discount fields per line, never merged
+
+`promotionDiscountShare` and `discretionaryDiscount` are two distinct fields, always — never one merged figure. A web-channel line's `discretionaryDiscount` is always zero (no discretionary-discount UI exists or is designed for the storefront), but the field exists on every SALE line, not only POS ones, so `netPaidAmount`'s formula never needs a channel-specific branch.
+
+#### E-D4 — One snapshot builder for both channels
+
+The logic that turns a priced line into the full field set below is one app-layer service — the same shape `CheckoutLinePricer` already establishes (`App\Services`, not a domain concept; `SaleLine` itself still knows nothing about Pricing, Cart, or POS input, per §1). Web Checkout is its first caller (implementation stage 4, §6); a future POS flow is its second. Two independent implementations of "how to fill in a snapshot" is exactly the class of drift §3.3/§3.8 already warn against — one service, two callers.
+
+**Revised — the allocation math itself is ONE level lower than the snapshot builder, and has a THIRD caller besides the two above.** Splitting a total Money amount across weighted shares is not specific to promotions at all — a future POS bill-level discretionary discount (a cashier knocks 5.00 off the whole ticket; §3.13's own `discretionaryDiscount` field needs a per-line share of that too) needs the exact same operation. Recommend: **`Money::allocate(array $weights): array` on `EasyCo\Pricing\Money` itself**, not a dedicated allocator service and not duplicated per caller — see the Promotion allocation rule below for its exact contract. `Money` is already the shared, framework-agnostic primitive every one of these domains reuses (§3.1); a pure, stateless "split myself into N parts by these weights" operation is the same class of method as the `multiply(int)` it already has, not a new architectural concept. `PromotionDiscountCalculator` becomes `Money::allocate()`'s first caller; the future POS discretionary-discount split and the future snapshot builder (E-D4 above) are its second and third — one implementation, three callers, none of them re-deriving the largest-remainder logic independently.
+
+#### E-D5 — Invariants at creation, trust storage on reconstitution
+
+Covered fully in §3.12's own amendment above (the `SaleLine::create()` / `reconstituteFromStorage()` split). Applies identically to every field below: required on fresh construction, `NULL` accepted on reconstitution, never backfilled on legacy rows.
+
+#### Fields
+
+| Field | Type | Required (fresh SALE line) | Meaning |
+|---|---|---|---|
+| `regularUnitPrice` | `Money` | yes | Level 2's regular component, per unit. |
+| `finalUnitPrice` | `Money` | yes | Level 2's final component, per unit — the price the store actually showed, before any promotion/discretionary discount. For a FRESH line, removes the need for the current workaround in `OrderAdminReader::buildLineView()`, which divides `amount` by `quantity` and defensively checks the division is exact (logging a warning and rendering "unavailable" when it isn't). **`OrderAdminReader` keeps that fallback, unchanged, for any row where `finalUnitPrice` is `NULL`** (a legacy row, per E-D5) — it does not delete the workaround, only stops needing it for new rows; the two code paths (`finalUnitPrice` when present, the divide-and-check fallback when absent) coexist by design, matching E-D5's own "never backfilled" rule. |
+| `promotionDiscountShare` | `Money` | yes (zero when not applicable) | This line's share of the order-level promotion-code discount — see Promotion allocation rule below. |
+| `discretionaryDiscount` | `Money` | yes (always zero on a WEB line) | E-D3. |
+| `netPaidAmount` | `Money` | yes | Level 3 — `finalUnitPrice × quantity − promotionDiscountShare − discretionaryDiscount`. |
+| `soldAttributes` | ordered `array<{definitionId: string, definitionCode: string, definitionName: string, valueId: string, value: string}>` | yes (`[]` for a SIMPLE line — never `null`) | The sold Variation's attribute values as they existed at sale time — display/reprint/returns only, not a reporting source (live `catalog_variation_attribute_values` serves that, joined via `priceableId` — see Q3). |
+| `unitCost` | `?Money` | recommended (Q2) — nullable even on a fresh line: `null` = genuinely unknown, not zero | Closes `checkout-domain-design.md` §9.3's own deferred gap. |
+
+#### Invariants
+
+- **Same currency** across `amount`, `regularUnitPrice`, `finalUnitPrice`, `promotionDiscountShare`, `discretionaryDiscount`, `netPaidAmount`, and `unitCost` (when set) — enforced by `SaleLine::create()` (single-line scope, `Money`'s own cross-currency operations already refuse to compute otherwise, same posture `InstallmentPlan`'s `CurrencyMismatchException` already establishes, §3.10).
+- **`netPaidAmount == finalUnitPrice × quantity − promotionDiscountShare − discretionaryDiscount`, exactly.** `SaleLine::create()` receives `netPaidAmount` as an explicit argument — never silently recomputed internally — and validates it against this formula, throwing on mismatch. The same "cheap corruption detector, not implicit trust" posture `reconstituteFromStorage()`'s own docblock already uses for `Variation`'s signature-vs-assignments check (cited directly in this document's §3.12 amendment above) — a builder bug that miscalculates `netPaidAmount` is caught immediately at construction, never silently persisted.
+- **`netPaidAmount ≥ 0`.** `create()` throws if the formula would produce a negative value — a discretionary discount or promotion share exceeding the line's final value is a caller bug the builder/POS UI must cap before calling `create()`, never a state a `SaleLine` represents.
+- **Order-level reconciliation, enforced by the snapshot builder (E-D4), not by `SaleLine` itself** (a single line has no visibility into its siblings or the `Order`): for a WEB order, `Σ line.promotionDiscountShare == orders.discount_minor` exactly, and `Σ line.netPaidAmount == orders.total_minor` exactly. If the Promotion allocation rule below is implemented correctly, this assertion should never actually fire in production — it exists as the same class of cheap, always-on corruption detector as the two checks above, not routine defensive programming against an expected failure.
+  **Caveat, holds only as long as `checkout-domain-design.md` §10 still holds:** `Σ netPaidAmount == orders.total_minor` is only true because `Order.total` is currently defined as exactly `subtotal − discount`, with **no shipping component** (§10's own explicit statement). The moment shipping is added to `Order.total` — §10 already lists everything else that touches — this invariant needs a `shippingMinor` term added to one side or the other (a `SaleLine` for the shipping charge already exists as its own `SHIPPING`-type line per §2/§4, excluded from this sum today since it isn't a SALE line at all). Not a correction needed now; flagged so whoever adds shipping finds this invariant on the list rather than rediscovering it, the same posture §10 itself already takes for every other shipping consequence.
+
+#### Promotion allocation rule
+
+**Owned by `PromotionDiscountCalculator` (`App\Services`) — the exact same code path that computes the order-level total today, extended, never a second independent split.** `eligibleBase()`/`baseCappedByUsageLimit()` already compute a per-line "eligible amount" internally while accumulating toward one total — today that per-line value is discarded the moment it's added to the running sum. The extension: keep each line's own eligible amount (walked in the SAME array order `baseCappedByUsageLimit()` already establishes), and hand `[eligibleAmount[0], eligibleAmount[1], ...]` as weights to `Money::allocate()` (E-D4 above) together with the already-computed total discount.
+
+**REVISED — largest-remainder method, not "round each share, last line absorbs the remainder."** The original per-line rounding rule in this section was wrong, and demonstrably so, not just inelegant:
+
+> **Counter-example that disproves it:** a 10% promotion over three lines with eligible amounts 5, 5, 1 (minor units; base = 11). `roundedDivide(11 × 1000, 10000)` = **1** minor unit total discount. The old rule: `share[0] = roundedDivide(5 × 1000, 10000)` = 1 (half-up rounds `0.5` up), `share[1]` = 1 the same way, `share[2]` (the last line, "absorbing the remainder") = `total − share[0] − share[1]` = `1 − 1 − 1` = **−1**. A negative promotion share on a real sale line — exactly the class of bug `netPaidAmount ≥ 0` (this section's own Invariants) exists to catch, except here the BUILDER itself would be the thing producing the invalid value, not a caller.
+
+`Money::allocate(array $weights): array` fixes this with the **largest-remainder method** (a well-established, standard technique for this exact problem — not invented here):
+
+1. For each weight `w[i]`, compute the exact (unrounded) share `w[i] × total / Σw` and take its floor: `floor[i] = intdiv(w[i] × total, Σw)`.
+2. `leftover = total − Σ floor[i]` (an integer, `0 ≤ leftover < count(weights)` by construction).
+3. Distribute `leftover` minor units one each to the `leftover` lines with the **largest fractional remainder** (`w[i] × total mod Σw`, largest first); ties broken by array order — the same "walk in the given order, deterministic" posture `baseCappedByUsageLimit()` already establishes elsewhere in this same class.
+
+**Same counter-example, worked through the new rule:** weights `[5, 5, 1]`, total `1`. `floor[i]` = `intdiv(5×1,11)=0`, `intdiv(5×1,11)=0`, `intdiv(1×1,11)=0` — all zero. `leftover = 1 − 0 = 1`. Fractional remainders: `5×1 mod 11 = 5`, `5×1 mod 11 = 5` (tied with line 0), `1×1 mod 11 = 1`. Line 0 wins the tie (array order) and receives the one leftover unit: `share = [1, 0, 0]`. Sums to `1` ✓; every share is `≤` its own weight ✓; nothing negative.
+
+**Guarantees, stated explicitly (the contract `Money::allocate()` must document and a unit test must prove):**
+- `Σ shares == total`, exactly, always.
+- `0 ≤ share[i] ≤ weights[i]` for every `i` — a line's share can never exceed its own eligible amount, and never goes negative. (Holds because `total ≤ Σweights` in every caller here — `PromotionDiscountResult`'s own capping already guarantees this on the Promotions side — and the leftover distributed is always `< count(weights)`, so no single floor can be pushed past its own weight; see the method's own docblock for the short proof once implemented.)
+- Deterministic: the same `(weights, total)` input always produces the same output — no dependency on hash-map iteration order or anything but array position.
+
+**The four cases restated against the new rule:**
+- **PERCENTAGE:** weights = each applicable line's eligible amount; total = the already-computed `roundedDivide(base × basisPoints, 10000)`.
+- **FIXED_AMOUNT, uncapped (nominal ≤ base):** weights = eligible amounts; total = `nominal`.
+- **FIXED_AMOUNT, capped (nominal > base):** total = `base` itself (`PromotionDiscountResult::capped()`) — `Money::allocate()` with `total == Σweights` degenerates to `share[i] = weights[i]` exactly (every `floor[i]` already equals `weights[i]`, `leftover = 0`), so this case needs no special-casing at all, unlike the old rule.
+- **`usageLimitItems` set:** weights are exactly what `baseCappedByUsageLimit()` already computes per line — full `lineTotal` for a line entirely within the limit, `unitPrice × remaining` for the line that crosses it, zero beyond it. Zero-weight lines always floor to `0` and can never win a largest-remainder tie against a genuinely eligible line (their fractional remainder is `0`), so "non-applicable lines get share `0`" falls out of the algorithm, not a special case.
+
+**Per-line keys — POS forces a positional, not associative, breakdown.** `PromotionDiscountResult`'s new accessor returns a plain, sequential `array<int, Money>`, positionally aligned with the `$applicableLines` array already passed into `calculate()` — **never** `array<string, Money>` keyed by `variationId`. On the web, keying by `variationId` would be safe today — `cart_lines` carries a real `UNIQUE(cart_id, variation_id)` constraint (`cart_lines_cart_variation_unique`, `2026_08_31_000002_create_cart_lines_table.php`), so a web cart can never have two lines for the same variation. A future POS ticket has no such constraint and no reason to need one (a cashier may legitimately ring up the same item twice as two separate lines, e.g. rung at different discretionary discounts) — an associative breakdown would silently collapse two real lines' shares into one key. Keying by array position, matching how `$applicableLines`/`$validatorLines` are already built and walked everywhere else in this pipeline, works identically for both channels and can never collide.
+
+#### Partial return of a quantity
+
+**Confirmed sound, with a worked example:** cumulative `floor(netPaidAmount_minor × n / quantity)` for `n = 0..quantity`, differenced. Returning units `r+1..r+k` (i.e., `k` more units on top of `r` already refunded, tracked by summing `quantityReturned` across prior `REFUND` lines sharing this `originatingSaleLineId` — a query, never a stored running counter, per §3.4's revised design above) refunds `cumulative(r + k) − cumulative(r)`.
+
+**Worked example, quantity 3, net 100.00 (10000 minor units):** `cumulative(0)=0, cumulative(1)=3333, cumulative(2)=6666, cumulative(3)=10000`. Returning one unit at a time: `3333`, then `3333`, then `3334` — sums to `10000`. Returning two units then one: `6666`, then `3334` — still `10000`. This holds for ANY sequence of consecutive partial returns, by construction: it's a telescoping sum over integer breakpoints of the same fixed interval `[0, quantity]`, not per-return-event rounding that could drift — the property the prompt's own "never a cent more or less, in any sequence" requirement demands.
+
+#### Profit, computed on net
+
+`profit = netPaidAmount − (unitCost × quantity)`, computed by the snapshot builder at SALE-line creation time (implementation stage 4, §6) and stored in the EXISTING `profit` field — no new field needed. **Existing rows are unchanged** — `profit` is a historical fact (§3.2); nothing rewrites it retroactively. Reports must read `profit` conditioned on `netPaidAmount`'s own nullability (E-D5): `netPaidAmount === null` (a legacy row) means `profit` was computed the OLD way (`amount − unitCost × quantity`, i.e. before any promotion was subtracted); `netPaidAmount !== null` means `profit` is computed the NEW way, on net. No separate schema-version flag is needed — `netPaidAmount`'s own presence already carries this signal, the same "one nullability check answers two questions" shape §3.13's fields already lean on elsewhere in this section.
+
+#### `amount`'s meaning — recommendation (domain-owner decision at review)
+
+**Recommended: keep `amount`'s meaning byte-identical (final unit price × quantity, pre-promotion) and add `netPaidAmount` as a new, separate fact — do not redefine `amount`.** `amount` continues to mean "the gross value of the goods, at the store's displayed final price" — a real, legitimate figure in its own right (what a receipt line would show before a register discount), unchanged for every existing row, no migration needed to preserve its meaning. Reports that want "real revenue, net of everything actually discounted" switch to `netPaidAmount`, falling back to `amount` explicitly (never silently) for a legacy row where `netPaidAmount` is `null`.
+
+**Rejected alternative:** redefining `amount` itself to mean net. This would silently change what every existing row's `amount` value means without changing the stored data — a report written before this change and one written after would disagree about what the identical historical number represents, with nothing in the data itself to tell them apart. That is precisely the kind of undocumented meaning-drift this project's own design-doc discipline (every "corrected during implementation" note throughout this document and `checkout-domain-design.md`) exists to prevent. Presented as a recommendation, not decided here, per this task's own instruction.
+
+#### REFUND lines
+
+Covered fully in §3.4's rewrite above: a REFUND line inherits `productName`/`sku`/`soldAttributes`/`regularUnitPrice`/`finalUnitPrice` via `originatingSaleLineId` (never duplicates them), and records on itself `quantityReturned`, `defaultRefundAmount` (computed, informational), `actualRefundAmount` (the fact of record, operator-overridable), and `displayPriceAtReturn` (informational only, never drives the refund amount — E-D2).
+
+#### RESERVATION lines
+
+Same posture §3.12 already established for `productName`/`sku`: unconstrained for now (either state acceptable) — reservation-recording isn't wired end-to-end in production yet (`inventory-domain-design.md`), so requiring any of §3.13's new fields here would only force placeholder values into a flow that doesn't practically exist. Revisit together, when reservation-recording is actually built.
+
+#### Open questions — recommendations only, not decided here
+
+**Q1 — Price-list source (which price list produced the final price, e.g. "Manual Sale" vs. a campaign)?** Requires an additive change to Pricing's `PriceQuote` (a cross-package change, the most invasive item in this whole section). Value: campaign-level reporting distinct from promotion-code tracking (already fully covered by `promotionDiscountShare`/`PromotionRedemption`), and a possible future input to `excludeSaleItems`-style exchange logic. **Recommend: defer.** No exchange flow exists or is designed anywhere in this project yet (returns here means refund, not exchange), so there is no real consumer for this field today — adding it now would be exactly the kind of speculative field this project's own repeated "no `priority` field until something needs it" (`promotions-domain-design.md` §3.1) and "no shipping component until something charges for it" (`checkout-domain-design.md` §10) precedent argues against. Add `§5`'s deferred list entry below; revisit when a real campaign-reporting or exchange-flow need is actually designed.
+
+**Q2 — Unit cost snapshot (`unitCost`, nullable = unknown).** **Recommend: include now.** Closes `checkout-domain-design.md` §9.3's own already-flagged gap ("cost never set vs. verified zero... would require changing `SaleLine` itself — out of scope") directly — this is that moment. Lets a return correctly reverse profit using the cost that was actually true at sale time, not whatever `ProductCost` says today (which may have changed). Small, low-risk addition: the source already exists and is designed (`CostPriceProvider::costFor()`, `checkout-domain-design.md` §9.1), and `CheckoutLinePricingResult::costRecorded()` already distinguishes "real" from "zero-fallback" — this only needs the actual `?Money` value carried one step further, onto `SaleLine`, instead of being discarded after computing `profit`.
+
+**Q3 — Attribute snapshot storage: JSON column vs. a child table.** **Recommend: a JSON column on the sale line row.** A snapshot is read as a whole, once, alongside its parent line — it is never independently filtered or joined the way `catalog_variation_attribute_values` legitimately is for live catalog browsing. A child table would need its own repository/reconstitution plumbing for a fact that has exactly one real consumer shape ("show what was sold").
+
+**Stronger argument for JSON, confirmed against the real invariant rather than just "it's simpler":** a `Variation`'s attribute assignments are **immutable after creation** — `Product::declareVariationAxes()`/`assertValidCombination()` fix a STANDARD variation's combination at the point it's added, `changeVariationCombination()` is the only mutation path and creates no new historical ambiguity (it validates against a uniqueness check the same way creation does, catalog-domain-design.md §"Atomic variation combination changes"), and a variation is archived, never deleted (§2's own "historical identity is never destroyed," CLAUDE.md rule 4) — so `catalog_variation_attribute_values` for a given `variation_id` is, for all practical reporting purposes, itself already a stable historical fact, not a moving target. **This means a report like "units sold per size" does not need the snapshot at all** — it can `JOIN` live `catalog_variation_attribute_values` through `SaleLine.priceableId` (already a plain id reference, §2) and get an accurate answer, exactly the shape `OrderAdminReader`'s own cross-table reads already establish for other admin queries. `soldAttributes` therefore serves a genuinely narrower job than Q3's original framing suggested: **display, reprint, and returns only** (showing what a specific receipt said, verbatim, even if the variation itself is later archived and its live rows become harder to reach) — never the one thing that might have justified a queryable child table (per-attribute aggregate reporting), because that need is already served, more accurately, by the live join. This makes the JSON recommendation stronger, not merely simpler: there is no real reporting consumer this format under-serves.
+
+Each JSON entry gains `definitionId` (the raw `catalog_attribute_definitions.id`, alongside the already-specified `definitionCode`/`definitionName`/`valueId`/`value`) — a real id, not just its human-readable code/name pair, so a future need to join back to the live definition (e.g. checking whether an attribute's `type` changed) has one to use without re-deriving it from `definitionCode`.
+
+**Q4 — Other gaps found while designing this. Recorded here as domain-owner decisions for the future Returns design — NOT designed or built in this pass; also listed in §5's deferred list.**
+
+- **(a) The performing staff member.** No field records WHO acted anywhere on `SaleLine`/`OperationalSales` today, despite `Permission::REFUND_CASH`/`REFUND_BANK` already gating the action itself. **Decided:** taken from the authenticated user at the point of return and recorded on the REFUND line itself (not the original SALE line — the SALE line's own facts, per §3.2, stay about the sale, never retroactively annotated with a fact from its eventual return).
+- **(b) Return reason.** **Decided:** an optional free-text field on the REFUND line. No fixed taxonomy (defective / wrong size / changed mind / ...) decided here — free text is the V1 shape; a structured reason code, if ever wanted, is a later, separate decision.
+- **(c) Restocking.** **Decided:** a POS return increases stock unconditionally. Whether the returned unit becomes sellable ONLINE again is a merchant-controlled checkbox at the point of return — a real, common case in physical retail is a returned item going back into POS-only stock (e.g. it has no product photos, or the merchant wants to inspect it before it's orderable online again). An ONLINE return (the storefront's own return flow, once one exists) always increases stock AND makes the variation sellable — no checkbox, since an online customer only ever returns something that was itself sellable online. If the parent Product is inactive at the point of a return that re-enables its only remaining sellable variation, the Product is activated too, so the return doesn't silently produce stock nobody can buy.
+
+  **Open points recorded alongside (c), for whoever picks up Returns:**
+  - **Reviving an ARCHIVED variation goes through `Product::restoreArchivedVariation($variation)`, never `Variation::reviveFromArchive()` directly** — confirmed against the installed source: `reviveFromArchive()` is reserved for exactly two sanctioned Product-level callers (`Product::addStandardVariation()`'s implicit reuse case, and `restoreArchivedVariation()`'s explicit one — `Variation.php`'s own docblock, catalog-domain-design.md §3.17); calling it from anywhere else, including a future Returns flow, would bypass `restoreArchivedVariation()`'s own axis-drift validation. `restoreArchivedVariation()` only takes the variation ARCHIVED → DRAFT — `is_visible`/`is_purchasable` deliberately stay `false` afterward (confirmed: `Variation.php`'s own comment on this) — a subsequent, explicit `activate()` (DRAFT → ACTIVE) plus `setVisible(true)`/`setPurchasable(true)` is still needed to actually make it sellable again; `activate()` called directly on a still-ARCHIVED variation throws (`Variation::activate()`'s own guard). **A real failure mode a Returns flow must handle, not assume away:** `restoreArchivedVariation()` throws `VariationNotRestorableException` if the Product's declared axes drifted since the variation was archived — what a return should do when the specific variation it's trying to restock literally cannot be restored is a genuine open question, not answered here.
+  - **The activity log:** a Product brought back online by a return is recorded via the existing `App\Services\ActivityLogger` (already the mechanism `ProductResource`'s own edit pages use for other Product-state changes), with the triggering order's id as the recorded reference — reusing the established mechanism, not inventing a parallel one.
+  - **Whether a DRAFT product is ever auto-published by a return.** **Recommend: no.** A DRAFT product was never live in the first place — a return reactivating one of its variations should not be the thing that first PUBLISHES the product; that remains a deliberate merchant action (`Product::publish()`), same posture as everywhere else `publish()` is a conscious, explicit call, never a side effect of an unrelated operation.
+  - **Whether a "return to stock" checkbox (default ON) is needed for a defective item** — i.e. an explicit way to receive a return WITHOUT restocking it at all (a genuinely defective unit that should never be resold). Not decided here; flagged as a real, likely-needed exception to (c)'s "restocking is the default" rule, for the same future design pass.
+
 ---
 
 ## 4. Status taxonomy: source system → this model
@@ -164,12 +326,14 @@ A new `assertProductNameAndSkuMatchType()` enforces exactly this: required for S
 
 ## 5. Explicitly deferred (documented, not accidental)
 
-- **Persistence layer and migrations for all four aggregates** (`Client`, `Transaction`, `SaleLine`, `InstallmentPlan`) — the domain layer is now fully implemented and tested in memory (61 tests, §3.9–§3.11 document what implementation resolved), but no Eloquent models, repositories, or migrations exist yet. This was implicit in §6's original next-steps ordering (domain layer, then persistence); now that the domain layer is done, it's the explicit next piece of work, following the same repository/reconstituteFromStorage() shape already proven in Catalog.
+- ~~Persistence layer and migrations for all four aggregates~~ — **done as of v1.2** (see this document's own Status line); this entry was stale (still described as "no Eloquent models, repositories, or migrations exist yet") until corrected in this pass, alongside the identical staleness found and fixed in §6 item 3.
 - **Full report/query-layer implementation** (daily register comparison, period summaries, delivery reconciliation) — the data model in §2 is designed to support all of it, but the actual query/view layer is separate follow-up work, not part of this domain's core.
 - **`SkuGenerator`/`BarcodeGenerator`** (already deferred from earlier Catalog work) — unrelated to this domain, still queued behind it.
 - **Brand/channel-specific discount rules** (e.g. the source system's brand-specific POS discount button) belong to **Pricing**, implemented as Hook filters (`Hook::apply('pricing.discount.percentage', ...)`), not to this domain — Operational Sales only ever records the resulting `amount` as a fact, never decides it.
 - **Barcode-based variation lookup for POS** — depends on the still-pending `VariationRepository::findByBarcode()` usage patterns; not designed here.
 - **Multi-operator concurrency safety** (two cashiers acting on the same client/plan simultaneously) — the DB-constraint-first pattern established throughout this project (`catalog-domain-design.md` §7) will apply once persistence is designed, but the specific constraints aren't finalized in this pass.
+- **Which price list produced a sale line's final price** (§3.13 Q1) — deferred: requires an additive change to Pricing's `PriceQuote`, and no real consumer (campaign reporting, an exchange flow) exists or is designed yet. Revisit if one is.
+- **The REFUND/POS flow itself** (§3.13 Q4) — domain-owner decisions recorded (performing staff member from the authenticated user, a free-text return reason, POS-return-always-restocks vs. online-return-restocks-and-relists), but nothing here is built: the restore-from-archive path, the activity-log entry, whether a DRAFT product can be auto-published by a return (recommended: no), and a possible "don't restock, it's defective" checkbox are all still open, for whoever builds returns end-to-end.
 
 ---
 
@@ -177,5 +341,12 @@ A new `assertProductNameAndSkuMatchType()` enforces exactly this: required for S
 
 1. ~~Review of this document by the domain owner (in progress).~~ Done — this is v1.1.
 2. ~~Domain-layer implementation (`Client`, `Transaction`, `SaleLine`, `InstallmentPlan` as plain PHP, framework-agnostic, mirroring `Product`/`Variation`'s existing shape) — separate, focused prompts per aggregate, same rhythm as the Catalog build.~~ Done as of v1.1 — see §3.9–§3.11 for what implementation resolved beyond the original design; 61 tests passing.
-3. **Persistence layer, migrations, and the DB-constraint story for `InstallmentPlan` settlement** — now the next piece of work; see §5.
-4. Reporting/query layer — last, once the write model is solid.
+3. ~~Persistence layer, migrations, and the DB-constraint story for `InstallmentPlan` settlement.~~ **Done as of v1.2** — see this document's own Status line (migrations, Eloquent repositories, verified against a real MySQL database). This item was still marked "next piece of work" here until this pass corrected it — a stale note found while adding §3.13, not left as-is.
+4. Reporting/query layer — once the write model is solid.
+
+**§3.13's own implementation stages** (full sale-line snapshot for returns — design approved, nothing below built yet):
+
+5. Schema (migration for §3.13's new `SaleLine` columns) + the `SaleLine` domain changes themselves (`SaleLine::create()`, the reconstitution split, §3.12's amendment) + the retroactive `reconstituteFromStorage()` fix for `productName`/`sku`.
+6. Per-line allocation in `PromotionDiscountCalculator` (§3.13's Promotion allocation rule).
+7. `CheckoutOrchestrator` writes the full snapshot via the new one-service-two-channels builder (§3.13 E-D4), and `profit` moves to being computed on net (§3.13).
+8. Admin Order View (`admin-panel-design.md` §14) surfaces the new fields.
