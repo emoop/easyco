@@ -45,11 +45,28 @@ class SaleLineModel extends Model
         'originating_sale_line_id',
         'originating_reservation_line_id',
         'installment_plan_id',
+        // operational-sales-domain-design.md §3.13 — see that migration's
+        // own docblock for why every Money field is a <name>_minor +
+        // <name>_currency pair, and why sold_attributes is JSON.
+        'regular_unit_price_minor',
+        'regular_unit_price_currency',
+        'final_unit_price_minor',
+        'final_unit_price_currency',
+        'promotion_discount_share_minor',
+        'promotion_discount_share_currency',
+        'discretionary_discount_minor',
+        'discretionary_discount_currency',
+        'net_paid_amount_minor',
+        'net_paid_amount_currency',
+        'unit_cost_minor',
+        'unit_cost_currency',
+        'sold_attributes',
     ];
 
     protected $casts = [
         'recorded_at' => 'datetime',
         'effective_at' => 'datetime',
+        'sold_attributes' => 'array',
     ];
 
     public function transaction(): BelongsTo
