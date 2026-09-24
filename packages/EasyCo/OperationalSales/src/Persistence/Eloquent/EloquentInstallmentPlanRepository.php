@@ -4,12 +4,9 @@ namespace EasyCo\OperationalSales\Persistence\Eloquent;
 
 use EasyCo\OperationalSales\Contracts\InstallmentPlanRepository;
 use EasyCo\OperationalSales\Enums\InstallmentPlanStatus;
-use EasyCo\OperationalSales\Enums\SaleLineStatus;
 use EasyCo\OperationalSales\Enums\SaleLineType;
 use EasyCo\OperationalSales\Exceptions\ClientAlreadyHasActiveInstallmentPlanException;
 use EasyCo\OperationalSales\InstallmentPlan;
-use EasyCo\OperationalSales\SaleLine;
-use EasyCo\Pricing\Money;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -201,7 +198,7 @@ final class EloquentInstallmentPlanRepository implements InstallmentPlanReposito
         $paymentLines = [];
 
         foreach ($lineModels as $lineModel) {
-            $saleLine = $this->toDomainSaleLine($lineModel);
+            $saleLine = SaleLineMapper::toDomain($lineModel);
 
             if ($saleLine->type() === SaleLineType::RESERVATION) {
                 $reservedLines[] = $saleLine;
@@ -222,27 +219,6 @@ final class EloquentInstallmentPlanRepository implements InstallmentPlanReposito
             status: InstallmentPlanStatus::from($model->status),
             reservedLines: $reservedLines,
             paymentLines: $paymentLines,
-        );
-    }
-
-    private function toDomainSaleLine(SaleLineModel $model): SaleLine
-    {
-        return SaleLine::reconstituteFromStorage(
-            id: (string) $model->id,
-            transactionId: (string) $model->transaction_id,
-            clientId: (string) $model->client_id,
-            priceableId: $model->priceable_id,
-            type: SaleLineType::from($model->type),
-            status: SaleLineStatus::from($model->status),
-            quantity: $model->quantity,
-            amount: Money::fromMinorUnits($model->amount_minor, $model->amount_currency),
-            profit: Money::fromMinorUnits($model->profit_minor, $model->profit_currency),
-            recordedAt: $model->recorded_at->toDateTimeImmutable(),
-            effectiveAt: $model->effective_at->toDateTimeImmutable(),
-            originatingSaleLineId: $model->originating_sale_line_id !== null ? (string) $model->originating_sale_line_id : null,
-            originatingReservationLineId: $model->originating_reservation_line_id !== null ? (string) $model->originating_reservation_line_id : null,
-            productName: $model->product_name,
-            sku: $model->sku,
         );
     }
 }

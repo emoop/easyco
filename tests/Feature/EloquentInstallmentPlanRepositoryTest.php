@@ -14,11 +14,13 @@ use EasyCo\OperationalSales\InstallmentPlan;
 use EasyCo\OperationalSales\Persistence\Eloquent\ClientModel;
 use EasyCo\OperationalSales\Persistence\Eloquent\InstallmentPlanModel;
 use EasyCo\OperationalSales\Persistence\Eloquent\SaleLineModel;
+use EasyCo\OperationalSales\Persistence\Eloquent\TransactionModel;
 use EasyCo\OperationalSales\SaleLine;
 use EasyCo\OperationalSales\Transaction;
 use EasyCo\Pricing\Money;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use RuntimeException;
 use Tests\TestCase;
 
@@ -319,5 +321,65 @@ class EloquentInstallmentPlanRepositoryTest extends TestCase
 
         $this->expectException(RuntimeException::class);
         $this->repository()->save($plan);
+    }
+
+    /**
+     * §3.13 D5 — the shared SaleLineMapper, proven through THIS
+     * repository too, not only EloquentTransactionRepositoryTest's own
+     * equivalent. A raw-inserted RESERVATION row with every §3.13 column
+     * NULL reads back through findById() without throwing and with every
+     * new accessor null — the same mapper, the same behaviour, via its
+     * second real caller.
+     */
+    public function test_a_legacy_reserved_line_with_null_snapshot_fields_reads_back_without_throwing(): void
+    {
+        $clientId = $this->clientId();
+        $transactionModel = TransactionModel::create(['channel' => Channel::POS->value]);
+
+        $plan = InstallmentPlan::open($clientId);
+        $this->repository()->save($plan);
+
+        DB::table('operational_sales_sale_lines')->insert([
+            'transaction_id' => $transactionModel->id,
+            'client_id' => $clientId,
+            'priceable_id' => 'priceable-1',
+            'product_name' => null,
+            'sku' => null,
+            'type' => SaleLineType::RESERVATION->value,
+            'status' => SaleLineStatus::PENDING->value,
+            'quantity' => 1,
+            'amount_minor' => 1000,
+            'amount_currency' => 'EUR',
+            'profit_minor' => 200,
+            'profit_currency' => 'EUR',
+            'recorded_at' => now(),
+            'effective_at' => now(),
+            'regular_unit_price_minor' => null,
+            'regular_unit_price_currency' => null,
+            'final_unit_price_minor' => null,
+            'final_unit_price_currency' => null,
+            'promotion_discount_share_minor' => null,
+            'promotion_discount_share_currency' => null,
+            'discretionary_discount_minor' => null,
+            'discretionary_discount_currency' => null,
+            'net_paid_amount_minor' => null,
+            'net_paid_amount_currency' => null,
+            'unit_cost_minor' => null,
+            'unit_cost_currency' => null,
+            'sold_attributes' => null,
+            'installment_plan_id' => $plan->id(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $reloaded = $this->repository()->findById($plan->id());
+
+        $this->assertCount(1, $reloaded->reservedLines());
+        $reloadedLine = $reloaded->reservedLines()[0];
+
+        $this->assertNull($reloadedLine->productName());
+        $this->assertNull($reloadedLine->regularUnitPrice());
+        $this->assertNull($reloadedLine->soldAttributes());
+        $this->assertNull($reloadedLine->unitCost());
     }
 }
