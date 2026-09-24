@@ -42,6 +42,26 @@ use EasyCo\Pricing\Currency;
  */
 class PriceDisplayFormatter
 {
+    /**
+     * Memoized per instance, and this class is bound scoped()
+     * (AppServiceProvider) — a real, confirmed regression found while
+     * building the Orders admin read-path: bare app(PriceDisplayFormatter
+     * ::class) calls at ProductResource's per-row price callbacks
+     * (priceRangeHtml(), the infolist's price entries) previously
+     * created a fresh, unbound instance for every row, and this
+     * property's own absence meant a fresh, unmemoized
+     * SiteSettingsRepository::get() query per format() call too — "N
+     * rows -> N queries", the same shape ProductPriceRangeProvider's own
+     * scoped() binding already exists to prevent (see that class's
+     * docblock). Read once, lazily, on this instance's first format()
+     * call — the class docblock's own "never cached at class-load time"
+     * still holds: cached per REQUEST (this scoped() instance's
+     * lifetime), never across requests, so a merchant changing the
+     * setting mid-session is reflected on their very next page load,
+     * just not mid-request.
+     */
+    private ?string $cachedPosition = null;
+
     public function __construct(
         private readonly SiteSettingsRepository $settings,
     ) {}
@@ -102,7 +122,9 @@ class PriceDisplayFormatter
             return $decimalValue;
         }
 
-        return match ($this->settings->get('site.currency_symbol_position') ?? 'suffix_space') {
+        $this->cachedPosition ??= $this->settings->get('site.currency_symbol_position') ?? 'suffix_space';
+
+        return match ($this->cachedPosition) {
             'prefix' => "{$symbol}{$decimalValue}",
             'prefix_space' => "{$symbol} {$decimalValue}",
             'suffix' => "{$decimalValue}{$symbol}",

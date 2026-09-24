@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Services\PriceDisplayFormatter;
 use App\Services\ProductPriceRangeProvider;
 use Illuminate\Support\ServiceProvider;
 
@@ -27,6 +28,15 @@ class AppServiceProvider extends ServiceProvider
         // process — a real singleton() would risk exactly that, serving
         // a stale price to a later, unrelated request).
         $this->app->scoped(ProductPriceRangeProvider::class);
+
+        // Same real "N rows -> N queries" shape as ProductPriceRangeProvider
+        // above, confirmed while building the Orders admin read-path —
+        // see PriceDisplayFormatter's own docblock for the full finding.
+        // Its own $cachedPosition memoizes the read WITHIN one instance;
+        // scoped() is what makes that one instance actually the SAME
+        // object across every app(PriceDisplayFormatter::class) call in
+        // a request, instead of a fresh, un-memoized one per call.
+        $this->app->scoped(PriceDisplayFormatter::class);
     }
 
     /**

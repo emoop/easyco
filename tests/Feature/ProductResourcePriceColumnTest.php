@@ -6,7 +6,9 @@ use App\Filament\Resources\ProductResource;
 use App\Filament\Resources\ProductResource\Pages\CreateProduct;
 use App\Filament\Resources\ProductResource\Pages\ListProducts;
 use App\Filament\StaffPanelUser;
+use App\Services\PriceDisplayFormatter;
 use App\Services\ProductPriceRangeProvider;
+use App\Settings\Contracts\SiteSettingsRepository;
 use EasyCo\Catalog\AttributeDefinition;
 use EasyCo\Catalog\AttributeValue;
 use EasyCo\Catalog\Contracts\AttributeDefinitionRepository;
@@ -19,6 +21,7 @@ use EasyCo\Catalog\Persistence\Eloquent\ProductModel;
 use EasyCo\Catalog\Product;
 use EasyCo\Catalog\VariationAxis;
 use EasyCo\Pricing\Contracts\PriceListItemRepository;
+use EasyCo\Pricing\Currency;
 use EasyCo\Pricing\Contracts\PriceListRepository;
 use EasyCo\Pricing\Enums\PriceListItemTargetType;
 use EasyCo\Pricing\Money;
@@ -507,6 +510,125 @@ class ProductResourcePriceColumnTest extends TestCase
         fwrite(STDERR, "\n[query-count] 5-product page: {$queriesForFiveProducts} queries, 25-product page: {$queriesForTwentyFiveProducts} queries\n");
 
         $this->assertSame($queriesForFiveProducts, $queriesForTwentyFiveProducts, 'query count must not grow with the number of rows on the page');
+    }
+
+    /**
+     * PriceDisplayFormatter's own real regression, found while building
+     * the Orders admin read-path (D7): before this class's
+     * $cachedPosition + AppServiceProvider's scoped() binding, a bare
+     * app(PriceDisplayFormatter::class) resolved a FRESH instance every
+     * call — this products list's own price_display column calls it
+     * twice per row (regular + final) — so N rows cost up to 2N real
+     * SiteSettingsRepository::get() queries. The existing
+     * test_query_count_for_a_5_product_vs_25_product_page_is_equal
+     * above does NOT catch this: it measures ProductPriceRangeProvider
+     * alone, never priceRangeHtml()/PriceDisplayFormatter at all.
+     */
+    public function test_the_currency_position_setting_is_read_once_per_scoped_instance_not_once_per_format_call(): void
+    {
+        app(SiteSettingsRepository::class)->set('site.currency_symbol_position', 'prefix');
+
+        $formatter = app(PriceDisplayFormatter::class);
+
+        $queries = $this->countQueries(function () use ($formatter): void {
+            for ($i = 0; $i < 10; $i++) {
+                $formatter->format('19.99', Currency::EUR());
+            }
+        });
+
+        $this->assertSame(1, $queries, '10 format() calls on the same instance must read the position setting exactly once');
+        $this->assertSame('€19.99', $formatter->format('19.99', Currency::EUR()));
+
+        // Resolved AGAIN via app() — still the SAME object (scoped()),
+        // zero further queries. This is the real mechanism
+        // priceRangeHtml() depends on: every row's own bare
+        // app(PriceDisplayFormatter::class) call within one request
+        // must hit this same cached instance, not a fresh one.
+        $queriesOnReResolve = $this->countQueries(function (): void {
+            app(PriceDisplayFormatter::class)->format('29.99', Currency::EUR());
+        });
+        $this->assertSame(0, $queriesOnReResolve);
+    }
+
+    /**
+     * The real, end-to-end proof for D7's own query-count requirement:
+     * rendering the products list's price_display column for many rows
+     * (which calls PriceDisplayFormatter::format() twice per priced
+     * row, via bare app() calls exactly as production code does) costs
+     * the SAME number of queries regardless of row count — the
+     * regression this task's own Commit 1 fixes.
+     */
+    public function test_query_count_for_rendering_the_price_column_is_independent_of_row_count(): void
+    {
+        $this->seedPricingLists();
+        $this->actingAsStaffRole('Administrator');
+
+        for ($i = 1; $i <= 25; $i++) {
+            $this->variableProduct("qcprice-{$i}", [
+                ['regular' => '19.99'],
+            ]);
+        }
+
+        $allProductIds = ProductModel::orderBy('id')->pluck('id')->map(fn ($id) => (string) $id)->all();
+        $provider = app(ProductPriceRangeProvider::class);
+
+        // Warm-up: memoizes the position on the shared scoped()
+        // instance BEFORE either measurement, so both blocks below
+        // measure the real, steady-state per-row cost a live page
+        // actually has (the position is read once per request, the
+        // very first time any row needs it — not re-paid by every
+        // subsequent row or by a later, separate page render).
+        app(PriceDisplayFormatter::class)->format('0.00', Currency::EUR());
+
+        $rangesFive = $provider->forProducts(array_slice($allProductIds, 0, 5));
+        $queriesForFive = $this->countQueries(function () use ($rangesFive): void {
+            foreach ($rangesFive as $range) {
+                ProductResource::priceRangeHtml($range);
+            }
+        });
+
+        $rangesTwentyFive = $provider->forProducts($allProductIds);
+        $queriesForTwentyFive = $this->countQueries(function () use ($rangesTwentyFive): void {
+            foreach ($rangesTwentyFive as $range) {
+                ProductResource::priceRangeHtml($range);
+            }
+        });
+
+        fwrite(STDERR, "\n[query-count] price column rendering, 5 rows: {$queriesForFive} queries, 25 rows: {$queriesForTwentyFive} queries\n");
+
+        $this->assertSame(0, $queriesForFive, 'the position was already memoized on the shared scoped() instance by the fixture setup above');
+        $this->assertSame($queriesForFive, $queriesForTwentyFive, 'price column rendering query count must not grow with the number of rows');
+    }
+
+    /**
+     * The other half of D7: memoization is per REQUEST, not per
+     * PROCESS — a setting change must reach the very next request, even
+     * though it is invisible mid-request (the class docblock's own
+     * documented tradeoff). Container::forgetScopedInstances() is the
+     * real mechanism Laravel itself uses to end a scoped binding's
+     * lifetime between requests in a long-running worker; a plain
+     * PHP-FPM-style fresh process gets the equivalent for free via a
+     * brand-new container, never exercised in-process by this test.
+     */
+    public function test_a_changed_currency_position_is_invisible_mid_request_but_reaches_the_next_one(): void
+    {
+        app(SiteSettingsRepository::class)->set('site.currency_symbol_position', 'prefix');
+        $this->assertSame('€19.99', app(PriceDisplayFormatter::class)->format('19.99', Currency::EUR()));
+
+        app(SiteSettingsRepository::class)->set('site.currency_symbol_position', 'suffix');
+        $this->assertSame(
+            '€19.99',
+            app(PriceDisplayFormatter::class)->format('19.99', Currency::EUR()),
+            'mid-request, the already-memoized position must not change'
+        );
+
+        $this->app->forgetScopedInstances();
+
+        $this->assertSame(
+            '19.99€',
+            app(PriceDisplayFormatter::class)->format('19.99', Currency::EUR()),
+            'a new scoped instance (the next request) must read the current setting'
+        );
     }
 
     /** The extracted priceRangeForRecord() fallback branch, exercised directly with a $livewire that is not table-bearing. */
