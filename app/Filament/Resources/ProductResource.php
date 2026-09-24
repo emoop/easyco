@@ -1535,29 +1535,36 @@ class ProductResource extends Resource
     }
 
     /**
-     * "Duplicate" — admin-panel-design.md §13.2. SIMPLE products only:
-     * hidden entirely for a VARIABLE row (the VARIABLE creation wizard
-     * this would need to feed into doesn't exist yet — see
-     * DuplicateProduct's own docblock). Gated by createPermission(),
+     * "Duplicate" — admin-panel-design.md §13.2, extended to VARIABLE
+     * per product-duplication-and-templates-note.md (DuplicateProduct's
+     * own docblock has the full reasoning: a VARIABLE duplicate always
+     * gets zero declared axes/variations, by permanent domain-owner
+     * decision, not a temporary limitation). Gated by createPermission(),
      * not editPermission() — duplicating is really "creating with
      * prefilled values," the same permission a plain Create already
      * requires. On success, redirects straight into the new product's
      * real Edit page (§13.2: "not a prefilled Create form awaiting a
-     * first save") — $livewire is a real, named-parameter-injectable
-     * closure argument on Filament\Actions\Action (confirmed against
-     * the installed source), giving access to Livewire's own
-     * redirect().
+     * first save") — a VARIABLE duplicate lands on EditVariableProduct's
+     * own first ("General") tab, exactly like landing on this page any
+     * other way: no ?tab= query param is passed, since Tabs::getActiveTab()
+     * already falls back to the first declared tab when the query string
+     * carries none (confirmed against the installed source). $livewire is
+     * a real, named-parameter-injectable closure argument on
+     * Filament\Actions\Action (confirmed against the installed source),
+     * giving access to Livewire's own redirect().
      */
     public static function duplicateAction(): Action
     {
         return Action::make('duplicate')
             ->label(__('products.duplicate_action'))
             ->icon('heroicon-o-document-duplicate')
-            ->visible(fn (ProductModel $record): bool => static::canCreate() && $record->type === ProductType::SIMPLE->value)
+            ->visible(fn (): bool => static::canCreate())
             ->action(function (ProductModel $record, $livewire): void {
                 $duplicate = app(DuplicateProduct::class)->duplicate((string) $record->id);
 
-                $livewire->redirect(static::getUrl('edit', ['record' => $duplicate->id()]));
+                $editPage = $duplicate->type() === ProductType::SIMPLE ? 'edit' : 'edit-variable';
+
+                $livewire->redirect(static::getUrl($editPage, ['record' => $duplicate->id()]));
             });
     }
 

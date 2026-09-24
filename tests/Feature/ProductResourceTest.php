@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Filament\Resources\ProductResource;
 use App\Filament\Resources\ProductResource\Pages\CreateProduct;
 use App\Filament\Resources\ProductResource\Pages\EditProduct;
+use App\Filament\Resources\ProductResource\Pages\EditVariableProduct;
 use App\Filament\Resources\ProductResource\Pages\ListProducts;
 use App\Filament\Resources\ProductResource\Pages\ViewProduct;
 use App\Filament\StaffPanelUser;
@@ -1066,6 +1067,95 @@ class ProductResourceTest extends TestCase
             ->firstOrFail();
 
         $component->assertRedirect(ProductResource::getUrl('edit', ['record' => $duplicateModel->id]));
+    }
+
+    /**
+     * VARIABLE duplication — product-duplication-and-templates-note.md's
+     * own domain-owner decision: the "tedious" parent fields (brand,
+     * season, product group, categories, tags, description, descriptive
+     * attributes) are copied exactly like SIMPLE, but declared axes and
+     * variations are NEVER copied — the duplicate is a genuine
+     * zero-axes VARIABLE product, not a partial copy with a fallback.
+     */
+    public function test_duplicating_a_variable_product_copies_the_tedious_fields_but_never_axes_or_variations(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        $brand = $this->persistedBrand();
+        $season = $this->persistedSeason();
+        $group = $this->persistedProductGroup();
+        $sneakers = $this->persistedCategory('Sneakers');
+        $summer = $this->persistedTag('Summer');
+        $material = $this->persistedTextDefinition('material');
+        [$color, $black] = $this->persistedSelectDefinitionWithValues('color');
+        [$size, $medium] = $this->persistedSelectDefinitionWithValues('size');
+
+        $source = Product::createVariable('Variable Air Max', 'SKU-VAR-SOURCE', 'variable-air-max');
+        $source->setCatalogVisibility(CatalogVisibility::VISIBLE);
+        $source->assignBrand($brand->id());
+        $source->assignSeason($season->id());
+        $source->assignProductGroup($group->id());
+        $source->changeDescription('A classic silhouette, with sizes.');
+        $source->setDescriptiveAttribute($material, 'Leather');
+        $source->setDescriptiveAttribute($color, $black);
+        $source->declareVariationAxes([new VariationAxis($size, [$medium])]);
+        $source->addStandardVariation([$size->id() => $medium->id()], 'SKU-VAR-SOURCE-M');
+        app(ProductRepository::class)->save($source);
+
+        app(ProductCategoryRepository::class)->save(new ProductCategory(id: null, productId: $source->id(), categoryId: $sneakers->id()));
+        app(ProductTagRepository::class)->save(new ProductTag(id: null, productId: $source->id(), tagId: $summer->id()));
+
+        Livewire::test(ListProducts::class)
+            ->callTableAction('duplicate', ProductModel::find($source->id()));
+
+        $duplicateModel = ProductModel::where('slug', '!=', 'variable-air-max')
+            ->where('name', 'like', 'Variable Air Max%')
+            ->firstOrFail();
+        $duplicate = app(ProductRepository::class)->findByIdWithVariations((string) $duplicateModel->id);
+
+        $this->assertSame("Variable Air Max ({$this->translatedDuplicateSuffix()})", $duplicate->name());
+        $this->assertNotSame('variable-air-max', $duplicate->slug());
+        $this->assertNotSame('SKU-VAR-SOURCE', $duplicate->baseSku());
+        $this->assertSame(ProductStatus::DRAFT, $duplicate->status());
+        $this->assertSame(CatalogVisibility::VISIBLE, $duplicate->catalogVisibility());
+        $this->assertSame($brand->id(), $duplicate->brandId());
+        $this->assertSame($season->id(), $duplicate->seasonId());
+        $this->assertSame($group->id(), $duplicate->productGroupId());
+        $this->assertSame('A classic silhouette, with sizes.', $duplicate->description());
+
+        $attributes = $duplicate->descriptiveAttributes();
+        $this->assertSame('Leather', $attributes[(string) $material->id()]);
+        $this->assertSame($black->id(), $attributes[(string) $color->id()]->id());
+
+        $categoryIds = array_map(fn ($c) => $c->categoryId(), app(ProductCategoryRepository::class)->findByProductId($duplicate->id()));
+        $this->assertSame([$sneakers->id()], $categoryIds);
+
+        $tagIds = array_map(fn ($t) => $t->tagId(), app(ProductTagRepository::class)->findByProductId($duplicate->id()));
+        $this->assertSame([$summer->id()], $tagIds);
+
+        // The real, permanent rule this task settled: never copied.
+        $this->assertSame([], $duplicate->variationAxes());
+        $this->assertCount(0, $duplicate->variations());
+
+        // Photos explicitly NOT copied, same as SIMPLE.
+        $this->assertCount(0, app(ProductMediaRepository::class)->findByProductId($duplicate->id()));
+    }
+
+    public function test_duplicating_a_variable_product_redirects_to_the_new_products_real_edit_variable_url(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        $source = Product::createVariable('Variable Air Force 1', 'SKU-VAR-AF1', 'variable-air-force-1');
+        app(ProductRepository::class)->save($source);
+
+        $component = Livewire::test(ListProducts::class)
+            ->callTableAction('duplicate', ProductModel::find($source->id()));
+
+        $duplicateModel = ProductModel::where('name', 'like', 'Variable Air Force 1%')
+            ->where('id', '!=', $source->id())
+            ->firstOrFail();
+
+        $component->assertRedirect(ProductResource::getUrl('edit-variable', ['record' => $duplicateModel->id]));
     }
 
     /**

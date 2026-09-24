@@ -49,6 +49,7 @@ use EasyCo\Media\VariationMediaCountGuard;
 use EasyCo\Media\VideoCountGuard;
 use EasyCo\Staff\Enums\Permission;
 use Filament\Actions\Action;
+use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Repeater;
@@ -512,10 +513,11 @@ class EditVariableProduct extends EditRecord
                         ->required()
                         ->live()
                         ->afterStateUpdated(fn (Set $set) => $set('value_ids', [])),
-                    Select::make('value_ids')
+                    CheckboxList::make('value_ids')
                         ->label(__('products.axes.values_label'))
-                        ->multiple()
                         ->searchable()
+                        ->columns(3)
+                        ->bulkToggleable()
                         ->required()
                         ->options(fn (Get $get): array => AttributeValueModel::where('attribute_definition_id', $get('attribute_definition_id'))
                             ->pluck('value', 'id')

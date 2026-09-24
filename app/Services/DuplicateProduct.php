@@ -12,24 +12,29 @@ use EasyCo\Catalog\ProductCategory;
 use EasyCo\Catalog\ProductTag;
 use EasyCo\Extensibility\Hook;
 use Illuminate\Support\Facades\DB;
-use LogicException;
 use RuntimeException;
 
 /**
- * "Duplicate" — admin-panel-design.md §13.2. An app-layer orchestration
- * service, not a Product domain method: no real domain invariant is
- * being protected here, only field values copied into a new entity —
- * mirrors DetachProductFromCatalogLookup's own "app-layer
- * orchestration, not a Product method" precedent.
+ * "Duplicate" — admin-panel-design.md §13.2, extended to VARIABLE per
+ * product-duplication-and-templates-note.md's own domain-owner
+ * decision. An app-layer orchestration service, not a Product domain
+ * method: no real domain invariant is being protected here, only field
+ * values copied into a new entity — mirrors
+ * DetachProductFromCatalogLookup's own "app-layer orchestration, not a
+ * Product method" precedent.
  *
- * SIMPLE PRODUCTS ONLY in this pass — §13.2's own text describes
- * copying VARIABLE axis declarations too, but that is explicitly this
- * task's own deferred scope (the VARIABLE creation wizard doesn't
- * exist yet to review/adjust a copied axis selection against). A
- * VARIABLE source throws rather than silently doing a partial copy —
- * the real, only guard against this is ProductResource's own
- * ->visible() check hiding the action entirely for a VARIABLE row, so
- * reaching this exception at all would mean that check was bypassed.
+ * SIMPLE AND VARIABLE BOTH SUPPORTED — but for VARIABLE, axis
+ * declarations and variations are NEVER copied, full stop, not merely
+ * deferred. This is a permanent domain-owner decision (see the note's
+ * own "Confirmed by the domain owner" section for variations; axes
+ * were later settled the same way): a VARIABLE duplicate is always
+ * created via Product::createVariable() with zero declared axes — the
+ * merchant declares them fresh on the Axes tab, which the existing
+ * "Generate missing variations" mechanism already makes fast. Nothing
+ * in this class ever touches VariationAxis or Variation for either
+ * product type; the field-copying below (name/brand/season/product
+ * group/categories/tags/description/descriptive attributes) is already
+ * entirely type-agnostic.
  *
  * TWO ASSUMPTIONS NOT EXPLICITLY CONFIRMED BY §13.2's OWN TEXT —
  * flagged per this task's own instruction, not silently guessed:
@@ -38,6 +43,7 @@ use RuntimeException;
  *     collide with the source's in real-world scanning use if copied
  *     verbatim, so the new universal Variation starts with barcode
  *     unset and is_purchasable at its own construction default (true).
+ *     (Moot for a VARIABLE source — it has no universal Variation.)
  *  2. §13.2 does explicitly confirm description/descriptive attributes
  *     are copied ("Assumed, not explicitly confirmed... easy to
  *     reverse") — implemented as copied, per that note.
@@ -60,21 +66,18 @@ final class DuplicateProduct
                 throw new RuntimeException("Product \"{$sourceProductId}\" could not be found to duplicate.");
             }
 
-            if ($source->type() !== ProductType::SIMPLE) {
-                throw new LogicException(
-                    "Product \"{$sourceProductId}\" is VARIABLE — DuplicateProduct only supports SIMPLE ".
-                    'products in this pass (admin-panel-design.md §13.2\'s own deferred VARIABLE scope).'
-                );
-            }
-
             $newName = "{$source->name()} (".__('products.duplicate_suffix').')';
             $slug = Hook::apply('catalog.product.slug', '', $newName);
             $baseSku = Hook::apply('catalog.product.base_sku', '');
 
-            // createSimple() itself already defaults status to DRAFT —
-            // "always DRAFT regardless of the source's status" (§13.2)
-            // is already true by construction, nothing further to call.
-            $duplicate = Product::createSimple($newName, $baseSku, $slug);
+            // Both factories default status to DRAFT — "always DRAFT
+            // regardless of the source's status" (§13.2) is already
+            // true by construction, nothing further to call. Neither
+            // factory declares any axis or variation — exactly the
+            // "zero axes, merchant starts fresh" rule above.
+            $duplicate = $source->type() === ProductType::SIMPLE
+                ? Product::createSimple($newName, $baseSku, $slug)
+                : Product::createVariable($newName, $baseSku, $slug);
 
             $duplicate->setCatalogVisibility($source->catalogVisibility());
             $duplicate->assignBrand($source->brandId());

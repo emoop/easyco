@@ -21,6 +21,7 @@ use EasyCo\Catalog\Persistence\Eloquent\ProductModel;
 use EasyCo\Catalog\Product;
 use EasyCo\Catalog\Services\VariationCombinationGenerator;
 use EasyCo\Extensibility\Hook;
+use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\RichEditor;
 use Filament\Forms\Components\Select;
@@ -268,10 +269,11 @@ class CreateVariableProduct extends CreateRecord
                                 // own real valueBelongsToWrongDefinition
                                 // check at submit.
                                 ->afterStateUpdated(fn (Set $set) => $set('value_ids', [])),
-                            Select::make('value_ids')
+                            CheckboxList::make('value_ids')
                                 ->label(__('products.wizard.axes.values_label'))
-                                ->multiple()
                                 ->searchable()
+                                ->columns(3)
+                                ->bulkToggleable()
                                 ->required()
                                 ->options(fn (Get $get): array => AttributeValueModel::where('attribute_definition_id', $get('attribute_definition_id'))
                                     ->pluck('value', 'id')
