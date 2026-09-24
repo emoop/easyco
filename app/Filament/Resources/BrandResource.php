@@ -80,6 +80,29 @@ class BrandResource extends Resource
         return Permission::PRODUCT_VIEW;
     }
 
+    /**
+     * Catalog settings' "Brand field enabled" toggle
+     * (ProductResource::brandFieldEnabled()) — when the merchant turns
+     * Brand off, this Resource disappears from the nav (Resource's own
+     * canAccess() = canViewAny(), confirmed against the installed
+     * HasAuthorization source) AND a direct URL hit 403s, because
+     * ListBrands::authorizeAccess() already calls this same
+     * canViewAny() (a real, pre-existing gap Filament's own
+     * shouldRegisterNavigation() docblock flags — "hiding from
+     * navigation does NOT prevent direct URL access" — already closed
+     * here the same way ListRoles/ListProductGroups do it). Overrides
+     * the trait's own one-line canViewAny() rather than calling
+     * parent:: (it is a trait method on THIS class, not an inherited
+     * one) — same explicit-redefinition posture
+     * AuthorizesViaStaffPermission's own docblock already establishes
+     * for a Page's local canAccess().
+     */
+    public static function canViewAny(): bool
+    {
+        return static::staffCanForAction(static::viewAnyPermission())
+            && ProductResource::brandFieldEnabled();
+    }
+
     protected static function viewPermission(): ?Permission
     {
         return static::viewAnyPermission();

@@ -67,6 +67,13 @@ class SeasonResource extends Resource
         return Permission::PRODUCT_VIEW;
     }
 
+    /** See BrandResource::canViewAny()'s identical docblock — same "Season field enabled" toggle, same closed nav+direct-URL gap. */
+    public static function canViewAny(): bool
+    {
+        return static::staffCanForAction(static::viewAnyPermission())
+            && ProductResource::seasonFieldEnabled();
+    }
+
     protected static function viewPermission(): ?Permission
     {
         return static::viewAnyPermission();

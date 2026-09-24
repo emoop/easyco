@@ -210,11 +210,13 @@ class CreateVariableProduct extends CreateRecord
                     Select::make('brand_id')
                         ->label(__('products.fields.brand_id'))
                         ->options(fn (): array => BrandModel::pluck('name', 'id')->all())
-                        ->searchable(),
+                        ->searchable()
+                        ->visible(fn (): bool => ProductResource::brandFieldEnabled()),
                     Select::make('product_group_id')
                         ->label(__('products.fields.product_group_id'))
                         ->options(fn (): array => ProductGroupModel::pluck('name', 'id')->all())
                         ->searchable()
+                        ->visible(fn (): bool => ProductResource::productGroupFieldEnabled())
                         ->required(fn (): bool => (bool) (app(SiteSettingsRepository::class)->get('catalog.product_group_required') ?? false)),
                 ]),
             Step::make(__('products.wizard.steps.axes'))

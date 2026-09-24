@@ -134,4 +134,30 @@ class LocaleSettingsPageTest extends TestCase
         $this->assertSame('0', $settings->get('admin.activity_log_enabled'));
         $this->assertSame('12', $settings->get('admin.activity_log_retention_months'));
     }
+
+    /**
+     * 'suffix_space' — the exact, byte-for-byte behavior
+     * PriceDisplayFormatter had before this setting existed
+     * ("{amount} {symbol}"). An installation that never visits the
+     * Currency tab must render identically to before.
+     */
+    public function test_the_currency_tab_defaults_to_suffix_with_a_space_when_never_set(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        Livewire::test(LocaleSettings::class)
+            ->assertSchemaStateSet(['currency_symbol_position' => 'suffix_space']);
+    }
+
+    public function test_changing_the_currency_symbol_position_persists_it(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        Livewire::test(LocaleSettings::class)
+            ->fillForm(['currency_symbol_position' => 'prefix'])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $this->assertSame('prefix', app(SiteSettingsRepository::class)->get('site.currency_symbol_position'));
+    }
 }

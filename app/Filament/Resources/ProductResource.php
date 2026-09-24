@@ -225,6 +225,49 @@ class ProductResource extends Resource
         ]);
     }
 
+    /**
+     * Catalog settings' four field-visibility toggles (admin-panel-design.md
+     * §13.4's own follow-up) — whether Season/Brand/Tags/Product group are
+     * offered at all when creating/editing a product, independent of
+     * product_group_id's existing catalog.product_group_required
+     * (still "shown, but is it mandatory" — this new set is "shown at
+     * all"). Read fresh on each render, same reasoning as
+     * product_group_id's own ->required() closure just below — never
+     * cached at class-load time.
+     *
+     * PUBLIC (not protected): CreateVariableProduct/EditVariableProduct
+     * both author their own brand_id/product_group_id fields fresh
+     * (documented precedent — see EditVariableProduct::generalTabComponents()'s
+     * own docblock for why they don't call ProductResource's methods
+     * directly), so those two classes call these four helpers directly
+     * to stay in sync with SIMPLE's own gating, exactly like
+     * staffHasPermission() is already reused the same way.
+     *
+     * Default TRUE (missing key, or any value other than the literal
+     * '0', counts as enabled) — an upgraded installation that never
+     * visited CatalogSettings keeps today's exact behavior (every field
+     * shown) rather than silently hiding anything.
+     */
+    public static function seasonFieldEnabled(): bool
+    {
+        return app(SiteSettingsRepository::class)->get('catalog.season_field_enabled') !== '0';
+    }
+
+    public static function brandFieldEnabled(): bool
+    {
+        return app(SiteSettingsRepository::class)->get('catalog.brand_field_enabled') !== '0';
+    }
+
+    public static function tagsFieldEnabled(): bool
+    {
+        return app(SiteSettingsRepository::class)->get('catalog.tags_field_enabled') !== '0';
+    }
+
+    public static function productGroupFieldEnabled(): bool
+    {
+        return app(SiteSettingsRepository::class)->get('catalog.product_group_field_enabled') !== '0';
+    }
+
     /** @return array<int, Component> */
     protected static function generalTabComponents(): array
     {
@@ -297,11 +340,13 @@ class ProductResource extends Resource
             Select::make('brand_id')
                 ->label(__('products.fields.brand_id'))
                 ->options(fn (): array => BrandModel::pluck('name', 'id')->all())
-                ->searchable(),
+                ->searchable()
+                ->visible(fn (): bool => static::brandFieldEnabled()),
             Select::make('product_group_id')
                 ->label(__('products.fields.product_group_id'))
                 ->options(fn (): array => ProductGroupModel::pluck('name', 'id')->all())
                 ->searchable()
+                ->visible(fn (): bool => static::productGroupFieldEnabled())
                 // Read fresh on each render, not cached at class-load
                 // time — mirrors why getModelLabel() etc. are methods,
                 // not static properties (admin-panel-design.md §13.4).
@@ -342,6 +387,7 @@ class ProductResource extends Resource
                         ->searchable(),
                 ]),
             Section::make(__('products.fields.tags'))
+                ->visible(fn (): bool => static::tagsFieldEnabled())
                 ->schema([
                     Select::make('tags')
                         ->hiddenLabel()
@@ -350,6 +396,7 @@ class ProductResource extends Resource
                         ->searchable(),
                 ]),
             Section::make(__('products.fields.season_id'))
+                ->visible(fn (): bool => static::seasonFieldEnabled())
                 ->schema([
                     Select::make('season_id')
                         ->hiddenLabel()
@@ -1069,7 +1116,8 @@ class ProductResource extends Resource
                     ->formatStateUsing(fn (string $state): string => __("products.visibility_options.{$state}"))
                     ->color(fn (string $state): string => $state === CatalogVisibility::VISIBLE->value ? 'success' : 'gray'),
                 TextColumn::make('brand.name')
-                    ->label(__('products.fields.brand_id')),
+                    ->label(__('products.fields.brand_id'))
+                    ->visible(fn (): bool => static::brandFieldEnabled()),
                 // ProductModel::categories() — a real, read-only
                 // BelongsToMany added specifically so Filament's table
                 // columns/filters have something to query against (see
@@ -1112,13 +1160,16 @@ class ProductResource extends Resource
                     ),
                 SelectFilter::make('brand_id')
                     ->label(__('products.fields.brand_id'))
-                    ->options(fn (): array => BrandModel::pluck('name', 'id')->all()),
+                    ->options(fn (): array => BrandModel::pluck('name', 'id')->all())
+                    ->visible(fn (): bool => static::brandFieldEnabled()),
                 SelectFilter::make('season_id')
                     ->label(__('products.fields.season_id'))
-                    ->options(fn (): array => SeasonModel::pluck('name', 'id')->all()),
+                    ->options(fn (): array => SeasonModel::pluck('name', 'id')->all())
+                    ->visible(fn (): bool => static::seasonFieldEnabled()),
                 SelectFilter::make('product_group_id')
                     ->label(__('products.fields.product_group_id'))
-                    ->options(fn (): array => ProductGroupModel::pluck('name', 'id')->all()),
+                    ->options(fn (): array => ProductGroupModel::pluck('name', 'id')->all())
+                    ->visible(fn (): bool => static::productGroupFieldEnabled()),
                 // NOT ->relationship(): a real, confirmed gap found in
                 // a live check — SelectFilter::relationship() builds its
                 // OWN options from the relationship internally and
@@ -1159,6 +1210,7 @@ class ProductResource extends Resource
                     ->label(__('products.fields.tags'))
                     ->options(fn (): array => TagModel::pluck('name', 'id')->all())
                     ->searchable()
+                    ->visible(fn (): bool => static::tagsFieldEnabled())
                     ->query(function (Builder $query, array $data): Builder {
                         if (blank($data['value'] ?? null)) {
                             return $query;

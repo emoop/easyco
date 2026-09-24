@@ -907,6 +907,73 @@ class ProductResourceTest extends TestCase
         $this->assertArrayNotHasKey('delete', ProductResource::getPages());
     }
 
+    /**
+     * CatalogSettings' four field-visibility toggles — every field
+     * shown by default (an installation that never visits the settings
+     * page keeps today's exact behavior), and each hides independently
+     * once its own toggle is turned off. Checked on CreateProduct/
+     * EditVariableProduct (the two places brand_id/product_group_id are
+     * authored fresh, per ProductResource's own brandFieldEnabled()
+     * docblock) — the sidebar Sections (Season/Tags) are shared code
+     * (ProductResource::sidebarComponents()), so one check there covers
+     * every page that reuses it.
+     */
+    public function test_all_four_catalog_fields_are_visible_by_default(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        Livewire::test(CreateProduct::class)
+            ->assertFormFieldVisible('brand_id')
+            ->assertFormFieldVisible('product_group_id')
+            ->assertFormFieldVisible('season_id')
+            ->assertFormFieldVisible('tags');
+    }
+
+    public function test_each_catalog_field_hides_independently_once_its_own_toggle_is_off(): void
+    {
+        $this->actingAsPanelAdministrator();
+        $settings = app(SiteSettingsRepository::class);
+
+        $settings->set('catalog.brand_field_enabled', '0');
+        Livewire::test(CreateProduct::class)
+            ->assertFormFieldHidden('brand_id')
+            ->assertFormFieldVisible('product_group_id')
+            ->assertFormFieldVisible('season_id')
+            ->assertFormFieldVisible('tags');
+        $settings->set('catalog.brand_field_enabled', '1');
+
+        $settings->set('catalog.season_field_enabled', '0');
+        Livewire::test(CreateProduct::class)->assertFormFieldHidden('season_id');
+        $settings->set('catalog.season_field_enabled', '1');
+
+        $settings->set('catalog.tags_field_enabled', '0');
+        Livewire::test(CreateProduct::class)->assertFormFieldHidden('tags');
+        $settings->set('catalog.tags_field_enabled', '1');
+
+        $settings->set('catalog.product_group_field_enabled', '0');
+        Livewire::test(CreateProduct::class)->assertFormFieldHidden('product_group_id');
+    }
+
+    /**
+     * EditVariableProduct authors brand_id/product_group_id fresh
+     * (ProductResource::form() is not reused there) — a separate,
+     * explicit check that the same setting reaches this second call
+     * site too, not just SIMPLE's own CreateProduct/EditProduct.
+     */
+    public function test_brand_and_group_fields_also_hide_on_the_variable_product_edit_page(): void
+    {
+        $this->actingAsPanelAdministrator();
+        app(SiteSettingsRepository::class)->set('catalog.brand_field_enabled', '0');
+        app(SiteSettingsRepository::class)->set('catalog.product_group_field_enabled', '0');
+
+        $variableProduct = Product::createVariable('Hidden Fields Product', 'SKU-HIDDEN-FIELDS', 'hidden-fields-product');
+        app(ProductRepository::class)->save($variableProduct);
+
+        Livewire::test(EditVariableProduct::class, ['record' => $variableProduct->id()])
+            ->assertFormFieldHidden('brand_id')
+            ->assertFormFieldHidden('product_group_id');
+    }
+
     public function test_creating_without_a_group_succeeds_when_the_setting_is_off_by_default(): void
     {
         $this->actingAsPanelAdministrator();

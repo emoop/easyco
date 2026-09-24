@@ -118,11 +118,17 @@ class LocaleSettings extends Page
         $locale = $settings->get('site.locale') ?? 'bg';
         $activityLogEnabled = $settings->get('admin.activity_log_enabled') === '1';
         $activityLogRetentionMonths = (int) ($settings->get('admin.activity_log_retention_months') ?? 12);
+        // Default matches PriceDisplayFormatter's own pre-existing,
+        // hardcoded behavior byte for byte ("{amount} {symbol}") — an
+        // upgraded installation that never visited this tab keeps
+        // today's exact rendering, not a silently different one.
+        $currencySymbolPosition = $settings->get('site.currency_symbol_position') ?? 'suffix_space';
 
         $this->form->fill([
             'locale' => $locale,
             'activity_log_enabled' => $activityLogEnabled,
             'activity_log_retention_months' => $activityLogRetentionMonths,
+            'currency_symbol_position' => $currencySymbolPosition,
         ]);
     }
 
@@ -170,6 +176,33 @@ class LocaleSettings extends Page
                                     ->visible(fn (Get $get): bool => (bool) $get('activity_log_enabled'))
                                     ->required(fn (Get $get): bool => (bool) $get('activity_log_enabled')),
                             ]),
+                        // Only the SYMBOL'S DISPLAY here — which currency
+                        // is actually in use stays a .env-only,
+                        // developer-set value (PRICING_DEFAULT_CURRENCY,
+                        // EasyCo\Pricing\DefaultCurrency) by explicit
+                        // domain-owner decision: every already-saved
+                        // price/cost is keyed by currency code at write
+                        // time (ProductPricingAndStock's own
+                        // Money::fromDecimal($decimal, DefaultCurrency::get())
+                        // calls), so changing it after real prices exist
+                        // does not convert anything — a merchant-facing
+                        // dropdown here was deliberately dropped in favor
+                        // of keeping that a rare, developer-supervised
+                        // change.
+                        Tab::make(__('settings.currency.tab_label'))
+                            ->schema([
+                                Select::make('currency_symbol_position')
+                                    ->label(__('settings.currency.position_label'))
+                                    ->helperText(__('settings.currency.position_help'))
+                                    ->options([
+                                        'prefix' => __('settings.currency.position_options.prefix'),
+                                        'prefix_space' => __('settings.currency.position_options.prefix_space'),
+                                        'suffix' => __('settings.currency.position_options.suffix'),
+                                        'suffix_space' => __('settings.currency.position_options.suffix_space'),
+                                    ])
+                                    ->default('suffix_space')
+                                    ->required(),
+                            ]),
                     ]),
             ])
             ->statePath('data');
@@ -211,6 +244,7 @@ class LocaleSettings extends Page
         $settings->set('site.locale', $data['locale']);
         $settings->set('admin.activity_log_enabled', $data['activity_log_enabled'] ? '1' : '0');
         $settings->set('admin.activity_log_retention_months', (string) ($data['activity_log_retention_months'] ?? 12));
+        $settings->set('site.currency_symbol_position', $data['currency_symbol_position'] ?? 'suffix_space');
 
         Notification::make()
             ->title(__('settings.locale.saved_notification'))

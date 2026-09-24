@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Settings\Contracts\SiteSettingsRepository;
 use EasyCo\Pricing\Currency;
 
 /**
@@ -19,28 +20,32 @@ use EasyCo\Pricing\Currency;
  * a second, potentially-diverging source of truth for the exact same
  * fact.
  *
- * THIS CLASS IS DELIBERATELY THE ONLY PLACE THE SYMBOL AND ITS POSITION
- * ARE DECIDED TODAY. The symbol table below is a small, hardcoded map —
- * not configuration, not a domain concept, just enough to stop showing
- * a bare decimal in the admin panel right now. The deferred settings
- * task (admin Settings → currency display: an on/off toggle plus a
- * left/right position choice, real keys to be named
- * `site.currency_symbol_enabled` / `site.currency_symbol_position`) will
- * move the source of both the symbol and its position to
- * SiteSettingsRepository — INSIDE THIS CLASS ONLY, with zero call-site
- * changes anywhere that already calls format()/symbolFor().
- *
- * SUFFIX POSITION IS A DELIBERATE, TEMPORARY COMPROMISE, NOT AN
- * OVERSIGHT: format() always renders "{amount} {symbol}" — correct for
- * EUR/BGN and most of the map, but genuinely atypical for USD/GBP
- * (customarily prefixed, "$49.99"/"£49.99"). Accepted for now because
- * this project's home market is EUR/BGN-first (CLAUDE.md's own
- * "Bulgaria adopted the euro" note) and the deferred settings task above
- * is what actually needs to offer a position choice, not this one-shot
- * admin-panel pass.
+ * THE SYMBOL TABLE ITSELF STAYS A SMALL, HARDCODED MAP — not
+ * configuration, not a domain concept, just enough to stop showing a
+ * bare decimal. WHICH CURRENCY THE STORE ACTUALLY USES is a separate,
+ * deliberately .env-only decision (PRICING_DEFAULT_CURRENCY,
+ * EasyCo\Pricing\DefaultCurrency) — every already-saved price/cost is
+ * keyed by currency code at write time, so a merchant-facing currency
+ * picker was ruled out (would silently orphan existing prices, not
+ * convert them). ONLY THE POSITION IS MERCHANT-CONFIGURABLE, per the
+ * originally-deferred settings task this finishes: `site.currency_symbol_
+ * position`, read fresh on every format() call (same "never cached at
+ * class-load time" posture as every other SiteSettingsRepository read
+ * in this codebase), one of 'prefix' | 'prefix_space' | 'suffix' |
+ * 'suffix_space' — WooCommerce's own well-tested 4-option model, chosen
+ * over two separate booleans (position + spacing) to avoid inventing
+ * combinations no real platform actually ships. Defaults to
+ * 'suffix_space' when unset — the exact, byte-for-byte behavior this
+ * class had before this setting existed ("{amount} {symbol}"), so an
+ * upgraded installation that never visits the new Settings tab renders
+ * identically to before.
  */
 class PriceDisplayFormatter
 {
+    public function __construct(
+        private readonly SiteSettingsRepository $settings,
+    ) {}
+
     /**
      * ISO 4217 code => display symbol. An unknown currency (anything not
      * in EasyCo\Pricing\Currency::KNOWN, or simply not added here yet)
@@ -83,15 +88,25 @@ class PriceDisplayFormatter
     }
 
     /**
-     * Suffix position, separated by a single ordinary space (no NBSP
-     * yet — see class docblock's deferred list). An unknown currency's
-     * symbol is null, so this returns $decimalValue completely
-     * unchanged — today's plain-decimal behaviour, byte for byte.
+     * Position/spacing read fresh from SiteSettingsRepository on every
+     * call — see class docblock for the four real option values and the
+     * 'suffix_space' default. An unknown currency's symbol is null, so
+     * this returns $decimalValue completely unchanged regardless of
+     * position — today's plain-decimal behaviour, byte for byte.
      */
     public function format(string $decimalValue, Currency $currency): string
     {
         $symbol = $this->symbolFor($currency);
 
-        return $symbol === null ? $decimalValue : "{$decimalValue} {$symbol}";
+        if ($symbol === null) {
+            return $decimalValue;
+        }
+
+        return match ($this->settings->get('site.currency_symbol_position') ?? 'suffix_space') {
+            'prefix' => "{$symbol}{$decimalValue}",
+            'prefix_space' => "{$symbol} {$decimalValue}",
+            'suffix' => "{$decimalValue}{$symbol}",
+            default => "{$decimalValue} {$symbol}",
+        };
     }
 }

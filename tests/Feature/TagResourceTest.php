@@ -128,6 +128,22 @@ class TagResourceTest extends TestCase
             ->assertHasNoFormErrors();
     }
 
+    /** See BrandResourceTest's identical test for the full reasoning — same "Show Tags field" toggle, same closed nav+direct-URL gap. */
+    public function test_the_resource_is_fully_hidden_when_the_tags_field_setting_is_off(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        app(\App\Settings\Contracts\SiteSettingsRepository::class)->set('catalog.tags_field_enabled', '0');
+
+        $this->assertFalse(TagResource::canViewAny());
+        $this->get(TagResource::getUrl('index'))->assertForbidden();
+
+        app(\App\Settings\Contracts\SiteSettingsRepository::class)->set('catalog.tags_field_enabled', '1');
+
+        $this->assertTrue(TagResource::canViewAny());
+        $this->get(TagResource::getUrl('index'))->assertOk();
+    }
+
     public function test_the_real_permission_matrix_across_all_three_shipped_roles(): void
     {
         $this->actingAsPanelAdministrator();

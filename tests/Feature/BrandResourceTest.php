@@ -210,6 +210,30 @@ class BrandResourceTest extends TestCase
         $this->get(BrandResource::getUrl('create'))->assertForbidden();
     }
 
+    /**
+     * CatalogSettings' "Show Brand field" toggle — off hides this whole
+     * Resource: the nav item (canAccess() = canViewAny(), Filament's own
+     * HasAuthorization) AND a direct URL hit to the list, because
+     * ListBrands::authorizeAccess() already re-checks canViewAny() (a
+     * real, pre-existing Filament gap — "hiding from navigation does
+     * NOT prevent direct URL access" — already closed here the same way
+     * ListRoles/ListProductGroups do it).
+     */
+    public function test_the_resource_is_fully_hidden_when_the_brand_field_setting_is_off(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        app(\App\Settings\Contracts\SiteSettingsRepository::class)->set('catalog.brand_field_enabled', '0');
+
+        $this->assertFalse(BrandResource::canViewAny());
+        $this->get(BrandResource::getUrl('index'))->assertForbidden();
+
+        app(\App\Settings\Contracts\SiteSettingsRepository::class)->set('catalog.brand_field_enabled', '1');
+
+        $this->assertTrue(BrandResource::canViewAny());
+        $this->get(BrandResource::getUrl('index'))->assertOk();
+    }
+
     public function test_a_brands_row_navigates_to_view_and_edit_button_visibility_matches_permission(): void
     {
         $this->actingAsPanelAdministrator();
