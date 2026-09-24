@@ -9,6 +9,7 @@ use App\Filament\Resources\AttributeDefinitionResource;
 use App\Filament\Resources\AttributeValueResource;
 use App\Filament\Resources\BrandResource;
 use App\Filament\Resources\CategoryResource;
+use App\Filament\Resources\OrderResource;
 use App\Filament\Resources\RoleResource;
 use App\Filament\Resources\SeasonResource;
 use App\Filament\Resources\StaffResource;
@@ -67,6 +68,17 @@ class NavigationGroupingTest extends TestCase
         $this->assertSame('Catalog', NavigationGroup::CATALOG->getLabel());
     }
 
+    public function test_sales_group_items_report_the_real_translated_group_name_in_both_locales(): void
+    {
+        $this->assertSame(NavigationGroup::SALES, OrderResource::getNavigationGroup());
+
+        $this->applyLocale('bg');
+        $this->assertSame('Продажби', NavigationGroup::SALES->getLabel());
+
+        $this->applyLocale('en');
+        $this->assertSame('Sales', NavigationGroup::SALES->getLabel());
+    }
+
     public function test_admin_group_items_report_the_real_translated_group_name_in_both_locales(): void
     {
         $this->assertSame(NavigationGroup::ADMIN, RoleResource::getNavigationGroup());
@@ -80,16 +92,20 @@ class NavigationGroupingTest extends TestCase
         $this->assertSame('Admin', NavigationGroup::ADMIN->getLabel());
     }
 
-    public function test_the_catalog_group_declares_before_the_admin_group_so_it_renders_first(): void
+    public function test_the_groups_declare_in_catalog_sales_admin_render_order(): void
     {
         // Real Filament ordering gotcha this enum fixes (see its own
         // docblock): with no panel-registered groups, group render
         // order follows a UnitEnum's own cases() declaration order,
         // not any individual item's getNavigationSort() value. A
-        // regression here would silently put Admin back above Catalog.
+        // regression here would silently reorder the sidebar's own
+        // top-level groups. Sales was added between Catalog and Admin
+        // (admin-panel-design.md §14) — this asserts all three, not
+        // just the original two.
         $cases = NavigationGroup::cases();
         $this->assertSame(NavigationGroup::CATALOG, $cases[0]);
-        $this->assertSame(NavigationGroup::ADMIN, $cases[1]);
+        $this->assertSame(NavigationGroup::SALES, $cases[1]);
+        $this->assertSame(NavigationGroup::ADMIN, $cases[2]);
     }
 
     public function test_the_six_catalog_group_items_sort_in_the_exact_stated_order(): void
