@@ -12,6 +12,7 @@ return [
         'recipient_name' => 'Получател',
         'email' => 'Имейл',
         'client_name' => 'Клиент',
+        'client_id' => 'ID на клиента',
         'channel' => 'Канал',
         'payment_method' => 'Начин на плащане',
         'payment_status' => 'Статус на плащане',
@@ -81,6 +82,8 @@ return [
         'pickup_point' => 'Офис на куриер',
     ],
 
+    'yes' => 'Да',
+    'no' => 'Не',
     'no_promotion' => 'Няма приложена промоция.',
     'no_payment' => 'Няма запис за плащане.',
     'attempts_suffix' => ':count опита',

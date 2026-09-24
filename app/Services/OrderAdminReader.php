@@ -38,6 +38,15 @@ use Illuminate\Support\Facades\Log;
  *    handful of queries for exactly one order is the real, accepted
  *    cost, same posture ProductResource's own ViewProduct infolist
  *    already takes for a single record's price/stock entries).
+ *    MEMOIZED PER INSTANCE AND BOUND scoped() (AppServiceProvider),
+ *    same real reasoning as PriceDisplayFormatter's own identical
+ *    posture: the View page's infolist has no single place to build
+ *    every Section from one upfront read (each TextEntry/RepeatableEntry
+ *    resolves its own state independently, via Filament's own per-
+ *    component closure injection), so several of them call
+ *    app(OrderAdminReader::class)->forOrder() with the SAME order id —
+ *    without this, that would be several complete re-reads of the same
+ *    order per page view.
  *
  * WHY SALE LINES ARE READ VIA A RAW QUERY, NOT
  * TransactionRepository::findByIdWithSaleLines() — A REAL, CONFIRMED
@@ -70,6 +79,9 @@ use Illuminate\Support\Facades\Log;
  */
 final class OrderAdminReader
 {
+    /** @var array<string, ?OrderAdminOrderView> */
+    private array $orderViewCache = [];
+
     public function __construct(
         private readonly OrderRepository $orders,
         private readonly ClientRepository $clients,
@@ -144,10 +156,14 @@ final class OrderAdminReader
      */
     public function forOrder(string $orderId): ?OrderAdminOrderView
     {
+        if (array_key_exists($orderId, $this->orderViewCache)) {
+            return $this->orderViewCache[$orderId];
+        }
+
         $order = $this->orders->findById($orderId);
 
         if ($order === null) {
-            return null;
+            return $this->orderViewCache[$orderId] = null;
         }
 
         $client = $this->clients->findById($order->clientId());
@@ -190,7 +206,7 @@ final class OrderAdminReader
 
         $paymentAttemptCount = DB::table('payments')->where('order_id', $orderId)->count();
 
-        return new OrderAdminOrderView(
+        return $this->orderViewCache[$orderId] = new OrderAdminOrderView(
             order: $order,
             clientName: $clientName,
             channel: $channel,

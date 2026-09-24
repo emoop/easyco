@@ -338,7 +338,21 @@ class OrderAdminReaderTest extends TestCase
 
         $this->setPrice($variationId, '99.00');
 
-        $lineAfter = app(OrderAdminReader::class)->forOrder($order->id())->lines[0];
+        // A FRESH reader, not app() — OrderAdminReader::forOrder() is
+        // now memoized per instance (see its own docblock), and
+        // app(OrderAdminReader::class) within this same test method
+        // still resolves the SAME scoped() instance from the "before"
+        // call above; only a real new object forces a genuine re-read,
+        // which is the actual point of this test (proving the
+        // UNDERLYING DATA is stable, not merely that a cached object is
+        // == itself).
+        $freshReader = new \App\Services\OrderAdminReader(
+            app(\EasyCo\Order\Contracts\OrderRepository::class),
+            app(\EasyCo\OperationalSales\Contracts\ClientRepository::class),
+            app(\EasyCo\Payment\Contracts\PaymentRepository::class),
+        );
+
+        $lineAfter = $freshReader->forOrder($order->id())->lines[0];
 
         $this->assertSame($lineBefore->productName, $lineAfter->productName);
         $this->assertSame($lineBefore->sku, $lineAfter->sku);

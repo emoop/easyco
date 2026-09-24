@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Services\OrderAdminReader;
 use App\Services\PriceDisplayFormatter;
 use App\Services\ProductPriceRangeProvider;
 use Illuminate\Support\ServiceProvider;
@@ -37,6 +38,15 @@ class AppServiceProvider extends ServiceProvider
         // object across every app(PriceDisplayFormatter::class) call in
         // a request, instead of a fresh, un-memoized one per call.
         $this->app->scoped(PriceDisplayFormatter::class);
+
+        // OrderAdminReader::forOrder()'s own per-instance cache
+        // ($orderViewCache) only pays off across separate
+        // app(OrderAdminReader::class) calls if they all reach the SAME
+        // instance — the Orders View page's infolist has several
+        // TextEntry/RepeatableEntry closures that each independently
+        // resolve the reader for the same order id (see that method's
+        // own docblock).
+        $this->app->scoped(OrderAdminReader::class);
     }
 
     /**

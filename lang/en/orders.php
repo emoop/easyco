@@ -12,6 +12,7 @@ return [
         'recipient_name' => 'Recipient',
         'email' => 'Email',
         'client_name' => 'Client',
+        'client_id' => 'Client ID',
         'channel' => 'Channel',
         'payment_method' => 'Payment method',
         'payment_status' => 'Payment status',
@@ -81,6 +82,8 @@ return [
         'pickup_point' => 'Pickup point',
     ],
 
+    'yes' => 'Yes',
+    'no' => 'No',
     'no_promotion' => 'No promotion applied.',
     'no_payment' => 'No payment record.',
     'attempts_suffix' => ':count attempts',
