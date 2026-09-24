@@ -218,6 +218,12 @@ class OrderViewPageTest extends TestCase
 
         $order = app(CheckoutOrchestrator::class)->place($input, new DateTimeImmutable('2026-09-20 10:00:00'))->order();
 
+        // Captured BEFORE the rename/re-sku/re-price below — this is the
+        // snapshot value the View page must still show afterward.
+        $originalSku = DB::table('operational_sales_sale_lines')
+            ->where('transaction_id', $order->transactionId())
+            ->value('sku');
+
         $productId = (string) VariationModel::find($variationId)->product_id;
         $product = app(ProductRepository::class)->findByIdWithVariations($productId);
         $product->rename('Renamed After Order');
@@ -239,6 +245,14 @@ class OrderViewPageTest extends TestCase
         $this->assertStringNotContainsString('Renamed After Order', $html);
         $this->assertStringNotContainsString('SKU-RENAMED-AFTER', $html);
         $this->assertStringNotContainsString('999.00', $html);
+
+        // Positive: the ORIGINAL sku and the formatted ORIGINAL unit
+        // price / line total (25.00, qty 1, unaffected by the 999.00
+        // re-price above) are actually rendered, not merely "the new
+        // values are absent" (which a blank/broken render would also
+        // satisfy).
+        $this->assertStringContainsString($originalSku, $html);
+        $this->assertStringContainsString('25.00 €', $html);
     }
 
     public function test_a_line_with_null_product_name_and_sku_renders_as_a_dash(): void
@@ -259,6 +273,46 @@ class OrderViewPageTest extends TestCase
 
         $this->assertStringNotContainsString('Null Snapshot Product', $html);
         $this->assertStringNotContainsString($originalSku, $html);
+
+        // Positive, SCOPED TO THE LINE ROW ITSELF — the page has other
+        // fields that also fall back to '—' (e.g. account_id), so a plain
+        // "the page contains a dash somewhere" check would pass even if
+        // the line row itself silently rendered blank. Slicing the html
+        // between the Items section heading and the next section
+        // (Promotion) isolates the actual row lineRows() built (see
+        // OrderResource::lineRows() — a null productName/sku maps to
+        // orders.not_available directly).
+        $linesSectionStart = strpos($html, __('orders.sections.lines'));
+        $linesSectionEnd = strpos($html, __('orders.sections.promotion'), $linesSectionStart);
+        $this->assertNotFalse($linesSectionStart, 'Items section heading not found in the rendered page');
+        $this->assertNotFalse($linesSectionEnd, 'Promotion section heading not found in the rendered page');
+
+        $lineRowHtml = substr($html, $linesSectionStart, $linesSectionEnd - $linesSectionStart);
+
+        $this->assertStringContainsString(__('orders.not_available'), $lineRowHtml);
+    }
+
+    /**
+     * A real, confirmed gap found while adding this helper (see
+     * OrderResource::optionLabel()'s own docblock): before, an unknown
+     * stored value rendered as the literal translation KEY string
+     * ("orders.payment_method_options.xyz"), not the raw value — because
+     * Laravel's __() returns the key itself when no translation entry
+     * exists (confirmed against installed source, not assumed).
+     */
+    public function test_an_unknown_payment_method_renders_its_raw_value_not_the_translation_key(): void
+    {
+        $this->actingAsStaffRole('Administrator');
+        $order = $this->placeOrder();
+
+        DB::table('payments')
+            ->where('order_id', $order->id())
+            ->update(['method' => 'crypto_wallet_xyz']);
+
+        $html = $this->get(OrderResource::getUrl('view', ['record' => $order->id()]))->assertOk()->getContent();
+
+        $this->assertStringContainsString('crypto_wallet_xyz', $html);
+        $this->assertStringNotContainsString('orders.payment_method_options.', $html);
     }
 
     public function test_profit_never_appears_in_the_rendered_view_html(): void

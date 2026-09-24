@@ -57,6 +57,31 @@ use EasyCo\Staff\Staff;
  * real 2-query load inside StaffRepository — Role hydration is a
  * separate concern, Staff's own class docblock, Part 1 — just paid at
  * most once per id per request now, not once per check).
+ *
+ * THE "NEXT REQUEST SEES IT" GUARANTEE, BACKED BY REAL INSTALLED
+ * SOURCE, NOT ASSUMED — a genuine new PHP-FPM-style request needs no
+ * reset at all (it gets a brand-new container for free), and the two
+ * long-running execution models where a single process really does
+ * serve more than one "request" in place both reset scoped bindings
+ * between them: vendor/laravel/framework/src/Illuminate/Queue/
+ * QueueServiceProvider.php, registerWorker() (~line 247) builds a
+ * $resetScope closure that calls `$app->forgetScopedInstances();`
+ * (line 263) between every processed job, and passes that closure
+ * straight into the `Worker` it constructs (~line 275), which invokes
+ * it after each job in its daemon loop. Laravel Octane is NOT
+ * installed in this project (confirmed: absent from composer.json,
+ * composer.lock, and vendor/laravel/) — it registers an equivalent
+ * reset via its own service provider listening for its own
+ * between-request event, but that source is not present here to quote
+ * directly. Illuminate\Foundation\Http\Kernel never calls
+ * forgetScopedInstances() anywhere in its installed source, confirming
+ * a plain HTTP request needs no such call. NOTE: a single PHPUnit test
+ * method reusing one Application instance across several
+ * `$this->get()` calls is neither of these two reset points, so it is
+ * NOT a valid stand-in for "the next request" — see
+ * AuthorizesViaStaffPermissionTest's own test for how this codebase
+ * proves the guarantee instead (a real forgetScopedInstances() call,
+ * simulating the boundary these real reset points provide).
  */
 final class AuthenticatedStaffResolver
 {
