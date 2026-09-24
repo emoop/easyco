@@ -6,6 +6,7 @@ use App\Services\PromotionDiscountCalculator;
 use EasyCo\Pricing\Money;
 use EasyCo\Promotions\Enums\PromotionDiscountType;
 use EasyCo\Promotions\Promotion;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 final class PromotionDiscountCalculatorTest extends TestCase
@@ -156,5 +157,130 @@ final class PromotionDiscountCalculatorTest extends TestCase
         $result = $this->calculator()->calculate($promotion, $lines);
 
         $this->assertSame(1900, $result->amount()->minorValue());
+    }
+
+    // --- §3.13 / §8: per-line breakdown, added on top of the existing,
+    // unchanged total — none of the tests above were touched. -----------
+
+    /** @return int[] */
+    private function shareMinorValues(array $shares): array
+    {
+        return array_map(static fn (Money $m) => $m->minorValue(), $shares);
+    }
+
+    public function test_percentage_discount_allocates_per_line_shares_summing_to_the_total(): void
+    {
+        $promotion = $this->percentagePromotion(3000); // 30%
+        $lines = [
+            $this->line('v1', 1, 500),
+            $this->line('v2', 1, 500),
+            $this->line('v3', 1, 100),
+        ];
+
+        $result = $this->calculator()->calculate($promotion, $lines);
+
+        // base = 1100, 30% -> roundedDivide(1100*3000, 10000) = 330.
+        $this->assertSame(330, $result->amount()->minorValue());
+        $this->assertCount(3, $result->perLineShares());
+        $this->assertSame(330, array_sum($this->shareMinorValues($result->perLineShares())));
+    }
+
+    public function test_fixed_amount_uncapped_allocates_per_line_shares_summing_to_the_total(): void
+    {
+        $promotion = $this->fixedAmountPromotion(Money::fromMinorUnits(500, 'EUR'));
+        $lines = [
+            $this->line('v1', 1, 700),
+            $this->line('v2', 1, 300),
+        ];
+
+        $result = $this->calculator()->calculate($promotion, $lines);
+
+        $this->assertSame(500, $result->amount()->minorValue());
+        $this->assertSame(500, array_sum($this->shareMinorValues($result->perLineShares())));
+    }
+
+    /**
+     * The one case §3.13's own design doc calls out as needing NO
+     * rounding at all: total == sum(eligible amounts), so
+     * Money::allocate() degenerates to share[i] == the line's own
+     * eligible amount, exactly.
+     */
+    public function test_fixed_amount_capped_shares_equal_the_eligible_amounts_exactly(): void
+    {
+        $promotion = $this->fixedAmountPromotion(Money::fromMinorUnits(10000, 'EUR')); // face value far exceeds the base
+        $lines = [
+            $this->line('v1', 1, 500),
+            $this->line('v2', 1, 200),
+        ];
+
+        $result = $this->calculator()->calculate($promotion, $lines);
+
+        $this->assertTrue($result->discountCapped());
+        $this->assertSame(700, $result->amount()->minorValue());
+        $this->assertSame([500, 200], $this->shareMinorValues($result->perLineShares()));
+    }
+
+    /**
+     * usage_limit_items = 3 across three lines: line 1 (qty 2) fits
+     * entirely, line 2 (qty 2) crosses the limit with only 1 unit of
+     * headroom left (unitPrice x 1, not its full lineTotal), line 3 (qty
+     * 1) is entirely beyond the exhausted limit — zero eligible amount,
+     * so its own share must be exactly zero too, never a rounding
+     * artifact.
+     */
+    public function test_usage_limit_items_crossing_a_line_gives_it_a_partial_share_and_zero_beyond(): void
+    {
+        $promotion = $this->percentagePromotion(10000, usageLimitItems: 3); // 100%, so shares == eligible amounts exactly
+        $lines = [
+            $this->line('v1', 2, 500), // fits entirely: eligible 1000
+            $this->line('v2', 2, 300), // crosses: eligible 300 (1 unit x 300)
+            $this->line('v3', 1, 900), // beyond the limit: eligible 0
+        ];
+
+        $result = $this->calculator()->calculate($promotion, $lines);
+
+        $this->assertSame(1300, $result->amount()->minorValue());
+        $this->assertSame([1000, 300, 0], $this->shareMinorValues($result->perLineShares()));
+    }
+
+    /**
+     * Equivalence, restated as its own explicit property test rather
+     * than by editing any test above: every scenario already covered by
+     * the pre-existing tests, re-run here purely to assert
+     * Σ perLineShares() == amount() — never edited into the original
+     * tests themselves.
+     */
+    public static function equivalenceScenarioProvider(): array
+    {
+        return [
+            'percentage half-up boundary' => [3000, null, [['v1', 1, 5]]],
+            'fixed under base' => [null, 500, [['v1', 1, 1000]]],
+            'fixed over base (capped)' => [null, 1000, [['v1', 1, 700]]],
+            'fixed exactly equal to base' => [null, 700, [['v1', 1, 700]]],
+            'usage limit below total quantity' => [10000, null, [['v1', 2, 500], ['v2', 3, 300]], 3],
+            'usage limit above total quantity' => [10000, null, [['v1', 2, 500], ['v2', 3, 300]], 10],
+            'no usage limit' => [10000, null, [['v1', 2, 500], ['v2', 3, 300]]],
+        ];
+    }
+
+    #[DataProvider('equivalenceScenarioProvider')]
+    public function test_per_line_shares_always_sum_to_exactly_the_total_amount(
+        ?int $basisPoints,
+        ?int $fixedAmountMinor,
+        array $lineSpecs,
+        ?int $usageLimitItems = null,
+    ): void {
+        $promotion = $basisPoints !== null
+            ? $this->percentagePromotion($basisPoints, $usageLimitItems)
+            : $this->fixedAmountPromotion(Money::fromMinorUnits($fixedAmountMinor, 'EUR'));
+
+        $lines = array_map(fn (array $spec) => $this->line(...$spec), $lineSpecs);
+
+        $result = $this->calculator()->calculate($promotion, $lines);
+
+        $this->assertSame(
+            $result->amount()->minorValue(),
+            array_sum($this->shareMinorValues($result->perLineShares())),
+        );
     }
 }

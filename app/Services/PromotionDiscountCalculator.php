@@ -30,6 +30,21 @@ use InvalidArgumentException;
  *    unitPrice * (remaining allowed units) to the base, not its full
  *    lineTotal.
  *
+ * PER-LINE BREAKDOWN (operational-sales-domain-design.md §3.13,
+ * promotions-domain-design.md §8) — added on top of the already-correct
+ * total, never changing it: eligibleAmountsPerLine() computes exactly
+ * the same per-line eligible amounts this class already derived
+ * internally before (full lineTotal, a usage-limit-crossing line's
+ * partial unitPrice x remaining, or zero) — previously discarded the
+ * moment they were summed into $base, now kept and exposed via
+ * PromotionDiscountResult::perLineShares(). The already-computed total
+ * discount is allocated across those SAME per-line amounts via
+ * Money::allocate() (EasyCo\Pricing\Money) — the breakdown is derived
+ * FROM the total, never the other way round, so amount() cannot regress
+ * by construction: it is not possible for perLineShares() to sum to
+ * anything other than amount(), because amount() IS what's being
+ * allocated.
+ *
  * roundedDivide() below is a byte-for-byte copy of
  * EloquentPriceResolver::roundedDivide() (itself a copy of Price's own
  * private rounding helper) — deliberately reimplemented here rather
@@ -53,32 +68,41 @@ final class PromotionDiscountCalculator
             );
         }
 
-        $base = $this->eligibleBase($promotion, $applicableLines);
+        $currency = $applicableLines[0]['lineTotal']->currency();
+        $eligibleAmounts = $this->eligibleAmountsPerLine($promotion, $applicableLines);
+        $base = self::sumAmounts($eligibleAmounts, $currency);
 
         if ($promotion->discountType() === PromotionDiscountType::PERCENTAGE) {
             $discountMinor = self::roundedDivide(
                 $base->minorValue() * $promotion->percentageBasisPoints(),
                 10000
             );
+            $totalDiscount = Money::fromMinorUnits($discountMinor, $base->currency());
 
-            return PromotionDiscountResult::uncapped(Money::fromMinorUnits($discountMinor, $base->currency()));
+            return PromotionDiscountResult::uncapped($totalDiscount, self::allocate($totalDiscount, $eligibleAmounts));
         }
 
         $nominal = $promotion->discountAmount();
 
         if ($nominal->subtract($base)->isPositive()) {
-            return PromotionDiscountResult::capped($base, $nominal);
+            // Capped: the applied discount is the full eligible base —
+            // Money::allocate($base, eligibleAmounts) degenerates to
+            // share[i] == eligibleAmounts[i] exactly here (total ==
+            // sum(weights) is the one case allocate() itself documents
+            // as needing no rounding at all), so no special-casing is
+            // needed for the per-line breakdown either.
+            return PromotionDiscountResult::capped($base, $nominal, self::allocate($base, $eligibleAmounts));
         }
 
-        return PromotionDiscountResult::uncapped($nominal);
+        return PromotionDiscountResult::uncapped($nominal, self::allocate($nominal, $eligibleAmounts));
     }
 
     /**
      * @param array<int, array{variationId: string, quantity: int, unitPrice: Money, lineTotal: Money}> $applicableLines
+     * @return Money[] Same count/order as $applicableLines.
      */
-    private function eligibleBase(Promotion $promotion, array $applicableLines): Money
+    private function eligibleAmountsPerLine(Promotion $promotion, array $applicableLines): array
     {
-        $currency = $applicableLines[0]['lineTotal']->currency();
         $usageLimitItems = $promotion->usageLimitItems();
 
         if ($usageLimitItems !== null) {
@@ -88,16 +112,11 @@ final class PromotionDiscountCalculator
             ));
 
             if ($totalQuantity > $usageLimitItems) {
-                return $this->baseCappedByUsageLimit($applicableLines, $usageLimitItems, $currency);
+                return $this->perLineAmountsCappedByUsageLimit($applicableLines, $usageLimitItems);
             }
         }
 
-        $sum = Money::zero($currency);
-        foreach ($applicableLines as $line) {
-            $sum = $sum->add($line['lineTotal']);
-        }
-
-        return $sum;
+        return array_map(static fn (array $line) => $line['lineTotal'], $applicableLines);
     }
 
     /**
@@ -107,32 +126,65 @@ final class PromotionDiscountCalculator
      * contributes only unitPrice * (remaining allowed units) — an
      * exact integer multiplication (Money::multiply() only ever
      * accepts an integer factor), never a float. Lines beyond the
-     * point the limit is exhausted contribute nothing.
+     * point the limit is exhausted contribute zero.
      *
      * @param array<int, array{variationId: string, quantity: int, unitPrice: Money, lineTotal: Money}> $applicableLines
+     * @return Money[] Same count/order as $applicableLines.
      */
-    private function baseCappedByUsageLimit(array $applicableLines, int $usageLimitItems, Currency $currency): Money
+    private function perLineAmountsCappedByUsageLimit(array $applicableLines, int $usageLimitItems): array
     {
-        $sum = Money::zero($currency);
+        $currency = $applicableLines[0]['lineTotal']->currency();
+        $amounts = [];
         $remaining = $usageLimitItems;
 
         foreach ($applicableLines as $line) {
             if ($remaining <= 0) {
-                break;
+                $amounts[] = Money::zero($currency);
+
+                continue;
             }
 
             if ($line['quantity'] <= $remaining) {
-                $sum = $sum->add($line['lineTotal']);
+                $amounts[] = $line['lineTotal'];
                 $remaining -= $line['quantity'];
 
                 continue;
             }
 
-            $sum = $sum->add($line['unitPrice']->multiply($remaining));
+            $amounts[] = $line['unitPrice']->multiply($remaining);
             $remaining = 0;
         }
 
+        return $amounts;
+    }
+
+    /**
+     * @param Money[] $amounts
+     */
+    private static function sumAmounts(array $amounts, Currency $currency): Money
+    {
+        $sum = Money::zero($currency);
+
+        foreach ($amounts as $amount) {
+            $sum = $sum->add($amount);
+        }
+
         return $sum;
+    }
+
+    /**
+     * Money::allocate() takes integer weights, not Money — converts each
+     * eligible amount's own minorValue() into the weight Money::allocate()
+     * expects.
+     *
+     * @param Money[] $eligibleAmounts
+     * @return Money[]
+     */
+    private static function allocate(Money $totalDiscount, array $eligibleAmounts): array
+    {
+        $weights = array_map(static fn (Money $amount) => $amount->minorValue(), $eligibleAmounts);
+
+        return $totalDiscount->allocate($weights);
     }
 
     /**
