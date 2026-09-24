@@ -25,6 +25,7 @@ use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\Lang;
 
 /**
  * Orders — admin-panel-design.md §14. STRICTLY READ-ONLY (D1): list and
@@ -124,6 +125,18 @@ class OrderResource extends Resource
     {
         return $table
             ->modifyQueryUsing(fn (Builder $query): Builder => app(OrderAdminReader::class)->applyListAggregates($query))
+            // Tie-break for two orders with an identical placed_at: NO
+            // explicit ->orderBy('id', 'desc') needed here — confirmed
+            // against the installed source, not assumed.
+            // Filament\Tables\Table\Concerns\CanSortRecords::
+            // $hasDefaultKeySort defaults to true, and
+            // Filament\Tables\Concerns\CanSortRecords::
+            // applySortingToTableQuery() (vendor/filament/tables/src/
+            // Concerns/CanSortRecords.php, ~lines 119-140) appends
+            // ->orderBy($qualifiedKeyName, $sortDirection) itself whenever
+            // the query doesn't already order by the model's key — using
+            // the SAME $sortDirection as this defaultSort ('desc'), so the
+            // real tie-break is already "placed_at desc, then id desc".
             ->defaultSort('placed_at', 'desc')
             ->columns([
                 TextColumn::make('id')
@@ -146,14 +159,10 @@ class OrderResource extends Resource
                     ->formatStateUsing(fn (?string $state): string => $state ?? __('orders.not_available')),
                 TextColumn::make('channel')
                     ->label(__('orders.fields.channel'))
-                    ->formatStateUsing(fn (?string $state): string => $state !== null
-                        ? __("orders.channel_options.{$state}")
-                        : __('orders.not_available')),
+                    ->formatStateUsing(fn (?string $state): string => static::optionLabel('channel', $state)),
                 TextColumn::make('payment_method')
                     ->label(__('orders.fields.payment_method'))
-                    ->formatStateUsing(fn (?string $state): string => $state !== null
-                        ? __("orders.payment_method_options.{$state}")
-                        : __('orders.not_available')),
+                    ->formatStateUsing(fn (?string $state): string => static::optionLabel('payment_method', $state)),
                 TextColumn::make('payment_status')
                     ->label(__('orders.fields.payment_status'))
                     ->badge()
@@ -163,17 +172,12 @@ class OrderResource extends Resource
                         'failed' => 'danger',
                         default => 'gray',
                     })
-                    ->formatStateUsing(fn (?string $state): string => $state !== null
-                        ? __("orders.payment_status_options.{$state}")
-                        : __('orders.not_available')),
+                    ->formatStateUsing(fn (?string $state): string => static::optionLabel('payment_status', $state)),
                 TextColumn::make('item_count')
                     ->label(__('orders.fields.item_count')),
                 TextColumn::make('total')
                     ->label(__('orders.fields.total'))
-                    ->getStateUsing(fn (OrderModel $record): string => app(PriceDisplayFormatter::class)->format(
-                        Money::fromMinorUnits((int) $record->total_minor, $record->currency)->decimalValue(),
-                        Currency::of($record->currency)
-                    )),
+                    ->getStateUsing(fn (OrderModel $record): string => static::formatOrderMoney($record, 'total_minor')),
             ])
             ->filters([]);
     }
@@ -219,13 +223,7 @@ class OrderResource extends Resource
                         ->formatStateUsing(fn (string $state): string => __("orders.status_options.{$state}")),
                     TextEntry::make('channel')
                         ->label(__('orders.fields.channel'))
-                        ->getStateUsing(function (OrderModel $record): string {
-                            $channel = static::forOrder($record)->channel;
-
-                            return array_key_exists($channel, ['web' => true, 'pos' => true])
-                                ? __("orders.channel_options.{$channel}")
-                                : $channel;
-                        }),
+                        ->getStateUsing(fn (OrderModel $record): string => static::optionLabel('channel', static::forOrder($record)->channel)),
                 ])
                 ->columns(4),
             Section::make(__('orders.sections.client'))
@@ -309,10 +307,7 @@ class OrderResource extends Resource
                     TextEntry::make('discount_minor')
                         ->label(__('orders.fields.discount'))
                         ->visible(fn (OrderModel $record): bool => $record->applied_promotion_code !== null)
-                        ->getStateUsing(fn (OrderModel $record): string => app(PriceDisplayFormatter::class)->format(
-                            Money::fromMinorUnits((int) $record->discount_minor, $record->currency)->decimalValue(),
-                            Currency::of($record->currency)
-                        )),
+                        ->getStateUsing(fn (OrderModel $record): string => static::formatOrderMoney($record, 'discount_minor')),
                     TextEntry::make('promotion_redeemed')
                         ->label(__('orders.fields.promotion_redeemed'))
                         ->visible(fn (OrderModel $record): bool => $record->applied_promotion_code !== null)
@@ -325,22 +320,13 @@ class OrderResource extends Resource
                 ->schema([
                     TextEntry::make('subtotal_minor')
                         ->label(__('orders.fields.subtotal'))
-                        ->getStateUsing(fn (OrderModel $record): string => app(PriceDisplayFormatter::class)->format(
-                            Money::fromMinorUnits((int) $record->subtotal_minor, $record->currency)->decimalValue(),
-                            Currency::of($record->currency)
-                        )),
+                        ->getStateUsing(fn (OrderModel $record): string => static::formatOrderMoney($record, 'subtotal_minor')),
                     TextEntry::make('discount_minor_total')
                         ->label(__('orders.fields.discount'))
-                        ->getStateUsing(fn (OrderModel $record): string => app(PriceDisplayFormatter::class)->format(
-                            Money::fromMinorUnits((int) $record->discount_minor, $record->currency)->decimalValue(),
-                            Currency::of($record->currency)
-                        )),
+                        ->getStateUsing(fn (OrderModel $record): string => static::formatOrderMoney($record, 'discount_minor')),
                     TextEntry::make('total_minor')
                         ->label(__('orders.fields.total'))
-                        ->getStateUsing(fn (OrderModel $record): string => app(PriceDisplayFormatter::class)->format(
-                            Money::fromMinorUnits((int) $record->total_minor, $record->currency)->decimalValue(),
-                            Currency::of($record->currency)
-                        )),
+                        ->getStateUsing(fn (OrderModel $record): string => static::formatOrderMoney($record, 'total_minor')),
                 ])
                 ->columns(3),
             Section::make(__('orders.sections.payment'))
@@ -350,11 +336,9 @@ class OrderResource extends Resource
                         ->getStateUsing(function (OrderModel $record): string {
                             $payment = static::forOrder($record)->latestPayment;
 
-                            if ($payment === null) {
-                                return __('orders.no_payment');
-                            }
-
-                            return __("orders.payment_method_options.{$payment->method()}");
+                            return $payment !== null
+                                ? static::optionLabel('payment_method', $payment->method())
+                                : __('orders.no_payment');
                         }),
                     TextEntry::make('payment_status')
                         ->label(__('orders.fields.payment_status'))
@@ -370,7 +354,7 @@ class OrderResource extends Resource
                             $payment = static::forOrder($record)->latestPayment;
 
                             return $payment !== null
-                                ? __("orders.payment_status_options.{$payment->status()->value}")
+                                ? static::optionLabel('payment_status', $payment->status()->value)
                                 : __('orders.no_payment');
                         }),
                     TextEntry::make('provider_reference')
@@ -398,6 +382,47 @@ class OrderResource extends Resource
     private static function forOrder(OrderModel $record): OrderAdminOrderView
     {
         return app(OrderAdminReader::class)->forOrder((string) $record->id);
+    }
+
+    /**
+     * The one formatting shape every money column/entry on this Resource
+     * shares: a *_minor column on OrderModel plus $record->currency, run
+     * through the same PriceDisplayFormatter every other price display in
+     * this admin panel uses. No behaviour change from extracting this —
+     * every call site below produced byte-identical output before.
+     */
+    private static function formatOrderMoney(OrderModel $record, string $minorField): string
+    {
+        return app(PriceDisplayFormatter::class)->format(
+            Money::fromMinorUnits((int) $record->{$minorField}, $record->currency)->decimalValue(),
+            Currency::of($record->currency)
+        );
+    }
+
+    /**
+     * Shared by every enum-backed column/entry (channel — EasyCo\
+     * OperationalSales\Enums\Channel, payment_method, payment_status —
+     * EasyCo\Payment\Enums\PaymentStatus) on both the list and the View
+     * page — a real, confirmed gap found before this helper existed: every
+     * call site independently ran __("orders.{$group}_options.{$state}")
+     * with no Lang::has() check first, and Laravel's own __() returns the
+     * translation KEY ITSELF when no entry exists (confirmed against
+     * installed source, not assumed) — so a stored value with no lang
+     * entry rendered as the literal string "orders.payment_method_options.
+     * xyz" instead of the raw value a merchant/support agent could
+     * actually recognise. $state === null stays a separate case
+     * (orders.not_available, "no value recorded"), never confused with
+     * "a value exists but has no label" (this method's own fallback).
+     */
+    private static function optionLabel(string $group, ?string $state): string
+    {
+        if ($state === null) {
+            return __('orders.not_available');
+        }
+
+        $key = "orders.{$group}_options.{$state}";
+
+        return Lang::has($key) ? __($key) : $state;
     }
 
     /** @return array<int, array{product_name: string, sku: string, quantity: int, unit_price: string, line_total: string}> */
