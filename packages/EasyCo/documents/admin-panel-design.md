@@ -802,3 +802,115 @@ confirmed with a real test, not merely asserted by inspection.
   only.
 - A bulk "promote" action across multiple selected rows.
 - Any merchant-API exposure of promote/unpromote (JSON API surface).
+
+---
+
+## §14. Orders (read-only)
+
+A `List` + `View` `OrderResource` — strictly read-only, the manual
+prerequisite for exercising cart → checkout → order end to end before
+any order-editing UI exists. Confirmed decisions:
+
+- **D1 — Strictly read-only.** No create/edit/delete pages, no bulk
+  actions, no status transitions, no row action beyond View.
+  `createPermission()`/`editPermission()`/`deletePermission()` are
+  deliberately never overridden — `AuthorizesViaStaffPermission`'s own
+  `staffCanForAction()` fails closed for an undeclared permission, so
+  `canCreate()`/`canEdit()`/`canDelete()` are false for every role by
+  construction, asserted by a real test rather than implied. Gated by
+  `Permission::ORDER_VIEW` alone (Administrator and Manager hold it,
+  Product Entry does not).
+- **D2 — Snapshot, never live.** Every amount, product name, SKU and
+  delivery field comes from `orders` / `operational_sales_sale_lines`
+  directly. Nothing is re-resolved through Pricing or Catalog — a
+  renamed product, a changed SKU, or a changed price after the order
+  was placed changes nothing this page shows (confirmed by a real
+  test: rename/re-SKU/re-price the product, the View page is
+  unchanged).
+- **D3 — A line shows** product name, SKU, quantity, line total, and
+  unit price derived as `amount_minor / quantity` — exact by
+  construction (`CheckoutLinePricer` builds `amount` as
+  `unitPrice->multiply($quantity)`, plain integer multiplication), but
+  still verified rather than trusted; a non-exact division would log a
+  warning and render blank, never round silently. No regular/struck-
+  through price and no variation attributes — neither is stored
+  anywhere on a `SaleLine` snapshot (see "Snapshot gaps" below).
+- **D4 — `profit_minor` is shown nowhere**, list or View — margin
+  visibility needs its own future permission decision.
+- **D5 — `App\Services\OrderAdminReader`** is the one place every
+  cross-table read for this section lives (`orders`,
+  `operational_sales_sale_lines`, `operational_sales_transactions`,
+  `operational_sales_clients`, `payments`, `promotion_redemptions` —
+  five packages that deliberately never reference each other's
+  Eloquent models). `OrderModel` carries no relations, and none were
+  added. `applyListAggregates()` layers correlated-subquery `addSelect()`
+  columns onto the List page's query (same shape
+  `ProductResource::table()`'s own `thumbnail_path` subquery already
+  uses); `forOrder()` assembles the View page's full read, memoized per
+  instance (the reader is bound `scoped()`, same pattern as
+  `PriceDisplayFormatter`/`ProductPriceRangeProvider`) since the
+  infolist's several independent entries all resolve it for the same
+  order id.
+- **D6 — Payment shown = the most recent row** (by `attempted_at`, then
+  `id`), plus the attempt count when more than one exists.
+  `payments.order_id` is a plain, unindexed-by-FK `VARCHAR`
+  (`payment-domain-design.md` §6 — the Order domain didn't exist yet
+  when Payment was built); every join casts `orders.id` to `CHAR`
+  rather than touching `payments.order_id`, so that column's own real
+  index (`pay_payments_order_id_index`) stays usable.
+- **D7 — List query count is independent of row count**, confirmed by
+  a real test (`OrderAdminReaderTest`) that isolates
+  `OrderAdminReader`'s own contribution: 1 query regardless of page
+  size. A SEPARATE, pre-existing cost does scale with row count once a
+  View page exists — Filament calls `canView($record)` per row to
+  decide whether it's clickable, and
+  `AuthorizesViaStaffPermission::staffCanForAction()` reloads the full
+  `Staff` aggregate on every single call (that trait's own docblock
+  already flags this as a known, deliberately deferred cost, twice
+  over — not something this task reopens or fixes).
+- **D8 — Fail-soft display.** Missing optional data (no payment row, no
+  promotion, a pickup-point order with no street fields) renders `'—'`,
+  never an exception.
+
+**A real, confirmed gap found while building `forOrder()`, flagged, not
+fixed:** `SaleLine`'s own constructor
+(`assertProductNameAndSkuMatchType()`) rejects a `null`
+`product_name`/`sku` for a SALE line unconditionally, including during
+`reconstituteFromStorage()`. That snapshot only exists on rows written
+after the 2026-09-17 migration that added the columns — so
+`TransactionRepository::findByIdWithSaleLines()` would genuinely throw
+reconstructing an older row, the opposite of this page's own D2/D8
+requirements. `OrderAdminReader` reads `operational_sales_sale_lines`
+directly instead, sidestepping that constructor entirely (confirmed
+survivable by a real test that writes `NULL` directly into the table).
+
+**Snapshot gaps this page surfaces but does not create — flagged for a
+future decision, not guessed at here:** `operational_sales_sale_lines`
+stores no unit/regular price separately from the line total (only
+derivable, and only when the division happens to be exact) and no
+variation attributes (color/size/etc.) at all — an order for a VARIABLE
+product's variation shows only whatever `product_name`/`sku` the
+snapshot carries, nothing about which combination was purchased. Adding
+either is a real schema change to `EasyCo\OperationalSales`, out of this
+task's scope.
+
+**Deferred, explicitly:**
+- Order status transitions / any editing capability.
+- A Promotions admin UI.
+- Refunds UI (`PaymentRefund` already exists as a domain concept —
+  payment-domain-design.md — with no admin surface yet).
+- List filters (by status, channel, payment status, date range).
+- Printing / invoices.
+- Margin (profit) visibility — needs its own permission decision (D4).
+- The terms/phone-call checkout fields §7 named — they do not exist in
+  the schema yet, so there is nothing yet for this page to show.
+
+**`Database\Seeders\DemoPromotionsSeeder`** — not part of the admin
+panel itself, but this section's own manual-testing prerequisite: four
+demo promotion codes (`DEMO10`, `DEMOFIX`, `DEMOONCE`, `DEMOSCOPE`),
+seeded via `php artisan db:seed --class=DemoPromotionsSeeder` (never
+registered in `DatabaseSeeder`, refuses in production, idempotent).
+See CLAUDE.md's own "Build / test" section for the one-line usage note,
+and the seeder's own docblock for why each code's specific parameters
+were chosen.
+- Any merchant-API exposure of promote/unpromote (JSON API surface).

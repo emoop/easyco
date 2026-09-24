@@ -132,6 +132,11 @@ packages/EasyCo/documents/{domain}-domain-design.md before working in it.
   fresh `composer install` on new packages in some contexts — check
   whether that's still true before assuming it).
 - Full app test suite: `php artisan test`.
+- `php artisan db:seed --class=DemoPromotionsSeeder` seeds four demo
+  promotion codes (DEMO10, DEMOFIX, DEMOONCE, DEMOSCOPE) for manually
+  exercising cart → checkout → order end to end — not registered in
+  `DatabaseSeeder`, dev/staging only (refuses in production), idempotent
+  to re-run. See admin-panel-design.md §14.
 
 ## Deferred, tracked (don't rebuild speculatively, don't lose track)
 
