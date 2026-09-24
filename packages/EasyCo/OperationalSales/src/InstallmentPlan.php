@@ -359,6 +359,29 @@ final class InstallmentPlan
                 // defer it to settlement.
                 productName: $reservedLine->productName(),
                 sku: $reservedLine->sku(),
+                // §3.13 — carried through unchanged from the reservedLine's
+                // own snapshot, the SAME rule as productName/sku just
+                // above, not a new one invented for this stage. Still `new
+                // SaleLine(...)`, not SaleLine::create() (§3.13's own
+                // implementation stages, D4) — these fields stay optional
+                // here for now, so a RESERVATION line recorded before
+                // reservation-recording captures §3.13's snapshot (it does
+                // not yet — inventory-domain-design.md) settles exactly as
+                // it does today. ONCE THIS MOVES TO create() (a later
+                // stage, not this one): settling a reservation whose own
+                // line never captured this snapshot will fail loudly
+                // instead of silently producing a settlement SALE line
+                // with none of it either — reservation-recording must
+                // capture the §3.13 snapshot at reservation time, not
+                // defer it to settlement, the same posture already
+                // documented above for productName/sku.
+                regularUnitPrice: $reservedLine->regularUnitPrice(),
+                finalUnitPrice: $reservedLine->finalUnitPrice(),
+                promotionDiscountShare: $reservedLine->promotionDiscountShare(),
+                discretionaryDiscount: $reservedLine->discretionaryDiscount(),
+                netPaidAmount: $reservedLine->netPaidAmount(),
+                soldAttributes: $reservedLine->soldAttributes(),
+                unitCost: $reservedLine->unitCost(),
             );
         }
 

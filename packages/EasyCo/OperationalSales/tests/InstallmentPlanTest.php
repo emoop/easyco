@@ -57,6 +57,13 @@ final class InstallmentPlanTest extends TestCase
         string $currency = 'EUR',
         ?DateTimeImmutable $effectiveAt = null,
         ?string $id = null,
+        ?Money $regularUnitPrice = null,
+        ?Money $finalUnitPrice = null,
+        ?Money $promotionDiscountShare = null,
+        ?Money $discretionaryDiscount = null,
+        ?Money $netPaidAmount = null,
+        ?array $soldAttributes = null,
+        ?Money $unitCost = null,
     ): SaleLine {
         $line = new SaleLine(
             id: null,
@@ -77,6 +84,17 @@ final class InstallmentPlanTest extends TestCase
             // — see that method's own inline note.
             productName: 'Product One',
             sku: 'SKU-1',
+            // §3.13 — also unconstrained on RESERVATION (Tier A), all
+            // null by default here to match existing test behaviour;
+            // callers proving buildSettlementSaleLines()'s own D4
+            // carry-through pass these explicitly.
+            regularUnitPrice: $regularUnitPrice,
+            finalUnitPrice: $finalUnitPrice,
+            promotionDiscountShare: $promotionDiscountShare,
+            discretionaryDiscount: $discretionaryDiscount,
+            netPaidAmount: $netPaidAmount,
+            soldAttributes: $soldAttributes,
+            unitCost: $unitCost,
         );
 
         if ($id !== null) {
@@ -284,6 +302,62 @@ final class InstallmentPlanTest extends TestCase
         // NOT be "now"/recordedAt.
         $this->assertEquals($originalEffectiveAt, $settlement->effectiveAt());
         $this->assertNotEquals($originalEffectiveAt, $settlement->recordedAt());
+    }
+
+    /**
+     * operational-sales-domain-design.md §3.13 D4: buildSettlementSaleLines()
+     * carries every §3.13 field through from the reserved line UNCHANGED
+     * — the same rule already proven for productName/sku above, extended
+     * to the seven new fields.
+     */
+    public function test_settlement_carries_every_snapshot_field_through_from_the_reserved_line(): void
+    {
+        $plan = InstallmentPlan::open('client-1');
+        $soldAttributes = [
+            ['definitionId' => '1', 'definitionCode' => 'color', 'definitionName' => 'Color', 'valueId' => '10', 'value' => 'Black'],
+        ];
+
+        $reserved = $this->reservedLine(
+            amountMinorUnits: 1000,
+            id: 'reserved-line-1',
+            regularUnitPrice: $this->money(1100),
+            finalUnitPrice: $this->money(1000),
+            promotionDiscountShare: $this->money(50),
+            discretionaryDiscount: $this->money(0),
+            netPaidAmount: $this->money(950),
+            soldAttributes: $soldAttributes,
+            unitCost: $this->money(400),
+        );
+        $plan->attachReservedLine($reserved);
+
+        $settlement = $plan->recordPayment($this->paymentLine(amountMinorUnits: 1000))[0];
+
+        $this->assertTrue($settlement->regularUnitPrice()->equals($this->money(1100)));
+        $this->assertTrue($settlement->finalUnitPrice()->equals($this->money(1000)));
+        $this->assertTrue($settlement->promotionDiscountShare()->equals($this->money(50)));
+        $this->assertTrue($settlement->discretionaryDiscount()->equals($this->money(0)));
+        $this->assertTrue($settlement->netPaidAmount()->equals($this->money(950)));
+        $this->assertSame($soldAttributes, $settlement->soldAttributes());
+        $this->assertTrue($settlement->unitCost()->equals($this->money(400)));
+    }
+
+    /**
+     * The other half of D4's own carry-through rule: a reservation
+     * recorded WITHOUT the §3.13 snapshot (reservation-recording doesn't
+     * capture it yet, §3.13's own RESERVATION posture) settles exactly as
+     * it does today — nulls through, no exception, no invented value.
+     */
+    public function test_settlement_of_a_reserved_line_without_the_snapshot_carries_nulls_through(): void
+    {
+        $plan = InstallmentPlan::open('client-1');
+        $reserved = $this->reservedLine(amountMinorUnits: 1000, id: 'reserved-line-1');
+        $plan->attachReservedLine($reserved);
+
+        $settlement = $plan->recordPayment($this->paymentLine(amountMinorUnits: 1000))[0];
+
+        $this->assertNull($settlement->regularUnitPrice());
+        $this->assertNull($settlement->soldAttributes());
+        $this->assertNull($settlement->unitCost());
     }
 
     public function test_record_payment_that_only_partially_reduces_the_balance_leaves_the_plan_active(): void

@@ -412,6 +412,7 @@ final class SaleLineTest extends TestCase
         $expectedPublicMethods = [
             '__construct',
             'reconstituteFromStorage',
+            'create',
             'id',
             'assignId',
             'assignTransactionId',
@@ -429,6 +430,13 @@ final class SaleLineTest extends TestCase
             'originatingReservationLineId',
             'productName',
             'sku',
+            'regularUnitPrice',
+            'finalUnitPrice',
+            'promotionDiscountShare',
+            'discretionaryDiscount',
+            'netPaidAmount',
+            'soldAttributes',
+            'unitCost',
         ];
 
         $actualPublicMethods = array_map(
@@ -607,5 +615,323 @@ final class SaleLineTest extends TestCase
 
         $this->assertNull($withoutSnapshot->productName());
         $this->assertNull($withoutSnapshot->sku());
+    }
+
+    // --- §3.13: SaleLine::create() ---------------------------------------
+
+    /** @return array<int, array{definitionId: string, definitionCode: string, definitionName: string, valueId: string, value: string}> */
+    private function soldAttributes(): array
+    {
+        return [
+            ['definitionId' => '1', 'definitionCode' => 'color', 'definitionName' => 'Color', 'valueId' => '10', 'value' => 'Black'],
+            ['definitionId' => '2', 'definitionCode' => 'size', 'definitionName' => 'Size', 'valueId' => '20', 'value' => 'M'],
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $overrides
+     */
+    private function createArgs(array $overrides = []): array
+    {
+        return array_merge([
+            'transactionId' => 'txn-1',
+            'clientId' => 'client-1',
+            'priceableId' => 'priceable-1',
+            'status' => SaleLineStatus::COMPLETED,
+            'quantity' => 2,
+            'amount' => $this->money(2000),
+            'profit' => $this->money(1000),
+            'recordedAt' => $this->now(),
+            'effectiveAt' => $this->now(),
+            'productName' => 'Product One',
+            'sku' => 'SKU-1',
+            'regularUnitPrice' => $this->money(1100),
+            'finalUnitPrice' => $this->money(1000),
+            'promotionDiscountShare' => $this->money(100),
+            'discretionaryDiscount' => $this->money(0),
+            // netPaidAmount = finalUnitPrice(1000) x quantity(2) - promotionDiscountShare(100) - discretionaryDiscount(0) = 1900
+            'netPaidAmount' => $this->money(1900),
+            'soldAttributes' => [],
+            'unitCost' => null,
+            'originatingReservationLineId' => null,
+        ], $overrides);
+    }
+
+    private function create(array $overrides = []): SaleLine
+    {
+        $args = $this->createArgs($overrides);
+
+        return SaleLine::create(...$args);
+    }
+
+    public function test_create_succeeds_for_a_simple_line_with_no_attributes(): void
+    {
+        $line = $this->create();
+
+        $this->assertSame(SaleLineType::SALE, $line->type());
+        $this->assertSame([], $line->soldAttributes());
+        $this->assertNull($line->unitCost());
+        $this->assertTrue($line->netPaidAmount()->equals($this->money(1900)));
+    }
+
+    public function test_create_succeeds_for_a_variable_line_with_attributes(): void
+    {
+        $line = $this->create(['soldAttributes' => $this->soldAttributes()]);
+
+        $this->assertSame($this->soldAttributes(), $line->soldAttributes());
+    }
+
+    public function test_create_accepts_a_null_unit_cost(): void
+    {
+        $line = $this->create(['unitCost' => null]);
+
+        $this->assertNull($line->unitCost());
+    }
+
+    public function test_create_accepts_a_real_unit_cost(): void
+    {
+        $line = $this->create(['unitCost' => $this->money(400)]);
+
+        $this->assertTrue($line->unitCost()->equals($this->money(400)));
+    }
+
+    public function test_create_throws_when_a_money_field_currency_does_not_match_amount(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+
+        $this->create(['regularUnitPrice' => Money::fromMinorUnits(1100, 'USD')]);
+    }
+
+    public function test_create_throws_when_unit_cost_currency_does_not_match_amount(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+
+        $this->create(['unitCost' => Money::fromMinorUnits(400, 'USD')]);
+    }
+
+    public function test_create_throws_when_amount_does_not_match_final_unit_price_times_quantity(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+
+        // createArgs()'s own amount is 2000 (finalUnitPrice 1000 x quantity 2) — off by one.
+        $this->create(['amount' => $this->money(2001)]);
+    }
+
+    public function test_create_throws_when_net_paid_amount_does_not_match_the_formula(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+
+        // Correct net would be 1900 (see createArgs()'s own comment) — off by one.
+        $this->create(['netPaidAmount' => $this->money(1901)]);
+    }
+
+    public function test_create_throws_when_net_paid_amount_would_be_negative(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+
+        // finalUnitPrice(1000) x quantity(2) - promotionDiscountShare(2500) - discretionaryDiscount(0) = -500.
+        $this->create(['promotionDiscountShare' => $this->money(2500), 'netPaidAmount' => $this->money(-500)]);
+    }
+
+    public function test_create_throws_when_promotion_discount_share_is_negative(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+
+        // netPaidAmount recomputed to keep the formula check itself from firing first:
+        // finalUnitPrice(1000) x 2 - (-100) - 0 = 2100.
+        $this->create(['promotionDiscountShare' => $this->money(-100), 'netPaidAmount' => $this->money(2100)]);
+    }
+
+    public function test_create_throws_when_discretionary_discount_is_negative(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+
+        $this->create(['discretionaryDiscount' => $this->money(-50), 'netPaidAmount' => $this->money(1950)]);
+    }
+
+    public function test_create_throws_when_an_attribute_entry_is_missing_a_required_key(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+
+        $this->create(['soldAttributes' => [
+            ['definitionId' => '1', 'definitionCode' => 'color', 'definitionName' => 'Color', 'valueId' => '10'],
+        ]]);
+    }
+
+    /**
+     * No interim regression (§3.13's own stage-2 requirement): create()
+     * still requires productName/sku for a fresh SALE line, via the same
+     * constructor Tier B check `new SaleLine(...)` has always run — not a
+     * new rule invented for create() itself.
+     */
+    public function test_create_throws_when_product_name_is_empty(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+
+        $this->create(['productName' => '']);
+    }
+
+    // --- §3.13: Tier A structural rule for the seven new fields ----------
+
+    public static function snapshotFieldOverrideProvider(): array
+    {
+        return [
+            'regularUnitPrice' => [['regularUnitPrice' => Money::fromMinorUnits(100, 'EUR')]],
+            'finalUnitPrice' => [['finalUnitPrice' => Money::fromMinorUnits(100, 'EUR')]],
+            'promotionDiscountShare' => [['promotionDiscountShare' => Money::fromMinorUnits(0, 'EUR')]],
+            'discretionaryDiscount' => [['discretionaryDiscount' => Money::fromMinorUnits(0, 'EUR')]],
+            'netPaidAmount' => [['netPaidAmount' => Money::fromMinorUnits(100, 'EUR')]],
+            'soldAttributes' => [['soldAttributes' => []]],
+            'unitCost' => [['unitCost' => Money::fromMinorUnits(50, 'EUR')]],
+        ];
+    }
+
+    #[DataProvider('snapshotFieldOverrideProvider')]
+    public function test_shipping_type_with_any_non_null_snapshot_field_throws(array $override): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+
+        new SaleLine(
+            id: null,
+            transactionId: 'txn-1',
+            clientId: 'client-1',
+            priceableId: null,
+            type: SaleLineType::SHIPPING,
+            status: SaleLineStatus::COMPLETED,
+            quantity: 1,
+            amount: $this->money(),
+            profit: $this->money(200),
+            recordedAt: $this->now(),
+            effectiveAt: $this->now(),
+            regularUnitPrice: $override['regularUnitPrice'] ?? null,
+            finalUnitPrice: $override['finalUnitPrice'] ?? null,
+            promotionDiscountShare: $override['promotionDiscountShare'] ?? null,
+            discretionaryDiscount: $override['discretionaryDiscount'] ?? null,
+            netPaidAmount: $override['netPaidAmount'] ?? null,
+            soldAttributes: $override['soldAttributes'] ?? null,
+            unitCost: $override['unitCost'] ?? null,
+        );
+    }
+
+    public function test_reservation_type_is_unconstrained_on_snapshot_fields(): void
+    {
+        $line = new SaleLine(
+            id: null,
+            transactionId: 'txn-1',
+            clientId: 'client-1',
+            priceableId: 'priceable-1',
+            type: SaleLineType::RESERVATION,
+            status: SaleLineStatus::PENDING,
+            quantity: 1,
+            amount: $this->money(),
+            profit: $this->money(200),
+            recordedAt: $this->now(),
+            effectiveAt: $this->now(),
+            regularUnitPrice: $this->money(1100),
+            finalUnitPrice: $this->money(1000),
+            soldAttributes: $this->soldAttributes(),
+        );
+
+        $this->assertTrue($line->regularUnitPrice()->equals($this->money(1100)));
+        $this->assertSame($this->soldAttributes(), $line->soldAttributes());
+    }
+
+    // --- §3.13 E-D5 / §3.12 amendment: reconstitution tolerates NULLs ----
+
+    public function test_reconstitution_of_a_sale_row_with_null_product_name_sku_and_snapshot_fields_does_not_throw(): void
+    {
+        $line = SaleLine::reconstituteFromStorage(
+            id: 'line-1',
+            transactionId: 'txn-1',
+            clientId: 'client-1',
+            priceableId: 'priceable-1',
+            type: SaleLineType::SALE,
+            status: SaleLineStatus::COMPLETED,
+            quantity: 1,
+            amount: $this->money(),
+            profit: $this->money(200),
+            recordedAt: $this->now(),
+            effectiveAt: $this->now(),
+            // productName/sku AND every §3.13 field left at their null
+            // defaults — this is exactly the legacy-row shape Prompt Г
+            // found throwing (admin-panel-design.md §14), and §3.13
+            // E-D5's own reconstitution fix.
+        );
+
+        $this->assertNull($line->productName());
+        $this->assertNull($line->sku());
+        $this->assertNull($line->regularUnitPrice());
+        $this->assertNull($line->soldAttributes());
+    }
+
+    public function test_reconstitution_of_a_structurally_impossible_row_still_throws(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+
+        // A SHIPPING line reconstituted with a non-null productName is
+        // not "legacy data missing a later field" — it is a genuinely
+        // impossible state (Tier A), which must still throw even during
+        // reconstitution.
+        SaleLine::reconstituteFromStorage(
+            id: 'line-1',
+            transactionId: 'txn-1',
+            clientId: 'client-1',
+            priceableId: null,
+            type: SaleLineType::SHIPPING,
+            status: SaleLineStatus::COMPLETED,
+            quantity: 1,
+            amount: $this->money(),
+            profit: $this->money(200),
+            recordedAt: $this->now(),
+            effectiveAt: $this->now(),
+            productName: 'Impossible Product Name',
+        );
+    }
+
+    /**
+     * The $reconstituting flag is reset even when the constructor it
+     * wraps throws — otherwise a failed reconstitution would leave Tier
+     * B suppressed for the NEXT, unrelated `new SaleLine(...)` call.
+     */
+    public function test_a_failed_reconstitution_does_not_leak_the_reconstituting_flag(): void
+    {
+        try {
+            SaleLine::reconstituteFromStorage(
+                id: 'line-1',
+                transactionId: 'txn-1',
+                clientId: 'client-1',
+                priceableId: null,
+                type: SaleLineType::SHIPPING,
+                status: SaleLineStatus::COMPLETED,
+                quantity: 1,
+                amount: $this->money(),
+                profit: $this->money(200),
+                recordedAt: $this->now(),
+                effectiveAt: $this->now(),
+                productName: 'Impossible Product Name',
+            );
+            $this->fail('Expected InvalidArgumentException was not thrown.');
+        } catch (\InvalidArgumentException) {
+            // expected
+        }
+
+        // If the flag leaked "true", this would NOT throw even though
+        // productName/sku are missing for a fresh SALE line — proving
+        // Tier B is still active for ordinary construction.
+        $this->expectException(\InvalidArgumentException::class);
+
+        new SaleLine(
+            id: null,
+            transactionId: 'txn-1',
+            clientId: 'client-1',
+            priceableId: 'priceable-1',
+            type: SaleLineType::SALE,
+            status: SaleLineStatus::COMPLETED,
+            quantity: 1,
+            amount: $this->money(),
+            profit: $this->money(200),
+            recordedAt: $this->now(),
+            effectiveAt: $this->now(),
+        );
     }
 }
