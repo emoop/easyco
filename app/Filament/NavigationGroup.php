@@ -21,19 +21,21 @@ use Filament\Support\Contracts\HasLabel;
  * sort value determines which group renders first) — this enum is the
  * real fix, not a workaround.
  *
- * Add future groups (Продажби, Клиенти, CMS, Доклади, Маркетинг,
- * Shipping) as new cases here, in the desired render order — that's
- * the whole mechanism; nothing else needs to change.
+ * Add future groups (Клиенти, CMS, Доклади, Маркетинг, Shipping) as new
+ * cases here, in the desired render order — that's the whole mechanism;
+ * nothing else needs to change.
  */
 enum NavigationGroup implements HasLabel
 {
     case CATALOG;
+    case SALES;
     case ADMIN;
 
     public function getLabel(): string
     {
         return match ($this) {
             self::CATALOG => __('navigation.groups.catalog'),
+            self::SALES => __('navigation.groups.sales'),
             self::ADMIN => __('navigation.groups.admin'),
         };
     }
