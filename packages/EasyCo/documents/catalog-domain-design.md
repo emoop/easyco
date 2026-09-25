@@ -1111,39 +1111,54 @@ things distinguishing two different physical items in the record.
 
 #### 3.19.12 Implementation stages, each with a review gate
 
+Each stage ships its own admin surface — there is no separate final "UI
+stage" that would leave the operation unreachable until the last one lands;
+each stage below names the slice of §3.19.8 it delivers.
+
 1. **This document.** `catalog-domain-design.md` §3.19, the CLAUDE.md rule
    4 amendment, the one line in `operational-sales-domain-design.md`. No
    code. *Gate: approval of this design.*
-2. **Deletability + variation deletion.** `App\Services\CatalogDeletion`
-   (+ `VariationDeletionImpact` / `ProductDeletionImpact`),
+2. **Deletability + variation deletion, with its admin action.**
+   `App\Services\CatalogDeletion` (`variationIdsWithHistory()`,
+   `impactForVariation()` + `VariationDeletionImpact`, `deleteVariation()`),
    `Product::removeStandardVariation()`, `ProductRepository::
    deleteVariation()`, `ActivityLogger::logDeleted()` with its two
-   exceptions (§3.19.10), the
-   `operational_sales_sale_lines.priceable_id` index migration, and
+   decisions (§3.19.10) and the `activity-log:prune` exclusion, the
+   `operational_sales_sale_lines.priceable_id` index migration,
+   `Permission::PRODUCT_DELETE` + `StaffSystemRolesSeeder` + the data
+   migration that extends an already-installed Administrator role,
    `PruneProductsToOriginal` switched onto `variationIdsWithHistory()`
-   **including** its three currently-missed tables (§3.19.2).
-   Tests: refusal on history (including a soft-deleted sale line) and on
-   non-zero stock; a successful delete leaving zero rows in every table of
-   §3.19.4 and the unique indexes genuinely free; the prune command's
-   gate. The concurrency rule is asserted at the level it is testable —
-   the emitted SQL uses `FOR UPDATE` on both reads, and a two-connection
-   test commits a sale line after the impact and proves the in-transaction
-   re-check refuses. *Gate: review before any UI exists.*
-3. **Product deletion.** `ProductRepository::delete()`,
-   `CatalogDeletion::deleteProduct()`, the ARCHIVED gate, the variation
-   loop, the four product-scope/price-item deletes. Tests: refusal for a
-   non-archived product and for any variation with history or stock;
-   success freeing `base_sku` and `slug`. *Gate.*
-4. **Change-axes flow.** `App\Services\VariationAxisRestructure`: compute
-   the two lists, archive, delete via `CatalogDeletion`, re-declare,
-   generate. Tests: removing an axis that a live variation blocks;
-   removing a `R4` value; the "archived and unrestorable" outcome stated
+   **including** its three currently-missed tables (§3.19.2), and the
+   `EditVariableProduct` per-row delete action with its impact /
+   refusal / confirmation modal (§3.19.8 A) plus `products.deletion.*` in
+   both locales. Tests: refusal on history (including a soft-deleted sale
+   line) and on non-zero stock; a successful delete leaving zero rows in
+   every table of §3.19.4 and the unique indexes genuinely free — re-adding
+   the combination then creating a NEW variation with a new id; the prune
+   command's gate; the emitted SQL using `FOR UPDATE` on both reads, plus a
+   two-connection test proving the in-transaction re-check refuses when a
+   sale line is committed after the impact was computed; the permission
+   migration; and the action's own authorization, refusal and typed-SKU
+   paths. *Gate.*
+3. **Product deletion, with its admin action.** `ProductRepository::
+   delete()`, `CatalogDeletion::deleteProduct()`, the ARCHIVED gate, the
+   variation loop, the four product-scope/price-item deletes, and the
+   `ViewProduct` header / list-row delete action with its own modal
+   (§3.19.8 B). Tests: refusal for a non-archived product and for any
+   variation with history or stock; success freeing `base_sku` and `slug`.
+   *Gate.*
+4. **Change-axes flow, with its modal.** `App\Services\
+   VariationAxisRestructure`: compute the two lists, archive, delete via
+   `CatalogDeletion`, re-declare, generate; the Axes-tab impact step
+   (§3.19.8 C). Tests: removing an axis that a live variation blocks;
+   removing an `R4` value; the "archived and unrestorable" outcome stated
    in the modal. *Gate.*
-5. **Admin UI.** The three actions/modals, `products.deletion.*` i18n in
-   both locales, `Permission::PRODUCT_DELETE` and `StaffSystemRolesSeeder`
-   (the permission is already documented in
-   `staff-access-domain-design.md` §3/§3.1/§4.1 — §12.1 of which records
-   what making it grantable to Manager requires). *Gate.*
+
+**Left out of every stage above, deliberately, and tracked elsewhere:**
+the mechanism that makes `PRODUCT_DELETE` *grantable to Manager* — system
+roles' permissions are not editable today (§3.19.9; `staff-access-domain-
+design.md` §12.1 records the two ways to change that), and that is a
+Staff-domain decision, not a Catalog one. There is no fifth "UI" stage.
 
 **Deliberately not designed here, so it is not silently assumed:**
 a bulk/CSV deletion path; any "undo" (there is none — that is the point);
