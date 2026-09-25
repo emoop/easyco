@@ -83,6 +83,50 @@ class EloquentInstallmentPlanRepositoryTest extends TestCase
         return $line;
     }
 
+    /**
+     * §3.13 D7 (stage 4a) — InstallmentPlan::buildSettlementSaleLines()
+     * now requires the full snapshot on every reserved line it settles
+     * (SaleLine::create() rejects nulls). Any test whose reserved line
+     * will actually reach settlement (an exact-payoff recordPayment())
+     * must use this instead of persistedReservedLine() — quantity is
+     * always 1 in this fixture, so regularUnitPrice == finalUnitPrice ==
+     * the line's own amount (no discount modeled), promotionDiscountShare
+     * /discretionaryDiscount zero, netPaidAmount == amount, matching
+     * create()'s own formula invariants exactly.
+     */
+    private function persistedReservedLineWithSnapshot(string $clientId, int $amountMinorUnits): SaleLine
+    {
+        $amount = $this->money($amountMinorUnits);
+
+        $transaction = new Transaction(id: null, channel: Channel::POS);
+        $line = new SaleLine(
+            id: null,
+            transactionId: '',
+            clientId: $clientId,
+            priceableId: 'priceable-1',
+            type: SaleLineType::RESERVATION,
+            status: SaleLineStatus::PENDING,
+            quantity: 1,
+            amount: $amount,
+            profit: $this->money((int) round($amountMinorUnits * 0.2)),
+            recordedAt: new DateTimeImmutable(),
+            effectiveAt: new DateTimeImmutable('2020-01-01 00:00:00'),
+            productName: 'Product One',
+            sku: 'SKU-1',
+            regularUnitPrice: $amount,
+            finalUnitPrice: $amount,
+            promotionDiscountShare: $this->money(0),
+            discretionaryDiscount: $this->money(0),
+            netPaidAmount: $amount,
+            soldAttributes: [],
+            unitCost: null,
+        );
+        $transaction->addSaleLine($line);
+        $this->transactionRepository()->save($transaction);
+
+        return $line;
+    }
+
     private function persistedPaymentLine(string $clientId, int $amountMinorUnits): SaleLine
     {
         $transaction = new Transaction(id: null, channel: Channel::POS);
@@ -253,7 +297,7 @@ class EloquentInstallmentPlanRepositoryTest extends TestCase
     public function test_completing_a_plan_frees_the_client_to_open_a_new_active_plan(): void
     {
         $clientId = $this->clientId();
-        $reserved = $this->persistedReservedLine($clientId, 1000);
+        $reserved = $this->persistedReservedLineWithSnapshot($clientId, 1000);
 
         $plan = InstallmentPlan::open($clientId);
         $plan->attachReservedLine($reserved);

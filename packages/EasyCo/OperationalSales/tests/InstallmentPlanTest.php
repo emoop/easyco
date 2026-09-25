@@ -104,6 +104,42 @@ final class InstallmentPlanTest extends TestCase
         return $line;
     }
 
+    /**
+     * §3.13 D7 (stage 4a) — buildSettlementSaleLines() now requires the
+     * full snapshot on every reserved line it settles (SaleLine::create()
+     * rejects nulls). Any test whose reservedLine() will actually reach
+     * settlement (an exact-payoff recordPayment()) must use this helper
+     * instead of the bare one — quantity is always 1 in this fixture, so
+     * regularUnitPrice == finalUnitPrice == the line's own amount (no
+     * discount modeled), promotionDiscountShare/discretionaryDiscount
+     * zero, netPaidAmount == amount, matching create()'s own formula
+     * invariants exactly.
+     */
+    private function reservedLineWithSnapshot(
+        string $clientId = 'client-1',
+        int $amountMinorUnits = 1000,
+        string $currency = 'EUR',
+        ?DateTimeImmutable $effectiveAt = null,
+        ?string $id = null,
+    ): SaleLine {
+        $amount = $this->money($amountMinorUnits, $currency);
+
+        return $this->reservedLine(
+            clientId: $clientId,
+            amountMinorUnits: $amountMinorUnits,
+            currency: $currency,
+            effectiveAt: $effectiveAt,
+            id: $id,
+            regularUnitPrice: $amount,
+            finalUnitPrice: $amount,
+            promotionDiscountShare: $this->money(0, $currency),
+            discretionaryDiscount: $this->money(0, $currency),
+            netPaidAmount: $amount,
+            soldAttributes: [],
+            unitCost: null,
+        );
+    }
+
     private function paymentLine(string $clientId = 'client-1', int $amountMinorUnits = 500, string $currency = 'EUR'): SaleLine
     {
         return new SaleLine(
@@ -225,7 +261,7 @@ final class InstallmentPlanTest extends TestCase
     public function test_attach_reserved_line_is_rejected_on_a_completed_plan(): void
     {
         $plan = InstallmentPlan::open('client-1');
-        $plan->attachReservedLine($this->reservedLine(amountMinorUnits: 1000));
+        $plan->attachReservedLine($this->reservedLineWithSnapshot(amountMinorUnits: 1000));
         $plan->recordPayment($this->paymentLine(amountMinorUnits: 1000));
         $this->assertSame(InstallmentPlanStatus::COMPLETED, $plan->status());
 
@@ -283,7 +319,7 @@ final class InstallmentPlanTest extends TestCase
         $plan = InstallmentPlan::open('client-1');
 
         $originalEffectiveAt = new DateTimeImmutable('2020-01-01 00:00:00');
-        $reserved = $this->reservedLine(amountMinorUnits: 1000, effectiveAt: $originalEffectiveAt, id: 'reserved-line-1');
+        $reserved = $this->reservedLineWithSnapshot(amountMinorUnits: 1000, effectiveAt: $originalEffectiveAt, id: 'reserved-line-1');
         $plan->attachReservedLine($reserved);
 
         $settlementLines = $plan->recordPayment($this->paymentLine(amountMinorUnits: 1000));
@@ -342,22 +378,43 @@ final class InstallmentPlanTest extends TestCase
     }
 
     /**
-     * The other half of D4's own carry-through rule: a reservation
-     * recorded WITHOUT the §3.13 snapshot (reservation-recording doesn't
-     * capture it yet, §3.13's own RESERVATION posture) settles exactly as
-     * it does today — nulls through, no exception, no invented value.
+     * REPLACES this test's own stage-2 assertion ("settlement of a
+     * reserved line without the snapshot carries nulls through, no
+     * exception") — superseded by §3.13's own D7 (stage 4a):
+     * buildSettlementSaleLines() now goes through SaleLine::create(),
+     * which requires the full snapshot on every fresh SALE line it
+     * builds. A RESERVATION line recorded before reservation-recording
+     * captures that snapshot (not wired end-to-end in production yet —
+     * inventory-domain-design.md) now makes settlement throw instead of
+     * silently producing a settlement line with nulls — see
+     * buildSettlementSaleLines()'s own docblock.
+     *
+     * Also proves recordPayment()'s own reordering fix (see that
+     * method's docblock): the throw must leave the plan completely
+     * untouched — same status, same reserved/payment lines, same
+     * balance — never a payment silently recorded with the plan stuck
+     * half-settled.
      */
-    public function test_settlement_of_a_reserved_line_without_the_snapshot_carries_nulls_through(): void
+    public function test_settlement_of_a_reserved_line_without_the_snapshot_throws_and_leaves_the_plan_unchanged(): void
     {
         $plan = InstallmentPlan::open('client-1');
         $reserved = $this->reservedLine(amountMinorUnits: 1000, id: 'reserved-line-1');
         $plan->attachReservedLine($reserved);
 
-        $settlement = $plan->recordPayment($this->paymentLine(amountMinorUnits: 1000))[0];
+        try {
+            $plan->recordPayment($this->paymentLine(amountMinorUnits: 1000));
+            $this->fail('Expected settlement to throw for a reserved line with no §3.13 snapshot.');
+        } catch (\TypeError) {
+            // expected — SaleLine::create()'s regularUnitPrice/
+            // finalUnitPrice/promotionDiscountShare/discretionaryDiscount/
+            // netPaidAmount/soldAttributes parameters are non-nullable;
+            // $reserved carries null for all of them.
+        }
 
-        $this->assertNull($settlement->regularUnitPrice());
-        $this->assertNull($settlement->soldAttributes());
-        $this->assertNull($settlement->unitCost());
+        $this->assertSame(InstallmentPlanStatus::ACTIVE, $plan->status());
+        $this->assertSame([$reserved], $plan->reservedLines());
+        $this->assertSame([], $plan->paymentLines());
+        $this->assertTrue($plan->outstandingBalance()->equals($this->money(1000)));
     }
 
     public function test_record_payment_that_only_partially_reduces_the_balance_leaves_the_plan_active(): void
@@ -387,7 +444,7 @@ final class InstallmentPlanTest extends TestCase
         );
 
         $plan = InstallmentPlan::open('client-1');
-        $plan->attachReservedLine($this->reservedLine(amountMinorUnits: 30));
+        $plan->attachReservedLine($this->reservedLineWithSnapshot(amountMinorUnits: 30));
 
         $result1 = $plan->recordPayment($this->paymentLine(amountMinorUnits: 10));
         $result2 = $plan->recordPayment($this->paymentLine(amountMinorUnits: 10));

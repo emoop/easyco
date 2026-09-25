@@ -286,6 +286,19 @@ final class InstallmentPlan
      * minor units, never a float — Money::isZero() is an exact integer
      * comparison with no rounding-drift failure mode at all.
      *
+     * SETTLEMENT LINES ARE BUILT *BEFORE* ANY STATE IS MUTATED —
+     * §3.13's own D7 (stage 4a): buildSettlementSaleLines() now goes
+     * through SaleLine::create(), which throws if any reserved line on
+     * this plan was recorded without its §3.13 snapshot (reservation-
+     * recording doesn't capture it yet in production — see that
+     * method's own docblock). Appending $paymentLine and flipping
+     * $status to COMPLETED BEFORE that build (the original ordering)
+     * would leave this plan half-settled on a throw — a payment
+     * silently recorded and the plan marked COMPLETED with no
+     * settlement lines to show for it. Building first means a throw
+     * here leaves this plan exactly as it was before the call: same
+     * balance, same status, same lines.
+     *
      * @return SaleLine[] Newly-generated settlement SaleLines, or an
      *   empty array if the plan is not yet fully paid.
      */
@@ -312,18 +325,42 @@ final class InstallmentPlan
             );
         }
 
-        $this->paymentLines[] = $paymentLine;
-
         if (! $projectedBalance->isZero()) {
+            $this->paymentLines[] = $paymentLine;
+
             return [];
         }
 
+        $settlementLines = $this->buildSettlementSaleLines();
+
+        $this->paymentLines[] = $paymentLine;
         $this->status = InstallmentPlanStatus::COMPLETED;
 
-        return $this->buildSettlementSaleLines();
+        return $settlementLines;
     }
 
     /**
+     * §3.13's own D7 (stage 4a) — moved from `new SaleLine(...)` to
+     * SaleLine::create(), the SALE-specific strict factory: a settlement
+     * line IS a fresh SALE line, so it now goes through the same path
+     * CheckoutOrchestrator's SaleLineSnapshotBuilder uses, carrying
+     * every §3.13 field through UNCHANGED from the reservedLine's own
+     * snapshot (never recomputed — this is a settlement, not a new
+     * sale).
+     *
+     * A RESERVATION line recorded WITHOUT the §3.13 snapshot (reservation
+     * -recording doesn't capture it yet in production —
+     * inventory-domain-design.md) makes THIS THROW — create() rejects a
+     * null productName/regularUnitPrice/finalUnitPrice/
+     * promotionDiscountShare/discretionaryDiscount/netPaidAmount/
+     * soldAttributes outright, unlike the old `new SaleLine(...)` call
+     * this replaces, which tolerated nulls silently. This is a
+     * deliberate, correct failure, not a regression: whoever eventually
+     * builds reservation-recording must capture the §3.13 snapshot at
+     * reservation time, not defer it to settlement. See recordPayment()'s
+     * own docblock for why this is called BEFORE any state on $this is
+     * mutated — a throw here must leave the plan untouched.
+     *
      * @return SaleLine[]
      */
     private function buildSettlementSaleLines(): array
@@ -332,12 +369,10 @@ final class InstallmentPlan
         $settlementLines = [];
 
         foreach ($this->reservedLines as $reservedLine) {
-            $settlementLines[] = new SaleLine(
-                id: null,
+            $settlementLines[] = SaleLine::create(
                 transactionId: '',
                 clientId: $reservedLine->clientId(),
                 priceableId: $reservedLine->priceableId(),
-                type: SaleLineType::SALE,
                 status: SaleLineStatus::COMPLETED,
                 quantity: $reservedLine->quantity(),
                 amount: $reservedLine->amount(),
@@ -346,35 +381,8 @@ final class InstallmentPlan
                 // Preserves the ORIGINAL reservation date (§3.5) —
                 // deliberately NOT $recordedAt/"now".
                 effectiveAt: $reservedLine->effectiveAt(),
-                originatingReservationLineId: $reservedLine->id(),
-                // This settlement line is SaleLineType::SALE, which
-                // requires a non-null productName/sku per §3.12 — carried
-                // through from the reservedLine's own snapshot. RESERVATION
-                // lines are themselves unconstrained on these two fields
-                // (reservation-recording isn't wired end-to-end yet), so a
-                // reservedLine created without them will make settlement
-                // throw here — a real, correct failure: this domain rule
-                // means whoever eventually builds reservation-recording
-                // must capture productName/sku at reservation time, not
-                // defer it to settlement.
                 productName: $reservedLine->productName(),
                 sku: $reservedLine->sku(),
-                // §3.13 — carried through unchanged from the reservedLine's
-                // own snapshot, the SAME rule as productName/sku just
-                // above, not a new one invented for this stage. Still `new
-                // SaleLine(...)`, not SaleLine::create() (§3.13's own
-                // implementation stages, D4) — these fields stay optional
-                // here for now, so a RESERVATION line recorded before
-                // reservation-recording captures §3.13's snapshot (it does
-                // not yet — inventory-domain-design.md) settles exactly as
-                // it does today. ONCE THIS MOVES TO create() (a later
-                // stage, not this one): settling a reservation whose own
-                // line never captured this snapshot will fail loudly
-                // instead of silently producing a settlement SALE line
-                // with none of it either — reservation-recording must
-                // capture the §3.13 snapshot at reservation time, not
-                // defer it to settlement, the same posture already
-                // documented above for productName/sku.
                 regularUnitPrice: $reservedLine->regularUnitPrice(),
                 finalUnitPrice: $reservedLine->finalUnitPrice(),
                 promotionDiscountShare: $reservedLine->promotionDiscountShare(),
@@ -382,6 +390,7 @@ final class InstallmentPlan
                 netPaidAmount: $reservedLine->netPaidAmount(),
                 soldAttributes: $reservedLine->soldAttributes(),
                 unitCost: $reservedLine->unitCost(),
+                originatingReservationLineId: $reservedLine->id(),
             );
         }
 
