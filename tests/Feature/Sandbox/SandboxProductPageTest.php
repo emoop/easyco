@@ -2,6 +2,8 @@
 
 namespace Tests\Feature\Sandbox;
 
+use App\Filament\Resources\ProductResource\Pages\EditVariableProduct;
+use App\Filament\StaffPanelUser;
 use EasyCo\Catalog\AttributeDefinition;
 use EasyCo\Catalog\AttributeValue;
 use EasyCo\Catalog\Contracts\AttributeDefinitionRepository;
@@ -29,8 +31,14 @@ use EasyCo\Pricing\Money;
 use EasyCo\Pricing\Price;
 use EasyCo\Pricing\PriceListItem;
 use EasyCo\Pricing\Seeders\PricingSystemListsSeeder;
+use EasyCo\Staff\Contracts\PasswordHasher;
+use EasyCo\Staff\Contracts\RoleRepository;
+use EasyCo\Staff\Contracts\StaffRepository;
+use EasyCo\Staff\Seeders\StaffSystemRolesSeeder;
+use EasyCo\Staff\Staff;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Livewire\Livewire;
 use Tests\TestCase;
 
 /**
@@ -306,6 +314,69 @@ final class SandboxProductPageTest extends TestCase
         $response->assertDontSee('SKU-DRAFTED');
         $response->assertDontSee('SKU-ARCHIVED');
         $response->assertDontSee('SKU-INVISIBLE');
+    }
+
+    private function actingAsPanelAdministrator(): StaffPanelUser
+    {
+        $roleRepository = app(RoleRepository::class);
+        $role = $roleRepository->findSystemRoleByName('Administrator');
+
+        if ($role === null) {
+            app(StaffSystemRolesSeeder::class)->run($roleRepository);
+            $role = $roleRepository->findSystemRoleByName('Administrator');
+        }
+
+        $staff = Staff::create('admin@example.com', app(PasswordHasher::class)->hash('password123'), 'Administrator', $role);
+        app(StaffRepository::class)->save($staff);
+
+        $model = StaffPanelUser::find($staff->id());
+        $this->actingAs($model, 'staff');
+
+        return $model;
+    }
+
+    /**
+     * The real, end-to-end proof "Admin: activate and show/hide existing
+     * variations" exists for: a DRAFT variation — excluded above — is
+     * activated through the REAL admin edit page (EditVariableProduct,
+     * the same Livewire flow EditVariableProductTest's own
+     * test_activating_a_draft_variation_via_the_edit_page_persists_and_logs_it()
+     * proves in isolation), and THEN the sandbox product page, re-fetched
+     * fresh, lists it — never asserted against a view model or a direct
+     * domain call, the real rendered HTML of the real public route, same
+     * rigor as every other test in this file.
+     */
+    public function test_activating_a_draft_variation_through_the_admin_editor_makes_it_appear_on_the_sandbox_page(): void
+    {
+        $this->seedPricingLists();
+
+        $product = $this->variableProduct('activated', [
+            ['label' => 'M', 'sku' => 'SKU-WAS-DRAFT', 'status' => 'draft', 'regular' => '15.00'],
+        ]);
+        $variationId = (string) $product->variations()->first()->id;
+
+        // Confirmed excluded before activation — the same rule
+        // test_draft_archived_and_invisible_variations_are_excluded()
+        // already proves, restated here as this test's own starting
+        // point.
+        $this->get('/_sandbox/products/'.$product->id)
+            ->assertOk()
+            ->assertDontSee('SKU-WAS-DRAFT');
+
+        $this->actingAsPanelAdministrator();
+
+        $component = Livewire::test(EditVariableProduct::class, ['record' => $product->id]);
+        $rowKeys = array_keys($component->get('data.existing_variations'));
+
+        $component->set("data.existing_variations.{$rowKeys[0]}.is_active", true)
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $this->assertSame('active', \EasyCo\Catalog\Persistence\Eloquent\VariationModel::find($variationId)->status);
+
+        $this->get('/_sandbox/products/'.$product->id)
+            ->assertOk()
+            ->assertSee('SKU-WAS-DRAFT');
     }
 
     public function test_a_product_with_no_resolvable_price_anywhere_shows_a_dash_not_an_error(): void

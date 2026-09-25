@@ -30,6 +30,7 @@ use EasyCo\Catalog\Exceptions\CannotPublishEmptyVariableProductException;
 use EasyCo\Catalog\Persistence\Eloquent\AttributeDefinitionModel;
 use EasyCo\Catalog\Persistence\Eloquent\AttributeValueModel;
 use EasyCo\Catalog\Persistence\Eloquent\ProductModel;
+use EasyCo\Catalog\Persistence\Eloquent\VariationModel;
 use EasyCo\Catalog\Product;
 use EasyCo\Catalog\ProductCategory;
 use EasyCo\Catalog\ProductGroup;
@@ -361,6 +362,325 @@ class EditVariableProductTest extends TestCase
         $this->assertFalse($variation->isPurchasable());
         $this->assertSame('12.50', $pricingAndStock->costDisplay($variationId));
         $this->assertSame(42, $pricingAndStock->stockQuantity($variationId));
+    }
+
+    // --- "Admin: activate and show/hide existing variations" — D1/D2/D3/D4 ---
+
+    /**
+     * D1/D4: persistedVariableProductWithOneVariation()'s own fixture
+     * never calls activate() — a real, ordinary DRAFT STANDARD variation,
+     * the exact real gap this task closes (previously Variation::
+     * activate() was only ever reachable from a NEW-variation row, never
+     * an existing one). Both the real DB write and the ActivityLogger
+     * entry are asserted — the field name ("variation[{id}].status",
+     * old='draft'/new='active') matches the SAME convention the restore
+     * flow's own activity-log entry already establishes elsewhere in
+     * this file (EditVariableProductAxesAndRestoreTest's restore test).
+     */
+    public function test_activating_a_draft_variation_via_the_edit_page_persists_and_logs_it(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        app(SiteSettingsRepository::class)->set('admin.activity_log_enabled', '1');
+
+        [$product, $variationId] = $this->persistedVariableProductWithOneVariation();
+        $this->assertSame('draft', VariationModel::find($variationId)->status, 'fixture assumption: starts DRAFT');
+        $productModel = ProductModel::find($product->id());
+
+        $component = Livewire::test(EditVariableProduct::class, ['record' => $productModel->id]);
+        $rowKeys = array_keys($component->get('data.existing_variations'));
+
+        $component->set("data.existing_variations.{$rowKeys[0]}.is_active", true)
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $this->assertSame('active', VariationModel::find($variationId)->status);
+
+        $this->assertTrue(
+            ActivityLogModel::where('entity_type', 'product')
+                ->where('entity_id', $product->id())
+                ->where('field', "variation[{$variationId}].status")
+                ->where('old_value', 'draft')
+                ->where('new_value', 'active')
+                ->exists()
+        );
+    }
+
+    /**
+     * D1's own "one-way" rule: once ACTIVE, the toggle is shown ON and
+     * DISABLED — asserted directly against the real, live Filament
+     * component state (not a simulated click), same rigor as this
+     * file's own test_the_real_archive_action_... tests elsewhere. Then
+     * a crafted ->set() (what ->disabled() alone cannot stop, since a
+     * disabled field's own dehydrated value still reaches $data on
+     * submit — the same real gap this file's other permission tests
+     * already document) proves the SERVER-SIDE write logic also refuses
+     * to move an ACTIVE variation back to DRAFT: Variation has no
+     * ACTIVE -> DRAFT transition at all (its own class docblock), so
+     * updateVariationRows() only ever calls activate() when the
+     * variation ISN'T already ACTIVE — a crafted is_active=false is
+     * silently a no-op, not an error, matching the real domain rule.
+     */
+    public function test_an_active_variations_toggle_is_disabled_and_a_crafted_submission_cannot_move_it_back_to_draft(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        [$product, $variationId] = $this->persistedVariableProductWithOneVariation();
+        VariationModel::find($variationId)->update(['status' => 'active']);
+        $productModel = ProductModel::find($product->id());
+
+        $component = Livewire::test(EditVariableProduct::class, ['record' => $productModel->id]);
+        $rowKeys = array_keys($component->get('data.existing_variations'));
+
+        $field = $component->instance()->form->getComponent("existing_variations.{$rowKeys[0]}.is_active", withHidden: true, isAbsoluteKey: false);
+        $this->assertNotNull($field, 'the is_active field must exist on the live form');
+        $this->assertTrue($field->isDisabled());
+
+        $component->set("data.existing_variations.{$rowKeys[0]}.is_active", false)
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $this->assertSame('active', VariationModel::find($variationId)->status, 'a crafted false must never move an ACTIVE variation back to DRAFT');
+    }
+
+    /**
+     * D2: a plain, two-way round trip — unlike is_active, setVisible()
+     * has no one-way constraint, so both directions are real, legitimate
+     * writes.
+     */
+    public function test_visible_off_on_round_trip_for_a_standard_variation(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        app(SiteSettingsRepository::class)->set('admin.activity_log_enabled', '1');
+
+        [$product, $variationId] = $this->persistedVariableProductWithOneVariation();
+        $this->assertTrue(VariationModel::find($variationId)->is_visible, 'fixture assumption: starts visible');
+        $productModel = ProductModel::find($product->id());
+
+        $component = Livewire::test(EditVariableProduct::class, ['record' => $productModel->id]);
+        $rowKeys = array_keys($component->get('data.existing_variations'));
+
+        $component->set("data.existing_variations.{$rowKeys[0]}.is_visible", false)
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $this->assertFalse((bool) VariationModel::find($variationId)->is_visible);
+
+        $component = Livewire::test(EditVariableProduct::class, ['record' => $productModel->id]);
+        $rowKeys = array_keys($component->get('data.existing_variations'));
+
+        $component->set("data.existing_variations.{$rowKeys[0]}.is_visible", true)
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $this->assertTrue((bool) VariationModel::find($variationId)->is_visible);
+
+        $this->assertTrue(
+            ActivityLogModel::where('entity_type', 'product')
+                ->where('entity_id', $product->id())
+                ->where('field', "variation[{$variationId}].is_visible")
+                ->where('old_value', '1')
+                ->where('new_value', '0')
+                ->exists()
+        );
+    }
+
+    /**
+     * Review fix: a missing is_visible key must mean "no change," never
+     * "hide" — the same safe-default posture is_purchasable's own
+     * ?? true fallback already establishes for that field (also
+     * untested in isolation anywhere in this class — this is the first
+     * test of either fallback).
+     *
+     * NOT REACHABLE VIA Livewire::test()->set(), CONFIRMED BY A REAL
+     * FAILING TEST FIRST: replacing 'data.existing_variations' wholesale
+     * with a row that omits 'is_visible' does NOT reach save() with the
+     * key genuinely missing — Filament's own Toggle component fills its
+     * schema default (false, since is_visible has no explicit
+     * ->default()) into the live property the moment it's read back,
+     * before updateVariationRows() ever sees $data (confirmed via a
+     * real debug dump: the row arrived as "is_visible":false, not
+     * absent). A real browser submission is no different — Filament
+     * always dehydrates a normal, non-hidden field. The genuinely
+     * missing-key case this fallback guards against is a raw, crafted
+     * payload bypassing Filament's own Schema/dehydration layer
+     * entirely (the same class of scenario is_purchasable's own
+     * ?? true already defends against, never exercised through the UI
+     * either) — proven here by calling the real, private
+     * updateVariationRows() directly via Reflection with a hand-built
+     * $rows array, the one way to construct that exact shape. The
+     * method takes every dependency as a parameter and never reads
+     * $this, so calling it on a bare, unmounted instance is safe.
+     */
+    public function test_a_row_submitted_without_is_visible_leaves_visibility_unchanged(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        [$product, $variationId] = $this->persistedVariableProductWithOneVariation();
+        $this->assertTrue(VariationModel::find($variationId)->is_visible, 'fixture assumption: starts visible');
+
+        $reloaded = app(ProductRepository::class)->findByIdWithVariations((string) $product->id());
+
+        $method = new \ReflectionMethod(EditVariableProduct::class, 'updateVariationRows');
+        $method->setAccessible(true);
+        $method->invoke(new EditVariableProduct(), $reloaded, [[
+            'variation_id' => $variationId,
+            'sku' => 'SKU-VAR-BLACK',
+            'barcode' => '1112223334445',
+            'is_purchasable' => true,
+            // 'is_visible' deliberately OMITTED — see this test's own
+            // docblock for why only Reflection can reach this shape.
+        ]], app(\App\Services\ActivityLogger::class));
+
+        app(ProductRepository::class)->save($reloaded);
+
+        $this->assertTrue((bool) VariationModel::find($variationId)->is_visible, 'a missing is_visible key must never hide the variation');
+    }
+
+    /**
+     * SIMPLE has no existing_variations Repeater at all — EditProduct.php
+     * (the SIMPLE edit page) is a completely separate class, out of this
+     * task's own scope (D1/D2 both say "STANDARD variation row"; a
+     * UNIVERSAL variation can never be made visible at all —
+     * Variation::setVisible() throws for one). Confirmed here by
+     * asserting the field simply does not exist on EditProduct's own
+     * form for a real SIMPLE product, rather than assumed from the
+     * source read alone.
+     */
+    public function test_no_visible_control_for_a_simple_product(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        $product = Product::createSimple('Simple Shirt', 'SKU-SIMPLE', 'simple-shirt');
+        app(ProductRepository::class)->save($product);
+        $productModel = ProductModel::find($product->id());
+
+        $component = Livewire::test(\App\Filament\Resources\ProductResource\Pages\EditProduct::class, ['record' => $productModel->id]);
+
+        $this->assertNull($component->instance()->form->getComponent('is_visible', withHidden: true));
+    }
+
+    /**
+     * D1's revival case: archive() forces is_visible/is_purchasable
+     * false and status=ARCHIVED; reviveFromArchive() (via
+     * restoreArchivedVariationById(), see EditVariableProductAxesAndRestoreTest's
+     * own precedent for this call) takes it only to DRAFT, leaving
+     * is_visible/is_purchasable untouched (still false) — this task's
+     * own new toggles are what finally let a merchant bring a revived
+     * variation properly back: activate it AND make it visible again,
+     * in the SAME save the restored row is now editable in.
+     */
+    public function test_a_revived_variation_can_be_activated_and_made_visible_again(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        [$definition, $black] = $this->persistedColorDefinition();
+        $product = Product::createVariable('Variable Shirt', 'SKU-VAR', 'variable-shirt');
+        $product->declareVariationAxes([new VariationAxis($definition, [$black])]);
+        $variation = $product->addStandardVariation([$definition->id() => $black->id()], 'SKU-VAR-BLACK');
+        $variation->activate();
+        $variation->archive();
+        app(ProductRepository::class)->save($product);
+        $variationId = (string) $variation->id();
+
+        $this->assertSame('archived', VariationModel::find($variationId)->status);
+        $this->assertFalse((bool) VariationModel::find($variationId)->is_visible);
+
+        $productModel = ProductModel::find($product->id());
+        $component = Livewire::test(EditVariableProduct::class, ['record' => $productModel->id]);
+
+        $component->call('restoreArchivedVariationById', $variationId);
+        $this->assertSame('draft', VariationModel::find($variationId)->status, 'fixture assumption: revival only reaches DRAFT');
+        $this->assertFalse((bool) VariationModel::find($variationId)->is_visible, 'fixture assumption: revival leaves is_visible untouched');
+
+        $existingRows = $component->get('data.existing_variations');
+        $existingIds = array_column($existingRows, 'variation_id');
+        $rowKeys = array_keys($existingRows);
+        $rowKey = $rowKeys[array_search($variationId, $existingIds, true)];
+
+        $component->set("data.existing_variations.{$rowKey}.is_active", true)
+            ->set("data.existing_variations.{$rowKey}.is_visible", true)
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $this->assertSame('active', VariationModel::find($variationId)->status);
+        $this->assertTrue((bool) VariationModel::find($variationId)->is_visible);
+    }
+
+    /**
+     * D3: the SAME real, reachable boundary this file's own
+     * test_a_staff_member_without_product_manage_is_turned_away_at_the_page_boundary_before_reaching_any_field()
+     * already establishes for variation_photos — is_active/is_visible
+     * use the SAME PRODUCT_MANAGE permission that gates the whole page
+     * (ProductResource::editPermission()), so there is no real, shipped
+     * role that reaches this form with these two toggles visible but
+     * disabled: they are turned away at mount, before any field,
+     * exactly like every other PRODUCT_MANAGE-gated field on this page.
+     * A custom, non-system role (Role::create(), the same factory a
+     * real merchant's own custom role would use) holding PRODUCT_VIEW
+     * without PRODUCT_MANAGE is the real, reachable proof.
+     */
+    public function test_without_product_manage_a_staff_member_is_turned_away_before_reaching_the_active_or_visible_toggles(): void
+    {
+        $role = \EasyCo\Staff\Role::create('View Only', [\EasyCo\Staff\Enums\Permission::PRODUCT_VIEW]);
+        app(RoleRepository::class)->save($role);
+        $staff = Staff::create('view.only.status@example.com', app(PasswordHasher::class)->hash('password123'), 'View Only', $role);
+        app(StaffRepository::class)->save($staff);
+
+        [$product, $variationId] = $this->persistedVariableProductWithOneVariation();
+        $productModel = ProductModel::find($product->id());
+
+        $this->actingAs(StaffPanelUser::find($staff->id()), 'staff');
+
+        $this->get(ProductResource::getUrl('edit-variable', ['record' => $productModel]))
+            ->assertForbidden();
+
+        $this->assertSame('draft', VariationModel::find($variationId)->status, 'nothing must have changed for a request that never even mounted the form');
+    }
+
+    /**
+     * D5 (default kept false, per explicit domain-owner decision):
+     * the Create wizard's own equivalent default is already proven by
+     * this codebase's existing test_navigating_through_the_wizard_
+     * generates_the_real_cartesian_product_preview() (CreateVariableProductVariationsStepTest,
+     * asserts $rows[0]['is_active'] === false directly off the wizard's
+     * own preview-generation). This is the "Add variation" (existing-
+     * product) side of the SAME default: a fresh new_variations row
+     * submitted without is_active ever having been touched (what a
+     * merchant who never touches the toggle actually submits) must
+     * still produce a DRAFT variation, never an accidental ACTIVE one.
+     */
+    public function test_add_variation_defaults_to_inactive_when_the_toggle_is_never_touched(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        [$definition, $black, $white] = $this->persistedColorDefinition();
+        $product = Product::createVariable('Variable Shirt', 'SKU-VAR', 'variable-shirt');
+        $product->declareVariationAxes([new VariationAxis($definition, [$black, $white])]);
+        app(ProductRepository::class)->save($product);
+        $productModel = ProductModel::find($product->id());
+
+        $component = Livewire::test(EditVariableProduct::class, ['record' => $productModel->id]);
+
+        $component->set('data.new_variations', [[
+            "axis_value_{$definition->id()}" => $white->id(),
+            'sku' => 'SKU-VAR-WHITE',
+            'barcode' => '',
+            // 'is_active' deliberately OMITTED — simulating a merchant
+            // who never touched the toggle, the real untouched-default
+            // case.
+        ]])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $reloaded = app(ProductRepository::class)->findByIdWithVariations((string) $productModel->id);
+        $newVariation = array_values(array_filter(
+            $reloaded->variations(),
+            fn (Variation $v): bool => $v->sku() === 'SKU-VAR-WHITE'
+        ))[0];
+
+        $this->assertSame('draft', VariationModel::find($newVariation->id())->status);
     }
 
     /**

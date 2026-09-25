@@ -102,6 +102,20 @@ use RuntimeException;
  * archivedVariationRows()/generateMissingVariationsAction()'s own
  * docblocks. admin-panel-design.md §13.6 has the full design.
  *
+ * "Admin: activate and show/hide existing variations" closed a real
+ * admin gap: a STANDARD variation created DRAFT (the new-variation
+ * rows' own is_active default is false) had no way back to ACTIVE from
+ * THIS page at all — Variation::activate() was previously only ever
+ * called from ProductResource::writeStandardVariation(), at creation
+ * time — and is_visible had no admin control whatsoever. Existing-row
+ * "Active"/"Visible" toggles, both PRODUCT_MANAGE-gated, both
+ * explicit-checked-before-reading-$data at write time (see
+ * updateVariationRows()'s own docblock) — "Active" is a ONE-WAY toggle
+ * (locked on once ACTIVE, matching Variation's own real DRAFT/ACTIVE ->
+ * ACTIVE-only transition; taking a variation off sale is Visible/
+ * Purchasable/archiving instead, not a status change this page can
+ * make).
+ *
  * STILL EXPLICITLY NOT HERE, deliberate limits, not oversights: moving
  * a definition from descriptive-attribute to variation-axis (or back)
  * in one submission — a merchant must remove it from the descriptive
@@ -887,6 +901,82 @@ class EditVariableProduct extends EditRecord
                                 ->label(__('products.fields.is_purchasable'))
                                 ->columnSpan(1),
                         ]),
+                    // Admin: activate and show/hide existing variations —
+                    // D1/D2. A SEPARATE Grid, not folded into the one
+                    // above: label/is_purchasable's own layout/behaviour
+                    // (untouched by this task) stays exactly as it was:
+                    // only these two new fields are added.
+                    //
+                    // is_active (D1) — Off -> on calls Variation::
+                    // activate() (updateVariationRows() below); ONE-WAY,
+                    // matching the real domain (Variation has no
+                    // ACTIVE -> DRAFT transition, see its own class
+                    // docblock): once ACTIVE, ->disabled() locks the
+                    // toggle on, with a short hint pointing at Visible/
+                    // Purchasable/archiving as the real way to take a
+                    // variation off sale. Never rendered for an ARCHIVED
+                    // row — moot here: this Repeater's own
+                    // existingVariationRows() already excludes ARCHIVED
+                    // rows entirely (archivedVariationsComponents() is a
+                    // separate Repeater with its own Restore action).
+                    //
+                    // is_visible (D2) — plain round-trip Toggle::
+                    // setVisible(), no one-way constraint. Never rendered
+                    // for the UNIVERSAL variation — moot here too: this
+                    // whole page (EditVariableProduct) only ever edits a
+                    // VARIABLE product's STANDARD variations; a UNIVERSAL
+                    // variation belongs to a SIMPLE product, edited on
+                    // the separate EditProduct.php page, out of this
+                    // task's own scope (D1/D2 both say "STANDARD
+                    // variation row").
+                    //
+                    // Both ->disabled() on PRODUCT_MANAGE, same
+                    // permission as the page's own editPermission() (see
+                    // updateVariationRows()'s own docblock for why the
+                    // write path ALSO re-checks this explicitly, not just
+                    // the UI): today PRODUCT_MANAGE already gates the
+                    // whole page at mount (EditRecord::authorizeAccess())
+                    // for every shipped role, so this ->disabled() is the
+                    // same defensive, currently-unreachable-via-real-
+                    // roles belt-and-suspenders posture
+                    // stock_quantity's own ->disabled() already
+                    // establishes just below.
+                    //
+                    // was_active (dehydrated(false), hydrated ONCE from
+                    // the DB in existingVariationRows()) — a REAL,
+                    // CONFIRMED Filament gotcha found while building this:
+                    // is_active's own ->disabled()/->helperText() closures
+                    // CANNOT read is_active's OWN live value via
+                    // Get $get('is_active') — doing so silently breaks
+                    // THAT SAME field's dehydration (it vanishes from
+                    // $data entirely on submit, confirmed by a real
+                    // failing test before this fix — a self-referential
+                    // Get read during a field's own state resolution, not
+                    // documented anywhere in the installed source).
+                    // Reading a SEPARATE sibling field instead sidesteps
+                    // it entirely. Practical consequence, stated plainly:
+                    // the toggle visually locks based on the variation's
+                    // status AS OF THIS PAGE LOAD, not instantly within
+                    // the same unsaved session the instant it's flipped
+                    // on — acceptable, since the real guarantee (an
+                    // ACTIVE variation can never be moved back to DRAFT)
+                    // is enforced server-side regardless, in
+                    // updateVariationRows() below.
+                    Hidden::make('was_active')
+                        ->dehydrated(false),
+                    Grid::make(2)
+                        ->schema([
+                            Toggle::make('is_active')
+                                ->label(__('products.wizard.variations.active_label'))
+                                ->helperText(fn (Get $get): ?string => (bool) $get('was_active')
+                                    ? __('products.fields.variation_active_locked_hint')
+                                    : null)
+                                ->disabled(fn (Get $get): bool => ! ProductResource::staffHasPermission(Permission::PRODUCT_MANAGE)
+                                    || (bool) $get('was_active')),
+                            Toggle::make('is_visible')
+                                ->label(__('products.fields.is_visible'))
+                                ->disabled(fn (): bool => ! ProductResource::staffHasPermission(Permission::PRODUCT_MANAGE)),
+                        ]),
                     TextInput::make('sku')
                         ->label(__('products.wizard.variations.sku_label')),
                     TextInput::make('barcode')
@@ -1383,6 +1473,9 @@ class EditVariableProduct extends EditRecord
                 'sku' => $variation->sku(),
                 'barcode' => $variation->barcode(),
                 'is_purchasable' => $variation->isPurchasable(),
+                'is_active' => $variation->status() === VariationStatus::ACTIVE,
+                'was_active' => $variation->status() === VariationStatus::ACTIVE,
+                'is_visible' => $variation->isVisible(),
                 'cost' => $pricingAndStock->costDisplay($variation->id()),
                 'stock_quantity' => $pricingAndStock->stockQuantity($variation->id()),
                 'regular_price' => $pricingAndStock->regularPriceDisplay($variation->id()),
@@ -2281,7 +2374,21 @@ class EditVariableProduct extends EditRecord
      * current state of the skipped variation is simply left untouched,
      * not corrupted.
      *
-     * @param array<int, array{variation_id?: mixed, sku?: mixed, barcode?: mixed, is_purchasable?: mixed}> $rows
+     * is_active/is_visible (Admin: activate and show/hide existing
+     * variations — D1/D2, D3) are DIFFERENT from sku/barcode/
+     * is_purchasable just above: an EXPLICIT PRODUCT_MANAGE re-check,
+     * BEFORE either is read out of $row — the same permission-gate-
+     * before-reading-$data discipline updateVariationPricingAndStock()'s
+     * own COST_MANAGE/PRODUCT_MANAGE blocks already use (that method's
+     * own docblock), not merely relying on canEdit() already having
+     * gated the whole page. is_active is a ONE-WAY write: activate() is
+     * called only when the row says active AND the variation isn't
+     * ACTIVE yet — a row that (still, or again) says inactive for an
+     * already-ACTIVE variation is silently left alone, matching the
+     * real domain (Variation has no ACTIVE -> DRAFT transition), not
+     * treated as an error.
+     *
+     * @param array<int, array{variation_id?: mixed, sku?: mixed, barcode?: mixed, is_purchasable?: mixed, is_active?: mixed, is_visible?: mixed}> $rows
      */
     private function updateVariationRows(Product $product, array $rows, ActivityLogger $logger): void
     {
@@ -2315,6 +2422,26 @@ class EditVariableProduct extends EditRecord
             if ($variation->isPurchasable() !== $newIsPurchasable) {
                 $logger->logFieldChanged('product', $product->id(), "variation[{$variationId}].is_purchasable", $variation->isPurchasable() ? '1' : '0', $newIsPurchasable ? '1' : '0');
                 $variation->setPurchasable($newIsPurchasable);
+            }
+
+            if (ProductResource::staffHasPermission(Permission::PRODUCT_MANAGE)) {
+                $newIsActive = (bool) ($row['is_active'] ?? false);
+                if ($newIsActive && $variation->status() !== VariationStatus::ACTIVE) {
+                    $logger->logFieldChanged('product', $product->id(), "variation[{$variationId}].status", $variation->status()->value, VariationStatus::ACTIVE->value);
+                    $variation->activate();
+                }
+
+                // Unlike is_active's ?? false (a missing key there is
+                // safely "don't activate," never destructive), a missing
+                // is_visible key must mean "no change" — falling back to
+                // false would silently HIDE the variation, the same
+                // is_purchasable's own ?? true fallback already guards
+                // against for that field.
+                $newIsVisible = (bool) ($row['is_visible'] ?? $variation->isVisible());
+                if ($variation->isVisible() !== $newIsVisible) {
+                    $logger->logFieldChanged('product', $product->id(), "variation[{$variationId}].is_visible", $variation->isVisible() ? '1' : '0', $newIsVisible ? '1' : '0');
+                    $variation->setVisible($newIsVisible);
+                }
             }
         }
     }

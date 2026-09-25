@@ -65,6 +65,8 @@ return [
         'categories' => 'Categories',
         'tags' => 'Tags',
         'is_purchasable' => 'Purchasable',
+        'is_visible' => 'Visible',
+        'variation_active_locked_hint' => 'To take this variation off sale, use Visible, Purchasable, or archive it.',
         'main_photo' => 'Main photo',
         'gallery_photos' => 'Gallery photos',
         'video' => 'Video',
