@@ -10,6 +10,7 @@ use App\Services\OrderAdminOrderView;
 use App\Services\OrderAdminReader;
 use App\Services\OrderAdminSaleLineView;
 use App\Services\PriceDisplayFormatter;
+use App\Services\ProductPriceDisplay;
 use BackedEnum;
 use EasyCo\Order\Enums\OrderDeliveryType;
 use EasyCo\Order\Persistence\Eloquent\OrderModel;
@@ -284,20 +285,14 @@ class OrderResource extends Resource
                     RepeatableEntry::make('lines')
                         ->hiddenLabel()
                         ->getStateUsing(fn (OrderModel $record): array => static::lineRows($record))
-                        ->table([
-                            RepeatableTableColumn::make(__('orders.fields.product_name')),
-                            RepeatableTableColumn::make(__('orders.fields.sku')),
-                            RepeatableTableColumn::make(__('orders.fields.quantity')),
-                            RepeatableTableColumn::make(__('orders.fields.unit_price')),
-                            RepeatableTableColumn::make(__('orders.fields.line_total')),
-                        ])
-                        ->schema([
-                            TextEntry::make('product_name')->hiddenLabel(),
-                            TextEntry::make('sku')->hiddenLabel(),
-                            TextEntry::make('quantity')->hiddenLabel(),
-                            TextEntry::make('unit_price')->hiddenLabel(),
-                            TextEntry::make('line_total')->hiddenLabel(),
-                        ]),
+                        ->table(fn (OrderModel $record): array => array_map(
+                            static fn (array $spec): RepeatableTableColumn => RepeatableTableColumn::make($spec['label']),
+                            static::lineColumnSpecs($record),
+                        ))
+                        ->schema(fn (OrderModel $record): array => array_map(
+                            static fn (array $spec): TextEntry => static::lineCell($spec['key']),
+                            static::lineColumnSpecs($record),
+                        )),
                 ]),
             Section::make(__('orders.sections.promotion'))
                 ->schema([
@@ -425,22 +420,149 @@ class OrderResource extends Resource
         return Lang::has($key) ? __($key) : $state;
     }
 
-    /** @return array<int, array{product_name: string, sku: string, quantity: int, unit_price: string, line_total: string}> */
+    /**
+     * The row data behind every Lines-table cell, keyed to match
+     * lineColumnSpecs()'s own keys. The values for the two HTML cells
+     * (product_name, unit_price) are already-escaped markup; every other
+     * value is plain text Filament escapes itself. One OrderAdminReader
+     * read backs the whole table — no per-line query.
+     *
+     * @return array<int, array<string, string>>
+     */
     private static function lineRows(OrderModel $record): array
     {
-        $formatter = app(PriceDisplayFormatter::class);
-
         return array_map(
             fn (OrderAdminSaleLineView $line): array => [
-                'product_name' => $line->productName ?? __('orders.not_available'),
+                'product_name' => static::lineProductHtml($line),
                 'sku' => $line->sku ?? __('orders.not_available'),
-                'quantity' => $line->quantity,
-                'unit_price' => $line->unitPrice !== null
-                    ? $formatter->format($line->unitPrice->decimalValue(), $line->unitPrice->currency())
-                    : __('orders.not_available'),
-                'line_total' => $formatter->format($line->lineTotal->decimalValue(), $line->lineTotal->currency()),
+                'quantity' => (string) $line->quantity,
+                'unit_price' => static::lineUnitPriceHtml($line),
+                'line_total' => static::formatLineMoney($line->lineTotal),
+                // D5: a legacy line's net is NEVER derived from the
+                // order-level discount — it renders '—' (unknown), and so
+                // does its promotion share, which it never had.
+                'promotion_discount' => static::formatLineMoney($line->isLegacy ? null : $line->promotionDiscountShare),
+                'discretionary_discount' => static::formatLineMoney($line->discretionaryDiscount),
+                'net_paid' => static::formatLineMoney($line->isLegacy ? null : $line->netPaidAmount),
+                'unit_cost' => static::formatLineMoney($line->unitCost),
             ],
-            static::forOrder($record)->lines
+            static::forOrder($record)->lines,
         );
+    }
+
+    /**
+     * The Lines table's own column set, in order — ONE list drives both
+     * the header row (->table()) and the per-row cells (->schema()), so
+     * the two can never drift out of positional alignment:
+     * RepeatableEntry maps the Nth cell to the Nth column.
+     *
+     * @return array<int, array{key: string, label: string}>
+     */
+    private static function lineColumnSpecs(OrderModel $record): array
+    {
+        $specs = [
+            ['key' => 'product_name', 'label' => __('orders.fields.product_name')],
+            ['key' => 'sku', 'label' => __('orders.fields.sku')],
+            ['key' => 'quantity', 'label' => __('orders.fields.quantity')],
+            ['key' => 'unit_price', 'label' => __('orders.fields.unit_price')],
+            ['key' => 'line_total', 'label' => __('orders.fields.line_total')],
+            ['key' => 'promotion_discount', 'label' => __('orders.fields.promotion_discount')],
+        ];
+
+        // D4: the discretionary (register) discount column appears only
+        // when at least one line on THIS order actually carries a non-zero
+        // value — web checkout always writes zero, so it does not clutter
+        // the table for the common case.
+        if (static::hasDiscretionaryDiscount(static::forOrder($record))) {
+            $specs[] = ['key' => 'discretionary_discount', 'label' => __('orders.fields.discretionary_discount')];
+        }
+
+        $specs[] = ['key' => 'net_paid', 'label' => __('orders.fields.net_paid')];
+
+        // D6: unit cost is its own column, and only for staff allowed to
+        // see cost at all — the same Permission::COST_VIEW gate (through
+        // the same helper) ProductResource's own cost field/entry uses.
+        if (static::staffCanForAction(Permission::COST_VIEW)) {
+            $specs[] = ['key' => 'unit_cost', 'label' => __('orders.fields.unit_cost')];
+        }
+
+        return $specs;
+    }
+
+    /** D4's own "show the discretionary column only if any line has one" check. */
+    private static function hasDiscretionaryDiscount(OrderAdminOrderView $view): bool
+    {
+        foreach ($view->lines as $line) {
+            if ($line->discretionaryDiscount !== null && $line->discretionaryDiscount->minorValue() !== 0) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * One body cell. product_name and unit_price carry deliberate,
+     * already-escaped markup (the sold attributes; the D3 struck price),
+     * so they render as HTML — every other cell is plain text, escaped by
+     * Filament. See lineRows() for what each key's value is.
+     */
+    private static function lineCell(string $key): TextEntry
+    {
+        $entry = TextEntry::make($key)->hiddenLabel();
+
+        if ($key === 'product_name' || $key === 'unit_price') {
+            $entry->html();
+        }
+
+        return $entry;
+    }
+
+    /**
+     * D4: the product name, with the sold variation attributes underneath
+     * as `Name: value` pairs in their stored order. D5: a legacy line
+     * appends a small translated note saying it predates the full
+     * snapshot. Every interpolated piece is escaped here because this
+     * cell renders as HTML.
+     */
+    private static function lineProductHtml(OrderAdminSaleLineView $line): string
+    {
+        $html = e($line->productName ?? __('orders.not_available'));
+
+        foreach ($line->soldAttributes as $attribute) {
+            $html .= '<br>'.e(($attribute['definitionName'] ?? '').': '.($attribute['value'] ?? ''));
+        }
+
+        if ($line->isLegacy) {
+            $html .= '<br><span>'.e(__('orders.legacy_line_note')).'</span>';
+        }
+
+        return $html;
+    }
+
+    /**
+     * D4: the sold regular/final unit price through the one shared markup
+     * rule (ProductPriceDisplay::priceHtml()) — the regular price is
+     * struck through only when it differs from the final one. D5: a legacy
+     * line has no such snapshot, so it keeps the derived amount/quantity
+     * with no struck price at all.
+     */
+    private static function lineUnitPriceHtml(OrderAdminSaleLineView $line): string
+    {
+        if (! $line->isLegacy && $line->regularUnitPrice !== null && $line->finalUnitPrice !== null) {
+            return app(ProductPriceDisplay::class)->priceHtml($line->regularUnitPrice, $line->finalUnitPrice);
+        }
+
+        return static::formatLineMoney($line->unitPrice);
+    }
+
+    /** '—' for a genuinely absent value, otherwise the shared money formatter — never a second one. */
+    private static function formatLineMoney(?Money $money): string
+    {
+        if ($money === null) {
+            return __('orders.not_available');
+        }
+
+        return app(PriceDisplayFormatter::class)->format($money->decimalValue(), $money->currency());
     }
 }

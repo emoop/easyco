@@ -99,8 +99,16 @@ final class SaleLineMapper
      * pair together, in the same migration) — it is a corrupt row, and
      * silently treating it as "unset" would hide that corruption instead
      * of surfacing it.
+     *
+     * PUBLIC since §3.13 stage 5: the read side needs the exact same rule
+     * (App\Services\OrderAdminReader reads operational_sales_sale_lines
+     * directly, not through toDomain(), so it never reaches the private
+     * call sites above). Exposing this one method keeps the corrupt-pair
+     * definition in ONE place rather than a second, hand-copied version
+     * that could drift — still this mapper's own rule, still this
+     * mapper's own exception message.
      */
-    private static function moneyOrNull(?int $minorValue, ?string $currency, string $fieldName): ?Money
+    public static function moneyOrNull(?int $minorValue, ?string $currency, string $fieldName): ?Money
     {
         if ($minorValue === null && $currency === null) {
             return null;

@@ -5,12 +5,14 @@ namespace App\Services;
 use EasyCo\OperationalSales\Contracts\ClientRepository;
 use EasyCo\OperationalSales\Enums\SaleLineStatus;
 use EasyCo\OperationalSales\Enums\SaleLineType;
+use EasyCo\OperationalSales\Persistence\Eloquent\SaleLineMapper;
 use EasyCo\Order\Contracts\OrderRepository;
 use EasyCo\Payment\Contracts\PaymentRepository;
 use EasyCo\Pricing\Money;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use RuntimeException;
 
 /**
  * The one place every cross-table read for the read-only Orders admin
@@ -233,6 +235,15 @@ final class OrderAdminReader
      * than trusted — see OrderAdminSaleLineView's own docblock for why
      * this is provably exact for any line CheckoutLinePricer actually
      * produced, and why this still checks rather than assumes.
+     *
+     * STAGE 5: also maps the §3.13 sale-line snapshot columns into the
+     * same view DTO — still one query, never a query per line (the row
+     * object already carries every column). A half-populated money pair
+     * is corruption, not legacy, and is made to fail loudly through
+     * SaleLineMapper::moneyOrNull() — the SAME rule the write path's own
+     * mapper enforces (D2), reused rather than copied. netPaidAmount is
+     * resolved before the constructor call because isLegacy (D1) is
+     * derived from it.
      */
     private function buildLineView(object $row): OrderAdminSaleLineView
     {
@@ -251,12 +262,87 @@ final class OrderAdminReader
             ]);
         }
 
+        $netPaidAmount = SaleLineMapper::moneyOrNull($row->net_paid_amount_minor, $row->net_paid_amount_currency, 'netPaidAmount');
+
         return new OrderAdminSaleLineView(
             productName: $row->product_name,
             sku: $row->sku,
             quantity: $quantity,
             lineTotal: $lineTotal,
             unitPrice: $unitPrice,
+            regularUnitPrice: SaleLineMapper::moneyOrNull($row->regular_unit_price_minor, $row->regular_unit_price_currency, 'regularUnitPrice'),
+            finalUnitPrice: SaleLineMapper::moneyOrNull($row->final_unit_price_minor, $row->final_unit_price_currency, 'finalUnitPrice'),
+            promotionDiscountShare: SaleLineMapper::moneyOrNull($row->promotion_discount_share_minor, $row->promotion_discount_share_currency, 'promotionDiscountShare'),
+            discretionaryDiscount: SaleLineMapper::moneyOrNull($row->discretionary_discount_minor, $row->discretionary_discount_currency, 'discretionaryDiscount'),
+            netPaidAmount: $netPaidAmount,
+            unitCost: SaleLineMapper::moneyOrNull($row->unit_cost_minor, $row->unit_cost_currency, 'unitCost'),
+            soldAttributes: self::decodeSoldAttributes($row->sold_attributes, $netPaidAmount === null, (string) $row->id),
+            isLegacy: $netPaidAmount === null,
+        );
+    }
+
+    /**
+     * `sold_attributes` is a JSON column read here through a raw
+     * DB::table() query, so it arrives as the stored JSON string (or NULL
+     * for a legacy row) — not as an already-decoded array, and not via
+     * SaleLineModel's own array cast.
+     *
+     * LEGACY AND CORRUPT ARE DIFFERENT CASES — the same distinction D2
+     * draws for the money pairs, applied to this column. A line written
+     * before §3.13's snapshot migration has NULL here and NO attributes
+     * were ever recorded, so [] is the correct answer (the same shape a
+     * SIMPLE line legitimately has). A NON-legacy line is always written by
+     * SaleLineSnapshotBuilder, which always stores a real JSON list ([] for
+     * a SIMPLE line) — so NULL, '', invalid JSON, or JSON that is not a
+     * list on such a line is corruption, not "no attributes", and is made
+     * to fail loudly (§3.13 stage 5 D2's own posture) rather than silently
+     * rendering a line with its attributes quietly missing.
+     *
+     * @return array<int, array{definitionId: string, definitionCode: string, definitionName: string, valueId: string, value: string}>
+     *
+     * @throws RuntimeException If a non-legacy line's snapshot is missing or malformed.
+     */
+    private static function decodeSoldAttributes(mixed $raw, bool $isLegacy, string $saleLineId): array
+    {
+        if ($isLegacy) {
+            return is_array($raw) ? $raw : [];
+        }
+
+        if (is_array($raw)) {
+            // Already decoded — a driver that hands a JSON column back as a
+            // PHP array rather than the raw JSON string.
+            if (array_is_list($raw)) {
+                return $raw;
+            }
+
+            throw self::corruptSoldAttributes($saleLineId, 'not a list');
+        }
+
+        if (! is_string($raw) || $raw === '') {
+            throw self::corruptSoldAttributes($saleLineId, $raw === null ? 'NULL' : 'empty');
+        }
+
+        // Decoded WITHOUT associative casting first: a JSON object must be
+        // rejected as "not a list", and with assoc=true an empty object
+        // would be indistinguishable from an empty array ([]).
+        $shape = json_decode($raw);
+
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            throw self::corruptSoldAttributes($saleLineId, 'invalid JSON');
+        }
+
+        if (! is_array($shape)) {
+            throw self::corruptSoldAttributes($saleLineId, 'not a list');
+        }
+
+        return json_decode($raw, true);
+    }
+
+    private static function corruptSoldAttributes(string $saleLineId, string $reason): RuntimeException
+    {
+        return new RuntimeException(
+            "OrderAdminReader: sale line \"{$saleLineId}\" is not a legacy line but its sold_attributes snapshot is missing or malformed ({$reason}) — ".
+            'no legitimate write path produces that.'
         );
     }
 }

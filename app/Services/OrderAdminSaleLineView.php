@@ -20,15 +20,45 @@ use EasyCo\Pricing\Money;
  * corrupted or hand-inserted data to occur at all) logs a warning and
  * leaves this null, rendered as '—' by the View page, never a silently
  * rounded figure.
+ *
+ * STAGE 5 — THE FULL §3.13 SNAPSHOT, READ STRAIGHT FROM THE SALE LINE:
+ * regularUnitPrice/finalUnitPrice/promotionDiscountShare/
+ * discretionaryDiscount/netPaidAmount/unitCost and soldAttributes are the
+ * sale line's own stored snapshot columns (operational-sales-domain-
+ * design.md §3.13), never re-resolved through Pricing or Catalog (D2).
+ * All six Money fields are NULLABLE: a line written before §3.13's stage
+ * 2 migration has NEITHER half of every pair (legacy), and even a fresh
+ * line's unitCost is legitimately NULL when the cost is genuinely unknown
+ * (§3.13 Q2).
+ *
+ * isLegacy IS DERIVED, NOT STORED — D1: true exactly when netPaidAmount
+ * is NULL. §3.13's stage-4a write path always sets every snapshot field
+ * together, so "no net paid amount" is the one reliable marker of "this
+ * row predates the full snapshot" (see OrderAdminReader::buildLineView()
+ * for where a HALF-populated pair — corruption, not legacy — is made to
+ * fail loudly instead, via SaleLineMapper's own rule).
  */
 final class OrderAdminSaleLineView
 {
+    /**
+     * @param array<int, array{definitionId: string, definitionCode: string, definitionName: string, valueId: string, value: string}> $soldAttributes
+     *   The line's sold variation attributes in their stored order — []
+     *   for a SIMPLE line and for a legacy line, never null.
+     */
     public function __construct(
         public readonly ?string $productName,
         public readonly ?string $sku,
         public readonly int $quantity,
         public readonly Money $lineTotal,
         public readonly ?Money $unitPrice,
+        public readonly ?Money $regularUnitPrice,
+        public readonly ?Money $finalUnitPrice,
+        public readonly ?Money $promotionDiscountShare,
+        public readonly ?Money $discretionaryDiscount,
+        public readonly ?Money $netPaidAmount,
+        public readonly ?Money $unitCost,
+        public readonly array $soldAttributes,
+        public readonly bool $isLegacy,
     ) {
     }
 }

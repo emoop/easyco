@@ -38,6 +38,10 @@ return [
         'quantity' => 'Quantity',
         'unit_price' => 'Unit price',
         'line_total' => 'Total',
+        'promotion_discount' => 'Promotion discount',
+        'discretionary_discount' => 'Discretionary discount',
+        'net_paid' => 'Net paid',
+        'unit_cost' => 'Unit cost',
         'promotion_code' => 'Code',
         'promotion_redeemed' => 'Redeemed code',
         'provider_reference' => 'Reference',
@@ -88,5 +92,6 @@ return [
     'no_payment' => 'No payment record.',
     'attempts_suffix' => ':count attempts',
     'not_available' => '—',
+    'legacy_line_note' => 'Recorded before full snapshot',
 
 ];

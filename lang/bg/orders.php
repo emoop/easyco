@@ -38,6 +38,10 @@ return [
         'quantity' => 'Количество',
         'unit_price' => 'Единична цена',
         'line_total' => 'Сума',
+        'promotion_discount' => 'Промо отстъпка',
+        'discretionary_discount' => 'Ръчна отстъпка',
+        'net_paid' => 'Платено нето',
+        'unit_cost' => 'Себестойност',
         'promotion_code' => 'Код',
         'promotion_redeemed' => 'Използван код',
         'provider_reference' => 'Референция',
@@ -88,5 +92,6 @@ return [
     'no_payment' => 'Няма запис за плащане.',
     'attempts_suffix' => ':count опита',
     'not_available' => '—',
+    'legacy_line_note' => 'Записано преди пълния запис',
 
 ];

@@ -278,14 +278,18 @@ class OrderViewPageTest extends TestCase
         // fields that also fall back to '—' (e.g. account_id), so a plain
         // "the page contains a dash somewhere" check would pass even if
         // the line row itself silently rendered blank. Slicing the html
-        // between the Items section heading and the next section
-        // (Promotion) isolates the actual row lineRows() built (see
-        // OrderResource::lineRows() — a null productName/sku maps to
-        // orders.not_available directly).
+        // from the Items section heading to the end of its table body
+        // (</tbody>) isolates exactly the rendered rows lineRows() built
+        // (see OrderResource::lineRows() — a null productName/sku maps to
+        // orders.not_available directly). The boundary used to be the NEXT
+        // section heading — (en) "Promotion" — but that string is now also
+        // a prefix of the Lines table's own "Promotion discount" column
+        // header (§3.13 stage 5), which would cut the slice off before the
+        // rows; </tbody> is both locale-safe and a tighter scope.
         $linesSectionStart = strpos($html, __('orders.sections.lines'));
-        $linesSectionEnd = strpos($html, __('orders.sections.promotion'), $linesSectionStart);
+        $linesSectionEnd = strpos($html, '</tbody>', $linesSectionStart);
         $this->assertNotFalse($linesSectionStart, 'Items section heading not found in the rendered page');
-        $this->assertNotFalse($linesSectionEnd, 'Promotion section heading not found in the rendered page');
+        $this->assertNotFalse($linesSectionEnd, 'the Items table body was not found in the rendered page');
 
         $lineRowHtml = substr($html, $linesSectionStart, $linesSectionEnd - $linesSectionStart);
 
