@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\ActivityLogModel;
+use App\Services\ActivityLogger;
 use App\Settings\Contracts\SiteSettingsRepository;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Date;
@@ -24,6 +25,14 @@ use Illuminate\Support\Facades\Date;
  * the setting, is for. Automatically running a delete query against
  * a table nobody is currently using it for is waste, not safety.
  *
+ * DELETION SNAPSHOTS ARE NEVER PRUNED — catalog-domain-design.md
+ * §3.19.10's second recorded decision. Rows whose action is
+ * ActivityLogger::ACTION_DELETED are excluded from the age cutoff: they
+ * are a handful of rows over a store's whole lifetime, and they are the
+ * only remaining record of what a hard delete destroyed. Letting those
+ * expire while the sale lines they were reconciled against never do would
+ * lose the wrong half of the pair.
+ *
  * UNLIKE cart:prune, THIS COMMAND IS ACTUALLY SCHEDULED — a real,
  * confirmed gap found while reading cart:prune as this task's own
  * named precedent: cart:prune's own class docblock states plainly
@@ -38,7 +47,7 @@ class PruneActivityLog extends Command
 {
     protected $signature = 'activity-log:prune';
 
-    protected $description = 'Delete activity log rows older than the configured retention period (skipped entirely while the log is disabled)';
+    protected $description = 'Delete activity log rows older than the configured retention period (skipped entirely while the log is disabled; deletion snapshots are never pruned)';
 
     public function handle(SiteSettingsRepository $settings): int
     {
@@ -51,7 +60,11 @@ class PruneActivityLog extends Command
         $retentionMonths = (int) ($settings->get('admin.activity_log_retention_months') ?? 12);
         $cutoff = Date::now()->subMonths($retentionMonths);
 
-        $deleted = ActivityLogModel::where('occurred_at', '<', $cutoff)->delete();
+        $deleted = ActivityLogModel::where('occurred_at', '<', $cutoff)
+            // §3.19.10 — deletion snapshots are permanent. See this
+            // command's own class docblock for why.
+            ->where('action', '!=', ActivityLogger::ACTION_DELETED)
+            ->delete();
 
         $this->info("Pruned {$deleted} activity log row(s) older than {$retentionMonths} month(s).");
 

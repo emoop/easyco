@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\ActivityLogModel;
+use App\Services\ActivityLogger;
 use App\Settings\Contracts\SiteSettingsRepository;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -65,5 +66,56 @@ class PruneActivityLogTest extends TestCase
 
         $this->assertNull(ActivityLogModel::find($old->id));
         $this->assertNotNull(ActivityLogModel::find($recent->id));
+    }
+
+    /**
+     * catalog-domain-design.md §3.19.10's second decision: a deletion
+     * snapshot is the only remaining record of what a hard delete
+     * destroyed, so the age cutoff never touches it — even when every
+     * OTHER old row is pruned in the same run.
+     */
+    public function test_it_never_prunes_deletion_snapshots(): void
+    {
+        app(SiteSettingsRepository::class)->set('admin.activity_log_enabled', '1');
+        app(SiteSettingsRepository::class)->set('admin.activity_log_retention_months', '1');
+
+        $deletion = ActivityLogModel::create([
+            'entity_type' => 'variation',
+            'entity_id' => '123',
+            'action' => ActivityLogger::ACTION_DELETED,
+            'old_value' => json_encode(['variation_sku' => 'SKU-X']),
+            'occurred_at' => now()->subYears(5),
+        ]);
+
+        $old = $this->logRow('old', now()->subYears(5));
+
+        $this->artisan('activity-log:prune')->assertExitCode(0);
+
+        $this->assertNotNull(ActivityLogModel::find($deletion->id));
+        $this->assertNull(ActivityLogModel::find($old->id));
+    }
+
+    /**
+     * The gate exception (§3.19.10's first decision) asserted at the
+     * logger itself: a deletion snapshot is written while the log is OFF,
+     * and nothing else is.
+     */
+    public function test_a_deletion_snapshot_is_written_even_while_the_log_is_disabled(): void
+    {
+        app(SiteSettingsRepository::class)->forget('admin.activity_log_enabled');
+
+        app(ActivityLogger::class)->logDeleted('variation', '9', ['variation_sku' => 'SKU-X']);
+        app(ActivityLogger::class)->logCreated('product', '9');
+
+        $row = ActivityLogModel::where('action', ActivityLogger::ACTION_DELETED)->sole();
+
+        $this->assertSame('variation', $row->entity_type);
+        $this->assertSame('9', $row->entity_id);
+        $this->assertNull($row->new_value);
+        $this->assertSame('SKU-X', json_decode((string) $row->old_value, true)['variation_sku']);
+
+        // The ordinary entry was suppressed — the exception is exactly one
+        // method wide.
+        $this->assertSame(1, ActivityLogModel::count());
     }
 }
