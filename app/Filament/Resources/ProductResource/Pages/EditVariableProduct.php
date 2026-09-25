@@ -884,28 +884,25 @@ class EditVariableProduct extends EditRecord
                 // while collapsed) but never forced.
                 ->schema([
                     Hidden::make('variation_id'),
-                    // Purely a layout grouping — label/is_purchasable's
-                    // own ->disabled()/->dehydrated(false)/permission
-                    // config is completely unchanged, only their
-                    // position moves. 3:1 read well in practice (label
-                    // text is the longer of the two, the toggle needs
-                    // only enough room for its switch).
-                    Grid::make(4)
-                        ->schema([
-                            TextInput::make('label')
-                                ->label(__('products.wizard.variations.combination_label'))
-                                ->disabled()
-                                ->dehydrated(false)
-                                ->columnSpan(3),
-                            Toggle::make('is_purchasable')
-                                ->label(__('products.fields.is_purchasable'))
-                                ->columnSpan(1),
-                        ]),
+                    // The row's own heading, full width, on its own
+                    // line — label's own ->disabled()/->dehydrated(false)
+                    // config is completely unchanged, only its position
+                    // moves (previously shared a Grid(4) with
+                    // is_purchasable at columnSpan(3); is_purchasable now
+                    // lives in the toggle row directly below instead).
+                    TextInput::make('label')
+                        ->label(__('products.wizard.variations.combination_label'))
+                        ->disabled()
+                        ->dehydrated(false),
                     // Admin: activate and show/hide existing variations —
-                    // D1/D2. A SEPARATE Grid, not folded into the one
-                    // above: label/is_purchasable's own layout/behaviour
-                    // (untouched by this task) stays exactly as it was:
-                    // only these two new fields are added.
+                    // D1/D2. Three toggles, ONE LINE, directly under the
+                    // row's own heading above, in this exact order:
+                    // Active, Visible, Purchasable — a later UI-only
+                    // revision moving is_purchasable here from its own
+                    // former Grid(4) alongside label; no behaviour change
+                    // for any of the three (same labels, same permission
+                    // gating, same Active lock/hint, same save logic —
+                    // only position).
                     //
                     // is_active (D1) — Off -> on calls Variation::
                     // activate() (updateVariationRows() below); ONE-WAY,
@@ -964,7 +961,7 @@ class EditVariableProduct extends EditRecord
                     // updateVariationRows() below.
                     Hidden::make('was_active')
                         ->dehydrated(false),
-                    Grid::make(2)
+                    Grid::make(3)
                         ->schema([
                             Toggle::make('is_active')
                                 ->label(__('products.wizard.variations.active_label'))
@@ -976,6 +973,16 @@ class EditVariableProduct extends EditRecord
                             Toggle::make('is_visible')
                                 ->label(__('products.fields.is_visible'))
                                 ->disabled(fn (): bool => ! ProductResource::staffHasPermission(Permission::PRODUCT_MANAGE)),
+                            // Moved here from its own former Grid(4)
+                            // alongside label — same field, same
+                            // (absent) permission gating (relies on the
+                            // page's own canEdit(), see
+                            // updateVariationRows()'s own docblock for
+                            // why sku/barcode/is_purchasable need no
+                            // explicit ->disabled() of their own), no
+                            // other change.
+                            Toggle::make('is_purchasable')
+                                ->label(__('products.fields.is_purchasable')),
                         ]),
                     TextInput::make('sku')
                         ->label(__('products.wizard.variations.sku_label')),
