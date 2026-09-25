@@ -14,6 +14,8 @@ This domain owns **what actually happened** in a sale, reservation, refund, or i
 
 **The one rule that matters most in this whole document:** Operational Sales never writes back into Catalog or Pricing as a side effect of a sales operation. The legacy system's refund flow mutated a product's `sale_price` directly from inside the refund handler — convenient, but it meant a refund action silently changed what every other customer sees as the current price. This domain captures the price **as a fact at the moment of the transaction**, and never reaches backward into Pricing to "correct" or "refresh" anything.
 
+**The mirror image of that rule:** a sale line is also what makes a Catalog record permanently undeletable — `catalog-domain-design.md` §3.19 treats any variation or product id referenced by a `SaleLine` (`priceable_id`, any type: sale, refund, reservation, settlement) as history, so Catalog refuses to hard-delete that variation or product and offers archiving instead. History is never deleted, and never deleted *around*.
+
 ---
 
 ## 2. The core model

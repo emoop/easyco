@@ -45,12 +45,21 @@ packages/EasyCo/documents/{domain}-domain-design.md before working in it.
    initial MySQL-only version silently failed against SQLite.
 
 4. **Historical identity is never destroyed or reassigned.** No hard
-   deletes of anything another domain might reference by id (Orders,
-   POS, Inventory). Soft-delete / archive-status / append-only-new-row
-   patterns only. See Catalog's Variation lifecycle and
-   operational-sales-domain-design.md §3.2 (SaleLine immutability - a
-   correction is always a NEW row referencing the old one, never an
-   in-place rewrite).
+   delete of any record that has HISTORY - history meaning a financial
+   record references it by id, primarily an
+   `operational_sales_sale_lines` row (`priceable_id`, any type: sale,
+   refund, reservation, settlement). Such a record is never deleted and
+   never orphaned: soft-delete / archive-status / append-only-new-row
+   patterns only. A record referenced ONLY by configuration (a
+   `pricing_price_list_items` row, a `pricing_product_costs` row, a
+   `cart_lines` row, a product-scoped `promotion_scopes` /
+   `pricing_price_list_scopes` row, a media or taxonomy pivot) is not
+   protected by this rule and may be hard-deleted - but only through the
+   sanctioned deletion operations, and only after the app-layer
+   deletability check in catalog-domain-design.md §3.19. See Catalog's
+   Variation lifecycle and operational-sales-domain-design.md §3.2
+   (SaleLine immutability - a correction is always a NEW row referencing
+   the old one, never an in-place rewrite).
 
 5. **MySQL/MariaDB identifiers have a 64-char limit.** Laravel's
    auto-generated names can exceed it, especially on long table names

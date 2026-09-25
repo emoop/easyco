@@ -63,6 +63,7 @@ Grouped by what they gate:
 **Catalog**
 - `PRODUCT_VIEW` — see products and variations at all
 - `PRODUCT_MANAGE` — create and edit products, variations, media
+- `PRODUCT_DELETE` — permanently delete a STANDARD variation, or an ARCHIVED product, and free its identifiers (catalog-domain-design.md §3.19)
 - `TAXONOMY_MANAGE` — brands, categories, tags, seasons, attribute definitions and values
 
 **Cost and pricing**
@@ -91,11 +92,26 @@ Grouped by what they gate:
 - `STAFF_MANAGE` — create, edit, deactivate staff and assign their roles
 - `AI_MANAGE` — configuration of the AI-facing functionality
 
-### 3.1 Two splits that exist for specific, stated reasons
+### 3.1 Three splits that exist for specific, stated reasons
 
 **`REFUND_CASH` vs `REFUND_BANK` — split by method, not by action.** Domain-owner decision, from the shop floor rather than from theory: a trusted manager returns cash from the register on the spot, in front of the customer, and the matter is closed the moment the money leaves the drawer. A refund that goes through a bank is not closed — it is a request to a provider that can fail, be delayed for days, or need reconciling against a statement. Different work, different exposure, different authority. This is why the split is by *method* rather than "may refund / may not".
 
 **`COST_VIEW` separate from `PRODUCT_VIEW`.** Cost price is what the merchant paid; it is the merchant's margin laid bare. A remote contractor entering products has no business seeing it, and Shopify reached the same conclusion after shipping the coarse version first. Note that this permission is only meaningful if enforced *everywhere* — see §6.
+
+**`PRODUCT_DELETE` separate from `PRODUCT_MANAGE`.** Domain-owner
+decision. `PRODUCT_MANAGE` is "may change what the catalog says" —
+reversible, and the shop's daily work; `PRODUCT_DELETE` is "may destroy a
+record and hand its identifiers back" — irreversible, and it removes
+configuration (stock rows, cart lines, price-list items, product costs,
+product-scoped promotions and price lists) rather than editing it. The
+two differ in kind, not in degree: a mistake made with `PRODUCT_MANAGE` is
+corrected by editing again, a mistake made with `PRODUCT_DELETE` cannot be
+corrected at all, and it frees a SKU/barcode that may already be printed
+on a physical label. Hence it ships to **Administrator only** (§4.1) — a
+remote Product Entry contributor must never hold it, and a Manager is
+trusted with the catalog without a hard delete being part of running the
+shop. `catalog-domain-design.md` §3.19 is what it guards; the two-step
+"archive, then delete" rule lives there, not here.
 
 ---
 
@@ -124,7 +140,7 @@ Each role is defined below as an explicit list, granted and withheld, rather tha
 
 **Granted: every permission in §3, without exception.**
 
-`PRODUCT_VIEW`, `PRODUCT_MANAGE`, `TAXONOMY_MANAGE`, `COST_VIEW`, `COST_MANAGE`, `PRICE_MANAGE`, `ORDER_VIEW`, `ORDER_MANAGE`, `REFUND_CASH`, `REFUND_BANK`, `POS_OPERATE`, `POS_DISCOUNT`, `PROMOTION_MANAGE`, `REPORT_VIEW`, `SETTINGS_MANAGE`, `STAFF_MANAGE`, `AI_MANAGE`.
+`PRODUCT_VIEW`, `PRODUCT_MANAGE`, `PRODUCT_DELETE`, `TAXONOMY_MANAGE`, `COST_VIEW`, `COST_MANAGE`, `PRICE_MANAGE`, `ORDER_VIEW`, `ORDER_MANAGE`, `REFUND_CASH`, `REFUND_BANK`, `POS_OPERATE`, `POS_DISCOUNT`, `PROMOTION_MANAGE`, `REPORT_VIEW`, `SETTINGS_MANAGE`, `STAFF_MANAGE`, `AI_MANAGE`.
 
 This is the only role that can create and manage other staff, change site and payment settings, run promotion codes, configure the AI functionality, and send money back through a bank.
 
@@ -150,6 +166,7 @@ A note for whoever implements this: Administrator is **not** a bypass. It holds 
 - `SETTINGS_MANAGE` — includes where the shop's money is sent. This is the single most valuable target in the system (§7) and the reason this role model is deliberately stronger than WooCommerce's Shop Manager, which does have it.
 - `STAFF_MANAGE` — a role that can create roles can grant itself anything, which would make every other withholding above meaningless.
 - `AI_MANAGE` — configuration of how the shop presents itself to AI channels; an owner-level concern.
+- `PRODUCT_DELETE` — an irreversible destruction of a catalog record that also frees a SKU/barcode possibly printed on a physical label (§3.1). A Manager runs the shop; they do not destroy its records. **Grantable, and expected to be granted on request:** this is the one withheld permission a merchant is likely to hand to a Manager deliberately, and the Role editor is where they do it — see §12.1's own note for what that currently requires.
 
 ---
 
@@ -170,6 +187,7 @@ That is the entire list.
 - `POS_OPERATE`, `POS_DISCOUNT` — no register.
 - `REPORT_VIEW` — no reports of any kind. Stated explicitly by the domain owner: this role sees no reports, no margins, nothing. Without this, cost could leak through a margin report even with `COST_VIEW` withheld — the two withholdings only work together.
 - `PROMOTION_MANAGE`, `SETTINGS_MANAGE`, `STAFF_MANAGE`, `AI_MANAGE` — nothing administrative.
+- `PRODUCT_DELETE` — they enter products; they do not destroy them or hand their SKUs back.
 
 Their entire world is the catalog. Nothing about money is visible to them anywhere in the system.
 
@@ -180,6 +198,7 @@ Their entire world is the catalog. Nothing about money is visible to them anywhe
 | Permission | Administrator | Manager | Product Entry |
 |---|---|---|---|
 | `PRODUCT_VIEW` / `PRODUCT_MANAGE` | ✅ | ✅ | ✅ |
+| `PRODUCT_DELETE` | ✅ | ❌ | ❌ |
 | `TAXONOMY_MANAGE` | ✅ | ✅ | ❌ |
 | `COST_VIEW` / `COST_MANAGE` | ✅ | ✅ | ❌ |
 | `PRICE_MANAGE` | ✅ | ✅ | ❌ |
@@ -325,6 +344,29 @@ in this document assumes is complete. A merchant's own custom roles
 re-permissioning a role they created themselves is exactly the
 flexibility §4 already promises ("the domain owner's three roles are a
 good default set, not a ceiling").
+
+**One real consequence of `PRODUCT_DELETE` (§3/§4.1) — flagged, not
+smoothed over.** §4.1 records that this permission ships
+Administrator-only and is *grantable to Manager via the Role editor*.
+Today that is not possible: `updatePermissions()` above throws
+`CannotModifySystemRoleException` for any `isSystem() === true` role, and
+`RoleResource::canEdit()` is false for a system role (both verified, not
+assumed) — and Manager is a system role. So implementing §4.1's decision
+needs one of exactly two changes, and this document does not pick between
+them on the domain owner's behalf:
+
+1. relax the guard so a system role's **permissions** may be updated while
+   its **name** stays fixed — which must keep §4.1's load-bearing property
+   intact for Administrator specifically (it is looked up by exact name at
+   bootstrap and must keep holding every permission in §3, so an edit that
+   *removes* a permission from Administrator still cannot be allowed); or
+2. leave the guard alone and let a merchant reach the same outcome by
+   duplicating Manager into a custom role and editing that — already
+   possible today (§4's "a good default set, not a ceiling"), at the cost
+   of losing the system role's own identity.
+
+Whichever is chosen, "grantable to Manager" has to be a real, reachable
+action when §4.1's decision is implemented — not a sentence in a document.
 
 No `delete()` — not asked for by `admin-panel-design.md`, and deleting
 a role currently assigned to a `Staff` member raises questions (reassign

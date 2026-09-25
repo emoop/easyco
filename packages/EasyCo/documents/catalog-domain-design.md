@@ -553,6 +553,624 @@ price change, a status transition). The only caller is the explicit
 merchant action — see admin-panel-design.md's own entry for the row
 actions.
 
+### 3.19 Deletion and axis restructuring
+
+**Status: design only — no code, no migration, no test for anything in
+this section exists yet.** It designs the four operations the domain
+owner asked for and that §3.17 left out of scope: deleting a STANDARD
+variation, deleting an ARCHIVED product, and an admin "change axes" flow
+that restructures a VARIABLE product's axes by deleting or archiving
+whatever blocks the change. It amends CLAUDE.md rule 4 (§3.19.1) and
+narrows §7's own closing statement that `softDeletes()` is "the actual
+'removal' mechanism" — that stays true for every record with history,
+and stops being true for a record referenced only by configuration.
+
+**Why this needs designing at all, when this codebase says "never hard
+delete":** `catalog_variations.sku`, `.barcode`,
+`UNIQUE(product_id, attribute_signature)`, `catalog_products.base_sku`
+and `.slug` are real `UNIQUE` indexes. Soft-deleting or archiving a row
+frees **none** of them — the row still occupies each index entry
+forever. So today a mistyped `base_sku` on an abandoned draft product is
+unusable for all time, and a variation whose combination is re-added is
+forced down §3.9's revival path with its original id and SKU rather than
+becoming a new one. G-D8 deliberately frees them: an identifier belongs
+to a physical/commercial fact, and once that fact is withdrawn the
+identifier is reusable.
+
+#### 3.19.1 CLAUDE.md rule 4, amended — history vs. configuration
+
+The prohibition is re-scoped from *what a record is* to *what references
+it*: a record with history is never deleted; a record referenced only by
+configuration may be, through the sanctioned operations below and nothing
+else. Rule 4's exact new text:
+
+```
+4. **Historical identity is never destroyed or reassigned.** No hard
+   delete of any record that has HISTORY - history meaning a financial
+   record references it by id, primarily an
+   `operational_sales_sale_lines` row (`priceable_id`, any type: sale,
+   refund, reservation, settlement). Such a record is never deleted and
+   never orphaned: soft-delete / archive-status / append-only-new-row
+   patterns only. A record referenced ONLY by configuration (a
+   `pricing_price_list_items` row, a `pricing_product_costs` row, a
+   `cart_lines` row, a product-scoped `promotion_scopes` /
+   `pricing_price_list_scopes` row, a media or taxonomy pivot) is not
+   protected by this rule and may be hard-deleted - but only through the
+   sanctioned deletion operations, and only after the app-layer
+   deletability check in catalog-domain-design.md §3.19. See Catalog's
+   Variation lifecycle and operational-sales-domain-design.md §3.2
+   (SaleLine immutability - a correction is always a NEW row referencing
+   the old one, never an in-place rewrite).
+```
+
+**The test is "does a financial record reference it", not "is it
+important".** A `pricing_product_costs` row can be worth real money and
+is still configuration: it describes what the merchant *intends* to pay,
+and a deleted variation's cost row is regenerated the moment the
+variation is. A sale line is the opposite: it records money that already
+changed hands, so it wins over any configuration need.
+
+**Why the rule must be amended rather than bypassed once:** the old text
+("no hard deletes of anything another domain might reference by id") is
+satisfiable only by never deleting anything a *future* domain might want
+to reference — which is every row. That is what made §3.19's three
+operations structurally impossible; G-D1 replaces it with a check against
+the references that actually exist (the map in §3.19.2).
+
+#### 3.19.2 The reference map — every table that can reference a product or variation
+
+Verified by reading every migration in the repository, not inferred — the
+same exercise `PruneProductsToOriginal` performed for its own narrower
+purpose. "History" / "configuration" is the G-D1 classification.
+
+| Referencing table.column | Kind of reference | Classification |
+|---|---|---|
+| `operational_sales_sale_lines.priceable_id` | **history** — a SALE / REFUND / RESERVATION / INSTALLMENT_PAYMENT line; no FK, by design (§1) | **HISTORY — never deleted, and never deleted *around*** |
+| `operational_sales_sale_lines.product_name` / `.sku` / `.sold_attributes` / `.unit_cost` | the §3.12/§3.13 snapshot, not an id | not a reference — and the reason history stays *readable* after a delete |
+| `catalog_variations.product_id` | the variation's own parent, `restrictOnDelete()` | configuration, structural — deleted last, by the operation (FK) |
+| `catalog_product_attributes.product_id` | axis declarations + descriptive attributes, `cascadeOnDelete()` | configuration — DB-cascaded |
+| `catalog_product_axis_values.product_id` | enabled values per declared axis, `cascadeOnDelete()` | configuration — DB-cascaded |
+| `catalog_product_categories.product_id`, `catalog_product_tags.product_id` | taxonomy pivots, `cascadeOnDelete()` | configuration — DB-cascaded |
+| `catalog_product_media.product_id`, `catalog_variation_media.variation_id` | media pivots, `cascadeOnDelete()` | configuration — DB-cascaded (the *assets* are not: §3.19.7) |
+| `catalog_variation_attribute_values.variation_id` | the variation's own combination rows, `cascadeOnDelete()` | configuration — DB-cascaded |
+| `stock_levels.variation_id` | the variation's stock, `restrictOnDelete()`, UNIQUE | configuration — **explicit delete** + the concurrency lock (§3.19.5) |
+| `cart_lines.variation_id` | a basket line, `restrictOnDelete()` | configuration — **explicit delete**, converted carts included (§3.19.4) |
+| `pricing_price_list_items.target_id` (`target_type = variation \| product`) | which list prices this variation/product; no FK, by design | configuration — **explicit delete** |
+| `pricing_product_costs.priceable_id` | the variation's cost; no FK, by design | configuration — **explicit delete** |
+| `pricing_price_list_scopes.scope_reference_id` (`scope_type = product`) | which list applies *because of this product* | configuration — **explicit delete** (product deletion only) |
+| `promotions_promotion_scopes.scope_reference_id` (`scope_type = product`) | which promotion applies because of this product | configuration — **explicit delete** (product deletion only) |
+| `activity_log.entity_type` / `.entity_id` (`'product'` today) | the log entry *about* the record; plain strings, **no FK** | neither — deliberately retained (§3.19.10) |
+| `catalog_media` rows and physical files | **not** a child of a product (only the pivots are) | neither — orphaned by design, §3.19.7 |
+
+**Checked and cleared explicitly, so this is a map and not a guess:**
+`catalog_products.brand_id` / `.size_guide_id` / `.season_id` /
+`.product_group_id` point *from* the product outward;
+`catalog_product_templates` references brand/season/product-group plus
+JSON category/tag id arrays — it is a Create-form pre-fill, not a live
+link, and no migration ever adds a `template_id` to `catalog_products`;
+`catalog_brands.logo_media_asset_id` points at `catalog_media`, never at
+a product; `orders` references client/transaction/account/address only,
+with all line detail in `operational_sales_sale_lines`;
+`promotion_redemptions` references promotion/order/account;
+`payments` / `payment_refunds` reference orders and payments. Nothing in
+this list is "unclear".
+
+**One real gap this map exposes in existing tooling — reported, not fixed
+here:** `PruneProductsToOriginal` deletes `stock_levels`,
+`pricing_price_list_items` and the catalog rows, but **not**
+`pricing_product_costs`, `pricing_price_list_scopes` or
+`promotion_scopes`. After a prune run today those three tables keep rows
+pointing at products/variations that no longer exist. Stage 2
+(§3.19.12) fixes the command as part of extracting the shared gate —
+otherwise the admin deletion path would inherit the same omission.
+
+**A second difference in that command, reported for the same reason:** its
+gate has *two* parts — it aborts on a doomed variation's sale lines **and**
+on its `cart_lines` rows. Only the first is history. The cart-line half is
+a scope-specific safety net for that command's much broader "delete
+everything except the 6 oldest" job, where aborting is clearly safer than
+silently emptying merchants' baskets; the admin path instead treats cart
+lines as configuration and deletes them (§3.19.4), because its scope is
+one variation the merchant explicitly chose and confirmed. So "one rule,
+not two" holds for the **history** rule — after stage 2 the sale-line half
+is `variationIdsWithHistory()` in both places — while the command keeps
+its cart-line abort as an explicitly separate, scope-specific guard.
+Flattening both into one predicate would give the same function two
+different meanings at its two call sites.
+
+#### 3.19.3 Where each piece lives
+
+**Domain — `Product` (the aggregate).** One new operation,
+`Product::removeStandardVariation(Variation $variation): void`:
+
+1. `$variation` must already belong to this product (`LogicException`
+   otherwise — the same rule §3.7's `changeVariationCombination()`
+   enforces).
+2. It must be `STANDARD` (`LogicException` for `UNIVERSAL` — G-D2: a
+   UNIVERSAL variation is only ever deleted *together with* its
+   product).
+3. It drops the variation from `$this->variations`, leaving the aggregate
+   self-consistent so a caller can immediately `declareVariationAxes()`
+   and generate the replacements inside the same instance (that ordering
+   is what the change-axes flow needs).
+
+**Deliberately NOT in the domain:** the history and stock checks. The
+aggregate cannot see them — Catalog must never query
+`operational_sales_sale_lines` or `stock_levels` (CLAUDE.md rule 1;
+`operational-sales-domain-design.md` §1). #3 above also does not delete
+anything: `EloquentProductRepository::save()` upserts the variations it is
+given and **never** removes rows absent from the aggregate (verified — it
+has no delete path at all), so "removed from the aggregate" and "row
+gone" are two different, separately-authorized steps. That is deliberate:
+the physical delete is the part that needs the history check, so it must
+not be reachable by a plain `save()`.
+
+**Repository — `ProductRepository` (Catalog-owned rows only).** Two new
+methods, both `withTrashed()` + force-delete, and both touching
+`catalog_*` tables exclusively:
+
+- `deleteVariation(Variation $variation): void` — force-deletes the
+  `catalog_variations` row, letting the DB cascade
+  `catalog_variation_attribute_values` and `catalog_variation_media`.
+- `delete(Product $product): void` — force-deletes the
+  `catalog_products` row, cascading `catalog_product_attributes`,
+  `_axis_values`, `_categories`, `_tags`, `_media`. Its variations must
+  already be gone (`catalog_variations.product_id` is
+  `restrictOnDelete()`).
+
+Neither may touch `stock_levels`, `cart_lines`,
+`pricing_price_list_items`, `pricing_product_costs`, `promotion_scopes`
+or `pricing_price_list_scopes` — a Catalog class referencing those would
+break package isolation. They are deleted by the app layer below, in the
+same transaction.
+
+**App layer — ONE deletability/deletion service,
+`App\Services\CatalogDeletion`.** The single place any history check
+across domains lives, for the same reason `OrderAdminReader` is the single
+place the Orders admin's cross-table reads live (and
+`CheckoutOrchestrator` the single place checkout's cross-domain writes
+do):
+
+- `variationIdsWithHistory(array $variationIds): array<string, int>` —
+  sale-line counts per variation id (`priceable_id`, any type, any
+  status, **including soft-deleted lines**). This *is* the one rule
+  CLAUDE.md rule 4 now names; `PruneProductsToOriginal`'s own inline
+  `operational_sales_sale_lines` gate is replaced by a call to it
+  (stage 2), so the command and the admin path cannot drift apart.
+- `impactForVariation(string $variationId): VariationDeletionImpact` and
+  `impactForProduct(string $productId): ProductDeletionImpact` — read-only
+  reports, no writes, safe to render in the confirmation modal
+  (§3.19.8). Each carries: deletable or not, the refusal reason, the
+  history count, the stock quantity, and the configuration row counts
+  that would be removed (cart lines, price items, costs, media pivots).
+  The product impact additionally splits its variations into
+  **delete** (no history *and* stock 0) and **archive** (history or
+  stock > 0) — the exact lists G-D4's modal shows.
+- `deleteVariation(string $variationId): void` /
+  `deleteProduct(string $productId): void` — re-run every check inside
+  their own transaction after taking the locks (§3.19.5), record the
+  activity-log snapshot (§3.19.10), then execute §3.19.4.
+
+The impact objects and the delete methods are one service on purpose: a
+second caller computing "is this deletable?" separately is exactly the
+drift `variationIdsWithHistory()` exists to prevent. Authorization
+(`permission::PRODUCT_DELETE`, §3.19.9) is *not* checked here — the
+service enforces the invariant, the UI/HTTP layer enforces who may ask.
+
+#### 3.19.4 The deletion order
+
+Everything below happens inside ONE transaction (§3.19.5). "Explicit"
+means the app-layer service issues the delete itself, because the row is
+either cross-domain (Catalog must not know it exists) or a deliberate
+guard against the DB's own `restrictOnDelete()`. "Cascade" means the
+database does it when the catalog row is force-deleted, and it is
+re-verified after execution rather than assumed — the same
+prove-it-didn't-just-look-right posture `PruneProductsToOriginal`'s own
+final-state report already takes.
+
+**Deleting a STANDARD variation `V` of product `P`:**
+
+| # | Table | How |
+|---|---|---|
+| 1 | `stock_levels` `WHERE variation_id = V` | explicit |
+| 2 | `cart_lines` `WHERE variation_id = V` | explicit |
+| 3 | `pricing_price_list_items` `WHERE target_type = 'variation' AND target_id = V` | explicit |
+| 4 | `pricing_product_costs` `WHERE priceable_id = V` | explicit |
+| 5 | `catalog_variations` row `V` | explicit, `withTrashed()` + `forceDelete()` |
+| 6 | `catalog_variation_attribute_values`, `catalog_variation_media` | cascade from #5 |
+
+`catalog_product_axis_values` is **not** touched: deleting one variation
+does not remove the axis value that produced it — the merchant may still
+want a *different* combination using it.
+
+**Deleting an ARCHIVED product `P`** (only reachable when every one of
+its variations passes the same two checks):
+
+| # | Table | How |
+|---|---|---|
+| 1 | for **every** variation of `P` — UNIVERSAL, live STANDARD, ARCHIVED and soft-deleted alike, in ascending variation id — the whole variation sequence above (its steps 1-4, then its force-delete) | explicit |
+| 2 | `pricing_price_list_items` `WHERE target_type = 'product' AND target_id = P` | explicit |
+| 3 | `pricing_price_list_scopes` `WHERE scope_type = 'product' AND scope_reference_id = P` | explicit |
+| 4 | `promotion_scopes` `WHERE scope_type = 'product' AND scope_reference_id = P` | explicit |
+| 5 | `catalog_variations` rows of `P` | explicit, `withTrashed()` + `forceDelete()` — **before** the product row, because `catalog_variations.product_id` is `restrictOnDelete()` |
+| 6 | `catalog_products` row `P` | explicit, `withTrashed()` + `forceDelete()` |
+| 7 | `catalog_product_attributes`, `_axis_values`, `_categories`, `_tags`, `_media` | cascade from #6 |
+
+**Every table is deleted in exactly one place.** Step 1 *is* the variation
+sequence above, applied once per variation — and that sequence is already
+where `stock_levels`, `cart_lines`, variation-target
+`pricing_price_list_items` and `pricing_product_costs` are deleted. The
+product path therefore adds only the rows that are *product*-scoped, and
+never a second, parallel delete of the same table: two definitions of "how a
+variation's configuration goes away" would be two things to keep in step.
+
+**`forceDelete()`, and `withTrashed()`, are not optional.** `ProductModel`
+and `VariationModel` both use `SoftDeletes`, so a plain `delete()` only
+sets `deleted_at`: the row survives, keeps occupying `sku` / `barcode` /
+`base_sku` / `slug` / `(product_id, attribute_signature)` (the whole point
+of G-D8 fails), and still blocks `catalog_variations.product_id`'s
+restrict FK. A *already* soft-deleted variation is therefore included by
+`withTrashed()` and force-deleted with the rest — which is also what makes
+"delete an archived product" (an archived variation is a real row, not a
+deleted one) coherent.
+
+**`cart_lines` are removed for open and converted carts alike.**
+`cart_lines.variation_id` is `restrictOnDelete()`, so a converted cart
+(checkout only sets `carts.order_id`; it never clears or copies the lines
+— verified) would otherwise block the delete forever. These rows are
+configuration under G-D1: a cart is a transient basket, and everything
+financial about what was bought already lives in the Order and its
+SaleLines, which carry their own product name / SKU / unit prices /
+discount shares / sold attributes snapshot (§3.12, §3.13). Nothing
+historical is lost by removing the basket line — but the impact summary
+(§3.19.8) states the count and how many of those carts were already
+converted, so it is never a silent side effect.
+
+**Not deleted, deliberately:** `activity_log` rows (§3.19.10) and
+`catalog_media` rows/files (§3.19.7).
+
+#### 3.19.5 Concurrency — the check must not be stale
+
+The failure this closes: between "this variation has no history and zero
+stock" and the DELETE, a checkout sells it. The sale line is written and
+the variation row is gone — history referencing a variation that no
+longer exists, which is the exact prohibition rule 4 states, achieved by
+a race rather than by intent.
+
+**Verified facts this design builds on:** `CheckoutOrchestrator::
+placeWithinTransaction()` runs inside one transaction and decrements
+stock (step 7, `StockLevelRepository::decrease()`) **before** it writes
+the Transaction and the SALE SaleLines (step 8), so for one variation the
+stock decrement and its history row commit or roll back together.
+`decrease()` is a conditional UPDATE — `UPDATE stock_levels SET quantity
+= quantity - n WHERE variation_id = ? AND quantity >= n` — which takes an
+exclusive row lock on that `stock_levels` row and holds it until the
+checkout commits. `stock_levels.variation_id` is UNIQUE, so that lock is
+exactly one row, never a gap-lock cascade.
+
+**Locking rules.**
+
+1. **The stock row is locked first, and that same statement performs the
+   stock check:** `SELECT quantity FROM stock_levels WHERE variation_id =
+   ? FOR UPDATE`. When no row exists, MySQL's unique-index equality read
+   takes a gap lock on the missing key, so a concurrent
+   `increase()`/`save()` cannot create the row underneath the decision;
+   "no row" is then read as quantity 0 — `StockLevelRepository::
+   findByVariationId()`'s own documented "no row and zero are the same
+   fact" rule, not a new interpretation.
+2. **The history check must be a locking read:** `SELECT id FROM
+   operational_sales_sale_lines WHERE priceable_id = ? FOR UPDATE`. A
+   plain `SELECT COUNT(*)` is *not* sufficient: under MySQL's default
+   REPEATABLE READ the consistent snapshot is fixed by the transaction's
+   first non-locking read, so a sale line committed after that snapshot
+   but before our lock was granted would be invisible and we would delete
+   anyway. A locking read always reads the latest committed version, and
+   it additionally blocks a concurrent INSERT of a new sale line for this
+   variation (insert-intention locks conflict with the gap/next-key lock
+   the scan holds).
+3. **`priceable_id` therefore needs an index.** It has none today — the
+   `os_sale_lines_*` indexes cover `transaction_id`, `(client_id, type,
+   status)`, `installment_plan_id` and the FKs — so rule 2's `FOR UPDATE`
+   would scan and lock the whole sale-lines table. Stage 2 adds a plain
+   `INDEX operational_sales_sale_lines.priceable_id`, which also makes
+   the count O(log n) instead of a full scan. This is the only schema
+   change this design requires.
+4. **Multi-variation operations take their locks in ascending
+   `catalog_variations.id` order**, and the transaction is wrapped with a
+   bounded deadlock retry (Laravel's `DB::transaction($closure, attempts:
+   3)`). A concurrent checkout locks one stock row at a time in cart-line
+   order and cannot be made to observe our ordering, so deterministic
+   ordering plus retry is the honest answer — "deadlock impossible" is
+   not claimable here and is not claimed.
+
+**How this serializes with checkout, both ways round.**
+
+- *Deletion first:* it holds the stock row's exclusive lock. The
+  checkout's step-7 UPDATE blocks; when the deletion commits the row is
+  gone, so the UPDATE matches zero rows →
+  `InsufficientStockException` → the entire checkout transaction rolls
+  back: no order, no sale line, no payment.
+- *Checkout first:* it holds that lock and commits its sale line before
+  releasing it. The deletion's rule-1 read blocks until then, and rules 1
+  and 2 then read the committed state — stock is now 0 (not itself a
+  refusal) but the history count is ≥ 1, so the deletion is refused with
+  the sale-line count and archiving is offered instead (G-D2). Nothing is
+  deleted and nothing is orphaned.
+
+**What is deliberately not locked, and what protects it instead:**
+`cart_lines` insertions are not serialized against the deletion —
+`CartLineAdder` reads the variation without a lock, so a line can land
+either side of our cart-line delete. The protection is the schema, not a
+lock: `cart_lines.variation_id` is `restrictOnDelete()`, so whichever
+order the two transactions commit in, one of them fails loudly — our
+`catalog_variations` delete hits the FK restriction and the whole
+deletion rolls back (the merchant retries and the recomputed impact
+already accounts for the new line), or the cart insert hits it and the
+cart add fails. Never a silent orphan; this is CLAUDE.md rule 2 doing
+exactly the job it exists for. `catalog_variations` itself is not locked
+up front: its row lock comes from the `forceDelete`, which is the last
+step, by which point the verdict is already computed.
+
+#### 3.19.6 After a delete: no revival, a genuinely new variation
+
+§3.9's implicit revival-by-signature is triggered by
+`addStandardVariation()` finding an **archived** variation with the same
+`(product_id, attribute_signature)` — `findArchivedVariationBySignature()`
+reads storage. After a hard delete that row does not exist, so re-adding
+the same combination creates a **new** variation: new `id`, and its
+`sku`/`barcode` are whatever the caller supplies or the
+`catalog.variation.sku` hook generates. Nothing has to be changed to make
+this true, and nothing is added that could make it a revival.
+
+`restoreArchivedVariation()` (§3.17) is untouched and strictly narrower:
+it operates on an in-memory `Variation` instance that must currently
+exist and be `ARCHIVED`, so a deleted variation is not reachable from the
+Restore action at all — it has no instance to offer.
+
+The merchant-facing consequence is that "archive then restore" and
+"delete" are two genuinely different offers, and the UI must say which
+one it is doing (§3.19.8): archiving keeps the id, SKU, barcode **and**
+the combination's claim on the uniqueness index; deleting frees all four,
+so the combination becomes creatable as a new variation. That is the
+whole reason G-D8 exists.
+
+§3.17's R2/R3/R4 guards are unaffected, and this is the mechanism that
+makes the change-axes flow possible at all: they collect **live**
+(non-archived) STANDARD variations only, so deleting a live variation —
+or archiving one — removes it from that collection and the axis may then
+be re-declared.
+
+#### 3.19.7 The media gap — deliberately not solved here
+
+Deleting a product or variation removes the `catalog_product_media` /
+`catalog_variation_media` **pivot** rows (DB cascade). It does **not**
+delete the `catalog_media` rows or the physical files: `catalog_media`
+has no FK to a product, because an asset may be legitimately shared by
+several products and by a brand logo. This is the already-tracked gap in
+`media-cleanup-and-storage-optimization-note.md` §1, and the same gap
+`PruneProductsToOriginal`'s own docblock flags for its own deletion path.
+
+It is not solved here, and specifically not by deleting every
+`catalog_media` row a removed pivot pointed at — that would delete assets
+still in use elsewhere. What the deletion does provide is the media count
+in both the impact summary and the activity-log snapshot, so orphaned
+assets are at least discoverable by the future cleanup UI. Solving it is
+that note's work, not this section's.
+
+#### 3.19.8 The admin UX (described, not built)
+
+**A — Delete a variation.** A per-row action on `EditVariableProduct`'s
+Variations tab, next to (never instead of) the archive action already
+there. That existing per-row action is an *archive* — it is labelled
+`products.variation_archive.button_label` precisely because it removes the
+row from the submitted set and the save path then archives it — so the
+delete must be an additional, differently-labelled action. Visible with
+`PRODUCT_DELETE`; when the impact says not deletable, the action is
+disabled with the reason shown and the archive action is the offered
+alternative. The modal shows: the SKU and the attribute combination
+(`attributeAssignments()`); "no sales history", or the count if it changed
+between render and submit; the stock quantity; the configuration that
+will also be removed (N cart lines, of which M in already-converted
+carts; N price-list items; N cost rows; N media attachments — **the files
+are not deleted**); the explicit "this cannot be undone" checkbox; and a
+field requiring the variation's SKU to be typed (G-D6).
+
+**B — Delete a product.** On `ViewProduct`'s header (and mirrored as a
+list row action), offered only when the product is `ARCHIVED`. On a
+non-archived product the same slot offers the existing Archive action plus
+one line explaining the two-step rule (G-D3) — a disabled button with no
+reason is exactly what this codebase avoids. The modal shows every
+variation with its own verdict, the product-scope rows that would go
+(price-list scopes, promotion scopes), the aggregate cart-line /
+price-item / cost / media counts, the `base_sku` and `slug` that will
+become reusable, the checkbox, and a field requiring the **base SKU**.
+Because G-D3 refuses when any variation must be archived, this list is in
+practice all-delete or the operation is refused — the modal says which.
+
+**C — Change axes.** On the existing Axes tab. Today a refused submission
+surfaces `UnsafeAxisRedeclarationException` as an error notification; the
+change is that a submission which *would* be refused first shows an impact
+step: current axes vs submitted axes, then two lists — **will be
+deleted** (live STANDARD variations, no history, stock 0) and **will be
+archived** (history or stock > 0) — with counts, and, when either list is
+non-empty, the visible warning that listed variations and their
+identifiers are permanently removed. On confirm, in one transaction:
+archive the second list, delete the first *through* `CatalogDeletion` (so
+the checks re-run inside the same locking window), then re-declare the
+axes through the unchanged `declareVariationAxes()`, then create the new
+combinations with the existing generation path
+(`catalog.variation.sku` hook + `VariationCombinationGenerator`). A
+variation in the "will be archived" list whose value is being removed
+stays archived **and unrestorable** — §3.17's documented trade-off — and
+the modal says so up front rather than letting the merchant discover it
+when the Restore action later refuses.
+
+**D — Refusal messages are the domain's own.** Each refusal is shown
+verbatim, the same posture `VariationController` already takes for
+`VariationNotRestorableException`, never a generic failure: history —
+"Variation {sku} has {n} sale line(s) and cannot be deleted. Archive it
+instead."; stock — "Variation {sku} still has {n} in stock. Set stock to 0,
+or archive it instead."; not archived — "Only an archived product can be
+deleted. Archive {name} first."; blocked variation — "Variation {sku} has
+{n} sale line(s), so {name} cannot be deleted."
+
+**E — i18n:** new keys under `products.deletion.*` in `lang/en` and
+`lang/bg`, beside the existing `products.variation_archive.*` keys.
+
+#### 3.19.9 Permission
+
+A new dedicated permission, **`Permission::PRODUCT_DELETE`
+(`'product_delete'`)** — a capability the code actually enforces, in the
+existing vocabulary's shape. Granted by `StaffSystemRolesSeeder` to
+**Administrator only** (G-D5): a hard delete destroys configuration and
+frees identifiers, so it does not ship enabled for Manager — but it is
+**grantable to Manager through the Role editor**, which is what "grantable
+to Manager" means.
+
+**Already documented, not deferred:**
+`staff-access-domain-design.md` §3 (the permission list), §3.1 (why it is
+split from `PRODUCT_MANAGE`) and §4.1 (the three roles' granted/withheld
+lists and the side-by-side matrix) are updated in this same change, not in
+stage 5. §12.1 there also records the one real consequence for
+implementation: system roles' permissions are currently not editable
+(`Role::updatePermissions()` throws `CannotModifySystemRoleException`, and
+`RoleResource::canEdit()` is false for a system role), so making
+"grantable to Manager" reachable needs either permission-level editing of
+a system role or a copy-to-custom-role path — with the constraint that any
+such change must keep Administrator holding every permission, since it is
+looked up by exact name at bootstrap. Nothing new is needed to *view* the
+impact reports: they show counts and identifiers, never a cost amount, so
+`PRODUCT_VIEW`/`PRODUCT_MANAGE` coverage is unchanged and there is no new
+`COST_VIEW` interaction.
+
+#### 3.19.10 Nothing silent — the activity-log snapshot, and the two gaps it closes
+
+**G-D7's record.** Before any row is deleted, one `activity_log` entry is
+written describing the whole operation: entity type and id, product name,
+`base_sku`, `slug`, every variation's id, SKU, barcode, attribute
+combination, status, price-list items, cost rows, stock quantity, the
+cart-line / price-item / cost / media counts, and the acting staff member
+and timestamp. Written through a new `ActivityLogger::logDeleted()` into
+the existing `activity_log` table, whose `entity_type`/`entity_id` are
+plain strings with **no foreign key** — verified — so the entry survives
+the deletion it describes. That survival is the whole reason the design
+depends on the log, and it is a genuine property of the schema rather than
+something this design has to add.
+
+**Decision (domain owner) — a deletion is never gated by the log setting.**
+`ActivityLogger::write()` returns early unless `admin.activity_log_enabled`
+is `'1'`, and that setting ships **off** (LocaleSettings' own Tab 2) — so
+under the existing gate a deletion snapshot on a default installation would
+silently record nothing at all, making G-D7 a promise the code does not
+keep. `ActivityLogger::logDeleted()` therefore writes **regardless** of that
+setting, and it is the only method that does. Routine field-change telemetry
+staying opt-in is fine; the record that a product or variation *was
+destroyed* is not telemetry — it is the only remaining trace of the row, and
+the operation cannot be undone. The setting's own purpose ("don't log every
+edit unless asked") is untouched.
+
+**Decision (domain owner) — deletion snapshots are never pruned.**
+`activity-log:prune` deletes rows older than a configured retention period
+(months), which would take a deletion snapshot with it: the record of *what
+was destroyed* would expire while the sale lines it was reconciled against
+never do. The command therefore excludes rows with `action = 'deleted'`
+from age-based pruning — a handful of rows per store's lifetime, against
+losing the only record of a destroyed identifier. The command's own
+docblock carries this exception explicitly, not implicitly.
+
+**A third, smaller caveat, reported rather than solved:** `entity_id`
+holds the product/variation **id**, and ids are not guaranteed unique
+across time once rows are hard-deleted — InnoDB recomputes a table's
+auto-increment counter as `max(id) + 1`, so removing the highest-id row
+(MariaDB, or MySQL after a restore/`ALTER`) can let a *different*, later
+record take the same id. That is precisely why the snapshot above carries
+the SKU(s), `base_sku` and slug as well: the identifiers, not the
+surrogate id, are what the log entry must be readable by. Worth stating
+plainly because it is the second reason not to treat `entity_id` as a
+stable key.
+
+#### 3.19.11 Identifiers are freed on purpose (G-D8) — the verified mechanics
+
+| Identifier | Generator today | What a hard delete frees |
+|---|---|---|
+| `catalog_products.base_sku` | `catalog.product.base_sku` hook → `SkuSequenceRepository::next()`, a persisted monotonic counter (`catalog_sku_sequence`); a merchant-typed value is returned unchanged | the `UNIQUE` entry. The generator will never *re-issue* the value (its counter only moves up); a merchant may type it again freely |
+| `catalog_products.slug` | `catalog.product.slug` hook (slugified) + DB-constraint retry against `catalog_products_slug_unique` | the `UNIQUE` entry, immediately reusable by the generator's own retry |
+| `catalog_variations.sku` | `catalog.variation.sku` hook → `{baseSku}-{n}`, `n = count($product->variations()) + 1`, explicitly *best-effort*, with the authoritative retry against `catalog_variations_sku_unique` | the `UNIQUE` entry **and** the position in that count — so the next generated SKU can be exactly the deleted one (a product whose 3rd variation was deleted gets `-3` back for its next combination) |
+| `catalog_variations.barcode` | none — caller-supplied only | the `UNIQUE` entry |
+| `UNIQUE(product_id, attribute_signature)` | `VariationSignature`, deterministic | the combination's claim, so re-adding it creates a new variation (§3.19.6) rather than reviving the old one |
+
+That last line is the mechanism, not a side effect: the reclaimed count
+position is *why* deletion and archiving must stay visibly different
+offers in the UI. Archiving a variation keeps its SKU occupied forever, so
+"archive" is the safe action for a variation whose barcode is on a printed
+label still sitting on a shelf; deleting it hands the number back and the
+next generation may reuse it for a different physical item. Hence the
+typed-SKU confirmation (G-D6) and the identifiers in the log snapshot
+(§3.19.10) are not ceremony — with a freed barcode they are the only
+things distinguishing two different physical items in the record.
+
+#### 3.19.12 Implementation stages, each with a review gate
+
+1. **This document.** `catalog-domain-design.md` §3.19, the CLAUDE.md rule
+   4 amendment, the one line in `operational-sales-domain-design.md`. No
+   code. *Gate: approval of this design.*
+2. **Deletability + variation deletion.** `App\Services\CatalogDeletion`
+   (+ `VariationDeletionImpact` / `ProductDeletionImpact`),
+   `Product::removeStandardVariation()`, `ProductRepository::
+   deleteVariation()`, `ActivityLogger::logDeleted()` with its two
+   exceptions (§3.19.10), the
+   `operational_sales_sale_lines.priceable_id` index migration, and
+   `PruneProductsToOriginal` switched onto `variationIdsWithHistory()`
+   **including** its three currently-missed tables (§3.19.2).
+   Tests: refusal on history (including a soft-deleted sale line) and on
+   non-zero stock; a successful delete leaving zero rows in every table of
+   §3.19.4 and the unique indexes genuinely free; the prune command's
+   gate. The concurrency rule is asserted at the level it is testable —
+   the emitted SQL uses `FOR UPDATE` on both reads, and a two-connection
+   test commits a sale line after the impact and proves the in-transaction
+   re-check refuses. *Gate: review before any UI exists.*
+3. **Product deletion.** `ProductRepository::delete()`,
+   `CatalogDeletion::deleteProduct()`, the ARCHIVED gate, the variation
+   loop, the four product-scope/price-item deletes. Tests: refusal for a
+   non-archived product and for any variation with history or stock;
+   success freeing `base_sku` and `slug`. *Gate.*
+4. **Change-axes flow.** `App\Services\VariationAxisRestructure`: compute
+   the two lists, archive, delete via `CatalogDeletion`, re-declare,
+   generate. Tests: removing an axis that a live variation blocks;
+   removing a `R4` value; the "archived and unrestorable" outcome stated
+   in the modal. *Gate.*
+5. **Admin UI.** The three actions/modals, `products.deletion.*` i18n in
+   both locales, `Permission::PRODUCT_DELETE` and `StaffSystemRolesSeeder`
+   (the permission is already documented in
+   `staff-access-domain-design.md` §3/§3.1/§4.1 — §12.1 of which records
+   what making it grantable to Manager requires). *Gate.*
+
+**Deliberately not designed here, so it is not silently assumed:**
+a bulk/CSV deletion path; any "undo" (there is none — that is the point);
+a barcode generator (freed barcodes are reusable but still never
+auto-generated); the media-orphan cleanup of §3.19.7, which belongs to its
+own note; and merchant-defined axis order, below.
+
+**Merchant-defined axis order — its own task, not this one.**
+`catalog_product_attributes.sort_order` exists as a column and is always
+written as the literal `0`
+(`EloquentProductRepository::persistVariationAxes()`, both call sites), and
+`loadVariationAxes()` does not `ORDER BY` it — so the order
+`Product::variationAxes()` returns is simply whatever order the rows come
+back in, and **a merchant cannot order a product's axes at all**. The
+change-axes flow above inherits that limit: it can add, remove and re-value
+axes, but the axis *sequence* it writes is not a merchant decision. The
+effect reaches past the admin — `sold_attributes` in the §3.13 sale-line
+snapshot is sorted by `attribute_definition_id` as a deterministic
+substitute for a real order (`SaleLineSnapshotBuilder`, and §3.13's own D5
+note), so the order a customer sees on the storefront and on a receipt is
+definition-id order, not the shop's chosen order. Fixing it needs a real
+`sort_order` write path, a UI, an ordering rule for rows that already exist,
+and a deliberate decision about whether the display order should also drive
+`sold_attributes` from then on — plus an answer for the snapshots already
+written. It spans the admin, the storefront and receipts, so it is designed
+as its own task; nothing here should half-implement it.
+
 ## 4. Entities
 
 ### 4.1 Product (aggregate root)
