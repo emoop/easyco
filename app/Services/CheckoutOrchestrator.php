@@ -6,6 +6,7 @@ use App\Services\Exceptions\CartClaimLostException;
 use App\Services\Exceptions\CartNotFoundForCheckoutException;
 use App\Services\Exceptions\EmptyCartException;
 use App\Services\Exceptions\PromotionNoLongerValidException;
+use App\Services\Exceptions\SaleLineOrderReconciliationException;
 use DateTimeImmutable;
 use EasyCo\Address\Address;
 use EasyCo\Cart\Cart;
@@ -17,7 +18,6 @@ use EasyCo\Order\Enums\OrderDeliveryType;
 use EasyCo\Order\Order;
 use EasyCo\OperationalSales\Enums\Channel;
 use EasyCo\OperationalSales\Enums\SaleLineStatus;
-use EasyCo\OperationalSales\Enums\SaleLineType;
 use EasyCo\OperationalSales\Contracts\TransactionRepository;
 use EasyCo\OperationalSales\SaleLine;
 use EasyCo\OperationalSales\Transaction;
@@ -91,6 +91,7 @@ final class CheckoutOrchestrator
         private readonly TransactionRepository $transactions,
         private readonly PaymentRepository $payments,
         private readonly PaymentMethodAdapterResolver $adapterResolver,
+        private readonly SaleLineSnapshotBuilder $saleLineSnapshotBuilder,
     ) {
     }
 
@@ -211,7 +212,7 @@ final class CheckoutOrchestrator
         }
 
         // Step 3/4: live-revalidate the applied promotion, if any.
-        [$appliedPromotion, $discount] = $this->resolvePromotion($cart, $subtotal, $pricingResults, $input->accountId);
+        [$appliedPromotion, $discount, $perLineShares] = $this->resolvePromotion($cart, $subtotal, $pricingResults, $input->accountId);
 
         // Step 5: resolve the Address.
         $address = $this->resolveAddress($input);
@@ -225,25 +226,58 @@ final class CheckoutOrchestrator
             $this->stockLevels->decrease($line->variationId(), $line->quantity());
         }
 
-        // Step 8: Transaction + one SaleLine per line.
+        // Step 8: Transaction + one full-snapshot SALE SaleLine per line,
+        // via the one app-layer builder (operational-sales-domain-
+        // design.md §3.13 E-D4/D1) — Web Checkout always passes a zero
+        // per-line discretionaryDiscount (E-D3: no discretionary-discount
+        // UI exists on the storefront; the field itself is per-line, not
+        // per-cart — see SaleLineSnapshotBuilder's own class docblock).
         $transaction = new Transaction(null, Channel::WEB);
 
-        foreach ($pricingResults as $result) {
-            $transaction->addSaleLine(new SaleLine(
-                id: null,
-                transactionId: '',
-                clientId: $client->id(),
-                priceableId: $result->variationId(),
-                type: SaleLineType::SALE,
-                status: SaleLineStatus::COMPLETED,
-                quantity: $result->quantity(),
-                amount: $result->amount(),
-                profit: $result->profit(),
-                recordedAt: $placedAt,
-                effectiveAt: $placedAt,
-                productName: $result->productName(),
-                sku: $result->sku(),
-            ));
+        $builderLines = [];
+        foreach ($pricingResults as $index => $result) {
+            $builderLines[] = [
+                'variationId' => $result->variationId(),
+                'quantity' => $result->quantity(),
+                'regularUnitPrice' => $result->regularUnitPrice(),
+                'finalUnitPrice' => $result->unitPrice(),
+                'unitCost' => $result->unitCost(),
+                'productName' => $result->productName(),
+                'sku' => $result->sku(),
+                'promotionDiscountShare' => $perLineShares[$index],
+                'discretionaryDiscount' => Money::zero($currency),
+            ];
+        }
+
+        $saleLines = $this->saleLineSnapshotBuilder->buildForCart(
+            lines: $builderLines,
+            transactionId: '',
+            clientId: $client->id(),
+            status: SaleLineStatus::COMPLETED,
+            recordedAt: $placedAt,
+            effectiveAt: $placedAt,
+        );
+
+        // D6 — order-level reconciliation, checked as early as possible:
+        // BEFORE either the Transaction or the Order is written, not
+        // after. Order.total is always subtotal->subtract(discount)
+        // exactly (Order::create()'s own docblock/computation) — computed
+        // directly here rather than waiting for a real Order instance,
+        // since nothing else about that computation depends on the Order
+        // object itself. operational-sales-domain-design.md §3.13's own
+        // Invariants section names exactly these two sums and states they
+        // "should never actually fire in production" if the Promotion
+        // allocation rule is implemented correctly — the same cheap,
+        // always-on corruption-detector posture as SaleLine::create()'s
+        // own formula checks, not routine defensive programming against
+        // an expected failure. Holds only as long as checkout-domain-
+        // design.md §10 still holds (Order.total has no shipping
+        // component) — see that section's own note for what changes the
+        // day shipping is added.
+        $this->assertSaleLinesReconcileWithOrder($saleLines, $discount, $subtotal->subtract($discount));
+
+        foreach ($saleLines as $saleLine) {
+            $transaction->addSaleLine($saleLine);
         }
 
         $this->transactions->save($transaction);
@@ -312,8 +346,21 @@ final class CheckoutOrchestrator
      * CartController::resolvePromotion() calls, so the per-setting query
      * guards live in exactly one place, not two.
      *
+     * D3 — RETURNS A PER-LINE SHARE FOR EVERY PRICED LINE, not just the
+     * applicable ones: $applicableLines used to be rebuilt via
+     * array_values(array_filter(...)), which lost each applicable line's
+     * original index into $pricingResults — needed to map
+     * PromotionDiscountResult::perLineShares() (itself positionally
+     * aligned with whatever array $applicableLines was) back onto the
+     * right line. array_filter() alone (no array_values()) keeps the
+     * original keys, so $applicableLines' keys ARE $pricingResults'
+     * original indices; zipping perLineShares() back onto those same
+     * keys, then filling every non-applicable index with zero, produces
+     * $perLineShares indexed 0..count($pricingResults)-1 exactly like
+     * $pricingResults itself — no second allocation, no order desync.
+     *
      * @param array<int, CheckoutLinePricingResult> $pricingResults
-     * @return array{0: ?Promotion, 1: Money} [appliedPromotion, discount]
+     * @return array{0: ?Promotion, 1: Money, 2: array<int, Money>} [appliedPromotion, discount, perLineShares]
      */
     private function resolvePromotion(
         Cart $cart,
@@ -324,7 +371,9 @@ final class CheckoutOrchestrator
         $code = $cart->appliedPromotionCode();
 
         if ($code === null) {
-            return [null, Money::zero($subtotal->currency())];
+            $zeroShares = array_fill(0, count($pricingResults), Money::zero($subtotal->currency()));
+
+            return [null, Money::zero($subtotal->currency()), $zeroShares];
         }
 
         $promotion = $this->promotions->findByCode($code);
@@ -359,14 +408,55 @@ final class CheckoutOrchestrator
         }
 
         $applicableIds = array_flip($validation->applicableVariationIds());
-        $applicableLines = array_values(array_filter(
+        $applicableLines = array_filter(
             $validatorLines,
             static fn (array $line) => isset($applicableIds[$line['variationId']])
-        ));
+        );
 
-        $discountResult = $this->promotionDiscountCalculator->calculate($promotion, $applicableLines);
+        $discountResult = $this->promotionDiscountCalculator->calculate($promotion, array_values($applicableLines));
 
-        return [$promotion, $discountResult->amount()];
+        $sharesByOriginalIndex = array_combine(array_keys($applicableLines), $discountResult->perLineShares());
+
+        $perLineShares = [];
+        foreach ($validatorLines as $index => $line) {
+            $perLineShares[$index] = $sharesByOriginalIndex[$index] ?? Money::zero($subtotal->currency());
+        }
+
+        return [$promotion, $discountResult->amount(), $perLineShares];
+    }
+
+    /**
+     * D6 — see the call site's own comment for why this check exists and
+     * when it's expected to actually fire.
+     *
+     * @param SaleLine[] $saleLines
+     *
+     * @throws SaleLineOrderReconciliationException
+     */
+    private function assertSaleLinesReconcileWithOrder(array $saleLines, Money $discount, Money $orderTotal): void
+    {
+        $currency = $discount->currency();
+        $shareSum = Money::zero($currency);
+        $netPaidSum = Money::zero($currency);
+
+        foreach ($saleLines as $saleLine) {
+            $shareSum = $shareSum->add($saleLine->promotionDiscountShare());
+            $netPaidSum = $netPaidSum->add($saleLine->netPaidAmount());
+        }
+
+        if (! $shareSum->equals($discount)) {
+            throw new SaleLineOrderReconciliationException(
+                "Sum of SaleLine promotionDiscountShare ({$shareSum->minorValue()}) does not equal ".
+                "the order's discount ({$discount->minorValue()})."
+            );
+        }
+
+        if (! $netPaidSum->equals($orderTotal)) {
+            throw new SaleLineOrderReconciliationException(
+                "Sum of SaleLine netPaidAmount ({$netPaidSum->minorValue()}) does not equal ".
+                "the order's total ({$orderTotal->minorValue()})."
+            );
+        }
     }
 
     private function resolveAddress(CheckoutInput $input): Address

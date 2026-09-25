@@ -9,6 +9,17 @@ use EasyCo\Pricing\Money;
  * orchestration needs, per line, to eventually build a SaleLine
  * (checkout-domain-design.md §8.3 step 8) and contribute to Order's
  * subtotal (§8.3 step 4).
+ *
+ * NO profit()/costRecorded() HERE — removed in operational-sales-domain-
+ * design.md §3.13 stage 4a's own review: this class's pre-promotion
+ * profit (amount - unitCost x quantity) became dead the moment
+ * App\Services\SaleLineSnapshotBuilder started computing the real,
+ * post-promotion profit (D4 — on net) as the ONE place profit is
+ * computed for a checkout SALE line. Confirmed via a full-repo grep
+ * before removing: no production code read either accessor (only this
+ * class's own now-updated test did). unitCost() alone is what
+ * SaleLineSnapshotBuilder actually needs; costRecorded() was always
+ * exactly unitCost() !== null, so it added no information of its own.
  */
 final class CheckoutLinePricingResult
 {
@@ -19,10 +30,10 @@ final class CheckoutLinePricingResult
         private readonly ?string $productId,
         private readonly array $matchingScopeReferenceIds,
         private readonly bool $isDiscounted,
+        private readonly Money $regularUnitPrice,
         private readonly Money $unitPrice,
         private readonly Money $amount,
-        private readonly Money $profit,
-        private readonly bool $costRecorded,
+        private readonly ?Money $unitCost,
         private readonly ?string $productName,
         private readonly ?string $sku,
     ) {
@@ -35,10 +46,10 @@ final class CheckoutLinePricingResult
         ?string $productId,
         array $matchingScopeReferenceIds,
         bool $isDiscounted,
+        Money $regularUnitPrice,
         Money $unitPrice,
         Money $amount,
-        Money $profit,
-        bool $costRecorded,
+        ?Money $unitCost,
         ?string $productName,
         ?string $sku,
     ): self {
@@ -48,10 +59,10 @@ final class CheckoutLinePricingResult
             $productId,
             $matchingScopeReferenceIds,
             $isDiscounted,
+            $regularUnitPrice,
             $unitPrice,
             $amount,
-            $profit,
-            $costRecorded,
+            $unitCost,
             $productName,
             $sku,
         );
@@ -103,6 +114,23 @@ final class CheckoutLinePricingResult
         return $this->isDiscounted;
     }
 
+    /**
+     * D2 (operational-sales-domain-design.md §3.13 stage 4a) — level 2's
+     * regular component, per unit, as the store showed it at the moment
+     * of sale. Discarded before this stage; carried now so
+     * SaleLineSnapshotBuilder can pass it straight into
+     * SaleLine::create()'s regularUnitPrice without re-resolving the
+     * PriceQuote a second time.
+     */
+    public function regularUnitPrice(): Money
+    {
+        return $this->regularUnitPrice;
+    }
+
+    /**
+     * Level 2's final component, per unit — unchanged meaning, this is
+     * "today's" unitPrice §0 already documented.
+     */
     public function unitPrice(): Money
     {
         return $this->unitPrice;
@@ -113,22 +141,18 @@ final class CheckoutLinePricingResult
         return $this->amount;
     }
 
-    public function profit(): Money
-    {
-        return $this->profit;
-    }
-
     /**
-     * False means profit() is a KNOWN DISTORTION, not a real number —
-     * checkout-domain-design.md §9.3: this line's priceable had no
-     * recorded ProductCost, so cost was treated as zero, showing
-     * 100%-margin profit until the merchant fills it in. Exposed here
-     * specifically so a future reporting layer can flag/exclude these
-     * rather than silently trusting them.
+     * The raw cost value itself — null means genuinely unknown
+     * (checkout-domain-design.md §9.3 / operational-sales-domain-
+     * design.md §3.13 Q2), never treated as zero. Carried for
+     * SaleLineSnapshotBuilder to snapshot onto SaleLine::create()'s
+     * unitCost, and for it alone to compute profit — see this class's
+     * own docblock for why no profit/costRecorded accessor lives here
+     * any more.
      */
-    public function costRecorded(): bool
+    public function unitCost(): ?Money
     {
-        return $this->costRecorded;
+        return $this->unitCost;
     }
 
     /**

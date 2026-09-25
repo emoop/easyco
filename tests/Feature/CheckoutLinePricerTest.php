@@ -97,29 +97,32 @@ class CheckoutLinePricerTest extends TestCase
     }
 
     /**
-     * checkout-domain-design.md §9.3's own "known distortion, visible
-     * not hidden" point: no recorded cost means profit == amount
-     * (100%-margin), and costRecorded() surfaces that it's not a real
-     * number.
+     * checkout-domain-design.md §9.3 / operational-sales-domain-design.md
+     * §3.13 Q2's own distinction: no recorded ProductCost means
+     * unitCost() is null — genuinely unknown, never treated as zero.
+     * profit()/costRecorded() no longer exist on this result (removed in
+     * §3.13 stage 4a's own review — SaleLineSnapshotBuilder is now the
+     * ONE place profit is computed, on net; see this test file's own
+     * class docblock note in CheckoutLinePricingResult.php).
      */
-    public function test_a_line_with_no_recorded_cost_shows_the_full_amount_as_profit_and_flags_cost_not_recorded(): void
+    public function test_a_line_with_no_recorded_cost_has_a_null_unit_cost(): void
     {
         $variationId = $this->pricedPurchasableVariation('10.00');
 
         $result = $this->pricer()->priceLine($variationId, 2, 'EUR');
 
         $this->assertSame(2000, $result->amount()->minorValue());
-        $this->assertSame(2000, $result->profit()->minorValue());
-        $this->assertFalse($result->costRecorded());
+        $this->assertNull($result->unitCost());
     }
 
     /**
-     * The real correction this task makes: cost must scale by quantity,
-     * the same way amount already does. quantity 3 * (10.00 - 4.00) =
-     * 18.00 profit — NOT 30.00 - 4.00 = 26.00, the wrong answer the
-     * original, unscaled §9.3 formula would have given.
+     * unitCost() is a PER-UNIT value — quantity must never scale it here
+     * (that scaling now happens exactly once, inside
+     * SaleLineSnapshotBuilder's own profit formula — see
+     * SaleLineSnapshotBuilderTest::test_profit_on_net_with_a_known_cost()
+     * for the quantity-3 case this test file used to cover directly).
      */
-    public function test_cost_scales_with_quantity_not_just_amount(): void
+    public function test_unit_cost_is_the_same_regardless_of_quantity(): void
     {
         $variationId = $this->pricedPurchasableVariation('10.00');
         $this->setCost($variationId, '4.00');
@@ -127,9 +130,7 @@ class CheckoutLinePricerTest extends TestCase
         $result = $this->pricer()->priceLine($variationId, 3, 'EUR');
 
         $this->assertSame(3000, $result->amount()->minorValue());
-        $this->assertSame(1800, $result->profit()->minorValue());
-        $this->assertNotSame(2600, $result->profit()->minorValue());
-        $this->assertTrue($result->costRecorded());
+        $this->assertSame(400, $result->unitCost()->minorValue());
     }
 
     public function test_a_simple_quantity_one_line_with_a_recorded_cost(): void
@@ -140,8 +141,7 @@ class CheckoutLinePricerTest extends TestCase
         $result = $this->pricer()->priceLine($variationId, 1, 'EUR');
 
         $this->assertSame(1000, $result->amount()->minorValue());
-        $this->assertSame(600, $result->profit()->minorValue());
-        $this->assertTrue($result->costRecorded());
+        $this->assertSame(400, $result->unitCost()->minorValue());
     }
 
     public function test_product_id_matches_the_lines_real_product(): void
