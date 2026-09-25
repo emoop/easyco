@@ -6,6 +6,9 @@ use App\Filament\Resources\ProductResource;
 use App\Providers\CatalogSkuGeneratorServiceProvider;
 use App\Services\ActivityLogger;
 use App\Services\ArchiveProductMediaCleaner;
+use App\Services\CatalogDeletion;
+use App\Services\VariationDeletionImpact;
+use App\Services\VariationDeletionRefusalMessage;
 use App\Services\ProductPricingAndStock;
 use App\Settings\Contracts\SiteSettingsRepository;
 use EasyCo\Catalog\Contracts\ProductCategoryRepository;
@@ -21,6 +24,7 @@ use EasyCo\Catalog\Exceptions\CannotPublishEmptyVariableProductException;
 use EasyCo\Catalog\Exceptions\DuplicateVariationCombinationException;
 use EasyCo\Catalog\Exceptions\InvalidVariationAxisException;
 use EasyCo\Catalog\Exceptions\UnsafeAxisRedeclarationException;
+use EasyCo\Catalog\Exceptions\VariationNotDeletableException;
 use EasyCo\Catalog\Exceptions\VariationNotRestorableException;
 use EasyCo\Catalog\Persistence\Eloquent\AttributeDefinitionModel;
 use EasyCo\Catalog\Persistence\Eloquent\AttributeValueModel;
@@ -49,6 +53,7 @@ use EasyCo\Media\VariationMediaCountGuard;
 use EasyCo\Media\VideoCountGuard;
 use EasyCo\Staff\Enums\Permission;
 use Filament\Actions\Action;
+use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Hidden;
@@ -68,6 +73,7 @@ use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Filament\Support\Exceptions\Halt;
+use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
 use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
@@ -824,6 +830,16 @@ class EditVariableProduct extends EditRecord
                         ->modalSubmitActionLabel(__('products.variation_archive.confirm_submit'))
                         ->modalCancelActionLabel(__('products.variation_archive.confirm_cancel'));
                 })
+                // THE HARD DELETE (catalog-domain-design.md §3.19.8 A) — a
+                // SECOND per-row action, deliberately not a change to the
+                // archive control above: removing a row from this Repeater
+                // IS the archive signal updateProduct() acts on, and it must
+                // keep meaning exactly that. Repeater implements
+                // HasExtraItemActions (the archived_variations Repeater's own
+                // Restore action already relies on it), so both controls sit
+                // in the same row's action group: Archive (reversible) and
+                // Delete permanently (not).
+                ->extraItemActions([$this->deleteVariationAction()])
                 // Genuinely drag-and-drop reorderable — Filament's own
                 // Repeater default (confirmed against its installed
                 // source: $isReorderable = true,
@@ -3053,5 +3069,381 @@ class EditVariableProduct extends EditRecord
                 sortOrder: $sortOrder,
             ));
         }
+    }
+
+    /**
+     * The per-row "delete permanently" Action — catalog-domain-design.md
+     * §3.19.8 A, §3.19.9's permission, §3.19.10's log.
+     *
+     * WHAT THE MODAL SHOWS IS App\Services\VariationDeletionImpact, never a
+     * number recomputed here: the same service that will run the delete
+     * produces the counts and the refusal reason, so the modal cannot
+     * promise something the delete then refuses, or hide a refusal the
+     * delete would enforce.
+     *
+     * REFUSAL = NO DELETE BUTTON, not a disabled one. When the impact is
+     * not deletable the modal body carries the domain's own sentence
+     * (VariationNotDeletableException's message, §3.19.8 D) plus a pointer
+     * at the archive control sitting in the same row's action group, and
+     * ->modalSubmitAction() returns false so the footer has only Cancel.
+     *
+     * WHEN IT IS DELETABLE the two confirmations live in the action's own
+     * Filament schema, which gives three independent gates rather than one:
+     * the browser will not submit the modal form while the checkbox/field
+     * are empty (Filament wraps an action schema in a real <form>), Filament
+     * validates that schema before the action body runs (an EXACT-match rule
+     * on the typed SKU, not merely "non-empty"), and the PRIVATE
+     * deleteVariationById() re-checks both itself — the only check that
+     * actually matters, since the schema and its validation are UI
+     * affordances a crafted request can skip entirely.
+     *
+     * A DEVIATION FROM §3.19.8's WORDING, STATED RATHER THAN DISCOVERED
+     * LATER: the submit button is not rendered *disabled* until both fields
+     * are satisfied — it is rendered, and submitting before they are
+     * satisfied is rejected (inline errors, modal stays open, nothing
+     * deleted). Filament offers no supported way to drive a modal footer
+     * button's disabled() from the modal schema's own state: footer buttons
+     * are built by CanOpenModal::makeModalAction() as fresh Actions that
+     * never receive the schema component, so a `disabled(fn (Get $get) => …)`
+     * there would be evaluated with no component bound — at RENDER time, for
+     * every row on the page — and would fail rather than degrade. Reaching
+     * the same end state through validation is the faithful adaptation.
+     *
+     * PERMISSION: ->visible() hides the button from staff without
+     * PRODUCT_DELETE, and the private deleteVariationById() checks it AGAIN
+     * as its first statement — visibility is a UI affordance, never
+     * authorization (§3.19.9). Its other gate is ownership: the variation
+     * must belong to the product this page edits, so a crafted request that
+     * rewrites a row's variation_id cannot reach another product's data.
+     */
+    private function deleteVariationAction(): Action
+    {
+        return Action::make('delete_variation')
+            ->label(__('products.deletion.button_label'))
+            ->icon('heroicon-o-trash')
+            ->color('danger')
+            ->visible(fn (): bool => ProductResource::staffHasPermission(Permission::PRODUCT_DELETE))
+            ->modalHeading(__('products.deletion.confirm_heading'))
+            ->modalSubmitActionLabel(__('products.deletion.confirm_submit'))
+            ->modalCancelActionLabel(__('products.deletion.confirm_cancel'))
+            ->modalContent(
+                fn (array $arguments, Repeater $component): ?View => $this->deletionImpactView($arguments, $component)
+            )
+            ->modalSubmitAction(function (Action $action, array $arguments, Repeater $component): Action|false {
+                $impact = $this->variationDeletionImpact($arguments, $component);
+
+                return $impact !== null && $impact->isDeletable() ? $action : false;
+            })
+            ->schema(
+                fn (array $arguments, Repeater $component): array => $this->deletionConfirmationFields($arguments, $component)
+            )
+            ->action(function (array $data, array $arguments, Repeater $component, $livewire): void {
+                $variationId = $this->variationIdForItem($arguments, $component);
+
+                if ($variationId === null) {
+                    return;
+                }
+
+                $livewire->deleteVariationById($variationId, $data);
+            });
+    }
+
+    /** @return array<int, \Filament\Forms\Components\Component> */
+    private function deletionConfirmationFields(array $arguments, Repeater $component): array
+    {
+        $impact = $this->variationDeletionImpact($arguments, $component);
+
+        // Nothing to confirm when the delete is already refused: that modal
+        // has no submit button at all (deleteVariationAction()), so asking
+        // for a confirmation it will never use would be indistinguishable
+        // from a working control.
+        if ($impact === null || ! $impact->isDeletable()) {
+            return [];
+        }
+
+        return [
+            Checkbox::make('understand_permanent')
+                ->label(__('products.deletion.field_confirm_label'))
+                ->accepted()
+                ->required(),
+            TextInput::make('sku_confirmation')
+                ->label(__('products.deletion.field_sku_label', ['sku' => $impact->sku]))
+                ->required()
+                // EXACT match. Written as a closure that RETURNS a rule,
+                // not a bare Laravel rule closure: Filament evaluates
+                // anything passed to ->rule() with its own injectable
+                // parameters first, so a bare `function ($attribute, $value,
+                // $fail)` would be evaluated — and fail — before Laravel
+                // ever sees it (found by a real, failing test).
+                //
+                // Not Laravel's "in:…" either: that takes a comma-separated
+                // list, and a SKU may contain a comma, in which case the
+                // rule would silently accept the wrong half of it.
+                ->rule(fn (): \Closure => static function (string $attribute, mixed $value, \Closure $fail) use ($impact): void {
+                    if ((string) $value !== $impact->sku) {
+                        $fail(__('products.deletion.field_sku_mismatch'));
+                    }
+                }),
+        ];
+    }
+
+    /** The modal BODY — see the view itself for why modalContent() and not modalDescription(). */
+    private function deletionImpactView(array $arguments, Repeater $component): ?View
+    {
+        $impact = $this->variationDeletionImpact($arguments, $component);
+
+        if ($impact === null) {
+            return null;
+        }
+
+        return view('filament.product-resource.variation-deletion-impact', [
+            'impact' => $impact,
+            // Already localised — the view never builds a merchant-facing
+            // sentence of its own (see VariationDeletionRefusalMessage).
+            'refusalMessage' => $impact->refusal !== null
+                ? VariationDeletionRefusalMessage::for($impact->refusal)
+                : null,
+            'attributesLabel' => implode(', ', array_map(
+                static fn (array $attribute): string => $attribute['name'].': '.$attribute['value'],
+                $impact->attributes,
+            )),
+            'openCartLines' => $impact->cartLineCount - $impact->convertedCartLineCount,
+        ]);
+    }
+
+    /**
+     * The impact for the row this action was mounted on, computed ONCE per
+     * variation per request and memoized: the action's own modalContent,
+     * schema and modalSubmitAction are three separate evaluations of the
+     * same fact, and CatalogDeletion::impactForVariation() is several
+     * queries.
+     *
+     * NULL MEANS "NOT THIS PRODUCT'S VARIATION", and the modal is then
+     * empty with no delete button. That is not the same statement as "this
+     * variation cannot be deleted" — it is "this row is not a row of the
+     * product this page edits", which can only happen when the page's own
+     * state was tampered with (a row's `variation_id` is public Livewire
+     * state). See variationBelongsToEditedProduct(), and note that
+     * deleteVariationById() checks the same thing again before deleting:
+     * the modal is a UI affordance, that check is the gate.
+     *
+     * @var array<string, VariationDeletionImpact>
+     */
+    private array $variationDeletionImpacts = [];
+
+    private function variationDeletionImpact(array $arguments, Repeater $component): ?VariationDeletionImpact
+    {
+        $variationId = $this->variationIdForItem($arguments, $component);
+
+        if ($variationId === null || ! $this->variationBelongsToEditedProduct($variationId)) {
+            return null;
+        }
+
+        return $this->variationDeletionImpacts[$variationId]
+            ??= app(CatalogDeletion::class)->impactForVariation($variationId);
+    }
+
+    /**
+     * The product model this page edits, loaded once with its variations.
+     * Memoized deliberately: the page's own row lists and the per-row
+     * delete action both ask about it, and `$this->record` is the MODEL
+     * (a ProductModel), not the aggregate the ownership question is about.
+     *
+     * @var Product|null
+     */
+    private ?Product $editedProductWithVariations = null;
+
+    private bool $editedProductWithVariationsLoaded = false;
+
+    private function editedProductWithVariations(): ?Product
+    {
+        if (! $this->editedProductWithVariationsLoaded) {
+            $this->editedProductWithVariations = app(ProductRepository::class)
+                ->findByIdWithVariations((string) $this->record->id);
+
+            $this->editedProductWithVariationsLoaded = true;
+        }
+
+        return $this->editedProductWithVariations;
+    }
+
+    /**
+     * Does this variation belong to the product THIS PAGE edits?
+     *
+     * A regular UI path cannot ask otherwise — the row's variation id comes
+     * from this product's own aggregate — but a crafted request can rewrite
+     * `data.existing_variations.{row}.variation_id` (public Livewire state)
+     * to any id it likes, and the action resolves the row's id from exactly
+     * that state. Without this check, PRODUCT_DELETE on product A's page
+     * would delete product B's variation.
+     *
+     * A variation this method cannot find is not deletable through this
+     * page, for the same reason it is not in the aggregate at all: it is
+     * absent, already deleted, or belongs to another product.
+     */
+    private function variationBelongsToEditedProduct(string $variationId): bool
+    {
+        foreach ($this->editedProductWithVariations()?->variations() ?? [] as $candidate) {
+            if ((string) $candidate->id() === $variationId) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * The row's own variation id — array $arguments['item'] (the Repeater
+     * item key, bound by the Repeater's own view through
+     * HasMountableArguments::__invoke()) plus
+     * $component->getChildSchema($itemKey)?->getRawState()['variation_id'],
+     * the SAME confirmed-working pair the archive and restore actions in
+     * this class already use. Never Get $get — it would resolve against the
+     * Repeater's own state path rather than this row's (this class's own
+     * itemLabel() docblock documents that gap in full).
+     */
+    private function variationIdForItem(array $arguments, Repeater $component): ?string
+    {
+        $itemKey = $arguments['item'] ?? null;
+
+        $variationId = $itemKey !== null
+            ? ($component->getChildSchema($itemKey)?->getRawState()['variation_id'] ?? null)
+            : null;
+
+        return $variationId !== null ? (string) $variationId : null;
+    }
+
+    /**
+     * THE SERVER-SIDE GATE — everything the modal claims, re-decided here.
+     *
+     * PRIVATE, AND THAT IS A SECURITY PROPERTY, NOT STYLE. Livewire exposes
+     * every PUBLIC method of a component to the browser, so a public
+     * deleteVariationById(string $id, array $confirmation) would be a
+     * callable endpoint taking an arbitrary variation id and an arbitrary
+     * confirmation payload — no modal, no visible button, no product scope.
+     * The Action reaches it from INSIDE this class (its closure's scope is
+     * this class, which is what makes the private call legal) and nothing
+     * else can: a browser call to it is not routable at all.
+     *
+     * THREE GATES, IN THIS ORDER:
+     *  1. the permission (§3.19.9 — visibility is never authorization);
+     *  2. OWNERSHIP: the variation must belong to the product THIS page
+     *     edits. The row's own variation_id is public Livewire state, so a
+     *     crafted request can point the delete at another product's
+     *     variation; without this check, PRODUCT_DELETE held on product A's
+     *     page would delete product B's variation. The modal hides itself
+     *     for the same case, but this is the gate;
+     *  3. the confirmation values, re-validated rather than trusted.
+     *
+     * WHAT THIS IS NOT: a substitute for the service's own re-check.
+     * CatalogDeletion::deleteVariation() takes the stock lock, runs the
+     * locking history read and the domain guards inside its own transaction
+     * (§3.19.5) — the impact read below exists so the refusals are
+     * reachable BEFORE a transaction is opened, not so they can be trusted.
+     *
+     * REFUSALS ARE RENDERED, NOT COPIED: every merchant-facing sentence goes
+     * through VariationDeletionRefusalMessage, so a Bulgarian merchant reads
+     * Bulgarian while the exception keeps its own English wording for logs.
+     *
+     * ON SUCCESS THE PAGE IS RELOADED FROM THE DATABASE, not re-filled:
+     * §3.19.8 requires the merchant to be told that unsaved edits elsewhere
+     * on the page are discarded, and a real reload is the only honest way to
+     * honour that. This is the deliberate difference from
+     * restoreArchivedVariationById()'s own refreshVariationRows(), which
+     * preserves unsaved edits because a restore has nothing to discard.
+     *
+     * @param array<string, mixed> $confirmation
+     */
+    private function deleteVariationById(string $variationId, array $confirmation = []): void
+    {
+        if (! ProductResource::staffHasPermission(Permission::PRODUCT_DELETE)) {
+            Notification::make()
+                ->title(__('products.deletion.notification_unauthorized'))
+                ->danger()
+                ->send();
+
+            return;
+        }
+
+        if (! $this->variationBelongsToEditedProduct($variationId)) {
+            Notification::make()
+                ->title(__('products.deletion.not_on_this_product'))
+                ->danger()
+                ->send();
+
+            return;
+        }
+
+        try {
+            $impact = app(CatalogDeletion::class)->impactForVariation($variationId);
+        } catch (\InvalidArgumentException $e) {
+            // A stale page: another staff member already deleted this row.
+            Notification::make()->title($e->getMessage())->danger()->send();
+
+            return;
+        }
+
+        // THE REFUSAL PATH — the domain's reason, rendered in the current
+        // locale, and no delete attempted (§3.19.8 D).
+        if (! $impact->isDeletable()) {
+            Notification::make()
+                ->title(VariationDeletionRefusalMessage::for($impact->refusal))
+                ->danger()
+                ->send();
+
+            return;
+        }
+
+        if (! $this->deletionIsConfirmed($impact, $confirmation)) {
+            Notification::make()
+                ->title(__('products.deletion.notification_not_confirmed'))
+                ->danger()
+                ->send();
+
+            return;
+        }
+
+        try {
+            app(CatalogDeletion::class)->deleteVariation($variationId);
+        } catch (VariationNotDeletableException $e) {
+            // Reachable through a stale page: a sale line or stock landed
+            // between the impact read above and the service's own re-check
+            // inside its transaction. Rendered the same way as the refusal
+            // path — the reason is a fact, the sentence is the merchant's
+            // own locale.
+            Notification::make()
+                ->title(VariationDeletionRefusalMessage::for($e))
+                ->danger()
+                ->send();
+
+            return;
+        } catch (\LogicException $e) {
+            // The aggregate's own structural refusals: a UNIVERSAL
+            // variation, or one that no longer belongs to its product.
+            // Neither is a merchant-facing workflow, so the domain's English
+            // sentence is the right artefact here.
+            Notification::make()->title($e->getMessage())->danger()->send();
+
+            return;
+        }
+
+        Notification::make()
+            ->title(__('products.deletion.notification_success', ['sku' => $impact->sku]))
+            ->success()
+            ->send();
+
+        $this->redirect(ProductResource::getUrl('edit-variable', ['record' => $this->record]));
+    }
+
+    /**
+     * Both confirmations, re-checked — never "the modal only let them
+     * through": a Livewire call can carry any $data it likes.
+     *
+     * @param array<string, mixed> $confirmation
+     */
+    private function deletionIsConfirmed(VariationDeletionImpact $impact, array $confirmation): bool
+    {
+        return filter_var($confirmation['understand_permanent'] ?? false, FILTER_VALIDATE_BOOLEAN)
+            && (string) ($confirmation['sku_confirmation'] ?? '') === $impact->sku;
     }
 }
