@@ -14,6 +14,7 @@ use App\Filament\Resources\ProductResource\Pages\ViewProduct;
 use App\Services\ActivityLogger;
 use App\Services\DuplicateProduct;
 use App\Services\PriceDisplayFormatter;
+use App\Services\ProductPriceDisplay;
 use App\Services\ProductPricingAndStock;
 use App\Services\ProductPriceRangeProvider;
 use App\Services\ProductTimelinePromoter;
@@ -1503,20 +1504,28 @@ class ProductResource extends Resource
     }
 
     /**
-     * The table's own price-range display — replaces the old
-     * priceDisplayHtml()/priceMinorSubquery() pair (a correlated,
-     * un-ordered LIMIT 1 subquery over the FIRST variation's
-     * VARIATION-level item only, which is exactly why a VARIABLE
-     * product — and any product priced at PRODUCT level rather than
-     * VARIATION level — always showed "—", a real, confirmed defect,
-     * not a deliberate SIMPLE-only scope). Now backed by
-     * EasyCo\Pricing\PriceRange, resolved for the whole page in one
-     * batch via App\Services\ProductPriceRangeProvider (see the
-     * 'price_display' column's own ->getStateUsing() closure) — the
-     * same resolver-backed range both a VARIABLE and a SIMPLE product
-     * now render through identically, no more special-cased column.
+     * The table's own price-range display — a thin delegate, since
+     * Prompt D's D6, to App\Services\ProductPriceDisplay::rangeHtml(),
+     * which is now where the rule itself lives (the admin table and the
+     * sandbox storefront must render a price through ONE implementation,
+     * not two that have to be kept in sync by hand).
      *
-     * DISPLAY RULES (D1), exact:
+     * KEPT AS A PUBLIC STATIC METHOD rather than switching every call
+     * site to the service directly: the 'price_display' column's own
+     * ->getStateUsing() closure below and the pre-existing admin tests
+     * that call ProductResource::priceRangeHtml($range) directly
+     * (tests/Feature/ProductResourcePriceColumnTest.php — deliberately
+     * left untouched by D6, as the requirement states) both go through
+     * here, so the extraction is provably behaviour-preserving.
+     *
+     * The rule itself, unchanged and documented in full on the service:
+     * backed by EasyCo\Pricing\PriceRange, resolved for the whole page in
+     * one batch via App\Services\ProductPriceRangeProvider (see the
+     * 'price_display' column's own ->getStateUsing() closure) — the same
+     * resolver-backed range both a VARIABLE and a SIMPLE product render
+     * through identically, no special-cased column.
+     *
+     * DISPLAY RULES (D1), exact — still exactly these, no more:
      * - an empty range (nothing resolvable) → '—';
      * - otherwise render $priceRange->lowestFinalQuote(): the plain
      *   amount, or struck-through regular + final when that same quote
@@ -1530,30 +1539,14 @@ class ProductResource extends Resource
      *   explicitly deferred (see admin-panel-design.md's own §13.x
      *   entry for this pass).
      *
-     * Every amount is escaped (e()) exactly like the old
-     * priceDisplayHtml() did — ->html() on the column means this
-     * string is rendered unescaped by Filament, so anything
-     * interpolated into it must already be safe.
+     * Every amount is escaped (e()) inside the service, exactly like the
+     * old priceDisplayHtml() did — ->html() on the column means this
+     * string is rendered unescaped by Filament, so anything interpolated
+     * into it must already be safe.
      */
     public static function priceRangeHtml(?PriceRange $priceRange): string
     {
-        if ($priceRange === null || $priceRange->isEmpty()) {
-            return '—';
-        }
-
-        $lowestFinalQuote = $priceRange->lowestFinalQuote();
-        $formatter = app(PriceDisplayFormatter::class);
-
-        $regular = e($formatter->format($lowestFinalQuote->regular->gross()->decimalValue(), $lowestFinalQuote->regular->gross()->currency()));
-        $final = e($formatter->format($lowestFinalQuote->final->gross()->decimalValue(), $lowestFinalQuote->final->gross()->currency()));
-
-        $html = $lowestFinalQuote->isDiscounted() ? "<s>{$regular}</s> {$final}" : $final;
-
-        if (! $priceRange->hasUniformFinalPrice()) {
-            $html = e(__('products.price_from')).' '.$html;
-        }
-
-        return $html;
+        return app(ProductPriceDisplay::class)->rangeHtml($priceRange);
     }
 
     public static function getPages(): array
