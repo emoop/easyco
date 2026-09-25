@@ -118,6 +118,6 @@ The Feature suite runs against a **real MySQL database**, not an in-memory one �
 php artisan test
 ```
 
-Point your test database at a throwaway schema before running it — `RefreshDatabase` will drop and recreate every table.
+Point your test database at a throwaway schema before running it — `RefreshDatabase` will drop and recreate every table. Copy [`.env.testing.example`](.env.testing.example) to `.env.testing`, give it its own throwaway database name (e.g. `easyco_testing_sandbox`) and create that database once — the file's own comments explain why the name is per-worktree and why `php artisan config:clear` must run first (`composer test` does it).
 
 The domain packages also carry their own pure PHPUnit suites (no database, no Laravel) under `packages/EasyCo/*/tests/`, runnable independently.
