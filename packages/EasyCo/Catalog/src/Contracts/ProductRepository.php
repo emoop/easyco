@@ -3,6 +3,7 @@
 namespace EasyCo\Catalog\Contracts;
 
 use EasyCo\Catalog\Product;
+use EasyCo\Catalog\Variation;
 
 /**
  * Persistence contract for the Product aggregate. Implementations must
@@ -17,6 +18,31 @@ use EasyCo\Catalog\Product;
 interface ProductRepository
 {
     public function save(Product $product): void;
+
+    /**
+     * Force-deletes one variation row, and nothing else — the physical
+     * half of catalog-domain-design.md §3.19's variation deletion (G-D2).
+     *
+     * DELIBERATELY NARROW: it touches `catalog_variations` only, letting
+     * the database cascade that row's own catalog children
+     * (`catalog_variation_attribute_values`, `catalog_variation_media`).
+     * It must NOT touch `stock_levels`, `cart_lines`,
+     * `pricing_price_list_items` or `pricing_product_costs` — those are
+     * other domains' tables, and Catalog may never reach into them
+     * (CLAUDE.md rule 1); App\Services\CatalogDeletion removes them in the
+     * same transaction, before calling this.
+     *
+     * The caller also owns the transaction. There is no transaction here
+     * on purpose: this is one statement, and the surrounding delete must
+     * be atomic across four other domains' rows plus this one.
+     *
+     * withTrashed() + force-delete — never a plain delete(): VariationModel
+     * uses SoftDeletes, so a soft delete would leave the row occupying
+     * `sku` / `barcode` / `(product_id, attribute_signature)` forever (the
+     * opposite of §3.19.11's freed identifiers) and would still block
+     * `catalog_variations.product_id`'s restrict FK.
+     */
+    public function deleteVariation(Variation $variation): void;
 
     public function findById(string $id): ?Product;
 

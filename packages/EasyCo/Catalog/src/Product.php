@@ -1021,6 +1021,47 @@ final class Product
         return $variation;
     }
 
+    /**
+     * Removes a STANDARD variation from this aggregate — the domain half
+     * of catalog-domain-design.md §3.19's variation deletion (G-D2).
+     *
+     * THIS DELETES NOTHING, AND THAT IS THE POINT. It only detaches the
+     * variation from the in-memory collection, so a caller can go on to
+     * re-declare axes and generate replacements in the same instance.
+     * `EloquentProductRepository::save()` upserts the variations it is
+     * given and has no delete path at all, so "removed from the
+     * aggregate" and "row gone" stay two separately-authorized steps —
+     * the physical delete is the one that needs the cross-domain history
+     * check, and it must not be reachable through a plain save().
+     *
+     * The two guards here are the ones this aggregate can actually
+     * enforce: the variation must belong to this Product (§3.7's own
+     * ownership rule), and it must be STANDARD — a UNIVERSAL variation is
+     * deleted only together with its Product (G-D2). The history and
+     * stock checks are deliberately NOT here: Catalog may never query
+     * `operational_sales_sale_lines` or `stock_levels` (CLAUDE.md rule 1,
+     * operational-sales-domain-design.md §1). They live in
+     * App\Services\CatalogDeletion, which is the only caller that pairs
+     * this operation with an actual delete.
+     */
+    public function removeStandardVariation(Variation $variation): void
+    {
+        $key = array_search($variation, $this->variations, true);
+
+        if ($key === false) {
+            throw new \LogicException('This Variation does not belong to this Product.');
+        }
+
+        if ($variation->type() !== VariationType::STANDARD) {
+            throw new \LogicException(
+                'Only a STANDARD variation can be removed on its own; a UNIVERSAL variation is only '.
+                'ever deleted together with its Product.'
+            );
+        }
+
+        unset($this->variations[$key]);
+    }
+
     private function findArchivedVariationBySignature(VariationSignature $signature): ?Variation
     {
         foreach ($this->variations as $existing) {

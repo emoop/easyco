@@ -193,6 +193,25 @@ final class EloquentProductRepository implements ProductRepository
         DB::table('catalog_product_attributes')->insert($rows);
     }
 
+    /**
+     * See Contracts\ProductRepository::deleteVariation()'s own docblock for
+     * why this is one force-delete statement, why it touches
+     * `catalog_variations` only, and why it does not open a transaction of
+     * its own.
+     */
+    public function deleteVariation(Variation $variation): void
+    {
+        $variationId = $variation->id();
+
+        if ($variationId === null) {
+            throw new \InvalidArgumentException(
+                'Cannot delete a Variation that was never persisted — it has no id.'
+            );
+        }
+
+        VariationModel::withTrashed()->whereKey($variationId)->forceDelete();
+    }
+
     public function findById(string $id): ?Product
     {
         $model = ProductModel::find($id);
