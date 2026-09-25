@@ -24,6 +24,8 @@ use Filament\Resources\Resource;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Enums\FiltersLayout;
+use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Lang;
@@ -103,29 +105,42 @@ class OrderResource extends Resource
     }
 
     /**
-     * D3's own field's own real accepted shape, per column:
+     * D1 — the list's five columns, in order: Number (id), Date
+     * (placed_at), Recipient (name + email as a description line), Status
+     * (the order's OWN status, translated) and Total. Client, Channel,
+     * Payment method, Payment status and Item count are gone from the
+     * LIST only — every one of them still renders on the View page
+     * (channel and payment have their own sections there).
+     *
      *  - id: order number (there is no separate human-readable one —
-     *    §0's own note), searchable, default part of the sort tie-break.
+     *    §0's own note), searchable, still part of the sort tie-break.
      *  - placed_at: default sort, descending.
      *  - recipient_name (+ email as a description line): searchable
      *    against email specifically, per the task's own "Search: order
      *    id and email" — recipient_name itself is never matched, only
      *    displayed.
-     *  - client_name/channel/payment_method/payment_status/item_count:
-     *    OrderAdminReader::applyListAggregates()'s own computed columns,
-     *    plain display, not independently sortable (each is a
-     *    correlated subquery result, not a real indexed column — kept
-     *    simple rather than fighting Filament's sort-by-alias support
-     *    for columns nothing here requires sorting on).
+     *  - status: a real `orders` column, so unlike the removed computed
+     *    cells it is genuinely, safely sortable.
      *  - total: formatted through the same PriceDisplayFormatter every
      *    other price display in this admin panel already uses.
      *
-     * NO FILTERS — explicit task scope.
+     * D2 — ONE QUICK FILTER, RENDERED ABOVE THE TABLE
+     * (FiltersLayout::AboveContent, so it is visible without opening a
+     * filter dropdown): Payment method, single-select and clearable. A
+     * Channel filter was deliberately NOT built — the `orders` table only
+     * ever holds online orders, so it would always offer a single value.
+     * This Resource supplies only the label and the option list; the reads
+     * behind it belong to OrderAdminReader (D3) — the "latest payment row"
+     * definition reuses the exact subquery forOrder() uses, and the option
+     * list offers only methods that really are some order's latest
+     * payment.
      */
     public static function table(Table $table): Table
     {
         return $table
-            ->modifyQueryUsing(fn (Builder $query): Builder => app(OrderAdminReader::class)->applyListAggregates($query))
+            // No ->modifyQueryUsing() any more: all five columns above are
+            // real `orders` columns, so the list no longer needs any of the
+            // correlated subqueries the removed aggregate columns carried.
             // Tie-break for two orders with an identical placed_at: NO
             // explicit ->orderBy('id', 'desc') needed here — confirmed
             // against the installed source, not assumed.
@@ -155,32 +170,28 @@ class OrderResource extends Resource
                     // recipient_name itself — the task's own explicit
                     // "search: order id and email", nothing else.
                     ->searchable(['orders.email']),
-                TextColumn::make('client_name')
-                    ->label(__('orders.fields.client_name'))
-                    ->formatStateUsing(fn (?string $state): string => $state ?? __('orders.not_available')),
-                TextColumn::make('channel')
-                    ->label(__('orders.fields.channel'))
-                    ->formatStateUsing(fn (?string $state): string => static::optionLabel('channel', $state)),
-                TextColumn::make('payment_method')
-                    ->label(__('orders.fields.payment_method'))
-                    ->formatStateUsing(fn (?string $state): string => static::optionLabel('payment_method', $state)),
-                TextColumn::make('payment_status')
-                    ->label(__('orders.fields.payment_status'))
-                    ->badge()
-                    ->color(fn (?string $state): string => match ($state) {
-                        'captured' => 'success',
-                        'pending' => 'gray',
-                        'failed' => 'danger',
-                        default => 'gray',
-                    })
-                    ->formatStateUsing(fn (?string $state): string => static::optionLabel('payment_status', $state)),
-                TextColumn::make('item_count')
-                    ->label(__('orders.fields.item_count')),
+                TextColumn::make('status')
+                    ->label(__('orders.fields.status'))
+                    ->formatStateUsing(fn (?string $state): string => static::optionLabel('status', $state)),
                 TextColumn::make('total')
                     ->label(__('orders.fields.total'))
                     ->getStateUsing(fn (OrderModel $record): string => static::formatOrderMoney($record, 'total_minor')),
             ])
-            ->filters([]);
+            ->filters([
+                SelectFilter::make('payment_method')
+                    ->label(__('orders.fields.payment_method'))
+                    ->placeholder(__('orders.filters.all_payment_methods'))
+                    // Only methods that are some order's LATEST payment —
+                    // every option is guaranteed to match at least one row
+                    // (OrderAdminReader::paymentMethodOptions()).
+                    ->options(static::paymentMethodFilterOptions())
+                    // blank() covers both "never chosen" and "cleared" —
+                    // returning the query untouched is what makes clearing
+                    // the filter restore the full list.
+                    ->query(fn (Builder $query, array $data): Builder => blank($data['value'] ?? null)
+                        ? $query
+                        : app(OrderAdminReader::class)->applyLatestPaymentMethodFilter($query, (string) $data['value'])),
+            ], layout: FiltersLayout::AboveContent);
     }
 
     public static function getPages(): array
@@ -418,6 +429,35 @@ class OrderResource extends Resource
         $key = "orders.{$group}_options.{$state}";
 
         return Lang::has($key) ? __($key) : $state;
+    }
+
+    /**
+     * D2's filter option list — value => label. The VALUES come from
+     * OrderAdminReader (the one place every cross-table read for this
+     * section lives, D3); the LABELS come from optionLabel() above, so a
+     * method with no translation entry shows its raw value here exactly as
+     * it does everywhere else on this Resource.
+     *
+     * @return array<string, string>
+     */
+    private static function paymentMethodFilterOptions(): array
+    {
+        return static::labelledOptions(app(OrderAdminReader::class)->paymentMethodOptions(), 'payment_method');
+    }
+
+    /**
+     * @param string[] $values
+     * @return array<string, string>
+     */
+    private static function labelledOptions(array $values, string $group): array
+    {
+        $options = [];
+
+        foreach ($values as $value) {
+            $options[(string) $value] = static::optionLabel($group, (string) $value);
+        }
+
+        return $options;
     }
 
     /**

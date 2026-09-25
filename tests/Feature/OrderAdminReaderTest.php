@@ -158,25 +158,46 @@ class OrderAdminReaderTest extends TestCase
         return [$result->order(), $variationId];
     }
 
-    public function test_apply_list_aggregates_exposes_client_channel_item_count_and_latest_payment(): void
+    /**
+     * Replaces the removed applyListAggregates() test: the list's only
+     * reader-side read now is the payment-method filter (D3) — its option
+     * list AND its condition. The options are only methods that are some
+     * order's LATEST payment, so every offered option matches at least one
+     * order: a method that only ever appeared on a superseded (earlier)
+     * attempt is deliberately not offered.
+     */
+    public function test_the_payment_method_filter_options_are_only_methods_that_are_an_orders_latest_payment(): void
     {
-        [$order] = $this->placeGuestOrder(['quantity' => 3]);
+        [$first] = $this->placeGuestOrder(['email' => 'first@example.com']);
+        [$second] = $this->placeGuestOrder(['email' => 'second@example.com']);
 
-        $row = app(OrderAdminReader::class)->applyListAggregates(OrderModel::query())
-            ->where('id', $order->id())
-            ->first();
+        $reader = app(OrderAdminReader::class);
 
-        $this->assertNotNull($row);
-        $this->assertSame('Guest Buyer', $row->client_name);
-        $this->assertSame('web', $row->channel);
-        $this->assertSame(3, (int) $row->item_count);
-        $this->assertSame('cash_on_delivery', $row->payment_method);
-        // CashOnDeliveryPaymentMethodAdapter always answers PENDING.
-        $this->assertSame('pending', $row->payment_status);
-        $this->assertSame(1, (int) $row->payment_attempt_count);
+        // Both orders' latest payment is the checkout's own method.
+        $this->assertSame(['cash_on_delivery'], $reader->paymentMethodOptions());
+
+        // Supersede ONE order with a different method — a real, NEW payment
+        // row, per payment-domain-design.md §1's "a retry is a NEW row".
+        $latest = Payment::create($first->id(), 'bank_transfer', $first->total(), PaymentStatus::PENDING);
+        $latest->recordAttemptResult(PaymentStatus::CAPTURED, 'ref-latest', null, new DateTimeImmutable('+1 hour'));
+        app(PaymentRepository::class)->save($latest);
+
+        // Both are now somebody's latest payment.
+        $this->assertSame(['bank_transfer', 'cash_on_delivery'], $reader->paymentMethodOptions());
+
+        // Supersede the second order too: cash_on_delivery now exists as a
+        // payment row, but is nobody's latest — so it is no longer offered.
+        $secondLatest = Payment::create($second->id(), 'bank_transfer', $second->total(), PaymentStatus::PENDING);
+        $secondLatest->recordAttemptResult(PaymentStatus::CAPTURED, 'ref-second', null, new DateTimeImmutable('+2 hours'));
+        app(PaymentRepository::class)->save($secondLatest);
+
+        $this->assertSame(['bank_transfer'], $reader->paymentMethodOptions());
+
+        $this->assertSame(2, $reader->applyLatestPaymentMethodFilter(OrderModel::query(), 'bank_transfer')->count());
+        $this->assertSame(0, $reader->applyLatestPaymentMethodFilter(OrderModel::query(), 'cash_on_delivery')->count());
     }
 
-    public function test_apply_list_aggregates_shows_the_most_recent_payment_and_a_real_attempt_count(): void
+    public function test_for_order_shows_the_most_recent_payment_and_a_real_attempt_count(): void
     {
         [$order] = $this->placeGuestOrder();
 
@@ -196,13 +217,6 @@ class OrderAdminReaderTest extends TestCase
         $latest->recordAttemptResult(PaymentStatus::CAPTURED, 'ref-123', null, new DateTimeImmutable('+2 hours'));
         app(PaymentRepository::class)->save($latest);
 
-        $row = app(OrderAdminReader::class)->applyListAggregates(OrderModel::query())
-            ->where('id', $order->id())
-            ->first();
-
-        $this->assertSame('captured', $row->payment_status);
-        $this->assertSame(3, (int) $row->payment_attempt_count);
-
         $view = app(OrderAdminReader::class)->forOrder($order->id());
         $this->assertNotNull($view->latestPayment);
         $this->assertSame('captured', $view->latestPayment->status()->value);
@@ -210,7 +224,13 @@ class OrderAdminReaderTest extends TestCase
         $this->assertSame(3, $view->paymentAttemptCount);
     }
 
-    public function test_query_count_for_list_aggregates_is_independent_of_row_count(): void
+    /**
+     * The list's filter adds a NESTED condition, never another round trip —
+     * so a filtered page still costs exactly one query, whatever the number
+     * of orders it returns. Replaces the removed applyListAggregates()
+     * query-count test (there is no aggregate select list any more).
+     */
+    public function test_query_count_for_the_list_filter_is_independent_of_row_count(): void
     {
         for ($i = 0; $i < 25; $i++) {
             $this->placeGuestOrder(['email' => "buyer{$i}@example.com"]);
@@ -224,19 +244,30 @@ class OrderAdminReaderTest extends TestCase
             $count++;
         });
 
-        $reader->applyListAggregates(OrderModel::query())->whereIn('id', array_slice($ids, 0, 5))->get();
+        // The filter is active in both measurements — the only variable is
+        // the row count.
+        $reader->applyLatestPaymentMethodFilter(OrderModel::query(), 'cash_on_delivery')
+            ->whereIn('id', array_slice($ids, 0, 5))
+            ->get();
         $queriesForFive = $count;
         $count = 0;
 
-        $reader->applyListAggregates(OrderModel::query())->get();
+        $reader->applyLatestPaymentMethodFilter(OrderModel::query(), 'cash_on_delivery')->get();
         $queriesForTwentyFive = $count;
+        $count = 0;
+
+        // The option list behind that filter is ONE query too, however many
+        // orders exist (distinct latest methods, collapsed in the database).
+        $reader->paymentMethodOptions();
+        $queriesForOptions = $count;
 
         DB::flushQueryLog();
 
-        fwrite(STDERR, "\n[query-count] orders list, 5 rows: {$queriesForFive} queries, 25 rows: {$queriesForTwentyFive} queries\n");
+        fwrite(STDERR, "\n[query-count] orders list filter, 5 rows: {$queriesForFive} queries, 25 rows: {$queriesForTwentyFive} queries; payment-method options: {$queriesForOptions}\n");
 
-        $this->assertSame(1, $queriesForFive, 'every aggregate is a correlated subquery inside ONE select — one real query per page load');
+        $this->assertSame(1, $queriesForFive, 'the filter is a nested condition inside ONE query — one real query per page load');
         $this->assertSame($queriesForFive, $queriesForTwentyFive, 'query count must not grow with the number of rows on the page');
+        $this->assertSame(1, $queriesForOptions, 'the filter option list is ONE query regardless of how many orders exist');
     }
 
     public function test_for_order_returns_the_full_snapshot_for_an_order_with_a_promotion_and_a_street_address(): void
@@ -302,16 +333,15 @@ class OrderAdminReaderTest extends TestCase
     }
 
     /**
-     * Both applyListAggregates()'s item_count subquery and forOrder()'s
-     * $lines read use raw DB::table(), not Eloquent — SaleLineModel's own
-     * SoftDeletes global scope never applies to either, so a soft-deleted
-     * SALE line (never hard-deleted per design doc §3.2/SaleLineModel's own
-     * docblock — a correction is a future new row, not an in-place rewrite)
-     * had to be excluded explicitly or it would keep counting/rendering
-     * after being "removed". TWO lines, only ONE soft-deleted — proves
-     * exactly the deleted line drops out and the surviving one is
-     * untouched, not just that "the count goes to zero" (which a broken
-     * query that excluded everything would also satisfy).
+     * forOrder()'s $lines read uses raw DB::table(), not Eloquent —
+     * SaleLineModel's own SoftDeletes global scope never applies to it, so
+     * a soft-deleted SALE line (never hard-deleted per design doc §3.2/
+     * SaleLineModel's own docblock — a correction is a future new row, not
+     * an in-place rewrite) had to be excluded explicitly or it would keep
+     * rendering after being "removed". TWO lines, only ONE soft-deleted —
+     * proves exactly the deleted line drops out and the surviving one is
+     * untouched, not just that "the list goes empty" (which a broken query
+     * that excluded everything would also satisfy).
      */
     public function test_a_soft_deleted_sale_line_is_excluded_while_the_surviving_line_remains(): void
     {
@@ -342,13 +372,6 @@ class OrderAdminReaderTest extends TestCase
             ->value('id');
 
         DB::table('operational_sales_sale_lines')->where('id', $lineAId)->update(['deleted_at' => now()]);
-
-        $row = app(OrderAdminReader::class)->applyListAggregates(OrderModel::query())
-            ->where('id', $order->id())
-            ->first();
-
-        // Line A's quantity (1) is gone; only Line B's quantity (2) remains.
-        $this->assertSame(2, (int) $row->item_count);
 
         $view = app(OrderAdminReader::class)->forOrder($order->id());
         $this->assertCount(1, $view->lines);

@@ -17,7 +17,6 @@ return [
         'payment_method' => 'Payment method',
         'payment_status' => 'Payment status',
         'payment_attempts' => 'Payment attempts',
-        'item_count' => 'Items',
         'total' => 'Total',
         'subtotal' => 'Subtotal',
         'discount' => 'Discount',
@@ -84,6 +83,10 @@ return [
     'delivery_type_options' => [
         'street_address' => 'Street address',
         'pickup_point' => 'Pickup point',
+    ],
+
+    'filters' => [
+        'all_payment_methods' => 'All payment methods',
     ],
 
     'yes' => 'Yes',

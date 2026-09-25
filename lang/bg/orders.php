@@ -17,7 +17,6 @@ return [
         'payment_method' => 'Начин на плащане',
         'payment_status' => 'Статус на плащане',
         'payment_attempts' => 'Опити за плащане',
-        'item_count' => 'Артикули',
         'total' => 'Обща сума',
         'subtotal' => 'Междинна сума',
         'discount' => 'Отстъпка',
@@ -84,6 +83,10 @@ return [
     'delivery_type_options' => [
         'street_address' => 'Адрес',
         'pickup_point' => 'Офис на куриер',
+    ],
+
+    'filters' => [
+        'all_payment_methods' => 'Всички начини на плащане',
     ],
 
     'yes' => 'Да',

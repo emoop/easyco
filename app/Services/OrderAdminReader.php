@@ -25,15 +25,16 @@ use RuntimeException;
  * app-layer composition point CLAUDE.md rule 9 sanctions for exactly
  * this kind of cross-domain read.
  *
- * TWO READ SHAPES, BOTH SNAPSHOT-ONLY (D2) — NEVER RE-RESOLVED THROUGH
+ * READ SHAPES, ALL SNAPSHOT-ONLY (D2) — NEVER RE-RESOLVED THROUGH
  * CATALOG OR PRICING:
- *  - applyListAggregates(): adds the computed columns the Orders list
- *    page needs (client name, channel, item count, latest payment
- *    method/status) to a query Filament already built from OrderModel,
- *    the same "layer extra correlated-subquery selects onto the
- *    Resource's own query" shape ProductResource::table()'s own
- *    thumbnail_path subquery already establishes — one query for the
- *    whole page regardless of row count (D7), never an N+1 loop.
+ *  - The Orders list's quick filter (the order's LATEST payment method):
+ *    adds ONE condition to the query Filament already built from
+ *    OrderModel — still one query for the whole page regardless of row
+ *    count (D7), never an N+1 loop. The list itself needs no computed
+ *    column: it shows the order's own columns only, so the old
+ *    applyListAggregates() correlated-subquery select list was removed
+ *    together with the client/channel/item-count/latest-payment columns
+ *    that used it.
  *  - forOrder(): the single-order View page's full read, assembled from
  *    several small, targeted reads (never a loop over many rows, so the
  *    same query-count discipline does not apply the same way here — a
@@ -92,47 +93,49 @@ final class OrderAdminReader
     }
 
     /**
-     * Adds the Orders list page's own computed columns to a query
-     * Filament already built from OrderModel — mirrors
-     * ProductResource::table()'s own ->modifyQueryUsing() shape exactly
-     * (see this class's own docblock). Every added column is a single
-     * correlated subquery, so the whole page still costs one query
-     * regardless of row count (D7) — confirmed by a real query-count
-     * test, not assumed.
+     * The Orders list's payment-method filter options: the methods that
+     * are some order's LATEST payment — the very same "latest payment
+     * row" definition the filter itself matches on (D6), so every option
+     * offered is guaranteed to match at least one order. A method that
+     * only ever appeared on a superseded (earlier) attempt is deliberately
+     * NOT offered.
+     *
+     * Built by selecting latestPaymentColumnSubquery() ITSELF — one
+     * query, reused rather than re-derived: the correlated subquery is
+     * evaluated once per order row and DISTINCT collapses the results.
+     * NULL (an order with no payment row at all) is dropped in PHP rather
+     * than in SQL, so the "latest" rule stays expressed in exactly one
+     * place. Sorting is done in PHP too, so the read does not depend on
+     * ordering by a select alias.
+     *
+     * Labels are not this class's concern — the Resource maps each value
+     * through its own optionLabel().
+     *
+     * @return string[]
      */
-    public function applyListAggregates(Builder $query): Builder
+    public function paymentMethodOptions(): array
     {
-        return $query->addSelect([
-            'client_name' => DB::table('operational_sales_clients')
-                ->select('operational_sales_clients.name')
-                ->whereColumn('operational_sales_clients.id', 'orders.client_id')
-                ->limit(1),
-            'channel' => DB::table('operational_sales_transactions')
-                ->select('operational_sales_transactions.channel')
-                ->whereColumn('operational_sales_transactions.id', 'orders.transaction_id')
-                ->limit(1),
-            // COALESCE: an order whose Transaction genuinely has zero
-            // COMPLETED SALE lines (should not happen via Checkout, but
-            // D8's own fail-soft posture applies here too) must show 0,
-            // not a blank/NULL cell.
-            'item_count' => DB::table('operational_sales_sale_lines')
-                ->selectRaw('COALESCE(SUM(operational_sales_sale_lines.quantity), 0)')
-                ->whereColumn('operational_sales_sale_lines.transaction_id', 'orders.transaction_id')
-                ->where('operational_sales_sale_lines.type', SaleLineType::SALE->value)
-                ->where('operational_sales_sale_lines.status', SaleLineStatus::COMPLETED->value)
-                // These are raw DB::table() reads, not Eloquent — SaleLineModel's
-                // own SoftDeletes global scope (softDeletes() migration column,
-                // "never hard-deleted... historical record", that model's own
-                // docblock) never applies here, so a soft-deleted line must be
-                // excluded explicitly or it would double-count against its own
-                // correction.
-                ->whereNull('operational_sales_sale_lines.deleted_at'),
-            'payment_method' => $this->latestPaymentColumnSubquery('method'),
-            'payment_status' => $this->latestPaymentColumnSubquery('status'),
-            'payment_attempt_count' => DB::table('payments')
-                ->selectRaw('COUNT(*)')
-                ->whereRaw('payments.order_id = CAST(orders.id AS CHAR)'),
-        ]);
+        return DB::table('orders')
+            ->selectSub($this->latestPaymentColumnSubquery('method'), 'latest_payment_method')
+            ->distinct()
+            ->get()
+            ->pluck('latest_payment_method')
+            ->filter(fn (?string $method): bool => filled($method))
+            ->sort()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * D2's payment-method filter — BY THE SAME "latest payment row" RULE
+     * (D6) forOrder() applies, reusing latestPaymentColumnSubquery()
+     * itself rather than a second definition of "latest": an order whose
+     * earlier attempt was method A and whose latest attempt is method B
+     * matches B only, never A.
+     */
+    public function applyLatestPaymentMethodFilter(Builder $query, string $method): Builder
+    {
+        return $query->where($this->latestPaymentColumnSubquery('method'), '=', $method);
     }
 
     /**
@@ -186,9 +189,11 @@ final class OrderAdminReader
             ->where('transaction_id', $order->transactionId())
             ->where('type', SaleLineType::SALE->value)
             ->where('status', SaleLineStatus::COMPLETED->value)
-            // Same reasoning as applyListAggregates()'s own item_count
-            // subquery above — a raw DB::table() read, so SaleLineModel's
-            // SoftDeletes scope does not apply automatically here.
+            // A raw DB::table() read, so SaleLineModel's own SoftDeletes
+            // scope (softDeletes() column — "never hard-deleted...
+            // historical record") does not apply automatically here; a
+            // soft-deleted line must be excluded explicitly or a
+            // correction would keep rendering next to its own original.
             ->whereNull('deleted_at')
             ->orderBy('id')
             ->get()

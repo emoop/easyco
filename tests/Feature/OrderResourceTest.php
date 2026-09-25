@@ -15,7 +15,11 @@ use EasyCo\Catalog\Contracts\ProductRepository;
 use EasyCo\Catalog\Product;
 use EasyCo\Inventory\Contracts\StockLevelRepository;
 use EasyCo\Inventory\StockLevel;
+use EasyCo\Order\Enums\OrderStatus;
 use EasyCo\Order\Persistence\Eloquent\OrderModel;
+use EasyCo\Payment\Contracts\PaymentRepository;
+use EasyCo\Payment\Enums\PaymentStatus;
+use EasyCo\Payment\Payment;
 use EasyCo\Pricing\Contracts\PriceListItemRepository;
 use EasyCo\Pricing\Contracts\PriceListRepository;
 use EasyCo\Pricing\Enums\PriceListItemTargetType;
@@ -162,7 +166,10 @@ class OrderResourceTest extends TestCase
         $component = Livewire::test(ListOrders::class);
 
         $component->assertCanSeeTableRecords([OrderModel::find($order->id())]);
-        $component->assertTableColumnStateSet('item_count', 2, OrderModel::find($order->id()));
+        // 'item_count' used to be asserted here; that column was removed
+        // from the list by D1, so 'status' — a real `orders` column that
+        // took its place in the five-column set — is asserted instead.
+        $component->assertTableColumnStateSet('status', OrderStatus::PLACED->value, OrderModel::find($order->id()));
         $component->assertTableColumnStateSet('total', '50.00 €', OrderModel::find($order->id()));
     }
 
@@ -271,5 +278,159 @@ class OrderResourceTest extends TestCase
         $html = $this->get(OrderResource::getUrl('index'))->assertOk()->getContent();
 
         $this->assertStringNotContainsString('profit', strtolower($html));
+    }
+
+    /**
+     * D1 — exactly the five columns, in this order. Asserted on the
+     * table's own column set rather than the rendered HTML: the two new
+     * quick FILTERS reuse the Channel and Payment method labels above the
+     * table, so a plain "this string is absent" check on the page would be
+     * meaningless.
+     */
+    public function test_the_list_shows_exactly_the_five_decision_columns_in_order(): void
+    {
+        $this->actingAsStaffRole('Administrator');
+        $this->placeGuestOrder();
+
+        $columns = array_keys(Livewire::test(ListOrders::class)->instance()->getTable()->getColumns());
+
+        $this->assertSame(['id', 'placed_at', 'recipient_name', 'status', 'total'], $columns);
+
+        foreach (['client_name', 'channel', 'payment_method', 'payment_status', 'item_count'] as $removed) {
+            $this->assertNotContains($removed, $columns, "[{$removed}] was removed from the Orders list");
+        }
+    }
+
+    /**
+     * D2 — the payment-method filter matches the order's LATEST payment row
+     * (the same D6 definition the View page shows), never "any row": an
+     * order whose earlier attempt used method A and whose latest used
+     * method B appears under B only.
+     */
+    public function test_the_payment_method_filter_matches_the_latest_payment_row_only(): void
+    {
+        $this->actingAsStaffRole('Administrator');
+
+        // Payment method is the ONLY filter — a Channel filter was
+        // deliberately not built, since the orders table only ever holds
+        // online orders and it would always offer a single value.
+        $this->assertSame(
+            ['payment_method'],
+            array_keys(Livewire::test(ListOrders::class)->instance()->getTable()->getFilters()),
+        );
+
+        $order = $this->placeGuestOrder(['email' => 'latest-b@example.com']);
+        $other = $this->placeGuestOrder(['email' => 'still-a@example.com']);
+
+        // A LATER attempt with a different method — a real, NEW Payment row,
+        // per payment-domain-design.md §1's "a retry is a NEW row" rule.
+        $latest = Payment::create($order->id(), 'bank_transfer', $order->total(), PaymentStatus::PENDING);
+        $latest->recordAttemptResult(PaymentStatus::CAPTURED, 'ref-latest', null, new DateTimeImmutable('+1 hour'));
+        app(PaymentRepository::class)->save($latest);
+
+        $orderRecord = OrderModel::find($order->id());
+        $otherRecord = OrderModel::find($other->id());
+
+        // Found by its LATEST method...
+        Livewire::test(ListOrders::class)
+            ->filterTable('payment_method', 'bank_transfer')
+            ->assertCanSeeTableRecords([$orderRecord])
+            ->assertCanNotSeeTableRecords([$otherRecord]);
+
+        // ...and NOT by the earlier one, which only the other order still
+        // has as its latest attempt.
+        Livewire::test(ListOrders::class)
+            ->filterTable('payment_method', 'cash_on_delivery')
+            ->assertCanSeeTableRecords([$otherRecord])
+            ->assertCanNotSeeTableRecords([$orderRecord]);
+    }
+
+    /**
+     * Clearing the filter restores every row it had hidden — both through
+     * the table's own remove action and by setting the value back to blank.
+     */
+    public function test_clearing_the_payment_method_filter_restores_the_full_list(): void
+    {
+        $this->actingAsStaffRole('Administrator');
+
+        $cash = $this->placeGuestOrder(['email' => 'cash@example.com']);
+        $bank = $this->placeGuestOrder(['email' => 'bank@example.com']);
+
+        // A LATER attempt with a different method — a real, NEW Payment row,
+        // per payment-domain-design.md §1's "a retry is a NEW row" rule.
+        $latest = Payment::create($bank->id(), 'bank_transfer', $bank->total(), PaymentStatus::PENDING);
+        $latest->recordAttemptResult(PaymentStatus::CAPTURED, 'ref-bank', null, new DateTimeImmutable('+1 hour'));
+        app(PaymentRepository::class)->save($latest);
+
+        $cashRecord = OrderModel::find($cash->id());
+        $bankRecord = OrderModel::find($bank->id());
+
+        $component = Livewire::test(ListOrders::class)
+            ->filterTable('payment_method', 'bank_transfer')
+            ->assertCanSeeTableRecords([$bankRecord])
+            ->assertCanNotSeeTableRecords([$cashRecord]);
+
+        // Clearing through the table's own remove action...
+        $component->removeTableFilter('payment_method')->assertCanSeeTableRecords([$cashRecord, $bankRecord]);
+
+        // ...and clearing by setting the value back to blank both restore
+        // the full list.
+        $component->filterTable('payment_method', 'bank_transfer')->assertCanNotSeeTableRecords([$cashRecord]);
+        $component->filterTable('payment_method', null)->assertCanSeeTableRecords([$cashRecord, $bankRecord]);
+    }
+
+    /**
+     * The page's query count does not grow with the number of rows
+     * rendered — WITH or WITHOUT an active filter, and an active filter
+     * adds no queries of its own (D1/D3: the list has no per-row
+     * correlated subquery any more, and each filter is a nested condition
+     * inside the same single query).
+     */
+    public function test_list_query_count_is_identical_for_five_and_twenty_five_rows_with_and_without_a_filter(): void
+    {
+        $this->actingAsStaffRole('Administrator');
+
+        for ($i = 0; $i < 25; $i++) {
+            $this->placeGuestOrder(['email' => "buyer{$i}@example.com"]);
+        }
+
+        // ONE already-mounted component reused for every measurement — a
+        // second, separate Livewire::test() call re-mounts from scratch
+        // (its own auth/session bookkeeping), which is noise unrelated to
+        // the actual table query this test cares about.
+        $component = Livewire::test(ListOrders::class);
+
+        $count = 0;
+        DB::listen(function () use (&$count): void {
+            $count++;
+        });
+
+        $component->set('tableRecordsPerPage', 5)->call('$refresh');
+        $unfilteredForFive = $count;
+        $count = 0;
+
+        $component->set('tableRecordsPerPage', 25)->call('$refresh');
+        $unfilteredForTwentyFive = $count;
+        $count = 0;
+
+        // Choosing the filter is not part of the measurement — only the
+        // refresh that renders the filtered page is.
+        $component->filterTable('payment_method', 'cash_on_delivery');
+        $count = 0;
+
+        $component->set('tableRecordsPerPage', 5)->call('$refresh');
+        $filteredForFive = $count;
+        $count = 0;
+
+        $component->set('tableRecordsPerPage', 25)->call('$refresh');
+        $filteredForTwentyFive = $count;
+
+        DB::flushQueryLog();
+
+        fwrite(STDERR, "\n[query-count] orders list page — unfiltered 5/25 rows: {$unfilteredForFive}/{$unfilteredForTwentyFive} queries; filtered 5/25 rows: {$filteredForFive}/{$filteredForTwentyFive} queries\n");
+
+        $this->assertSame($unfilteredForFive, $unfilteredForTwentyFive, 'unfiltered: query count must not grow with the number of rows rendered');
+        $this->assertSame($filteredForFive, $filteredForTwentyFive, 'filtered: query count must not grow with the number of rows rendered');
+        $this->assertSame($unfilteredForFive, $filteredForFive, 'an active filter must not add queries to the page');
     }
 }
