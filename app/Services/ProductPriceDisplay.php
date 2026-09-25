@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use EasyCo\Pricing\Contracts\PriceQuote;
+use EasyCo\Pricing\Money;
 use EasyCo\Pricing\PriceRange;
 
 /**
@@ -86,12 +87,28 @@ final class ProductPriceDisplay
             return '—';
         }
 
-        // Every interpolated amount is escaped here, at the single place
-        // the string is built — a caller must not have to remember to
-        // escape it again (and a caller that did would double-escape).
-        $regular = e($this->formatter->format($quote->regular->gross()->decimalValue(), $quote->regular->gross()->currency()));
-        $final = e($this->formatter->format($quote->final->gross()->decimalValue(), $quote->final->gross()->currency()));
+        return $this->priceHtml($quote->regular->gross(), $quote->final->gross());
+    }
 
-        return $quote->isDiscounted() ? "<s>{$regular}</s> {$final}" : $final;
+    /**
+     * THE `<s>regular</s> final` UNIT OF THE RULE, for a caller that has
+     * two already-resolved Money amounts rather than a PriceQuote
+     * (e.g. the Orders admin View page reading a §3.13 sale-line
+     * snapshot's stored regular/final unit prices — admin-panel-
+     * design.md §14). quoteHtml() delegates here, so the markup exists in
+     * exactly one place; "regular and final differ" is the same condition
+     * PriceQuote::isDiscounted() expresses (gross regular != gross final),
+     * just without a quote to ask.
+     *
+     * Every interpolated amount is escaped here, at the single place the
+     * string is built — a caller must not have to remember to escape it
+     * again (and a caller that did would double-escape).
+     */
+    public function priceHtml(Money $regular, Money $final): string
+    {
+        $regularHtml = e($this->formatter->format($regular->decimalValue(), $regular->currency()));
+        $finalHtml = e($this->formatter->format($final->decimalValue(), $final->currency()));
+
+        return $regular->equals($final) ? $finalHtml : "<s>{$regularHtml}</s> {$finalHtml}";
     }
 }
