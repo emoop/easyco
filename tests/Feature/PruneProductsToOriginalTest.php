@@ -25,6 +25,7 @@ use EasyCo\Pricing\Enums\PriceListItemTargetType;
 use EasyCo\Pricing\Enums\PriceListMode;
 use EasyCo\Pricing\Money;
 use EasyCo\Pricing\Persistence\Eloquent\PriceListItemModel;
+use EasyCo\Pricing\Persistence\Eloquent\ProductCostModel;
 use EasyCo\Pricing\Price;
 use EasyCo\Pricing\PriceList;
 use EasyCo\Pricing\PriceListItem;
@@ -276,5 +277,92 @@ class PruneProductsToOriginalTest extends TestCase
             ->assertExitCode(0);
 
         $this->assertNull(VariationModel::withTrashed()->find($doomedVariationId));
+    }
+
+    public function test_the_shared_history_rule_still_trips_the_gate_on_a_soft_deleted_sale_line(): void
+    {
+        [$products] = $this->seedEightProducts();
+        [, $doomedVariationId] = $products[7];
+
+        $this->addSaleLine($doomedVariationId);
+
+        DB::table('operational_sales_sale_lines')
+            ->where('priceable_id', $doomedVariationId)
+            ->update(['deleted_at' => now()]);
+
+        $this->assertSame(
+            1,
+            DB::table('operational_sales_sale_lines')->whereNotNull('deleted_at')->count()
+        );
+
+        $this->artisan('products:prune-to-original', ['--execute' => true, '--force' => true])
+            ->expectsOutputToContain('SAFETY GATE TRIPPED')
+            ->assertExitCode(1);
+
+        $this->assertSame(8, ProductModel::count());
+        $this->assertSame(8, VariationModel::count());
+    }
+
+    /**
+     * §3.19.2's own gap list: pricing_product_costs,
+     * pricing_price_list_scopes and promotion_scopes were all missing from
+     * this command. None of them is a foreign key into the catalog, so
+     * nothing else would ever reach them — a missed one is a row pointing
+     * at a product that no longer exists.
+     */
+    public function test_execute_force_also_removes_the_three_configuration_tables_the_command_used_to_miss(): void
+    {
+        [$products, $priceListId] = $this->seedEightProducts();
+
+        [$doomedProductId, $doomedVariationId] = $products[7];
+        [$keptProductId, $keptVariationId] = $products[0];
+
+        ProductCostModel::create(['priceable_id' => $doomedVariationId, 'cost_amount_minor' => 1000, 'cost_currency' => 'EUR']);
+        ProductCostModel::create(['priceable_id' => $keptVariationId, 'cost_amount_minor' => 2000, 'cost_currency' => 'EUR']);
+
+        $promotionId = DB::table('promotions')->insertGetId([
+            'code' => 'PROMO-1',
+            'discount_type' => 'percentage',
+            'status' => 'active',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        foreach ([$doomedProductId, $keptProductId] as $productId) {
+            DB::table('pricing_price_list_scopes')->insert([
+                'price_list_id' => $priceListId,
+                'scope_type' => 'product',
+                'scope_reference_id' => (string) $productId,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            DB::table('promotion_scopes')->insert([
+                'promotion_id' => $promotionId,
+                'scope_type' => 'product',
+                'scope_reference_id' => (string) $productId,
+                'mode' => 'include',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
+
+        $this->assertSame(2, DB::table('pricing_product_costs')->count());
+        $this->assertSame(2, DB::table('pricing_price_list_scopes')->count());
+        $this->assertSame(2, DB::table('promotion_scopes')->count());
+
+        $this->artisan('products:prune-to-original', ['--execute' => true, '--force' => true])
+            ->expectsOutputToContain('Prune complete')
+            ->assertExitCode(0);
+
+        $this->assertSame(0, DB::table('pricing_product_costs')->where('priceable_id', $doomedVariationId)->count());
+        $this->assertSame(0, DB::table('pricing_price_list_scopes')->where('scope_reference_id', (string) $doomedProductId)->count());
+        $this->assertSame(0, DB::table('promotion_scopes')->where('scope_reference_id', (string) $doomedProductId)->count());
+
+        // The kept product's own rows survive — the command did not
+        // over-delete while learning about these tables.
+        $this->assertSame(1, DB::table('pricing_product_costs')->where('priceable_id', $keptVariationId)->count());
+        $this->assertSame(1, DB::table('pricing_price_list_scopes')->where('scope_reference_id', (string) $keptProductId)->count());
+        $this->assertSame(1, DB::table('promotion_scopes')->where('scope_reference_id', (string) $keptProductId)->count());
     }
 }
