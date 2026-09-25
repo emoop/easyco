@@ -25,6 +25,7 @@ class StaffSystemRolesSeeder extends Seeder
         $this->seedIfMissing($roleRepository, 'Administrator', [
             Permission::PRODUCT_VIEW,
             Permission::PRODUCT_MANAGE,
+            Permission::PRODUCT_DELETE,
             Permission::TAXONOMY_MANAGE,
             Permission::COST_VIEW,
             Permission::COST_MANAGE,

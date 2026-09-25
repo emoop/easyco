@@ -237,19 +237,20 @@ class RoleResource extends Resource
      * / System). This is a static, hand-maintained map rather than a
      * method on the enum itself — Permission.php's own docblock states
      * "No methods on this enum — pure vocabulary," and that boundary is
-     * kept here: a future 18th Permission needs this mapping updated by
+     * kept here: a future new Permission needs this mapping updated by
      * hand (unlike permissionOptions() above, which derives itself
      * automatically), a real accepted maintenance tradeoff, not an
      * oversight. test_permission_groups_account_for_every_real_permission_exactly_once
      * (RoleResourceTest) is the regression test that catches a forgotten
-     * update.
+     * update — as it did for PRODUCT_DELETE, which is why it is listed
+     * here as well as in the enum and the seeder.
      *
      * @return array<string, Permission[]>
      */
     private static function permissionGroups(): array
     {
         return [
-            'Catalog' => [Permission::PRODUCT_VIEW, Permission::PRODUCT_MANAGE, Permission::TAXONOMY_MANAGE],
+            'Catalog' => [Permission::PRODUCT_VIEW, Permission::PRODUCT_MANAGE, Permission::PRODUCT_DELETE, Permission::TAXONOMY_MANAGE],
             'Cost and pricing' => [Permission::COST_VIEW, Permission::COST_MANAGE, Permission::PRICE_MANAGE],
             'Orders' => [Permission::ORDER_VIEW, Permission::ORDER_MANAGE, Permission::REFUND_CASH, Permission::REFUND_BANK],
             'Point of sale' => [Permission::POS_OPERATE, Permission::POS_DISCOUNT],

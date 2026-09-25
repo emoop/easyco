@@ -32,6 +32,7 @@ return [
     'permissions' => [
         'product_view' => 'View products',
         'product_manage' => 'Manage products',
+        'product_delete' => 'Delete variations and archived products permanently',
         'taxonomy_manage' => 'Manage taxonomy (brands, categories, tags)',
         'cost_view' => 'View cost price',
         'cost_manage' => 'Manage cost price',

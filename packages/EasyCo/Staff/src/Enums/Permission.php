@@ -18,6 +18,8 @@ enum Permission: string
     case PRODUCT_VIEW = 'product_view';
     /** create and edit products, variations, media */
     case PRODUCT_MANAGE = 'product_manage';
+    /** permanently delete a STANDARD variation, or an ARCHIVED product, and free its identifiers */
+    case PRODUCT_DELETE = 'product_delete';
     /** brands, categories, tags, seasons, attribute definitions and values */
     case TAXONOMY_MANAGE = 'taxonomy_manage';
 
