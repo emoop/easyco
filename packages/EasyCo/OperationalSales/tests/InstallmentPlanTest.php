@@ -65,12 +65,11 @@ final class InstallmentPlanTest extends TestCase
         ?array $soldAttributes = null,
         ?Money $unitCost = null,
     ): SaleLine {
-        $line = new SaleLine(
-            id: null,
+        $line = SaleLine::createNonSale(
+            type: SaleLineType::RESERVATION,
             transactionId: '',
             clientId: $clientId,
             priceableId: 'priceable-1',
-            type: SaleLineType::RESERVATION,
             status: SaleLineStatus::PENDING,
             quantity: 1,
             amount: $this->money($amountMinorUnits, $currency),
@@ -142,12 +141,11 @@ final class InstallmentPlanTest extends TestCase
 
     private function paymentLine(string $clientId = 'client-1', int $amountMinorUnits = 500, string $currency = 'EUR'): SaleLine
     {
-        return new SaleLine(
-            id: null,
+        return SaleLine::createNonSale(
+            type: SaleLineType::INSTALLMENT_PAYMENT,
             transactionId: '',
             clientId: $clientId,
             priceableId: null,
-            type: SaleLineType::INSTALLMENT_PAYMENT,
             status: SaleLineStatus::COMPLETED,
             quantity: 1,
             amount: $this->money($amountMinorUnits, $currency),
@@ -209,12 +207,10 @@ final class InstallmentPlanTest extends TestCase
     public function test_attach_reserved_line_rejects_a_non_reservation_line_type(): void
     {
         $plan = InstallmentPlan::open('client-1');
-        $saleLine = new SaleLine(
-            id: null,
+        $saleLine = SaleLine::create(
             transactionId: '',
             clientId: 'client-1',
             priceableId: 'priceable-1',
-            type: SaleLineType::SALE,
             status: SaleLineStatus::COMPLETED,
             quantity: 1,
             amount: $this->money(1000),
@@ -223,6 +219,12 @@ final class InstallmentPlanTest extends TestCase
             effectiveAt: $this->now(),
             productName: 'Product One',
             sku: 'SKU-1',
+            regularUnitPrice: $this->money(1000),
+            finalUnitPrice: $this->money(1000),
+            promotionDiscountShare: $this->money(0),
+            discretionaryDiscount: $this->money(0),
+            netPaidAmount: $this->money(1000),
+            soldAttributes: [],
         );
 
         $this->expectException(\InvalidArgumentException::class);

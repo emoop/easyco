@@ -16,7 +16,6 @@ use EasyCo\Inventory\StockLevel;
 use EasyCo\OperationalSales\Contracts\TransactionRepository;
 use EasyCo\OperationalSales\Enums\Channel;
 use EasyCo\OperationalSales\Enums\SaleLineStatus;
-use EasyCo\OperationalSales\Enums\SaleLineType;
 use EasyCo\OperationalSales\Persistence\Eloquent\ClientModel;
 use EasyCo\OperationalSales\SaleLine;
 use EasyCo\OperationalSales\Transaction;
@@ -95,12 +94,10 @@ class PruneProductsToOriginalTest extends TestCase
         $clientId = (string) ClientModel::create(['name' => 'Test Client'])->id;
 
         $transaction = new Transaction(id: null, channel: Channel::POS);
-        $transaction->addSaleLine(new SaleLine(
-            id: null,
+        $transaction->addSaleLine(SaleLine::create(
             transactionId: '',
             clientId: $clientId,
             priceableId: $variationId,
-            type: SaleLineType::SALE,
             status: SaleLineStatus::COMPLETED,
             quantity: 1,
             amount: Money::fromMinorUnits(2500, 'EUR'),
@@ -109,6 +106,12 @@ class PruneProductsToOriginalTest extends TestCase
             effectiveAt: new DateTimeImmutable('2026-08-20 09:00:00'),
             productName: 'Doomed Product',
             sku: 'SKU-DOOMED',
+            regularUnitPrice: Money::fromMinorUnits(2500, 'EUR'),
+            finalUnitPrice: Money::fromMinorUnits(2500, 'EUR'),
+            promotionDiscountShare: Money::zero('EUR'),
+            discretionaryDiscount: Money::zero('EUR'),
+            netPaidAmount: Money::fromMinorUnits(2500, 'EUR'),
+            soldAttributes: [],
         ));
 
         app(TransactionRepository::class)->save($transaction);

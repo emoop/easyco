@@ -38,6 +38,95 @@ final class SaleLineTest extends TestCase
         return ['priceableId' => $priceableId, 'type' => $type, 'productName' => $productName, 'sku' => $sku];
     }
 
+    /**
+     * Stage 4b (D8/D9) — SaleLine's constructor is now private, so every
+     * test in this file's earlier (pre-§3.13-create()) section builds a
+     * line through this dispatcher instead of `new SaleLine(...)`: SALE
+     * goes through create() (which now requires the full §3.13 snapshot
+     * and runs its own formula/Tier-B pre-checks before ever reaching the
+     * constructor), every other type goes through createNonSale() (Tier
+     * A only, no pre-checks of its own). Defaults here match this
+     * section's own pre-existing baseline (quantity 1, amount/profit
+     * money(1000)/money(200)) — NOT createArgs()'s own §3.13-test
+     * baseline further down, which is a separate, already-correct
+     * fixture left untouched.
+     *
+     * @param array<string, mixed> $overrides
+     */
+    private function construct(SaleLineType $type, array $overrides = []): SaleLine
+    {
+        $args = array_merge([
+            'transactionId' => 'txn-1',
+            'clientId' => 'client-1',
+            'priceableId' => in_array($type, [SaleLineType::SHIPPING, SaleLineType::INSTALLMENT_PAYMENT], true) ? null : 'priceable-1',
+            'status' => SaleLineStatus::PENDING,
+            'quantity' => 1,
+            'amount' => $this->money(),
+            'profit' => $this->money(200),
+            'recordedAt' => $this->now(),
+            'effectiveAt' => $this->now(),
+            'originatingSaleLineId' => null,
+            'originatingReservationLineId' => null,
+            'productName' => $type === SaleLineType::SALE ? 'Product One' : null,
+            'sku' => $type === SaleLineType::SALE ? 'SKU-1' : null,
+            'regularUnitPrice' => null,
+            'finalUnitPrice' => null,
+            'promotionDiscountShare' => null,
+            'discretionaryDiscount' => null,
+            'netPaidAmount' => null,
+            'soldAttributes' => null,
+            'unitCost' => null,
+        ], $overrides);
+
+        if ($type === SaleLineType::SALE) {
+            return SaleLine::create(
+                transactionId: $args['transactionId'],
+                clientId: $args['clientId'],
+                priceableId: $args['priceableId'],
+                status: $args['status'],
+                quantity: $args['quantity'],
+                amount: $args['amount'],
+                profit: $args['profit'],
+                recordedAt: $args['recordedAt'],
+                effectiveAt: $args['effectiveAt'],
+                productName: $args['productName'],
+                sku: $args['sku'],
+                regularUnitPrice: $args['regularUnitPrice'] ?? $this->money(1000),
+                finalUnitPrice: $args['finalUnitPrice'] ?? $this->money(1000),
+                promotionDiscountShare: $args['promotionDiscountShare'] ?? $this->money(0),
+                discretionaryDiscount: $args['discretionaryDiscount'] ?? $this->money(0),
+                netPaidAmount: $args['netPaidAmount'] ?? $args['amount'],
+                soldAttributes: $args['soldAttributes'] ?? [],
+                unitCost: $args['unitCost'],
+                originatingReservationLineId: $args['originatingReservationLineId'],
+            );
+        }
+
+        return SaleLine::createNonSale(
+            type: $type,
+            transactionId: $args['transactionId'],
+            clientId: $args['clientId'],
+            priceableId: $args['priceableId'],
+            status: $args['status'],
+            quantity: $args['quantity'],
+            amount: $args['amount'],
+            profit: $args['profit'],
+            recordedAt: $args['recordedAt'],
+            effectiveAt: $args['effectiveAt'],
+            originatingSaleLineId: $args['originatingSaleLineId'],
+            originatingReservationLineId: $args['originatingReservationLineId'],
+            productName: $args['productName'],
+            sku: $args['sku'],
+            regularUnitPrice: $args['regularUnitPrice'],
+            finalUnitPrice: $args['finalUnitPrice'],
+            promotionDiscountShare: $args['promotionDiscountShare'],
+            discretionaryDiscount: $args['discretionaryDiscount'],
+            netPaidAmount: $args['netPaidAmount'],
+            soldAttributes: $args['soldAttributes'],
+            unitCost: $args['unitCost'],
+        );
+    }
+
     public static function allTypesProvider(): array
     {
         return [
@@ -54,21 +143,11 @@ final class SaleLineTest extends TestCase
     {
         $args = $this->baseArgsFor($type);
 
-        $line = new SaleLine(
-            id: null,
-            transactionId: 'txn-1',
-            clientId: 'client-1',
-            priceableId: $args['priceableId'],
-            type: $type,
-            status: SaleLineStatus::PENDING,
-            quantity: 1,
-            amount: $this->money(),
-            profit: $this->money(200),
-            recordedAt: $this->now(),
-            effectiveAt: $this->now(),
-            productName: $args['productName'],
-            sku: $args['sku'],
-        );
+        $line = $this->construct($type, [
+            'priceableId' => $args['priceableId'],
+            'productName' => $args['productName'],
+            'sku' => $args['sku'],
+        ]);
 
         $this->assertSame($type, $line->type());
         $this->assertSame($args['priceableId'], $line->priceableId());
@@ -85,24 +164,22 @@ final class SaleLineTest extends TestCase
         ];
     }
 
+    /**
+     * SALE's own case now uses an EMPTY STRING, not null: create()'s
+     * priceableId parameter is non-nullable (string, not ?string) — the
+     * type system itself now rejects null before Tier A's own runtime
+     * check ever gets a chance to (a stronger guarantee than before, not
+     * a weaker one). Tier A's "non-empty string" rule still has a real,
+     * reachable failure mode for create() callers: an empty string.
+     */
     #[DataProvider('priceableIdRequiredTypesProvider')]
     public function test_priceable_id_is_required_for_sale_reservation_and_refund(SaleLineType $type): void
     {
         $this->expectException(\InvalidArgumentException::class);
 
-        new SaleLine(
-            id: null,
-            transactionId: 'txn-1',
-            clientId: 'client-1',
-            priceableId: null,
-            type: $type,
-            status: SaleLineStatus::PENDING,
-            quantity: 1,
-            amount: $this->money(),
-            profit: $this->money(200),
-            recordedAt: $this->now(),
-            effectiveAt: $this->now(),
-        );
+        $this->construct($type, [
+            'priceableId' => $type === SaleLineType::SALE ? '' : null,
+        ]);
     }
 
     public static function priceableIdForbiddenTypesProvider(): array
@@ -118,63 +195,45 @@ final class SaleLineTest extends TestCase
     {
         $this->expectException(\InvalidArgumentException::class);
 
-        new SaleLine(
-            id: null,
-            transactionId: 'txn-1',
-            clientId: 'client-1',
-            priceableId: 'priceable-1',
-            type: $type,
-            status: SaleLineStatus::PENDING,
-            quantity: 1,
-            amount: $this->money(),
-            profit: $this->money(200),
-            recordedAt: $this->now(),
-            effectiveAt: $this->now(),
-        );
+        $this->construct($type, ['priceableId' => 'priceable-1']);
     }
 
+    /**
+     * quantity<=0 is a Tier A rule, unconditional on type — tested here
+     * via a non-SALE type (createNonSale() has no pre-checks of its own
+     * beyond refusing SALE, so it reaches the constructor's own quantity
+     * check directly). Testing this via SALE/create() would risk one of
+     * create()'s own formula pre-checks (amount == finalUnitPrice x
+     * quantity, netPaidAmount's formula) intercepting first for the
+     * wrong reason — not a concern for a type-agnostic Tier A rule like
+     * this one.
+     */
     public function test_quantity_of_zero_is_rejected(): void
     {
         $this->expectException(\InvalidArgumentException::class);
 
-        new SaleLine(
-            id: null,
-            transactionId: 'txn-1',
-            clientId: 'client-1',
-            priceableId: 'priceable-1',
-            type: SaleLineType::SALE,
-            status: SaleLineStatus::PENDING,
-            quantity: 0,
-            amount: $this->money(),
-            profit: $this->money(200),
-            recordedAt: $this->now(),
-            effectiveAt: $this->now(),
-        );
+        $this->construct(SaleLineType::RESERVATION, ['quantity' => 0]);
     }
 
     public function test_negative_quantity_is_rejected(): void
     {
         $this->expectException(\InvalidArgumentException::class);
 
-        new SaleLine(
-            id: null,
-            transactionId: 'txn-1',
-            clientId: 'client-1',
-            priceableId: 'priceable-1',
-            type: SaleLineType::SALE,
-            status: SaleLineStatus::PENDING,
-            quantity: -1,
-            amount: $this->money(),
-            profit: $this->money(200),
-            recordedAt: $this->now(),
-            effectiveAt: $this->now(),
-        );
+        $this->construct(SaleLineType::RESERVATION, ['quantity' => -1]);
     }
 
+    /**
+     * SALE removed from this provider: create() has no
+     * $originatingSaleLineId parameter at all (only REFUND ever legally
+     * carries one) — there is no longer any way to even ATTEMPT setting
+     * it on a fresh SALE line through the public API, a stronger
+     * guarantee than the old runtime-only rejection. The Tier A rule
+     * itself stays fully covered by the three remaining, still-reachable
+     * cases below.
+     */
     public static function nonRefundTypesProvider(): array
     {
         return [
-            'SALE' => [SaleLineType::SALE],
             'RESERVATION' => [SaleLineType::RESERVATION],
             'SHIPPING' => [SaleLineType::SHIPPING],
             'INSTALLMENT_PAYMENT' => [SaleLineType::INSTALLMENT_PAYMENT],
@@ -188,38 +247,18 @@ final class SaleLineTest extends TestCase
 
         $this->expectException(\InvalidArgumentException::class);
 
-        new SaleLine(
-            id: null,
-            transactionId: 'txn-1',
-            clientId: 'client-1',
-            priceableId: $args['priceableId'],
-            type: $type,
-            status: SaleLineStatus::PENDING,
-            quantity: 1,
-            amount: $this->money(),
-            profit: $this->money(200),
-            recordedAt: $this->now(),
-            effectiveAt: $this->now(),
-            originatingSaleLineId: 'sale-line-1',
-        );
+        $this->construct($type, [
+            'priceableId' => $args['priceableId'],
+            'originatingSaleLineId' => 'sale-line-1',
+        ]);
     }
 
     public function test_originating_sale_line_id_is_accepted_on_refund(): void
     {
-        $line = new SaleLine(
-            id: null,
-            transactionId: 'txn-1',
-            clientId: 'client-1',
-            priceableId: 'priceable-1',
-            type: SaleLineType::REFUND,
-            status: SaleLineStatus::COMPLETED,
-            quantity: 1,
-            amount: $this->money(),
-            profit: $this->money(200),
-            recordedAt: $this->now(),
-            effectiveAt: $this->now(),
-            originatingSaleLineId: 'sale-line-1',
-        );
+        $line = $this->construct(SaleLineType::REFUND, [
+            'status' => SaleLineStatus::COMPLETED,
+            'originatingSaleLineId' => 'sale-line-1',
+        ]);
 
         $this->assertSame('sale-line-1', $line->originatingSaleLineId());
     }
@@ -241,61 +280,25 @@ final class SaleLineTest extends TestCase
 
         $this->expectException(\InvalidArgumentException::class);
 
-        new SaleLine(
-            id: null,
-            transactionId: 'txn-1',
-            clientId: 'client-1',
-            priceableId: $args['priceableId'],
-            type: $type,
-            status: SaleLineStatus::PENDING,
-            quantity: 1,
-            amount: $this->money(),
-            profit: $this->money(200),
-            recordedAt: $this->now(),
-            effectiveAt: $this->now(),
-            originatingReservationLineId: 'reservation-line-1',
-        );
+        $this->construct($type, [
+            'priceableId' => $args['priceableId'],
+            'originatingReservationLineId' => 'reservation-line-1',
+        ]);
     }
 
     public function test_originating_reservation_line_id_is_accepted_on_sale(): void
     {
-        $line = new SaleLine(
-            id: null,
-            transactionId: 'txn-1',
-            clientId: 'client-1',
-            priceableId: 'priceable-1',
-            type: SaleLineType::SALE,
-            status: SaleLineStatus::COMPLETED,
-            quantity: 1,
-            amount: $this->money(),
-            profit: $this->money(200),
-            recordedAt: $this->now(),
-            effectiveAt: $this->now(),
-            originatingReservationLineId: 'reservation-line-1',
-            productName: 'Product One',
-            sku: 'SKU-1',
-        );
+        $line = $this->construct(SaleLineType::SALE, [
+            'status' => SaleLineStatus::COMPLETED,
+            'originatingReservationLineId' => 'reservation-line-1',
+        ]);
 
         $this->assertSame('reservation-line-1', $line->originatingReservationLineId());
     }
 
     private function placeholderLine(): SaleLine
     {
-        return new SaleLine(
-            id: null,
-            transactionId: '',
-            clientId: 'client-1',
-            priceableId: 'priceable-1',
-            type: SaleLineType::SALE,
-            status: SaleLineStatus::PENDING,
-            quantity: 1,
-            amount: $this->money(),
-            profit: $this->money(200),
-            recordedAt: $this->now(),
-            effectiveAt: $this->now(),
-            productName: 'Product One',
-            sku: 'SKU-1',
-        );
+        return $this->construct(SaleLineType::SALE, ['transactionId' => '']);
     }
 
     public function test_an_empty_string_transaction_id_placeholder_is_accepted_at_construction(): void
@@ -318,21 +321,7 @@ final class SaleLineTest extends TestCase
 
     public function test_assign_transaction_id_throws_when_transaction_id_is_already_real(): void
     {
-        $line = new SaleLine(
-            id: null,
-            transactionId: 'txn-1',
-            clientId: 'client-1',
-            priceableId: 'priceable-1',
-            type: SaleLineType::SALE,
-            status: SaleLineStatus::PENDING,
-            quantity: 1,
-            amount: $this->money(),
-            profit: $this->money(200),
-            recordedAt: $this->now(),
-            effectiveAt: $this->now(),
-            productName: 'Product One',
-            sku: 'SKU-1',
-        );
+        $line = $this->construct(SaleLineType::SALE);
 
         $this->expectException(\LogicException::class);
         $line->assignTransactionId('txn-2');
@@ -340,21 +329,7 @@ final class SaleLineTest extends TestCase
 
     public function test_id_can_only_be_assigned_once(): void
     {
-        $line = new SaleLine(
-            id: null,
-            transactionId: 'txn-1',
-            clientId: 'client-1',
-            priceableId: 'priceable-1',
-            type: SaleLineType::SALE,
-            status: SaleLineStatus::PENDING,
-            quantity: 1,
-            amount: $this->money(),
-            profit: $this->money(200),
-            recordedAt: $this->now(),
-            effectiveAt: $this->now(),
-            productName: 'Product One',
-            sku: 'SKU-1',
-        );
+        $line = $this->construct(SaleLineType::SALE);
 
         $line->assignId('line-1');
         $this->assertSame('line-1', $line->id());
@@ -398,21 +373,23 @@ final class SaleLineTest extends TestCase
     /**
      * Confirms SaleLine's immutability rule (§3.2) holds structurally, not
      * just by convention: the only public instance methods are the
-     * constructor, the plain accessors listed below, assignId(), and
-     * assignTransactionId() (a narrow, one-time structural-reference
-     * backfill — see the class docblock for why that's not a violation
-     * of §3.2) — no setter or other mutation method exists on this
-     * class. Written as a Reflection-based allow-list so that adding any
-     * new public method to SaleLine in the future forces a conscious
-     * update to this test, rather than silently slipping a mutator past
-     * the class's central invariant.
+     * plain accessors listed below, assignId(), and assignTransactionId()
+     * (a narrow, one-time structural-reference backfill — see the class
+     * docblock for why that's not a violation of §3.2) — no setter or
+     * other mutation method exists on this class. __construct() is no
+     * longer in this list (stage 4b — it's private now, so
+     * getMethods(IS_PUBLIC) never returns it); createNonSale() is new.
+     * Written as a Reflection-based allow-list so that adding any new
+     * public method to SaleLine in the future forces a conscious update
+     * to this test, rather than silently slipping a mutator past the
+     * class's central invariant.
      */
     public function test_no_mutation_method_exists_beyond_assign_id(): void
     {
         $expectedPublicMethods = [
-            '__construct',
             'reconstituteFromStorage',
             'create',
+            'createNonSale',
             'id',
             'assignId',
             'assignTransactionId',
@@ -451,17 +428,48 @@ final class SaleLineTest extends TestCase
     }
 
     /**
-     * operational-sales-domain-design.md §3.12: productName/sku required
-     * only for SaleLineType::SALE.
+     * D8 (stage 4b) — the constructor itself must be private, so no
+     * caller outside this class can ever construct a SaleLine except
+     * through create()/createNonSale()/reconstituteFromStorage().
      */
-    public function test_sale_type_with_real_product_name_and_sku_succeeds(): void
+    public function test_the_constructor_is_private(): void
     {
-        $line = new SaleLine(
-            id: null,
+        $constructor = (new \ReflectionClass(SaleLine::class))->getConstructor();
+
+        $this->assertNotNull($constructor);
+        $this->assertTrue($constructor->isPrivate());
+    }
+
+    /**
+     * D9 (stage 4b) — the $reconstituting flag this class used to carry
+     * (stage 2's temporary mechanism) no longer exists at all, now that
+     * Tier B lives exclusively in create() and the constructor never
+     * needs to suppress it.
+     */
+    public function test_the_reconstituting_flag_no_longer_exists(): void
+    {
+        $propertyNames = array_map(
+            static fn (\ReflectionProperty $property) => $property->getName(),
+            (new \ReflectionClass(SaleLine::class))->getProperties(),
+        );
+
+        $this->assertNotContains('reconstituting', $propertyNames);
+    }
+
+    /**
+     * D9 — createNonSale() refuses SaleLineType::SALE outright; a caller
+     * wanting a SALE line must use create() instead, which enforces the
+     * full §3.13 invariant set createNonSale() deliberately does not.
+     */
+    public function test_create_non_sale_refuses_sale_type(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+
+        SaleLine::createNonSale(
+            type: SaleLineType::SALE,
             transactionId: 'txn-1',
             clientId: 'client-1',
             priceableId: 'priceable-1',
-            type: SaleLineType::SALE,
             status: SaleLineStatus::COMPLETED,
             quantity: 1,
             amount: $this->money(),
@@ -471,40 +479,49 @@ final class SaleLineTest extends TestCase
             productName: 'Product One',
             sku: 'SKU-1',
         );
+    }
+
+    /**
+     * operational-sales-domain-design.md §3.12: productName/sku required
+     * only for SaleLineType::SALE.
+     */
+    public function test_sale_type_with_real_product_name_and_sku_succeeds(): void
+    {
+        $line = $this->construct(SaleLineType::SALE, [
+            'status' => SaleLineStatus::COMPLETED,
+        ]);
 
         $this->assertSame('Product One', $line->productName());
         $this->assertSame('SKU-1', $line->sku());
     }
 
-    public static function nullProductNameOrSkuProvider(): array
+    /**
+     * Empty strings, not null: create()'s productName/sku parameters are
+     * non-nullable (string, not ?string) — null is now rejected by the
+     * type system itself before Tier B's own runtime check ever runs (a
+     * stronger guarantee than before). Tier B's "non-empty" rule still
+     * has a real, reachable failure mode for create() callers: an empty
+     * string, which is what this now tests.
+     */
+    public static function emptyProductNameOrSkuProvider(): array
     {
         return [
-            'null productName' => [null, 'SKU-1'],
-            'null sku' => ['Product One', null],
-            'both null' => [null, null],
+            'empty productName' => ['', 'SKU-1'],
+            'empty sku' => ['Product One', ''],
+            'both empty' => ['', ''],
         ];
     }
 
-    #[DataProvider('nullProductNameOrSkuProvider')]
-    public function test_sale_type_with_a_null_product_name_or_sku_throws(?string $productName, ?string $sku): void
+    #[DataProvider('emptyProductNameOrSkuProvider')]
+    public function test_sale_type_with_an_empty_product_name_or_sku_throws(string $productName, string $sku): void
     {
         $this->expectException(\InvalidArgumentException::class);
 
-        new SaleLine(
-            id: null,
-            transactionId: 'txn-1',
-            clientId: 'client-1',
-            priceableId: 'priceable-1',
-            type: SaleLineType::SALE,
-            status: SaleLineStatus::COMPLETED,
-            quantity: 1,
-            amount: $this->money(),
-            profit: $this->money(200),
-            recordedAt: $this->now(),
-            effectiveAt: $this->now(),
-            productName: $productName,
-            sku: $sku,
-        );
+        $this->construct(SaleLineType::SALE, [
+            'status' => SaleLineStatus::COMPLETED,
+            'productName' => $productName,
+            'sku' => $sku,
+        ]);
     }
 
     public static function nonNullProductNameOrSkuProvider(): array
@@ -521,40 +538,20 @@ final class SaleLineTest extends TestCase
     {
         $this->expectException(\InvalidArgumentException::class);
 
-        new SaleLine(
-            id: null,
-            transactionId: 'txn-1',
-            clientId: 'client-1',
-            priceableId: null,
-            type: SaleLineType::SHIPPING,
-            status: SaleLineStatus::COMPLETED,
-            quantity: 1,
-            amount: $this->money(),
-            profit: $this->money(200),
-            recordedAt: $this->now(),
-            effectiveAt: $this->now(),
-            productName: $productName,
-            sku: $sku,
-        );
+        $this->construct(SaleLineType::SHIPPING, [
+            'status' => SaleLineStatus::COMPLETED,
+            'productName' => $productName,
+            'sku' => $sku,
+        ]);
     }
 
     public function test_shipping_type_with_both_null_succeeds(): void
     {
-        $line = new SaleLine(
-            id: null,
-            transactionId: 'txn-1',
-            clientId: 'client-1',
-            priceableId: null,
-            type: SaleLineType::SHIPPING,
-            status: SaleLineStatus::COMPLETED,
-            quantity: 1,
-            amount: $this->money(),
-            profit: $this->money(200),
-            recordedAt: $this->now(),
-            effectiveAt: $this->now(),
-            productName: null,
-            sku: null,
-        );
+        $line = $this->construct(SaleLineType::SHIPPING, [
+            'status' => SaleLineStatus::COMPLETED,
+            'productName' => null,
+            'sku' => null,
+        ]);
 
         $this->assertNull($line->productName());
         $this->assertNull($line->sku());
@@ -562,35 +559,12 @@ final class SaleLineTest extends TestCase
 
     public function test_reservation_type_is_unconstrained_on_product_name_and_sku(): void
     {
-        $withoutSnapshot = new SaleLine(
-            id: null,
-            transactionId: 'txn-1',
-            clientId: 'client-1',
-            priceableId: 'priceable-1',
-            type: SaleLineType::RESERVATION,
-            status: SaleLineStatus::PENDING,
-            quantity: 1,
-            amount: $this->money(),
-            profit: $this->money(200),
-            recordedAt: $this->now(),
-            effectiveAt: $this->now(),
-        );
+        $withoutSnapshot = $this->construct(SaleLineType::RESERVATION);
 
-        $withSnapshot = new SaleLine(
-            id: null,
-            transactionId: 'txn-1',
-            clientId: 'client-1',
-            priceableId: 'priceable-1',
-            type: SaleLineType::RESERVATION,
-            status: SaleLineStatus::PENDING,
-            quantity: 1,
-            amount: $this->money(),
-            profit: $this->money(200),
-            recordedAt: $this->now(),
-            effectiveAt: $this->now(),
-            productName: 'Product One',
-            sku: 'SKU-1',
-        );
+        $withSnapshot = $this->construct(SaleLineType::RESERVATION, [
+            'productName' => 'Product One',
+            'sku' => 'SKU-1',
+        ]);
 
         $this->assertNull($withoutSnapshot->productName());
         $this->assertSame('Product One', $withSnapshot->productName());
@@ -598,20 +572,10 @@ final class SaleLineTest extends TestCase
 
     public function test_refund_type_is_unconstrained_on_product_name_and_sku(): void
     {
-        $withoutSnapshot = new SaleLine(
-            id: null,
-            transactionId: 'txn-1',
-            clientId: 'client-1',
-            priceableId: 'priceable-1',
-            type: SaleLineType::REFUND,
-            status: SaleLineStatus::COMPLETED,
-            quantity: 1,
-            amount: $this->money(),
-            profit: $this->money(200),
-            recordedAt: $this->now(),
-            effectiveAt: $this->now(),
-            originatingSaleLineId: 'sale-line-1',
-        );
+        $withoutSnapshot = $this->construct(SaleLineType::REFUND, [
+            'status' => SaleLineStatus::COMPLETED,
+            'originatingSaleLineId' => 'sale-line-1',
+        ]);
 
         $this->assertNull($withoutSnapshot->productName());
         $this->assertNull($withoutSnapshot->sku());
@@ -759,10 +723,9 @@ final class SaleLineTest extends TestCase
     }
 
     /**
-     * No interim regression (§3.13's own stage-2 requirement): create()
-     * still requires productName/sku for a fresh SALE line, via the same
-     * constructor Tier B check `new SaleLine(...)` has always run — not a
-     * new rule invented for create() itself.
+     * No interim regression (§3.13's own stage-2 requirement, still true
+     * after stage 4b moved this check from the constructor into create()
+     * itself — the check moved, it did not disappear).
      */
     public function test_create_throws_when_product_name_is_empty(): void
     {
@@ -791,46 +754,25 @@ final class SaleLineTest extends TestCase
     {
         $this->expectException(\InvalidArgumentException::class);
 
-        new SaleLine(
-            id: null,
-            transactionId: 'txn-1',
-            clientId: 'client-1',
-            priceableId: null,
-            type: SaleLineType::SHIPPING,
-            status: SaleLineStatus::COMPLETED,
-            quantity: 1,
-            amount: $this->money(),
-            profit: $this->money(200),
-            recordedAt: $this->now(),
-            effectiveAt: $this->now(),
-            regularUnitPrice: $override['regularUnitPrice'] ?? null,
-            finalUnitPrice: $override['finalUnitPrice'] ?? null,
-            promotionDiscountShare: $override['promotionDiscountShare'] ?? null,
-            discretionaryDiscount: $override['discretionaryDiscount'] ?? null,
-            netPaidAmount: $override['netPaidAmount'] ?? null,
-            soldAttributes: $override['soldAttributes'] ?? null,
-            unitCost: $override['unitCost'] ?? null,
-        );
+        $this->construct(SaleLineType::SHIPPING, [
+            'status' => SaleLineStatus::COMPLETED,
+            'regularUnitPrice' => $override['regularUnitPrice'] ?? null,
+            'finalUnitPrice' => $override['finalUnitPrice'] ?? null,
+            'promotionDiscountShare' => $override['promotionDiscountShare'] ?? null,
+            'discretionaryDiscount' => $override['discretionaryDiscount'] ?? null,
+            'netPaidAmount' => $override['netPaidAmount'] ?? null,
+            'soldAttributes' => $override['soldAttributes'] ?? null,
+            'unitCost' => $override['unitCost'] ?? null,
+        ]);
     }
 
     public function test_reservation_type_is_unconstrained_on_snapshot_fields(): void
     {
-        $line = new SaleLine(
-            id: null,
-            transactionId: 'txn-1',
-            clientId: 'client-1',
-            priceableId: 'priceable-1',
-            type: SaleLineType::RESERVATION,
-            status: SaleLineStatus::PENDING,
-            quantity: 1,
-            amount: $this->money(),
-            profit: $this->money(200),
-            recordedAt: $this->now(),
-            effectiveAt: $this->now(),
-            regularUnitPrice: $this->money(1100),
-            finalUnitPrice: $this->money(1000),
-            soldAttributes: $this->soldAttributes(),
-        );
+        $line = $this->construct(SaleLineType::RESERVATION, [
+            'regularUnitPrice' => $this->money(1100),
+            'finalUnitPrice' => $this->money(1000),
+            'soldAttributes' => $this->soldAttributes(),
+        ]);
 
         $this->assertTrue($line->regularUnitPrice()->equals($this->money(1100)));
         $this->assertSame($this->soldAttributes(), $line->soldAttributes());
@@ -885,53 +827,6 @@ final class SaleLineTest extends TestCase
             recordedAt: $this->now(),
             effectiveAt: $this->now(),
             productName: 'Impossible Product Name',
-        );
-    }
-
-    /**
-     * The $reconstituting flag is reset even when the constructor it
-     * wraps throws — otherwise a failed reconstitution would leave Tier
-     * B suppressed for the NEXT, unrelated `new SaleLine(...)` call.
-     */
-    public function test_a_failed_reconstitution_does_not_leak_the_reconstituting_flag(): void
-    {
-        try {
-            SaleLine::reconstituteFromStorage(
-                id: 'line-1',
-                transactionId: 'txn-1',
-                clientId: 'client-1',
-                priceableId: null,
-                type: SaleLineType::SHIPPING,
-                status: SaleLineStatus::COMPLETED,
-                quantity: 1,
-                amount: $this->money(),
-                profit: $this->money(200),
-                recordedAt: $this->now(),
-                effectiveAt: $this->now(),
-                productName: 'Impossible Product Name',
-            );
-            $this->fail('Expected InvalidArgumentException was not thrown.');
-        } catch (\InvalidArgumentException) {
-            // expected
-        }
-
-        // If the flag leaked "true", this would NOT throw even though
-        // productName/sku are missing for a fresh SALE line — proving
-        // Tier B is still active for ordinary construction.
-        $this->expectException(\InvalidArgumentException::class);
-
-        new SaleLine(
-            id: null,
-            transactionId: 'txn-1',
-            clientId: 'client-1',
-            priceableId: 'priceable-1',
-            type: SaleLineType::SALE,
-            status: SaleLineStatus::COMPLETED,
-            quantity: 1,
-            amount: $this->money(),
-            profit: $this->money(200),
-            recordedAt: $this->now(),
-            effectiveAt: $this->now(),
         );
     }
 }

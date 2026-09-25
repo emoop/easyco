@@ -25,12 +25,10 @@ final class TransactionTest extends TestCase
 
     private function saleLine(?string $id, string $transactionId): SaleLine
     {
-        $line = new SaleLine(
-            id: null,
+        $line = SaleLine::create(
             transactionId: $transactionId,
             clientId: 'client-1',
             priceableId: 'priceable-1',
-            type: SaleLineType::SALE,
             status: SaleLineStatus::COMPLETED,
             quantity: 1,
             amount: $this->money(),
@@ -39,6 +37,12 @@ final class TransactionTest extends TestCase
             effectiveAt: $this->now(),
             productName: 'Product One',
             sku: 'SKU-1',
+            regularUnitPrice: $this->money(),
+            finalUnitPrice: $this->money(),
+            promotionDiscountShare: $this->money(0),
+            discretionaryDiscount: $this->money(0),
+            netPaidAmount: $this->money(),
+            soldAttributes: [],
         );
 
         if ($id !== null) {

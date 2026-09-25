@@ -57,12 +57,11 @@ class EloquentInstallmentPlanRepositoryTest extends TestCase
     private function persistedReservedLine(string $clientId, int $amountMinorUnits): SaleLine
     {
         $transaction = new Transaction(id: null, channel: Channel::POS);
-        $line = new SaleLine(
-            id: null,
+        $line = SaleLine::createNonSale(
+            type: SaleLineType::RESERVATION,
             transactionId: '',
             clientId: $clientId,
             priceableId: 'priceable-1',
-            type: SaleLineType::RESERVATION,
             status: SaleLineStatus::PENDING,
             quantity: 1,
             amount: $this->money($amountMinorUnits),
@@ -99,12 +98,11 @@ class EloquentInstallmentPlanRepositoryTest extends TestCase
         $amount = $this->money($amountMinorUnits);
 
         $transaction = new Transaction(id: null, channel: Channel::POS);
-        $line = new SaleLine(
-            id: null,
+        $line = SaleLine::createNonSale(
+            type: SaleLineType::RESERVATION,
             transactionId: '',
             clientId: $clientId,
             priceableId: 'priceable-1',
-            type: SaleLineType::RESERVATION,
             status: SaleLineStatus::PENDING,
             quantity: 1,
             amount: $amount,
@@ -130,12 +128,11 @@ class EloquentInstallmentPlanRepositoryTest extends TestCase
     private function persistedPaymentLine(string $clientId, int $amountMinorUnits): SaleLine
     {
         $transaction = new Transaction(id: null, channel: Channel::POS);
-        $line = new SaleLine(
-            id: null,
+        $line = SaleLine::createNonSale(
+            type: SaleLineType::INSTALLMENT_PAYMENT,
             transactionId: '',
             clientId: $clientId,
             priceableId: null,
-            type: SaleLineType::INSTALLMENT_PAYMENT,
             status: SaleLineStatus::COMPLETED,
             quantity: 1,
             amount: $this->money($amountMinorUnits),
@@ -346,12 +343,11 @@ class EloquentInstallmentPlanRepositoryTest extends TestCase
     {
         $clientId = $this->clientId();
 
-        $unpersistedReserved = new SaleLine(
-            id: null,
+        $unpersistedReserved = SaleLine::createNonSale(
+            type: SaleLineType::RESERVATION,
             transactionId: '',
             clientId: $clientId,
             priceableId: 'priceable-1',
-            type: SaleLineType::RESERVATION,
             status: SaleLineStatus::PENDING,
             quantity: 1,
             amount: $this->money(1000),

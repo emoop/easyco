@@ -41,21 +41,32 @@ class EloquentTransactionRepositoryTest extends TestCase
         $recordedAt = new DateTimeImmutable('2026-08-25 10:00:00');
         $effectiveAt = new DateTimeImmutable('2026-08-20 09:00:00');
 
+        // amount/quantity changed from the original 2500/3 to 3000/3
+        // (review fix, not a pure construction-call swap): create() now
+        // enforces amount == finalUnitPrice x quantity exactly, and 2500
+        // is not evenly divisible by 3 — no finalUnitPrice could ever
+        // satisfy that formula for the old fixture. 3000/3 = 1000 exactly
+        // preserves this test's real intent (a quantity > 1 SALE line
+        // round-trips correctly) with no change to what's proven.
         $transaction = new Transaction(id: null, channel: Channel::POS);
-        $saleLine = new SaleLine(
-            id: null,
+        $saleLine = SaleLine::create(
             transactionId: '',
             clientId: $clientId,
             priceableId: 'priceable-1',
-            type: SaleLineType::SALE,
             status: SaleLineStatus::COMPLETED,
             quantity: 3,
-            amount: $this->money(2500),
+            amount: $this->money(3000),
             profit: $this->money(400),
             recordedAt: $recordedAt,
             effectiveAt: $effectiveAt,
             productName: 'Product One',
             sku: 'SKU-1',
+            regularUnitPrice: $this->money(1000),
+            finalUnitPrice: $this->money(1000),
+            promotionDiscountShare: $this->money(0),
+            discretionaryDiscount: $this->money(0),
+            netPaidAmount: $this->money(3000),
+            soldAttributes: [],
         );
         $transaction->addSaleLine($saleLine);
 
@@ -80,7 +91,7 @@ class EloquentTransactionRepositoryTest extends TestCase
         $this->assertSame(SaleLineType::SALE, $reloadedLine->type());
         $this->assertSame(SaleLineStatus::COMPLETED, $reloadedLine->status());
         $this->assertSame(3, $reloadedLine->quantity());
-        $this->assertTrue($reloadedLine->amount()->equals($this->money(2500)));
+        $this->assertTrue($reloadedLine->amount()->equals($this->money(3000)));
         $this->assertTrue($reloadedLine->profit()->equals($this->money(400)));
         $this->assertEquals($recordedAt, $reloadedLine->recordedAt());
         $this->assertEquals($effectiveAt, $reloadedLine->effectiveAt());
@@ -95,12 +106,11 @@ class EloquentTransactionRepositoryTest extends TestCase
         $clientId = $this->clientId();
 
         $transaction = new Transaction(id: null, channel: Channel::WEB);
-        $shippingLine = new SaleLine(
-            id: null,
+        $shippingLine = SaleLine::createNonSale(
+            type: SaleLineType::SHIPPING,
             transactionId: '',
             clientId: $clientId,
             priceableId: null,
-            type: SaleLineType::SHIPPING,
             status: SaleLineStatus::COMPLETED,
             quantity: 1,
             amount: $this->money(599),
@@ -123,12 +133,10 @@ class EloquentTransactionRepositoryTest extends TestCase
         $clientId = $this->clientId();
 
         $transaction = new Transaction(id: null, channel: Channel::POS);
-        $originalSale = new SaleLine(
-            id: null,
+        $originalSale = SaleLine::create(
             transactionId: '',
             clientId: $clientId,
             priceableId: 'priceable-1',
-            type: SaleLineType::SALE,
             status: SaleLineStatus::COMPLETED,
             quantity: 1,
             amount: $this->money(1000),
@@ -137,16 +145,21 @@ class EloquentTransactionRepositoryTest extends TestCase
             effectiveAt: new DateTimeImmutable(),
             productName: 'Product One',
             sku: 'SKU-1',
+            regularUnitPrice: $this->money(1000),
+            finalUnitPrice: $this->money(1000),
+            promotionDiscountShare: $this->money(0),
+            discretionaryDiscount: $this->money(0),
+            netPaidAmount: $this->money(1000),
+            soldAttributes: [],
         );
         $transaction->addSaleLine($originalSale);
         $this->repository()->save($transaction);
 
-        $refund = new SaleLine(
-            id: null,
+        $refund = SaleLine::createNonSale(
+            type: SaleLineType::REFUND,
             transactionId: $transaction->id(),
             clientId: $clientId,
             priceableId: 'priceable-1',
-            type: SaleLineType::REFUND,
             status: SaleLineStatus::COMPLETED,
             quantity: 1,
             amount: $this->money(1000),

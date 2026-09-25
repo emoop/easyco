@@ -44,68 +44,24 @@ use InvalidArgumentException;
 final class SaleLine
 {
     /**
-     * Set only by reconstituteFromStorage(), for the exact duration of
-     * its own `new self(...)` call below — operational-sales-domain-
-     * design.md §3.13 E-D5 / §3.12's amendment. NOT a public constructor
-     * parameter: a boolean flag on __construct()'s own signature would
-     * let ANY caller bypass Tier B ("required for a fresh SALE line")
-     * validation, not just the one legitimate caller (this class's own
-     * reconstitution factory) — this is a private, internal
-     * construction-context marker instead, readable only from inside
-     * this class, reset in a finally block so a reconstitution that
-     * itself throws (a genuinely impossible/Tier-A-violating row) can
-     * never leave the flag "stuck" true for some later, unrelated
-     * construction.
-     *
-     * TEMPORARY, TRACKED STATE (§3.13's own implementation stages, this
-     * is stage 2's mechanism — see the constructor's own docblock for
-     * the matching note): this flag exists ONLY because the constructor
-     * still runs Tier B for productName/sku unconditionally in this
-     * stage. Once stage 4 makes the constructor private and migrates
-     * CheckoutOrchestrator/InstallmentPlan to create() (the only path
-     * that will still run Tier B, and only for a genuine fresh
-     * construction), reconstituteFromStorage() will build a SaleLine via
-     * the private constructor directly, needing no gate at all — this
-     * flag, and the "if (! self::$reconstituting)" check in the
-     * constructor, should both be REMOVED entirely at that point, not
-     * kept around unused.
-     */
-    private static bool $reconstituting = false;
-
-    /**
      * @param string $transactionId The owning Transaction's id, or the
      *   empty-string placeholder — same sentinel convention as
      *   Catalog\Variation's not-yet-persisted productId — meaning this
      *   line has not yet been attached to a persisted Transaction. See
      *   assignTransactionId() below for how the placeholder is resolved.
      *
-     * TEMPORARY, TRACKED STATE (operational-sales-domain-design.md
-     * §3.13's own implementation stages — this is stage 2's own note,
-     * to be removed once stage 4 lands): this constructor stays PUBLIC
-     * and its behaviour is UNCHANGED in this stage — it still requires
-     * productName/sku for a fresh SaleLineType::SALE line, exactly as
-     * before §3.13 — because CheckoutOrchestrator and
-     * InstallmentPlan::buildSettlementSaleLines() both still call `new
-     * SaleLine(...)` directly rather than the new, stricter
-     * SaleLine::create() below. The seven new §3.13 fields are optional,
-     * nullable arguments HERE (not required, even for SALE) precisely
-     * so those two existing call sites keep working unchanged — only
-     * create() enforces them.
-     *
-     * STAGE 4'S EXACT CHANGE, SPELLED OUT HERE SO IT ISN'T GUESSED AT
-     * LATER: make this constructor private; migrate CheckoutOrchestrator
-     * and InstallmentPlan::buildSettlementSaleLines() to call create()
-     * instead of `new SaleLine(...)`; move productName/sku's Tier B
-     * check (assertProductNameAndSkuPresentForFreshSale()) OUT of this
-     * constructor and into create() alongside the seven §3.13 fields'
-     * own requiredness check, so "required for a fresh SALE line" lives
-     * in exactly ONE place, not split across the constructor and
-     * create(); and REMOVE the $reconstituting flag entirely (see its
-     * own docblock) — with the constructor private and Tier B moved out
-     * of it, reconstituteFromStorage() no longer needs to suppress
-     * anything.
+     * PRIVATE — operational-sales-domain-design.md §3.13 stage 4b.
+     * Every caller now goes through a named factory instead:
+     * create() (fresh SALE lines, enforces every §3.13 invariant
+     * including productName/sku), createNonSale() (fresh RESERVATION/
+     * REFUND/SHIPPING/INSTALLMENT_PAYMENT lines, Tier A only), or
+     * reconstituteFromStorage() (persistence-layer only, Tier A only,
+     * trusts already-validated storage). This constructor itself only
+     * ever runs Tier A (structural, type-driven) validation — "required
+     * for a fresh SALE line" (Tier B) lives exclusively in create() now,
+     * never here.
      */
-    public function __construct(
+    private function __construct(
         private ?string $id,
         private string $transactionId,
         private string $clientId,
@@ -141,12 +97,12 @@ final class SaleLine
         self::assertOriginatingSaleLineIdMatchesType($originatingSaleLineId, $type);
         self::assertOriginatingReservationLineIdMatchesType($originatingReservationLineId, $type);
 
-        // Tier A (structural, ALWAYS enforced — construction AND
-        // reconstitution alike) vs. Tier B ("required for a fresh SALE
-        // line", skipped ONLY during reconstitution) — operational-
-        // sales-domain-design.md §3.12's own amendment / §3.13 E-D5. See
-        // this class's own $reconstituting docblock for why the gate is
-        // an internal flag, not a public constructor parameter.
+        // Tier A only — structural, driven purely by $type, ALWAYS
+        // enforced regardless of caller (create()/createNonSale()/
+        // reconstituteFromStorage() alike). Tier B ("required for a
+        // fresh SALE line") is enforced by create() itself, never here —
+        // operational-sales-domain-design.md §3.12's own amendment /
+        // §3.13 E-D5 / stage 4b.
         self::assertProductNameAndSkuStructurallyValid($productName, $sku, $type);
         self::assertSnapshotFieldsStructurallyValid(
             $regularUnitPrice,
@@ -158,10 +114,6 @@ final class SaleLine
             $unitCost,
             $type,
         );
-
-        if (! self::$reconstituting) {
-            self::assertProductNameAndSkuPresentForFreshSale($productName, $sku, $type);
-        }
     }
 
     /**
@@ -238,27 +190,23 @@ final class SaleLine
 
     /**
      * Tier B half of the §3.12 productName/sku rule — "required for a
-     * fresh SALE line." Skipped during reconstitution (see the
-     * $reconstituting flag) so a legacy row with a genuinely NULL
-     * product_name/sku reads back cleanly instead of throwing — the
-     * exact defect found during Prompt Г (admin-panel-design.md §14),
-     * fixed here.
+     * fresh SALE line." Called ONLY from create() (stage 4b), never from
+     * the constructor — so reconstituteFromStorage() never runs it at
+     * all, and a legacy row with a genuinely NULL product_name/sku reads
+     * back cleanly instead of throwing — the exact defect found during
+     * Prompt Г (admin-panel-design.md §14), fixed here.
      */
-    private static function assertProductNameAndSkuPresentForFreshSale(?string $productName, ?string $sku, SaleLineType $type): void
+    private static function assertProductNameAndSkuPresentForFreshSale(?string $productName, ?string $sku): void
     {
-        if ($type !== SaleLineType::SALE) {
-            return;
-        }
-
         if ($productName === null || $productName === '') {
             throw new InvalidArgumentException(
-                "SaleLine productName must be a non-empty string for type {$type->value}."
+                'SaleLine productName must be a non-empty string for type sale.'
             );
         }
 
         if ($sku === null || $sku === '') {
             throw new InvalidArgumentException(
-                "SaleLine sku must be a non-empty string for type {$type->value}."
+                'SaleLine sku must be a non-empty string for type sale.'
             );
         }
     }
@@ -269,12 +217,10 @@ final class SaleLine
      * SHIPPING/INSTALLMENT_PAYMENT (neither pseudo-line type has a real
      * priceable to snapshot a price/attribute/cost for), unconstrained
      * for RESERVATION/REFUND. UNLIKE productName/sku, there is no Tier B
-     * check for these fields inside this constructor at all in this
-     * stage — "required for a fresh SALE line" is enforced ONLY by
-     * SaleLine::create() below, never here, so the seven new
-     * constructor arguments stay genuinely optional for `new
-     * SaleLine(...)`'s existing callers (see this constructor's own
-     * "TEMPORARY, TRACKED STATE" docblock).
+     * check for these fields inside the constructor at all — "required
+     * for a fresh SALE line" is enforced ONLY by SaleLine::create()
+     * below, never here, so createNonSale()'s callers can freely pass
+     * these fields as optional/nullable for the types that allow them.
      */
     private static function assertSnapshotFieldsStructurallyValid(
         ?Money $regularUnitPrice,
@@ -321,16 +267,16 @@ final class SaleLine
      * detector" as Variation's signature-vs-assignments recomputation,
      * which stays in place regardless of how a Variation is built — not
      * the same class of check as axis validation, which genuinely cannot
-     * run here. This factory therefore delegates to the same constructor
-     * as normal construction, so Tier A cross-validation still runs; it
-     * is not bypassed.
+     * run here. This factory therefore delegates to the same (now
+     * private) constructor as create()/createNonSale(), so Tier A
+     * cross-validation still runs; it is not bypassed.
      *
-     * TIER B IS BYPASSED HERE, DELIBERATELY (§3.12's amendment / §3.13
-     * E-D5): the productName/sku-required-for-SALE rule, and every new
-     * §3.13 field, must NOT throw for a row written before either
-     * shipped. Setting $reconstituting for the exact duration of the
-     * `new self(...)` call below is what suppresses Tier B — see that
-     * flag's own docblock for why it isn't a public parameter instead.
+     * TIER B NEVER RUNS HERE AT ALL (§3.12's amendment / §3.13 E-D5,
+     * stage 4b): the productName/sku-required-for-SALE rule lives
+     * exclusively in create() now, not in the constructor this method
+     * also calls — so a row written before either shipped reads back
+     * cleanly with genuinely NULL fields, with no flag or gate needed to
+     * suppress anything.
      */
     public static function reconstituteFromStorage(
         string $id,
@@ -356,40 +302,30 @@ final class SaleLine
         ?array $soldAttributes = null,
         ?Money $unitCost = null,
     ): self {
-        self::$reconstituting = true;
-
-        try {
-            return new self(
-                id: $id,
-                transactionId: $transactionId,
-                clientId: $clientId,
-                priceableId: $priceableId,
-                type: $type,
-                status: $status,
-                quantity: $quantity,
-                amount: $amount,
-                profit: $profit,
-                recordedAt: $recordedAt,
-                effectiveAt: $effectiveAt,
-                originatingSaleLineId: $originatingSaleLineId,
-                originatingReservationLineId: $originatingReservationLineId,
-                productName: $productName,
-                sku: $sku,
-                regularUnitPrice: $regularUnitPrice,
-                finalUnitPrice: $finalUnitPrice,
-                promotionDiscountShare: $promotionDiscountShare,
-                discretionaryDiscount: $discretionaryDiscount,
-                netPaidAmount: $netPaidAmount,
-                soldAttributes: $soldAttributes,
-                unitCost: $unitCost,
-            );
-        } finally {
-            // ALWAYS reset, even if the constructor above just threw (a
-            // genuinely impossible/Tier-A-violating row) — otherwise a
-            // failed reconstitution would leave Tier B suppressed for
-            // whatever unrelated `new SaleLine(...)` call happens next.
-            self::$reconstituting = false;
-        }
+        return new self(
+            id: $id,
+            transactionId: $transactionId,
+            clientId: $clientId,
+            priceableId: $priceableId,
+            type: $type,
+            status: $status,
+            quantity: $quantity,
+            amount: $amount,
+            profit: $profit,
+            recordedAt: $recordedAt,
+            effectiveAt: $effectiveAt,
+            originatingSaleLineId: $originatingSaleLineId,
+            originatingReservationLineId: $originatingReservationLineId,
+            productName: $productName,
+            sku: $sku,
+            regularUnitPrice: $regularUnitPrice,
+            finalUnitPrice: $finalUnitPrice,
+            promotionDiscountShare: $promotionDiscountShare,
+            discretionaryDiscount: $discretionaryDiscount,
+            netPaidAmount: $netPaidAmount,
+            soldAttributes: $soldAttributes,
+            unitCost: $unitCost,
+        );
     }
 
     /**
@@ -408,13 +344,13 @@ final class SaleLine
      *
      * SALE-SPECIFIC BY DESIGN — does not take a $type parameter at all;
      * building a REFUND/RESERVATION/SHIPPING/INSTALLMENT_PAYMENT line
-     * still goes through `new SaleLine(...)` directly, unchanged. §3.13
-     * only specifies these fields' meaning for a SALE line; extending
-     * create() to other types is not this stage's job.
+     * goes through createNonSale() instead. §3.13 only specifies these
+     * fields' meaning for a SALE line; extending create() to other types
+     * is not this stage's job.
      *
-     * TEMPORARY, TRACKED STATE — see the public constructor's own
-     * docblock: CheckoutOrchestrator/InstallmentPlan do not call this
-     * method yet in this stage (that's §3.13's implementation stage 4).
+     * productName/sku's Tier B check (assertProductNameAndSkuPresentForFreshSale(),
+     * stage 4b) also lives here — the PHP type system alone rejects a
+     * null, but not an empty string, hence the explicit call below.
      *
      * @param array<int, array{definitionId: string, definitionCode: string, definitionName: string, valueId: string, value: string}> $soldAttributes
      */
@@ -439,6 +375,7 @@ final class SaleLine
         ?Money $unitCost = null,
         ?string $originatingReservationLineId = null,
     ): self {
+        self::assertProductNameAndSkuPresentForFreshSale($productName, $sku);
         self::assertSoldAttributesShape($soldAttributes);
         self::assertSnapshotFieldsSameCurrency(
             $amount,
@@ -465,6 +402,90 @@ final class SaleLine
             profit: $profit,
             recordedAt: $recordedAt,
             effectiveAt: $effectiveAt,
+            originatingReservationLineId: $originatingReservationLineId,
+            productName: $productName,
+            sku: $sku,
+            regularUnitPrice: $regularUnitPrice,
+            finalUnitPrice: $finalUnitPrice,
+            promotionDiscountShare: $promotionDiscountShare,
+            discretionaryDiscount: $discretionaryDiscount,
+            netPaidAmount: $netPaidAmount,
+            soldAttributes: $soldAttributes,
+            unitCost: $unitCost,
+        );
+    }
+
+    /**
+     * The fresh-construction path for every type EXCEPT SALE —
+     * operational-sales-domain-design.md §3.13 stage 4b (D9). create()
+     * above stays SALE-only (SALE is the one type §3.13 actually
+     * specifies field meanings for); this is the single remaining path
+     * for a fresh RESERVATION/REFUND/SHIPPING/INSTALLMENT_PAYMENT line —
+     * Tier A (structural, type-driven) only, enforced by the constructor
+     * itself. No Tier B check of any kind: RESERVATION/REFUND are
+     * unconstrained on productName/sku/the §3.13 fields by design (§3.12,
+     * §3.13's own "RESERVATION lines" section — reservation-recording
+     * isn't wired end-to-end yet), and SHIPPING/INSTALLMENT_PAYMENT are
+     * already forced null by Tier A.
+     *
+     * REFUSES SaleLineType::SALE outright — SALE has its own, stricter
+     * factory (create()) with real formula invariants this method does
+     * not and should not replicate; a caller wanting a SALE line must
+     * use create() instead.
+     *
+     * RETURNS AND RESERVATIONS WILL EACH GET THEIR OWN STRICT FACTORY
+     * WHEN DESIGNED (mirroring create()'s own formula-invariant
+     * enforcement, once §3.13's own deferred REFUND/RESERVATION design
+     * items — §3.4's rewrite, reservation-recording — are actually
+     * built). Until then, this is the SOLE path for every non-SALE
+     * type — do not special-case REFUND/RESERVATION validation into this
+     * method piecemeal; give each its own factory instead, the same way
+     * create() exists for SALE.
+     *
+     * @param array<int, array{definitionId: string, definitionCode: string, definitionName: string, valueId: string, value: string}>|null $soldAttributes
+     */
+    public static function createNonSale(
+        SaleLineType $type,
+        string $transactionId,
+        string $clientId,
+        ?string $priceableId,
+        SaleLineStatus $status,
+        int $quantity,
+        Money $amount,
+        Money $profit,
+        DateTimeImmutable $recordedAt,
+        DateTimeImmutable $effectiveAt,
+        ?string $originatingSaleLineId = null,
+        ?string $originatingReservationLineId = null,
+        ?string $productName = null,
+        ?string $sku = null,
+        ?Money $regularUnitPrice = null,
+        ?Money $finalUnitPrice = null,
+        ?Money $promotionDiscountShare = null,
+        ?Money $discretionaryDiscount = null,
+        ?Money $netPaidAmount = null,
+        ?array $soldAttributes = null,
+        ?Money $unitCost = null,
+    ): self {
+        if ($type === SaleLineType::SALE) {
+            throw new InvalidArgumentException(
+                'SaleLine::createNonSale() does not accept SaleLineType::SALE — use SaleLine::create() instead.'
+            );
+        }
+
+        return new self(
+            id: null,
+            transactionId: $transactionId,
+            clientId: $clientId,
+            priceableId: $priceableId,
+            type: $type,
+            status: $status,
+            quantity: $quantity,
+            amount: $amount,
+            profit: $profit,
+            recordedAt: $recordedAt,
+            effectiveAt: $effectiveAt,
+            originatingSaleLineId: $originatingSaleLineId,
             originatingReservationLineId: $originatingReservationLineId,
             productName: $productName,
             sku: $sku,

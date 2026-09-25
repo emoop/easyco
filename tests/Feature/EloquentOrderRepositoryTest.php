@@ -14,7 +14,6 @@ use EasyCo\OperationalSales\Contracts\ClientRepository;
 use EasyCo\OperationalSales\Contracts\TransactionRepository;
 use EasyCo\OperationalSales\Enums\Channel;
 use EasyCo\OperationalSales\Enums\SaleLineStatus;
-use EasyCo\OperationalSales\Enums\SaleLineType;
 use EasyCo\OperationalSales\Persistence\Eloquent\ClientModel;
 use EasyCo\OperationalSales\SaleLine;
 use EasyCo\OperationalSales\Transaction;
@@ -56,12 +55,10 @@ class EloquentOrderRepositoryTest extends TestCase
     private function transactionId(string $clientId): string
     {
         $transaction = new Transaction(null, Channel::WEB);
-        $transaction->addSaleLine(new SaleLine(
-            id: null,
+        $transaction->addSaleLine(SaleLine::create(
             transactionId: '',
             clientId: $clientId,
             priceableId: 'variation-1',
-            type: SaleLineType::SALE,
             status: SaleLineStatus::COMPLETED,
             quantity: 1,
             amount: Money::fromMinorUnits(1000, 'EUR'),
@@ -70,6 +67,12 @@ class EloquentOrderRepositoryTest extends TestCase
             effectiveAt: new DateTimeImmutable('2026-01-01'),
             productName: 'Product One',
             sku: 'SKU-1',
+            regularUnitPrice: Money::fromMinorUnits(1000, 'EUR'),
+            finalUnitPrice: Money::fromMinorUnits(1000, 'EUR'),
+            promotionDiscountShare: Money::zero('EUR'),
+            discretionaryDiscount: Money::zero('EUR'),
+            netPaidAmount: Money::fromMinorUnits(1000, 'EUR'),
+            soldAttributes: [],
         ));
 
         app(TransactionRepository::class)->save($transaction);
