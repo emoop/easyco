@@ -69,6 +69,7 @@ use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\EditRecord;
+use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Group;
 use Filament\Schemas\Components\Section;
@@ -604,7 +605,7 @@ class EditVariableProduct extends EditRecord
      * to be, or its own value options would never load.
      *
      * @param string[] $excludedDefinitionIds
-     * @return array<int, \Filament\Forms\Components\Component>
+     * @return array<int, Component>
      */
     private function axisRowComponents(array $excludedDefinitionIds, bool $live): array
     {
@@ -724,7 +725,7 @@ class EditVariableProduct extends EditRecord
         return $this->mountedActions[array_key_last($this->mountedActions)]['data']['axes'] ?? null;
     }
 
-    /** @return array<int, \Filament\Forms\Components\Component> */
+    /** @return array<int, Component> */
     private function changeAxesSchema(): array
     {
         return [
@@ -3665,7 +3666,7 @@ class EditVariableProduct extends EditRecord
             });
     }
 
-    /** @return array<int, \Filament\Forms\Components\Component> */
+    /** @return array<int, Component> */
     private function deletionConfirmationFields(array $arguments, Repeater $component): array
     {
         $impact = $this->variationDeletionImpact($arguments, $component);

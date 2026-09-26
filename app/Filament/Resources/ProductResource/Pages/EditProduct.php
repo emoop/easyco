@@ -4,7 +4,7 @@ namespace App\Filament\Resources\ProductResource\Pages;
 
 use App\Filament\Resources\ProductResource;
 use App\Services\ActivityLogger;
-use App\Services\ArchiveProductMediaCleaner;
+use App\Services\ProductStatusChanger;
 use App\Services\ProductPricingAndStock;
 use EasyCo\Catalog\Contracts\ProductCategoryRepository;
 use EasyCo\Catalog\Contracts\ProductRepository;
@@ -156,6 +156,7 @@ class EditProduct extends EditRecord
         }
 
         $logger = app(ActivityLogger::class);
+        $statusChanger = app(ProductStatusChanger::class);
 
         if ($product->name() !== $data['name']) {
             $logger->logFieldChanged('product', $product->id(), 'name', $product->name(), $data['name']);
@@ -206,10 +207,22 @@ class EditProduct extends EditRecord
             $product->changeDescription($newDescription);
         }
 
-        $newStatus = $data['status'] ?? ProductStatus::DRAFT->value;
-        $oldStatus = $product->status()->value;
-        // Detected here (this "if changed" block already guarantees
-        // $oldStatus !== $newStatus when true; re-saving an
+        // ONE PLACE DECIDES WHAT A STATUS CHANGE MEANS
+        // (App\Services\ProductStatusChanger): this page keeps its own WRITE —
+        // every field of the product is mutated here and saved ONCE, and the
+        // archived-media cleanup is deliberately deferred to after syncMedia()
+        // below — so it hands over only the status half: the log entry and the
+        // domain's own transition. The products list's bulk archive/publish
+        // actions run the very same code through that service's own
+        // whole-operation entry points, so the two surfaces cannot drift.
+        //
+        // A submitted value outside the enum keeps this page's own long-standing
+        // fallback (draft) rather than introducing a new failure mode for a
+        // crafted request: the field's own options are the only values a real
+        // submission can carry.
+        $newStatus = ProductStatus::tryFrom((string) ($data['status'] ?? ProductStatus::DRAFT->value)) ?? ProductStatus::DRAFT;
+        $oldStatus = $product->status();
+        // Detected here (the two statuses genuinely differ when true; re-saving an
         // already-archived product never re-enters this block at all,
         // so this is naturally a one-time, no-op-on-repeat condition
         // without any extra guard needed) — but NOT ACTED ON until
@@ -225,16 +238,9 @@ class EditProduct extends EditRecord
         // disk. See ArchiveProductMediaCleaner's own docblock for what
         // "cleanup" really does — real deletion, not detach-only,
         // confirmed by the domain owner.
-        $shouldCleanArchivedMedia = $oldStatus !== $newStatus && $newStatus === ProductStatus::ARCHIVED->value;
+        $shouldCleanArchivedMedia = $statusChanger->requiresArchivedMediaCleanup($oldStatus, $newStatus);
 
-        if ($oldStatus !== $newStatus) {
-            $logger->logFieldChanged('product', $product->id(), 'status', $oldStatus, $newStatus);
-            match ($newStatus) {
-                ProductStatus::ACTIVE->value => $product->publish(),
-                ProductStatus::ARCHIVED->value => $product->archive(),
-                default => $product->markAsDraft(),
-            };
-        }
+        $statusChanger->applyStatus($product, $newStatus);
 
         $newVisibility = CatalogVisibility::from($data['catalog_visibility'] ?? CatalogVisibility::HIDDEN->value);
         if ($product->catalogVisibility() !== $newVisibility) {
@@ -304,7 +310,7 @@ class EditProduct extends EditRecord
         // $shouldCleanArchivedMedia's own comment for why running this
         // any earlier would be a real ordering bug.
         if ($shouldCleanArchivedMedia) {
-            app(ArchiveProductMediaCleaner::class)->clean($product->id());
+            $statusChanger->cleanArchivedMedia((string) $product->id());
         }
 
         $this->updatePricingAndStock($universal->priceableId(), $data, $logger, $product->id());
