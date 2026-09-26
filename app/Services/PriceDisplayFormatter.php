@@ -29,39 +29,26 @@ use EasyCo\Pricing\Currency;
  * picker was ruled out (would silently orphan existing prices, not
  * convert them). ONLY THE POSITION IS MERCHANT-CONFIGURABLE, per the
  * originally-deferred settings task this finishes: `site.currency_symbol_
- * position`, read fresh on every format() call (same "never cached at
- * class-load time" posture as every other SiteSettingsRepository read
- * in this codebase), one of 'prefix' | 'prefix_space' | 'suffix' |
- * 'suffix_space' — WooCommerce's own well-tested 4-option model, chosen
- * over two separate booleans (position + spacing) to avoid inventing
+ * position`, one of 'prefix' | 'prefix_space' | 'suffix' | 'suffix_space'
+ * — WooCommerce's own well-tested 4-option model, chosen over two
+ * separate booleans (position + spacing) to avoid inventing
  * combinations no real platform actually ships. Defaults to
  * 'suffix_space' when unset — the exact, byte-for-byte behavior this
  * class had before this setting existed ("{amount} {symbol}"), so an
  * upgraded installation that never visits the new Settings tab renders
  * identically to before.
+ *
+ * THIS CLASS HOLDS NO STATE OF ITS OWN, and the position is still read on
+ * every format() call — that read is now an in-memory array lookup, because
+ * SiteSettingsRepository itself memoizes per request (see that
+ * implementation's own docblock). This class used to keep a private copy of
+ * the position precisely because the repository had no memory; keeping it now
+ * would be worse than redundant: it would serve the pre-write value for the
+ * rest of the request even after a caller had set a new one, which is exactly
+ * the behaviour that was deliberately removed.
  */
 class PriceDisplayFormatter
 {
-    /**
-     * Memoized per instance, and this class is bound scoped()
-     * (AppServiceProvider) — a real, confirmed regression found while
-     * building the Orders admin read-path: bare app(PriceDisplayFormatter
-     * ::class) calls at ProductResource's per-row price callbacks
-     * (priceRangeHtml(), the infolist's price entries) previously
-     * created a fresh, unbound instance for every row, and this
-     * property's own absence meant a fresh, unmemoized
-     * SiteSettingsRepository::get() query per format() call too — "N
-     * rows -> N queries", the same shape ProductPriceRangeProvider's own
-     * scoped() binding already exists to prevent (see that class's
-     * docblock). Read once, lazily, on this instance's first format()
-     * call — the class docblock's own "never cached at class-load time"
-     * still holds: cached per REQUEST (this scoped() instance's
-     * lifetime), never across requests, so a merchant changing the
-     * setting mid-session is reflected on their very next page load,
-     * just not mid-request.
-     */
-    private ?string $cachedPosition = null;
-
     public function __construct(
         private readonly SiteSettingsRepository $settings,
     ) {}
@@ -108,11 +95,11 @@ class PriceDisplayFormatter
     }
 
     /**
-     * Position/spacing read fresh from SiteSettingsRepository on every
-     * call — see class docblock for the four real option values and the
-     * 'suffix_space' default. An unknown currency's symbol is null, so
-     * this returns $decimalValue completely unchanged regardless of
-     * position — today's plain-decimal behaviour, byte for byte.
+     * The position, read on EVERY call (no memo here — see the class docblock
+     * for why a private copy of it would now be a bug rather than a saving).
+     * An unknown currency's symbol is null, so this returns $decimalValue
+     * completely unchanged regardless of position — today's plain-decimal
+     * behaviour, byte for byte.
      */
     public function format(string $decimalValue, Currency $currency): string
     {
@@ -122,9 +109,9 @@ class PriceDisplayFormatter
             return $decimalValue;
         }
 
-        $this->cachedPosition ??= $this->settings->get('site.currency_symbol_position') ?? 'suffix_space';
+        $position = $this->settings->get('site.currency_symbol_position') ?? 'suffix_space';
 
-        return match ($this->cachedPosition) {
+        return match ($position) {
             'prefix' => "{$symbol}{$decimalValue}",
             'prefix_space' => "{$symbol} {$decimalValue}",
             'suffix' => "{$decimalValue}{$symbol}",

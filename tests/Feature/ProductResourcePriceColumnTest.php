@@ -513,20 +513,31 @@ class ProductResourcePriceColumnTest extends TestCase
     }
 
     /**
-     * PriceDisplayFormatter's own real regression, found while building
-     * the Orders admin read-path (D7): before this class's
-     * $cachedPosition + AppServiceProvider's scoped() binding, a bare
-     * app(PriceDisplayFormatter::class) resolved a FRESH instance every
-     * call — this products list's own price_display column calls it
-     * twice per row (regular + final) — so N rows cost up to 2N real
+     * The read-once-per-request regression, found while building the Orders admin
+     * read-path (D7): before it, a bare app(PriceDisplayFormatter::class) resolved
+     * a FRESH instance every call — this products list's own price_display column
+     * calls it twice per row (regular + final) — so N rows cost up to 2N real
      * SiteSettingsRepository::get() queries. The existing
-     * test_query_count_for_a_5_product_vs_25_product_page_is_equal
-     * above does NOT catch this: it measures ProductPriceRangeProvider
-     * alone, never priceRangeHtml()/PriceDisplayFormatter at all.
+     * test_query_count_for_a_5_product_vs_25_product_page_is_equal above does NOT
+     * catch this: it measures ProductPriceRangeProvider alone, never
+     * priceRangeHtml()/PriceDisplayFormatter at all.
+     *
+     * WHERE THE MEMO LIVES NOW: this test used to prove PriceDisplayFormatter's
+     * own $cachedPosition. That property is gone — the read is memoized by the
+     * scoped SiteSettingsRepository itself — so what this now proves is the same
+     * property one layer down (and one layer stronger: it holds for EVERY reader
+     * of a setting, not just this formatter), while the assertion about the
+     * shared scoped() instance below is unchanged.
      */
     public function test_the_currency_position_setting_is_read_once_per_scoped_instance_not_once_per_format_call(): void
     {
         app(SiteSettingsRepository::class)->set('site.currency_symbol_position', 'prefix');
+
+        // A cold memo, so the loop below measures the read itself: set() writes
+        // through to the memo, so without this the position would already be
+        // known and the 10 calls would (correctly) cost zero queries — which
+        // would leave the assertion below proving nothing.
+        $this->app->forgetScopedInstances();
 
         $formatter = app(PriceDisplayFormatter::class);
 
@@ -539,11 +550,10 @@ class ProductResourcePriceColumnTest extends TestCase
         $this->assertSame(1, $queries, '10 format() calls on the same instance must read the position setting exactly once');
         $this->assertSame('€19.99', $formatter->format('19.99', Currency::EUR()));
 
-        // Resolved AGAIN via app() — still the SAME object (scoped()),
-        // zero further queries. This is the real mechanism
-        // priceRangeHtml() depends on: every row's own bare
-        // app(PriceDisplayFormatter::class) call within one request
-        // must hit this same cached instance, not a fresh one.
+        // Resolved AGAIN via app() — zero further queries. This is the real
+        // mechanism priceRangeHtml() depends on: every row's own bare
+        // app(PriceDisplayFormatter::class) call within one request must hit the
+        // same memoized setting, not re-read it per row.
         $queriesOnReResolve = $this->countQueries(function (): void {
             app(PriceDisplayFormatter::class)->format('29.99', Currency::EUR());
         });
@@ -601,31 +611,43 @@ class ProductResourcePriceColumnTest extends TestCase
     }
 
     /**
-     * The other half of D7: memoization is per REQUEST, not per
-     * PROCESS — a setting change must reach the very next request, even
-     * though it is invisible mid-request (the class docblock's own
-     * documented tradeoff). Container::forgetScopedInstances() is the
-     * real mechanism Laravel itself uses to end a scoped binding's
-     * lifetime between requests in a long-running worker; a plain
-     * PHP-FPM-style fresh process gets the equivalent for free via a
-     * brand-new container, never exercised in-process by this test.
+     * The other half of D7, INVERTED by the per-request memo work: a setting
+     * change is now visible to the very next read in the SAME request, and it
+     * still reaches the next request.
+     *
+     * This test previously asserted the opposite ("mid-request, the
+     * already-memoized position must not change"), which was the documented
+     * tradeoff of PriceDisplayFormatter's own private position copy. That copy
+     * is gone — the memo now lives in the scoped SiteSettingsRepository, which
+     * writes set() through to its own memo — so the mid-request invisibility is
+     * no longer a property of the system, and asserting it would be asserting a
+     * bug. What replaces it is the stronger pair below: visible immediately,
+     * AND still current in the next request.
+     *
+     * Container::forgetScopedInstances() is the real mechanism Laravel itself
+     * uses to end a scoped binding's lifetime between requests in a long-running
+     * worker; a plain PHP-FPM-style fresh process gets the equivalent for free
+     * via a brand-new container, never exercised in-process by this test.
      */
-    public function test_a_changed_currency_position_is_invisible_mid_request_but_reaches_the_next_one(): void
+    public function test_a_changed_currency_position_is_visible_immediately_and_still_current_next_request(): void
     {
         app(SiteSettingsRepository::class)->set('site.currency_symbol_position', 'prefix');
         $this->assertSame('€19.99', app(PriceDisplayFormatter::class)->format('19.99', Currency::EUR()));
 
         app(SiteSettingsRepository::class)->set('site.currency_symbol_position', 'suffix');
         $this->assertSame(
-            '€19.99',
+            '19.99€',
             app(PriceDisplayFormatter::class)->format('19.99', Currency::EUR()),
-            'mid-request, the already-memoized position must not change'
+            'mid-request, a written setting must be visible to the very next read'
         );
+
+        // ...and a fourth value still reaches a later request.
+        app(SiteSettingsRepository::class)->set('site.currency_symbol_position', 'prefix_space');
 
         $this->app->forgetScopedInstances();
 
         $this->assertSame(
-            '19.99€',
+            '€ 19.99',
             app(PriceDisplayFormatter::class)->format('19.99', Currency::EUR()),
             'a new scoped instance (the next request) must read the current setting'
         );

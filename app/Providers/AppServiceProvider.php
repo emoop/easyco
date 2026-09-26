@@ -32,12 +32,14 @@ class AppServiceProvider extends ServiceProvider
         $this->app->scoped(ProductPriceRangeProvider::class);
 
         // Same real "N rows -> N queries" shape as ProductPriceRangeProvider
-        // above, confirmed while building the Orders admin read-path —
-        // see PriceDisplayFormatter's own docblock for the full finding.
-        // Its own $cachedPosition memoizes the read WITHIN one instance;
-        // scoped() is what makes that one instance actually the SAME
-        // object across every app(PriceDisplayFormatter::class) call in
-        // a request, instead of a fresh, un-memoized one per call.
+        // above, confirmed while building the Orders admin read-path. The memo
+        // that finding produced now lives in the SiteSettingsRepository binding
+        // instead (scoped(), in SiteSettingsServiceProvider), because it belongs
+        // to the SETTINGS, not to this one formatter — PriceDisplayFormatter is
+        // stateless now. Its scoped() binding is kept only so the two have one
+        // consistent lifetime: removing it would change nothing observable for a
+        // stateless service, and this comment would then have nothing to attach
+        // the "where did the memo go" answer to.
         $this->app->scoped(PriceDisplayFormatter::class);
 
         // OrderAdminReader::forOrder()'s own per-instance cache
