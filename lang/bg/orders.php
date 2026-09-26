@@ -32,6 +32,7 @@ return [
         'carrier_code' => 'Куриер',
         'pickup_point_reference' => 'Офис на куриер',
         'settlement' => 'Населено място',
+        'image' => 'Снимка',
         'product_name' => 'Продукт',
         'sku' => 'SKU',
         'quantity' => 'Количество',

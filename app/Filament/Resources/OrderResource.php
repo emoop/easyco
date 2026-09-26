@@ -17,6 +17,8 @@ use EasyCo\Order\Persistence\Eloquent\OrderModel;
 use EasyCo\Pricing\Currency;
 use EasyCo\Pricing\Money;
 use EasyCo\Staff\Enums\Permission;
+use Filament\Infolists\Components\Entry;
+use Filament\Infolists\Components\ImageEntry;
 use Filament\Infolists\Components\RepeatableEntry;
 use Filament\Infolists\Components\RepeatableEntry\TableColumn as RepeatableTableColumn;
 use Filament\Infolists\Components\TextEntry;
@@ -56,6 +58,13 @@ class OrderResource extends Resource
     protected static ?string $model = OrderModel::class;
 
     protected static string|BackedEnum|null $navigationIcon = 'heroicon-o-shopping-bag';
+
+    /**
+     * §14's line thumbnail: 38x38 px, square — the merchant's own size for
+     * it, named here rather than repeated as a bare number in a cell and in
+     * a test.
+     */
+    private const LINE_THUMBNAIL_SIZE_PX = 38;
 
     public static function getModelLabel(): string
     {
@@ -317,7 +326,7 @@ class OrderResource extends Resource
                             static::lineColumnSpecs($record),
                         ))
                         ->schema(fn (OrderModel $record): array => array_map(
-                            static fn (array $spec): TextEntry => static::lineCell($spec['key']),
+                            static fn (array $spec): Entry => static::lineCell($spec['key']),
                             static::lineColumnSpecs($record),
                         )),
                 ]),
@@ -490,16 +499,22 @@ class OrderResource extends Resource
      * values (OrderAdminSaleLineView); this page simply stops showing
      * them.
      *
+     * `image` IS NULLABLE, unlike every other value here: the line's
+     * thumbnail is live data (no snapshot stores one) and a line with no
+     * usable photo legitimately has none — lineCell() hides the cell
+     * entirely for it rather than rendering a broken image.
+     *
      * The four numbers a merchant reads off a line are NAMED on the line
      * itself as well as in the header row, by lineCell() — see its own
      * docblock; the values here stay pure values.
      *
-     * @return array<int, array<string, string>>
+     * @return array<int, array<string, string|null>>
      */
     private static function lineRows(OrderModel $record): array
     {
         return array_map(
             fn (OrderAdminSaleLineView $line): array => [
+                'image' => $line->imagePath,
                 'product_name' => static::lineProductHtml($line),
                 'sku' => $line->sku ?? __('orders.not_available'),
                 'quantity' => (string) $line->quantity,
@@ -541,11 +556,19 @@ class OrderResource extends Resource
      *  - line total (the amount before discounts): with Price x Quantity,
      *    Discount and Final price it only repeated information.
      *
+     * A THUMBNAIL COMES FIRST, before the product name — 38x38 px, the
+     * merchant's own size for it (LINE_THUMBNAIL_SIZE_PX), so a line reads
+     * like the physical article rather than as a wall of values. It is the
+     * only LIVE value on this page (no snapshot stores an image — see
+     * OrderAdminReader::imagePathsFor()), and it fails soft: a line with no
+     * usable photo renders no image cell at all.
+     *
      * @return array<int, array{key: string, label: string}>
      */
     private static function lineColumnSpecs(OrderModel $record): array
     {
         $specs = [
+            ['key' => 'image', 'label' => __('orders.fields.image')],
             ['key' => 'product_name', 'label' => __('orders.fields.product_name')],
             ['key' => 'sku', 'label' => __('orders.fields.sku')],
             ['key' => 'quantity', 'label' => __('orders.fields.quantity')],
@@ -598,9 +621,25 @@ class OrderResource extends Resource
      * the label column is exactly the slot that shows a name in that mode
      * while the CSS hides it again in the wide/table mode, where the header
      * row takes over.
+     *
+     * THE THUMBNAIL IS THE ONE CELL THAT IS NOT A TextEntry — and the only
+     * one hidden outright when it has nothing to show, because an image
+     * cell with an empty state would render an empty <img> box that reads
+     * as a broken picture (lineRows() explains why its value is nullable).
      */
-    private static function lineCell(string $key): TextEntry
+    private static function lineCell(string $key): Entry
     {
+        if ($key === 'image') {
+            return ImageEntry::make($key)
+                ->label(__('orders.fields.image'))
+                // Same disk rule as ProductResource's own list thumbnail —
+                // config, never a hardcoded 'public'.
+                ->disk(config('services.media.default_disk', 'public'))
+                ->imageSize(self::LINE_THUMBNAIL_SIZE_PX)
+                ->square()
+                ->hidden(fn (?string $state): bool => blank($state));
+        }
+
         $entry = TextEntry::make($key);
 
         if ($key === 'product_name' || $key === 'unit_price') {
@@ -624,8 +663,8 @@ class OrderResource extends Resource
      * merchant uses for them (admin-panel-design.md §14) — or null for the
      * values a line does NOT name:
      *
-     *  - product_name / sku are identified by their own content (the product
-     *    name, the SKU), not by a label;
+     *  - image / product_name / sku are identified by their own content (the
+     *    photo, the product name, the SKU), not by a label;
      *  - discretionary_discount (a register discount, D4) appears only when
      *    some line has one, and keeps its own column header only — adding a
      *    fifth label for it was not asked for.

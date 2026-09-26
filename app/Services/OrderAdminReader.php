@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use EasyCo\Media\Enums\MediaType;
+use EasyCo\Media\Enums\ProcessingStatus;
 use EasyCo\OperationalSales\Contracts\ClientRepository;
 use EasyCo\OperationalSales\Enums\SaleLineStatus;
 use EasyCo\OperationalSales\Enums\SaleLineType;
@@ -185,7 +187,7 @@ final class OrderAdminReader
             ->where('id', $order->transactionId())
             ->value('channel') ?? '—';
 
-        $lines = DB::table('operational_sales_sale_lines')
+        $rows = DB::table('operational_sales_sale_lines')
             ->where('transaction_id', $order->transactionId())
             ->where('type', SaleLineType::SALE->value)
             ->where('status', SaleLineStatus::COMPLETED->value)
@@ -196,8 +198,21 @@ final class OrderAdminReader
             // correction would keep rendering next to its own original.
             ->whereNull('deleted_at')
             ->orderBy('id')
-            ->get()
-            ->map(fn (object $row): OrderAdminSaleLineView => $this->buildLineView($row))
+            ->get();
+
+        // ONE read for every line's thumbnail, never one per line — see
+        // imagePathsFor()'s own docblock. The View page's query-count test
+        // pins the page's count to the line COUNT, not to how much data a
+        // line carries.
+        $imagePathsByVariationId = $this->imagePathsFor(
+            $rows->pluck('priceable_id')->filter()->unique()->values()->all()
+        );
+
+        $lines = $rows
+            ->map(fn (object $row): OrderAdminSaleLineView => $this->buildLineView(
+                $row,
+                $row->priceable_id === null ? null : ($imagePathsByVariationId[$row->priceable_id] ?? null),
+            ))
             ->all();
 
         $hasPromotionRedemption = DB::table('promotion_redemptions')
@@ -250,7 +265,7 @@ final class OrderAdminReader
      * resolved before the constructor call because isLegacy (D1) is
      * derived from it.
      */
-    private function buildLineView(object $row): OrderAdminSaleLineView
+    private function buildLineView(object $row, ?string $imagePath): OrderAdminSaleLineView
     {
         $quantity = (int) $row->quantity;
         $amountMinor = (int) $row->amount_minor;
@@ -281,9 +296,89 @@ final class OrderAdminReader
             discretionaryDiscount: SaleLineMapper::moneyOrNull($row->discretionary_discount_minor, $row->discretionary_discount_currency, 'discretionaryDiscount'),
             netPaidAmount: $netPaidAmount,
             unitCost: SaleLineMapper::moneyOrNull($row->unit_cost_minor, $row->unit_cost_currency, 'unitCost'),
+            imagePath: $imagePath,
             soldAttributes: self::decodeSoldAttributes($row->sold_attributes, $netPaidAmount === null, (string) $row->id),
             isLegacy: $netPaidAmount === null,
         );
+    }
+
+    /**
+     * The thumbnail path for each of an order's line variations — BOUNDED
+     * to one read (two when the first leaves any line without a photo) for
+     * the WHOLE order, never a lookup per line, because the lines section
+     * must not grow its query count with the number of lines it renders.
+     *
+     * THE IMAGE IS LIVE DATA, THE ONE DELIBERATE EXCEPTION TO D2's
+     * "SNAPSHOT, NEVER LIVE" RULE, and stated here rather than left to be
+     * discovered: §3.13's sale-line snapshot stores no image at all, so
+     * there is no historical photo this page COULD show. What the merchant
+     * sees is the variation's own current first photo, falling back to its
+     * product's own first photo — the same "first READY image" rule
+     * ProductResource's list subquery and the sandbox's gallery use, read
+     * through this class because D5 keeps every cross-table read here.
+     *
+     * FAIL-SOFT (D8), NEVER LOUD: a variation that no longer exists, a
+     * product with no media, an asset that never reached READY, or a
+     * priceable_id that is NULL (the pseudo-lines the column's own
+     * migration documents) all simply produce no entry in the returned map,
+     * and the line renders without a thumbnail rather than with a broken
+     * one.
+     *
+     * @param  list<string>  $variationIds  The order's line priceable ids (a SALE line's priceable_id IS its variation id — see SaleLineSnapshotBuilder's own construction of the snapshot).
+     * @return array<string, string> variationId => path, for the ids that HAVE a usable image.
+     */
+    private function imagePathsFor(array $variationIds): array
+    {
+        if ($variationIds === []) {
+            return [];
+        }
+
+        // 1. The variation's OWN photo (what a VARIABLE product's merchant
+        //    attaches per variation), ordered by the attachment's own
+        //    sort_order with the asset id as a stable tie-break — the exact
+        //    ordering rule the two existing call sites use.
+        $rows = DB::table('catalog_variation_media')
+            ->join('catalog_media', 'catalog_media.id', '=', 'catalog_variation_media.media_id')
+            ->whereIn('catalog_variation_media.variation_id', $variationIds)
+            ->where('catalog_media.type', MediaType::IMAGE->value)
+            ->where('catalog_media.processing_status', ProcessingStatus::READY->value)
+            ->orderBy('catalog_variation_media.sort_order')
+            ->orderBy('catalog_media.id')
+            ->select(['catalog_variation_media.variation_id', 'catalog_media.path'])
+            ->get();
+
+        $paths = [];
+        foreach ($rows as $row) {
+            $paths[(string) $row->variation_id] ??= (string) $row->path;
+        }
+
+        // 2. The product's own photo, for every line still without one —
+        //    one query, reached THROUGH catalog_variations so no separate
+        //    variation -> product lookup is needed either. A SIMPLE
+        //    product's UNIVERSAL variation has no variation media at all,
+        //    so this is the branch the common case takes.
+        $withoutImage = array_values(array_diff($variationIds, array_keys($paths)));
+
+        if ($withoutImage === []) {
+            return $paths;
+        }
+
+        $productRows = DB::table('catalog_product_media')
+            ->join('catalog_media', 'catalog_media.id', '=', 'catalog_product_media.media_id')
+            ->join('catalog_variations', 'catalog_variations.product_id', '=', 'catalog_product_media.product_id')
+            ->whereIn('catalog_variations.id', $withoutImage)
+            ->where('catalog_media.type', MediaType::IMAGE->value)
+            ->where('catalog_media.processing_status', ProcessingStatus::READY->value)
+            ->orderBy('catalog_product_media.sort_order')
+            ->orderBy('catalog_media.id')
+            ->select(['catalog_variations.id as variation_id', 'catalog_media.path'])
+            ->get();
+
+        foreach ($productRows as $row) {
+            $paths[(string) $row->variation_id] ??= (string) $row->path;
+        }
+
+        return $paths;
     }
 
     /**

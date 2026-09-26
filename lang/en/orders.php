@@ -32,6 +32,7 @@ return [
         'carrier_code' => 'Carrier',
         'pickup_point_reference' => 'Pickup point',
         'settlement' => 'Settlement',
+        'image' => 'Image',
         'product_name' => 'Product',
         'sku' => 'SKU',
         'quantity' => 'Quantity',

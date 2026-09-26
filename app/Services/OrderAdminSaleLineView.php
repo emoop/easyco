@@ -46,6 +46,14 @@ use EasyCo\Pricing\Money;
  * row predates the full snapshot" (see OrderAdminReader::buildLineView()
  * for where a HALF-populated pair — corruption, not legacy — is made to
  * fail loudly instead, via SaleLineMapper's own rule).
+ *
+ * imagePath IS THE ONE LIVE VALUE ON THIS DTO, DELIBERATELY: §3.13's
+ * snapshot stores no image at all, so there is nothing historical a line
+ * could show — the thumbnail is the variation's (or, failing that, its
+ * product's) CURRENT first READY photo, resolved in one batched read per
+ * order by OrderAdminReader::imagePathsFor(). NULL means "no usable photo,
+ * show none" and is the normal case for a variation with no media, never an
+ * error.
  */
 final class OrderAdminSaleLineView
 {
@@ -66,6 +74,7 @@ final class OrderAdminSaleLineView
         public readonly ?Money $discretionaryDiscount,
         public readonly ?Money $netPaidAmount,
         public readonly ?Money $unitCost,
+        public readonly ?string $imagePath,
         public readonly array $soldAttributes,
         public readonly bool $isLegacy,
     ) {

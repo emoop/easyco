@@ -22,6 +22,13 @@ use EasyCo\Catalog\Product;
 use EasyCo\Catalog\VariationAxis;
 use EasyCo\Inventory\Contracts\StockLevelRepository;
 use EasyCo\Inventory\StockLevel;
+use EasyCo\Media\Contracts\MediaAssetRepository;
+use EasyCo\Media\Contracts\ProductMediaRepository;
+use EasyCo\Media\Contracts\VariationMediaRepository;
+use EasyCo\Media\Enums\MediaType;
+use EasyCo\Media\MediaAsset;
+use EasyCo\Media\ProductMedia;
+use EasyCo\Media\VariationMedia;
 use EasyCo\Order\Order;
 use EasyCo\Pricing\Contracts\PriceListItemRepository;
 use EasyCo\Pricing\Contracts\PriceListRepository;
@@ -49,6 +56,7 @@ use EasyCo\Staff\Staff;
 use Filament\Support\Enums\Alignment;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -296,18 +304,18 @@ class OrderViewSnapshotPageTest extends TestCase
     /**
      * §14's column pass — the Lines table carries NO unit-cost column for
      * any role, in either locale. Asserted two ways so this cannot pass
-     * vacuously: the six price/product labels it DOES carry must really be
-     * in the header, and the header must hold exactly six `<th>` cells —
-     * so ANY seventh column (a re-added cost column under any label, in
-     * any locale) fails here. The default fixtures below write no
-     * register discount, so §14 D4's own seventh column is legitimately
-     * absent.
+     * vacuously: the seven labels it DOES carry must really be in the
+     * header, and the header must hold exactly seven `<th>` cells — so ANY
+     * eighth column (a re-added cost column under any label, in any locale)
+     * fails here. The default fixtures below write no register discount, so
+     * §14 D4's own seventh column is legitimately absent.
      */
     private function assertNoUnitCostColumn(string $html): void
     {
         $header = $this->linesHeaderArea($html);
 
         $expectedLabels = [
+            __('orders.fields.image'),
             __('orders.fields.product_name'),
             __('orders.fields.sku'),
             __('orders.fields.quantity'),
@@ -323,8 +331,74 @@ class OrderViewSnapshotPageTest extends TestCase
         $this->assertSame(
             count($expectedLabels),
             preg_match_all('#<th\b#', $header),
-            'the Lines table must render exactly the six columns §14 leaves it — no unit cost',
+            'the Lines table must render exactly the seven columns §14 leaves it — no unit cost',
         );
+    }
+
+    /**
+     * A real READY image attached to a PRODUCT — the same fixture shape
+     * SandboxProductPageTest uses, so the media pipeline's own states are
+     * produced the way production produces them, never hand-written rows.
+     *
+     * THE FILE ITSELF IS ALSO WRITTEN, on a faked disk: Filament's ImageEntry
+     * checks that the file exists before rendering a URL (confirmed in the
+     * installed source), which is exactly why a missing file shows no image
+     * rather than a broken one — so a path-only fixture would prove nothing
+     * about what the page renders.
+     */
+    private function attachProductImage(string $productId, string $path): void
+    {
+        $asset = MediaAsset::create(MediaType::IMAGE, 'public', $path, 'Product photo');
+        $asset->markProcessing();
+        $asset->markReady([]);
+        app(MediaAssetRepository::class)->save($asset);
+
+        app(ProductMediaRepository::class)->save(new ProductMedia(
+            id: null,
+            productId: $productId,
+            mediaId: (string) $asset->id(),
+            sortOrder: 0,
+            autoplay: false,
+        ));
+
+        $this->writeMediaFile($path);
+    }
+
+    /** The same, attached to a VARIATION — what a VARIABLE product's merchant sets per combination. */
+    private function attachVariationImage(string $variationId, string $path): void
+    {
+        $asset = MediaAsset::create(MediaType::IMAGE, 'public', $path, 'Variation photo');
+        $asset->markProcessing();
+        $asset->markReady([]);
+        app(MediaAssetRepository::class)->save($asset);
+
+        app(VariationMediaRepository::class)->save(new VariationMedia(
+            id: null,
+            variationId: $variationId,
+            mediaId: (string) $asset->id(),
+            sortOrder: 0,
+        ));
+
+        $this->writeMediaFile($path);
+    }
+
+    /** The disk the View page's ImageEntry reads through — config, like the cell itself. */
+    private function mediaDisk(): string
+    {
+        return (string) config('services.media.default_disk', 'public');
+    }
+
+    private function writeMediaFile(string $path): void
+    {
+        if (! Storage::disk($this->mediaDisk())->exists($path)) {
+            Storage::disk($this->mediaDisk())->put($path, 'fake image bytes');
+        }
+    }
+
+    /** The product a variation belongs to — the test's own read of the fixture, not a production path. */
+    private function productIdOfVariation(string $variationId): string
+    {
+        return (string) DB::table('catalog_variations')->where('id', $variationId)->value('product_id');
     }
 
     /**
@@ -659,6 +733,89 @@ class OrderViewSnapshotPageTest extends TestCase
             $this->assertTrue($unnamed->isLabelHidden(), "the '{$key}' cell must not gain a name");
             $this->assertNull($unnamed->getAlignment());
         }
+    }
+
+    /**
+     * §14's thumbnail — every line shows what was sold, 38x38 px square, in
+     * the FIRST cell, before the product name. The fixture attaches a real
+     * READY image to the product itself: a SIMPLE product's UNIVERSAL
+     * variation has no media of its own, so this is also
+     * OrderAdminReader::imagePathsFor()'s fallback branch.
+     */
+    public function test_each_line_shows_a_38px_square_thumbnail_of_its_product_before_the_name(): void
+    {
+        $this->seedPricingLists();
+        Storage::fake($this->mediaDisk());
+
+        $variationId = $this->simpleVariation('10.00');
+        $this->attachProductImage($this->productIdOfVariation($variationId), 'products/ordered-product.jpg');
+
+        $cart = $this->guestCart();
+        $this->addLine($cart, $variationId, 1);
+        app(CartRepository::class)->save($cart);
+
+        $order = $this->place($cart);
+        $this->actingAsRole('Administrator');
+        $row = $this->linesBodyRows($this->viewHtml($order))[0];
+
+        $this->assertStringContainsString('products/ordered-product.jpg', $row);
+
+        // 38 x 38 px, square — OrderResource::LINE_THUMBNAIL_SIZE_PX.
+        $this->assertStringContainsString('height: 38px', $row);
+        $this->assertStringContainsString('width: 38px', $row);
+
+        // The FIRST cell of the line: the thumbnail precedes the product name.
+        $this->assertLessThan(
+            strpos($row, 'Simple '),
+            strpos($row, 'products/ordered-product.jpg'),
+            'the thumbnail must come before the product name',
+        );
+    }
+
+    /**
+     * The variation's OWN photo wins over its product's — for a VARIABLE
+     * product the merchant attaches the photo of the combination actually
+     * bought, which is the more truthful thumbnail of the two.
+     */
+    public function test_a_variations_own_photo_wins_over_its_products(): void
+    {
+        $this->seedPricingLists();
+        Storage::fake($this->mediaDisk());
+
+        $variable = $this->variableVariation(regular: '80.00', valueLabel: 'M');
+
+        $this->attachProductImage($variable['productId'], 'products/product-photo.jpg');
+        $this->attachVariationImage($variable['variationId'], 'products/variation-photo.jpg');
+
+        $cart = $this->guestCart();
+        $this->addLine($cart, $variable['variationId'], 1);
+        app(CartRepository::class)->save($cart);
+
+        $order = $this->place($cart);
+        $this->actingAsRole('Administrator');
+        $row = $this->linesBodyRows($this->viewHtml($order))[0];
+
+        $this->assertStringContainsString('products/variation-photo.jpg', $row);
+        $this->assertStringNotContainsString('products/product-photo.jpg', $row);
+    }
+
+    /**
+     * Fail-soft, D8: a line whose product has no usable photo renders NO
+     * image at all — not an empty <img> box that reads as a broken picture,
+     * and never an error. (The page itself renders fine: viewHtml() asserts
+     * a 200.)
+     */
+    public function test_a_line_with_no_usable_photo_renders_without_a_thumbnail(): void
+    {
+        $this->seedPricingLists();
+
+        $order = $this->orderWithLines(1);
+
+        $this->actingAsRole('Administrator');
+        $row = $this->linesBodyRows($this->viewHtml($order))[0];
+
+        $this->assertStringNotContainsString('<img', $row);
+        $this->assertStringContainsString('Simple ', $row, 'the line itself must still render');
     }
 
     /**

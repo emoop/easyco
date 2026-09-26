@@ -1080,6 +1080,18 @@ are their own keys, so a row may word a value differently from the heading
 it sits under (`Бройка` on the line, D3's `Количество` above it) — the line
 language is the merchant's, the column name is the table's.
 
+**A thumbnail comes first, before the product name** — 38x38 px, square, so
+a line reads like the article itself rather than as a wall of values. It is
+THE ONE LIVE VALUE on this page, and therefore a stated exception to D2:
+§3.13's snapshot stores no image at all, so there is nothing historical to
+show, and the cell renders the variation's own first READY photo, falling back
+to its product's first photo — one batched read per order
+(`OrderAdminReader::imagePathsFor()`), never one per line, which this page's
+own query-count test pins. Fail-soft in both directions: a line with no usable
+photo renders no image cell at all, and Filament's own ImageEntry renders no
+URL for a file that is not on disk, so a stale path can never show a broken
+picture.
+
 **The sections stack, one under another** — the page's own section grid is
 set to a single column, overriding Filament's default of TWO columns from
 the `lg` breakpoint. With two columns the tall lines section sat beside a
