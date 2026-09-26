@@ -79,6 +79,7 @@
     window.sandboxApi = {
         get: function (url) { return call('GET', url); },
         post: function (url, body) { return call('POST', url, body); },
+        put: function (url, body) { return call('PUT', url, body); },
         patch: function (url, body) { return call('PATCH', url, body); },
         del: function (url) { return call('DELETE', url); },
         money: money,

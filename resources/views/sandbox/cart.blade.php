@@ -176,7 +176,7 @@ document.addEventListener('DOMContentLoaded', function () {
     document.getElementById('apply-promotion').addEventListener('click', async function () {
         clear();
         try {
-            await api.post('/api/cart/promotion', { code: document.getElementById('promotion-code').value });
+            await api.put('/api/cart/promotion', { code: document.getElementById('promotion-code').value });
             await load();
             ok('Promotion applied.');
         } catch (failure) { fail(failure.message); }

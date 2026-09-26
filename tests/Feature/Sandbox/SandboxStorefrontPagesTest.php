@@ -225,9 +225,28 @@ final class SandboxStorefrontPagesTest extends TestCase
 
         // The page is a shell: it holds no lines of its own and asks the real API
         // for them, so a cart is never identified by this page.
-        $this->assertStringContainsString("'/api/cart'", $response->getContent());
-        $this->assertStringContainsString("'/api/cart/promotion'", $response->getContent());
-        $this->assertStringContainsString("'/api/cart/lines/'", $response->getContent());
+        //
+        // THE METHOD IS PART OF THE ASSERTION, NOT JUST THE URL. This test used to
+        // assert only that "'/api/cart/promotion'" appeared somewhere on the page —
+        // and it passed the whole time the page sent that path as a POST, even
+        // though routes/api.php declares Route::put('/cart/promotion'). A POST to a
+        // PUT-only route answers 405, so "apply promotion" could never have worked
+        // while a passing test said the page talked to the right API. Asserting the
+        // CALL is what makes the assertion mean something.
+        $this->assertStringContainsString("api.get('/api/cart')", $response->getContent());
+        $this->assertStringContainsString("api.put('/api/cart/promotion'", $response->getContent());
+        $this->assertStringNotContainsString("api.post('/api/cart/promotion'", $response->getContent());
+        $this->assertStringContainsString("api.del('/api/cart/promotion')", $response->getContent());
+        $this->assertStringContainsString("api.patch('/api/cart/lines/'", $response->getContent());
+        $this->assertStringContainsString("api.del('/api/cart/lines/'", $response->getContent());
+
+        // The wrapper every one of those calls goes through must actually define PUT —
+        // the other half of the same bug: without it, api.put would have been a
+        // TypeError, not a request.
+        $this->assertStringContainsString(
+            "put: function (url, body) { return call('PUT', url, body); }",
+            $response->getContent(),
+        );
     }
 
     public function test_the_checkout_page_renders_and_is_noindex(): void
