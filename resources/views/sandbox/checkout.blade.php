@@ -81,8 +81,17 @@ document.addEventListener('DOMContentLoaded', function () {
     });
     toggleDelivery();
 
+    var displayedCartId = null;
+
     api.get('/api/cart').then(function (cart) {
         var lines = cart.lines || [];
+
+        // The cart THIS page is confirming, named back to the API on submit —
+        // REQUIRED by POST /api/checkout (cart-domain-design.md §14.2): after a
+        // successful order the old cart stops being the current one, so only naming
+        // it can answer a repeat submission with the same order.
+        displayedCartId = cart.cart_id;
+        document.getElementById('place-order').disabled = displayedCartId === null || lines.length === 0;
 
         summary.textContent = lines.length === 0
             ? 'Your cart is empty — add something before checking out.'
@@ -101,7 +110,14 @@ document.addEventListener('DOMContentLoaded', function () {
         event.preventDefault();
         error.hidden = true;
 
+        if (displayedCartId === null) {
+            fail('Your cart is empty, or has already been checked out. Nothing to place.');
+
+            return;
+        }
+
         var payload = {
+            cart_id: displayedCartId,
             email: document.getElementById('email').value,
             recipient_name: document.getElementById('recipient_name').value,
             phone: document.getElementById('phone').value,

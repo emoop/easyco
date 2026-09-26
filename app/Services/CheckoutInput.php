@@ -20,6 +20,13 @@ use EasyCo\Address\Enums\AddressDeliveryType;
  * $paymentMethod matches the Payment domain's own `method` string
  * ('cash_on_delivery' / 'bank_transfer' in V1) — validating that it's one
  * the merchant actually offers belongs to the future HTTP layer, not here.
+ *
+ * $guestCartToken is the request's own session-held cart token (cart-domain-design.md
+ * §8): the HTTP layer resolves it from the session and never from the request body,
+ * and the orchestrator uses it — together with $accountId — as the identity that must
+ * match a claim (§14.2) and a live cart's owner before anything is bought. Required
+ * for a guest checkout: without it, no guest cart could ever be shown to be the
+ * requester's.
  */
 final class CheckoutInput
 {
@@ -30,6 +37,7 @@ final class CheckoutInput
         public readonly string $phone,
         public readonly string $paymentMethod,
         public readonly ?string $accountId = null,
+        public readonly ?string $guestCartToken = null,
         public readonly ?string $addressId = null,
         public readonly ?AddressDeliveryType $deliveryType = null,
         public readonly ?string $country = null,

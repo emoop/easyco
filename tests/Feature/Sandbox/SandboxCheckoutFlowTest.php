@@ -52,6 +52,9 @@ final class SandboxCheckoutFlowTest extends TestCase
 
     private ?PriceList $priceList = null;
 
+    /** The cart the page displayed for this test's flow — cart-domain-design.md §14.2. */
+    private string $cartId = '';
+
     /**
      * PUBLIC, matching Illuminate\Foundation\Testing\TestCase's own (public)
      * signature — narrowing it to protected is a fatal error. The flag must be a
@@ -135,9 +138,13 @@ final class SandboxCheckoutFlowTest extends TestCase
     }
 
     /** @return array<string, string> */
-    private function checkoutPayload(): array
+    private function checkoutPayload(array $overrides = []): array
     {
-        return [
+        return array_merge([
+            // The cart this browser is confirming — REQUIRED since
+            // cart-domain-design.md §14.2, and the only thing that can answer a
+            // replay once the cart stops being the current one.
+            'cart_id' => $this->cartId,
             'email' => 'guest@example.com',
             'recipient_name' => 'Guest Buyer',
             'phone' => '+359888000000',
@@ -147,7 +154,7 @@ final class SandboxCheckoutFlowTest extends TestCase
             'country' => 'BG',
             'city' => 'Sofia',
             'address_line_1' => 'Vitosha Blvd 1',
-        ];
+        ], $overrides);
     }
 
     public function test_a_sandbox_visitor_can_add_a_line_apply_a_promotion_and_place_a_real_order(): void
@@ -165,10 +172,10 @@ final class SandboxCheckoutFlowTest extends TestCase
             ->withHeader('X-CSRF-TOKEN', $this->sessionToken());
 
         // 2. Add to cart, exactly as the product page's add-to-cart control does.
-        $this->postJson('/api/cart/lines', [
+        $this->cartId = (string) $this->postJson('/api/cart/lines', [
             'variation_id' => $product['variation_id'],
             'quantity' => 2,
-        ])->assertStatus(201);
+        ])->assertStatus(201)->json('cart_id');
 
         // 3. The cart page's own read: the display fields it renders must be there.
         $cart = $this->getJson('/api/cart')->assertOk();
@@ -219,17 +226,30 @@ final class SandboxCheckoutFlowTest extends TestCase
         // 7. Real stock movement.
         $this->assertSame(3, app(StockLevelRepository::class)->findByVariationId($product['variation_id'])->quantity());
 
-        // 8. CURRENT, DEFECTIVE BEHAVIOUR, PINNED ON PURPOSE — NOT A REQUIREMENT.
-        //    Checkout CLAIMS the cart but does not clear it, so the claimed cart stays
-        //    the customer's current cart and a second checkout in the same session
-        //    returns the FIRST order instead of creating a new one. Tracked as a
-        //    separate Cart task (see sandbox-manual-test-checklist.md, scenario 10);
-        //    the two assertions below exist so that fixing it means changing them
-        //    deliberately rather than discovering them.
-        $this->assertCount(1, $this->getJson('/api/cart')->assertOk()->json('lines'));
+        // 8. THE DEFECT IS GONE, AND THE NEXT PURCHASE WORKS: the claimed cart is no
+        //    longer this session's current cart at all, so the next add starts a NEW
+        //    one — reusing the very same session cart_token (cart-domain-design.md
+        //    §14.1) — while a late replay naming the OLD cart still returns the first
+        //    order instead of placing a second one (§14.2).
+        $this->assertSame([], $this->getJson('/api/cart')->assertOk()->json('lines'));
+        $this->assertNull($this->getJson('/api/cart')->assertOk()->json('cart_id'));
 
-        $replay = $this->postJson('/api/checkout', $this->checkoutPayload())->assertStatus(201);
-        $this->assertTrue($replay->json('already_placed'));
-        $this->assertSame($orderId, $replay->json('order.id'));
+        $secondProduct = $this->pricedStockedProduct(9);
+        $secondCartId = (string) $this->postJson('/api/cart/lines', [
+            'variation_id' => $secondProduct['variation_id'],
+            'quantity' => 1,
+        ])->assertStatus(201)->json('cart_id');
+
+        $this->assertNotSame($this->cartId, $secondCartId, 'the next add must start a new cart');
+        $this->assertSame(
+            [$secondProduct['name']],
+            array_column($this->getJson('/api/cart')->assertOk()->json('lines'), 'product_name'),
+            'the new cart holds the new line and nothing that was already bought'
+        );
+
+        $lateReplay = $this->postJson('/api/checkout', $this->checkoutPayload(['cart_id' => $this->cartId]))
+            ->assertStatus(201);
+        $this->assertTrue($lateReplay->json('already_placed'));
+        $this->assertSame($orderId, $lateReplay->json('order.id'));
     }
 }

@@ -231,6 +231,11 @@ class CheckoutOrchestratorTest extends TestCase
 
     private function guestCheckoutInput(string $cartId, array $overrides = []): CheckoutInput
     {
+        // The identity the HTTP layer would pass with this request: the session's own
+        // token for this guest cart (cart-domain-design.md §14.2 — a checkout whose
+        // cart is not the requester's is not found at all).
+        $guestCartToken = app(CartRepository::class)->findById($cartId)?->sessionToken();
+
         return new CheckoutInput(
             cartId: $cartId,
             email: $overrides['email'] ?? 'guest@example.com',
@@ -238,6 +243,7 @@ class CheckoutOrchestratorTest extends TestCase
             phone: $overrides['phone'] ?? '+359888000000',
             paymentMethod: $overrides['paymentMethod'] ?? 'cash_on_delivery',
             accountId: null,
+            guestCartToken: $guestCartToken,
             addressId: null,
             deliveryType: AddressDeliveryType::STREET_ADDRESS,
             country: 'BG',
@@ -555,6 +561,7 @@ class CheckoutOrchestratorTest extends TestCase
         $cart = $this->guestCart();
         $this->addLine($cart, $variationId, 1);
 
+        /** @var Order|null $received */
         $received = null;
         Hook::action('order.placed', function ($order) use (&$received): void {
             $received = $order;

@@ -118,6 +118,10 @@ class CheckoutSaleLineSnapshotTest extends TestCase
 
     private function checkoutInput(string $cartId): CheckoutInput
     {
+        // Same identity the HTTP layer would pass for a guest cart — see
+        // cart-domain-design.md §14.2.
+        $guestCartToken = app(CartRepository::class)->findById($cartId)?->sessionToken();
+
         return new CheckoutInput(
             cartId: $cartId,
             email: 'guest@example.com',
@@ -125,6 +129,7 @@ class CheckoutSaleLineSnapshotTest extends TestCase
             phone: '+359888000000',
             paymentMethod: 'cash_on_delivery',
             accountId: null,
+            guestCartToken: $guestCartToken,
             addressId: null,
             deliveryType: AddressDeliveryType::STREET_ADDRESS,
             country: 'BG',

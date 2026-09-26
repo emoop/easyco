@@ -304,6 +304,7 @@ class CartController extends Controller
 
         if ($cart === null) {
             return [
+                'cart_id' => null,
                 'lines' => [],
                 'subtotal' => $this->moneyToArray($subtotal),
                 'total' => $this->moneyToArray($subtotal),
@@ -417,6 +418,10 @@ class CartController extends Controller
         }
 
         return [
+            // The live cart's id, so a client can name the cart it is buying at
+            // checkout — REQUIRED there since cart-domain-design.md §14.2, and the
+            // only way a replay can be answered after the cart stops being current.
+            'cart_id' => (string) $cart->id(),
             'lines' => $lines,
             'subtotal' => $this->moneyToArray($subtotal),
             'total' => $this->moneyToArray($total),

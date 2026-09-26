@@ -10,6 +10,7 @@ use App\Services\Exceptions\SaleLineOrderReconciliationException;
 use DateTimeImmutable;
 use EasyCo\Address\Address;
 use EasyCo\Cart\Cart;
+use EasyCo\Cart\CartClaim;
 use EasyCo\Cart\Contracts\CartRepository;
 use EasyCo\Extensibility\Hook;
 use EasyCo\Inventory\Contracts\StockLevelRepository;
@@ -113,10 +114,13 @@ final class CheckoutOrchestrator
         // Fast path, before opening any transaction — the cheap, common
         // double-submit case. The atomic claim inside the transaction
         // (step 10) is the real race guard, not this.
-        $existingOrderId = $this->carts->findOrderIdForCart($input->cartId);
-
-        if ($existingOrderId !== null) {
-            return CheckoutResult::alreadyPlaced($this->orders->findById($existingOrderId));
+        //
+        // IDENTITY-CHECKED, NEVER A BARE CART ID (cart-domain-design.md §14.2):
+        // only the account — or the session token — that the cart was claimed by
+        // may learn which order it produced. Every other cart_id, claimed or live,
+        // is simply not found, exactly like an unknown id.
+        if ($this->claimFor($input) !== null) {
+            return $this->replayFor($input);
         }
 
         try {
@@ -125,9 +129,18 @@ final class CheckoutOrchestrator
             // A concurrent request claimed this cart between the fast
             // path above and this attempt's own claim (step 10) —
             // resolve idempotently, same as the fast path.
-            $orderId = $this->carts->findOrderIdForCart($input->cartId);
+            return $this->replayFor($input);
+        } catch (CartNotFoundForCheckoutException $exception) {
+            // The cart VANISHED between the fast path and this transaction's own
+            // load, which can only mean it was claimed in that window: a claimed
+            // cart is invisible to findById() by construction (§14.1). That is a
+            // double-submit, not a missing cart, so it resolves exactly like a lost
+            // claim — and a genuinely unknown id still 404s, as before.
+            if ($this->claimFor($input) !== null) {
+                return $this->replayFor($input);
+            }
 
-            return CheckoutResult::alreadyPlaced($this->orders->findById($orderId));
+            throw $exception;
         }
 
         if ($result->isAlreadyPlaced()) {
@@ -186,12 +199,64 @@ final class CheckoutOrchestrator
         return CheckoutResult::placed($order, $payment);
     }
 
+    /** The claim on this request's cart, iff the requester is the identity it was claimed by. */
+    private function claimFor(CheckoutInput $input): ?CartClaim
+    {
+        return $this->carts->findClaimForIdentity($input->cartId, $input->accountId, $input->guestCartToken);
+    }
+
+    /**
+     * The idempotent answer for a replay: the order the claimed cart produced, or a
+     * clean "no cart" when the claim is no longer answerable (the order row was
+     * deleted, which NULLs carts.order_id — checkout-domain-design.md §6). Never
+     * re-charges, never writes.
+     */
+    private function replayFor(CheckoutInput $input): CheckoutResult
+    {
+        $claim = $this->claimFor($input);
+
+        if ($claim === null) {
+            throw new CartNotFoundForCheckoutException($input->cartId);
+        }
+
+        $order = $this->orders->findById($claim->orderId);
+
+        if ($order === null) {
+            throw new CartNotFoundForCheckoutException($input->cartId);
+        }
+
+        return CheckoutResult::alreadyPlaced($order);
+    }
+
+    /**
+     * Ownership of a LIVE cart: the account for an account cart, the session's own
+     * token for a guest cart (cart-domain-design.md §8 — a client never supplies the
+     * token itself, so holding the session is what makes the cart theirs). An id
+     * alone is never enough to buy someone else's cart, and a cart that is not the
+     * requester's is a 404, indistinguishable from an unknown id.
+     */
+    private function isOwnedByRequester(Cart $cart, CheckoutInput $input): bool
+    {
+        if ($cart->accountId() !== null) {
+            return $input->accountId !== null && $cart->accountId() === $input->accountId;
+        }
+
+        return $input->guestCartToken !== null && $cart->sessionToken() === $input->guestCartToken;
+    }
+
     private function placeWithinTransaction(CheckoutInput $input, DateTimeImmutable $placedAt): CheckoutResult
     {
         // Step 1: load the cart, reject empty.
         $cart = $this->carts->findById($input->cartId);
 
         if ($cart === null) {
+            throw new CartNotFoundForCheckoutException($input->cartId);
+        }
+
+        // ...and it must be THIS requester's cart (cart-domain-design.md §14.2).
+        // Enforced here, in the one place every checkout goes through, so no caller
+        // can buy — or learn anything about — a cart that is not its own.
+        if (! $this->isOwnedByRequester($cart, $input)) {
             throw new CartNotFoundForCheckoutException($input->cartId);
         }
 

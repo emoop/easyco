@@ -342,6 +342,18 @@ class EloquentCartRepositoryTest extends TestCase
         $createTable = DB::select('SHOW CREATE TABLE carts')[0]->{'Create Table'};
 
         $this->assertStringContainsString('UNIQUE KEY `carts_order_id_unique`', $createTable);
+
+        // §14.1/§14.5: the live columns KEEP their unique indexes — which now mean "at
+        // most one LIVE cart per identity" — while the claimed columns are indexed but
+        // deliberately NOT unique, and the claimed FK carries the "a cart does not
+        // outlive its account" rule for a row whose live account_id is NULL.
+        $this->assertStringContainsString('UNIQUE KEY `carts_account_id_unique`', $createTable);
+        $this->assertStringContainsString('UNIQUE KEY `carts_session_token_unique`', $createTable);
+        $this->assertStringContainsString('`claimed_session_token`', $createTable);
+        $this->assertStringContainsString(
+            'CONSTRAINT `carts_claimed_account_id_foreign` FOREIGN KEY (`claimed_account_id`) REFERENCES `accounts` (`id`) ON DELETE CASCADE',
+            $createTable
+        );
         $this->assertStringContainsString(
             'CONSTRAINT `carts_order_id_foreign` FOREIGN KEY (`order_id`) REFERENCES `orders` (`id`) ON DELETE SET NULL',
             $createTable
@@ -358,6 +370,131 @@ class EloquentCartRepositoryTest extends TestCase
         DB::table('orders')->where('id', $orderId)->delete();
 
         $this->assertNull($this->repository()->findOrderIdForCart($cart->id()));
-        $this->assertNotNull($this->repository()->findById($cart->id()));
+
+        // The row survives, but it is no longer a CART: deleting the order un-claimed
+        // it (order_id is nullOnDelete) WITHOUT restoring the identity the claim moved
+        // away, so findById() — which refuses to build a Cart from a row with no live
+        // identity — reports it as absent (cart-domain-design.md §14.1). Disposable
+        // history, not a cart anybody could add to.
+        $this->assertNotNull(CartModel::find($cart->id()));
+        $this->assertNull($this->repository()->findById($cart->id()));
+    }
+
+    // ---------------------------------------------------------------------------------
+    // cart-domain-design.md §14 — a claimed cart is not the identity's current cart
+    // ---------------------------------------------------------------------------------
+
+    public function test_claiming_moves_the_identity_to_the_claimed_columns_and_nulls_the_live_ones(): void
+    {
+        $cart = Cart::forGuest('token-moving', $this->expiry());
+        $this->repository()->save($cart);
+        $orderId = $this->orderId();
+
+        $this->assertTrue($this->repository()->claimForOrder($cart->id(), $orderId));
+
+        $row = CartModel::findOrFail($cart->id());
+        $this->assertNull($row->session_token, 'the live identity column must be freed for the next cart');
+        $this->assertSame('token-moving', $row->claimed_session_token);
+        $this->assertSame($orderId, (string) $row->order_id);
+
+        // The account half of the same move, asserted the same way: what must land in
+        // claimed_account_id is the PREVIOUS live account_id, not the NULL this one
+        // statement writes into that live column. The order of claimForOrder()'s SET
+        // list is what makes this true — see its docblock.
+        $accountId = $this->accountId('moving-identity@example.com');
+        $accountCart = Cart::forAccount($accountId, $this->expiry());
+        $this->repository()->save($accountCart);
+
+        $this->assertTrue($this->repository()->claimForOrder($accountCart->id(), $this->orderId()));
+
+        $accountRow = CartModel::findOrFail($accountCart->id());
+        $this->assertNull($accountRow->account_id, 'the live identity column must be freed for the next cart');
+        $this->assertSame($accountId, (string) $accountRow->claimed_account_id);
+    }
+
+    public function test_a_claimed_cart_is_no_longer_the_identities_current_cart(): void
+    {
+        $accountId = $this->accountId('claimed-account@example.com');
+        $cart = Cart::forAccount($accountId, $this->expiry());
+        $this->repository()->save($cart);
+
+        $this->assertNotNull($this->repository()->findByAccountId($accountId));
+
+        $this->repository()->claimForOrder($cart->id(), $this->orderId());
+
+        $this->assertNull($this->repository()->findByAccountId($accountId), 'the next add must not find the bought cart');
+        $this->assertNull($this->repository()->findById($cart->id()), 'and no Cart aggregate is ever built from a claimed row');
+    }
+
+    public function test_the_same_identity_can_start_a_new_cart_after_a_claim_without_a_duplicate_key_error(): void
+    {
+        $accountId = $this->accountId('second-purchase@example.com');
+        $first = Cart::forAccount($accountId, $this->expiry());
+        $this->repository()->save($first);
+        $this->repository()->claimForOrder($first->id(), $this->orderId());
+
+        // The row the unique index used to forbid: without the identity move, this
+        // save would hit carts_account_id_unique.
+        $second = Cart::forAccount($accountId, $this->expiry());
+        $this->repository()->save($second);
+
+        $this->assertNotSame($first->id(), $second->id());
+        $this->assertSame($second->id(), $this->repository()->findByAccountId($accountId)?->id());
+
+        // A guest's next cart reuses the SAME session token (§14.1) — the live unique
+        // index is free again precisely because the claim moved that token away.
+        $guestFirst = Cart::forGuest('token-reused', $this->expiry());
+        $this->repository()->save($guestFirst);
+        $this->repository()->claimForOrder($guestFirst->id(), $this->orderId());
+
+        $guestSecond = Cart::forGuest('token-reused', $this->expiry());
+        $this->repository()->save($guestSecond);
+
+        $this->assertSame($guestSecond->id(), $this->repository()->findBySessionToken('token-reused')?->id());
+    }
+
+    public function test_find_claim_for_identity_answers_only_the_identity_that_owned_the_cart(): void
+    {
+        $accountId = $this->accountId('claim-owner@example.com');
+        $cart = Cart::forAccount($accountId, $this->expiry());
+        $this->repository()->save($cart);
+        $orderId = $this->orderId();
+        $this->repository()->claimForOrder($cart->id(), $orderId);
+
+        $this->assertSame($orderId, $this->repository()->findClaimForIdentity($cart->id(), $accountId, null)?->orderId);
+        $this->assertNull(
+            $this->repository()->findClaimForIdentity($cart->id(), $this->accountId('claim-stranger@example.com'), null)
+        );
+        $this->assertNull($this->repository()->findClaimForIdentity($cart->id(), null, null), 'an identity-less caller owns nothing');
+        $this->assertNull($this->repository()->findClaimForIdentity('00000000-0000-7000-8000-000000000000', $accountId, null));
+
+        // A guest claim answers to the session's own token, and to nothing else.
+        $guestCart = Cart::forGuest('token-claimed', $this->expiry());
+        $this->repository()->save($guestCart);
+        $guestOrderId = $this->orderId();
+        $this->repository()->claimForOrder($guestCart->id(), $guestOrderId);
+
+        $this->assertSame($guestOrderId, $this->repository()->findClaimForIdentity($guestCart->id(), null, 'token-claimed')?->orderId);
+        $this->assertNull($this->repository()->findClaimForIdentity($guestCart->id(), null, 'token-not-mine'));
+    }
+
+    public function test_find_claim_for_identity_is_null_for_a_live_cart(): void
+    {
+        $cart = Cart::forGuest('token-live-claim', $this->expiry());
+        $this->repository()->save($cart);
+
+        $this->assertNull($this->repository()->findClaimForIdentity($cart->id(), null, 'token-live-claim'));
+    }
+
+    public function test_a_claimed_cart_is_still_pruned_on_its_own_expiry_and_then_has_no_claim(): void
+    {
+        $cart = Cart::forGuest('token-expiring-claimed', new DateTimeImmutable('-1 day'));
+        $this->repository()->save($cart);
+        $this->repository()->claimForOrder($cart->id(), $this->orderId());
+
+        $this->assertSame(1, $this->repository()->deleteExpired(new DateTimeImmutable()));
+
+        // §14.4: the replay window ends with the cart — documented, not discovered.
+        $this->assertNull($this->repository()->findClaimForIdentity($cart->id(), null, 'token-expiring-claimed'));
     }
 }

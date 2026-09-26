@@ -11,6 +11,7 @@ use DateTimeImmutable;
 use EasyCo\Address\Enums\AddressDeliveryType;
 use EasyCo\Cart\Cart;
 use EasyCo\Cart\CartLineAdder;
+use EasyCo\Cart\Contracts\CartRepository;
 use EasyCo\Catalog\Contracts\ProductRepository;
 use EasyCo\Catalog\Product;
 use EasyCo\Inventory\Contracts\StockLevelRepository;
@@ -119,6 +120,7 @@ class OrderResourceTest extends TestCase
 
         $input = new CheckoutInput(
             cartId: $cart->id(),
+            guestCartToken: app(CartRepository::class)->findById($cart->id())?->sessionToken(),
             email: $overrides['email'] ?? 'guest@example.com',
             recipientName: $overrides['recipientName'] ?? 'Guest Buyer',
             phone: '+359888000000',

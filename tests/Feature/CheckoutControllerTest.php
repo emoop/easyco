@@ -130,17 +130,21 @@ class CheckoutControllerTest extends TestCase
         return $model;
     }
 
+    private string $cartId = '';
+
     private function addLineViaHttp(string $variationId, int $quantity = 1): void
     {
-        $this->postJson('/api/cart/lines', [
+        // The cart the "page" would now be displaying (cart-domain-design.md §14.2).
+        $this->cartId = (string) $this->postJson('/api/cart/lines', [
             'variation_id' => $variationId,
             'quantity' => $quantity,
-        ])->assertStatus(201);
+        ])->assertStatus(201)->json('cart_id');
     }
 
     private function checkoutPayload(array $overrides = []): array
     {
         return array_merge([
+            'cart_id' => $this->cartId,
             'email' => 'guest@example.com',
             'recipient_name' => 'Guest Buyer',
             'phone' => '+359888000000',
@@ -191,13 +195,20 @@ class CheckoutControllerTest extends TestCase
         $variationId = $this->pricedPurchasableVariation('15.00', 5);
         $this->addLineViaHttp($variationId, 1);
 
-        $response = $this->postJson('/api/checkout', [
+        // address_id PROHIBITS the typed-address fields (CheckoutController::validationRules()),
+        // and the shared helper's defaults include them — so this payload starts from the
+        // helper and drops them, exactly like a real client choosing a saved address.
+        $payload = $this->checkoutPayload([
             'email' => $account->email,
             'recipient_name' => 'Ivan Ivanov',
             'phone' => '+359888111222',
             'payment_method' => 'bank_transfer',
             'address_id' => $addressId,
         ]);
+
+        unset($payload['delivery_type'], $payload['country'], $payload['city'], $payload['address_line_1']);
+
+        $response = $this->postJson('/api/checkout', $payload);
 
         $response->assertStatus(201);
         $orderId = $response->json('order.id');
@@ -206,11 +217,22 @@ class CheckoutControllerTest extends TestCase
         $this->assertSame((string) $addressId, (string) $order->address_id);
     }
 
-    public function test_checkout_with_no_cart_returns_404(): void
+    public function test_checkout_without_a_cart_id_returns_422(): void
     {
-        $response = $this->postJson('/api/checkout', $this->checkoutPayload());
+        $payload = $this->checkoutPayload();
+        unset($payload['cart_id']);
 
-        $response->assertStatus(404);
+        // REQUIRED, not optional — cart-domain-design.md §14.2: without it a
+        // sequential second click would find no live cart and 404 instead of
+        // replaying, so the protection must never depend on the client sending it.
+        $this->postJson('/api/checkout', $payload)->assertStatus(422);
+    }
+
+    public function test_checkout_with_an_unknown_cart_id_returns_404(): void
+    {
+        $this->postJson('/api/checkout', $this->checkoutPayload([
+            'cart_id' => '0193f0d0-0000-7000-8000-000000000000',
+        ]))->assertStatus(404);
     }
 
     public function test_double_submit_returns_201_twice_with_the_second_marked_already_placed(): void

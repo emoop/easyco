@@ -13,8 +13,6 @@ use App\Services\Exceptions\UnknownPaymentMethodException;
 use App\Services\PaymentMethodAdapterResolver;
 use DateTimeImmutable;
 use EasyCo\Address\Enums\AddressDeliveryType;
-use EasyCo\Cart\Cart;
-use EasyCo\Cart\Contracts\CartRepository;
 use EasyCo\Inventory\Exceptions\InsufficientStockException;
 use EasyCo\OperationalSales\Contracts\TransactionRepository;
 use EasyCo\OperationalSales\SaleLine;
@@ -41,7 +39,6 @@ use LogicException;
 class CheckoutController extends Controller
 {
     public function __construct(
-        private readonly CartRepository $carts,
         private readonly CheckoutOrchestrator $orchestrator,
         private readonly PaymentMethodAdapterResolver $adapterResolver,
         private readonly TransactionRepository $transactions,
@@ -59,11 +56,13 @@ class CheckoutController extends Controller
     {
         $validated = $request->validate($this->validationRules());
 
-        $cart = $this->findCurrentCart($request);
-
-        if ($cart === null) {
-            return response()->json(['message' => 'No cart to check out.'], 404);
-        }
+        // THE CART TO CHECK OUT IS THE ONE THE PAGE DISPLAYED, AND IT IS REQUIRED
+        // (cart-domain-design.md §14.2). The server deliberately no longer resolves
+        // "the current cart" for this request: a claimed cart is nobody's current
+        // cart any more, and only the client can name the cart it is confirming —
+        // which is what keeps a replay answerable. Unknown, not-yours and
+        // someone-else's-cart all come back from the orchestrator as the same clean
+        // 404; a request without the field is a 422 from the rules above.
 
         // Validated BEFORE Phase 1 runs at all, deliberately duplicating
         // the orchestrator's own UnknownPaymentMethodException throw
@@ -91,12 +90,13 @@ class CheckoutController extends Controller
         $accountId = Auth::guard('customer')->check() ? (string) Auth::guard('customer')->id() : null;
 
         $input = new CheckoutInput(
-            cartId: $cart->id(),
+            cartId: (string) $validated['cart_id'],
             email: $validated['email'],
             recipientName: $validated['recipient_name'],
             phone: $validated['phone'],
             paymentMethod: $validated['payment_method'],
             accountId: $accountId,
+            guestCartToken: $accountId === null ? $request->session()->get('cart_token') : null,
             addressId: $validated['address_id'] ?? null,
             deliveryType: isset($validated['delivery_type']) ? AddressDeliveryType::from($validated['delivery_type']) : null,
             country: $validated['country'] ?? null,
@@ -163,23 +163,13 @@ class CheckoutController extends Controller
         ], 201);
     }
 
-    /**
-     * Same Auth::guard('customer') vs. session cart_token identification
-     * CartController::findCurrentCart() already uses — read-only, never
-     * creates a cart or a session token (a guest's cart token is only
-     * ever generated on a cart WRITE, per cart-domain-design.md §10).
-     * Never a client-supplied token.
-     */
-    private function findCurrentCart(Request $request): ?Cart
-    {
-        if (Auth::guard('customer')->check()) {
-            return $this->carts->findByAccountId((string) Auth::guard('customer')->id());
-        }
-
-        $token = $request->session()->get('cart_token');
-
-        return $token !== null ? $this->carts->findBySessionToken($token) : null;
-    }
+    // findCurrentCart() used to live here, and is deliberately GONE rather than
+    // merely unused: resolving "the current cart" for a checkout is exactly what the
+    // after-checkout fix removed (cart-domain-design.md §14.2). After a claim, the
+    // cart being confirmed is nobody's current cart, and only the client can name it.
+    // The identity this request DOES need — the account, or the session's own guest
+    // token — is read in store() and handed to the orchestrator, which is where both
+    // the claim and the live cart are checked against it.
 
     /**
      * The address fields are only required when NO address_id is given.
@@ -203,6 +193,10 @@ class CheckoutController extends Controller
     private function validationRules(): array
     {
         return [
+            // REQUIRED, not optional — cart-domain-design.md §14.2: the cart the page
+            // displayed is the only thing that can answer a replay after the claim has
+            // taken that cart out of "the current cart" for this identity.
+            'cart_id' => 'required|string',
             'email' => 'required|email',
             'recipient_name' => 'required|string',
             'phone' => 'required|string',

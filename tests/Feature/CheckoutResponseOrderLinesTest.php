@@ -78,18 +78,21 @@ class CheckoutResponseOrderLinesTest extends TestCase
         return $variationId;
     }
 
+    private string $cartId = '';
+
     private function addLineViaHttp(string $variationId, int $quantity = 1): void
     {
-        $this->postJson('/api/cart/lines', [
+        $this->cartId = (string) $this->postJson('/api/cart/lines', [
             'variation_id' => $variationId,
             'quantity' => $quantity,
-        ])->assertStatus(201);
+        ])->assertStatus(201)->json('cart_id');
     }
 
     /** @return array<string, mixed> */
     private function checkoutPayload(array $overrides = []): array
     {
         return array_merge([
+            'cart_id' => $this->cartId,
             'email' => 'guest@example.com',
             'recipient_name' => 'Guest Buyer',
             'phone' => '+359888000000',

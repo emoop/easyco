@@ -222,6 +222,7 @@ class DemoPromotionsSeederTest extends TestCase
 
         $firstInput = new \App\Services\CheckoutInput(
             cartId: $firstCart->id(),
+            guestCartToken: app(\EasyCo\Cart\Contracts\CartRepository::class)->findById($firstCart->id())?->sessionToken(),
             email: 'guest@example.com',
             recipientName: 'Guest Buyer',
             phone: '+359888000000',
@@ -242,6 +243,7 @@ class DemoPromotionsSeederTest extends TestCase
 
         $secondInput = new \App\Services\CheckoutInput(
             cartId: $secondCart->id(),
+            guestCartToken: app(\EasyCo\Cart\Contracts\CartRepository::class)->findById($secondCart->id())?->sessionToken(),
             email: 'guest2@example.com',
             recipientName: 'Guest Buyer Two',
             phone: '+359888000001',

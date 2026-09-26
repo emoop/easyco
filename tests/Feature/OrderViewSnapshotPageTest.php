@@ -215,6 +215,7 @@ class OrderViewSnapshotPageTest extends TestCase
     {
         $input = new CheckoutInput(
             cartId: $cart->id(),
+            guestCartToken: app(CartRepository::class)->findById($cart->id())?->sessionToken(),
             email: 'guest@example.com',
             recipientName: 'Guest Buyer',
             phone: '+359888000000',

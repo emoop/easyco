@@ -236,6 +236,12 @@ final class SandboxStorefrontPagesTest extends TestCase
 
         $this->assertNoIndex($response->getContent(), $response);
         $this->assertStringContainsString("'/api/checkout'", $response->getContent());
+
+        // The page must name the cart it is confirming: POST /api/checkout REQUIRES
+        // cart_id (cart-domain-design.md §14.2) — without it the API answers 422, and a
+        // double-click could never be answered with the first order.
+        $this->assertStringContainsString('cart_id', $response->getContent());
+        $this->assertStringContainsString('place-order', $response->getContent());
     }
 
     public function test_the_order_confirmation_page_renders_and_is_noindex(): void

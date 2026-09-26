@@ -4,6 +4,7 @@ namespace EasyCo\Cart\Persistence\Eloquent;
 
 use DateTimeImmutable;
 use EasyCo\Cart\Cart;
+use EasyCo\Cart\CartClaim;
 use EasyCo\Cart\CartLine;
 use EasyCo\Cart\Contracts\CartRepository;
 use Illuminate\Database\QueryException;
@@ -109,9 +110,28 @@ final class EloquentCartRepository implements CartRepository
         return $model->id;
     }
 
+    /**
+     * A LIVE, identity-carrying cart only. Two rows are deliberately invisible here:
+     *
+     * - a claimed one (`order_id` set) — its live identity is NULL by construction
+     *   (cart-domain-design.md §14.1), and `Cart`'s own XOR invariant would reject it
+     *   as a 500 rather than a domain answer;
+     * - an orphaned one — `carts.order_id` is `nullOnDelete`, so deleting an Order
+     *   un-claims the row without restoring the identity it moved away. Such a row is
+     *   disposable history, not a cart anybody can add to.
+     *
+     * Both exclusions live HERE, so "no `Cart` aggregate is ever built from a row
+     * without a live identity" is a property of this repository rather than a rule
+     * every caller must remember.
+     */
     public function findById(string $id): ?Cart
     {
-        $model = CartModel::with('lines')->find($id);
+        $model = CartModel::with('lines')
+            ->whereNull('order_id')
+            ->where(function ($query): void {
+                $query->whereNotNull('account_id')->orWhereNotNull('session_token');
+            })
+            ->find($id);
 
         return $model !== null ? $this->toDomainCart($model) : null;
     }
@@ -140,20 +160,82 @@ final class EloquentCartRepository implements CartRepository
         return CartModel::where('expires_at', '<=', $now)->delete();
     }
 
+    /**
+     * One statement, so the claim stays exactly as atomic as it has always been:
+     * `order_id` is set, and in the same UPDATE the cart's identity MOVES to the
+     * `claimed_*` columns while the live ones are NULLed — cart-domain-design.md
+     * §14.1. Zero-affected-rows therefore still means precisely "some other attempt
+     * claimed this cart first".
+     *
+     * `DB::raw()` on the right-hand sides is what makes the move a single statement:
+     * the values are copied server-side, never read into PHP first (which would open
+     * exactly the race this UPDATE exists to close).
+     *
+     * THE ORDER OF THE ASSIGNMENTS IS LOAD-BEARING — the `claimed_*` copies MUST be
+     * listed before the two nulls, never after. MySQL (this project's engine, tests
+     * included) evaluates a multi-column SET left to right, and a later expression
+     * sees the value an earlier assignment in that SAME statement just wrote. So
+     * `'claimed_session_token' => DB::raw('session_token')` placed AFTER
+     * `'session_token' => null` would copy NULL, and the identity the claim exists to
+     * hand over would be gone. Note the failure mode: silent. The UPDATE still
+     * affects its one row, `order_id` is still set, and the cart simply stops
+     * answering findClaimForIdentity() afterwards.
+     */
     public function claimForOrder(string $cartId, string $orderId): bool
     {
         $affected = CartModel::where('id', $cartId)
             ->whereNull('order_id')
-            ->update(['order_id' => $orderId]);
+            ->update([
+                'order_id' => $orderId,
+                // MUST come before the two nulls below: MySQL evaluates this SET list
+                // left to right, so a DB::raw() reference placed after its own column
+                // was NULLed would copy the NULL. See the docblock's ordering note.
+                'claimed_account_id' => DB::raw('account_id'),
+                'claimed_session_token' => DB::raw('session_token'),
+                'account_id' => null,
+                'session_token' => null,
+            ]);
 
         return $affected > 0;
     }
 
+    /**
+     * CLAIM-ID-BLIND by contract — see the interface's own warning: for tests and
+     * diagnostics, never for answering a request. findClaimForIdentity() below is the
+     * identity-checked accessor every request path must use.
+     */
     public function findOrderIdForCart(string $cartId): ?string
     {
         $orderId = CartModel::where('id', $cartId)->value('order_id');
 
         return $orderId !== null ? (string) $orderId : null;
+    }
+
+    public function findClaimForIdentity(string $cartId, ?string $accountId, ?string $sessionToken): ?CartClaim
+    {
+        if ($accountId === null && $sessionToken === null) {
+            // Nothing to match on: an identity-less caller can never own a claim.
+            // Matching anyway would be exactly the leak this method exists to prevent.
+            return null;
+        }
+
+        $row = CartModel::query()
+            ->where('id', $cartId)
+            ->whereNotNull('order_id')
+            ->where(function ($query) use ($accountId, $sessionToken): void {
+                if ($accountId !== null) {
+                    $query->orWhere('claimed_account_id', $accountId);
+                }
+
+                if ($sessionToken !== null) {
+                    $query->orWhere('claimed_session_token', $sessionToken);
+                }
+            })
+            ->first(['id', 'order_id']);
+
+        return $row !== null
+            ? new CartClaim(cartId: (string) $row->id, orderId: (string) $row->order_id)
+            : null;
     }
 
     /**
