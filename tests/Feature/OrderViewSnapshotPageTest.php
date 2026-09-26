@@ -275,6 +275,58 @@ class OrderViewSnapshotPageTest extends TestCase
     }
 
     /**
+     * The rendered Lines table's own header area — everything from the
+     * Items section heading down to its table body. Filament renders the
+     * column LABELS there (every body cell is label-less — TextEntry::
+     * hiddenLabel()), so this slice is exactly where a column either
+     * appears or does not, independent of the rest of the page.
+     */
+    private function linesHeaderArea(string $html): string
+    {
+        $sectionStart = strpos($html, __('orders.sections.lines'));
+        $bodyStart = ($sectionStart === false) ? false : strpos($html, '<tbody>', $sectionStart);
+
+        $this->assertNotFalse($sectionStart, 'Items section heading not found in the rendered page');
+        $this->assertNotFalse($bodyStart, 'Items table body not found in the rendered page');
+
+        return substr($html, $sectionStart, $bodyStart - $sectionStart);
+    }
+
+    /**
+     * §14's column pass — the Lines table carries NO unit-cost column for
+     * any role, in either locale. Asserted two ways so this cannot pass
+     * vacuously: the six price/product labels it DOES carry must really be
+     * in the header, and the header must hold exactly six `<th>` cells —
+     * so ANY seventh column (a re-added cost column under any label, in
+     * any locale) fails here. The default fixtures below write no
+     * register discount, so §14 D4's own seventh column is legitimately
+     * absent.
+     */
+    private function assertNoUnitCostColumn(string $html): void
+    {
+        $header = $this->linesHeaderArea($html);
+
+        $expectedLabels = [
+            __('orders.fields.product_name'),
+            __('orders.fields.sku'),
+            __('orders.fields.quantity'),
+            __('orders.fields.unit_price'),
+            __('orders.fields.promotion_discount'),
+            __('orders.fields.net_paid'),
+        ];
+
+        foreach ($expectedLabels as $label) {
+            $this->assertStringContainsString($label, $header, "the Lines table must still carry its '{$label}' column");
+        }
+
+        $this->assertSame(
+            count($expectedLabels),
+            preg_match_all('#<th\b#', $header),
+            'the Lines table must render exactly the six columns §14 leaves it — no unit cost',
+        );
+    }
+
+    /**
      * D4 — a VARIABLE line with a Manual Sale (regular 80.00, final 60.00)
      * and a promotion code scoped to its own product, next to an
      * out-of-scope SIMPLE line: the struck regular price, the ordered
@@ -498,11 +550,15 @@ class OrderViewSnapshotPageTest extends TestCase
     }
 
     /**
-     * D6 — the unit cost column exists only for staff holding
-     * Permission::COST_VIEW, and a known cost renders in it; without the
-     * permission neither the header nor the value appears.
+     * §14's own column pass — the unit cost column is gone for EVERY role,
+     * Administrator included, so COST_VIEW no longer affects this page at
+     * all: margin analysis belongs to a future reports screen holding
+     * REPORT_VIEW *and* COST_VIEW explicitly. The fixture still records a
+     * real cost for the sold variation, so the absence asserted below is
+     * the COLUMN's absence, not a missing value — were the column to come
+     * back, 4.00 would render.
      */
-    public function test_the_unit_cost_column_requires_cost_view(): void
+    public function test_the_lines_table_shows_no_unit_cost_for_any_role_administrator_included(): void
     {
         $this->seedPricingLists();
 
@@ -515,20 +571,23 @@ class OrderViewSnapshotPageTest extends TestCase
 
         $order = $this->place($cart);
 
-        // Administrator holds COST_VIEW.
+        // Administrator holds COST_VIEW — the one role that used to see
+        // this column, and the only one that ever could.
         $this->actingAsRole('Administrator');
-        $htmlWithCost = $this->viewHtml($order);
-        $this->assertStringContainsString(__('orders.fields.unit_cost'), $htmlWithCost);
-        $this->assertStringContainsString('4.00 €', $this->linesBodyRows($htmlWithCost)[0]);
+        $administratorHtml = $this->viewHtml($order);
+
+        $this->assertStringNotContainsString('4.00 €', $administratorHtml, 'no cost value may render on this page');
+        $this->assertNoUnitCostColumn($administratorHtml);
 
         // ORDER_VIEW without COST_VIEW — no seeded system role has that
         // shape, so a custom role supplies exactly it.
         $this->app->forgetScopedInstances();
         $this->actingAsPermissions([Permission::ORDER_VIEW, Permission::PRODUCT_VIEW]);
 
-        $htmlWithoutCost = $this->viewHtml($order);
-        $this->assertStringNotContainsString(__('orders.fields.unit_cost'), $htmlWithoutCost);
-        $this->assertStringNotContainsString('4.00 €', $htmlWithoutCost);
+        $restrictedHtml = $this->viewHtml($order);
+
+        $this->assertStringNotContainsString('4.00 €', $restrictedHtml);
+        $this->assertNoUnitCostColumn($restrictedHtml);
     }
 
     /**

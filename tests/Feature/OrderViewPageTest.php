@@ -284,10 +284,11 @@ class OrderViewPageTest extends TestCase
         // (</tbody>) isolates exactly the rendered rows lineRows() built
         // (see OrderResource::lineRows() — a null productName/sku maps to
         // orders.not_available directly). The boundary used to be the NEXT
-        // section heading — (en) "Promotion" — but that string is now also
-        // a prefix of the Lines table's own "Promotion discount" column
-        // header (§3.13 stage 5), which would cut the slice off before the
-        // rows; </tbody> is both locale-safe and a tighter scope.
+        // section heading — (en) "Promotion" — which stopped working once
+        // the Lines table's own column labels began with that same word
+        // (§3.13 stage 5); those labels have since been renamed (§14's own
+        // column pass), but </tbody> stays: it is locale-safe and a
+        // tighter scope than any heading-based boundary.
         $linesSectionStart = strpos($html, __('orders.sections.lines'));
         $linesSectionEnd = strpos($html, '</tbody>', $linesSectionStart);
         $this->assertNotFalse($linesSectionStart, 'Items section heading not found in the rendered page');

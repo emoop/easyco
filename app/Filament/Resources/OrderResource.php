@@ -467,6 +467,13 @@ class OrderResource extends Resource
      * value is plain text Filament escapes itself. One OrderAdminReader
      * read backs the whole table — no per-line query.
      *
+     * line_total and unit_cost are deliberately NOT among these keys: the
+     * first repeated Price x Quantity, Discount and Final price, and the
+     * second was removed for every role — see lineColumnSpecs()'s own
+     * docblock for both reasons. The view object still CARRIES both
+     * values (OrderAdminSaleLineView); this page simply stops showing
+     * them.
+     *
      * @return array<int, array<string, string>>
      */
     private static function lineRows(OrderModel $record): array
@@ -477,14 +484,12 @@ class OrderResource extends Resource
                 'sku' => $line->sku ?? __('orders.not_available'),
                 'quantity' => (string) $line->quantity,
                 'unit_price' => static::lineUnitPriceHtml($line),
-                'line_total' => static::formatLineMoney($line->lineTotal),
                 // D5: a legacy line's net is NEVER derived from the
                 // order-level discount — it renders '—' (unknown), and so
                 // does its promotion share, which it never had.
                 'promotion_discount' => static::formatLineMoney($line->isLegacy ? null : $line->promotionDiscountShare),
                 'discretionary_discount' => static::formatLineMoney($line->discretionaryDiscount),
                 'net_paid' => static::formatLineMoney($line->isLegacy ? null : $line->netPaidAmount),
-                'unit_cost' => static::formatLineMoney($line->unitCost),
             ],
             static::forOrder($record)->lines,
         );
@@ -496,6 +501,26 @@ class OrderResource extends Resource
      * the two can never drift out of positional alignment:
      * RepeatableEntry maps the Nth cell to the Nth column.
      *
+     * The price columns read, in order, Price (the sold unit price, its
+     * struck regular price kept exactly as it was), Discount (the line's
+     * own promotion share), Merchant discount (a register discount — D4:
+     * shown only when some line on this order actually has one) and Final
+     * price (net paid). Labels live in lang/{bg,en}/orders.php.
+     *
+     * TWO COLUMNS ARE DELIBERATELY ABSENT, both removed on purpose:
+     *
+     *  - unit cost, for EVERY role, Administrator included — COST_VIEW no
+     *    longer affects this page at all. A per-line cost on an order
+     *    screen is margin analysis by another name, and that belongs to a
+     *    future reports screen holding REPORT_VIEW *and* COST_VIEW
+     *    explicitly (staff-access-domain-design.md §6), not to a page
+     *    gated by ORDER_VIEW alone. The value is untouched — it stays in
+     *    the sale line's §3.13 snapshot (a return reverses profit from it)
+     *    and in OrderAdminSaleLineView — so nothing here narrows what a
+     *    report can read later.
+     *  - line total (the amount before discounts): with Price x Quantity,
+     *    Discount and Final price it only repeated information.
+     *
      * @return array<int, array{key: string, label: string}>
      */
     private static function lineColumnSpecs(OrderModel $record): array
@@ -505,7 +530,6 @@ class OrderResource extends Resource
             ['key' => 'sku', 'label' => __('orders.fields.sku')],
             ['key' => 'quantity', 'label' => __('orders.fields.quantity')],
             ['key' => 'unit_price', 'label' => __('orders.fields.unit_price')],
-            ['key' => 'line_total', 'label' => __('orders.fields.line_total')],
             ['key' => 'promotion_discount', 'label' => __('orders.fields.promotion_discount')],
         ];
 
@@ -518,13 +542,6 @@ class OrderResource extends Resource
         }
 
         $specs[] = ['key' => 'net_paid', 'label' => __('orders.fields.net_paid')];
-
-        // D6: unit cost is its own column, and only for staff allowed to
-        // see cost at all — the same Permission::COST_VIEW gate (through
-        // the same helper) ProductResource's own cost field/entry uses.
-        if (static::staffCanForAction(Permission::COST_VIEW)) {
-            $specs[] = ['key' => 'unit_cost', 'label' => __('orders.fields.unit_cost')];
-        }
 
         return $specs;
     }

@@ -31,6 +31,15 @@ use EasyCo\Pricing\Money;
  * line's unitCost is legitimately NULL when the cost is genuinely unknown
  * (§3.13 Q2).
  *
+ * unitCost IS NO LONGER RENDERED ANYWHERE — §14's own column pass removed
+ * the cost column from the Order View Lines table for every role, margin
+ * analysis being a future reports screen's job with its own permission
+ * (admin-panel-design.md §14). It is kept here, and kept populated by
+ * OrderAdminReader, because the snapshot is what a return reverses profit
+ * from: a report reads this value, the order page does not. lineTotal is
+ * kept for the same reason — the page stopped showing it, the read model
+ * did not stop carrying it.
+ *
  * isLegacy IS DERIVED, NOT STORED — D1: true exactly when netPaidAmount
  * is NULL. §3.13's stage-4a write path always sets every snapshot field
  * together, so "no net paid amount" is the one reliable marker of "this

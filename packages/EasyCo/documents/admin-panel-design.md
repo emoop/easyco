@@ -1042,6 +1042,28 @@ any order-editing UI exists. Confirmed decisions:
   promotion, a pickup-point order with no street fields) renders `'—'`,
   never an exception.
 
+**Amended — the Lines table's own columns (a later, small UI pass on this
+same section):** the **unit-cost column is gone for everyone**, the
+Administrator included, so `COST_VIEW` no longer affects this page at all.
+The value itself is untouched: it stays in the sale line's §3.13 snapshot
+(a return reverses profit from the cost that was true at sale time) and in
+`OrderAdminSaleLineView`, so nothing here narrows what a future report can
+read. The reason is D4's, made concrete: a per-line cost on an order screen
+is margin analysis by another name, and that belongs to a future reports
+screen that requires `REPORT_VIEW` *and* `COST_VIEW` explicitly
+(`staff-access-domain-design.md` §6 — "a permission that only hides a field
+in one UI is not a permission"), not to a page whose only permission is
+`ORDER_VIEW`. The columns that remain are, in order: Product, SKU,
+Quantity, **Price** (the sold unit price, its struck regular price kept
+exactly as it was), **Discount** (the line's promotion share), **Merchant
+discount** (a register discount — still shown only when at least one line
+carries a non-zero one, D4) and **Final price** (the net paid). The old
+"Line total" column ("the amount before discounts") is gone with it: with
+Price x Quantity, Discount and Final price it only repeated information.
+D3 above describes the pre-§3.13 line shape and is superseded as a column
+list by this paragraph — its derived `amount_minor / quantity` rule still
+stands, and is still exactly what a legacy line shows under Price.
+
 **A real, confirmed gap found while building `forOrder()`, flagged, not
 fixed:** `SaleLine`'s own constructor
 (`assertProductNameAndSkuMatchType()`) rejects a `null`
