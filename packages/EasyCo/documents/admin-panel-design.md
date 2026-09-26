@@ -843,9 +843,137 @@ confirmed with a real test, not merely asserted by inspection.
 
 ---
 
-## §14. Orders (read-only)
+### 13.9 The products list: status buttons, and three bulk actions
 
-A `List` + `View` `OrderResource` — strictly read-only, the manual
+The list's own status mechanism changed shape here, and it grew the first
+bulk actions the panel has. Both halves are one design: the status buttons
+say *which* rows are on screen, and the bulk actions operate on the rows a
+merchant has ticked there.
+
+#### The four status VIEWS (Active · Draft · Archived · All)
+
+- Implemented as **one `ActionGroup` of four plain `Action`s with
+  `->buttonGroup()`**, mounted through `Table::toolbarActions()` — in
+  Filament v5.8.1 the toolbar's actions container is the FIRST child of the
+  header-toolbar row (`vendor/.../tables/resources/views/index.blade.php`:
+  `<div class="fi-ta-header-toolbar"><div class="fi-ta-actions fi-align-start
+  fi-wrapped">…@foreach ($toolbarActions as $action)…</div><div>…search,
+  filter trigger, column manager…</div>`), and that row's own CSS
+  (`tables/resources/css/container.css`) gives child 1 `shrink-0` and child
+  2 `ms-auto` inside a `justify-between` flex. The actions are therefore at
+  the **left of the row that carries the search box and the filter button**,
+  which is what was asked for — no fallback to tabs was needed.
+- **`->buttonGroup()` is what makes them buttons**, not a dropdown:
+  `ActionGroup::isButtonGroup()` switches each child's default view from
+  `GROUPED_VIEW` to `BUTTON_VIEW`.
+- **The view lives in the URL**: a single
+  `#[Livewire\Attributes\Url(as: 'status')] public string $statusView` on
+  `ListProducts`, so `?status=archived` is restored on a full page load
+  (Livewire's `BaseUrl::mount() → setPropertyFromQueryString()` reads
+  `request()->query()` for a non-Livewire request) and a back-navigation
+  returns to the same view. `history: false` replaces rather than pushes, so
+  switching four times does not leave four history entries.
+- **One reader, and it self-heals**: `ProductResource::statusViewFrom()`
+  whitelists the value against `STATUS_VIEWS`, falls back to
+  `STATUS_VIEW_DEFAULT` (= Active), and writes the normalised value back onto
+  the page — so a crafted or stale `?status=…` cannot reach a query *and*
+  cannot leave the toolbar without a highlighted button.
+- **The current button is highlighted by colour alone** (`primary` vs
+  `gray`), not disabled: a disabled current view reads as an unavailable
+  control while the highlight already says which one is on.
+- **Switching clears the row selection**, server-side:
+  `ProductResource::clearTableSelection()` empties `$selectedTableRecords`,
+  `$deselectedTableRecords` and `$isTrackingDeselectedTableRecords` and *then*
+  calls Filament's own `deselectAllTableRecords()` — which on its own only
+  dispatches the browser event whose JS handler empties the Alpine checkbox
+  Set, leaving the component's own state untouched.
+- **The old "Show archived only" Filter is gone, and so is the
+  `modifyQueryUsing()` exclusion that had to ask it whether it was active**:
+  that filter's `status = archived` and an unconditional `status != archived`
+  could only coexist by one of them reading the other's state, which is
+  exactly the coupling the buttons remove. The status view is now the ONE
+  status constraint on this list; 'all' is the only view that adds none.
+  Every other filter (visibility, purchasable, brand, season, product group,
+  categories, tags, attribute usage) is untouched and still composes with the
+  view.
+
+#### Three bulk actions: Archive · Publish · Delete permanently
+
+| Action | Permission | Offered in | Limit |
+| --- | --- | --- | --- |
+| Archive | `PRODUCT_MANAGE` | every view **except** Archived | 500 |
+| Publish | `PRODUCT_MANAGE` | Draft and All | 500 |
+| Delete permanently | `PRODUCT_DELETE` | **only** Archived | 50 |
+
+- **The view, not the permission, decides whether an action is offered**;
+  the permission decides whether it exists at all for that staff member.
+  Archiving in the Archived view (a no-op), publishing in the Active view
+  (nothing to do) and publishing in the Archived view (a product comes back
+  by restoring it, one at a time) are all dead ends, so they are not offered.
+- **The limits are D7's own numbers, and they exist for stated reasons**: one
+  product per transaction, each loading its own aggregate, saving it and (for
+  archiving) walking its media rows — 500 keeps that linear cost inside a few
+  seconds of request time. Delete is 50 because it is irreversible, each
+  product's transaction takes row and stock locks, *and* the modal renders
+  one `impactForProduct()` read-set per selected product before anything
+  happens.
+- **One product per transaction, one path per operation**: archive and
+  publish go through `App\Services\ProductStatusChanger` (below), which owns
+  each product's own `DB::transaction(attempts: 3)`; delete calls
+  `CatalogDeletion::deleteProduct()` per product (stage 3's own path). A
+  refusal never blocks the rest of the selection: every product is processed
+  on its own and the result notification states the counts **and lists each
+  refused or skipped product with its translated reason** — reuse, not a
+  second vocabulary, for deletions (`ProductDeletionRefusalMessage`).
+- **Confirmations**: Archive and Publish are a plain confirmation with the
+  number of selected products (both are reversible). Delete is the per-row
+  modal's bigger sibling — the impact for the whole selection (how many will
+  be deleted, which will be refused and why, per product), a "cannot be
+  undone" checkbox, and **the number of products that will actually be
+  deleted typed exactly** (the *deletable* count, not the selection size),
+  re-derived server-side from fresh impacts before anything is deleted. No
+  submit button at all when nothing can go, or when the selection is over the
+  limit — the same "no dead control" posture the per-row delete takes.
+- **Nothing here is a public Livewire method taking ids**: every handler is a
+  `private static` helper on `ProductResource`, the records always come from
+  Filament's own selection state, and both the permission and the limit are
+  re-checked as the handler's first act. Filament refuses *before* that even
+  (a mounted action whose `->visible()` is false for the current staff member
+  no longer resolves), which is why the handler-level gate is proven in tests
+  by invoking it directly.
+
+#### The shared status-change service (D4)
+
+- **`App\Services\ProductStatusChanger` is the one place a product's own
+  status changes.** Archiving was never one line: a domain transition,
+  a repository save, a real on-disk media cleanup (§3.19.7) and a logged
+  field change — four steps whose ORDER matters, and a bulk action that
+  re-implemented them would be a second, subtly different archive.
+- **Two entry points, by write ownership.** `archive()`/`publish()` are the
+  WHOLE operation for a product this class may own end to end: load the
+  aggregate, transition, save, clean up after an archive, each in its own
+  transaction. `applyStatus()` is the same status logic — the log entry and
+  the domain's own transition, no transaction, no save — for the edit page,
+  which mutates a dozen fields and saves ONCE and must run the archived-media
+  cleanup itself, after its media sync (`requiresArchivedMediaCleanup()`
+  carries that rule).
+- **The domain keeps every rule.** `publish()`'s own guard
+  (`CannotPublishEmptyVariableProductException`) is what the bulk publish
+  reports per product; `archive()` stays unconditional, so archiving an
+  already-archived product is a silent no-op that a bulk run reports as
+  skipped. The service sequences the rules the domain has — it invents none.
+- **The edit page did not change behaviour**: same ordering, same single
+  save, same deferred cleanup, same log rows — the status block is now the
+  shared code path instead of a copy of it, which is why the existing edit
+  tests pass untouched.
+
+**Deferred, explicitly:** merchant-defined axis order (tracked in
+catalog-domain-design.md §3.19), a bulk "promote" on the timeline, and any
+merchant-API exposure of these bulk operations.
+
+---
+
+## §14. Orders (read-only)
 prerequisite for exercising cart → checkout → order end to end before
 any order-editing UI exists. Confirmed decisions:
 
