@@ -1064,6 +1064,17 @@ D3 above describes the pre-§3.13 line shape and is superseded as a column
 list by this paragraph — its derived `amount_minor / quantity` rule still
 stands, and is still exactly what a legacy line shows under Price.
 
+**Each line also NAMES its own numbers** — Бройка 1, Цена 48.00 €,
+Отстъпка 0.00 €, Сума 48.00 € — instead of relying on the header row alone.
+A table this wide scrolls sideways, and a heading that has scrolled out of
+sight names nothing; the line labels live in `orders.line_labels`
+(`lang/{bg,en}/orders.php`) and are applied by `OrderResource::lineCell()`,
+while the header row itself is untouched. Worth knowing when reading the
+code: the row labels are their own keys, so a row may word a value
+differently from the heading it sits under (`Бройка` on the line, D3's
+`Количество` above it) — the line language is the merchant's, the column
+name is the table's.
+
 **A real, confirmed gap found while building `forOrder()`, flagged, not
 fixed:** `SaleLine`'s own constructor
 (`assertProductNameAndSkuMatchType()`) rejects a `null`

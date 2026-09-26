@@ -591,6 +591,37 @@ class OrderViewSnapshotPageTest extends TestCase
     }
 
     /**
+     * §14's LINE LABELS — every line names its own four numbers, so the line
+     * still reads correctly on a table this wide, where the header row
+     * scrolls out of sight: Бройка 2, Цена 10.00 €, Отстъпка 0.00 €,
+     * Сума 20.00 €.
+     */
+    public function test_each_line_names_its_own_quantity_price_discount_and_amount(): void
+    {
+        $this->seedPricingLists();
+
+        $cart = $this->guestCart();
+        $this->addLine($cart, $this->simpleVariation('10.00'), 2);
+        app(CartRepository::class)->save($cart);
+
+        $order = $this->place($cart);
+
+        $this->actingAsRole('Administrator');
+        $row = $this->linesBodyRows($this->viewHtml($order))[0];
+
+        // Each name sits ON THE LINE, immediately in front of the value it
+        // names — not only in the table's header row.
+        $this->assertStringContainsString(__('orders.line_labels.quantity').' 2', $row);
+        $this->assertStringContainsString(__('orders.line_labels.unit_price').' 10.00 €', $row);
+        $this->assertStringContainsString(__('orders.line_labels.discount').' 0.00 €', $row);
+        $this->assertStringContainsString(__('orders.line_labels.amount').' 20.00 €', $row);
+
+        // The values themselves are unchanged by the labels: 2 x 10.00 with
+        // no discount is still the line's own arithmetic.
+        $this->assertCount(1, $this->linesBodyRows($this->viewHtml($order)));
+    }
+
+    /**
      * D1/D7 — the View page's query count does not grow with the number of
      * sale lines: the reader reads them in one query and never per line,
      * and the table's own column decisions reuse that same memoized read.

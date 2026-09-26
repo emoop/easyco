@@ -474,6 +474,10 @@ class OrderResource extends Resource
      * values (OrderAdminSaleLineView); this page simply stops showing
      * them.
      *
+     * The four numbers a merchant reads off a line are NAMED on the line
+     * itself as well as in the header row, by lineCell() — see its own
+     * docblock; the values here stay pure values.
+     *
      * @return array<int, array<string, string>>
      */
     private static function lineRows(OrderModel $record): array
@@ -563,6 +567,13 @@ class OrderResource extends Resource
      * already-escaped markup (the sold attributes; the D3 struck price),
      * so they render as HTML — every other cell is plain text, escaped by
      * Filament. See lineRows() for what each key's value is.
+     *
+     * §14's LINE LABELS live here, not in lineRows(): the four numbers a
+     * merchant reads off a line each get their own name in front of them
+     * (Бройка 1, Цена 48.00 €, Отстъпка 0.00 €, Сума 48.00 €) rather than
+     * relying only on the header row, which scrolls out of sight on a table
+     * this wide. lineRows() keeps returning pure values; naming a value is
+     * a presentation decision of its cell.
      */
     private static function lineCell(string $key): TextEntry
     {
@@ -572,7 +583,37 @@ class OrderResource extends Resource
             $entry->html();
         }
 
+        if (($label = static::lineValueLabel($key)) !== null) {
+            // The trailing space is INSIDE the prefix on purpose:
+            // Filament's own formatState() concatenates a prefix onto the
+            // state with no separator of its own, so 'Бройка' alone would
+            // render 'Бройка1'.
+            $entry->prefix($label.' ');
+        }
+
         return $entry;
+    }
+
+    /**
+     * The name a line puts in front of one of its own values, in the words
+     * the merchant uses for them (admin-panel-design.md §14) — or null for
+     * the values a line does NOT name:
+     *
+     *  - product_name / sku are identified by their own content (the product
+     *    name, the SKU), not by a label;
+     *  - discretionary_discount (a register discount, D4) appears only when
+     *    some line has one, and keeps its own column header only — adding a
+     *    fifth label for it was not asked for.
+     */
+    private static function lineValueLabel(string $key): ?string
+    {
+        return match ($key) {
+            'quantity' => __('orders.line_labels.quantity'),
+            'unit_price' => __('orders.line_labels.unit_price'),
+            'promotion_discount' => __('orders.line_labels.discount'),
+            'net_paid' => __('orders.line_labels.amount'),
+            default => null,
+        };
     }
 
     /**

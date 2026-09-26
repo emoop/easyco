@@ -95,4 +95,15 @@ return [
     'not_available' => '—',
     'legacy_line_note' => 'Recorded before full snapshot',
 
+    // The names each LINE puts in front of its own values on the View page's
+    // Lines table (admin-panel-design.md §14): a table wide enough to scroll
+    // sideways scrolls its header row out of sight, so every line names its own
+    // numbers, in the words the merchant reads them off in.
+    'line_labels' => [
+        'quantity' => 'Qty',
+        'unit_price' => 'Price',
+        'discount' => 'Discount',
+        'amount' => 'Total',
+    ],
+
 ];
