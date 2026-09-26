@@ -202,6 +202,44 @@ return [
         ],
     ],
 
+    // §3.19.8 C — the axis-restructuring flow. Its own top-level block rather
+    // than more keys under `deletion`, because it is a different operation
+    // with its own refusals: what it reports about variations reuses the
+    // deletion wording it shares, and everything else here is its own.
+    'axes_restructure' => [
+        'button_label' => 'Change axes',
+        'heading' => 'Change the variation axes',
+        'description' => 'Adding or removing an axis or a value here reviews the impact first, then rewrites the axes and creates the new combinations. Unsaved edits elsewhere on this page are discarded when it finishes.',
+        'submit' => 'Apply the axis change',
+        'impact_intro' => 'Current axes: :current',
+        'impact_new' => 'New axes: :new',
+        'impact_unchanged_axes' => 'The axes are unchanged — confirming writes nothing at all.',
+        'impact_no_variations' => 'No live variation is affected by this change.',
+        'impact_will_delete' => 'Will be permanently deleted (:count):',
+        'impact_will_archive' => 'Will be archived (:count):',
+        'impact_will_become_unrestorable' => 'Will become unrestorable (:count):',
+        'impact_no_attributes' => 'no attributes',
+        'impact_delete_note' => 'A deleted variation and its SKU and barcode are gone for good — the identifiers become reusable.',
+        'impact_archive_note' => 'An archived variation keeps its record, its SKU and its history, and stays off sale until it is restored.',
+        'impact_no_delete_permission' => 'You do not have permission to delete variations permanently, so every one of these is archived instead — their SKUs stay occupied.',
+        'impact_restorable_note' => 'These archived variations can be restored today. After this change their combination no longer fits the axes, so restoring them will be refused.',
+        'impact_generated' => 'The combinations of the new axes are created afterwards as draft variations. A combination an archived variation already owns is restored with its own SKU instead.',
+        'impact_unsaved_note' => 'The page reloads from the database when this completes.',
+        'refusal' => [
+            'invalid_axes' => 'Those axes cannot be declared for ":product": :detail',
+            'plan_changed' => '":product" changed since you opened this dialog — reopen it to see the current impact. Nothing was changed.',
+        ],
+        'field_confirm_label' => 'I understand this cannot be undone, and that deleted SKUs and barcodes become reusable',
+        'field_base_sku_label' => 'Type the base SKU (:base_sku) to confirm',
+        'field_base_sku_mismatch' => 'The typed base SKU does not match this product\'s base SKU.',
+        'notification_unauthorized' => 'You do not have permission to change this product\'s axes.',
+        'notification_not_confirmed' => 'Nothing was done: both the confirmation box and the exact base SKU are required.',
+        'notification_unchanged' => 'The axes are unchanged — nothing was written.',
+        'notification_success_title' => 'Axes changed for :product',
+        'notification_success_body' => ':deleted deleted, :archived archived, :created created, :restored restored.',
+        'use_action_hint' => 'To make this change, use the "Change axes" action on the Axes tab: it lists exactly which variations must be deleted or archived first and carries the whole change out in one step.',
+    ],
+
     'variations_generate' => [
         'button_label' => 'Generate missing variations',
         'confirm_heading' => 'Generate every missing combination?',

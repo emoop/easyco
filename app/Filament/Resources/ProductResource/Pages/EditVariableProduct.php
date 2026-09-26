@@ -6,7 +6,10 @@ use App\Filament\Resources\ProductResource;
 use App\Providers\CatalogSkuGeneratorServiceProvider;
 use App\Services\ActivityLogger;
 use App\Services\ArchiveProductMediaCleaner;
+use App\Services\AxesRestructureImpact;
+use App\Services\AxesRestructureRefusalMessage;
 use App\Services\CatalogDeletion;
+use App\Services\VariationAxisRestructure;
 use App\Services\VariationDeletionImpact;
 use App\Services\VariationDeletionRefusalMessage;
 use App\Services\ProductPricingAndStock;
@@ -20,6 +23,7 @@ use EasyCo\Catalog\Enums\CatalogVisibility;
 use EasyCo\Catalog\Enums\ProductStatus;
 use EasyCo\Catalog\Enums\VariationStatus;
 use EasyCo\Catalog\Enums\VariationType;
+use EasyCo\Catalog\Exceptions\AxesRestructureRefused;
 use EasyCo\Catalog\Exceptions\CannotPublishEmptyVariableProductException;
 use EasyCo\Catalog\Exceptions\DuplicateVariationCombinationException;
 use EasyCo\Catalog\Exceptions\InvalidVariationAxisException;
@@ -57,6 +61,7 @@ use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Hidden;
+use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\RichEditor;
 use Filament\Forms\Components\Select;
@@ -199,6 +204,65 @@ class EditVariableProduct extends EditRecord
 
     /** @var array<string, string> */
     private array $finalVariationSkus = [];
+
+    /**
+     * The "Change axes" modal's impact, memoized per REQUEST (see hydrate()
+     * below) and keyed by the axes input the merchant currently has in the
+     * modal. The impact is a read-only report costing roughly two dozen indexed
+     * reads, and ONE request evaluates it several times over: the preview
+     * placeholder, the confirmation fields' visibility, the submit button's
+     * state, and the action itself.
+     *
+     * WHY PER-REQUEST AND NOT PER-COMPONENT: Livewire component state survives
+     * between requests, and a modal showing yesterday's impact would be a lie on
+     * screen even though the restructure itself re-derives its own plan inside
+     * its transaction and never trusts this cache. hydrate() — which
+     * Filament's own EditRecord::hydrate() already runs for authorization — is
+     * exactly the per-request boundary.
+     *
+     * @var array<string, AxesRestructureImpact>
+     */
+    private array $axesRestructureImpacts = [];
+
+    /**
+     * The fingerprint of the plan the "Change axes" modal last RENDERED — the
+     * plan the merchant is looking at. It is handed to
+     * VariationAxisRestructure::apply() as the plan that was confirmed
+     * (§3.19.8 C), which re-derives the plan inside its transaction and refuses
+     * when the two differ.
+     *
+     * WHY A COMPONENT PROPERTY AND NOT A HIDDEN FORM FIELD: a hidden field's
+     * state is only re-evaluated when something explicitly sets it, so it would
+     * keep whichever value it was born with while the merchant edits the axes —
+     * a confirmation token that does not follow the confirmation is worse than
+     * none. This one is written by the single thing that actually knows which
+     * plan is on screen: the render of the impact itself
+     * (axesRestructureImpactView()). Nothing else writes it, and in particular
+     * the submit path does NOT recompute it — restructureAxes() reads it before
+     * deriving anything, so the gate compares what was SHOWN with what would now
+     * be executed.
+     *
+     * A client that tampers with it can only cause a refusal, never a different
+     * deletion: the lists that are deleted and archived are always the ones
+     * apply() derives itself.
+     */
+    public ?string $axesPlanFingerprint = null;
+
+    /**
+     * Filament/Livewire hydration hook: runs at the start of every request after
+     * the first. Clears the per-request impact memo above; the parent call first,
+     * because that is where Filament's own authorizeAccess() lives.
+     *
+     * $axesPlanFingerprint is deliberately NOT cleared here — it is the one piece
+     * of state that has to survive from the render that showed the impact into
+     * the later request that submits it.
+     */
+    public function hydrate(): void
+    {
+        parent::hydrate();
+
+        $this->axesRestructureImpacts = [];
+    }
 
     /**
      * ->requiresConfirmation() takes bool|Closure (confirmed against
@@ -513,42 +577,435 @@ class EditVariableProduct extends EditRecord
      */
     private function axesTabComponents(): array
     {
+        return [
+            // Wrapped in a Section for the same reason the Variations tab's
+            // Repeater is (see existingVariationsComponents()): Repeater does
+            // not implement Filament's HasHeaderActions, Section does — and
+            // §3.19.8 C's "Change axes" action belongs ON the Axes tab, beside
+            // the inputs it operates on. The key is what makes this Section (and
+            // so its header action) addressable by name — the same reason the
+            // Variations tab's Repeater is addressed by its own field name.
+            Section::make()
+                ->key('axes_change')
+                ->headerActions([$this->changeAxesAction()])
+                ->schema([
+                    $this->axesRepeater(),
+                ]),
+        ];
+    }
+
+    /**
+     * The Axes tab's own inputs — ONE definition Select plus its value
+     * CheckboxList per row — shared by the tab's Repeater and by the "Change
+     * axes" modal's Repeater (§3.19.8 C's own "the new axes (same inputs as the
+     * tab)"). $live is the modal's only difference: it makes the value list live
+     * too, so the impact preview rendered below it updates as the merchant
+     * edits. The definition Select is live in BOTH places regardless — it has
+     * to be, or its own value options would never load.
+     *
+     * @param string[] $excludedDefinitionIds
+     * @return array<int, \Filament\Forms\Components\Component>
+     */
+    private function axisRowComponents(array $excludedDefinitionIds, bool $live): array
+    {
+        return [
+            Select::make('attribute_definition_id')
+                ->label(__('products.axes.attribute_label'))
+                ->options(fn (): array => AttributeDefinitionModel::where('type', AttributeType::SELECT->value)
+                    ->whereNotIn('id', $excludedDefinitionIds)
+                    ->pluck('name', 'id')
+                    ->all())
+                ->searchable()
+                ->required()
+                ->live()
+                ->afterStateUpdated(fn (Set $set) => $set('value_ids', [])),
+            CheckboxList::make('value_ids')
+                ->label(__('products.axes.values_label'))
+                ->searchable()
+                ->columns(3)
+                ->bulkToggleable()
+                ->required()
+                ->live($live)
+                ->options(fn (Get $get): array => AttributeValueModel::where('attribute_definition_id', $get('attribute_definition_id'))
+                    ->pluck('value', 'id')
+                    ->all()),
+        ];
+    }
+
+    /**
+     * One axes Repeater, built identically for the tab and for the modal — the
+     * tab's own definition of "which values are selectable" (a definition
+     * already used as a descriptive attribute is excluded, §4.3's
+     * per-product "descriptive OR axis" rule) lives here exactly once.
+     */
+    private function axesRepeater(bool $live = false): Repeater
+    {
         $product = app(ProductRepository::class)->findByIdWithVariations((string) $this->record->id);
 
         $excludedDefinitionIds = array_keys($product->descriptiveAttributes());
 
+        return Repeater::make('axes')
+            ->hiddenLabel()
+            ->defaultItems(0)
+            ->addActionLabel(__('products.axes.add_axis'))
+            ->reorderable(false)
+            ->collapsible()
+            ->schema($this->axisRowComponents($excludedDefinitionIds, $live))
+            ->itemLabel(fn (array $state): ?string => filled($state['attribute_definition_id'] ?? null)
+                ? AttributeDefinitionModel::find($state['attribute_definition_id'])?->name
+                : null);
+    }
+
+    /**
+     * "Change axes" — catalog-domain-design.md §3.19.8 C, as its OWN action on
+     * the Axes tab rather than as an interception of the page's save. The normal
+     * Save keeps refusing an unsafe re-declaration (its notification now points
+     * the merchant here), while a SAFE change — R1's identical set, or R5's
+     * addition of a value no live variation is harmed by — still goes through
+     * Save exactly as before, with no modal at all.
+     *
+     * THREE STEPS IN ONE SCHEMA, top to bottom (§3.19.8 C's own order): the new
+     * axes, the impact, then the confirmation. The axes inputs ARE the tab's own
+     * inputs (axesRepeater(live: true)), seeded from the product's real declared
+     * axes through ->fillForm(), so an untouched modal submits the identical set
+     * — which the impact reports as the R1 no-op it is.
+     *
+     * THE SUBMIT BUTTON IS THE IMPACT'S OWN ANSWER: when the domain will not
+     * declare the entered set at all, the action has no submit action (the modal
+     * shows the reason instead) — the same "no dead control" posture the two
+     * delete modals take.
+     *
+     * AUTHORIZATION IS RE-CHECKED SERVER-SIDE (§3.19.9): ->visible() is a UX aid
+     * only, restructureAxes() re-checks PRODUCT_MANAGE, and whether the deletable
+     * list may actually be DELETED is read from the real PRODUCT_DELETE
+     * permission at submit time — never from anything submitted.
+     */
+    private function changeAxesAction(): Action
+    {
+        return Action::make('change_axes')
+            ->label(__('products.axes_restructure.button_label'))
+            ->icon('heroicon-o-arrows-right-left')
+            ->color('warning')
+            ->visible(fn (): bool => ProductResource::staffHasPermission(Permission::PRODUCT_MANAGE))
+            ->modalHeading(__('products.axes_restructure.heading'))
+            ->modalDescription(fn (): string => __('products.axes_restructure.description', ['product' => (string) $this->record->name]))
+            ->modalSubmitActionLabel(__('products.axes_restructure.submit'))
+            ->modalCancelActionLabel(__('products.deletion.confirm_cancel'))
+            ->fillForm(fn (): array => ['axes' => $this->axesRows()])
+            ->schema(fn (): array => $this->changeAxesSchema())
+            ->modalSubmitAction(function (Action $action): Action|false {
+                return $this->axesRestructureImpactFor($this->changeAxesModalRows())->canApply() ? $action : false;
+            })
+            ->action(function (array $data, $livewire): void {
+                $this->restructureAxes($data, $livewire);
+            });
+    }
+
+    /**
+     * The axes rows the "Change axes" modal currently holds.
+     *
+     * WHY THIS IS NOT a `Get $get` INJECTION, unlike every OTHER field closure on
+     * this page: this action is a Section HEADER action, so Get()/$data in its own
+     * closures resolve against the header action's container (the page's form) —
+     * not against the mounted modal's schema, whose state lives at
+     * `mountedActions.{index}.data` (Action::getData() is empty for a non-table
+     * action as well). Both were confirmed against the installed Filament source
+     * and by test before this helper existed. Reading the mounted action's own
+     * state is reading exactly the array Filament's modal form binds to.
+     */
+    private function changeAxesModalRows(): mixed
+    {
+        $mountedAction = $this->getMountedAction();
+
+        if (! $mountedAction instanceof Action || $mountedAction->getName() !== 'change_axes') {
+            return null;
+        }
+
+        return $this->mountedActions[array_key_last($this->mountedActions)]['data']['axes'] ?? null;
+    }
+
+    /** @return array<int, \Filament\Forms\Components\Component> */
+    private function changeAxesSchema(): array
+    {
         return [
-            Repeater::make('axes')
+            $this->axesRepeater(live: true),
+            Placeholder::make('axes_restructure_impact')
                 ->hiddenLabel()
-                ->defaultItems(0)
-                ->addActionLabel(__('products.axes.add_axis'))
-                ->reorderable(false)
-                ->collapsible()
-                ->schema([
-                    Select::make('attribute_definition_id')
-                        ->label(__('products.axes.attribute_label'))
-                        ->options(fn (): array => AttributeDefinitionModel::where('type', AttributeType::SELECT->value)
-                            ->whereNotIn('id', $excludedDefinitionIds)
-                            ->pluck('name', 'id')
-                            ->all())
-                        ->searchable()
-                        ->required()
-                        ->live()
-                        ->afterStateUpdated(fn (Set $set) => $set('value_ids', [])),
-                    CheckboxList::make('value_ids')
-                        ->label(__('products.axes.values_label'))
-                        ->searchable()
-                        ->columns(3)
-                        ->bulkToggleable()
-                        ->required()
-                        ->options(fn (Get $get): array => AttributeValueModel::where('attribute_definition_id', $get('attribute_definition_id'))
-                            ->pluck('value', 'id')
-                            ->all()),
-                ])
-                ->itemLabel(fn (array $state): ?string => filled($state['attribute_definition_id'] ?? null)
-                    ? AttributeDefinitionModel::find($state['attribute_definition_id'])?->name
-                    : null),
+                ->content(fn (): View => $this->axesRestructureImpactView($this->changeAxesModalRows())),
+            // §3.19.8 C's confirmation, shown only when the change actually
+            // touches live variations: when both lists are empty there is
+            // nothing irreversible to confirm, and the modal's own submit button
+            // IS the confirmation. `affectsVariations()` covers the archive list
+            // too, because an archived variation can be unrestorable afterwards.
+            Checkbox::make('understand_permanent')
+                ->label(__('products.axes_restructure.field_confirm_label'))
+                ->accepted()
+                ->required()
+                ->visible(fn (): bool => $this->axesRestructureImpactFor($this->changeAxesModalRows())->affectsVariations()),
+            TextInput::make('base_sku_confirmation')
+                ->label(__('products.axes_restructure.field_base_sku_label', ['base_sku' => (string) $this->record->base_sku]))
+                ->required()
+                ->visible(fn (): bool => $this->axesRestructureImpactFor($this->changeAxesModalRows())->affectsVariations())
+                // EXACT match, as a closure that RETURNS a rule — see
+                // deletionConfirmationFields()'s own comment for why a bare rule
+                // closure would be evaluated by Filament's injector first.
+                ->rule(fn (): \Closure => function (string $attribute, mixed $value, \Closure $fail): void {
+                    if ((string) $value !== (string) $this->record->base_sku) {
+                        $fail(__('products.axes_restructure.field_base_sku_mismatch'));
+                    }
+                }),
         ];
+    }
+
+    /** The modal BODY: the impact the service reports for the axes currently entered. */
+    private function axesRestructureImpactView(mixed $axesRows): View
+    {
+        $impact = $this->axesRestructureImpactFor($axesRows);
+
+        // RECORDED HERE, in the render path, and nowhere else: this IS the impact
+        // the merchant is looking at, so this is the plan they can go on to
+        // confirm — see $axesPlanFingerprint's own docblock for why the submit
+        // path must never overwrite it.
+        $this->axesPlanFingerprint = $impact->fingerprint;
+
+        return view('filament.product-resource.axes-restructure-impact', [
+            'impact' => $impact,
+            // Already localised — the view never builds a merchant-facing
+            // sentence of its own (see AxesRestructureRefusalMessage).
+            'refusalMessage' => $impact->refusal !== null
+                ? AxesRestructureRefusalMessage::for($impact->refusal)
+                : null,
+            'variationLabels' => $this->variationAttributeLabels([
+                ...$impact->willBeDeleted,
+                ...$impact->willBeArchived,
+                ...$impact->willBecomeUnrestorable,
+            ]),
+        ]);
+    }
+
+    /**
+     * The impact for the axes currently entered in the modal — computed once per
+     * REQUEST per distinct input (see $axesRestructureImpacts' own docblock), so
+     * the preview, the confirmation fields, the submit button and the action all
+     * describe the same input in the same way, from the same service.
+     */
+    private function axesRestructureImpactFor(mixed $axesRows): AxesRestructureImpact
+    {
+        $rows = $this->completeAxesRows($axesRows);
+        $cacheKey = md5((string) json_encode($rows));
+
+        return $this->axesRestructureImpacts[$cacheKey] ??= app(VariationAxisRestructure::class)->impact(
+            (string) $this->record->id,
+            ProductResource::buildVariationAxesFromInput($rows),
+            mayDelete: $this->mayDeleteVariations(),
+        );
+    }
+
+    /**
+     * §3.19.9: deleting is its own capability, not part of managing. Without
+     * PRODUCT_DELETE nothing is deleted, and every blocker is archived instead —
+     * read here from the real authenticated staff member, never from submitted
+     * data.
+     */
+    private function mayDeleteVariations(): bool
+    {
+        return ProductResource::staffHasPermission(Permission::PRODUCT_DELETE);
+    }
+
+    /**
+     * The modal's raw rows, filtered to the COMPLETE ones — a definition chosen
+     * and at least one value. Rows arrive incomplete while the merchant is still
+     * editing (both inputs are live, so a fresh row re-renders the modal
+     * immediately), and a half-typed row is not a proposed axis: the domain would
+     * refuse it as an EMPTY axis and bury the real preview under that refusal.
+     *
+     * The modal's own ->required() fields are what actually stop an incomplete
+     * row from being SUBMITTED, so this filter can never let one through.
+     *
+     * @return list<array{attribute_definition_id: string, value_ids: list<string>}>
+     */
+    private function completeAxesRows(mixed $axesRows): array
+    {
+        $complete = [];
+
+        foreach (is_array($axesRows) ? $axesRows : [] as $row) {
+            $definitionId = (string) (is_array($row) ? ($row['attribute_definition_id'] ?? '') : '');
+            $valueIds = array_values(array_map(
+                strval(...),
+                array_filter(
+                    is_array($row) ? (array) ($row['value_ids'] ?? []) : [],
+                    static fn (mixed $valueId): bool => filled($valueId),
+                ),
+            ));
+
+            if ($definitionId === '' || $valueIds === []) {
+                continue;
+            }
+
+            $complete[] = ['attribute_definition_id' => $definitionId, 'value_ids' => $valueIds];
+        }
+
+        return $complete;
+    }
+
+    /**
+     * The real work behind the "Change axes" action — every gate re-checked
+     * server-side (never "the modal only let them through"), and the axes set
+     * re-built from the SUBMITTED rows rather than from the memoized preview.
+     *
+     * The impact is computed here for its verdict and for the confirmation check;
+     * the restructure then re-derives its own plan inside its transaction, so this
+     * read is a GATE, not the operation's source of truth.
+     *
+     * @param array<string, mixed> $data
+     */
+    private function restructureAxes(array $data, $livewire): void
+    {
+        if (! ProductResource::staffHasPermission(Permission::PRODUCT_MANAGE)) {
+            Notification::make()
+                ->title(__('products.axes_restructure.notification_unauthorized'))
+                ->danger()
+                ->send();
+
+            return;
+        }
+
+        $impact = $this->axesRestructureImpactFor($data['axes'] ?? null);
+
+        if (! $impact->canApply()) {
+            Notification::make()
+                ->title(AxesRestructureRefusalMessage::for($impact->refusal))
+                ->danger()
+                ->send();
+
+            return;
+        }
+
+        if ($impact->affectsVariations() && ! $this->axesRestructureIsConfirmed($impact, $data)) {
+            Notification::make()
+                ->title(__('products.axes_restructure.notification_not_confirmed'))
+                ->danger()
+                ->send();
+
+            return;
+        }
+
+        // THE PLAN THE MERCHANT CONFIRMED, captured before anything above could
+        // derive a fresh one: what the modal was showing, not what the submitted
+        // axes would produce now. apply() compares it against the plan it derives
+        // inside its own transaction and refuses if the two differ — so a
+        // variation added, archived or deleted between the two never travels
+        // silently into a deletion (see $axesPlanFingerprint).
+        $confirmedFingerprint = $this->axesPlanFingerprint;
+
+        try {
+            $result = app(VariationAxisRestructure::class)->apply(
+                (string) $this->record->id,
+                ProductResource::buildVariationAxesFromInput($this->completeAxesRows($data['axes'] ?? null)),
+                mayDelete: $this->mayDeleteVariations(),
+                expectedFingerprint: $confirmedFingerprint,
+            );
+        } catch (AxesRestructureRefused $e) {
+            // The plan was overtaken, or the set turned out to be undeclarable
+            // after all: nothing was changed, and the reason is the merchant's own
+            // locale.
+            Notification::make()->title(AxesRestructureRefusalMessage::for($e))->danger()->send();
+
+            return;
+        } catch (VariationNotDeletableException $e) {
+            // A sale or a stock write landed on a variation the plan would have
+            // deleted; CatalogDeletion's own re-check refused, and the whole
+            // restructure rolled back. Rendered exactly like the delete modal's
+            // own refusal — the reason is a fact, the sentence is the locale.
+            Notification::make()->title(VariationDeletionRefusalMessage::for($e))->danger()->send();
+
+            return;
+        }
+
+        if (! $result->changed) {
+            Notification::make()
+                ->title(__('products.axes_restructure.notification_unchanged'))
+                ->info()
+                ->send();
+
+            return;
+        }
+
+        Notification::make()
+            ->title(__('products.axes_restructure.notification_success_title', ['product' => (string) $this->record->name]))
+            ->body(__('products.axes_restructure.notification_success_body', [
+                'deleted' => $result->deletedVariationCount,
+                'archived' => $result->archivedVariationCount,
+                'created' => $result->createdVariationCount,
+                'restored' => $result->restoredVariationCount,
+            ]))
+            ->success()
+            ->send();
+
+        // §3.19.8 C: the page reloads from the database afterwards, which is what
+        // discards the unsaved edits the modal warned about — the same behaviour
+        // the per-variation delete already has.
+        $livewire->redirect(ProductResource::getUrl('edit-variable', ['record' => $this->record]));
+    }
+
+    /**
+     * Both confirmations, re-checked — never "the modal only let them through": a
+     * Livewire call can carry any $data it likes.
+     *
+     * @param array<string, mixed> $data
+     */
+    private function axesRestructureIsConfirmed(AxesRestructureImpact $impact, array $data): bool
+    {
+        return filter_var($data['understand_permanent'] ?? false, FILTER_VALIDATE_BOOLEAN)
+            && (string) ($data['base_sku_confirmation'] ?? '') === $impact->baseSku;
+    }
+
+    /**
+     * §3.19.8 C's own seed: the modal opens on the product's REAL declared axes,
+     * so an untouched modal submits the R1 no-op the domain already allows.
+     *
+     * @return list<array{attribute_definition_id: string, value_ids: list<string>}>
+     */
+    private function axesRows(): array
+    {
+        $product = app(ProductRepository::class)->findByIdWithVariations((string) $this->record->id);
+
+        return $this->axesRowsFromAxes($product->variationAxes());
+    }
+
+    /**
+     * The one row shape both the page's own form fill and the modal's seed use.
+     *
+     * @param VariationAxis[] $axes
+     * @return list<array{attribute_definition_id: string, value_ids: list<string>}>
+     */
+    private function axesRowsFromAxes(array $axes): array
+    {
+        return array_map(
+            static fn (VariationAxis $axis): array => [
+                'attribute_definition_id' => $axis->attributeDefinitionId(),
+                'value_ids' => $axis->allowedValueIds(),
+            ],
+            $axes,
+        );
+    }
+
+    /**
+     * @param list<VariationDeletionImpact> $impacts
+     * @return array<string, string> variation id => "Color: Black" style label
+     */
+    private function variationAttributeLabels(array $impacts): array
+    {
+        $labels = [];
+
+        foreach ($impacts as $impact) {
+            $labels[$impact->variationId] = implode(', ', array_map(
+                static fn (array $attribute): string => $attribute['name'].': '.$attribute['value'],
+                $impact->attributes,
+            ));
+        }
+
+        return $labels;
     }
 
     /**
@@ -1439,14 +1896,9 @@ class EditVariableProduct extends EditRecord
         // now allows as a genuine no-op, unlike the old blanket
         // refusal. allowedValueIds() already returns string[] (see
         // that method's own real source), matching value_ids' own
-        // multiple-Select shape exactly.
-        $data['axes'] = array_map(
-            fn (VariationAxis $axis): array => [
-                'attribute_definition_id' => $axis->attributeDefinitionId(),
-                'value_ids' => $axis->allowedValueIds(),
-            ],
-            $product->variationAxes()
-        );
+        // multiple-Select shape exactly. axesRowsFromAxes() is the SAME
+        // builder the "Change axes" modal's own seed uses.
+        $data['axes'] = $this->axesRowsFromAxes($product->variationAxes());
 
         // Both use the SAME two shared row-shape builders this class's
         // own restoreArchivedVariationById()/generateMissingVariations()
@@ -2062,6 +2514,11 @@ class EditVariableProduct extends EditRecord
             } catch (UnsafeAxisRedeclarationException|InvalidVariationAxisException|\LogicException $e) {
                 Notification::make()
                     ->title($e->getMessage())
+                    // §3.19.8 C: the unsafe re-declaration stays REFUSED here —
+                    // that is the point of the guard — and the merchant is
+                    // pointed at the action that can carry it out, rather than
+                    // being told about a rule with no way forward.
+                    ->body(__('products.axes_restructure.use_action_hint'))
                     ->danger()
                     ->send();
 
@@ -2637,39 +3094,10 @@ class EditVariableProduct extends EditRecord
      */
     private function axesDiffer(array $currentAxes, array $newAxes): bool
     {
-        $current = [];
-        foreach ($currentAxes as $axis) {
-            $current[$axis->attributeDefinitionId()] = $this->normalizedIdSet($axis->allowedValueIds());
-        }
-
-        $new = [];
-        foreach ($newAxes as $axis) {
-            $new[$axis->attributeDefinitionId()] = $this->normalizedIdSet($axis->allowedValueIds());
-        }
-
-        if ($this->normalizedIdSet(array_keys($current)) !== $this->normalizedIdSet(array_keys($new))) {
-            return true;
-        }
-
-        foreach ($current as $definitionId => $valueIds) {
-            if ($valueIds !== $new[$definitionId]) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    /**
-     * @param string[] $ids
-     * @return string[]
-     */
-    private function normalizedIdSet(array $ids): array
-    {
-        $unique = array_values(array_unique(array_map('strval', $ids)));
-        sort($unique, SORT_STRING);
-
-        return $unique;
+        // ONE implementation, shared with VariationAxisRestructure (which asks
+        // the same question before writing anything) — see that method's own
+        // docblock for why it is exactly §3.17's R1 test.
+        return VariationAxisRestructure::axesDiffer($currentAxes, $newAxes);
     }
 
     /**
@@ -2685,21 +3113,10 @@ class EditVariableProduct extends EditRecord
      */
     private function axesSummary(array $axes): string
     {
-        $parts = [];
-
-        foreach ($axes as $axis) {
-            $definitionId = $axis->attributeDefinitionId();
-            $definitionName = AttributeDefinitionModel::find($definitionId)?->name ?? $axis->attributeDefinitionCode();
-
-            $valueNames = array_map(
-                fn (string $valueId): string => AttributeValueModel::find($valueId)?->value ?? $valueId,
-                $axis->allowedValueIds()
-            );
-
-            $parts[] = "{$definitionName}: ".implode(', ', $valueNames);
-        }
-
-        return implode('; ', $parts);
+        // ONE implementation, shared with VariationAxisRestructure's own
+        // 'variation_axes' log entry for the restructure flow — so two entries
+        // about the same fact can never be formatted differently.
+        return VariationAxisRestructure::summarize($axes);
     }
 
     /**
