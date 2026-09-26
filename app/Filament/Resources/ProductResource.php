@@ -12,8 +12,11 @@ use App\Filament\Resources\ProductResource\Pages\ListProducts;
 use App\Filament\Resources\ProductResource\Pages\ProductActivityLog;
 use App\Filament\Resources\ProductResource\Pages\ViewProduct;
 use App\Services\ActivityLogger;
+use App\Services\CatalogDeletion;
 use App\Services\DuplicateProduct;
 use App\Services\PriceDisplayFormatter;
+use App\Services\ProductDeletionImpact;
+use App\Services\ProductDeletionRefusalMessage;
 use App\Services\ProductPriceDisplay;
 use App\Services\ProductPricingAndStock;
 use App\Services\ProductPriceRangeProvider;
@@ -36,6 +39,7 @@ use EasyCo\Catalog\Persistence\Eloquent\ProductGroupModel;
 use EasyCo\Catalog\Persistence\Eloquent\ProductModel;
 use EasyCo\Catalog\Persistence\Eloquent\SeasonModel;
 use EasyCo\Catalog\Persistence\Eloquent\TagModel;
+use EasyCo\Catalog\Exceptions\ProductNotDeletableException;
 use EasyCo\Catalog\Product;
 use EasyCo\Catalog\Variation;
 use EasyCo\Catalog\VariationAxis;
@@ -51,6 +55,7 @@ use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
+use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Repeater;
@@ -77,6 +82,7 @@ use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
+use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -92,8 +98,13 @@ use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
  * reason Permission::PRODUCT_MANAGE and the Product Entry role exist
  * (§4.1).
  *
- * No delete action anywhere on this Resource — Product has no delete()
- * domain method by design; archive() is the real "remove from active
+ * THE ONE DESTRUCTIVE ACTION HERE IS DELETION, AND IT IS A NARROW ONE:
+ * `deleteProductAction()` (catalog-domain-design.md §3.19.8 B) destroys an
+ * ARCHIVED product, gated by its own dedicated `PRODUCT_DELETE` permission
+ * (§3.19.9) and never by PRODUCT_MANAGE — the two differ in kind, not in
+ * degree, because a hard delete frees a base SKU and slug that may already be
+ * printed on a physical label and cannot be undone. Everything else on this
+ * Resource remains reversible: `archive()` is the real "remove from active
  * use" operation, mirroring Staff::deactivate() rather than deletion.
  */
 class ProductResource extends Resource
@@ -1326,6 +1337,13 @@ class ProductResource extends Resource
                     static::promoteAction(),
                     static::unpromoteAction(),
                     static::duplicateAction(),
+                    // §3.19.8 B's "mirrored as a list row action" — the SAME
+                    // factory ViewProduct's header mounts, so the row and the
+                    // header cannot drift. It is invisible for every product
+                    // that is not ARCHIVED (which is also why it is only ever
+                    // reachable through the list's own "Show archived only"
+                    // filter), and without PRODUCT_DELETE.
+                    static::deleteProductAction(),
                 ]),
             ])
             // Edit by default on row click — the most-used action on
@@ -1713,6 +1731,259 @@ class ProductResource extends Resource
             ->icon('heroicon-o-clock')
             ->visible(fn (ProductModel $record): bool => static::canView($record) && static::staffHasPermission(Permission::COST_VIEW))
             ->url(fn (ProductModel $record): string => static::getUrl('activity-log', ['record' => $record]));
+    }
+
+    /**
+     * "Delete product permanently" — catalog-domain-design.md §3.19.8 B, the
+     * ARCHIVED-product half of the delete UX. ONE factory, TWO mounts:
+     * ViewProduct's header and this Resource's own list row action, so the
+     * two cannot drift in wording, gating or behaviour (the same "row action
+     * on the list, header action on View" pattern duplicateAction() uses).
+     *
+     * VISIBLE ONLY WITH PRODUCT_DELETE AND ONLY FOR AN ARCHIVED PRODUCT
+     * (G-D3) — visible, not disabled: §3.19.8 B avoids a dead control, and the
+     * non-archived case is offered archiveFirstAction() below instead.
+     * Visibility is a UX aid and never the enforcement: deleteProductRecord()
+     * re-checks BOTH facts server-side, and CatalogDeletion::deleteProduct()
+     * re-checks the ARCHIVED gate once more on a locking read inside its own
+     * transaction (§3.19.5).
+     *
+     * THE RECORD IS THE ACTION'S OWN RECORD, THROUGHOUT. There is no parameter
+     * anywhere a product id could be injected into — the modal's content, its
+     * confirmation fields, its submit-button state and the delete all read
+     * `$record`, which Filament resolves from the page's own route-bound record
+     * or from the table row. No page here defines a public Livewire method that
+     * takes a product id, so a crafted request has nothing to point at another
+     * product.
+     *
+     * The three modal closures share one memoized impact per action instance
+     * (see below) — the read-only half of the same fact the delete re-checks,
+     * never a substitute for it.
+     */
+    public static function deleteProductAction(): Action
+    {
+        /**
+         * Per-ACTION-INSTANCE memo, deliberately NOT a static: the modal's
+         * content, its confirmation fields and its submit-button state each
+         * need the same read-only impact, and
+         * CatalogDeletion::impactForProduct() is a dozen indexed reads. The
+         * Action object is rebuilt on every request, so this cache lives
+         * exactly as long as the render that uses it — it can never hand a
+         * later request a stale verdict for a product that has since been
+         * deleted or un-archived, and it never mixes two products up.
+         *
+         * @var array<string, ProductDeletionImpact>
+         */
+        $impacts = [];
+
+        $impactFor = static function (ProductModel $record) use (&$impacts): ProductDeletionImpact {
+            $productId = (string) $record->id;
+
+            return $impacts[$productId] ??= app(CatalogDeletion::class)->impactForProduct($productId);
+        };
+
+        return Action::make('delete_product')
+            ->label(__('products.deletion.product_button_label'))
+            ->icon('heroicon-o-trash')
+            ->color('danger')
+            ->visible(fn (ProductModel $record): bool => static::staffHasPermission(Permission::PRODUCT_DELETE)
+                && $record->status === ProductStatus::ARCHIVED->value)
+            ->modalHeading(__('products.deletion.product_confirm_heading'))
+            ->modalSubmitActionLabel(__('products.deletion.product_confirm_submit'))
+            ->modalCancelActionLabel(__('products.deletion.confirm_cancel'))
+            ->modalContent(fn (ProductModel $record): View => static::productDeletionImpactView($impactFor($record)))
+            // §3.19.8 B, both halves: when the impact refuses, the modal has
+            // NO submit button at all — the refusal is shown instead, and
+            // asking for a confirmation the action will never use would be
+            // indistinguishable from a working control.
+            ->modalSubmitAction(fn (ProductModel $record, Action $action): Action|false => $impactFor($record)->isDeletable() ? $action : false)
+            ->schema(fn (ProductModel $record): array => static::productDeletionConfirmationFields($impactFor($record)))
+            ->action(function (ProductModel $record, array $data, $livewire) use ($impactFor): void {
+                static::deleteProductRecord($record, $data, $impactFor, $livewire);
+            });
+    }
+
+    /**
+     * The non-archived half of §3.19.8 B's header slot: the two-step rule
+     * (G-D3) said in one line, with a real way to take the first step.
+     *
+     * WHY THIS IS NOT "THE EXISTING ARCHIVE ACTION" — a reported deviation
+     * from §3.19.8 B's own wording: this admin panel has no standalone archive
+     * action on ViewProduct. Archiving happens by setting the product's Status
+     * to Archived on its Edit page (EditProduct::handleRecordUpdate(), which
+     * also runs ArchiveProductMediaCleaner and logs the change), and this
+     * Resource's own docblock says as much ("archive() is the real 'remove from
+     * active use' operation"). Adding a second archive code path here would
+     * duplicate that whole flow, so this offers the existing one: a modal that
+     * states the rule, and a button that opens the correct Edit page for the
+     * product's type.
+     *
+     * Same visibility posture as deleteProductAction(): PRODUCT_DELETE only —
+     * a staff member who may not delete has nothing to be told about the
+     * two-step rule.
+     */
+    public static function archiveFirstAction(): Action
+    {
+        return Action::make('archive_first')
+            ->label(__('products.deletion.archive_first_button'))
+            ->icon('heroicon-o-archive-box')
+            ->color('gray')
+            ->visible(fn (ProductModel $record): bool => static::staffHasPermission(Permission::PRODUCT_DELETE)
+                && $record->status !== ProductStatus::ARCHIVED->value)
+            ->requiresConfirmation()
+            ->modalHeading(__('products.deletion.archive_first_heading'))
+            ->modalDescription(fn (ProductModel $record): string => __('products.deletion.archive_first_description', ['name' => $record->name]))
+            ->modalSubmitActionLabel(__('products.deletion.archive_first_submit'))
+            ->modalCancelActionLabel(__('products.deletion.confirm_cancel'))
+            ->action(function (ProductModel $record, $livewire): void {
+                $editPage = $record->type === ProductType::SIMPLE->value ? 'edit' : 'edit-variable';
+
+                $livewire->redirect(static::getUrl($editPage, ['record' => $record]));
+            });
+    }
+
+    /** The modal BODY for the product delete — see the view itself for why modalContent() and not modalDescription(). */
+    private static function productDeletionImpactView(ProductDeletionImpact $impact): View
+    {
+        $variationLabels = [];
+        foreach ($impact->variations as $variation) {
+            $variationLabels[$variation->variationId] = implode(', ', array_map(
+                static fn (array $attribute): string => $attribute['name'].': '.$attribute['value'],
+                $variation->attributes,
+            ));
+        }
+
+        return view('filament.product-resource.product-deletion-impact', [
+            'impact' => $impact,
+            // Already localised — the view never builds a merchant-facing
+            // sentence of its own (see ProductDeletionRefusalMessage).
+            'refusalMessage' => $impact->refusal !== null
+                ? ProductDeletionRefusalMessage::for($impact->refusal)
+                : null,
+            'variationLabels' => $variationLabels,
+            'openCartLines' => $impact->cartLineCount - $impact->convertedCartLineCount,
+        ]);
+    }
+
+    /** @return array<int, \Filament\Forms\Components\Component> */
+    private static function productDeletionConfirmationFields(ProductDeletionImpact $impact): array
+    {
+        // Nothing to confirm when the delete is already refused: that modal
+        // has no submit button at all, so asking for a confirmation it will
+        // never use would be indistinguishable from a working control.
+        if (! $impact->isDeletable()) {
+            return [];
+        }
+
+        return [
+            Checkbox::make('understand_permanent')
+                ->label(__('products.deletion.product_field_confirm_label'))
+                ->accepted()
+                ->required(),
+            TextInput::make('base_sku_confirmation')
+                ->label(__('products.deletion.product_field_base_sku_label', ['base_sku' => $impact->baseSku]))
+                ->required()
+                // EXACT match, as a closure that RETURNS a rule — see
+                // EditVariableProduct::deletionConfirmationFields()'s own
+                // comment for why a bare rule closure would be evaluated by
+                // Filament's own injector first, and why Laravel's "in:…"
+                // cannot express this (a SKU may contain a comma).
+                ->rule(fn (): \Closure => static function (string $attribute, mixed $value, \Closure $fail) use ($impact): void {
+                    if ((string) $value !== $impact->baseSku) {
+                        $fail(__('products.deletion.product_field_base_sku_mismatch'));
+                    }
+                }),
+        ];
+    }
+
+    /**
+     * The server-side half of §3.19.8 B — every gate re-checked here, never
+     * "the modal only let them through": a Livewire call can carry any $data
+     * it likes, and the record can have changed since the modal was rendered.
+     *
+     * ORDER: permission (PRODUCT_DELETE), then the impact's own verdict (which
+     * includes the ARCHIVED gate and every variation's history/stock), then
+     * BOTH confirmations, and only then the call. Each failure is a
+     * notification with the reason, never a silent no-op.
+     *
+     * CatalogDeletion::deleteProduct() re-checks all of it again inside its
+     * locking transaction, so a sale line or an un-archive landing between the
+     * impact read and the delete is refused there and surfaces through the
+     * same localised message (ProductDeletionRefusalMessage).
+     *
+     * @param array<string, mixed> $data
+     * @param \Closure(ProductModel): ProductDeletionImpact $impactFor
+     */
+    private static function deleteProductRecord(ProductModel $record, array $data, \Closure $impactFor, $livewire): void
+    {
+        if (! static::staffHasPermission(Permission::PRODUCT_DELETE)) {
+            Notification::make()
+                ->title(__('products.deletion.product_notification_unauthorized'))
+                ->danger()
+                ->send();
+
+            return;
+        }
+
+        $impact = $impactFor($record);
+
+        if (! $impact->isDeletable()) {
+            Notification::make()
+                ->title(ProductDeletionRefusalMessage::for($impact->refusal))
+                ->danger()
+                ->send();
+
+            return;
+        }
+
+        if (! static::productDeletionIsConfirmed($impact, $data)) {
+            Notification::make()
+                ->title(__('products.deletion.product_notification_not_confirmed'))
+                ->danger()
+                ->send();
+
+            return;
+        }
+
+        try {
+            app(CatalogDeletion::class)->deleteProduct($impact->productId);
+        } catch (ProductNotDeletableException $e) {
+            // Reachable through a stale modal: a sale line or an un-archive
+            // landed after the impact was read. The reason is a fact, the
+            // sentence is the merchant's own locale.
+            Notification::make()
+                ->title(ProductDeletionRefusalMessage::for($e))
+                ->danger()
+                ->send();
+
+            return;
+        } catch (\InvalidArgumentException $e) {
+            // Stale page: another staff member already deleted it.
+            Notification::make()->title($e->getMessage())->danger()->send();
+
+            return;
+        }
+
+        Notification::make()
+            ->title(__('products.deletion.product_notification_success', ['name' => $impact->productName]))
+            ->success()
+            ->send();
+
+        // §3.19.8 B: back to the list — the record no longer exists, so its
+        // own view page cannot be re-rendered.
+        $livewire->redirect(static::getUrl('index'));
+    }
+
+    /**
+     * Both confirmations, re-checked — never "the modal only let them
+     * through": a Livewire call can carry any $data it likes.
+     *
+     * @param array<string, mixed> $confirmation
+     */
+    private static function productDeletionIsConfirmed(ProductDeletionImpact $impact, array $confirmation): bool
+    {
+        return filter_var($confirmation['understand_permanent'] ?? false, FILTER_VALIDATE_BOOLEAN)
+            && (string) ($confirmation['base_sku_confirmation'] ?? '') === $impact->baseSku;
     }
 
     /**

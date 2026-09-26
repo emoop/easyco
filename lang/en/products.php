@@ -159,6 +159,47 @@ return [
         'notification_success' => 'Variation :sku was permanently deleted.',
         'notification_not_confirmed' => 'Nothing was deleted: both the confirmation box and the exact SKU are required.',
         'notification_unauthorized' => 'You do not have permission to delete variations permanently.',
+
+        // §3.19.8 B — the PRODUCT half of the same modal. The product-level
+        // refusal keys live HERE rather than inside `refusal` above because
+        // they are a different object with a different shape: a product
+        // refusal names the product and, when variations block it, lists each
+        // one through `blocked_variation` below (the variation's own words,
+        // not a second vocabulary).
+        'product_button_label' => 'Delete product permanently',
+        'product_confirm_heading' => 'Permanently delete this product?',
+        'product_confirm_submit' => 'Delete permanently',
+        'archive_first_button' => 'Archive first',
+        'archive_first_heading' => 'Only an archived product can be deleted',
+        'archive_first_description' => 'Deleting is irreversible and frees the base SKU and slug, so it is offered only for an archived product. Archive ":name" first (its Status field), then come back here.',
+        'archive_first_submit' => 'Open the product to archive it',
+        'product_impact_intro' => 'Deleting :sku (":product") permanently removes the product, every variation listed below, and everything else listed. This cannot be undone.',
+        'product_impact_identifiers' => 'Freed for reuse once it is gone: base SKU :base_sku and slug :slug.',
+        'product_impact_variations' => 'Variations (:count):',
+        'product_impact_variation' => ':sku — :attributes — :verdict',
+        'product_impact_no_attributes' => 'no attributes',
+        'product_impact_will_delete' => 'will be deleted',
+        'product_impact_will_archive' => 'cannot be deleted (history or stock)',
+        'product_impact_scopes' => 'Price-list scopes applying because of this product: :price_lists; promotion scopes: :promotions',
+        'product_impact_price_list_items' => 'Price list items: :total (:variation on its variations, :product aimed at the product itself)',
+        'product_impact_media' => 'Media attachments: :total (:variation on its variations, :product on the product itself — the files themselves are kept)',
+        'product_impact_unrepeatable' => 'Unlike archiving, this is permanent: the variations, their SKUs and barcodes, stock rows, basket lines, price list items, costs and scopes are gone, and nothing brings them back.',
+        'product_after_delete_note' => 'The deletion finishes back on the products list — this product no longer exists, so its own page goes with it.',
+        'product_archive_instead' => 'Not sure? An archived product keeps all of that and can be restored — archiving is the reversible offer, this one is not.',
+        'product_field_confirm_label' => 'I understand this cannot be undone, and that the base SKU and slug become reusable',
+        'product_field_base_sku_label' => 'Type the base SKU (:base_sku) to confirm',
+        'product_field_base_sku_mismatch' => 'The typed base SKU does not match this product\'s base SKU.',
+        'product_notification_success' => 'Product :name was permanently deleted.',
+        'product_notification_not_confirmed' => 'Nothing was deleted: both the confirmation box and the exact base SKU are required.',
+        'product_notification_unauthorized' => 'You do not have permission to delete products permanently.',
+        'product_refusal' => [
+            'not_archived' => 'Only an archived product can be deleted. Archive :product first.',
+            'blocked_by_variations' => '":product" cannot be deleted: :variations',
+        ],
+        'blocked_variation' => [
+            'has_history' => 'variation ":sku" has :count sale line(s).',
+            'has_stock' => 'variation ":sku" has :count in stock.',
+        ],
     ],
 
     'variations_generate' => [
