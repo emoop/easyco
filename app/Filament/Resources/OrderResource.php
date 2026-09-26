@@ -297,7 +297,14 @@ class OrderResource extends Resource
                         ->hiddenLabel()
                         ->getStateUsing(fn (OrderModel $record): array => static::lineRows($record))
                         ->table(fn (OrderModel $record): array => array_map(
-                            static fn (array $spec): RepeatableTableColumn => RepeatableTableColumn::make($spec['label']),
+                            // Same rule as the cells themselves: a column
+                            // whose line carries a name is a NUMBER column,
+                            // so its heading is end-aligned with it — only
+                            // visible in the wide/table mode, where the
+                            // stacked mode's own labels give way to this
+                            // header row.
+                            static fn (array $spec): RepeatableTableColumn => RepeatableTableColumn::make($spec['label'])
+                                ->alignEnd(static::lineValueLabel($spec['key']) !== null),
                             static::lineColumnSpecs($record),
                         ))
                         ->schema(fn (OrderModel $record): array => array_map(
@@ -569,35 +576,44 @@ class OrderResource extends Resource
      * Filament. See lineRows() for what each key's value is.
      *
      * §14's LINE LABELS live here, not in lineRows(): the four numbers a
-     * merchant reads off a line each get their own name in front of them
-     * (Бройка 1, Цена 48.00 €, Отстъпка 0.00 €, Сума 48.00 €) rather than
-     * relying only on the header row, which scrolls out of sight on a table
-     * this wide. lineRows() keeps returning pure values; naming a value is
-     * a presentation decision of its cell.
+     * merchant reads off a line carry their own name as the entry's OWN
+     * label, and their value is END-ALIGNED — so every line's numbers sit
+     * in one right-hand column, the way amounts read on a receipt, instead
+     * of trailing their labels at the left. lineRows() keeps returning pure
+     * values; naming and aligning a value are presentation decisions of its
+     * cell.
+     *
+     * Why the entry's label rather than a prefix on the value: Filament
+     * renders a table repeatable as a stacked card below its container
+     * breakpoint — the header row is `hidden` there (repeatable.css), and
+     * the label column is exactly the slot that shows a name in that mode
+     * while the CSS hides it again in the wide/table mode, where the header
+     * row takes over.
      */
     private static function lineCell(string $key): TextEntry
     {
-        $entry = TextEntry::make($key)->hiddenLabel();
+        $entry = TextEntry::make($key);
 
         if ($key === 'product_name' || $key === 'unit_price') {
             $entry->html();
         }
 
-        if (($label = static::lineValueLabel($key)) !== null) {
-            // The trailing space is INSIDE the prefix on purpose:
-            // Filament's own formatState() concatenates a prefix onto the
-            // state with no separator of its own, so 'Бройка' alone would
-            // render 'Бройка1'.
-            $entry->prefix($label.' ');
+        $label = static::lineValueLabel($key);
+
+        if ($label === null) {
+            return $entry->hiddenLabel();
         }
 
-        return $entry;
+        return $entry
+            ->label($label)
+            ->inlineLabel()
+            ->alignEnd();
     }
 
     /**
-     * The name a line puts in front of one of its own values, in the words
-     * the merchant uses for them (admin-panel-design.md §14) — or null for
-     * the values a line does NOT name:
+     * The name a line puts on one of its own values, in the words the
+     * merchant uses for them (admin-panel-design.md §14) — or null for the
+     * values a line does NOT name:
      *
      *  - product_name / sku are identified by their own content (the product
      *    name, the SKU), not by a label;

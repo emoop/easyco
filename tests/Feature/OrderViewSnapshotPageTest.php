@@ -46,6 +46,7 @@ use EasyCo\Staff\Enums\Permission;
 use EasyCo\Staff\Role;
 use EasyCo\Staff\Seeders\StaffSystemRolesSeeder;
 use EasyCo\Staff\Staff;
+use Filament\Support\Enums\Alignment;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -591,12 +592,16 @@ class OrderViewSnapshotPageTest extends TestCase
     }
 
     /**
-     * §14's LINE LABELS — every line names its own four numbers, so the line
-     * still reads correctly on a table this wide, where the header row
-     * scrolls out of sight: Бройка 2, Цена 10.00 €, Отстъпка 0.00 €,
-     * Сума 20.00 €.
+     * §14's line labels — every line names its own four numbers AND their
+     * values are end-aligned, so a line's numbers sit in one right-hand
+     * column: Бройка 2 · Цена 10.00 € · Отстъпка 0.00 € · Сума 20.00 €.
+     *
+     * Asserted twice on purpose: on the rendered row (the label really is
+     * there, next to its value) and on the cells themselves — the names are
+     * the entries' OWN labels now, not text glued onto the values, so
+     * "labelled and end-aligned" is a property of the cell, not of a string.
      */
-    public function test_each_line_names_its_own_quantity_price_discount_and_amount(): void
+    public function test_each_line_names_and_end_aligns_its_own_numbers(): void
     {
         $this->seedPricingLists();
 
@@ -605,20 +610,55 @@ class OrderViewSnapshotPageTest extends TestCase
         app(CartRepository::class)->save($cart);
 
         $order = $this->place($cart);
-
         $this->actingAsRole('Administrator');
         $row = $this->linesBodyRows($this->viewHtml($order))[0];
 
-        // Each name sits ON THE LINE, immediately in front of the value it
-        // names — not only in the table's header row.
-        $this->assertStringContainsString(__('orders.line_labels.quantity').' 2', $row);
-        $this->assertStringContainsString(__('orders.line_labels.unit_price').' 10.00 €', $row);
-        $this->assertStringContainsString(__('orders.line_labels.discount').' 0.00 €', $row);
-        $this->assertStringContainsString(__('orders.line_labels.amount').' 20.00 €', $row);
+        foreach ([
+            __('orders.line_labels.quantity'),
+            __('orders.line_labels.unit_price'),
+            __('orders.line_labels.discount'),
+            __('orders.line_labels.amount'),
+        ] as $label) {
+            $this->assertStringContainsString($label, $row, "the line must name its own '{$label}' value");
+        }
 
-        // The values themselves are unchanged by the labels: 2 x 10.00 with
-        // no discount is still the line's own arithmetic.
-        $this->assertCount(1, $this->linesBodyRows($this->viewHtml($order)));
+        // The quantity value itself, as its own node (2 x 10.00 = 20.00).
+        $this->assertMatchesRegularExpression('#>\s*2\s*<#', $row);
+        $this->assertStringContainsString('10.00 €', $row);
+        $this->assertStringContainsString('0.00 €', $row);
+        $this->assertStringContainsString('20.00 €', $row);
+
+        // ONE right-hand column: only the four named values are end-aligned.
+        // Filament emits that class twice per entry — once on the entry's own
+        // text element, once on its content wrapper — so four named values
+        // account for exactly eight occurrences: ten would mean some fifth
+        // cell got pushed into the numbers' column, four would mean a named
+        // value lost its alignment.
+        $this->assertSame(8, substr_count($row, 'fi-align-end'), 'only the four named values may be end-aligned');
+
+        $cell = new \ReflectionMethod(OrderResource::class, 'lineCell');
+
+        foreach ([
+            'quantity' => __('orders.line_labels.quantity'),
+            'unit_price' => __('orders.line_labels.unit_price'),
+            'promotion_discount' => __('orders.line_labels.discount'),
+            'net_paid' => __('orders.line_labels.amount'),
+        ] as $key => $label) {
+            $named = $cell->invoke(null, $key);
+
+            $this->assertSame($label, $named->getLabel(), "the '{$key}' cell must be named");
+            $this->assertTrue($named->hasInlineLabel(), "the '{$key}' name must sit beside its value");
+            $this->assertSame(Alignment::End, $named->getAlignment(), "the '{$key}' value must be end-aligned");
+        }
+
+        // Product name, SKU and the register discount are NOT named, and are
+        // therefore not pushed into the numbers' column.
+        foreach (['product_name', 'sku', 'discretionary_discount'] as $key) {
+            $unnamed = $cell->invoke(null, $key);
+
+            $this->assertTrue($unnamed->isLabelHidden(), "the '{$key}' cell must not gain a name");
+            $this->assertNull($unnamed->getAlignment());
+        }
     }
 
     /**

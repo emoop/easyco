@@ -1065,15 +1065,20 @@ list by this paragraph — its derived `amount_minor / quantity` rule still
 stands, and is still exactly what a legacy line shows under Price.
 
 **Each line also NAMES its own numbers** — Бройка 1, Цена 48.00 €,
-Отстъпка 0.00 €, Сума 48.00 € — instead of relying on the header row alone.
-A table this wide scrolls sideways, and a heading that has scrolled out of
-sight names nothing; the line labels live in `orders.line_labels`
-(`lang/{bg,en}/orders.php`) and are applied by `OrderResource::lineCell()`,
-while the header row itself is untouched. Worth knowing when reading the
-code: the row labels are their own keys, so a row may word a value
-differently from the heading it sits under (`Бройка` on the line, D3's
-`Количество` above it) — the line language is the merchant's, the column
-name is the table's.
+Отстъпка 0.00 €, Сума 48.00 € — and their values are END-ALIGNED, so a
+line's numbers sit in one right-hand column, the way amounts read on a
+receipt. This is not decoration: Filament renders a table repeatable as a
+stacked card below its own container breakpoint, and the header row is
+`hidden` there (the infolists `repeatable.css`) — a heading that is not
+rendered names nothing. Each name is the entry's OWN label and each value
+carries `alignEnd()`; the words come from `orders.line_labels`
+(`lang/{bg,en}/orders.php`) and are applied by `OrderResource::lineCell()`.
+The header row itself is untouched — in the wide/table mode Filament hides
+those labels again and the header row takes over, its number columns
+end-aligned to match. Worth knowing when reading the code: the row labels
+are their own keys, so a row may word a value differently from the heading
+it sits under (`Бройка` on the line, D3's `Количество` above it) — the line
+language is the merchant's, the column name is the table's.
 
 **A real, confirmed gap found while building `forOrder()`, flagged, not
 fixed:** `SaleLine`'s own constructor
