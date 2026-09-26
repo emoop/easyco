@@ -36,4 +36,23 @@ final class PaymentMethodAdapterResolver
 
         return $this->container->make($key);
     }
+
+    /**
+     * Every payment method this application accepts, in display order.
+     *
+     * THE ONE PLACE THOSE CODES ARE DECLARED. PaymentServiceProvider binds each one
+     * as 'payment.adapter.<method>' but publishes no list of them, and deriving the
+     * list by scanning the container's own bindings would make this answer depend on
+     * binding order and on keys this class does not own — so the list is written out
+     * here, where a human can read and change it, and
+     * tests/Feature/PaymentMethodAdapterResolverTest.php keeps it honest in both
+     * directions: every entry here must still resolve, and every adapter the
+     * provider binds must appear here.
+     *
+     * @return list<string>
+     */
+    public function availableMethods(): array
+    {
+        return ['cash_on_delivery', 'bank_transfer'];
+    }
 }

@@ -7,8 +7,10 @@ use App\Services\CatalogScopeResolver;
 use App\Services\PromotionDiscountCalculator;
 use App\Services\PromotionUsageContextAssembler;
 use App\Services\PromotionValidator;
+use App\Services\VariationDisplayReader;
 use DateTimeImmutable;
 use EasyCo\Cart\Cart;
+use EasyCo\Cart\CartLine;
 use EasyCo\Cart\CartLineAdder;
 use EasyCo\Cart\Contracts\CartRepository;
 use EasyCo\Cart\Exceptions\InsufficientStockForCartException;
@@ -62,6 +64,7 @@ class CartController extends Controller
         private readonly PromotionValidator $promotionValidator,
         private readonly PromotionDiscountCalculator $promotionDiscountCalculator,
         private readonly PromotionUsageContextAssembler $usageContextAssembler,
+        private readonly VariationDisplayReader $displayReader,
     ) {
     }
 
@@ -311,6 +314,16 @@ class CartController extends Controller
         $lines = [];
         $validatorLines = [];
 
+        // ONE BATCHED DISPLAY READ FOR THE WHOLE CART — each line's product name,
+        // SKU and attribute labels come from a single call, never one per line.
+        // See VariationDisplayReader's own docblock for the four/five queries this
+        // costs regardless of cart size, and
+        // tests/Feature/CartLineDisplayFieldsTest.php for the measured numbers.
+        $displayByVariationId = $this->displayReader->lineDisplayFor(array_map(
+            static fn (CartLine $line): string => $line->variationId(),
+            $cart->lines(),
+        ));
+
         foreach ($cart->lines() as $line) {
             $priceAtAdd = $line->priceAtAddMinor() !== null
                 ? $this->moneyToArray(Money::fromMinorUnits($line->priceAtAddMinor(), $line->priceAtAddCurrency()))
@@ -340,6 +353,9 @@ class CartController extends Controller
                     'line_total' => null,
                     'price_changed_since_add' => false,
                     'price_available' => false,
+                    'product_name' => $displayByVariationId[$line->variationId()]['product_name'],
+                    'sku' => $displayByVariationId[$line->variationId()]['sku'],
+                    'attributes' => $displayByVariationId[$line->variationId()]['attributes'],
                 ];
 
                 continue;
@@ -362,6 +378,9 @@ class CartController extends Controller
                 'line_total' => $this->moneyToArray($lineTotal),
                 'price_changed_since_add' => $priceChanged,
                 'price_available' => true,
+                'product_name' => $displayByVariationId[$line->variationId()]['product_name'],
+                'sku' => $displayByVariationId[$line->variationId()]['sku'],
+                'attributes' => $displayByVariationId[$line->variationId()]['attributes'],
             ];
 
             // Carries both what PromotionValidator needs (productId/

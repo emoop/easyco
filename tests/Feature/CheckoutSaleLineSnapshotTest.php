@@ -6,6 +6,7 @@ use App\Services\CheckoutInput;
 use App\Services\CheckoutOrchestrator;
 use App\Services\Exceptions\SaleLineOrderReconciliationException;
 use App\Services\SaleLineSnapshotBuilder;
+use App\Services\VariationDisplayReader;
 use DateTimeImmutable;
 use EasyCo\Address\Enums\AddressDeliveryType;
 use EasyCo\Cart\Cart;
@@ -322,7 +323,7 @@ class CheckoutSaleLineSnapshotTest extends TestCase
     public function test_a_forced_reconciliation_mismatch_aborts_checkout_with_nothing_written(): void
     {
         $this->app->bind(SaleLineSnapshotBuilder::class, function ($app) {
-            return new class($app->make(VariationRepository::class)) extends SaleLineSnapshotBuilder {
+            return new class($app->make(VariationDisplayReader::class)) extends SaleLineSnapshotBuilder {
                 public function buildForCart(
                     array $lines,
                     string $transactionId,

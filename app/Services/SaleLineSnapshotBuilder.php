@@ -3,14 +3,9 @@
 namespace App\Services;
 
 use DateTimeImmutable;
-use EasyCo\Catalog\Contracts\VariationRepository;
-use EasyCo\Catalog\Persistence\Eloquent\AttributeDefinitionModel;
-use EasyCo\Catalog\Persistence\Eloquent\AttributeValueModel;
-use EasyCo\Catalog\Variation;
 use EasyCo\OperationalSales\Enums\SaleLineStatus;
 use EasyCo\OperationalSales\SaleLine;
 use EasyCo\Pricing\Money;
-use Illuminate\Support\Collection;
 use LogicException;
 
 /**
@@ -71,7 +66,7 @@ use LogicException;
 class SaleLineSnapshotBuilder
 {
     public function __construct(
-        private readonly VariationRepository $variations,
+        private readonly VariationDisplayReader $displayReader,
     ) {
     }
 
@@ -157,97 +152,12 @@ class SaleLineSnapshotBuilder
      */
     private function batchLoadSoldAttributes(array $variationIds): array
     {
-        if ($variationIds === []) {
-            return [];
-        }
-
-        $uniqueVariationIds = array_values(array_unique($variationIds));
-        $variationsById = $this->variations->findByIds($uniqueVariationIds);
-
-        foreach ($uniqueVariationIds as $variationId) {
-            if (! isset($variationsById[$variationId])) {
-                throw new LogicException(
-                    "SaleLineSnapshotBuilder: variation \"{$variationId}\" was not returned by ".
-                    'VariationRepository::findByIds() — cannot build its sold-attributes snapshot.'
-                );
-            }
-        }
-
-        $definitionIds = [];
-        $valueIds = [];
-        foreach ($variationsById as $variation) {
-            foreach ($variation->attributeAssignments() as $definitionId => $valueId) {
-                $definitionIds[] = $definitionId;
-                $valueIds[] = $valueId;
-            }
-        }
-
-        $definitionModels = AttributeDefinitionModel::whereIn('id', array_unique($definitionIds))
-            ->get()
-            ->keyBy('id');
-        $valueModels = AttributeValueModel::whereIn('id', array_unique($valueIds))
-            ->get()
-            ->keyBy('id');
-
-        $result = [];
-        foreach ($variationsById as $variationId => $variation) {
-            $result[$variationId] = $this->soldAttributesFor($variationId, $variation, $definitionModels, $valueModels);
-        }
-
-        return $result;
-    }
-
-    /**
-     * @param Collection<int, AttributeDefinitionModel> $definitionModels
-     * @param Collection<int, AttributeValueModel> $valueModels
-     * @return array<int, array{definitionId: string, definitionCode: string, definitionName: string, valueId: string, value: string}>
-     *
-     * @throws LogicException If an assignment references a definition or
-     *   value row that no longer exists — should be structurally
-     *   impossible (Catalog's own restrictOnDelete FKs forbid deleting a
-     *   referenced definition/value), so this is a real corruption
-     *   signal, never silently skipped.
-     */
-    private function soldAttributesFor(string $variationId, Variation $variation, Collection $definitionModels, Collection $valueModels): array
-    {
-        $assignments = $variation->attributeAssignments();
-
-        // No authoritative order exists — see this class's own docblock.
-        // Sort by definitionId ascending for a deterministic, stable
-        // result rather than trusting unordered DB row-return order. A
-        // SIMPLE product's UNIVERSAL variation has $assignments === [];
-        // the loop below simply doesn't run, correctly yielding [].
-        ksort($assignments, SORT_NUMERIC);
-
-        $attributes = [];
-        foreach ($assignments as $definitionId => $valueId) {
-            $definitionModel = $definitionModels->get($definitionId);
-
-            if ($definitionModel === null) {
-                throw new LogicException(
-                    "SaleLineSnapshotBuilder: variation \"{$variationId}\" references attribute_definition_id ".
-                    "\"{$definitionId}\", which does not exist."
-                );
-            }
-
-            $valueModel = $valueModels->get($valueId);
-
-            if ($valueModel === null) {
-                throw new LogicException(
-                    "SaleLineSnapshotBuilder: variation \"{$variationId}\" references attribute_value_id ".
-                    "\"{$valueId}\", which does not exist."
-                );
-            }
-
-            $attributes[] = [
-                'definitionId' => (string) $definitionId,
-                'definitionCode' => $definitionModel->code,
-                'definitionName' => $definitionModel->name,
-                'valueId' => (string) $valueId,
-                'value' => $valueModel->value,
-            ];
-        }
-
-        return $attributes;
+        // DELEGATED, not duplicated: the cart API needs the same labels for its
+        // own lines, so the batched walk lives in ONE place —
+        // VariationDisplayReader — and this class calls it. The four queries it
+        // costs and its throw-on-a-missing-variation-id behaviour are exactly what
+        // this method used to do inline; SaleLineSnapshotBuilderQueryCountTest
+        // proves the numbers are unchanged.
+        return $this->displayReader->soldAttributesFor($variationIds);
     }
 }

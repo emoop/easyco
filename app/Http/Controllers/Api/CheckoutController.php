@@ -16,6 +16,8 @@ use EasyCo\Address\Enums\AddressDeliveryType;
 use EasyCo\Cart\Cart;
 use EasyCo\Cart\Contracts\CartRepository;
 use EasyCo\Inventory\Exceptions\InsufficientStockException;
+use EasyCo\OperationalSales\Contracts\TransactionRepository;
+use EasyCo\OperationalSales\SaleLine;
 use EasyCo\Order\Order;
 use EasyCo\Payment\Payment;
 use EasyCo\Pricing\Exceptions\PriceNotConfiguredException;
@@ -23,6 +25,7 @@ use EasyCo\Pricing\Money;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use LogicException;
 
 /**
  * The Checkout HTTP surface — the final piece over checkout-domain-
@@ -41,6 +44,7 @@ class CheckoutController extends Controller
         private readonly CartRepository $carts,
         private readonly CheckoutOrchestrator $orchestrator,
         private readonly PaymentMethodAdapterResolver $adapterResolver,
+        private readonly TransactionRepository $transactions,
     ) {
     }
 
@@ -237,7 +241,54 @@ class CheckoutController extends Controller
             'carrier_code' => $order->carrierCode(),
             'pickup_point_reference' => $order->pickupPointReference(),
             'settlement' => $order->settlement(),
+            'lines' => $this->saleLinesToArray($order->transactionId()),
         ];
+    }
+
+    /**
+     * The order's lines, straight from the sale-line SNAPSHOT this request has
+     * just written — never re-derived from the cart (already claimed by this
+     * checkout: the claim records the order id and leaves the cart's lines in
+     * place — a known Cart defect, see sandbox-manual-test-checklist.md's
+     * scenario 10) and never re-priced. Eight display fields per line: product
+     * name, SKU, the sold attributes exactly as recorded, quantity, final and
+     * regular unit price, this line's share of the promotion discount, and what
+     * was actually paid for it.
+     *
+     * COST IS DELIBERATELY ABSENT — no unit cost, no profit, no margin of any kind.
+     * SaleLine carries those operational facts (§3.13) and the admin surface reads
+     * them, but this is the CUSTOMER-facing storefront API: a customer's browser
+     * must never receive the shop's cost basis.
+     * tests/Feature/CheckoutResponseOrderLinesTest.php asserts their absence.
+     *
+     * Read server-side by the transaction id the order already carries, so the
+     * storefront never needs a second lookup to render a confirmation page.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function saleLinesToArray(string $transactionId): array
+    {
+        $transaction = $this->transactions->findByIdWithSaleLines($transactionId);
+
+        if ($transaction === null) {
+            // Structurally impossible in this request: the orchestrator wrote this
+            // transaction moments ago. A missing one is real corruption, so this
+            // fails loudly rather than returning an order with no lines.
+            throw new LogicException(
+                "CheckoutController: transaction \"{$transactionId}\" was not found immediately after checkout."
+            );
+        }
+
+        return array_map(fn (SaleLine $line): array => [
+            'product_name' => $line->productName(),
+            'sku' => $line->sku(),
+            'attributes' => $line->soldAttributes(),
+            'quantity' => $line->quantity(),
+            'final_unit_price' => $this->moneyToArrayOrNull($line->finalUnitPrice()),
+            'regular_unit_price' => $this->moneyToArrayOrNull($line->regularUnitPrice()),
+            'promotion_discount_share' => $this->moneyToArrayOrNull($line->promotionDiscountShare()),
+            'net_paid_amount' => $this->moneyToArrayOrNull($line->netPaidAmount()),
+        ], $transaction->saleLines());
     }
 
     private function paymentToArray(Payment $payment): array
@@ -254,5 +305,16 @@ class CheckoutController extends Controller
     private function moneyToArray(Money $money): array
     {
         return ['minor' => $money->minorValue(), 'currency' => $money->currency()->code()];
+    }
+
+    /**
+     * SaleLine's snapshot amounts are nullable (§3.13 Q2 — genuinely unknown, not
+     * zero), so they pass through as null rather than being invented here.
+     *
+     * @return array{minor: int, currency: string}|null
+     */
+    private function moneyToArrayOrNull(?Money $money): ?array
+    {
+        return $money === null ? null : $this->moneyToArray($money);
     }
 }
