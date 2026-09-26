@@ -555,15 +555,17 @@ actions.
 
 ### 3.19 Deletion and axis restructuring
 
-**Status: stages 1–3 implemented; stage 4 (the change-axes flow) still
-design only — no code, no migration, no test for anything in it exists
-yet.** Stage 1 was this document; stage 2 (§3.19.12 item 2) shipped as
+**Status: stages 1–4 implemented.** Stage 1 was this document; stage 2
+(§3.19.12 item 2) shipped as
 `Admin: permanently delete a variation from EditVariableProduct`; stage 3
-(item 3) shipped as `CatalogDeletion: delete an ARCHIVED product with all
-of its variations` and `Admin: permanently delete an ARCHIVED product from
-ViewProduct and the list`. §3.19.12 records what each stage delivered, and
-§3.19.3 and §3.19.8 B each carry one of the two places the implementation
-deliberately deviates from this section's own first wording.
+(item 3) shipped as
+`CatalogDeletion: delete an ARCHIVED product with all of its variations` and
+`Admin: permanently delete an ARCHIVED product from ViewProduct and the list`;
+stage 4 (item 4) shipped as
+`Admin: change the variation axes from the Axes tab`. §3.19.12 records what
+each stage delivered, and §3.19.3, §3.19.8 B and §3.19.8 C each carry the
+places the implementation deliberately deviates from this section's own
+first wording — three of them now, rather than two.
 
 It designs the four operations the domain
 owner asked for and that §3.17 left out of scope: deleting a STANDARD
@@ -1026,8 +1028,9 @@ become reusable, the checkbox, and a field requiring the **base SKU**.
 Because G-D3 refuses when any variation must be archived, this list is in
 practice all-delete or the operation is refused — the modal says which.
 
-**C — Change axes.** On the existing Axes tab. Today a refused submission
-surfaces `UnsafeAxisRedeclarationException` as an error notification; the
+**C — Change axes.** On the existing Axes tab. Before this change, a
+refused submission simply surfaced `UnsafeAxisRedeclarationException` as an
+error notification; the
 change is that a submission which *would* be refused first shows an impact
 step: current axes vs submitted axes, then two lists — **will be
 deleted** (live STANDARD variations, no history, stock 0) and **will be
@@ -1043,6 +1046,65 @@ variation in the "will be archived" list whose value is being removed
 stays archived **and unrestorable** — §3.17's documented trade-off — and
 the modal says so up front rather than letting the merchant discover it
 when the Restore action later refuses.
+
+**Amended by the implementation — D1 and D3.** Two deliberate departures
+from the wording above, recorded rather than silently made:
+
+- **D1 — a dedicated action, not an interception of the tab's Save.** The
+  Axes tab gains a "Change axes" action whose modal is the three steps in
+  order: the new axes (the tab's own inputs), the impact, the confirmation.
+  The tab's Save is unchanged in shape — still refusing an unsafe
+  re-declaration, with its refusal now naming the action — and a SAFE change
+  (R1's identical set, or R5's value addition) still goes through Save with
+  no modal at all. Intercepting Save instead would have meant either
+  hijacking a submission that carries every other field on the page (and
+  then deciding what happens to those edits when the merchant cancels), or
+  silently saving a subset of it; a refusal-triggered interception is also
+  not re-editable, which an impact step has to be. The action needs
+  `PRODUCT_MANAGE` like the rest of the page, and its modal states that
+  unsaved edits elsewhere on the page are discarded, because the page
+  reloads from the database when it finishes.
+- **D3 — without `PRODUCT_DELETE`, the first list is ARCHIVED instead.** The
+  change is reachable for a Manager who may not delete (§3.19.9 grants that
+  capability to Administrator only): nothing is deleted, every blocker is
+  archived, their SKUs stay occupied, and the modal says exactly that. The
+  restructure service takes the capability as an argument and never reads
+  permissions itself (§3.19.9's own boundary), while the caller computes it
+  from the authenticated staff member — never from submitted data.
+
+**The confirmed plan is the executed plan — the fingerprint rule.** The
+impact report carries a `fingerprint` of the plan it describes: a hash of the
+proposed axes (per definition, its allowed value ids — order never matters)
+plus the SORTED variation ids of the "will be deleted" and "will be archived"
+lists. The dialog carries that fingerprint along with the impact it is
+showing, and `apply()` is given it as the plan the merchant confirmed. It
+re-derives the plan inside its own transaction exactly as described above and
+REFUSES, changing nothing, when the two fingerprints differ — the new
+`PLAN_CHANGED` reason, whose sentence is "the product changed since you opened
+this dialog — reopen it to see the current impact". That closes the one
+window this section's first wording left open: a variation added, archived or
+deleted between the impact and the apply used to be executed against a
+confirmation the merchant never saw. Nothing about the fingerprint is a
+secret, and nothing about it is trusted for safety: a fabricated value can
+only cause a refusal, because the lists that are deleted and archived are the
+ones `apply()` derives itself — and §3.17's guard is the second net under the
+same fact, refusing the re-declaration if a live variation the plan never saw
+would be orphaned (the same `PLAN_CHANGED` answer, discovered one step later).
+
+ONE further implementation fact worth recording: the impact deliberately does
+NOT count the combinations the change will generate. That number would be a
+promise about a cartesian product, whereas the real created/restored counts
+are reported after the fact by the same generation path the modal's own text
+describes.
+
+**The doc's own ORDER of the two lists is the other way round in practice:**
+the "will be deleted" list is deleted FIRST, and the archive happens
+afterwards, on the aggregate re-loaded after those deletions — because that
+same aggregate is the one the archiving and the re-declaration share (one
+write pass instead of two, and one load fewer). Deleting second would give
+the identical result, since `CatalogDeletion::deleteVariation()` checks and
+writes inside its own transaction either way; nothing about the two lists'
+own semantics depends on the order.
 
 **D — Refusal messages are the domain's own.** Each refusal is shown
 verbatim, the same posture `VariationController` already takes for
@@ -1148,6 +1210,24 @@ typed-SKU confirmation (G-D6) and the identifiers in the log snapshot
 (§3.19.10) are not ceremony — with a freed barcode they are the only
 things distinguishing two different physical items in the record.
 
+**Verified, not assumed (the stage-4 task's own §0 question):** the
+count-based candidate does **not** search for a free number, and `count()`
+does include ARCHIVED variations, because they are real rows that keep their
+SKUs. A candidate can therefore collide with an ARCHIVED variation's SKU
+whenever the two happen to coincide — an archived row carrying a
+merchant-typed SKU (`-3`) while a deleted row's reclaimed position is `-3`
+too. That is by design, and it is handled exactly where the table above says
+it is: the repository's DB-constraint retry saves the same candidate with a
+numeric suffix and writes the saved value back onto the aggregate, so the
+new variation gets a different, genuinely free SKU while the archived row
+keeps its own. Proven by
+`tests/Feature/VariationAxisRestructureTest.php`'s
+`test_a_generated_sku_that_collides_with_an_archived_variations_sku_is_saved_under_a_different_sku`,
+which constructs precisely that coincidence. No fix was needed. The bound to
+be aware of is the retry's own: four attempts, then a loud
+`RuntimeException` — which inside the restructure's transaction rolls the
+whole change back and leaves the product as it was.
+
 #### 3.19.12 Implementation stages, each with a review gate
 
 Each stage ships its own admin surface — there is no separate final "UI
@@ -1216,7 +1296,38 @@ each stage below names the slice of §3.19.8 it delivers.
    `CatalogDeletion`, re-declare, generate; the Axes-tab impact step
    (§3.19.8 C). Tests: removing an axis that a live variation blocks;
    removing an `R4` value; the "archived and unrestorable" outcome stated
-   in the modal. *Gate.*
+   in the modal. *Gate.* **Implemented** — commit
+   `Admin: change the variation axes from the Axes tab`, on top of
+   `Catalog: refusal types for the axes-restructure flow`. Tests live in
+   `tests/Feature/VariationAxisRestructureTest.php` (the service: plans,
+   permission mode, freed identifiers, unrestorable reporting, atomicity, the
+   plan fingerprint — including a variation added between the impact and the
+   apply — the concurrency window, the SKU-collision question §3.19.11 records)
+   and
+   `tests/Feature/EditVariableProductChangeAxesTest.php` (the action: what
+   is rendered, what is refused, what a crafted call cannot do).
+
+   **What the delivered slice adds beyond this item's own list.** The plan
+   comes from ONE predicate — "does this variation's own combination still
+   fit the new axes?" — which is exactly what §3.17's R2/R3/R4 refuse on, so
+   the flow asks the domain's own `declareVariationAxes()` whether the set
+   may be declared at all and never re-implements R1–R5. The deletable /
+   archivable split reuses stage 3's product impact for its per-variation
+   facts (history count, stock, and `CatalogDeletion`'s own refusal) instead
+   of a second copy of that rule. `apply()` re-loads the product after the
+   deletions before archiving and re-declaring — reusing the pre-deletion
+   aggregate would leave the deleted rows in its variations array as LIVE
+   objects and make the guard refuse the very change the flow exists to
+   perform; a test asserts the outcome only reachable through the re-load.
+   The impact's third list is §3.17's own trade-off named in advance:
+   ARCHIVED variations that are restorable today and would not be after this
+   change. Two deliberate simplifications are recorded in §3.19.8 C (D1's
+   dedicated action, D3's archive-instead-of-delete), and the dialog and the
+   operation are bound together by the plan's own FINGERPRINT: `apply()`
+   refuses (`PLAN_CHANGED`) when the plan it derives inside its transaction is
+   not the one the merchant was shown, so a variation added, archived or
+   deleted in between changes nothing. `PruneProductsToOriginal`
+   is untouched by this stage as well.
 
 **Left out of every stage above, deliberately, and tracked elsewhere:**
 the mechanism that makes `PRODUCT_DELETE` *grantable to Manager* — system
