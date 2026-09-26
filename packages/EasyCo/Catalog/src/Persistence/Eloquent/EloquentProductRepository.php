@@ -212,6 +212,24 @@ final class EloquentProductRepository implements ProductRepository
         VariationModel::withTrashed()->whereKey($variationId)->forceDelete();
     }
 
+    /**
+     * See Contracts\ProductRepository::delete()'s own docblock for why the
+     * variations go first (their FK restricts), why both statements are
+     * withTrashed() force-deletes, why only `catalog_*` tables are touched,
+     * and why there is no transaction here.
+     */
+    public function delete(Product $product): void
+    {
+        $productId = $product->id();
+
+        if ($productId === null) {
+            throw new RuntimeException('Cannot delete a Product that was never persisted — it has no id.');
+        }
+
+        VariationModel::withTrashed()->where('product_id', $productId)->forceDelete();
+        ProductModel::withTrashed()->whereKey($productId)->forceDelete();
+    }
+
     public function findById(string $id): ?Product
     {
         $model = ProductModel::find($id);

@@ -44,6 +44,34 @@ interface ProductRepository
      */
     public function deleteVariation(Variation $variation): void;
 
+    /**
+     * Force-deletes every `catalog_variations` row of this product —
+     * withTrashed(), so ARCHIVED (a real row) and soft-deleted rows go
+     * alike — and then the `catalog_products` row itself: the physical half
+     * of catalog-domain-design.md §3.19.4's steps 5-6, and the reason the
+     * product path cannot reuse deleteVariation() for them: a SOFT-DELETED
+     * variation has no domain object, so no `Variation` to pass.
+     *
+     * WHY THE VARIATION SWEEP LIVES HERE AND NOT IN THE SERVICE: every
+     * table this touches is Catalog-owned (`catalog_*`), which is exactly
+     * the boundary §3.19.3 draws for this contract. It must NOT touch
+     * `stock_levels`, `cart_lines`, `pricing_price_list_items`,
+     * `pricing_product_costs`, `pricing_price_list_scopes` or
+     * `promotion_scopes` — App\Services\CatalogDeletion removes those in
+     * the same transaction, before calling this, along with the
+     * activity-log snapshot (§3.19.10).
+     *
+     * THE ORDER IS LOAD-BEARING: `catalog_variations.product_id` is
+     * `restrictOnDelete()`, so the product row cannot go first. The
+     * `catalog_products` force-delete then cascades
+     * `catalog_product_attributes`, `_axis_values`, `_categories`, `_tags`
+     * and `_media`.
+     *
+     * The caller also owns the transaction — there is none here on purpose,
+     * same as deleteVariation().
+     */
+    public function delete(Product $product): void;
+
     public function findById(string $id): ?Product;
 
     /**

@@ -38,6 +38,14 @@ final class VariationDeletionImpact
         public readonly string $sku,
         public readonly ?string $barcode,
         public readonly string $status,
+        /**
+         * 'standard' | 'universal' — carried for the §3.19.10 snapshot, and
+         * for product deletion's own per-variation verdicts: a UNIVERSAL
+         * variation is deleted only together with its product (G-D2), which
+         * a reader of the record must be able to tell apart from a
+         * STANDARD row that went on its own.
+         */
+        public readonly string $variationType,
         public readonly string $attributeSignature,
         public readonly array $attributes,
         public readonly int $saleLineCount,
