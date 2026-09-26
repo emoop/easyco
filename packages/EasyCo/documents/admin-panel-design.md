@@ -596,8 +596,8 @@ exactly as the Create wizard already does, no reimplementation:**
   barcode/an active toggle. Processed as part of the normal Save
   submission (`updateProduct()`), not a separate action.
 
-**The archived-variations list** — a separate, display-only `Repeater`
-(never the existing-variations one) listing this product's ARCHIVED
+**The archived-variations list** — a separate `Repeater` (never the
+existing-variations one) listing this product's ARCHIVED
 STANDARD variations, each with a per-row Restore action
 (`->extraItemActions()`) that calls `Product::restoreArchivedVariation()`
 through the repository, logs the status change, and — the one real
@@ -620,10 +620,37 @@ those same two keys — unlike the not-restorable case, the page's own
 row lists are genuinely stale here, so the refresh is what stops the
 merchant from clicking a button that no longer applies. The whole
 section is hidden entirely when the product currently has no archived
-STANDARD variation (a real, scoped `exists()` query, not a loaded-
+STANDARD variation (a real, scoped `count()` query, not a loaded-
 collection count) — an always-visible, always-empty list was pure
 noise, the same reasoning already applied to the price-override
 toggles elsewhere on this page.
+
+**Collapsed by default, with the count in its heading** (a later
+revision): the section is `->collapsible()->collapsed()`, and its heading
+reads the number of archived STANDARD variations from the same scoped
+query that decides its own visibility — so a merchant with a long archived
+history can see how much is behind a closed section, and the number can
+never disagree with the existence answer. Collapsing is deliberately NOT
+hiding: the rows are still rendered and still present in Livewire state,
+which is what the two per-row actions read; `->visible(false)` (the
+empty-list case above) is the only thing that removes them.
+
+**The archived rows carry a DELETE action too** — the live rows' own
+`deleteVariationAction()`, REUSED rather than copied, so §3.19.8 A's
+impact/refusal/confirmation modal, §3.19.9's `PRODUCT_DELETE` visibility
+and the private `deleteVariationById()`'s own re-checks arrive with it and
+cannot drift between the two lists. It is the one way to hand an archived
+variation's SKU and barcode back (catalog-domain-design.md §3.19.11):
+archiving keeps both occupied forever, so an archived variation with no
+history and zero stock is deletable under exactly the same rule and with
+exactly the same refusals as a live one. `restoreArchivedVariationById()`
+and `generateMissingVariations()` are PRIVATE for the same reason
+`deleteVariationById()` is: Livewire exposes every public method of a
+component to the browser, so a public routine taking an id (or none at all)
+with no modal, no button and no permission check of its own is a callable
+endpoint. Each re-checks `PRODUCT_MANAGE` as its first statement — the
+actions' own `->disabled()`/`->visible()` are UI affordances, never
+authorization (§3.19.9).
 
 **Save-time ordering, in `updateProduct()`:** declare axes (only when
 the submitted set genuinely differs from the current one — an
