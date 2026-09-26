@@ -555,8 +555,17 @@ actions.
 
 ### 3.19 Deletion and axis restructuring
 
-**Status: design only — no code, no migration, no test for anything in
-this section exists yet.** It designs the four operations the domain
+**Status: stages 1–3 implemented; stage 4 (the change-axes flow) still
+design only — no code, no migration, no test for anything in it exists
+yet.** Stage 1 was this document; stage 2 (§3.19.12 item 2) shipped as
+`Admin: permanently delete a variation from EditVariableProduct`; stage 3
+(item 3) shipped as `CatalogDeletion: delete an ARCHIVED product with all
+of its variations` and `Admin: permanently delete an ARCHIVED product from
+ViewProduct and the list`. §3.19.12 records what each stage delivered, and
+§3.19.3 and §3.19.8 B each carry one of the two places the implementation
+deliberately deviates from this section's own first wording.
+
+It designs the four operations the domain
 owner asked for and that §3.17 left out of scope: deleting a STANDARD
 variation, deleting an ARCHIVED product, and an admin "change axes" flow
 that restructures a VARIABLE product's axes by deleting or archiving
@@ -712,11 +721,29 @@ methods, both `withTrashed()` + force-delete, and both touching
 - `deleteVariation(Variation $variation): void` — force-deletes the
   `catalog_variations` row, letting the DB cascade
   `catalog_variation_attribute_values` and `catalog_variation_media`.
-- `delete(Product $product): void` — force-deletes the
-  `catalog_products` row, cascading `catalog_product_attributes`,
-  `_axis_values`, `_categories`, `_tags`, `_media`. Its variations must
-  already be gone (`catalog_variations.product_id` is
-  `restrictOnDelete()`).
+- `delete(Product $product): void` — force-deletes **every one of the
+  product's own `catalog_variations` rows first** (`withTrashed()`, so an
+  ARCHIVED row — a real row — and a *soft-deleted* row go alike: a
+  soft-deleted variation has no domain object for a caller to hand to
+  `deleteVariation()`), and then the `catalog_products` row, cascading
+  `catalog_product_attributes`, `_axis_values`, `_categories`, `_tags`,
+  `_media`. **Both statements are `withTrashed()` force-deletes and both
+  touch `catalog_*` tables only** — no cross-domain table is reachable from
+  here.
+
+  **As implemented, the repository clears its own way** rather than
+  requiring its caller to have deleted the variations already (this bullet's
+  first wording): that is what keeps
+  `catalog_variations.product_id`'s `restrictOnDelete()` from ever blocking
+  the product row, and it is the only way a soft-deleted variation can be
+  swept up at all. The order inside
+  `CatalogDeletion::deleteProduct()` is unchanged by that: it runs the
+  per-variation **cross-domain configuration deletes** (§3.19.4 step 1 —
+  `stock_levels`, `cart_lines`, variation-target
+  `pricing_price_list_items`, `pricing_product_costs`) for every variation
+  *before* handing the aggregate to this method, and the product-scope rows
+  (product-target price items, `pricing_price_list_scopes`,
+  `promotion_scopes`) before it too, all in the same transaction.
 
 Neither may touch `stock_levels`, `cart_lines`,
 `pricing_price_list_items`, `pricing_product_costs`, `promotion_scopes`
@@ -977,9 +1004,21 @@ field requiring the variation's SKU to be typed (G-D6).
 
 **B — Delete a product.** On `ViewProduct`'s header (and mirrored as a
 list row action), offered only when the product is `ARCHIVED`. On a
-non-archived product the same slot offers the existing Archive action plus
-one line explaining the two-step rule (G-D3) — a disabled button with no
-reason is exactly what this codebase avoids. The modal shows every
+non-archived product the same slot offers one line explaining the two-step
+rule (G-D3) — a disabled button with no reason is exactly what this
+codebase avoids — together with a real first step to take.
+
+**As implemented, that first step is not a separate archive action, and
+that is a deliberate deviation from this paragraph's first wording.** The
+admin panel has **no Archive action on `ViewProduct`** at all: archiving is
+the Edit page's `Status` field (`EditProduct::handleRecordUpdate()`, which
+also runs `ArchiveProductMediaCleaner` and logs the change). So the
+non-archived half is a single action, `archive_first`, visible with
+`PRODUCT_DELETE` on a non-archived product: it states the rule in one line
+and redirects to the product's own Edit page (`edit` for SIMPLE,
+`edit-variable` for VARIABLE) — the real first step, reached without
+introducing a second archive code path that would have to be kept in step
+with the first. The modal shows every
 variation with its own verdict, the product-scope rows that would go
 (price-list scopes, promotion scopes), the aggregate cart-line /
 price-item / cost / media counts, the `base_sku` and `slug` that will
@@ -1139,14 +1178,39 @@ each stage below names the slice of §3.19.8 it delivers.
    two-connection test proving the in-transaction re-check refuses when a
    sale line is committed after the impact was computed; the permission
    migration; and the action's own authorization, refusal and typed-SKU
-   paths. *Gate.*
+   paths. *Gate.* **Implemented** — commit `Admin: permanently delete a
+   variation from EditVariableProduct`, with its domain, activity-log,
+   prune-command, permission and service halves in the five commits before
+   it. Tests live in
+   `tests/Feature/CatalogDeletionTest.php` and
+   `tests/Feature/EditVariableProductDeleteVariationTest.php`.
 3. **Product deletion, with its admin action.** `ProductRepository::
    delete()`, `CatalogDeletion::deleteProduct()`, the ARCHIVED gate, the
    variation loop, the four product-scope/price-item deletes, and the
    `ViewProduct` header / list-row delete action with its own modal
    (§3.19.8 B). Tests: refusal for a non-archived product and for any
    variation with history or stock; success freeing `base_sku` and `slug`.
-   *Gate.*
+   *Gate.* **Implemented** — commits
+   `CatalogDeletion: delete an ARCHIVED product with all of its variations`
+   and `Admin: permanently delete an ARCHIVED product from ViewProduct and
+   the list`; tests in `tests/Feature/CatalogProductDeletionTest.php` and
+   `tests/Feature/ViewProductDeleteProductTest.php`.
+
+   **What the delivered slice adds beyond this item's own list:** step 1 of
+   a product deletion is stage 2's per-variation routine, called once per
+   variation rather than re-implemented; every variation row is included —
+   UNIVERSAL, live STANDARD, ARCHIVED and soft-deleted alike, in ascending
+   `catalog_variations.id` order — with the product row, each stock row and
+   the history read locked in that order before any write, and one
+   `activity_log` snapshot (§3.19.10) carrying all of them. The two places
+   the implementation deliberately departs from this section's first wording
+   are recorded in §3.19.3 (`ProductRepository::delete()` performs the
+   `withTrashed()` variation sweep itself) and §3.19.8 B (there is no
+   Archive action on `ViewProduct`; the non-archived slot is
+   `archive_first`). `PruneProductsToOriginal` is deliberately unchanged by
+   this stage: it prunes *non-archived* products and keeps its own
+   scope-specific cart-line abort, so `deleteProduct()` cannot serve it
+   (§3.19.2).
 4. **Change-axes flow, with its modal.** `App\Services\
    VariationAxisRestructure`: compute the two lists, archive, delete via
    `CatalogDeletion`, re-declare, generate; the Axes-tab impact step
