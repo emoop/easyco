@@ -218,6 +218,15 @@ class OrderResource extends Resource
      * plain text, not a real hyperlink — no AccountResource exists yet
      * in this admin panel to link to. Flagged, not silently
      * downgraded.
+     *
+     * ONE COLUMN, DELIBERATELY — the sections stack, they are never paired
+     * side by side. Filament's default section grid goes to TWO columns from
+     * the `lg` breakpoint, and with two columns a tall section (the lines
+     * table) sat beside a short one and left a large empty gap under the
+     * short one before the next section began (found in the panel itself:
+     * Promotion and Payment appeared far below Delivery). The single column
+     * is set on THIS schema; each Section's own entries still lay out in
+     * their own 3- or 4-column grid.
      */
     public static function infolist(Schema $schema): Schema
     {
@@ -388,7 +397,7 @@ class OrderResource extends Resource
                         ->getStateUsing(fn (OrderModel $record): string => __('orders.attempts_suffix', ['count' => static::forOrder($record)->paymentAttemptCount])),
                 ])
                 ->columns(3),
-        ]);
+        ])->columns(1);
     }
 
     /** Shared by every infolist closure above — one read per record, per OrderAdminReader's own per-instance cache. */

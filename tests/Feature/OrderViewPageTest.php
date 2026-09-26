@@ -179,6 +179,27 @@ class OrderViewPageTest extends TestCase
         $this->assertStringContainsString('Plovdiv', $html);
     }
 
+    /**
+     * §14's sections are ONE UNDER ANOTHER. Filament's own default pairs
+     * sections up from the `lg` breakpoint (a 2-column `--cols-lg`), which put
+     * the very tall lines section beside a short one and left a large empty
+     * gap under the short one before the next section began — reported from
+     * the panel itself as "Промоция and Плащане are far below Доставка".
+     * OrderResource::infolist() sets the page's section grid to a single
+     * column; each section's OWN entries keep their own 3-/4-column grid,
+     * which is why a 1-column and a 3-/4-column grid style both appear.
+     */
+    public function test_the_infolist_sections_stack_one_under_another(): void
+    {
+        $this->actingAsStaffRole('Administrator');
+        $order = $this->placeOrder();
+
+        $html = $this->get(OrderResource::getUrl('view', ['record' => $order->id()]))->assertOk()->getContent();
+
+        $this->assertStringContainsString('--cols-lg: repeat(1, minmax(0, 1fr))', $html);
+        $this->assertStringNotContainsString('--cols-lg: repeat(2, minmax(0, 1fr))', $html, 'no pair of sections may sit side by side');
+    }
+
     public function test_a_minimal_pickup_point_order_with_no_promotion_renders_without_error(): void
     {
         $this->actingAsStaffRole('Administrator');

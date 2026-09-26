@@ -1080,6 +1080,14 @@ are their own keys, so a row may word a value differently from the heading
 it sits under (`Бройка` on the line, D3's `Количество` above it) — the line
 language is the merchant's, the column name is the table's.
 
+**The sections stack, one under another** — the page's own section grid is
+set to a single column, overriding Filament's default of TWO columns from
+the `lg` breakpoint. With two columns the tall lines section sat beside a
+short one and left a large empty gap under the short one before the next
+section began (found in the panel itself: Promotion and Payment appeared far
+below Delivery). Each section's own entries keep their own 3- or 4-column
+grid; only the sections themselves are stacked.
+
 **A real, confirmed gap found while building `forOrder()`, flagged, not
 fixed:** `SaleLine`'s own constructor
 (`assertProductNameAndSkuMatchType()`) rejects a `null`
