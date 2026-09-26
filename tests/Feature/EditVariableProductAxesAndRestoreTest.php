@@ -24,6 +24,7 @@ use EasyCo\Staff\Role;
 use EasyCo\Staff\Seeders\StaffSystemRolesSeeder;
 use EasyCo\Staff\Staff;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Filament\Actions\Testing\TestAction;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -219,6 +220,44 @@ class EditVariableProductAxesAndRestoreTest extends TestCase
     }
 
     /**
+     * Drives the archived row's own Restore action — the path the merchant's
+     * click takes, and now the ONLY path: the routine behind it
+     * (restoreArchivedVariationById()) is private, so a Livewire call can no
+     * longer reach it.
+     */
+    private function restoreArchivedRow(\Livewire\Features\SupportTesting\Testable $component, string $variationId): void
+    {
+        $component->mountAction(
+            TestAction::make('restore_variation')->schemaComponent('archived_variations', 'form'),
+            ['item' => $this->archivedRowKeyFor($component, $variationId)],
+        );
+
+        $component->callMountedAction();
+    }
+
+    /** The archived Repeater's own row key for a variation id, read from live state. */
+    private function archivedRowKeyFor(\Livewire\Features\SupportTesting\Testable $component, string $variationId): string
+    {
+        foreach ($component->get('data.archived_variations') ?? [] as $key => $row) {
+            if ((string) ($row['variation_id'] ?? '') === $variationId) {
+                return (string) $key;
+            }
+        }
+
+        $this->fail("No archived_variations row for variation {$variationId}.");
+    }
+
+    /** Drives "Generate missing variations" through its own header action, for the same reason. */
+    private function runGenerateMissingVariationsAction(\Livewire\Features\SupportTesting\Testable $component): void
+    {
+        $component->mountAction(
+            TestAction::make('generate_missing_variations')->schemaComponent('existing_variations_section', 'form'),
+        );
+
+        $component->callMountedAction();
+    }
+
+    /**
      * THE REAL SAVE-TIME ORDERING PROOF: extending an axis's own value
      * set AND adding a new variation for that brand-new value, in the
      * SAME submission, must both succeed together — the new
@@ -287,9 +326,11 @@ class EditVariableProductAxesAndRestoreTest extends TestCase
         // assertNotified()'s installed source) — the real per-count
         // body is verified via the real domain reload below instead,
         // which is the actually meaningful assertion.
-        Livewire::test(EditVariableProduct::class, ['record' => $productModel->id])
-            ->call('generateMissingVariations')
-            ->assertNotified(__('products.variations_generate.notification_title'));
+        $generator = Livewire::test(EditVariableProduct::class, ['record' => $productModel->id]);
+
+        $this->runGenerateMissingVariationsAction($generator);
+
+        $generator->assertNotified(__('products.variations_generate.notification_title'));
 
         $reloaded = app(ProductRepository::class)->findByIdWithVariations((string) $productModel->id);
         $this->assertCount(3, $reloaded->variations());
@@ -387,8 +428,8 @@ class EditVariableProductAxesAndRestoreTest extends TestCase
         $this->assertSame($whiteId, $archivedRows[0]['variation_id']);
         $this->assertSame('SKU-VAR-WHITE', $archivedRows[0]['sku']);
 
-        $component->call('restoreArchivedVariationById', $whiteId)
-            ->assertNotified(__('products.variation_restore.notification_success'));
+        $this->restoreArchivedRow($component, $whiteId);
+        $component->assertNotified(__('products.variation_restore.notification_success'));
 
         $this->assertSame('draft', VariationModel::find($whiteId)->status);
         $this->assertSame('SKU-VAR-WHITE', VariationModel::find($whiteId)->sku);
@@ -436,9 +477,11 @@ class EditVariableProductAxesAndRestoreTest extends TestCase
 
         $productModel = \EasyCo\Catalog\Persistence\Eloquent\ProductModel::find($product->id());
 
-        Livewire::test(EditVariableProduct::class, ['record' => $productModel->id])
-            ->call('restoreArchivedVariationById', $variationId)
-            ->assertNotified();
+        $component = Livewire::test(EditVariableProduct::class, ['record' => $productModel->id]);
+
+        $this->restoreArchivedRow($component, $variationId);
+
+        $component->assertNotified();
 
         $this->assertSame('archived', VariationModel::find($variationId)->status, 'a failed restore must not change anything');
     }
@@ -472,7 +515,7 @@ class EditVariableProductAxesAndRestoreTest extends TestCase
 
         $this->assertSame('Unsaved In-Progress Name', $component->get('data.name'));
 
-        $component->call('restoreArchivedVariationById', $whiteId);
+        $this->restoreArchivedRow($component, $whiteId);
 
         // The unrelated, unsaved edit must have survived Restore's own refresh.
         $this->assertSame('Unsaved In-Progress Name', $component->get('data.name'));
@@ -487,22 +530,47 @@ class EditVariableProductAxesAndRestoreTest extends TestCase
     }
 
     /**
-     * FIX 2: restoreArchivedVariation()'s own \LogicException ("only
-     * applies to an ARCHIVED variation") for a LIVE (ACTIVE) variation
-     * must surface as a danger notification, not an uncaught 500.
+     * FIX 2, kept reachable: restoreArchivedVariation()'s own \LogicException
+     * ("only applies to an ARCHIVED variation") must surface as a danger
+     * notification, not an uncaught 500.
+     *
+     * The route is the ARCHIVED row's own action, pointed at a row whose id has
+     * become a LIVE variation's since the page rendered — a stale page, or a
+     * crafted request rewriting the row's own public variation_id. That is the
+     * only way this call can still happen now that the routine behind the action
+     * is private (see EditVariableProduct::restoreArchivedVariationById()'s own
+     * docblock), and it is asserted THROUGH the action rather than by calling the
+     * method directly, so the action's own plumbing is covered too.
      */
     public function test_restore_on_a_live_variation_shows_a_danger_notification_carrying_the_domain_message_and_leaves_it_active(): void
     {
         $this->actingAsPanelAdministrator();
 
-        [$product, $definition, $black] = $this->persistedVariableProductWithOneLiveVariation();
+        [$color, $black, $white] = $this->persistedColorDefinition();
+
+        $product = Product::createVariable('Variable Shirt', 'SKU-VAR', 'variable-shirt');
+        $product->declareVariationAxes([new VariationAxis($color, [$black, $white])]);
+        $liveVariation = $product->addStandardVariation([$color->id() => $black->id()], 'SKU-VAR-BLACK');
+        $liveVariation->activate();
+        $archivedVariation = $product->addStandardVariation([$color->id() => $white->id()], 'SKU-VAR-WHITE');
+        $archivedVariation->archive();
+        app(ProductRepository::class)->save($product);
+
         $productModel = \EasyCo\Catalog\Persistence\Eloquent\ProductModel::find($product->id());
+        $liveVariationId = (string) $liveVariation->id();
 
-        $liveVariationId = $this->liveVariationId($product);
+        $component = Livewire::test(EditVariableProduct::class, ['record' => $productModel->id]);
+        $rowKey = $this->archivedRowKeyFor($component, (string) $archivedVariation->id());
 
-        Livewire::test(EditVariableProduct::class, ['record' => $productModel->id])
-            ->call('restoreArchivedVariationById', $liveVariationId)
-            ->assertNotified('restoreArchivedVariation() only applies to an ARCHIVED variation.');
+        $component->set("data.archived_variations.{$rowKey}.variation_id", $liveVariationId);
+
+        $component->mountAction(
+            TestAction::make('restore_variation')->schemaComponent('archived_variations', 'form'),
+            ['item' => $rowKey],
+        );
+        $component->callMountedAction();
+
+        $component->assertNotified('restoreArchivedVariation() only applies to an ARCHIVED variation.');
 
         $this->assertSame('active', VariationModel::find($liveVariationId)->status);
     }
@@ -533,7 +601,7 @@ class EditVariableProductAxesAndRestoreTest extends TestCase
         $component = Livewire::test(EditVariableProduct::class, ['record' => $productModel->id]);
         $component->assertSeeHtml(__('products.variation_restore.section_label'));
 
-        $component->call('restoreArchivedVariationById', $whiteId);
+        $this->restoreArchivedRow($component, $whiteId);
 
         $component->assertDontSeeHtml(__('products.variation_restore.section_label'));
         $existingIds = array_column($component->get('data.existing_variations'), 'variation_id');

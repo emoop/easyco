@@ -56,6 +56,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Filament\Actions\Testing\TestAction;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -590,7 +591,15 @@ class EditVariableProductTest extends TestCase
         $productModel = ProductModel::find($product->id());
         $component = Livewire::test(EditVariableProduct::class, ['record' => $productModel->id]);
 
-        $component->call('restoreArchivedVariationById', $variationId);
+        // Through the archived row's own Restore action: the routine behind it is
+        // private now, so this is the only path (see
+        // EditVariableProduct::restoreArchivedVariationById()'s own docblock).
+        $component->mountAction(
+            TestAction::make('restore_variation')->schemaComponent('archived_variations', 'form'),
+            ['item' => $this->archivedRowKeyFor($component, $variationId)],
+        );
+        $component->callMountedAction();
+
         $this->assertSame('draft', VariationModel::find($variationId)->status, 'fixture assumption: revival only reaches DRAFT');
         $this->assertFalse((bool) VariationModel::find($variationId)->is_visible, 'fixture assumption: revival leaves is_visible untouched');
 
@@ -713,6 +722,22 @@ class EditVariableProductTest extends TestCase
         // every mount — never stored anywhere the tampered value could
         // have landed.
         $this->assertSame(['Color' => 'Black'], $this->realAttributeAssignmentNames($variation));
+    }
+
+    /**
+     * The archived Repeater's own row key for a variation id, read from live
+     * state — the row key an extraItemAction's own array $arguments carries at
+     * render time (the Repeater's blade binds $action(['item' => $itemKey])).
+     */
+    private function archivedRowKeyFor(\Livewire\Features\SupportTesting\Testable $component, string $variationId): string
+    {
+        foreach ($component->get('data.archived_variations') ?? [] as $key => $row) {
+            if ((string) ($row['variation_id'] ?? '') === $variationId) {
+                return (string) $key;
+            }
+        }
+
+        $this->fail("No archived_variations row for variation {$variationId}.");
     }
 
     /** @return array<string, string> */

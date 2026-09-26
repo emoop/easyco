@@ -246,6 +246,7 @@ return [
         'confirm_description' => 'This creates a new draft variation for every combination of the declared axis values that does not already exist. An archived combination whose axis values are still enabled is restored with its original SKU, not recreated — the same behavior as re-adding it manually.',
         'notification_title' => 'Variations generated',
         'notification_body' => ':created created, :restored restored.',
+        'notification_unauthorized' => 'You do not have permission to generate variations for this product.',
     ],
 
     'new_variations' => [
@@ -257,12 +258,14 @@ return [
 
     'variation_restore' => [
         'section_label' => 'Archived variations',
+        'section_label_with_count' => 'Archived variations (:count)',
         'button_label' => 'Restore',
         'confirm_heading' => 'Restore this variation?',
         'confirm_description' => 'Restoring ":label" brings it back as a draft, with its original SKU, barcode and history intact. It will not be visible or purchasable until you activate it again.',
         'confirm_submit' => 'Restore',
         'confirm_cancel' => 'Cancel',
         'notification_success' => 'Variation restored.',
+        'notification_unauthorized' => 'You do not have permission to restore variations on this product.',
     ],
 
     'duplicate_action' => 'Duplicate',

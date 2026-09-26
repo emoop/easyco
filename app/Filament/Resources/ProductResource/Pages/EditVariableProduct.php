@@ -586,7 +586,7 @@ class EditVariableProduct extends EditRecord
             // so its header action) addressable by name — the same reason the
             // Variations tab's Repeater is addressed by its own field name.
             Section::make()
-                ->key('axes_change')
+                ->key('axes_change', isInheritable: false)
                 ->headerActions([$this->changeAxesAction()])
                 ->schema([
                     $this->axesRepeater(),
@@ -1223,7 +1223,15 @@ class EditVariableProduct extends EditRecord
             // faithful adaptation that keeps the exact same visual
             // result (the button sits directly above the variations
             // list) without inventing a different UX.
+            //
+            // The key is what makes this Section (and so its header action)
+            // addressable BY NAME — a nested action is not resolvable by name
+            // alone. Same reason (and same shape) as the Axes tab's own
+            // axes_change Section, and it is what lets the test suite mount the
+            // real "Generate missing variations" action instead of reaching for
+            // the private method behind it.
             Section::make()
+                ->key('existing_variations_section', isInheritable: false)
                 ->headerActions([$this->generateMissingVariationsAction()])
                 ->schema([
                     Repeater::make('existing_variations')
@@ -1686,7 +1694,18 @@ class EditVariableProduct extends EditRecord
      */
     private function archivedVariationsComponents(): Section
     {
-        return Section::make(__('products.variation_restore.section_label'))
+        return Section::make()
+            // The COUNT lives in the heading, because the section is now
+            // COLLAPSED BY DEFAULT (->collapsible()/->collapsed() below) and a
+            // collapsed section with no number tells a merchant nothing about
+            // what is behind it. It comes from archivedVariationsCount(), the
+            // same query that decides whether the section is shown at all, so the
+            // number and the existence answer can never disagree.
+            ->heading(fn (): string => __('products.variation_restore.section_label_with_count', [
+                'count' => $this->archivedVariationsCount(),
+            ]))
+            ->collapsible()
+            ->collapsed()
             // Hidden entirely when there is nothing to restore — same
             // precedent as clear_regular_price_overrides/
             // clear_sale_price_overrides above (an always-visible,
@@ -1698,6 +1717,11 @@ class EditVariableProduct extends EditRecord
             // "hidden components are excluded from $data, safe only
             // when nothing on submit reads that key" reasoning already
             // documented on this class's own price-field docblocks.
+            //
+            // Collapsing is a different thing from hiding, and deliberately so:
+            // ->collapsed() renders the rows (hidden client-side) and keeps their
+            // live state, which is exactly what the two per-row actions below read
+            // — the archived section still has no WRITE path through the Save flow.
             ->visible(fn (): bool => $this->hasArchivedVariations())
             ->schema([
                 Repeater::make('archived_variations')
@@ -1733,6 +1757,21 @@ class EditVariableProduct extends EditRecord
 
                                 $livewire->restoreArchivedVariationById((string) $variationId);
                             }),
+                        // THE LIVE ROWS' OWN ACTION, REUSED RATHER THAN COPIED
+                        // (§3.19.8 A): the impact modal, the refusal on history or
+                        // stock, the confirmation fields and the private
+                        // deleteVariationById()'s own re-checks all arrive with this
+                        // one call, so an archived row's delete can never drift from
+                        // a live row's. It reads nothing live-row-specific: the row's
+                        // own variation_id, the product this page edits, and the
+                        // service's verdict.
+                        //
+                        // WHY AN ARCHIVED VARIATION IS DELETABLE AT ALL: archiving
+                        // keeps its SKU and barcode occupied forever, so deleting one
+                        // that has no history and zero stock is the only way to hand
+                        // those identifiers back (§3.19.11) — the same rule, the same
+                        // refusals, no exception for having been archived first.
+                        $this->deleteVariationAction(),
                     ])
                     ->schema([
                         Hidden::make('variation_id'),
@@ -1787,14 +1826,18 @@ class EditVariableProduct extends EditRecord
     }
 
     /**
-     * Gates archivedVariationsComponents()'s own ->visible() — same
-     * real-query posture as hasDeclaredAxes() above, not a loaded-
-     * collection count. Scoped identically to archivedVariationRows()'s
-     * own filter: STANDARD type (a UNIVERSAL variation is never
-     * restorable/never shown here) and ARCHIVED status, compared
-     * against the enums' own ->value, never a literal string.
+     * How many ARCHIVED STANDARD variations this product has — the number in the
+     * section's own heading, and the source of hasArchivedVariations()'s answer,
+     * so "is there anything to show" and "what does the heading say" can never
+     * disagree.
+     *
+     * Same real-query posture as hasDeclaredAxes() above, not a loaded-collection
+     * count, and scoped identically to archivedVariationRows()'s own filter:
+     * STANDARD type (a UNIVERSAL variation is never restorable/never shown here)
+     * and ARCHIVED status, compared against the enums' own ->value, never a
+     * literal string.
      */
-    private function hasArchivedVariations(): bool
+    private function archivedVariationsCount(): int
     {
         return DB::table('catalog_variations')
             ->where('product_id', $this->record->id)
@@ -1807,9 +1850,20 @@ class EditVariableProduct extends EditRecord
             // archived row would count here even though
             // archivedVariationRows() (reading from the domain
             // aggregate, which IS scope-aware) would show none — the
-            // Section would render visible with an empty list.
+            // Section would render visible with an empty list, and now the
+            // heading would count a row that is not there.
             ->whereNull('deleted_at')
-            ->exists();
+            ->count();
+    }
+
+    /**
+     * Gates archivedVariationsComponents()'s own ->visible() — the same question
+     * archivedVariationsCount() answers with a number, asked as a yes/no, so both
+     * the visibility and the heading are one query's answer.
+     */
+    private function hasArchivedVariations(): bool
+    {
+        return $this->archivedVariationsCount() > 0;
     }
 
     /**
@@ -2119,13 +2173,27 @@ class EditVariableProduct extends EditRecord
 
     /**
      * "Generate missing variations" (B1) — the real work behind
-     * generateMissingVariationsAction()'s own header Action, resolved
-     * via that Action's named $livewire injection (ProductResource::
-     * duplicateAction()'s own confirmed-working precedent). A real,
+     * generateMissingVariationsAction()'s own header Action, reached from that
+     * Action's closure, whose scope is this class (which is what makes the
+     * private call legal: $livewire IS this page). A real,
      * independent side-action, NOT part of the normal Save submission
      * — it reloads the aggregate, runs the generator, and saves
      * immediately on click, exactly like restoreArchivedVariationById()
      * below.
+     *
+     * PRIVATE, AND THAT IS A SECURITY PROPERTY, NOT STYLE — the same argument
+     * deleteVariationById() carries. Livewire exposes every PUBLIC method of a
+     * component to the browser, so a public generateMissingVariations() would be
+     * a parameterless endpoint that writes variations on whatever product the
+     * page happens to be showing: no button, no confirmation, no permission
+     * check of its own. Nothing can reach it from outside this class now, and a
+     * browser call is not routable at all.
+     *
+     * PERMISSION: the action's own ->disabled() hides the button (§3.19.9 —
+     * visibility is a UX affordance, never authorization), and the check below
+     * is the gate that actually decides, re-read at write time from the real
+     * authenticated staff member. A same-class caller that somehow skipped the
+     * action still cannot write without PRODUCT_MANAGE.
      *
      * VariationCombinationGenerator::generate() and
      * CatalogSkuGeneratorServiceProvider::variationSkuStrategy() are
@@ -2142,8 +2210,17 @@ class EditVariableProduct extends EditRecord
      * all). Checked BEFORE save() below, while a genuinely-new
      * Variation's id() is still null.
      */
-    public function generateMissingVariations(): void
+    private function generateMissingVariations(): void
     {
+        if (! ProductResource::staffHasPermission(Permission::PRODUCT_MANAGE)) {
+            Notification::make()
+                ->title(__('products.variations_generate.notification_unauthorized'))
+                ->danger()
+                ->send();
+
+            return;
+        }
+
         $product = app(ProductRepository::class)->findByIdWithVariations((string) $this->record->id);
 
         $valuesByAxis = [];
@@ -2194,8 +2271,7 @@ class EditVariableProduct extends EditRecord
     /**
      * The real work behind archivedVariationsComponents()'s own
      * per-row Restore Action — see that method's own docblock for the
-     * full mechanism (named $livewire injection, why it's a public
-     * method). Reloads the aggregate fresh (this page's own $product
+     * full mechanism. Reloads the aggregate fresh (this page's own $product
      * from a normal Save is not involved at all — this is a
      * completely independent action), locates the variation by id,
      * calls the real Product::restoreArchivedVariation(), and saves
@@ -2203,6 +2279,21 @@ class EditVariableProduct extends EditRecord
      * its own DB::transaction() internally — confirmed against its
      * installed source — so no extra transaction wrapping is needed
      * here).
+     *
+     * PRIVATE, AND THAT IS A SECURITY PROPERTY, NOT STYLE — the same argument
+     * deleteVariationById() and generateMissingVariations() carry. Livewire
+     * exposes every PUBLIC method of a component to the browser, so a public
+     * restoreArchivedVariationById(string $variationId) would be a callable
+     * endpoint taking an arbitrary variation id with no modal, no button and no
+     * confirmation. The Action's closure reaches it from INSIDE this class
+     * (its scope is this class, which is what makes the private call legal) and
+     * nothing else can: a browser call is not routable at all.
+     *
+     * PERMISSION: the Restore action's own ->disabled() greys the button out
+     * (§3.19.9 — visibility is a UX affordance, never authorization), and the
+     * check below is the gate that actually decides, re-read at write time from
+     * the real authenticated staff member. A same-class caller that somehow
+     * skipped the action still cannot restore without PRODUCT_MANAGE.
      *
      * On VariationNotRestorableException: a danger notification
      * carrying the exception's OWN message (never a generic string),
@@ -2227,8 +2318,17 @@ class EditVariableProduct extends EditRecord
      * the merchant last left it) back through the schema's own real
      * state, with no re-derivation step at all.
      */
-    public function restoreArchivedVariationById(string $variationId): void
+    private function restoreArchivedVariationById(string $variationId): void
     {
+        if (! ProductResource::staffHasPermission(Permission::PRODUCT_MANAGE)) {
+            Notification::make()
+                ->title(__('products.variation_restore.notification_unauthorized'))
+                ->danger()
+                ->send();
+
+            return;
+        }
+
         $product = app(ProductRepository::class)->findByIdWithVariations((string) $this->record->id);
 
         $variation = null;
