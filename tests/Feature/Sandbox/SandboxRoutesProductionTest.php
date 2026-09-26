@@ -59,8 +59,14 @@ final class SandboxRoutesProductionTest extends TestCase
     {
         $this->assertFalse(Route::has('sandbox.index'));
         $this->assertFalse(Route::has('sandbox.products.show'));
+        $this->assertFalse(Route::has('sandbox.cart'));
+        $this->assertFalse(Route::has('sandbox.checkout'));
+        $this->assertFalse(Route::has('sandbox.order-placed'));
 
         $this->get('/_sandbox')->assertNotFound();
         $this->get('/_sandbox/products/1')->assertNotFound();
+        $this->get('/_sandbox/cart')->assertNotFound();
+        $this->get('/_sandbox/checkout')->assertNotFound();
+        $this->get('/_sandbox/order-placed')->assertNotFound();
     }
 }

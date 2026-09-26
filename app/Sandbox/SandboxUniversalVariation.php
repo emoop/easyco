@@ -13,7 +13,9 @@ namespace App\Sandbox;
  * so rendering it as a table row would show a customer a "choice" that
  * does not exist. Its two facts a customer DOES need (how many are left,
  * and whether it can be bought right now) are shown under the price
- * instead.
+ * instead, together with the add-to-cart control that needs its id —
+ * $id is the variation the real POST /api/cart/lines accepts, and
+ * nothing else about it is exposed.
  *
  * $stockQuantity is the real Inventory quantity (0 for a variation with
  * no stock row at all — StockLevelRepository::findByVariationId() never
@@ -28,6 +30,7 @@ namespace App\Sandbox;
 final readonly class SandboxUniversalVariation
 {
     public function __construct(
+        public string $id,
         public int $stockQuantity,
         public bool $purchasable,
     ) {

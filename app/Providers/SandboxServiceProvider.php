@@ -9,7 +9,15 @@ use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 
 /**
- * Registers the sandbox storefront's three routes — Prompt D, D1/D2.
+ * Registers the sandbox storefront's routes — Prompt D, D1/D2 (the first two
+ * pages) and the D-stage cart/checkout/confirmation pages that follow.
+ *
+ * THE CART/CHECKOUT PAGES ADD NO WRITE ROUTE. They are GET pages that render a
+ * shell; every write they trigger goes to the REAL storefront API (routes/api.php
+ * — /api/cart/lines, /api/cart/promotion, /api/checkout) from the browser, with
+ * that API's own CSRF and identification rules intact. Nothing about carts,
+ * prices, promotions or checkout is reimplemented here, and the sandbox's own
+ * route table stays four GETs and one 404-capable id route.
  *
  * WHY A PROVIDER AND NOT AN IF INSIDE routes/web.php: D1's own
  * requirement is "disabled -> the routes do not exist (404), not a
@@ -105,6 +113,9 @@ class SandboxServiceProvider extends ServiceProvider
             ->group(function (): void {
                 Route::get('/', [SandboxProductController::class, 'index'])->name('index');
                 Route::get('/products/{productId}', [SandboxProductController::class, 'show'])->name('products.show');
+                Route::get('/cart', [SandboxProductController::class, 'cart'])->name('cart');
+                Route::get('/checkout', [SandboxProductController::class, 'checkout'])->name('checkout');
+                Route::get('/order-placed', [SandboxProductController::class, 'orderPlaced'])->name('order-placed');
             });
     }
 }

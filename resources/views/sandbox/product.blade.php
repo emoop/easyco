@@ -48,6 +48,19 @@
         @if ($product->universalVariation !== null)
             <p class="stock">Stock: {{ $product->universalVariation->stockQuantity }}</p>
             <p class="purchasable">Purchasable: {{ $product->universalVariation->purchasable ? 'Yes' : 'No' }}</p>
+
+            {{-- D3's add-to-cart control, SIMPLE branch: one control, because a SIMPLE product has exactly one
+                 thing to buy. No control at all when the domain says it is not purchasable — this page never
+                 offers an action the API would refuse. --}}
+            @if ($product->universalVariation->purchasable)
+                <p class="add-to-cart" data-variation-id="{{ $product->universalVariation->id }}">
+                    <label for="qty-universal">Quantity</label>
+                    <input id="qty-universal" class="qty-input" type="number" min="1" value="1">
+                    <button class="primary add" type="button">Add to cart</button>
+                </p>
+            @else
+                <p class="muted">Not purchasable right now — no add-to-cart control.</p>
+            @endif
         @endif
     @else
         <h2>Variations</h2>
@@ -66,6 +79,7 @@
                         <th>Price</th>
                         <th>Stock</th>
                         <th>Purchasable</th>
+                        <th></th>
                     </tr>
                 </thead>
                 <tbody>
@@ -84,6 +98,19 @@
                             <td>{!! $variation->priceHtml !!}</td>
                             <td>{{ $variation->stockQuantity }}</td>
                             <td>{{ $variation->purchasable ? 'Yes' : 'No' }}</td>
+                            {{-- D3's add-to-cart control, VARIABLE branch: one per PURCHASABLE row (the row the
+                                 customer is actually choosing), none on a row the API would refuse — never a
+                                 disabled form a customer can still submit. --}}
+                            <td>
+                                @if ($variation->purchasable)
+                                    <span class="add-to-cart" data-variation-id="{{ $variation->id }}">
+                                        <input class="qty-input" type="number" min="1" value="1" aria-label="Quantity">
+                                        <button class="primary add" type="button">Add</button>
+                                    </span>
+                                @else
+                                    <span class="muted">—</span>
+                                @endif
+                            </td>
                         </tr>
                     @endforeach
                 </tbody>

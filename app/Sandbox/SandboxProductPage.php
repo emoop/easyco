@@ -223,6 +223,7 @@ final class SandboxProductPage
         }
 
         return new SandboxUniversalVariation(
+            id: $variationId,
             stockQuantity: $this->stockLevels->findByVariationId($variationId)->quantity(),
             purchasable: $variation->isEffectivelyPurchasable(),
         );

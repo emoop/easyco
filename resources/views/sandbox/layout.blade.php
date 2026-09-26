@@ -41,6 +41,24 @@
         .card .price { margin: 0; font-weight: 600; }
         .card s { color: #57606a; font-weight: 400; }
         button[disabled] { align-self: flex-start; padding: .35rem .7rem; border: 1px dashed #b9c0c8; background: #f6f8fa; color: #768390; border-radius: 6px; font-size: .8rem; cursor: not-allowed; }
+        button.primary { padding: .4rem .9rem; border: 1px solid #0b5cad; background: #0b5cad; color: #fff; border-radius: 6px; font-size: .85rem; cursor: pointer; }
+        button.primary[disabled] { border-style: dashed; background: #f6f8fa; color: #768390; cursor: not-allowed; }
+        button.link { border: 0; background: none; color: #0b5cad; padding: 0; font: inherit; cursor: pointer; text-decoration: underline; }
+        input[type="number"] { width: 4.5rem; }
+        input, select { padding: .35rem .45rem; border: 1px solid #d0d7de; border-radius: 6px; font: inherit; }
+        label { display: block; font-size: .85rem; color: #57606a; margin-bottom: .15rem; }
+        .field { margin-bottom: .75rem; }
+        .line-items { margin-top: 1rem; }
+        .line-items td.qty { white-space: nowrap; }
+        .notice { border-left: 4px solid #0b5cad; background: #f6f8fa; border-radius: 6px; padding: .6rem .8rem; margin: 1rem 0; font-size: .9rem; }
+        .notice.error { border-left-color: #7a1d1d; }
+        .message { margin: 1rem 0; font-size: .9rem; }
+        .message.error { color: #7a1d1d; font-weight: 600; }
+        .message.ok { color: #166534; font-weight: 600; }
+        .totals { margin-top: 1rem; display: flex; gap: 1.5rem; flex-wrap: wrap; }
+        .totals div { font-size: .95rem; }
+        .actions { margin-top: 1.25rem; display: flex; gap: .75rem; align-items: center; flex-wrap: wrap; }
+        footer.site { border-top: 1px solid #e4e7eb; color: #57606a; font-size: .85rem; }
         table { width: 100%; border-collapse: collapse; margin-top: 1rem; font-size: .92rem; }
         th, td { text-align: left; padding: .5rem .6rem; border-bottom: 1px solid #e4e7eb; vertical-align: top; }
         th { background: #f6f8fa; font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; color: #57606a; }
@@ -58,12 +76,16 @@
 <body>
     {{-- Unmissable on purpose: a real product page that looks like the real
          storefront is exactly the thing that would be mistaken for one. --}}
-    <div class="banner">SANDBOX — not the real storefront. Read-only preview of real catalog data.</div>
+    <div class="banner">SANDBOX — not the real storefront. Real catalog data, and a real cart and checkout API.</div>
 
     <header class="site">
         <div class="wrap">
             <span class="name"><a href="{{ route('sandbox.index') }}">EasyCo sandbox</a></span>
-            <span class="note">noindex · no cart · no checkout</span>
+            <span class="note">
+                noindex ·
+                <a href="{{ route('sandbox.cart') }}">cart (<span id="sandbox-cart-count">–</span>)</a> ·
+                <a href="{{ route('sandbox.checkout') }}">checkout</a>
+            </span>
         </div>
     </header>
 
@@ -73,9 +95,14 @@
 
     <footer class="site">
         <div class="wrap">
-            Read-only preview. Prices come from the real Pricing domain, stock from the real Inventory domain —
-            nothing on these pages writes anything.
+            Prices come from the real Pricing domain and stock from the real Inventory domain. Adding to the cart,
+            applying a promotion and checking out call the REAL storefront API from this page's JavaScript, with that
+            API's own CSRF protection and its own rule for who the customer is — nothing about how carts, prices,
+            promotions or orders work is reimplemented here. No order is ever looked up by id: the confirmation page
+            shows only the order this browser just placed.
         </div>
     </footer>
+
+    @include('sandbox.partials.api')
 </body>
 </html>

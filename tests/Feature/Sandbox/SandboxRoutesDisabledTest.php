@@ -32,11 +32,21 @@ final class SandboxRoutesDisabledTest extends TestCase
     {
         $this->assertFalse(Route::has('sandbox.index'));
         $this->assertFalse(Route::has('sandbox.products.show'));
+        $this->assertFalse(Route::has('sandbox.cart'));
+        $this->assertFalse(Route::has('sandbox.checkout'));
+        $this->assertFalse(Route::has('sandbox.order-placed'));
     }
 
-    public function test_both_sandbox_urls_return_404(): void
+    public function test_every_sandbox_url_returns_404(): void
     {
         $this->get('/_sandbox')->assertNotFound();
         $this->get('/_sandbox/products/1')->assertNotFound();
+        $this->get('/_sandbox/cart')->assertNotFound();
+        $this->get('/_sandbox/checkout')->assertNotFound();
+        $this->get('/_sandbox/order-placed')->assertNotFound();
+
+        // The guessed-id path a stage-2 confirmation page must NEVER have: with the
+        // flag off it 404s because the whole group is absent.
+        $this->get('/_sandbox/order-placed/1')->assertNotFound();
     }
 }
