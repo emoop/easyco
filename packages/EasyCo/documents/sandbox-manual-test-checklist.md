@@ -40,21 +40,18 @@ human runs in a real browser, where cookies, `sessionStorage` and CSRF actually 
    resolves, with readable labels, and shows a summary of the cart being checked out.
 9. **Pickup point toggles.** Choosing "Pickup point" hides the street-address fields and shows
    carrier / pickup point / settlement (and vice versa) — no stale hidden values are submitted.
-10. **A real order — plus one KNOWN DEFECT to look at.** Complete checkout: you land on the
+10. **A real order — and a second one right after.** Complete checkout: you land on the
     confirmation page, which shows the order id, its status, the lines (name, attributes, SKU,
     quantity, final price, promotion discount, net paid), the totals and the payment. Stock in
-    the admin drops by the ordered quantity.
+    the admin drops by the ordered quantity, and the cart you just bought is **no longer your
+    current cart**: the cart page shows an empty cart, and your next add starts a NEW one (a
+    guest's next cart reuses the same session token — `cart-domain-design.md` §14.1).
 
-    **KNOWN DEFECT — NOT INTENDED BEHAVIOUR, tracked as a separate Cart task:** the checkout
-    CLAIMS the cart but does not clear it, and a claimed cart stays the customer's *current*
-    cart for the rest of the session. What that looks like from the sandbox: after placing an
-    order, the cart page still lists the lines you just bought, and placing a second order in
-    the same session returns the FIRST order instead of creating a new one. The correct
-    behaviour is that a checked-out cart stops being the customer's current cart — the next
-    order must start from a new, empty one. Until that Cart fix lands,
-    `SandboxCheckoutFlowTest` (step 8 of its flow test) and this scenario PIN the current
-    behaviour deliberately, so that fixing it means changing them rather than discovering
-    them; neither claims the behaviour is correct.
+    Buy again in the same session: it is a **second order**, not a replay of the first — the
+    defect this fix removed. Re-submitting the FIRST cart's checkout (the same `cart_id`, as a
+    double-clicked button does) still returns that first order with `already_placed: true`,
+    which is the protection the fix had to keep (§14.2). Naming another customer's `cart_id`
+    returns 404 and never their order.
 11. **Confirmation is browser-local, and failures are clean.** Reload the confirmation page: it
     still shows the order (from `sessionStorage`). Open `/_sandbox/order-placed/1` (or any id):
     **404** — there is no order-by-id route and no way to read someone else's order. Clear

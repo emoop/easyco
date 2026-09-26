@@ -141,6 +141,25 @@ if ($affected === 0) {
 
 This is the same "atomic conditional UPDATE, zero-affected-rows means someone else already acted" shape `Inventory::decrease()` already uses (§5) and the same shape `EloquentCartRepository`'s own SQLSTATE-1062 self-healing already uses (`cart-domain-design.md` §10) — a third application of one pattern this project keeps reaching for, not a new one invented here.
 
+**The claim also MOVES the cart's identity — added with the after-checkout fix (`cart-domain-design.md` §14).** A claimed cart must stop being the customer's current cart, so the same single conditional UPDATE copies `account_id`/`session_token` into `claimed_account_id`/`claimed_session_token` and NULLs the live columns:
+
+```php
+$affected = CartModel::where('id', $cartId)
+    ->whereNull('order_id')
+    ->update([
+        'order_id' => $order->id(),
+        'claimed_account_id' => DB::raw('account_id'),
+        'claimed_session_token' => DB::raw('session_token'),
+        'account_id' => null,
+        'session_token' => null,
+    ]);
+```
+
+One statement, so the claim stays exactly as atomic as it is today and the zero-affected-rows check is unchanged. What changes is only what the row answers *afterwards*: `findByAccountId()`/`findBySessionToken()` no longer see it, which is what lets the customer's next add create a new cart instead of colliding with the unique index. `cart-domain-design.md` §14.1 owns that decision and the alternatives rejected for it.
+
+**The replay is answered per `cart_id` + requester, never per cart id alone.** `POST /api/checkout` **requires** `cart_id` (`422` when absent — the cart the page displayed; `GET /api/cart` returns it), and `CartRepository::findClaimForIdentity($cartId, $accountId, $sessionToken)` returns a claim only when the requesting account — or the requesting session's own token — is the identity recorded at claim time. Every other answer, including another customer's live or claimed cart, is a `404` indistinguishable from an unknown id. The fast path above is therefore implemented through that identity-checked call rather than a bare `findOrderIdForCart($cartId)`: an id alone must never be enough to learn an order. `cart-domain-design.md` §14.2 owns the full truth table and why the field is required rather than optional (without it a sequential second click would find no live cart and `404` instead of replaying, so the protection would depend on the client).
+
+
 **Why not Medusa's full idempotency-key/recovery-point machine (§Origin):** that machine exists to let a *multi-step, potentially-async* completion process resume from wherever it was interrupted (tax calculation, then payment authorization, which might itself require redirect/webhook round-trips, then inventory). V1's two payment adapters are synchronous and always resolve immediately (`PENDING`, never a redirect or async callback) — there is nothing to "resume into" mid-flow. A single all-or-nothing transaction with one claim-or-return-existing check is the simplest mechanism that's actually correct for this shape, matching the project's own "boutique, not feature-for-feature" philosophy (`ai-collaboration-protocol.md`). **Flagged for revisiting** if/when a real async provider is added.
 
 ---
@@ -193,7 +212,7 @@ Nothing in this project currently captures a contact email for a guest. `Address
 8. Build a new `Transaction` (`channel: WEB`) and one `SaleLine` per line (`type: SALE`, `status: COMPLETED` — see §8.5 for why `COMPLETED` regardless of payment method — `profit`: computed per §9.3), `TransactionRepository::save()`. **Once `operational-sales-domain-design.md` §3.13 is implemented** (designed, not yet built — full price-level/discount/attribute/cost snapshot, needed for returns), this step calls §3.13 E-D4's one-service-two-channels snapshot builder instead of constructing each `SaleLine` inline as it does today, and `profit` is computed on net rather than pre-promotion (§3.13, "Profit, computed on net").
 9. Insert the new `Order` row (§3), referencing the just-created `transactionId`/`clientId`, with the Address snapshot from step 5.
 10. **Write the `Payment` row itself, as `PENDING`, with no attempt outcome recorded yet** (`orderId` = the just-inserted `Order.id`, `method` = the chosen method, `amount` = `Order.total`) — see the note immediately below this list for why this step exists and wasn't part of the original design.
-11. Claim the cart via the atomic `order_id` update (§6). Zero-affected-rows here rolls back everything above (including the `Payment` row from step 10) and returns the pre-existing order instead.
+11. Claim the cart via the atomic `order_id` update (§6) — which now also moves the cart's identity onto `claimed_account_id`/`claimed_session_token`, leaving the live columns NULL (`cart-domain-design.md` §14.1). Zero-affected-rows here rolls back everything above (including the `Payment` row from step 10) and returns the pre-existing order instead.
 12. If a promotion was applied (step 2/4), lock the `Promotion` row and write the `PromotionRedemption` (§7) — a failed usage-limit re-check here also aborts the whole transaction.
 13. Commit.
 

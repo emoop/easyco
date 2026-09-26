@@ -70,6 +70,8 @@ This is exactly how WooCommerce behaves by default (no cart-level stock hold wit
 
 On a successful `customer`-guard login (see §8 for exactly which event this hooks), if a guest cart (found by session token) and an account cart both already exist, their lines are merged into the account cart, not replaced by it. Same `variation_id` in both → **quantities are summed**, then the result is **clamped to currently-available stock** if the sum would exceed it — the merge never fails the login over a stock conflict; it silently clamps instead. The guest cart row is deleted once the merge completes.
 
+**A CLAIMED cart is never merged, in either direction — see §14.3.** A claimed cart has already produced an order; merging it (or deleting it as the source) would both re-add purchased lines to a live cart and destroy the claim a legitimate double-submit replay depends on.
+
 The domain owner's own reasoning, recorded verbatim because it explains the "merge, not replace" choice better than a paraphrase would: *"we're simply making sure they get their own choices back — if they don't want something, they can remove it."*
 
 **A real tension worth being explicit about, not silently resolved either way:** the original guidance for this decision also said clamping should "ideally" be visible in the login/registration HTTP response. That's not done here — making it visible would require editing `AccountSessionController`/`AccountRegistrationController`'s response shape, and this task's scope explicitly forbids touching any `Account` source file (that domain "shouldn't grow Cart knowledge," per the same instruction that specified this merge). The merge itself still happens correctly and safely; the clamped result simply isn't visible until the customer's very next `GET /api/cart`, not inside the login/register response itself. Flagging this rather than either silently breaking the "don't touch Account" rule or silently dropping the "make it visible" request.
@@ -135,3 +137,115 @@ The composite `unique(cart_id, variation_id)` (named `cart_lines_cart_variation_
 - **`matchingScopeReferenceIds` scope matching** — §12's first flagged limitation, restated here for visibility in the deferred list a future session will scan first.
 - **Scheduling `cart:prune`.** §9 — the command exists and works; nothing calls it automatically. A future deployment/scheduling task needs to wire it into Laravel's scheduler or an OS-level cron/Task Scheduler entry.
 - **Abandoned-cart recovery** (`cart-abandoned-recovery-note.md`) — the actual reason guest carts are persisted at all (§1), but the recovery mechanism itself (a `cart.abandoned` Hook action, email/push listeners, the single-use discount-code generation it would need from Pricing) is not built in this task. Genuinely next in line per that note's own stated priority, not merely a someday item.
+
+---
+
+## 14. A claimed cart stops being the current cart — the fix, and how double-submit protection survives it
+
+**The defect, stated precisely** (found in real use, tracked as its own task): `carts.order_id` marks a cart as claimed (`checkout-domain-design.md` §6), but nothing on the *lookup* path cares. `findByAccountId()`/`findBySessionToken()` return a claimed row like any other, so after a successful checkout the claimed cart stays the customer's current cart **forever**: `GET /api/cart` keeps replaying the lines that were just bought, and a second `POST /api/checkout` in the same session or account returns the **first** order instead of placing a second one. A customer who buys twice in one session cannot buy the second thing at all.
+
+The two `unique()` indexes on `account_id`/`session_token` make the obvious one-line idea — filter `order_id IS NULL` into the lookups — impossible as well as insufficient: they forbid the very row the next purchase needs, so the permanently-missing filter would turn the second purchase into a 1062 duplicate-key error rather than merely the wrong order.
+
+### 14.1 Identity moves to `claimed_*` columns at claim time
+
+**Decision:** the claim, in the same transaction as today (`checkout-domain-design.md` §8.3 step 11), also **moves the identity**. `account_id`/`session_token` are copied into new, non-unique, indexed `claimed_account_id`/`claimed_session_token` and set to NULL on the row. The live columns keep their `unique()` indexes, which now mean exactly what they should always have meant: *at most one live cart per identity, ever*.
+
+**Why this shape:** current-cart lookups stay what they already are — a plain `where('account_id', …)` — and become correct **by construction**. There is no `order_id IS NULL` filter for a future caller, join or report to forget, because there is nothing to filter: a claimed row no longer carries an identity any lookup asks about. The defect cannot silently come back.
+
+**Alternatives evaluated, and rejected:**
+
+- **Filter the lookups only (`whereNull('order_id')`), no schema change.** Impossible on its own (the unique indexes, above), and weak even combined with the generated-column option below: correctness would live in every caller's memory.
+- **Move the unique indexes onto generated columns** — `live_account_id = IF(order_id IS NULL, account_id, NULL)`, with the two `UNIQUE` indexes on those. This is MySQL's nearest equivalent to PostgreSQL's partial unique index, which MySQL does not have. It works, and it keeps the identity readable in place on a claimed row. Rejected because the row still holds a *real* `account_id`/`session_token` value: every existing lookup, join and report would still match a claimed cart unless each one remembers the `order_id IS NULL` rule — the same forgetting risk that produced this defect, moved one column over. Recorded here as the fallback if a future need ever requires the identity to stay in place.
+- **A `status`/`claimed_at` column plus an application-level invariant.** Strictly worse: no DB-level uniqueness for the live case at all, and the same forgetting risk.
+- **A separate `cart_claims` table.** A whole table for one nullable column, plus a join on the checkout hot path, to express a fact that belongs to the cart row itself. Rejected.
+
+**Deliberately NOT moving: the `Cart` aggregate.** `accountId`/`sessionToken` stay `readonly` and the domain's XOR rule (§2/§7) is untouched; the claim remains a raw, model-level atomic operation, exactly as `claimForOrder()`'s own docblock describes it. Neither `reconstituteFromStorage()` nor any aggregate method ever sees a claimed row — the one thing that must read one (the replay check, §14.2) reads a small value object instead, never a `Cart`.
+
+**`Cart` can never be reconstituted from a claimed row — enforced, not merely intended.** `CartRepository::findById()` returns `null` for a cart that has a claim (`whereNull('order_id')` at the SQL level) **and for a row with no live identity at all**, so no code path can build an aggregate out of a row whose live identity is NULL — which `Cart`'s own XOR invariant would reject anyway, with an `InvalidArgumentException` that would surface as a 500. Every aggregate-returning read (`findById()`, `findByAccountId()`, `findBySessionToken()`) therefore excludes claimed rows by construction, and the replay check reads `CartClaim`, never a `Cart`.
+
+The second exclusion is not hypothetical: `carts.order_id` is `nullOnDelete` (`checkout-domain-design.md` §6), so deleting an Order un-claims the row **without** restoring the identity it moved away — leaving a row that is neither claimed nor a cart anybody could add to. It is disposable history, and `findById()` treats it as absent rather than as an aggregate it cannot build.
+
+The one race this leaves — a cart claimed between the replay check and the transaction's own load of it — is closed by resolving that not-found outcome exactly like a lost claim, never by loading the claimed row (`CheckoutOrchestrator` resolves the claim and answers `already_placed`; a genuinely unknown cart still `404`s).
+
+**A guest's next cart REUSES the same session `cart_token`.** The claim moved the token to `claimed_session_token`, so the live `session_token` unique index is free again: `CartController::currentOrNewCart()` finds no live cart by that token and creates a new one **with the same token** — no new token is generated and nothing in the session changes. That is what keeps §14.2's replay working for a guest who has already started their next purchase: the late replay matches `claimed_session_token`, which is still the token their session holds.
+
+### 14.2 Double-submit protection: the page's `cart_id`, and who is allowed to ask
+
+**Decision: `POST /api/checkout` REQUIRES `cart_id`** — the id of the cart the page displayed — and `GET /api/cart` returns `cart_id` (an additive display field, `null` when the identity has no live cart). The semantics, exhaustively:
+
+| `cart_id` in the request | state of that cart | result |
+|---|---|---|
+| given | claimed, and the identity recorded at claim time matches the requester (the account, or the session's own `cart_token`) | `201`, `already_placed: true`, **that** order — nothing written, never re-charged |
+| given | claimed, identity does **not** match | `404`, exactly as if the id were unknown — never another customer's order, never a hint that it exists |
+| given | live and owned by the requester | checked out normally |
+| given | live but owned by someone else, or unknown | `404` |
+| **absent** | — | **`422`** — `cart_id` is a required field of this request, not a fallback path |
+
+**Why REQUIRED, and not optional — amended after review of this section's first draft.** An optional `cart_id` with an identity-resolved fallback looks harmless and is not: the fallback can only ever find a *live* cart, so a **sequential** second click after a completed checkout — the customer pressing "place order" again rather than double-clicking it — would find no live cart and get `404` instead of `already_placed`. The double-submit protection would then depend on the client choosing to send the field, i.e. it would silently disappear exactly when the client is oldest or the page is oldest. Requiring it makes the protection unconditional: every checkout names the cart it is buying, and every replay can be answered. The cost is zero today — no external client exists (the sandbox sends it), and every client already receives `cart_id` from `GET /api/cart`, so there is nothing to be compatible with. A request without it is a **`422`** from request validation, before any cart is looked at.
+
+**Why the ownership check lives in the repository** — `findClaimForIdentity(string $cartId, ?string $accountId, ?string $sessionToken): ?CartClaim`: one method that cannot be called without stating who is asking. A controller, orchestrator or test that wants a claim must hand over an identity, and gets `null` for anything that is not the requester's — so "someone else's `cart_id`" can only ever produce `404`. Same "one place, impossible to forget" posture as §14.1, applied to the read side.
+
+**What does not change:** the atomic claim itself; the zero-affected-rows → rollback → resolve-idempotently shape (`checkout-domain-design.md` §6); and §8's rule that a guest's token is server-generated and session-bound. A `cart_id` is an id the client is already told about its **own** cart — never a credential, and a foreign one buys nothing and reveals nothing.
+
+**Returning `cart_id` from `GET /api/cart` is part of this decision, not a nicety.** Without it no client can ever name the cart it displayed, so the replay protection above would have no way to be triggered; and it is the same class of additive, display-only field the sandbox's cart/checkout pages already consume (variation display data), with no change to how a cart is priced, claimed or identified.
+
+### 14.3 The guest→account merge never touches a claimed cart
+
+**Decision** — in `MergeGuestCartIntoAccountCart` (§6's own flow, app layer):
+
+- a **claimed guest cart** is neither merged from nor deleted. The listener forgets the session's `cart_token` and returns, so the guest's purchased lines are never re-added to a live cart and the claim — its `order_id` link, and with it §14.2's replay answer — survives;
+- a **claimed account cart** is never merged *into*. The merge target is found by `findByAccountId()`, which after §14.1 can no longer see a claimed row, so a live target is created when the account has none. The listener therefore needs no target-side special case at all; only the source side does.
+
+Without the source-side check, logging in after a guest purchase would have merged the just-bought lines back into the account's cart **and deleted the claimed row**, turning a legitimate replay into a `404` (`findClaimForIdentity()` would find nothing) — a second, quieter defect of exactly the same family. Closed here rather than left to be discovered.
+
+**NO LISTENER CHANGE WAS NEEDED to achieve either half**, and that is worth stating rather than leaving to be inferred: after §14.1, `findBySessionToken()` cannot see a claimed guest cart (it has no live token) and `findByAccountId()` cannot see a claimed account cart (it has no live account id). So the listener's existing "no guest cart → forget the session token and return" branch *is* the §14.3 behaviour for the source side, and its merge target is freshly created when the account has none. The two listener tests added with this change pin exactly that, instead of pinning a new code path that does not exist.
+
+### 14.4 Expiry and cleanup: claimed carts stay disposable
+
+**Decision:** `deleteExpired()` — and therefore `cart:prune` (§9, §13) — keeps deleting claimed carts on exactly the same rules. A claimed cart is still working state with no historical value of its own (§10's own reasoning, the same one `checkout-domain-design.md` §6 quotes). No exemption, no separate retention policy, no second command.
+
+**Consequence, documented rather than discovered:** once a claimed cart is pruned, a replay carrying its `cart_id` finds no claim and is answered like any other unknown cart — `404`, not `already_placed`. That window is the cart's own expiry (10 days guest / 30 days account, §9), orders of magnitude longer than any double-click. The alternative — exempting claimed carts from pruning — would keep every checked-out cart forever while no customer can see it, which is precisely what §10 says this table's rows should not become. Since `cart:prune` is deliberately manual and unscheduled (§13's deferred item), the window is in practice whatever an operator's schedule makes it; noted here because that is now a replay-relevant fact and not only a disk-space one.
+
+### 14.5 The migration (Cart package, after `2026_09_06_000002`)
+
+- **Schema.** Adds `claimed_account_id` (nullable, `cascadeOnDelete` toward `accounts` — a claimed cart must not outlive its account either, and for a claimed row this is now the only FK that can carry that rule) and `claimed_session_token` (nullable, indexed, **not** unique — several claimed carts may legitimately share a token's history). The live columns and their `unique()` indexes are untouched; they simply hold `NULL` on a claimed row. `carts_order_id_unique` and its `nullOnDelete` FK are untouched (`checkout-domain-design.md` §6's own guarantees).
+- **Data.** In the same migration's `up()`, every already-claimed row (`order_id IS NOT NULL`) moves its `account_id`/`session_token` into the claimed columns and NULLs the live ones — the dev database included, verified by a test against a claimed fixture rather than assumed.
+- **`down()` reverses it where it can, and says so.** Live identity is restored only for rows whose identity does not collide with a *live* cart created since (after this change one identity legitimately holds one claimed **and** one live cart). A row that cannot be restored keeps its claimed values until the columns are dropped. "Reversible" must mean "reversible without silently failing", not "reversible after deleting the customer's new cart" — failing the rollback, or dropping data to force it, would both be worse than a documented, partial inverse.
+
+### 14.6 Tests the implementation must have
+
+**Repository level** (`EloquentCartRepositoryTest`):
+
+1. Claiming NULLs the live identity and fills the claimed columns — asserted on the raw row, never through the aggregate.
+2. `findByAccountId()`/`findBySessionToken()` return `null` after a claim (the claimed cart is no longer the identity's current cart).
+3. A new cart for the same identity then saves **without** a duplicate-key error, and is the one both lookups return — the unique indexes' new meaning, proven rather than assumed.
+4. `findClaimForIdentity()` answers for a matching account **and** for a matching session token, and returns `null` for a foreign identity, for an unknown id and for a live cart.
+5. `deleteExpired()` still removes an expired claimed cart, after which the same lookup returns `null` (the §14.4 window, pinned).
+6. The `SHOW CREATE TABLE carts` assertions extended to the new columns, their indexes and the claimed FK; the existing `order_id` uniqueness/`nullOnDelete` assertions unchanged.
+
+**HTTP level** (`CheckoutControllerTest` plus a focused new file, one test per row of §14.2's table):
+
+7. A **guest** orders, then adds again → a **new** cart id holding only the new line, and a second checkout places a **second order** (`already_placed: false`, different id) — the reported defect, gone.
+8. The same flow for a **logged-in account**.
+9. A **double-click** — two identical requests carrying the same `cart_id` → second response `already_placed: true` with the same order id, exactly one order row and one payment row, stock decremented once (the protection §14.2 exists to keep).
+10. Another customer's `cart_id` → `404`, whose body contains neither their order id nor any trace of their cart.
+11. An unknown `cart_id` → `404`.
+12. No `cart_id` with a live cart → unchanged behaviour; no `cart_id` with only a claimed cart → `404` with the documented message.
+13. `GET /api/cart` returns `cart_id` equal to the live cart's id, and `null` when the identity has none.
+
+**Merge** (`CartMergeOnLoginTest`):
+
+14. A claimed guest cart is neither merged nor deleted: its lines are absent from the account cart, and its claim still resolves afterwards.
+15. A claimed account cart is not merged into: the guest's lines land in a **new** live account cart.
+16. The session's `cart_token` is forgotten in both cases, so the claimed cart can never become "current" again.
+
+**Sandbox and docs** (`SandboxCheckoutFlowTest`, the manual checklist):
+
+17. The checkout page posts the `cart_id` it displayed (asserted on the rendered page and by the flow test), after a successful order the cart page shows an empty cart instead of the purchased lines, and replaying the same `cart_id` still returns the first order.
+18. `sandbox-manual-test-checklist.md` scenario 10 rewritten — the defect note there is deleted in the same change that removes the defect.
+
+**Regression:** the whole existing suite, with `CheckoutOrchestratorTest`'s unknown-cart, claim-lost and replay cases unchanged in behaviour (their shapes stay; only the identity check inside them is new).
+
+
+
+
