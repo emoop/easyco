@@ -124,8 +124,15 @@ class TagResource extends Resource
                     // via its 'tags' SelectFilter (Filament's real
                     // #[Url(as: 'filters')] binding on ListRecords::$tableFilters)
                     // — not a custom drill-down table anymore.
+                    // 'status' => 'all': this count is every product carrying the
+                    // tag, whatever its status, so the drill-down opens the one
+                    // view whose rows can match the number (the products list
+                    // itself defaults to Active).
                     ->url(fn (TagModel $record, int $state): ?string => $state > 0
-                        ? ProductResource::getUrl('index', ['filters' => ['tags' => ['value' => $record->id]]])
+                        ? ProductResource::getUrl('index', [
+                            'status' => 'all',
+                            'filters' => ['tags' => ['value' => $record->id]],
+                        ])
                         : null),
                 TextColumn::make('created_at')
                     ->dateTime()

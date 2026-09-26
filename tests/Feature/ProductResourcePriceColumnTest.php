@@ -108,7 +108,11 @@ class ProductResourcePriceColumnTest extends TestCase
 
         $this->createSimpleProduct('Air Max', 'air-max', ['regular_price' => '29.99']);
 
+        // 'status' => 'all': the products list now defaults to the Active view,
+        // and this file's fixtures are deliberately un-published DRAFT products —
+        // the subject here is the price column, not the status view.
         $row = Livewire::test(ListProducts::class)
+            ->set('statusView', 'all')
             ->instance()
             ->getTable()
             ->getRecords()
@@ -131,6 +135,7 @@ class ProductResourcePriceColumnTest extends TestCase
         ]);
 
         $row = Livewire::test(ListProducts::class)
+            ->set('statusView', 'all')
             ->instance()
             ->getTable()
             ->getRecords()
@@ -149,6 +154,7 @@ class ProductResourcePriceColumnTest extends TestCase
         $this->createSimpleProduct('Gazelle', 'gazelle');
 
         $row = Livewire::test(ListProducts::class)
+            ->set('statusView', 'all')
             ->instance()
             ->getTable()
             ->getRecords()
@@ -175,6 +181,7 @@ class ProductResourcePriceColumnTest extends TestCase
         $this->createSimpleProduct('Samba', 'samba', ['regular_price' => '85.00']);
 
         $records = Livewire::test(ListProducts::class)
+            ->set('statusView', 'all')
             ->instance()
             ->getTable()
             ->getRecords();
@@ -199,7 +206,7 @@ class ProductResourcePriceColumnTest extends TestCase
 
         $this->createSimpleProduct('Superstar', 'superstar');
 
-        $response = Livewire::test(ListProducts::class);
+        $response = Livewire::test(ListProducts::class)->set('statusView', 'all');
         $response->assertOk();
 
         $row = $response->instance()->getTable()->getRecords()->firstWhere('slug', 'superstar');
@@ -284,6 +291,7 @@ class ProductResourcePriceColumnTest extends TestCase
     private function assertColumnState(string $expectedHtml, ProductModel $record): void
     {
         Livewire::test(ListProducts::class)
+            ->set('statusView', 'all')
             ->assertTableColumnStateSet('price_display', $expectedHtml, $record);
     }
 

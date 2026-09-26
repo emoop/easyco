@@ -352,6 +352,7 @@ class BrandResourceTest extends TestCase
         $this->assertStringContainsString(ProductResource::getUrl('index'), $generatedUrl);
 
         Livewire::test(ListProducts::class)
+            ->set('statusView', 'all')
             ->filterTable('brand_id', $nike->id())
             ->assertCanSeeTableRecords([ProductModel::find($nikeProduct->id())])
             ->assertCanNotSeeTableRecords([

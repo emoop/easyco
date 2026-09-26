@@ -406,10 +406,10 @@ class ViewProductDeleteProductTest extends TestCase
 
         $record = ProductModel::find($productId);
 
-        // The row is only ever reachable through the "Show archived only"
-        // filter — which is exactly where the action belongs.
+        // The row is only ever reachable through the Archived status
+        // view — which is exactly where the action belongs.
         $component = Livewire::test(ListProducts::class)
-            ->filterTable('archived_only');
+            ->set('statusView', 'archived');
 
         $component->assertTableActionVisible('delete_product', $record);
 

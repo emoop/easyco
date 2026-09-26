@@ -126,8 +126,15 @@ class SeasonResource extends Resource
                     // via its existing 'season_id' SelectFilter (Filament's real
                     // #[Url(as: 'filters')] binding on ListRecords::$tableFilters)
                     // — not a custom drill-down table anymore.
+                    // 'status' => 'all': this count is every product in the
+                    // season, whatever its status, so the drill-down opens the one
+                    // view whose rows can match the number (the products list
+                    // itself defaults to Active).
                     ->url(fn (SeasonModel $record, int $state): ?string => $state > 0
-                        ? ProductResource::getUrl('index', ['filters' => ['season_id' => ['value' => $record->id]]])
+                        ? ProductResource::getUrl('index', [
+                            'status' => 'all',
+                            'filters' => ['season_id' => ['value' => $record->id]],
+                        ])
                         : null),
                 TextColumn::make('created_at')
                     ->dateTime()

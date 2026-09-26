@@ -333,7 +333,11 @@ class AttributeDefinitionResourceTest extends TestCase
         $this->assertStringContainsString(ProductResource::getUrl('index'), $generatedUrl);
         $this->assertStringContainsString('attribute_usage', $generatedUrl);
 
+        // 'status' => 'all': the generated URL above carries status=all (the count
+        // it drills down from counts every product, whatever its status), and this
+        // mount mirrors exactly that.
         Livewire::test(ListProducts::class)
+            ->set('statusView', 'all')
             ->filterTable('attribute_usage', ['attribute_definition_id' => $definition->id()])
             ->assertCanSeeTableRecords([ProductModel::find($usingDescriptively->id())])
             ->assertCanNotSeeTableRecords([

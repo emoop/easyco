@@ -295,6 +295,7 @@ class ProductGroupResourceTest extends TestCase
         $this->assertStringContainsString(ProductResource::getUrl('index'), $generatedUrl);
 
         Livewire::test(ListProducts::class)
+            ->set('statusView', 'all')
             ->filterTable('product_group_id', $shoes->id())
             ->assertCanSeeTableRecords([ProductModel::find($shoeProduct->id())])
             ->assertCanNotSeeTableRecords([

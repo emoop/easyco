@@ -75,9 +75,17 @@ class ProductTimelineAdminTest extends TestCase
         $model->save();
     }
 
+    /**
+     * The list's rows in their own order.
+     *
+     * 'status' => 'all': this file's fixtures are DRAFT products (Product::createSimple()
+     * starts there) and the products list now defaults to the ACTIVE view — the
+     * subject here is the timeline order, not the status view.
+     */
     private function listedSlugsInOrder(): array
     {
         return Livewire::test(ListProducts::class)
+            ->set('statusView', 'all')
             ->instance()
             ->getTable()
             ->getRecords()
@@ -126,11 +134,13 @@ class ProductTimelineAdminTest extends TestCase
         $this->setTimeline($newer, new DateTimeImmutable('-1 day'));
 
         Livewire::test(ListProducts::class)
+            ->set('statusView', 'all')
             ->callTableAction('promote', ProductModel::find($old->id));
 
         $this->assertSame('old-product', $this->listedSlugsInOrder()[0]);
 
         Livewire::test(ListProducts::class)
+            ->set('statusView', 'all')
             ->callTableAction('unpromote', ProductModel::find($old->id));
 
         // Back to natural created_at order: newer, then old.
@@ -179,6 +189,7 @@ class ProductTimelineAdminTest extends TestCase
         $this->assertSame(['zebra', 'apple', 'mango'], $this->listedSlugsInOrder());
 
         $slugsByName = Livewire::test(ListProducts::class)
+            ->set('statusView', 'all')
             ->sortTable('name', 'asc')
             ->instance()
             ->getTable()
@@ -197,6 +208,7 @@ class ProductTimelineAdminTest extends TestCase
         $product = $this->persistedProduct('Air Max', 'air-max');
 
         Livewire::test(ListProducts::class)
+            ->set('statusView', 'all')
             ->assertTableActionHidden('unpromote', $product)
             ->assertTableActionVisible('promote', $product);
     }
@@ -218,12 +230,11 @@ class ProductTimelineAdminTest extends TestCase
         $product = ProductModel::find($domainProduct->id());
 
         // Archived products are hidden from the table by default
-        // (ProductResource::table()'s own modifyQueryUsing() —
-        // unrelated to this pass, deliberately untouched) — the
-        // "archived_only" filter must be active for the row to even be
+        // (ProductResource::table()'s own status-view query — the
+        // Archived status view must be active for the row to even be
         // present to assert its actions against.
         Livewire::test(ListProducts::class)
-            ->filterTable('archived_only', true)
+            ->set('statusView', 'archived')
             ->assertTableActionHidden('promote', $product)
             ->assertTableActionHidden('unpromote', $product);
     }
@@ -243,7 +254,10 @@ class ProductTimelineAdminTest extends TestCase
 
         $product = ProductModel::find($domainProduct->id());
 
+        // The 'all' view: this fixture is a DRAFT product, and the list's default
+        // view (Active) does not contain it.
         Livewire::test(ListProducts::class)
+            ->set('statusView', 'all')
             ->assertTableActionHidden('promote', $product)
             ->assertTableActionHidden('unpromote', $product);
     }
@@ -260,6 +274,7 @@ class ProductTimelineAdminTest extends TestCase
         $this->assertTrue($sourceModel->fresh()->timeline_at->gt($sourceModel->fresh()->created_at), 'sanity check: the source really is promoted');
 
         Livewire::test(ListProducts::class)
+            ->set('statusView', 'all')
             ->callTableAction('duplicate', ProductModel::find($source->id()));
 
         $duplicateModel = ProductModel::where('slug', '!=', 'air-max')->where('name', 'like', 'Air Max%')->firstOrFail();

@@ -183,8 +183,15 @@ class BrandResource extends Resource
                     // via its existing 'brand_id' SelectFilter (Filament's real
                     // #[Url(as: 'filters')] binding on ListRecords::$tableFilters)
                     // — not a custom drill-down table anymore.
+                    // 'status' => 'all': this count is every product using the
+                    // brand, whatever its status, so the drill-down opens the one
+                    // view whose rows can match the number (the products list
+                    // itself defaults to Active).
                     ->url(fn (BrandModel $record, int $state): ?string => $state > 0
-                        ? ProductResource::getUrl('index', ['filters' => ['brand_id' => ['value' => $record->id]]])
+                        ? ProductResource::getUrl('index', [
+                            'status' => 'all',
+                            'filters' => ['brand_id' => ['value' => $record->id]],
+                        ])
                         : null),
                 TextColumn::make('created_at')
                     ->dateTime()

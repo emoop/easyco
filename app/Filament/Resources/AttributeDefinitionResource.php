@@ -146,8 +146,16 @@ class AttributeDefinitionResource extends Resource
                     // (ProductResource::table()'s own docblock) — not a
                     // custom drill-down table anymore. Real row actions
                     // (View/Edit/Duplicate), not a stripped-down set.
+                    //
+                    // 'status' => 'all': the count above is EVERY product
+                    // referencing this definition, whatever its status, so the
+                    // drill-down opens the one view whose rows can match the
+                    // number (the products list itself defaults to Active).
                     ->url(fn (AttributeDefinitionModel $record, int $state): ?string => $state > 0
-                        ? ProductResource::getUrl('index', ['filters' => ['attribute_usage' => ['attribute_definition_id' => $record->id]]])
+                        ? ProductResource::getUrl('index', [
+                            'status' => 'all',
+                            'filters' => ['attribute_usage' => ['attribute_definition_id' => $record->id]],
+                        ])
                         : null),
                 TextColumn::make('axis_count')
                     ->label(__('attribute_definitions.fields.axis_count'))

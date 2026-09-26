@@ -89,14 +89,23 @@ return [
     // rendered VALUE, it is not itself a field label.
     'price_from' => 'from',
 
-    'filters' => [
-        'archived_only' => 'Show archived only',
-    ],
-
     'status_options' => [
         'draft' => 'Draft',
         'active' => 'Active',
         'archived' => 'Archived',
+    ],
+
+    // The products list's four status VIEWS (D1): the toolbar button group at
+    // the left of the table. The first three are the product's own status
+    // values (so the view IS the query constraint), 'all' is the one that adds
+    // none. Separate from `status_options` above — the same three words, but a
+    // different control with its own plural "All", and a field label must not
+    // have to change when a button's wording does.
+    'status_views' => [
+        'active' => 'Active',
+        'draft' => 'Draft',
+        'archived' => 'Archived',
+        'all' => 'All',
     ],
 
     'visibility_options' => [
@@ -199,6 +208,51 @@ return [
         'blocked_variation' => [
             'has_history' => 'variation ":sku" has :count sale line(s).',
             'has_stock' => 'variation ":sku" has :count in stock.',
+        ],
+    ],
+
+    // §13.1 — the products list's three BULK actions and the confirmations they
+    // demand (D3/D5/D6/D7). Its own top-level block: these are the LIST's words,
+    // not the deletion flow's — where they report a product deletion refusal
+    // they reuse `deletion.product_refusal.*`/`blocked_variation.*` through
+    // App\Services\ProductDeletionRefusalMessage rather than restating them.
+    'bulk' => [
+        'archive_label' => 'Archive',
+        'archive_heading' => 'Archive :count selected products?',
+        'archive_description' => 'Each product is archived on its own; up to :limit products can be archived in one run. Products that are already archived are skipped and reported.',
+        'archive_submit' => 'Archive',
+        'publish_label' => 'Publish',
+        'publish_heading' => 'Publish :count selected products?',
+        'publish_description' => 'Each product is published on its own; up to :limit products can be published in one run. Products the catalog does not allow to publish are refused and reported.',
+        'publish_submit' => 'Publish',
+        'delete_label' => 'Delete permanently',
+        'delete_heading' => 'Permanently delete the selected products?',
+        'delete_over_limit' => 'You selected :selected products, but at most :limit can be deleted in one run.',
+        'delete_over_limit_hint' => 'Select at most :limit products and try again.',
+        'delete_impact_intro' => 'You selected :selected products: :deletable will be deleted permanently and :refused will be refused.',
+        'delete_impact_refused_note' => 'A refused product is left exactly as it is — nothing about it changes.',
+        'delete_impact_row' => ':name — :verdict',
+        'delete_impact_will_delete' => 'will be deleted permanently',
+        'delete_impact_unrepeatable' => 'This cannot be undone: the variations, their SKUs and barcodes, stock, basket lines and price list items go with the product. The image files themselves are kept.',
+        'delete_impact_type_count' => 'To confirm, type the number of products that will be deleted (:count).',
+        'field_confirm_label' => 'I understand this cannot be undone',
+        'field_count_label' => 'Type the number of products to delete (:count)',
+        'field_count_mismatch' => 'The typed number is not :count.',
+        'limit_exceeded' => 'Nothing was changed: at most :limit products can be processed in one run.',
+        'notification_unauthorized_status' => 'You do not have permission to change product status.',
+        'notification_not_confirmed' => 'Nothing was deleted: the confirmation box and the exact number of products are both required.',
+        'archive_done_title' => 'Products archived',
+        'archive_done_body' => 'Archived: :archived. Already archived, skipped: :skipped. Failed: :failed.',
+        'publish_done_title' => 'Products published',
+        'publish_done_body' => 'Published: :published. Refused or failed: :failed.',
+        'delete_done_title' => 'Products deleted',
+        'delete_done_body' => 'Deleted: :deleted. Refused or failed: :failed.',
+        'refusal_line' => '• :name — :reason',
+        'reason' => [
+            'already_archived' => 'it is already archived',
+            'cannot_publish_empty_variable' => 'a variable product with no available variations cannot be published',
+            'no_longer_exists' => 'it no longer exists',
+            'failed' => 'it could not be changed (:detail)',
         ],
     ],
 

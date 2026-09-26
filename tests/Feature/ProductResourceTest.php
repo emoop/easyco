@@ -64,6 +64,13 @@ use Tests\TestCase;
  * Exercises the real, production ProductResource — SIMPLE products only
  * (admin-panel-design.md §10 Part 5). Mirrors BrandResourceTest's own
  * established conventions exactly.
+ *
+ * `->set('statusView', 'all')` APPEARS THROUGHOUT THIS FILE, deliberately: the
+ * products list now defaults to the ACTIVE status view (§13.9, D1), while
+ * Product::createSimple() — this file's fixture of choice — starts in DRAFT, and
+ * most of these tests are about a row's column, action or record URL rather than
+ * about the status view at all. Where a test IS about the view, it says so
+ * explicitly instead (see the archived-view and archived-hidden tests).
  */
 class ProductResourceTest extends TestCase
 {
@@ -829,7 +836,7 @@ class ProductResourceTest extends TestCase
             ->assertHasNoFormErrors();
         $productModel = ProductModel::where('slug', 'navigable-product')->firstOrFail();
 
-        $component = Livewire::test(ListProducts::class);
+        $component = Livewire::test(ListProducts::class)->set('statusView', 'all');
         $component->assertTableActionVisible('edit', $productModel);
 
         $recordUrl = $component->instance()->getTable()->getRecordUrl($productModel);
@@ -864,7 +871,7 @@ class ProductResourceTest extends TestCase
         app(StaffRepository::class)->save($staff);
         $this->actingAs(StaffPanelUser::find($staff->id()), 'staff');
 
-        $component = Livewire::test(ListProducts::class);
+        $component = Livewire::test(ListProducts::class)->set('statusView', 'all');
         $component->assertTableActionHidden('edit', $productModel);
 
         $recordUrl = $component->instance()->getTable()->getRecordUrl($productModel);
@@ -884,7 +891,7 @@ class ProductResourceTest extends TestCase
             ->assertHasNoFormErrors();
         $productModel = ProductModel::where('slug', 'no-delete-product')->firstOrFail();
 
-        $component = Livewire::test(ListProducts::class);
+        $component = Livewire::test(ListProducts::class)->set('statusView', 'all');
         $table = $component->instance()->getTable();
 
         // Record actions are grouped into a single ActionGroup
@@ -1037,6 +1044,7 @@ class ProductResourceTest extends TestCase
         $expectedPath = MediaAssetModel::find($firstPivot->mediaId())->path;
 
         Livewire::test(ListProducts::class)
+            ->set('statusView', 'all')
             ->assertTableColumnStateSet('thumbnail_path', $expectedPath, record: $productModel);
     }
 
@@ -1052,6 +1060,7 @@ class ProductResourceTest extends TestCase
         $productModel = ProductModel::where('slug', 'no-photo-product')->firstOrFail();
 
         Livewire::test(ListProducts::class)
+            ->set('statusView', 'all')
             ->assertTableColumnStateSet('thumbnail_path', null, record: $productModel);
     }
 
@@ -1084,6 +1093,7 @@ class ProductResourceTest extends TestCase
         app(ProductTagRepository::class)->save(new ProductTag(id: null, productId: $source->id(), tagId: $summer->id()));
 
         Livewire::test(ListProducts::class)
+            ->set('statusView', 'all')
             ->callTableAction('duplicate', ProductModel::find($source->id()));
 
         $duplicateModel = ProductModel::where('slug', '!=', 'air-max')->where('name', 'like', 'Air Max%')->firstOrFail();
@@ -1127,6 +1137,7 @@ class ProductResourceTest extends TestCase
         app(ProductRepository::class)->save($source);
 
         $component = Livewire::test(ListProducts::class)
+            ->set('statusView', 'all')
             ->callTableAction('duplicate', ProductModel::find($source->id()));
 
         $duplicateModel = ProductModel::where('name', 'like', 'Air Force 1%')
@@ -1173,6 +1184,7 @@ class ProductResourceTest extends TestCase
         app(ProductTagRepository::class)->save(new ProductTag(id: null, productId: $source->id(), tagId: $summer->id()));
 
         Livewire::test(ListProducts::class)
+            ->set('statusView', 'all')
             ->callTableAction('duplicate', ProductModel::find($source->id()));
 
         $duplicateModel = ProductModel::where('slug', '!=', 'variable-air-max')
@@ -1216,6 +1228,7 @@ class ProductResourceTest extends TestCase
         app(ProductRepository::class)->save($source);
 
         $component = Livewire::test(ListProducts::class)
+            ->set('statusView', 'all')
             ->callTableAction('duplicate', ProductModel::find($source->id()));
 
         $duplicateModel = ProductModel::where('name', 'like', 'Variable Air Force 1%')
@@ -1259,6 +1272,7 @@ class ProductResourceTest extends TestCase
         app(ProductRepository::class)->save($simpleProduct);
 
         Livewire::test(ListProducts::class)
+            ->set('statusView', 'all')
             ->assertCanSeeTableRecords([ProductModel::find($variableProduct->id())])
             ->assertCanSeeTableRecords([ProductModel::find($simpleProduct->id())]);
     }
@@ -1363,7 +1377,7 @@ class ProductResourceTest extends TestCase
         $variableModel = ProductModel::find($variableProduct->id());
         $simpleModel = ProductModel::find($simpleProduct->id());
 
-        $editAction = Livewire::test(ListProducts::class)->instance()->getTable()->getAction('edit');
+        $editAction = Livewire::test(ListProducts::class)->set('statusView', 'all')->instance()->getTable()->getAction('edit');
 
         $editAction->record($variableModel);
         $this->assertTrue($editAction->isVisible());
@@ -1395,7 +1409,7 @@ class ProductResourceTest extends TestCase
         $simpleProduct = Product::createSimple('Simple Shirt', 'SKU-SIMPLE', 'simple-shirt');
         app(ProductRepository::class)->save($simpleProduct);
 
-        $editAction = Livewire::test(ListProducts::class)->instance()->getTable()->getAction('edit');
+        $editAction = Livewire::test(ListProducts::class)->set('statusView', 'all')->instance()->getTable()->getAction('edit');
 
         $editAction->record(ProductModel::find($variableProduct->id()));
         $this->assertTrue($editAction->isHidden());
@@ -1520,6 +1534,10 @@ class ProductResourceTest extends TestCase
         $this->actingAsPanelAdministrator();
 
         $active = Product::createSimple('Active Product', 'SKU-ACTIVE', 'active-product');
+        // ACTIVE, not the DRAFT Product::createSimple() starts in: this test's own
+        // subject is "an active product is in the default view and an archived one
+        // is not", and the default view IS Active (D1).
+        $active->publish();
         app(ProductRepository::class)->save($active);
 
         $archived = Product::createSimple('Archived Product', 'SKU-ARCHIVED', 'archived-product');
@@ -1534,7 +1552,7 @@ class ProductResourceTest extends TestCase
             ->assertCanNotSeeTableRecords([$archivedModel]);
     }
 
-    public function test_the_archived_only_filter_shows_only_archived_products_and_excludes_the_rest(): void
+    public function test_the_archived_status_view_shows_only_archived_products_and_excludes_the_rest(): void
     {
         $this->actingAsPanelAdministrator();
 
@@ -1549,7 +1567,7 @@ class ProductResourceTest extends TestCase
         $archivedModel = ProductModel::where('slug', 'archived-product-two')->firstOrFail();
 
         Livewire::test(ListProducts::class)
-            ->filterTable('archived_only', true)
+            ->set('statusView', 'archived')
             ->assertCanSeeTableRecords([$archivedModel])
             ->assertCanNotSeeTableRecords([$activeModel]);
     }
@@ -1583,6 +1601,7 @@ class ProductResourceTest extends TestCase
         $productModel = ProductModel::where('slug', 'categorized-product')->firstOrFail();
 
         Livewire::test(ListProducts::class)
+            ->set('statusView', 'all')
             ->assertTableColumnStateSet('categories.name', ['Sneakers'], record: $productModel)
             ->assertTableColumnDoesNotExist('created_at');
     }
@@ -1622,6 +1641,7 @@ class ProductResourceTest extends TestCase
         $bootModel = ProductModel::where('slug', 'boot-product')->firstOrFail();
 
         Livewire::test(ListProducts::class)
+            ->set('statusView', 'all')
             ->filterTable('categories', $sneakers->id())
             ->assertCanSeeTableRecords([$sneakerModel])
             ->assertCanNotSeeTableRecords([$bootModel]);

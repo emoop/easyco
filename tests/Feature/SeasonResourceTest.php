@@ -281,6 +281,7 @@ class SeasonResourceTest extends TestCase
         $this->assertStringContainsString(ProductResource::getUrl('index'), $generatedUrl);
 
         Livewire::test(ListProducts::class)
+            ->set('statusView', 'all')
             ->filterTable('season_id', $summer->id())
             ->assertCanSeeTableRecords([ProductModel::find($summerProduct->id())])
             ->assertCanNotSeeTableRecords([

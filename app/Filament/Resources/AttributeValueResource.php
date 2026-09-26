@@ -167,11 +167,17 @@ class AttributeValueResource extends Resource
                     // down to exactly this value's own products (see
                     // ProductResource::table()'s 'attribute_usage' Filter
                     // docblock for the exact query branch this takes).
+                    //
+                    // 'status' => 'all': same reason as that column's own —
+                    // the count is every product, whatever its status.
                     ->url(fn (AttributeValueModel $record, int $state): ?string => $state > 0
-                        ? ProductResource::getUrl('index', ['filters' => ['attribute_usage' => [
-                            'attribute_definition_id' => $record->attribute_definition_id,
-                            'attribute_value_id' => $record->id,
-                        ]]])
+                        ? ProductResource::getUrl('index', [
+                            'status' => 'all',
+                            'filters' => ['attribute_usage' => [
+                                'attribute_definition_id' => $record->attribute_definition_id,
+                                'attribute_value_id' => $record->id,
+                            ]],
+                        ])
                         : null),
                 TextColumn::make('axis_count')
                     ->label(__('attribute_values.fields.axis_count'))

@@ -324,6 +324,7 @@ class CategoryResourceTest extends TestCase
         $this->assertStringContainsString(ProductResource::getUrl('index'), $generatedUrl);
 
         Livewire::test(ListProducts::class)
+            ->set('statusView', 'all')
             ->filterTable('categories', $sneakers->id())
             ->assertCanSeeTableRecords([ProductModel::find($sneakerProduct->id())])
             ->assertCanNotSeeTableRecords([

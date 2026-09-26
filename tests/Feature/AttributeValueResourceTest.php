@@ -345,6 +345,7 @@ class AttributeValueResourceTest extends TestCase
         // stay excluded, confirming attribute_value_id genuinely narrows
         // beyond what attribute_definition_id alone would return.
         Livewire::test(ListProducts::class)
+            ->set('statusView', 'all')
             ->filterTable('attribute_usage', [
                 'attribute_definition_id' => $definition->id(),
                 'attribute_value_id' => $black->id(),

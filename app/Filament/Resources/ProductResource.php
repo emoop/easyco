@@ -20,6 +20,7 @@ use App\Services\ProductDeletionRefusalMessage;
 use App\Services\ProductPriceDisplay;
 use App\Services\ProductPricingAndStock;
 use App\Services\ProductPriceRangeProvider;
+use App\Services\ProductStatusChanger;
 use App\Services\ProductTimelinePromoter;
 use DateTimeImmutable;
 use App\Settings\Contracts\SiteSettingsRepository;
@@ -39,6 +40,7 @@ use EasyCo\Catalog\Persistence\Eloquent\ProductGroupModel;
 use EasyCo\Catalog\Persistence\Eloquent\ProductModel;
 use EasyCo\Catalog\Persistence\Eloquent\SeasonModel;
 use EasyCo\Catalog\Persistence\Eloquent\TagModel;
+use EasyCo\Catalog\Exceptions\CannotPublishEmptyVariableProductException;
 use EasyCo\Catalog\Exceptions\ProductNotDeletableException;
 use EasyCo\Catalog\Product;
 use EasyCo\Catalog\Variation;
@@ -53,6 +55,8 @@ use EasyCo\Pricing\PriceRange;
 use EasyCo\Staff\Enums\Permission;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
+use Filament\Actions\BulkAction;
+use Filament\Actions\BulkActionGroup;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
 use Filament\Forms\Components\Checkbox;
@@ -994,6 +998,57 @@ class ProductResource extends Resource
         return __('products.fields.media_upload_hint', ['max' => $formatted]);
     }
 
+    /**
+     * The four status views the products list's toolbar buttons offer, in D1's
+     * own order: Active · Draft · Archived · All.
+     *
+     * THE VALUES ARE THE COLUMN VALUES for the first three and the literal 'all'
+     * for the fourth — which is why {@see statusViewFrom()} can hand the view
+     * straight to a `where('status', …)` without a lookup table to drift out of
+     * sync, while 'all' (the one view that adds no constraint) is spelled out.
+     */
+    public const STATUS_VIEWS = [
+        ProductStatus::ACTIVE->value,
+        ProductStatus::DRAFT->value,
+        ProductStatus::ARCHIVED->value,
+        'all',
+    ];
+
+    /** The default view (D1): the products actually on sale. */
+    public const STATUS_VIEW_DEFAULT = ProductStatus::ACTIVE->value;
+
+    /**
+     * The status view the given Livewire component is showing — the ONE reader of
+     * the page's own `statusView` property, whitelisted against
+     * {@see STATUS_VIEWS} so a crafted or stale `?status=…` can never reach a
+     * query.
+     *
+     * WHY THE PAGE HOLDS IT: the choice has to live in the URL query string so a
+     * reload and a back-navigation return to the same view (D1), which is
+     * Livewire's own `#[Url]` property on ListProducts. This method is how the
+     * Resource's table closures read it, defensively: a Livewire component
+     * without that property (or with a value none of the four views matches)
+     * gets the default rather than an error.
+     */
+    public static function statusViewFrom(mixed $livewire): string
+    {
+        $livewireHasTheProperty = is_object($livewire) && property_exists($livewire, 'statusView');
+
+        $view = $livewireHasTheProperty ? (string) $livewire->statusView : '';
+        $normalized = in_array($view, self::STATUS_VIEWS, true) ? $view : self::STATUS_VIEW_DEFAULT;
+
+        // SELF-HEALING, and deliberately here rather than in a validator: this is
+        // the ONE place that knows the whitelist, so it is also the only place a
+        // crafted or stale `?status=…` can be normalised ON THE PAGE ITSELF — the
+        // toolbar then highlights exactly one button, and the #[Url] attribute
+        // stops echoing the unknown value back into the URL on the next request.
+        if ($livewireHasTheProperty && $normalized !== $view) {
+            $livewire->statusView = $normalized;
+        }
+
+        return $normalized;
+    }
+
     public static function table(Table $table): Table
     {
         return $table
@@ -1048,28 +1103,27 @@ class ProductResource extends Resource
             // is_purchasable and adding new variations are still
             // separate, later steps — see that page's own docblock).
             //
-            // ARCHIVED PRODUCTS HIDDEN BY DEFAULT: modifyQueryUsing()
-            // runs BEFORE filters in Filament's own query pipeline
-            // (confirmed against HasRecords::getFilteredTableQuery() —
-            // getTable()->getQuery() applies this closure first, THEN
-            // filterTableQuery() applies the "archived_only" Filter
-            // below on top of it), so this closure cannot simply add an
-            // unconditional `status != archived` — the "archived_only"
-            // filter's own `status = archived` would then always
-            // contradict it, returning zero rows even when that filter
-            // is active. $livewire is injected BY NAME, not type — a
-            // real, confirmed mechanism (Table::
-            // resolveDefaultClosureDependencyForEvaluationByName()
-            // resolves the 'livewire' parameter name specifically,
-            // checked directly against the installed v5.8.1 source),
-            // giving this closure the one thing it needs:
-            // getTableFilterState() to see whether "archived_only" is
-            // currently active and skip its own exclusion when it is.
+            // THE STATUS VIEW IS THE ONLY STATUS FILTER ON THIS LIST (D1/D2).
+            // The "archived only" Filter and the unconditional ARCHIVED exclusion
+            // that had to detect it are both gone: modifyQueryUsing() runs BEFORE
+            // filters in Filament's own query pipeline
+            // (HasRecords::getFilteredTableQuery()), so the old closure had to ask
+            // a FILTER whether it was active before it could decide to exclude
+            // anything — a query constraint sharing its decision with a filter was
+            // exactly the coupling D2 removes. The view now comes from ONE place
+            // (the page's own `statusView` property, read through
+            // statusViewFrom()), and 'all' is the only view that adds no
+            // constraint.
+            //
+            // $livewire is injected BY NAME, not type — a real, confirmed
+            // mechanism (Table::resolveDefaultClosureDependencyForEvaluationByName()
+            // resolves the 'livewire' parameter name specifically, checked directly
+            // against the installed v5.8.1 source).
             ->modifyQueryUsing(function (Builder $query, $livewire): Builder {
-                $showArchivedOnly = (bool) ($livewire?->getTableFilterState('archived_only')['isActive'] ?? false);
+                $statusView = static::statusViewFrom($livewire);
 
-                if (! $showArchivedOnly) {
-                    $query->where('status', '!=', ProductStatus::ARCHIVED->value);
+                if ($statusView !== 'all') {
+                    $query->where('status', $statusView);
                 }
 
                 return $query
@@ -1142,18 +1196,6 @@ class ProductResource extends Resource
                     ->limitList(3),
             ])
             ->filters([
-                // A dedicated "archived only" view, not a toggle that
-                // ADDS archived into the normal list — confirmed
-                // requirement. Inactive by default (matches
-                // modifyQueryUsing()'s own default exclusion above);
-                // when active, ->query() below is the ONLY status
-                // constraint applied (modifyQueryUsing() detects this
-                // via getTableFilterState() and skips its own exclusion
-                // — see that closure's own comment for why).
-                Filter::make('archived_only')
-                    ->label(__('products.filters.archived_only'))
-                    ->toggle()
-                    ->query(fn (Builder $query): Builder => $query->where('status', ProductStatus::ARCHIVED->value)),
                 TernaryFilter::make('catalog_visibility')
                     ->label(__('products.fields.catalog_visibility'))
                     ->queries(
@@ -1341,9 +1383,50 @@ class ProductResource extends Resource
                     // factory ViewProduct's header mounts, so the row and the
                     // header cannot drift. It is invisible for every product
                     // that is not ARCHIVED (which is also why it is only ever
-                    // reachable through the list's own "Show archived only"
-                    // filter), and without PRODUCT_DELETE.
+                    // reachable through this list's Archived status view), and
+                    // without PRODUCT_DELETE.
                     static::deleteProductAction(),
+                ]),
+            ])
+            // THE TOOLBAR: the four status views at the LEFT, and the three bulk
+            // actions beside them (D1/D3).
+            //
+            // WHY THE LEFT IS GUARANTEED, quoting the installed v5.8.1 source
+            // rather than assuming: vendor/filament/tables/resources/views/
+            // index.blade.php puts the toolbar's actions container FIRST inside
+            // the toolbar row —
+            //   <div class="fi-ta-header-toolbar">
+            //     <div class="fi-ta-actions fi-align-start fi-wrapped">
+            //       … @foreach ($toolbarActions as $action) {{ $action }} …
+            //     </div>
+            //     <div>          ← the search field, the filter trigger, the column manager
+            // — and vendor/filament/tables/resources/css/container.css styles it as
+            //   & .fi-ta-header-toolbar { @apply flex flex-wrap items-center justify-between …;
+            //       & > :nth-child(1) { @apply shrink-0; }
+            //       & > :nth-child(2) { @apply ms-auto; } }
+            // i.e. the first child (the actions) sits at the start and the second
+            // (search + filters) is pushed to the right with `ms-auto`. So
+            // toolbarActions() IS the left of the row that carries the search box
+            // and the filter button — no fallback to tabs is needed.
+            //
+            // COEXISTENCE WITH BULK ACTIONS: in v5.8.1 they are the SAME
+            // mechanism. HasBulkActions::bulkActions() is deprecated in favour of
+            // toolbarActions(), and BulkActionGroup::make() is pushed into the
+            // same $toolbarActions array; a BulkAction's own getExtraAttributes()
+            // adds x-cloak + x-show="getSelectedRecordsCount()", so the group
+            // appears only once rows are selected, while the status buttons (plain
+            // Actions — the "non-bulk toolbar action" the same Blade file tests
+            // with $hasNonBulkToolbarAction) keep the row itself permanently
+            // visible. Selection is enabled automatically: HasBulkActions::
+            // isSelectionEnabled() returns true as soon as any flat bulk action is
+            // visible, which is why the Archived view (Delete only) still gets
+            // checkboxes.
+            ->toolbarActions([
+                static::statusViewButtons(),
+                BulkActionGroup::make([
+                    static::bulkArchiveAction(),
+                    static::bulkPublishAction(),
+                    static::bulkDeleteAction(),
                 ]),
             ])
             // Edit by default on row click — the most-used action on
@@ -1865,7 +1948,7 @@ class ProductResource extends Resource
         ]);
     }
 
-    /** @return array<int, \Filament\Forms\Components\Component> */
+    /** @return array<int, Component> */
     private static function productDeletionConfirmationFields(ProductDeletionImpact $impact): array
     {
         // Nothing to confirm when the delete is already refused: that modal
@@ -2171,5 +2254,617 @@ class ProductResource extends Resource
         }
 
         return $variation;
+    }
+
+    /**
+     * How many products one BULK STATUS run may touch (D7) — and why the number
+     * exists at all: every product is its own transaction (D5), each one loads
+     * its own aggregate, saves it and (for archiving) walks its media rows, so a
+     * run's cost is LINEAR in the selection while it holds writes the whole time.
+     * 500 keeps the worst case to a few seconds; a merchant with more than that
+     * to archive is doing a migration, not an admin action.
+     */
+    public const BULK_STATUS_LIMIT = 500;
+
+    /**
+     * How many products one BULK DELETE run may touch (D7) — deliberately the
+     * smaller number, because deleting is irreversible and each product's own
+     * transaction takes a row lock, a stock lock and a history read
+     * (CatalogDeletion::deleteProduct()) — and because the modal has to render one
+     * impact per selected product BEFORE anything happens (D6), which is a dozen
+     * reads each. 50 bounds both.
+     */
+    public const BULK_DELETE_LIMIT = 50;
+
+    /**
+     * The four status views, as ONE button group at the left of the table toolbar
+     * (D1).
+     *
+     * ->buttonGroup() IS WHAT MAKES THEM BUTTONS: ActionGroup::isButtonGroup()
+     * switches each child's default view from GROUPED_VIEW (a row inside a
+     * dropdown) to BUTTON_VIEW (an inline button) — confirmed against the
+     * installed v5.8.1 ActionGroup source, line ~243 — so this renders as the
+     * group of four side-by-side buttons the requirement asks for rather than a
+     * "Status" dropdown.
+     *
+     * THE CURRENT ONE IS VISIBLY HIGHLIGHTED by colour alone (primary vs gray):
+     * NOT disabled, because a disabled current view looks like an unavailable
+     * control and the same state is already unmistakable from the highlighted
+     * button plus the rows themselves.
+     */
+    public static function statusViewButtons(): ActionGroup
+    {
+        return ActionGroup::make(array_map(
+            static fn (string $view): Action => static::statusViewButton($view),
+            self::STATUS_VIEWS,
+        ))->buttonGroup();
+    }
+
+    /**
+     * One status view button — a plain (non-bulk) toolbar Action, which is what
+     * keeps the toolbar row permanently visible (see the Blade comment in table()).
+     */
+    private static function statusViewButton(string $view): Action
+    {
+        return Action::make("status_view_{$view}")
+            ->label(__("products.status_views.{$view}"))
+            ->color(fn ($livewire): string => static::statusViewFrom($livewire) === $view ? 'primary' : 'gray')
+            ->action(function ($livewire) use ($view): void {
+                // The page's own #[Url] property: the view is the ONLY piece of
+                // state these buttons have, and it lives in the URL query string
+                // so a reload or a back-navigation returns to it (D1).
+                $livewire->statusView = $view;
+
+                // D1: switching CLEARS the row selection. A selection made in one
+                // view must never be carried into a bulk action mounted under a
+                // different one — the actions' own visibility differs per view, so
+                // "the same rows stayed selected" is not even well defined across a
+                // switch.
+                static::clearTableSelection($livewire);
+            });
+    }
+
+    /**
+     * Clears the table's row selection SERVER-SIDE, then tells the browser to
+     * untick the boxes.
+     *
+     * WHY BOTH, quoting the installed v5.8.1 source: Filament's own
+     * HasBulkActions::deselectAllTableRecords() ONLY dispatches the
+     * 'deselectAllTableRecords' browser event — the JS handler
+     * (vendor/filament/tables/resources/js/components/table.js, "$wire.$on(
+     * 'deselectAllTableRecords', () => this.deselectAllRecords())") is what empties
+     * the Alpine checkbox Set — so on its own it leaves $selectedTableRecords and
+     * the "select all except…" tracking untouched in the component's own state.
+     * Clearing them here as well is what makes "the selection does not survive a
+     * view switch or a completed bulk run" true on the SERVER rather than merely in
+     * the browser: whatever the client sends, a stale selection cannot be replayed
+     * into an action mounted under another view.
+     */
+    private static function clearTableSelection(mixed $livewire): void
+    {
+        $livewire->selectedTableRecords = [];
+        $livewire->deselectedTableRecords = [];
+        $livewire->isTrackingDeselectedTableRecords = false;
+
+        $livewire->deselectAllTableRecords();
+    }
+
+    /**
+     * BULK ARCHIVE (D3) — `PRODUCT_MANAGE`, and never offered in the Archived
+     * view: archiving what is already archived is not a guard the domain owns
+     * (Product::archive() is unconditional), it is simply pointless, and a button
+     * that can only ever pad a result list does not belong on screen.
+     *
+     * REQUIRES CONFIRMATION WITH THE COUNT (D6): a plain confirmation, because
+     * archiving is REVERSIBLE — nothing here is destroyed, and the count is the
+     * only thing a merchant needs to check against their own selection.
+     */
+    public static function bulkArchiveAction(): BulkAction
+    {
+        return BulkAction::make('bulk_archive')
+            ->label(__('products.bulk.archive_label'))
+            ->icon('heroicon-o-archive-box')
+            ->color('gray')
+            ->visible(fn ($livewire): bool => static::staffHasPermission(Permission::PRODUCT_MANAGE)
+                && static::statusViewFrom($livewire) !== ProductStatus::ARCHIVED->value)
+            ->requiresConfirmation()
+            ->modalHeading(__('products.bulk.archive_heading'))
+            ->modalDescription(fn (Collection $records): string => __('products.bulk.archive_description', [
+                'count' => $records->count(),
+                'limit' => static::BULK_STATUS_LIMIT,
+            ]))
+            ->modalSubmitActionLabel(__('products.bulk.archive_submit'))
+            ->modalCancelActionLabel(__('products.deletion.confirm_cancel'))
+            ->deselectRecordsAfterCompletion()
+            ->action(function (Collection $records, $livewire): void {
+                static::archiveSelectedRecords($records, $livewire);
+            });
+    }
+
+    /**
+     * BULK PUBLISH (D3) — `PRODUCT_MANAGE`, offered in the Draft and All views
+     * only: in the Active view every row is already published (nothing to do),
+     * and in the Archived view publishing is deliberately not part of the flow
+     * (an archived product comes back by restoring it, one product at a time, so
+     * the merchant sees its own state first).
+     *
+     * "ONLY PRODUCTS THE DOMAIN ALLOWS TO PUBLISH ARE PUBLISHED": this action
+     * adds no rule of its own — Product::publish()'s own guard (a VARIABLE product
+     * with no non-ARCHIVED STANDARD variation) throws
+     * CannotPublishEmptyVariableProductException, and that per-product refusal is
+     * reported while every other selected product is still published (D5).
+     */
+    public static function bulkPublishAction(): BulkAction
+    {
+        return BulkAction::make('bulk_publish')
+            ->label(__('products.bulk.publish_label'))
+            ->icon('heroicon-o-check-circle')
+            ->color('success')
+            ->visible(fn ($livewire): bool => static::staffHasPermission(Permission::PRODUCT_MANAGE)
+                && in_array(static::statusViewFrom($livewire), [ProductStatus::DRAFT->value, 'all'], true))
+            ->requiresConfirmation()
+            ->modalHeading(__('products.bulk.publish_heading'))
+            ->modalDescription(fn (Collection $records): string => __('products.bulk.publish_description', [
+                'count' => $records->count(),
+                'limit' => static::BULK_STATUS_LIMIT,
+            ]))
+            ->modalSubmitActionLabel(__('products.bulk.publish_submit'))
+            ->modalCancelActionLabel(__('products.deletion.confirm_cancel'))
+            ->deselectRecordsAfterCompletion()
+            ->action(function (Collection $records, $livewire): void {
+                static::publishSelectedRecords($records, $livewire);
+            });
+    }
+
+    /**
+     * BULK DELETE (D3) — offered ONLY in the Archived view, `PRODUCT_DELETE` only.
+     *
+     * TWO REASONS FOR THAT PAIRING: deletion is the ONE irreversible operation on
+     * this list, and only an ARCHIVED product may be deleted at all (G-D3's
+     * two-step rule, enforced per product by CatalogDeletion — this visibility is
+     * a UI affordance, never the gate). An Active or Draft row therefore has
+     * nothing to delete, and showing the button there would offer an action that
+     * can only refuse.
+     *
+     * THE MODAL IS THE PER-ROW ONE'S BIGGER SIBLING (D6): the impact for the whole
+     * SELECTION (how many will be deleted, which ones will be refused and why,
+     * each through stage 3's own translated sentence), a "cannot be undone"
+     * checkbox, and the NUMBER of products to be deleted typed exactly — the count
+     * of DELETABLE ones, not the selection size, because the refused ones are
+     * skipped and the modal says so per product.
+     */
+    public static function bulkDeleteAction(): BulkAction
+    {
+        /**
+         * Per-ACTION-INSTANCE memo, exactly like deleteProductAction()'s own: the
+         * modal's content, its confirmation fields and its submit-button state each
+         * need the same read-only impacts, and one impact is a dozen indexed reads
+         * for ONE product. The Action object is rebuilt every request, so this can
+         * never hand a later request a stale verdict for a product that has since
+         * changed.
+         *
+         * BOUNDED BY BULK_DELETE_LIMIT: the 50-product cap exists partly so this map
+         * stays small enough to render synchronously (D7).
+         *
+         * @var array<string, ProductDeletionImpact>
+         */
+        $impacts = [];
+
+        $impactFor = static function (ProductModel $record) use (&$impacts): ProductDeletionImpact {
+            $productId = (string) $record->id;
+
+            return $impacts[$productId] ??= app(CatalogDeletion::class)->impactForProduct($productId);
+        };
+
+        return BulkAction::make('bulk_delete')
+            ->label(__('products.bulk.delete_label'))
+            ->icon('heroicon-o-trash')
+            ->color('danger')
+            ->visible(fn ($livewire): bool => static::staffHasPermission(Permission::PRODUCT_DELETE)
+                && static::statusViewFrom($livewire) === ProductStatus::ARCHIVED->value)
+            ->modalHeading(__('products.bulk.delete_heading'))
+            ->modalSubmitActionLabel(__('products.deletion.product_confirm_submit'))
+            ->modalCancelActionLabel(__('products.deletion.confirm_cancel'))
+            ->modalContent(fn (Collection $records): View => static::bulkDeletionImpactView($records, $impactFor))
+            // NO SUBMIT BUTTON when there is nothing to do: over the limit, or with
+            // every selected product refused (D6/D7) — the modal then shows the
+            // reason instead, the same "no dead control" posture the per-row delete
+            // takes.
+            ->modalSubmitAction(fn (Collection $records, Action $action): Action|false => $records->count() <= static::BULK_DELETE_LIMIT
+                && static::bulkDeletionDeletableCount($records, $impactFor) > 0
+                    ? $action
+                    : false)
+            ->schema(fn (Collection $records): array => static::bulkDeletionConfirmationFields($records, $impactFor))
+            ->action(function (Collection $records, array $data, $livewire): void {
+                static::deleteSelectedRecords($records, $data, $livewire);
+            })
+            ->deselectRecordsAfterCompletion();
+    }
+
+    /**
+     * The two gates EVERY bulk action re-checks server-side (D8), in ONE place: the
+     * permission — a bulk action's own ->visible() is a UI affordance, never
+     * authorization — and the per-run limit (D7). It sends the refusal notification
+     * itself when a run may not proceed, so no caller can forget to, and returns
+     * true only when the run may go ahead.
+     *
+     * @param Collection<int, ProductModel> $records
+     */
+    private static function bulkRunIsAllowed(Collection $records, Permission $permission, string $unauthorizedTitle, int $limit): bool
+    {
+        if (! static::staffHasPermission($permission)) {
+            Notification::make()
+                ->title($unauthorizedTitle)
+                ->danger()
+                ->send();
+
+            return false;
+        }
+
+        if ($records->count() > $limit) {
+            Notification::make()
+                ->title(__('products.bulk.limit_exceeded', ['limit' => $limit]))
+                ->danger()
+                ->send();
+
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Bulk archive, ONE PRODUCT PER TRANSACTION (D5) — ProductStatusChanger::
+     * archive() owns each product's own transaction, so a refusal or a failure on
+     * one row cannot take another row's write with it.
+     *
+     * AN ALREADY-ARCHIVED PRODUCT IS REPORTED, NOT AN ERROR: it is counted and
+     * listed as skipped (with its own translated reason), which is what makes a
+     * selection that accidentally includes one behave like the rest.
+     *
+     * @param Collection<int, ProductModel> $records
+     */
+    private static function archiveSelectedRecords(Collection $records, mixed $livewire): void
+    {
+        if (! static::bulkRunIsAllowed($records, Permission::PRODUCT_MANAGE, __('products.bulk.notification_unauthorized_status'), static::BULK_STATUS_LIMIT)) {
+            return;
+        }
+
+        $changer = app(ProductStatusChanger::class);
+
+        $archived = 0;
+        $skipped = [];
+        $failed = [];
+
+        foreach ($records as $record) {
+            if ($record->status === ProductStatus::ARCHIVED->value) {
+                $skipped[] = static::bulkRefusalLine((string) $record->name, __('products.bulk.reason.already_archived'));
+
+                continue;
+            }
+
+            try {
+                $changer->archive((string) $record->id);
+                $archived++;
+            } catch (\InvalidArgumentException) {
+                // The record vanished between the selection and this loop.
+                $skipped[] = static::bulkRefusalLine((string) $record->name, __('products.bulk.reason.no_longer_exists'));
+            } catch (\Throwable $e) {
+                $failed[] = static::bulkRefusalLine((string) $record->name, __('products.bulk.reason.failed', [
+                    'detail' => $e->getMessage(),
+                ]));
+            }
+        }
+
+        static::notifyBulkResult(
+            __('products.bulk.archive_done_title'),
+            __('products.bulk.archive_done_body', [
+                'archived' => $archived,
+                'skipped' => count($skipped),
+                'failed' => count($failed),
+            ]),
+            [...$skipped, ...$failed],
+        );
+
+        static::clearTableSelection($livewire);
+    }
+
+    /**
+     * Bulk publish, ONE PRODUCT PER TRANSACTION (D5), and — the whole point of this
+     * action — ONLY THE PRODUCTS THE DOMAIN ALLOWS: Product::publish()'s own guard
+     * throws CannotPublishEmptyVariableProductException, caught per product and
+     * reported while every other selected product is still published.
+     *
+     * An already-ACTIVE product is not a failure: publish() is idempotent, and its
+     * end state is exactly what the merchant asked for.
+     *
+     * @param Collection<int, ProductModel> $records
+     */
+    private static function publishSelectedRecords(Collection $records, mixed $livewire): void
+    {
+        if (! static::bulkRunIsAllowed($records, Permission::PRODUCT_MANAGE, __('products.bulk.notification_unauthorized_status'), static::BULK_STATUS_LIMIT)) {
+            return;
+        }
+
+        $changer = app(ProductStatusChanger::class);
+
+        $published = 0;
+        $refused = [];
+
+        foreach ($records as $record) {
+            try {
+                $changer->publish((string) $record->id);
+                $published++;
+            } catch (CannotPublishEmptyVariableProductException) {
+                $refused[] = static::bulkRefusalLine(
+                    (string) $record->name,
+                    __('products.bulk.reason.cannot_publish_empty_variable'),
+                );
+            } catch (\InvalidArgumentException) {
+                $refused[] = static::bulkRefusalLine((string) $record->name, __('products.bulk.reason.no_longer_exists'));
+            } catch (\Throwable $e) {
+                $refused[] = static::bulkRefusalLine((string) $record->name, __('products.bulk.reason.failed', [
+                    'detail' => $e->getMessage(),
+                ]));
+            }
+        }
+
+        static::notifyBulkResult(
+            __('products.bulk.publish_done_title'),
+            __('products.bulk.publish_done_body', [
+                'published' => $published,
+                'failed' => count($refused),
+            ]),
+            $refused,
+        );
+
+        static::clearTableSelection($livewire);
+    }
+
+    /** One "— Name: reason" line, the shape every bulk result lists its refusals in (D5). */
+    private static function bulkRefusalLine(string $name, string $reason): string
+    {
+        return __('products.bulk.refusal_line', ['name' => $name, 'reason' => $reason]);
+    }
+
+    /**
+     * The ONE result notification a bulk run sends (D5): the counts, then one line
+     * per product that was refused or skipped, each already carrying its own
+     * translated reason (or, for deletion, stage 3's own full sentence).
+     *
+     * ->warning() WHEN SOMETHING WAS REFUSED, ->success() only when everything the
+     * merchant selected went through — a run that always looked successful would
+     * hide the very rows the merchant still has to deal with.
+     *
+     * @param list<string> $refusals
+     */
+    private static function notifyBulkResult(string $title, string $counts, array $refusals): void
+    {
+        $body = $counts;
+
+        if ($refusals !== []) {
+            $body .= "\n".implode("\n", $refusals);
+        }
+
+        $notification = Notification::make()->title($title)->body($body);
+
+        ($refusals === [] ? $notification->success() : $notification->warning())->send();
+    }
+
+    /**
+     * Bulk delete (D3/D5/D6/D7/D8): the permission, the limit, a FRESH impact per
+     * selected product, the two confirmations, then ONE PRODUCT PER TRANSACTION.
+     *
+     * THE IMPACTS ARE RE-READ HERE, never taken from the modal: the modal is a UI
+     * affordance, and a product that gained a sale line or stock since it opened
+     * must be refused — CatalogDeletion re-checks each of these inside its own
+     * transaction anyway (§3.19.5), this just reaches the refusal before a
+     * transaction is opened, and lists it per product.
+     *
+     * @param Collection<int, ProductModel> $records
+     * @param array<string, mixed> $data
+     */
+    private static function deleteSelectedRecords(Collection $records, array $data, mixed $livewire): void
+    {
+        if (! static::bulkRunIsAllowed($records, Permission::PRODUCT_DELETE, __('products.deletion.product_notification_unauthorized'), static::BULK_DELETE_LIMIT)) {
+            return;
+        }
+
+        $deletion = app(CatalogDeletion::class);
+
+        $deletable = [];
+        $refused = [];
+
+        foreach ($records as $record) {
+            try {
+                $impact = $deletion->impactForProduct((string) $record->id);
+            } catch (\InvalidArgumentException) {
+                $refused[] = static::bulkRefusalLine((string) $record->name, __('products.bulk.reason.no_longer_exists'));
+
+                continue;
+            }
+
+            if (! $impact->isDeletable()) {
+                // Stage 3's own translated sentence, reused verbatim: one refusal
+                // must not grow two vocabularies (§3.19.8 D).
+                $refused[] = ProductDeletionRefusalMessage::for($impact->refusal);
+
+                continue;
+            }
+
+            $deletable[] = $impact;
+        }
+
+        if (! static::bulkDeletionIsConfirmed($data, count($deletable))) {
+            Notification::make()
+                ->title(__('products.bulk.notification_not_confirmed', ['count' => count($deletable)]))
+                ->danger()
+                ->send();
+
+            return;
+        }
+
+        $deleted = 0;
+
+        foreach ($deletable as $impact) {
+            try {
+                $deletion->deleteProduct($impact->productId);
+                $deleted++;
+            } catch (ProductNotDeletableException $e) {
+                // A refusal that only became true between the impact above and the
+                // delete's own re-check inside its transaction.
+                $refused[] = ProductDeletionRefusalMessage::for($e);
+            } catch (\InvalidArgumentException) {
+                $refused[] = static::bulkRefusalLine($impact->productName, __('products.bulk.reason.no_longer_exists'));
+            }
+        }
+
+        static::notifyBulkResult(
+            __('products.bulk.delete_done_title'),
+            __('products.bulk.delete_done_body', ['deleted' => $deleted, 'failed' => count($refused)]),
+            $refused,
+        );
+
+        static::clearTableSelection($livewire);
+    }
+
+    /**
+     * Both confirmations, re-checked server-side (D6) — never "the modal only let
+     * them through": the count is re-derived from the FRESH impacts above, so a
+     * modal that showed "3" against a product that has since become undeletable
+     * refuses instead of proceeding on a promise it can no longer keep.
+     *
+     * @param array<string, mixed> $data
+     */
+    private static function bulkDeletionIsConfirmed(array $data, int $deletableCount): bool
+    {
+        if ($deletableCount === 0) {
+            return false;
+        }
+
+        return filter_var($data['understand_permanent'] ?? false, FILTER_VALIDATE_BOOLEAN)
+            && (int) ($data['count_confirmation'] ?? 0) === $deletableCount;
+    }
+
+    /**
+     * How many of the selected products are actually deletable, through the SAME
+     * memoized impacts the modal renders — ONE definition, used by the modal body,
+     * by its confirmation rule and by the submit button's own state.
+     *
+     * OVER THE LIMIT IT RETURNS 0 WITHOUT READING ANYTHING: the run will not happen
+     * (D7), and computing 51+ impacts just to report a zero would be pure cost.
+     *
+     * @param Collection<int, ProductModel> $records
+     * @param \Closure(ProductModel): ProductDeletionImpact $impactFor
+     */
+    private static function bulkDeletionDeletableCount(Collection $records, \Closure $impactFor): int
+    {
+        if ($records->count() > static::BULK_DELETE_LIMIT) {
+            return 0;
+        }
+
+        $count = 0;
+
+        foreach ($records as $record) {
+            try {
+                $impact = $impactFor($record);
+            } catch (\InvalidArgumentException) {
+                // Vanished since the selection: refused, never counted.
+                continue;
+            }
+
+            if ($impact->isDeletable()) {
+                $count++;
+            }
+        }
+
+        return $count;
+    }
+
+    /**
+     * The modal BODY for the bulk delete — see the view itself for why
+     * modalContent() and not modalDescription().
+     *
+     * @param Collection<int, ProductModel> $records
+     * @param \Closure(ProductModel): ProductDeletionImpact $impactFor
+     */
+    private static function bulkDeletionImpactView(Collection $records, \Closure $impactFor): View
+    {
+        $rows = [];
+        $deletableCount = 0;
+        $overLimit = $records->count() > static::BULK_DELETE_LIMIT;
+
+        if (! $overLimit) {
+            foreach ($records as $record) {
+                try {
+                    $impact = $impactFor($record);
+                } catch (\InvalidArgumentException) {
+                    $rows[] = [
+                        'name' => (string) $record->name,
+                        'deletable' => false,
+                        'sentence' => static::bulkRefusalLine((string) $record->name, __('products.bulk.reason.no_longer_exists')),
+                    ];
+
+                    continue;
+                }
+
+                if ($impact->isDeletable()) {
+                    $deletableCount++;
+                    $rows[] = ['name' => $impact->productName, 'deletable' => true, 'sentence' => null];
+
+                    continue;
+                }
+
+                $rows[] = [
+                    'name' => $impact->productName,
+                    'deletable' => false,
+                    'sentence' => ProductDeletionRefusalMessage::for($impact->refusal),
+                ];
+            }
+        }
+
+        return view('filament.product-resource.bulk-deletion-impact', [
+            'rows' => $rows,
+            'selectedCount' => $records->count(),
+            'deletableCount' => $deletableCount,
+            'refusedCount' => count($rows) - $deletableCount,
+            'limit' => static::BULK_DELETE_LIMIT,
+            'overLimit' => $overLimit,
+        ]);
+    }
+
+    /**
+     * The bulk delete's two confirmations (D6): the "cannot be undone" checkbox and
+     * the NUMBER of products that will be deleted, typed exactly.
+     *
+     * The number is the DELETABLE count, not the selection size — the modal refuses
+     * a mismatch with the count it showed, which is the whole point of typing it.
+     *
+     * @param Collection<int, ProductModel> $records
+     * @param \Closure(ProductModel): ProductDeletionImpact $impactFor
+     * @return array<int, Component>
+     */
+    private static function bulkDeletionConfirmationFields(Collection $records, \Closure $impactFor): array
+    {
+        $deletableCount = static::bulkDeletionDeletableCount($records, $impactFor);
+
+        return [
+            TextInput::make('count_confirmation')
+                ->label(__('products.bulk.field_count_label', ['count' => $deletableCount]))
+                ->numeric()
+                ->required()
+                // EXACT match, as a closure that RETURNS a rule — see
+                // productDeletionConfirmationFields()'s own comment for why a bare
+                // rule closure would be evaluated by Filament's injector first.
+                ->rule(fn (): \Closure => static function (string $attribute, mixed $value, \Closure $fail) use ($deletableCount): void {
+                    if ((int) $value !== $deletableCount) {
+                        $fail(__('products.bulk.field_count_mismatch', ['count' => $deletableCount]));
+                    }
+                }),
+            Checkbox::make('understand_permanent')
+                ->label(__('products.bulk.field_confirm_label'))
+                ->accepted()
+                ->required(),
+        ];
     }
 }
