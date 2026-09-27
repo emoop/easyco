@@ -896,6 +896,22 @@ merchant has ticked there.
   page 2. Filters, the search box, the sort and the per-page select already
   reset the page themselves; the status view was the only narrowing control
   that did not.
+- **A page number that is past the end of a view is clamped to the LAST page that
+  view really has**, on every render (`ListProducts::rendering()`), because the page
+  number is also URL state that arrives outside the merchant's click: a bookmark, a
+  shared link, a back-navigation, or a reload of a list whose rows have since been
+  archived or deleted elsewhere can hand a narrower view a page it does not have.
+  Filament renders that page empty rather than clamping it
+  (`LengthAwarePaginator` returns an empty page for an out-of-range number), which
+  reads as "there are no products". The reset above covers the *switch*; this covers
+  the *number coming in*. The hook is Livewire's last one before the view renders, so
+  the number is already final whichever way it arrived — a mount, a hydration, a
+  client-side write, or a pagination link (`setPage(...)`, a method call applied
+  after `boot`/`booted`). It lands on the LAST page rather than page 1 deliberately:
+  page 1 would throw away a valid position whenever the rows merely shrank, and the
+  thing being ruled out is an empty table, not a deep page. It costs no extra query —
+  `getTableRecords()` is cached and is the very query the table's own view then
+  reuses — and only a genuinely out-of-range page re-queries once.
 - **The old "Show archived only" Filter is gone, and so is the
   `modifyQueryUsing()` exclusion that had to ask it whether it was active**:
   that filter's `status = archived` and an unconditional `status != archived`
