@@ -887,6 +887,15 @@ merchant has ticked there.
   calls Filament's own `deselectAllTableRecords()` — which on its own only
   dispatches the browser event whose JS handler empties the Alpine checkbox
   Set, leaving the component's own state untouched.
+- **Switching also resets pagination**, and it has to be said explicitly because
+  the view reaches the query through the table's own `modifyQueryUsing()` —
+  *not* through a Filter — so Filament's own filter-change reset (the last
+  statement of `HasFilters::handleTableFilterUpdates()`) never runs for it.
+  Without it, going from All on page 2 to Active left the table **empty**: the
+  page number is bound to the URL (`?page=2`), and the narrower view has no
+  page 2. Filters, the search box, the sort and the per-page select already
+  reset the page themselves; the status view was the only narrowing control
+  that did not.
 - **The old "Show archived only" Filter is gone, and so is the
   `modifyQueryUsing()` exclusion that had to ask it whether it was active**:
   that filter's `status = archived` and an unconditional `status != archived`
