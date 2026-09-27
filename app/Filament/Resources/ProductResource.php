@@ -284,23 +284,71 @@ class ProductResource extends Resource
         return app(SiteSettingsRepository::class)->get('catalog.product_group_field_enabled') !== '0';
     }
 
-    /** @return array<int, Component> */
+    /**
+     * Laid out in PAIRS rather than one full-width field per row — the
+     * same compaction EditVariableProduct::generalTabComponents() already
+     * applies to this same set (the "empty space, lots of scrolling"
+     * review, whose form() docblock above records the root-schema
+     * ->columns(1) half of it): ten stacked rows became six, with no
+     * field removed and no field's own label/visibility/required
+     * behaviour changed. Only WHERE each field renders moved, plus two
+     * fields' own helper TEXT, which moved from a helperText line to the
+     * always-present hint icon + tooltip that costs a paired row no
+     * vertical space at all: status's archive warning (the same treatment
+     * EditVariableProduct already renders for it) and base_sku's own
+     * help/change warning. No text was added or removed — both strings
+     * still reach the page, which is why the test guarding status's,
+     * ProductResourceTest::test_the_status_fields_help_text_
+     * mentions_the_real_archive_consequence(), passes unchanged. Every
+     * field's own name, validation and write path
+     * (CreateProduct/EditProduct's own mutateFormDataBeforeCreate()/
+     * mutateFormDataBeforeFill()+updateProduct()) are untouched.
+     *
+     * @return array<int, Component>
+     */
     protected static function generalTabComponents(): array
     {
         return [
-            TextInput::make('name')
-                ->label(__('products.fields.name'))
-                ->required(),
+            // Name + the purchasable switch SHARE the tab's first row
+            // (3/4 + 1/4) instead of each owning a full-width row of its
+            // own. is_purchasable is the one boolean a merchant looks for
+            // before anything else on this tab, so the top-right corner is
+            // where it belongs, and pairing it with name costs no extra
+            // vertical space. Grid's own breakpoint default is lg
+            // (confirmed against HasColumns::columns(),
+            // vendor/filament/schemas), so below 1024px the switch simply
+            // stacks beneath the name again — no narrow-screen regression.
+            Grid::make(4)
+                ->schema([
+                    TextInput::make('name')
+                        ->label(__('products.fields.name'))
+                        ->required()
+                        ->columnSpan(3),
+                    Toggle::make('is_purchasable')
+                        ->label(__('products.fields.is_purchasable'))
+                        ->default(true),
+                ]),
             TextInput::make('slug')
                 ->label(__('products.fields.slug'))
                 ->helperText(__('products.fields.slug_help')),
-            TextInput::make('base_sku')
-                ->label(__('products.fields.base_sku'))
-                ->helperText(fn (string $operation): string => $operation === 'edit'
-                    ? __('products.base_sku_change_warning')
-                    : __('products.fields.base_sku_help')),
-            TextInput::make('barcode')
-                ->label(__('products.fields.barcode')),
+            // The two identifiers, read together off the same physical
+            // label — a merchant holding one and needing the other.
+            Grid::make(2)
+                ->schema([
+                    TextInput::make('base_sku')
+                        ->label(__('products.fields.base_sku'))
+                        // Hint icon + tooltip rather than a helperText line:
+                        // the text is IDENTICAL (the same operation-aware
+                        // closure, moved from ->helperText() to hintIcon()'s
+                        // tooltip argument), but a helper-text line under one
+                        // of these two paired fields is exactly the vertical
+                        // space this Grid::make(2) exists to reclaim.
+                        ->hintIcon('heroicon-o-information-circle', tooltip: fn (string $operation): string => $operation === 'edit'
+                            ? __('products.base_sku_change_warning')
+                            : __('products.fields.base_sku_help')),
+                    TextInput::make('barcode')
+                        ->label(__('products.fields.barcode')),
+                ]),
             // Native RichEditor (Filament v5.8.1), no third-party
             // package — confirmed sufficient by the domain owner over
             // a plain Textarea (headings for size, bold, no px-level
@@ -323,50 +371,63 @@ class ProductResource extends Resource
                     ['textColor'],
                     ['undo', 'redo'],
                 ]),
-            Select::make('status')
-                ->label(__('products.fields.status'))
-                ->options([
-                    ProductStatus::DRAFT->value => __('products.status_options.draft'),
-                    ProductStatus::ACTIVE->value => __('products.status_options.active'),
-                    ProductStatus::ARCHIVED->value => __('products.status_options.archived'),
-                ])
-                ->default(ProductStatus::DRAFT->value)
-                // Always visible, not a reactive/conditional helperText
-                // tied to ->live() — a real photo-deletion warning
-                // (App\Services\ArchiveProductMediaCleaner, wired into
-                // EditProduct's own status-change block) is not worth
-                // the extra debounced round-trip a live-reactive field
-                // would add just to hide this text while 'archived'
-                // isn't selected; the domain owner's own requirement is
-                // that the merchant SEES the warning before deciding,
-                // not that it stays hidden otherwise.
-                ->helperText(__('products.fields.status_archive_warning'))
-                ->required(),
-            Select::make('catalog_visibility')
-                ->label(__('products.fields.catalog_visibility'))
-                ->options([
-                    CatalogVisibility::VISIBLE->value => __('products.visibility_options.visible'),
-                    CatalogVisibility::HIDDEN->value => __('products.visibility_options.hidden'),
-                ])
-                ->default(CatalogVisibility::HIDDEN->value)
-                ->required(),
-            Toggle::make('is_purchasable')
-                ->label(__('products.fields.is_purchasable'))
-                ->default(true),
-            Select::make('brand_id')
-                ->label(__('products.fields.brand_id'))
-                ->options(fn (): array => BrandModel::pluck('name', 'id')->all())
-                ->searchable()
-                ->visible(fn (): bool => static::brandFieldEnabled()),
-            Select::make('product_group_id')
-                ->label(__('products.fields.product_group_id'))
-                ->options(fn (): array => ProductGroupModel::pluck('name', 'id')->all())
-                ->searchable()
-                ->visible(fn (): bool => static::productGroupFieldEnabled())
-                // Read fresh on each render, not cached at class-load
-                // time — mirrors why getModelLabel() etc. are methods,
-                // not static properties (admin-panel-design.md §13.4).
-                ->required(fn (): bool => (bool) (app(SiteSettingsRepository::class)->get('catalog.product_group_required') ?? false)),
+            // Status/visibility/brand/group as one 2x2 block — exactly the
+            // shape EditVariableProduct::generalTabComponents() already
+            // gives these same four fields, so a SIMPLE and a VARIABLE
+            // product read identically on their General tab. A hidden
+            // field (brand_id/product_group_id, when Catalog settings
+            // turns it off) keeps its own fi-hidden wrapper and consumes
+            // no grid cell, so a disabled field leaves no empty half-row.
+            Grid::make(2)
+                ->schema([
+                    Select::make('status')
+                        ->label(__('products.fields.status'))
+                        ->options([
+                            ProductStatus::DRAFT->value => __('products.status_options.draft'),
+                            ProductStatus::ACTIVE->value => __('products.status_options.active'),
+                            ProductStatus::ARCHIVED->value => __('products.status_options.archived'),
+                        ])
+                        ->default(ProductStatus::DRAFT->value)
+                        // An amber hint ICON + tooltip, never a plain helperText
+                        // line under the select — exactly what
+                        // EditVariableProduct's own status field renders, so a
+                        // SIMPLE and a VARIABLE product read identically. The
+                        // warning itself is real and permanent
+                        // (App\Services\ArchiveProductMediaCleaner, wired into
+                        // EditProduct's own status-change block), so it stays
+                        // ALWAYS visible beside the label rather than becoming a
+                        // reactive/conditional hint gated behind ->live(): the
+                        // domain owner's requirement is that the merchant SEES
+                        // it before deciding, and three helper-text lines under
+                        // a field that now shares its half-row with
+                        // catalog_visibility would undo the 2x2 block this
+                        // grouping exists for.
+                        ->hintIcon('heroicon-o-exclamation-triangle', tooltip: __('products.fields.status_archive_warning'))
+                        ->hintColor('warning')
+                        ->required(),
+                    Select::make('catalog_visibility')
+                        ->label(__('products.fields.catalog_visibility'))
+                        ->options([
+                            CatalogVisibility::VISIBLE->value => __('products.visibility_options.visible'),
+                            CatalogVisibility::HIDDEN->value => __('products.visibility_options.hidden'),
+                        ])
+                        ->default(CatalogVisibility::HIDDEN->value)
+                        ->required(),
+                    Select::make('brand_id')
+                        ->label(__('products.fields.brand_id'))
+                        ->options(fn (): array => BrandModel::pluck('name', 'id')->all())
+                        ->searchable()
+                        ->visible(fn (): bool => static::brandFieldEnabled()),
+                    Select::make('product_group_id')
+                        ->label(__('products.fields.product_group_id'))
+                        ->options(fn (): array => ProductGroupModel::pluck('name', 'id')->all())
+                        ->searchable()
+                        ->visible(fn (): bool => static::productGroupFieldEnabled())
+                        // Read fresh on each render, not cached at class-load
+                        // time — mirrors why getModelLabel() etc. are methods,
+                        // not static properties (admin-panel-design.md §13.4).
+                        ->required(fn (): bool => (bool) (app(SiteSettingsRepository::class)->get('catalog.product_group_required') ?? false)),
+                ]),
         ];
     }
 

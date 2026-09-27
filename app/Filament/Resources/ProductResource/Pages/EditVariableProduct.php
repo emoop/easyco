@@ -484,6 +484,8 @@ class EditVariableProduct extends EditRecord
                     ['textColor'],
                     ['undo', 'redo'],
                 ]),
+            Grid::make(2)
+          ->schema([    
             Select::make('status')
                 ->label(__('products.fields.status'))
                 ->options([
@@ -492,7 +494,9 @@ class EditVariableProduct extends EditRecord
                     ProductStatus::ARCHIVED->value => __('products.status_options.archived'),
                 ])
                 ->default(ProductStatus::DRAFT->value)
-                ->helperText(__('products.fields.status_archive_warning'))
+                //->helperText(__('products.fields.status_archive_warning'))
+                ->hintIcon('heroicon-o-exclamation-triangle', tooltip: __('products.fields.status_archive_warning'))
+                ->hintColor('warning')
                 ->required(),
             Select::make('catalog_visibility')
                 ->label(__('products.fields.catalog_visibility'))
@@ -512,7 +516,8 @@ class EditVariableProduct extends EditRecord
                 ->options(fn (): array => ProductGroupModel::pluck('name', 'id')->all())
                 ->searchable()
                 ->visible(fn (): bool => ProductResource::productGroupFieldEnabled())
-                ->required(fn (): bool => (bool) (app(SiteSettingsRepository::class)->get('catalog.product_group_required') ?? false)),
+                ->required(fn (): bool => (bool) (app(SiteSettingsRepository::class)->get('catalog.product_group_required') ?? false))
+          ]),
         ];
     }
 
@@ -1124,6 +1129,8 @@ class EditVariableProduct extends EditRecord
                 ->default(false)
                 ->dehydrated(false)
                 ->live(),
+           Grid::make(2)
+            ->schema([     
             TextInput::make('product_regular_price')
                 ->label(__('products.fields.regular_price'))
                 ->numeric()
@@ -1143,7 +1150,8 @@ class EditVariableProduct extends EditRecord
                 ->step(0.01)
                 ->visible(fn (Get $get): bool => (bool) $get('edit_all'))
                 ->dehydratedWhenHidden()
-                ->disabled(fn (): bool => ! ProductResource::staffHasPermission(Permission::PRICE_MANAGE)),
+                ->disabled(fn (): bool => ! ProductResource::staffHasPermission(Permission::PRICE_MANAGE))
+            ]),
             // Pure display state, seeded once in mutateFormDataBeforeFill()
             // — never itself submitted, same posture as label/the two
             // placeholder fields inside the Repeater below. Read via
@@ -1179,6 +1187,8 @@ class EditVariableProduct extends EditRecord
                 ->default(false)
                 ->visible(fn (Get $get): bool => ((int) $get('sale_price_override_count')) > 0)
                 ->disabled(fn (): bool => ! ProductResource::staffHasPermission(Permission::PRICE_MANAGE)),
+        Grid::make(2)
+            ->schema([ 
             TextInput::make('bulk_cost')
                 ->label(__('products.wizard.variations.bulk_cost'))
                 ->numeric()
@@ -1210,7 +1220,8 @@ class EditVariableProduct extends EditRecord
                     foreach (array_keys($get('existing_variations') ?? []) as $key) {
                         $set("existing_variations.{$key}.stock_quantity", $state);
                     }
-                }),
+                })
+            ]),
             // Section, not a bare Repeater — "Generate missing
             // variations" (generateMissingVariationsAction()'s own
             // docblock) needs a REAL Filament header-action mechanism
@@ -1319,6 +1330,7 @@ class EditVariableProduct extends EditRecord
                 // survives a save and a reload.
                 ->reorderable()
                 ->collapsible()
+                ->collapsed() 
                 // NEITHER Get $get NOR array $state — both tried and
                 // BOTH confirmed broken by a real, failing test before
                 // landing on this:
@@ -1466,6 +1478,8 @@ class EditVariableProduct extends EditRecord
                             Toggle::make('is_purchasable')
                                 ->label(__('products.fields.is_purchasable')),
                         ]),
+                     Grid::make(2)
+                        ->schema([    
                     TextInput::make('sku')
                         ->label(__('products.wizard.variations.sku_label')),
                     TextInput::make('barcode')
@@ -1476,7 +1490,8 @@ class EditVariableProduct extends EditRecord
                         ->minValue(0)
                         ->step(0.01)
                         ->visible(fn (): bool => ProductResource::staffHasPermission(Permission::COST_VIEW))
-                        ->disabled(fn (): bool => ! ProductResource::staffHasPermission(Permission::COST_MANAGE)),
+                        ->disabled(fn (): bool => ! ProductResource::staffHasPermission(Permission::COST_MANAGE))
+                        ->extraInputAttributes(['style' => 'color: #9ca3af;']),
                     TextInput::make('stock_quantity')
                         ->label(__('products.fields.stock_quantity'))
                         ->numeric()
@@ -1500,7 +1515,8 @@ class EditVariableProduct extends EditRecord
                     Hidden::make('regular_price_placeholder')
                         ->dehydrated(false),
                     Hidden::make('sale_price_placeholder')
-                        ->dehydrated(false),
+                        ->dehydrated(false)
+                ]),
                     // Per-variation photos — a SEPARATE MediaType::IMAGE
                     // collection from the product-level main_photo/
                     // gallery_photos in the sidebar (ProductResource::
