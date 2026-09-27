@@ -859,37 +859,58 @@ class ProductResource extends Resource
      * ->disabled() is a real UX aid (a staff member literally cannot
      * type into the field), not the security boundary.
      *
+     * LAYOUT — two PAIRS, not four stacked full-width rows: regular/
+     * sale price together, then cost/stock_quantity, the same compaction
+     * generalTabComponents() above already applies. Only WHERE each
+     * field renders moved — every label, ->numeric()/->integer()/
+     * ->minValue()/->step()/->default() and both permission gates are
+     * untouched. Cost is ->visible()-gated on COST_VIEW (above):
+     * Filament gives a hidden component's own grid-column wrapper its
+     * `fi-hidden` class precisely "so that they don't consume grid
+     * space" (vendor/filament/schemas/src/Components/Component.php), so
+     * a staff member without COST_VIEW sees stock_quantity lead the row
+     * rather than an empty half sitting next to it.
+     *
      * @return array<int, Component>
      */
     protected static function priceStockTabComponents(): array
     {
         return [
-            TextInput::make('regular_price')
-                ->label(__('products.fields.regular_price'))
-                ->numeric()
-                ->minValue(0)
-                ->step(0.01)
-                ->disabled(fn (): bool => ! static::staffCanForAction(Permission::PRICE_MANAGE)),
-            TextInput::make('sale_price')
-                ->label(__('products.fields.sale_price'))
-                ->numeric()
-                ->minValue(0)
-                ->step(0.01)
-                ->disabled(fn (): bool => ! static::staffCanForAction(Permission::PRICE_MANAGE)),
-            TextInput::make('cost')
-                ->label(__('products.fields.cost'))
-                ->numeric()
-                ->minValue(0)
-                ->step(0.01)
-                ->visible(fn (): bool => static::staffCanForAction(Permission::COST_VIEW))
-                ->disabled(fn (): bool => ! static::staffCanForAction(Permission::COST_MANAGE)),
-            TextInput::make('stock_quantity')
-                ->label(__('products.fields.stock_quantity'))
-                ->numeric()
-                ->integer()
-                ->minValue(0)
-                ->default(0)
-                ->disabled(fn (): bool => ! static::staffCanForAction(Permission::PRODUCT_MANAGE)),
+            // Regular/Sale price pair, then Cost/Stock pair — see this
+            // method's own LAYOUT docblock above (incl. the COST_VIEW-
+            // hidden case).
+            Grid::make(2)
+                ->schema([
+                    TextInput::make('regular_price')
+                        ->label(__('products.fields.regular_price'))
+                        ->numeric()
+                        ->minValue(0)
+                        ->step(0.01)
+                        ->disabled(fn (): bool => ! static::staffCanForAction(Permission::PRICE_MANAGE)),
+                    TextInput::make('sale_price')
+                        ->label(__('products.fields.sale_price'))
+                        ->numeric()
+                        ->minValue(0)
+                        ->step(0.01)
+                        ->disabled(fn (): bool => ! static::staffCanForAction(Permission::PRICE_MANAGE)),
+                ]),
+            Grid::make(2)
+                ->schema([
+                    TextInput::make('cost')
+                        ->label(__('products.fields.cost'))
+                        ->numeric()
+                        ->minValue(0)
+                        ->step(0.01)
+                        ->visible(fn (): bool => static::staffCanForAction(Permission::COST_VIEW))
+                        ->disabled(fn (): bool => ! static::staffCanForAction(Permission::COST_MANAGE)),
+                    TextInput::make('stock_quantity')
+                        ->label(__('products.fields.stock_quantity'))
+                        ->numeric()
+                        ->integer()
+                        ->minValue(0)
+                        ->default(0)
+                        ->disabled(fn (): bool => ! static::staffCanForAction(Permission::PRODUCT_MANAGE)),
+                ]),
         ];
     }
 
