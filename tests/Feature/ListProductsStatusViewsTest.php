@@ -288,6 +288,75 @@ class ListProductsStatusViewsTest extends TestCase
         $this->assertSame([(string) $products['active']->id], $this->visibleProductIds($component->instance()));
     }
 
+    /**
+     * A PAGE NUMBER FROM THE URL IS CLAMPED TO THE LAST PAGE THE VIEW REALLY HAS —
+     * the other half of the pagination story above, and the half the view switch's own
+     * `resetPage()` cannot cover: `?page=3` is a URL, so it can also arrive from a
+     * bookmark, a shared link, a back-navigation, or a reload of a list whose rows
+     * have since been archived or deleted elsewhere. Nothing else catches it —
+     * `LengthAwarePaginator` returns an empty page for an out-of-range number rather
+     * than clamping it, so the merchant reads "no products" where the truth is
+     * "you are past the end".
+     *
+     * MODELLED AS A FULL PAGE LOAD CARRYING BOTH PARAMETERS, through Livewire's own
+     * `withQueryParams()`: for a non-Livewire request that IS the real thing — the
+     * `#[Url]` attribute and the paginator both read `request()->query()`
+     * (SupportQueryString/BaseUrl.php:165-166, SupportPagination.php:121-124).
+     *
+     * IT IS THE LAST PAGE, NOT PAGE 1, and the fixture is built to say so: the
+     * archived view has ONE row, so its last page is 1 — the page it must land on
+     * because it is the last one, not because the clamp resets.
+     */
+    public function test_a_page_number_past_the_end_of_a_view_lands_on_that_views_last_page(): void
+    {
+        $this->staffWithRole('Administrator');
+
+        $products = $this->oneOfEachStatus();
+
+        $component = Livewire::withQueryParams([
+            'status' => ProductStatus::ARCHIVED->value,
+            'page' => 3,
+        ])->test(ListProducts::class);
+
+        // NOT an empty table: the rows of the last page this view actually has.
+        $this->assertSame(1, $component->instance()->getTablePage());
+        $this->assertSame([(string) $products['archived']->id], $this->visibleProductIds($component->instance()));
+
+        // ...and the page NUMBER itself — what Livewire publishes back into the
+        // browser's URL — is the clamped one, so the URL and the rows cannot disagree.
+        $this->assertSame(1, $component->get('paginators')['page']);
+    }
+
+    /**
+     * THE CLAMP ALSO CATCHES A PAGE NUMBER THAT ARRIVES AFTER THE REQUEST HAS STARTED.
+     * A pagination link is a method call — `setPage(...)`/`previousPage(...)`
+     * (support/resources/views/components/pagination/index.blade.php:31-33) — so it is
+     * applied only after the `boot`/`booted` hooks have run, which is exactly why the
+     * clamp is not one of them (`HandleComponents::updateProperty()`,
+     * …/Mechanisms/HandleComponents/HandleComponents.php:442). It is also how a link can
+     * point at a page that no longer exists: it was rendered while the rows were still
+     * there, and they were archived or deleted since — in another tab, by another
+     * merchant.
+     *
+     * THE DISTINCTION THIS LOCKS DOWN: it lands on the LAST existing page (3 of 3),
+     * not on page 1. The empty table is the bug; a deep page is not.
+     */
+    public function test_a_page_number_past_the_end_is_clamped_to_the_last_existing_page_not_to_the_first(): void
+    {
+        $this->staffWithRole('Administrator');
+
+        $this->oneOfEachStatus();
+
+        // One row per page, so the three-row 'all' view really has three pages.
+        $component = Livewire::test(ListProducts::class)
+            ->set('statusView', 'all')
+            ->set('tableRecordsPerPage', 1)
+            ->call('setPage', 9);
+
+        $this->assertSame(3, $component->instance()->getTablePage(), 'the last existing page is where it must land');
+        $this->assertCount(1, $this->visibleProductIds($component->instance()), 'the clamped page must show rows, not an empty table');
+    }
+
     public function test_the_archived_only_filter_is_gone_and_the_other_filters_still_work_with_a_status_view(): void
     {
         $this->staffWithRole('Administrator');
