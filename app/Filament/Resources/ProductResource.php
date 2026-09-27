@@ -2403,6 +2403,38 @@ class ProductResource extends Resource
                 // "the same rows stayed selected" is not even well defined across a
                 // switch.
                 static::clearTableSelection($livewire);
+
+                // AND IT RESETS THE PAGE, because pagination is the OTHER piece of
+                // view-scoped state: switching from a wide view on page 2 to a
+                // narrower one left the table EMPTY — the narrower view simply has
+                // no page 2 — and the stale page is visible to the merchant, since
+                // Livewire binds it to the URL query string as `?page=2`
+                // (SupportPagination/HandlesPagination.php:10-16).
+                //
+                // WHY IT HAS TO BE SAID HERE: the view reaches the query through
+                // the table's own modifyQueryUsing() (see table()), which is NOT a
+                // filter — so Filament never runs the `resetPage()` that ends its
+                // own filter-change handling
+                // (vendor/filament/tables/src/Concerns/HasFilters.php:75). Every
+                // other narrowing control on this list already resets the page:
+                // filters (HasFilters.php:75), the search box
+                // (CanSearchRecords.php:37), the sort (CanSortRecords.php:63) and
+                // the per-page select (CanPaginateRecords.php:26). The status view
+                // was the ONE control that did not, which is the whole bug.
+                //
+                // NOT AN `updatedStatusView()` HOOK ON THE PAGE, deliberately:
+                // Livewire dispatches its property hooks from
+                // HandleComponents::updateProperty() — the browser-to-server path
+                // (vendor/livewire/livewire/src/Mechanisms/HandleComponents/
+                // HandleComponents.php:442, `trigger('update', …)`) — while these
+                // buttons write the property SERVER-SIDE, so such a hook would
+                // never fire on a click, the one way a view is switched.
+                //
+                // resetPage() IS FILAMENT'S OWN (InteractsWithTable.php:262), and
+                // it resolves the TABLE's own page name rather than the literal
+                // 'page', so this stays right if the list ever carries more than
+                // one table.
+                $livewire->resetPage();
             });
     }
 

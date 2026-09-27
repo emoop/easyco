@@ -245,6 +245,49 @@ class ListProductsStatusViewsTest extends TestCase
         $this->assertSame([(string) $products['archived']->id], $this->visibleProductIds($component->instance()));
     }
 
+    /**
+     * A VIEW SWITCH RESETS PAGINATION, exactly as every other narrowing control on
+     * this list already does.
+     *
+     * THE BUG THIS LOCKS DOWN: with `?page=2` standing, switching to a view with
+     * fewer pages left the table EMPTY. The view is applied through the table's own
+     * `modifyQueryUsing()` (ProductResource::table()), which is NOT a filter — so
+     * Filament's own `HasFilters::handleTableFilterUpdates()` never runs for it, and
+     * with it neither does that method's last statement, `resetPage()`
+     * (vendor/filament/tables/src/Concerns/HasFilters.php:75). The page number is
+     * Livewire's own `$paginators['page']`, bound to the query string under the
+     * alias `page` (SupportPagination/HandlesPagination.php:10-16) — which is why the
+     * URL is where the stale page is visible. Filters, the search box, the sort and
+     * the per-page select all reset it already (`HasFilters.php:75`,
+     * `CanSearchRecords.php:37`, `CanSortRecords.php:63`, `CanPaginateRecords.php:26`);
+     * the status view was the ONE narrowing control that did not.
+     *
+     * THE FIXTURE IS ONE ROW PER PAGE, so the three-row 'all' view really has a
+     * POPULATED second page to stand on, and the active view — switched to FROM that
+     * page — has a single page, the one that must be shown. Before the fix the final
+     * assertion saw an empty table, which is the reported symptom exactly: not a
+     * missing product, but a page the narrower view does not have.
+     */
+    public function test_switching_the_status_view_resets_pagination_to_the_first_page(): void
+    {
+        $this->staffWithRole('Administrator');
+
+        $products = $this->oneOfEachStatus();
+
+        $component = Livewire::test(ListProducts::class)
+            ->set('statusView', 'all')
+            ->set('tableRecordsPerPage', 1)
+            ->call('setPage', 2);
+
+        $this->assertSame(2, $component->instance()->getTablePage(), 'the fixture must really sit on the second page');
+        $this->assertCount(1, $this->visibleProductIds($component->instance()), '...and that page must really show a row');
+
+        $component->callAction(TestAction::make('status_view_active')->table());
+
+        $this->assertSame(1, $component->instance()->getTablePage(), 'switching views must land on the first page');
+        $this->assertSame([(string) $products['active']->id], $this->visibleProductIds($component->instance()));
+    }
+
     public function test_the_archived_only_filter_is_gone_and_the_other_filters_still_work_with_a_status_view(): void
     {
         $this->staffWithRole('Administrator');
