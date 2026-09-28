@@ -5,6 +5,7 @@ namespace EasyCo\Order;
 use DateTimeImmutable;
 use EasyCo\Order\Enums\OrderDeliveryType;
 use EasyCo\Order\Enums\OrderStatus;
+use EasyCo\Order\Exceptions\InvalidOrderTransitionException;
 use EasyCo\Pricing\Currency;
 use EasyCo\Pricing\Money;
 use InvalidArgumentException;
@@ -41,10 +42,14 @@ use LogicException;
  * currency/non-negative assertions as create(), as a real integrity
  * check on what came out of the database, not a rubber stamp.
  *
- * MOSTLY IMMUTABLE — only id is ever assigned after construction (the
- * usual one-time assignId()). No mutator exists for anything else: this
- * pass never changes a placed Order (status transitions are explicitly
- * future admin-UI work, see OrderStatus's own docblock).
+ * MOSTLY IMMUTABLE — only two fields ever change after construction: `id`,
+ * once, through the one-time assignId(); and `status`, through the five
+ * named mutators below (confirm/ship/deliver/cancel/refund — one per legal
+ * move), each guarded by OrderStatus's own transition matrix and nothing
+ * else. Every other field is frozen: no setter, no reconstitute-and-resave.
+ * Why status is the one mutable business fact, what a transition
+ * deliberately does NOT write, and what the app layer wraps around it are
+ * order-lifecycle-design.md §3 and §5.1.
  */
 final class Order
 {
@@ -59,7 +64,9 @@ final class Order
         private readonly Money $discount,
         private readonly Money $total,
         private readonly ?string $appliedPromotionCode,
-        private readonly OrderStatus $status,
+        // NOT readonly — the one field the mutators below change (see this
+        // class's own "MOSTLY IMMUTABLE" paragraph and §5.1).
+        private OrderStatus $status,
         private readonly DateTimeImmutable $placedAt,
         private readonly ?string $addressId,
         private readonly OrderDeliveryType $deliveryType,
@@ -394,6 +401,79 @@ final class Order
     public function status(): OrderStatus
     {
         return $this->status;
+    }
+
+    /**
+     * placed -> confirmed (§2.1). Carries no guard of its own: §5.1's own
+     * "what the domain half deliberately does not guard" list applies to
+     * all five mutators.
+     */
+    public function confirm(): void
+    {
+        $this->transitionTo(OrderStatus::CONFIRMED);
+    }
+
+    /**
+     * confirmed -> shipped (§2.1). R9's "the bank transfer must have
+     * arrived" is a read the aggregate does not own, so it lives in the
+     * service that wraps this call.
+     */
+    public function ship(): void
+    {
+        $this->transitionTo(OrderStatus::SHIPPED);
+    }
+
+    /**
+     * shipped -> delivered (§2.1). R10's cash-on-delivery confirmation is
+     * likewise the service's, not this class's.
+     */
+    public function deliver(): void
+    {
+        $this->transitionTo(OrderStatus::DELIVERED);
+    }
+
+    /**
+     * placed|confirmed|shipped -> cancelled (§2.1) — the three ways an
+     * order ends before the customer has it. Stock, money and the reason
+     * recorded for the cancellation belong to the operation around this
+     * call, never to the aggregate (§5.1).
+     */
+    public function cancel(): void
+    {
+        $this->transitionTo(OrderStatus::CANCELLED);
+    }
+
+    /**
+     * delivered -> refunded (§2.1, §2.3) — the system-only move that closes
+     * an order whose goods came back. Nothing but the status moves here:
+     * the return that emptied the order wrote its own goods and money in
+     * its own transaction.
+     */
+    public function refund(): void
+    {
+        $this->transitionTo(OrderStatus::REFUNDED);
+    }
+
+    /**
+     * The one place a status changes, so both refusals live in exactly one
+     * place: (1) the order is already in $to — OrderStatus's matrix answers
+     * false for every same-status pair too, but the caller that made an
+     * idempotent retry deserves the reason it actually hit; (2) the current
+     * status may not move to $to at all. Nothing else is touched, ever: no
+     * timestamp, no payment, no stock, no refund, no event row (§5.1's own
+     * closing list).
+     */
+    private function transitionTo(OrderStatus $to): void
+    {
+        if ($this->status === $to) {
+            throw InvalidOrderTransitionException::becauseAlreadyInStatus($to);
+        }
+
+        if (! $this->status->canTransitionTo($to)) {
+            throw InvalidOrderTransitionException::becauseCannotTransition($this->status, $to);
+        }
+
+        $this->status = $to;
     }
 
     public function placedAt(): DateTimeImmutable

@@ -19,11 +19,13 @@ namespace EasyCo\Order\Enums;
  *               remaining unit is back. Terminal.
  *
  * THIS ENUM STATES WHICH MOVES ARE LEGAL AND PERFORMS NONE. `canTransitionTo()`
- * and `isTerminal()` read one private map and change nothing: the mutator that
- * changes a status belongs on `Order`, and the transaction that wraps it belongs
- * to the app layer (design doc §5) — this file answers "is that move legal?" and
- * nothing else. `OrderStatusTest` walks all 36 (from, to) pairs against §2.1's
- * table, so the prose and this map cannot drift apart silently.
+ * and `isTerminal()` read one private map and change nothing: the mutators that
+ * change a status are `Order::confirm()`, `ship()`, `deliver()`, `cancel()` and
+ * `refund()`, one per legal move, and the transaction that wraps one of them
+ * belongs to the app layer (design doc §5) — this file answers "is that move
+ * legal?" and nothing else. `OrderStatusTest` walks all 36 (from, to) pairs
+ * against §2.1's table, so the prose and this map cannot drift apart
+ * silently.
  *
  * NO VALUE IS EVER ADDED FOR A MONEY FACT. "Has the money arrived?" is
  * `Payment.status`'s question and "is this line's own financial fact settled?"

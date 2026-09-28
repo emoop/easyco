@@ -58,6 +58,19 @@ final class EloquentOrderRepository implements OrderRepository
         return $model !== null ? $this->toDomainOrder($model) : null;
     }
 
+    /**
+     * findById()'s locking sibling — the identical mapping and the identical
+     * null, with `FOR UPDATE` on the read. One method, one difference; see
+     * the contract's docblock for what the lock is for and when it means
+     * anything at all.
+     */
+    public function findByIdForUpdate(string $id): ?Order
+    {
+        $model = OrderModel::query()->lockForUpdate()->find($id);
+
+        return $model !== null ? $this->toDomainOrder($model) : null;
+    }
+
     public function hasAnyForAccount(string $accountId): bool
     {
         return OrderModel::where('account_id', $accountId)->exists();

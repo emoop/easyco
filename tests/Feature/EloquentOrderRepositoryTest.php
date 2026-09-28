@@ -22,6 +22,7 @@ use EasyCo\Order\Enums\OrderDeliveryType;
 use EasyCo\Order\Enums\OrderStatus;
 use EasyCo\Order\Order;
 use EasyCo\Pricing\Money;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -385,5 +386,160 @@ class EloquentOrderRepositoryTest extends TestCase
         $this->repository()->save($guestOrder);
 
         $this->assertFalse($this->repository()->hasAnyForAccount($accountId));
+    }
+
+    /**
+     * A saved street-address order — the fixture the four tests below share,
+     * with the status as the one thing a caller varies.
+     */
+    private function savedOrder(OrderStatus $status = OrderStatus::PLACED): Order
+    {
+        $clientId = $this->clientId();
+        $transactionId = $this->transactionId($clientId);
+
+        $order = Order::create(
+            clientId: $clientId,
+            transactionId: $transactionId,
+            email: 'buyer@example.com',
+            currency: 'EUR',
+            subtotal: Money::fromMinorUnits(1000, 'EUR'),
+            discount: Money::fromMinorUnits(300, 'EUR'),
+            deliveryType: OrderDeliveryType::STREET_ADDRESS,
+            recipientName: 'Ivan Ivanov',
+            phone: '+359888123456',
+            placedAt: $this->placedAt(),
+            status: $status,
+            country: 'BG',
+            city: 'Sofia',
+            postalCode: '1000',
+            addressLine1: 'Vitosha Blvd 1',
+        );
+
+        $this->repository()->save($order);
+
+        return $order;
+    }
+
+    /**
+     * Every accessor's answer, as scalar values, so two reconstitutions can
+     * be compared field by field (status included).
+     *
+     * @return array<string, mixed>
+     */
+    private function allFields(Order $order): array
+    {
+        return [
+            'id' => $order->id(),
+            'clientId' => $order->clientId(),
+            'accountId' => $order->accountId(),
+            'transactionId' => $order->transactionId(),
+            'email' => $order->email(),
+            'currency' => $order->currency()->code(),
+            'subtotal' => $order->subtotal()->minorValue(),
+            'discount' => $order->discount()->minorValue(),
+            'total' => $order->total()->minorValue(),
+            'appliedPromotionCode' => $order->appliedPromotionCode(),
+            'status' => $order->status()->value,
+            'placedAt' => $order->placedAt()->format('Y-m-d H:i:s'),
+            'addressId' => $order->addressId(),
+            'deliveryType' => $order->deliveryType()->value,
+            'recipientName' => $order->recipientName(),
+            'phone' => $order->phone(),
+            'country' => $order->country(),
+            'city' => $order->city(),
+            'postalCode' => $order->postalCode(),
+            'addressLine1' => $order->addressLine1(),
+            'addressLine2' => $order->addressLine2(),
+            'carrierCode' => $order->carrierCode(),
+            'pickupPointReference' => $order->pickupPointReference(),
+            'settlement' => $order->settlement(),
+        ];
+    }
+
+    public function test_find_by_id_for_update_returns_the_order_find_by_id_returns(): void
+    {
+        $order = $this->savedOrder();
+
+        $plain = $this->repository()->findById($order->id());
+        $locked = DB::transaction(fn (): ?Order => $this->repository()->findByIdForUpdate($order->id()));
+
+        $this->assertNotNull($plain);
+        $this->assertNotNull($locked);
+        $this->assertNotSame($plain, $locked, 'The locked read reconstitutes its own Order rather than reusing one.');
+        $this->assertSame($this->allFields($plain), $this->allFields($locked));
+    }
+
+    public function test_find_by_id_for_update_for_a_nonexistent_id_returns_null(): void
+    {
+        $this->assertNull(
+            DB::transaction(fn (): ?Order => $this->repository()->findByIdForUpdate('999999'))
+        );
+    }
+
+    /**
+     * The lock is in the STATEMENT, not in a comment: the read is one select
+     * of the orders row by primary key, ending in `for update`, while the
+     * unlocked findById() in the same window is the same select without it.
+     */
+    public function test_find_by_id_for_update_reads_the_orders_row_with_for_update(): void
+    {
+        $order = $this->savedOrder();
+
+        $queries = [];
+        DB::listen(function (QueryExecuted $query) use (&$queries): void {
+            $queries[] = $query->sql;
+        });
+
+        DB::transaction(function () use ($order): void {
+            $this->repository()->findByIdForUpdate($order->id());
+        });
+        DB::transaction(function () use ($order): void {
+            $this->repository()->findById($order->id());
+        });
+
+        $orderReads = array_values(array_filter(
+            $queries,
+            static fn (string $sql): bool => str_contains($sql, 'from `orders`'),
+        ));
+
+        $this->assertCount(2, $orderReads, 'One locked read and one plain read of orders — nothing else.');
+
+        [$locked, $plain] = $orderReads;
+
+        $this->assertStringContainsString('select * from `orders` where `orders`.`id` = ?', $locked);
+        $this->assertStringEndsWith('for update', strtolower($locked));
+        $this->assertStringNotContainsString('for update', strtolower($plain));
+    }
+
+    /**
+     * The round trip the lock exists for: read under the lock, move the
+     * status, save — and findById() then reads the new status back while
+     * every other column of the row is byte-identical to what it was.
+     */
+    public function test_a_locked_read_then_a_transition_then_save_persists_only_the_status(): void
+    {
+        $order = $this->savedOrder();
+        $before = (array) DB::table('orders')->where('id', $order->id())->first();
+
+        DB::transaction(function () use ($order): void {
+            $locked = $this->repository()->findByIdForUpdate($order->id());
+            $this->assertNotNull($locked);
+
+            $locked->confirm();
+            $this->repository()->save($locked);
+        });
+
+        $reloaded = $this->repository()->findById($order->id());
+        $this->assertNotNull($reloaded);
+        $this->assertSame(OrderStatus::CONFIRMED, $reloaded->status());
+
+        $after = (array) DB::table('orders')->where('id', $order->id())->first();
+
+        $this->assertSame('placed', $before['status']);
+        $this->assertSame('confirmed', $after['status']);
+
+        $changed = array_values(array_diff(array_keys(array_diff_assoc($after, $before)), ['updated_at']));
+
+        $this->assertSame(['status'], $changed, 'A transition may not rewrite any other column.');
     }
 }
