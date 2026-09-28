@@ -62,7 +62,7 @@ Order                                          (aggregate root, package EasyCo\O
 ├── appliedPromotionCode   nullable string — display/audit snapshot of the code used.
 │                         The actual usage-tracking fact of record is Promotions'
 │                         PromotionRedemption (§7), not this field.
-├── status                 OrderStatus: PLACED | FULFILLED | CANCELLED — see below
+├── status                 OrderStatus: PLACED | CONFIRMED | SHIPPED | DELIVERED | CANCELLED | REFUNDED — see below
 ├── placedAt               datetime
 │
 │ Address snapshot — embedded, immutable copy, NOT a live reference. Same shape
@@ -90,9 +90,9 @@ Order                                          (aggregate root, package EasyCo\O
 
 **`status` is in V1 after all — domain-owner decision, reversing this document's own first draft.** The reasoning for cutting it (nothing consumes it yet) still stands as a fact, but the field itself is judged indispensable to a real, working store regardless — better to have the column exist and sit mostly-`PLACED` for a while than to retrofit it onto a live `orders` table later, the same "costs nothing now, costs real migration work later" reasoning `account-domain-design.md` §5 already used to justify `softDeletes()` on `accounts` before anything needed it either.
 
-**Deliberately minimal — three values, "от хиляди опции — само три" applied literally:**
+**Deliberately minimal — the whole list, with what each of the six values means and when it is reachable, is `order-lifecycle-design.md` §1:**
 - `PLACED` — the order's entire life today; every order is created in this state, and nothing in this document transitions it out of it.
-- `FULFILLED` — the merchant has prepared/handed over the order. No trigger exists yet — no Shipping domain, no admin action to set it.
+- `FULFILLED` is gone — it was one word for two facts a fulfilment queue has to tell apart: "prepared, but still in my shop" (where a cancellation is still honest) and "gone, in someone else's hands" (where it is not). `order-lifecycle-design.md` §1 replaces it with `CONFIRMED` and `SHIPPED`, §2 states which of the seven transitions between the six values are legal and what each side effect is, and §10 stages the build; the migration that ships with the removal (`2026_09_28_000001_guard_no_fulfilled_orders`) refuses to run while any row still holds the old value rather than guessing which of the two it meant.
 - `CANCELLED` — the order was called off. No trigger exists yet either — no compensating logic (stock restock, payment refund) is designed here.
 
 **What this document does NOT build:** any transition path between these three states, any admin endpoint to change `status`, and any side effect of `CANCELLED` (should cancelling restock the decremented `Inventory`? should it trigger a `PaymentRefund`? — genuine, real questions, deliberately not answered here). Domain-owner instruction: build the transition logic together with the future admin UI, as one coherent piece of work, rather than guessing at admin workflow needs in isolation now. Recorded as explicitly deferred in §10, not silently dropped.
