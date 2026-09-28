@@ -21,11 +21,20 @@ use EasyCo\Payment\Payment;
  * the Order itself — see that class's own docblock), but this DTO does
  * not assume that guarantee holds forever; a null here renders '—', not
  * an exception.
+ *
+ * events IS THE ORDER'S OWN HISTORY (order-lifecycle-design.md §6.3, §10
+ * stage 3): every order_events row for this order, oldest first, read in one
+ * query by forOrder() and never by the Orders LIST (which stays a read with no
+ * per-row events query — §11 item 15). [] is the normal state for every order
+ * placed before this table existed, never an error. NOTHING RENDERS IT YET: the
+ * timeline section is §10 stage 7, so this is a read with no consumer until
+ * then, deliberately.
  */
 final class OrderAdminOrderView
 {
     /**
      * @param OrderAdminSaleLineView[] $lines
+     * @param OrderAdminEventView[] $events
      */
     public function __construct(
         public readonly Order $order,
@@ -35,6 +44,7 @@ final class OrderAdminOrderView
         public readonly bool $hasPromotionRedemption,
         public readonly ?Payment $latestPayment,
         public readonly int $paymentAttemptCount,
+        public readonly array $events,
     ) {
     }
 }

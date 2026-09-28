@@ -14,6 +14,7 @@ use EasyCo\Pricing\Money;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use DateTimeImmutable;
 use RuntimeException;
 
 /**
@@ -42,7 +43,11 @@ use RuntimeException;
  *    same query-count discipline does not apply the same way here — a
  *    handful of queries for exactly one order is the real, accepted
  *    cost, same posture ProductResource's own ViewProduct infolist
- *    already takes for a single record's price/stock entries).
+ *    already takes for a single record's price/stock entries). The
+ *    order's own history is one more of those targeted reads —
+ *    `order_events`, ONE query, ordered oldest first and tie-broken by
+ *    id (order-lifecycle-design.md §6.3, §10 stage 3) — and the Orders
+ *    LIST never reads it (§11 item 15: no per-row events query).
  *    MEMOIZED PER INSTANCE AND BOUND scoped() (AppServiceProvider),
  *    same real reasoning as PriceDisplayFormatter's own identical
  *    posture: the View page's infolist has no single place to build
@@ -167,6 +172,13 @@ final class OrderAdminReader
      * returned DTO's own fields rather than another null/exception
      * (D8), so the View page itself never needs its own per-field
      * fallback logic.
+     *
+     * The order's own history (order-lifecycle-design.md §6.3, §10 stage 3) is
+     * read here as ONE more query — never one per event, and never with a join
+     * to `staff` (staff_name is the event row's own snapshot). Ordered by
+     * occurred_at, then id, so the id breaks the tie between two events
+     * recorded in the same second; [] for an order with no events, which is
+     * every order placed before this table existed.
      */
     public function forOrder(string $orderId): ?OrderAdminOrderView
     {
@@ -239,6 +251,26 @@ final class OrderAdminReader
 
         $paymentAttemptCount = DB::table('payments')->where('order_id', $orderId)->count();
 
+        // §6.3's one events read: the whole history in a single query, oldest
+        // first, tie-broken by id. No join to `staff` — staff_name is the row's
+        // own snapshot — and no derived value: this renders what the writer
+        // wrote, never a status recomputed from the events.
+        $events = DB::table('order_events')
+            ->where('order_id', $orderId)
+            ->orderBy('occurred_at')
+            ->orderBy('id')
+            ->get()
+            ->map(fn (object $row): OrderAdminEventView => new OrderAdminEventView(
+                type: (string) $row->type,
+                fromStatus: $row->from_status === null ? null : (string) $row->from_status,
+                toStatus: $row->to_status === null ? null : (string) $row->to_status,
+                reason: $row->reason === null ? null : (string) $row->reason,
+                transactionId: $row->transaction_id === null ? null : (string) $row->transaction_id,
+                staffName: $row->staff_name === null ? null : (string) $row->staff_name,
+                occurredAt: new DateTimeImmutable((string) $row->occurred_at),
+            ))
+            ->all();
+
         return $this->orderViewCache[$orderId] = new OrderAdminOrderView(
             order: $order,
             clientName: $clientName,
@@ -247,6 +279,7 @@ final class OrderAdminReader
             hasPromotionRedemption: $hasPromotionRedemption,
             latestPayment: $latestPayment,
             paymentAttemptCount: $paymentAttemptCount,
+            events: $events,
         );
     }
 

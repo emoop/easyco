@@ -824,6 +824,15 @@ class OrderViewSnapshotPageTest extends TestCase
      * and the table's own column decisions reuse that same memoized read.
      * Both measurements start from a cold scoped container, so the only
      * difference between them is the line count.
+     *
+     * THE ORDER-LIFECYCLE STAGE THAT ADDED ORDER_EVENTS ADDED EXACTLY ONE QUERY
+     * TO THIS PAGE (+1), AND THIS TEST IS UNCHANGED ON PURPOSE: forOrder() now
+     * also reads the order's own history — one query for the whole list, however
+     * long it is (order-lifecycle-design.md §6.3, §10 stage 3). Both measurements
+     * below carry that one query equally, which is precisely what "the count does
+     * not grow with what the page renders" means, and the absolute cost is pinned
+     * as a real number by OrderAdminReaderEventsTest instead of here — this test
+     * never asserted a number to increment.
      */
     public function test_view_page_query_count_is_identical_for_two_and_ten_lines(): void
     {

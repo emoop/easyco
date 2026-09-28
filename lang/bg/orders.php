@@ -85,6 +85,20 @@ return [
         'refunded' => 'Върната',
     ],
 
+    // The order's own history — one label per App\Enums\OrderEventType value
+    // (order-lifecycle-design.md §6.1, §10 stage 2). A type with no entry here
+    // would render as its raw snake_case value rather than fail
+    // (OrderResource::optionLabel(), :448-457), which is why
+    // OrderEventTypeLabelsTest pins every case against both languages.
+    'event_type_options' => [
+        'status_changed' => 'Смяна на статус',
+        'payment_confirmed' => 'Плащането е отбелязано като получено',
+        'returned' => 'Върната стока',
+        'refunded' => 'Върнати пари',
+        'payment_voided' => 'Чакащо плащане анулирано',
+        'note_added' => 'Вътрешна бележка',
+    ],
+
     'delivery_type_options' => [
         'street_address' => 'Адрес',
         'pickup_point' => 'Офис на куриер',
