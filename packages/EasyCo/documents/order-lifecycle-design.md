@@ -947,7 +947,7 @@ Column by column, with the precedent each one follows:
 | Column | Why |
 |---|---|
 | `order_id` | Real FK, `restrictOnDelete()` — the posture `orders` itself takes toward `transaction_id`/`client_id` (`create_orders_table.php:57-63`), and the honest alternative to a cascade that would delete history. No order-deletion path exists anywhere; the constraint *proves* that rather than assuming it. |
-| `type` | The operation, named once and human-legible: `status_changed`, `payment_confirmed`, `returned`, `refunded`, `payment_voided`. A plain string, like every other enum column here (`orders.status`, `sale_lines.type`). |
+| `type` | The operation, named once and human-legible: `status_changed`, `payment_confirmed`, `returned`, `refunded`, `payment_voided`, `note_added`. A plain string, like every other enum column here (`orders.status`, `sale_lines.type`). `note_added` is the one value that is not a change to the order at all — an internal note an operator left on it (owner decision D5): both statuses NULL, like every other event that moved nothing, and `reason` carries the note itself, non-blank, because a note nobody can read is not a note. |
 | `from_status` / `to_status` | §5.1's enum values, as status names. Both NULL exactly when nothing transitioned — a partial return, §4.3's `payment_confirmed` and §7.3's `payment_voided` are real events with no status change (§3 item 1), and NULL/NULL is how they say so. |
 | `reason` | The operator's own words, verbatim and untranslated: a cancellation's reason, a return's reason, a free-text note on a transition — or nothing, since §5.2 makes all of them optional. One column, because all of them answer the same question — *why did this happen* — and `Payment.failureReason`/`PaymentRefund.failureReason` already establish "one nullable text column, set only when it means something". |
 | `transaction_id` | The return's own `Transaction`, nullable, where the goods half of a return lives (§7.2). The event says *which* transaction to read for the per-line quantities instead of copying them into the event (§6.4) — and it is a real FK with `restrictOnDelete()`, the posture `orders.transaction_id` already takes (`create_orders_table.php:61-63`), so a return's record cannot be deleted out from under the order's own history. NULL for every event that is not a return. |
@@ -977,7 +977,7 @@ One public method, called by §5.2 and §4.3 **inside** their own transactions:
 ```php
 public function record(
     string $orderId,
-    string $type,
+    OrderEventType $type,
     ?OrderStatus $fromStatus,
     ?OrderStatus $toStatus,
     ?string $reason,
@@ -985,6 +985,12 @@ public function record(
     DateTimeImmutable $occurredAt,
 ): void
 ```
+
+- **`$type` is `OrderEventType`, not a `string` as first written here.** The enum
+  (`App\Enums\OrderEventType`) is the six values above in one place: the writer
+  cannot be handed a type no label exists for, a caller cannot mistype one, and
+  the label-parity test can walk every case. The stored column stays the plain
+  string §6.1 describes — the writer stores `$type->value`.
 
 - **`$transactionId`, never the quantities.** A return's event points at the
   `Transaction` its `REFUND` lines were written into (§7.2) rather than storing a
@@ -1384,6 +1390,13 @@ the operator's other write on this screen: "the transfer arrived" is recorded
 from the order in front of them. It gets its own action beside the payment
 entries, gated by `ORDER_MANAGE` like the rest.
 
+**"Add internal note" is the page's third write, and it is not a transition
+either.** One action, gated by `ORDER_MANAGE`, readable by anyone who can open the
+order at all (`ORDER_VIEW`): it records a single `note_added` event (§6.1) and
+moves no status — nothing on the order changes except its own history, which is
+what makes it the one action here that cannot refuse. Its UI belongs to stage 7,
+like every other action in this section.
+
 ### 8.2 Which buttons exist: visibility is derived from §2.1, never re-listed
 
 **Every action's `->visible()` is two questions, and the matrix answers the first
@@ -1741,6 +1754,11 @@ read §6.3 adds to `OrderAdminReader` — inert until stage 7 shows it. Tests:
 insert-only (the class issues no other statement), each FK's restrict behaviour
 proven by a real delete attempt against the live engine, actor resolution from the
 panel guard, and `null` for a console caller.
+
+Stages 2 and 3 shipped as ONE piece of work (owner decision): the status labels are
+meaningless without the enum that produces them and the event-type labels are
+meaningless without `OrderEventType`, so the two stages were built and reviewed
+together rather than in two passes over the same files.
 
 **Stage 4 — `Order`'s transitions, and the locked read.** §5.1's five mutators on
 the aggregate, and `OrderRepository::findByIdForUpdate()` (§5.2 step 2). No other
