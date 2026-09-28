@@ -373,7 +373,7 @@ final class OrderTest extends TestCase
             discount: Money::fromMinorUnits(300, 'EUR'),
             total: Money::fromMinorUnits(700, 'EUR'),
             appliedPromotionCode: 'summer20',
-            status: OrderStatus::FULFILLED,
+            status: OrderStatus::SHIPPED,
             placedAt: $placedAt,
             addressId: '7',
             deliveryType: OrderDeliveryType::STREET_ADDRESS,
@@ -399,7 +399,7 @@ final class OrderTest extends TestCase
         $this->assertSame(300, $order->discount()->minorValue());
         $this->assertSame(700, $order->total()->minorValue());
         $this->assertSame('summer20', $order->appliedPromotionCode());
-        $this->assertSame(OrderStatus::FULFILLED, $order->status());
+        $this->assertSame(OrderStatus::SHIPPED, $order->status());
         $this->assertSame($placedAt, $order->placedAt());
         $this->assertSame('7', $order->addressId());
         $this->assertSame('Floor 2', $order->addressLine2());
