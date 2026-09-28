@@ -48,7 +48,7 @@ Payment
 │                       which have none
 ├── failureReason       nullable string — populated only when
 │                       status = FAILED
-└── attemptedAt         nullable DateTimeImmutable — ADDED during
+├── attemptedAt         nullable DateTimeImmutable — ADDED during
                         Checkout implementation, not part of the
                         original design (see the amendment note in §1).
                         Records WHEN THE ADAPTER ANSWERED — deliberately
@@ -68,9 +68,36 @@ Payment
                         attemptedAt SET means a normal offline order
                         genuinely awaiting the customer's money and
                         needs a merchant confirmation (§7), not a retry.
+├── confirmedAt         nullable DateTimeImmutable — ADDED with the
+│                       offline confirmation (order-lifecycle-design.md
+│                       §4.1). Records WHEN A MERCHANT SAW THE MONEY
+│                       ARRIVE — the half no adapter can answer for a bank
+│                       transfer or a cash-on-delivery order — written
+│                       once by Payment::confirm() and never cleared.
+│                       NOT a fourth PaymentStatus, deliberately (§7.3,
+│                       and PaymentStatus's own docblock): the row is the
+│                       record of what the adapter answered, and a
+│                       confirmation that moved `status` would silently
+│                       widen captured_order_id's own double-capture
+│                       invariant instead of leaving it meaning what §5.1
+│                       documents.
+└── voidedAt            nullable DateTimeImmutable — ADDED with the void
+                        (order-lifecycle-design.md §7.3). Records WHEN THE
+                        ORDER'S REQUIREMENT SHRANK: the customer was never
+                        told a smaller amount, so what is owed changes by
+                        APPENDING A NEW PAYMENT ROW, and this column is
+                        what says the old row is no longer the order's
+                        current payment. Written once by Payment::void(),
+                        never cleared. Only ever set on a pending,
+                        unconfirmed row, so a voided row keeps contributing
+                        NULL to both captured_order_id and
+                        settled_order_id and cannot interact with either
+                        unique index (§5.1).
 ```
 
 No `priority`/reservation concept here — mirrors how `inventory-domain-design.md` deliberately has none either; a `Payment` attempt either captures or it doesn't, no holding state beyond `PENDING`. **This remains true even with `attemptedAt` added** — `attemptedAt` records *when* an attempt's outcome became known, not a new outcome an attempt can reach; the attempt itself still only ever captures or doesn't, exactly as this sentence originally said.
+
+**`status`, `attemptedAt`, `confirmedAt` and `voidedAt` are four different facts, not four ways of saying one** — what the adapter answered, when it answered, when a merchant recorded the money as received, and when the order's requirement was called off. Neither of the two new ones is a `PaymentStatus`, on `PaymentStatus`'s own argument echoed in §7.3 below: an attempt either captures or it doesn't, and a confirmation or a void is a *human* fact recorded on a row the adapter already answered, so folding either into `status` would replace that answer instead of sitting beside it (`order-lifecycle-design.md` §4.2).
 
 ---
 
@@ -102,7 +129,11 @@ PaymentRefund
 │                       deliberately — this is a merchant/staff tool
 │                       first, not a fraud-detection pipeline; a
 │                       future iteration could add a stricter enum
-│                       if that need materializes
+│                       if that need materializes. Its first real
+│                       writer is designed in `order-lifecycle-design.md`
+│                       §7.3 — the `PaymentRefund` a cancellation or a
+│                       return writes (that document's §10 stage 6);
+│                       nothing else in the codebase writes one.
 ├── refundedBy          nullable string — the staff/Account id who
 │                       authorized this refund, null if issued
 │                       automatically/by-API. Added specifically
@@ -152,6 +183,8 @@ A real online provider adapter (Stripe or otherwise) is not built in V1 — see 
 
 MySQL has no native syntax for "unique only when a condition holds" (unlike Postgres's partial indexes). The standard, portable MySQL mechanism: a `STORED` generated column, `captured_order_id`, computed as `CASE WHEN status = 'captured' THEN order_id ELSE NULL END`, with a plain `UNIQUE` index on that generated column. MySQL treats multiple `NULL`s in a unique index as non-conflicting, so only rows that are actually `CAPTURED` ever compete for uniqueness on `order_id` — a `PENDING` or `FAILED` row (however many exist for the same order, across retries) contributes `NULL` and never collides with anything. This makes double-capture for the same order **physically impossible at the database engine level**, immune to two concurrent requests racing past an application-level check-then-act — the direct, literal answer to the domain owner's "never charge a customer twice" requirement.
 
+**The same mechanism was extended, not replaced, when the offline confirmation arrived.** `payments` now carries a SECOND stored generated column beside this one — `settled_order_id`, computed as `CASE WHEN status = 'captured' OR confirmed_at IS NOT NULL THEN order_id ELSE NULL END`, with its own unique index (`pay_settled_order_unique`) — so "at most one settled Payment per order" covers a merchant's confirmation of an offline payment too, while this index keeps meaning exactly what it says above rather than having its expression rewritten under existing rows. Read the two together: two narrow, separately testable constraints, neither a looser duplicate of the other (`order-lifecycle-design.md` §4.4). And `voided_at` participates in neither: a void is only possible on a pending, not-yet-confirmed row, so a voided row contributes `NULL` to both indexes and cannot interact with either (that document's §7.3).
+
 ### 5.2 "Sum of PaymentRefund amounts for a Payment never exceeds that Payment's captured amount" — NOT purely DB-enforceable, stated honestly rather than overclaimed
 
 Unlike §5.1's uniqueness, this is a SUM-aggregate constraint across multiple rows — MySQL's `CHECK` constraints (available since 8.0.16) cannot reference other rows or run aggregates, so there is no equivalent single-column trick here. This invariant requires a transactional guarantee instead: whoever creates a `PaymentRefund` must do so inside a database transaction that first locks the parent `Payment` row (`SELECT ... FOR UPDATE`), computes the sum of existing `PaymentRefund`s against it, and only proceeds if the new refund would not exceed the captured amount — all within that same locked transaction, never as a separate read-then-write step outside one. This is a weaker guarantee than §5.1's (it depends on every future caller using the transaction correctly, rather than being impossible to violate by construction) — exactly the same honest posture `pricing-persistence-domain-design.md` §4.7 already takes toward its own not-fully-DB-enforceable uniqueness case, rather than pretending otherwise.
@@ -170,7 +203,7 @@ Unlike §5.1's uniqueness, this is a SUM-aggregate constraint across multiple ro
 
 - Any real online payment provider adapter (Stripe or otherwise) — contract shape only, two offline adapters built (§4).
 - Any HTTP surface at all — domain + persistence only, matching how every other domain in this project has been staged.
-- A confirmation mechanism/endpoint for moving a `PENDING` payment (bank transfer received, cash collected on delivery) to `CAPTURED` — the domain-layer status transition is designed for, its HTTP exposure is not built here.
+- A confirmation mechanism for moving a `PENDING` payment (bank transfer received, cash collected on delivery) to `CAPTURED`: **the confirmation exists now, and it deliberately does not move the status.** `Payment::confirm()` writes `confirmed_at` — the instant a merchant recorded the money as received — and `Payment::isSettled()` (`status === CAPTURED || confirmedAt !== null`) is the single predicate that means "the money is held" everywhere a rule or a screen needs to ask. The operation around it is `App\Services\OrderPaymentConfirmer::confirm()`: one transaction that locks the order row, one `payment_confirmed` row in the order's own history, and one `order.payment_confirmed` hook after the commit. The status is left exactly as the adapter answered it, so §5.1's `captured` double-capture invariant keeps meaning what it documents instead of silently widening to cover offline rows — the rejected alternative, argued in `order-lifecycle-design.md` §4.2/§4.4. The panel action that will call this service, and the order transitions that ride with it, are that document's own scope (§8.1, §5.2); this domain gains no HTTP surface from any of it.
 - Checkout-level idempotency for a double-clicked "pay" button before an Order exists — explicitly Checkout's responsibility, not this domain's (see §1).
 - The `Order` domain itself, and therefore any real, end-to-end payment flow — this document defines Payment/PaymentRefund's own shape only.
 - A stricter `reason` enum on `PaymentRefund` (Stripe's fraud-oriented duplicate/fraudulent/requested_by_customer) — free text for V1, noted in §3 as a possible future addition if the need materializes, not assumed now.
@@ -182,4 +215,5 @@ Unlike §5.1's uniqueness, this is a SUM-aggregate constraint across multiple ro
 - `Payment` domain unit tests: construction/validation for all three statuses; `failureReason` only meaningful (or only settable) when `FAILED`; `providerReference` nullable for offline methods.
 - `PaymentRefund` domain unit tests: construction/validation for all three statuses; `failureReason` only meaningful when `FAILED`; `refundedBy` nullable; a zero or negative `amount` rejected.
 - Repository Feature tests (real MySQL): save/round-trip both entities; a real, direct `SHOW CREATE TABLE` confirmation that the `captured_order_id` generated-column unique index exists exactly as described in §5.1 (not assumed from the migration file alone); a real test that attempting to save a second `CAPTURED` `Payment` for the same `orderId` throws a real database-level uniqueness violation, not an application-level rejection — proving §5.1's guarantee is genuinely enforced by the engine, not simulated in PHP.
+- The `settled_order_id` pair, added beside that one for the same stated reason (§5.1): a real `SHOW CREATE TABLE` confirmation that the second generated column's expression and its `pay_settled_order_unique` index exist exactly as described — asserted against the engine *and* asserted not to have widened the `captured_order_id` expression — plus real insertion tests proving the engine refuses a second settled row for one order (a `confirmed` one; a `captured`/`confirmed` pair, in both arrival orders) while any number of `pending`, `failed` and voided rows coexist. `findSettledForOrder()`, `Payment::isSettled()` and the generated column are cross-checked against each other row by row, so the three expressions of one rule cannot drift apart silently. Plus the void's own pair: both new timestamps round-tripping through the repository (and reading back `NULL` when unset), and `Payment::void()` refusing an unanswered, captured, failed, already-confirmed or already-voided row.
 - `PaymentMethodAdapter` tests for both V1 adapters: `CashOnDeliveryPaymentMethodAdapter::charge()` always returns `PENDING` with no `providerReference`; its `refund()` always returns `COMPLETED`; same pair of assertions for `BankTransferPaymentMethodAdapter`.
