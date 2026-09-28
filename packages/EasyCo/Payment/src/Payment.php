@@ -26,15 +26,33 @@ use LogicException;
  * Money that needs a strictly-positive value must (see
  * assertPositiveAmount()).
  *
- * $status, $providerReference AND $failureReason ARE THE ONLY MUTABLE
- * FIELDS — deliberately, via recordAttemptResult() below, and for
- * exactly one reason: CheckoutOrchestrator now writes this row INSIDE
- * Phase 1 (checkout-domain-design.md §8.3) as PENDING, before the actual
- * charge is even attempted, so that a crash between commit and the
- * external call leaves a real, findable row rather than nothing at all.
- * recordAttemptResult() is how Phase 2 fills in what the adapter actually
- * said, once it's known. Every other field stays readonly and set once
- * at construction — this is NOT a general mutation door.
+ * $status, $providerReference, $failureReason, $confirmedAt AND $voidedAt
+ * ARE THE MUTABLE FIELDS — five fields, three one-time mutators, and
+ * nothing else in this class ever moves after construction:
+ *  - recordAttemptResult() records what the ADAPTER answered, once.
+ *    CheckoutOrchestrator writes this row INSIDE Phase 1
+ *    (checkout-domain-design.md §8.3) as PENDING, before the actual charge
+ *    is even attempted, so that a crash between commit and the external
+ *    call leaves a real, findable row rather than nothing at all; Phase 2
+ *    fills in the answer once it is known.
+ *  - confirm() records that a MERCHANT saw the money arrive, once
+ *    (order-lifecycle-design.md §4.1) — the half no adapter can answer for
+ *    a bank transfer or a cash-on-delivery order.
+ *  - void() records that the ORDER'S REQUIREMENT shrank afterwards, once
+ *    (that document's §7.3) — the row that carried the old obligation stops
+ *    being the current one (see $voidedAt below).
+ * Each of the three is one-time and refuses a second call with a
+ * LogicException. Every other field stays readonly and set once at
+ * construction — this is NOT a general mutation door.
+ *
+ * status, attemptedAt, confirmedAt AND voidedAt ARE FOUR DIFFERENT FACTS,
+ * NOT FOUR WAYS OF SAYING ONE (payment-domain-design.md §2, §7.3): what the
+ * adapter answered, when it answered, when a human recorded the money, and
+ * when the obligation was called off. Neither of the last two is a
+ * PaymentStatus, deliberately — PaymentStatus's own docblock argues against
+ * exactly that addition, and a confirmation that flipped status would
+ * silently widen captured_order_id's DB guarantee instead of leaving it
+ * meaning what it documents (order-lifecycle-design.md §4.2).
  *
  * THIS DOES NOT VIOLATE payment-domain-design.md §1'S APPEND-ONLY RULE —
  * a real distinction, not a loophole, worth stating explicitly: a RETRY
@@ -79,6 +97,8 @@ final class Payment
         private ?string $providerReference,
         private ?string $failureReason,
         private ?DateTimeImmutable $attemptedAt,
+        private ?DateTimeImmutable $confirmedAt = null,
+        private ?DateTimeImmutable $voidedAt = null,
     ) {
         self::assertNotEmpty('orderId', $orderId);
         self::assertNotEmpty('method', $method);
@@ -115,8 +135,14 @@ final class Payment
     }
 
     /**
-     * attemptedAt always starts null — a freshly created Payment has not
-     * yet had an adapter answer for it (see class docblock).
+     * attemptedAt/confirmedAt/voidedAt always start null — a freshly created
+     * Payment has not yet had an adapter answer for it, no merchant has
+     * recorded its money and no obligation has been called off (see class
+     * docblock). The two last parameters exist so a caller can thread
+     * already-known facts through the factory the same way it threads
+     * providerReference/failureReason; nothing in this codebase creates a
+     * Payment with a confirmation or a void, and every existing call site
+     * keeps working unchanged because both are last and defaulted.
      */
     public static function create(
         string $orderId,
@@ -125,6 +151,8 @@ final class Payment
         PaymentStatus $status,
         ?string $providerReference = null,
         ?string $failureReason = null,
+        ?DateTimeImmutable $confirmedAt = null,
+        ?DateTimeImmutable $voidedAt = null,
     ): self {
         return new self(
             id: null,
@@ -135,6 +163,8 @@ final class Payment
             providerReference: $providerReference,
             failureReason: $failureReason,
             attemptedAt: null,
+            confirmedAt: $confirmedAt,
+            voidedAt: $voidedAt,
         );
     }
 
@@ -156,6 +186,8 @@ final class Payment
         ?string $providerReference,
         ?string $failureReason,
         ?DateTimeImmutable $attemptedAt,
+        ?DateTimeImmutable $confirmedAt = null,
+        ?DateTimeImmutable $voidedAt = null,
     ): self {
         return new self(
             id: $id,
@@ -166,6 +198,8 @@ final class Payment
             providerReference: $providerReference,
             failureReason: $failureReason,
             attemptedAt: $attemptedAt,
+            confirmedAt: $confirmedAt,
+            voidedAt: $voidedAt,
         );
     }
 
@@ -219,6 +253,55 @@ final class Payment
     }
 
     /**
+     * When a merchant recorded this attempt's money as received
+     * (order-lifecycle-design.md §4.1) — null until confirm() runs, and
+     * never cleared afterwards. Not "when the adapter answered" (that is
+     * attemptedAt() above) and not "when the money arrived": it is when the
+     * fact was recorded, the same honest, narrower claim attemptedAt makes
+     * for the adapter's own answer.
+     */
+    public function confirmedAt(): ?DateTimeImmutable
+    {
+        return $this->confirmedAt;
+    }
+
+    /**
+     * When this row stopped being the order's current payment because the
+     * obligation it carried was called off (order-lifecycle-design.md §7.3).
+     * The row stays, in full, for the payment trail — a reissued row is a
+     * NEW payment, never an edit of this one.
+     */
+    public function voidedAt(): ?DateTimeImmutable
+    {
+        return $this->voidedAt;
+    }
+
+    public function isVoided(): bool
+    {
+        return $this->voidedAt !== null;
+    }
+
+    /**
+     * The ONE place "money is held on this payment" is decided
+     * (order-lifecycle-design.md §4.1, §11 item 17): the adapter captured
+     * it, or a merchant recorded the money as received. Every rule that
+     * means "settled" — refusing a second settlement, a refund's target, a
+     * shipment's precondition, the panel's payment block — calls this
+     * instead of re-deriving the two-part predicate, or the guard and the
+     * badge eventually disagree with each other.
+     *
+     * voidedAt IS DELIBERATELY NOT PART OF THIS PREDICATE: a void only ever
+     * happens on a row that was never settled (see void()'s guards), so the
+     * two can never describe the same row through any write path — and
+     * adding the term here would let a "settled but voided" row, which no
+     * caller can create, silently read as unsettled.
+     */
+    public function isSettled(): bool
+    {
+        return $this->status === PaymentStatus::CAPTURED || $this->confirmedAt !== null;
+    }
+
+    /**
      * Records the outcome of THIS attempt, once. Only ever called after
      * this Payment was created as the "we are about to charge, result
      * not yet known" placeholder (checkout-domain-design.md §8.3) —
@@ -257,5 +340,133 @@ final class Payment
         $this->providerReference = $providerReference;
         $this->failureReason = $failureReason;
         $this->attemptedAt = $attemptedAt;
+    }
+
+    /**
+     * Records that the money this attempt was for actually arrived, once —
+     * a MERCHANT's fact, on a row an ADAPTER already answered
+     * (order-lifecycle-design.md §4.1). This is the offline half of "the
+     * money is held": for cash on delivery and bank transfer the adapter's
+     * own answer is PENDING and always will be, so without this call an
+     * offline-paid order can never be told apart from one whose money never
+     * came.
+     *
+     * IT MOVES $status NOWHERE (§4.2) — deliberately, and it writes exactly
+     * one field, $confirmedAt. The row is the record of what the adapter
+     * said; flipping it to CAPTURED would replace that answer with a
+     * human's, lose the attemptedAt distinction the column exists for, and
+     * silently widen captured_order_id's DB guarantee to cover offline
+     * rows. Whether the money is held is isSettled()'s question, and it
+     * answers it from both facts.
+     *
+     * ONE-TIME, like assignId() and recordAttemptResult(): a second call
+     * throws, because recording the same money fact twice is a caller bug
+     * (a race or a defect), not a no-op. There is no un-confirm anywhere
+     * (§11 item 6) — a confirmation recorded against the wrong order is
+     * corrected by the money trail, never by clearing this column.
+     *
+     * THE GUARDS, all LogicException, all visible on the aggregate itself
+     * (so no caller needs a read of its own to know what is confirmable):
+     *  - $attemptedAt must be set. PENDING + NULL attemptedAt is the state
+     *    attemptedAt was added to expose — a crashed or never-answered
+     *    attempt — and confirming it would record money against an attempt
+     *    whose outcome nobody knows.
+     *  - the status may not be CAPTURED: the adapter already settled it.
+     *  - the status may not be FAILED: the adapter answered no, there is no
+     *    money, and "confirming" it would be a refund waiting to happen.
+     *  - the row may not be voided: a called-off obligation is not a
+     *    payment, so confirming one would record money against a row the
+     *    order no longer owes on.
+     * The only state confirm() accepts is therefore PENDING with an
+     * answered attempt.
+     */
+    public function confirm(DateTimeImmutable $confirmedAt): void
+    {
+        if ($this->confirmedAt !== null) {
+            throw new LogicException(
+                "Payment was already confirmed at {$this->confirmedAt->format(DATE_ATOM)}; confirm() is a one-time operation."
+            );
+        }
+
+        if ($this->attemptedAt === null) {
+            throw new LogicException(
+                'Payment attempt was never answered (attemptedAt is null) — money cannot be recorded as received against an attempt nobody knows the outcome of.'
+            );
+        }
+
+        if ($this->status === PaymentStatus::CAPTURED) {
+            throw new LogicException(
+                'Payment was already settled by the adapter (status captured); confirm() is the offline half and has nothing to add.'
+            );
+        }
+
+        if ($this->status === PaymentStatus::FAILED) {
+            throw new LogicException(
+                'Payment attempt failed; there is no money to record as received.'
+            );
+        }
+
+        if ($this->voidedAt !== null) {
+            throw new LogicException(
+                "Payment was voided at {$this->voidedAt->format(DATE_ATOM)}; a called-off obligation cannot be confirmed — the order owes on a newer payment row."
+            );
+        }
+
+        $this->confirmedAt = $confirmedAt;
+    }
+
+    /**
+     * Records that the ORDER'S REQUIREMENT shrank, once — the row stops
+     * being the order's current payment (order-lifecycle-design.md §7.3,
+     * §11 item 19). It is NOT a fourth status and NOT the attempt's
+     * outcome: the attempt was answered PENDING and always will have been;
+     * what changed is that the customer was never told the amount this row
+     * carries, so the money owed is corrected by appending a NEW payment
+     * row, never by editing this one (payment-domain-design.md §1's
+     * append-only rule). The annotation on the OLD row is what says it is
+     * no longer current.
+     *
+     * ONE-TIME, like every other mutator here: a second call throws.
+     *
+     * THE GUARDS, all LogicException: a void applies to a normal offline
+     * order awaiting its money, so the status must be PENDING, $attemptedAt
+     * must be set (the same crashed/never-answered distinction confirm()
+     * makes, read from the other side), the row must not already be settled
+     * — isSettled(): a captured row, or one whose money a merchant already
+     * recorded, is REFUNDED, never voided, because money that really moved
+     * has to move back — and it must not already be voided.
+     *
+     * IT MOVES $status NOWHERE and touches neither generated column: a
+     * voided row is always a pending, unconfirmed one, so it keeps
+     * contributing NULL to captured_order_id and settled_order_id and can
+     * never interact with either unique index.
+     */
+    public function void(DateTimeImmutable $voidedAt): void
+    {
+        if ($this->voidedAt !== null) {
+            throw new LogicException(
+                "Payment was already voided at {$this->voidedAt->format(DATE_ATOM)}; void() is a one-time operation."
+            );
+        }
+
+        if ($this->isSettled()) {
+            throw new LogicException(
+                'Payment is settled (status captured, or a confirmation is on record) — money that really moved is refunded, never voided.'
+            );
+        }
+
+        if ($this->status === PaymentStatus::FAILED) {
+            throw new LogicException(
+                'Payment attempt failed; there is no outstanding obligation to call off.'
+            );
+        }
+
+        if ($this->attemptedAt === null) {
+            throw new LogicException(
+                'Payment attempt was never answered (attemptedAt is null) — void() applies to a normal offline order awaiting its money, not to a crashed attempt.'
+            );
+        }
+
+        $this->voidedAt = $voidedAt;
     }
 }

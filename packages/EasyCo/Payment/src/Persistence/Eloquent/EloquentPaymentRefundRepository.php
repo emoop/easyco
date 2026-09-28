@@ -51,6 +51,26 @@ final class EloquentPaymentRefundRepository implements PaymentRefundRepository
             ->all();
     }
 
+    /**
+     * One SUM over the payment's own rows — see the contract's docblock for
+     * why this is a query rather than a get() and an add-up. `sum()` returns
+     * 0 (not null) when nothing matches, which is exactly the "nothing
+     * refunded yet" answer R8(a)'s cap needs; the cast is for the driver
+     * returning the total as a string.
+     *
+     * The currency is the caller's (the payment's own) and is never inferred
+     * from the rows: a refund is constructed from the payment it corrects,
+     * so every row of one payment is in that payment's currency.
+     */
+    public function sumCompletedForPayment(string $paymentId, string $currency): Money
+    {
+        $sum = PaymentRefundModel::where('payment_id', $paymentId)
+            ->where('status', PaymentRefundStatus::COMPLETED->value)
+            ->sum('amount_minor');
+
+        return Money::fromMinorUnits((int) $sum, $currency);
+    }
+
     private function toDomainPaymentRefund(PaymentRefundModel $model): PaymentRefund
     {
         return PaymentRefund::reconstituteFromStorage(
