@@ -73,10 +73,16 @@ return [
         'failed' => 'Неуспешна',
     ],
 
+    // The order's own six statuses (order-lifecycle-design.md §1, §10 stage 2).
+    // `fulfilled` is deliberately GONE rather than kept as a dead key: the enum
+    // no longer has the case, so nothing can ever produce the value again.
     'status_options' => [
-        'placed' => 'Направена',
-        'fulfilled' => 'Изпълнена',
-        'cancelled' => 'Отменена',
+        'placed' => 'Приета',
+        'confirmed' => 'Потвърдена',
+        'shipped' => 'Изпратена',
+        'delivered' => 'Доставена',
+        'cancelled' => 'Отказана',
+        'refunded' => 'Върната',
     ],
 
     'delivery_type_options' => [
