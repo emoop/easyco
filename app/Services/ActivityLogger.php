@@ -5,8 +5,6 @@ namespace App\Services;
 use App\Models\ActivityLogModel;
 use App\Settings\Contracts\SiteSettingsRepository;
 use DateTimeImmutable;
-use EasyCo\Staff\Persistence\Eloquent\StaffModel;
-use Filament\Facades\Filament;
 
 /**
  * A compact, generic activity log — app/ layer, not an EasyCo\* domain
@@ -34,13 +32,16 @@ use Filament\Facades\Filament;
  * PruneActivityLog and ACTION_DELETED below.
  *
  * Both methods resolve the current staff (id + name snapshot) from the
- * panel guard internally — callers never pass staff info explicitly,
- * mirroring AuthorizesViaStaffPermission::staffCanForAction()'s own
- * `Filament::auth()->user()` resolution. A null/non-StaffModel
- * authenticated user (a console command, a queued job with no request
- * context) logs with a null staff_id/staff_name rather than throwing —
- * the History page's own "System" fallback exists specifically for
- * this case.
+ * panel guard internally — callers never pass staff info explicitly, and the
+ * resolution itself now lives in App\Services\PanelStaffActor, the one place
+ * this codebase asks that question (shared with App\Services\
+ * OrderEventRecorder, which needs the identical answer for order_events —
+ * order-lifecycle-design.md §6.2). A null/non-StaffModel authenticated user (a
+ * console command, a queued job with no request context) logs with a null
+ * staff_id/staff_name rather than throwing — the History page's own "System"
+ * fallback exists specifically for this case. This class's own behaviour is
+ * unchanged by that extraction: same guard, same result, still resolved at
+ * write time rather than cached.
  */
 final class ActivityLogger
 {
@@ -55,6 +56,7 @@ final class ActivityLogger
 
     public function __construct(
         private readonly SiteSettingsRepository $siteSettings,
+        private readonly PanelStaffActor $staffActor,
     ) {
     }
 
@@ -113,7 +115,7 @@ final class ActivityLogger
             return;
         }
 
-        $staff = $this->currentStaff();
+        $staff = $this->staffActor->current();
 
         ActivityLogModel::create([
             'entity_type' => $entityType,
@@ -126,12 +128,5 @@ final class ActivityLogger
             'staff_name' => $staff?->name,
             'occurred_at' => new DateTimeImmutable(),
         ]);
-    }
-
-    private function currentStaff(): ?StaffModel
-    {
-        $authenticatedModel = Filament::auth()->user();
-
-        return $authenticatedModel instanceof StaffModel ? $authenticatedModel : null;
     }
 }
