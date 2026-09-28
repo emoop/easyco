@@ -37,7 +37,12 @@ use RuntimeException;
  *    column: it shows the order's own columns only, so the old
  *    applyListAggregates() correlated-subquery select list was removed
  *    together with the client/channel/item-count/latest-payment columns
- *    that used it.
+ *    that used it. "Latest payment" here MEANS the CURRENT payment —
+ *    the newest payments row for the order by attempted_at DESC, id DESC
+ *    whose voided_at is NULL (order-lifecycle-design.md §7.3) — and
+ *    forOrder() below applies the identical rule, so the list's filter
+ *    and the View page can never disagree about which payment an order's
+ *    obligations live on.
  *  - forOrder(): the single-order View page's full read, assembled from
  *    several small, targeted reads (never a loop over many rows, so the
  *    same query-count discipline does not apply the same way here — a
@@ -153,12 +158,22 @@ final class OrderAdminReader
      * exactly what forOrder() below does via a real ORDER BY for the
      * single-order case, so list and view never disagree about which
      * payment is "the" one shown.
+     *
+     * THE "CURRENT PAYMENT" DEFINITION, IN FULL
+     * (order-lifecycle-design.md §7.3, §11 item 19): the newest payments row
+     * for the order by attempted_at DESC, id DESC **whose voided_at is
+     * NULL**. The voided_at condition is not an extra rule bolted on — it is
+     * the other half of "current": a row whose obligation was called off
+     * (voided_at set) is still visible in the order's payment trail but is
+     * never the row the order currently owes on, so it must never be the
+     * row the list's filter matches or the View page shows.
      */
     private function latestPaymentColumnSubquery(string $column): \Illuminate\Database\Query\Builder
     {
         return DB::table('payments')
             ->select("payments.{$column}")
             ->whereRaw('payments.order_id = CAST(orders.id AS CHAR)')
+            ->whereNull('payments.voided_at')
             ->orderByDesc('payments.attempted_at')
             ->orderByDesc('payments.id')
             ->limit(1);
@@ -238,8 +253,18 @@ final class OrderAdminReader
         // Payment's own reconstitution has no similarly brittle
         // unconditional constructor check for older rows — confirmed
         // against its installed source).
+        //
+        // THE SAME "CURRENT PAYMENT" DEFINITION, voided_at INCLUDED
+        // (order-lifecycle-design.md §7.3, §11 item 19): the newest row by
+        // attempted_at DESC, id DESC whose voided_at is NULL. Every row
+        // stays visible in the payment trail below this one; what a void
+        // removes is only the row's claim to be the order's current
+        // payment. Both reads therefore carry the identical condition, or
+        // the list's filter and this page would disagree about the same
+        // order.
         $latestPaymentId = DB::table('payments')
             ->where('order_id', $orderId)
+            ->whereNull('voided_at')
             ->orderByDesc('attempted_at')
             ->orderByDesc('id')
             ->limit(1)
@@ -249,6 +274,10 @@ final class OrderAdminReader
             ? $this->payments->findById((string) $latestPaymentId)
             : null;
 
+        // Every attempt, voided rows included — deliberately a plain count
+        // with no voided_at condition: this is a display fact ("how many
+        // times was this order's money attempted"), not the "current
+        // payment" rule, and a void does not un-happen the attempt.
         $paymentAttemptCount = DB::table('payments')->where('order_id', $orderId)->count();
 
         // §6.3's one events read: the whole history in a single query, oldest
