@@ -45,11 +45,22 @@ return [
         'provider_reference' => 'Референция',
         'failure_reason' => 'Причина за отказ',
         'attempted_at' => 'Опитано на',
+        // §8.4 stage 7c-1 — the two facts the Payment section could not state
+        // before "Mark as received" (see en/orders.php's own comment for the
+        // wording). 'Money held' is §4.1's settled fact; 'Received at' follows
+        // attempted_at's own '<participle> at' shape.
+        'payment_settled' => 'Държани пари',
+        'payment_confirmed_at' => 'Получено на',
         'occurred_at' => 'Дата',
         'event_type' => 'Събитие',
         'from_status' => 'От',
         'to_status' => 'До',
         'reason' => 'Причина',
+        // §8.4 stage 7c-1 — the History table's return-reference column: the
+        // return's own Transaction id, rendered as text (no Transaction page
+        // exists to link to yet). Named for what a merchant reads it as, not
+        // for the column it comes from.
+        'return_record' => 'Запис за връщане',
         'staff_name' => 'От (служител)',
     ],
 
@@ -170,6 +181,12 @@ return [
     'no' => 'Не',
     'no_promotion' => 'Няма приложена промоция.',
     'no_payment' => 'Няма запис за плащане.',
+    // §8.4 stage 7c-1 — the two states of the Payment section's settled
+    // badge (en/orders.php's own comment carries the full argument): the
+    // positive one is §4.1's "money is held", the negative one states the money
+    // as NOT RECORDED, never "unpaid" (§4.5 / §3 item 3).
+    'payment_settled_yes' => 'Получени',
+    'payment_settled_no' => 'Няма запис',
     'attempts_suffix' => ':count опита',
     'not_available' => '—',
     'legacy_line_note' => 'Записано преди пълния запис',

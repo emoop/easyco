@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Enums\OrderEventType;
 use App\Filament\StaffPanelUser;
 use App\Services\OrderAdminReader;
+use App\Services\OrderAdminSaleLineView;
 use App\Services\OrderEventRecorder;
 use DateTimeImmutable;
 use EasyCo\OperationalSales\Client;
@@ -57,32 +58,48 @@ class OrderAdminReaderEventsTest extends TestCase
      * A real order with one real SALE line and nothing else — the same shape the
      * pre-stage-3 baseline query count was measured against, so the arithmetic in
      * the cost test below is a comparison rather than a coincidence.
+     *
+     * $saleLines > 1 widens ONLY the Lines half of that order, for the stage
+     * 7c-1 measurement that asks whether the per-line R7 read is batched: it must
+     * not change any other number this file asserts, and it does not, because
+     * lines are read in one query and the returns sum in one more.
      */
-    private function orderId(): string
+    private function orderId(int $saleLines = 1): string
     {
         $client = new Client(null, 'Ivan Ivanov');
         app(ClientRepository::class)->save($client);
 
         $transaction = new Transaction(null, Channel::WEB);
-        $transaction->addSaleLine(SaleLine::create(
-            transactionId: '',
-            clientId: $client->id(),
-            priceableId: 'variation-1',
-            status: SaleLineStatus::COMPLETED,
-            quantity: 1,
-            amount: Money::fromMinorUnits(1000, 'EUR'),
-            profit: Money::fromMinorUnits(200, 'EUR'),
-            recordedAt: new DateTimeImmutable('2026-09-28 09:00:00'),
-            effectiveAt: new DateTimeImmutable('2026-09-28 09:00:00'),
-            productName: 'Product One',
-            sku: 'SKU-1',
-            regularUnitPrice: Money::fromMinorUnits(1000, 'EUR'),
-            finalUnitPrice: Money::fromMinorUnits(1000, 'EUR'),
-            promotionDiscountShare: Money::zero('EUR'),
-            discretionaryDiscount: Money::zero('EUR'),
-            netPaidAmount: Money::fromMinorUnits(1000, 'EUR'),
-            soldAttributes: [],
-        ));
+
+        // $saleLines exists for ONE measurement below (stage 7c-1's batched
+        // R7 read for the Lines table): the default of 1 keeps every other
+        // test in this file on the exact single-line shape the pre-stage-3
+        // baseline query count was measured against. Each line carries its
+        // own distinct priceableId, which is all the reader's own thumbnails
+        // and per-line mapping key off; the ORDER's own header totals stay
+        // at the fixture's original numbers because no test here reads them.
+        for ($i = 1; $i <= $saleLines; $i++) {
+            $transaction->addSaleLine(SaleLine::create(
+                transactionId: '',
+                clientId: $client->id(),
+                priceableId: "variation-{$i}",
+                status: SaleLineStatus::COMPLETED,
+                quantity: 1,
+                amount: Money::fromMinorUnits(1000, 'EUR'),
+                profit: Money::fromMinorUnits(200, 'EUR'),
+                recordedAt: new DateTimeImmutable('2026-09-28 09:00:00'),
+                effectiveAt: new DateTimeImmutable('2026-09-28 09:00:00'),
+                productName: "Product {$i}",
+                sku: "SKU-{$i}",
+                regularUnitPrice: Money::fromMinorUnits(1000, 'EUR'),
+                finalUnitPrice: Money::fromMinorUnits(1000, 'EUR'),
+                promotionDiscountShare: Money::zero('EUR'),
+                discretionaryDiscount: Money::zero('EUR'),
+                netPaidAmount: Money::fromMinorUnits(1000, 'EUR'),
+                soldAttributes: [],
+            ));
+        }
+
         app(TransactionRepository::class)->save($transaction);
 
         $order = Order::create(
@@ -235,6 +252,16 @@ class OrderAdminReaderEventsTest extends TestCase
      * `assertSame(1, $queriesForOptions)`: a future read added to forOrder() must
      * consciously update this line and its comment rather than quietly making the
      * View page more expensive.
+     *
+     * ORDER-LIFECYCLE STAGE 7c-1 UPDATED IT CONSCIOUSLY, WHICH IS THIS TEST
+     * WORKING AS DESIGNED: §8.4's remainingReturnable needed R7's read for the
+     * order's lines, and it is ONE grouped query for the whole list (never one
+     * per line — EloquentSaleLineRepository::sumQuantityReturnedForOriginatingLines()),
+     * so the cost is exactly +1: 9 + 1 (events) + 1 (returns) = 11. An order
+     * with no lines costs no returns query at all (that method returns [] for
+     * an empty id list before touching the database), which is why this
+     * fixture — one line, like the pre-stage-3 baseline — is the one that sees
+     * the +1.
      */
     public function test_for_order_costs_exactly_one_more_query_than_it_did_before_this_stage(): void
     {
@@ -244,9 +271,9 @@ class OrderAdminReaderEventsTest extends TestCase
 
         $queries = $this->countForOrderQueries($orderId);
 
-        fwrite(STDERR, "\n[query-count] forOrder(): 9 queries on 01398d9 (no events read), {$queries} with the events read\n");
+        fwrite(STDERR, "\n[query-count] forOrder(): 9 queries on 01398d9 (no events, no returns read), {$queries} with the events read and stage 7c-1's returns read\n");
 
-        $this->assertSame(10, $queries, 'forOrder() must cost the pre-stage-3 9 queries plus exactly ONE for the events list');
+        $this->assertSame(11, $queries, 'forOrder() must cost the pre-stage-3 9 queries plus exactly ONE for the events list and ONE for stage 7c-1\'s batched returns read');
     }
 
     /**
@@ -279,6 +306,66 @@ class OrderAdminReaderEventsTest extends TestCase
             $queriesForFive,
             $queriesForTwentyFive,
             'the events read must not grow with the number of events (one query, never a per-event read)'
+        );
+    }
+
+    /**
+     * Stage 7c-1's own version of the same property, for LINES: §8.4's Lines
+     * table now needs R7's number on EVERY row (D3's remainingReturnable), which
+     * is exactly the shape of read that becomes a query per line if it is not
+     * batched. Five lines cost what one line costs.
+     *
+     * The rows themselves are asserted too — five DISTINCT ids and five SKUs —
+     * so the count cannot pass by rendering less than the order holds; and the
+     * ABSOLUTE number is asserted as well, not only the equality, because
+     * equality alone would still hold if both reads had grown: nine reads for the
+     * order and its lines, one for its history, one for the returns summed across
+     * its lines.
+     */
+    public function test_five_lines_cost_the_same_number_of_queries_as_one_line(): void
+    {
+        $oneLineOrderId = $this->orderId();
+        $fiveLineOrderId = $this->orderId(saleLines: 5);
+
+        $queriesForOne = $this->countForOrderQueries($oneLineOrderId);
+        $oneLineView = $this->reader()->forOrder($oneLineOrderId);
+
+        $queriesForFive = $this->countForOrderQueries($fiveLineOrderId);
+        $fiveLineView = $this->reader()->forOrder($fiveLineOrderId);
+
+        $this->assertCount(1, $oneLineView->lines);
+        $this->assertCount(5, $fiveLineView->lines);
+
+        $skus = array_map(static fn (OrderAdminSaleLineView $line): string => $line->sku, $fiveLineView->lines);
+        sort($skus);
+
+        $this->assertSame(['SKU-1', 'SKU-2', 'SKU-3', 'SKU-4', 'SKU-5'], $skus, 'five real lines, each mapped from its own row');
+
+        $ids = array_map(static fn (OrderAdminSaleLineView $line): string => $line->id, $fiveLineView->lines);
+
+        $this->assertCount(5, array_unique($ids), 'each row is addressed by its own line id, never a blank or shared one');
+
+        $this->assertSame(
+            [1],
+            array_values(array_unique(array_map(
+                static fn (OrderAdminSaleLineView $line): int => $line->remainingReturnable,
+                $fiveLineView->lines
+            ))),
+            'nothing has come back on any line yet, so every row shows its own full quantity'
+        );
+
+        fwrite(STDERR, "\n[query-count] forOrder(): 1 line = {$queriesForOne} queries, 5 lines = {$queriesForFive} queries\n");
+
+        $this->assertSame(
+            11,
+            $queriesForFive,
+            'nine reads for the order and its lines, one for its history, one for the returns summed across those lines'
+        );
+
+        $this->assertSame(
+            $queriesForOne,
+            $queriesForFive,
+            'the per-row R7 number must not turn into a read per row (one grouped query, never a per-line read)'
         );
     }
 

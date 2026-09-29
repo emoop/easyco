@@ -5,6 +5,7 @@ namespace App\Services;
 use EasyCo\Media\Enums\MediaType;
 use EasyCo\Media\Enums\ProcessingStatus;
 use EasyCo\OperationalSales\Contracts\ClientRepository;
+use EasyCo\OperationalSales\Contracts\SaleLineRepository;
 use EasyCo\OperationalSales\Enums\SaleLineStatus;
 use EasyCo\OperationalSales\Enums\SaleLineType;
 use EasyCo\OperationalSales\Persistence\Eloquent\SaleLineMapper;
@@ -101,6 +102,11 @@ final class OrderAdminReader
         private readonly OrderRepository $orders,
         private readonly ClientRepository $clients,
         private readonly PaymentRepository $payments,
+        // R7's read, for the Lines table's own remaining-returnable capacity
+        // (order-lifecycle-design.md §8.4, stage 7c-1). The package contract,
+        // never EloquentSaleLineRepository directly — the same boundary this
+        // class already respects for orders/clients/payments.
+        private readonly SaleLineRepository $saleLines,
     ) {
     }
 
@@ -235,10 +241,21 @@ final class OrderAdminReader
             $rows->pluck('priceable_id')->filter()->unique()->values()->all()
         );
 
+        // R7's read for the WHOLE order, batched (§8.4, stage 7c-1): ONE
+        // grouped query for every SALE line above, never one per line — the
+        // same discipline imagePathsFor() follows below, and the reason
+        // SaleLineRepository grew a plural twin of its single-line method
+        // rather than this loop calling the singular one. [] (and no query at
+        // all) for an order with no lines.
+        $returnedByLineId = $this->saleLines->sumQuantityReturnedForOriginatingLines(
+            $rows->pluck('id')->map(static fn (mixed $id): string => (string) $id)->all()
+        );
+
         $lines = $rows
             ->map(fn (object $row): OrderAdminSaleLineView => $this->buildLineView(
                 $row,
                 $row->priceable_id === null ? null : ($imagePathsByVariationId[$row->priceable_id] ?? null),
+                $returnedByLineId[(string) $row->id] ?? 0,
             ))
             ->all();
 
@@ -326,8 +343,24 @@ final class OrderAdminReader
      * mapper enforces (D2), reused rather than copied. netPaidAmount is
      * resolved before the constructor call because isLegacy (D1) is
      * derived from it.
+     *
+     * STAGE 7c-1: $returnedQuantity arrives ALREADY SUMMED for this line —
+     * forOrder() above read every line's total in one grouped query and
+     * hands each line its own, so this method stays a pure mapper with no
+     * read of its own (the same reason $imagePath is a parameter here and
+     * not a lookup). remainingReturnable is then derived here rather than
+     * in the DTO, so there is exactly one place that turns "how many came
+     * back" into "how many may still" — the DTO holds facts, not arithmetic
+     * (its own docblock).
+     *
+     * CLAMPED AT 0, one-directionally: the write path's locked R7 read
+     * refuses an over-return, so quantity_returned exceeding quantity means
+     * corrupted data — and 0 ("nothing left to return") is the safe reading
+     * of that, where a negative capacity would reach §8.4's form as a
+     * nonsense max. Never rounded up to the quantity either: a line whose
+     * units have all come back is legitimately 0.
      */
-    private function buildLineView(object $row, ?string $imagePath): OrderAdminSaleLineView
+    private function buildLineView(object $row, ?string $imagePath, int $returnedQuantity): OrderAdminSaleLineView
     {
         $quantity = (int) $row->quantity;
         $amountMinor = (int) $row->amount_minor;
@@ -347,9 +380,14 @@ final class OrderAdminReader
         $netPaidAmount = SaleLineMapper::moneyOrNull($row->net_paid_amount_minor, $row->net_paid_amount_currency, 'netPaidAmount');
 
         return new OrderAdminSaleLineView(
+            id: (string) $row->id,
             productName: $row->product_name,
             sku: $row->sku,
             quantity: $quantity,
+            // max(), not a conditional: the clamp and the normal case are
+            // one expression, and the normal case (a sum within the
+            // quantity) is what every legitimate write produces.
+            remainingReturnable: max(0, $quantity - $returnedQuantity),
             lineTotal: $lineTotal,
             unitPrice: $unitPrice,
             regularUnitPrice: SaleLineMapper::moneyOrNull($row->regular_unit_price_minor, $row->regular_unit_price_currency, 'regularUnitPrice'),

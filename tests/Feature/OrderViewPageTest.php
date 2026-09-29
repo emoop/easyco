@@ -18,6 +18,9 @@ use EasyCo\Catalog\Product;
 use EasyCo\Inventory\Contracts\StockLevelRepository;
 use EasyCo\Inventory\StockLevel;
 use EasyCo\Order\Order;
+use EasyCo\Payment\Contracts\PaymentRepository;
+use EasyCo\Payment\Enums\PaymentStatus;
+use EasyCo\Payment\Payment;
 use EasyCo\Pricing\Contracts\PriceListItemRepository;
 use EasyCo\Pricing\Contracts\PriceListRepository;
 use EasyCo\Pricing\Enums\PriceListItemTargetType;
@@ -402,5 +405,375 @@ class OrderViewPageTest extends TestCase
         $this->get(OrderResource::getUrl('view', ['record' => $order->id()]))
             ->assertOk()
             ->assertSee(__('orders.sections.history'));
+    }
+
+    // --- stage 7c-1: the Payment section's own two facts (§8.4) -----------------
+
+    /**
+     * The Payment section's own slice: from its heading to History's heading.
+     * Payment and History are this page's last two sections, so the closing
+     * boundary is a heading that always exists. The opening heading is also the
+     * FIRST place the word appears on the page — "Payment method"/"Payment
+     * status" are labels INSIDE this section, and every earlier section is
+     * about the order, the client, the address, the lines or the money totals —
+     * so the slice cannot silently widen into another section.
+     */
+    private function paymentHtml(string $html): string
+    {
+        $start = strpos($html, __('orders.sections.payment'));
+        $this->assertNotFalse($start, 'Payment section heading not found in the rendered page');
+
+        $end = strpos($html, __('orders.sections.history'), $start);
+        $this->assertNotFalse($end, 'History section heading not found after the Payment section');
+
+        return substr($html, $start, $end - $start);
+    }
+
+    /**
+     * The order's own payment row as a caller reads it BEFORE anything happens
+     * to it — deliberately findByOrderId() and not findSettledForOrder(): the
+     * row this helper is used to confirm is, by definition, not settled yet.
+     */
+    private function theOrdersPaymentRow(string $orderId): Payment
+    {
+        $payments = app(PaymentRepository::class)->findByOrderId($orderId);
+
+        $this->assertCount(1, $payments, "Order {$orderId} was expected to carry exactly one payment row (its checkout attempt).");
+
+        return $payments[0];
+    }
+
+    /**
+     * §8.4's hole, closed: before stage 7c-1 NOTHING in this section changed
+     * when the money was recorded as received — the page kept rendering
+     * "Pending" and the staff member who recorded it was shown no evidence at
+     * all that the click had done anything. Both halves of the fix are pinned
+     * here: the MONEY fact ("Money held", read from Payment::isSettled() — §11
+     * item 17's one predicate, so this entry cannot disagree with the guard
+     * that decides whether the order may ship) and the INSTANT it was recorded
+     * ("Received at", §4.3's confirmed_at, rendered Y-m-d H:i like every other
+     * instant on this page).
+     *
+     * The adapter's own answer is pinned alongside them because the fix must
+     * NOT collapse the two: confirm() moves $status nowhere (§4.2), so this
+     * section genuinely holds two independent facts — the adapter said
+     * "Pending" and the merchant recorded the money — and a page showing only
+     * one of them would be lying about the other.
+     */
+    public function test_a_confirmed_offline_payment_shows_the_money_is_held_and_when_it_was_received(): void
+    {
+        $this->actingAsStaffRole('Administrator');
+        $order = $this->placeOrder();
+
+        $payment = $this->theOrdersPaymentRow($order->id());
+        $payment->confirm(new DateTimeImmutable('2026-09-25 09:30:00'));
+        app(PaymentRepository::class)->save($payment);
+
+        // The write moved exactly one column and left the adapter's answer
+        // alone — read back from storage, not from the object in hand.
+        $row = DB::table('payments')->where('id', $payment->id())->first();
+        $this->assertSame('pending', $row->status);
+        $this->assertSame('2026-09-25 09:30:00', $row->confirmed_at);
+
+        $paymentHtml = $this->paymentHtml(
+            $this->get(OrderResource::getUrl('view', ['record' => $order->id()]))->assertOk()->getContent()
+        );
+
+        $this->assertStringContainsString(__('orders.fields.payment_settled'), $paymentHtml);
+        $this->assertStringContainsString(__('orders.payment_settled_yes'), $paymentHtml);
+        $this->assertStringContainsString(__('orders.fields.payment_confirmed_at'), $paymentHtml);
+        $this->assertStringContainsString('2026-09-25 09:30', $paymentHtml);
+        $this->assertStringContainsString(
+            __('orders.payment_status_options.pending'),
+            $paymentHtml,
+            "the adapter's own word is still rendered next to it — a second fact, not a replacement"
+        );
+    }
+
+    /**
+     * The adapter's half alone: a captured row IS settled money with no
+     * merchant confirmation behind it, and the page must say the money is held
+     * while claiming nothing about an instant nobody recorded. §4.5's "no
+     * invented state" cuts both ways — the confirmed-at entry is HIDDEN (the
+     * payment_status entry above it sets the precedent: an entry whose fact does
+     * not exist is not rendered), rather than shown empty or with a dash that
+     * would read as "there is a record here".
+     */
+    public function test_an_adapter_captured_payment_reads_as_settled_with_no_received_instant_invented(): void
+    {
+        $this->actingAsStaffRole('Administrator');
+        $order = $this->placeOrder();
+
+        // A retry is a NEW row (payment-domain-design.md §1): the checkout's own
+        // COD attempt stays exactly as it was, this captured row is a second one
+        // — which is also what keeps the settled_order_id unique index happy.
+        // Dated RELATIVE to now, like OrderAdminReaderTest's own retry fixtures
+        // ('+1 hour'): the checkout's row is written at the test's real now, so a
+        // hardcoded instant in the past would leave the COD row as the order's
+        // latest payment and this test would assert nothing about the adapter
+        // half at all.
+        $captured = Payment::create($order->id(), 'bank_transfer', $order->total(), PaymentStatus::PENDING);
+        $captured->recordAttemptResult(PaymentStatus::CAPTURED, 'ref-captured-001', null, new DateTimeImmutable('+1 hour'));
+        app(PaymentRepository::class)->save($captured);
+
+        $this->assertSame(2, DB::table('payments')->where('order_id', $order->id())->count(), 'the retry is a second row');
+
+        $latestRow = DB::table('payments')
+            ->where('order_id', $order->id())
+            ->orderByDesc('attempted_at')
+            ->orderByDesc('id')
+            ->first();
+
+        $this->assertSame($captured->id(), (string) $latestRow->id, "the section reads the order's latest payment");
+        $this->assertSame('captured', $latestRow->status, "the adapter's own answer, stored");
+        $this->assertNull($latestRow->confirmed_at, 'and no merchant confirmation anywhere near it');
+
+        $paymentHtml = $this->paymentHtml(
+            $this->get(OrderResource::getUrl('view', ['record' => $order->id()]))->assertOk()->getContent()
+        );
+
+        $this->assertStringContainsString(__('orders.payment_settled_yes'), $paymentHtml, 'the adapter settled it: the money is held');
+        $this->assertStringContainsString(__('orders.payment_status_options.captured'), $paymentHtml);
+        $this->assertStringContainsString('ref-captured-001', $paymentHtml);
+        $this->assertStringNotContainsString(
+            __('orders.fields.payment_confirmed_at'),
+            $paymentHtml,
+            'nothing is recorded on this row, so no entry claims a record exists'
+        );
+    }
+
+    /**
+     * The ordinary state of a cash-on-delivery order: one row, the adapter said
+     * Pending, nobody has recorded anything. The section must SAY so — §4.5's
+     * "no silence either": an absent fact reads exactly like a page that forgot
+     * to ask, which is the failure stage 7c-1 exists to fix (and the negative
+     * state must never be dressed up as "unpaid": this entry reports whether the
+     * MERCHANT has recorded the money, so what is missing is the merchant's
+     * entry, not the customer's money).
+     */
+    public function test_a_payment_with_nothing_recorded_says_so_instead_of_staying_silent(): void
+    {
+        $this->actingAsStaffRole('Administrator');
+        $order = $this->placeOrder();
+
+        $paymentHtml = $this->paymentHtml(
+            $this->get(OrderResource::getUrl('view', ['record' => $order->id()]))->assertOk()->getContent()
+        );
+
+        $this->assertStringContainsString(
+            __('orders.fields.payment_settled'),
+            $paymentHtml,
+            'a payment row exists, so this entry always has an answer to give'
+        );
+        $this->assertStringContainsString(__('orders.payment_settled_no'), $paymentHtml);
+        $this->assertStringNotContainsString(__('orders.payment_settled_yes'), $paymentHtml);
+        $this->assertStringNotContainsString(__('orders.fields.payment_confirmed_at'), $paymentHtml);
+    }
+
+    /**
+     * No payment row at all (the legacy or cancelled-before-checkout shapes):
+     * there is no row to ask, so BOTH new entries are hidden. The two entries
+     * above already say it in this page's own established words
+     * (`orders.no_payment` on method and status), and a third "Money held: Not
+     * recorded" would read as an attempt that happened and is being reported on.
+     */
+    public function test_an_order_with_no_payment_row_hides_both_new_entries(): void
+    {
+        $this->actingAsStaffRole('Administrator');
+        $order = $this->placeOrder();
+
+        DB::table('payments')->where('order_id', $order->id())->delete();
+
+        $paymentHtml = $this->paymentHtml(
+            $this->get(OrderResource::getUrl('view', ['record' => $order->id()]))->assertOk()->getContent()
+        );
+
+        $this->assertStringContainsString(__('orders.no_payment'), $paymentHtml);
+        $this->assertStringNotContainsString(__('orders.fields.payment_settled'), $paymentHtml);
+        $this->assertStringNotContainsString(__('orders.payment_settled_yes'), $paymentHtml);
+        $this->assertStringNotContainsString(__('orders.payment_settled_no'), $paymentHtml);
+    }
+
+    /**
+     * The two new facts cost NOTHING to read. Neither entry asks a repository
+     * anything: both take their state off the SAME OrderAdminReader::forOrder()
+     * view the rest of this page already builds (§8.4's "no second read"), which
+     * is why this measures two DIFFERENT orders rather than one order twice —
+     * a second render of the same order would be answered from the reader's own
+     * per-order memo and would prove nothing about the query cost. The only
+     * difference between the two orders is that one of them has its money
+     * recorded, and the two renders must cost the same.
+     */
+    public function test_the_settled_and_received_facts_add_no_query_of_their_own(): void
+    {
+        $this->actingAsStaffRole('Administrator');
+
+        $notRecorded = $this->placeOrder();
+        $recorded = $this->placeOrder(['email' => 'settled@example.com']);
+
+        $payment = $this->theOrdersPaymentRow($recorded->id());
+        $payment->confirm(new DateTimeImmutable('2026-09-25 09:30:00'));
+        app(PaymentRepository::class)->save($payment);
+
+        // One discarded render first, so every cache that outlives a single
+        // request (Filament's own, the permission registry, ...) is warm for
+        // BOTH measurements. countViewPageQueries() drops the scoped instances
+        // before each one, because a scoped memo lives as long as this test's
+        // container does — and the reader's own memo is exactly what would make
+        // a measured render skip the reads being measured.
+        $this->countViewPageQueries($notRecorded->id());
+
+        $withoutTheFact = $this->countViewPageQueries($notRecorded->id());
+        $withTheFact = $this->countViewPageQueries($recorded->id());
+
+        fwrite(STDERR, "\n[query-count] order view page — money not recorded: {$withoutTheFact} queries, money held: {$withTheFact} queries\n");
+
+        $this->assertSame(
+            $withoutTheFact,
+            $withTheFact,
+            'the settled/received pair is read off the viewer the page already built, so it cannot add a query'
+        );
+    }
+
+    /** One render of the order view page, counted the same way OrderViewActionsTest counts the same page. */
+    private function countViewPageQueries(string $orderId): int
+    {
+        $this->app->forgetScopedInstances();
+
+        $queries = 0;
+
+        DB::listen(function () use (&$queries): void {
+            $queries++;
+        });
+
+        $this->get(OrderResource::getUrl('view', ['record' => $orderId]))->assertOk();
+
+        return $queries;
+    }
+
+    // --- stage 7c-1: History's own order and its return reference (D2, §8.4) ----
+
+    /**
+     * §8.4: "newest first, since a merchant opening an order wants the last
+     * thing that happened". The reversal is a DISPLAY decision taken by
+     * historyRows() — OrderAdminReader::forOrder() still returns events
+     * oldest-first, tie-broken by id, which OrderAdminReaderEventsTest pins —
+     * so this asserts the ORDER OF THE RENDERED SECTION and nothing else: the
+     * newest event's own words must appear before the older event's.
+     */
+    public function test_the_history_section_renders_the_newest_event_first(): void
+    {
+        $order = $this->placeOrder();
+
+        $changer = app(OrderStatusChanger::class);
+        $changer->confirm($order->id(), new DateTimeImmutable('2026-09-21 10:00:00'), 'accepted by phone');
+        $changer->ship($order->id(), new DateTimeImmutable('2026-09-22 10:00:00'), 'handed to courier');
+
+        $this->actingAsStaffRole('Administrator');
+        $historyHtml = $this->historyHtml(
+            $this->get(OrderResource::getUrl('view', ['record' => $order->id()]))->assertOk()->getContent()
+        );
+
+        $newest = strpos($historyHtml, 'handed to courier');
+        $oldest = strpos($historyHtml, 'accepted by phone');
+
+        $this->assertNotFalse($newest, "the newest event's own reason was not rendered at all");
+        $this->assertNotFalse($oldest, "the older event's own reason was not rendered at all");
+        $this->assertLessThan($oldest, $newest, 'the newest event is rendered FIRST');
+    }
+
+    /**
+     * §8.4's return reference, and this page's own word where there is none.
+     * The RETURNED event is the one §6.1 event that points at a record
+     * elsewhere (`transaction_id`), so its cell renders that reference as plain
+     * text: §8.4's LINK half still cannot be honoured — there is still no
+     * Transaction page to link to, and a link to nothing would be worse than
+     * text — but on a returned row the id is the only thing that distinguishes
+     * one of §7.2's several partial returns from another, which is a thing a
+     * merchant acts on daily.
+     *
+     * This is also the regression guard for HOW the cell is filled: the row
+     * array is keyed by the column spec's own key ('return_record'), because a
+     * RepeatableEntry child resolves its state by its OWN name — a descriptive
+     * key does not render a differently-named cell, it renders an EMPTY one, so
+     * only a positive assertion on the reference itself can catch it.
+     */
+    public function test_the_history_section_renders_the_returns_own_reference(): void
+    {
+        $order = $this->placeOrder();
+
+        $changer = app(OrderStatusChanger::class);
+        $changer->confirm($order->id(), new DateTimeImmutable('2026-09-21 10:00:00'), 'accepted by phone');
+        $changer->ship($order->id(), new DateTimeImmutable('2026-09-22 10:00:00'), 'handed to courier');
+
+        $saleLineId = (string) DB::table('operational_sales_sale_lines')
+            ->where('transaction_id', $order->transactionId())
+            ->value('id');
+
+        $changer->recordReturn($order->id(), [
+            ['originatingSaleLineId' => $saleLineId, 'quantityReturned' => 1, 'restock' => true],
+        ], new DateTimeImmutable('2026-09-23 10:00:00'), 'damaged in transit');
+
+        $returnedTransactionId = DB::table('order_events')
+            ->where('order_id', $order->id())
+            ->where('type', 'returned')
+            ->value('transaction_id');
+
+        $this->assertNotNull($returnedTransactionId, 'the return wrote its own transaction reference onto the event row');
+
+        $this->actingAsStaffRole('Administrator');
+        $historyHtml = $this->historyHtml(
+            $this->get(OrderResource::getUrl('view', ['record' => $order->id()]))->assertOk()->getContent()
+        );
+
+        $this->assertStringContainsString(__('orders.fields.return_record'), $historyHtml, "the column's own header");
+        $this->assertStringContainsString('#'.$returnedTransactionId, $historyHtml, "the returning transaction's own reference");
+        $this->assertStringContainsString(__('orders.event_type_options.returned'), $historyHtml);
+        $this->assertStringContainsString('damaged in transit', $historyHtml);
+    }
+
+    /**
+     * The negative half of the same column, on an order where nothing ever came
+     * back: every event names no record elsewhere and each says so ONCE, in its
+     * own cell (orders.not_available — the word Reason and the line columns
+     * already use for an absent value).
+     *
+     * The assertion is a COUNT rather than a presence, because "the page
+     * contains a dash somewhere" cannot tell a correct page apart from a cell
+     * that renders empty (the key mismatch the sibling test guards against, in
+     * its less obvious direction) or from a dash borrowed from another column.
+     * The fixture is chosen so that no other dash can exist: both of its events
+     * are status changes with both statuses set to real labels, an operator's
+     * own reason and an authenticated actor — so every dash in this section
+     * belongs to this one column.
+     */
+    public function test_the_return_record_column_says_no_record_for_events_that_are_not_returns(): void
+    {
+        $order = $this->placeOrder();
+
+        $changer = app(OrderStatusChanger::class);
+        $changer->confirm($order->id(), new DateTimeImmutable('2026-09-21 10:00:00'), 'accepted by phone');
+        $changer->ship($order->id(), new DateTimeImmutable('2026-09-22 10:00:00'), 'handed to courier');
+
+        $eventCount = DB::table('order_events')->where('order_id', $order->id())->count();
+
+        $this->assertSame(2, $eventCount, "the fixture's own two calls are this order's whole history");
+        $this->assertSame(
+            0,
+            DB::table('order_events')->where('order_id', $order->id())->whereNotNull('transaction_id')->count(),
+            'no event here names a record elsewhere'
+        );
+
+        $this->actingAsStaffRole('Administrator');
+        $historyHtml = $this->historyHtml(
+            $this->get(OrderResource::getUrl('view', ['record' => $order->id()]))->assertOk()->getContent()
+        );
+
+        $this->assertStringContainsString(__('orders.fields.return_record'), $historyHtml);
+        $this->assertSame(
+            $eventCount,
+            substr_count($historyHtml, __('orders.not_available')),
+            'one dash per event and no more: the return-record cell of each row'
+        );
     }
 }

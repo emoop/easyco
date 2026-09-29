@@ -54,6 +54,28 @@ use EasyCo\Pricing\Money;
  * order by OrderAdminReader::imagePathsFor(). NULL means "no usable photo,
  * show none" and is the normal case for a variation with no media, never an
  * error.
+ *
+ * id IS THE LINE'S OWN PRIMARY KEY, AND IT IS THE ONLY WAY THIS ROW CAN BE
+ * ADDRESSED (stage 7c-1). §8.4's cancel/return dialog is "one integer input
+ * per SALE line (keyed by line id ...)" and "is filled from the id, never from
+ * the name" — precisely because a legacy line HAS no name to fill it from
+ * (productName is nullable for exactly that reason) while it still has an id
+ * and a quantity, "the whole of what this form needs". This DTO carries it;
+ * the form itself is the next sub-stage's consumer.
+ *
+ * remainingReturnable IS R7's NUMBER, READ — NEVER A COUNTER
+ * (order-lifecycle-design.md §2.2 R7, §8.4): quantity minus the units already
+ * returned against this line, summed across the REFUND lines sharing its own
+ * originating_sale_line_id. It is the ceiling §8.4's form renders
+ * (`minValue(0)`, up to it), and it is deliberately NOT the guard: R7's read
+ * runs again, inside the locked transaction, in
+ * OrderStatusChanger::recordReturn() before anything is written, so this value
+ * being stale by one click can only produce a refusal, never an over-return.
+ * CLAMPED AT 0, deliberately and only in this direction: no legitimate write
+ * path can return more than a line's quantity (the same locked R7 read
+ * refuses it), so a sum above the quantity means corrupted data — and "nothing
+ * left to return" is the safe reading of that, whereas a negative capacity
+ * would reach the form as a nonsense max.
  */
 final class OrderAdminSaleLineView
 {
@@ -63,9 +85,11 @@ final class OrderAdminSaleLineView
      *   for a SIMPLE line and for a legacy line, never null.
      */
     public function __construct(
+        public readonly string $id,
         public readonly ?string $productName,
         public readonly ?string $sku,
         public readonly int $quantity,
+        public readonly int $remainingReturnable,
         public readonly Money $lineTotal,
         public readonly ?Money $unitPrice,
         public readonly ?Money $regularUnitPrice,

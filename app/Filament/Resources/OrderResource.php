@@ -535,6 +535,86 @@ class OrderResource extends Resource
                                 ? static::optionLabel('payment_status', $payment->status()->value)
                                 : __('orders.no_payment');
                         }),
+                    // §8.4's hole, closed (stage 7c-1): before these two
+                    // entries, NOT ONE fact in this section changed when
+                    // "Mark as received" ran — the section kept rendering
+                    // "Pending" and nothing moved at all, which reads like a
+                    // failed click. Both read the SAME forOrder() call every
+                    // other closure here makes, off the same Payment object,
+                    // so neither adds a query: the reader's own payment read
+                    // already carries the columns §4/§7.3 added, because
+                    // OrderAdminOrderView::latestPayment is the domain
+                    // Payment itself, not a copy of a few of its fields
+                    // (§8.4 puts it as "that DTO's latest-payment part gains
+                    // confirmedAt and voidedAt" — this DTO's latest-payment
+                    // part IS the aggregate that already exposes both, so the
+                    // intent is met without a second home for the two dates).
+                    //
+                    // IS "SETTLED" THE PREDICATE R8/R9 CALL? LITERALLY:
+                    // Payment::isSettled() is the one place §11 item 17 puts
+                    // "money is held" (§4.1), so this badge cannot disagree
+                    // with the guard that decides whether the order may ship
+                    // or how much may be refunded. It stays a SEPARATE entry
+                    // from payment_status on purpose: that one says exactly
+                    // what the adapter said (§4.2's whole argument, including
+                    // a raw value nothing here recognises), this one says
+                    // whether money is held — a captured row is settled with
+                    // no confirmation ever recorded, and only the pair can
+                    // say both facts at once.
+                    //
+                    // A BADGE ONLY FOR THE POSITIVE FACT, AND NO COLOUR
+                    // ANYWHERE. ->badge() takes a closure, so "settled" wears
+                    // a badge and the not-recorded case is a plain sentence —
+                    // §4.5 requires exactly that: the money stated as not
+                    // recorded, "no computed 'unpaid' badge" (§3 item 3) and
+                    // "no silence either". No ->color() for either state,
+                    // matching payment_status' own bare badge above: a green
+                    // "settled" beside a colourless "Captured" would rank two
+                    // facts §4.2 deliberately keeps side by side, and the
+                    // colour would say nothing the words do not.
+                    //
+                    // VISIBLE WHENEVER A PAYMENT ROW EXISTS — including the
+                    // COD delivery that could not confirm anything (§4.5's
+                    // first face), where it reads "Money not recorded" rather
+                    // than vanishing. For an order with NO payment row at
+                    // all, the two entries above already say it in this
+                    // page's own established words (orders.no_payment on
+                    // method and status), so this one has no subject to speak
+                    // about and stays hidden instead of repeating it a third
+                    // time. getStateUsing() still reads defensively, like the
+                    // sibling above: Filament may evaluate state itself.
+                    TextEntry::make('payment_settled')
+                        ->label(__('orders.fields.payment_settled'))
+                        ->badge(fn (OrderModel $record): bool => static::forOrder($record)->latestPayment?->isSettled() === true)
+                        ->visible(fn (OrderModel $record): bool => static::forOrder($record)->latestPayment !== null)
+                        ->getStateUsing(function (OrderModel $record): string {
+                            $payment = static::forOrder($record)->latestPayment;
+
+                            return $payment !== null && $payment->isSettled()
+                                ? __('orders.payment_settled_yes')
+                                : __('orders.payment_settled_no');
+                        }),
+                    // The instant §4.1's confirm() ran — NOT attemptedAt()
+                    // (when the adapter answered) and not the payment's
+                    // placement: the same honest, narrower claim Payment's
+                    // own confirmedAt() docblock makes, in this section's own
+                    // timestamp format. Hidden when NULL, the ordinary state
+                    // of an online-captured or still-pending payment — the
+                    // entry states a fact, it does not stand in for a missing
+                    // one ('—' would claim a record exists).
+                    //
+                    // The confirmation ACTION needs nothing here: it is
+                    // already hidden once the payment stops being confirmable
+                    // (markAsReceivedAction()'s own ->visible(), which
+                    // isConfirmable() makes false the moment confirmedAt is
+                    // set), so §8.4's "the button's absence is the correct
+                    // state, not a missing feature" holds today — this entry
+                    // is what turns that absence from silence into a
+                    // statement.
+                    TextEntry::make('payment_confirmed_at')
+                        ->label(__('orders.fields.payment_confirmed_at'))
+                        ->visible(fn (OrderModel $record): bool => static::forOrder($record)->latestPayment?->confirmedAt() !== null)
+                        ->getStateUsing(fn (OrderModel $record): ?string => static::forOrder($record)->latestPayment?->confirmedAt()?->format('Y-m-d H:i')),
                     TextEntry::make('provider_reference')
                         ->label(__('orders.fields.provider_reference'))
                         ->visible(fn (OrderModel $record): bool => static::forOrder($record)->latestPayment?->providerReference() !== null)
@@ -1114,43 +1194,84 @@ class OrderResource extends Resource
      *
      * RENDERED THE SAME TABLE WAY Lines renders its own RepeatableEntry
      * (lineRows()/lineColumnSpecs() above), not stacked/labelled-field-per-
-     * event — one row per order_events row, oldest first (the read's own
-     * order, unchanged here).
+     * event — one row per order_events row.
+     *
+     * NEWEST FIRST (§8.4's own words: "newest first, since a merchant opening
+     * an order wants the last thing that happened"), AND THE REVERSAL HAPPENS
+     * HERE RATHER THAN IN THE READ. OrderAdminReader::forOrder() documents —
+     * and OrderAdminReaderEventsTest pins — that it returns events
+     * oldest-first with the id breaking a same-second tie: that ordering is
+     * the read's own identity, the one that lets any caller see the events in
+     * the order they really happened in. Reversing it there would trade a
+     * documented, tested read contract for ONE page's display preference, and
+     * leave the tie-break untestable in the direction it is stated.
+     * array_reverse() on the already-materialised list costs no query and
+     * cannot disturb the tie-break: it reverses an order the read already
+     * decided. Rows stay a LIST (0..n-1) afterwards — RepeatableEntry maps the
+     * Nth cell to the Nth column, so keys must not be preserved.
      *
      * A FIXED COLUMN SET, UNLIKE Lines' OWN CONDITIONAL discretionary_discount
      * COLUMN — nothing here varies per record, so historyColumnSpecs() takes
      * no $record and neither ->table() nor ->schema() in infolist() needs a
      * per-record closure the way lineColumnSpecs()'s callers do.
      *
-     * SIX COLUMNS: Date (occurred_at), Event (type, via the SAME
+     * SEVEN COLUMNS: Date (occurred_at), Event (type, via the SAME
      * event_type_options group the label-parity test already pins),
      * From/To (from_status/to_status, via the SAME status_options group the
      * list's own status column uses — both '—' for the four event types
      * that move no status, §6.1), Reason (the operator's own words,
-     * verbatim, '—' when none was given) and By (staff_name, or 'System' for
-     * a console/job caller — OrderAdminEventView's own docblock already
-     * names this exact wording as the View page's job).
+     * verbatim, '—' when none was given), Return record (below) and By
+     * (staff_name, or 'System' for a console/job caller —
+     * OrderAdminEventView's own docblock already names this exact wording as
+     * the View page's job).
      *
-     * transaction_id IS DELIBERATELY NOT A COLUMN — no admin surface reads
-     * or links to a Transaction yet (no TransactionResource exists), so a
-     * raw id would be noise nobody here can act on; OrderAdminEventView
-     * still carries it for whenever that changes.
+     * THE RETURN RECORD COLUMN REVERSES AN EARLIER DECISION MADE IN THIS VERY
+     * DOCBLOCK, deliberately (§8.4, stage 7c-1). It used to read
+     * "transaction_id is deliberately not a column — no admin surface reads or
+     * links to a Transaction yet (no TransactionResource exists), so a raw id
+     * would be noise nobody here can act on". The LINK half of §8.4's sentence
+     * ("a link to the return's own lines where §6.1's transaction_id is set")
+     * still cannot be honoured — there is still no Transaction page to link
+     * to, and a link to nothing would be worse than text — so this renders the
+     * id as PLAIN TEXT. What changed is the "noise nobody can act on" half: on
+     * a returned row the id is the only thing that distinguishes one of §7.2's
+     * several partial returns from another, and it is the reference the
+     * merchant quotes when reconciling a return against the goods that came
+     * back, which is a thing they act on daily. It shows '—' wherever
+     * OrderAdminEventView::transactionId is NULL — every event type but the
+     * return — which reads as "this event is not about a record elsewhere",
+     * this page's own established word for an absent value (orders.not_available,
+     * the same one Reason and the line columns use).
      *
      * @return array<int, array<string, string>>
      */
     private static function historyRows(OrderModel $record): array
     {
-        return array_map(
+        $rows = array_map(
             fn (OrderAdminEventView $event): array => [
                 'occurred_at' => $event->occurredAt->format('Y-m-d H:i'),
                 'type' => static::optionLabel('event_type', $event->type),
                 'from_status' => static::optionLabel('status', $event->fromStatus),
                 'to_status' => static::optionLabel('status', $event->toStatus),
                 'reason' => $event->reason ?? __('orders.not_available'),
+                // THE KEY MUST BE THE COLUMN SPEC'S OWN KEY, NOT A
+                // DESCRIPTIVE ONE: RepeatableEntry hands each row's array to
+                // its child entries and each TextEntry resolves its state by
+                // ITS OWN NAME (historyColumnSpecs()'s 'return_record'), so a
+                // key named anything else is not a naming preference — the
+                // cell renders empty. OrderViewPageTest pins the rendered
+                // reference for exactly this reason.
+                'return_record' => $event->transactionId === null
+                    ? __('orders.not_available')
+                    : '#'.$event->transactionId,
                 'staff_name' => $event->staffName ?? __('orders.system_actor'),
             ],
             static::forOrder($record)->events,
         );
+
+        // preserve_keys: false (the default) is the correct one — see this
+        // method's own docblock.
+        return array_reverse($rows);
     }
 
     /** History's fixed column set, in order — see historyRows()'s own docblock for what each key is. @return array<int, array{key: string, label: string}> */
@@ -1162,6 +1283,7 @@ class OrderResource extends Resource
             ['key' => 'from_status', 'label' => __('orders.fields.from_status')],
             ['key' => 'to_status', 'label' => __('orders.fields.to_status')],
             ['key' => 'reason', 'label' => __('orders.fields.reason')],
+            ['key' => 'return_record', 'label' => __('orders.fields.return_record')],
             ['key' => 'staff_name', 'label' => __('orders.fields.staff_name')],
         ];
     }

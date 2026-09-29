@@ -15,6 +15,10 @@ use EasyCo\Catalog\Persistence\Eloquent\VariationModel;
 use EasyCo\Catalog\Product;
 use EasyCo\Inventory\Contracts\StockLevelRepository;
 use EasyCo\Inventory\StockLevel;
+use EasyCo\OperationalSales\Contracts\TransactionRepository;
+use EasyCo\OperationalSales\Enums\Channel;
+use EasyCo\OperationalSales\SaleLine;
+use EasyCo\OperationalSales\Transaction;
 use EasyCo\Order\Persistence\Eloquent\OrderModel;
 use EasyCo\Payment\Contracts\PaymentRepository;
 use EasyCo\Payment\Enums\PaymentStatus;
@@ -430,6 +434,11 @@ class OrderAdminReaderTest extends TestCase
             app(\EasyCo\Order\Contracts\OrderRepository::class),
             app(\EasyCo\OperationalSales\Contracts\ClientRepository::class),
             app(\EasyCo\Payment\Contracts\PaymentRepository::class),
+            // Stage 7c-1's 4th collaborator: R7's read for the Lines table's
+            // own remainingReturnable. A real hand-built reader must supply it
+            // too — the constructor deliberately has no default, so a new
+            // dependency cannot be forgotten at a call site like this one.
+            app(\EasyCo\OperationalSales\Contracts\SaleLineRepository::class),
         );
 
         $lineAfter = $freshReader->forOrder($order->id())->lines[0];
@@ -462,5 +471,124 @@ class OrderAdminReaderTest extends TestCase
         $this->assertCount(1, $view->lines);
         $this->assertNull($view->lines[0]->productName);
         $this->assertNull($view->lines[0]->sku);
+    }
+
+    // --- stage 7c-1: the Lines table's own id + R7 ceiling (D3, §8.4) ----------
+
+    /**
+     * ONE real REFUND line, written the way the domain requires it to be
+     * written — SaleLine::createRefund() plus the real TransactionRepository,
+     * the same shape EloquentSaleLineRepositoryTest's own saveRefund() uses
+     * (duplicated rather than shared, per this file's own fixture precedent).
+     * The originating line is RE-READ from the database because createRefund()
+     * takes the line itself, not an id — the same read
+     * OrderStatusChanger::recordReturn() performs.
+     *
+     * The refund's default amount is priced at this file's own fixture price
+     * (10.00 per unit, placeGuestOrder()'s default), because createRefund()
+     * checks it against the originating line's own amount: this helper is
+     * therefore only usable on a line bought at that price.
+     */
+    private function recordRefund(string $orderTransactionId, int $quantityReturned): void
+    {
+        $placement = app(TransactionRepository::class)->findByIdWithSaleLines($orderTransactionId);
+
+        $this->assertNotNull($placement, "The order's placement transaction {$orderTransactionId} could not be read.");
+
+        $refund = SaleLine::createRefund(
+            originatingLine: $placement->saleLines()[0],
+            transactionId: '',
+            quantityReturned: $quantityReturned,
+            defaultRefundAmount: Money::fromDecimal(number_format(10 * $quantityReturned, 2, '.', ''), 'EUR'),
+            returnedBy: null,
+            returnedByName: null,
+            returnReason: null,
+            displayPriceAtReturn: null,
+            recordedAt: new DateTimeImmutable('2026-09-28 09:00:00'),
+            effectiveAt: new DateTimeImmutable('2026-09-28 09:00:00'),
+        );
+
+        $transaction = new Transaction(null, Channel::WEB);
+        $transaction->addSaleLine($refund);
+        app(TransactionRepository::class)->save($transaction);
+    }
+
+    /** A genuinely cold reader: forOrder() is memoized per scoped() instance, so a re-read needs a real new object (see this file's own snapshot test). */
+    private function freshReader(): OrderAdminReader
+    {
+        $this->app->forgetScopedInstances();
+
+        return app(OrderAdminReader::class);
+    }
+
+    /**
+     * §8.4's own two facts on the Lines table (D3): every rendered row can be
+     * ADDRESSED (id — the cancel/return form is "filled from the id, never from
+     * the name", which is the one thing a legacy row is guaranteed to have) and
+     * every row states its own R7 ceiling. Nothing returned yet is the ordinary
+     * case, and it must read as the line's FULL quantity, not as 0 — the reader
+     * defaults a missing sum to 0, so a subtraction inverted here would look
+     * like a plausible result rather than an error.
+     *
+     * The id is read back from the table rather than assumed to be 1, so this
+     * pins the real row's own primary key.
+     */
+    public function test_each_line_carries_its_own_id_and_its_full_remaining_returnable_when_nothing_came_back(): void
+    {
+        [$order] = $this->placeGuestOrder(['quantity' => 3]);
+
+        $storedId = (string) DB::table('operational_sales_sale_lines')
+            ->where('transaction_id', $order->transactionId())
+            ->value('id');
+
+        $line = app(OrderAdminReader::class)->forOrder($order->id())->lines[0];
+
+        $this->assertSame($storedId, $line->id, 'the row is addressed by its own primary key');
+        $this->assertSame(3, $line->quantity);
+        $this->assertSame(3, $line->remainingReturnable, 'nothing has come back, so all three units may still');
+    }
+
+    /**
+     * R7's number is a READ, and it follows the REFUND lines: each return lowers
+     * it by exactly what came back, summed across the refunds of THAT line, and
+     * an over-return is CLAMPED at 0 rather than rendered as a negative ceiling
+     * (no write path can produce one — the locked R7 read in
+     * OrderStatusChanger::recordReturn() refuses it).
+     *
+     * The over-return is built the only way it can exist: two REFUND rows that
+     * are each individually legal against the line's own quantity (2 ≤ 3, twice
+     * — SaleLine::createRefund()'s own guard passes both) but that TOGETHER
+     * exceed it, which is precisely the stale-read race the clamp defends
+     * against.
+     */
+    public function test_remaining_returnable_falls_by_what_came_back_and_is_clamped_at_zero(): void
+    {
+        [$order] = $this->placeGuestOrder(['quantity' => 3]);
+
+        $storedId = (string) DB::table('operational_sales_sale_lines')
+            ->where('transaction_id', $order->transactionId())
+            ->value('id');
+
+        $this->assertSame(3, app(OrderAdminReader::class)->forOrder($order->id())->lines[0]->remainingReturnable);
+
+        $this->recordRefund($order->transactionId(), 2);
+
+        $afterOneReturn = $this->freshReader()->forOrder($order->id())->lines[0];
+
+        $this->assertSame(1, $afterOneReturn->remainingReturnable, 'two of the three units came back');
+        $this->assertSame($storedId, $afterOneReturn->id);
+
+        // A SECOND return of 2 units: legal on its own, impossible for the write
+        // path to combine with the first, and the reason the clamp exists.
+        $this->recordRefund($order->transactionId(), 2);
+
+        $afterOverReturn = $this->freshReader()->forOrder($order->id())->lines[0];
+
+        $this->assertSame(
+            0,
+            $afterOverReturn->remainingReturnable,
+            'four units are recorded as returned against a line of three: the ceiling is 0, never -1'
+        );
+        $this->assertSame(3, $afterOverReturn->quantity, "the line's own quantity is untouched — this read reports the situation, it does not rewrite the line");
     }
 }

@@ -45,11 +45,24 @@ return [
         'provider_reference' => 'Reference',
         'failure_reason' => 'Failure reason',
         'attempted_at' => 'Attempted at',
+        // §8.4 stage 7c-1 — the two facts the Payment section could not state
+        // before "Mark as received" (see that section's own comment block).
+        // 'Money held' names the fact §4.1 means by settled (a held hold, not a
+        // debt settled); 'Received at' follows attempted_at's own
+        // '<participle> at' shape for the instant §4.1's confirm() ran.
+        'payment_settled' => 'Money held',
+        'payment_confirmed_at' => 'Received at',
         'occurred_at' => 'Date',
         'event_type' => 'Event',
         'from_status' => 'From',
         'to_status' => 'To',
         'reason' => 'Reason',
+        // §8.4 stage 7c-1 — the History table's return-reference column: the
+        // return's own Transaction id, rendered as TEXT (there is still no
+        // Transaction page to link to — see historyRows()'s own docblock).
+        // Named for what a merchant reads it as, not for the column it comes
+        // from.
+        'return_record' => 'Return record',
         'staff_name' => 'By',
     ],
 
@@ -177,6 +190,14 @@ return [
     'no' => 'No',
     'no_promotion' => 'No promotion applied.',
     'no_payment' => 'No payment record.',
+    // §8.4 stage 7c-1 — the two states of the Payment section's settled
+    // badge. The positive one is §4.1's own "money is held"; the negative one
+    // states the money as NOT RECORDED, never "unpaid": §4.5 forbids a
+    // computed 'unpaid' badge, because a payment row with no confirmation can
+    // just as truthfully be a COD delivery that never had to confirm (§3
+    // item 3 — "no computed 'unpaid' badge — but no silence either").
+    'payment_settled_yes' => 'Settled',
+    'payment_settled_no' => 'Not recorded',
     'attempts_suffix' => ':count attempts',
     'not_available' => '—',
     'legacy_line_note' => 'Recorded before full snapshot',
