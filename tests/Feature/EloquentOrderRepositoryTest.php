@@ -389,6 +389,71 @@ class EloquentOrderRepositoryTest extends TestCase
     }
 
     /**
+     * order-lifecycle-design.md §7.4/R11's own reversal, tested against a
+     * real DB: a CANCELLED order was called off and never became a
+     * purchase — it must not count toward new_customers_only.
+     */
+    public function test_has_any_for_account_is_false_when_the_only_order_is_cancelled(): void
+    {
+        $clientId = $this->clientId();
+        $transactionId = $this->transactionId($clientId);
+        $accountId = $this->accountId();
+
+        $order = Order::create(
+            clientId: $clientId,
+            transactionId: $transactionId,
+            email: 'buyer@example.com',
+            currency: 'EUR',
+            subtotal: Money::fromMinorUnits(500, 'EUR'),
+            discount: Money::fromMinorUnits(0, 'EUR'),
+            deliveryType: OrderDeliveryType::STREET_ADDRESS,
+            recipientName: 'Ivan Ivanov',
+            phone: '+359888123456',
+            placedAt: $this->placedAt(),
+            accountId: $accountId,
+            status: OrderStatus::CANCELLED,
+            country: 'BG',
+            city: 'Sofia',
+            addressLine1: 'Vitosha Blvd 1',
+        );
+        $this->repository()->save($order);
+
+        $this->assertFalse($this->repository()->hasAnyForAccount($accountId));
+    }
+
+    /**
+     * The other direction of the same rule: a REFUNDED order really was a
+     * purchase — it must still count.
+     */
+    public function test_has_any_for_account_is_true_when_the_only_order_is_refunded(): void
+    {
+        $clientId = $this->clientId();
+        $transactionId = $this->transactionId($clientId);
+        $accountId = $this->accountId();
+
+        $order = Order::create(
+            clientId: $clientId,
+            transactionId: $transactionId,
+            email: 'buyer@example.com',
+            currency: 'EUR',
+            subtotal: Money::fromMinorUnits(500, 'EUR'),
+            discount: Money::fromMinorUnits(0, 'EUR'),
+            deliveryType: OrderDeliveryType::STREET_ADDRESS,
+            recipientName: 'Ivan Ivanov',
+            phone: '+359888123456',
+            placedAt: $this->placedAt(),
+            accountId: $accountId,
+            status: OrderStatus::REFUNDED,
+            country: 'BG',
+            city: 'Sofia',
+            addressLine1: 'Vitosha Blvd 1',
+        );
+        $this->repository()->save($order);
+
+        $this->assertTrue($this->repository()->hasAnyForAccount($accountId));
+    }
+
+    /**
      * A saved street-address order — the fixture the four tests below share,
      * with the status as the one thing a caller varies.
      */

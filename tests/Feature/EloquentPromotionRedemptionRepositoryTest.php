@@ -223,4 +223,95 @@ class EloquentPromotionRedemptionRepositoryTest extends TestCase
 
         PromotionModel::where('id', $promotionId)->delete();
     }
+
+    // --- release() — order-lifecycle-design.md §7.4, R11 ------------------------
+
+    public function test_a_released_redemption_is_excluded_from_count_for_promotion(): void
+    {
+        $promotionId = $this->promotionId('summer20');
+
+        $redemption = new PromotionRedemption(
+            id: null,
+            promotionId: $promotionId,
+            orderId: $this->orderId(),
+            accountId: null,
+            redeemedAt: $this->redeemedAt(),
+        );
+        $this->repository()->save($redemption);
+        $this->assertSame(1, $this->repository()->countForPromotion($promotionId));
+
+        $redemption->release(new DateTimeImmutable('2026-01-05 09:00:00'));
+        $this->repository()->save($redemption);
+
+        $this->assertSame(0, $this->repository()->countForPromotion($promotionId));
+    }
+
+    public function test_a_released_redemption_is_excluded_from_count_for_promotion_and_account(): void
+    {
+        $promotionId = $this->promotionId('summer20');
+        $accountId = $this->accountId('buyer@example.com');
+
+        $redemption = new PromotionRedemption(
+            id: null,
+            promotionId: $promotionId,
+            orderId: $this->orderId(),
+            accountId: $accountId,
+            redeemedAt: $this->redeemedAt(),
+        );
+        $this->repository()->save($redemption);
+        $this->assertSame(1, $this->repository()->countForPromotionAndAccount($promotionId, $accountId));
+
+        $redemption->release(new DateTimeImmutable('2026-01-05 09:00:00'));
+        $this->repository()->save($redemption);
+
+        $this->assertSame(0, $this->repository()->countForPromotionAndAccount($promotionId, $accountId));
+    }
+
+    public function test_released_at_round_trips_through_save_and_find_by_order_id(): void
+    {
+        $orderId = $this->orderId();
+        $releasedAt = new DateTimeImmutable('2026-01-05 09:00:00');
+
+        $redemption = new PromotionRedemption(
+            id: null,
+            promotionId: $this->promotionId('summer20'),
+            orderId: $orderId,
+            accountId: null,
+            redeemedAt: $this->redeemedAt(),
+        );
+        $redemption->release($releasedAt);
+        $this->repository()->save($redemption);
+
+        $reloaded = $this->repository()->findByOrderId($orderId);
+
+        $this->assertNotNull($reloaded);
+        $this->assertTrue($reloaded->isReleased());
+        $this->assertSame($releasedAt->format('Y-m-d H:i:s'), $reloaded->releasedAt()->format('Y-m-d H:i:s'));
+    }
+
+    public function test_find_by_order_id_returns_null_when_no_code_was_applied(): void
+    {
+        $orderId = $this->orderId();
+
+        $this->assertNull($this->repository()->findByOrderId($orderId));
+    }
+
+    public function test_find_by_order_id_returns_the_redemption_before_it_is_released(): void
+    {
+        $orderId = $this->orderId();
+
+        $redemption = new PromotionRedemption(
+            id: null,
+            promotionId: $this->promotionId('summer20'),
+            orderId: $orderId,
+            accountId: null,
+            redeemedAt: $this->redeemedAt(),
+        );
+        $this->repository()->save($redemption);
+
+        $reloaded = $this->repository()->findByOrderId($orderId);
+
+        $this->assertNotNull($reloaded);
+        $this->assertFalse($reloaded->isReleased());
+    }
 }

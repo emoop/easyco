@@ -71,9 +71,12 @@ final class EloquentOrderRepository implements OrderRepository
         return $model !== null ? $this->toDomainOrder($model) : null;
     }
 
+    /** Excludes CANCELLED (order-lifecycle-design.md §7.4/R11) — see the contract's own docblock for the reasoning. */
     public function hasAnyForAccount(string $accountId): bool
     {
-        return OrderModel::where('account_id', $accountId)->exists();
+        return OrderModel::where('account_id', $accountId)
+            ->where('status', '!=', OrderStatus::CANCELLED->value)
+            ->exists();
     }
 
     private function toDomainOrder(OrderModel $model): Order

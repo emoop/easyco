@@ -21,8 +21,14 @@ interface OrderRepository
      * new_customers_only. A guest order (account_id null) is invisible
      * to this check — a customer who ordered as a guest and later
      * registered counts as new, consistent with §8.1's own deliberate
-     * no-guest-deduplication decision. An order in any status counts,
-     * including CANCELLED: they did place one.
+     * no-guest-deduplication decision. An order in any status counts
+     * EXCEPT CANCELLED (order-lifecycle-design.md §7.4/R11's own
+     * reversal of this document's original wording): a cancelled order
+     * was called off and never became a purchase, so it must not grant a
+     * first-purchase discount to a customer with nothing to show for it.
+     * A REFUNDED order still counts — the customer really did buy, and
+     * treating a return as "never bought" would let anyone farm a
+     * new-customer discount by buying and returning.
      */
     public function hasAnyForAccount(string $accountId): bool;
 

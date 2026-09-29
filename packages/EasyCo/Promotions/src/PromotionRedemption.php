@@ -31,6 +31,10 @@ final class PromotionRedemption
         private readonly string $orderId,
         private readonly ?string $accountId,
         private readonly DateTimeImmutable $redeemedAt,
+        // NOT readonly — the one field release() changes (order-lifecycle-
+        // design.md §7.4, R11). Last, defaulted — every existing call site
+        // keeps working unchanged.
+        private ?DateTimeImmutable $releasedAt = null,
     ) {
         self::assertNotEmpty('promotionId', $promotionId);
         self::assertNotEmpty('orderId', $orderId);
@@ -67,6 +71,7 @@ final class PromotionRedemption
         string $orderId,
         ?string $accountId,
         DateTimeImmutable $redeemedAt,
+        ?DateTimeImmutable $releasedAt = null,
     ): self {
         return new self(
             id: $id,
@@ -74,6 +79,7 @@ final class PromotionRedemption
             orderId: $orderId,
             accountId: $accountId,
             redeemedAt: $redeemedAt,
+            releasedAt: $releasedAt,
         );
     }
 
@@ -109,5 +115,40 @@ final class PromotionRedemption
     public function redeemedAt(): DateTimeImmutable
     {
         return $this->redeemedAt;
+    }
+
+    /**
+     * order-lifecycle-design.md §7.4, R11: a redemption is released only
+     * when the order it was written for becomes CANCELLED — never for a
+     * return after delivery, never for a refund. Releasing stops it
+     * counting against usage_limit_total/usage_limit_per_customer
+     * (EloquentPromotionRedemptionRepository's own count queries exclude
+     * a released row); the row itself is never deleted and stays in
+     * applied_promotion_code and the panel's history.
+     *
+     * ONE-TIME, mirroring Payment::void()'s own idiom: a second release of
+     * an already-released redemption is a caller bug, not a no-op —
+     * releasing the same slot twice would let one cancelled order free two
+     * counted uses.
+     */
+    public function release(DateTimeImmutable $releasedAt): void
+    {
+        if ($this->releasedAt !== null) {
+            throw new LogicException(
+                "PromotionRedemption was already released at {$this->releasedAt->format(DATE_ATOM)}; release() is a one-time operation."
+            );
+        }
+
+        $this->releasedAt = $releasedAt;
+    }
+
+    public function isReleased(): bool
+    {
+        return $this->releasedAt !== null;
+    }
+
+    public function releasedAt(): ?DateTimeImmutable
+    {
+        return $this->releasedAt;
     }
 }

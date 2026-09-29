@@ -24,6 +24,7 @@ final class EloquentPromotionRedemptionRepository implements PromotionRedemption
         $model->order_id = $redemption->orderId();
         $model->account_id = $redemption->accountId();
         $model->redeemed_at = $redemption->redeemedAt();
+        $model->released_at = $redemption->releasedAt();
 
         $model->save();
 
@@ -32,15 +33,38 @@ final class EloquentPromotionRedemptionRepository implements PromotionRedemption
         }
     }
 
+    /** Excludes a released redemption (order-lifecycle-design.md §7.4, R11). */
     public function countForPromotion(string $promotionId): int
     {
-        return PromotionRedemptionModel::where('promotion_id', $promotionId)->count();
+        return PromotionRedemptionModel::where('promotion_id', $promotionId)
+            ->whereNull('released_at')
+            ->count();
     }
 
+    /** Excludes a released redemption — same rule as countForPromotion(). */
     public function countForPromotionAndAccount(string $promotionId, string $accountId): int
     {
         return PromotionRedemptionModel::where('promotion_id', $promotionId)
             ->where('account_id', $accountId)
+            ->whereNull('released_at')
             ->count();
+    }
+
+    public function findByOrderId(string $orderId): ?PromotionRedemption
+    {
+        $model = PromotionRedemptionModel::where('order_id', $orderId)->first();
+
+        if ($model === null) {
+            return null;
+        }
+
+        return PromotionRedemption::reconstituteFromStorage(
+            id: (string) $model->id,
+            promotionId: (string) $model->promotion_id,
+            orderId: (string) $model->order_id,
+            accountId: $model->account_id !== null ? (string) $model->account_id : null,
+            redeemedAt: $model->redeemed_at->toDateTimeImmutable(),
+            releasedAt: $model->released_at?->toDateTimeImmutable(),
+        );
     }
 }

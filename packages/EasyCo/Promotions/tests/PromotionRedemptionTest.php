@@ -134,4 +134,84 @@ final class PromotionRedemptionTest extends TestCase
 
         $this->assertNull($redemption->accountId());
     }
+
+    // --- release() — order-lifecycle-design.md §7.4, R11 ------------------------
+
+    public function test_a_fresh_redemption_is_not_released(): void
+    {
+        $redemption = new PromotionRedemption(
+            id: null,
+            promotionId: '7',
+            orderId: '42',
+            accountId: null,
+            redeemedAt: $this->redeemedAt(),
+        );
+
+        $this->assertFalse($redemption->isReleased());
+        $this->assertNull($redemption->releasedAt());
+    }
+
+    public function test_release_sets_released_at_and_is_released(): void
+    {
+        $redemption = new PromotionRedemption(
+            id: null,
+            promotionId: '7',
+            orderId: '42',
+            accountId: null,
+            redeemedAt: $this->redeemedAt(),
+        );
+
+        $releasedAt = new DateTimeImmutable('2026-01-05 09:00:00');
+        $redemption->release($releasedAt);
+
+        $this->assertTrue($redemption->isReleased());
+        $this->assertSame($releasedAt, $redemption->releasedAt());
+    }
+
+    public function test_release_is_a_one_time_operation(): void
+    {
+        $redemption = new PromotionRedemption(
+            id: null,
+            promotionId: '7',
+            orderId: '42',
+            accountId: null,
+            redeemedAt: $this->redeemedAt(),
+        );
+
+        $redemption->release(new DateTimeImmutable('2026-01-05 09:00:00'));
+
+        $this->expectException(LogicException::class);
+        $redemption->release(new DateTimeImmutable('2026-01-06 09:00:00'));
+    }
+
+    public function test_released_at_round_trips_through_reconstitute_from_storage(): void
+    {
+        $releasedAt = new DateTimeImmutable('2026-01-05 09:00:00');
+
+        $redemption = PromotionRedemption::reconstituteFromStorage(
+            id: '3',
+            promotionId: '7',
+            orderId: '42',
+            accountId: '9',
+            redeemedAt: $this->redeemedAt(),
+            releasedAt: $releasedAt,
+        );
+
+        $this->assertTrue($redemption->isReleased());
+        $this->assertSame($releasedAt, $redemption->releasedAt());
+    }
+
+    public function test_reconstitute_from_storage_defaults_released_at_to_null(): void
+    {
+        $redemption = PromotionRedemption::reconstituteFromStorage(
+            id: '3',
+            promotionId: '7',
+            orderId: '42',
+            accountId: '9',
+            redeemedAt: $this->redeemedAt(),
+        );
+
+        $this->assertFalse($redemption->isReleased());
+        $this->assertNull($redemption->releasedAt());
+    }
 }

@@ -20,9 +20,11 @@ class PromotionRedemptionModel extends Model
         'order_id',
         'account_id',
         'redeemed_at',
+        'released_at',
     ];
 
     protected $casts = [
         'redeemed_at' => 'immutable_datetime',
+        'released_at' => 'immutable_datetime',
     ];
 }
