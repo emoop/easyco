@@ -3,6 +3,7 @@
 namespace App\Services\Exceptions;
 
 use App\Enums\OrderRefusalReason;
+use EasyCo\Order\Enums\OrderStatus;
 use RuntimeException;
 
 /**
@@ -47,6 +48,31 @@ final class OrderTransitionRefusedException extends RuntimeException
         return new self(
             "Order \"{$orderId}\" cannot ship: its payment method is bank transfer and no payment has settled yet.",
             OrderRefusalReason::BANK_TRANSFER_NOT_SETTLED,
+        );
+    }
+
+    /**
+     * cancel() refused: the order's locked status is not one of
+     * placed/confirmed/shipped (order-lifecycle-design.md §5.2 step 2,
+     * §10 stage 6b-ii part 2).
+     */
+    public static function becauseOrderNotCancellable(string $orderId, OrderStatus $status): self
+    {
+        return new self(
+            "Order \"{$orderId}\" cannot be cancelled from status \"{$status->value}\".",
+            OrderRefusalReason::ORDER_NOT_CANCELLABLE,
+        );
+    }
+
+    /**
+     * recordReturn() refused: the order's locked status is not one of
+     * shipped/delivered.
+     */
+    public static function becauseOrderNotReturnable(string $orderId, OrderStatus $status): self
+    {
+        return new self(
+            "Order \"{$orderId}\" cannot record a return from status \"{$status->value}\".",
+            OrderRefusalReason::ORDER_NOT_RETURNABLE,
         );
     }
 

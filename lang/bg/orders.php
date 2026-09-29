@@ -109,6 +109,8 @@ return [
     // stage's own report.
     'refusal_reasons' => [
         'bank_transfer_not_settled' => 'Банковият превод за тази поръчка още не е отбелязан като получен.',
+        'order_not_cancellable' => 'Тази поръчка не може да бъде отказана в текущия си статус.',
+        'order_not_returnable' => 'Не може да се регистрира връщане за тази поръчка в текущия ѝ статус.',
     ],
 
     'filters' => [

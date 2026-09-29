@@ -110,6 +110,8 @@ return [
     // when a real guard needs one.
     'refusal_reasons' => [
         'bank_transfer_not_settled' => 'This order\'s bank transfer has not been recorded as settled yet.',
+        'order_not_cancellable' => 'This order cannot be cancelled from its current status.',
+        'order_not_returnable' => 'A return cannot be recorded against this order in its current status.',
     ],
 
     'filters' => [
