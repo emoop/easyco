@@ -104,6 +104,13 @@ return [
         'pickup_point' => 'Офис на куриер',
     ],
 
+    // One label per App\Enums\OrderRefusalReason value (order-lifecycle-
+    // design.md §2.2, §10 stage 6a). Wording pending owner review — see this
+    // stage's own report.
+    'refusal_reasons' => [
+        'bank_transfer_not_settled' => 'Банковият превод за тази поръчка още не е отбелязан като получен.',
+    ],
+
     'filters' => [
         'all_payment_methods' => 'Всички начини на плащане',
     ],

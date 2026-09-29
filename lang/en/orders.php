@@ -104,6 +104,14 @@ return [
         'pickup_point' => 'Pickup point',
     ],
 
+    // One label per App\Enums\OrderRefusalReason value (order-lifecycle-
+    // design.md §2.2, §10 stage 6a) — R9's "bank transfer must have arrived"
+    // is the first. Minimal on purpose: one case, one key, added again only
+    // when a real guard needs one.
+    'refusal_reasons' => [
+        'bank_transfer_not_settled' => 'This order\'s bank transfer has not been recorded as settled yet.',
+    ],
+
     'filters' => [
         'all_payment_methods' => 'All payment methods',
     ],
