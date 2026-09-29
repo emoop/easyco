@@ -45,6 +45,12 @@ return [
         'provider_reference' => 'Референция',
         'failure_reason' => 'Причина за отказ',
         'attempted_at' => 'Опитано на',
+        'occurred_at' => 'Дата',
+        'event_type' => 'Събитие',
+        'from_status' => 'От',
+        'to_status' => 'До',
+        'reason' => 'Причина',
+        'staff_name' => 'От (служител)',
     ],
 
     'sections' => [
@@ -55,6 +61,7 @@ return [
         'promotion' => 'Промоция',
         'totals' => 'Суми',
         'payment' => 'Плащане',
+        'history' => 'История',
     ],
 
     'channel_options' => [
@@ -104,6 +111,19 @@ return [
         'pickup_point' => 'Офис на куриер',
     ],
 
+    // The list's status-view toolbar buttons (OrderResource::STATUS_VIEWS) —
+    // see the en/ file's own comment for why this is a separate group from
+    // status_options above.
+    'status_views' => [
+        'all' => 'Всички',
+        'placed' => 'Приета',
+        'confirmed' => 'Потвърдена',
+        'shipped' => 'Изпратена',
+        'delivered' => 'Доставена',
+        'cancelled' => 'Отказана',
+        'refunded' => 'Върната',
+    ],
+
     // One label per App\Enums\OrderRefusalReason value (order-lifecycle-
     // design.md §2.2, §10 stage 6a). Wording pending owner review — see this
     // stage's own report.
@@ -124,6 +144,9 @@ return [
     'attempts_suffix' => ':count опита',
     'not_available' => '—',
     'legacy_line_note' => 'Записано преди пълния запис',
+    // order_events.staff_id/staff_name NULL — записът е направен от конзолата
+    // или фонова задача (виж en/orders.php's own comment).
+    'system_actor' => 'Системата',
 
     // The names each LINE puts in front of its own values on the View page's
     // Lines table (admin-panel-design.md §14): a table wide enough to scroll

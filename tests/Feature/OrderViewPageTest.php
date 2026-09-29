@@ -6,6 +6,7 @@ use App\Filament\Resources\OrderResource;
 use App\Filament\StaffPanelUser;
 use App\Services\CheckoutInput;
 use App\Services\CheckoutOrchestrator;
+use App\Services\OrderStatusChanger;
 use DateTimeImmutable;
 use EasyCo\Address\Enums\AddressDeliveryType;
 use EasyCo\Cart\Cart;
@@ -351,5 +352,55 @@ class OrderViewPageTest extends TestCase
         $html = $this->get(OrderResource::getUrl('view', ['record' => $order->id()]))->assertOk()->getContent();
 
         $this->assertStringNotContainsString('profit', strtolower($html));
+    }
+
+    // --- D4: the History section, its first rendering ---------------------------
+
+    /** History is scoped from its own heading to the end of the page — it is this Resource's LAST section, so nothing else can leak into the slice. */
+    private function historyHtml(string $html): string
+    {
+        $start = strpos($html, __('orders.sections.history'));
+        $this->assertNotFalse($start, 'History section heading not found in the rendered page');
+
+        return substr($html, $start);
+    }
+
+    public function test_the_history_section_renders_a_status_changed_event_with_its_labels_and_the_acting_staff_name(): void
+    {
+        $order = $this->placeOrder();
+
+        $staff = $this->actingAsStaffRole('Administrator');
+        app(OrderStatusChanger::class)->confirm($order->id(), new DateTimeImmutable('2026-09-21 10:00:00'), 'accepted by phone');
+
+        $html = $this->get(OrderResource::getUrl('view', ['record' => $order->id()]))->assertOk()->getContent();
+        $historyHtml = $this->historyHtml($html);
+
+        $this->assertStringContainsString(__('orders.event_type_options.status_changed'), $historyHtml);
+        $this->assertStringContainsString(__('orders.status_options.confirmed'), $historyHtml);
+        $this->assertStringContainsString('accepted by phone', $historyHtml);
+        $this->assertStringContainsString($staff->name, $historyHtml);
+    }
+
+    /** No staff is authenticated when confirm() runs — a console-style caller — so the row's staff_id/staff_name are NULL (OrderAdminEventView's own documented "System" wording). */
+    public function test_the_history_section_shows_system_for_an_event_with_no_authenticated_actor(): void
+    {
+        $order = $this->placeOrder();
+
+        app(OrderStatusChanger::class)->confirm($order->id(), new DateTimeImmutable('2026-09-21 10:00:00'));
+
+        $this->actingAsStaffRole('Administrator');
+        $html = $this->get(OrderResource::getUrl('view', ['record' => $order->id()]))->assertOk()->getContent();
+
+        $this->assertStringContainsString(__('orders.system_actor'), $this->historyHtml($html));
+    }
+
+    public function test_an_order_with_no_history_still_renders_the_history_section_without_error(): void
+    {
+        $this->actingAsStaffRole('Administrator');
+        $order = $this->placeOrder();
+
+        $this->get(OrderResource::getUrl('view', ['record' => $order->id()]))
+            ->assertOk()
+            ->assertSee(__('orders.sections.history'));
     }
 }

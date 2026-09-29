@@ -6,6 +6,7 @@ use App\Filament\Concerns\AuthorizesViaStaffPermission;
 use App\Filament\NavigationGroup;
 use App\Filament\Resources\OrderResource\Pages\ListOrders;
 use App\Filament\Resources\OrderResource\Pages\ViewOrder;
+use App\Services\OrderAdminEventView;
 use App\Services\OrderAdminOrderView;
 use App\Services\OrderAdminReader;
 use App\Services\OrderAdminSaleLineView;
@@ -13,10 +14,13 @@ use App\Services\PriceDisplayFormatter;
 use App\Services\ProductPriceDisplay;
 use BackedEnum;
 use EasyCo\Order\Enums\OrderDeliveryType;
+use EasyCo\Order\Enums\OrderStatus;
 use EasyCo\Order\Persistence\Eloquent\OrderModel;
 use EasyCo\Pricing\Currency;
 use EasyCo\Pricing\Money;
 use EasyCo\Staff\Enums\Permission;
+use Filament\Actions\Action;
+use Filament\Actions\ActionGroup;
 use Filament\Infolists\Components\Entry;
 use Filament\Infolists\Components\ImageEntry;
 use Filament\Infolists\Components\RepeatableEntry;
@@ -65,6 +69,90 @@ class OrderResource extends Resource
      * a test.
      */
     private const LINE_THUMBNAIL_SIZE_PX = 38;
+
+    /**
+     * The status-view toolbar buttons — mirrors
+     * ProductResource::STATUS_VIEWS exactly: the values are real column
+     * values for the six real statuses, and the literal 'all' for the view
+     * that adds no constraint (statusViewFrom() below), 'all' FIRST rather
+     * than last (ARCHITECT DEFAULT, this stage's own brief) — a merchant
+     * landing on Orders defaults to seeing everything, unlike Products
+     * where the active view is the daily default.
+     *
+     * SEVEN BUTTONS, NOT FOUR — the one real difference OrderStatus's own
+     * six-value shape forces versus Product's three: this toolbar row is
+     * visibly longer than Products' own. Nothing here shortens it; §2.1 of
+     * order-lifecycle-design.md states six statuses and this table offers
+     * exactly that many views plus 'all', the same "no lookup table to
+     * drift out of sync" reasoning Product's own docblock gives.
+     */
+    public const STATUS_VIEWS = [
+        'all',
+        OrderStatus::PLACED->value,
+        OrderStatus::CONFIRMED->value,
+        OrderStatus::SHIPPED->value,
+        OrderStatus::DELIVERED->value,
+        OrderStatus::CANCELLED->value,
+        OrderStatus::REFUNDED->value,
+    ];
+
+    /** ARCHITECT DEFAULT (this stage's own brief): 'all', not a single status — see STATUS_VIEWS's own docblock. */
+    public const STATUS_VIEW_DEFAULT = 'all';
+
+    /**
+     * The status view the given Livewire component is showing — byte-for-
+     * byte the same shape as ProductResource::statusViewFrom() (see that
+     * method's own docblock for the full reasoning: the #[Url] property
+     * lives on ListOrders, this is the one whitelisted reader of it, and it
+     * self-heals a crafted/stale `?status=…` back onto the property).
+     */
+    public static function statusViewFrom(mixed $livewire): string
+    {
+        $livewireHasTheProperty = is_object($livewire) && property_exists($livewire, 'statusView');
+
+        $view = $livewireHasTheProperty ? (string) $livewire->statusView : '';
+        $normalized = in_array($view, self::STATUS_VIEWS, true) ? $view : self::STATUS_VIEW_DEFAULT;
+
+        if ($livewireHasTheProperty && $normalized !== $view) {
+            $livewire->statusView = $normalized;
+        }
+
+        return $normalized;
+    }
+
+    /**
+     * ONE ActionGroup of colour-toggling buttons — byte-for-byte
+     * ProductResource::statusViewButtons()'s own shape.
+     */
+    public static function statusViewButtons(): ActionGroup
+    {
+        return ActionGroup::make(array_map(
+            static fn (string $view): Action => static::statusViewButton($view),
+            self::STATUS_VIEWS,
+        ))->buttonGroup();
+    }
+
+    /**
+     * One status view button. NO clearTableSelection() call, unlike
+     * ProductResource::statusViewButton() — a REAL, REPORTED DIFFERENCE:
+     * this Resource registers no bulk action anywhere (D1: strictly
+     * read-only, no create/edit/delete), so
+     * HasBulkActions::isSelectionEnabled() is never true here and there is
+     * no selection state a view switch could ever need to clear.
+     * resetPage() stays: switching views still changes the row set, and a
+     * stale page number is the same real bug Product's own docblock
+     * documents finding.
+     */
+    private static function statusViewButton(string $view): Action
+    {
+        return Action::make("status_view_{$view}")
+            ->label(__("orders.status_views.{$view}"))
+            ->color(fn ($livewire): string => static::statusViewFrom($livewire) === $view ? 'primary' : 'gray')
+            ->action(function ($livewire) use ($view): void {
+                $livewire->statusView = $view;
+                $livewire->resetPage();
+            });
+    }
 
     public static function getModelLabel(): string
     {
@@ -133,10 +221,14 @@ class OrderResource extends Resource
      *  - total: formatted through the same PriceDisplayFormatter every
      *    other price display in this admin panel already uses.
      *
-     * D2 — ONE QUICK FILTER, RENDERED ABOVE THE TABLE
-     * (FiltersLayout::AboveContent, so it is visible without opening a
-     * filter dropdown): Payment method, single-select and clearable. A
-     * Channel filter was deliberately NOT built — the `orders` table only
+     * D2 — STATUS-VIEW TOOLBAR BUTTONS (this stage's own revision — see
+     * STATUS_VIEWS's own docblock) plus ONE QUICK FILTER rendered as a
+     * compact dropdown trigger (FiltersLayout::Dropdown — confirmed a real
+     * v5.8.1 enum case, read directly from vendor source before use): Payment
+     * method, single-select and clearable, in the SAME header row as the
+     * status buttons and the table's own search box, not a separate row
+     * beneath (the earlier AboveContent layout's own always-expanded row).
+     * A Channel filter was deliberately NOT built — the `orders` table only
      * ever holds online orders, so it would always offer a single value.
      * This Resource supplies only the label and the option list; the reads
      * behind it belong to OrderAdminReader (D3) — the "latest payment row"
@@ -147,9 +239,6 @@ class OrderResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
-            // No ->modifyQueryUsing() any more: all five columns above are
-            // real `orders` columns, so the list no longer needs any of the
-            // correlated subqueries the removed aggregate columns carried.
             // Tie-break for two orders with an identical placed_at: NO
             // explicit ->orderBy('id', 'desc') needed here — confirmed
             // against the installed source, not assumed.
@@ -163,6 +252,20 @@ class OrderResource extends Resource
             // the SAME $sortDirection as this defaultSort ('desc'), so the
             // real tie-break is already "placed_at desc, then id desc".
             ->defaultSort('placed_at', 'desc')
+            // THE STATUS VIEW IS THE ONLY STATUS FILTER ON THIS LIST (D2) —
+            // byte-for-byte ProductResource::table()'s own
+            // ->modifyQueryUsing() shape (see that method's own docblock:
+            // $livewire injected BY NAME, a real, confirmed mechanism).
+            // 'all' is the only view that adds no constraint.
+            ->modifyQueryUsing(function (Builder $query, $livewire): Builder {
+                $statusView = static::statusViewFrom($livewire);
+
+                if ($statusView !== 'all') {
+                    $query->where('status', $statusView);
+                }
+
+                return $query;
+            })
             ->columns([
                 TextColumn::make('id')
                     ->label(__('orders.fields.id'))
@@ -200,7 +303,19 @@ class OrderResource extends Resource
                     ->query(fn (Builder $query, array $data): Builder => blank($data['value'] ?? null)
                         ? $query
                         : app(OrderAdminReader::class)->applyLatestPaymentMethodFilter($query, (string) $data['value'])),
-            ], layout: FiltersLayout::AboveContent);
+            ], layout: FiltersLayout::Dropdown)
+            // REPORTED DIFFERENCE FROM THIS STAGE'S OWN BRIEF: placed via
+            // ->toolbarActions(), not ->headerActions() — verified directly
+            // against ProductResource::table(), which places its own
+            // statusViewButtons() call inside ->toolbarActions() (that
+            // method's own docblock walks vendor/filament's container.css
+            // rule for why that renders in the table's own header-toolbar
+            // row alongside search/filters). No BulkActionGroup sits beside
+            // it here — this Resource registers no bulk action at all
+            // (D1), unlike Product's own toolbarActions() call.
+            ->toolbarActions([
+                static::statusViewButtons(),
+            ]);
     }
 
     public static function getPages(): array
@@ -405,7 +520,24 @@ class OrderResource extends Resource
                         ->visible(fn (OrderModel $record): bool => static::forOrder($record)->paymentAttemptCount > 1)
                         ->getStateUsing(fn (OrderModel $record): string => __('orders.attempts_suffix', ['count' => static::forOrder($record)->paymentAttemptCount])),
                 ])
-                ->columns(3),
+                // D3 (tightened): columns(4), matching Summary's own
+                // density (id/placed_at/status/channel, one row of 4) —
+                // not one fact per full-width row.
+                ->columns(4),
+            Section::make(__('orders.sections.history'))
+                ->schema([
+                    RepeatableEntry::make('history')
+                        ->hiddenLabel()
+                        ->getStateUsing(fn (OrderModel $record): array => static::historyRows($record))
+                        ->table(array_map(
+                            static fn (array $spec): RepeatableTableColumn => RepeatableTableColumn::make($spec['label']),
+                            static::historyColumnSpecs(),
+                        ))
+                        ->schema(array_map(
+                            static fn (array $spec): Entry => TextEntry::make($spec['key'])->hiddenLabel(),
+                            static::historyColumnSpecs(),
+                        )),
+                ]),
         ])->columns(1);
     }
 
@@ -726,5 +858,65 @@ class OrderResource extends Resource
         }
 
         return app(PriceDisplayFormatter::class)->format($money->decimalValue(), $money->currency());
+    }
+
+    /**
+     * D4 — the order's own always-on history (order-lifecycle-design.md
+     * §6.3, §10 stage 7), THIS SECTION'S FIRST RENDERING: OrderAdminOrderView::
+     * $events already existed with "NOTHING RENDERS IT YET" in its own
+     * docblock (that class's own note) — this is the consumer.
+     *
+     * RENDERED THE SAME TABLE WAY Lines renders its own RepeatableEntry
+     * (lineRows()/lineColumnSpecs() above), not stacked/labelled-field-per-
+     * event — one row per order_events row, oldest first (the read's own
+     * order, unchanged here).
+     *
+     * A FIXED COLUMN SET, UNLIKE Lines' OWN CONDITIONAL discretionary_discount
+     * COLUMN — nothing here varies per record, so historyColumnSpecs() takes
+     * no $record and neither ->table() nor ->schema() in infolist() needs a
+     * per-record closure the way lineColumnSpecs()'s callers do.
+     *
+     * SIX COLUMNS: Date (occurred_at), Event (type, via the SAME
+     * event_type_options group the label-parity test already pins),
+     * From/To (from_status/to_status, via the SAME status_options group the
+     * list's own status column uses — both '—' for the four event types
+     * that move no status, §6.1), Reason (the operator's own words,
+     * verbatim, '—' when none was given) and By (staff_name, or 'System' for
+     * a console/job caller — OrderAdminEventView's own docblock already
+     * names this exact wording as the View page's job).
+     *
+     * transaction_id IS DELIBERATELY NOT A COLUMN — no admin surface reads
+     * or links to a Transaction yet (no TransactionResource exists), so a
+     * raw id would be noise nobody here can act on; OrderAdminEventView
+     * still carries it for whenever that changes.
+     *
+     * @return array<int, array<string, string>>
+     */
+    private static function historyRows(OrderModel $record): array
+    {
+        return array_map(
+            fn (OrderAdminEventView $event): array => [
+                'occurred_at' => $event->occurredAt->format('Y-m-d H:i'),
+                'type' => static::optionLabel('event_type', $event->type),
+                'from_status' => static::optionLabel('status', $event->fromStatus),
+                'to_status' => static::optionLabel('status', $event->toStatus),
+                'reason' => $event->reason ?? __('orders.not_available'),
+                'staff_name' => $event->staffName ?? __('orders.system_actor'),
+            ],
+            static::forOrder($record)->events,
+        );
+    }
+
+    /** History's fixed column set, in order — see historyRows()'s own docblock for what each key is. @return array<int, array{key: string, label: string}> */
+    private static function historyColumnSpecs(): array
+    {
+        return [
+            ['key' => 'occurred_at', 'label' => __('orders.fields.occurred_at')],
+            ['key' => 'type', 'label' => __('orders.fields.event_type')],
+            ['key' => 'from_status', 'label' => __('orders.fields.from_status')],
+            ['key' => 'to_status', 'label' => __('orders.fields.to_status')],
+            ['key' => 'reason', 'label' => __('orders.fields.reason')],
+            ['key' => 'staff_name', 'label' => __('orders.fields.staff_name')],
+        ];
     }
 }

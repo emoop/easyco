@@ -45,6 +45,12 @@ return [
         'provider_reference' => 'Reference',
         'failure_reason' => 'Failure reason',
         'attempted_at' => 'Attempted at',
+        'occurred_at' => 'Date',
+        'event_type' => 'Event',
+        'from_status' => 'From',
+        'to_status' => 'To',
+        'reason' => 'Reason',
+        'staff_name' => 'By',
     ],
 
     'sections' => [
@@ -55,6 +61,7 @@ return [
         'promotion' => 'Promotion',
         'totals' => 'Totals',
         'payment' => 'Payment',
+        'history' => 'History',
     ],
 
     'channel_options' => [
@@ -104,6 +111,21 @@ return [
         'pickup_point' => 'Pickup point',
     ],
 
+    // The list's status-view toolbar buttons (OrderResource::STATUS_VIEWS) —
+    // a separate group from status_options above, mirroring products.
+    // status_views: the words happen to match today, but the two stay
+    // independently editable (Product's own status_views group does the
+    // same for the identical reason).
+    'status_views' => [
+        'all' => 'All',
+        'placed' => 'Placed',
+        'confirmed' => 'Confirmed',
+        'shipped' => 'Shipped',
+        'delivered' => 'Delivered',
+        'cancelled' => 'Cancelled',
+        'refunded' => 'Refunded',
+    ],
+
     // One label per App\Enums\OrderRefusalReason value (order-lifecycle-
     // design.md §2.2, §10 stage 6a) — R9's "bank transfer must have arrived"
     // is the first. Minimal on purpose: one case, one key, added again only
@@ -125,6 +147,9 @@ return [
     'attempts_suffix' => ':count attempts',
     'not_available' => '—',
     'legacy_line_note' => 'Recorded before full snapshot',
+    // order_events.staff_id/staff_name NULL — a console/job caller recorded
+    // the event (OrderAdminEventView's own docblock names this wording).
+    'system_actor' => 'System',
 
     // The names each LINE puts in front of its own values on the View page's
     // Lines table (admin-panel-design.md §14): a table wide enough to scroll

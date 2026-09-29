@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Filament\Resources\OrderResource;
 use App\Filament\Resources\OrderResource\Pages\ListOrders;
 use App\Filament\StaffPanelUser;
+use Filament\Tables\Enums\FiltersLayout;
 use App\Services\CheckoutInput;
 use App\Services\CheckoutOrchestrator;
 use DateTimeImmutable;
@@ -434,5 +435,64 @@ class OrderResourceTest extends TestCase
         $this->assertSame($unfilteredForFive, $unfilteredForTwentyFive, 'unfiltered: query count must not grow with the number of rows rendered');
         $this->assertSame($filteredForFive, $filteredForTwentyFive, 'filtered: query count must not grow with the number of rows rendered');
         $this->assertSame($unfilteredForFive, $filteredForFive, 'an active filter must not add queries to the page');
+    }
+
+    // --- D2: status-view toolbar buttons, and the compact filter dropdown -------
+
+    public function test_the_status_view_toolbar_offers_all_seven_views_all_first(): void
+    {
+        $this->assertSame(
+            ['all', 'placed', 'confirmed', 'shipped', 'delivered', 'cancelled', 'refunded'],
+            OrderResource::STATUS_VIEWS,
+        );
+        $this->assertSame('all', OrderResource::STATUS_VIEW_DEFAULT, 'a merchant landing on Orders defaults to seeing everything');
+    }
+
+    public function test_the_default_view_shows_every_status_and_a_specific_view_narrows_to_it(): void
+    {
+        $this->actingAsStaffRole('Administrator');
+
+        $placed = $this->placeGuestOrder(['email' => 'placed@example.com']);
+        $confirmed = $this->placeGuestOrder(['email' => 'confirmed@example.com']);
+        app(\App\Services\OrderStatusChanger::class)->confirm($confirmed->id(), new DateTimeImmutable('2026-09-21 10:00:00'));
+
+        $placedRecord = OrderModel::find($placed->id());
+        $confirmedRecord = OrderModel::find($confirmed->id());
+
+        // Default ('all'): both visible.
+        Livewire::test(ListOrders::class)
+            ->assertCanSeeTableRecords([$placedRecord, $confirmedRecord]);
+
+        // 'placed': only the placed one.
+        Livewire::test(ListOrders::class)
+            ->set('statusView', 'placed')
+            ->assertCanSeeTableRecords([$placedRecord])
+            ->assertCanNotSeeTableRecords([$confirmedRecord]);
+
+        // 'confirmed': only the confirmed one.
+        Livewire::test(ListOrders::class)
+            ->set('statusView', 'confirmed')
+            ->assertCanSeeTableRecords([$confirmedRecord])
+            ->assertCanNotSeeTableRecords([$placedRecord]);
+    }
+
+    /** A crafted/stale `?status=…` self-heals to the default — byte-for-byte ProductResource::statusViewFrom()'s own behaviour. */
+    public function test_an_unrecognised_status_view_falls_back_to_the_default(): void
+    {
+        $this->actingAsStaffRole('Administrator');
+        $order = $this->placeGuestOrder();
+
+        Livewire::test(ListOrders::class)
+            ->set('statusView', 'not-a-real-status')
+            ->assertCanSeeTableRecords([OrderModel::find($order->id())]);
+    }
+
+    public function test_the_payment_method_filter_is_a_compact_dropdown_not_an_always_expanded_row(): void
+    {
+        $this->actingAsStaffRole('Administrator');
+
+        $layout = Livewire::test(ListOrders::class)->instance()->getTable()->getFiltersLayout();
+
+        $this->assertSame(FiltersLayout::Dropdown, $layout);
     }
 }
