@@ -29,16 +29,16 @@ interface StockLevelRepository
      * §6, the race this exists to prevent). Throws
      * InsufficientStockException if the current quantity is less than
      * $amount, or if no row exists at all (equivalent to 0 available).
-     * No caller exists yet — this is the future Checkout/POS
-     * write-path's job (§Deferred).
+     * Real caller: App\Services\CheckoutOrchestrator, at placement.
      */
     public function decrease(string $variationId, int $amount): void;
 
     /**
      * Atomic. Creates the row (quantity=0) first if none exists yet —
      * increment() alone is a silent no-op against zero matched rows,
-     * it does not insert (inventory-domain-design.md §7). No caller
-     * exists yet — see decrease() above.
+     * it does not insert (inventory-domain-design.md §7). Real caller:
+     * App\Services\ReturnGoodsRecorder, restocking a returned line
+     * (order-lifecycle-design.md §7.1, its own stage 6b-i).
      */
     public function increase(string $variationId, int $amount): void;
 }

@@ -62,7 +62,7 @@ if ($affected === 0) {
 
 Eloquent's `decrement()` is a thin wrapper over a plain `UPDATE`, and returns the number of rows it actually matched and changed. The `WHERE quantity >= ?` clause and the `$affected === 0` check together mean the database itself enforces "only decrement if there's enough," inside one atomic statement — there is no window between "check the quantity" and "write the new quantity" for a second request to land in, because there is no separate check step at all. Either the conditional `UPDATE` matches a row and the whole operation succeeds, or it matches nothing and nothing was written.
 
-**No caller exists for `increase()`/`decrease()` yet** — see §9/§11. The primitive still has to be race-safe from day one, because retrofitting real atomicity onto a naive caller that's already shipped and already assumed a simpler read-then-write shape is a much harder bug to find (and fix without a regression) than building it correctly before any caller exists at all.
+**Both now have real callers, found stale and corrected here rather than left to rot (CLAUDE.md's own instruction for a doc claim a later stage falsifies): `decrease()`'s is `App\Services\CheckoutOrchestrator`, at placement; `increase()`'s is `App\Services\ReturnGoodsRecorder`, restocking a returned line (order-lifecycle-design.md §7.1, its own stage 6b-i) — see §9/§11.** The primitive still had to be race-safe from day one regardless of when a caller arrived, because retrofitting real atomicity onto a naive caller that's already shipped and already assumed a simpler read-then-write shape is a much harder bug to find (and fix without a regression) than building it correctly before any caller exists at all.
 
 ---
 
