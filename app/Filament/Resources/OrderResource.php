@@ -6,26 +6,34 @@ use App\Filament\Concerns\AuthorizesViaStaffPermission;
 use App\Filament\NavigationGroup;
 use App\Filament\Resources\OrderResource\Pages\ListOrders;
 use App\Filament\Resources\OrderResource\Pages\ViewOrder;
+use App\Services\Exceptions\OrderTransitionRefusedException;
 use App\Services\OrderAdminEventView;
 use App\Services\OrderAdminOrderView;
 use App\Services\OrderAdminReader;
 use App\Services\OrderAdminSaleLineView;
+use App\Services\OrderPaymentConfirmer;
+use App\Services\OrderStatusChanger;
 use App\Services\PriceDisplayFormatter;
 use App\Services\ProductPriceDisplay;
 use BackedEnum;
+use Closure;
+use DateTimeImmutable;
 use EasyCo\Order\Enums\OrderDeliveryType;
 use EasyCo\Order\Enums\OrderStatus;
+use EasyCo\Order\Exceptions\InvalidOrderTransitionException;
 use EasyCo\Order\Persistence\Eloquent\OrderModel;
 use EasyCo\Pricing\Currency;
 use EasyCo\Pricing\Money;
 use EasyCo\Staff\Enums\Permission;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
+use Filament\Forms\Components\Textarea;
 use Filament\Infolists\Components\Entry;
 use Filament\Infolists\Components\ImageEntry;
 use Filament\Infolists\Components\RepeatableEntry;
 use Filament\Infolists\Components\RepeatableEntry\TableColumn as RepeatableTableColumn;
 use Filament\Infolists\Components\TextEntry;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
@@ -35,19 +43,26 @@ use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Lang;
+use InvalidArgumentException;
 
 /**
- * Orders — admin-panel-design.md §14. STRICTLY READ-ONLY (D1): list and
- * view only, no create/edit/delete pages, no bulk actions, no status
- * transitions. createPermission()/editPermission()/deletePermission()
- * are deliberately left unset — AuthorizesViaStaffPermission's own
+ * Orders — admin-panel-design.md §14, order-lifecycle-design.md §8. NO
+ * create/edit/delete PAGES, NO BULK ACTIONS, and STILL NO LIST-PAGE ROW
+ * ACTIONS (D1's original read-only posture for the list stands) — but,
+ * as of §10 stage 7b, no longer status-transition-free: the View page's
+ * header carries the lifecycle's first four write actions (D2 —
+ * confirmAction()/shipAction()/deliverAction()/markAsReceivedAction()
+ * below), gated Action-by-Action on Permission::ORDER_MANAGE, never
+ * through createPermission()/editPermission()/deletePermission(), which
+ * stay deliberately unset — AuthorizesViaStaffPermission's own
  * staffCanForAction() fails closed for an undeclared permission (see
  * that trait's own docblock), so canCreate()/canEdit()/canDelete() are
- * false for every role without a single line of code here; asserted by
- * a real test, not just implied by omission.
+ * still false for every role without a single line of code here;
+ * asserted by a real test, not just implied by omission.
  *
- * Gated by Permission::ORDER_VIEW alone — Administrator and Manager
- * hold it, Product Entry does not (StaffSystemRolesSeeder).
+ * Gated by Permission::ORDER_VIEW to open either page at all; the four
+ * write actions additionally require ORDER_MANAGE. Administrator and
+ * Manager hold both, Product Entry holds neither (StaffSystemRolesSeeder).
  *
  * EVERY CROSS-TABLE READ LIVES IN App\Services\OrderAdminReader, NOT
  * HERE — this Resource only wires that service's output into Filament's
@@ -187,6 +202,23 @@ class OrderResource extends Resource
     protected static function viewPermission(): ?Permission
     {
         return static::viewAnyPermission();
+    }
+
+    /**
+     * D2/D4 (order-lifecycle-design.md §8.3 item 1, §10 stage 7b) — the
+     * SAME deliberate, arbitrary-permission escape hatch
+     * ProductResource::staffHasPermission() already carries, newly added
+     * here rather than inherited: AuthorizesViaStaffPermission's own
+     * staffCanForAction() is protected on the trait, so a method on THIS
+     * Resource can call it but a page (ViewOrder) or any other class
+     * cannot — exactly what the four write actions' own ->visible()
+     * closures need to check ORDER_MANAGE, a permission this Resource's
+     * own createPermission()/editPermission()/deletePermission() never
+     * declare (§0/D4: no change to those overrides).
+     */
+    public static function staffHasPermission(Permission $permission): bool
+    {
+        return static::staffCanForAction($permission);
     }
 
     /**
@@ -539,6 +571,220 @@ class OrderResource extends Resource
                         )),
                 ]),
         ])->columns(1);
+    }
+
+    /**
+     * D2 (order-lifecycle-design.md §8, §10 stage 7b) — the View page's
+     * FIRST write buttons, mounted from ViewOrder::getHeaderActions() in
+     * this order: Confirm, Ship, Deliver, "Mark as received". Each is
+     * gated by ORDER_MANAGE (D4: Action-level only, no change to this
+     * Resource's own permission overrides) and its own status/eligibility
+     * condition, collects an optional note in the SAME confirmation modal
+     * (Filament v5.8.1's real API is ->schema(), confirmed by reading
+     * vendor/filament/actions/src/Concerns/HasSchema.php directly —
+     * ->form() there is `@deprecated Use schema() instead`, a thin wrapper
+     * around the very same method), and shares one refusal/success/redirect
+     * shape via runOrderAction() below.
+     *
+     * D3: Ship's own ->visible() is `status === confirmed` ONLY — R9's
+     * guard is surfaced by the ATTEMPT (a translated failure), never by
+     * hiding the button, so a bank_transfer order whose payment has not
+     * settled still offers Ship and tells the merchant why it refused.
+     */
+    public static function confirmAction(): Action
+    {
+        return Action::make('confirm')
+            ->label(__('orders.actions.confirm'))
+            ->color('primary')
+            ->icon('heroicon-o-check-circle')
+            ->requiresConfirmation()
+            ->modalHeading(fn (OrderModel $record): string => __('orders.actions.confirm_heading', ['id' => $record->id]))
+            ->modalDescription(fn (OrderModel $record): string => __('orders.actions.confirm_description', ['id' => $record->id]))
+            ->schema([
+                Textarea::make('note')->label(__('orders.actions.note_label')),
+            ])
+            ->visible(fn (OrderModel $record): bool => static::staffHasPermission(Permission::ORDER_MANAGE)
+                && $record->status === OrderStatus::PLACED->value)
+            ->action(function (array $data, OrderModel $record, $livewire): void {
+                static::runOrderAction(
+                    $record,
+                    $livewire,
+                    fn () => app(OrderStatusChanger::class)->confirm((string) $record->id, new DateTimeImmutable(), $data['note'] ?? null),
+                    __('orders.actions.confirm_done'),
+                );
+            });
+    }
+
+    public static function shipAction(): Action
+    {
+        return Action::make('ship')
+            ->label(__('orders.actions.ship'))
+            ->color('warning')
+            ->icon('heroicon-o-truck')
+            ->requiresConfirmation()
+            ->modalHeading(fn (OrderModel $record): string => __('orders.actions.ship_heading', ['id' => $record->id]))
+            ->modalDescription(fn (OrderModel $record): string => __('orders.actions.ship_description', ['id' => $record->id]))
+            ->schema([
+                Textarea::make('note')->label(__('orders.actions.note_label')),
+            ])
+            // D3: no ADDITIONAL gate on isSettled() here — every confirmed
+            // order offers Ship, regardless of R9's own guard.
+            ->visible(fn (OrderModel $record): bool => static::staffHasPermission(Permission::ORDER_MANAGE)
+                && $record->status === OrderStatus::CONFIRMED->value)
+            ->action(function (array $data, OrderModel $record, $livewire): void {
+                static::runOrderAction(
+                    $record,
+                    $livewire,
+                    fn () => app(OrderStatusChanger::class)->ship((string) $record->id, new DateTimeImmutable(), $data['note'] ?? null),
+                    __('orders.actions.ship_done'),
+                );
+            });
+    }
+
+    public static function deliverAction(): Action
+    {
+        return Action::make('deliver')
+            ->label(__('orders.actions.deliver'))
+            ->color('success')
+            ->icon('heroicon-o-check-badge')
+            ->requiresConfirmation()
+            ->modalHeading(fn (OrderModel $record): string => __('orders.actions.deliver_heading', ['id' => $record->id]))
+            ->modalDescription(fn (OrderModel $record): string => __('orders.actions.deliver_description', ['id' => $record->id]))
+            ->schema([
+                Textarea::make('note')->label(__('orders.actions.note_label')),
+            ])
+            ->visible(fn (OrderModel $record): bool => static::staffHasPermission(Permission::ORDER_MANAGE)
+                && $record->status === OrderStatus::SHIPPED->value)
+            ->action(function (array $data, OrderModel $record, $livewire): void {
+                static::runOrderAction(
+                    $record,
+                    $livewire,
+                    fn () => app(OrderStatusChanger::class)->deliver((string) $record->id, new DateTimeImmutable(), $data['note'] ?? null),
+                    __('orders.actions.deliver_done'),
+                );
+            });
+    }
+
+    /**
+     * "Mark as received" — OrderPaymentConfirmer::confirm(), not
+     * OrderStatusChanger (§4.3: confirming a payment is not a transition).
+     * No note field (that service's own confirm() takes none). Visible
+     * only when the order's CURRENT latest payment is itself confirmable
+     * (Payment::isConfirmable(), D1) — read via the SAME forOrder() call
+     * every other closure on this page already makes, so this adds no
+     * second query (T5).
+     */
+    public static function markAsReceivedAction(): Action
+    {
+        return Action::make('mark_as_received')
+            ->label(__('orders.actions.mark_as_received'))
+            ->color('success')
+            ->icon('heroicon-o-banknotes')
+            ->requiresConfirmation()
+            ->modalHeading(fn (OrderModel $record): string => __('orders.actions.mark_as_received_heading', ['id' => $record->id]))
+            ->modalDescription(fn (OrderModel $record): string => __('orders.actions.mark_as_received_description', ['id' => $record->id]))
+            ->visible(fn (OrderModel $record): bool => static::staffHasPermission(Permission::ORDER_MANAGE)
+                && (static::forOrder($record)->latestPayment?->isConfirmable() ?? false))
+            ->action(function (OrderModel $record, $livewire): void {
+                // A GRACEFUL RACE GUARD, NOT A FATAL ERROR: the button's
+                // own ->visible() read this same fact at render time: by
+                // the click it may no longer hold (another operator acted
+                // first) — refused with a notification, exactly like every
+                // other refusal on this page, never an uncaught error.
+                $payment = static::forOrder($record)->latestPayment;
+
+                if ($payment === null || ! $payment->isConfirmable()) {
+                    Notification::make()
+                        ->title(__('orders.actions.refused_title'))
+                        ->body(__('orders.actions.no_eligible_payment'))
+                        ->danger()
+                        ->send();
+
+                    return;
+                }
+
+                static::runOrderAction(
+                    $record,
+                    $livewire,
+                    fn () => app(OrderPaymentConfirmer::class)->confirm($payment->id(), new DateTimeImmutable()),
+                    __('orders.actions.mark_as_received_done'),
+                );
+            });
+    }
+
+    /**
+     * The shape every action above shares (§8.3 items 4-5): run the
+     * domain call, and either translate its refusal or show success and
+     * move on. `\Throwable` is deliberately NOT caught here — a single-
+     * record action has no "other rows" to protect, so an unexpected
+     * defect propagates loudly instead of being flattened into a friendly
+     * toast (§8.3 item 4's own reasoning, quoted there for the bulk case
+     * this departs from).
+     *
+     * REFUSAL RENDERING, per exception:
+     *  - OrderTransitionRefusedException (R9 today): rendered through the
+     *    SAME orders.refusal_reasons.* group R9's own lang entry already
+     *    provides — never a second, hand-rolled message for the same fact.
+     *  - InvalidOrderTransitionException: a clear sentence built from its
+     *    own from()/to() values (both real OrderStatus), translated
+     *    through the SAME status_options group the rest of this page
+     *    already uses — never its raw English message.
+     *  - InvalidArgumentException (an order/payment that vanished, or an
+     *    anomaly guard): a clear, honest, translated sentence naming the
+     *    order — never its raw message either.
+     *
+     * ON SUCCESS: order-lifecycle-design.md §8.3 item 5's own answer to
+     * "how does the page reflect the new state" — a REDIRECT to the
+     * order's own View URL, not a soft Livewire refresh. That section
+     * argues why: OrderAdminReader is bound scoped() and memoizes per
+     * instance (confirmed against AppServiceProvider.php), so the SAME
+     * request that just wrote would otherwise render the header, the
+     * status badge and the History section from the pre-write read. A
+     * redirect is a new request, a fresh scoped reader, and a correct page
+     * for free — the same $livewire->redirect() mechanism
+     * ProductResource::duplicateAction() already uses for its own
+     * post-write navigation.
+     */
+    private static function runOrderAction(OrderModel $record, $livewire, Closure $operation, string $successTitle): void
+    {
+        try {
+            $operation();
+        } catch (OrderTransitionRefusedException $e) {
+            Notification::make()
+                ->title(__('orders.actions.refused_title'))
+                ->body(__('orders.refusal_reasons.'.$e->reason()->value))
+                ->danger()
+                ->send();
+
+            return;
+        } catch (InvalidOrderTransitionException $e) {
+            Notification::make()
+                ->title(__('orders.actions.refused_title'))
+                ->body(__('orders.actions.invalid_transition_body', [
+                    'id' => $record->id,
+                    'from' => static::optionLabel('status', $e->from()->value),
+                    'to' => static::optionLabel('status', $e->to()->value),
+                ]))
+                ->danger()
+                ->send();
+
+            return;
+        } catch (InvalidArgumentException $e) {
+            Notification::make()
+                ->title(__('orders.actions.refused_title'))
+                ->body(__('orders.actions.generic_refusal_body', ['id' => $record->id]))
+                ->danger()
+                ->send();
+
+            return;
+        }
+
+        Notification::make()
+            ->title($successTitle)
+            ->success()
+            ->send();
+
+        $livewire->redirect(static::getUrl('view', ['record' => $record->id]));
     }
 
     /** Shared by every infolist closure above — one read per record, per OrderAdminReader's own per-instance cache. */

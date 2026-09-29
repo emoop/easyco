@@ -16,7 +16,6 @@ use EasyCo\Order\Contracts\OrderRepository;
 use EasyCo\Order\Enums\OrderStatus;
 use EasyCo\Order\Order;
 use EasyCo\Payment\Contracts\PaymentRepository;
-use EasyCo\Payment\Enums\PaymentStatus;
 use EasyCo\Payment\Payment;
 use EasyCo\Pricing\Money;
 use EasyCo\Promotions\Contracts\PromotionRedemptionRepository;
@@ -662,12 +661,15 @@ final class OrderStatusChanger
      */
     private function confirmDeliveryPaymentIfEligible(string $orderId, DateTimeImmutable $occurredAt): ?Payment
     {
+        // §10 stage 7b: this used to be an inline copy of §4.5's own
+        // predicate — now Payment::isConfirmable() itself, extracted
+        // because a real second caller (the admin panel's "Mark as
+        // received" action) needed to ask the same question without a
+        // second inline copy. No behaviour change: the formula is
+        // byte-for-byte what this closure computed before.
         $confirmable = array_values(array_filter(
             $this->payments->findByOrderId($orderId),
-            static fn (Payment $payment): bool => $payment->status() === PaymentStatus::PENDING
-                && $payment->attemptedAt() !== null
-                && $payment->confirmedAt() === null
-                && ! $payment->isVoided(),
+            static fn (Payment $payment): bool => $payment->isConfirmable(),
         ));
 
         if (count($confirmable) !== 1) {

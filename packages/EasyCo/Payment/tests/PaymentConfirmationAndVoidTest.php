@@ -241,6 +241,61 @@ final class PaymentConfirmationAndVoidTest extends TestCase
         $this->assertFalse($payment->isSettled());
     }
 
+    // --- isConfirmable(): §4.5's own table, as one predicate -----------------
+
+    /**
+     * The five states of §4.5's table, as one truth table — Payment::
+     * isConfirmable() (order-lifecycle-design.md §10 stage 7b), extracted
+     * from confirm()'s own four guards. Built through
+     * reconstituteFromStorage for the same reason
+     * test_is_settled_truth_table_over_status_and_confirmation() above is:
+     * some of these rows (a captured payment, say) are states the WRITE
+     * path never produces via confirm() itself, but a row in storage is a
+     * row in storage and the predicate must answer it truthfully rather
+     * than assume confirm()'s own guards already ran.
+     */
+    public function test_is_confirmable_truth_table(): void
+    {
+        $table = [
+            'pending, answered, unconfirmed, unvoided (the eligible case)' => [PaymentStatus::PENDING, '2026-09-28 10:00:00', null, null, true],
+            'pending, never answered' => [PaymentStatus::PENDING, null, null, null, false],
+            'pending, already confirmed' => [PaymentStatus::PENDING, '2026-09-28 10:00:00', '2026-09-28 11:15:00', null, false],
+            'pending, answered, voided' => [PaymentStatus::PENDING, '2026-09-28 10:00:00', null, '2026-09-28 10:30:00', false],
+            'captured' => [PaymentStatus::CAPTURED, '2026-09-28 10:00:00', null, null, false],
+            'failed' => [PaymentStatus::FAILED, '2026-09-28 10:00:00', null, null, false],
+        ];
+
+        foreach ($table as $case => [$status, $attemptedAt, $confirmedAt, $voidedAt, $expected]) {
+            $payment = Payment::reconstituteFromStorage(
+                id: '1',
+                orderId: 'order-1',
+                method: 'bank_transfer',
+                amount: $this->amount(),
+                status: $status,
+                providerReference: null,
+                failureReason: null,
+                attemptedAt: $attemptedAt !== null ? new DateTimeImmutable($attemptedAt) : null,
+                confirmedAt: $confirmedAt !== null ? new DateTimeImmutable($confirmedAt) : null,
+                voidedAt: $voidedAt !== null ? new DateTimeImmutable($voidedAt) : null,
+            );
+
+            $this->assertSame($expected, $payment->isConfirmable(), "isConfirmable() for {$case}");
+        }
+    }
+
+    /** isConfirmable() true is exactly "confirm() would succeed" — proven directly, not just asserted by construction. */
+    public function test_is_confirmable_true_means_confirm_actually_succeeds(): void
+    {
+        $payment = $this->answeredPending();
+
+        $this->assertTrue($payment->isConfirmable());
+
+        $payment->confirm(new DateTimeImmutable('2026-09-28 11:15:00'));
+
+        $this->assertTrue($payment->isSettled());
+        $this->assertFalse($payment->isConfirmable(), 'no longer confirmable once confirmed — confirmedAt is no longer null');
+    }
+
     // --- factories and reconstitution ----------------------------------------
 
     public function test_create_leaves_both_new_facts_null_without_the_new_arguments(): void

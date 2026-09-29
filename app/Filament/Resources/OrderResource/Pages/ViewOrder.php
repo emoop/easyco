@@ -6,12 +6,20 @@ use App\Filament\Resources\OrderResource;
 use Filament\Resources\Pages\ViewRecord;
 
 /**
- * Read-only. ViewRecord::authorizeAccess() already correctly calls
+ * ViewRecord::authorizeAccess() already correctly calls
  * abort_unless(canView($record), 403) by default (confirmed against the
  * installed source — same established note as ProductResource\Pages\
  * ViewProduct/RoleResource\Pages\ViewRole) — no override needed here.
- * No header actions at all — D1: strictly read-only, nothing here to
- * duplicate, edit, or act on.
+ *
+ * FOUR HEADER ACTIONS, AS OF order-lifecycle-design.md §10 stage 7b —
+ * the page's still-read-only D1 posture (no create/edit/delete, no form)
+ * gains its first real writes: Confirm/Ship/Deliver/"Mark as received",
+ * each an OrderResource::*Action() factory so the object is testable
+ * without Livewire (the same reason ProductResource's own actions are
+ * static methods there, not inlined here — see ViewProduct's identical
+ * note). Every gate, every refusal and every success notification is
+ * that factory's own job; this page stays the two-line adapter it always
+ * was.
  */
 class ViewOrder extends ViewRecord
 {
@@ -19,6 +27,11 @@ class ViewOrder extends ViewRecord
 
     protected function getHeaderActions(): array
     {
-        return [];
+        return [
+            OrderResource::confirmAction(),
+            OrderResource::shipAction(),
+            OrderResource::deliverAction(),
+            OrderResource::markAsReceivedAction(),
+        ];
     }
 }

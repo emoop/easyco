@@ -140,6 +140,39 @@ return [
         'all_payment_methods' => 'All payment methods',
     ],
 
+    // The View page's four header actions (order-lifecycle-design.md §8,
+    // §10 stage 7b) — the first write buttons this Resource has ever had.
+    'actions' => [
+        'confirm' => 'Confirm',
+        'confirm_heading' => 'Confirm order :id',
+        'confirm_description' => 'Accept order :id and start preparing it.',
+        'confirm_done' => 'Order confirmed.',
+
+        'ship' => 'Ship',
+        'ship_heading' => 'Ship order :id',
+        'ship_description' => 'Mark order :id as shipped.',
+        'ship_done' => 'Order marked as shipped.',
+
+        'deliver' => 'Deliver',
+        'deliver_heading' => 'Deliver order :id',
+        'deliver_description' => 'Mark order :id as delivered to the customer.',
+        'deliver_done' => 'Order marked as delivered.',
+
+        'mark_as_received' => 'Mark as received',
+        'mark_as_received_heading' => 'Mark payment as received for order :id',
+        'mark_as_received_description' => 'Record this order\'s pending payment as received.',
+        'mark_as_received_done' => 'Payment recorded as received.',
+        // D2's own graceful refusal (§0 item — no eligible payment left at click time).
+        'no_eligible_payment' => 'No payment on this order is eligible to be marked as received.',
+
+        'note_label' => 'Note (optional)',
+        'refused_title' => 'This action was refused',
+        // InvalidOrderTransitionException's own from()/to() (§8.3 item 4) — never its raw English message.
+        'invalid_transition_body' => 'Order :id cannot move from :from to :to.',
+        // InvalidArgumentException (an unknown/changed record) — never its raw message either.
+        'generic_refusal_body' => 'Order :id could not be processed — it may no longer exist, or its state changed since this page was loaded.',
+    ],
+
     'yes' => 'Yes',
     'no' => 'No',
     'no_promotion' => 'No promotion applied.',

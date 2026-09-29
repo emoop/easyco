@@ -302,6 +302,28 @@ final class Payment
     }
 
     /**
+     * EXACTLY THE STATE confirm() ITSELF ACCEPTS — §4.5's table
+     * (order-lifecycle-design.md), extracted as a real accessor so a caller
+     * can ask "would this succeed" without duplicating confirm()'s own four
+     * guard conditions inline (§10 stage 7b). `status !== CAPTURED &&
+     * status !== FAILED` there is `status === PENDING` here: PaymentStatus
+     * has exactly those three cases, so the two are the same predicate,
+     * stated the way confirm()'s own guards state it.
+     *
+     * App\Services\OrderStatusChanger::confirmDeliveryPaymentIfEligible()
+     * (R10) is the first caller — previously an inline copy of this exact
+     * formula, found byte-for-byte identical when extracted (not a
+     * "subtly different" duplicate).
+     */
+    public function isConfirmable(): bool
+    {
+        return $this->status === PaymentStatus::PENDING
+            && $this->attemptedAt !== null
+            && $this->confirmedAt === null
+            && ! $this->isVoided();
+    }
+
+    /**
      * Records the outcome of THIS attempt, once. Only ever called after
      * this Payment was created as the "we are about to charge, result
      * not yet known" placeholder (checkout-domain-design.md §8.3) —
