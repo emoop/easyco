@@ -61,6 +61,18 @@ class SaleLineModel extends Model
         'unit_cost_minor',
         'unit_cost_currency',
         'sold_attributes',
+        // operational-sales-domain-design.md §3.4 (revised) / §3.13,
+        // stage 6b-i — the REFUND ledger's own fields.
+        'quantity_returned',
+        'default_refund_amount_minor',
+        'default_refund_amount_currency',
+        'actual_refund_amount_minor',
+        'actual_refund_amount_currency',
+        'display_price_at_return_minor',
+        'display_price_at_return_currency',
+        'returned_by',
+        'returned_by_name',
+        'return_reason',
     ];
 
     protected $casts = [

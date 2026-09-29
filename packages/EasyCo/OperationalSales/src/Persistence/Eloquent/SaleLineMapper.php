@@ -53,6 +53,13 @@ final class SaleLineMapper
             netPaidAmount: self::moneyOrNull($model->net_paid_amount_minor, $model->net_paid_amount_currency, 'netPaidAmount'),
             soldAttributes: $model->sold_attributes,
             unitCost: self::moneyOrNull($model->unit_cost_minor, $model->unit_cost_currency, 'unitCost'),
+            quantityReturned: $model->quantity_returned,
+            defaultRefundAmount: self::moneyOrNull($model->default_refund_amount_minor, $model->default_refund_amount_currency, 'defaultRefundAmount'),
+            actualRefundAmount: self::moneyOrNull($model->actual_refund_amount_minor, $model->actual_refund_amount_currency, 'actualRefundAmount'),
+            displayPriceAtReturn: self::moneyOrNull($model->display_price_at_return_minor, $model->display_price_at_return_currency, 'displayPriceAtReturn'),
+            returnedBy: $model->returned_by !== null ? (string) $model->returned_by : null,
+            returnedByName: $model->returned_by_name,
+            returnReason: $model->return_reason,
         );
     }
 
@@ -89,6 +96,14 @@ final class SaleLineMapper
         self::fillMoneyOrNull($model, 'unit_cost', $saleLine->unitCost());
 
         $model->sold_attributes = $saleLine->soldAttributes();
+
+        $model->quantity_returned = $saleLine->quantityReturned();
+        self::fillMoneyOrNull($model, 'default_refund_amount', $saleLine->defaultRefundAmount());
+        self::fillMoneyOrNull($model, 'actual_refund_amount', $saleLine->actualRefundAmount());
+        self::fillMoneyOrNull($model, 'display_price_at_return', $saleLine->displayPriceAtReturn());
+        $model->returned_by = $saleLine->returnedBy();
+        $model->returned_by_name = $saleLine->returnedByName();
+        $model->return_reason = $saleLine->returnReason();
     }
 
     /**

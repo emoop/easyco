@@ -390,6 +390,7 @@ final class SaleLineTest extends TestCase
             'reconstituteFromStorage',
             'create',
             'createNonSale',
+            'createRefund',
             'id',
             'assignId',
             'assignTransactionId',
@@ -414,6 +415,13 @@ final class SaleLineTest extends TestCase
             'netPaidAmount',
             'soldAttributes',
             'unitCost',
+            'quantityReturned',
+            'defaultRefundAmount',
+            'actualRefundAmount',
+            'displayPriceAtReturn',
+            'returnedBy',
+            'returnedByName',
+            'returnReason',
         ];
 
         $actualPublicMethods = array_map(
@@ -828,5 +836,370 @@ final class SaleLineTest extends TestCase
             effectiveAt: $this->now(),
             productName: 'Impossible Product Name',
         );
+    }
+
+    // --- createRefund() — operational-sales-domain-design.md §3.4 revised, stage 6b-i ---
+
+    /** A real, persisted-looking SALE line (assignId() called), the shape createRefund() requires as its origin. */
+    private function persistedSaleLine(array $overrides = []): SaleLine
+    {
+        $line = $this->create($overrides);
+        $line->assignId($overrides['id'] ?? 'sale-line-1');
+
+        return $line;
+    }
+
+    private function refundArgs(SaleLine $originatingLine, array $overrides = []): array
+    {
+        return array_merge([
+            'originatingLine' => $originatingLine,
+            'transactionId' => 'refund-txn-1',
+            'quantityReturned' => 1,
+            'defaultRefundAmount' => $this->money(950),
+            'returnedBy' => 'staff-1',
+            'returnedByName' => 'Ana Petrova',
+            'returnReason' => 'wrong size',
+            'displayPriceAtReturn' => $this->money(1100),
+            'recordedAt' => $this->now(),
+            'effectiveAt' => $this->now(),
+        ], $overrides);
+    }
+
+    private function createRefund(SaleLine $originatingLine, array $overrides = []): SaleLine
+    {
+        return SaleLine::createRefund(...$this->refundArgs($originatingLine, $overrides));
+    }
+
+    public function test_create_refund_succeeds_against_a_persisted_sale_line(): void
+    {
+        $origin = $this->persistedSaleLine();
+
+        $refund = $this->createRefund($origin);
+
+        $this->assertSame(SaleLineType::REFUND, $refund->type());
+        $this->assertSame(SaleLineStatus::COMPLETED, $refund->status());
+        $this->assertSame($origin->id(), $refund->originatingSaleLineId());
+    }
+
+    public function test_create_refund_throws_when_the_originating_line_is_not_sale(): void
+    {
+        $origin = SaleLine::createNonSale(
+            type: SaleLineType::SHIPPING,
+            transactionId: 'txn-1',
+            clientId: 'client-1',
+            priceableId: null,
+            status: SaleLineStatus::COMPLETED,
+            quantity: 1,
+            amount: $this->money(),
+            profit: $this->money(0),
+            recordedAt: $this->now(),
+            effectiveAt: $this->now(),
+        );
+        $origin->assignId('shipping-line-1');
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('must be type sale');
+
+        $this->createRefund($origin);
+    }
+
+    public function test_create_refund_throws_when_the_originating_line_has_never_been_persisted(): void
+    {
+        $origin = $this->create(); // no assignId() call — id() is null
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('must already be persisted');
+
+        $this->createRefund($origin);
+    }
+
+    public function test_create_refund_throws_when_quantity_returned_is_zero_or_negative(): void
+    {
+        $origin = $this->persistedSaleLine();
+
+        foreach ([0, -1] as $quantityReturned) {
+            try {
+                $this->createRefund($origin, ['quantityReturned' => $quantityReturned]);
+                $this->fail("quantityReturned={$quantityReturned} must be refused.");
+            } catch (\InvalidArgumentException $exception) {
+                $this->assertStringContainsString('must be a positive integer', $exception->getMessage());
+            }
+        }
+    }
+
+    public function test_create_refund_throws_when_quantity_returned_exceeds_the_originating_lines_own_quantity(): void
+    {
+        $origin = $this->persistedSaleLine(['quantity' => 2, 'amount' => $this->money(2000)]);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('must not exceed');
+
+        $this->createRefund($origin, ['quantityReturned' => 3]);
+    }
+
+    public function test_create_refund_accepts_quantity_returned_equal_to_the_full_original_quantity(): void
+    {
+        $origin = $this->persistedSaleLine(['quantity' => 2, 'amount' => $this->money(2000)]);
+
+        $refund = $this->createRefund($origin, ['quantityReturned' => 2]);
+
+        $this->assertSame(2, $refund->quantityReturned());
+    }
+
+    public function test_create_refund_throws_when_default_refund_amount_is_zero_or_negative(): void
+    {
+        $origin = $this->persistedSaleLine();
+
+        foreach ([$this->money(0), Money::fromMinorUnits(-100, 'EUR')] as $amount) {
+            try {
+                $this->createRefund($origin, ['defaultRefundAmount' => $amount]);
+                $this->fail('a zero/negative defaultRefundAmount must be refused.');
+            } catch (\InvalidArgumentException $exception) {
+                $this->assertStringContainsString('must be positive', $exception->getMessage());
+            }
+        }
+    }
+
+    public function test_create_refund_throws_when_default_refund_amount_currency_does_not_match_the_originating_line(): void
+    {
+        $origin = $this->persistedSaleLine(); // EUR, per $this->money()'s own default
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage("currency");
+
+        $this->createRefund($origin, ['defaultRefundAmount' => Money::fromMinorUnits(950, 'USD')]);
+    }
+
+    /**
+     * order-lifecycle-design.md §14 Q6's own resolution: quantity on the
+     * BUILT row is the ORIGIN's own quantity, never quantityReturned —
+     * the two numbers stay independently readable without a join.
+     */
+    public function test_create_refund_sets_quantity_to_the_originating_lines_own_quantity_not_quantity_returned(): void
+    {
+        // finalUnitPrice(1000) x quantity(5) - promotionDiscountShare(100) - discretionaryDiscount(0) = 4900.
+        $origin = $this->persistedSaleLine(['quantity' => 5, 'amount' => $this->money(5000), 'netPaidAmount' => $this->money(4900)]);
+
+        $refund = $this->createRefund($origin, ['quantityReturned' => 2]);
+
+        $this->assertSame(5, $refund->quantity(), 'quantity must be the ORIGIN\'s own quantity');
+        $this->assertSame(2, $refund->quantityReturned(), 'quantityReturned is the separate, independently-readable count');
+    }
+
+    public function test_create_refund_sets_amount_to_the_positive_default_refund_amount(): void
+    {
+        $origin = $this->persistedSaleLine();
+
+        $refund = $this->createRefund($origin, ['defaultRefundAmount' => $this->money(950)]);
+
+        $this->assertTrue($refund->amount()->equals($this->money(950)));
+        $this->assertTrue($refund->amount()->isPositive(), 'amount is stored positive, not negated (consistent with PaymentRefund)');
+    }
+
+    public function test_create_refund_sets_actual_refund_amount_equal_to_default_with_no_override_exposed(): void
+    {
+        $origin = $this->persistedSaleLine();
+
+        $refund = $this->createRefund($origin, ['defaultRefundAmount' => $this->money(950)]);
+
+        $this->assertTrue($refund->actualRefundAmount()->equals($this->money(950)));
+        $this->assertTrue($refund->defaultRefundAmount()->equals($refund->actualRefundAmount()));
+    }
+
+    /** An explicit, reported scope cut (this stage's own final report) — see createRefund()'s own docblock. */
+    public function test_create_refund_sets_profit_to_zero(): void
+    {
+        $origin = $this->persistedSaleLine();
+
+        $refund = $this->createRefund($origin);
+
+        $this->assertTrue($refund->profit()->isZero());
+        $this->assertSame('EUR', $refund->profit()->currency()->code());
+    }
+
+    /**
+     * §3.4 revised: a REFUND line never duplicates the SALE line's
+     * snapshot fields — it resolves them through originatingSaleLineId
+     * instead. Every one of these stays NULL on the built row, even
+     * though the origin has them all set.
+     */
+    public function test_create_refund_leaves_every_snapshot_field_null_even_though_the_origin_has_them_set(): void
+    {
+        $origin = $this->persistedSaleLine();
+
+        $refund = $this->createRefund($origin);
+
+        $this->assertNull($refund->productName());
+        $this->assertNull($refund->sku());
+        $this->assertNull($refund->soldAttributes());
+        $this->assertNull($refund->regularUnitPrice());
+        $this->assertNull($refund->finalUnitPrice());
+        $this->assertNull($refund->promotionDiscountShare());
+        $this->assertNull($refund->discretionaryDiscount());
+        $this->assertNull($refund->netPaidAmount());
+        $this->assertNull($refund->unitCost());
+    }
+
+    public function test_create_refund_carries_the_actor_and_reason_verbatim(): void
+    {
+        $origin = $this->persistedSaleLine();
+
+        $refund = $this->createRefund($origin, [
+            'returnedBy' => 'staff-42',
+            'returnedByName' => 'Ivan Ivanov',
+            'returnReason' => 'defective',
+        ]);
+
+        $this->assertSame('staff-42', $refund->returnedBy());
+        $this->assertSame('Ivan Ivanov', $refund->returnedByName());
+        $this->assertSame('defective', $refund->returnReason());
+    }
+
+    public function test_create_refund_accepts_a_null_display_price_at_return_and_null_reason_and_null_actor(): void
+    {
+        $origin = $this->persistedSaleLine();
+
+        $refund = $this->createRefund($origin, [
+            'returnedBy' => null,
+            'returnedByName' => null,
+            'returnReason' => null,
+            'displayPriceAtReturn' => null,
+        ]);
+
+        $this->assertNull($refund->returnedBy());
+        $this->assertNull($refund->returnedByName());
+        $this->assertNull($refund->returnReason());
+        $this->assertNull($refund->displayPriceAtReturn());
+    }
+
+    public function test_create_refund_carries_a_real_display_price_at_return(): void
+    {
+        $origin = $this->persistedSaleLine();
+
+        $refund = $this->createRefund($origin, ['displayPriceAtReturn' => $this->money(1150)]);
+
+        $this->assertTrue($refund->displayPriceAtReturn()->equals($this->money(1150)));
+    }
+
+    /** Tier A: every REFUND field must be null for a non-REFUND type. */
+    public function test_refund_fields_must_be_null_for_sale_type(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('must all be null');
+
+        // create() has no parameter for these — reach the constructor's
+        // own Tier A guard through reconstituteFromStorage(), the one
+        // public path that accepts every field positionally.
+        SaleLine::reconstituteFromStorage(
+            id: 'line-1',
+            transactionId: 'txn-1',
+            clientId: 'client-1',
+            priceableId: 'priceable-1',
+            type: SaleLineType::SALE,
+            status: SaleLineStatus::COMPLETED,
+            quantity: 1,
+            amount: $this->money(),
+            profit: $this->money(200),
+            recordedAt: $this->now(),
+            effectiveAt: $this->now(),
+            quantityReturned: 1,
+        );
+    }
+
+    public function test_refund_fields_must_be_null_for_shipping_type(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('must all be null');
+
+        SaleLine::reconstituteFromStorage(
+            id: 'line-1',
+            transactionId: 'txn-1',
+            clientId: 'client-1',
+            priceableId: null,
+            type: SaleLineType::SHIPPING,
+            status: SaleLineStatus::COMPLETED,
+            quantity: 1,
+            amount: $this->money(),
+            profit: $this->money(0),
+            recordedAt: $this->now(),
+            effectiveAt: $this->now(),
+            returnReason: 'should not be allowed here',
+        );
+    }
+
+    public function test_refund_fields_must_be_null_for_installment_payment_type(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('must all be null');
+
+        SaleLine::reconstituteFromStorage(
+            id: 'line-1',
+            transactionId: 'txn-1',
+            clientId: 'client-1',
+            priceableId: null,
+            type: SaleLineType::INSTALLMENT_PAYMENT,
+            status: SaleLineStatus::COMPLETED,
+            quantity: 1,
+            amount: $this->money(),
+            profit: $this->money(0),
+            recordedAt: $this->now(),
+            effectiveAt: $this->now(),
+            returnedBy: 'staff-1',
+        );
+    }
+
+    /** Tier A: REFUND itself is unconstrained at this tier — every field accepted null or set. */
+    public function test_refund_fields_are_unconstrained_for_refund_type(): void
+    {
+        $line = SaleLine::createNonSale(
+            type: SaleLineType::REFUND,
+            transactionId: 'txn-1',
+            clientId: 'client-1',
+            priceableId: 'priceable-1',
+            status: SaleLineStatus::COMPLETED,
+            quantity: 1,
+            amount: $this->money(),
+            profit: $this->money(0),
+            recordedAt: $this->now(),
+            effectiveAt: $this->now(),
+            originatingSaleLineId: 'sale-line-1',
+        );
+
+        $this->assertNull($line->quantityReturned());
+        $this->assertNull($line->defaultRefundAmount());
+        $this->assertNull($line->returnedBy());
+    }
+
+    public function test_the_six_refund_fields_round_trip_through_reconstitute_from_storage(): void
+    {
+        $line = SaleLine::reconstituteFromStorage(
+            id: 'refund-line-1',
+            transactionId: 'txn-1',
+            clientId: 'client-1',
+            priceableId: 'priceable-1',
+            type: SaleLineType::REFUND,
+            status: SaleLineStatus::COMPLETED,
+            quantity: 5,
+            amount: $this->money(950),
+            profit: $this->money(0),
+            recordedAt: $this->now(),
+            effectiveAt: $this->now(),
+            originatingSaleLineId: 'sale-line-1',
+            quantityReturned: 2,
+            defaultRefundAmount: $this->money(950),
+            actualRefundAmount: $this->money(900),
+            displayPriceAtReturn: $this->money(1100),
+            returnedBy: 'staff-1',
+            returnedByName: 'Ana Petrova',
+            returnReason: 'wrong size',
+        );
+
+        $this->assertSame(2, $line->quantityReturned());
+        $this->assertTrue($line->defaultRefundAmount()->equals($this->money(950)));
+        $this->assertTrue($line->actualRefundAmount()->equals($this->money(900)), 'a legacy/operator-overridden row may legitimately disagree with defaultRefundAmount');
+        $this->assertTrue($line->displayPriceAtReturn()->equals($this->money(1100)));
+        $this->assertSame('staff-1', $line->returnedBy());
+        $this->assertSame('Ana Petrova', $line->returnedByName());
+        $this->assertSame('wrong size', $line->returnReason());
     }
 }

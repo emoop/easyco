@@ -84,6 +84,20 @@ final class SaleLine
         private ?Money $netPaidAmount = null,
         private ?array $soldAttributes = null,
         private ?Money $unitCost = null,
+        // operational-sales-domain-design.md §3.4 (revised) / §3.13 —
+        // returns. Tier A only, enforced below (assertRefundFieldsMatchType()):
+        // NULL for every type except REFUND; for REFUND, unconstrained at
+        // this tier — Tier B ("required for a fresh REFUND line") lives
+        // exclusively in createRefund(), never here, mirroring exactly how
+        // create()'s own Tier B for productName/sku stays out of this
+        // constructor (§3.12's amendment).
+        private ?int $quantityReturned = null,
+        private ?Money $defaultRefundAmount = null,
+        private ?Money $actualRefundAmount = null,
+        private ?Money $displayPriceAtReturn = null,
+        private ?string $returnedBy = null,
+        private ?string $returnedByName = null,
+        private ?string $returnReason = null,
     ) {
         if ($clientId === '') {
             throw new InvalidArgumentException('SaleLine clientId must not be empty.');
@@ -112,6 +126,16 @@ final class SaleLine
             $netPaidAmount,
             $soldAttributes,
             $unitCost,
+            $type,
+        );
+        self::assertRefundFieldsMatchType(
+            $quantityReturned,
+            $defaultRefundAmount,
+            $actualRefundAmount,
+            $displayPriceAtReturn,
+            $returnedBy,
+            $returnedByName,
+            $returnReason,
             $type,
         );
     }
@@ -248,6 +272,40 @@ final class SaleLine
     }
 
     /**
+     * Tier A for the §3.4-revised REFUND fields — the same shape as
+     * assertSnapshotFieldsStructurallyValid() above: a fact about the
+     * line's TYPE, true regardless of when the row was written, so it
+     * runs unconditionally on every path (construction, reconstitution,
+     * createRefund() alike). NULL for every type except REFUND;
+     * unconstrained for REFUND at this tier — "required for a fresh
+     * REFUND line" (Tier B) is createRefund()'s own job, never this
+     * constructor's.
+     */
+    private static function assertRefundFieldsMatchType(
+        ?int $quantityReturned,
+        ?Money $defaultRefundAmount,
+        ?Money $actualRefundAmount,
+        ?Money $displayPriceAtReturn,
+        ?string $returnedBy,
+        ?string $returnedByName,
+        ?string $returnReason,
+        SaleLineType $type,
+    ): void {
+        if ($type === SaleLineType::REFUND) {
+            return;
+        }
+
+        if ($quantityReturned !== null || $defaultRefundAmount !== null || $actualRefundAmount !== null
+            || $displayPriceAtReturn !== null || $returnedBy !== null || $returnedByName !== null
+            || $returnReason !== null) {
+            throw new InvalidArgumentException(
+                "SaleLine's REFUND fields (quantityReturned, defaultRefundAmount, actualRefundAmount, ".
+                "displayPriceAtReturn, returnedBy, returnedByName, returnReason) must all be null for type {$type->value}."
+            );
+        }
+    }
+
+    /**
      * Reconstitutes a SaleLine exactly as it exists in storage.
      *
      * PERSISTENCE-LAYER ONLY — trusts that every argument already passed
@@ -301,6 +359,13 @@ final class SaleLine
         ?Money $netPaidAmount = null,
         ?array $soldAttributes = null,
         ?Money $unitCost = null,
+        ?int $quantityReturned = null,
+        ?Money $defaultRefundAmount = null,
+        ?Money $actualRefundAmount = null,
+        ?Money $displayPriceAtReturn = null,
+        ?string $returnedBy = null,
+        ?string $returnedByName = null,
+        ?string $returnReason = null,
     ): self {
         return new self(
             id: $id,
@@ -325,6 +390,13 @@ final class SaleLine
             netPaidAmount: $netPaidAmount,
             soldAttributes: $soldAttributes,
             unitCost: $unitCost,
+            quantityReturned: $quantityReturned,
+            defaultRefundAmount: $defaultRefundAmount,
+            actualRefundAmount: $actualRefundAmount,
+            displayPriceAtReturn: $displayPriceAtReturn,
+            returnedBy: $returnedBy,
+            returnedByName: $returnedByName,
+            returnReason: $returnReason,
         );
     }
 
@@ -433,14 +505,29 @@ final class SaleLine
      * not and should not replicate; a caller wanting a SALE line must
      * use create() instead.
      *
-     * RETURNS AND RESERVATIONS WILL EACH GET THEIR OWN STRICT FACTORY
-     * WHEN DESIGNED (mirroring create()'s own formula-invariant
-     * enforcement, once §3.13's own deferred REFUND/RESERVATION design
-     * items — §3.4's rewrite, reservation-recording — are actually
-     * built). Until then, this is the SOLE path for every non-SALE
-     * type — do not special-case REFUND/RESERVATION validation into this
-     * method piecemeal; give each its own factory instead, the same way
-     * create() exists for SALE.
+     * REFUND NOW HAS ITS OWN STRICT FACTORY — createRefund() below
+     * (operational-sales-domain-design.md §3.4 revised, §3.13 stage 6b-i)
+     * — mirroring create()'s own formula-invariant enforcement. A caller
+     * building a fresh REFUND line should use createRefund(), not this
+     * method. This method still technically accepts REFUND (Tier A only,
+     * no formula/quantity checks at all) rather than refusing it outright
+     * the way it refuses SALE — deliberately NOT hardened into a runtime
+     * refusal in this pass, because a real, out-of-scope test
+     * (tests/Feature/EloquentTransactionRepositoryTest.php) still builds
+     * a REFUND line through this exact path and this pass's own stated
+     * scope excludes touching anything outside packages/EasyCo/
+     * OperationalSales, packages/EasyCo/Inventory and one new app/
+     * Services class. Reported, not silently fixed — see this stage's
+     * own final report.
+     *
+     * RESERVATION WILL GET ITS OWN STRICT FACTORY WHEN DESIGNED
+     * (reservation-recording isn't wired end-to-end yet). Until then,
+     * this remains the SOLE path for RESERVATION/SHIPPING/
+     * INSTALLMENT_PAYMENT, and technically still for REFUND per the
+     * paragraph above — do not special-case RESERVATION validation into
+     * this method piecemeal; give it its own factory instead, the same
+     * way create() exists for SALE and createRefund() now exists for
+     * REFUND.
      *
      * @param array<int, array{definitionId: string, definitionCode: string, definitionName: string, valueId: string, value: string}>|null $soldAttributes
      */
@@ -497,6 +584,144 @@ final class SaleLine
             soldAttributes: $soldAttributes,
             unitCost: $unitCost,
         );
+    }
+
+    /**
+     * The strict path for a freshly-created REFUND line —
+     * operational-sales-domain-design.md §3.4 (revised) / §3.13, stage
+     * 6b-i. Mirrors create()'s own formula-invariant enforcement for
+     * SALE: real Tier B invariants below, an InvalidArgumentException
+     * per field, named the same way create()'s own checks are.
+     *
+     * $originatingLine IS READ, NEVER MUTATED — the SALE line being
+     * refunded. Its own clientId/priceableId/quantity/amount are used to
+     * derive this REFUND line's own values (§3.4 revised: a REFUND line
+     * never duplicates the SALE line's snapshot fields — productName,
+     * sku, soldAttributes, regularUnitPrice, finalUnitPrice,
+     * promotionDiscountShare, discretionaryDiscount, netPaidAmount,
+     * unitCost — it resolves them through originatingSaleLineId
+     * instead, so none of them is a parameter here and every one of
+     * them stays NULL on the built row).
+     *
+     * quantity ON THE BUILT ROW = $originatingLine->quantity(), NOT
+     * $quantityReturned — order-lifecycle-design.md §14 Q6's own
+     * resolution: the REFUND row's pre-existing, always-required
+     * `quantity` field holds the ORIGINAL line's own quantity, so one
+     * row reads "quantityReturned=2 of quantity=5" — quantityReturned is
+     * its own field precisely so the two numbers can differ and both be
+     * readable without a join.
+     *
+     * amount = $defaultRefundAmount, POSITIVE (not negated) — consistent
+     * with PaymentRefund's own positive-amount convention for the same
+     * real-world event; §3.6's "included as a negative" describes a
+     * future REPORT's arithmetic treatment of type=REFUND rows, not this
+     * class's storage convention.
+     *
+     * actualRefundAmount IS NOT A PARAMETER — order-lifecycle-design.md
+     * §7.2's own decision: it is set internally, equal to
+     * $defaultRefundAmount. No override is exposed on this path.
+     *
+     * profit = Money::zero() — an explicit, reported scope cut, not an
+     * oversight: computing a returned unit's true profit share would
+     * need the same largest-remainder allocation (EasyCo\Pricing\
+     * Money::allocate()) the promotion-discount rule already establishes,
+     * applied to a NEW quantity — out of scope for this stage. See this
+     * stage's own final report.
+     *
+     * @throws InvalidArgumentException If $originatingLine is not type
+     *   SALE, has never been persisted (no real id), if $quantityReturned
+     *   is not a positive integer not exceeding $originatingLine's own
+     *   quantity, or if $defaultRefundAmount is not positive or is
+     *   denominated in a different currency than $originatingLine's own
+     *   amount.
+     */
+    public static function createRefund(
+        self $originatingLine,
+        string $transactionId,
+        int $quantityReturned,
+        Money $defaultRefundAmount,
+        ?string $returnedBy,
+        ?string $returnedByName,
+        ?string $returnReason,
+        ?Money $displayPriceAtReturn,
+        DateTimeImmutable $recordedAt,
+        DateTimeImmutable $effectiveAt,
+    ): self {
+        self::assertOriginatingLineIsSale($originatingLine);
+        self::assertOriginatingLineIsPersisted($originatingLine);
+        self::assertQuantityReturnedIsValid($quantityReturned, $originatingLine->quantity());
+        self::assertDefaultRefundAmountIsValid($defaultRefundAmount, $originatingLine->amount());
+
+        return new self(
+            id: null,
+            transactionId: $transactionId,
+            clientId: $originatingLine->clientId(),
+            priceableId: $originatingLine->priceableId(),
+            type: SaleLineType::REFUND,
+            status: SaleLineStatus::COMPLETED,
+            quantity: $originatingLine->quantity(),
+            amount: $defaultRefundAmount,
+            profit: Money::zero($defaultRefundAmount->currency()),
+            recordedAt: $recordedAt,
+            effectiveAt: $effectiveAt,
+            originatingSaleLineId: $originatingLine->id(),
+            quantityReturned: $quantityReturned,
+            defaultRefundAmount: $defaultRefundAmount,
+            actualRefundAmount: $defaultRefundAmount,
+            displayPriceAtReturn: $displayPriceAtReturn,
+            returnedBy: $returnedBy,
+            returnedByName: $returnedByName,
+            returnReason: $returnReason,
+        );
+    }
+
+    private static function assertOriginatingLineIsSale(self $originatingLine): void
+    {
+        if ($originatingLine->type() !== SaleLineType::SALE) {
+            throw new InvalidArgumentException(
+                "SaleLine::createRefund(): originatingLine must be type sale, got {$originatingLine->type()->value}."
+            );
+        }
+    }
+
+    private static function assertOriginatingLineIsPersisted(self $originatingLine): void
+    {
+        if ($originatingLine->id() === null) {
+            throw new InvalidArgumentException(
+                'SaleLine::createRefund(): originatingLine must already be persisted (have a real id) — '.
+                'a REFUND line cannot reference a SALE line that does not exist yet.'
+            );
+        }
+    }
+
+    private static function assertQuantityReturnedIsValid(int $quantityReturned, int $originalQuantity): void
+    {
+        if ($quantityReturned <= 0) {
+            throw new InvalidArgumentException(
+                "SaleLine::createRefund(): quantityReturned must be a positive integer, got {$quantityReturned}."
+            );
+        }
+
+        if ($quantityReturned > $originalQuantity) {
+            throw new InvalidArgumentException(
+                "SaleLine::createRefund(): quantityReturned ({$quantityReturned}) must not exceed ".
+                "the originating line's own quantity ({$originalQuantity})."
+            );
+        }
+    }
+
+    private static function assertDefaultRefundAmountIsValid(Money $defaultRefundAmount, Money $originatingAmount): void
+    {
+        if (! $defaultRefundAmount->isPositive()) {
+            throw new InvalidArgumentException('SaleLine::createRefund(): defaultRefundAmount must be positive.');
+        }
+
+        if (! $defaultRefundAmount->currency()->equals($originatingAmount->currency())) {
+            throw new InvalidArgumentException(
+                "SaleLine::createRefund(): defaultRefundAmount's currency ({$defaultRefundAmount->currency()->code()}) ".
+                "must match the originating line's own currency ({$originatingAmount->currency()->code()})."
+            );
+        }
     }
 
     /**
@@ -765,5 +990,47 @@ final class SaleLine
     public function unitCost(): ?Money
     {
         return $this->unitCost;
+    }
+
+    /** §3.4 revised — set only on a REFUND line; NULL for every other type. */
+    public function quantityReturned(): ?int
+    {
+        return $this->quantityReturned;
+    }
+
+    /** §3.4 revised — the computed cumulative share (App\Services\CumulativeRefundShareCalculator); informational/audit. */
+    public function defaultRefundAmount(): ?Money
+    {
+        return $this->defaultRefundAmount;
+    }
+
+    /** §3.4 revised — the fact of record; equals defaultRefundAmount on every line createRefund() builds (no override on this path). */
+    public function actualRefundAmount(): ?Money
+    {
+        return $this->actualRefundAmount;
+    }
+
+    /** §3.4 revised — a live PriceResolver read at the moment of return, nullable, informational only; never drives the refund amount. */
+    public function displayPriceAtReturn(): ?Money
+    {
+        return $this->displayPriceAtReturn;
+    }
+
+    /** §3.13 Q4(a) — the authenticated staff id at the point of return; NULL for a console/job caller. */
+    public function returnedBy(): ?string
+    {
+        return $this->returnedBy;
+    }
+
+    /** The staff name snapshot alongside returnedBy — mirrors order_events.staff_id/staff_name. */
+    public function returnedByName(): ?string
+    {
+        return $this->returnedByName;
+    }
+
+    /** §3.13 Q4(b) — optional free text, verbatim and untranslated. */
+    public function returnReason(): ?string
+    {
+        return $this->returnReason;
     }
 }
