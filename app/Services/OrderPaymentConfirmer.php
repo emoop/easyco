@@ -70,6 +70,33 @@ use InvalidArgumentException;
  * told a fact that is already durable, so a listener that throws cannot
  * un-record it — the error surfaces to the operator while the confirmation
  * stays written (§8.3 item 4's policy, proven in this class's own tests).
+ *
+ * SPLIT IN TWO, AS OF order-lifecycle-design.md §10 stage 6a, FOR ONE REASON:
+ * §5.2's deliver() needs steps 1-6 below run INSIDE ITS OWN already-open
+ * transaction, with the hook fired only after THAT transaction's real commit
+ * — not after this class's own DB::transaction() call returns, which, when
+ * nested inside a caller's open transaction, is merely a savepoint release
+ * (Laravel's own nested-transaction composition). Firing here in that case
+ * would violate §12's "every action hook fires after the writing transaction
+ * commits": the confirmation could still be rolled back by the OUTER
+ * transaction after the hook already ran. confirmWithinOpenTransaction()
+ * below is steps 1-6, with no transaction of its own and no hook — it
+ * ASSUMES it is already inside an open transaction, exactly the assumption
+ * App\Services\OrderEventRecorder::record() already makes of its own
+ * callers. confirm() is now a thin wrapper: open one transaction, run the
+ * steps, fire the hook after that transaction call returns — behaviourally
+ * IDENTICAL to the pre-split body for confirm()'s own callers (this class's
+ * public API and its transaction/hook timing are unchanged; only the
+ * refactor of what runs inside it is new).
+ *
+ * confirmWithinOpenTransaction() IS PUBLIC, NOT protected/private, BECAUSE
+ * PHP HAS NO PACKAGE-PRIVATE VISIBILITY: OrderStatusChanger::deliver() is a
+ * different class calling this one as a constructor-injected collaborator,
+ * not a subclass, so `protected` would refuse it exactly as `private`
+ * would. There is no visibility modifier that says "internal to this
+ * package, not to the whole app" — so this is public, its name says what it
+ * assumes, and its docblock states the one rule that matters: never call it
+ * except from inside a transaction you will fire the hook after committing.
  */
 final class OrderPaymentConfirmer
 {
@@ -97,88 +124,109 @@ final class OrderPaymentConfirmer
      * and money — is §5.2's, and it passes attempts at its own call site.
      *
      * CALLED FROM INSIDE A CALLER'S OWN TRANSACTION, AND SAFELY (§4.3):
-     * `deliver()` already holds the order's row lock inside its own
-     * DB::transaction(), and Laravel composes this one as a savepoint, so the
-     * goods fact and the money fact remain one atomic unit under one lock
-     * order. What that caller does with a *refusal* is deliberately the
-     * caller's decision and not this class's (§4.5's table) — a wrong
-     * confirmation must never roll back a delivery that physically happened —
-     * so this class keeps §4.1's strict guards and their loud LogicExceptions
-     * exactly as they are.
+     * `deliver()` no longer calls this public method at all (see this class's
+     * own docblock, stage 6a) — it calls confirmWithinOpenTransaction()
+     * directly, inside its own transaction, and fires the hook itself after
+     * that transaction's real commit. This method's own transaction/hook
+     * timing is therefore exactly what it always was, for its own caller
+     * (the panel's payment action).
      *
      * @throws InvalidArgumentException If no payment has that id, if its order does not exist, or if the order already has a settled payment.
      * @throws \LogicException If Payment::confirm()'s own guards refuse it — an unanswered, captured, failed or voided attempt, or a second confirmation.
      */
     public function confirm(string $paymentId, DateTimeImmutable $confirmedAt): void
     {
-        $payment = DB::transaction(function () use ($paymentId, $confirmedAt): Payment {
-            // 1. The payment itself — a plain read, and deliberately the first
-            //    statement, because the order to lock is only known from this
-            //    row. The lock below, not this read, is what makes the
-            //    decision that follows hold.
-            $payment = $this->payments->findById($paymentId);
-
-            if ($payment === null) {
-                throw new InvalidArgumentException(
-                    "OrderPaymentConfirmer: no payment exists with id \"{$paymentId}\"."
-                );
-            }
-
-            // 2. THE ORDER ROW, UNDER ITS LOCK, BEFORE ANY PAYMENT IS READ OR
-            //    WRITTEN (§11 item 13's one lock order: the order, then its
-            //    payments). The value is not needed — the lock is the point:
-            //    it is what stops another panel action from moving this
-            //    order's money underneath the decision made below.
-            if ($this->orders->findByIdForUpdate($payment->orderId()) === null) {
-                throw new InvalidArgumentException(
-                    "OrderPaymentConfirmer: payment \"{$paymentId}\" belongs to order \"{$payment->orderId()}\", which does not exist."
-                );
-            }
-
-            // 3. The courtesy check (§4.3 step 2): an attempt of this order
-            //    already holds the money — including this very row, which is why
-            //    a captured or already-confirmed payment is refused here, with a
-            //    readable sentence, rather than by the domain guard behind it.
-            //    §4.4's unique index is the guarantee; this is the readable
-            //    refusal in front of it.
-            foreach ($this->payments->findByOrderId($payment->orderId()) as $attempt) {
-                if ($attempt->isSettled()) {
-                    throw new InvalidArgumentException(sprintf(
-                        'OrderPaymentConfirmer: order "%s" already has a settled payment ("%s", %s) — at most one payment per order may hold money.',
-                        $payment->orderId(),
-                        (string) $attempt->id(),
-                        self::describeSettled($attempt),
-                    ));
-                }
-            }
-
-            // 4. The domain's own guards (§4.1) — they throw before anything
-            //    is written, and their LogicExceptions are not caught here.
-            $payment->confirm($confirmedAt);
-
-            // 5. The row.
-            $this->payments->save($payment);
-
-            // 6. ...and the order's own history, inside the same transaction
-            //    (§6.2): a confirmation that rolls back leaves no event behind.
-            //    No reason and no transaction id — nothing was said and no
-            //    return happened; both statuses NULL, because nothing moved.
-            $this->events->record(
-                orderId: $payment->orderId(),
-                type: OrderEventType::PAYMENT_CONFIRMED,
-                fromStatus: null,
-                toStatus: null,
-                reason: null,
-                transactionId: null,
-                occurredAt: $confirmedAt,
-            );
-
-            return $payment;
-        });
+        $payment = DB::transaction(
+            fn (): Payment => $this->confirmWithinOpenTransaction($paymentId, $confirmedAt)
+        );
 
         // AFTER the commit, and only after it (§12): the confirmation is
         // durable before any listener hears about it.
         Hook::fire('order.payment_confirmed', $payment);
+    }
+
+    /**
+     * Steps 1-6 of confirm(), with no transaction of its own and no hook —
+     * see this class's own docblock for exactly why this split exists.
+     *
+     * ASSUMES IT IS ALREADY INSIDE AN OPEN TRANSACTION. The caller is
+     * responsible for: (1) actually holding one open, and (2) firing
+     * `Hook::fire('order.payment_confirmed', $payment)` with this method's
+     * return value AFTER that transaction genuinely commits — never before,
+     * and never at all if the caller decides not to call this in the first
+     * place (§4.5's table: a refusal to confirm is the caller's own decision,
+     * made BEFORE calling this, never by catching an exception from it).
+     *
+     * @throws InvalidArgumentException If no payment has that id, if its order does not exist, or if the order already has a settled payment.
+     * @throws \LogicException If Payment::confirm()'s own guards refuse it — an unanswered, captured, failed or voided attempt, or a second confirmation.
+     */
+    public function confirmWithinOpenTransaction(string $paymentId, DateTimeImmutable $confirmedAt): Payment
+    {
+        // 1. The payment itself — a plain read, and deliberately the first
+        //    statement, because the order to lock is only known from this
+        //    row. The lock below, not this read, is what makes the
+        //    decision that follows hold.
+        $payment = $this->payments->findById($paymentId);
+
+        if ($payment === null) {
+            throw new InvalidArgumentException(
+                "OrderPaymentConfirmer: no payment exists with id \"{$paymentId}\"."
+            );
+        }
+
+        // 2. THE ORDER ROW, UNDER ITS LOCK, BEFORE ANY PAYMENT IS READ OR
+        //    WRITTEN (§11 item 13's one lock order: the order, then its
+        //    payments). The value is not needed — the lock is the point:
+        //    it is what stops another panel action from moving this
+        //    order's money underneath the decision made below. Re-locking a
+        //    row this same transaction already holds (deliver()'s own
+        //    findByIdForUpdate() call, before this method runs) is a safe,
+        //    reentrant no-op under InnoDB — not a second, competing lock.
+        if ($this->orders->findByIdForUpdate($payment->orderId()) === null) {
+            throw new InvalidArgumentException(
+                "OrderPaymentConfirmer: payment \"{$paymentId}\" belongs to order \"{$payment->orderId()}\", which does not exist."
+            );
+        }
+
+        // 3. The courtesy check (§4.3 step 2): an attempt of this order
+        //    already holds the money — including this very row, which is why
+        //    a captured or already-confirmed payment is refused here, with a
+        //    readable sentence, rather than by the domain guard behind it.
+        //    §4.4's unique index is the guarantee; this is the readable
+        //    refusal in front of it.
+        foreach ($this->payments->findByOrderId($payment->orderId()) as $attempt) {
+            if ($attempt->isSettled()) {
+                throw new InvalidArgumentException(sprintf(
+                    'OrderPaymentConfirmer: order "%s" already has a settled payment ("%s", %s) — at most one payment per order may hold money.',
+                    $payment->orderId(),
+                    (string) $attempt->id(),
+                    self::describeSettled($attempt),
+                ));
+            }
+        }
+
+        // 4. The domain's own guards (§4.1) — they throw before anything
+        //    is written, and their LogicExceptions are not caught here.
+        $payment->confirm($confirmedAt);
+
+        // 5. The row.
+        $this->payments->save($payment);
+
+        // 6. ...and the order's own history, inside the same transaction
+        //    (§6.2): a confirmation that rolls back leaves no event behind.
+        //    No reason and no transaction id — nothing was said and no
+        //    return happened; both statuses NULL, because nothing moved.
+        $this->events->record(
+            orderId: $payment->orderId(),
+            type: OrderEventType::PAYMENT_CONFIRMED,
+            fromStatus: null,
+            toStatus: null,
+            reason: null,
+            transactionId: null,
+            occurredAt: $confirmedAt,
+        );
+
+        return $payment;
     }
 
     /**
