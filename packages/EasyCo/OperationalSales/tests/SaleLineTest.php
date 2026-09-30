@@ -297,21 +297,23 @@ final class SaleLineTest extends TestCase
     /**
      * order-editing-design.md §4.1, stage 2 (D5) — EDIT_REVERSAL also
      * accepts it: the line an edit fully/partially reverses. No factory
-     * targets EDIT_REVERSAL yet (D3's own "exists and is unused" —
-     * stage 3's OrderEditor is the first real writer), so this goes
-     * through reconstituteFromStorage() directly, exactly as T2 asks.
+     * targeted EDIT_REVERSAL when this test was written (D3's own "exists
+     * and is unused" — stage 3a's createEditReversal() is the first real
+     * writer), so it goes through reconstituteFromStorage() directly,
+     * exactly as T2 asks.
      *
-     * A REAL, REPORTED FINDING, deliberately NOT worked around here:
-     * assertRefundFieldsMatchType() (SaleLine.php, still REFUND-only)
-     * was NOT touched by this stage's D5 — only asked to loosen
-     * assertOriginatingSaleLineIdMatchesType() — so a REAL EDIT_REVERSAL
-     * row carrying its own quantityReturned/defaultRefundAmount/etc.
-     * (§4.1's "reuses the entire REFUND-shaped column set") would
-     * currently still throw. This test only proves the ONE guard this
-     * stage was asked to loosen; it leaves the REFUND-shaped fields null
-     * to stay inside that guard's own boundary — Stage 3 (or whichever
-     * stage first writes a real EDIT_REVERSAL row) will need to widen
-     * assertRefundFieldsMatchType() too before that write is possible.
+     * STAGE 2'S OWN REPORTED FINDING, NOW CLOSED BY STAGE 3a: stage 2
+     * deliberately loosened only assertOriginatingSaleLineIdMatchesType()
+     * and reported that assertRefundFieldsMatchType() was left
+     * REFUND-only, so a REAL EDIT_REVERSAL row carrying its own
+     * quantityReturned/defaultRefundAmount/etc. (§4.1's "reuses the
+     * entire REFUND-shaped column set") would still have thrown. Stage 3a
+     * widened that second guard too, because createEditReversal() writes
+     * exactly such a row —
+     * test_the_refund_shaped_fields_are_accepted_on_edit_reversal_type()
+     * below is the test stage 2 could not write (the fields are left null
+     * here on purpose: this test proves the ONE guard it was written for,
+     * and nothing else).
      */
     public function test_originating_sale_line_id_is_accepted_on_edit_reversal(): void
     {
@@ -450,6 +452,10 @@ final class SaleLineTest extends TestCase
      * other mutation method exists on this class. __construct() is no
      * longer in this list (stage 4b — it's private now, so
      * getMethods(IS_PUBLIC) never returns it); createNonSale() is new.
+     * Stage 3a adds createEditReversal() — a second, equally static
+     * factory, no more a mutator than createRefund() beside it is; this
+     * allow-list is what forced that addition to be conscious rather than
+     * silent, exactly as the paragraph below intends.
      * Written as a Reflection-based allow-list so that adding any new
      * public method to SaleLine in the future forces a conscious update
      * to this test, rather than silently slipping a mutator past the
@@ -462,6 +468,7 @@ final class SaleLineTest extends TestCase
             'create',
             'createNonSale',
             'createRefund',
+            'createEditReversal',
             'id',
             'assignId',
             'assignTransactionId',
@@ -1326,5 +1333,389 @@ final class SaleLineTest extends TestCase
         $this->assertSame('staff-1', $line->returnedBy());
         $this->assertSame('Ana Petrova', $line->returnedByName());
         $this->assertSame('wrong size', $line->returnReason());
+    }
+
+    // --- createEditReversal() — order-editing-design.md §4.1/§4.2/§4.3, stage 3a (D3) ---
+
+    /**
+     * A real, persisted-looking SALE line as storage hands one back: a
+     * persisted id plus the full §3.13 snapshot. Overridable per field so
+     * a test can describe a row the write-time factories could never have
+     * produced (a corrupt negative net, a foreign-currency net) as well
+     * as one they can (a legitimately free, fully discounted zero net).
+     *
+     * @param array<string, mixed> $overrides
+     */
+    private function reconstitutedSaleLine(array $overrides = []): SaleLine
+    {
+        $args = array_merge([
+            'id' => 'sale-line-1',
+            'transactionId' => 'txn-1',
+            'clientId' => 'client-1',
+            'priceableId' => 'priceable-1',
+            'quantity' => 2,
+            'amount' => $this->money(2000),
+            'profit' => $this->money(1000),
+            'productName' => 'Product One',
+            'sku' => 'SKU-1',
+            'regularUnitPrice' => $this->money(1100),
+            'finalUnitPrice' => $this->money(1000),
+            'promotionDiscountShare' => $this->money(100),
+            'discretionaryDiscount' => $this->money(0),
+            'netPaidAmount' => $this->money(1900),
+            'soldAttributes' => [],
+            'unitCost' => null,
+        ], $overrides);
+
+        return SaleLine::reconstituteFromStorage(
+            id: $args['id'],
+            transactionId: $args['transactionId'],
+            clientId: $args['clientId'],
+            priceableId: $args['priceableId'],
+            type: SaleLineType::SALE,
+            status: SaleLineStatus::COMPLETED,
+            quantity: $args['quantity'],
+            amount: $args['amount'],
+            profit: $args['profit'],
+            recordedAt: $this->now(),
+            effectiveAt: $this->now(),
+            productName: $args['productName'],
+            sku: $args['sku'],
+            regularUnitPrice: $args['regularUnitPrice'],
+            finalUnitPrice: $args['finalUnitPrice'],
+            promotionDiscountShare: $args['promotionDiscountShare'],
+            discretionaryDiscount: $args['discretionaryDiscount'],
+            netPaidAmount: $args['netPaidAmount'],
+            soldAttributes: $args['soldAttributes'],
+            unitCost: $args['unitCost'],
+        );
+    }
+
+    /** A SALE row exactly as a pre-§3.13 write left it: no snapshot fields recorded at all, so netPaidAmount is null — not zero. */
+    private function legacySaleLine(): SaleLine
+    {
+        return SaleLine::reconstituteFromStorage(
+            id: 'legacy-sale-1',
+            transactionId: 'txn-old',
+            clientId: 'client-1',
+            priceableId: 'priceable-1',
+            type: SaleLineType::SALE,
+            status: SaleLineStatus::COMPLETED,
+            quantity: 2,
+            amount: $this->money(2000),
+            profit: $this->money(1000),
+            recordedAt: $this->now(),
+            effectiveAt: $this->now(),
+        );
+    }
+
+    /** A legitimately FREE SALE line: 2 x 1000 fully covered by a 2000 promotion share, so netPaidAmount is exactly zero, never null. */
+    private function fullyDiscountedSaleLine(): SaleLine
+    {
+        return $this->reconstitutedSaleLine([
+            'profit' => $this->money(0),
+            'regularUnitPrice' => $this->money(1000),
+            'promotionDiscountShare' => $this->money(2000),
+            'netPaidAmount' => $this->money(0),
+        ]);
+    }
+
+    /**
+     * @param array<string, mixed> $overrides
+     * @return array<string, mixed>
+     */
+    private function editReversalArgs(SaleLine $originatingLine, array $overrides = []): array
+    {
+        return array_merge([
+            'originatingLine' => $originatingLine,
+            'transactionId' => 'edit-txn-1',
+            'editedBy' => 'staff-1',
+            'editedByName' => 'Ana Petrova',
+            'reason' => 'customer changed size',
+            'displayPriceAtEdit' => $this->money(1100),
+            'recordedAt' => $this->now(),
+            'effectiveAt' => $this->now(),
+        ], $overrides);
+    }
+
+    private function createEditReversal(SaleLine $originatingLine, array $overrides = []): SaleLine
+    {
+        return SaleLine::createEditReversal(...$this->editReversalArgs($originatingLine, $overrides));
+    }
+
+    public function test_create_edit_reversal_succeeds_against_a_persisted_sale_line(): void
+    {
+        $origin = $this->persistedSaleLine();
+
+        $reversal = $this->createEditReversal($origin);
+
+        $this->assertNull($reversal->id(), 'a reversal is a brand new line — only the origin is persisted');
+        $this->assertSame(SaleLineType::EDIT_REVERSAL, $reversal->type());
+        $this->assertSame(SaleLineStatus::COMPLETED, $reversal->status(), 'a settled ledger fact, exactly like a REFUND — never PENDING');
+        $this->assertSame($origin->id(), $reversal->originatingSaleLineId());
+        $this->assertSame('edit-txn-1', $reversal->transactionId());
+        $this->assertSame($origin->clientId(), $reversal->clientId());
+        $this->assertSame($origin->priceableId(), $reversal->priceableId(), 'the stock consequence is the SAME variation the origin sold');
+        $this->assertEquals($this->now(), $reversal->recordedAt());
+        $this->assertEquals($this->now(), $reversal->effectiveAt());
+    }
+
+    public function test_create_edit_reversal_reverses_the_origins_own_full_quantity(): void
+    {
+        // finalUnitPrice(1000) x quantity(4) - promotionDiscountShare(100) = 3900.
+        $origin = $this->persistedSaleLine([
+            'quantity' => 4,
+            'amount' => $this->money(4000),
+            'netPaidAmount' => $this->money(3900),
+        ]);
+
+        $reversal = $this->createEditReversal($origin);
+
+        $this->assertSame(4, $reversal->quantity(), "quantity is the ORIGIN's own quantity");
+        $this->assertSame(4, $reversal->quantityReturned(), 'the FULL quantity — §4.2 allows no partial edit reversal, so no caller-supplied count could ever disagree with quantity()');
+    }
+
+    public function test_create_edit_reversal_sets_amount_and_both_refund_amounts_to_the_origins_net_paid_amount(): void
+    {
+        $origin = $this->persistedSaleLine(); // amount 2000, netPaidAmount 1900
+
+        $reversal = $this->createEditReversal($origin);
+
+        $this->assertTrue($reversal->amount()->equals($this->money(1900)), 'netPaidAmount — what the customer actually paid — never the pre-discount amount');
+        $this->assertTrue($reversal->amount()->isPositive(), 'released money is stored POSITIVE, exactly as createRefund() stores it');
+        $this->assertTrue($reversal->defaultRefundAmount()->equals($this->money(1900)));
+        $this->assertTrue($reversal->actualRefundAmount()->equals($this->money(1900)), '§4.3: no money is captured at edit time, so the two columns never disagree on an EDIT_REVERSAL this factory wrote');
+    }
+
+    public function test_create_edit_reversal_sets_profit_to_zero_in_the_released_currencys_own_units(): void
+    {
+        $origin = $this->persistedSaleLine();
+
+        $reversal = $this->createEditReversal($origin);
+
+        $this->assertTrue($reversal->profit()->isZero());
+        $this->assertSame('EUR', $reversal->profit()->currency()->code(), "zero in the origin's own currency, never a bare zero");
+    }
+
+    public function test_create_edit_reversal_leaves_every_snapshot_field_null(): void
+    {
+        $origin = $this->persistedSaleLine();
+
+        $reversal = $this->createEditReversal($origin);
+
+        $this->assertNull($reversal->productName(), 'the reversal snapshots nothing — it says only "this line is gone"');
+        $this->assertNull($reversal->sku());
+        $this->assertNull($reversal->regularUnitPrice());
+        $this->assertNull($reversal->finalUnitPrice());
+        $this->assertNull($reversal->promotionDiscountShare());
+        $this->assertNull($reversal->discretionaryDiscount());
+        $this->assertNull($reversal->netPaidAmount(), "§4.6: only a SALE line carries the §3.13 snapshot — the reversal resolves the origin's via originatingSaleLineId()");
+        $this->assertNull($reversal->soldAttributes());
+        $this->assertNull($reversal->unitCost());
+        $this->assertNull($reversal->originatingReservationLineId(), 'only a SALE line settles a reservation');
+    }
+
+    public function test_create_edit_reversal_carries_the_editor_and_reason_in_the_refund_shaped_columns(): void
+    {
+        $origin = $this->persistedSaleLine();
+
+        $reversal = $this->createEditReversal($origin);
+
+        $this->assertSame('staff-1', $reversal->returnedBy(), '§4.1 reuses the REFUND column set; `type` tells a reader which meaning applies');
+        $this->assertSame('Ana Petrova', $reversal->returnedByName());
+        $this->assertSame('customer changed size', $reversal->returnReason());
+        $this->assertTrue($reversal->displayPriceAtReturn()->equals($this->money(1100)));
+    }
+
+    public function test_create_edit_reversal_accepts_a_null_editor_reason_and_display_price(): void
+    {
+        $origin = $this->persistedSaleLine();
+
+        $reversal = $this->createEditReversal($origin, [
+            'editedBy' => null,
+            'editedByName' => null,
+            'reason' => null,
+            'displayPriceAtEdit' => null,
+        ]);
+
+        $this->assertNull($reversal->returnedBy());
+        $this->assertNull($reversal->returnedByName());
+        $this->assertNull($reversal->returnReason());
+        $this->assertNull($reversal->displayPriceAtReturn());
+        $this->assertTrue($reversal->amount()->equals($this->money(1900)), 'the money facts are never optional, only the narration is');
+    }
+
+    public function test_create_edit_reversal_throws_when_the_originating_line_is_not_sale(): void
+    {
+        $origin = $this->persistedSaleLine();
+        $refund = $this->createRefund($origin); // a real REFUND row — persisted, but not a SALE line
+        $refund->assignId('refund-line-1');
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('SaleLine::createEditReversal(): originatingLine must be type sale, got refund.');
+
+        $this->createEditReversal($refund);
+    }
+
+    public function test_create_edit_reversal_throws_when_the_originating_line_has_never_been_persisted(): void
+    {
+        $origin = $this->create(); // a perfectly valid SALE line, but with no id: never stored
+
+        $this->assertNull($origin->id());
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('SaleLine::createEditReversal(): originatingLine must already be persisted (have a real id)');
+
+        $this->createEditReversal($origin);
+    }
+
+    public function test_create_edit_reversal_refuses_a_legacy_origin_with_no_recorded_net_paid_amount(): void
+    {
+        $origin = $this->legacySaleLine();
+
+        $this->assertNull($origin->netPaidAmount(), 'the row predates §3.13: no snapshot at all, so netPaidAmount is genuinely unknown — not zero');
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('SaleLine::createEditReversal(): originatingLine "legacy-sale-1" has no netPaidAmount recorded');
+
+        $this->createEditReversal($origin);
+    }
+
+    public function test_create_edit_reversal_refuses_a_corrupt_negative_net_paid_amount(): void
+    {
+        // reconstituteFromStorage()'s Tier A deliberately does not re-derive
+        // §3.13's invariants, so this row can exist; the factory refuses to
+        // turn it into a "money released" ledger fact.
+        $origin = $this->reconstitutedSaleLine(['netPaidAmount' => Money::fromMinorUnits(-100, 'EUR')]);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('SaleLine::createEditReversal(): netAmountReduction must not be negative');
+
+        $this->createEditReversal($origin);
+    }
+
+    public function test_create_edit_reversal_refuses_a_net_paid_amount_in_another_currency_than_the_originating_amount(): void
+    {
+        $origin = $this->reconstitutedSaleLine(['netPaidAmount' => Money::fromMinorUnits(1900, 'USD')]);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage("SaleLine::createEditReversal(): netAmountReduction's currency (USD) must match the originating line's own currency (EUR).");
+
+        $this->createEditReversal($origin);
+    }
+
+    public function test_create_edit_reversal_accepts_a_fully_discounted_origin_and_records_a_zero_amount(): void
+    {
+        $origin = $this->fullyDiscountedSaleLine();
+        $this->assertTrue($origin->netPaidAmount()->isZero(), 'zero, not null: §3.13 was shipped for this row');
+
+        $reversal = $this->createEditReversal($origin);
+
+        $this->assertTrue($reversal->amount()->isZero(), 'D2: a free line is still editable, so it is still reversible — a zero release is a fact, not an error');
+        $this->assertFalse($reversal->amount()->isNegative(), 'never a negative release');
+        $this->assertTrue($reversal->defaultRefundAmount()->isZero());
+        $this->assertSame(2, $reversal->quantityReturned(), 'the stock half of the reversal is NOT zero — only the money half is');
+    }
+
+    public function test_create_refund_still_refuses_the_fully_discounted_origin_that_create_edit_reversal_accepts(): void
+    {
+        // D2's own rationale as a contrast in one place: the two factories
+        // reach opposite-but-both-correct answers for the same zero-net row,
+        // because createRefund()'s defaultRefundAmount is a CHOICE a human
+        // makes for a return, while a reversal's is DERIVED.
+        $origin = $this->fullyDiscountedSaleLine();
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('defaultRefundAmount must be positive');
+
+        $this->createRefund($origin, ['defaultRefundAmount' => $this->money(0)]);
+    }
+
+    /**
+     * D1 — the guard widening itself: the seven REFUND-shaped fields are
+     * unconstrained for EDIT_REVERSAL (assertRefundFieldsMatchType()),
+     * exactly as this file's own
+     * test_the_six_refund_fields_round_trip_through_reconstitute_from_storage()
+     * shows they are for REFUND. Without this widening, the row
+     * createEditReversal() builds (§4.1's "reuses the entire
+     * REFUND-shaped column set") could never be read back.
+     */
+    public function test_the_refund_shaped_fields_are_accepted_on_edit_reversal_type(): void
+    {
+        $line = SaleLine::reconstituteFromStorage(
+            id: 'reversal-1',
+            transactionId: 'edit-txn-1',
+            clientId: 'client-1',
+            priceableId: 'priceable-1',
+            type: SaleLineType::EDIT_REVERSAL,
+            status: SaleLineStatus::COMPLETED,
+            quantity: 2,
+            amount: $this->money(1900),
+            profit: $this->money(0),
+            recordedAt: $this->now(),
+            effectiveAt: $this->now(),
+            originatingSaleLineId: 'sale-line-1',
+            quantityReturned: 2,
+            defaultRefundAmount: $this->money(1900),
+            actualRefundAmount: $this->money(1800),
+            displayPriceAtReturn: $this->money(1100),
+            returnedBy: 'staff-1',
+            returnedByName: 'Ana Petrova',
+            returnReason: 'customer changed size',
+        );
+
+        $this->assertSame(SaleLineType::EDIT_REVERSAL, $line->type());
+        $this->assertSame(2, $line->quantityReturned());
+        $this->assertTrue($line->defaultRefundAmount()->equals($this->money(1900)));
+        $this->assertTrue($line->actualRefundAmount()->equals($this->money(1800)), 'a stored row may legitimately disagree with defaultRefundAmount — only the factory keeps them equal');
+        $this->assertTrue($line->displayPriceAtReturn()->equals($this->money(1100)));
+        $this->assertSame('staff-1', $line->returnedBy());
+        $this->assertSame('Ana Petrova', $line->returnedByName());
+        $this->assertSame('customer changed size', $line->returnReason());
+    }
+
+    /**
+     * The strongest end-to-end proof available without a database: the row
+     * the factory builds is itself a legal row. Feeding each of the
+     * factory's own outputs back through reconstituteFromStorage() — the
+     * same path SaleLineRepository uses when it rehydrates a line — must
+     * not throw, and must hand back the same facts. This is what makes
+     * §4.1's "reuse the REFUND column set, no new columns, no migration"
+     * claim checkable here rather than only in Stage 3b's write path.
+     */
+    public function test_the_row_create_edit_reversal_builds_can_be_read_back_through_reconstitute_from_storage(): void
+    {
+        $reversal = $this->createEditReversal($this->persistedSaleLine());
+
+        $readBack = SaleLine::reconstituteFromStorage(
+            id: 'reversal-1',
+            transactionId: $reversal->transactionId(),
+            clientId: $reversal->clientId(),
+            priceableId: $reversal->priceableId(),
+            type: $reversal->type(),
+            status: $reversal->status(),
+            quantity: $reversal->quantity(),
+            amount: $reversal->amount(),
+            profit: $reversal->profit(),
+            recordedAt: $reversal->recordedAt(),
+            effectiveAt: $reversal->effectiveAt(),
+            originatingSaleLineId: $reversal->originatingSaleLineId(),
+            quantityReturned: $reversal->quantityReturned(),
+            defaultRefundAmount: $reversal->defaultRefundAmount(),
+            actualRefundAmount: $reversal->actualRefundAmount(),
+            displayPriceAtReturn: $reversal->displayPriceAtReturn(),
+            returnedBy: $reversal->returnedBy(),
+            returnedByName: $reversal->returnedByName(),
+            returnReason: $reversal->returnReason(),
+        );
+
+        $this->assertSame(SaleLineType::EDIT_REVERSAL, $readBack->type());
+        $this->assertSame('sale-line-1', $readBack->originatingSaleLineId());
+        $this->assertSame(2, $readBack->quantity());
+        $this->assertSame(2, $readBack->quantityReturned());
+        $this->assertTrue($readBack->amount()->equals($this->money(1900)));
+        $this->assertTrue($readBack->profit()->isZero());
+        $this->assertNull($readBack->netPaidAmount(), 'the reversal carries no §3.13 snapshot of its own, even after a round trip');
+        $this->assertSame('staff-1', $readBack->returnedBy());
     }
 }

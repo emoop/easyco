@@ -10,7 +10,10 @@ use InvalidArgumentException;
 
 /**
  * A single recorded line of what actually happened: a sale, a
- * reservation, a refund, a shipping charge, or an installment payment.
+ * reservation, a refund, an edit reversal (order-editing-design.md §4.1 —
+ * the full reversal of a prior line that an order edit performed, never a
+ * customer return: REFUND is that), a shipping charge, or an installment
+ * payment.
  *
  * IMMUTABLE — THIS IS THE SINGLE MOST IMPORTANT RULE IN THIS CLASS (see
  * operational-sales-domain-design.md §3.2). Once constructed, a SaleLine
@@ -85,12 +88,16 @@ final class SaleLine
         private ?array $soldAttributes = null,
         private ?Money $unitCost = null,
         // operational-sales-domain-design.md §3.4 (revised) / §3.13 —
-        // returns. Tier A only, enforced below (assertRefundFieldsMatchType()):
-        // NULL for every type except REFUND; for REFUND, unconstrained at
-        // this tier — Tier B ("required for a fresh REFUND line") lives
-        // exclusively in createRefund(), never here, mirroring exactly how
-        // create()'s own Tier B for productName/sku stays out of this
-        // constructor (§3.12's amendment).
+        // returns, plus order-editing-design.md §4.1's deliberate reuse of
+        // the same six-plus-one columns for its own EDIT_REVERSAL line.
+        // Tier A only, enforced below (assertRefundFieldsMatchType()):
+        // NULL for every type except REFUND and EDIT_REVERSAL; for those
+        // two, unconstrained at this tier — Tier B ("required for a fresh
+        // REFUND line") lives exclusively in createRefund(), its
+        // EDIT_REVERSAL twin's Tier B lives in createEditReversal(), never
+        // here, mirroring exactly how create()'s own Tier B for
+        // productName/sku stays out of this constructor (§3.12's
+        // amendment).
         private ?int $quantityReturned = null,
         private ?Money $defaultRefundAmount = null,
         private ?Money $actualRefundAmount = null,
@@ -288,10 +295,21 @@ final class SaleLine
      * assertSnapshotFieldsStructurallyValid() above: a fact about the
      * line's TYPE, true regardless of when the row was written, so it
      * runs unconditionally on every path (construction, reconstitution,
-     * createRefund() alike). NULL for every type except REFUND;
-     * unconstrained for REFUND at this tier — "required for a fresh
-     * REFUND line" (Tier B) is createRefund()'s own job, never this
-     * constructor's.
+     * createRefund()/createEditReversal() alike). NULL for every type
+     * except REFUND and EDIT_REVERSAL; unconstrained for those two at
+     * this tier — "required for a fresh REFUND line" (Tier B) is
+     * createRefund()'s own job, never this constructor's.
+     *
+     * EDIT_REVERSAL WAS ADDED HERE IN STAGE 3a (D1), AND ONLY HERE.
+     * order-editing-design.md §4.1 reuses these same columns for a
+     * different domain fact (an edit's own reversal of a prior line, not
+     * a customer return), so a line of that type must be free to carry
+     * them — refusal at this tier would make createEditReversal() unable
+     * to write anything. The list is deliberately widened to exactly the
+     * two types that have a writer for these fields (createRefund() for
+     * REFUND, createEditReversal() for EDIT_REVERSAL); SALE and every
+     * other type is still refused, unchanged, because nothing may put a
+     * return-shaped fact on a line that is neither.
      */
     private static function assertRefundFieldsMatchType(
         ?int $quantityReturned,
@@ -303,7 +321,7 @@ final class SaleLine
         ?string $returnReason,
         SaleLineType $type,
     ): void {
-        if ($type === SaleLineType::REFUND) {
+        if ($type === SaleLineType::REFUND || $type === SaleLineType::EDIT_REVERSAL) {
             return;
         }
 
@@ -661,9 +679,9 @@ final class SaleLine
         DateTimeImmutable $recordedAt,
         DateTimeImmutable $effectiveAt,
     ): self {
-        self::assertOriginatingLineIsSale($originatingLine);
-        self::assertOriginatingLineIsPersisted($originatingLine);
-        self::assertQuantityReturnedIsValid($quantityReturned, $originatingLine->quantity());
+        self::assertOriginatingLineIsSale($originatingLine, 'createRefund');
+        self::assertOriginatingLineIsPersisted($originatingLine, 'createRefund');
+        self::assertQuantityReturnedIsValid($quantityReturned, $originatingLine->quantity(), 'createRefund');
         self::assertDefaultRefundAmountIsValid($defaultRefundAmount, $originatingLine->amount());
 
         return new self(
@@ -689,25 +707,147 @@ final class SaleLine
         );
     }
 
-    private static function assertOriginatingLineIsSale(self $originatingLine): void
+    /**
+     * The strict factory for a fresh EDIT_REVERSAL line —
+     * order-editing-design.md §4.1/§4.2/§4.3, stage 3a. Called only by
+     * App\Services\OrderLineEditor, which reverses a line in full before
+     * writing that line's replacement (§4.2's "never a partial rewrite").
+     *
+     * WHY A SIBLING OF createRefund() RATHER THAN A NEW PARAMETER ON IT —
+     * §4.1's own sentence ("needs no change beyond accepting the new type
+     * as a legal type/context") is right about the COLUMNS but not about
+     * the factory, for three concrete reasons:
+     * 1. createRefund() hardcodes type=REFUND (§4.1 wants a distinct type
+     *    so a report can never mistake an edit for a customer return —
+     *    the whole point of D1).
+     * 2. createRefund()'s Tier B requires a POSITIVE amount and refuses
+     *    zero outright. A reversal of a legitimately free line — one whose
+     *    netPaidAmount is Money::zero(), e.g. a fully discounted line —
+     *    must still be possible, or that line could never be removed or
+     *    changed. Both cases are real and both must stay writable; neither
+     *    rule can be relaxed inside one method without weakening the other.
+     * 3. BOTH NUMBERS ARE DERIVED HERE, NEVER PASSED. §4.2 requires the
+     *    full reversal and §4.3 requires the reversal's own amount to BE
+     *    the origin's netPaidAmount ("money never charged for these
+     *    units"), so this factory reads both off $originatingLine instead
+     *    of accepting them: a caller has no way to over- or under-reverse,
+     *    a stronger guarantee than createRefund()'s parameters can offer
+     *    (a partial customer return is legal; a partial edit reversal is
+     *    not). quantity is the origin's own quantity and quantityReturned
+     *    is the same number: for any line the editor is handed, §4.4's
+     *    remaining equals the line's own quantity (every edit reverses in
+     *    full, and at most one of the two subtracted sums is ever
+     *    non-zero), so "full remaining quantity" and "own quantity" are one
+     *    fact here.
+     *
+     * COLUMN MAPPING (§4.1's deliberate reuse of the REFUND column set, no
+     * new columns, no migration): the origin's own quantity goes in
+     * quantity_returned — the quantity THIS EDIT removed, which is the
+     * column SaleLineRepository::sumQuantityEditedAwayForOriginatingLine()
+     * sums; the derived amount goes in BOTH default_refund_amount and
+     * actual_refund_amount (never a PaymentRefund — §4.3: no money was ever
+     * captured at edit time, §6 voids-and-reissues the pending payment
+     * instead); $editedBy/$editedByName go in returned_by/returned_by_name
+     * (a staff fact in a customer-return-named column, safe *because*
+     * `type` already tells a reader which meaning applies); $reason goes in
+     * return_reason; $displayPriceAtEdit goes in display_price_at_return.
+     *
+     * amount = the origin's netPaidAmount, POSITIVE (not negated) — the
+     * storage convention createRefund() and PaymentRefund already use for
+     * "money owed back" — and profit = Money::zero(), for the reason
+     * createRefund()'s own docblock already states. §4.6: a replacement
+     * line's profit is computed fresh from its own quantity and price,
+     * never inherited or prorated from the line it replaced.
+     *
+     * @throws InvalidArgumentException If $originatingLine is not type
+     *   SALE, has never been persisted (no real id), or has no
+     *   netPaidAmount recorded (a legacy line — refused loudly rather than
+     *   silently treated as zero, the same posture ReturnGoodsRecorder
+     *   takes for the same field).
+     */
+    public static function createEditReversal(
+        self $originatingLine,
+        string $transactionId,
+        ?string $editedBy,
+        ?string $editedByName,
+        ?string $reason,
+        ?Money $displayPriceAtEdit,
+        DateTimeImmutable $recordedAt,
+        DateTimeImmutable $effectiveAt,
+    ): self {
+        self::assertOriginatingLineIsSale($originatingLine, 'createEditReversal');
+        self::assertOriginatingLineIsPersisted($originatingLine, 'createEditReversal');
+
+        $netAmountReduction = $originatingLine->netPaidAmount();
+
+        if ($netAmountReduction === null) {
+            throw new InvalidArgumentException(
+                "SaleLine::createEditReversal(): originatingLine \"{$originatingLine->id()}\" has no netPaidAmount recorded ".
+                '(a legacy line, written before operational-sales-domain-design.md §3.13 shipped) — a reversal records '.
+                "that line's own netPaidAmount (order-editing-design.md §4.3), and this is refused rather than silently ".
+                'treated as zero.'
+            );
+        }
+
+        self::assertEditReversalAmountIsValid($netAmountReduction, $originatingLine->amount());
+
+        return new self(
+            id: null,
+            transactionId: $transactionId,
+            clientId: $originatingLine->clientId(),
+            priceableId: $originatingLine->priceableId(),
+            type: SaleLineType::EDIT_REVERSAL,
+            status: SaleLineStatus::COMPLETED,
+            quantity: $originatingLine->quantity(),
+            amount: $netAmountReduction,
+            profit: Money::zero($netAmountReduction->currency()),
+            recordedAt: $recordedAt,
+            effectiveAt: $effectiveAt,
+            originatingSaleLineId: $originatingLine->id(),
+            quantityReturned: $originatingLine->quantity(),
+            defaultRefundAmount: $netAmountReduction,
+            actualRefundAmount: $netAmountReduction,
+            displayPriceAtReturn: $displayPriceAtEdit,
+            returnedBy: $editedBy,
+            returnedByName: $editedByName,
+            returnReason: $reason,
+        );
+    }
+
+    /**
+     * Shared by createRefund() AND createEditReversal() (stage 3a) — the
+     * origin requirements are identical for both, so the check is written
+     * once and the refusal names whichever factory the caller actually
+     * called ($factoryName) rather than always claiming to be
+     * createRefund(). The messages themselves are unchanged from before
+     * stage 3a: only the prefix is now a parameter.
+     */
+    private static function assertOriginatingLineIsSale(self $originatingLine, string $factoryName): void
     {
         if ($originatingLine->type() !== SaleLineType::SALE) {
             throw new InvalidArgumentException(
-                "SaleLine::createRefund(): originatingLine must be type sale, got {$originatingLine->type()->value}."
+                "SaleLine::{$factoryName}(): originatingLine must be type sale, got {$originatingLine->type()->value}."
             );
         }
     }
 
-    private static function assertOriginatingLineIsPersisted(self $originatingLine): void
+    private static function assertOriginatingLineIsPersisted(self $originatingLine, string $factoryName): void
     {
         if ($originatingLine->id() === null) {
             throw new InvalidArgumentException(
-                'SaleLine::createRefund(): originatingLine must already be persisted (have a real id) — '.
-                'a REFUND line cannot reference a SALE line that does not exist yet.'
+                "SaleLine::{$factoryName}(): originatingLine must already be persisted (have a real id) — ".
+                'a reversal line cannot reference a SALE line that does not exist yet.'
             );
         }
     }
 
+    /**
+     * createRefund()'s own Tier B for quantityReturned, and NOT shared with
+     * createEditReversal() (stage 3a): an edit reversal's quantity is not a
+     * caller choice at all — §4.2 requires the FULL reversal, so
+     * createEditReversal() derives it from the origin and there is nothing
+     * here for it to validate.
+     */
     private static function assertQuantityReturnedIsValid(int $quantityReturned, int $originalQuantity): void
     {
         if ($quantityReturned <= 0) {
@@ -733,6 +873,39 @@ final class SaleLine
         if (! $defaultRefundAmount->currency()->equals($originatingAmount->currency())) {
             throw new InvalidArgumentException(
                 "SaleLine::createRefund(): defaultRefundAmount's currency ({$defaultRefundAmount->currency()->code()}) ".
+                "must match the originating line's own currency ({$originatingAmount->currency()->code()})."
+            );
+        }
+    }
+
+    /**
+     * createEditReversal()'s own Tier B for the amount it records — the one
+     * place it deliberately differs from assertDefaultRefundAmountIsValid()
+     * above: NON-NEGATIVE, never "must be positive". The amount is derived
+     * from the origin's own netPaidAmount, and a legitimately FREE line
+     * (netPaidAmount === Money::zero(), e.g. fully discounted) must still be
+     * reversible, or it could never be removed or changed (§4.2/§4.3).
+     *
+     * Both checks below are corruption detectors, not caller-input
+     * validation: create() already guarantees an uncorrupted SALE line's
+     * netPaidAmount is non-negative and shares its amount's currency
+     * (§3.13), so reaching either throw means a hand-written or
+     * pre-§3.13 row that reconstituteFromStorage()'s Tier A cannot catch on
+     * its own — refused here rather than written into the ledger.
+     */
+    private static function assertEditReversalAmountIsValid(Money $netAmountReduction, Money $originatingAmount): void
+    {
+        if ($netAmountReduction->isNegative()) {
+            throw new InvalidArgumentException(
+                'SaleLine::createEditReversal(): netAmountReduction must not be negative, got '.
+                "{$netAmountReduction->minorValue()} (minor units) — an edit reversal records money never charged, ".
+                'never a negative amount.'
+            );
+        }
+
+        if (! $netAmountReduction->currency()->equals($originatingAmount->currency())) {
+            throw new InvalidArgumentException(
+                "SaleLine::createEditReversal(): netAmountReduction's currency ({$netAmountReduction->currency()->code()}) ".
                 "must match the originating line's own currency ({$originatingAmount->currency()->code()})."
             );
         }

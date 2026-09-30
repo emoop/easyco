@@ -14,9 +14,11 @@ enum SaleLineType: string
     case SHIPPING = 'shipping';
     case INSTALLMENT_PAYMENT = 'installment_payment';
 
-    // order-editing-design.md §4.1 — a full/partial reversal of a SALE line
+    // order-editing-design.md §4.1 — the full reversal of a SALE line
     // written by an order edit, never a customer return (REFUND is that).
-    // Reuses REFUND's entire existing column set (§4.1); unused until
-    // stage 3's OrderEditor writes one.
+    // Reuses REFUND's entire existing column set (§4.1). Written by
+    // SaleLine::createEditReversal() (stage 3a), called only by
+    // App\Services\OrderLineEditor — OrderLineEditor itself constructs no
+    // line of this type.
     case EDIT_REVERSAL = 'edit_reversal';
 }
