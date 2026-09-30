@@ -55,6 +55,28 @@ return [
         'default_tax_rate_basis_points' => env('PRICING_DEFAULT_TAX_RATE_BASIS_POINTS', 0),
     ],
 
+    'site' => [
+        // The merchant's OWN time zone — which wall clock the admin panel's
+        // date/time displays are rendered in (site.timezone, set from the
+        // Settings page every install has; see App\Http\Middleware\
+        // ApplyStoreTimezone for the whole mechanism and for why this is
+        // display-only). An IANA identifier, never a UTC offset: a fixed
+        // offset is silently wrong for half the year in any zone that
+        // observes DST, which is the entire reason the setting stores a zone
+        // name.
+        //
+        // This is the two-layer fallback's SECOND layer
+        // (site-settings-design.md §5): the stored row wins, and this is
+        // what the panel renders in — and what the Settings page's own form
+        // shows — until a merchant changes it. 'Europe/Sofia' is this
+        // installation's own merchant, chosen as a default rather than
+        // hardcoded anywhere in the code path; any merchant worldwide sets
+        // their own zone, and an operator who wants a different
+        // installation-wide default overrides it via .env (the same
+        // convention PRICING_DEFAULT_CURRENCY and the media limits follow).
+        'default_timezone' => env('SITE_DEFAULT_TIMEZONE', 'Europe/Sofia'),
+    ],
+
     'catalog' => [
         // The first value the auto-generated Product::baseSku() sequence
         // issues (see database/migrations/..._create_catalog_sku_sequence_table.php

@@ -3,6 +3,7 @@
 namespace App\Providers\Filament;
 
 use App\Http\Middleware\ApplyStoreLocale;
+use App\Http\Middleware\ApplyStoreTimezone;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
@@ -88,6 +89,16 @@ class AdminPanelProvider extends PanelProvider
                 // the admin panel to see the same merchant-configured
                 // locale a future storefront request would.
                 ApplyStoreLocale::class,
+                // And Site Settings' second consumer, for a reason verified
+                // independently against the installed v5.8.1 and Livewire
+                // sources rather than copied from the line above: a panel
+                // page's own GET request runs through THIS array and never
+                // through Laravel's 'web' group, so without this line the
+                // first render of every screen would be in UTC while every
+                // Livewire round trip after it (which uses the 'web' group —
+                // see bootstrap/app.php's own comment) would be correct.
+                // Both registrations are load-bearing, one per pipeline.
+                ApplyStoreTimezone::class,
             ])
             ->authMiddleware([
                 Authenticate::class,

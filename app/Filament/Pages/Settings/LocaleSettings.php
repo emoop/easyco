@@ -4,8 +4,10 @@ namespace App\Filament\Pages\Settings;
 
 use App\Filament\Concerns\AuthorizesViaStaffPermission;
 use App\Filament\NavigationGroup;
+use App\Rules\KnownTimezoneIdentifier;
 use App\Settings\Contracts\SiteSettingsRepository;
 use BackedEnum;
+use DateTimeZone;
 use EasyCo\Staff\Enums\Permission;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Select;
@@ -44,6 +46,19 @@ use Filament\Schemas\Schema;
  * a separate page/prefix). The class stays named LocaleSettings (not
  * renamed) — this task's own instruction is to restructure this exact
  * page, not rename/relocate it.
+ *
+ * A "Time zone" tab now sits between Tab 1 and the Activity Log tab
+ * (site.timezone — the merchant's own zone, applied to every date/time the
+ * panel DISPLAYS by App\Http\Middleware\ApplyStoreTimezone; storage stays
+ * UTC). It is a NEW TAB rather than a second field under "Language" for
+ * two reasons: every tab on this page today is one topic (Language, Activity
+ * Log, Currency), and a time zone is not a language — the Currency tab is
+ * this page's own precedent that a single regional-formatting field gets its
+ * own tab. It stays on THIS page rather than becoming a sibling settings
+ * page (LocaleSettings is already the multi-topic page this codebase put its
+ * first settings screens on) so that the merchant's locale and their time
+ * zone — the two things that decide how the panel reads to them — are set in
+ * one place with one save.
  */
 class LocaleSettings extends Page
 {
@@ -52,7 +67,7 @@ class LocaleSettings extends Page
     /** @var array<string, mixed> */
     public ?array $data = [];
 
-    protected static string | BackedEnum | null $navigationIcon = 'heroicon-o-globe-alt';
+    protected static string|BackedEnum|null $navigationIcon = 'heroicon-o-globe-alt';
 
     /**
      * Generalized to the same "Settings" label the sidebar already
@@ -116,6 +131,12 @@ class LocaleSettings extends Page
         $settings = app(SiteSettingsRepository::class);
 
         $locale = $settings->get('site.locale') ?? 'bg';
+        // Same two-layer fallback the middleware itself applies
+        // (ApplyStoreTimezone), deliberately read from the SAME place — so
+        // the zone the form shows before anyone has ever saved it is
+        // exactly the zone the panel is already rendering in, not a second,
+        // independently-maintained default.
+        $timezone = $settings->get('site.timezone') ?? config('services.site.default_timezone');
         $activityLogEnabled = $settings->get('admin.activity_log_enabled') === '1';
         $activityLogRetentionMonths = (int) ($settings->get('admin.activity_log_retention_months') ?? 12);
         // Default matches PriceDisplayFormatter's own pre-existing,
@@ -126,6 +147,7 @@ class LocaleSettings extends Page
 
         $this->form->fill([
             'locale' => $locale,
+            'timezone' => $timezone,
             'activity_log_enabled' => $activityLogEnabled,
             'activity_log_retention_months' => $activityLogRetentionMonths,
             'currency_symbol_position' => $currencySymbolPosition,
@@ -148,6 +170,36 @@ class LocaleSettings extends Page
                                         'en' => 'English',
                                     ])
                                     ->required(),
+                            ]),
+                        Tab::make(__('settings.timezone.tab_label'))
+                            ->schema([
+                                Select::make('timezone')
+                                    ->label(__('settings.timezone.field_label'))
+                                    ->helperText(__('settings.timezone.field_help'))
+                                    // PHP's OWN complete list, as D2 requires
+                                    // — never a hand-picked shortlist of
+                                    // "likely" zones, which would silently
+                                    // limit a merchant anywhere outside the
+                                    // one zone whoever wrote that list
+                                    // happened to think of. array_combine()
+                                    // gives the identity map a Select needs
+                                    // (value => label): the identifier IS
+                                    // the human-readable label here, the
+                                    // same string a merchant would see in
+                                    // any other tool that asks for an IANA
+                                    // zone.
+                                    ->options(array_combine(
+                                        DateTimeZone::listIdentifiers(),
+                                        DateTimeZone::listIdentifiers(),
+                                    ))
+                                    ->searchable()
+                                    ->required()
+                                    // Not Laravel's built-in `timezone` rule:
+                                    // see App\Rules\KnownTimezoneIdentifier's
+                                    // own docblock (it would check the list
+                                    // only, and its message ships in English
+                                    // only in this project).
+                                    ->rule(new KnownTimezoneIdentifier),
                             ]),
                         Tab::make(__('settings.activity_log.tab_label'))
                             ->schema([
@@ -242,6 +294,12 @@ class LocaleSettings extends Page
         // correct in that state rather than assuming the key exists.
         $settings = app(SiteSettingsRepository::class);
         $settings->set('site.locale', $data['locale']);
+        // $data['timezone'] is a required, always-visible field, so it is
+        // always dehydrated (unlike the retention select above) — the ??
+        // is here for the same reason as the currency fallback below: if
+        // the field is ever made conditional, a save must still leave a
+        // real zone behind rather than writing nothing.
+        $settings->set('site.timezone', $data['timezone'] ?? config('services.site.default_timezone'));
         $settings->set('admin.activity_log_enabled', $data['activity_log_enabled'] ? '1' : '0');
         $settings->set('admin.activity_log_retention_months', (string) ($data['activity_log_retention_months'] ?? 12));
         $settings->set('site.currency_symbol_position', $data['currency_symbol_position'] ?? 'suffix_space');

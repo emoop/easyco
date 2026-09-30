@@ -15,6 +15,18 @@ return [
         'saved_notification' => 'Settings saved',
     ],
 
+    // The merchant's own time zone (`site.timezone`, applied by
+    // App\Http\Middleware\ApplyStoreTimezone to every date/time the panel
+    // DISPLAYS — storage stays UTC, which is why the help text says so
+    // explicitly: a merchant changing this must be able to tell it is not a
+    // data migration).
+    'timezone' => [
+        'tab_label' => 'Time zone',
+        'field_label' => 'Store time zone',
+        'field_help' => 'The time zone every date and time is shown in across the admin panel. Orders and everything else keep being recorded in UTC, so changing this changes how times read, never what is stored.',
+        'invalid' => 'Enter a real time zone identifier, for example Europe/Sofia.',
+    ],
+
     'catalog' => [
         'title' => 'Catalog',
         'season_enabled_label' => 'Show "Season" field',
