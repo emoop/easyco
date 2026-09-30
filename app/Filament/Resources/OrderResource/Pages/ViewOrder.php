@@ -11,15 +11,16 @@ use Filament\Resources\Pages\ViewRecord;
  * installed source — same established note as ProductResource\Pages\
  * ViewProduct/RoleResource\Pages\ViewRole) — no override needed here.
  *
- * FOUR HEADER ACTIONS, AS OF order-lifecycle-design.md §10 stage 7b —
- * the page's still-read-only D1 posture (no create/edit/delete, no form)
- * gains its first real writes: Confirm/Ship/Deliver/"Mark as received",
- * each an OrderResource::*Action() factory so the object is testable
- * without Livewire (the same reason ProductResource's own actions are
- * static methods there, not inlined here — see ViewProduct's identical
- * note). Every gate, every refusal and every success notification is
- * that factory's own job; this page stays the two-line adapter it always
- * was.
+ * SIX HEADER ACTIONS, AS OF order-lifecycle-design.md §10 stage 7c-2 (four
+ * since stage 7b) — the page's still-read-only D1 posture (no
+ * create/edit/delete, no form) gains its first real writes:
+ * Confirm/Ship/Deliver/"Mark as received"/Cancel/"Record a return", each
+ * an OrderResource::*Action() factory so the object is testable without
+ * Livewire (the same reason ProductResource's own actions are static
+ * methods there, not inlined here — see ViewProduct's identical note).
+ * Every gate, every refusal and every success notification is that
+ * factory's own job; this page stays the two-line adapter it always was
+ * — §8.1's own wording, `return OrderResource::orderActions();`, exactly.
  */
 class ViewOrder extends ViewRecord
 {
@@ -27,11 +28,6 @@ class ViewOrder extends ViewRecord
 
     protected function getHeaderActions(): array
     {
-        return [
-            OrderResource::confirmAction(),
-            OrderResource::shipAction(),
-            OrderResource::deliverAction(),
-            OrderResource::markAsReceivedAction(),
-        ];
+        return OrderResource::orderActions();
     }
 }

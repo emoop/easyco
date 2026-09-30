@@ -178,10 +178,37 @@ return [
         // D2's own graceful refusal (§0 item — no eligible payment left at click time).
         'no_eligible_payment' => 'No payment on this order is eligible to be marked as received.',
 
+        'cancel' => 'Cancel',
+        'cancel_heading' => 'Cancel order :id',
+        'cancel_description' => 'Cancel order :id.',
+        'cancel_done' => 'Order :id cancelled.',
+
+        'record_return' => 'Record a return',
+        'record_return_heading' => 'Record a return for order :id',
+        'record_return_description' => 'Record which units of order :id have come back.',
+        'record_return_done' => 'Recorded a return of :count unit(s) on order :id.',
+
+        'add_note' => 'Add note',
+        'add_note_heading' => 'Add a note to order :id',
+        'add_note_description' => 'Record an internal note on order :id. Visible to anyone who can view this order.',
+        'add_note_done' => 'Note added.',
+        // The ONE genuinely required field on this page — an empty note is
+        // nothing to record (D1). Deliberately a different key from
+        // note_label below, which is every OTHER action's optional note.
+        'note_field_label' => 'Note',
+
+        'quantity_label' => 'Quantity',
+        'restock_label' => 'Return to stock',
+        'reason_label' => 'Reason (optional)',
+        // D5's own client-side rule — every line left at 0/blank.
+        'nothing_to_return' => 'Enter at least one unit to record a return.',
+
         'note_label' => 'Note (optional)',
         'refused_title' => 'This action was refused',
         // InvalidOrderTransitionException's own from()/to() (§8.3 item 4) — never its raw English message.
         'invalid_transition_body' => 'Order :id cannot move from :from to :to.',
+        // ReturnExceedsRemainingQuantityException's own real accessors (§10 stage 7c-2, D7) — never its raw message either.
+        'return_exceeds_remaining_body' => 'Cannot return :requested unit(s) of ":line": only :remaining unit(s) remain.',
         // InvalidArgumentException (an unknown/changed record) — never its raw message either.
         'generic_refusal_body' => 'Order :id could not be processed — it may no longer exist, or its state changed since this page was loaded.',
     ],

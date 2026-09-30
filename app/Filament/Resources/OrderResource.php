@@ -7,10 +7,12 @@ use App\Filament\NavigationGroup;
 use App\Filament\Resources\OrderResource\Pages\ListOrders;
 use App\Filament\Resources\OrderResource\Pages\ViewOrder;
 use App\Services\Exceptions\OrderTransitionRefusedException;
+use App\Services\Exceptions\ReturnExceedsRemainingQuantityException;
 use App\Services\OrderAdminEventView;
 use App\Services\OrderAdminOrderView;
 use App\Services\OrderAdminReader;
 use App\Services\OrderAdminSaleLineView;
+use App\Services\OrderNoteRecorder;
 use App\Services\OrderPaymentConfirmer;
 use App\Services\OrderStatusChanger;
 use App\Services\PriceDisplayFormatter;
@@ -28,6 +30,8 @@ use EasyCo\Staff\Enums\Permission;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
 use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Toggle;
 use Filament\Infolists\Components\Entry;
 use Filament\Infolists\Components\ImageEntry;
 use Filament\Infolists\Components\RepeatableEntry;
@@ -35,6 +39,7 @@ use Filament\Infolists\Components\RepeatableEntry\TableColumn as RepeatableTable
 use Filament\Infolists\Components\TextEntry;
 use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
+use Filament\Schemas\Components\Fieldset;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
@@ -654,6 +659,27 @@ class OrderResource extends Resource
     }
 
     /**
+     * D1 (order-lifecycle-design.md §8.1, §10 stage 7c-2) — ALL SIX header
+     * actions, in order: confirm, ship, deliver, mark_as_received, cancel,
+     * record_return. `ViewOrder::getHeaderActions()` becomes exactly
+     * `return OrderResource::orderActions();` — §8.1's own words — so the
+     * Resource stays the one place that knows which actions exist and the
+     * page stays a two-line adapter.
+     */
+    public static function orderActions(): array
+    {
+        return [
+            static::confirmAction(),
+            static::shipAction(),
+            static::deliverAction(),
+            static::markAsReceivedAction(),
+            static::cancelAction(),
+            static::recordReturnAction(),
+            static::addNoteAction(),
+        ];
+    }
+
+    /**
      * D2 (order-lifecycle-design.md §8, §10 stage 7b) — the View page's
      * FIRST write buttons, mounted from ViewOrder::getHeaderActions() in
      * this order: Confirm, Ship, Deliver, "Mark as received". Each is
@@ -670,6 +696,17 @@ class OrderResource extends Resource
      * guard is surfaced by the ATTEMPT (a translated failure), never by
      * hiding the button, so a bank_transfer order whose payment has not
      * settled still offers Ship and tells the merchant why it refused.
+     *
+     * §10 STAGE 7C-2's OWN REFACTOR (D1): confirm()/ship()/deliver()'s own
+     * ->visible() now reads `OrderStatus::from($record->status)->
+     * canTransitionTo(OrderStatus::X)` instead of a direct `$record->status
+     * === X->value` equality check — behaviourally IDENTICAL today (§8.2's
+     * own reasoning: this matrix gives every target exactly one legal
+     * predecessor, so "may this order become CONFIRMED" and "is this order
+     * PLACED" already agree for every real row), but now covered by the
+     * SAME `OrderStatus` transition-matrix drift test §10 stage 1 already
+     * has, rather than a second, hand-kept list the panel and the domain
+     * could silently disagree about.
      */
     public static function confirmAction(): Action
     {
@@ -684,7 +721,7 @@ class OrderResource extends Resource
                 Textarea::make('note')->label(__('orders.actions.note_label')),
             ])
             ->visible(fn (OrderModel $record): bool => static::staffHasPermission(Permission::ORDER_MANAGE)
-                && $record->status === OrderStatus::PLACED->value)
+                && OrderStatus::from($record->status)->canTransitionTo(OrderStatus::CONFIRMED))
             ->action(function (array $data, OrderModel $record, $livewire): void {
                 static::runOrderAction(
                     $record,
@@ -710,7 +747,7 @@ class OrderResource extends Resource
             // D3: no ADDITIONAL gate on isSettled() here — every confirmed
             // order offers Ship, regardless of R9's own guard.
             ->visible(fn (OrderModel $record): bool => static::staffHasPermission(Permission::ORDER_MANAGE)
-                && $record->status === OrderStatus::CONFIRMED->value)
+                && OrderStatus::from($record->status)->canTransitionTo(OrderStatus::SHIPPED))
             ->action(function (array $data, OrderModel $record, $livewire): void {
                 static::runOrderAction(
                     $record,
@@ -734,7 +771,7 @@ class OrderResource extends Resource
                 Textarea::make('note')->label(__('orders.actions.note_label')),
             ])
             ->visible(fn (OrderModel $record): bool => static::staffHasPermission(Permission::ORDER_MANAGE)
-                && $record->status === OrderStatus::SHIPPED->value)
+                && OrderStatus::from($record->status)->canTransitionTo(OrderStatus::DELIVERED))
             ->action(function (array $data, OrderModel $record, $livewire): void {
                 static::runOrderAction(
                     $record,
@@ -793,6 +830,313 @@ class OrderResource extends Resource
     }
 
     /**
+     * D2 (order-lifecycle-design.md §8.2, §10 stage 7c-2). Visible when
+     * `canTransitionTo(CANCELLED)` — placed/confirmed/shipped, per the
+     * matrix — AND D3's money-permission clause. §8.2's own "two things
+     * deliberately still offered when they might refuse" covers this
+     * button too: a cancel from `shipped` whose share might exceed what
+     * the payment can still refund is still shown; OrderRefunder's own
+     * anomaly guard is what actually refuses it, translated by
+     * runOrderAction()'s existing InvalidArgumentException branch.
+     *
+     * THE FORM (D4/§8.4): the SAME line blocks recordReturnAction() uses
+     * (buildLineFormSchema()), with the quantity always a READ-ONLY
+     * display (never collected — cancel() takes no quantities at all,
+     * only a restock choice) and the restock Toggle offered ONLY when the
+     * locked status is `shipped` — from placed/confirmed the toggle is
+     * absent entirely (§8.4: "from placed/confirmed the toggles are not
+     * offered at all, because the goods never left"), matching
+     * `OrderStatusChanger::cancel()`'s own documented behaviour of
+     * ignoring $restockOverrides entirely in that case.
+     *
+     * REPORTED DIFFERENCE FROM D4'S OWN LITERAL TEXT, RESOLVED IN THE
+     * DESIGN DOC'S FAVOUR PER §0's OWN INSTRUCTION: D4 as written says
+     * cancel() from placed/confirmed shows "NO line form at all". §8.4
+     * itself says the opposite — "cancel opens the SAME FORM with the
+     * quantities fixed at the remaining units and only the toggles
+     * editable when the order is shipped; from placed/confirmed the
+     * toggles are not offered at all" — i.e. the line blocks (read-only
+     * quantities) DO render from placed/confirmed too, only the toggle is
+     * missing. Implemented per §8.4: the merchant always sees what is
+     * about to be cancelled, never a bare "are you sure" with nothing to
+     * look at.
+     */
+    public static function cancelAction(): Action
+    {
+        return Action::make('cancel')
+            ->label(__('orders.actions.cancel'))
+            ->color('danger')
+            ->icon('heroicon-o-x-circle')
+            ->requiresConfirmation()
+            ->modalHeading(fn (OrderModel $record): string => __('orders.actions.cancel_heading', ['id' => $record->id]))
+            ->modalDescription(fn (OrderModel $record): string => __('orders.actions.cancel_description', ['id' => $record->id]))
+            ->schema(fn (OrderModel $record): array => static::buildLineFormSchema(
+                $record,
+                editableQuantity: false,
+                showRestockToggle: $record->status === OrderStatus::SHIPPED->value,
+            ))
+            ->visible(fn (OrderModel $record): bool => static::staffHasPermission(Permission::ORDER_MANAGE)
+                && OrderStatus::from($record->status)->canTransitionTo(OrderStatus::CANCELLED)
+                && static::moneyPermissionClause($record))
+            ->action(function (array $data, OrderModel $record, $livewire): void {
+                $restockOverrides = $record->status === OrderStatus::SHIPPED->value
+                    ? static::restockOverridesFromData($data, static::forOrder($record))
+                    : [];
+
+                static::runOrderAction(
+                    $record,
+                    $livewire,
+                    fn () => app(OrderStatusChanger::class)->cancel((string) $record->id, new DateTimeImmutable(), $data['reason'] ?? null, $restockOverrides),
+                    __('orders.actions.cancel_done', ['id' => $record->id]),
+                );
+            });
+    }
+
+    /**
+     * D2 (order-lifecycle-design.md §8.2, §10 stage 7c-2). Visible at
+     * shipped/delivered — DELIBERATELY NOT a canTransitionTo() check: a
+     * return is not itself a matrix target (§2.2 R2 — cancel/recordReturn
+     * share one goods-return implementation, but only cancel's OWN
+     * terminal move is a real transition; a partial return moves no
+     * status at all, §2.3), so this is the one place D1's own
+     * "read the matrix" rule does not apply, stated here rather than left
+     * to read as an inconsistency.
+     *
+     * THE FORM: the SAME line blocks, quantity a real EDITABLE integer
+     * input (`minValue(0)`, `maxValue($line->remainingReturnable)`,
+     * blank by default — sparse, §8.4/§5.2) and the restock Toggle always
+     * offered (a return is legal only from shipped/delivered, where the
+     * goods already left — R3's flag is always a real per-line choice
+     * here, never ignored).
+     */
+    public static function recordReturnAction(): Action
+    {
+        return Action::make('record_return')
+            ->label(__('orders.actions.record_return'))
+            ->color('warning')
+            ->icon('heroicon-o-arrow-uturn-left')
+            ->requiresConfirmation()
+            ->modalHeading(fn (OrderModel $record): string => __('orders.actions.record_return_heading', ['id' => $record->id]))
+            ->modalDescription(fn (OrderModel $record): string => __('orders.actions.record_return_description', ['id' => $record->id]))
+            ->schema(fn (OrderModel $record): array => static::buildLineFormSchema(
+                $record,
+                editableQuantity: true,
+                showRestockToggle: true,
+            ))
+            ->visible(fn (OrderModel $record): bool => static::staffHasPermission(Permission::ORDER_MANAGE)
+                && in_array($record->status, [OrderStatus::SHIPPED->value, OrderStatus::DELIVERED->value], true)
+                && static::moneyPermissionClause($record))
+            ->action(function (array $data, OrderModel $record, $livewire): void {
+                $view = static::forOrder($record);
+                $lines = [];
+                $totalQuantity = 0;
+
+                foreach ($view->lines as $line) {
+                    if ($line->remainingReturnable <= 0) {
+                        continue;
+                    }
+
+                    $quantity = (int) ($data['quantity'][$line->id] ?? 0);
+
+                    if ($quantity <= 0) {
+                        continue;
+                    }
+
+                    $lines[] = [
+                        'originatingSaleLineId' => $line->id,
+                        'quantityReturned' => $quantity,
+                        'restock' => (bool) ($data['restock'][$line->id] ?? true),
+                    ];
+                    $totalQuantity += $quantity;
+                }
+
+                // D5's own client-side rule: nothing to submit is a form
+                // error, not a service call — refused BEFORE
+                // OrderStatusChanger ever runs, exactly like every guard
+                // elsewhere on this page that checks before it writes.
+                if ($lines === []) {
+                    Notification::make()
+                        ->title(__('orders.actions.refused_title'))
+                        ->body(__('orders.actions.nothing_to_return'))
+                        ->danger()
+                        ->send();
+
+                    return;
+                }
+
+                static::runOrderAction(
+                    $record,
+                    $livewire,
+                    fn () => app(OrderStatusChanger::class)->recordReturn((string) $record->id, $lines, new DateTimeImmutable(), $data['reason'] ?? null),
+                    __('orders.actions.record_return_done', ['id' => $record->id, 'count' => $totalQuantity]),
+                );
+            });
+    }
+
+    /**
+     * D1 (order-lifecycle-design.md §8.1's "Add internal note", §10 stage
+     * 7c-3) — "the page's third write, and the one action here that
+     * cannot refuse": no status condition at all in ->visible() (always
+     * offered to anyone with ORDER_MANAGE, regardless of the order's own
+     * status), and the note field is the ONE genuinely ->required() field
+     * on this whole page — every other action's own note/reason is free
+     * text and optional (§5.2); an empty note is nothing to record at
+     * all, not a valid "note added" event.
+     *
+     * NO EXCEPTION BEYOND \Throwable IS REALISTICALLY REACHABLE HERE,
+     * CONFIRMED RATHER THAN ASSUMED (D1 asked to report one if found): a
+     * first draft suspected a whitespace-only note (" ") would satisfy
+     * Filament's own ->required() rule — which is not empty/null — and
+     * still reach OrderEventRecorder::record()'s own `trim($reason) ===
+     * ''` guard for NOTE_ADDED. Tested directly against the real action:
+     * it does not. Filament's own required validation refuses a
+     * whitespace-only Textarea submission too (the action stays mounted
+     * with a validation error, confirmed via its own mountedActions
+     * state — never reaching this closure at all), so the domain's own
+     * blank-reason guard is unreachable through this action, exactly the
+     * "cannot refuse" §8.1 itself describes.
+     */
+    public static function addNoteAction(): Action
+    {
+        return Action::make('add_note')
+            ->label(__('orders.actions.add_note'))
+            ->color('gray')
+            ->icon('heroicon-o-pencil-square')
+            ->requiresConfirmation()
+            ->modalHeading(fn (OrderModel $record): string => __('orders.actions.add_note_heading', ['id' => $record->id]))
+            ->modalDescription(fn (OrderModel $record): string => __('orders.actions.add_note_description', ['id' => $record->id]))
+            ->schema([
+                Textarea::make('note')->label(__('orders.actions.note_field_label'))->required(),
+            ])
+            ->visible(fn (): bool => static::staffHasPermission(Permission::ORDER_MANAGE))
+            ->action(function (array $data, OrderModel $record, $livewire): void {
+                static::runOrderAction(
+                    $record,
+                    $livewire,
+                    fn () => app(OrderNoteRecorder::class)->record((string) $record->id, $data['note'], new DateTimeImmutable()),
+                    __('orders.actions.add_note_done'),
+                );
+            });
+    }
+
+    /**
+     * D3 (order-lifecycle-design.md §8.2's own "money step adds a third
+     * question", R5) — shared by cancelAction()/recordReturnAction() so
+     * the rule is written once. Reads the SAME latestPayment the Payment
+     * section already reads (static::forOrder($record), no new query):
+     * nothing settled means nothing to refund, so ORDER_MANAGE alone
+     * suffices (§2.2 R8(c)); a settled payment needs R5's derived
+     * permission ON TOP — REFUND_CASH for cash_on_delivery, REFUND_BANK
+     * for every other method.
+     */
+    private static function moneyPermissionClause(OrderModel $record): bool
+    {
+        $payment = static::forOrder($record)->latestPayment;
+
+        if ($payment === null || ! $payment->isSettled()) {
+            return true;
+        }
+
+        return static::staffHasPermission(
+            $payment->method() === 'cash_on_delivery' ? Permission::REFUND_CASH : Permission::REFUND_BANK
+        );
+    }
+
+    /**
+     * D4/§0 item 7 — the cancel/return dialog's shared line-block
+     * builder. ONE FIXED, DYNAMICALLY-GENERATED SET, NOT A Repeater:
+     * every candidate line (remainingReturnable > 0) is already known in
+     * full at render time from the SAME batched read stage 7c-1 built
+     * (OrderAdminSaleLineView::remainingReturnable), so there is nothing
+     * for the merchant to add or remove and no reason to pay for
+     * Repeater's own add/delete/reorder machinery and its item-key
+     * indirection (a Repeater's own item state is keyed by an
+     * auto-generated key, not the line's own id, which would need a
+     * hidden per-item field just to read it back) — a plain Fieldset per
+     * line, its own field NAMES built directly from the line's real id
+     * (`quantity.{$id}`, `restock.{$id}`), is both simpler and reads the
+     * submission back with zero indirection. Filament\Forms\Components\
+     * Repeater IS used elsewhere in this codebase (ProductResource's own
+     * variations, an open-ended user-add/remove collection) — read as
+     * the style precedent §0 asked for, and confirmed to be the WRONG
+     * shape for this fixed, render-time-known set.
+     *
+     * The quantity display uses TextEntry (an Infolist component, legal
+     * inside a Schema action's ->schema() array in this unified v5.8.1
+     * Schema system — Fieldset itself lives in Filament\Schemas\
+     * Components for the same reason) rather than Filament\Forms\
+     * Components\Placeholder, confirmed by reading Placeholder's own
+     * installed source: `@deprecated Use TextEntry with the state()
+     * method instead`.
+     *
+     * A line with remainingReturnable === 0 is skipped entirely — "there
+     * is nothing left to ask about it" (D4).
+     *
+     * @return array<int, Fieldset|Textarea>
+     */
+    private static function buildLineFormSchema(OrderModel $record, bool $editableQuantity, bool $showRestockToggle): array
+    {
+        $blocks = [];
+
+        foreach (static::forOrder($record)->lines as $line) {
+            if ($line->remainingReturnable <= 0) {
+                continue;
+            }
+
+            $fields = [
+                $editableQuantity
+                    ? TextInput::make("quantity.{$line->id}")
+                        ->label(__('orders.actions.quantity_label'))
+                        ->numeric()
+                        ->minValue(0)
+                        ->maxValue($line->remainingReturnable)
+                        ->default(null)
+                    : TextEntry::make("quantity_display.{$line->id}")
+                        ->label(__('orders.actions.quantity_label'))
+                        ->state((string) $line->remainingReturnable),
+            ];
+
+            if ($showRestockToggle) {
+                $fields[] = Toggle::make("restock.{$line->id}")
+                    ->label(__('orders.actions.restock_label'))
+                    ->default(true);
+            }
+
+            $blocks[] = Fieldset::make($line->productName ?? $line->sku ?? __('orders.not_available'))
+                ->schema($fields);
+        }
+
+        $blocks[] = Textarea::make('reason')->label(__('orders.actions.reason_label'));
+
+        return $blocks;
+    }
+
+    /**
+     * cancelAction()'s own submission mapping (D5) — every line THIS
+     * form actually showed (remainingReturnable > 0), keyed by id, `true`
+     * for an absent entry (Filament's own Toggle omits an unchecked
+     * value from $data only in some circumstances — reading with a
+     * default rather than assuming presence either way is the safe
+     * reading of "on by default").
+     *
+     * @return array<string, bool>
+     */
+    private static function restockOverridesFromData(array $data, OrderAdminOrderView $view): array
+    {
+        $overrides = [];
+
+        foreach ($view->lines as $line) {
+            if ($line->remainingReturnable <= 0) {
+                continue;
+            }
+
+            $overrides[$line->id] = (bool) ($data['restock'][$line->id] ?? true);
+        }
+
+        return $overrides;
+    }
+
+    /**
      * The shape every action above shares (§8.3 items 4-5): run the
      * domain call, and either translate its refusal or show success and
      * move on. `\Throwable` is deliberately NOT caught here — a single-
@@ -809,6 +1153,13 @@ class OrderResource extends Resource
      *    own from()/to() values (both real OrderStatus), translated
      *    through the SAME status_options group the rest of this page
      *    already uses — never its raw English message.
+     *  - ReturnExceedsRemainingQuantityException (§10 stage 7c-2, from
+     *    ReturnGoodsRecorder via recordReturn()): a translated message
+     *    built from its own requestedQuantity()/remainingQuantity(),
+     *    naming the LINE by product name/sku — resolved from
+     *    forOrder($record)->lines, already in hand, no second query — or
+     *    this page's own "not available" wording if the id is somehow not
+     *    among them (a page rendered against a different order's state).
      *  - InvalidArgumentException (an order/payment that vanished, or an
      *    anomaly guard): a clear, honest, translated sentence naming the
      *    order — never its raw message either.
@@ -844,6 +1195,28 @@ class OrderResource extends Resource
                     'id' => $record->id,
                     'from' => static::optionLabel('status', $e->from()->value),
                     'to' => static::optionLabel('status', $e->to()->value),
+                ]))
+                ->danger()
+                ->send();
+
+            return;
+        } catch (ReturnExceedsRemainingQuantityException $e) {
+            $line = null;
+
+            foreach (static::forOrder($record)->lines as $candidate) {
+                if ($candidate->id === $e->originatingSaleLineId()) {
+                    $line = $candidate;
+
+                    break;
+                }
+            }
+
+            Notification::make()
+                ->title(__('orders.actions.refused_title'))
+                ->body(__('orders.actions.return_exceeds_remaining_body', [
+                    'line' => $line?->productName ?? $line?->sku ?? __('orders.not_available'),
+                    'requested' => $e->requestedQuantity(),
+                    'remaining' => $e->remainingQuantity(),
                 ]))
                 ->danger()
                 ->send();
