@@ -736,13 +736,15 @@ class OrderViewSnapshotPageTest extends TestCase
     }
 
     /**
-     * §14's thumbnail — every line shows what was sold, 38x38 px square, in
-     * the FIRST cell, before the product name. The fixture attaches a real
-     * READY image to the product itself: a SIMPLE product's UNIVERSAL
-     * variation has no media of its own, so this is also
-     * OrderAdminReader::imagePathsFor()'s fallback branch.
+     * §14's thumbnail — every line shows what was sold, 36 px TALL and
+     * HEIGHT ONLY, in the FIRST cell, before the product name. The width is
+     * deliberately never written: with both dimensions set a photo that is
+     * not square is cropped into its square box instead of keeping its own
+     * shape. The fixture attaches a real READY image to the product itself:
+     * a SIMPLE product's UNIVERSAL variation has no media of its own, so
+     * this is also OrderAdminReader::imagePathsFor()'s fallback branch.
      */
-    public function test_each_line_shows_a_38px_square_thumbnail_of_its_product_before_the_name(): void
+    public function test_each_line_shows_a_36px_tall_thumbnail_of_its_product_before_the_name(): void
     {
         $this->seedPricingLists();
         Storage::fake($this->mediaDisk());
@@ -760,9 +762,15 @@ class OrderViewSnapshotPageTest extends TestCase
 
         $this->assertStringContainsString('products/ordered-product.jpg', $row);
 
-        // 38 x 38 px, square — OrderResource::LINE_THUMBNAIL_SIZE_PX.
-        $this->assertStringContainsString('height: 38px', $row);
-        $this->assertStringContainsString('width: 38px', $row);
+        // 36 px TALL, HEIGHT ONLY — OrderResource::LINE_THUMBNAIL_HEIGHT_PX.
+        // The width is asserted ABSENT on purpose: Filament writes a width
+        // the moment ->square()/->imageSize() is used, and that height/width
+        // pair is what cropped a non-square photo into a square box.
+        preg_match('#<img\b[^>]*>#', $row, $image);
+
+        $this->assertNotEmpty($image, 'the line must render the photo as an <img>');
+        $this->assertStringContainsString('height: 36px', $image[0]);
+        $this->assertStringNotContainsString('width', $image[0]);
 
         // The FIRST cell of the line: the thumbnail precedes the product name.
         $this->assertLessThan(

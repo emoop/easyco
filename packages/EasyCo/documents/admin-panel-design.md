@@ -1105,8 +1105,14 @@ are their own keys, so a row may word a value differently from the heading
 it sits under (`Бройка` on the line, D3's `Количество` above it) — the line
 language is the merchant's, the column name is the table's.
 
-**A thumbnail comes first, before the product name** — 38x38 px, square, so
-a line reads like the article itself rather than as a wall of values. It is
+**A thumbnail comes first, before the product name** — 36 px TALL and
+HEIGHT ONLY, never a width, so a line reads like the article itself rather
+than as a wall of values. The size lives in
+`OrderResource::LINE_THUMBNAIL_HEIGHT_PX` and is applied with
+`imageHeight()` ALONE: `imageSize()` and `square()` each write a width
+beside the height, and that height/width pair crops a photo that is not
+square into a square box — which is exactly what made these thumbnails
+look wrong. It is
 THE ONE LIVE VALUE on this page, and therefore a stated exception to D2:
 §3.13's snapshot stores no image at all, so there is nothing historical to
 show, and the cell renders the variation's own first READY photo, falling back

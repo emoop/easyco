@@ -97,11 +97,19 @@ class OrderResource extends Resource
     protected static string|BackedEnum|null $navigationIcon = 'heroicon-o-shopping-bag';
 
     /**
-     * §14's line thumbnail: 38x38 px, square — the merchant's own size for
-     * it, named here rather than repeated as a bare number in a cell and in
-     * a test.
+     * §14's line thumbnail: 36 px TALL — and HEIGHT ONLY, never a width —
+     * the merchant's own size for it, named here rather than repeated as a
+     * bare number in a cell and in a test.
+     *
+     * WHY NO WIDTH: Filament's ImageEntry writes BOTH dimensions into the
+     * <img>'s inline style as soon as it is ->square() (or given
+     * ->imageSize()), and a fixed height/width pair crops a photo that is
+     * not square into its square box (the theme's own `object-cover`) —
+     * that pairing is what made a line's photo look wrong. ->imageHeight()
+     * ALONE renders `style="height: 36px;"` with no width at all, so each
+     * photo keeps its real aspect ratio at a uniform 36px line height.
      */
-    private const LINE_THUMBNAIL_SIZE_PX = 38;
+    private const LINE_THUMBNAIL_HEIGHT_PX = 36;
 
     /**
      * The status-view toolbar buttons — mirrors
@@ -1696,9 +1704,11 @@ class OrderResource extends Resource
      *  - line total (the amount before discounts): with Price x Quantity,
      *    Discount and Final price it only repeated information.
      *
-     * A THUMBNAIL COMES FIRST, before the product name — 38x38 px, the
-     * merchant's own size for it (LINE_THUMBNAIL_SIZE_PX), so a line reads
-     * like the physical article rather than as a wall of values. It is the
+     * A THUMBNAIL COMES FIRST, before the product name — 36 px tall, the
+     * merchant's own size for it (LINE_THUMBNAIL_HEIGHT_PX), and HEIGHT
+     * ONLY so a photo keeps its own aspect ratio (that constant's own
+     * docblock has the why) — so a line reads like the physical article
+     * rather than as a wall of values. It is the
      * only LIVE value on this page (no snapshot stores an image — see
      * OrderAdminReader::imagePathsFor()), and it fails soft: a line with no
      * usable photo renders no image cell at all.
@@ -1775,8 +1785,12 @@ class OrderResource extends Resource
                 // Same disk rule as ProductResource's own list thumbnail —
                 // config, never a hardcoded 'public'.
                 ->disk(config('services.media.default_disk', 'public'))
-                ->imageSize(self::LINE_THUMBNAIL_SIZE_PX)
-                ->square()
+                // HEIGHT ONLY, never a width: NOT ->imageSize() and NOT
+                // ->square(), because either one writes a width beside the
+                // height, and that height/width pair crops a non-square
+                // photo into its square box. See
+                // LINE_THUMBNAIL_HEIGHT_PX's own docblock.
+                ->imageHeight(self::LINE_THUMBNAIL_HEIGHT_PX)
                 ->hidden(fn (?string $state): bool => blank($state));
         }
 

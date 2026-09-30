@@ -126,6 +126,23 @@ class ProductResource extends Resource
      */
     public const VARIATIONS_TAB_ID = 'variations';
 
+    /**
+     * The products list's own thumbnail height — 36px, and HEIGHT ONLY:
+     * no width is ever written (see the column's own note in table()).
+     *
+     * WHY NOT A SQUARE: Filament's ImageColumn writes BOTH dimensions into
+     * the <img>'s inline style the moment it is ->square() — and a fixed
+     * height/width pair crops a photo that is not square into its square
+     * box (the theme's own `object-cover`), instead of letting it keep its
+     * real shape. ->imageHeight() ALONE renders `style="height: 36px;"`
+     * with no width, so every row's photo is the same 36px tall whatever
+     * its aspect ratio.
+     *
+     * Named here rather than repeated as a bare 36 in table(), the same
+     * way OrderResource names its own LINE_THUMBNAIL_HEIGHT_PX.
+     */
+    private const THUMBNAIL_HEIGHT_PX = 36;
+
     protected static ?string $model = ProductModel::class;
 
     protected static string|BackedEnum|null $navigationIcon = 'heroicon-o-cube';
@@ -1222,7 +1239,13 @@ class ProductResource extends Resource
                 ImageColumn::make('thumbnail_path')
                     ->label(__('products.fields.thumbnail'))
                     ->disk(config('services.media.default_disk', 'public'))
-                    ->square(),
+                    // HEIGHT ONLY — see THUMBNAIL_HEIGHT_PX's own
+                    // docblock: NOT ->imageSize() and NOT ->square(),
+                    // because either one writes a WIDTH beside the height,
+                    // and that height/width pair is what made these
+                    // thumbnails look wrong (a non-square photo is cropped
+                    // into a square box instead of keeping its own shape).
+                    ->imageHeight(self::THUMBNAIL_HEIGHT_PX),
                 TextColumn::make('name')
                     ->searchable()
                     ->sortable(),
