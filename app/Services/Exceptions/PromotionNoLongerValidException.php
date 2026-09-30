@@ -22,8 +22,27 @@ use RuntimeException;
  */
 final class PromotionNoLongerValidException extends RuntimeException
 {
-    public function __construct(string $code, ?string $reason)
+    public function __construct(
+        private readonly string $promotionCode,
+        private readonly ?string $reason,
+    ) {
+        parent::__construct("Promotion code \"{$promotionCode}\" is no longer valid".($reason !== null ? " ({$reason})" : '').'.');
+    }
+
+    /**
+     * The code and the validator's reason as VALUES (order-editing stage
+     * 4b-i): the admin edit dialog words this refusal itself, in the
+     * merchant's language, instead of showing the English message. Additive —
+     * the constructor and the message are unchanged, so checkout is unaffected.
+     */
+    public function promotionCode(): string
     {
-        parent::__construct("Promotion code \"{$code}\" is no longer valid".($reason !== null ? " ({$reason})" : '').'.');
+        return $this->promotionCode;
+    }
+
+    /** One of PromotionValidator's reason codes (`expired`, `minimum_spend_not_met`, ...), `not_found`, or null. */
+    public function reason(): ?string
+    {
+        return $this->reason;
     }
 }

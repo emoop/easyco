@@ -41,6 +41,7 @@ return [
         'order_manage' => 'Manage orders',
         'refund_cash' => 'Refund in cash',
         'refund_bank' => 'Refund via bank',
+        'order_discount' => 'Give order lines a manual discount',
         'pos_operate' => 'Operate the register',
         'pos_discount' => 'Apply register discounts',
         'promotion_manage' => 'Manage promotions',

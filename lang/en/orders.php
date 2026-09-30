@@ -213,6 +213,38 @@ return [
         'return_exceeds_remaining_body' => 'Cannot return :requested unit(s) of ":line": only :remaining unit(s) remain.',
         // InvalidArgumentException (an unknown/changed record) — never its raw message either.
         'generic_refusal_body' => 'Order :id could not be processed — it may no longer exist, or its state changed since this page was loaded.',
+        // Order editing (stage 4b-i, order-editing-design.md section 8)
+        'edit' => 'Edit order',
+        'edit_heading' => 'Edit order :id',
+        'edit_description' => 'Reduce or remove items, change the delivery or the promotion code. The order total and the pending payment follow automatically.',
+        'edit_done' => 'Order :id updated.',
+        'edit_lines_hint' => 'Set a quantity of 0 to remove an item. A quantity can be reduced here, not raised.',
+        'edit_current_quantity' => 'Now',
+        'edit_new_quantity' => 'New quantity',
+        'edit_discount' => 'Manual discount',
+        'edit_promotion_code' => 'Promotion code',
+        'edit_promotion_code_hint' => 'Leave as is to keep the code, type another code to replace it.',
+        'edit_remove_promotion_code' => 'Remove the promotion code entirely',
+        'edit_nothing_to_change' => 'Nothing was changed, so there is nothing to save.',
+        'edit_stale_body' => 'Order :id was changed by someone else after this form was opened (revision :expected, now :actual). Nothing was saved - close this and open Edit order again.',
+        'edit_not_editable_status_body' => 'Order :id can no longer be edited: it is :status, and editing is only possible while an order is placed or confirmed.',
+        'edit_not_editable_payment_body' => 'Order :id can no longer be edited: a payment for it has already settled. Use cancel or return instead.',
+        'edit_promotion_invalid_body' => 'The promotion code ":code" cannot be applied to this order: :reason. Nothing was saved - change the quantities, or remove the code, and try again.',
+    ],
+
+    // PromotionValidator's own reason codes, worded for the edit dialog's refusal.
+    'promotion_refusal_reasons' => [
+        'not_found' => 'no such code exists',
+        'inactive' => 'the code is not active',
+        'not_yet_active' => 'the code is not valid yet',
+        'expired' => 'the code has expired',
+        'minimum_spend_not_met' => "the order is below the code's minimum spend",
+        'maximum_spend_exceeded' => "the order is above the code's maximum spend",
+        'new_customers_only' => 'the code is for new customers only',
+        'account_scope_mismatch' => 'the code is not available for this customer',
+        'usage_limit_reached' => 'the code has reached its usage limit',
+        'usage_limit_per_customer_reached' => 'this customer has used the code the maximum number of times',
+        'no_matching_lines' => "none of the order's items qualify for the code",
     ],
 
     'yes' => 'Yes',

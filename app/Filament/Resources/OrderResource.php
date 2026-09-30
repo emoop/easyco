@@ -7,14 +7,20 @@ use App\Filament\NavigationGroup;
 use App\Filament\Resources\OrderResource\Pages\ListOrders;
 use App\Filament\Resources\OrderResource\Pages\ViewOrder;
 use App\Services\Exceptions\OrderTransitionRefusedException;
+use App\Services\Exceptions\PromotionNoLongerValidException;
 use App\Services\Exceptions\ReturnExceedsRemainingQuantityException;
+use App\Services\Exceptions\StaleOrderEditException;
 use App\Services\OrderAdminEventView;
 use App\Services\OrderAdminOrderView;
 use App\Services\OrderAdminReader;
 use App\Services\OrderAdminSaleLineView;
+use App\Services\OrderCurrentLinesResolver;
+use App\Services\OrderEditFormMapper;
+use App\Services\OrderEditor;
 use App\Services\OrderNoteRecorder;
 use App\Services\OrderPaymentConfirmer;
 use App\Services\OrderStatusChanger;
+use App\Services\PanelStaffActor;
 use App\Services\PriceDisplayFormatter;
 use App\Services\ProductPriceDisplay;
 use BackedEnum;
@@ -22,13 +28,19 @@ use Closure;
 use DateTimeImmutable;
 use EasyCo\Order\Enums\OrderDeliveryType;
 use EasyCo\Order\Enums\OrderStatus;
+use EasyCo\Order\Contracts\OrderRepository;
 use EasyCo\Order\Exceptions\InvalidOrderTransitionException;
+use EasyCo\Order\Exceptions\OrderNotEditableException;
 use EasyCo\Order\Persistence\Eloquent\OrderModel;
 use EasyCo\Pricing\Currency;
 use EasyCo\Pricing\Money;
 use EasyCo\Staff\Enums\Permission;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
+use Filament\Forms\Components\Hidden;
+use Filament\Forms\Components\Repeater;
+use Filament\Forms\Components\Repeater\TableColumn as RepeaterTableColumn;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
@@ -41,6 +53,7 @@ use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Fieldset;
 use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Enums\FiltersLayout;
@@ -678,6 +691,7 @@ class OrderResource extends Resource
             static::markAsReceivedAction(),
             static::cancelAction(),
             static::recordReturnAction(),
+            static::editAction(),
             static::addNoteAction(),
         ];
     }
@@ -977,6 +991,235 @@ class OrderResource extends Resource
     }
 
     /**
+     * order-editing-design.md §8 (D7), stage 4b-i — the edit dialog: the
+     * order's CURRENT lines (reduce or remove, optionally a manual discount),
+     * its delivery, its promotion code, and an optional reason, submitted as
+     * ONE App\Services\OrderEditor::apply() call.
+     *
+     * VISIBLE only for ORDER_MANAGE, at placed/confirmed, with no SETTLED
+     * payment on the order: E3 makes an order with money captured simply not
+     * editable, so the action is not offered (the service still refuses
+     * truthfully if a stale page reaches it). Unlike cancel/return this is not
+     * a money-permission conjunction: editing never moves captured money.
+     *
+     * THE LINE TABLE IS A Filament Repeater IN ITS OWN TABLE MODE
+     * (Repeater::table([...TableColumn]) — confirmed in the installed v5.8.1
+     * source), which renders the same header-row-over-cells look the read-only
+     * Lines section above gets from RepeatableEntry::table(). It is fixed —
+     * ->addable(false)->deletable(false)->reorderable(false) — because the row
+     * set is exactly the order's current lines, known at render time. The price
+     * of using a Repeater (its item state is keyed by an auto-generated key, not
+     * by the line id, which is why cancel/return use a Fieldset per line
+     * instead) is paid deliberately: one hidden `line_id` per row, which
+     * OrderEditFormMapper reads; the item key is never used. A quantity can only
+     * go DOWN here (maxValue = the line's current quantity; the mapper enforces
+     * it again), 0 meaning remove; raising a quantity or adding a product is
+     * another dialog's job. The discount cell exists only for ORDER_DISCOUNT —
+     * absent, not merely refused, for anyone without it — and the mapper never
+     * reads a discount without it either.
+     *
+     * THE CONCURRENCY TOKEN is the order's edit_revision as read when the
+     * dialog OPENED, carried in a hidden field (the schema closure runs at
+     * mount, on a freshly hydrated record), and handed to apply() untouched: if
+     * anything edited the order in between, apply() refuses it as stale before
+     * writing a thing.
+     *
+     * A SUBMISSION THAT CHANGES NOTHING IS REFUSED HERE, never sent: apply()
+     * would faithfully bump the revision and write an `edited` event for an
+     * edit that edited nothing, which is noise in an order's own history.
+     */
+    public static function editAction(): Action
+    {
+        return Action::make('edit_order')
+            ->label(__('orders.actions.edit'))
+            ->color('primary')
+            ->icon('heroicon-o-pencil')
+            ->modalHeading(fn (OrderModel $record): string => __('orders.actions.edit_heading', ['id' => $record->id]))
+            ->modalDescription(fn (OrderModel $record): string => __('orders.actions.edit_description', ['id' => $record->id]))
+            ->modalWidth('5xl')
+            ->schema(fn (OrderModel $record): array => static::buildEditFormSchema($record))
+            ->visible(fn (OrderModel $record): bool => static::staffHasPermission(Permission::ORDER_MANAGE)
+                && in_array($record->status, [OrderStatus::PLACED->value, OrderStatus::CONFIRMED->value], true)
+                && ! (static::forOrder($record)->latestPayment?->isSettled() ?? false))
+            ->action(function (array $data, OrderModel $record, $livewire): void {
+                try {
+                    $order = app(OrderRepository::class)->findById((string) $record->id);
+
+                    if ($order === null) {
+                        throw new InvalidArgumentException('order vanished');
+                    }
+
+                    $currentLinesById = [];
+                    foreach (app(OrderCurrentLinesResolver::class)->resolve($order) as $line) {
+                        $currentLinesById[(string) $line->id()] = $line;
+                    }
+
+                    $lineChanges = OrderEditFormMapper::lineChanges(
+                        array_values($data['lines'] ?? []),
+                        $currentLinesById,
+                        static::staffHasPermission(Permission::ORDER_DISCOUNT),
+                        $order->currency(),
+                    );
+
+                    $delivery = OrderEditFormMapper::deliveryChange(
+                        array_combine(OrderEditFormMapper::DELIVERY_FIELDS, array_map(
+                            static fn (string $field): ?string => $record->{$field},
+                            OrderEditFormMapper::DELIVERY_FIELDS,
+                        )),
+                        (array) ($data['delivery'] ?? []),
+                    );
+
+                    $promotionCode = OrderEditFormMapper::promotionCodeChange(
+                        $order->appliedPromotionCode(),
+                        $data['promotion_code'] ?? null,
+                        (bool) ($data['remove_promotion_code'] ?? false),
+                    );
+                } catch (InvalidArgumentException) {
+                    Notification::make()
+                        ->title(__('orders.actions.refused_title'))
+                        ->body(__('orders.actions.generic_refusal_body', ['id' => $record->id]))
+                        ->danger()
+                        ->send();
+
+                    return;
+                }
+
+                if ($lineChanges === [] && $delivery === null && $promotionCode->isUnchanged()) {
+                    Notification::make()
+                        ->title(__('orders.actions.refused_title'))
+                        ->body(__('orders.actions.edit_nothing_to_change'))
+                        ->danger()
+                        ->send();
+
+                    return;
+                }
+
+                $staff = app(PanelStaffActor::class)->current();
+
+                static::runOrderAction(
+                    $record,
+                    $livewire,
+                    fn () => app(OrderEditor::class)->apply(
+                        orderId: (string) $record->id,
+                        expectedRevision: (int) ($data['edit_revision'] ?? -1),
+                        lineChanges: $lineChanges,
+                        delivery: $delivery,
+                        promotionCode: $promotionCode,
+                        editedBy: $staff !== null ? (string) $staff->id : null,
+                        editedByName: $staff?->name,
+                        reason: $data['reason'] ?? null,
+                        occurredAt: new DateTimeImmutable(),
+                    ),
+                    __('orders.actions.edit_done', ['id' => $record->id]),
+                );
+            });
+    }
+
+    /**
+     * The edit dialog's form: line table, delivery, promotion, reason, and
+     * the hidden concurrency token. Delivery labels and the delivery-type
+     * options are the SAME `orders.fields.*` / `orders.delivery_type_options`
+     * keys the read-only Delivery section above already uses — the form is the
+     * editable twin of that section, not a second vocabulary — and its
+     * street/pickup field visibility mirrors that section's own
+     * `delivery_type` conditions.
+     *
+     * @return array<int, mixed>
+     */
+    private static function buildEditFormSchema(OrderModel $record): array
+    {
+        $mayDiscount = static::staffHasPermission(Permission::ORDER_DISCOUNT);
+        $view = static::forOrder($record);
+
+        $rows = array_map(static fn (OrderAdminSaleLineView $line): array => [
+            'line_id' => $line->id,
+            'product' => trim(($line->productName ?? __('orders.not_available')).($line->sku !== null ? " ({$line->sku})" : '')),
+            'current_quantity' => (string) $line->quantity,
+            'quantity' => $line->quantity,
+            'discount' => $line->discretionaryDiscount?->decimalValue() ?? '0.00',
+        ], $view->lines);
+
+        $columns = [
+            RepeaterTableColumn::make(__('orders.fields.product_name')),
+            RepeaterTableColumn::make(__('orders.actions.edit_current_quantity'))->alignEnd(),
+            RepeaterTableColumn::make(__('orders.actions.edit_new_quantity'))->alignEnd(),
+        ];
+
+        $cells = [
+            Hidden::make('line_id'),
+            TextInput::make('product')->hiddenLabel()->disabled()->dehydrated(false),
+            TextInput::make('current_quantity')->hiddenLabel()->disabled()->dehydrated(false),
+            TextInput::make('quantity')
+                ->hiddenLabel()
+                ->numeric()
+                ->integer()
+                ->required()
+                ->minValue(0)
+                ->maxValue(fn (Get $get): int => (int) $get('current_quantity')),
+        ];
+
+        if ($mayDiscount) {
+            $columns[] = RepeaterTableColumn::make(__('orders.actions.edit_discount'))->alignEnd();
+            $cells[] = TextInput::make('discount')->hiddenLabel()->numeric()->minValue(0);
+        }
+
+        $isStreet = static fn (Get $get): bool => $get('delivery.delivery_type') === OrderDeliveryType::STREET_ADDRESS->value;
+        $isPickup = static fn (Get $get): bool => $get('delivery.delivery_type') === OrderDeliveryType::PICKUP_POINT->value;
+
+        return [
+            Hidden::make('edit_revision')->default((int) $record->edit_revision),
+            Section::make(__('orders.sections.lines'))
+                ->description(__('orders.actions.edit_lines_hint'))
+                ->schema([
+                    Repeater::make('lines')
+                        ->hiddenLabel()
+                        ->table($columns)
+                        ->addable(false)
+                        ->deletable(false)
+                        ->reorderable(false)
+                        ->default($rows)
+                        ->schema($cells),
+                ]),
+            Section::make(__('orders.sections.delivery'))
+                ->schema([
+                    Select::make('delivery.delivery_type')
+                        ->label(__('orders.fields.delivery_type'))
+                        ->options([
+                            OrderDeliveryType::STREET_ADDRESS->value => __('orders.delivery_type_options.street_address'),
+                            OrderDeliveryType::PICKUP_POINT->value => __('orders.delivery_type_options.pickup_point'),
+                        ])
+                        ->default($record->delivery_type)
+                        ->required()
+                        ->live(),
+                    TextInput::make('delivery.recipient_name')->label(__('orders.fields.recipient_name'))->default($record->recipient_name)->required(),
+                    TextInput::make('delivery.phone')->label(__('orders.fields.phone'))->default($record->phone)->required(),
+                    TextInput::make('delivery.country')->label(__('orders.fields.country'))->default($record->country)->visible($isStreet)->required(),
+                    TextInput::make('delivery.city')->label(__('orders.fields.city'))->default($record->city)->visible($isStreet)->required(),
+                    TextInput::make('delivery.postal_code')->label(__('orders.fields.postal_code'))->default($record->postal_code)->visible($isStreet),
+                    TextInput::make('delivery.address_line_1')->label(__('orders.fields.address_line_1'))->default($record->address_line_1)->visible($isStreet)->required(),
+                    TextInput::make('delivery.address_line_2')->label(__('orders.fields.address_line_2'))->default($record->address_line_2)->visible($isStreet),
+                    TextInput::make('delivery.carrier_code')->label(__('orders.fields.carrier_code'))->default($record->carrier_code)
+                        ->required($isPickup),
+                    TextInput::make('delivery.pickup_point_reference')->label(__('orders.fields.pickup_point_reference'))->default($record->pickup_point_reference)->visible($isPickup)->required(),
+                    TextInput::make('delivery.settlement')->label(__('orders.fields.settlement'))->default($record->settlement)->visible($isPickup)->required(),
+                ])
+                ->columns(2),
+            Section::make(__('orders.sections.promotion'))
+                ->schema([
+                    TextInput::make('promotion_code')
+                        ->label(__('orders.actions.edit_promotion_code'))
+                        ->helperText(__('orders.actions.edit_promotion_code_hint'))
+                        ->default($record->applied_promotion_code),
+                    Toggle::make('remove_promotion_code')
+                        ->label(__('orders.actions.edit_remove_promotion_code'))
+                        ->default(false)
+                        ->visible($record->applied_promotion_code !== null),
+                ]),
+            Textarea::make('reason')->label(__('orders.actions.reason_label')),
+        ];
+    }
+
+    /**
      * D1 (order-lifecycle-design.md §8.1's "Add internal note", §10 stage
      * 7c-3) — "the page's third write, and the one action here that
      * cannot refuse": no status condition at all in ->visible() (always
@@ -1220,6 +1463,50 @@ class OrderResource extends Resource
                     'line' => $line?->productName ?? $line?->sku ?? __('orders.not_available'),
                     'requested' => $e->requestedQuantity(),
                     'remaining' => $e->remainingQuantity(),
+                ]))
+                ->danger()
+                ->send();
+
+            return;
+        } catch (StaleOrderEditException $e) {
+            // The order changed since the edit form opened: no field-by-field
+            // diff, an honest "start again".
+            Notification::make()
+                ->title(__('orders.actions.refused_title'))
+                ->body(__('orders.actions.edit_stale_body', [
+                    'id' => $record->id,
+                    'expected' => $e->expectedRevision(),
+                    'actual' => $e->actualRevision(),
+                ]))
+                ->danger()
+                ->send();
+
+            return;
+        } catch (OrderNotEditableException $e) {
+            // Two different facts, two different sentences: money already
+            // captured (use cancel/return) versus a status that no longer allows it.
+            Notification::make()
+                ->title(__('orders.actions.refused_title'))
+                ->body($e->isBecauseOfSettledPayment()
+                    ? __('orders.actions.edit_not_editable_payment_body', ['id' => $record->id])
+                    : __('orders.actions.edit_not_editable_status_body', [
+                        'id' => $record->id,
+                        'status' => static::optionLabel('status', $e->status()->value),
+                    ]))
+                ->danger()
+                ->send();
+
+            return;
+        } catch (PromotionNoLongerValidException $e) {
+            $reason = $e->reason();
+
+            Notification::make()
+                ->title(__('orders.actions.refused_title'))
+                ->body(__('orders.actions.edit_promotion_invalid_body', [
+                    'code' => $e->promotionCode(),
+                    'reason' => $reason !== null && Lang::has('orders.promotion_refusal_reasons.'.$reason)
+                        ? __('orders.promotion_refusal_reasons.'.$reason)
+                        : ($reason ?? '-'),
                 ]))
                 ->danger()
                 ->send();

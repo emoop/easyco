@@ -252,7 +252,7 @@ class RoleResource extends Resource
         return [
             'Catalog' => [Permission::PRODUCT_VIEW, Permission::PRODUCT_MANAGE, Permission::PRODUCT_DELETE, Permission::TAXONOMY_MANAGE],
             'Cost and pricing' => [Permission::COST_VIEW, Permission::COST_MANAGE, Permission::PRICE_MANAGE],
-            'Orders' => [Permission::ORDER_VIEW, Permission::ORDER_MANAGE, Permission::REFUND_CASH, Permission::REFUND_BANK],
+            'Orders' => [Permission::ORDER_VIEW, Permission::ORDER_MANAGE, Permission::REFUND_CASH, Permission::REFUND_BANK, Permission::ORDER_DISCOUNT],
             'Point of sale' => [Permission::POS_OPERATE, Permission::POS_DISCOUNT],
             'Marketing' => [Permission::PROMOTION_MANAGE],
             'Reporting' => [Permission::REPORT_VIEW],

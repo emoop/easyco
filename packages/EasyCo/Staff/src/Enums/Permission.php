@@ -39,6 +39,8 @@ enum Permission: string
     case REFUND_CASH = 'refund_cash';
     /** a refund that goes through a bank: card reversals, transfers */
     case REFUND_BANK = 'refund_bank';
+    /** give an order line a manual discount while editing an order (order-editing-design.md E5) */
+    case ORDER_DISCOUNT = 'order_discount';
 
     // Point of sale
     /** take sales at the register */
