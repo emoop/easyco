@@ -8,7 +8,6 @@ use Closure;
 use DateTimeImmutable;
 use EasyCo\Extensibility\Hook;
 use EasyCo\OperationalSales\Contracts\SaleLineRepository;
-use EasyCo\OperationalSales\Contracts\TransactionRepository;
 use EasyCo\OperationalSales\Enums\SaleLineType;
 use EasyCo\OperationalSales\SaleLine;
 use EasyCo\OperationalSales\Transaction;
@@ -91,7 +90,7 @@ final class OrderStatusChanger
         private readonly PaymentRepository $payments,
         private readonly OrderEventRecorder $events,
         private readonly OrderPaymentConfirmer $paymentConfirmer,
-        private readonly TransactionRepository $transactions,
+        private readonly OrderCurrentLinesResolver $currentLines,
         private readonly SaleLineRepository $saleLineRepository,
         private readonly ReturnGoodsRecorder $returnGoodsRecorder,
         private readonly OrderRefunder $orderRefunder,
@@ -281,7 +280,7 @@ final class OrderStatusChanger
 
                     if (! isset($byId[$id])) {
                         throw new InvalidArgumentException(
-                            "OrderStatusChanger: SaleLine \"{$id}\" is not a SALE line on this order's placement transaction."
+                            "OrderStatusChanger: SaleLine \"{$id}\" is not a current SALE line of this order."
                         );
                     }
 
@@ -300,7 +299,7 @@ final class OrderStatusChanger
     /**
      * R2's ONE implementation of "the goods come back", shared by cancel()
      * and recordReturn() — the only thing that differs between them is how
-     * $resolveLines turns the order's placement-transaction SALE lines into
+     * $resolveLines turns the order's current SALE lines into
      * {originatingLine, quantityReturned, restock} entries (cancel(): every
      * remaining unit of every line; recordReturn(): the operator's own map,
      * validated against those same lines). $legalStartingStatuses/
@@ -377,12 +376,13 @@ final class OrderStatusChanger
                 throw $refusalException($orderId, $lockedStatus);
             }
 
-            $placementTransaction = $this->transactions->findByIdWithSaleLines($order->transactionId());
-
-            $saleLines = array_values(array_filter(
-                $placementTransaction->saleLines(),
-                static fn (SaleLine $line): bool => $line->type() === SaleLineType::SALE,
-            ));
+            // The order's TRUE lines (order-editing-design.md §4.4), not just
+            // its placement transaction's: an edited order's original lines
+            // may have been reversed away and replaced by lines in an edit's
+            // own transaction. A line whose units are wholly or partly
+            // returned is still listed — the R7 arithmetic below and in
+            // $resolveLines decides what remains.
+            $saleLines = $this->currentLines->resolveWithReturns($order);
 
             $entries = $resolveLines($order, $saleLines);
 
