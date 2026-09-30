@@ -117,6 +117,8 @@ return [
         'refunded' => 'Money refunded',
         'payment_voided' => 'Pending payment voided',
         'note_added' => 'Internal note',
+        'edited' => 'Order edited',
+        'tracking_recorded' => 'Tracking number recorded',
     ],
 
     'delivery_type_options' => [

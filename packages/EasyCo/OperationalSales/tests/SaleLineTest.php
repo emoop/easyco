@@ -138,6 +138,21 @@ final class SaleLineTest extends TestCase
         ];
     }
 
+    /**
+     * order-editing-design.md §4.1 / stage 1 D3 — EDIT_REVERSAL is a real,
+     * distinct SaleLineType case, unused by any factory method this stage
+     * (D3's own "exists and is unused" posture), but a real value all the
+     * same: a separate string from REFUND's own 'refund', never confusable
+     * with it by any code that switches on the raw column value.
+     */
+    public function test_edit_reversal_is_a_real_distinct_case_from_refund(): void
+    {
+        $this->assertSame('edit_reversal', SaleLineType::EDIT_REVERSAL->value);
+        $this->assertNotSame(SaleLineType::REFUND, SaleLineType::EDIT_REVERSAL);
+        $this->assertNotSame(SaleLineType::REFUND->value, SaleLineType::EDIT_REVERSAL->value);
+        $this->assertSame(SaleLineType::EDIT_REVERSAL, SaleLineType::from('edit_reversal'));
+    }
+
     #[DataProvider('allTypesProvider')]
     public function test_valid_construction_succeeds_for_every_type(SaleLineType $type): void
     {
@@ -665,6 +680,65 @@ final class SaleLineTest extends TestCase
         $line = $this->create(['unitCost' => $this->money(400)]);
 
         $this->assertTrue($line->unitCost()->equals($this->money(400)));
+    }
+
+    /**
+     * order-editing-design.md §4.2 / stage 1 D4 — create()'s new,
+     * additive, last-and-defaulted $originatingSaleLineId parameter.
+     * WITHOUT it (the default), a SALE line still round-trips through
+     * reconstituteFromStorage() correctly — every existing call site
+     * keeps compiling and behaving unchanged.
+     */
+    public function test_create_without_the_new_originating_sale_line_id_param_round_trips_through_reconstitution(): void
+    {
+        $line = $this->create();
+
+        $this->assertNull($line->originatingSaleLineId());
+
+        $reconstituted = SaleLine::reconstituteFromStorage(
+            id: 'line-1',
+            transactionId: $line->transactionId(),
+            clientId: $line->clientId(),
+            priceableId: $line->priceableId(),
+            type: $line->type(),
+            status: $line->status(),
+            quantity: $line->quantity(),
+            amount: $line->amount(),
+            profit: $line->profit(),
+            recordedAt: $line->recordedAt(),
+            effectiveAt: $line->effectiveAt(),
+            originatingSaleLineId: $line->originatingSaleLineId(),
+        );
+
+        $this->assertNull($reconstituted->originatingSaleLineId());
+    }
+
+    /**
+     * A REAL, REPORTED FINDING (stage 1's own report), proven here rather
+     * than merely asserted in prose: the pre-existing
+     * assertOriginatingSaleLineIdMatchesType() guard (built earlier for
+     * createRefund()'s own use, :171-178) restricts a non-null
+     * originatingSaleLineId to type REFUND only — and create() always
+     * builds type SALE. So today, passing a non-null value through
+     * create()'s brand new parameter throws immediately, even though
+     * order-editing-design.md §4.2 explicitly designs this parameter for
+     * SALE lines (a fresh replacement line pointing at the line it
+     * replaces, "purely for lineage/audit"). This is NOT a bug introduced
+     * by this stage — D4 explicitly asked for no new assertion, and stage
+     * 1 does not touch the existing one (loosening it to also permit SALE
+     * is a real domain-layer semantic change, stage 2's "Domain" work, not
+     * schema). Until that guard is loosened, the new parameter is plumbed
+     * through and round-trips correctly when null (the test above), but is
+     * not yet USABLE with a real value via create() — this test documents
+     * that honestly instead of asserting a passing "round trip with a
+     * value" that does not reflect current, real behaviour.
+     */
+    public function test_create_with_a_non_null_originating_sale_line_id_currently_throws_because_the_existing_type_guard_only_permits_refund(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('originatingSaleLineId may only be set when type is REFUND, got sale');
+
+        $this->create(['originatingSaleLineId' => 'sale-line-0']);
     }
 
     public function test_create_throws_when_a_money_field_currency_does_not_match_amount(): void

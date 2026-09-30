@@ -115,6 +115,9 @@ return [
         'refunded' => 'Върнати пари',
         'payment_voided' => 'Чакащо плащане анулирано',
         'note_added' => 'Вътрешна бележка',
+        // Draft — flagged for the owner's review (§0's own posture for new copy).
+        'edited' => 'Поръчката е редактирана',
+        'tracking_recorded' => 'Записан е номер за проследяване',
     ],
 
     'delivery_type_options' => [

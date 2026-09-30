@@ -446,6 +446,7 @@ final class SaleLine
         array $soldAttributes,
         ?Money $unitCost = null,
         ?string $originatingReservationLineId = null,
+        ?string $originatingSaleLineId = null,
     ): self {
         self::assertProductNameAndSkuPresentForFreshSale($productName, $sku);
         self::assertSoldAttributesShape($soldAttributes);
@@ -474,6 +475,7 @@ final class SaleLine
             profit: $profit,
             recordedAt: $recordedAt,
             effectiveAt: $effectiveAt,
+            originatingSaleLineId: $originatingSaleLineId,
             originatingReservationLineId: $originatingReservationLineId,
             productName: $productName,
             sku: $sku,

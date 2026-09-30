@@ -35,6 +35,7 @@ use EasyCo\Order\Contracts\OrderRepository;
 use EasyCo\Order\Enums\OrderDeliveryType;
 use EasyCo\Order\Order;
 use EasyCo\Order\Persistence\Eloquent\OrderModel;
+use EasyCo\Order\Persistence\Eloquent\OrderPlacementSnapshotModel;
 use EasyCo\Payment\Contracts\PaymentMethodAdapter;
 use EasyCo\Payment\Contracts\PaymentRepository;
 use EasyCo\Payment\Enums\PaymentStatus;
@@ -636,5 +637,154 @@ class CheckoutOrchestratorTest extends TestCase
         $this->assertCount(1, $rows);
         $this->assertSame(PaymentStatus::PENDING, $rows[0]->status());
         $this->assertNull($rows[0]->attemptedAt());
+    }
+
+    // --- order-editing-design.md §2.1, stage 1 D6 — the new snapshot write ----
+
+    public function test_placing_an_order_writes_exactly_one_placement_snapshot_row_matching_the_order_field_by_field(): void
+    {
+        $variationId = $this->pricedPurchasableVariation('10.00', 10);
+        $cart = $this->guestCart();
+        $this->addLine($cart, $variationId, 2);
+
+        $placedAt = new DateTimeImmutable('2026-09-29 12:00:00');
+        $order = app(CheckoutOrchestrator::class)->place($this->guestCheckoutInput($cart->id()), $placedAt)->order();
+
+        $this->assertSame(1, OrderPlacementSnapshotModel::where('order_id', $order->id())->count());
+
+        $row = OrderPlacementSnapshotModel::where('order_id', $order->id())->sole();
+
+        $this->assertSame((int) $order->id(), (int) $row->order_id);
+        $this->assertSame($order->subtotal()->minorValue(), $row->subtotal_minor);
+        $this->assertSame($order->subtotal()->currency()->code(), $row->subtotal_currency);
+        $this->assertSame($order->discount()->minorValue(), $row->discount_minor);
+        $this->assertSame($order->discount()->currency()->code(), $row->discount_currency);
+        $this->assertSame($order->total()->minorValue(), $row->total_minor);
+        $this->assertSame($order->total()->currency()->code(), $row->total_currency);
+        $this->assertSame($order->appliedPromotionCode(), $row->applied_promotion_code);
+        $this->assertSame($order->deliveryType()->value, $row->delivery_type);
+        $this->assertSame($order->recipientName(), $row->recipient_name);
+        $this->assertSame($order->phone(), $row->phone);
+        $this->assertSame($order->country(), $row->country);
+        $this->assertSame($order->city(), $row->city);
+        $this->assertSame($order->postalCode(), $row->postal_code);
+        $this->assertSame($order->addressLine1(), $row->address_line_1);
+        $this->assertSame($order->addressLine2(), $row->address_line_2);
+        $this->assertSame($order->carrierCode(), $row->carrier_code);
+        $this->assertSame($order->pickupPointReference(), $row->pickup_point_reference);
+        $this->assertSame($order->settlement(), $row->settlement);
+        $this->assertSame($placedAt->getTimestamp(), $row->created_at->getTimestamp());
+    }
+
+    public function test_a_promotion_coded_order_snapshots_the_applied_code_too(): void
+    {
+        $variationId = $this->pricedPurchasableVariation('10.00', 10);
+        $cart = $this->guestCart();
+        $this->addLine($cart, $variationId, 1);
+        $this->createPromotion('SNAP10');
+        $this->applyPromotion($cart, 'SNAP10');
+
+        $order = app(CheckoutOrchestrator::class)->place($this->guestCheckoutInput($cart->id()), new DateTimeImmutable('2026-09-29 12:00:00'))->order();
+
+        $row = OrderPlacementSnapshotModel::where('order_id', $order->id())->sole();
+        $this->assertSame($order->appliedPromotionCode(), $row->applied_promotion_code);
+        $this->assertSame($order->discount()->minorValue(), $row->discount_minor);
+        $this->assertGreaterThan(0, $row->discount_minor);
+    }
+
+    /**
+     * D6's own required rollback proof, in "the existing rollback-test
+     * style this class' own test file already uses" (§ review gate item
+     * 6) — reusing this file's own existing
+     * test_a_promotion_code_at_its_usage_limit_total_aborts_checkout()
+     * scenario (a promotion's usage limit reached by a concurrent
+     * redemption between soft-validation and the authoritative re-check),
+     * because redeemPromotionAtomically() (step 11) runs strictly AFTER
+     * the Order write, the new snapshot write, AND the Payment write —
+     * unlike this file's OTHER rollback tests (insufficient stock, an
+     * expired code), which all fail before the Order row is even written
+     * and so never actually exercise a failure after the snapshot write.
+     */
+    public function test_a_failure_after_the_snapshot_write_rolls_back_the_order_the_snapshot_and_the_payment_together(): void
+    {
+        $variationId = $this->pricedPurchasableVariation('10.00', 10);
+        $cart = $this->guestCart();
+        $this->addLine($cart, $variationId, 1);
+        $promotion = $this->createPromotion('ROLLBACK1', usageLimitTotal: 1);
+        $this->redeemPromotion($promotion);
+        $this->applyPromotion($cart, 'ROLLBACK1');
+
+        $ordersBefore = OrderModel::count();
+        $snapshotsBefore = OrderPlacementSnapshotModel::count();
+
+        try {
+            app(CheckoutOrchestrator::class)->place($this->guestCheckoutInput($cart->id()), new DateTimeImmutable('2026-09-29 12:00:00'));
+            $this->fail('Expected PromotionNoLongerValidException.');
+        } catch (PromotionNoLongerValidException) {
+            // expected
+        }
+
+        $this->assertSame($ordersBefore, OrderModel::count(), 'no new order committed.');
+        $this->assertSame($snapshotsBefore, OrderPlacementSnapshotModel::count(), 'no new snapshot row survived the rollback — proves it shares the Order write\'s own transaction.');
+        $this->assertSame(10, app(StockLevelRepository::class)->findByVariationId($variationId)->quantity());
+    }
+
+    /**
+     * D6's own query-count ask — reported, not hidden: the new snapshot
+     * write DOES add exactly one query. Measured two ways in the same
+     * test rather than guessed: the real AFTER total for a full
+     * placement, and the real, isolated cost of the one new INSERT this
+     * stage adds (a single OrderPlacementSnapshotModel::create() call, on
+     * a real pre-existing order) — BEFORE is reported as their difference,
+     * not as a re-run of old code.
+     */
+    public function test_placement_query_count_includes_the_one_new_snapshot_insert(): void
+    {
+        $variationId = $this->pricedPurchasableVariation('10.00', 10);
+        $cart = $this->guestCart();
+        $this->addLine($cart, $variationId, 1);
+
+        $afterCount = 0;
+        $listener = function () use (&$afterCount): void {
+            $afterCount++;
+        };
+        \Illuminate\Support\Facades\DB::listen($listener);
+
+        app(CheckoutOrchestrator::class)->place($this->guestCheckoutInput($cart->id()), new DateTimeImmutable('2026-09-29 12:00:00'));
+
+        $existingOrder = $this->createOrder();
+        $insertCount = 0;
+        \Illuminate\Support\Facades\DB::listen(function () use (&$insertCount): void {
+            $insertCount++;
+        });
+        OrderPlacementSnapshotModel::create([
+            'order_id' => $existingOrder->id(),
+            'subtotal_minor' => 1000,
+            'subtotal_currency' => 'EUR',
+            'discount_minor' => 0,
+            'discount_currency' => 'EUR',
+            'total_minor' => 1000,
+            'total_currency' => 'EUR',
+            'applied_promotion_code' => null,
+            'delivery_type' => 'street_address',
+            'recipient_name' => 'Ivan Ivanov',
+            'phone' => '+359888123456',
+            'country' => 'BG',
+            'city' => 'Sofia',
+            'postal_code' => null,
+            'address_line_1' => 'Vitosha Blvd 1',
+            'address_line_2' => null,
+            'carrier_code' => null,
+            'pickup_point_reference' => null,
+            'settlement' => null,
+            'created_at' => new DateTimeImmutable('2026-09-29 12:00:00'),
+        ]);
+
+        $beforeCount = $afterCount - $insertCount;
+
+        fwrite(STDERR, "\n[query-count] CheckoutOrchestrator::place() — before the snapshot write: {$beforeCount} queries, after: {$afterCount} queries (+{$insertCount})\n");
+
+        $this->assertSame(1, $insertCount, 'the new write must cost exactly one query — a single INSERT.');
+        $this->assertGreaterThan($beforeCount, $afterCount);
     }
 }

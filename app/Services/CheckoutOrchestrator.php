@@ -17,6 +17,7 @@ use EasyCo\Inventory\Contracts\StockLevelRepository;
 use EasyCo\Order\Contracts\OrderRepository;
 use EasyCo\Order\Enums\OrderDeliveryType;
 use EasyCo\Order\Order;
+use EasyCo\Order\Persistence\Eloquent\OrderPlacementSnapshotModel;
 use EasyCo\OperationalSales\Enums\Channel;
 use EasyCo\OperationalSales\Enums\SaleLineStatus;
 use EasyCo\OperationalSales\Contracts\TransactionRepository;
@@ -373,6 +374,33 @@ final class CheckoutOrchestrator
         );
 
         $this->orders->save($order);
+
+        // order-editing-design.md §2.1 — one write-once snapshot row, a
+        // pure, mechanical copy of the Order row just saved above. Inside
+        // this same placement transaction, so a rollback anywhere else in
+        // Phase 1 takes this row with it, exactly like the Order itself.
+        OrderPlacementSnapshotModel::create([
+            'order_id' => $order->id(),
+            'subtotal_minor' => $order->subtotal()->minorValue(),
+            'subtotal_currency' => $order->subtotal()->currency()->code(),
+            'discount_minor' => $order->discount()->minorValue(),
+            'discount_currency' => $order->discount()->currency()->code(),
+            'total_minor' => $order->total()->minorValue(),
+            'total_currency' => $order->total()->currency()->code(),
+            'applied_promotion_code' => $order->appliedPromotionCode(),
+            'delivery_type' => $order->deliveryType()->value,
+            'recipient_name' => $order->recipientName(),
+            'phone' => $order->phone(),
+            'country' => $order->country(),
+            'city' => $order->city(),
+            'postal_code' => $order->postalCode(),
+            'address_line_1' => $order->addressLine1(),
+            'address_line_2' => $order->addressLine2(),
+            'carrier_code' => $order->carrierCode(),
+            'pickup_point_reference' => $order->pickupPointReference(),
+            'settlement' => $order->settlement(),
+            'created_at' => $placedAt,
+        ]);
 
         // Write the Payment row NOW, as PENDING with no attempt outcome
         // yet — see class docblock for why this moved into Phase 1. A

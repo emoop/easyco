@@ -22,6 +22,17 @@ namespace App\Enums;
  * - NOTE_ADDED        — an internal note an operator left on the order: the one
  *                       value that is not a change to the order at all. Both
  *                       statuses NULL, and `reason` holds the note itself.
+ * - EDITED            — order-editing-design.md §9: an OrderEditor edit ran.
+ *                       Both statuses NULL (an edit is not a transition,
+ *                       §2), `transaction_id` points at the edit's own new
+ *                       Transaction, `reason` holds the operator's own
+ *                       optional note.
+ * - TRACKING_RECORDED — order-editing-design.md §3: a courier tracking
+ *                       number was entered or corrected while `shipped`.
+ *                       Both statuses NULL, `reason` holds the tracking
+ *                       number itself verbatim. A correction writes a
+ *                       second row rather than rewriting the first
+ *                       (append-only) — the admin view shows the latest one.
  *
  * STORED AS A PLAIN STRING COLUMN, like every other enum column in this schema
  * (`orders.status`, `operational_sales_sale_lines.type`) — never a native DB
@@ -35,4 +46,6 @@ enum OrderEventType: string
     case REFUNDED = 'refunded';
     case PAYMENT_VOIDED = 'payment_voided';
     case NOTE_ADDED = 'note_added';
+    case EDITED = 'edited';
+    case TRACKING_RECORDED = 'tracking_recorded';
 }
