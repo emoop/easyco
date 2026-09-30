@@ -102,11 +102,10 @@ final class OrderAdminReader
         private readonly OrderRepository $orders,
         private readonly ClientRepository $clients,
         private readonly PaymentRepository $payments,
-        // R7's read, for the Lines table's own remaining-returnable capacity
-        // (order-lifecycle-design.md §8.4, stage 7c-1). The package contract,
-        // never EloquentSaleLineRepository directly — the same boundary this
-        // class already respects for orders/clients/payments.
-        private readonly SaleLineRepository $saleLines,
+        // The order's current lines and their returned/edited-away sums
+        // (R7's read and §4.4's, order-editing-design.md — stage 4a), shared
+        // with OrderEditor rather than re-derived here.
+        private readonly OrderCurrentLinesResolver $currentLines,
     ) {
     }
 
@@ -220,18 +219,13 @@ final class OrderAdminReader
             ->where('id', $order->transactionId())
             ->value('channel') ?? '—';
 
-        $rows = DB::table('operational_sales_sale_lines')
-            ->where('transaction_id', $order->transactionId())
-            ->where('type', SaleLineType::SALE->value)
-            ->where('status', SaleLineStatus::COMPLETED->value)
-            // A raw DB::table() read, so SaleLineModel's own SoftDeletes
-            // scope (softDeletes() column — "never hard-deleted...
-            // historical record") does not apply automatically here; a
-            // soft-deleted line must be excluded explicitly or a
-            // correction would keep rendering next to its own original.
-            ->whereNull('deleted_at')
-            ->orderBy('id')
-            ->get();
+        // The order's lines as they STAND NOW (order-editing-design.md §4.4),
+        // through the one shared resolver: the placement transaction's lines
+        // plus those of every earlier edit, minus whatever an edit reversed
+        // away. Each entry carries its own returned and edited-away sums,
+        // read in one grouped query each — never one per line.
+        $entries = $this->currentLines->resolveRows($order);
+        $rows = collect(array_column($entries, 'row'));
 
         // ONE read for every line's thumbnail, never one per line — see
         // imagePathsFor()'s own docblock. The View page's query-count test
@@ -241,23 +235,15 @@ final class OrderAdminReader
             $rows->pluck('priceable_id')->filter()->unique()->values()->all()
         );
 
-        // R7's read for the WHOLE order, batched (§8.4, stage 7c-1): ONE
-        // grouped query for every SALE line above, never one per line — the
-        // same discipline imagePathsFor() follows below, and the reason
-        // SaleLineRepository grew a plural twin of its single-line method
-        // rather than this loop calling the singular one. [] (and no query at
-        // all) for an order with no lines.
-        $returnedByLineId = $this->saleLines->sumQuantityReturnedForOriginatingLines(
-            $rows->pluck('id')->map(static fn (mixed $id): string => (string) $id)->all()
+        $lines = array_map(
+            fn (array $entry): OrderAdminSaleLineView => $this->buildLineView(
+                $entry['row'],
+                $entry['row']->priceable_id === null ? null : ($imagePathsByVariationId[$entry['row']->priceable_id] ?? null),
+                $entry['returned'],
+                $entry['editedAway'],
+            ),
+            $entries,
         );
-
-        $lines = $rows
-            ->map(fn (object $row): OrderAdminSaleLineView => $this->buildLineView(
-                $row,
-                $row->priceable_id === null ? null : ($imagePathsByVariationId[$row->priceable_id] ?? null),
-                $returnedByLineId[(string) $row->id] ?? 0,
-            ))
-            ->all();
 
         $hasPromotionRedemption = DB::table('promotion_redemptions')
             ->where('order_id', $orderId)
@@ -360,7 +346,7 @@ final class OrderAdminReader
      * nonsense max. Never rounded up to the quantity either: a line whose
      * units have all come back is legitimately 0.
      */
-    private function buildLineView(object $row, ?string $imagePath, int $returnedQuantity): OrderAdminSaleLineView
+    private function buildLineView(object $row, ?string $imagePath, int $returnedQuantity, int $editedAwayQuantity): OrderAdminSaleLineView
     {
         $quantity = (int) $row->quantity;
         $amountMinor = (int) $row->amount_minor;
@@ -388,6 +374,14 @@ final class OrderAdminReader
             // one expression, and the normal case (a sum within the
             // quantity) is what every legitimate write produces.
             remainingReturnable: max(0, $quantity - $returnedQuantity),
+            // Stage 4a: what an EDIT could still take of this line — its
+            // quantity less units returned AND units edited away. A separate
+            // question from remainingReturnable (whose meaning is unchanged);
+            // the same one-directional clamp applies. For a line that is
+            // still one of the order's lines editedAway is 0 by construction
+            // (a fully edited-away line is not listed at all), but it is
+            // subtracted so the number never depends on that.
+            remainingEditable: max(0, $quantity - $returnedQuantity - $editedAwayQuantity),
             lineTotal: $lineTotal,
             unitPrice: $unitPrice,
             regularUnitPrice: SaleLineMapper::moneyOrNull($row->regular_unit_price_minor, $row->regular_unit_price_currency, 'regularUnitPrice'),

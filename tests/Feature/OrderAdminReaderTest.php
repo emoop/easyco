@@ -434,11 +434,12 @@ class OrderAdminReaderTest extends TestCase
             app(\EasyCo\Order\Contracts\OrderRepository::class),
             app(\EasyCo\OperationalSales\Contracts\ClientRepository::class),
             app(\EasyCo\Payment\Contracts\PaymentRepository::class),
-            // Stage 7c-1's 4th collaborator: R7's read for the Lines table's
-            // own remainingReturnable. A real hand-built reader must supply it
-            // too — the constructor deliberately has no default, so a new
-            // dependency cannot be forgotten at a call site like this one.
-            app(\EasyCo\OperationalSales\Contracts\SaleLineRepository::class),
+            // The 4th collaborator (stage 7c-1's R7 read, since order-editing
+            // stage 4a served by the shared current-lines resolver, which
+            // also owns the returned sums). A real hand-built reader must
+            // supply it too — the constructor deliberately has no default, so
+            // a new dependency cannot be forgotten at a call site like this one.
+            app(\App\Services\OrderCurrentLinesResolver::class),
         );
 
         $lineAfter = $freshReader->forOrder($order->id())->lines[0];

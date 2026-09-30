@@ -364,4 +364,29 @@ class EloquentSaleLineRepositoryTest extends TestCase
         $this->assertSame([], $this->repository()->sumQuantityEditedAwayForOriginatingLines([]));
         $this->assertSame(0, $queries, 'an empty id list issues no query at all');
     }
+
+    /** Stage 4a T1: the batched sum agrees with the singular one for every id, including the untouched. */
+    public function test_the_batched_edited_away_sum_agrees_with_the_singular_method(): void
+    {
+        $clientId = $this->clientId();
+        $first = $this->saleLine($clientId);
+        $second = $this->saleLine($clientId);
+        $untouched = $this->saleLine($clientId);
+
+        $this->saveEditReversalRaw($clientId, $first->id(), 4);
+        $this->saveEditReversalRaw($clientId, $second->id(), 1);
+        $this->saveEditReversalRaw($clientId, $second->id(), 2);
+
+        $batched = $this->repository()->sumQuantityEditedAwayForOriginatingLines([$first->id(), $second->id(), $untouched->id()]);
+
+        foreach ([$first, $second, $untouched] as $line) {
+            $this->assertSame(
+                $this->repository()->sumQuantityEditedAwayForOriginatingLine($line->id()),
+                $batched[$line->id()] ?? 0,
+            );
+        }
+
+        $this->assertSame(0, $this->repository()->sumQuantityEditedAwayForOriginatingLine($untouched->id()), 'an untouched id is 0');
+        $this->assertArrayNotHasKey($untouched->id(), $batched);
+    }
 }

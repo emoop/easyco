@@ -257,7 +257,13 @@ class OrderAdminReaderEventsTest extends TestCase
      * WORKING AS DESIGNED: §8.4's remainingReturnable needed R7's read for the
      * order's lines, and it is ONE grouped query for the whole list (never one
      * per line — EloquentSaleLineRepository::sumQuantityReturnedForOriginatingLines()),
-     * so the cost is exactly +1: 9 + 1 (events) + 1 (returns) = 11. An order
+     * so the cost is exactly +1: 9 + 1 (events) + 1 (returns) = 11.
+     *
+     * ORDER-EDITING STAGE 4A UPDATED IT AGAIN, +2, CONSCIOUSLY: the Lines are
+     * now the order's CURRENT lines (OrderCurrentLinesResolver), which adds the
+     * EDITED-event read that finds any edit transactions (1) and the grouped
+     * edited-away sum (1) — 11 + 2 = 13. Still constant per order: neither is
+     * per line. An order
      * with no lines costs no returns query at all (that method returns [] for
      * an empty id list before touching the database), which is why this
      * fixture — one line, like the pre-stage-3 baseline — is the one that sees
@@ -273,7 +279,7 @@ class OrderAdminReaderEventsTest extends TestCase
 
         fwrite(STDERR, "\n[query-count] forOrder(): 9 queries on 01398d9 (no events, no returns read), {$queries} with the events read and stage 7c-1's returns read\n");
 
-        $this->assertSame(11, $queries, 'forOrder() must cost the pre-stage-3 9 queries plus exactly ONE for the events list and ONE for stage 7c-1\'s batched returns read');
+        $this->assertSame(13, $queries, 'forOrder() must cost the pre-stage-3 9 queries plus ONE for the events list, ONE for stage 7c-1 s batched returns read, and TWO for stage 4a s current-lines resolution (the EDITED-event read and the batched edited-away sum)');
     }
 
     /**
@@ -357,9 +363,9 @@ class OrderAdminReaderEventsTest extends TestCase
         fwrite(STDERR, "\n[query-count] forOrder(): 1 line = {$queriesForOne} queries, 5 lines = {$queriesForFive} queries\n");
 
         $this->assertSame(
-            11,
+            13,
             $queriesForFive,
-            'nine reads for the order and its lines, one for its history, one for the returns summed across those lines'
+            'nine reads for the order and its lines, one for its history, one for the returns summed across those lines, and two for the current-lines resolution (EDITED events, edited-away sum)'
         );
 
         $this->assertSame(
@@ -398,8 +404,10 @@ class OrderAdminReaderEventsTest extends TestCase
 
         $eventStatements = array_values(array_filter(
             $statements,
-            static fn (string $sql): bool => str_contains(strtolower($sql), 'order_events')
+            static fn (string $sql): bool => str_starts_with(strtolower($sql), 'select * from `order_events`')
         ));
+        // (The resolver's own `select transaction_id from order_events` — stage 4a's
+        // EDITED-event read — is a different, narrower statement and is excluded.)
 
         $this->assertCount(1, $eventStatements, 'the history is exactly ONE query');
 

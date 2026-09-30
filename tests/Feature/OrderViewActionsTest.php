@@ -449,6 +449,10 @@ class OrderViewActionsTest extends TestCase
 
         fwrite(STDERR, "\n[query-count] order view page with the four actions' own visibility checks (shipped, mark_as_received eligible): {$count} queries\n");
 
+        // Order-editing stage 4a: 23 -> 25 (+2, forOrder()'s current-lines
+        // resolution: the EDITED-event read and the batched edited-away sum). The
+        // ceiling was 25 with two of headroom; it is now met exactly, so the next
+        // added read must update this number consciously.
         $this->assertLessThanOrEqual(25, $count);
     }
 }

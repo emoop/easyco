@@ -3,15 +3,11 @@
 namespace App\Services;
 
 use App\Enums\OrderEventType;
-use App\Models\OrderEventModel;
 use App\Services\Exceptions\PromotionNoLongerValidException;
 use App\Services\Exceptions\SaleLineOrderReconciliationException;
 use App\Services\Exceptions\StaleOrderEditException;
 use DateTimeImmutable;
 use EasyCo\Extensibility\Hook;
-use EasyCo\OperationalSales\Contracts\SaleLineRepository;
-use EasyCo\OperationalSales\Contracts\TransactionRepository;
-use EasyCo\OperationalSales\Enums\SaleLineType;
 use EasyCo\OperationalSales\SaleLine;
 use EasyCo\Order\Contracts\OrderRepository;
 use EasyCo\Order\Enums\OrderStatus;
@@ -98,8 +94,7 @@ final class OrderEditor
     public function __construct(
         private readonly OrderRepository $orders,
         private readonly PaymentRepository $payments,
-        private readonly TransactionRepository $transactions,
-        private readonly SaleLineRepository $saleLineRepository,
+        private readonly OrderCurrentLinesResolver $currentLinesResolver,
         private readonly OrderLineEditor $lineEditor,
         private readonly OrderEventRecorder $events,
         private readonly PendingPaymentReissuer $paymentReissuer,
@@ -200,7 +195,7 @@ final class OrderEditor
         $pendingPayment = $this->paymentReissuer->currentPending($orderPayments, $orderId);
 
         // 4. The order's current lines.
-        $currentLines = $this->currentLines($order);
+        $currentLines = $this->currentLinesResolver->resolve($order);
 
         // 5. The promotion plan, and every resulting line's share.
         $plan = $this->planPromotion($order, $currentLines, $lineChanges, $promotionCode);
@@ -300,96 +295,6 @@ final class OrderEditor
         );
 
         return $order;
-    }
-
-    /**
-     * §4.4's "current lines", in one bounded read: every SALE line of the
-     * placement transaction PLUS every SALE line of each earlier edit's own
-     * transaction (reachable through order_events(EDITED).transaction_id,
-     * §4.4's own join path — without it a second edit would see no lines at
-     * all, since the first edit reversed the placement lines and re-wrote
-     * them into its own transaction), keeping those with
-     * remaining = quantity - returned - editedAway > 0. Both sums are
-     * batched (one query each), never per line.
-     *
-     * At placed/confirmed nothing has been returned yet, so `returned` is 0;
-     * it is subtracted anyway, because "current" means exactly this formula.
-     *
-     * @return array<int, SaleLine>
-     */
-    private function currentLines(Order $order): array
-    {
-        $transactionIds = [$order->transactionId()];
-
-        $editTransactionIds = OrderEventModel::query()
-            ->where('order_id', $order->id())
-            ->where('type', OrderEventType::EDITED->value)
-            ->whereNotNull('transaction_id')
-            ->orderBy('id')
-            ->pluck('transaction_id')
-            ->map(static fn (mixed $id): string => (string) $id)
-            ->all();
-
-        foreach ($editTransactionIds as $id) {
-            $transactionIds[] = $id;
-        }
-
-        $candidates = [];
-
-        foreach ($transactionIds as $transactionId) {
-            $transaction = $this->transactions->findByIdWithSaleLines($transactionId);
-
-            if ($transaction === null) {
-                throw new InvalidArgumentException(
-                    "OrderEditor: transaction \"{$transactionId}\" of order \"{$order->id()}\" does not exist."
-                );
-            }
-
-            foreach ($transaction->saleLines() as $line) {
-                if ($line->type() === SaleLineType::SALE) {
-                    $candidates[] = $line;
-                }
-            }
-        }
-
-        $ids = array_map(static fn (SaleLine $line): string => (string) $line->id(), $candidates);
-        $returned = $this->saleLineRepository->sumQuantityReturnedForOriginatingLines($ids);
-        $editedAway = $this->saleLineRepository->sumQuantityEditedAwayForOriginatingLines($ids);
-
-        $current = [];
-
-        foreach ($candidates as $line) {
-            $id = (string) $line->id();
-            $remaining = $line->quantity() - ($returned[$id] ?? 0) - ($editedAway[$id] ?? 0);
-
-            if ($remaining <= 0) {
-                continue;
-            }
-
-            if ($remaining !== $line->quantity()) {
-                // An edit reverses a line in full and a return cannot exist
-                // before shipping, so a partly-remaining line is a state no
-                // writer here produces — refused rather than edited around.
-                throw new InvalidArgumentException(
-                    "OrderEditor: line \"{$id}\" of order \"{$order->id()}\" is only partly remaining ({$remaining} of {$line->quantity()}) — an anomaly, refused."
-                );
-            }
-
-            // Totals are recomputed from every current line, so a line with
-            // no §3.13 snapshot (written before stage 4d) cannot be summed
-            // honestly — refused for the whole order, never guessed at.
-            if ($line->netPaidAmount() === null || $line->promotionDiscountShare() === null
-                || $line->discretionaryDiscount() === null || $line->finalUnitPrice() === null
-                || $line->regularUnitPrice() === null || $line->priceableId() === null) {
-                throw new InvalidArgumentException(
-                    "OrderEditor: line \"{$id}\" of order \"{$order->id()}\" carries no §3.13 snapshot, so the order's totals cannot be recomputed from it. Such an order is not edited."
-                );
-            }
-
-            $current[] = $line;
-        }
-
-        return $current;
     }
 
     /**

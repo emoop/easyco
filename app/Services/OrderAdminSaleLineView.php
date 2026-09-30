@@ -76,6 +76,15 @@ use EasyCo\Pricing\Money;
  * refuses it), so a sum above the quantity means corrupted data — and "nothing
  * left to return" is the safe reading of that, whereas a negative capacity
  * would reach the form as a nonsense max.
+ *
+ * remainingEditable (order-editing stage 4a) IS THE SAME READ FOR THE OTHER
+ * OPERATION: quantity minus units returned against the line minus units
+ * edited away from it (EDIT_REVERSAL lines sharing its originating id) — what
+ * a future edit could still take. remainingReturnable's meaning is unchanged
+ * (return-only); the two answer different questions, and E1's status windows
+ * (edit at placed/confirmed, return at shipped/delivered) mean at most one is
+ * operationally relevant at a time, though a line's history exists regardless
+ * of the order's current status. Same one-directional clamp at 0.
  */
 final class OrderAdminSaleLineView
 {
@@ -90,6 +99,7 @@ final class OrderAdminSaleLineView
         public readonly ?string $sku,
         public readonly int $quantity,
         public readonly int $remainingReturnable,
+        public readonly int $remainingEditable,
         public readonly Money $lineTotal,
         public readonly ?Money $unitPrice,
         public readonly ?Money $regularUnitPrice,
