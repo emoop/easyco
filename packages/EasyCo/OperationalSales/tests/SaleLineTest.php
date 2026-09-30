@@ -99,6 +99,7 @@ final class SaleLineTest extends TestCase
                 soldAttributes: $args['soldAttributes'] ?? [],
                 unitCost: $args['unitCost'],
                 originatingReservationLineId: $args['originatingReservationLineId'],
+                originatingSaleLineId: $args['originatingSaleLineId'],
             );
         }
 
@@ -238,15 +239,13 @@ final class SaleLineTest extends TestCase
     }
 
     /**
-     * SALE removed from this provider: create() has no
-     * $originatingSaleLineId parameter at all (only REFUND ever legally
-     * carries one) — there is no longer any way to even ATTEMPT setting
-     * it on a fresh SALE line through the public API, a stronger
-     * guarantee than the old runtime-only rejection. The Tier A rule
-     * itself stays fully covered by the three remaining, still-reachable
-     * cases below.
+     * order-editing-design.md §4.1/§4.2, stage 2 (D5) — WIDENED, NOT
+     * "except refund" any more: the allow-list is now REFUND/SALE/
+     * EDIT_REVERSAL. RESERVATION/SHIPPING/INSTALLMENT_PAYMENT are the
+     * three types that still refuse a non-null value — the ones this
+     * provider now names accurately.
      */
-    public static function nonRefundTypesProvider(): array
+    public static function typesThatStillRejectOriginatingSaleLineIdProvider(): array
     {
         return [
             'RESERVATION' => [SaleLineType::RESERVATION],
@@ -255,8 +254,8 @@ final class SaleLineTest extends TestCase
         ];
     }
 
-    #[DataProvider('nonRefundTypesProvider')]
-    public function test_originating_sale_line_id_is_rejected_on_every_type_except_refund(SaleLineType $type): void
+    #[DataProvider('typesThatStillRejectOriginatingSaleLineIdProvider')]
+    public function test_originating_sale_line_id_is_still_rejected_on_reservation_shipping_and_installment_payment(SaleLineType $type): void
     {
         $args = $this->baseArgsFor($type);
 
@@ -276,6 +275,63 @@ final class SaleLineTest extends TestCase
         ]);
 
         $this->assertSame('sale-line-1', $line->originatingSaleLineId());
+    }
+
+    /**
+     * order-editing-design.md §4.2, stage 2 (D5) — SALE now accepts it
+     * too (a fresh replacement line's own lineage pointer). Constructed
+     * via createNonSale() here rather than create() (which has its own,
+     * separately-tested coverage further down) — createNonSale() runs
+     * only Tier A, exactly what this guard is.
+     */
+    public function test_originating_sale_line_id_is_accepted_on_sale(): void
+    {
+        $line = $this->construct(SaleLineType::SALE, [
+            'status' => SaleLineStatus::COMPLETED,
+            'originatingSaleLineId' => 'sale-line-1',
+        ]);
+
+        $this->assertSame('sale-line-1', $line->originatingSaleLineId());
+    }
+
+    /**
+     * order-editing-design.md §4.1, stage 2 (D5) — EDIT_REVERSAL also
+     * accepts it: the line an edit fully/partially reverses. No factory
+     * targets EDIT_REVERSAL yet (D3's own "exists and is unused" —
+     * stage 3's OrderEditor is the first real writer), so this goes
+     * through reconstituteFromStorage() directly, exactly as T2 asks.
+     *
+     * A REAL, REPORTED FINDING, deliberately NOT worked around here:
+     * assertRefundFieldsMatchType() (SaleLine.php, still REFUND-only)
+     * was NOT touched by this stage's D5 — only asked to loosen
+     * assertOriginatingSaleLineIdMatchesType() — so a REAL EDIT_REVERSAL
+     * row carrying its own quantityReturned/defaultRefundAmount/etc.
+     * (§4.1's "reuses the entire REFUND-shaped column set") would
+     * currently still throw. This test only proves the ONE guard this
+     * stage was asked to loosen; it leaves the REFUND-shaped fields null
+     * to stay inside that guard's own boundary — Stage 3 (or whichever
+     * stage first writes a real EDIT_REVERSAL row) will need to widen
+     * assertRefundFieldsMatchType() too before that write is possible.
+     */
+    public function test_originating_sale_line_id_is_accepted_on_edit_reversal(): void
+    {
+        $line = SaleLine::reconstituteFromStorage(
+            id: 'line-1',
+            transactionId: 'txn-1',
+            clientId: 'client-1',
+            priceableId: 'priceable-1',
+            type: SaleLineType::EDIT_REVERSAL,
+            status: SaleLineStatus::COMPLETED,
+            quantity: 1,
+            amount: $this->money(),
+            profit: $this->money(0),
+            recordedAt: $this->now(),
+            effectiveAt: $this->now(),
+            originatingSaleLineId: 'sale-line-1',
+        );
+
+        $this->assertSame('sale-line-1', $line->originatingSaleLineId());
+        $this->assertSame(SaleLineType::EDIT_REVERSAL, $line->type());
     }
 
     public static function nonSaleTypesProvider(): array
@@ -714,31 +770,26 @@ final class SaleLineTest extends TestCase
     }
 
     /**
-     * A REAL, REPORTED FINDING (stage 1's own report), proven here rather
-     * than merely asserted in prose: the pre-existing
-     * assertOriginatingSaleLineIdMatchesType() guard (built earlier for
-     * createRefund()'s own use, :171-178) restricts a non-null
-     * originatingSaleLineId to type REFUND only — and create() always
-     * builds type SALE. So today, passing a non-null value through
-     * create()'s brand new parameter throws immediately, even though
-     * order-editing-design.md §4.2 explicitly designs this parameter for
-     * SALE lines (a fresh replacement line pointing at the line it
-     * replaces, "purely for lineage/audit"). This is NOT a bug introduced
-     * by this stage — D4 explicitly asked for no new assertion, and stage
-     * 1 does not touch the existing one (loosening it to also permit SALE
-     * is a real domain-layer semantic change, stage 2's "Domain" work, not
-     * schema). Until that guard is loosened, the new parameter is plumbed
-     * through and round-trips correctly when null (the test above), but is
-     * not yet USABLE with a real value via create() — this test documents
-     * that honestly instead of asserting a passing "round trip with a
-     * value" that does not reflect current, real behaviour.
+     * OBSOLETE ASSERTION, REWRITTEN, NOT DELETED (order-editing-design.md
+     * §4.1/§4.2, stage 2 D5): stage 1's own test here asserted that
+     * create() throws when passed a non-null originatingSaleLineId —
+     * true only because assertOriginatingSaleLineIdMatchesType() then
+     * restricted the field to type REFUND only, and create() always
+     * builds type SALE. Stage 1's own report flagged this as a real
+     * blocker for §4.2's "fresh replacement SALE line, pointing at the
+     * line it replaces" use case, explicitly deferring the fix to this
+     * stage rather than touching the guard itself (a domain-layer
+     * semantic change out of schema-only scope). The guard has now
+     * widened to REFUND/SALE/EDIT_REVERSAL (SaleLine.php's own updated
+     * docblock) — so the same call that used to throw now succeeds, and
+     * this test proves that directly rather than just asserting the old,
+     * now-obsolete throw.
      */
-    public function test_create_with_a_non_null_originating_sale_line_id_currently_throws_because_the_existing_type_guard_only_permits_refund(): void
+    public function test_create_now_accepts_a_non_null_originating_sale_line_id(): void
     {
-        $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('originatingSaleLineId may only be set when type is REFUND, got sale');
+        $line = $this->create(['originatingSaleLineId' => 'sale-line-0']);
 
-        $this->create(['originatingSaleLineId' => 'sale-line-0']);
+        $this->assertSame('sale-line-0', $line->originatingSaleLineId());
     }
 
     public function test_create_throws_when_a_money_field_currency_does_not_match_amount(): void

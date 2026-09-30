@@ -239,12 +239,24 @@ final class OrderTest extends TestCase
         $this->streetAddressOrder(['addressLine1' => null]);
     }
 
-    public function test_street_address_with_carrier_code_throws(): void
+    /**
+     * order-editing-design.md §3 (D4, stage 2) — OBSOLETE ASSERTION,
+     * REWRITTEN, NOT DELETED: this test used to assert that a STREET_ADDRESS
+     * order with a non-null carrierCode throws. That was only ever true
+     * because "set/change the courier on a street-address order" (E2) did
+     * not exist yet — assertFieldsMatchDeliveryType() has since been
+     * narrowed to stop forbidding carrierCode for STREET_ADDRESS
+     * (pickupPointReference/settlement stay forbidden, unchanged). This is
+     * a real, intentional relaxation of create()'s own behaviour, not just
+     * the new reviseDelivery() mutator's — the two share one implementation.
+     */
+    public function test_street_address_with_carrier_code_now_succeeds(): void
     {
-        $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('carrierCode');
+        $order = $this->streetAddressOrder(['carrierCode' => 'econt']);
 
-        $this->streetAddressOrder(['carrierCode' => 'econt']);
+        $this->assertSame('econt', $order->carrierCode());
+        $this->assertNull($order->pickupPointReference());
+        $this->assertNull($order->settlement());
     }
 
     public function test_street_address_with_pickup_point_reference_throws(): void

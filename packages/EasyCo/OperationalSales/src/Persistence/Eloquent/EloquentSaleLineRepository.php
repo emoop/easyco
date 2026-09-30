@@ -16,6 +16,23 @@ final class EloquentSaleLineRepository implements SaleLineRepository
     }
 
     /**
+     * order-editing-design.md §4.5, stage 2 (D6) — mirrors
+     * sumQuantityReturnedForOriginatingLine() exactly, summing
+     * EDIT_REVERSAL-type lines instead of REFUND-type ones. Same
+     * SoftDeletes-scope reasoning applies unchanged: a soft-deleted
+     * EDIT_REVERSAL line (a correction) must stop counting toward "how
+     * much was edited away," and reading through SaleLineModel::query()
+     * gets that for free.
+     */
+    public function sumQuantityEditedAwayForOriginatingLine(string $originatingSaleLineId): int
+    {
+        return (int) SaleLineModel::query()
+            ->where('type', SaleLineType::EDIT_REVERSAL->value)
+            ->where('originating_sale_line_id', $originatingSaleLineId)
+            ->sum('quantity_returned');
+    }
+
+    /**
      * The same condition, grouped — see the contract's own docblock for why
      * this exists ([], and no query, for an empty id list; an id with no
      * REFUND lines absent rather than 0).

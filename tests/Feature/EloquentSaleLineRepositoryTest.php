@@ -250,4 +250,87 @@ class EloquentSaleLineRepositoryTest extends TestCase
         $this->assertSame(0, $this->repository()->sumQuantityReturnedForOriginatingLine($origin->id()));
         $this->assertSame([], $this->repository()->sumQuantityReturnedForOriginatingLines([$origin->id()]));
     }
+
+    // --- sumQuantityEditedAwayForOriginatingLine (order-editing-design.md §4.5, stage 2 D6) ---
+
+    /**
+     * A REAL, REPORTED FINDING: unlike saveRefund() above (a real,
+     * legitimate SaleLine::createRefund() call), there is currently no
+     * public domain-layer path that can construct an EDIT_REVERSAL line
+     * carrying its own quantity_returned — createRefund() hardcodes
+     * type: REFUND, and the constructor's own assertRefundFieldsMatchType()
+     * (Tier A, always enforced, including through reconstituteFromStorage())
+     * still only allows the REFUND-shaped fields non-null for type REFUND.
+     * Stage 2's own D5 only widened assertOriginatingSaleLineIdMatchesType()
+     * — assertRefundFieldsMatchType() was explicitly out of that decision's
+     * scope, so this row is written with a raw DB insert, same as this
+     * file's own existing soft-delete test does for its own setup. This
+     * test exercises the REPOSITORY METHOD (a read of whatever the type/
+     * originating_sale_line_id/quantity_returned columns hold), which is
+     * independent of how a row got there — but a real caller (Stage 3's
+     * OrderEditor) cannot legally write this row yet through the domain
+     * layer, and will need assertRefundFieldsMatchType() widened first.
+     */
+    private function saveEditReversalRaw(string $clientId, string $originatingSaleLineId, int $quantityReturned): void
+    {
+        $transaction = new Transaction(null, Channel::WEB);
+        app(TransactionRepository::class)->save($transaction);
+
+        DB::table('operational_sales_sale_lines')->insert([
+            'transaction_id' => $transaction->id(),
+            'client_id' => $clientId,
+            'priceable_id' => 'variation-1',
+            'type' => 'edit_reversal',
+            'status' => 'completed',
+            'quantity' => 1,
+            'amount_minor' => 1000 * $quantityReturned,
+            'amount_currency' => 'EUR',
+            'profit_minor' => 0,
+            'profit_currency' => 'EUR',
+            'recorded_at' => $this->now(),
+            'effective_at' => $this->now(),
+            'originating_sale_line_id' => $originatingSaleLineId,
+            'quantity_returned' => $quantityReturned,
+            'created_at' => $this->now(),
+            'updated_at' => $this->now(),
+        ]);
+    }
+
+    public function test_edited_away_returns_zero_for_a_line_never_edited(): void
+    {
+        $origin = $this->saleLine($this->clientId());
+
+        $this->assertSame(0, $this->repository()->sumQuantityEditedAwayForOriginatingLine($origin->id()));
+    }
+
+    public function test_edited_away_sums_correctly_across_two_edit_reversal_lines(): void
+    {
+        $clientId = $this->clientId();
+        $origin = $this->saleLine($clientId);
+
+        $this->saveEditReversalRaw($clientId, $origin->id(), 2);
+        $this->saveEditReversalRaw($clientId, $origin->id(), 3);
+
+        $this->assertSame(5, $this->repository()->sumQuantityEditedAwayForOriginatingLine($origin->id()));
+    }
+
+    /**
+     * §4.4's own "temporally disjoint" reasoning, proven directly: a REFUND
+     * against a line and an EDIT_REVERSAL against the SAME line are summed
+     * completely independently — sumQuantityEditedAwayForOriginatingLine()
+     * never counts the REFUND, and sumQuantityReturnedForOriginatingLine()
+     * never counts the EDIT_REVERSAL. Also proves a SALE line for the same
+     * originating id contributes to neither sum.
+     */
+    public function test_edited_away_ignores_refund_and_sale_lines_for_the_same_originating_line(): void
+    {
+        $clientId = $this->clientId();
+        $origin = $this->saleLine($clientId);
+
+        $this->saveRefund($origin, 2);
+        $this->saveEditReversalRaw($clientId, $origin->id(), 3);
+
+        $this->assertSame(3, $this->repository()->sumQuantityEditedAwayForOriginatingLine($origin->id()), 'must not double-count the REFUND line.');
+        $this->assertSame(2, $this->repository()->sumQuantityReturnedForOriginatingLine($origin->id()), 'must not double-count the EDIT_REVERSAL line.');
+    }
 }

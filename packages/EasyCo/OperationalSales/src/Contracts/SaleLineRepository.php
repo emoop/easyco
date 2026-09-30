@@ -32,6 +32,25 @@ interface SaleLineRepository
     public function sumQuantityReturnedForOriginatingLine(string $originatingSaleLineId): int;
 
     /**
+     * order-editing-design.md §4.5, stage 2 (D6) — the same shape as
+     * sumQuantityReturnedForOriginatingLine() above, but sums
+     * quantity_returned across EDIT_REVERSAL-type lines only (never
+     * REFUND): "how much of this line has been edited away," a sum kept
+     * genuinely independent of "how much has been returned" (§4.4's own
+     * "temporally disjoint" reasoning — editing is legal only at
+     * placed/confirmed, a return only at shipped/delivered, so at most one
+     * of the two sums is ever non-zero for a given line). Zero when the
+     * line has never had an edit reverse any of it.
+     *
+     * NO BATCHED/PLURAL SIBLING IN THIS STAGE, DELIBERATELY: the plural
+     * sumQuantityReturnedForOriginatingLines() above was only added later,
+     * once a real admin-UI page needed to avoid N+1 across many lines at
+     * once (§8.4) — this stage has no such caller yet, so one is not built
+     * ahead of a real need.
+     */
+    public function sumQuantityEditedAwayForOriginatingLine(string $originatingSaleLineId): int;
+
+    /**
      * The same sum for MANY originating lines at once, keyed by
      * originating_sale_line_id — ONE query for the whole set (grouped, not
      * per id), so §8.4's per-line returnable quantity costs the View page

@@ -6,6 +6,7 @@ use DateTimeImmutable;
 use EasyCo\Order\Enums\OrderDeliveryType;
 use EasyCo\Order\Enums\OrderStatus;
 use EasyCo\Order\Exceptions\InvalidOrderTransitionException;
+use EasyCo\Order\Exceptions\OrderNotEditableException;
 use EasyCo\Pricing\Currency;
 use EasyCo\Pricing\Money;
 use InvalidArgumentException;
@@ -60,26 +61,33 @@ final class Order
         private readonly string $transactionId,
         private readonly string $email,
         private readonly Currency $currency,
-        private readonly Money $subtotal,
-        private readonly Money $discount,
-        private readonly Money $total,
-        private readonly ?string $appliedPromotionCode,
+        // NOT readonly (stage 2) — reviseTotals() changes these four
+        // together, one-shot, never partially (order-editing-design.md §2).
+        private Money $subtotal,
+        private Money $discount,
+        private Money $total,
+        private ?string $appliedPromotionCode,
         // NOT readonly — the one field the mutators below change (see this
         // class's own "MOSTLY IMMUTABLE" paragraph and §5.1).
         private OrderStatus $status,
         private readonly DateTimeImmutable $placedAt,
+        // STAYS readonly (stage 2, D2) — provenance ("which saved address
+        // this order started from"), never a live pointer reviseDelivery()
+        // re-targets.
         private readonly ?string $addressId,
-        private readonly OrderDeliveryType $deliveryType,
-        private readonly string $recipientName,
-        private readonly string $phone,
-        private readonly ?string $country,
-        private readonly ?string $city,
-        private readonly ?string $postalCode,
-        private readonly ?string $addressLine1,
-        private readonly ?string $addressLine2,
-        private readonly ?string $carrierCode,
-        private readonly ?string $pickupPointReference,
-        private readonly ?string $settlement,
+        // NOT readonly (stage 2) — reviseDelivery() replaces the whole
+        // delivery snapshot below atomically, one-shot.
+        private OrderDeliveryType $deliveryType,
+        private string $recipientName,
+        private string $phone,
+        private ?string $country,
+        private ?string $city,
+        private ?string $postalCode,
+        private ?string $addressLine1,
+        private ?string $addressLine2,
+        private ?string $carrierCode,
+        private ?string $pickupPointReference,
+        private ?string $settlement,
     ) {
         self::assertNotEmpty('email', $email);
         self::assertNotEmpty('recipientName', $recipientName);
@@ -149,11 +157,22 @@ final class Order
     /**
      * Enforces exclusivity between STREET_ADDRESS fields
      * (country/city/postalCode/addressLine1/addressLine2) and
-     * PICKUP_POINT fields (carrierCode/pickupPointReference/settlement)
-     * in BOTH directions — byte-for-byte the same rule
+     * PICKUP_POINT fields (pickupPointReference/settlement) in BOTH
+     * directions — byte-for-byte the same rule
      * EasyCo\Address\Address::assertFieldsMatchDeliveryType() already
      * enforces, deliberately duplicated rather than shared (see this
      * class's own docblock).
+     *
+     * order-editing-design.md §3 (D4, stage 2) — ONE NARROWING, STATED
+     * EXPLICITLY: carrierCode is no longer forbidden for STREET_ADDRESS.
+     * E2 asks for "set/change the courier" on any order, including a
+     * street-address one — a real, new fact this class could not represent
+     * before. pickupPointReference/settlement stay exactly as forbidden as
+     * before (a location identifier is still meaningless for a home
+     * delivery). This method is called by BOTH create() and
+     * reviseDelivery() (stage 2's own new mutator), so the relaxation
+     * applies to FRESH orders too, not only edited ones — an intentional
+     * consequence of there being one implementation, not a side effect.
      */
     private static function assertFieldsMatchDeliveryType(
         OrderDeliveryType $deliveryType,
@@ -173,7 +192,7 @@ final class Order
                 }
             }
 
-            foreach (['carrierCode' => $carrierCode, 'pickupPointReference' => $pickupPointReference, 'settlement' => $settlement] as $name => $value) {
+            foreach (['pickupPointReference' => $pickupPointReference, 'settlement' => $settlement] as $name => $value) {
                 if ($value !== null) {
                     throw new InvalidArgumentException("Order {$name} must be null when deliveryType is STREET_ADDRESS, got a non-null value.");
                 }
@@ -474,6 +493,90 @@ final class Order
         }
 
         $this->status = $to;
+    }
+
+    /**
+     * order-editing-design.md §1 (E1) / §2, stage 2 — the shared guard
+     * both edit mutators below run first. Not part of transitionTo()'s own
+     * matrix: an edit is not a transition (§2's own "status itself is
+     * untouched by either mutator"), so it lives here instead, as its own
+     * narrow check.
+     */
+    private function assertEditable(): void
+    {
+        if (! in_array($this->status, [OrderStatus::PLACED, OrderStatus::CONFIRMED], true)) {
+            throw OrderNotEditableException::because($this->status);
+        }
+    }
+
+    /**
+     * order-editing-design.md §2, stage 2 (D1) — one-shot, never partial:
+     * all three Money fields plus the promo code move together, because
+     * there is no such thing as editing just discount. Trusts its caller
+     * (stage 3's OrderEditor) to have computed these correctly from the
+     * order's real, current lines — no formula/consistency assertion is
+     * run here, the same trust create()'s own callers already get for
+     * these exact fields.
+     */
+    public function reviseTotals(Money $subtotal, Money $discount, Money $total, ?string $appliedPromotionCode): void
+    {
+        $this->assertEditable();
+
+        $this->subtotal = $subtotal;
+        $this->discount = $discount;
+        $this->total = $total;
+        $this->appliedPromotionCode = $appliedPromotionCode;
+    }
+
+    /**
+     * order-editing-design.md §2/§3, stage 2 (D2) — one-shot, atomic
+     * replacement of the whole delivery snapshot, running the exact same
+     * assertFieldsMatchDeliveryType() create() already runs (one
+     * implementation, called from two places now). addressId is
+     * DELIBERATELY NOT a parameter and is NEVER touched by this method —
+     * it stays exactly what it was at placement: provenance ("which saved
+     * address this order started from"), not a live pointer this method
+     * re-targets on every edit.
+     */
+    public function reviseDelivery(
+        OrderDeliveryType $deliveryType,
+        string $recipientName,
+        string $phone,
+        ?string $country,
+        ?string $city,
+        ?string $postalCode,
+        ?string $addressLine1,
+        ?string $addressLine2,
+        ?string $carrierCode,
+        ?string $pickupPointReference,
+        ?string $settlement,
+    ): void {
+        $this->assertEditable();
+        self::assertNotEmpty('recipientName', $recipientName);
+        self::assertNotEmpty('phone', $phone);
+        self::assertFieldsMatchDeliveryType(
+            deliveryType: $deliveryType,
+            country: $country,
+            city: $city,
+            postalCode: $postalCode,
+            addressLine1: $addressLine1,
+            addressLine2: $addressLine2,
+            carrierCode: $carrierCode,
+            pickupPointReference: $pickupPointReference,
+            settlement: $settlement,
+        );
+
+        $this->deliveryType = $deliveryType;
+        $this->recipientName = $recipientName;
+        $this->phone = $phone;
+        $this->country = $country;
+        $this->city = $city;
+        $this->postalCode = $postalCode;
+        $this->addressLine1 = $addressLine1;
+        $this->addressLine2 = $addressLine2;
+        $this->carrierCode = $carrierCode;
+        $this->pickupPointReference = $pickupPointReference;
+        $this->settlement = $settlement;
     }
 
     public function placedAt(): DateTimeImmutable

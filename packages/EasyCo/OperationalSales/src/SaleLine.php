@@ -164,15 +164,27 @@ final class SaleLine
     }
 
     /**
-     * Per §4: originatingSaleLineId is what a REFUND uses to point back at
-     * the SaleLine it refunds — no other type ever references a prior
-     * sale line this way.
+     * Per §4 / order-editing-design.md §4.1-§4.2 (stage 2, D5):
+     * originatingSaleLineId is what a line uses to point back at a prior
+     * SaleLine it relates to — REFUND (what it refunds), EDIT_REVERSAL
+     * (the line an edit fully/partially reverses), or SALE (a fresh
+     * replacement line's own lineage/audit pointer to the line it
+     * replaces, §4.2 — never load-bearing for any refund-share
+     * calculation). No other type ever references a prior sale line this
+     * way.
+     *
+     * WIDENED FROM "REFUND only" (stage 1's own original guard, built
+     * before EDIT_REVERSAL/the SALE lineage use existed) — RESERVATION,
+     * SHIPPING and INSTALLMENT_PAYMENT still refuse a non-null value
+     * exactly as before.
      */
     private static function assertOriginatingSaleLineIdMatchesType(?string $originatingSaleLineId, SaleLineType $type): void
     {
-        if ($originatingSaleLineId !== null && $type !== SaleLineType::REFUND) {
+        $allowed = [SaleLineType::REFUND, SaleLineType::SALE, SaleLineType::EDIT_REVERSAL];
+
+        if ($originatingSaleLineId !== null && ! in_array($type, $allowed, true)) {
             throw new InvalidArgumentException(
-                "SaleLine originatingSaleLineId may only be set when type is REFUND, got {$type->value}."
+                "SaleLine originatingSaleLineId may only be set when type is REFUND, SALE, or EDIT_REVERSAL, got {$type->value}."
             );
         }
     }

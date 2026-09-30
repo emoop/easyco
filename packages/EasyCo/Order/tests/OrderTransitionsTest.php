@@ -82,6 +82,12 @@ final class OrderTransitionsTest extends TestCase
         'country', 'city', 'postalCode', 'addressLine1', 'addressLine2',
         'carrierCode', 'pickupPointReference', 'settlement',
         'create', 'reconstituteFromStorage',
+        // order-editing-design.md §2, stage 2 — the two edit mutators.
+        // Neither changes $status (§2's own "status itself is untouched by
+        // either mutator") — both have required parameters, so
+        // test_no_other_public_method_changes_the_status() below skips them
+        // rather than needing a MUTATORS entry.
+        'reviseTotals', 'reviseDelivery',
     ];
 
     /** The street-address fixture OrderTest uses, with the status under test. */
