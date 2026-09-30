@@ -607,4 +607,65 @@ class EloquentOrderRepositoryTest extends TestCase
 
         $this->assertSame(['status'], $changed, 'A transition may not rewrite any other column.');
     }
+
+    // --- edit_revision (order-editing stage 3b, D1) ----------------------------
+
+    public function test_edit_revision_defaults_to_zero_and_round_trips_through_save_and_reload(): void
+    {
+        $order = $this->savedOrder();
+
+        $this->assertSame(0, $this->repository()->findById($order->id())->editRevision());
+        $this->assertSame(0, (int) DB::table('orders')->where('id', $order->id())->value('edit_revision'));
+
+        $order->bumpEditRevision();
+        $order->bumpEditRevision();
+        $this->repository()->save($order);
+
+        $this->assertSame(2, (int) DB::table('orders')->where('id', $order->id())->value('edit_revision'));
+        $this->assertSame(2, $this->repository()->findById($order->id())->editRevision());
+        $this->assertSame(2, $this->repository()->findByIdForUpdate($order->id())->editRevision());
+    }
+
+    public function test_a_status_only_save_keeps_the_revision(): void
+    {
+        $order = $this->savedOrder();
+        $order->bumpEditRevision();
+        $this->repository()->save($order);
+
+        // The normal read-modify-write of every other service: the revision survives a status-only save.
+        $reloaded = $this->repository()->findByIdForUpdate($order->id());
+        $reloaded->confirm();
+        $this->repository()->save($reloaded);
+
+        $this->assertSame(1, (int) DB::table('orders')->where('id', $order->id())->value('edit_revision'));
+    }
+
+    public function test_has_any_for_account_can_leave_one_order_out(): void
+    {
+        $accountId = $this->accountId();
+        $clientId = $this->clientId();
+
+        $order = Order::create(
+            clientId: $clientId,
+            transactionId: $this->transactionId($clientId),
+            email: 'buyer@example.com',
+            currency: 'EUR',
+            subtotal: Money::fromMinorUnits(500, 'EUR'),
+            discount: Money::fromMinorUnits(0, 'EUR'),
+            deliveryType: OrderDeliveryType::STREET_ADDRESS,
+            recipientName: 'Ivan Ivanov',
+            phone: '+359888123456',
+            placedAt: $this->placedAt(),
+            accountId: $accountId,
+            country: 'BG',
+            city: 'Sofia',
+            addressLine1: 'Vitosha Blvd 1',
+        );
+        $this->repository()->save($order);
+
+        $this->assertTrue($this->repository()->hasAnyForAccount($accountId));
+        $this->assertTrue($this->repository()->hasAnyForAccount($accountId, null));
+        $this->assertFalse($this->repository()->hasAnyForAccount($accountId, $order->id()), 'the only order, left out: no OTHER order');
+        $this->assertTrue($this->repository()->hasAnyForAccount($accountId, '999999'), 'leaving out a different order changes nothing');
+    }
 }

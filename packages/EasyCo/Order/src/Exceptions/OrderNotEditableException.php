@@ -30,6 +30,7 @@ final class OrderNotEditableException extends RuntimeException
     private function __construct(
         string $message,
         private readonly OrderStatus $status,
+        private readonly bool $becauseOfSettledPayment = false,
     ) {
         parent::__construct($message);
     }
@@ -40,6 +41,30 @@ final class OrderNotEditableException extends RuntimeException
             "Order cannot be edited while its status is \"{$status->value}\": editing is legal only while placed or confirmed.",
             $status,
         );
+    }
+
+    /**
+     * order-editing-design.md §6 (E3), stage 3b — the OTHER reason an edit is
+     * refused: the status would allow it, but money has already been
+     * captured, so the whole edit is refused (no refund-difference logic, no
+     * top-up, ever). One exception type for both refusals so a caller that
+     * only needs "this order cannot be edited right now" catches one class;
+     * isBecauseOfSettledPayment() tells the two apart for a caller that words
+     * them differently. status() is still the order's own current status.
+     */
+    public static function becausePaymentSettled(OrderStatus $status): self
+    {
+        return new self(
+            "Order cannot be edited: a payment for it has already settled (order status \"{$status->value}\"). Editing is legal only before any money is captured.",
+            $status,
+            becauseOfSettledPayment: true,
+        );
+    }
+
+    /** True when the refusal is E3's settled-payment gate rather than the status rule. */
+    public function isBecauseOfSettledPayment(): bool
+    {
+        return $this->becauseOfSettledPayment;
     }
 
     /** The status the order stood in when the refused edit was attempted. */

@@ -88,7 +88,15 @@ final class Order
         private ?string $carrierCode,
         private ?string $pickupPointReference,
         private ?string $settlement,
+        // NOT readonly — bumpEditRevision() increments it by exactly 1 per
+        // successful edit (order-editing-design.md §2.2). Last and
+        // defaulted so every existing call site keeps compiling unchanged.
+        private int $editRevision = 0,
     ) {
+        if ($editRevision < 0) {
+            throw new InvalidArgumentException('Order editRevision must not be negative.');
+        }
+
         self::assertNotEmpty('email', $email);
         self::assertNotEmpty('recipientName', $recipientName);
         self::assertNotEmpty('phone', $phone);
@@ -250,6 +258,7 @@ final class Order
         ?string $carrierCode = null,
         ?string $pickupPointReference = null,
         ?string $settlement = null,
+        int $editRevision = 0,
     ): self {
         $normalizedCurrency = Currency::from($currency);
 
@@ -288,6 +297,7 @@ final class Order
             carrierCode: $carrierCode,
             pickupPointReference: $pickupPointReference,
             settlement: $settlement,
+            editRevision: $editRevision,
         );
     }
 
@@ -329,6 +339,7 @@ final class Order
         ?string $carrierCode,
         ?string $pickupPointReference,
         ?string $settlement,
+        int $editRevision = 0,
     ): self {
         return new self(
             id: $id,
@@ -355,6 +366,7 @@ final class Order
             carrierCode: $carrierCode,
             pickupPointReference: $pickupPointReference,
             settlement: $settlement,
+            editRevision: $editRevision,
         );
     }
 
@@ -577,6 +589,33 @@ final class Order
         $this->carrierCode = $carrierCode;
         $this->pickupPointReference = $pickupPointReference;
         $this->settlement = $settlement;
+    }
+
+    /**
+     * order-editing-design.md §2.2 — how many successful edits this order
+     * has had; 0 means never edited. The optimistic-concurrency token an
+     * edit form carries (§5 step 3).
+     */
+    public function editRevision(): int
+    {
+        return $this->editRevision;
+    }
+
+    /**
+     * Increments editRevision by exactly 1 — one call per successful edit.
+     *
+     * CARRIES NO STATUS GUARD OF ITS OWN, deliberately, rather than running
+     * assertEditable() a third time: its only caller (stage 3b's
+     * OrderEditor) calls it strictly AFTER reviseTotals()/reviseDelivery()
+     * have already succeeded — both of which run assertEditable() — inside
+     * the same locked transaction, so the guard has already been applied to
+     * this very edit. Calling it on its own, for an order that was not just
+     * edited, would let the counter drift from the truth; that ordering is
+     * the caller's contract, stated here so it is not silently assumed.
+     */
+    public function bumpEditRevision(): void
+    {
+        $this->editRevision++;
     }
 
     public function placedAt(): DateTimeImmutable

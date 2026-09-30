@@ -88,6 +88,9 @@ final class OrderTransitionsTest extends TestCase
         // test_no_other_public_method_changes_the_status() below skips them
         // rather than needing a MUTATORS entry.
         'reviseTotals', 'reviseDelivery',
+        // order-editing-design.md §2.2, stage 3b (D1) — the edit-revision
+        // counter's accessor and its one increment. Neither touches $status.
+        'editRevision', 'bumpEditRevision',
     ];
 
     /** The street-address fixture OrderTest uses, with the status under test. */

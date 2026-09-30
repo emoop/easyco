@@ -29,8 +29,14 @@ interface OrderRepository
      * A REFUNDED order still counts — the customer really did buy, and
      * treating a return as "never bought" would let anyone farm a
      * new-customer discount by buying and returning.
+     *
+     * $exceptOrderId (order-editing-design.md §7, stage 3b) leaves one order
+     * out of the answer: an order EDIT that applies a new_customers_only
+     * code asks "has this account any OTHER order" — without the exclusion
+     * the order being edited would itself always answer yes. Null (every
+     * pre-existing caller) means no exclusion.
      */
-    public function hasAnyForAccount(string $accountId): bool;
+    public function hasAnyForAccount(string $accountId, ?string $exceptOrderId = null): bool;
 
     /**
      * The locked sibling of findById(): the same order, the same null when

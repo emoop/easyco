@@ -29,11 +29,9 @@ use EasyCo\Payment\Payment;
 use EasyCo\Payment\PaymentContext;
 use EasyCo\Pricing\DefaultCurrency;
 use EasyCo\Pricing\Money;
-use EasyCo\Promotions\Contracts\PromotionRedemptionRepository;
 use EasyCo\Promotions\Contracts\PromotionRepository;
 use EasyCo\Promotions\Contracts\PromotionScopeRepository;
 use EasyCo\Promotions\Promotion;
-use EasyCo\Promotions\PromotionRedemption;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
@@ -84,7 +82,7 @@ final class CheckoutOrchestrator
         private readonly PromotionScopeRepository $promotionScopes,
         private readonly PromotionValidator $promotionValidator,
         private readonly PromotionDiscountCalculator $promotionDiscountCalculator,
-        private readonly PromotionRedemptionRepository $promotionRedemptions,
+        private readonly PromotionRedeemer $promotionRedeemer,
         private readonly PromotionUsageContextAssembler $usageContextAssembler,
         private readonly OrderRepository $orders,
         private readonly ClientResolver $clientResolver,
@@ -427,7 +425,7 @@ final class CheckoutOrchestrator
         // — locked and re-checked, the authoritative check (§7),
         // distinct from the earlier soft one PromotionValidator ran.
         if ($appliedPromotion !== null) {
-            $this->redeemPromotionAtomically($appliedPromotion, $order->id(), $input->accountId, $placedAt);
+            $this->promotionRedeemer->redeemAtomically($appliedPromotion, $order->id(), $input->accountId, $placedAt);
         }
 
         return CheckoutResult::placed($order, $payment);
@@ -587,47 +585,5 @@ final class CheckoutOrchestrator
             pickupPointReference: $input->pickupPointReference,
             settlement: $input->settlement,
         );
-    }
-
-    /**
-     * The authoritative usage-limit enforcement, per §7: locks the
-     * Promotion row, re-counts existing redemptions against both limits,
-     * and only inserts if both still hold — a weaker guarantee than a
-     * true DB constraint (depends on every future caller using this
-     * transaction correctly), stated plainly, matching §7's own posture.
-     */
-    private function redeemPromotionAtomically(
-        Promotion $promotion,
-        string $orderId,
-        ?string $accountId,
-        DateTimeImmutable $placedAt,
-    ): void {
-        DB::table('promotions')->where('id', $promotion->id())->lockForUpdate()->first();
-
-        if ($promotion->usageLimitTotal() !== null) {
-            $count = $this->promotionRedemptions->countForPromotion($promotion->id());
-
-            if ($count >= $promotion->usageLimitTotal()) {
-                throw new PromotionNoLongerValidException($promotion->code(), 'usage_limit_reached');
-            }
-        }
-
-        if ($promotion->usageLimitPerCustomer() !== null && $accountId !== null) {
-            $countForAccount = $this->promotionRedemptions->countForPromotionAndAccount($promotion->id(), $accountId);
-
-            if ($countForAccount >= $promotion->usageLimitPerCustomer()) {
-                throw new PromotionNoLongerValidException($promotion->code(), 'usage_limit_per_customer_reached');
-            }
-        }
-
-        $redemption = new PromotionRedemption(
-            id: null,
-            promotionId: $promotion->id(),
-            orderId: $orderId,
-            accountId: $accountId,
-            redeemedAt: $placedAt,
-        );
-
-        $this->promotionRedemptions->save($redemption);
     }
 }

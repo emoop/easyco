@@ -47,12 +47,15 @@ final class PromotionUsageContextAssembler
     ) {
     }
 
-    public function assemble(Promotion $promotion, ?string $accountId): PromotionUsageContext
+    /**
+     * @param  ?string  $exceptOrderId  An order to leave out of the "previous orders" fact — passed only by an order EDIT (order-editing-design.md §7), whose own order would otherwise always count as the customer's previous one. Null for cart and checkout.
+     */
+    public function assemble(Promotion $promotion, ?string $accountId, ?string $exceptOrderId = null): PromotionUsageContext
     {
         return new PromotionUsageContext(
             customerHasPreviousOrders: $promotion->newCustomersOnly()
                 && $accountId !== null
-                && $this->orders->hasAnyForAccount($accountId),
+                && $this->orders->hasAnyForAccount($accountId, $exceptOrderId),
             redemptionsTotal: $promotion->usageLimitTotal() !== null
                 ? $this->promotionRedemptions->countForPromotion($promotion->id())
                 : 0,

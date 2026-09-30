@@ -43,6 +43,7 @@ final class EloquentOrderRepository implements OrderRepository
         $model->carrier_code = $order->carrierCode();
         $model->pickup_point_reference = $order->pickupPointReference();
         $model->settlement = $order->settlement();
+        $model->edit_revision = $order->editRevision();
 
         $model->save();
 
@@ -72,10 +73,11 @@ final class EloquentOrderRepository implements OrderRepository
     }
 
     /** Excludes CANCELLED (order-lifecycle-design.md §7.4/R11) — see the contract's own docblock for the reasoning. */
-    public function hasAnyForAccount(string $accountId): bool
+    public function hasAnyForAccount(string $accountId, ?string $exceptOrderId = null): bool
     {
         return OrderModel::where('account_id', $accountId)
             ->where('status', '!=', OrderStatus::CANCELLED->value)
+            ->when($exceptOrderId !== null, static fn ($query) => $query->where('id', '!=', $exceptOrderId))
             ->exists();
     }
 
@@ -106,6 +108,7 @@ final class EloquentOrderRepository implements OrderRepository
             carrierCode: $model->carrier_code,
             pickupPointReference: $model->pickup_point_reference,
             settlement: $model->settlement,
+            editRevision: (int) $model->edit_revision,
         );
     }
 }

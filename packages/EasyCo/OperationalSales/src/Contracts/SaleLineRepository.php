@@ -67,4 +67,21 @@ interface SaleLineRepository
      * @return array<string, int> originatingSaleLineId => sum of quantity_returned (only for ids that have REFUND lines)
      */
     public function sumQuantityReturnedForOriginatingLines(array $originatingSaleLineIds): array;
+
+    /**
+     * order-editing-design.md §4.4/§5 step 6, stage 3b — the batched twin of
+     * sumQuantityEditedAwayForOriginatingLine(), added for the reason this
+     * interface's own opening paragraph gives for the REFUND twin: the order
+     * editor needs "how much of this line has been edited away" for EVERY
+     * candidate line of ONE order, and a per-line loop would be the N+1 the
+     * edit's own query-count test forbids. Same read, one grouped query.
+     *
+     * Same map shape as sumQuantityReturnedForOriginatingLines(): a line
+     * never edited away is ABSENT (never 0), and an empty id list returns []
+     * with no query.
+     *
+     * @param  array<int, string>  $originatingSaleLineIds
+     * @return array<string, int> originatingSaleLineId => sum of quantity_returned across its EDIT_REVERSAL lines
+     */
+    public function sumQuantityEditedAwayForOriginatingLines(array $originatingSaleLineIds): array;
 }

@@ -314,4 +314,45 @@ class EloquentPromotionRedemptionRepositoryTest extends TestCase
         $this->assertNotNull($reloaded);
         $this->assertFalse($reloaded->isReleased());
     }
+
+    /**
+     * Order editing (stage 3b): replacing a code leaves one order with a
+     * released row and a live one. findByOrderId() must answer with the LIVE
+     * row whichever was written first, so a later removal or cancellation
+     * releases the row that is actually still counting.
+     */
+    public function test_find_by_order_id_prefers_the_live_redemption_over_an_earlier_released_one(): void
+    {
+        $orderId = $this->orderId();
+
+        $old = new PromotionRedemption(null, $this->promotionId('old10'), $orderId, null, $this->redeemedAt());
+        $this->repository()->save($old);
+        $old->release(new DateTimeImmutable('2026-01-02 12:00:00'));
+        $this->repository()->save($old);
+
+        $live = new PromotionRedemption(null, $this->promotionId('new20'), $orderId, null, new DateTimeImmutable('2026-01-02 12:00:00'));
+        $this->repository()->save($live);
+
+        $found = $this->repository()->findByOrderId($orderId);
+
+        $this->assertSame($live->id(), $found->id());
+        $this->assertFalse($found->isReleased());
+    }
+
+    public function test_find_by_order_id_returns_the_most_recent_when_every_redemption_is_released(): void
+    {
+        $orderId = $this->orderId();
+
+        $first = new PromotionRedemption(null, $this->promotionId('first10'), $orderId, null, $this->redeemedAt());
+        $this->repository()->save($first);
+        $first->release(new DateTimeImmutable('2026-01-02 12:00:00'));
+        $this->repository()->save($first);
+
+        $second = new PromotionRedemption(null, $this->promotionId('second20'), $orderId, null, new DateTimeImmutable('2026-01-02 12:00:00'));
+        $this->repository()->save($second);
+        $second->release(new DateTimeImmutable('2026-01-03 12:00:00'));
+        $this->repository()->save($second);
+
+        $this->assertSame($second->id(), $this->repository()->findByOrderId($orderId)->id());
+    }
 }

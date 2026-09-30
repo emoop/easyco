@@ -76,4 +76,26 @@ final class EloquentSaleLineRepository implements SaleLineRepository
             ->map(static fn (mixed $total): int => (int) $total)
             ->all();
     }
+
+    /**
+     * order-editing-design.md §4.4/§5 step 6, stage 3b — sumQuantityEdited
+     * AwayForOriginatingLine() grouped, exactly as
+     * sumQuantityReturnedForOriginatingLines() above is the grouped form of
+     * its own single-line sibling (see the contract's docblock).
+     */
+    public function sumQuantityEditedAwayForOriginatingLines(array $originatingSaleLineIds): array
+    {
+        if ($originatingSaleLineIds === []) {
+            return [];
+        }
+
+        return SaleLineModel::query()
+            ->where('type', SaleLineType::EDIT_REVERSAL->value)
+            ->whereIn('originating_sale_line_id', $originatingSaleLineIds)
+            ->groupBy('originating_sale_line_id')
+            ->selectRaw('originating_sale_line_id, SUM(quantity_returned) AS edited_quantity')
+            ->pluck('edited_quantity', 'originating_sale_line_id')
+            ->map(static fn (mixed $total): int => (int) $total)
+            ->all();
+    }
 }

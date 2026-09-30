@@ -64,6 +64,135 @@ final class OrderEditingTest extends TestCase
         );
     }
 
+    // --- editRevision (stage 3b, D1) ---------------------------------------
+
+    public function test_edit_revision_defaults_to_zero_for_a_fresh_order(): void
+    {
+        $this->assertSame(0, $this->order()->editRevision());
+    }
+
+    public function test_edit_revision_round_trips_through_reconstitute_from_storage(): void
+    {
+        $order = Order::reconstituteFromStorage(
+            id: '9',
+            clientId: 'client-9',
+            accountId: null,
+            transactionId: 'transaction-9',
+            email: 'buyer@example.com',
+            currency: 'EUR',
+            subtotal: Money::fromMinorUnits(1000, 'EUR'),
+            discount: Money::fromMinorUnits(0, 'EUR'),
+            total: Money::fromMinorUnits(1000, 'EUR'),
+            appliedPromotionCode: null,
+            status: OrderStatus::PLACED,
+            placedAt: new DateTimeImmutable('2026-01-01 12:00:00'),
+            addressId: null,
+            deliveryType: OrderDeliveryType::STREET_ADDRESS,
+            recipientName: 'Ivan Ivanov',
+            phone: '+359888123456',
+            country: 'BG',
+            city: 'Sofia',
+            postalCode: null,
+            addressLine1: 'Vitosha Blvd 1',
+            addressLine2: null,
+            carrierCode: null,
+            pickupPointReference: null,
+            settlement: null,
+            editRevision: 4,
+        );
+
+        $this->assertSame(4, $order->editRevision());
+    }
+
+    public function test_reconstitute_from_storage_without_an_edit_revision_defaults_to_zero(): void
+    {
+        $order = Order::reconstituteFromStorage(
+            id: '9',
+            clientId: 'client-9',
+            accountId: null,
+            transactionId: 'transaction-9',
+            email: 'buyer@example.com',
+            currency: 'EUR',
+            subtotal: Money::fromMinorUnits(1000, 'EUR'),
+            discount: Money::fromMinorUnits(0, 'EUR'),
+            total: Money::fromMinorUnits(1000, 'EUR'),
+            appliedPromotionCode: null,
+            status: OrderStatus::PLACED,
+            placedAt: new DateTimeImmutable('2026-01-01 12:00:00'),
+            addressId: null,
+            deliveryType: OrderDeliveryType::STREET_ADDRESS,
+            recipientName: 'Ivan Ivanov',
+            phone: '+359888123456',
+            country: 'BG',
+            city: 'Sofia',
+            postalCode: null,
+            addressLine1: 'Vitosha Blvd 1',
+            addressLine2: null,
+            carrierCode: null,
+            pickupPointReference: null,
+            settlement: null,
+        );
+
+        $this->assertSame(0, $order->editRevision());
+    }
+
+    public function test_bump_edit_revision_increments_by_exactly_one_each_call(): void
+    {
+        $order = $this->order();
+
+        $order->bumpEditRevision();
+        $this->assertSame(1, $order->editRevision());
+
+        $order->bumpEditRevision();
+        $order->bumpEditRevision();
+        $this->assertSame(3, $order->editRevision());
+    }
+
+    public function test_bump_edit_revision_touches_nothing_else(): void
+    {
+        $order = $this->order();
+        $before = $this->everythingExcept($order, ["status"]);
+
+        $order->bumpEditRevision();
+
+        $this->assertSame($before, $this->everythingExcept($order, ["status"]));
+        $this->assertSame(OrderStatus::PLACED, $order->status());
+    }
+
+    public function test_a_negative_edit_revision_is_refused(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+
+        Order::create(
+            clientId: 'client-1',
+            transactionId: 'transaction-1',
+            email: 'buyer@example.com',
+            currency: 'EUR',
+            subtotal: Money::fromMinorUnits(1000, 'EUR'),
+            discount: Money::fromMinorUnits(0, 'EUR'),
+            deliveryType: OrderDeliveryType::STREET_ADDRESS,
+            recipientName: 'Ivan Ivanov',
+            phone: '+359888123456',
+            placedAt: new DateTimeImmutable('2026-01-01 12:00:00'),
+            country: 'BG',
+            city: 'Sofia',
+            addressLine1: 'Vitosha Blvd 1',
+            editRevision: -1,
+        );
+    }
+
+    public function test_the_settled_payment_refusal_is_the_same_exception_type_and_says_which_reason_it_is(): void
+    {
+        $status = OrderNotEditableException::because(OrderStatus::SHIPPED);
+        $money = OrderNotEditableException::becausePaymentSettled(OrderStatus::PLACED);
+
+        $this->assertFalse($status->isBecauseOfSettledPayment());
+        $this->assertTrue($money->isBecauseOfSettledPayment());
+        $this->assertSame(OrderStatus::PLACED, $money->status());
+        $this->assertStringContainsString('settled', $money->getMessage());
+        $this->assertStringNotContainsString('legal only while placed or confirmed', $money->getMessage());
+    }
+
     public static function editableStatusesProvider(): array
     {
         return [

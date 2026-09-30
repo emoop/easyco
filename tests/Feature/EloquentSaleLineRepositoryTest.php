@@ -333,4 +333,35 @@ class EloquentSaleLineRepositoryTest extends TestCase
         $this->assertSame(3, $this->repository()->sumQuantityEditedAwayForOriginatingLine($origin->id()), 'must not double-count the REFUND line.');
         $this->assertSame(2, $this->repository()->sumQuantityReturnedForOriginatingLine($origin->id()), 'must not double-count the EDIT_REVERSAL line.');
     }
+
+    /**
+     * Stage 3b — the batched twin: one grouped read, keyed by originating
+     * id, lines never edited absent (not 0), empty input issues no query,
+     * REFUND lines never counted, and exactly one query for many ids.
+     */
+    public function test_the_batched_edited_away_sum_keys_edited_lines_only_and_is_one_query(): void
+    {
+        $clientId = $this->clientId();
+        $edited = $this->saleLine($clientId);
+        $untouched = $this->saleLine($clientId);
+        $refundedOnly = $this->saleLine($clientId);
+
+        $this->saveEditReversalRaw($clientId, $edited->id(), 2);
+        $this->saveEditReversalRaw($clientId, $edited->id(), 3);
+        $this->saveRefund($refundedOnly, 1);
+
+        $queries = 0;
+        DB::listen(function () use (&$queries): void {
+            $queries++;
+        });
+
+        $sums = $this->repository()->sumQuantityEditedAwayForOriginatingLines([$edited->id(), $untouched->id(), $refundedOnly->id()]);
+
+        $this->assertSame(1, $queries);
+        $this->assertSame([$edited->id() => 5], $sums);
+
+        $queries = 0;
+        $this->assertSame([], $this->repository()->sumQuantityEditedAwayForOriginatingLines([]));
+        $this->assertSame(0, $queries, 'an empty id list issues no query at all');
+    }
 }

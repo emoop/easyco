@@ -46,6 +46,7 @@ final class OrderRefunder
         private readonly PaymentRefundRepository $paymentRefunds,
         private readonly PaymentMethodAdapterResolver $adapterResolver,
         private readonly PanelStaffActor $staffActor,
+        private readonly PendingPaymentReissuer $pendingPaymentReissuer,
     ) {}
 
     /**
@@ -175,25 +176,16 @@ final class OrderRefunder
             ));
         }
 
-        $pendingPayment->void($occurredAt);
-        $this->payments->save($pendingPayment);
-
         if ($remainder->isZero()) {
+            $this->pendingPaymentReissuer->voidOnly($pendingPayment, $occurredAt);
+
             return OrderRefundOutcome::voidedOnly($pendingPayment);
         }
 
-        $adapter = $this->adapterResolver->resolve($pendingPayment->method());
-        $attempt = $adapter->charge($remainder, new PaymentContext($orderId));
-
-        $reissued = Payment::create($orderId, $pendingPayment->method(), $remainder, PaymentStatus::PENDING);
-        $reissued->recordAttemptResult(
-            status: $attempt->status(),
-            providerReference: $attempt->providerReference(),
-            failureReason: $attempt->failureReason(),
-            attemptedAt: $occurredAt,
-        );
-
-        $this->payments->save($reissued);
+        // The void-and-reissue mechanics live in PendingPaymentReissuer
+        // (order-editing stage 3b) — shared with order editing, which needs
+        // the same sequence for a TARGET that may be higher as well as lower.
+        $reissued = $this->pendingPaymentReissuer->reissueFor($pendingPayment, $remainder, $occurredAt);
 
         return OrderRefundOutcome::voidedAndReissued($pendingPayment, $reissued);
     }

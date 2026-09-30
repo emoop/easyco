@@ -50,9 +50,21 @@ final class EloquentPromotionRedemptionRepository implements PromotionRedemption
             ->count();
     }
 
+    /**
+     * order-editing-design.md §7 (stage 3b): an edit that REPLACES a code
+     * releases the old redemption and writes a new one, so one order can now
+     * own several rows. This returns the CURRENT one — the unreleased row if
+     * there is one, otherwise the most recent — so a later removal or a
+     * cancellation releases the row that is actually still counting, never
+     * an already-released predecessor. For the single-row orders that
+     * existed before editing, the answer is unchanged.
+     */
     public function findByOrderId(string $orderId): ?PromotionRedemption
     {
-        $model = PromotionRedemptionModel::where('order_id', $orderId)->first();
+        $model = PromotionRedemptionModel::where('order_id', $orderId)
+            ->orderByRaw('CASE WHEN released_at IS NULL THEN 0 ELSE 1 END')
+            ->orderByDesc('id')
+            ->first();
 
         if ($model === null) {
             return null;
