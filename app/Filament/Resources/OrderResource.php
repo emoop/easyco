@@ -321,7 +321,9 @@ class OrderResource extends Resource
                     ->searchable(['orders.email']),
                 TextColumn::make('status')
                     ->label(__('orders.fields.status'))
-                    ->formatStateUsing(fn (?string $state): string => static::optionLabel('status', $state)),
+                    ->formatStateUsing(fn (?string $state): string => static::optionLabel('status', $state))
+                    ->badge()
+                    ->color(fn (string $state): string => static::statusColor($state)),
                 TextColumn::make('total')
                     ->label(__('orders.fields.total'))
                     ->getStateUsing(fn (OrderModel $record): string => static::formatOrderMoney($record, 'total_minor')),
@@ -402,7 +404,8 @@ class OrderResource extends Resource
                     TextEntry::make('status')
                         ->label(__('orders.fields.status'))
                         ->badge()
-                        ->formatStateUsing(fn (string $state): string => __("orders.status_options.{$state}")),
+                        ->formatStateUsing(fn (string $state): string => __("orders.status_options.{$state}"))
+                        ->color(fn (string $state): string => static::statusColor($state)),
                     TextEntry::make('channel')
                         ->label(__('orders.fields.channel'))
                         ->getStateUsing(fn (OrderModel $record): string => static::optionLabel('channel', static::forOrder($record)->channel)),
@@ -1285,6 +1288,25 @@ class OrderResource extends Resource
         $key = "orders.{$group}_options.{$state}";
 
         return Lang::has($key) ? __($key) : $state;
+    }
+
+    /**
+     * The status badge's color, shared by the table column and the
+     * infolist entry (ONE match, never two copies) — mirrors
+     * ProductResource's own status column precedent. PLACED/CONFIRMED/
+     * SHIPPED are all 'gray' (still in progress, no merchant-actionable
+     * outcome yet); DELIVERED is the one 'success' outcome; CANCELLED is
+     * 'danger'; REFUNDED is 'warning' (money moved back out, distinct from
+     * a plain cancellation).
+     */
+    private static function statusColor(string $state): string
+    {
+        return match (OrderStatus::from($state)) {
+            OrderStatus::PLACED, OrderStatus::CONFIRMED, OrderStatus::SHIPPED => 'gray',
+            OrderStatus::DELIVERED => 'success',
+            OrderStatus::CANCELLED => 'danger',
+            OrderStatus::REFUNDED => 'warning',
+        };
     }
 
     /**
