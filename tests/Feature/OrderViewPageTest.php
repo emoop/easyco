@@ -776,4 +776,96 @@ class OrderViewPageTest extends TestCase
             'one dash per event and no more: the return-record cell of each row'
         );
     }
+
+    // --- history goods cell and payment history ---------------------------------------------
+
+    /** @return string the id of the order's first placement sale line */
+    private function firstSaleLineId(Order $order): string
+    {
+        return (string) DB::table('operational_sales_sale_lines')
+            ->where('transaction_id', $order->transactionId())
+            ->orderBy('id')
+            ->value('id');
+    }
+
+    /** Places an order, ships it, and records $returns returns of one unit each. */
+    private function orderWithReturns(int $returns, string $productName = 'Alpha Widget'): Order
+    {
+        $order = $this->placeOrder(['quantity' => 5, 'productName' => $productName]);
+        $changer = app(OrderStatusChanger::class);
+        $changer->confirm($order->id(), new DateTimeImmutable('2026-09-21 10:00:00'), 'accepted by phone');
+        $changer->ship($order->id(), new DateTimeImmutable('2026-09-22 10:00:00'), 'handed to courier');
+
+        for ($i = 1; $i <= $returns; $i++) {
+            $changer->recordReturn($order->id(), [
+                ['originatingSaleLineId' => $this->firstSaleLineId($order), 'quantityReturned' => 1, 'restock' => true],
+            ], new DateTimeImmutable('2026-09-23 1'.$i.':00:00'), 'damaged in transit');
+        }
+
+        return $order;
+    }
+
+    public function test_a_returns_history_cell_names_the_goods_with_name_sku_and_quantity_and_keeps_the_record_id(): void
+    {
+        $this->actingAsStaffRole('Administrator');
+        $order = $this->orderWithReturns(1);
+
+        $placed = DB::table('operational_sales_sale_lines')->where('id', $this->firstSaleLineId($order))->first();
+        $sku = (string) $placed->sku;
+        $name = (string) $placed->product_name;
+        $transactionId = (string) DB::table('order_events')->where('order_id', $order->id())->where('type', 'returned')->value('transaction_id');
+
+        $this->assertNotSame('', $sku);
+
+        $historyHtml = $this->historyHtml(
+            $this->get(OrderResource::getUrl('view', ['record' => $order->id()]))->assertOk()->getContent()
+        );
+
+        $this->assertStringContainsString($name.' ('.$sku.') × 1', $historyHtml, 'the goods that came back: name, sku and quantity');
+        $this->assertStringContainsString('#'.$transactionId, $historyHtml, 'and the record id the merchant quotes is still in the cell');
+    }
+
+    public function test_the_goods_read_is_batched_so_more_transaction_events_cost_no_more_queries(): void
+    {
+        $this->actingAsStaffRole('Administrator');
+        $one = $this->orderWithReturns(1);
+        $several = $this->orderWithReturns(3);
+
+        $this->assertGreaterThan(
+            3,
+            DB::table('order_events')->where('order_id', $several->id())->whereNotNull('transaction_id')->count(),
+            'the fixture really has several transaction-carrying events',
+        );
+
+        $costOne = $this->countViewPageQueries($one->id());
+        $costSeveral = $this->countViewPageQueries($several->id());
+
+        fwrite(STDERR, "\n[query-count] order view page, history goods: 1 return = {$costOne} queries, 3 returns = {$costSeveral} queries\n");
+
+        $this->assertSame($costOne, $costSeveral);
+    }
+
+    public function test_goods_are_listed_on_returned_and_refunded_rows_but_not_on_the_payment_voided_row(): void
+    {
+        $this->actingAsStaffRole('Administrator');
+        $order = $this->orderWithReturns(1);
+
+        $types = DB::table('order_events')->where('order_id', $order->id())->whereNotNull('transaction_id')->pluck('type')->all();
+
+        $this->assertContains('returned', $types);
+        $this->assertContains('payment_voided', $types, 'this return voids the still-pending payment, which is the event under test');
+
+        $placed = DB::table('operational_sales_sale_lines')->where('id', $this->firstSaleLineId($order))->first();
+        $goods = $placed->product_name.' ('.$placed->sku.') × 1';
+        $transactionId = (string) DB::table('order_events')->where('order_id', $order->id())->where('type', 'returned')->value('transaction_id');
+
+        $historyHtml = $this->historyHtml(
+            $this->get(OrderResource::getUrl('view', ['record' => $order->id()]))->assertOk()->getContent()
+        );
+
+        $goodsEvents = count(array_filter($types, static fn (string $type): bool => in_array($type, ['returned', 'refunded'], true)));
+
+        $this->assertSame($goodsEvents, substr_count($historyHtml, $goods), 'the goods appear on the returned (and refunded) rows only');
+        $this->assertSame(count($types), substr_count($historyHtml, '#'.$transactionId), 'while every transaction-carrying row, payment_voided included, keeps its record id');
+    }
 }

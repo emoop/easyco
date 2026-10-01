@@ -303,6 +303,26 @@ final class OrderAdminReader
             ))
             ->all();
 
+        $movedLines = $this->movedLinesByTransaction(array_values(array_unique(array_filter(
+            array_map(static fn (OrderAdminEventView $event): ?string => $event->transactionId, $events),
+        ))));
+
+        $events = array_map(
+            static fn (OrderAdminEventView $event): OrderAdminEventView => $event->transactionId === null
+                ? $event
+                : new OrderAdminEventView(
+                    $event->type,
+                    $event->fromStatus,
+                    $event->toStatus,
+                    $event->reason,
+                    $event->transactionId,
+                    $event->staffName,
+                    $event->occurredAt,
+                    $movedLines[$event->transactionId] ?? [],
+                ),
+            $events,
+        );
+
         return $this->orderViewCache[$orderId] = new OrderAdminOrderView(
             order: $order,
             clientName: $clientName,
@@ -313,6 +333,92 @@ final class OrderAdminReader
             paymentAttemptCount: $paymentAttemptCount,
             events: $events,
         );
+    }
+
+    /**
+     * What each of these transactions moved, keyed by transaction id — ONE
+     * grouped read for all of them, however many history rows carry one.
+     *
+     * Past returns' and edits' lines live on their OWN transactions and are
+     * not the order's current lines (OrderCurrentLinesResolver resolves
+     * those), so this is new data read for the history cell only.
+     *
+     * `kind` says which of three things a line is: a goods return, units an
+     * edit took off the order, or units an edit put on it. THE MOVED QUANTITY
+     * IS CHOSEN BY THAT KIND, never by whether quantity_returned is NULL: a
+     * refund line and an edit reversal record what they moved in
+     * quantity_returned, but an ADDED line's quantity_returned is about a
+     * LATER return of those units and says nothing about how many the edit put
+     * on. Reading it by null-ness would make the edit's history row report
+     * "× 1" instead of "× 3" the moment one added unit is returned, and worse
+     * with each further return.
+     * Axis values come from the line's own sold_attributes snapshot (no
+     * extra read); a missing or unreadable snapshot just yields none — a
+     * history page must never throw over a label.
+     *
+     * @param  list<string>  $transactionIds
+     * @return array<string, list<array{kind: string, name: ?string, sku: ?string, quantity: int, attributes: list<string>}>>
+     */
+    private function movedLinesByTransaction(array $transactionIds): array
+    {
+        if ($transactionIds === []) {
+            return [];
+        }
+
+        $grouped = [];
+
+        // A refund line does not copy the product's name, sku or axis snapshot
+        // — it points at the line it returns (originating_sale_line_id) — so
+        // those come from the originating line when the line has none of its
+        // own. A self-join in the SAME query, not a second read.
+        $rows = DB::table('operational_sales_sale_lines as l')
+            ->leftJoin('operational_sales_sale_lines as o', 'o.id', '=', 'l.originating_sale_line_id')
+            ->whereIn('l.transaction_id', $transactionIds)
+            ->whereNull('l.deleted_at')
+            ->orderBy('l.id')
+            ->get([
+                'l.transaction_id',
+                'l.type',
+                'l.quantity',
+                'l.quantity_returned',
+                DB::raw('COALESCE(l.product_name, o.product_name) as product_name'),
+                DB::raw('COALESCE(l.sku, o.sku) as sku'),
+                DB::raw('COALESCE(l.sold_attributes, o.sold_attributes) as sold_attributes'),
+            ]);
+
+        foreach ($rows as $row) {
+            $decoded = is_string($row->sold_attributes) ? json_decode($row->sold_attributes, true) : $row->sold_attributes;
+            $attributes = [];
+
+            if (is_array($decoded)) {
+                foreach ($decoded as $attribute) {
+                    if (is_array($attribute) && isset($attribute['value']) && is_string($attribute['value'])) {
+                        $attributes[] = $attribute['value'];
+                    }
+                }
+            }
+
+            $kind = match ((string) $row->type) {
+                'edit_reversal' => 'removed',
+                'sale' => 'added',
+                'refund' => 'return',
+                default => null,   // goods only: any other line type is not something that came back or was taken off
+            };
+
+            if ($kind === null) {
+                continue;
+            }
+
+            $grouped[(string) $row->transaction_id][] = [
+                'kind' => $kind,
+                'name' => $row->product_name === null ? null : (string) $row->product_name,
+                'sku' => $row->sku === null ? null : (string) $row->sku,
+                'quantity' => (int) ($kind === 'added' ? $row->quantity : ($row->quantity_returned ?? $row->quantity)),
+                'attributes' => $attributes,
+            ];
+        }
+
+        return $grouped;
     }
 
     /**

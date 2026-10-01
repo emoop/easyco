@@ -62,7 +62,7 @@ return [
         // Transaction page to link to — see historyRows()'s own docblock).
         // Named for what a merchant reads it as, not for the column it comes
         // from.
-        'return_record' => 'Return record',
+        'return_record' => 'Change',
         'staff_name' => 'By',
     ],
 

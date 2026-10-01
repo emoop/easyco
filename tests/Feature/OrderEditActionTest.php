@@ -867,4 +867,27 @@ class OrderEditActionTest extends TestCase
             );
         }
     }
+
+    /**
+     * An EDITED event carries the edit's own transaction, exactly as a return
+     * does — so the history's goods cell serves both. An edit's transaction
+     * holds what it took off AND what it put on, and the reader marks which.
+     */
+    public function test_an_edited_event_carries_a_transaction_whose_goods_are_split_into_removed_and_added(): void
+    {
+        $this->actingAsStaffRole('Administrator');
+        $order = $this->place();
+
+        $this->submitLines($this->mount($order), ['Beta' => ['quantity' => 1]]);
+
+        app()->forgetScopedInstances();
+        $edited = collect(app(\App\Services\OrderAdminReader::class)->forOrder($order->id())->events)->firstWhere('type', 'edited');
+
+        $this->assertNotNull($edited->transactionId, 'an edit writes a transaction onto its event');
+        $kinds = array_map(static fn (array $line): string => $line['kind'].':'.$line['quantity'], $edited->movedLines);
+        sort($kinds);
+
+        $this->assertSame(['added:1', 'removed:3'], $kinds, 'Beta 3 -> 1: three units taken off, one put back on');
+        $this->assertSame(['Beta Widget'], array_values(array_unique(array_map(static fn (array $line): string => (string) $line['name'], $edited->movedLines))), 'and both name the product');
+    }
 }

@@ -1538,4 +1538,69 @@ class OrderEditAddLineTest extends TestCase
         $this->assertStringContainsString('aria-disabled="true"', $html);
         $this->assertSame(0, preg_match('/\sdisabled[\s>=]/', $html), 'no native disabled attribute: a disabled button swallows hover in some browsers');
     }
+
+    /**
+     * The two-step sequence that breaks a null-ness read of quantity_returned:
+     * an edit ADDS 3 units, then 1 of those added units is returned. The edit's
+     * history row must still say 3 and the return's row must say 1.
+     */
+    public function test_an_edits_added_quantity_stays_put_after_part_of_it_is_returned(): void
+    {
+        $this->actingAsStaffRole('Administrator');
+        $order = $this->place();
+        $gamma = $this->variation('G', 'Gamma Widget', '7.50');
+
+        $component = $this->mount($order);
+        $this->pickVariation($component, $gamma, 3);
+        $component->callMountedAction();
+
+        $addedLineId = (string) DB::table('operational_sales_sale_lines')
+            ->where('priceable_id', $gamma)
+            ->where('type', 'sale')
+            ->value('id');
+
+        $changer = app(\App\Services\OrderStatusChanger::class);
+        $changer->confirm($order->id(), new DateTimeImmutable('2026-10-02 10:00:00'), 'accepted');
+        $changer->ship($order->id(), new DateTimeImmutable('2026-10-03 10:00:00'), 'shipped');
+        $changer->recordReturn($order->id(), [
+            ['originatingSaleLineId' => $addedLineId, 'quantityReturned' => 1, 'restock' => true],
+        ], new DateTimeImmutable('2026-10-04 10:00:00'), 'one came back');
+
+        app()->forgetScopedInstances();
+        $events = collect(app(\App\Services\OrderAdminReader::class)->forOrder($order->id())->events);
+
+        $edited = $events->firstWhere('type', 'edited');
+        $returned = $events->firstWhere('type', 'returned');
+
+        $added = array_values(array_filter($edited->movedLines, static fn (array $line): bool => $line['kind'] === 'added' && $line['name'] === 'Gamma Widget'));
+
+        $this->assertCount(1, $added);
+        $this->assertSame(3, $added[0]['quantity'], 'the edit still reports the 3 it put on, whatever came back later');
+        $this->assertSame([1], array_column($returned->movedLines, 'quantity'), 'and the return reports the 1 that came back');
+    }
+
+    /**
+     * Pins the rule itself. Today's return writer adds a NEW refund line and never
+     * touches the original line's quantity_returned (checked: the sequence test above
+     * passes against a null-ness read too), so this forces the state the rule guards
+     * against: an ADDED line carrying a quantity_returned of its own.
+     */
+    public function test_an_added_lines_own_quantity_returned_never_changes_what_the_edit_reports(): void
+    {
+        $this->actingAsStaffRole('Administrator');
+        $order = $this->place();
+        $gamma = $this->variation('G', 'Gamma Widget', '7.50');
+
+        $component = $this->mount($order);
+        $this->pickVariation($component, $gamma, 3);
+        $component->callMountedAction();
+
+        DB::table('operational_sales_sale_lines')->where('priceable_id', $gamma)->where('type', 'sale')->update(['quantity_returned' => 1]);
+
+        app()->forgetScopedInstances();
+        $edited = collect(app(\App\Services\OrderAdminReader::class)->forOrder($order->id())->events)->firstWhere('type', 'edited');
+        $added = array_values(array_filter($edited->movedLines, static fn (array $line): bool => $line['kind'] === 'added' && $line['name'] === 'Gamma Widget'));
+
+        $this->assertSame(3, $added[0]['quantity']);
+    }
 }

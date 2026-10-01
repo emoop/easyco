@@ -720,7 +720,9 @@ class OrderResource extends Resource
                             static::historyColumnSpecs(),
                         ))
                         ->schema(array_map(
-                            static fn (array $spec): Entry => TextEntry::make($spec['key'])->hiddenLabel(),
+                            static fn (array $spec): Entry => $spec['key'] === 'return_record'
+                                ? TextEntry::make($spec['key'])->hiddenLabel()->listWithLineBreaks()
+                                : TextEntry::make($spec['key'])->hiddenLabel(),
                             static::historyColumnSpecs(),
                         )),
                 ]),
@@ -2471,9 +2473,20 @@ class OrderResource extends Resource
                 // key named anything else is not a naming preference — the
                 // cell renders empty. OrderViewPageTest pins the rendered
                 // reference for exactly this reason.
+                // The key's NAME is historical: the cell now serves edits as well as
+                // returns and its label (orders.fields.return_record) is the authority.
+                // Goods are listed only for event types that actually moved goods — a
+                // payment_voided event can carry the same transaction id but moved
+                // none, so it shows the record id alone. Decided on the TYPE, not on
+                // whether the goods list is empty.
                 'return_record' => $event->transactionId === null
                     ? __('orders.not_available')
-                    : '#'.$event->transactionId,
+                    : [
+                        ...(in_array($event->type, ['returned', 'refunded', 'edited'], true)
+                            ? array_map(static::movedLineLabel(...), $event->movedLines)
+                            : []),
+                        '#'.$event->transactionId,
+                    ],
                 'staff_name' => $event->staffName ?? __('orders.system_actor'),
             ],
             static::forOrder($record)->events,
@@ -2482,6 +2495,42 @@ class OrderResource extends Resource
         // preserve_keys: false (the default) is the correct one — see this
         // method's own docblock.
         return array_reverse($rows);
+    }
+
+    /**
+     * One line of the history's goods cell: `Alpha Widget (SKU-A) × 2`, or
+     * `T-Shirt (TEE-1001 — Black, M) × 1` when the line's own snapshot has axis
+     * values — the same `{name} ({sku}[ — axis values])` shape the order edit
+     * picker uses, here from the stored snapshot (no extra read). An edit's
+     * transaction holds BOTH what it took off and what it put on, so those are
+     * marked `−` / `+`; a return's lines are the goods that came back and carry
+     * no mark.
+     *
+     * @param  array{kind: string, name: ?string, sku: ?string, quantity: int, attributes: list<string>}  $line
+     */
+    private static function movedLineLabel(array $line): string
+    {
+        $inner = trim((string) $line['sku']);
+
+        if ($line['attributes'] !== []) {
+            $inner = $inner === '' ? implode(', ', $line['attributes']) : $inner.' — '.implode(', ', $line['attributes']);
+        }
+
+        $name = trim((string) $line['name']);
+        $label = match (true) {
+            $name === '' && $inner === '' => __('orders.not_available'),
+            $name === '' => $inner,
+            $inner === '' => $name,
+            default => "{$name} ({$inner})",
+        };
+
+        $mark = match ($line['kind']) {
+            'removed' => '− ',
+            'added' => '+ ',
+            default => '',
+        };
+
+        return "{$mark}{$label} × {$line['quantity']}";
     }
 
     /** History's fixed column set, in order — see historyRows()'s own docblock for what each key is. @return array<int, array{key: string, label: string}> */

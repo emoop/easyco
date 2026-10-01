@@ -60,7 +60,7 @@ return [
         // return's own Transaction id, rendered as text (no Transaction page
         // exists to link to yet). Named for what a merchant reads it as, not
         // for the column it comes from.
-        'return_record' => 'Запис за връщане',
+        'return_record' => 'Промяна',
         'staff_name' => 'От (служител)',
     ],
 

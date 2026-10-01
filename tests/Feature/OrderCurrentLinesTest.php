@@ -344,7 +344,15 @@ class OrderCurrentLinesTest extends TestCase
         $this->edit($order, [['change' => 'remove', 'originatingLine' => $this->lineOf($order, 'B')]]);
         app()->forgetScopedInstances();
 
-        $this->get($url)->assertOk()->assertSee('Alpha Widget')->assertDontSee('Beta Widget');
+        // The CURRENT lines no longer list the removed product. The History section below
+        // now names the goods an edit took off (that is its job), so the check is scoped to
+        // what comes before it instead of the whole page.
+        $html = $this->get($url)->assertOk()->getContent();
+        $linesPart = substr($html, 0, (int) strpos($html, __('orders.sections.history')));
+
+        $this->assertStringContainsString('Alpha Widget', $linesPart);
+        $this->assertStringNotContainsString('Beta Widget', $linesPart);
+        $this->assertStringContainsString('Beta Widget', substr($html, strlen($linesPart)), 'and the history names what the edit removed');
     }
 
     public function test_the_view_page_query_cost_is_reported_and_does_not_grow_with_edits(): void
@@ -372,6 +380,8 @@ class OrderCurrentLinesTest extends TestCase
 
         $unedited = $measure();
         $this->changeQuantity($order, 'A', 3);
+        app()->forgetScopedInstances();
+        $editedOnce = $measure();
         $this->changeQuantity($order, 'A', 4);
         $this->changeQuantity($order, 'B', 1);
         app()->forgetScopedInstances();
@@ -380,8 +390,11 @@ class OrderCurrentLinesTest extends TestCase
         fwrite(STDERR, "\n[query-count] order view page: never edited {$unedited} queries, after three edits {$edited} queries\n");
 
         // Edits add no read of their own to the page: the edit transactions are found by ONE
-        // events read, and the lines of all of them by ONE lines read.
-        $this->assertSame($unedited, $edited);
+        // events read, and the lines of all of them by ONE lines read. The history's goods cell
+        // adds ONE grouped read as soon as ANY event carries a transaction (first edit: +1) and
+        // never another one for further edits.
+        $this->assertSame($unedited + 1, $editedOnce, 'the first edit adds the one batched goods read');
+        $this->assertSame($editedOnce, $edited, 'and two more edits add nothing');
     }
 
     public function test_a_delivery_only_edit_writes_an_event_with_no_transaction_and_changes_no_lines(): void

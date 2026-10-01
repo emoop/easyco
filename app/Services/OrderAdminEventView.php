@@ -25,6 +25,12 @@ use DateTimeImmutable;
  * occurredAt is the instant the fact happened, parsed from the column's real
  * TIMESTAMP type (the database, not this class, guarantees it parses).
  *
+ * movedLines IS WHAT THE EVENT'S TRANSACTION MOVED, when it has one — one entry per
+ * sale line of that transaction, read for ALL events in a single query by forOrder()
+ * (never one per event). Each entry is `{kind: 'return'|'removed'|'added', name, sku,
+ * quantity, attributes}`; see OrderAdminReader::movedLinesByTransaction(). [] for an
+ * event with no transaction.
+ *
  * INERT SO FAR: nothing renders this list yet — the timeline section is §10
  * stage 7, and §6.3's other half (the Orders LIST must never read events) is why
  * only forOrder() builds it.
@@ -39,6 +45,8 @@ final class OrderAdminEventView
         public readonly ?string $transactionId,
         public readonly ?string $staffName,
         public readonly DateTimeImmutable $occurredAt,
+        /** @var list<array{kind: string, name: ?string, sku: ?string, quantity: int, attributes: list<string>}> */
+        public readonly array $movedLines = [],
     ) {
     }
 }
