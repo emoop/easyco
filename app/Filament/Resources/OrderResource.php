@@ -57,10 +57,12 @@ use Filament\Infolists\Components\RepeatableEntry\TableColumn as RepeatableTable
 use Filament\Infolists\Components\TextEntry;
 use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
+use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\Fieldset;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Text;
 use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Enums\FiltersLayout;
@@ -1271,9 +1273,22 @@ class OrderResource extends Resource
             RepeaterTableColumn::make(__('orders.actions.edit_new_quantity'))->alignEnd(),
         ];
 
+        // How many rows of the dialog still carry a quantity above 0 — read from
+        // the LIVE form state, not from the stored order. The "add a product"
+        // section is a different state key and deliberately does not count.
+        $liveLineCount = static fn (Get $get): int => count(array_filter(
+            (array) $get('../../lines'),
+            static fn (mixed $row): bool => (int) ($row['quantity'] ?? 0) > 0,
+        ));
+
         $cells = [
             Hidden::make('line_id'),
-            TextInput::make('product')->hiddenLabel()->disabled()->dehydrated(false),
+            // A removed row (quantity 0) is struck through and dimmed — the
+            // same cue the quantity cell below it gives, no new style.
+            TextInput::make('product')->hiddenLabel()->disabled()->dehydrated(false)
+                ->extraInputAttributes(static fn (Get $get): array => (int) $get('quantity') === 0
+                    ? ['style' => 'text-decoration: line-through; opacity: .5;']
+                    : []),
             TextInput::make('current_quantity')->hiddenLabel()->disabled()->dehydrated(false),
             TextInput::make('quantity')
                 ->hiddenLabel()
@@ -1281,13 +1296,52 @@ class OrderResource extends Resource
                 ->integer()
                 ->required()
                 ->minValue(0)
-                ->maxValue(fn (Get $get): int => (int) $get('current_quantity')),
+                ->maxValue(fn (Get $get): int => (int) $get('current_quantity'))
+                // Live, so the last-line guard on the remove control follows
+                // what the merchant types.
+                ->live(onBlur: true),
         ];
 
         if ($mayDiscount) {
             $columns[] = RepeaterTableColumn::make(__('orders.actions.edit_discount'))->alignEnd();
             $cells[] = TextInput::make('discount')->hiddenLabel()->numeric()->minValue(0);
         }
+
+        $columns[] = RepeaterTableColumn::make(__('orders.actions.edit_remove_line'))->hiddenHeaderLabel();
+
+        // Both actions are bare icons (iconButton() + hiddenLabel(): the label stays
+        // as the aria-label and the hover tooltip). The control is appended AFTER the
+        // optional discount column so it is always the last cell of the row.
+        // REMOVE SETS THE ROW'S QUANTITY TO 0 — it never deletes the row: a row
+        // missing from the form state would read as "unchanged" to
+        // OrderEditFormMapper::lineChanges() and the item would silently stay.
+        // No confirmation modal: nothing is deleted until the dialog's own save.
+        $cells[] = Actions::make([
+            Action::make('removeLine')
+                ->label(__('orders.actions.edit_remove_line'))
+                ->icon('heroicon-m-trash')
+                ->color('danger')
+                ->iconButton()
+                ->hiddenLabel()
+                ->visible(static fn (Get $get): bool => (int) $get('quantity') > 0)
+                ->disabled(static fn (Get $get): bool => (int) $get('quantity') > 0 && $liveLineCount($get) <= 1)
+                ->tooltip(static fn (Get $get): string => $liveLineCount($get) <= 1
+                    ? __('orders.actions.edit_remove_last_line')
+                    : __('orders.actions.edit_remove_line'))
+                ->action(static function (Set $set): void {
+                    $set('quantity', 0);
+                }),
+            Action::make('restoreLine')
+                ->label(__('orders.actions.edit_restore_line'))
+                ->icon('heroicon-m-arrow-uturn-left')
+                ->iconButton()
+                ->hiddenLabel()
+                ->tooltip(__('orders.actions.edit_restore_line'))
+                ->visible(static fn (Get $get): bool => (int) $get('quantity') === 0)
+                ->action(static function (Get $get, Set $set): void {
+                    $set('quantity', (int) $get('current_quantity'));
+                }),
+        ])->key('lineControls')->alignEnd();
 
         $isStreet = static fn (Get $get): bool => $get('delivery.delivery_type') === OrderDeliveryType::STREET_ADDRESS->value;
         $isPickup = static fn (Get $get): bool => $get('delivery.delivery_type') === OrderDeliveryType::PICKUP_POINT->value;

@@ -1316,4 +1316,226 @@ class OrderEditAddLineTest extends TestCase
 
         $this->assertSame(['Alpha Widget' => 2, 'Beta Widget' => 3, 'Gamma Widget' => 2], $this->currentQuantities($order));
     }
+
+    // --- T7: the per-row remove / restore control -----------------------------------------
+
+    /** The row key (the repeater item uuid) of the dialog row whose product starts with $prefix. */
+    private function rowKey(Testable $component, string $prefix): string
+    {
+        foreach ($this->seeded($component)['lines'] as $key => $line) {
+            if (str_starts_with($line['product'], $prefix)) {
+                return (string) $key;
+            }
+        }
+
+        $this->fail("no dialog row for {$prefix}");
+    }
+
+    private function rowAction(string $name, string $key): TestAction
+    {
+        return TestAction::make($name)->schemaComponent("lines.{$key}.lineControls", 'mountedActionSchema0');
+    }
+
+    public function test_remove_sets_the_rows_quantity_to_zero_and_keeps_the_row_in_the_form(): void
+    {
+        $this->actingAsStaffRole('Administrator');
+        $order = $this->place();
+        $component = $this->mount($order);
+        $alpha = $this->rowKey($component, 'Alpha');
+        $before = $this->seeded($component)['lines'];
+
+        $component->callAction($this->rowAction('removeLine', $alpha));
+
+        $lines = $this->seeded($component)['lines'];
+
+        $this->assertArrayHasKey($alpha, $lines, 'the row is still in the form: a missing row would read as "unchanged"');
+        $this->assertSame(0, $lines[$alpha]['quantity']);
+        $this->assertSame($before[$alpha]['line_id'], $lines[$alpha]['line_id'], 'and it still names the same stored line');
+        $this->assertSame(3, $lines[$this->rowKey($component, 'Beta')]['quantity'], 'the other row is untouched');
+        $this->assertNotEmpty($component->instance()->mountedActions, 'and the edit dialog is still open: removing is not saving');
+    }
+
+    public function test_submitting_after_a_remove_writes_what_typing_zero_writes(): void
+    {
+        $this->actingAsStaffRole('Administrator');
+        $order = $this->place();
+        $stockBefore = $this->stock($this->variations['A']);
+        $component = $this->mount($order);
+
+        $component->callAction($this->rowAction('removeLine', $this->rowKey($component, 'Alpha')));
+        $component->callMountedAction();
+
+        $this->assertSame(['Beta Widget' => 3], $this->currentQuantities($order));
+        $this->assertSame($stockBefore + 2, $this->stock($this->variations['A']), 'the removed line stock is restored');
+        $this->assertSame(1, (int) $this->row($order->id())->edit_revision);
+        $this->assertSame(1, $this->editEvents($order));
+    }
+
+    public function test_restore_puts_the_current_quantity_back_and_saving_then_writes_nothing(): void
+    {
+        $this->actingAsStaffRole('Administrator');
+        $order = $this->place();
+        $component = $this->mount($order);
+        $alpha = $this->rowKey($component, 'Alpha');
+
+        $component->callAction($this->rowAction('removeLine', $alpha));
+        $this->assertSame(0, $this->seeded($component)['lines'][$alpha]['quantity']);
+        $component->callAction($this->rowAction('restoreLine', $alpha));
+
+        $this->assertSame(2, $this->seeded($component)['lines'][$alpha]['quantity'], 'back to current_quantity');
+
+        $component->callMountedAction();
+
+        $this->assertSame(__('orders.actions.edit_nothing_to_change'), $this->lastNotificationBody());
+        $this->assertSame(['Alpha Widget' => 2, 'Beta Widget' => 3], $this->currentQuantities($order));
+        $this->assertSame(0, (int) $this->row($order->id())->edit_revision);
+        $this->assertSame(0, $this->editEvents($order));
+    }
+
+    public function test_the_last_remaining_line_cannot_be_removed_and_the_guard_follows_the_live_state(): void
+    {
+        $this->actingAsStaffRole('Administrator');
+        $order = $this->place();
+        $component = $this->mount($order);
+        $alpha = $this->rowKey($component, 'Alpha');
+        $beta = $this->rowKey($component, 'Beta');
+
+        $component->assertActionEnabled($this->rowAction('removeLine', $alpha));
+        $component->assertActionEnabled($this->rowAction('removeLine', $beta));
+
+        $component->callAction($this->rowAction('removeLine', $alpha));
+
+        $component->assertActionDisabled($this->rowAction('removeLine', $beta));
+
+        $component->callAction($this->rowAction('restoreLine', $alpha));
+
+        $component->assertActionEnabled($this->rowAction('removeLine', $beta), 'restoring the other row frees this one again');
+    }
+
+    public function test_a_one_line_order_has_its_remove_control_disabled_from_the_start(): void
+    {
+        $this->actingAsStaffRole('Administrator');
+        $order = $this->place();
+        $component = $this->mount($order);
+        $component->callAction($this->rowAction('removeLine', $this->rowKey($component, 'Alpha')));
+        $component->callMountedAction();
+
+        // OrderAdminReader memoises a view per instance (one request in production); a test reopening the dialog is a new request.
+        app()->forgetInstance(\App\Services\OrderAdminReader::class);
+
+        $reopened = $this->mount($order);
+        $beta = $this->rowKey($reopened, 'Beta');
+
+        $this->assertCount(1, $this->seeded($reopened)['lines']);
+        $reopened->assertActionDisabled($this->rowAction('removeLine', $beta));
+    }
+
+    public function test_the_add_section_does_not_count_towards_the_last_line_guard(): void
+    {
+        $this->actingAsStaffRole('Administrator');
+        $order = $this->place();
+        $first = $this->mount($order);
+        $first->callAction($this->rowAction('removeLine', $this->rowKey($first, 'Alpha')));
+        $first->callMountedAction();
+
+        // OrderAdminReader memoises a view per instance (one request in production); a test reopening the dialog is a new request.
+        app()->forgetInstance(\App\Services\OrderAdminReader::class);
+
+        $component = $this->mount($order);
+        $gamma = $this->variation('G', 'Gamma Widget', '7.50');
+        $this->pickVariation($component, $gamma, 2);
+
+        $component->assertActionDisabled($this->rowAction('removeLine', $this->rowKey($component, 'Beta')));
+    }
+
+    public function test_the_last_line_tooltip_sentence_exists_in_both_languages(): void
+    {
+        foreach (['en', 'bg'] as $locale) {
+            foreach (['edit_remove_last_line', 'edit_remove_line', 'edit_restore_line'] as $key) {
+                $this->assertNotSame("orders.actions.{$key}", __("orders.actions.{$key}", [], $locale), "{$key} is missing in {$locale}");
+            }
+        }
+    }
+
+    public function test_a_remove_combined_with_an_add_ends_with_the_new_item_and_without_the_removed_one(): void
+    {
+        $this->actingAsStaffRole('Administrator');
+        $order = $this->place();
+        $gamma = $this->variation('G', 'Gamma Widget', '7.50');
+        $component = $this->mount($order);
+
+        $component->callAction($this->rowAction('removeLine', $this->rowKey($component, 'Alpha')));
+        $this->pickVariation($component, $gamma, 2);
+        $component->callMountedAction();
+
+        $this->assertSame(['Beta Widget' => 3, 'Gamma Widget' => 2], $this->currentQuantities($order));
+        $this->assertSame(1, $this->editEvents($order));
+    }
+
+    /** The rendered HTML of one dialog row's control cell. */
+    private function controlsHtml(Testable $component, string $key): string
+    {
+        return $this->dialogSchema($component)->getComponent("lines.{$key}.lineControls")->toHtml();
+    }
+
+    public function test_the_controls_are_bare_icons_whose_label_survives_as_the_accessible_name(): void
+    {
+        $this->actingAsStaffRole('Administrator');
+        $order = $this->place();
+        $component = $this->mount($order);
+        $alpha = $this->rowKey($component, 'Alpha');
+
+        $html = $this->controlsHtml($component, $alpha);
+
+        $this->assertStringContainsString('aria-label="'.__('orders.actions.edit_remove_line').'"', $html, 'the label is the accessible name');
+        $this->assertStringContainsString('fi-icon-btn', $html, 'an icon button');
+        $this->assertSame('', trim(preg_replace('/\s+/', ' ', strip_tags($html))), 'and no text renders next to the icon');
+
+        $component->callAction($this->rowAction('removeLine', $alpha));
+        $restored = $this->controlsHtml($component, $alpha);
+
+        $this->assertStringContainsString('aria-label="'.__('orders.actions.edit_restore_line').'"', $restored);
+        $this->assertSame('', trim(preg_replace('/\s+/', ' ', strip_tags($restored))));
+    }
+
+    public function test_the_tooltips_are_the_label_when_enabled_the_last_line_sentence_when_disabled_and_the_restore_label(): void
+    {
+        $this->actingAsStaffRole('Administrator');
+        $order = $this->place();
+        $component = $this->mount($order);
+        $alpha = $this->rowKey($component, 'Alpha');
+        $beta = $this->rowKey($component, 'Beta');
+
+        $this->assertStringContainsString("content: '".__('orders.actions.edit_remove_line')."'", $this->controlsHtml($component, $alpha), 'remove, enabled');
+
+        $component->callAction($this->rowAction('removeLine', $alpha));
+
+        $this->assertStringContainsString("content: '".__('orders.actions.edit_restore_line')."'", $this->controlsHtml($component, $alpha), 'restore');
+
+        $disabled = $this->controlsHtml($component, $beta);
+
+        $this->assertStringContainsString("content: '".__('orders.actions.edit_remove_last_line')."'", $disabled, 'remove, disabled by the last-line guard');
+        $this->assertStringNotContainsString("content: '".__('orders.actions.edit_remove_line')."'", $disabled);
+    }
+
+    /**
+     * Where the tooltip is bound, checked in the rendered markup: on the
+     * button itself, and Filament drops the HTML `disabled` attribute whenever
+     * a tooltip exists (button/index.blade.php: 'disabled' => $disabled &&
+     * blank($tooltip)), marking it aria-disabled instead — so the hover is not
+     * swallowed. The server still refuses the click (see the test above).
+     */
+    public function test_a_disabled_remove_keeps_its_tooltip_hoverable(): void
+    {
+        $this->actingAsStaffRole('Administrator');
+        $order = $this->place();
+        $component = $this->mount($order);
+        $component->callAction($this->rowAction('removeLine', $this->rowKey($component, 'Alpha')));
+
+        $html = $this->controlsHtml($component, $this->rowKey($component, 'Beta'));
+
+        $this->assertStringContainsString('x-tooltip=', $html);
+        $this->assertStringContainsString('aria-disabled="true"', $html);
+        $this->assertSame(0, preg_match('/\sdisabled[\s>=]/', $html), 'no native disabled attribute: a disabled button swallows hover in some browsers');
+    }
 }

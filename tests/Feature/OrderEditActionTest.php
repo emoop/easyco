@@ -832,4 +832,39 @@ class OrderEditActionTest extends TestCase
 
         $this->assertSame(['Alpha Widget' => 1, 'Beta Widget' => 3], $this->currentQuantities($order));
     }
+
+    /**
+     * The remove/restore control is the LAST cell of a row, and the table's
+     * columns and the row's cells stay the same length — with the discount
+     * column and without it.
+     */
+    public function test_the_row_control_is_the_last_cell_with_and_without_the_discount_permission(): void
+    {
+        foreach ([
+            'with ORDER_DISCOUNT' => [[Permission::ORDER_VIEW, Permission::ORDER_MANAGE, Permission::ORDER_DISCOUNT], ['lines.%s.discount', 5]],
+            'without ORDER_DISCOUNT' => [[Permission::ORDER_VIEW, Permission::ORDER_MANAGE], [null, 4]],
+        ] as $case => [$permissions, [$discountKey, $columnCount]]) {
+            $this->actingAsCustomRole($permissions);
+            $order = $this->place();
+            $component = $this->mount($order);
+
+            $repeater = $component->instance()->getSchema('mountedActionSchema0')->getComponent('lines');
+            $columns = $repeater->getTableColumns();
+            $rowKey = array_key_first($this->seeded($component)['lines']);
+            $cells = array_values(array_filter(
+                $repeater->getChildSchemas()[$rowKey]->getComponents(),
+                static fn ($cell): bool => ! $cell instanceof \Filament\Forms\Components\Hidden,
+            ));
+
+            $this->assertCount($columnCount, $columns, $case);
+            $this->assertCount($columnCount, $cells, "{$case}: one cell per column");
+            $this->assertInstanceOf(\Filament\Schemas\Components\Actions::class, end($cells), "{$case}: the control is the last cell");
+            $this->assertSame('lineControls', substr((string) end($cells)->getKey(), -12));
+            $this->assertSame(
+                $discountKey !== null,
+                str_ends_with((string) $cells[count($cells) - 2]->getKey(), '.discount'),
+                "{$case}: the discount cell, when present, sits immediately before the control",
+            );
+        }
+    }
 }
