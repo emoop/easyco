@@ -7,6 +7,8 @@ use App\Filament\Resources\OrderResource\Pages\ViewOrder;
 use App\Filament\StaffPanelUser;
 use App\Services\CheckoutInput;
 use App\Services\CheckoutOrchestrator;
+use App\Services\Exceptions\PromotionNoLongerValidException;
+use App\Services\Exceptions\StaleOrderEditException;
 use App\Services\OrderCurrentLinesResolver;
 use App\Services\OrderDeliveryChange;
 use App\Services\OrderEditor;
@@ -23,6 +25,8 @@ use EasyCo\Inventory\Contracts\StockLevelRepository;
 use EasyCo\Inventory\StockLevel;
 use EasyCo\Order\Contracts\OrderRepository;
 use EasyCo\Order\Enums\OrderDeliveryType;
+use EasyCo\Order\Enums\OrderStatus;
+use EasyCo\Order\Exceptions\OrderNotEditableException;
 use EasyCo\Order\Order;
 use EasyCo\Order\Persistence\Eloquent\OrderModel;
 use EasyCo\Pricing\Contracts\PriceListItemRepository;
@@ -44,11 +48,15 @@ use EasyCo\Staff\Enums\Permission;
 use EasyCo\Staff\Role;
 use EasyCo\Staff\Seeders\StaffSystemRolesSeeder;
 use EasyCo\Staff\Staff;
+use Filament\Actions\Testing\TestAction;
 use Filament\Forms\Components\Repeater;
 use Filament\Notifications\Livewire\Notifications;
+use Filament\Schemas\Components\Section;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Lang;
 use Illuminate\Support\Str;
+use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
 use PHPUnit\Framework\Attributes\DataProvider;
 use ReflectionMethod;
@@ -180,16 +188,28 @@ class OrderEditActionTest extends TestCase
 
     private function lastNotificationBody(): ?string
     {
-        $component = new Notifications();
+        $component = new Notifications;
         $component->mount();
 
         return $component->notifications->last()?->getBody();
     }
 
-    private function mount(Order $order): \Livewire\Features\SupportTesting\Testable
+    /**
+     * The edit dialog's own trigger, as Filament's button really sends it
+     * (stage 4b-ii, D5 moved the action into the "Items" section's own
+     * header, so a bare mountAction('edit_order') no longer resolves — the
+     * round trip carries the schema-component context
+     * Action::getContext() builds, and this is that context).
+     */
+    private function editActionTarget(): TestAction
+    {
+        return TestAction::make('edit_order')->schemaComponent(true, 'infolist');
+    }
+
+    private function mount(Order $order): Testable
     {
         $component = Livewire::test(ViewOrder::class, ['record' => $order->id()]);
-        $component->mountAction('edit_order');
+        $component->mountAction($this->editActionTarget());
         $this->assertNotEmpty($component->instance()->mountedActions, 'edit_order did not mount - check its ->visible() first.');
 
         return $component;
@@ -274,7 +294,28 @@ class OrderEditActionTest extends TestCase
         DB::table('orders')->where('id', $order->id())->update(['status' => $status]);
 
         $component = Livewire::test(ViewOrder::class, ['record' => $order->id()]);
-        $visible ? $component->assertActionVisible('edit_order') : $component->assertActionHidden('edit_order');
+
+        if ($visible) {
+            // Filament's own assertion, resolved through the exact context
+            // its button sends (see editActionTarget()).
+            $component->assertActionVisible($this->editActionTarget());
+            // ... AND the rendered page really carries the trigger, in the
+            // Items section's own header. Both halves matter: the first is
+            // the framework's own answer, the second is the merchant's.
+            $component->assertSee('edit_order', escape: false);
+
+            return;
+        }
+
+        // THE HIDDEN HALF IS ASSERTED ON THE RENDERED PAGE, and that is not a
+        // shortcut: a hidden schema-component action is NOT RESOLVABLE BY NAME
+        // at all — verified against the installed v5.8.1 (Filament\Schemas\Concerns\
+        // HasComponents::getAction() walks getComponents(), which filters hidden
+        // components out, so getAction('edit_order', …) returns null and
+        // assertActionHidden() itself throws ActionNotResolvableException).
+        // What the merchant's browser receives is what this asserts: the
+        // section is still painted, with no Edit button in it.
+        $component->assertDontSee('edit_order', escape: false);
     }
 
     public function test_the_edit_action_needs_order_manage(): void
@@ -282,10 +323,64 @@ class OrderEditActionTest extends TestCase
         $order = $this->place();
 
         $this->actingAsCustomRole([Permission::ORDER_VIEW]);
-        Livewire::test(ViewOrder::class, ['record' => $order->id()])->assertActionHidden('edit_order');
+        Livewire::test(ViewOrder::class, ['record' => $order->id()])->assertDontSee('edit_order', escape: false);
 
         $this->actingAsCustomRole([Permission::ORDER_VIEW, Permission::ORDER_MANAGE]);
-        Livewire::test(ViewOrder::class, ['record' => $order->id()])->assertActionVisible('edit_order');
+        Livewire::test(ViewOrder::class, ['record' => $order->id()])
+            ->assertActionVisible($this->editActionTarget())
+            ->assertSee('edit_order', escape: false);
+    }
+
+    /**
+     * D5 (stage 4b-ii) — the edit trigger is no longer one of the page's own
+     * header actions, and it IS one of the Items section's. This is the
+     * relocation stated as two facts about the two places Filament could
+     * paint it, with every other action in the page row untouched.
+     */
+    public function test_edit_is_a_section_header_action_not_a_page_header_action(): void
+    {
+        $this->actingAsStaffRole('Administrator');
+        $order = $this->place();
+
+        $pageRows = array_map(
+            static fn ($action): string => $action->getName(),
+            OrderResource::orderActions(),
+        );
+
+        $this->assertNotContains('edit_order', $pageRows);
+        $this->assertSame(
+            ['confirm', 'ship', 'deliver', 'mark_as_received', 'cancel', 'record_return', 'add_note'],
+            $pageRows,
+        );
+
+        $component = Livewire::test(ViewOrder::class, ['record' => $order->id()]);
+        $pageHeaderNames = array_map(
+            static fn ($action): string => $action->getName(),
+            $component->instance()->getCachedHeaderActions(),
+        );
+
+        $this->assertNotContains('edit_order', $pageHeaderNames, 'Edit must not be a PAGE header action any more.');
+
+        $items = $this->itemsSection($component->instance());
+
+        $this->assertNotNull($items, 'The Items section must still exist on the View page.');
+        $this->assertSame(
+            ['edit_order'],
+            array_map(static fn ($action): string => $action->getName(), $items->getHeaderActions()),
+            'Edit must be the Items section\'s own header action.',
+        );
+    }
+
+    /** The infolist's own "Items" Section — found by the heading it renders, never by a guessed key. */
+    private function itemsSection(mixed $livewire): ?Section
+    {
+        foreach ($livewire->getSchema('infolist')->getComponents() as $component) {
+            if ($component instanceof Section && $component->getHeading() === __('orders.sections.lines')) {
+                return $component;
+            }
+        }
+
+        return null;
     }
 
     /** @return array<int, string> the line table's header labels. */
@@ -653,18 +748,21 @@ class OrderEditActionTest extends TestCase
         $order = $this->place();
         $record = OrderModel::findOrFail($order->id());
         $run = new ReflectionMethod(OrderResource::class, 'runOrderAction');
-        $livewire = new class { public function redirect(string $url): void {} };
+        $livewire = new class
+        {
+            public function redirect(string $url): void {}
+        };
 
         $cases = [
-            [new \App\Services\Exceptions\StaleOrderEditException($order->id(), 3, 5),
+            [new StaleOrderEditException($order->id(), 3, 5),
                 __('orders.actions.edit_stale_body', ['id' => $order->id(), 'expected' => 3, 'actual' => 5])],
-            [\EasyCo\Order\Exceptions\OrderNotEditableException::becausePaymentSettled(\EasyCo\Order\Enums\OrderStatus::PLACED),
+            [OrderNotEditableException::becausePaymentSettled(OrderStatus::PLACED),
                 __('orders.actions.edit_not_editable_payment_body', ['id' => $order->id()])],
-            [\EasyCo\Order\Exceptions\OrderNotEditableException::because(\EasyCo\Order\Enums\OrderStatus::DELIVERED),
+            [OrderNotEditableException::because(OrderStatus::DELIVERED),
                 __('orders.actions.edit_not_editable_status_body', ['id' => $order->id(), 'status' => __('orders.status_options.delivered')])],
-            [new \App\Services\Exceptions\PromotionNoLongerValidException('summer', 'usage_limit_reached'),
+            [new PromotionNoLongerValidException('summer', 'usage_limit_reached'),
                 __('orders.actions.edit_promotion_invalid_body', ['code' => 'summer', 'reason' => __('orders.promotion_refusal_reasons.usage_limit_reached')])],
-            [new \App\Services\Exceptions\PromotionNoLongerValidException('summer', 'some_future_reason'),
+            [new PromotionNoLongerValidException('summer', 'some_future_reason'),
                 __('orders.actions.edit_promotion_invalid_body', ['code' => 'summer', 'reason' => 'some_future_reason'])],
         ];
 
@@ -681,16 +779,20 @@ class OrderEditActionTest extends TestCase
     {
         $keys = ['edit', 'edit_heading', 'edit_description', 'edit_done', 'edit_lines_hint', 'edit_current_quantity', 'edit_new_quantity', 'edit_discount',
             'edit_promotion_code', 'edit_promotion_code_hint', 'edit_remove_promotion_code', 'edit_nothing_to_change', 'edit_stale_body',
-            'edit_not_editable_status_body', 'edit_not_editable_payment_body', 'edit_promotion_invalid_body'];
+            'edit_not_editable_status_body', 'edit_not_editable_payment_body', 'edit_promotion_invalid_body',
+            // Add a product (stage 4b-ii), including the merge hint the
+            // same-variation refinement added.
+            'edit_add_heading', 'edit_add_hint', 'edit_add_product_placeholder', 'edit_add_quantity', 'edit_add_no_price', 'edit_add_unavailable',
+            'edit_add_unavailable_body', 'edit_add_no_price_body', 'edit_add_insufficient_stock_body', 'edit_add_merge_hint'];
         $reasons = ['not_found', 'inactive', 'not_yet_active', 'expired', 'minimum_spend_not_met', 'maximum_spend_exceeded', 'new_customers_only',
             'account_scope_mismatch', 'usage_limit_reached', 'usage_limit_per_customer_reached', 'no_matching_lines'];
 
         foreach (['en', 'bg'] as $locale) {
             foreach ($keys as $key) {
-                $this->assertTrue(\Illuminate\Support\Facades\Lang::has("orders.actions.{$key}", $locale, false), "{$locale}: orders.actions.{$key}");
+                $this->assertTrue(Lang::has("orders.actions.{$key}", $locale, false), "{$locale}: orders.actions.{$key}");
             }
             foreach ($reasons as $reason) {
-                $this->assertTrue(\Illuminate\Support\Facades\Lang::has("orders.promotion_refusal_reasons.{$reason}", $locale, false), "{$locale}: {$reason}");
+                $this->assertTrue(Lang::has("orders.promotion_refusal_reasons.{$reason}", $locale, false), "{$locale}: {$reason}");
             }
         }
     }
@@ -709,7 +811,7 @@ class OrderEditActionTest extends TestCase
             $count++;
         });
 
-        $component->mountAction('edit_order');
+        $component->mountAction($this->editActionTarget());
         $mountCost = $count;
 
         $count = 0;

@@ -225,4 +225,56 @@ class OrderEditFormMapperTest extends TestCase
             'a non-numeric quantity' => [[['line_id' => '10', 'quantity' => 'abc']]],
         ];
     }
+
+    // --- the "add a product" section (stage 4b-ii) -----------------------------------------
+
+    public function test_an_untouched_add_section_asks_for_nothing(): void
+    {
+        $this->assertNull(OrderEditFormMapper::addLineRequest([]));
+        $this->assertNull(OrderEditFormMapper::addLineRequest(['variation_id' => null, 'quantity' => 1]));
+        $this->assertNull(OrderEditFormMapper::addLineRequest(['variation_id' => '', 'quantity' => 1]));
+        $this->assertNull(OrderEditFormMapper::addLineRequest(['variation_id' => '   ', 'quantity' => 3]));
+    }
+
+    public function test_a_picked_variation_and_a_quantity_become_one_add_request(): void
+    {
+        $this->assertSame(
+            ['variationId' => '42', 'quantity' => 2],
+            OrderEditFormMapper::addLineRequest(['variation_id' => '42', 'quantity' => 2]),
+        );
+
+        $this->assertSame(
+            ['variationId' => '42', 'quantity' => 1],
+            OrderEditFormMapper::addLineRequest(['variation_id' => ' 42 ', 'quantity' => '1']),
+            'a padded id and a numeric string quantity are both normalised',
+        );
+
+        $this->assertSame(
+            ['variationId' => '42', 'quantity' => 5],
+            OrderEditFormMapper::addLineRequest(['variation_id' => 42, 'quantity' => 5]),
+            'an int id — a Select\'s own state can legitimately arrive either way',
+        );
+    }
+
+    #[DataProvider('refusedAdds')]
+    public function test_a_picked_variation_with_no_usable_quantity_is_refused(array $submitted): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        OrderEditFormMapper::addLineRequest($submitted);
+    }
+
+    /** @return array<string, array{array<string, mixed>}> */
+    public static function refusedAdds(): array
+    {
+        return [
+            'no quantity at all' => [['variation_id' => '42']],
+            'a blank quantity' => [['variation_id' => '42', 'quantity' => '']],
+            'a null quantity' => [['variation_id' => '42', 'quantity' => null]],
+            'zero' => [['variation_id' => '42', 'quantity' => 0]],
+            'a negative quantity' => [['variation_id' => '42', 'quantity' => -2]],
+            'a fractional quantity' => [['variation_id' => '42', 'quantity' => '1.5']],
+            'a non-numeric quantity' => [['variation_id' => '42', 'quantity' => 'two']],
+        ];
+    }
 }

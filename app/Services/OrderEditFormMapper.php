@@ -14,6 +14,14 @@ use InvalidArgumentException;
  * functions, no Filament class and no I/O, so each mapping rule is tested
  * directly instead of only through a mounted action.
  *
+ * TWO HALVES, ONE DISCIPLINE (stage 4b-ii): lineChanges() reads the current
+ * lines' own table, and addLineRequest() reads the "add a product" section
+ * below it. Neither trusts anything about a line that the line itself
+ * knows — a submission is only ever read for WHAT IT ASKS FOR (an id and a
+ * number), never for what a row claims a line currently is. The add
+ * section's own pricing happens outside this class, in
+ * OrderAddLinePricer, for the reason that class's docblock gives.
+ *
  * THE DIALOG'S LINE TABLE IS A Filament Repeater, WHOSE ITEM STATE IS KEYED BY
  * AN AUTO-GENERATED ITEM KEY, NOT BY THE LINE'S ID — so each row carries the
  * line's real id in a hidden `line_id` field, and lineChanges() reads THAT,
@@ -137,7 +145,7 @@ final class OrderEditFormMapper
 
             $seen[$id] = true;
             $line = $currentLinesById[$id];
-            $quantity = self::integerOrNull($row['quantity'] ?? null, $id) ?? $line->quantity();
+            $quantity = self::integerOrNull($row['quantity'] ?? null, "line \"{$id}\"") ?? $line->quantity();
 
             if ($quantity < 0) {
                 throw new InvalidArgumentException("OrderEditFormMapper: line \"{$id}\" has a negative quantity.");
@@ -170,6 +178,61 @@ final class OrderEditFormMapper
         return $changes;
     }
 
+    /**
+     * The dialog's own "add a product" section, mapped exactly as
+     * rigorously as the line table above (stage 4b-ii, D2/D4) — the
+     * submitted (variation, quantity) pair as an ADD REQUEST, or null when
+     * the section was left alone.
+     *
+     * NOT A CHANGE ENTRY YET, deliberately: an OrderLineEditor "add" entry
+     * also carries the new line's own §3.13 snapshot (regular/final unit
+     * price, cost, product name, sku), which is priced LIVE by
+     * OrderAddLinePricer — I/O this class has none of and wants none of.
+     * What is decided here is only what the submission itself SAYS.
+     *
+     *  - no variation id — the section untouched, or cleared — is null:
+     *    nothing picked is nothing to do, never a refusal. The quantity
+     *    field is seeded with 1 (so the form can submit it at all), which
+     *    is exactly why the VARIATION is the signal, not the quantity;
+     *  - a variation id with a whole quantity of at least 1 is that
+     *    request. A missing, blank, fractional, zero or negative quantity
+     *    is refused: the form's own minValue(1) refuses it first, and
+     *    OrderLineEditor::apply() refuses a sub-1 "add" quantity as well,
+     *    but a form value is only a request — the same posture
+     *    lineChanges() takes for a raised quantity.
+     *
+     * @param  array<string, mixed>  $submitted  the 'add' section's own state
+     * @return array{variationId: string, quantity: int}|null
+     */
+    public static function addLineRequest(array $submitted): ?array
+    {
+        $variationId = $submitted['variation_id'] ?? null;
+
+        // A Select's own state can arrive as a string OR an int — Filament's
+        // option state cast, Livewire's own dehydration and PHP's numeric
+        // array keys all get a say — so the id is normalised rather than
+        // tested for one shape.
+        if (is_int($variationId)) {
+            $variationId = (string) $variationId;
+        }
+
+        if (! is_string($variationId) || trim($variationId) === '') {
+            return null;
+        }
+
+        $quantity = self::integerOrNull($submitted['quantity'] ?? null, 'the add-a-product section');
+
+        if ($quantity === null || $quantity < 1) {
+            throw new InvalidArgumentException(
+                'OrderEditFormMapper: the add-a-product section names variation "'.trim($variationId).
+                '" with a quantity of '.var_export($submitted['quantity'] ?? null, true).
+                ' — adding a line takes a whole quantity of at least 1.'
+            );
+        }
+
+        return ['variationId' => trim($variationId), 'quantity' => $quantity];
+    }
+
     /** @param array<string, mixed> $values */
     private static function normalise(array $values): array
     {
@@ -184,7 +247,12 @@ final class OrderEditFormMapper
         return $out;
     }
 
-    private static function integerOrNull(mixed $value, string $id): ?int
+    /**
+     * @param  string  $label  what the caller calls the thing whose quantity
+     *                         this is — a line id, or the add section itself — so every refusal
+     *                         names the right subject.
+     */
+    private static function integerOrNull(mixed $value, string $label): ?int
     {
         if ($value === null || (is_string($value) && trim($value) === '')) {
             return null;
@@ -202,6 +270,6 @@ final class OrderEditFormMapper
             return (int) $value;
         }
 
-        throw new InvalidArgumentException("OrderEditFormMapper: line \"{$id}\" has a quantity that is not a whole number.");
+        throw new InvalidArgumentException("OrderEditFormMapper: {$label} has a quantity that is not a whole number.");
     }
 }

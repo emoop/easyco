@@ -6,10 +6,12 @@ use App\Filament\Concerns\AuthorizesViaStaffPermission;
 use App\Filament\NavigationGroup;
 use App\Filament\Resources\OrderResource\Pages\ListOrders;
 use App\Filament\Resources\OrderResource\Pages\ViewOrder;
+use App\Services\Exceptions\OrderAddLineRefusedException;
 use App\Services\Exceptions\OrderTransitionRefusedException;
 use App\Services\Exceptions\PromotionNoLongerValidException;
 use App\Services\Exceptions\ReturnExceedsRemainingQuantityException;
 use App\Services\Exceptions\StaleOrderEditException;
+use App\Services\OrderAddLinePricer;
 use App\Services\OrderAdminEventView;
 use App\Services\OrderAdminOrderView;
 use App\Services\OrderAdminReader;
@@ -17,6 +19,7 @@ use App\Services\OrderAdminSaleLineView;
 use App\Services\OrderCurrentLinesResolver;
 use App\Services\OrderEditFormMapper;
 use App\Services\OrderEditor;
+use App\Services\OrderLineProductSearch;
 use App\Services\OrderNoteRecorder;
 use App\Services\OrderPaymentConfirmer;
 use App\Services\OrderStatusChanger;
@@ -26,13 +29,16 @@ use App\Services\ProductPriceDisplay;
 use BackedEnum;
 use Closure;
 use DateTimeImmutable;
+use EasyCo\Inventory\Exceptions\InsufficientStockException;
+use EasyCo\Order\Contracts\OrderRepository;
 use EasyCo\Order\Enums\OrderDeliveryType;
 use EasyCo\Order\Enums\OrderStatus;
-use EasyCo\Order\Contracts\OrderRepository;
 use EasyCo\Order\Exceptions\InvalidOrderTransitionException;
 use EasyCo\Order\Exceptions\OrderNotEditableException;
+use EasyCo\OperationalSales\SaleLine;
 use EasyCo\Order\Persistence\Eloquent\OrderModel;
 use EasyCo\Pricing\Currency;
+use EasyCo\Pricing\Exceptions\PriceNotConfiguredException;
 use EasyCo\Pricing\Money;
 use EasyCo\Staff\Enums\Permission;
 use Filament\Actions\Action;
@@ -53,6 +59,7 @@ use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Fieldset;
 use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Text;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
@@ -61,6 +68,7 @@ use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Lang;
+use Illuminate\Support\HtmlString;
 use InvalidArgumentException;
 
 /**
@@ -505,7 +513,42 @@ class OrderResource extends Resource
                             static fn (array $spec): Entry => static::lineCell($spec['key']),
                             static::lineColumnSpecs($record),
                         )),
-                ]),
+                ])
+                // D5 (stage 4b-ii) — EDIT NOW LIVES HERE, IN THIS SECTION'S
+                // OWN HEADER, not in the page-wide action row above.
+                // Filament renders a Section's ->headerActions() at the
+                // RIGHT EDGE of its title bar with no alignment option
+                // needed, verified against the installed v5.8.1 source
+                // rather than assumed: Section::setUp() wires them into its
+                // `after_header` child schema
+                // (Schemas/Components/Section.php), Section::makeChildSchema()
+                // then calls $schema->alignEnd() on exactly that key, and the
+                // stylesheet's `.fi-section-header-text-ctn { @apply grid
+                // flex-1 }` (support/resources/css/components/section.css)
+                // is what pushes the action container to the far edge while
+                // `.fi-section-header-after-ctn { @apply self-center }`
+                // centres it vertically. The heading is what makes the row
+                // exist at all, so this section's own "Items" title is the
+                // left half of the pair.
+                //
+                // WHY THE MOVE AT ALL: an order's lines are edited from the
+                // lines, and the page-wide row above now holds exactly the
+                // actions that change the order's STATUS or record something
+                // about the order (see orderActions()'s own docblock). The
+                // action object itself is untouched — same ->visible()
+                // (ORDER_MANAGE, placed/confirmed, no settled payment), same
+                // dialog, same service call, same refusal mapping, same
+                // redirect. Only where Filament paints its trigger changed.
+                //
+                // A consequence worth naming, because it is visible to
+                // tests rather than to merchants: this action is no longer
+                // one of the page's cached HEADER actions, so mounting it by
+                // name alone no longer resolves — a Livewire round trip must
+                // carry the schema-component context Filament's own button
+                // sends (Action::getContext() → getSchemaComponent()'s key,
+                // resolved by InteractsWithActions::resolveSchemaComponentAction()).
+                // Every test drives it through that same context.
+                ->headerActions([static::editAction()]),
             Section::make(__('orders.sections.promotion'))
                 ->schema([
                     TextEntry::make('applied_promotion_code')
@@ -683,12 +726,23 @@ class OrderResource extends Resource
     }
 
     /**
-     * D1 (order-lifecycle-design.md §8.1, §10 stage 7c-2) — ALL SIX header
-     * actions, in order: confirm, ship, deliver, mark_as_received, cancel,
-     * record_return. `ViewOrder::getHeaderActions()` becomes exactly
-     * `return OrderResource::orderActions();` — §8.1's own words — so the
-     * Resource stays the one place that knows which actions exist and the
-     * page stays a two-line adapter.
+     * D1 (order-lifecycle-design.md §8.1, §10 stage 7c-2) — the STATUS /
+     * record-keeping actions the View page's own header row offers, in
+     * order: confirm, ship, deliver, mark_as_received, cancel,
+     * record_return, add_note. `ViewOrder::getHeaderActions()` becomes
+     * exactly `return OrderResource::orderActions();` — §8.1's own words —
+     * so the Resource stays the one place that knows which actions exist
+     * and the page stays a two-line adapter.
+     *
+     * EDIT IS NOT ONE OF THEM ANY MORE (stage 4b-ii, D5): editAction() is
+     * now a HEADER ACTION OF THE "Items" SECTION itself — see that
+     * section's own `->headerActions([static::editAction()])` in
+     * infolist() below, and editAction()'s own docblock for why. This row
+     * still owns every action that changes the ORDER'S STATUS or records
+     * something about it; editing its lines is a fact about the lines, so
+     * its trigger sits with them. Nothing else about the action moved: its
+     * own ->visible(), ->schema() and ->action() are byte-for-byte what
+     * they were, and no other action on this page changed place.
      */
     public static function orderActions(): array
     {
@@ -699,7 +753,6 @@ class OrderResource extends Resource
             static::markAsReceivedAction(),
             static::cancelAction(),
             static::recordReturnAction(),
-            static::editAction(),
             static::addNoteAction(),
         ];
     }
@@ -751,7 +804,7 @@ class OrderResource extends Resource
                 static::runOrderAction(
                     $record,
                     $livewire,
-                    fn () => app(OrderStatusChanger::class)->confirm((string) $record->id, new DateTimeImmutable(), $data['note'] ?? null),
+                    fn () => app(OrderStatusChanger::class)->confirm((string) $record->id, new DateTimeImmutable, $data['note'] ?? null),
                     __('orders.actions.confirm_done'),
                 );
             });
@@ -777,7 +830,7 @@ class OrderResource extends Resource
                 static::runOrderAction(
                     $record,
                     $livewire,
-                    fn () => app(OrderStatusChanger::class)->ship((string) $record->id, new DateTimeImmutable(), $data['note'] ?? null),
+                    fn () => app(OrderStatusChanger::class)->ship((string) $record->id, new DateTimeImmutable, $data['note'] ?? null),
                     __('orders.actions.ship_done'),
                 );
             });
@@ -801,7 +854,7 @@ class OrderResource extends Resource
                 static::runOrderAction(
                     $record,
                     $livewire,
-                    fn () => app(OrderStatusChanger::class)->deliver((string) $record->id, new DateTimeImmutable(), $data['note'] ?? null),
+                    fn () => app(OrderStatusChanger::class)->deliver((string) $record->id, new DateTimeImmutable, $data['note'] ?? null),
                     __('orders.actions.deliver_done'),
                 );
             });
@@ -848,7 +901,7 @@ class OrderResource extends Resource
                 static::runOrderAction(
                     $record,
                     $livewire,
-                    fn () => app(OrderPaymentConfirmer::class)->confirm($payment->id(), new DateTimeImmutable()),
+                    fn () => app(OrderPaymentConfirmer::class)->confirm($payment->id(), new DateTimeImmutable),
                     __('orders.actions.mark_as_received_done'),
                 );
             });
@@ -911,7 +964,7 @@ class OrderResource extends Resource
                 static::runOrderAction(
                     $record,
                     $livewire,
-                    fn () => app(OrderStatusChanger::class)->cancel((string) $record->id, new DateTimeImmutable(), $data['reason'] ?? null, $restockOverrides),
+                    fn () => app(OrderStatusChanger::class)->cancel((string) $record->id, new DateTimeImmutable, $data['reason'] ?? null, $restockOverrides),
                     __('orders.actions.cancel_done', ['id' => $record->id]),
                 );
             });
@@ -992,7 +1045,7 @@ class OrderResource extends Resource
                 static::runOrderAction(
                     $record,
                     $livewire,
-                    fn () => app(OrderStatusChanger::class)->recordReturn((string) $record->id, $lines, new DateTimeImmutable(), $data['reason'] ?? null),
+                    fn () => app(OrderStatusChanger::class)->recordReturn((string) $record->id, $lines, new DateTimeImmutable, $data['reason'] ?? null),
                     __('orders.actions.record_return_done', ['id' => $record->id, 'count' => $totalQuantity]),
                 );
             });
@@ -1069,6 +1122,47 @@ class OrderResource extends Resource
                         $order->currency(),
                     );
 
+                    // D2/D4 (stage 4b-ii) — the "Add a product" section's
+                    // own submitted state, read by the SAME pure mapper.
+                    // What comes back is only what the submission ASKS FOR
+                    // (a variation and a quantity); its price is resolved
+                    // live, inside the operation below, so a malformed ask
+                    // is refused here and a genuine pricing/catalog refusal
+                    // is translated there.
+                    $addRequest = OrderEditFormMapper::addLineRequest((array) ($data['add'] ?? []));
+
+                    // A PICK THE ORDER ALREADY SELLS IS A QUANTITY CHANGE ON
+                    // THAT LINE, NEVER A SECOND LINE OF THE SAME VARIATION
+                    // (refinement of §1/E2's "add a product/variation with a
+                    // quantity"): the line IS the order's own §3.13 snapshot,
+                    // so merging into it keeps the price those units were
+                    // actually sold at. Pricing a fresh line from the LIVE
+                    // price list would silently re-price the units the
+                    // merchant meant to add — and, once a price list changed,
+                    // would put two lines of one variation on one order at two
+                    // different prices, which §8's "never a free price
+                    // override" leaves no room for.
+                    //
+                    // The merged quantity is written through the ONE path this
+                    // dialog already uses for a line whose quantity changed,
+                    // so the stock, the ledger, the totals and the EDITED
+                    // event follow the line's own reversal + replacement
+                    // (§4.2) exactly as a reduction does — see
+                    // foldAddIntoLine() for why the row's own intent and the
+                    // add must be combined into ONE change entry.
+                    $mergeTarget = $addRequest === null
+                        ? null
+                        : static::mergeTargetFor(array_values($currentLinesById), $addRequest['variationId']);
+
+                    if ($mergeTarget !== null) {
+                        $lineChanges = static::foldAddIntoLine($lineChanges, $mergeTarget, $addRequest['quantity']);
+                    }
+
+                    // The ask that still has to be PRICED, as a line of its
+                    // own: null when the section was left alone, and null when
+                    // it was folded into a line above.
+                    $addToPrice = $mergeTarget === null ? $addRequest : null;
+
                     $delivery = OrderEditFormMapper::deliveryChange(
                         array_combine(OrderEditFormMapper::DELIVERY_FIELDS, array_map(
                             static fn (string $field): ?string => $record->{$field},
@@ -1092,7 +1186,7 @@ class OrderResource extends Resource
                     return;
                 }
 
-                if ($lineChanges === [] && $delivery === null && $promotionCode->isUnchanged()) {
+                if ($lineChanges === [] && $addToPrice === null && $delivery === null && $promotionCode->isUnchanged()) {
                     Notification::make()
                         ->title(__('orders.actions.refused_title'))
                         ->body(__('orders.actions.edit_nothing_to_change'))
@@ -1107,17 +1201,41 @@ class OrderResource extends Resource
                 static::runOrderAction(
                     $record,
                     $livewire,
-                    fn () => app(OrderEditor::class)->apply(
-                        orderId: (string) $record->id,
-                        expectedRevision: (int) ($data['edit_revision'] ?? -1),
-                        lineChanges: $lineChanges,
-                        delivery: $delivery,
-                        promotionCode: $promotionCode,
-                        editedBy: $staff !== null ? (string) $staff->id : null,
-                        editedByName: $staff?->name,
-                        reason: $data['reason'] ?? null,
-                        occurredAt: new DateTimeImmutable(),
-                    ),
+                    function () use ($record, $data, $order, $lineChanges, $addToPrice, $delivery, $promotionCode, $staff): void {
+                        // The added line is priced HERE, inside the mapped
+                        // operation, for two reasons: its price must be the
+                        // price at the moment of submission (never one
+                        // resolved when the modal was painted), and its own
+                        // refusals — an unconfigured price, a variation that
+                        // stopped being sellable, insufficient stock from
+                        // OrderLineEditor below — belong to the same
+                        // translated refusal handling every other refusal on
+                        // this action already uses.
+                        //
+                        // NULL WHEN THE ASK WAS MERGED into a line the order
+                        // already sells: there is no new line to price, and
+                        // the line's own snapshot price is what the merged
+                        // units are counted at.
+                        if ($addToPrice !== null) {
+                            $lineChanges[] = app(OrderAddLinePricer::class)->pricedChange(
+                                variationId: $addToPrice['variationId'],
+                                quantity: $addToPrice['quantity'],
+                                currency: $order->currency(),
+                            );
+                        }
+
+                        app(OrderEditor::class)->apply(
+                            orderId: (string) $record->id,
+                            expectedRevision: (int) ($data['edit_revision'] ?? -1),
+                            lineChanges: $lineChanges,
+                            delivery: $delivery,
+                            promotionCode: $promotionCode,
+                            editedBy: $staff !== null ? (string) $staff->id : null,
+                            editedByName: $staff?->name,
+                            reason: $data['reason'] ?? null,
+                            occurredAt: new DateTimeImmutable,
+                        );
+                    },
                     __('orders.actions.edit_done', ['id' => $record->id]),
                 );
             });
@@ -1188,6 +1306,58 @@ class OrderResource extends Resource
                         ->default($rows)
                         ->schema($cells),
                 ]),
+            Section::make(__('orders.actions.edit_add_heading'))
+                ->description(__('orders.actions.edit_add_hint'))
+                ->schema([
+                    Select::make('add.variation_id')
+                        ->label(__('orders.fields.product_name'))
+                        ->placeholder(__('orders.actions.edit_add_product_placeholder'))
+                        // The search and every label come from ONE service
+                        // (OrderLineProductSearch), whose matching is
+                        // ProductResource's own — see that class's docblock.
+                        // It returns VARIATIONS, each keyed by priceableId,
+                        // which is exactly what an ADD entry names.
+                        ->searchable()
+                        ->getSearchResultsUsing(static fn (string $search): array => app(OrderLineProductSearch::class)->results($search))
+                        // A value that was picked before a submission that
+                        // failed validation ELSEWHERE on this form must
+                        // render its label again, never a bare id. The
+                        // value arrives as a string OR an int (Filament's
+                        // own option state cast / PHP's numeric array
+                        // keys), so it is normalised rather than assumed.
+                        ->getOptionLabelUsing(static fn (mixed $value): ?string => is_string($value) || is_int($value)
+                            ? app(OrderLineProductSearch::class)->label($value)
+                            : null)
+                        // Live, because the price below is resolved for the
+                        // chosen variation — the merchant sees what they are
+                        // about to add before they add it.
+                        ->live(),
+                    TextInput::make('add.quantity')
+                        ->label(__('orders.actions.edit_add_quantity'))
+                        ->numeric()
+                        ->integer()
+                        ->minValue(1)
+                        ->default(1)
+                        ->required()
+                        // The resolved price can depend on the quantity
+                        // (PriceListItem::minQuantity() tiers), so the
+                        // preview re-resolves when the quantity is left.
+                        ->live(onBlur: true),
+                    // A render-time display, NOT a state-bound entry:
+                    // Filament\Schemas\Components\Text's own content closure
+                    // is evaluated while the component is RENDERED, so the
+                    // amount reflects the variation picked a moment ago in
+                    // the very same round trip. A TextEntry with ->state()
+                    // would instead write its value once, while the mounted
+                    // action's schema is BUILT (verified: the action's schema
+                    // is cached during bootedInteractsWithActions(), before
+                    // the round trip's own state update lands, which leaves
+                    // the first render one step behind).
+                    Text::make(static fn (Get $get): HtmlString => static::addLinePricePreview($get, $record))
+                        ->key('add.price')
+                        ->visible(static fn (Get $get): bool => filled($get('add.variation_id'))),
+                ])
+                ->columns(3),
             Section::make(__('orders.sections.delivery'))
                 ->schema([
                     Select::make('delivery.delivery_type')
@@ -1267,7 +1437,7 @@ class OrderResource extends Resource
                 static::runOrderAction(
                     $record,
                     $livewire,
-                    fn () => app(OrderNoteRecorder::class)->record((string) $record->id, $data['note'], new DateTimeImmutable()),
+                    fn () => app(OrderNoteRecorder::class)->record((string) $record->id, $data['note'], new DateTimeImmutable),
                     __('orders.actions.add_note_done'),
                 );
             });
@@ -1414,6 +1584,20 @@ class OrderResource extends Resource
      *    forOrder($record)->lines, already in hand, no second query — or
      *    this page's own "not available" wording if the id is somehow not
      *    among them (a page rendered against a different order's state).
+     *  - OrderAddLineRefusedException (stage 4b-ii, from OrderAddLinePricer
+     *    via editAction()): the variation the merchant picked cannot be
+     *    added — it vanished, is not effectively purchasable, or its
+     *    product is not active. One translated sentence: to the merchant
+     *    those are one fact, and all of them mean "nothing to add".
+     *  - PriceNotConfiguredException (Pricing, from the same: Pricing's own
+     *    exception, reused rather than re-detected): the chosen variation
+     *    has no price in the order's currency, so it can never become a
+     *    line — the same fact the dialog already shows next to the picker.
+     *  - InsufficientStockException (Inventory, from OrderLineEditor's own
+     *    stock step): the added quantity cannot be reserved. Only an ADD
+     *    can raise this from this action (a quantity can be reduced here,
+     *    never raised), so the sentence names the new item, and says the
+     *    same "nothing was saved" the rest of this page's refusals do.
      *  - InvalidArgumentException (an order/payment that vanished, or an
      *    anomaly guard): a clear, honest, translated sentence naming the
      *    order — never its raw message either.
@@ -1520,6 +1704,30 @@ class OrderResource extends Resource
                 ->send();
 
             return;
+        } catch (OrderAddLineRefusedException) {
+            Notification::make()
+                ->title(__('orders.actions.refused_title'))
+                ->body(__('orders.actions.edit_add_unavailable_body'))
+                ->danger()
+                ->send();
+
+            return;
+        } catch (PriceNotConfiguredException) {
+            Notification::make()
+                ->title(__('orders.actions.refused_title'))
+                ->body(__('orders.actions.edit_add_no_price_body'))
+                ->danger()
+                ->send();
+
+            return;
+        } catch (InsufficientStockException) {
+            Notification::make()
+                ->title(__('orders.actions.refused_title'))
+                ->body(__('orders.actions.edit_add_insufficient_stock_body'))
+                ->danger()
+                ->send();
+
+            return;
         } catch (InvalidArgumentException $e) {
             Notification::make()
                 ->title(__('orders.actions.refused_title'))
@@ -1619,7 +1827,7 @@ class OrderResource extends Resource
     }
 
     /**
-     * @param string[] $values
+     * @param  string[]  $values
      * @return array<string, string>
      */
     private static function labelledOptions(array $values, string $group): array
@@ -1880,6 +2088,258 @@ class OrderResource extends Resource
         }
 
         return app(PriceDisplayFormatter::class)->format($money->decimalValue(), $money->currency());
+    }
+
+    /**
+     * The ONE current line a pick may be merged into, or null when the ask
+     * must become a line of its OWN — the "add a product" section's real
+     * semantics for a variation the order already sells (stage 4b-ii
+     * refinement).
+     *
+     * EXACTLY ONE MATCH, OR NO MERGE: two current lines of one variation is a
+     * state a merchant genuinely reaches (add the same variation twice with
+     * different quantities — the second of which was a line of its own
+     * precisely because the first existed), and "which of the two did you
+     * mean" is not a question this dialog can answer. Merging into either
+     * would be a coin toss on the merchant's own money, so the ask falls back
+     * to a NEW line (the behaviour every add had before this refinement) and
+     * the merchant keeps the Lines section below for reducing the one they
+     * actually meant.
+     *
+     * @param  list<SaleLine>  $currentLines
+     */
+    private static function mergeTargetFor(array $currentLines, string $variationId): ?SaleLine
+    {
+        $matches = [];
+
+        foreach ($currentLines as $line) {
+            if ($line->priceableId() === $variationId) {
+                $matches[] = $line;
+            }
+        }
+
+        return count($matches) === 1 ? $matches[0] : null;
+    }
+
+    /**
+     * The same choice, resolved from the ORDER rather than from a list the
+     * caller already holds — the price preview's own entry point, which
+     * renders before any submission exists.
+     *
+     * REUSES OrderCurrentLinesResolver, deliberately: it is the page's own
+     * answer to "what does this order sell now", the very one the dialog's
+     * seed and editAction()'s line mapper read, so a preview can never
+     * disagree with the write about which line an add would land on. A pick
+     * for something the order does NOT sell — the commoner case — pays this
+     * resolve and finds nothing, then resolves the live price exactly as it
+     * did before: it costs reads, never correctness.
+     */
+    private static function mergeTargetForOrder(OrderModel $record, string $variationId): ?SaleLine
+    {
+        $order = app(OrderRepository::class)->findById((string) $record->id);
+
+        if ($order === null) {
+            return null;
+        }
+
+        $lines = [];
+
+        foreach (app(OrderCurrentLinesResolver::class)->resolve($order) as $line) {
+            $lines[] = $line;
+        }
+
+        return static::mergeTargetFor($lines, $variationId);
+    }
+
+    /**
+     * The submission's own change list with the add FOLDED INTO the row it
+     * belongs to — or a plain new entry when the row the merchant touched is
+     * not the line the add merges into.
+     *
+     * THE ROW'S OWN INTENT AND THE ADD MUST BE COMBINED, not left as two
+     * changes naming one line: OrderLineEditor refuses two changes of the same
+     * kind on one line outright ("a repeat would silently make one of the two
+     * win"), and a "remove" composes with nothing at all. The row's intent has
+     * already been resolved AT THE LINE'S OWN SNAPSHOT PRICE by
+     * OrderEditFormMapper::lineChanges() — a row left alone still resolves to
+     * its own current quantity — so the combined entry is defined by the
+     * ANSWER to "how many units of this line should the order end up with",
+     * never by which of the two paths produced it:
+     *
+     *  - the row's requested quantity plus the added units, when that is a
+     *    real change;
+     *  - NOTHING AT ALL when the two add up to the line's current quantity —
+     *    a row emptied (or reduced) and then given exactly as many of the same
+     *    variation is not an edit, and writing it would take stock and put it
+     *    straight back in the same breath. Dropping the entry is what lets the
+     *    dialog's own "nothing was changed" refusal answer honestly.
+     *
+     * A ROW EMPTIED AND THEN GIVEN FEWER UNITS IS STILL THAT LINE, because a
+     * "remove" of a line the merchant is immediately re-adding to is plainly
+     * not what they asked for: the entry becomes change_quantity and the line
+     * survives at the quantity they named, at its own snapshot price.
+     *
+     * A "discount" entry for the same line is left untouched — change_quantity
+     * plus discount is the ONE legal pair (§4.2), and it is exactly what a row
+     * that was both reduced and discounted already produces. It is SKIPPED,
+     * never read for a quantity, so a row the merchant discounted in this same
+     * submission keeps its discount beside the folded quantity (see the guard
+     * in the loop below).
+     *
+     * @param  array<int, array<string, mixed>>  $lineChanges  OrderEditFormMapper::lineChanges()'s own output
+     * @return array<int, array<string, mixed>>
+     */
+    private static function foldAddIntoLine(array $lineChanges, SaleLine $target, int $addedQuantity): array
+    {
+        $targetId = (string) $target->id();
+        $currentQuantity = $target->quantity();
+        $rowQuantity = null;
+
+        foreach ($lineChanges as $key => $change) {
+            $origin = $change['originatingLine'] ?? null;
+
+            if (! $origin instanceof SaleLine || (string) $origin->id() !== $targetId) {
+                continue;
+            }
+
+            // A "discount" entry for this same line is NOT consumed here. It
+            // carries no quantity at all, and change_quantity plus discount is
+            // the ONE legal pair on one line (§4.2) — the very pair a row that
+            // was both reduced and discounted already produces. Reading it as
+            // "the row asked for 0 units" would drop the merchant's discount
+            // and land the added units on a quantity no row ever named.
+            if (($change['change'] ?? null) === 'discount') {
+                continue;
+            }
+
+            // The row's own answer for this line: an emptied row asked for
+            // zero units, a reduced one for the quantity it shows, and a row
+            // left alone produced no entry at all (handled below).
+            $rowQuantity = ($change['change'] ?? null) === 'remove' ? 0 : (int) ($change['quantity'] ?? 0);
+
+            unset($lineChanges[$key]);
+        }
+
+        $rowQuantity ??= $currentQuantity;
+
+        $newQuantity = $rowQuantity + $addedQuantity;
+
+        if ($newQuantity === $currentQuantity) {
+            return array_values($lineChanges);
+        }
+
+        $lineChanges[] = [
+            'change' => 'change_quantity',
+            'originatingLine' => $target,
+            'quantity' => $newQuantity,
+        ];
+
+        return array_values($lineChanges);
+    }
+
+    /**
+     * D3 (stage 4b-ii) — the unit price of the line the merchant is about to
+     * add, painted next to the picker.
+     *
+     * COMPUTED AT RENDER TIME, from the dialog's own current state — see the
+     * calling component's own note for why a state-bound TextEntry could not
+     * be used for this.
+     *
+     * RESOLVED AT SELECTION TIME, FOR DISPLAY ONLY, AND RESOLVED AGAIN AT
+     * SUBMIT TIME FOR THE WRITE ITSELF (editAction()'s own closure): the
+     * number shown here may go stale if a price list changes while the
+     * modal is open, and the write never trusts it — it re-prices through
+     * the same OrderAddLinePricer::pricedChange(). Showing it is still worth
+     * those reads, because §8's own posture for this dialog is "preview
+     * before save, same code path as apply", and a merchant adding a line
+     * blind is precisely what "never a free price override" leaves them
+     * with otherwise.
+     *
+     * THE AMOUNT IS RENDERED THROUGH THE SAME MARKUP RULE EVERY OTHER
+     * PRICE DISPLAY USES — ProductPriceDisplay::priceHtml(), which the
+     * Lines table's own unit-price cell calls — so a discounted price is
+     * struck through here exactly as it is there, and there is no second
+     * price renderer. The whole line is returned as HtmlString (whose markup
+     * the schemas' Text component passes through unescaped) with every
+     * translated piece escaped here, at the one place the string is built.
+     *
+     * A REFUSAL IS SHOWN, NOT THROWN: a variation with no configured price
+     * (or one that stopped being sellable between the picker's search and
+     * this render) renders its own translated sentence in place of an
+     * amount, so the merchant learns it before submitting rather than after
+     * the same refusal arrives from the submit path.
+     *
+     * A PICK THE ORDER ALREADY SELLS SHOWS THE LINE'S OWN PRICE, NOT THE
+     * PRICE LIST'S, because that is what the submission will actually use:
+     * such a pick is written as a quantity change on that line (see
+     * editAction()'s own merge note), and the units are counted at the price
+     * the line already carries. Showing the live price there would be a
+     * number the merchant never gets — precisely the sort of "preview that
+     * does not match the write" this whole display exists to avoid — so the
+     * amount is read off the resolved current line and a translated hint
+     * says where the added units are going.
+     */
+    private static function addLinePricePreview(Get $get, OrderModel $record): HtmlString
+    {
+        $variationId = $get('add.variation_id');
+
+        if (! is_string($variationId) && ! is_int($variationId)) {
+            return new HtmlString('');
+        }
+
+        $variationId = trim((string) $variationId);
+
+        if ($variationId === '') {
+            return new HtmlString('');
+        }
+
+        // IS THIS A MERGE? Asked BEFORE the price is resolved, because a
+        // merged pick is not priced from the price list at all, and asked
+        // with the SAME rule the submission itself applies
+        // (mergeTargetFor(): exactly one current line of that variation).
+        $mergeLine = static::mergeTargetForOrder($record, $variationId);
+
+        if ($mergeLine !== null) {
+            $regularUnitPrice = $mergeLine->regularUnitPrice();
+            $finalUnitPrice = $mergeLine->finalUnitPrice();
+
+            // Unreachable for a line the resolver hands back — it refuses a
+            // line with no §3.13 snapshot — but the accessors are nullable and
+            // this file's own posture is a cheap corruption detector rather
+            // than implicit trust: name the problem instead of feeding a null
+            // to the markup rule.
+            if ($regularUnitPrice === null || $finalUnitPrice === null) {
+                return new HtmlString(e(__('orders.actions.edit_add_no_price')));
+            }
+
+            return new HtmlString(
+                e(__('orders.fields.unit_price')).': '
+                .app(ProductPriceDisplay::class)->priceHtml($regularUnitPrice, $finalUnitPrice)
+                .'<br>'.e(__('orders.actions.edit_add_merge_hint'))
+            );
+        }
+
+        $quantity = $get('add.quantity');
+        $quantity = is_numeric($quantity) ? (int) $quantity : 0;
+
+        try {
+            $change = app(OrderAddLinePricer::class)->pricedChange(
+                variationId: $variationId,
+                quantity: max(1, $quantity),
+                currency: $record->currency,
+            );
+        } catch (PriceNotConfiguredException) {
+            return new HtmlString(e(__('orders.actions.edit_add_no_price')));
+        } catch (OrderAddLineRefusedException) {
+            return new HtmlString(e(__('orders.actions.edit_add_unavailable')));
+        }
+
+        $pricedLine = $change['pricedLine'];
+
+        return new HtmlString(
+            e(__('orders.fields.unit_price')).': '
+            .app(ProductPriceDisplay::class)->priceHtml($pricedLine['regularUnitPrice'], $pricedLine['finalUnitPrice'])
+        );
     }
 
     /**
