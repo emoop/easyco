@@ -16,7 +16,6 @@ return [
         'channel' => 'Channel',
         'payment_method' => 'Payment method',
         'payment_status' => 'Payment status',
-        'payment_attempts' => 'Payment attempts',
         'total' => 'Total',
         'subtotal' => 'Subtotal',
         'discount' => 'Discount',
@@ -273,7 +272,13 @@ return [
     // item 3 — "no computed 'unpaid' badge — but no silence either").
     'payment_settled_yes' => 'Settled',
     'payment_settled_no' => 'Not recorded',
-    'attempts_suffix' => ':count attempts',
+    'payment_history' => [
+        'heading' => 'Payment history',
+        'amount' => 'Amount',
+        'why' => 'Why it is not current',
+        'failed' => 'Failed attempt',
+        'superseded' => 'Superseded',
+    ],
     'not_available' => '—',
     'legacy_line_note' => 'Recorded before full snapshot',
     // order_events.staff_id/staff_name NULL — a console/job caller recorded

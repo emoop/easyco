@@ -36,7 +36,7 @@ use Tests\TestCase;
  *
  * A VOIDED ROW STAYS VISIBLE. What a void removes is the row's claim to be the
  * order's current payment, never the attempt itself: the trail keeps every row,
- * and paymentAttemptCount keeps counting them (a display fact, deliberately not
+ * and the view's payments list keeps carrying them (a display fact, deliberately not
  * the "current" rule).
  */
 class OrderAdminReaderCurrentPaymentTest extends TestCase
@@ -150,7 +150,7 @@ class OrderAdminReaderCurrentPaymentTest extends TestCase
         $this->assertSame($older->id(), $view->latestPayment->id());
         $this->assertSame('cash_on_delivery', $view->latestPayment->method());
         $this->assertNull($view->latestPayment->voidedAt());
-        $this->assertSame(2, $view->paymentAttemptCount, 'every attempt is still counted, voided rows included');
+        $this->assertSame(2, count($view->payments), 'every row is still carried in payments, voided rows included');
     }
 
     /**
@@ -173,7 +173,7 @@ class OrderAdminReaderCurrentPaymentTest extends TestCase
         $view = $this->reader()->forOrder($orderId);
 
         $this->assertSame($reissued->id(), $view->latestPayment?->id());
-        $this->assertSame(2, $view->paymentAttemptCount);
+        $this->assertSame(2, count($view->payments));
 
         // A voided row is only ever outranked by a row that IS current: with a
         // newer voided row and no reissue, the OLDER row is current again (the
@@ -205,7 +205,7 @@ class OrderAdminReaderCurrentPaymentTest extends TestCase
 
         $this->assertNotNull($view);
         $this->assertNull($view->latestPayment);
-        $this->assertSame(2, $view->paymentAttemptCount);
+        $this->assertSame(2, count($view->payments));
     }
 
     /**

@@ -16,7 +16,6 @@ return [
         'channel' => 'Канал',
         'payment_method' => 'Начин на плащане',
         'payment_status' => 'Статус на плащане',
-        'payment_attempts' => 'Опити за плащане',
         'total' => 'Обща сума',
         'subtotal' => 'Междинна сума',
         'discount' => 'Отстъпка',
@@ -258,7 +257,13 @@ return [
     // as NOT RECORDED, never "unpaid" (§4.5 / §3 item 3).
     'payment_settled_yes' => 'Получени',
     'payment_settled_no' => 'Няма запис',
-    'attempts_suffix' => ':count опита',
+    'payment_history' => [
+        'heading' => 'История на плащанията',
+        'amount' => 'Сума',
+        'why' => 'Защо не е текущо',
+        'failed' => 'Неуспешен опит',
+        'superseded' => 'Заменено',
+    ],
     'not_available' => '—',
     'legacy_line_note' => 'Записано преди пълния запис',
     // order_events.staff_id/staff_name NULL — записът е направен от конзолата

@@ -37,6 +37,8 @@ use EasyCo\Order\Exceptions\InvalidOrderTransitionException;
 use EasyCo\Order\Exceptions\OrderNotEditableException;
 use EasyCo\OperationalSales\SaleLine;
 use EasyCo\Order\Persistence\Eloquent\OrderModel;
+use EasyCo\Payment\Enums\PaymentStatus;
+use EasyCo\Payment\Payment;
 use EasyCo\Pricing\Currency;
 use EasyCo\Pricing\Exceptions\PriceNotConfiguredException;
 use EasyCo\Pricing\Money;
@@ -701,15 +703,39 @@ class OrderResource extends Resource
                         ->label(__('orders.fields.attempted_at'))
                         ->visible(fn (OrderModel $record): bool => static::forOrder($record)->latestPayment?->attemptedAt() !== null)
                         ->getStateUsing(fn (OrderModel $record): ?string => static::forOrder($record)->latestPayment?->attemptedAt()?->format('Y-m-d H:i')),
-                    TextEntry::make('payment_attempts')
-                        ->label(__('orders.fields.payment_attempts'))
-                        ->visible(fn (OrderModel $record): bool => static::forOrder($record)->paymentAttemptCount > 1)
-                        ->getStateUsing(fn (OrderModel $record): string => __('orders.attempts_suffix', ['count' => static::forOrder($record)->paymentAttemptCount])),
                 ])
                 // D3 (tightened): columns(4), matching Summary's own
                 // density (id/placed_at/status/channel, one row of 4) —
                 // not one fact per full-width row.
                 ->columns(4),
+            // Every payment that is NOT the current one, collapsed by default so
+            // the everyday view stays quiet. It replaces the old "N attempts"
+            // count, which added a customer's genuine retries to the reissues an
+            // edit or a return causes and so said nothing true. Hidden outright
+            // when there is nothing to disclose (an order with one payment).
+            Section::make(__('orders.payment_history.heading'))
+                ->collapsible()
+                ->collapsed()
+                ->visible(fn (OrderModel $record): bool => static::paymentHistoryRows($record) !== [])
+                ->schema([
+                    RepeatableEntry::make('payment_history')
+                        ->hiddenLabel()
+                        ->getStateUsing(fn (OrderModel $record): array => static::paymentHistoryRows($record))
+                        ->table([
+                            RepeatableTableColumn::make(__('orders.payment_history.amount')),
+                            RepeatableTableColumn::make(__('orders.fields.payment_method')),
+                            RepeatableTableColumn::make(__('orders.fields.payment_status')),
+                            RepeatableTableColumn::make(__('orders.fields.attempted_at')),
+                            RepeatableTableColumn::make(__('orders.payment_history.why')),
+                        ])
+                        ->schema([
+                            TextEntry::make('amount')->hiddenLabel(),
+                            TextEntry::make('method')->hiddenLabel(),
+                            TextEntry::make('status')->hiddenLabel(),
+                            TextEntry::make('attempted_at')->hiddenLabel(),
+                            TextEntry::make('why')->hiddenLabel(),
+                        ]),
+                ]),
             Section::make(__('orders.sections.history'))
                 ->schema([
                     RepeatableEntry::make('history')
@@ -2531,6 +2557,46 @@ class OrderResource extends Resource
         };
 
         return "{$mark}{$label} × {$line['quantity']}";
+    }
+
+    /**
+     * The payments that are not the order's current one, newest first, each
+     * with a label for why it is no longer current — taken from facts the row
+     * already holds, so it claims no more than they say: FAILED is a genuine
+     * failed attempt, a set voidedAt is "superseded" (an edit or a return
+     * changed what was owed; Payment::void() records the moment, not which of
+     * the two it was — the order's own history, on this page, says that).
+     *
+     * @return array<int, array<string, string>>
+     */
+    private static function paymentHistoryRows(OrderModel $record): array
+    {
+        $view = static::forOrder($record);
+        $currentId = $view->latestPayment?->id();
+
+        $others = array_values(array_filter(
+            $view->payments,
+            static fn (Payment $payment): bool => $payment->id() !== $currentId,
+        ));
+
+        usort($others, static fn (Payment $a, Payment $b): int => [$b->attemptedAt()?->getTimestamp() ?? 0, (int) $b->id()]
+            <=> [$a->attemptedAt()?->getTimestamp() ?? 0, (int) $a->id()]);
+
+        return array_map(static function (Payment $payment): array {
+            $money = $payment->amount();
+
+            return [
+                'amount' => app(PriceDisplayFormatter::class)->format($money->decimalValue(), $money->currency()),
+                'method' => static::optionLabel('payment_method', $payment->method()),
+                'status' => static::optionLabel('payment_status', $payment->status()->value),
+                'attempted_at' => $payment->attemptedAt()?->format('Y-m-d H:i') ?? __('orders.not_available'),
+                'why' => match (true) {
+                    $payment->status() === PaymentStatus::FAILED => __('orders.payment_history.failed'),
+                    $payment->voidedAt() !== null => __('orders.payment_history.superseded'),
+                    default => __('orders.not_available'),
+                },
+            ];
+        }, $others);
     }
 
     /** History's fixed column set, in order — see historyRows()'s own docblock for what each key is. @return array<int, array{key: string, label: string}> */

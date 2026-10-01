@@ -845,6 +845,70 @@ class OrderViewPageTest extends TestCase
         $this->assertSame($costOne, $costSeveral);
     }
 
+    /** An older payment row (so the order's current payment is unchanged): 'failed' or 'voided'. */
+    private function extraPayment(Order $order, string $kind, string $attemptedAt): void
+    {
+        $payment = Payment::create($order->id(), 'cash_on_delivery', Money::fromMinorUnits(1000, 'EUR'), PaymentStatus::PENDING);
+
+        if ($kind === 'failed') {
+            $payment->recordAttemptResult(PaymentStatus::FAILED, null, 'card declined', new DateTimeImmutable($attemptedAt));
+        } else {
+            $payment->recordAttemptResult(PaymentStatus::PENDING, null, null, new DateTimeImmutable($attemptedAt));
+            $payment->void(new DateTimeImmutable('2020-02-01 10:00:00'));
+        }
+
+        app(PaymentRepository::class)->save($payment);
+    }
+
+    public function test_the_payment_attempts_count_is_gone_from_the_page(): void
+    {
+        $this->actingAsStaffRole('Administrator');
+        $order = $this->placeOrder();
+        $this->extraPayment($order, 'failed', '2020-01-01 10:00:00');
+        $this->extraPayment($order, 'voided', '2020-01-02 10:00:00');
+
+        $html = $this->get(OrderResource::getUrl('view', ['record' => $order->id()]))->assertOk()->getContent();
+
+        $this->assertStringNotContainsString('Payment attempts', $html);
+        $this->assertStringNotContainsString('3 attempts', $html);
+    }
+
+    public function test_the_payment_history_lists_failed_and_superseded_rows_with_the_right_label_and_leaves_the_current_one_alone(): void
+    {
+        $this->actingAsStaffRole('Administrator');
+        $order = $this->placeOrder();
+        $this->extraPayment($order, 'failed', '2020-01-01 10:00:00');
+        $this->extraPayment($order, 'voided', '2020-01-02 10:00:00');
+
+        $html = $this->get(OrderResource::getUrl('view', ['record' => $order->id()]))->assertOk()->getContent();
+
+        $this->assertStringContainsString(__('orders.payment_status_options.pending'), $this->paymentHtml($html), 'the current payment renders as before');
+        $this->assertStringContainsString(__('orders.payment_history.heading'), $html);
+        $this->assertStringContainsString(__('orders.payment_history.failed'), $html, 'a genuine failed attempt');
+        $this->assertStringContainsString(__('orders.payment_history.superseded'), $html, 'a voided row');
+        $this->assertStringContainsString('2020-01-01 10:00', $html);
+        $this->assertStringContainsString('2020-01-02 10:00', $html);
+    }
+
+    public function test_an_order_with_one_payment_shows_no_payment_history_disclosure(): void
+    {
+        $this->actingAsStaffRole('Administrator');
+        $order = $this->placeOrder();
+
+        $html = $this->get(OrderResource::getUrl('view', ['record' => $order->id()]))->assertOk()->getContent();
+
+        $this->assertStringNotContainsString(__('orders.payment_history.heading'), $html);
+    }
+
+    public function test_the_new_payment_history_keys_exist_in_both_languages(): void
+    {
+        foreach (['en', 'bg'] as $locale) {
+            foreach (['heading', 'amount', 'why', 'failed', 'superseded'] as $key) {
+                $this->assertNotSame("orders.payment_history.{$key}", __("orders.payment_history.{$key}", [], $locale), "{$key} missing in {$locale}");
+            }
+        }
+    }
+
     public function test_goods_are_listed_on_returned_and_refunded_rows_but_not_on_the_payment_voided_row(): void
     {
         $this->actingAsStaffRole('Administrator');

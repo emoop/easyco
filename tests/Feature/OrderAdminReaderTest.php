@@ -226,7 +226,7 @@ class OrderAdminReaderTest extends TestCase
         $this->assertNotNull($view->latestPayment);
         $this->assertSame('captured', $view->latestPayment->status()->value);
         $this->assertSame('ref-123', $view->latestPayment->providerReference());
-        $this->assertSame(3, $view->paymentAttemptCount);
+        $this->assertSame(3, count($view->payments));
     }
 
     /**
@@ -306,7 +306,7 @@ class OrderAdminReaderTest extends TestCase
         $this->assertSame(2000, $line->unitPrice->minorValue());
 
         $this->assertNotNull($view->latestPayment);
-        $this->assertSame(1, $view->paymentAttemptCount);
+        $this->assertSame(1, count($view->payments));
     }
 
     public function test_for_order_fail_softs_a_minimal_pickup_point_order_with_no_promotion(): void

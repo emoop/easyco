@@ -277,11 +277,12 @@ final class OrderAdminReader
             ? $this->payments->findById((string) $latestPaymentId)
             : null;
 
-        // Every attempt, voided rows included — deliberately a plain count
-        // with no voided_at condition: this is a display fact ("how many
-        // times was this order's money attempted"), not the "current
-        // payment" rule, and a void does not un-happen the attempt.
-        $paymentAttemptCount = DB::table('payments')->where('order_id', $orderId)->count();
+        // EVERY payment row, the current one and the voided/failed ones, in ONE
+        // read (it replaces the old attempt COUNT, which added a customer's
+        // genuine retries to the reissues an edit causes and meant nothing).
+        // The page splits them by facts the rows already carry: the current
+        // payment (above), status FAILED, voidedAt set.
+        $payments = $this->payments->findByOrderId($orderId);
 
         // §6.3's one events read: the whole history in a single query, oldest
         // first, tie-broken by id. No join to `staff` — staff_name is the row's
@@ -330,7 +331,7 @@ final class OrderAdminReader
             lines: $lines,
             hasPromotionRedemption: $hasPromotionRedemption,
             latestPayment: $latestPayment,
-            paymentAttemptCount: $paymentAttemptCount,
+            payments: $payments,
             events: $events,
         );
     }

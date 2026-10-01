@@ -35,6 +35,7 @@ final class OrderAdminOrderView
     /**
      * @param OrderAdminSaleLineView[] $lines
      * @param OrderAdminEventView[] $events
+     * @param Payment[] $payments EVERY payment row of the order (the current one included), read in one query
      */
     public function __construct(
         public readonly Order $order,
@@ -43,7 +44,7 @@ final class OrderAdminOrderView
         public readonly array $lines,
         public readonly bool $hasPromotionRedemption,
         public readonly ?Payment $latestPayment,
-        public readonly int $paymentAttemptCount,
+        public readonly array $payments,
         public readonly array $events,
     ) {
     }
