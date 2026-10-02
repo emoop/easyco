@@ -176,13 +176,13 @@ All three live in `EasyCo\Shipping\Contracts`, are resolved by code through name
 interface ShippingRateProvider
 {
     /** @return ShippingQuote[] — empty means this carrier will not carry it */
-    public function quote(ShippingContext $context): array;
+    public function quote(ShippingContext $context, CallBudget $budget): array;   // $budget: added in stage 3c, see §6.3
 }
 
 interface PickupPointProvider
 {
     /** @return PickupPoint[] — offices and lockers for a settlement */
-    public function pickupPointsIn(string $countryCode, string $settlement): array;
+    public function pickupPointsIn(string $countryCode, string $settlement, CallBudget $budget): array;
 }
 
 interface ShipmentLabelProvider
@@ -198,6 +198,44 @@ interface ShipmentLabelProvider
 **`PickupPointProvider` has nothing to change in `Address`** — it only *lists* what `Address` already knows how to store. That is why it is a small contract rather than a domain.
 
 **`ShipmentLabelProvider` is the furthest away** and is named here only so the eventual Econt/Speedy work has a declared home. Nothing in V1 calls it.
+
+### 6.1 What stage 3c built, and the decisions behind it
+
+The contracts, the value objects (`ShippingContext`, `ShippingQuote`, `PickupPoint`, `ShipmentRequest`, `ShipmentLabel`, `CallBudget`) and the `CarrierRegistry` are in the Shipping package (`EasyCo\Shipping\Contracts`, `EasyCo\Shipping\Carrier`): plain PHP, no Laravel, no Hook, no import of another domain. Money is an integer in minor units plus an ISO 4217 code, as everywhere in this package. Every value object validates at construction (uppercase alpha-2 country, uppercase alpha-3 currency, no negative amount) and **refuses rather than normalizes**. The country check is a *shape* check, like `ShippingZone`'s: whether a code is a real country is the application boundary's job (`KnownCountryCode`). A validation message names the class and the field and **never repeats a value**, because these objects carry addresses and names and an exception message ends up in logs. The resolver, the guard and the registry's wiring are in `app/` (`ShippingProviderResolver`, `CarrierCallGuard`).
+
+### 6.2 Resolver keys and the registry
+
+A carrier's package binds each capability it offers as a **named container key**: `shipping.carrier.<code>.rate`, `shipping.carrier.<code>.pickup`, `shipping.carrier.<code>.label` (`CarrierCapability::containerKey()` writes the convention once). A carrier may bind only some. The same package registers **one entry** in the `CarrierRegistry` — code, display name, declared capabilities — from its service provider. **Core lists no carrier and ships none.** This replaces `PaymentMethodAdapterResolver::availableMethods()`' hand-written list, which cannot work for third parties; the container cannot be scanned instead because that would depend on keys core does not own.
+
+`ShippingProviderResolver` refuses, **by name**, and **never falls back to a default or another carrier or another capability**: a code that is malformed or not registered (`UnknownShippingCarrierException` — a carrier that bound keys but never registered is unknown too, since an unlisted carrier must not be reachable); a registered carrier that does not offer the capability, declared it and bound nothing, or bound something that is not the contract (`CarrierCapabilityNotProvidedException`). A second registration of the same code is refused rather than replacing the first. A carrier code uses `ShippingCode`'s format, which has no dot, so a code can never reach another container key.
+
+### 6.3 Failure semantics
+
+Every rate and pickup-point call goes through `CarrierCallGuard`, which **never throws into checkout or the quote endpoint**. The result (`CarrierCallResult`) is either the provider's items — an empty list is an *answer* ("this carrier will not carry it"), not a failure — or `unavailable` with a reason from a closed list: `provider_error` (it threw, `Error`s included), `timed_out` (it answered after its budget; the answer is discarded), `invalid_response` (an item of the wrong type, a quote in another currency, a pickup point of another country or carrier), `not_configured` (unknown carrier or missing capability — the resolver's refusal, converted because the customer must not get a 500 for a merchant's configuration fault; it is logged with the carrier code). Each unavailability is logged at warning level with the carrier code, capability, reason, elapsed and budget milliseconds and the exception **class** — **never the context (it holds the destination) and never the exception message** (a provider may echo the address into it).
+
+**The time budget is not enforced from outside, because PHP cannot interrupt arbitrary code.** It is passed to the provider as a `CallBudget`, and the contract **obliges every implementation to honour it** (typically as its HTTP client's timeout, connect and read together); the guard only measures and logs an overrun. Providers must also be side-effect free and must not hold a database transaction open (`checkout-orchestration-performance-note.md` §2).
+
+**Label creation is deliberately not wrapped:** a failure there must surface to the merchant, and the idempotency reference below makes his retry safe. It also has no `CallBudget` parameter — a merchant waits for a label — though an implementation still sets a finite HTTP timeout of its own.
+
+### 6.4 The label idempotency obligation
+
+`ShipmentRequest` cannot be built without its **idempotency reference**: it is made from the order id and an attempt number (`"<orderId>#<attempt>"`, at most 64 characters), both required, the attempt at least 1. **Every `ShipmentLabelProvider` implementation is obliged** (stated in the contract's docblock) to make a retried request harmless: send the reference to the carrier as its client reference or idempotency key where the API accepts one; where it does not, look the shipment up by that reference before creating; a second call with the same reference returns the same label and never creates or charges again; if neither is possible the implementation must refuse to run rather than guess. A new attempt number is a **deliberate** new shipment (the first was cancelled or lost), chosen by the merchant's action and never by an automatic retry.
+
+### 6.5 The quote cache (design only; built with the quote endpoint in stage 3d)
+
+- **Key:** `shipping:quote:v1:<carrierCode>:<sha256 of the JSON of ShippingContext::toCanonicalArray()>` — the canonical array has a fixed key order and holds every field, so equal contexts share a key and any difference (settlement, weight, goods value, COD amount) is a different one. It holds no customer identity by construction. The `v1` is bumped when the context's shape changes.
+- **Lifetime:** a successful answer, **10 minutes** (long enough to cover a customer deciding, short enough that a carrier's price change is picked up); an *unavailable* result, **30 seconds** (a failing carrier is not hammered by every keystroke, yet recovers quickly). An *empty* answer is cached like any other answer.
+- **Never cached:** label creation; anything per order.
+- **Where:** in the quote service of 3d, around `CarrierCallGuard`, in the application cache store; the guard itself stays cache-free.
+- A merchant-level adjustment of quotes is an app-layer filter (`shipping.quotes`) applied by the quote service, not by the package; it is added with that service and gets its Hook Reference row in the same commit.
+
+### 6.6 Proposals made in stage 3c (marked: §6 as written does not say these)
+
+1. **`CallBudget` as a parameter of `quote()` and `pickupPointsIn()`.** §6's signatures had no way to pass the time budget the failure-tolerance paragraph requires. Built; the signatures above show it.
+2. **`ShippingContext::$cashOnDeliveryMinor` (nullable).** §6 reuses the goods value "for insurance and cash-on-delivery", but they differ: a prepaid parcel is insured and collects nothing, and Bulgarian couriers price the cash-on-delivery service by the collected amount. Built; null means prepaid.
+3. **Weight and dimensions are nullable, null meaning unknown, never zero.** A guessed zero would be priced as a weightless parcel. The three dimensions are all known or all unknown. §6's "summed dimensions" has no physical meaning for several items; the fields are the caller's best estimate of the parcel. Built.
+4. **`ShipmentRequest` carries the recipient and the order id/attempt**, `ShippingContext` still none of it. Built.
+5. **NOT built, proposed for the first real carrier:** `postalCode` and `pickupPointReference` on `ShippingContext` (some couriers price by postcode or by the chosen office); `kind` (office or locker), opening hours and coordinates on `PickupPoint`; an estimated delivery time and a cash-on-delivery *fee* on `ShippingQuote`; the carrier's own cost and a cancel/track capability on `ShipmentLabel`. Each is additive and breaks nothing already built.
 
 ---
 
