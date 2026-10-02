@@ -2524,7 +2524,7 @@ class OrderResource extends Resource
                 'return_record' => $event->transactionId === null
                     ? __('orders.not_available')
                     : [
-                        ...(in_array($event->type, ['returned', 'refunded', 'edited'], true)
+                        ...(in_array($event->type, ['returned', 'refunded', 'refund_owed', 'edited'], true)
                             ? array_map(static::movedLineLabel(...), $event->movedLines)
                             : []),
                         '#'.$event->transactionId,

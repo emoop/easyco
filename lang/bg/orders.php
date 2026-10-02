@@ -112,6 +112,7 @@ return [
         'payment_confirmed' => 'Плащането е отбелязано като получено',
         'returned' => 'Върната стока',
         'refunded' => 'Върнати пари',
+        'refund_owed' => 'Дължимо възстановяване',
         'payment_voided' => 'Чакащо плащане анулирано',
         'note_added' => 'Вътрешна бележка',
         // Draft — flagged for the owner's review (§0's own posture for new copy).

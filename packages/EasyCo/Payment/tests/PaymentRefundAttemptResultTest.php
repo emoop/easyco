@@ -8,11 +8,19 @@ use PHPUnit\Framework\TestCase;
 
 final class PaymentRefundAttemptResultTest extends TestCase
 {
-    public function test_pending_produces_a_pending_status_with_no_failure_reason(): void
+    public function test_requested_produces_a_requested_status_with_no_failure_reason(): void
     {
-        $result = PaymentRefundAttemptResult::pending();
+        $result = PaymentRefundAttemptResult::requested();
 
-        $this->assertSame(PaymentRefundStatus::PENDING, $result->status());
+        $this->assertSame(PaymentRefundStatus::REQUESTED, $result->status());
+        $this->assertNull($result->failureReason());
+    }
+
+    public function test_owed_produces_an_owed_status_with_no_failure_reason(): void
+    {
+        $result = PaymentRefundAttemptResult::owed();
+
+        $this->assertSame(PaymentRefundStatus::OWED, $result->status());
         $this->assertNull($result->failureReason());
     }
 

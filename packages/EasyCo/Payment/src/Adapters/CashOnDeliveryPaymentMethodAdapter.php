@@ -26,11 +26,17 @@ final class CashOnDeliveryPaymentMethodAdapter implements PaymentMethodAdapter
     }
 
     /**
-     * Always COMPLETED immediately — a physical cash handback has no
-     * external system to round-trip through.
+     * Always OWED — the refund is decided and recorded, the money is paid back by
+     * the merchant later (shipping-domain-design.md §7.2.5); there is no external
+     * system to round-trip through.
      */
     public function refund(Payment $original, Money $amount, PaymentContext $context): PaymentRefundAttemptResult
     {
-        return PaymentRefundAttemptResult::completed();
+        return PaymentRefundAttemptResult::owed();
+    }
+
+    public function isOffline(): bool
+    {
+        return true;
     }
 }

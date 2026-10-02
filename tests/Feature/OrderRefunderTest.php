@@ -99,7 +99,7 @@ class OrderRefunderTest extends TestCase
 
     // --- branch (a): one settled payment ----------------------------------------
 
-    public function test_branch_a_a_full_refund_creates_one_completed_payment_refund(): void
+    public function test_branch_a_a_full_refund_creates_one_owed_payment_refund(): void
     {
         $orderId = 'order-1';
         $settled = $this->savedSettledPayment($orderId, 1000);
@@ -110,7 +110,10 @@ class OrderRefunderTest extends TestCase
         $refunds = app(PaymentRefundRepository::class)->findByPaymentId($settled->id());
         $this->assertCount(1, $refunds);
         $this->assertTrue($refunds[0]->amount()->equals($this->money(1000)));
-        $this->assertSame('completed', $refunds[0]->status()->value, 'cash_on_delivery\'s refund() adapter is always COMPLETED');
+        $this->assertSame('owed', $refunds[0]->status()->value, 'cash_on_delivery\'s refund() adapter is always OWED: decided, not yet paid back');
+        $this->assertSame($orderId, $refunds[0]->orderId());
+        $this->assertSame('cash', $refunds[0]->channel()->value);
+        $this->assertTrue($refunds[0]->breakdown()->goods->equals($this->money(1000)), 'a plain amount is all goods');
         $this->assertSame('wrong size', $refunds[0]->reason());
         $this->assertSame((string) $staff->id, $refunds[0]->refundedBy());
 

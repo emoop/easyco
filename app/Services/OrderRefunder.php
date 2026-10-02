@@ -2,13 +2,16 @@
 
 namespace App\Services;
 
+use App\Services\Exceptions\NonOfflineRefundAdapterException;
 use DateTimeImmutable;
 use EasyCo\Payment\Contracts\PaymentRefundRepository;
 use EasyCo\Payment\Contracts\PaymentRepository;
 use EasyCo\Payment\Enums\PaymentStatus;
 use EasyCo\Payment\Payment;
 use EasyCo\Payment\PaymentContext;
+use EasyCo\Payment\Enums\RefundChannel;
 use EasyCo\Payment\PaymentRefund;
+use EasyCo\Payment\RefundBreakdown;
 use EasyCo\Pricing\Money;
 use InvalidArgumentException;
 
@@ -18,21 +21,27 @@ use InvalidArgumentException;
  * maybe-reissue, or nothing at all. R8's three cases, exactly.
  *
  * ASSUMES IT IS ALREADY INSIDE AN OPEN TRANSACTION — DOES NOT CALL
- * DB::transaction() ITSELF, AND FIRES NO HOOK. The same shape
- * OrderPaymentConfirmer::confirmWithinOpenTransaction() and
- * ReturnGoodsRecorder::record() already establish: a future
- * OrderStatusChanger will call this from inside its own locked
- * transaction, "under the payment's own row lock" per §7.3's own opening
- * sentence — this class does not take that lock itself, the same way
- * ReturnGoodsRecorder does not lock the order it restocks against.
+ * DB::transaction() ITSELF, AND FIRES NO HOOK. OrderStatusChanger calls it from
+ * inside its own transaction, with THE ORDER ROW LOCKED FIRST
+ * (OrderRepository::findByIdForUpdate): that order lock is the single
+ * serialization point for everything that moves an order's money
+ * (shipping-domain-design.md §7.2.3). It is NOT a payment-row lock — an
+ * earlier version of this comment said "under the payment's own row lock",
+ * which was never true of the code; this class takes no lock itself, the same
+ * way ReturnGoodsRecorder does not lock the order it restocks against.
  *
- * NOT WIRED IN YET. This pass builds OrderRefunder as an independent
- * collaborator only — OrderStatusChanger is untouched, per this stage's
- * own explicit instruction. refund() returns an OrderRefundOutcome so
- * that future caller can pick the right order_events type (REFUNDED /
- * PAYMENT_VOIDED / nothing, order-lifecycle-design.md §7.3's own table)
- * and hand the right PaymentRefund to the order.refunded hook, without a
- * second query to re-derive what just happened.
+ * refund() returns an OrderRefundOutcome so the caller can pick the right
+ * order_events type (REFUND_OWED / REFUNDED / PAYMENT_VOIDED / nothing,
+ * order-lifecycle-design.md §7.3's own table) and hand the right PaymentRefund
+ * to the order.refunded hook, without a second query to re-derive what just
+ * happened.
+ *
+ * EVERY REFUND THIS CLASS WRITES IS OFFLINE (stage R1a): it asks the adapter
+ * isOffline() first and refuses a method that is not, by name
+ * (NonOfflineRefundAdapterException), because an online provider call must
+ * never run inside the database transaction (§7.2.3) — that path is R5. The two
+ * shipped adapters return OWED: the refund is decided and recorded, and the
+ * merchant pays it back later.
  *
  * NO order_events ROW, NO HOOK, NO ORDER WRITE OF ANY KIND — all three
  * belong to the order context, which is OrderStatusChanger's job, not
@@ -57,8 +66,24 @@ final class OrderRefunder
      *   remains refundable, or if a pending-payment refund would leave a
      *   negative remainder.
      */
-    public function refund(string $orderId, Money $totalRefundAmount, DateTimeImmutable $occurredAt, ?string $reason): OrderRefundOutcome
-    {
+    public function refund(
+        string $orderId,
+        Money $totalRefundAmount,
+        DateTimeImmutable $occurredAt,
+        ?string $reason,
+        ?RefundBreakdown $breakdown = null,
+        ?RefundChannel $channel = null,
+    ): OrderRefundOutcome {
+        // The total is always goods + shipping + adjustment - deduction. With no
+        // breakdown given it is all goods (what a plain amount has always meant).
+        if ($breakdown !== null && ! $breakdown->total()->equals($totalRefundAmount)) {
+            throw new InvalidArgumentException(sprintf(
+                'OrderRefunder: the refund total (%d) does not equal its breakdown (%d).',
+                $totalRefundAmount->minorValue(),
+                $breakdown->total()->minorValue(),
+            ));
+        }
+
         $orderPayments = $this->payments->findByOrderId($orderId);
 
         $settled = array_values(array_filter(
@@ -100,7 +125,7 @@ final class OrderRefunder
         }
 
         if (count($settled) === 1) {
-            return $this->refundSettled($orderId, $settled[0], $totalRefundAmount, $reason);
+            return $this->refundSettled($orderId, $settled[0], $totalRefundAmount, $reason, $breakdown, $channel);
         }
 
         if (count($pendingEligible) === 1) {
@@ -115,11 +140,18 @@ final class OrderRefunder
 
     /**
      * R8(a): one PaymentRefund for the returned units' share, capped by
-     * what the settled payment has not already had refunded.
+     * what the settled payment has not already had refunded (every refund
+     * whose money is spoken for counts — OWED included).
      */
-    private function refundSettled(string $orderId, Payment $settledPayment, Money $totalRefundAmount, ?string $reason): OrderRefundOutcome
-    {
-        $alreadyRefunded = $this->paymentRefunds->sumCompletedForPayment(
+    private function refundSettled(
+        string $orderId,
+        Payment $settledPayment,
+        Money $totalRefundAmount,
+        ?string $reason,
+        ?RefundBreakdown $breakdown,
+        ?RefundChannel $channel,
+    ): OrderRefundOutcome {
+        $alreadyRefunded = $this->paymentRefunds->sumCountingForPayment(
             $settledPayment->id(),
             $settledPayment->amount()->currency()->code(),
         );
@@ -136,14 +168,22 @@ final class OrderRefunder
         }
 
         $adapter = $this->adapterResolver->resolve($settledPayment->method());
+
+        if (! $adapter->isOffline()) {
+            throw NonOfflineRefundAdapterException::forMethod($settledPayment->method());
+        }
+
         $attempt = $adapter->refund($settledPayment, $totalRefundAmount, new PaymentContext($orderId));
 
         $staff = $this->staffActor->current();
 
         $refund = PaymentRefund::create(
             paymentId: $settledPayment->id(),
+            orderId: $orderId,
             amount: $totalRefundAmount,
             status: $attempt->status(),
+            channel: $channel ?? RefundChannel::defaultForMethod($settledPayment->method()),
+            breakdown: $breakdown,
             reason: $reason,
             refundedBy: $staff !== null ? (string) $staff->id : null,
             failureReason: $attempt->failureReason(),

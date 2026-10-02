@@ -114,6 +114,7 @@ return [
         'payment_confirmed' => 'Payment recorded as received',
         'returned' => 'Goods returned',
         'refunded' => 'Money refunded',
+        'refund_owed' => 'Refund owed',
         'payment_voided' => 'Pending payment voided',
         'note_added' => 'Internal note',
         'edited' => 'Order edited',

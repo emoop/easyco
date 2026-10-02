@@ -26,4 +26,13 @@ interface PaymentMethodAdapter
     public function charge(Money $amount, PaymentContext $context): PaymentAttemptResult;
 
     public function refund(Payment $original, Money $amount, PaymentContext $context): PaymentRefundAttemptResult;
+
+    /**
+     * True when the method calls no external system at all (cash on delivery,
+     * bank transfer). The refund path only ever calls an OFFLINE adapter inside
+     * its database transaction and refuses any other loudly: an online refund
+     * must never run inside a transaction (shipping-domain-design.md §7.2.3);
+     * that path is R5.
+     */
+    public function isOffline(): bool;
 }

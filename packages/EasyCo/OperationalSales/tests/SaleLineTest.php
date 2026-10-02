@@ -1128,7 +1128,7 @@ final class SaleLineTest extends TestCase
         $this->assertTrue($refund->amount()->isPositive(), 'amount is stored positive, not negated (consistent with PaymentRefund)');
     }
 
-    public function test_create_refund_sets_actual_refund_amount_equal_to_default_with_no_override_exposed(): void
+    public function test_create_refund_without_an_entered_amount_sets_actual_refund_amount_equal_to_the_computed_default(): void
     {
         $origin = $this->persistedSaleLine();
 
@@ -1136,6 +1136,58 @@ final class SaleLineTest extends TestCase
 
         $this->assertTrue($refund->actualRefundAmount()->equals($this->money(950)));
         $this->assertTrue($refund->defaultRefundAmount()->equals($refund->actualRefundAmount()));
+    }
+
+    // --- the merchant-ENTERED amount (shipping-domain-design.md §7.2.1, refunds R1a) ---------
+
+    public function test_the_refund_lines_amount_and_actual_refund_amount_are_the_entered_amount_and_default_keeps_the_computed_share(): void
+    {
+        $origin = $this->persistedSaleLine();
+
+        $refund = $this->createRefund($origin, ['defaultRefundAmount' => $this->money(950), 'actualRefundAmount' => $this->money(600)]);
+
+        $this->assertSame(600, $refund->amount()->minorValue(), 'amount is what the merchant entered');
+        $this->assertSame(600, $refund->actualRefundAmount()->minorValue());
+        $this->assertSame(950, $refund->defaultRefundAmount()->minorValue(), 'the computed share is kept as the audit fact');
+    }
+
+    public function test_an_entered_amount_may_exceed_the_computed_share_the_caps_are_not_this_classs_job(): void
+    {
+        $refund = $this->createRefund($this->persistedSaleLine(), ['defaultRefundAmount' => $this->money(950), 'actualRefundAmount' => $this->money(1200)]);
+
+        $this->assertSame(1200, $refund->actualRefundAmount()->minorValue());
+    }
+
+    public function test_a_refund_line_with_0_is_accepted(): void
+    {
+        $refund = $this->createRefund($this->persistedSaleLine(), ['defaultRefundAmount' => $this->money(950), 'actualRefundAmount' => $this->money(0)]);
+
+        $this->assertTrue($refund->amount()->isZero(), 'goods returned, no money for this line');
+        $this->assertTrue($refund->actualRefundAmount()->isZero());
+        $this->assertSame(950, $refund->defaultRefundAmount()->minorValue());
+        $this->assertSame(1, $refund->quantityReturned(), 'the goods side of the line is untouched');
+    }
+
+    public function test_an_entered_amount_may_not_be_negative_or_in_another_currency(): void
+    {
+        $origin = $this->persistedSaleLine();
+
+        foreach ([[Money::fromMinorUnits(-1, 'EUR'), 'must not be negative'], [Money::fromMinorUnits(100, 'USD'), 'currency']] as [$amount, $expected]) {
+            try {
+                $this->createRefund($origin, ['actualRefundAmount' => $amount]);
+                $this->fail('the entered amount must be refused.');
+            } catch (\InvalidArgumentException $exception) {
+                $this->assertStringContainsString($expected, $exception->getMessage());
+            }
+        }
+    }
+
+    public function test_the_computed_default_is_still_positive_only_even_though_the_entered_amount_may_be_0(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('defaultRefundAmount must be positive');
+
+        $this->createRefund($this->persistedSaleLine(), ['defaultRefundAmount' => $this->money(0), 'actualRefundAmount' => $this->money(0)]);
     }
 
     /** An explicit, reported scope cut (this stage's own final report) — see createRefund()'s own docblock. */

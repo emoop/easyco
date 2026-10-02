@@ -53,6 +53,10 @@ final class ReturnGoodsRecorder
 
     /**
      * @param array<int, array{originatingLine: SaleLine, quantityReturned: int, restock: bool}> $lines
+     * @param array<string, Money> $enteredGoodsByLine The merchant-ENTERED goods amount per originating line id
+     *   (shipping-domain-design.md §7.2.1). A line absent from the map is refunded its computed share, which
+     *   is exactly what this class always did; 0 is a legal entry. An id that names no line of $lines is a
+     *   caller bug and is refused rather than silently ignored.
      *
      * @throws InvalidArgumentException If $lines is empty, or if any
      *   originating line's netPaidAmount is null (a legacy line — refused
@@ -67,6 +71,7 @@ final class ReturnGoodsRecorder
         ?string $returnedBy,
         ?string $returnedByName,
         ?string $reason,
+        array $enteredGoodsByLine = [],
     ): Transaction {
         if ($lines === []) {
             throw new InvalidArgumentException(
@@ -122,6 +127,16 @@ final class ReturnGoodsRecorder
             $alreadyReturnedByIndex[$index] = $alreadyReturned;
         }
 
+        $lineIds = array_map(static fn (array $line): string => (string) $line['originatingLine']->id(), $lines);
+
+        foreach (array_keys($enteredGoodsByLine) as $enteredId) {
+            if (! in_array((string) $enteredId, $lineIds, true)) {
+                throw new InvalidArgumentException(
+                    "ReturnGoodsRecorder: an entered goods amount names SaleLine \"{$enteredId}\", which is not one of the lines being returned."
+                );
+            }
+        }
+
         // Step 3: one new Transaction for this return event.
         $transaction = new Transaction(null, Channel::WEB);
 
@@ -167,6 +182,7 @@ final class ReturnGoodsRecorder
                 displayPriceAtReturn: null,
                 recordedAt: $occurredAt,
                 effectiveAt: $occurredAt,
+                actualRefundAmount: $enteredGoodsByLine[$originatingLine->id()] ?? null,
             );
 
             $transaction->addSaleLine($refundLine);
@@ -187,9 +203,10 @@ final class ReturnGoodsRecorder
             $this->stockLevels->increase($restock['priceableId'], $restock['quantity']);
         }
 
-        // Step 7: the caller (stage 6b-ii's OrderStatusChanger) reads the
-        // new transaction's id for order_events.transaction_id and each
-        // new line's actualRefundAmount for the money step.
+        // Step 7: the caller (OrderStatusChanger) reads the new transaction's
+        // id for order_events.transaction_id and each new line's
+        // actualRefundAmount (the merchant-ENTERED amount, or the computed
+        // share when none was entered) for the money step.
         return $transaction;
     }
 }

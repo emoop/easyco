@@ -44,6 +44,7 @@ enum OrderEventType: string
     case PAYMENT_CONFIRMED = 'payment_confirmed';
     case RETURNED = 'returned';
     case REFUNDED = 'refunded';
+    case REFUND_OWED = 'refund_owed';
     case PAYMENT_VOIDED = 'payment_voided';
     case NOTE_ADDED = 'note_added';
     case EDITED = 'edited';

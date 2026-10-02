@@ -615,6 +615,11 @@ class CheckoutOrchestratorTest extends TestCase
             {
                 throw new RuntimeException('Not exercised by this test.');
             }
+
+            public function isOffline(): bool
+            {
+                return true;
+            }
         });
 
         $variationId = $this->pricedPurchasableVariation('10.00', 10);

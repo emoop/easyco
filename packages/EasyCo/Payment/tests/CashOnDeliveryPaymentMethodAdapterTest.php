@@ -39,7 +39,7 @@ final class CashOnDeliveryPaymentMethodAdapterTest extends TestCase
         $this->assertNull($result->providerReference());
     }
 
-    public function test_refund_always_returns_completed(): void
+    public function test_refund_always_returns_owed_because_the_money_is_paid_back_later(): void
     {
         $original = Payment::create('order-1', 'cash_on_delivery', Money::fromMinorUnits(1000, 'EUR'), PaymentStatus::CAPTURED);
 
@@ -49,7 +49,12 @@ final class CashOnDeliveryPaymentMethodAdapterTest extends TestCase
             new PaymentContext(orderId: 'order-1'),
         );
 
-        $this->assertSame(PaymentRefundStatus::COMPLETED, $result->status());
+        $this->assertSame(PaymentRefundStatus::OWED, $result->status());
         $this->assertNull($result->failureReason());
+    }
+
+    public function test_the_adapter_is_offline(): void
+    {
+        $this->assertTrue($this->adapter()->isOffline(), 'it calls no external system, which is what lets its refund run inside a database transaction');
     }
 }

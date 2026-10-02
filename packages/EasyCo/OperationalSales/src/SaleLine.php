@@ -643,15 +643,20 @@ final class SaleLine
      * its own field precisely so the two numbers can differ and both be
      * readable without a join.
      *
-     * amount = $defaultRefundAmount, POSITIVE (not negated) — consistent
-     * with PaymentRefund's own positive-amount convention for the same
-     * real-world event; §3.6's "included as a negative" describes a
-     * future REPORT's arithmetic treatment of type=REFUND rows, not this
-     * class's storage convention.
+     * THE MERCHANT-ENTERED AMOUNT (shipping-domain-design.md §7.2.1, decision
+     * R1a-2): `amount` AND `actualRefundAmount` both hold the amount the
+     * merchant ENTERED for this line — $actualRefundAmount when given, else
+     * $defaultRefundAmount — and `defaultRefundAmount` always keeps the
+     * COMPUTED share. So a report summing the ledger sees the money that
+     * really went back, not a formula nobody applied. Stored POSITIVE (not
+     * negated), consistent with PaymentRefund's positive-amount convention;
+     * §3.6's "included as a negative" describes a future REPORT's treatment of
+     * type=REFUND rows, not this class's storage convention.
      *
-     * actualRefundAmount IS NOT A PARAMETER — order-lifecycle-design.md
-     * §7.2's own decision: it is set internally, equal to
-     * $defaultRefundAmount. No override is exposed on this path.
+     * A REFUND LINE MAY CARRY 0: the goods came back and no money is paid for
+     * that line. $actualRefundAmount must not be negative and must be in the
+     * origin's currency; the computed $defaultRefundAmount still has to be
+     * positive (unchanged), and no other line type's guards move.
      *
      * profit = Money::zero() — an explicit, reported scope cut, not an
      * oversight: computing a returned unit's true profit share would
@@ -678,11 +683,15 @@ final class SaleLine
         ?Money $displayPriceAtReturn,
         DateTimeImmutable $recordedAt,
         DateTimeImmutable $effectiveAt,
+        ?Money $actualRefundAmount = null,
     ): self {
         self::assertOriginatingLineIsSale($originatingLine, 'createRefund');
         self::assertOriginatingLineIsPersisted($originatingLine, 'createRefund');
         self::assertQuantityReturnedIsValid($quantityReturned, $originatingLine->quantity(), 'createRefund');
         self::assertDefaultRefundAmountIsValid($defaultRefundAmount, $originatingLine->amount());
+
+        $entered = $actualRefundAmount ?? $defaultRefundAmount;
+        self::assertEnteredRefundAmountIsValid($entered, $originatingLine->amount());
 
         return new self(
             id: null,
@@ -692,14 +701,14 @@ final class SaleLine
             type: SaleLineType::REFUND,
             status: SaleLineStatus::COMPLETED,
             quantity: $originatingLine->quantity(),
-            amount: $defaultRefundAmount,
+            amount: $entered,
             profit: Money::zero($defaultRefundAmount->currency()),
             recordedAt: $recordedAt,
             effectiveAt: $effectiveAt,
             originatingSaleLineId: $originatingLine->id(),
             quantityReturned: $quantityReturned,
             defaultRefundAmount: $defaultRefundAmount,
-            actualRefundAmount: $defaultRefundAmount,
+            actualRefundAmount: $entered,
             displayPriceAtReturn: $displayPriceAtReturn,
             returnedBy: $returnedBy,
             returnedByName: $returnedByName,
@@ -860,6 +869,25 @@ final class SaleLine
             throw new InvalidArgumentException(
                 "SaleLine::createRefund(): quantityReturned ({$quantityReturned}) must not exceed ".
                 "the originating line's own quantity ({$originalQuantity})."
+            );
+        }
+    }
+
+    /**
+     * The merchant-entered amount of a REFUND line: NON-NEGATIVE (a line may
+     * be refunded for 0) and in the origin's currency. The computed default
+     * keeps its own, stricter positive-only guard below.
+     */
+    private static function assertEnteredRefundAmountIsValid(Money $entered, Money $originatingAmount): void
+    {
+        if ($entered->isNegative()) {
+            throw new InvalidArgumentException('SaleLine::createRefund(): actualRefundAmount must not be negative.');
+        }
+
+        if (! $entered->currency()->equals($originatingAmount->currency())) {
+            throw new InvalidArgumentException(
+                "SaleLine::createRefund(): actualRefundAmount's currency ({$entered->currency()->code()}) ".
+                "must match the originating line's ({$originatingAmount->currency()->code()})."
             );
         }
     }
@@ -1191,7 +1219,7 @@ final class SaleLine
         return $this->defaultRefundAmount;
     }
 
-    /** §3.4 revised — the fact of record; equals defaultRefundAmount on every line createRefund() builds (no override on this path). */
+    /** §3.4 revised — the fact of record: the amount the merchant ENTERED for this line (equals defaultRefundAmount unless he entered another; may be 0). */
     public function actualRefundAmount(): ?Money
     {
         return $this->actualRefundAmount;

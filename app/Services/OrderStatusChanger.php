@@ -15,7 +15,10 @@ use EasyCo\Order\Contracts\OrderRepository;
 use EasyCo\Order\Enums\OrderStatus;
 use EasyCo\Order\Order;
 use EasyCo\Payment\Contracts\PaymentRepository;
+use EasyCo\Payment\Enums\PaymentRefundStatus;
 use EasyCo\Payment\Payment;
+use EasyCo\Payment\RefundBreakdown;
+use EasyCo\Payment\RefundLine;
 use EasyCo\Pricing\Money;
 use EasyCo\Promotions\Contracts\PromotionRedemptionRepository;
 use Illuminate\Support\Facades\DB;
@@ -159,11 +162,12 @@ final class OrderStatusChanger
      * restocks by default (true), and a line present with `false` does not.
      *
      * @param array<string, bool> $restockOverrides Keyed by originatingSaleLineId — read only when the order's locked status is `shipped`.
+     * @param RefundRequest|null $refund What the merchant decided about the money (shipping-domain-design.md §7.2.1); null is today's behaviour exactly — computed shares, no shipping, no deduction, derived channel.
      *
      * @throws InvalidArgumentException If $orderId is empty or unknown.
      * @throws OrderTransitionRefusedException If the order's locked status is not placed/confirmed/shipped.
      */
-    public function cancel(string $orderId, DateTimeImmutable $occurredAt, ?string $reason = null, array $restockOverrides = []): void
+    public function cancel(string $orderId, DateTimeImmutable $occurredAt, ?string $reason = null, array $restockOverrides = [], ?RefundRequest $refund = null): void
     {
         if (trim($orderId) === '') {
             throw new InvalidArgumentException('OrderStatusChanger: orderId must not be empty.');
@@ -173,6 +177,7 @@ final class OrderStatusChanger
             $orderId,
             $occurredAt,
             $reason,
+            $refund,
             legalStartingStatuses: [OrderStatus::PLACED, OrderStatus::CONFIRMED, OrderStatus::SHIPPED],
             refusalException: static fn (string $orderId, OrderStatus $status): Throwable => OrderTransitionRefusedException::becauseOrderNotCancellable($orderId, $status),
             resolveLines: function (Order $order, array $saleLines) use ($restockOverrides): array {
@@ -222,7 +227,7 @@ final class OrderStatusChanger
      *   placement transaction.
      * @throws OrderTransitionRefusedException If the order's locked status is not shipped/delivered.
      */
-    public function recordReturn(string $orderId, array $lines, DateTimeImmutable $occurredAt, ?string $reason = null): void
+    public function recordReturn(string $orderId, array $lines, DateTimeImmutable $occurredAt, ?string $reason = null, ?RefundRequest $refund = null): void
     {
         if (trim($orderId) === '') {
             throw new InvalidArgumentException('OrderStatusChanger: orderId must not be empty.');
@@ -265,6 +270,7 @@ final class OrderStatusChanger
             $orderId,
             $occurredAt,
             $reason,
+            $refund,
             legalStartingStatuses: [OrderStatus::SHIPPED, OrderStatus::DELIVERED],
             refusalException: static fn (string $orderId, OrderStatus $status): Throwable => OrderTransitionRefusedException::becauseOrderNotReturnable($orderId, $status),
             resolveLines: function (Order $order, array $saleLines) use ($lines): array {
@@ -356,12 +362,13 @@ final class OrderStatusChanger
         string $orderId,
         DateTimeImmutable $occurredAt,
         ?string $reason,
+        ?RefundRequest $refundRequest,
         array $legalStartingStatuses,
         Closure $refusalException,
         Closure $resolveLines,
     ): void {
         /** @var array{order: Order, returnTransaction: ?Transaction, from: ?OrderStatus, to: ?OrderStatus, outcome: ?OrderRefundOutcome} $result */
-        $result = DB::transaction(function () use ($orderId, $occurredAt, $reason, $legalStartingStatuses, $refusalException, $resolveLines): array {
+        $result = DB::transaction(function () use ($orderId, $occurredAt, $reason, $refundRequest, $legalStartingStatuses, $refusalException, $resolveLines): array {
             $order = $this->orders->findByIdForUpdate($orderId);
 
             if ($order === null) {
@@ -387,7 +394,9 @@ final class OrderStatusChanger
             $entries = $resolveLines($order, $saleLines);
 
             $returnTransaction = null;
-            $totalRefundAmount = Money::zero($order->currency());
+            $zero = Money::zero($order->currency());
+            $totalRefundAmount = $zero;
+            $breakdown = null;
 
             if ($entries !== []) {
                 $returnTransaction = $this->returnGoodsRecorder->record(
@@ -397,11 +406,30 @@ final class OrderStatusChanger
                     null,
                     null,
                     $reason,
+                    $refundRequest?->enteredGoodsByLine ?? [],
                 );
 
+                // The refund is made of what the merchant ENTERED: the goods amount
+                // of each new REFUND line (its actualRefundAmount — the computed
+                // share unless he entered another), plus a shipping refund, minus a
+                // deduction. A deduction is a refund-level figure; it is on no line.
+                $goods = $zero;
+                $lineRows = [];
+
                 foreach ($returnTransaction->saleLines() as $refundLine) {
-                    $totalRefundAmount = $totalRefundAmount->add($refundLine->actualRefundAmount());
+                    $goods = $goods->add($refundLine->actualRefundAmount());
+                    $lineRows[] = new RefundLine((string) $refundLine->originatingSaleLineId(), $refundLine->actualRefundAmount());
                 }
+
+                $breakdown = new RefundBreakdown(
+                    goods: $goods,
+                    shipping: $refundRequest?->shipping ?? $zero,
+                    adjustment: $zero,
+                    deduction: $refundRequest?->deduction ?? $zero,
+                    deductionReason: $refundRequest?->deductionReason,
+                    lines: $lineRows,
+                );
+                $totalRefundAmount = $breakdown->total();
 
                 $this->events->record(
                     orderId: $orderId,
@@ -467,13 +495,17 @@ final class OrderStatusChanger
             // actually moved money.
             $outcome = null;
 
+            // A refund whose total is 0 creates NO PaymentRefund — the goods have
+            // already moved above, and there is no money to record.
             if ($totalRefundAmount->isPositive()) {
-                $outcome = $this->orderRefunder->refund($orderId, $totalRefundAmount, $occurredAt, $reason);
+                $outcome = $this->orderRefunder->refund($orderId, $totalRefundAmount, $occurredAt, $reason, $breakdown, $refundRequest?->channel);
 
                 if ($outcome->isRefunded()) {
+                    // An offline refund is OWED — decided, not yet paid back — and the
+                    // history says so; REFUNDED is for money that has actually left.
                     $this->events->record(
                         orderId: $orderId,
-                        type: OrderEventType::REFUNDED,
+                        type: $outcome->refund()->status() === PaymentRefundStatus::OWED ? OrderEventType::REFUND_OWED : OrderEventType::REFUNDED,
                         fromStatus: null,
                         toStatus: null,
                         reason: $reason,

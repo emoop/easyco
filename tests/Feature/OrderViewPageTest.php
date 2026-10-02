@@ -927,7 +927,7 @@ class OrderViewPageTest extends TestCase
             $this->get(OrderResource::getUrl('view', ['record' => $order->id()]))->assertOk()->getContent()
         );
 
-        $goodsEvents = count(array_filter($types, static fn (string $type): bool => in_array($type, ['returned', 'refunded'], true)));
+        $goodsEvents = count(array_filter($types, static fn (string $type): bool => in_array($type, ['returned', 'refunded', 'refund_owed'], true)));
 
         $this->assertSame($goodsEvents, substr_count($historyHtml, $goods), 'the goods appear on the returned (and refunded) rows only');
         $this->assertSame(count($types), substr_count($historyHtml, '#'.$transactionId), 'while every transaction-carrying row, payment_voided included, keeps its record id');

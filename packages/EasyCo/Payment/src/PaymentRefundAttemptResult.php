@@ -18,9 +18,19 @@ final class PaymentRefundAttemptResult
     ) {
     }
 
-    public static function pending(): self
+    /** An online refund asked of a provider and not yet answered (R5). */
+    public static function requested(): self
     {
-        return new self(status: PaymentRefundStatus::PENDING, failureReason: null);
+        return new self(status: PaymentRefundStatus::REQUESTED, failureReason: null);
+    }
+
+    /**
+     * An OFFLINE refund: decided and dated, the money has not left yet. What
+     * both shipped adapters return (shipping-domain-design.md §7.2.5).
+     */
+    public static function owed(): self
+    {
+        return new self(status: PaymentRefundStatus::OWED, failureReason: null);
     }
 
     public static function completed(): self

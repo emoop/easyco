@@ -876,7 +876,7 @@ class OrderStatusChangerTest extends TestCase
         $this->assertSame('status_changed', $events[1]->type);
         $this->assertSame('placed', $events[1]->from_status);
         $this->assertSame('cancelled', $events[1]->to_status);
-        $this->assertSame('refunded', $events[2]->type, 'the settled payment WAS refunded — the event ledger records it regardless of which hook fires');
+        $this->assertSame('refund_owed', $events[2]->type, 'the settled payment WAS refunded — the event ledger records it regardless of which hook fires');
 
         $this->assertSame(1, $returnedFired);
         $this->assertSame(1, $statusChangedFired);
@@ -944,7 +944,7 @@ class OrderStatusChangerTest extends TestCase
         $events = $this->eventRows($orderId);
         $this->assertCount(2, $events, 'RETURNED + REFUNDED — a real refund was written even though the order stayed shipped');
         $this->assertSame('returned', $events[0]->type);
-        $this->assertSame('refunded', $events[1]->type);
+        $this->assertSame('refund_owed', $events[1]->type);
 
         $this->assertSame(1, $returnedFired);
         $this->assertSame(0, $statusChangedFired);

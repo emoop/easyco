@@ -889,6 +889,11 @@ class OrderEditorTest extends TestCase
             {
                 throw new RuntimeException('Not exercised.');
             }
+
+            public function isOffline(): bool
+            {
+                return true;
+            }
         });
 
         try {
