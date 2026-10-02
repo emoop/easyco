@@ -492,6 +492,7 @@ final class OrderStatusChanger
         $zero = Money::zero($order->currency());
         $totalRefundAmount = $zero;
         $breakdown = null;
+        $goodsDifferFromComputed = false;
 
         if ($entries !== []) {
             $returnTransaction = $this->returnGoodsRecorder->record(
@@ -512,6 +513,10 @@ final class OrderStatusChanger
             $lineRows = [];
 
             foreach ($returnTransaction->saleLines() as $refundLine) {
+                if (! $refundLine->actualRefundAmount()->equals($refundLine->defaultRefundAmount())) {
+                    $goodsDifferFromComputed = true;
+                }
+
                 $goods = $goods->add($refundLine->actualRefundAmount());
                 $lineRows[] = new RefundLine((string) $refundLine->originatingSaleLineId(), $refundLine->actualRefundAmount());
             }
@@ -601,9 +606,20 @@ final class OrderStatusChanger
         $outcome = null;
 
         // A refund whose total is 0 creates NO PaymentRefund — the goods have
-        // already moved above, and there is no money to record.
-        if ($totalRefundAmount->isPositive()) {
-            $outcome = $this->orderRefunder->refund($orderId, $totalRefundAmount, $occurredAt, $reason, $breakdown, $refundRequest?->channel);
+        // already moved above, and there is no money to record. The one exception
+        // is a FULL cancel/return, which must still reach the refunder so a pending
+        // payment is voided even when every returned unit was free (§7.2.4).
+        if ($totalRefundAmount->isPositive() || ($allEmptied && $returnTransaction !== null)) {
+            $outcome = $this->orderRefunder->refund(
+                $orderId,
+                $totalRefundAmount,
+                $occurredAt,
+                $reason,
+                $breakdown,
+                $refundRequest?->channel,
+                fullReturn: $allEmptied,
+                goodsDifferFromComputed: $goodsDifferFromComputed,
+            );
 
             if ($outcome->isRefunded()) {
                 // An offline refund is OWED — decided, not yet paid back — and the

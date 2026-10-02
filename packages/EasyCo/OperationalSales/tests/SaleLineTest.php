@@ -1078,18 +1078,25 @@ final class SaleLineTest extends TestCase
         $this->assertSame(2, $refund->quantityReturned());
     }
 
-    public function test_create_refund_throws_when_default_refund_amount_is_zero_or_negative(): void
+    public function test_create_refund_throws_when_default_refund_amount_is_negative(): void
     {
         $origin = $this->persistedSaleLine();
 
-        foreach ([$this->money(0), Money::fromMinorUnits(-100, 'EUR')] as $amount) {
-            try {
-                $this->createRefund($origin, ['defaultRefundAmount' => $amount]);
-                $this->fail('a zero/negative defaultRefundAmount must be refused.');
-            } catch (\InvalidArgumentException $exception) {
-                $this->assertStringContainsString('must be positive', $exception->getMessage());
-            }
+        try {
+            $this->createRefund($origin, ['defaultRefundAmount' => Money::fromMinorUnits(-100, 'EUR')]);
+            $this->fail('a negative defaultRefundAmount must be refused.');
+        } catch (\InvalidArgumentException $exception) {
+            $this->assertStringContainsString('must not be negative', $exception->getMessage());
         }
+    }
+
+    public function test_create_refund_accepts_a_computed_share_of_zero(): void
+    {
+        // The share is a cumulative rounding: a 1-cent line of 3 units has shares 0, 0, 1 (refunds R1c).
+        $refund = $this->createRefund($this->persistedSaleLine(), ['defaultRefundAmount' => $this->money(0)]);
+
+        $this->assertTrue($refund->defaultRefundAmount()->isZero());
+        $this->assertTrue($refund->actualRefundAmount()->isZero());
     }
 
     public function test_create_refund_throws_when_default_refund_amount_currency_does_not_match_the_originating_line(): void
@@ -1182,12 +1189,11 @@ final class SaleLineTest extends TestCase
         }
     }
 
-    public function test_the_computed_default_is_still_positive_only_even_though_the_entered_amount_may_be_0(): void
+    public function test_the_computed_default_may_be_zero_and_the_entered_amount_may_be_zero_too(): void
     {
-        $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('defaultRefundAmount must be positive');
+        $refund = $this->createRefund($this->persistedSaleLine(), ['defaultRefundAmount' => $this->money(0), 'actualRefundAmount' => $this->money(0)]);
 
-        $this->createRefund($this->persistedSaleLine(), ['defaultRefundAmount' => $this->money(0), 'actualRefundAmount' => $this->money(0)]);
+        $this->assertTrue($refund->amount()->isZero());
     }
 
     /** An explicit, reported scope cut (this stage's own final report) — see createRefund()'s own docblock. */
@@ -1669,18 +1675,15 @@ final class SaleLineTest extends TestCase
         $this->assertSame(2, $reversal->quantityReturned(), 'the stock half of the reversal is NOT zero — only the money half is');
     }
 
-    public function test_create_refund_still_refuses_the_fully_discounted_origin_that_create_edit_reversal_accepts(): void
+    public function test_create_refund_accepts_the_fully_discounted_origin_just_as_create_edit_reversal_does(): void
     {
-        // D2's own rationale as a contrast in one place: the two factories
-        // reach opposite-but-both-correct answers for the same zero-net row,
-        // because createRefund()'s defaultRefundAmount is a CHOICE a human
-        // makes for a return, while a reversal's is DERIVED.
+        // Refunds R1c: a computed share of 0 is legal (it was refused before R1b/R1c),
+        // so the two factories now agree on the zero-net row: the goods can come back.
         $origin = $this->fullyDiscountedSaleLine();
 
-        $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('defaultRefundAmount must be positive');
+        $refund = $this->createRefund($origin, ['defaultRefundAmount' => $this->money(0)]);
 
-        $this->createRefund($origin, ['defaultRefundAmount' => $this->money(0)]);
+        $this->assertTrue($refund->defaultRefundAmount()->isZero());
     }
 
     /**

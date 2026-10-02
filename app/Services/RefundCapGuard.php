@@ -37,6 +37,7 @@ final class RefundCapGuard
     public function __construct(
         private readonly PaymentRefundRepository $paymentRefunds,
         private readonly OrderRepository $orders,
+        private readonly OrderCurrentLinesResolver $currentLines,
     ) {
     }
 
@@ -96,6 +97,51 @@ final class RefundCapGuard
 
         if ($total->subtract($totalRoom)->isPositive()) {
             throw RefundCapExceededException::forCap(RefundCapExceededException::TOTAL, $totalRoom);
+        }
+    }
+
+    /**
+     * The shipping reduction of a PARTIAL return on a PENDING payment (§7.2.4) is
+     * capped at the order's shipping that has not been reduced already. Nothing is
+     * refunded there, so no refund record remembers earlier reductions; they are
+     * read off the pending payment itself, which every earlier partial return
+     * reissued for exactly `previous - goods - reduction`:
+     *
+     *   reduced so far = order total - goods credited by EARLIER returns - pending amount
+     *
+     * Goods credited by this return are already written (as REFUND lines) when this
+     * runs, so they are taken out of the sum. Orders are not edited once a return is
+     * possible, so the order total and the pending amount move only through returns.
+     *
+     * @throws RefundCapExceededException
+     */
+    public function assertPendingShippingReduction(string $orderId, Payment $pending, Money $goodsOfThisReturn, Money $reduction): void
+    {
+        if (! $reduction->isPositive()) {
+            return;
+        }
+
+        $order = $this->orders->findById($orderId);
+
+        if ($order === null) {
+            throw new InvalidArgumentException("RefundCapGuard: no order exists with id \"{$orderId}\".");
+        }
+
+        $currency = $reduction->currency();
+        $lineIds = array_map(static fn (array $entry): string => (string) $entry['row']->id, $this->currentLines->resolveRows($order));
+        $creditedInTotal = $lineIds === [] ? 0 : (int) DB::table('operational_sales_sale_lines')
+            ->where('type', 'refund')
+            ->whereIn('originating_sale_line_id', $lineIds)
+            ->sum('actual_refund_amount_minor');
+        $creditedEarlier = Money::fromMinorUnits($creditedInTotal, $currency)->subtract($goodsOfThisReturn);
+
+        $reducedSoFar = $order->total()->subtract($creditedEarlier)->subtract($pending->amount());
+        $reducedSoFar = $reducedSoFar->isNegative() ? Money::zero($currency) : $reducedSoFar;
+
+        $room = $order->shipping()->subtract($reducedSoFar);
+
+        if ($reduction->subtract($room)->isPositive()) {
+            throw RefundCapExceededException::forCap(RefundCapExceededException::PENDING_SHIPPING, $room);
         }
     }
 

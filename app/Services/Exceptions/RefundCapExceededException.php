@@ -26,6 +26,9 @@ final class RefundCapExceededException extends InvalidArgumentException
 
     public const DEDUCTION = 'deduction';
 
+    /** The shipping reduction of a partial return on a PENDING payment (§7.2.4). */
+    public const PENDING_SHIPPING = 'pending_shipping';
+
     private function __construct(
         private readonly string $cap,
         private readonly Money $room,

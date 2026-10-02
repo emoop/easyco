@@ -10,6 +10,7 @@ use App\Rules\KnownCountryCode;
 use App\Services\Exceptions\OperationKeyReusedException;
 use App\Services\Exceptions\OrderAddLineRefusedException;
 use App\Services\Exceptions\OrderTransitionRefusedException;
+use App\Services\Exceptions\PendingPaymentRefundRuleException;
 use App\Services\Exceptions\PromotionNoLongerValidException;
 use App\Services\Exceptions\RefundCapExceededException;
 use App\Services\Exceptions\RefundPermissionDeniedException;
@@ -1758,7 +1759,7 @@ class OrderResource extends Resource
                 ->send();
 
             return;
-        } catch (RefundCapExceededException|RefundPermissionDeniedException|OperationKeyReusedException $e) {
+        } catch (RefundCapExceededException|RefundPermissionDeniedException|OperationKeyReusedException|PendingPaymentRefundRuleException $e) {
             // The refund caps, the money permission and a reused operation key all
             // carry their own translated sentence: shown as a refusal, never a 500.
             Notification::make()

@@ -242,23 +242,96 @@ class RefundCapsTest extends TestCase
         $this->assertSame([0, 2000], array_map(static fn ($l): int => $l->amount->minorValue(), $refund->breakdown()->lines));
     }
 
-    public function test_a_zero_share_is_still_refused_while_net_paid_remains_and_a_negative_one_always(): void
+    public function test_a_computed_share_of_zero_is_legal_so_every_unit_of_a_one_cent_line_is_returnable(): void
+    {
+        // 1 cent paid over 3 units (gross 3, 2 off): the cumulative shares are 0, 0, 1 — and every unit must be returnable.
+        $order = $this->refundableOrder([['quantity' => 3, 'unit' => 1, 'discount' => 2]]);
+        [$line] = $order['saleLineIds'];
+
+        foreach ([1, 2, 3] as $unit) {
+            $this->changer()->recordReturn($order['orderId'], $this->returning($line, 1), $this->at());
+        }
+
+        $shares = DB::table('operational_sales_sale_lines')->where('type', 'refund')->orderBy('id')->pluck('default_refund_amount_minor')->map(fn ($v) => (int) $v)->all();
+        $this->assertSame([0, 0, 1], $shares);
+        $this->assertSame(13, $this->stockOf($order['variationIds'][0]), 'all three units went back on the shelf');
+        $this->assertSame('cancelled', DB::table('orders')->where('id', $order['orderId'])->value('status'), 'a shipped order that is returned in full is cancelled');
+
+        $refunds = $this->refundsOf($order['payment']);
+        $this->assertCount(1, $refunds, 'only the third return moved money: the two zero shares created no refund');
+        $this->assertSame(1, array_sum(array_map(static fn ($r): int => $r->amount()->minorValue(), $refunds)), 'the money totals 1 cent across the three returns');
+    }
+
+    public function test_a_negative_share_is_always_refused_by_the_domain(): void
     {
         $order = $this->refundableOrder([['quantity' => 1, 'unit' => 500]]);
-        $origin = $this->originLine($order['saleLineIds'][0]);
 
-        foreach ([[$this->eur(0), $this->eur(500)], [$this->eur(0), null], [$this->eur(-1), $this->eur(0)]] as [$share, $remaining]) {
-            try {
-                \EasyCo\OperationalSales\SaleLine::createRefund(
-                    originatingLine: $origin, transactionId: '', quantityReturned: 1, defaultRefundAmount: $share,
-                    returnedBy: null, returnedByName: null, returnReason: null, displayPriceAtReturn: null,
-                    recordedAt: $this->at(), effectiveAt: $this->at(), originRemainingNetPaid: $remaining,
-                );
-                $this->fail('a zero share with net paid left, or a negative share, must be refused.');
-            } catch (\InvalidArgumentException $exception) {
-                $this->assertStringContainsString('must be positive', $exception->getMessage());
-            }
-        }
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('must not be negative');
+
+        \EasyCo\OperationalSales\SaleLine::createRefund(
+            originatingLine: $this->originLine($order['saleLineIds'][0]), transactionId: '', quantityReturned: 1, defaultRefundAmount: $this->eur(-1),
+            returnedBy: null, returnedByName: null, returnReason: null, displayPriceAtReturn: null,
+            recordedAt: $this->at(), effectiveAt: $this->at(),
+        );
+    }
+
+    /**
+     * R1c: the per-line cap reads the net paid of the line the return NAMES, and a return can only name a CURRENT line
+     * (OrderCurrentLinesResolver) — after an edit that is the replacement line, whose own net paid is what was really paid.
+     */
+    public function test_the_per_line_cap_reads_the_post_edit_net_paid_of_a_line_edited_while_unpaid(): void
+    {
+        // A: 3 x 10.00, B: 1 x 20.00, placed and unpaid; shipping 0.
+        $order = $this->refundableOrder([['quantity' => 3, 'unit' => 1000], ['quantity' => 1, 'unit' => 2000]], status: \EasyCo\Order\Enums\OrderStatus::PLACED, settle: false);
+        $pending = \EasyCo\Payment\Payment::create($order['orderId'], 'cash_on_delivery', $this->eur(5000), \EasyCo\Payment\Enums\PaymentStatus::PENDING);
+        $pending->recordAttemptResult(\EasyCo\Payment\Enums\PaymentStatus::PENDING, null, null, new \DateTimeImmutable('2026-09-28 09:00:00'));
+        app(\EasyCo\Payment\Contracts\PaymentRepository::class)->save($pending);
+        [$lineA] = $order['saleLineIds'];
+
+        // Edit while pending: A 3 -> 2 (reverses the old line, writes a replacement; the pending payment is reissued for 4000).
+        $origin = $this->originLine($lineA);
+        app(\App\Services\OrderEditor::class)->apply(
+            orderId: $order['orderId'],
+            expectedRevision: 0,
+            lineChanges: [['change' => 'change_quantity', 'originatingLine' => $origin, 'quantity' => 2]],
+            delivery: null,
+            promotionCode: \App\Services\OrderPromotionCodeChange::unchanged(),
+            editedBy: null,
+            editedByName: null,
+            reason: null,
+            occurredAt: $this->at(),
+        );
+
+        $replacement = DB::table('operational_sales_sale_lines')->where('type', 'sale')->where('priceable_id', $order['variationIds'][0])->where('id', '!=', $lineA)->first();
+        $this->assertNotNull($replacement, 'the edit wrote a replacement line for A');
+        $this->assertSame(2000, (int) $replacement->net_paid_amount_minor, 'what was really paid for A after the edit: 2 x 10.00');
+        $this->assertSame(3000, (int) DB::table('operational_sales_sale_lines')->where('id', $lineA)->value('net_paid_amount_minor'), 'the pre-edit line still says 30.00');
+
+        // The customer pays the reissued 40.00 and the order ships.
+        $payments = app(\EasyCo\Payment\Contracts\PaymentRepository::class);
+        $current = collect($payments->findByOrderId($order['orderId']))->first(fn ($p) => ! $p->isVoided());
+        $this->assertSame(4000, $current->amount()->minorValue());
+        $current->confirm(new \DateTimeImmutable('2026-09-28 10:00:00'));
+        $payments->save($current);
+        DB::table('orders')->where('id', $order['orderId'])->update(['status' => 'shipped']);
+
+        // Return A in full with 25.00 entered: above the post-edit 20.00, below the pre-edit 30.00 and within the 40.00 payment.
+        $exception = $this->refusal(fn () => $this->changer()->recordReturn(
+            $order['orderId'],
+            $this->returning((string) $replacement->id, 2),
+            $this->at(),
+            null,
+            new RefundRequest(enteredGoodsByLine: [(string) $replacement->id => $this->eur(2500)]),
+        ));
+
+        $this->assertSame(RefundCapExceededException::LINE, $exception->cap());
+        $this->assertSame(2000, $exception->room()->minorValue(), 'the room is the post-edit net paid, not the pre-edit 30.00');
+        $this->assertSame([], $this->refundsOf($current));
+
+        // Entering exactly what was paid is accepted.
+        $this->changer()->recordReturn($order['orderId'], $this->returning((string) $replacement->id, 2), $this->at(), null, new RefundRequest(enteredGoodsByLine: [(string) $replacement->id => $this->eur(2000)]));
+        $this->assertSame(2000, $this->refundsOf($current)[0]->amount()->minorValue());
     }
 
     private function originLine(string $id): \EasyCo\OperationalSales\SaleLine

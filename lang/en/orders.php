@@ -152,6 +152,12 @@ return [
         'shipping' => 'The shipping refund is more than the shipping that was paid: at most :room can still be refunded.',
         'total' => 'This refund is more than the customer paid: at most :room can still be refunded.',
         'deduction' => 'The deduction is larger than the goods plus the shipping being refunded (at most :room). Nothing was recorded.',
+        'pending_shipping' => 'The shipping reduction is more than the shipping that has not been reduced yet: at most :room can still be taken off. Nothing was recorded.',
+    ],
+
+    'pending_payment_rules' => [
+        'deduction' => 'This order has not been paid, so there is nothing to deduct from. Remove the deduction. Nothing was recorded.',
+        'goods' => 'This order has not been paid, so the goods amount cannot be changed: it is the computed share of the returned units. Clear the entered amount. Nothing was recorded.',
     ],
 
     'refund_permission_denied' => [

@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Services\Exceptions\NonOfflineRefundAdapterException;
+use App\Services\Exceptions\PendingPaymentRefundRuleException;
 use DateTimeImmutable;
 use EasyCo\Payment\Contracts\PaymentRefundRepository;
 use EasyCo\Payment\Contracts\PaymentRepository;
@@ -75,6 +76,8 @@ final class OrderRefunder
         ?string $reason,
         ?RefundBreakdown $breakdown = null,
         ?RefundChannel $channel = null,
+        bool $fullReturn = false,
+        bool $goodsDifferFromComputed = false,
     ): OrderRefundOutcome {
         // The total is always goods + shipping + adjustment - deduction. With no
         // breakdown given it is all goods (what a plain amount has always meant).
@@ -127,11 +130,16 @@ final class OrderRefunder
         }
 
         if (count($settled) === 1) {
+            // A refund of nothing (a fully emptied order whose goods were all free) is no refund.
+            if (! $totalRefundAmount->isPositive()) {
+                return OrderRefundOutcome::nothingRecorded();
+            }
+
             return $this->refundSettled($orderId, $settled[0], $totalRefundAmount, $reason, $breakdown, $channel);
         }
 
         if (count($pendingEligible) === 1) {
-            return $this->voidAndMaybeReissue($orderId, $pendingEligible[0], $totalRefundAmount, $occurredAt);
+            return $this->voidAndMaybeReissue($orderId, $pendingEligible[0], $totalRefundAmount, $occurredAt, $breakdown, $fullReturn, $goodsDifferFromComputed);
         }
 
         // (c) No payment at all, or every payment already voided/failed:
@@ -201,8 +209,40 @@ final class OrderRefunder
      * duplicated rule. A remainder of zero voids and stops; a remainder
      * that would be negative is refused before anything is written.
      */
-    private function voidAndMaybeReissue(string $orderId, Payment $pendingPayment, Money $totalRefundAmount, DateTimeImmutable $occurredAt): OrderRefundOutcome
-    {
+    private function voidAndMaybeReissue(
+        string $orderId,
+        Payment $pendingPayment,
+        Money $totalRefundAmount,
+        DateTimeImmutable $occurredAt,
+        ?RefundBreakdown $breakdown,
+        bool $fullReturn,
+        bool $goodsDifferFromComputed,
+    ): OrderRefundOutcome {
+        $breakdown ??= RefundBreakdown::goodsOnly($totalRefundAmount);
+
+        // Nothing was paid (§7.2.4): there is nothing to deduct from, and the goods
+        // are the computed share of the returned units — read-only.
+        if ($breakdown->deduction->isPositive()) {
+            throw PendingPaymentRefundRuleException::deductionNotAllowed();
+        }
+
+        if ($goodsDifferFromComputed) {
+            throw PendingPaymentRefundRuleException::goodsAmountIsReadOnly();
+        }
+
+        // A FULL cancel or return leaves nothing owed: the payment is voided and
+        // NEVER reissued (closes H1 — it used to reissue what was left, the
+        // shipping, for an order that no longer exists).
+        if ($fullReturn) {
+            $this->pendingPaymentReissuer->voidOnly($pendingPayment, $occurredAt);
+
+            return OrderRefundOutcome::voidedOnly($pendingPayment);
+        }
+
+        // A PARTIAL return reissues pending - goods - shipping reduction; the
+        // shipping reduction (default 0) is capped at the shipping not yet reduced.
+        $this->capGuard->assertPendingShippingReduction($orderId, $pendingPayment, $breakdown->goods, $breakdown->shipping);
+
         $remainder = $pendingPayment->amount()->subtract($totalRefundAmount);
 
         if ($remainder->isNegative()) {
