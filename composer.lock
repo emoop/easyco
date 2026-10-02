@@ -1418,9 +1418,11 @@
             "dist": {
                 "type": "path",
                 "url": "packages/EasyCo/Shipping",
-                "reference": "f9a4f2f6b48f4c01417fcbf70735e7f89bffd1eb"
+                "reference": "3576ba47c619340083553f4634f8724dc863aa03"
             },
             "require": {
+                "ext-intl": "*",
+                "ext-mbstring": "*",
                 "php": "^8.3"
             },
             "require-dev": {

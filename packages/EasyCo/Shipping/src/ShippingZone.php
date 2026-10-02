@@ -3,14 +3,14 @@
 namespace EasyCo\Shipping;
 
 use EasyCo\Shipping\Exceptions\InvalidShippingZoneException;
+use EasyCo\Shipping\Matching\PostcodeNormalizer;
 use LogicException;
 
 /**
  * An ordered region a delivery address can fall in — shipping-domain-design.md
- * §4. STORE ONLY IN THIS STAGE: countryCodes, settlementNames and postcodes
- * are validated and persisted, but nothing here matches an address against
- * them — zone matching (first match by sortOrder wins, exactly one zone per
- * order) is stage 3a's.
+ * §4. This entity validates and holds countryCodes, settlementNames and
+ * postcodes; it does not match addresses. Matching (first match by sortOrder
+ * wins, exactly one zone per order) is Matching\ZoneMatcher's.
  *
  * countryCodes: a non-empty list of unique uppercase two-letter codes. They
  * are NOT checked against an official country list — only against the shape.
@@ -209,7 +209,7 @@ final class ShippingZone
             }
 
             // trim, remove ALL whitespace (ASCII and Unicode separators), uppercase
-            $normalized = mb_strtoupper((string) preg_replace('/[\s\p{Z}]+/u', '', $postcode));
+            $normalized = PostcodeNormalizer::normalize($postcode);
 
             if (preg_match('/^[A-Z0-9-]{2,12}$/D', $normalized) !== 1) {
                 throw InvalidShippingZoneException::invalidPostcode($postcode);
