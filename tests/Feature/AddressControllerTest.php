@@ -46,6 +46,7 @@ class AddressControllerTest extends TestCase
             'delivery_type' => 'pickup_point',
             'recipient_name' => 'Ivan Ivanov',
             'phone' => '+359888123456',
+            'country' => 'BG',
             'carrier_code' => 'econt',
             'pickup_point_reference' => 'office-1234',
             'settlement' => 'Sofia',
@@ -119,6 +120,86 @@ class AddressControllerTest extends TestCase
 
         $response->assertStatus(422);
         $response->assertJsonValidationErrors(['settlement']);
+    }
+
+    // --- the delivery country, owner decision D1 (stage 3.0b) -----------------------------------
+
+    public function test_a_pickup_point_payload_without_a_country_returns_422(): void
+    {
+        $payload = $this->pickupPointPayload();
+        unset($payload['country']);
+
+        $this->postJson('/api/addresses', $payload)
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['country']);
+    }
+
+    public function test_the_http_layer_accepts_a_lowercase_country_and_stores_it_uppercase_for_both_delivery_types(): void
+    {
+        foreach ([$this->streetAddressPayload(['country' => 'bg']), $this->pickupPointPayload(['country' => 'bg'])] as $payload) {
+            $response = $this->postJson('/api/addresses', $payload)->assertStatus(201);
+
+            $response->assertJsonPath('country', 'BG');
+            $this->assertSame('BG', AddressModel::findOrFail($response->json('id'))->country);
+        }
+    }
+
+    public function test_a_padded_country_is_trimmed_before_it_is_validated(): void
+    {
+        $response = $this->postJson('/api/addresses', $this->pickupPointPayload(['country' => '  gr ']))->assertStatus(201);
+
+        $this->assertSame('GR', $response->json('country'));
+    }
+
+    public function test_an_unknown_country_code_is_refused_at_http_for_both_delivery_types(): void
+    {
+        foreach (['ZZ', 'EU', 'UN', 'XYZ', 'B1', 'ß'] as $bad) {
+            foreach ([$this->streetAddressPayload(['country' => $bad]), $this->pickupPointPayload(['country' => $bad])] as $payload) {
+                $this->postJson('/api/addresses', $payload)
+                    ->assertStatus(422)
+                    ->assertJsonValidationErrors(['country']);
+            }
+        }
+
+        $this->assertSame(0, AddressModel::count());
+    }
+
+    public function test_xk_is_accepted_as_a_delivery_country(): void
+    {
+        $this->postJson('/api/addresses', $this->pickupPointPayload(['country' => 'xk']))
+            ->assertStatus(201)
+            ->assertJsonPath('country', 'XK');
+    }
+
+    public function test_the_country_error_message_is_translated_in_english_and_bulgarian(): void
+    {
+        app()->setLocale('en');
+        $this->postJson('/api/addresses', $this->pickupPointPayload(['country' => 'ZZ']))
+            ->assertJsonPath('errors.country.0', __('delivery.country.invalid', [], 'en'));
+        $this->assertStringContainsString('two-letter code', __('delivery.country.invalid', [], 'en'));
+
+        app()->setLocale('bg');
+        $this->postJson('/api/addresses', $this->pickupPointPayload(['country' => 'ZZ']))
+            ->assertJsonPath('errors.country.0', __('delivery.country.invalid', [], 'bg'));
+        $this->assertStringContainsString('двубуквения', __('delivery.country.invalid', [], 'bg'));
+
+        $payload = $this->pickupPointPayload();
+        unset($payload['country']);
+        $this->postJson('/api/addresses', $payload)->assertJsonPath('errors.country.0', __('delivery.country.required', [], 'bg'));
+    }
+
+    public function test_update_normalizes_the_country_too(): void
+    {
+        $this->loggedInAccount();
+        $created = $this->postJson('/api/addresses', $this->pickupPointPayload())->assertStatus(201)->json();
+
+        $this->putJson("/api/addresses/{$created['id']}", $this->pickupPointPayload(['country' => 'ro']))
+            ->assertStatus(200)
+            ->assertJsonPath('country', 'RO');
+
+        $this->putJson("/api/addresses/{$created['id']}", $this->pickupPointPayload(['country' => 'ZZ']))
+            ->assertStatus(422);
+        $this->assertSame('RO', AddressModel::findOrFail($created['id'])->country);
     }
 
     // --- index() ---------------------------------------------------------------

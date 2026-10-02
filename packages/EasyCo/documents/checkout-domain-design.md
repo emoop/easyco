@@ -85,7 +85,8 @@ Order                                          (aggregate root, package EasyCo\O
 │                          That contradicted §8.4 in the same document; §8.4 is correct.)
 ├── deliveryType           STREET_ADDRESS | PICKUP_POINT
 ├── recipientName, phone
-├── country, city, postalCode, addressLine1, addressLine2    (nullable; STREET_ADDRESS only)
+├── country                                                  (required for BOTH types, an uppercase ISO alpha-2 code, a PICKUP_POINT included — owner decision D1, shipping stage 3.0b; copied from the Address exactly as the street fields are)
+├── city, postalCode, addressLine1, addressLine2             (nullable; STREET_ADDRESS only)
 └── carrierCode, pickupPointReference, settlement            (nullable; PICKUP_POINT only)
 ```
 

@@ -6,6 +6,7 @@ use App\Filament\Concerns\AuthorizesViaStaffPermission;
 use App\Filament\NavigationGroup;
 use App\Filament\Resources\OrderResource\Pages\ListOrders;
 use App\Filament\Resources\OrderResource\Pages\ViewOrder;
+use App\Rules\KnownCountryCode;
 use App\Services\Exceptions\OrderAddLineRefusedException;
 use App\Services\Exceptions\OrderTransitionRefusedException;
 use App\Services\Exceptions\PromotionNoLongerValidException;
@@ -26,6 +27,8 @@ use App\Services\OrderStatusChanger;
 use App\Services\PanelStaffActor;
 use App\Services\PriceDisplayFormatter;
 use App\Services\ProductPriceDisplay;
+use App\Settings\CountryNames;
+use App\Settings\StoreLocale;
 use BackedEnum;
 use Closure;
 use DateTimeImmutable;
@@ -466,9 +469,10 @@ class OrderResource extends Resource
                     TextEntry::make('delivery_type')
                         ->label(__('orders.fields.delivery_type'))
                         ->formatStateUsing(fn (string $state): string => __("orders.delivery_type_options.{$state}")),
+                    // Shown for BOTH delivery types: a pickup point is in a country too
+                    // (owner decision D1). A historical pickup order may have none: "n/a".
                     TextEntry::make('country')
                         ->label(__('orders.fields.country'))
-                        ->visible(fn (OrderModel $record): bool => $record->delivery_type === OrderDeliveryType::STREET_ADDRESS->value)
                         ->formatStateUsing(fn (?string $state): string => $state ?? __('orders.not_available')),
                     TextEntry::make('city')
                         ->label(__('orders.fields.city'))
@@ -1453,7 +1457,19 @@ class OrderResource extends Resource
                         ->live(),
                     TextInput::make('delivery.recipient_name')->label(__('orders.fields.recipient_name'))->default($record->recipient_name)->required(),
                     TextInput::make('delivery.phone')->label(__('orders.fields.phone'))->default($record->phone)->required(),
-                    TextInput::make('delivery.country')->label(__('orders.fields.country'))->default($record->country)->visible($isStreet)->required(),
+                    // The country belongs to BOTH delivery types (owner decision D1), so it
+                    // is always shown, and picked from the same list the domain's HTTP layer
+                    // validates against. It is required, EXCEPT on a historical pickup-point
+                    // order that never had one: that order must stay editable in its lines
+                    // and promotion without being forced to invent a country, and if its
+                    // delivery snapshot IS changed the domain still refuses a blank country.
+                    Select::make('delivery.country')
+                        ->label(__('orders.fields.country'))
+                        ->options(fn (): array => CountryNames::forLocale(app(StoreLocale::class)->current()))
+                        ->searchable()
+                        ->default($record->country)
+                        ->rule(new KnownCountryCode('delivery.country.invalid'))
+                        ->required(fn (Get $get): bool => $record->country !== null || $isStreet($get)),
                     TextInput::make('delivery.city')->label(__('orders.fields.city'))->default($record->city)->visible($isStreet)->required(),
                     TextInput::make('delivery.postal_code')->label(__('orders.fields.postal_code'))->default($record->postal_code)->visible($isStreet),
                     TextInput::make('delivery.address_line_1')->label(__('orders.fields.address_line_1'))->default($record->address_line_1)->visible($isStreet)->required(),

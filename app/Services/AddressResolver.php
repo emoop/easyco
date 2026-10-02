@@ -2,10 +2,12 @@
 
 namespace App\Services;
 
+use App\Services\Exceptions\AddressIncompleteForCheckoutException;
 use App\Services\Exceptions\AddressNotFoundForCheckoutException;
 use EasyCo\Address\Address;
 use EasyCo\Address\Contracts\AddressRepository;
 use EasyCo\Address\Enums\AddressDeliveryType;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Resolves the Address for a checkout, per checkout-domain-design.md §8.4.
@@ -48,6 +50,18 @@ class AddressResolver
 
         if ($address === null || $address->accountId() !== $accountId) {
             throw new AddressNotFoundForCheckoutException($addressId);
+        }
+
+        // A historical pickup-point address saved before D1 has no country; an
+        // Order cannot be built from it and nothing may guess one. Refused here,
+        // before any write. The warning carries the address id ONLY (no personal
+        // data) so the merchant can find it and run the backfill command.
+        if ($address->country() === null) {
+            Log::warning('Checkout refused: the saved address has no country (run addresses:backfill-pickup-country).', [
+                'address_id' => $addressId,
+            ]);
+
+            throw new AddressIncompleteForCheckoutException($addressId);
         }
 
         return $address;

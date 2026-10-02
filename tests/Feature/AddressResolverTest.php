@@ -76,6 +76,7 @@ class AddressResolverTest extends TestCase
             recipientName: 'Maria Petrova',
             phone: '+359888654321',
             accountId: null,
+            country: 'BG',
             carrierCode: 'econt',
             pickupPointReference: 'office-1234',
             settlement: 'Plovdiv',
@@ -83,6 +84,7 @@ class AddressResolverTest extends TestCase
 
         $reloaded = app(AddressRepository::class)->findById($address->id());
         $this->assertSame(AddressDeliveryType::PICKUP_POINT, $reloaded->deliveryType());
+        $this->assertSame('BG', $reloaded->country());
         $this->assertSame('econt', $reloaded->carrierCode());
         $this->assertSame('office-1234', $reloaded->pickupPointReference());
         $this->assertSame('Plovdiv', $reloaded->settlement());

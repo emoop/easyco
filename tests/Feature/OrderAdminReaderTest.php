@@ -313,7 +313,7 @@ class OrderAdminReaderTest extends TestCase
     {
         [$order] = $this->placeGuestOrder([
             'deliveryType' => AddressDeliveryType::PICKUP_POINT,
-            'country' => null,
+            'country' => 'BG',
             'city' => null,
             'addressLine1' => null,
             'carrierCode' => 'econt',
@@ -326,7 +326,7 @@ class OrderAdminReaderTest extends TestCase
         $this->assertNotNull($view);
         $this->assertFalse($view->hasPromotionRedemption);
         $this->assertNull($view->order->appliedPromotionCode());
-        $this->assertNull($view->order->country());
+        $this->assertSame('BG', $view->order->country());
         $this->assertNull($view->order->addressLine1());
         $this->assertSame('EC-123', $view->order->pickupPointReference());
         $this->assertNotNull($view->latestPayment);

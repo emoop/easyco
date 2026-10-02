@@ -6,6 +6,7 @@ use EasyCo\Address\Address;
 use EasyCo\Address\Enums\AddressDeliveryType;
 use InvalidArgumentException;
 use LogicException;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 final class AddressTest extends TestCase
@@ -47,7 +48,7 @@ final class AddressTest extends TestCase
             recipientName: $this->value($overrides, 'recipientName', 'Ivan Ivanov'),
             phone: $this->value($overrides, 'phone', '+359888123456'),
             accountId: $this->value($overrides, 'accountId', null),
-            country: $this->value($overrides, 'country', null),
+            country: $this->value($overrides, 'country', 'BG'),
             city: $this->value($overrides, 'city', null),
             postalCode: $this->value($overrides, 'postalCode', null),
             addressLine1: $this->value($overrides, 'addressLine1', null),
@@ -149,7 +150,7 @@ final class AddressTest extends TestCase
         $this->assertSame('econt', $address->carrierCode());
         $this->assertSame('office-1234', $address->pickupPointReference());
         $this->assertSame('Sofia', $address->settlement());
-        $this->assertNull($address->country());
+        $this->assertSame('BG', $address->country());
         $this->assertNull($address->city());
         $this->assertNull($address->postalCode());
         $this->assertNull($address->addressLine1());
@@ -187,13 +188,82 @@ final class AddressTest extends TestCase
         $this->pickupPoint(['carrierCode' => '']);
     }
 
-    /** A PICKUP_POINT construction that also supplies country must throw — exclusivity direction 2. */
-    public function test_pickup_point_with_country_throws(): void
+    // --- country belongs to BOTH delivery types (owner decision D1, stage 3.0b) ---
+
+    public function test_a_pickup_point_address_requires_a_country(): void
     {
         $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('country');
+        $this->expectExceptionMessage('country must not be empty');
 
-        $this->pickupPoint(['country' => 'BG']);
+        $this->pickupPoint(['country' => null]);
+    }
+
+    public function test_a_blank_country_is_refused_for_a_pickup_point_too(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('country must not be empty');
+
+        $this->pickupPoint(['country' => '  ']);
+    }
+
+    /** @return array<string, array{string}> */
+    public static function malformedCountries(): array
+    {
+        return [
+            'lowercase' => ['bg'],
+            'mixed case' => ['Bg'],
+            'three letters' => ['BGR'],
+            'one letter' => ['B'],
+            'digits' => ['B1'],
+            'padded' => [' BG'],
+            'trailing newline' => ["BG\n"],
+            'non-ASCII letters' => ['БГ'],
+        ];
+    }
+
+    #[DataProvider('malformedCountries')]
+    public function test_a_lowercase_or_malformed_country_is_refused_by_the_domain_not_normalized(string $country): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('uppercase ISO 3166-1 alpha-2');
+
+        $this->pickupPoint(['country' => $country]);
+    }
+
+    #[DataProvider('malformedCountries')]
+    public function test_a_malformed_country_is_refused_for_a_street_address_too(string $country): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('uppercase ISO 3166-1 alpha-2');
+
+        $this->streetAddress(['country' => $country]);
+    }
+
+    public function test_the_domain_checks_the_shape_only_not_the_country_list(): void
+    {
+        // "ZZ" is a well-formed code that is not a country; telling the two apart is the
+        // HTTP layer's job (App\Rules\KnownCountryCode), because this package must not
+        // import app code.
+        $this->assertSame('ZZ', $this->pickupPoint(['country' => 'ZZ'])->country());
+        $this->assertSame('XK', $this->pickupPoint(['country' => 'XK'])->country());
+    }
+
+    public function test_update_refuses_a_lowercase_country_on_a_pickup_point(): void
+    {
+        $address = $this->pickupPoint();
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('uppercase ISO 3166-1 alpha-2');
+
+        $address->update(
+            deliveryType: AddressDeliveryType::PICKUP_POINT,
+            recipientName: 'Ivan Ivanov',
+            phone: '+359888123456',
+            country: 'bg',
+            carrierCode: 'econt',
+            pickupPointReference: 'office-1234',
+            settlement: 'Sofia',
+        );
     }
 
     public function test_pickup_point_with_city_throws(): void
@@ -323,6 +393,7 @@ final class AddressTest extends TestCase
             deliveryType: AddressDeliveryType::PICKUP_POINT,
             recipientName: 'Ivan Ivanov',
             phone: '+359888123456',
+            country: 'BG',
             carrierCode: 'speedy',
             pickupPointReference: 'office-9999',
             settlement: 'Varna',
@@ -330,7 +401,7 @@ final class AddressTest extends TestCase
 
         $this->assertSame(AddressDeliveryType::PICKUP_POINT, $address->deliveryType());
         $this->assertSame('speedy', $address->carrierCode());
-        $this->assertNull($address->country());
+        $this->assertSame('BG', $address->country());
         $this->assertNull($address->addressLine1());
     }
 
@@ -423,7 +494,30 @@ final class AddressTest extends TestCase
         $this->assertSame('Floor 2', $address->addressLine2());
     }
 
-    public function test_reconstitute_from_storage_round_trips_a_pickup_point(): void
+    public function test_reconstitute_from_storage_round_trips_a_pickup_point_with_a_country(): void
+    {
+        $address = Address::reconstituteFromStorage(
+            id: '7',
+            accountId: null,
+            deliveryType: AddressDeliveryType::PICKUP_POINT,
+            recipientName: 'Ivan Ivanov',
+            phone: '+359888123456',
+            country: 'GR',
+            city: null,
+            postalCode: null,
+            addressLine1: null,
+            addressLine2: null,
+            carrierCode: 'econt',
+            pickupPointReference: 'office-1234',
+            settlement: 'Athens',
+        );
+
+        $this->assertSame('GR', $address->country());
+        $this->assertSame('Athens', $address->settlement());
+    }
+
+    /** Read path: a historical pickup-point row saved before D1 has no country and must still load. */
+    public function test_a_historical_pickup_point_row_with_a_null_country_still_loads(): void
     {
         $address = Address::reconstituteFromStorage(
             id: '6',
@@ -442,6 +536,7 @@ final class AddressTest extends TestCase
         );
 
         $this->assertSame('6', $address->id());
+        $this->assertNull($address->country());
         $this->assertNull($address->accountId());
         $this->assertSame(AddressDeliveryType::PICKUP_POINT, $address->deliveryType());
         $this->assertSame('econt', $address->carrierCode());

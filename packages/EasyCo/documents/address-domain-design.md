@@ -35,10 +35,14 @@ Address
 │                          physically receives the delivery
 ├── phone                  string, required regardless of type — every
 │                          courier needs a contact number
+├── country                string, required regardless of type — an uppercase
+│                          ISO 3166-1 alpha-2 code, e.g. "BG" (or "XK", as
+│                          App\Settings\CountryNames offers). A PICKUP_POINT
+│                          has one too (owner decision D1, shipping stage
+│                          3.0b). See the paragraph below.
 │
 │ STREET_ADDRESS fields — required when deliveryType = STREET_ADDRESS,
 │ must be null when deliveryType = PICKUP_POINT:
-├── country                string (ISO 3166-1 alpha-2, e.g. "BG")
 ├── city                   string
 ├── postalCode             string, nullable even for STREET_ADDRESS —
 │                          some regions/rural addresses genuinely
@@ -61,6 +65,8 @@ Address
                            point is in, for display/snapshot
                            purposes only
 ```
+
+**Country is the one field shared by both types (owner decision D1, final).** The delivery country is a validated ISO alpha-2 code on EVERY address, a `PICKUP_POINT` included: a pickup point is in a country, and shipping rules (zones, rates) are decided by country. The domain checks the SHAPE only — exactly two uppercase ASCII letters, never normalized (a lowercase `bg` is refused, not fixed) — because this package must not import app code. Whether the code is a real country is the HTTP layer's job (`App\Rules\KnownCountryCode`, which trims and uppercases the submitted value first). The store country (`site.country`) is only the default a form may preselect; it is never substituted for a missing country. Rows read back from storage are not re-validated, so a historical pickup-point address with a NULL country still loads; an operator fills those deliberately with `addresses:backfill-pickup-country`.
 
 Constructor validates the same kind of exclusivity `Cart` already enforces between `accountId`/`sessionToken` (see `Cart.php`'s own constructor guard as the precedent to mirror): exactly the fields belonging to the given `deliveryType` may be non-null, never fields from the other type, regardless of which type is chosen.
 

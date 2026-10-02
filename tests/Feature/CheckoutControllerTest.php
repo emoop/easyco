@@ -217,6 +217,152 @@ class CheckoutControllerTest extends TestCase
         $this->assertSame((string) $addressId, (string) $order->address_id);
     }
 
+    // --- the delivery country, owner decision D1 (stage 3.0b) -----------------------------------
+
+    /** @return array<string, mixed> a fresh PICKUP_POINT delivery (no street fields) */
+    private function pickupPayload(array $overrides = []): array
+    {
+        $payload = $this->checkoutPayload(array_merge([
+            'delivery_type' => 'pickup_point',
+            'country' => 'bg',
+            'carrier_code' => 'econt',
+            'pickup_point_reference' => 'office-1234',
+            'settlement' => 'Plovdiv',
+        ], $overrides));
+        unset($payload['city'], $payload['address_line_1']);
+
+        return $payload;
+    }
+
+    public function test_checkout_copies_a_pickup_points_country_onto_the_order_and_the_http_layer_uppercases_it(): void
+    {
+        $variationId = $this->pricedPurchasableVariation('10.00', 10);
+        $this->addLineViaHttp($variationId, 1);
+
+        $response = $this->postJson('/api/checkout', $this->pickupPayload());
+
+        $response->assertStatus(201);
+        $response->assertJsonPath('order.country', 'BG');
+        $response->assertJsonPath('order.delivery_type', 'pickup_point');
+        $this->assertSame('BG', OrderModel::findOrFail($response->json('order.id'))->country);
+    }
+
+    public function test_checkout_copies_the_country_of_a_saved_pickup_point_address_onto_the_order(): void
+    {
+        $this->loggedInAccount();
+        $addressId = $this->postJson('/api/addresses', [
+            'delivery_type' => 'pickup_point',
+            'recipient_name' => 'Ivan Ivanov',
+            'phone' => '+359888111222',
+            'country' => 'GR',
+            'carrier_code' => 'speedy',
+            'pickup_point_reference' => 'office-9',
+            'settlement' => 'Athens',
+        ])->assertStatus(201)->json('id');
+
+        $variationId = $this->pricedPurchasableVariation('10.00', 10);
+        $this->addLineViaHttp($variationId, 1);
+
+        $payload = $this->checkoutPayload(['address_id' => $addressId]);
+        unset($payload['delivery_type'], $payload['country'], $payload['city'], $payload['address_line_1']);
+
+        $response = $this->postJson('/api/checkout', $payload)->assertStatus(201);
+
+        $this->assertSame('GR', OrderModel::findOrFail($response->json('order.id'))->country);
+    }
+
+    public function test_a_pickup_point_checkout_without_a_country_returns_422_and_places_nothing(): void
+    {
+        $variationId = $this->pricedPurchasableVariation('10.00', 10);
+        $this->addLineViaHttp($variationId, 1);
+
+        $payload = $this->pickupPayload();
+        unset($payload['country']);
+
+        $this->postJson('/api/checkout', $payload)->assertStatus(422)->assertJsonValidationErrors(['country']);
+        $this->assertSame(0, OrderModel::count());
+    }
+
+    public function test_an_unknown_country_is_refused_at_checkout_for_both_delivery_types_and_xk_is_accepted(): void
+    {
+        $variationId = $this->pricedPurchasableVariation('10.00', 10);
+        $this->addLineViaHttp($variationId, 1);
+
+        $this->postJson('/api/checkout', $this->pickupPayload(['country' => 'ZZ']))->assertStatus(422)->assertJsonValidationErrors(['country']);
+        $this->postJson('/api/checkout', $this->checkoutPayload(['country' => 'ZZ']))->assertStatus(422)->assertJsonValidationErrors(['country']);
+        $this->assertSame(0, OrderModel::count());
+
+        $this->postJson('/api/checkout', $this->pickupPayload(['country' => 'xk']))->assertStatus(201)->assertJsonPath('order.country', 'XK');
+    }
+
+    public function test_a_typed_country_together_with_a_saved_address_id_is_still_refused(): void
+    {
+        $this->loggedInAccount();
+        $addressId = $this->postJson('/api/addresses', [
+            'delivery_type' => 'street_address', 'recipient_name' => 'Ivan Ivanov', 'phone' => '+359888111222',
+            'country' => 'BG', 'city' => 'Sofia', 'address_line_1' => 'Graf Ignatiev 5',
+        ])->assertStatus(201)->json('id');
+        $this->addLineViaHttp($this->pricedPurchasableVariation('10.00', 10), 1);
+
+        $payload = $this->checkoutPayload(['address_id' => $addressId]);
+        unset($payload['delivery_type'], $payload['city'], $payload['address_line_1']);
+
+        $this->postJson('/api/checkout', $payload)->assertStatus(422)->assertJsonValidationErrors(['address_id']);
+    }
+
+    public function test_a_saved_address_without_a_country_is_refused_422_before_anything_is_written_and_the_cart_stays_usable(): void
+    {
+        $account = $this->loggedInAccount();
+        $addressId = $this->postJson('/api/addresses', [
+            'delivery_type' => 'pickup_point', 'recipient_name' => 'Ivan Ivanov', 'phone' => '+359888111222',
+            'country' => 'BG', 'carrier_code' => 'econt', 'pickup_point_reference' => 'office-1', 'settlement' => 'Varna',
+        ])->assertStatus(201)->json('id');
+        // A historical pickup point, saved before the country became mandatory.
+        \Illuminate\Support\Facades\DB::table('addresses')->where('id', $addressId)->update(['country' => null]);
+
+        $variationId = $this->pricedPurchasableVariation('10.00', 10);
+        $this->addLineViaHttp($variationId, 1);
+
+        $payload = $this->checkoutPayload(['address_id' => $addressId]);
+        unset($payload['delivery_type'], $payload['country'], $payload['city'], $payload['address_line_1']);
+
+        \Illuminate\Support\Facades\Log::spy();
+        $this->postJson('/api/checkout', $payload)
+            ->assertStatus(422)
+            ->assertJsonPath('reason', 'address_incomplete')
+            ->assertJsonPath('message', __('delivery.address_incomplete'));
+
+        // The warning names the address id and nothing personal.
+        \Illuminate\Support\Facades\Log::shouldHaveReceived('warning')
+            ->withArgs(fn (string $message, array $context): bool => $context === ['address_id' => (string) $addressId])
+            ->once();
+
+        // Nothing written; the cart is untouched.
+        $db = fn (string $t) => \Illuminate\Support\Facades\DB::table($t)->count();
+        $this->assertSame(0, $db('orders'));
+        $this->assertSame(0, $db('payments'));
+        $this->assertSame(0, $db('operational_sales_transactions'));
+        $this->assertSame(0, $db('operational_sales_sale_lines'));
+        $this->assertNull(\Illuminate\Support\Facades\DB::table('carts')->where('id', $this->cartId)->value('order_id'));
+        $this->assertSame(10, app(StockLevelRepository::class)->findByVariationId($variationId)->quantity());
+
+        // The customer updates the address; the same cart now checks out.
+        $this->putJson("/api/addresses/{$addressId}", [
+            'delivery_type' => 'pickup_point', 'recipient_name' => 'Ivan Ivanov', 'phone' => '+359888111222',
+            'country' => 'bg', 'carrier_code' => 'econt', 'pickup_point_reference' => 'office-1', 'settlement' => 'Varna',
+        ])->assertStatus(200);
+
+        $response = $this->postJson('/api/checkout', $payload)->assertStatus(201);
+        $this->assertSame('BG', OrderModel::findOrFail($response->json('order.id'))->country);
+    }
+
+    public function test_the_incomplete_address_message_exists_in_english_and_bulgarian(): void
+    {
+        $this->assertNotSame('delivery.address_incomplete', __('delivery.address_incomplete', [], 'en'));
+        $this->assertNotSame('delivery.address_incomplete', __('delivery.address_incomplete', [], 'bg'));
+        $this->assertNotSame(__('delivery.address_incomplete', [], 'en'), __('delivery.address_incomplete', [], 'bg'));
+    }
+
     public function test_checkout_without_a_cart_id_returns_422(): void
     {
         $payload = $this->checkoutPayload();

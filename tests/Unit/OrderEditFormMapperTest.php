@@ -101,11 +101,12 @@ class OrderEditFormMapperTest extends TestCase
     public function test_switching_to_a_pickup_point_drops_the_street_fields_the_form_no_longer_sends(): void
     {
         $change = OrderEditFormMapper::deliveryChange($this->street(), [
-            'delivery_type' => 'pickup_point', 'recipient_name' => 'Ivan', 'phone' => '+359888',
+            'delivery_type' => 'pickup_point', 'recipient_name' => 'Ivan', 'phone' => '+359888', 'country' => 'BG',
             'carrier_code' => 'speedy', 'pickup_point_reference' => 'office-7', 'settlement' => 'Sofia',
         ]);
 
         $this->assertSame(OrderDeliveryType::PICKUP_POINT, $change->deliveryType);
+        $this->assertSame('BG', $change->country, 'the country is kept for a pickup point (owner decision D1)');
         $this->assertNull($change->city);
         $this->assertNull($change->addressLine1);
         $this->assertSame('office-7', $change->pickupPointReference);

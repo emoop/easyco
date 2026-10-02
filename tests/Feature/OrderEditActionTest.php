@@ -567,15 +567,30 @@ class OrderEditActionTest extends TestCase
             'delivery_type' => 'pickup_point',
             'recipient_name' => 'Guest Buyer',
             'phone' => '+359888000000',
+            'country' => 'GR',
             'carrier_code' => 'speedy',
             'pickup_point_reference' => 'office-7',
-            'settlement' => 'Sofia',
+            'settlement' => 'Athens',
         ]])->callMountedAction();
 
         $row = $this->row($order->id());
         $this->assertSame('pickup_point', $row->delivery_type);
         $this->assertNull($row->city);
+        $this->assertSame('GR', $row->country, 'a pickup point keeps a country of its own (owner decision D1)');
         $this->assertSame('office-7', $row->pickup_point_reference);
+    }
+
+    public function test_the_edit_form_refuses_a_country_that_is_not_in_the_list(): void
+    {
+        $this->actingAsStaffRole('Administrator');
+        $order = $this->place();
+        $component = $this->mount($order);
+        $delivery = $this->seeded($component)['delivery'];
+        $delivery['country'] = 'ZZ';
+
+        $component->fillForm(['delivery' => $delivery])->callMountedAction()->assertHasFormErrors();
+
+        $this->assertSame(0, (int) $this->row($order->id())->edit_revision);
     }
 
     public function test_setting_a_brand_new_promotion_code(): void

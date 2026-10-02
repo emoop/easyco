@@ -7,8 +7,9 @@ use RuntimeException;
 /**
  * The store's country (`site.country`) is unset, or holds something that is
  * not an ISO 3166-1 alpha-2 code. Thrown by StoreCountry::current() — never
- * guessed around: a default country would quietly decide which zone a pickup
- * point falls in (CLAUDE.md rule 8).
+ * guessed around (CLAUDE.md rule 8): a silently assumed country is a wrong
+ * country. (A delivery's country is never taken from here anyway — every
+ * address carries its own, owner decision D1.)
  */
 final class StoreCountryNotConfiguredException extends RuntimeException
 {

@@ -176,6 +176,7 @@ class EloquentOrderRepositoryTest extends TestCase
             recipientName: 'Maria Petrova',
             phone: '+359888654321',
             placedAt: $this->placedAt(),
+            country: 'RO',
             carrierCode: 'econt',
             pickupPointReference: 'office-1234',
             settlement: 'Plovdiv',
@@ -189,9 +190,40 @@ class EloquentOrderRepositoryTest extends TestCase
         $this->assertSame('econt', $reloaded->carrierCode());
         $this->assertSame('office-1234', $reloaded->pickupPointReference());
         $this->assertSame('Plovdiv', $reloaded->settlement());
-        $this->assertNull($reloaded->country());
+        $this->assertSame('RO', $reloaded->country(), 'a pickup-point order carries its own country (owner decision D1)');
         $this->assertNull($reloaded->addressLine1());
         $this->assertSame(1000, $reloaded->total()->minorValue());
+    }
+
+    /** Read path: an order placed before D1 with a pickup point has a NULL country and must still load. */
+    public function test_a_historical_order_row_with_a_null_pickup_country_still_loads(): void
+    {
+        $clientId = $this->clientId('Old Buyer');
+
+        $order = Order::create(
+            clientId: $clientId,
+            transactionId: $this->transactionId($clientId),
+            email: 'old@example.com',
+            currency: 'EUR',
+            subtotal: Money::fromMinorUnits(1000, 'EUR'),
+            discount: Money::fromMinorUnits(0, 'EUR'),
+            deliveryType: OrderDeliveryType::PICKUP_POINT,
+            recipientName: 'Old Buyer',
+            phone: '+359888654321',
+            placedAt: $this->placedAt(),
+            country: 'BG',
+            carrierCode: 'econt',
+            pickupPointReference: 'office-1',
+            settlement: 'Varna',
+        );
+        $this->repository()->save($order);
+        \Illuminate\Support\Facades\DB::table('orders')->where('id', $order->id())->update(['country' => null]);
+
+        $reloaded = $this->repository()->findById($order->id());
+
+        $this->assertNotNull($reloaded);
+        $this->assertNull($reloaded->country());
+        $this->assertSame(OrderDeliveryType::PICKUP_POINT, $reloaded->deliveryType());
     }
 
     public function test_a_guest_order_round_trips_with_genuinely_null_account_and_address_columns(): void

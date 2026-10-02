@@ -64,6 +64,7 @@ class EloquentAddressRepositoryTest extends TestCase
             deliveryType: AddressDeliveryType::PICKUP_POINT,
             recipientName: 'Maria Petrova',
             phone: '+359888654321',
+            country: 'GR',
             carrierCode: 'econt',
             pickupPointReference: 'office-1234',
             settlement: 'Plovdiv',
@@ -77,8 +78,30 @@ class EloquentAddressRepositoryTest extends TestCase
         $this->assertSame('econt', $reloaded->carrierCode());
         $this->assertSame('office-1234', $reloaded->pickupPointReference());
         $this->assertSame('Plovdiv', $reloaded->settlement());
-        $this->assertNull($reloaded->country());
+        $this->assertSame('GR', $reloaded->country(), 'a pickup point carries its own country (owner decision D1)');
         $this->assertNull($reloaded->addressLine1());
+    }
+
+    /** Read path: a pickup-point row saved before D1 has a NULL country and must still load. */
+    public function test_a_historical_pickup_point_row_with_a_null_country_still_loads(): void
+    {
+        $id = \Illuminate\Support\Facades\DB::table('addresses')->insertGetId([
+            'delivery_type' => 'pickup_point',
+            'recipient_name' => 'Old Customer',
+            'phone' => '+359888000000',
+            'country' => null,
+            'carrier_code' => 'econt',
+            'pickup_point_reference' => 'office-1',
+            'settlement' => 'Varna',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $reloaded = $this->repository()->findById((string) $id);
+
+        $this->assertNotNull($reloaded);
+        $this->assertNull($reloaded->country());
+        $this->assertSame('Varna', $reloaded->settlement());
     }
 
     public function test_find_by_account_id_returns_every_address_saved_for_that_account(): void
@@ -100,6 +123,7 @@ class EloquentAddressRepositoryTest extends TestCase
             recipientName: 'Ivan Ivanov',
             phone: '+359888123456',
             accountId: $accountId,
+            country: 'BG',
             carrierCode: 'speedy',
             pickupPointReference: 'office-5678',
             settlement: 'Sofia',

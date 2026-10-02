@@ -82,12 +82,22 @@ final class Address
 
     /**
      * Enforces exclusivity between STREET_ADDRESS fields
-     * (country/city/postalCode/addressLine1/addressLine2) and
+     * (city/postalCode/addressLine1/addressLine2) and
      * PICKUP_POINT fields (carrierCode/pickupPointReference/settlement)
      * in BOTH directions: the fields belonging to the given deliveryType
      * must be present (postalCode/addressLine2 excepted — nullable
      * either way, see design doc §2), and the fields belonging to the
-     * OTHER type must all be null. Mirrors the clarity of Cart's own
+     * OTHER type must all be null.
+     *
+     * COUNTRY BELONGS TO BOTH TYPES (owner decision D1, shipping stage 3.0b):
+     * every delivery, a PICKUP_POINT included, is to a country, so it is no
+     * longer in the "must be null for a pickup point" list. Its SHAPE (exactly
+     * two uppercase ASCII letters, never normalized) is checked by
+     * assertCountryShape(), called only from the two operations that accept a
+     * NEW value — create() and update() — and NOT from here, because this method
+     * also runs from the constructor, which reconstituteFromStorage() uses: a
+     * historical pickup-point row with a NULL country must still load. (A
+     * STREET_ADDRESS keeps its old rule here: a non-empty country.) Mirrors the clarity of Cart's own
      * XOR exception message, naming exactly which fields conflicted
      * rather than just saying "invalid."
      */
@@ -125,7 +135,6 @@ final class Address
         }
 
         foreach ([
-            'country' => $country,
             'city' => $city,
             'postalCode' => $postalCode,
             'addressLine1' => $addressLine1,
@@ -134,6 +143,23 @@ final class Address
             if ($value !== null) {
                 throw new InvalidArgumentException("Address {$name} must be null when deliveryType is PICKUP_POINT, got a non-null value.");
             }
+        }
+    }
+
+    /**
+     * The delivery country, for EITHER type: required, exactly two uppercase
+     * ASCII letters. Shape only — whether the code is a real country is the
+     * HTTP layer's list (a domain package must not import app code) — and never
+     * normalized: a lowercase "bg" is refused, not fixed.
+     */
+    private static function assertCountryShape(?string $country): void
+    {
+        if ($country === null || trim($country) === '') {
+            throw new InvalidArgumentException('Address country must not be empty; it is required for every delivery type.');
+        }
+
+        if (preg_match('/^[A-Z]{2}$/D', $country) !== 1) {
+            throw new InvalidArgumentException("Address country must be an uppercase ISO 3166-1 alpha-2 code (two capital letters), got \"{$country}\".");
         }
     }
 
@@ -151,6 +177,8 @@ final class Address
         ?string $pickupPointReference = null,
         ?string $settlement = null,
     ): self {
+        self::assertCountryShape($country);
+
         return new self(
             id: null,
             accountId: $accountId,
@@ -247,6 +275,7 @@ final class Address
     ): void {
         self::assertNotEmpty('recipientName', $recipientName);
         self::assertNotEmpty('phone', $phone);
+        self::assertCountryShape($country);
         self::assertFieldsMatchDeliveryType(
             deliveryType: $deliveryType,
             country: $country,

@@ -107,6 +107,7 @@ final class CheckoutOrchestrator
      * @throws \EasyCo\Pricing\Exceptions\PriceNotConfiguredException Propagates uncaught — aborts the transaction (§8.3 step 3).
      * @throws \EasyCo\Inventory\Exceptions\InsufficientStockException Propagates uncaught — aborts the transaction (§8.3 step 7).
      * @throws \App\Services\Exceptions\AddressNotFoundForCheckoutException Propagates uncaught from AddressResolver::resolveExisting().
+     * @throws \App\Services\Exceptions\AddressIncompleteForCheckoutException A saved address with no country; thrown before Phase 1, nothing written.
      */
     public function place(CheckoutInput $input, DateTimeImmutable $placedAt): CheckoutResult
     {
@@ -120,6 +121,13 @@ final class CheckoutOrchestrator
         // is simply not found, exactly like an unknown id.
         if ($this->claimFor($input) !== null) {
             return $this->replayFor($input);
+        }
+
+        // BEFORE Phase 1: a saved address that cannot make an order (no country,
+        // a pre-D1 pickup point) is refused while nothing has been written. The
+        // same resolution runs again inside the transaction; it is one cheap read.
+        if ($input->addressId !== null && $input->accountId !== null) {
+            $this->addressResolver->resolveExisting($input->addressId, $input->accountId);
         }
 
         try {

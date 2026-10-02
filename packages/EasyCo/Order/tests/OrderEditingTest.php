@@ -58,6 +58,7 @@ final class OrderEditingTest extends TestCase
             placedAt: new DateTimeImmutable('2026-01-01 12:00:00'),
             status: $status,
             addressId: 'address-1',
+            country: 'BG',
             carrierCode: 'econt',
             pickupPointReference: 'office-1',
             settlement: 'Sofia district',
@@ -351,7 +352,7 @@ final class OrderEditingTest extends TestCase
             deliveryType: OrderDeliveryType::PICKUP_POINT,
             recipientName: 'Petar Petrov',
             phone: '+359888999999',
-            country: null,
+            country: 'BG',
             city: null,
             postalCode: null,
             addressLine1: null,
@@ -385,7 +386,7 @@ final class OrderEditingTest extends TestCase
             deliveryType: OrderDeliveryType::PICKUP_POINT,
             recipientName: 'Petar Petrov',
             phone: '+359888999999',
-            country: null,
+            country: 'BG',
             city: null,
             postalCode: null,
             addressLine1: null,
@@ -540,7 +541,7 @@ final class OrderEditingTest extends TestCase
             deliveryType: OrderDeliveryType::PICKUP_POINT,
             recipientName: 'Ivan Ivanov',
             phone: '+359888123456',
-            country: null,
+            country: 'BG',
             city: null,
             postalCode: null,
             addressLine1: null,
@@ -551,19 +552,46 @@ final class OrderEditingTest extends TestCase
         );
     }
 
+    /** Owner decision D1, stage 3.0b: a pickup point's revision needs a country too, and never normalizes it. */
+    public function test_revise_delivery_requires_a_country_for_a_pickup_point(): void
+    {
+        $order = $this->pickupPointOrder();
+
+        foreach ([null, 'bg'] as $country) {
+            try {
+                $order->reviseDelivery(
+                    deliveryType: OrderDeliveryType::PICKUP_POINT,
+                    recipientName: 'Ivan Ivanov',
+                    phone: '+359888123456',
+                    country: $country,
+                    city: null,
+                    postalCode: null,
+                    addressLine1: null,
+                    addressLine2: null,
+                    carrierCode: 'econt',
+                    pickupPointReference: 'office-1',
+                    settlement: 'Sofia district',
+                );
+                $this->fail('a pickup-point revision with country '.var_export($country, true).' must be refused.');
+            } catch (\InvalidArgumentException $e) {
+                $this->assertStringContainsString('country', $e->getMessage());
+            }
+        }
+    }
+
     public function test_pickup_point_with_a_street_address_field_still_refuses_via_revise_delivery(): void
     {
         $order = $this->pickupPointOrder();
 
         $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('country');
+        $this->expectExceptionMessage('city');
 
         $order->reviseDelivery(
             deliveryType: OrderDeliveryType::PICKUP_POINT,
             recipientName: 'Ivan Ivanov',
             phone: '+359888123456',
             country: 'BG',
-            city: null,
+            city: 'Sofia',
             postalCode: null,
             addressLine1: null,
             addressLine2: null,

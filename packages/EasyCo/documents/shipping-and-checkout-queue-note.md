@@ -31,6 +31,7 @@
 
 ## Checkout resilience audit: what the read-only audit must verify
 
+- Any domain `InvalidArgumentException` reaching `CheckoutController` is a 500 today. The audit must list every invariant reachable from checkout input and map each to a controlled 422 refusal with a reason code; nothing a customer can trigger may produce a 500. (First one done in stage 3.0b: a saved address without a country is refused with 422 `address_incomplete`.)
 - Phase 1 is one transaction with no external call inside; amounts are recomputed server-side; a changed amount refuses the order and writes nothing.
 - Cart-to-order link gives idempotency: a double submit returns the same order.
 - Virtual POS (when it exists): the browser return is NOT proof of payment; only the signed server-to-server callback is, plus periodic reconciliation with the provider for pending payments. Verify signature, amount, currency and order match; handle repeated callbacks idempotently.

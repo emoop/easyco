@@ -9,6 +9,7 @@ use EasyCo\Order\Order;
 use EasyCo\Pricing\Money;
 use InvalidArgumentException;
 use LogicException;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 final class OrderTest extends TestCase
@@ -74,7 +75,7 @@ final class OrderTest extends TestCase
             appliedPromotionCode: $this->value($overrides, 'appliedPromotionCode', null),
             status: $this->value($overrides, 'status', OrderStatus::PLACED),
             addressId: $this->value($overrides, 'addressId', null),
-            country: $this->value($overrides, 'country', null),
+            country: $this->value($overrides, 'country', 'BG'),
             city: $this->value($overrides, 'city', null),
             postalCode: $this->value($overrides, 'postalCode', null),
             addressLine1: $this->value($overrides, 'addressLine1', null),
@@ -111,7 +112,7 @@ final class OrderTest extends TestCase
         $this->assertSame('econt', $order->carrierCode());
         $this->assertSame('office-1234', $order->pickupPointReference());
         $this->assertSame('Sofia', $order->settlement());
-        $this->assertNull($order->country());
+        $this->assertSame('BG', $order->country());
         $this->assertNull($order->addressLine1());
     }
 
@@ -299,12 +300,80 @@ final class OrderTest extends TestCase
         $this->pickupPointOrder(['settlement' => null]);
     }
 
-    public function test_pickup_point_with_country_throws(): void
+    // --- country belongs to BOTH delivery types (owner decision D1, stage 3.0b) ---
+
+    public function test_a_pickup_point_order_requires_a_country(): void
     {
         $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('country');
+        $this->expectExceptionMessage('country must not be empty');
 
-        $this->pickupPointOrder(['country' => 'BG']);
+        $this->pickupPointOrder(['country' => null]);
+    }
+
+    /** @return array<string, array{string}> */
+    public static function malformedCountries(): array
+    {
+        return [
+            'lowercase' => ['bg'],
+            'three letters' => ['BGR'],
+            'digits' => ['B1'],
+            'padded' => [' BG'],
+            'trailing newline' => ["BG\n"],
+            'non-ASCII letters' => ['БГ'],
+        ];
+    }
+
+    #[DataProvider('malformedCountries')]
+    public function test_a_lowercase_or_malformed_country_is_refused_by_the_domain_not_normalized(string $country): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('uppercase ISO 3166-1 alpha-2');
+
+        $this->pickupPointOrder(['country' => $country]);
+    }
+
+    public function test_the_domain_checks_the_shape_only_not_the_country_list(): void
+    {
+        // Telling "ZZ" from a real country is the HTTP layer's job (this package must not
+        // import app code); "XK" is the shape the list also offers.
+        $this->assertSame('ZZ', $this->pickupPointOrder(['country' => 'ZZ'])->country());
+        $this->assertSame('XK', $this->pickupPointOrder(['country' => 'XK'])->country());
+    }
+
+    public function test_an_order_with_a_pickup_point_and_a_country_round_trips_through_storage(): void
+    {
+        $order = Order::reconstituteFromStorage(
+            id: '12',
+            clientId: 'client-12',
+            accountId: null,
+            transactionId: 'transaction-12',
+            email: 'guest@example.com',
+            currency: 'EUR',
+            subtotal: Money::fromMinorUnits(1000, 'EUR'),
+            discount: Money::fromMinorUnits(0, 'EUR'),
+            shipping: Money::fromMinorUnits(0, 'EUR'),
+            shippingMethodName: null,
+            shippingMethodCode: null,
+            total: Money::fromMinorUnits(1000, 'EUR'),
+            appliedPromotionCode: null,
+            status: OrderStatus::PLACED,
+            placedAt: $this->placedAt(),
+            addressId: null,
+            deliveryType: OrderDeliveryType::PICKUP_POINT,
+            recipientName: 'Maria Petrova',
+            phone: '+359888654321',
+            country: 'RO',
+            city: null,
+            postalCode: null,
+            addressLine1: null,
+            addressLine2: null,
+            carrierCode: 'econt',
+            pickupPointReference: 'office-1234',
+            settlement: 'Bucharest',
+        );
+
+        $this->assertSame('RO', $order->country());
+        $this->assertSame('Bucharest', $order->settlement());
     }
 
     public function test_pickup_point_with_city_throws(): void
@@ -452,6 +521,8 @@ final class OrderTest extends TestCase
             settlement: 'Plovdiv',
         );
 
+        // Read path: a historical pickup-point order saved before D1 has no country and still loads.
+        $this->assertNull($order->country());
         $this->assertSame(OrderDeliveryType::PICKUP_POINT, $order->deliveryType());
         $this->assertSame('econt', $order->carrierCode());
         $this->assertNull($order->accountId());

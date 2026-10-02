@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Rules\KnownCountryCode;
 use EasyCo\Address\Address;
 use EasyCo\Address\Contracts\AddressRepository;
 use EasyCo\Address\Enums\AddressDeliveryType;
@@ -39,7 +40,7 @@ class AddressController extends Controller
 
     public function store(Request $request): JsonResponse
     {
-        $validated = $request->validate($this->validationRules());
+        $validated = $this->validatedInput($request);
 
         $address = Address::create(
             deliveryType: AddressDeliveryType::from($validated['delivery_type']),
@@ -83,7 +84,7 @@ class AddressController extends Controller
             ], 404);
         }
 
-        $validated = $request->validate($this->validationRules());
+        $validated = $this->validatedInput($request);
 
         $address->update(
             deliveryType: AddressDeliveryType::from($validated['delivery_type']),
@@ -104,14 +105,33 @@ class AddressController extends Controller
         return response()->json($this->toArray($address));
     }
 
-    /** @return array<string, string> */
+    /**
+     * The submitted country is trimmed and uppercased BEFORE it is validated
+     * (a customer typing "bg" is not wrong), then checked against the country
+     * list for BOTH delivery types: the domain only checks the shape.
+     *
+     * @return array<string, mixed>
+     */
+    private function validatedInput(Request $request): array
+    {
+        if ($request->has('country')) {
+            $request->merge(['country' => KnownCountryCode::normalize($request->input('country'))]);
+        }
+
+        return $request->validate($this->validationRules(), [
+            'country.required' => __('delivery.country.required'),
+        ]);
+    }
+
+    /** @return array<string, mixed> */
     private function validationRules(): array
     {
         return [
             'delivery_type' => 'required|in:street_address,pickup_point',
             'recipient_name' => 'required|string',
             'phone' => 'required|string',
-            'country' => 'required_if:delivery_type,street_address|prohibited_if:delivery_type,pickup_point|string',
+            // Required for BOTH delivery types (owner decision D1): a pickup point is in a country too.
+            'country' => ['required', 'string', new KnownCountryCode('delivery.country.invalid')],
             'city' => 'required_if:delivery_type,street_address|prohibited_if:delivery_type,pickup_point|string',
             'address_line_1' => 'required_if:delivery_type,street_address|prohibited_if:delivery_type,pickup_point|string',
             'postal_code' => 'nullable|prohibited_if:delivery_type,pickup_point|string',

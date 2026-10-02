@@ -226,7 +226,7 @@ final class Order
 
     /**
      * Enforces exclusivity between STREET_ADDRESS fields
-     * (country/city/postalCode/addressLine1/addressLine2) and
+     * (city/postalCode/addressLine1/addressLine2) and
      * PICKUP_POINT fields (pickupPointReference/settlement) in BOTH
      * directions — byte-for-byte the same rule
      * EasyCo\Address\Address::assertFieldsMatchDeliveryType() already
@@ -243,6 +243,15 @@ final class Order
      * reviseDelivery() (stage 2's own new mutator), so the relaxation
      * applies to FRESH orders too, not only edited ones — an intentional
      * consequence of there being one implementation, not a side effect.
+     *
+     * COUNTRY BELONGS TO BOTH TYPES (owner decision D1, shipping stage 3.0b),
+     * so it is no longer in the "must be null for a pickup point" list. Its
+     * SHAPE (required, exactly two uppercase ASCII letters, never normalized) is
+     * checked by assertCountryShape(), called only from create() and
+     * reviseDelivery() — NOT from here, because this method also runs from the
+     * constructor, which reconstituteFromStorage() uses: a historical order whose
+     * pickup point has a NULL country must still load. (A STREET_ADDRESS keeps
+     * its old rule here: a non-empty country.)
      */
     private static function assertFieldsMatchDeliveryType(
         OrderDeliveryType $deliveryType,
@@ -278,7 +287,6 @@ final class Order
         }
 
         foreach ([
-            'country' => $country,
             'city' => $city,
             'postalCode' => $postalCode,
             'addressLine1' => $addressLine1,
@@ -287,6 +295,23 @@ final class Order
             if ($value !== null) {
                 throw new InvalidArgumentException("Order {$name} must be null when deliveryType is PICKUP_POINT, got a non-null value.");
             }
+        }
+    }
+
+    /**
+     * The delivery country, for EITHER type: required, exactly two uppercase
+     * ASCII letters. Shape only — whether the code is a real country is the
+     * HTTP layer's list (a domain package must not import app code) — and never
+     * normalized: a lowercase "bg" is refused, not fixed.
+     */
+    private static function assertCountryShape(?string $country): void
+    {
+        if ($country === null || trim($country) === '') {
+            throw new InvalidArgumentException('Order country must not be empty; it is required for every delivery type.');
+        }
+
+        if (preg_match('/^[A-Z]{2}$/D', $country) !== 1) {
+            throw new InvalidArgumentException("Order country must be an uppercase ISO 3166-1 alpha-2 code (two capital letters), got \"{$country}\".");
         }
     }
 
@@ -327,6 +352,8 @@ final class Order
         ?string $shippingMethodName = null,
         ?string $shippingMethodCode = null,
     ): self {
+        self::assertCountryShape($country);
+
         $normalizedCurrency = Currency::from($currency);
 
         // Validated explicitly here (with a clear, field-naming message)
@@ -665,6 +692,7 @@ final class Order
         $this->assertEditable();
         self::assertNotEmpty('recipientName', $recipientName);
         self::assertNotEmpty('phone', $phone);
+        self::assertCountryShape($country);
         self::assertFieldsMatchDeliveryType(
             deliveryType: $deliveryType,
             country: $country,

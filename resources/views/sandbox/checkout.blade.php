@@ -34,8 +34,10 @@
             <label><input type="radio" name="delivery_type" value="pickup_point"> Pickup point</label>
         </div>
 
+        {{-- The delivery country belongs to BOTH delivery types (owner decision D1): always sent. --}}
+        <div class="field"><label for="country">Country</label><input id="country" name="country" type="text" value="BG"></div>
+
         <div id="street-address">
-            <div class="field"><label for="country">Country</label><input id="country" name="country" type="text" value="BG"></div>
             <div class="field"><label for="city">City</label><input id="city" name="city" type="text"></div>
             <div class="field"><label for="address_line_1">Address</label><input id="address_line_1" name="address_line_1" type="text"></div>
             <div class="field"><label for="address_line_2">Address (line 2)</label><input id="address_line_2" name="address_line_2" type="text"></div>
@@ -63,7 +65,7 @@ document.addEventListener('DOMContentLoaded', function () {
     var summary = document.getElementById('checkout-summary');
     var street = document.getElementById('street-address');
     var pickup = document.getElementById('pickup-point');
-    var streetFields = ['country', 'city', 'address_line_1', 'address_line_2', 'postal_code'];
+    var streetFields = ['city', 'address_line_1', 'address_line_2', 'postal_code'];
     var pickupFields = ['carrier_code', 'pickup_point_reference', 'settlement'];
 
     function fail(text) { error.textContent = text; error.hidden = false; }
@@ -123,6 +125,7 @@ document.addEventListener('DOMContentLoaded', function () {
             phone: document.getElementById('phone').value,
             payment_method: form.querySelector('input[name="payment_method"]:checked').value,
             delivery_type: deliveryType(),
+            country: document.getElementById('country').value,
         };
 
         (deliveryType() === 'street_address' ? streetFields : pickupFields).forEach(function (name) {

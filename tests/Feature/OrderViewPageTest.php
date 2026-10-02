@@ -210,7 +210,7 @@ class OrderViewPageTest extends TestCase
 
         $order = $this->placeOrder([
             'deliveryType' => AddressDeliveryType::PICKUP_POINT,
-            'country' => null,
+            'country' => 'BG',
             'city' => null,
             'addressLine1' => null,
             'carrierCode' => 'econt',

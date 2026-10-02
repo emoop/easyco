@@ -7,14 +7,18 @@ use App\Settings\Exceptions\StoreCountryNotConfiguredException;
 
 /**
  * THE ONE READER of the store's country (`site.country`): an ISO 3166-1 alpha-2
- * code, uppercase. It is the prerequisite for anything that has to know where
- * the shop is — for example the country of a pickup-point delivery, whose
- * address carries none (shipping-domain-design.md §4).
+ * code, uppercase: where the shop is.
+ *
+ * IT IS NOT A DELIVERY COUNTRY. Every address and order — a PICKUP_POINT
+ * included — carries its own validated country (owner decision D1,
+ * shipping-domain-design.md §4); the store country is at most the default a
+ * storefront form PRESELECTS, and no business rule ever substitutes it for a
+ * missing delivery country.
  *
  * current() THROWS when the setting is unset or malformed (fail loud, CLAUDE.md
  * rule 8): there is deliberately no default country. currentOrNull() exists for
- * UI defaults only (the settings form showing "nothing chosen yet"); no
- * business rule may call it.
+ * UI defaults only (the settings form showing "nothing chosen yet", a form's
+ * preselected country); no business rule may call it.
  */
 final class StoreCountry
 {

@@ -3,8 +3,10 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Rules\KnownCountryCode;
 use App\Services\CheckoutInput;
 use App\Services\CheckoutOrchestrator;
+use App\Services\Exceptions\AddressIncompleteForCheckoutException;
 use App\Services\Exceptions\AddressNotFoundForCheckoutException;
 use App\Services\Exceptions\CartNotFoundForCheckoutException;
 use App\Services\Exceptions\EmptyCartException;
@@ -54,7 +56,16 @@ class CheckoutController extends Controller
      */
     public function store(Request $request): JsonResponse
     {
-        $validated = $request->validate($this->validationRules());
+        // The submitted country is trimmed and uppercased before validation, then
+        // checked against the country list for BOTH delivery types (the domain
+        // checks the shape only).
+        if ($request->has('country')) {
+            $request->merge(['country' => KnownCountryCode::normalize($request->input('country'))]);
+        }
+
+        $validated = $request->validate($this->validationRules(), [
+            'country.required_without' => __('delivery.country.required'),
+        ]);
 
         // THE CART TO CHECK OUT IS THE ONE THE PAGE DISPLAYED, AND IT IS REQUIRED
         // (cart-domain-design.md §14.2). The server deliberately no longer resolves
@@ -140,6 +151,13 @@ class CheckoutController extends Controller
             // 404, not 403 — the posture that exception's own docblock
             // documents; never "improved" to reveal existence.
             return response()->json(['message' => $e->getMessage()], 404);
+        } catch (AddressIncompleteForCheckoutException $e) {
+            // A historical saved address without a country: the customer must
+            // update it. Nothing was written and the cart is untouched.
+            return response()->json([
+                'message' => $e->getMessage(),
+                'reason' => 'address_incomplete',
+            ], 422);
         } catch (UnknownPaymentMethodException $e) {
             // Unreachable via this controller now that the pre-check
             // above rejects an unknown method before place() is ever
@@ -203,7 +221,10 @@ class CheckoutController extends Controller
             'payment_method' => 'required|string',
             'address_id' => 'nullable|string|prohibits:delivery_type,country,city,postal_code,address_line_1,address_line_2,carrier_code,pickup_point_reference,settlement',
             'delivery_type' => 'required_without:address_id|in:street_address,pickup_point',
-            'country' => 'required_if:delivery_type,street_address|prohibited_if:delivery_type,pickup_point|string',
+            // Required whenever the address is typed fresh, for BOTH delivery types (owner
+            // decision D1). With address_id the saved address's own country is used and the
+            // `prohibits` on address_id refuses a second one.
+            'country' => ['required_without:address_id', 'string', new KnownCountryCode('delivery.country.invalid')],
             'city' => 'required_if:delivery_type,street_address|prohibited_if:delivery_type,pickup_point|string',
             'address_line_1' => 'required_if:delivery_type,street_address|prohibited_if:delivery_type,pickup_point|string',
             'postal_code' => 'nullable|prohibited_if:delivery_type,pickup_point|string',
