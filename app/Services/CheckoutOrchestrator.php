@@ -29,9 +29,6 @@ use EasyCo\Payment\Payment;
 use EasyCo\Payment\PaymentContext;
 use EasyCo\Pricing\DefaultCurrency;
 use EasyCo\Pricing\Money;
-use EasyCo\Promotions\Contracts\PromotionRepository;
-use EasyCo\Promotions\Contracts\PromotionScopeRepository;
-use EasyCo\Promotions\Promotion;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
@@ -77,13 +74,8 @@ final class CheckoutOrchestrator
 {
     public function __construct(
         private readonly CartRepository $carts,
-        private readonly CheckoutLinePricer $linePricer,
-        private readonly PromotionRepository $promotions,
-        private readonly PromotionScopeRepository $promotionScopes,
-        private readonly PromotionValidator $promotionValidator,
-        private readonly PromotionDiscountCalculator $promotionDiscountCalculator,
+        private readonly CartPricing $cartPricing,
         private readonly PromotionRedeemer $promotionRedeemer,
-        private readonly PromotionUsageContextAssembler $usageContextAssembler,
         private readonly OrderRepository $orders,
         private readonly ClientResolver $clientResolver,
         private readonly AddressResolver $addressResolver,
@@ -271,20 +263,23 @@ final class CheckoutOrchestrator
             throw new EmptyCartException("Cart \"{$input->cartId}\" has no lines to check out.");
         }
 
-        // Step 2/3: price every line live; PriceNotConfiguredException
-        // propagates uncaught, aborting the transaction.
+        // Steps 2-4: price every line live and live-revalidate the applied promotion, via
+        // the ONE shared calculation the cart preview also uses (CartPricing, stage 3.0c).
+        // Checkout's two decisions are explicit here: an unpriced line is REFUSED
+        // (PriceNotConfiguredException propagates, aborting the transaction), and a
+        // promotion that is no longer valid is turned into PromotionNoLongerValidException.
         $currency = DefaultCurrency::get()->code();
-        $subtotal = Money::zero($currency);
-        $pricingResults = [];
+        $pricing = $this->cartPricing->price($cart, $input->accountId, $currency, UnpricedLines::REFUSE, includeUnitCost: true);
 
-        foreach ($cart->lines() as $line) {
-            $result = $this->linePricer->priceLine($line->variationId(), $line->quantity(), $currency);
-            $pricingResults[] = $result;
-            $subtotal = $subtotal->add($result->amount());
+        if ($pricing->promotionRefusal() !== null) {
+            throw new PromotionNoLongerValidException((string) $pricing->appliedPromotionCode(), $pricing->promotionRefusal());
         }
 
-        // Step 3/4: live-revalidate the applied promotion, if any.
-        [$appliedPromotion, $discount, $perLineShares] = $this->resolvePromotion($cart, $subtotal, $pricingResults, $input->accountId);
+        $pricingResults = $pricing->pricedLines();
+        $subtotal = $pricing->subtotal();
+        $appliedPromotion = $pricing->promotion();
+        $discount = $pricing->discount();
+        $perLineShares = $pricing->perLineShares();
 
         // Step 5: resolve the Address.
         $address = $this->resolveAddress($input);
@@ -346,7 +341,7 @@ final class CheckoutOrchestrator
         // design.md §10 still holds (Order.total has no shipping
         // component) — see that section's own note for what changes the
         // day shipping is added.
-        $this->assertSaleLinesReconcileWithOrder($saleLines, $discount, $subtotal->subtract($discount));
+        $this->assertSaleLinesReconcileWithOrder($saleLines, $discount, $pricing->goodsAfterDiscount());
 
         foreach ($saleLines as $saleLine) {
             $transaction->addSaleLine($saleLine);
@@ -437,91 +432,6 @@ final class CheckoutOrchestrator
         }
 
         return CheckoutResult::placed($order, $payment);
-    }
-
-    /**
-     * PromotionUsageContext assembly is delegated to
-     * PromotionUsageContextAssembler — the same instance
-     * CartController::resolvePromotion() calls, so the per-setting query
-     * guards live in exactly one place, not two.
-     *
-     * D3 — RETURNS A PER-LINE SHARE FOR EVERY PRICED LINE, not just the
-     * applicable ones: $applicableLines used to be rebuilt via
-     * array_values(array_filter(...)), which lost each applicable line's
-     * original index into $pricingResults — needed to map
-     * PromotionDiscountResult::perLineShares() (itself positionally
-     * aligned with whatever array $applicableLines was) back onto the
-     * right line. array_filter() alone (no array_values()) keeps the
-     * original keys, so $applicableLines' keys ARE $pricingResults'
-     * original indices; zipping perLineShares() back onto those same
-     * keys, then filling every non-applicable index with zero, produces
-     * $perLineShares indexed 0..count($pricingResults)-1 exactly like
-     * $pricingResults itself — no second allocation, no order desync.
-     *
-     * @param array<int, CheckoutLinePricingResult> $pricingResults
-     * @return array{0: ?Promotion, 1: Money, 2: array<int, Money>} [appliedPromotion, discount, perLineShares]
-     */
-    private function resolvePromotion(
-        Cart $cart,
-        Money $subtotal,
-        array $pricingResults,
-        ?string $accountId,
-    ): array {
-        $code = $cart->appliedPromotionCode();
-
-        if ($code === null) {
-            $zeroShares = array_fill(0, count($pricingResults), Money::zero($subtotal->currency()));
-
-            return [null, Money::zero($subtotal->currency()), $zeroShares];
-        }
-
-        $promotion = $this->promotions->findByCode($code);
-
-        if ($promotion === null) {
-            throw new PromotionNoLongerValidException($code, 'not_found');
-        }
-
-        $scopes = $this->promotionScopes->findByPromotionId($promotion->id());
-
-        // Per-setting query guards live in PromotionUsageContextAssembler
-        // — see its own class docblock for why a Promotion with none of
-        // newCustomersOnly/usageLimitTotal/usageLimitPerCustomer costs
-        // zero extra queries here, and for what a false/0 value on the
-        // result can and can't be taken to mean.
-        $usage = $this->usageContextAssembler->assemble($promotion, $accountId);
-
-        $validatorLines = array_map(static fn (CheckoutLinePricingResult $result) => [
-            'variationId' => $result->variationId(),
-            'quantity' => $result->quantity(),
-            'unitPrice' => $result->unitPrice(),
-            'lineTotal' => $result->amount(),
-            'productId' => $result->productId(),
-            'matchingScopeReferenceIds' => $result->matchingScopeReferenceIds(),
-            'isDiscounted' => $result->isDiscounted(),
-        ], $pricingResults);
-
-        $validation = $this->promotionValidator->validate($promotion, $scopes, $subtotal, $accountId, $validatorLines, $usage);
-
-        if (! $validation->isValid()) {
-            throw new PromotionNoLongerValidException($code, $validation->reason());
-        }
-
-        $applicableIds = array_flip($validation->applicableVariationIds());
-        $applicableLines = array_filter(
-            $validatorLines,
-            static fn (array $line) => isset($applicableIds[$line['variationId']])
-        );
-
-        $discountResult = $this->promotionDiscountCalculator->calculate($promotion, array_values($applicableLines));
-
-        $sharesByOriginalIndex = array_combine(array_keys($applicableLines), $discountResult->perLineShares());
-
-        $perLineShares = [];
-        foreach ($validatorLines as $index => $line) {
-            $perLineShares[$index] = $sharesByOriginalIndex[$index] ?? Money::zero($subtotal->currency());
-        }
-
-        return [$promotion, $discountResult->amount(), $perLineShares];
     }
 
     /**

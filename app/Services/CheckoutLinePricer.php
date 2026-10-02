@@ -49,7 +49,7 @@ class CheckoutLinePricer
      *   orchestration) lets this abort the whole transaction cleanly,
      *   per §8.3 step 3 — nothing partial is ever committed.
      */
-    public function priceLine(string $variationId, int $quantity, string $currency): CheckoutLinePricingResult
+    public function priceLine(string $variationId, int $quantity, string $currency, bool $includeUnitCost = true): CheckoutLinePricingResult
     {
         $scope = $this->catalogScopeResolver->forVariation($variationId);
 
@@ -69,7 +69,9 @@ class CheckoutLinePricer
         // no longer computed here at all: SaleLineSnapshotBuilder is now
         // the ONE place that computes it, on net, after the promotion
         // share (operational-sales-domain-design.md §3.13 stage 4a).
-        $unitCost = $this->costPriceProvider->costFor($variationId, $currency);
+        // $includeUnitCost false (the cart preview, via CartPricing) skips the lookup and
+        // leaves unitCost null; only a snapshot (checkout) reads it.
+        $unitCost = $includeUnitCost ? $this->costPriceProvider->costFor($variationId, $currency) : null;
 
         return CheckoutLinePricingResult::create(
             variationId: $variationId,
