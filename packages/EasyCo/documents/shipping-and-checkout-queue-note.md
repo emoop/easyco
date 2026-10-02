@@ -44,7 +44,7 @@
 
 - No delete for classes, zones, methods: the foreign keys refuse deletes with dependants. The admin stage needs an application-layer deletability check and an archive-versus-delete decision.
 - `freeAboveMinor` on a CARRIER method: stage 3 must define how a threshold interacts with a live carrier quote.
-- Zone `settlementPatterns` are stored only; the matching grammar belongs to stage 3 (see the locale decision above).
+- Zone `settlementNames` and `postcodes` (which replaced the single `settlementPatterns` list in stage 3.0a) are stored only; the matcher belongs to stage 3a (`shipping-domain-design.md` §4).
 - `ship_classes_code_unique` is case-insensitive and relies on the domain's lowercase-only format; an import path that bypasses the domain would be caught by the database, not by the format check.
 - On SQLite a class foreign-key failure would surface as a raw `QueryException` (the message carries no constraint name). No test of this package runs on SQLite.
 - Deferred, shipping money: recording the merchant's own cost of a refused or uncollected parcel (outbound plus return courier charges) for reporting; reimbursement of return shipping when the store policy makes the shop bear it. (The earlier "optional merchant action also refund the shipping" is moot: the refund form always offers a shipping refund amount, prefilled 0.)

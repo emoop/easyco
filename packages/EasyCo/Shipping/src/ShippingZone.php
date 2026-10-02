@@ -7,15 +7,23 @@ use LogicException;
 
 /**
  * An ordered region a delivery address can fall in — shipping-domain-design.md
- * §4. STORE ONLY IN THIS STAGE: countryCodes and settlementPatterns are
- * validated and persisted, but nothing here matches an address against them —
- * zone matching (first match by sortOrder wins, exactly one zone per order) is
- * stage 3's.
+ * §4. STORE ONLY IN THIS STAGE: countryCodes, settlementNames and postcodes
+ * are validated and persisted, but nothing here matches an address against
+ * them — zone matching (first match by sortOrder wins, exactly one zone per
+ * order) is stage 3a's.
  *
  * countryCodes: a non-empty list of unique uppercase two-letter codes. They
  * are NOT checked against an official country list — only against the shape.
- * settlementPatterns: null, or a list of unique, trimmed, non-empty strings;
- * an empty list means "no narrowing" and normalizes to null.
+ * settlementNames: null, or a list of unique, trimmed, non-empty strings,
+ * STORED AS ENTERED — the locale-aware normalization used for matching
+ * ("гр. София" against "София") belongs to stage 3a's SettlementNameNormalizer
+ * and is deliberately not applied here.
+ * postcodes: null, or a list normalized AT CONSTRUCTION — trimmed, ALL
+ * whitespace removed, uppercased ("sw1a 1aa" becomes "SW1A1AA") — then checked
+ * against ^[A-Z0-9-]{2,12}$; duplicates after normalization are refused.
+ * For both lists an empty list means "no narrowing" and normalizes to null.
+ * The two lists replaced the single free-form `settlementPatterns` list, which
+ * mixed names and postcodes and could not tell them apart.
  *
  * sortOrder is a non-negative int and is NOT unique; every ordered read uses
  * `sortOrder ASC, id ASC`.
@@ -32,29 +40,35 @@ final class ShippingZone
     private array $countryCodes;
 
     /** @var list<string>|null */
-    private ?array $settlementPatterns;
+    private ?array $settlementNames;
+
+    /** @var list<string>|null */
+    private ?array $postcodes;
 
     /**
      * @param  list<string>  $countryCodes
-     * @param  list<string>|null  $settlementPatterns
+     * @param  list<string>|null  $settlementNames
+     * @param  list<string>|null  $postcodes
      */
     private function __construct(
         private ?string $id,
         string $name,
         int $sortOrder,
         array $countryCodes,
-        ?array $settlementPatterns,
+        ?array $settlementNames,
+        ?array $postcodes,
     ) {
-        $this->apply($name, $sortOrder, $countryCodes, $settlementPatterns);
+        $this->apply($name, $sortOrder, $countryCodes, $settlementNames, $postcodes);
     }
 
     /**
      * @param  list<string>  $countryCodes
-     * @param  list<string>|null  $settlementPatterns
+     * @param  list<string>|null  $settlementNames
+     * @param  list<string>|null  $postcodes
      */
-    public static function create(string $name, int $sortOrder, array $countryCodes, ?array $settlementPatterns = null): self
+    public static function create(string $name, int $sortOrder, array $countryCodes, ?array $settlementNames = null, ?array $postcodes = null): self
     {
-        return new self(null, $name, $sortOrder, $countryCodes, $settlementPatterns);
+        return new self(null, $name, $sortOrder, $countryCodes, $settlementNames, $postcodes);
     }
 
     /**
@@ -62,11 +76,12 @@ final class ShippingZone
      * is already-valid data read back from storage.
      *
      * @param  list<string>  $countryCodes
-     * @param  list<string>|null  $settlementPatterns
+     * @param  list<string>|null  $settlementNames
+     * @param  list<string>|null  $postcodes
      */
-    public static function reconstituteFromStorage(string $id, string $name, int $sortOrder, array $countryCodes, ?array $settlementPatterns): self
+    public static function reconstituteFromStorage(string $id, string $name, int $sortOrder, array $countryCodes, ?array $settlementNames, ?array $postcodes): self
     {
-        return new self($id, $name, $sortOrder, $countryCodes, $settlementPatterns);
+        return new self($id, $name, $sortOrder, $countryCodes, $settlementNames, $postcodes);
     }
 
     /**
@@ -75,11 +90,12 @@ final class ShippingZone
      * Address::update()).
      *
      * @param  list<string>  $countryCodes
-     * @param  list<string>|null  $settlementPatterns
+     * @param  list<string>|null  $settlementNames
+     * @param  list<string>|null  $postcodes
      */
-    public function update(string $name, int $sortOrder, array $countryCodes, ?array $settlementPatterns = null): void
+    public function update(string $name, int $sortOrder, array $countryCodes, ?array $settlementNames = null, ?array $postcodes = null): void
     {
-        $this->apply($name, $sortOrder, $countryCodes, $settlementPatterns);
+        $this->apply($name, $sortOrder, $countryCodes, $settlementNames, $postcodes);
     }
 
     /**
@@ -87,9 +103,10 @@ final class ShippingZone
      * the entity exactly as it was.
      *
      * @param  array<mixed>  $countryCodes
-     * @param  array<mixed>|null  $settlementPatterns
+     * @param  array<mixed>|null  $settlementNames
+     * @param  array<mixed>|null  $postcodes
      */
-    private function apply(string $name, int $sortOrder, array $countryCodes, ?array $settlementPatterns): void
+    private function apply(string $name, int $sortOrder, array $countryCodes, ?array $settlementNames, ?array $postcodes): void
     {
         $name = trim($name);
 
@@ -106,12 +123,14 @@ final class ShippingZone
         }
 
         $countryCodes = self::normalizeCountryCodes($countryCodes);
-        $settlementPatterns = self::normalizeSettlementPatterns($settlementPatterns);
+        $settlementNames = self::normalizeSettlementNames($settlementNames);
+        $postcodes = self::normalizePostcodes($postcodes);
 
         $this->name = $name;
         $this->sortOrder = $sortOrder;
         $this->countryCodes = $countryCodes;
-        $this->settlementPatterns = $settlementPatterns;
+        $this->settlementNames = $settlementNames;
+        $this->postcodes = $postcodes;
     }
 
     /**
@@ -142,33 +161,67 @@ final class ShippingZone
     }
 
     /**
-     * @param  array<mixed>|null  $patterns
+     * @param  array<mixed>|null  $names
      * @return list<string>|null
      */
-    private static function normalizeSettlementPatterns(?array $patterns): ?array
+    private static function normalizeSettlementNames(?array $names): ?array
     {
-        if ($patterns === null || $patterns === []) {
+        if ($names === null || $names === []) {
             return null;
         }
 
         $seen = [];
 
-        foreach ($patterns as $pattern) {
-            if (! is_string($pattern) || trim($pattern) === '') {
-                throw InvalidShippingZoneException::invalidSettlementPattern($pattern);
+        foreach ($names as $name) {
+            if (! is_string($name) || trim($name) === '') {
+                throw InvalidShippingZoneException::invalidSettlementName($name);
             }
 
-            $pattern = trim($pattern);
+            $name = trim($name);
 
-            if (isset($seen[$pattern])) {
-                throw InvalidShippingZoneException::duplicateSettlementPattern($pattern);
+            if (isset($seen[$name])) {
+                throw InvalidShippingZoneException::duplicateSettlementName($name);
             }
 
-            $seen[$pattern] = true;
+            $seen[$name] = true;
         }
 
-        // array_keys() would turn a numeric-looking pattern such as "1000" (a
-        // postcode) into an int key, so the keys are cast back to strings.
+        // array_keys() would turn a numeric-looking name into an int key, so
+        // the keys are cast back to strings.
+        return array_map('strval', array_keys($seen));
+    }
+
+    /**
+     * @param  array<mixed>|null  $postcodes
+     * @return list<string>|null
+     */
+    private static function normalizePostcodes(?array $postcodes): ?array
+    {
+        if ($postcodes === null || $postcodes === []) {
+            return null;
+        }
+
+        $seen = [];
+
+        foreach ($postcodes as $postcode) {
+            if (! is_string($postcode)) {
+                throw InvalidShippingZoneException::invalidPostcode($postcode);
+            }
+
+            // trim, remove ALL whitespace (ASCII and Unicode separators), uppercase
+            $normalized = mb_strtoupper((string) preg_replace('/[\s\p{Z}]+/u', '', $postcode));
+
+            if (preg_match('/^[A-Z0-9-]{2,12}$/D', $normalized) !== 1) {
+                throw InvalidShippingZoneException::invalidPostcode($postcode);
+            }
+
+            if (isset($seen[$normalized])) {
+                throw InvalidShippingZoneException::duplicatePostcode($normalized);
+            }
+
+            $seen[$normalized] = true;
+        }
+
         return array_map('strval', array_keys($seen));
     }
 
@@ -202,9 +255,15 @@ final class ShippingZone
         return $this->countryCodes;
     }
 
-    /** @return list<string>|null */
-    public function settlementPatterns(): ?array
+    /** @return list<string>|null as entered, trimmed */
+    public function settlementNames(): ?array
     {
-        return $this->settlementPatterns;
+        return $this->settlementNames;
+    }
+
+    /** @return list<string>|null normalized: no whitespace, uppercase */
+    public function postcodes(): ?array
+    {
+        return $this->postcodes;
     }
 }

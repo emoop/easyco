@@ -83,6 +83,9 @@ class OrderEditAddLineTest extends TestCase
     /** @var array<string, string> */
     private array $variations = [];
 
+    /** Counter behind variableProduct()'s deterministic base_sku. */
+    private int $variableProductSequence = 0;
+
     /** @var array<string, PriceListItem> variationId => its own price list item */
     private array $priceItems = [];
 
@@ -174,7 +177,11 @@ class OrderEditAddLineTest extends TestCase
         $white = new AttributeValue(id: null, attributeDefinitionId: $definition->id(), value: 'White');
         app(AttributeValueRepository::class)->save($white);
 
-        $baseSku = 'SKU-'.strtoupper(Str::random(8));
+        // DETERMINISTIC (a fixed prefix and a counter), not random: a random base_sku could start
+        // with "A" and then contain the "SKU-A" fragment the search tests look for, which made
+        // test_the_search_matches_a_product_name_a_sku_and_a_barcode... fail about 1 run in 36.
+        // "TSBASE-" shares no fragment with any search term in this class.
+        $baseSku = sprintf('TSBASE-%03d', ++$this->variableProductSequence);
         $product = Product::createVariable($name, $baseSku, 't-shirt-'.strtolower(Str::random(6)));
         $product->declareVariationAxes([new VariationAxis($definition, [$black, $white])]);
 

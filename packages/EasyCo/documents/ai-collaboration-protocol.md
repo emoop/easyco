@@ -41,6 +41,7 @@ When designing a new domain, check 1-2 real-world platforms or APIs for preceden
 - MySQL/MariaDB is the source of truth for constraints and correctness — this project targets real MySQL from the start (via a dedicated `easyco_testing` database for the Feature suite), never SQLite outside the test suite's own in-memory speed optimization.
 - **Never approve based on a partial diff or a prose summary of files not shown.** If the coder's message describes changes to files whose content wasn't actually pasted, ask for those files explicitly before approving — a summary is not a substitute for reading the real content, no matter how detailed the summary is.
 - **Independently verify, don't just read.** Clone/pull the real repo, apply the diff to a real local checkout, run `git apply --check` yourself rather than trusting the coder's own report of it, and re-run any specific factual claim the coder makes (a cited CLAUDE.md rule number, a `SHOW CREATE TABLE` result, a "no other test reads this field" claim) with your own grep/query when it's cheap to do so and the claim matters.
+- **Never run a destructive git command on a file that has uncommitted work.** `git checkout`, `git restore`, `git reset`, `git clean` and `git stash` can silently discard edits that exist nowhere else. If a file must be restored to a committed state, stop and ask the architect first; do not "just get the original back" to make an edit script easier.
 
 ## When a diff won't apply — check your own transcription first
 

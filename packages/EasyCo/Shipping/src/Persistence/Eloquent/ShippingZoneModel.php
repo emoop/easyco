@@ -14,5 +14,5 @@ class ShippingZoneModel extends Model
 {
     protected $table = 'shipping_zones';
 
-    protected $fillable = ['name', 'sort_order', 'country_codes', 'settlement_patterns'];
+    protected $fillable = ['name', 'sort_order', 'country_codes', 'settlement_names', 'postcodes'];
 }

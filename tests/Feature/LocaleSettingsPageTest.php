@@ -63,12 +63,19 @@ class LocaleSettingsPageTest extends TestCase
         $this->assertSame('en', app(SiteSettingsRepository::class)->get('site.locale'));
     }
 
-    public function test_the_settings_page_defaults_to_bulgarian_when_never_set(): void
+    /**
+     * CHANGED in shipping stage 3.0a: this used to assert a hard-coded 'bg'
+     * while the middleware fell back to config('app.locale') ('en'), so with
+     * nothing stored the form and the panel disagreed. Both now use
+     * App\Settings\StoreLocale, whose one fallback is config('app.locale');
+     * the page shows the EFFECTIVE value.
+     */
+    public function test_the_settings_page_shows_the_effective_locale_when_never_set(): void
     {
         $this->actingAsPanelAdministrator();
 
         Livewire::test(LocaleSettings::class)
-            ->assertSchemaStateSet(['locale' => 'bg']);
+            ->assertSchemaStateSet(['locale' => config('app.locale')]);
     }
 
     public function test_the_real_permission_matrix_for_settings_access(): void

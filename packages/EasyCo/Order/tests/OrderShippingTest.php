@@ -211,4 +211,48 @@ class OrderShippingTest extends TestCase
         $this->assertSame(500, $order->shipping()->minorValue());
         $this->assertNull($order->shippingMethodCode());
     }
+
+    /**
+     * The strengthened stage-2 test: shipping greater than zero with a NULL
+     * method name is exactly the shape the create()-time rule forbids, and the
+     * read path must still accept it — reconstituteFromStorage() adds no new
+     * throw, so an order that predates (or was written outside) that rule can
+     * always be read back.
+     */
+    public function test_reconstitute_from_storage_with_shipping_and_no_method_name_does_not_throw(): void
+    {
+        $order = Order::reconstituteFromStorage(
+            id: '6',
+            clientId: 'client-6',
+            accountId: null,
+            transactionId: 'transaction-6',
+            email: 'buyer@example.com',
+            currency: 'EUR',
+            subtotal: Money::fromMinorUnits(8000, 'EUR'),
+            discount: Money::fromMinorUnits(1000, 'EUR'),
+            shipping: Money::fromMinorUnits(500, 'EUR'),
+            shippingMethodName: null,
+            shippingMethodCode: null,
+            total: Money::fromMinorUnits(7500, 'EUR'),
+            appliedPromotionCode: null,
+            status: OrderStatus::PLACED,
+            placedAt: new DateTimeImmutable('2026-01-01 12:00:00'),
+            addressId: null,
+            deliveryType: OrderDeliveryType::STREET_ADDRESS,
+            recipientName: 'Иван Иванов',
+            phone: '+359888123456',
+            country: 'BG',
+            city: 'София',
+            postalCode: null,
+            addressLine1: 'бул. Витоша 1',
+            addressLine2: null,
+            carrierCode: null,
+            pickupPointReference: null,
+            settlement: null,
+        );
+
+        $this->assertSame(500, $order->shipping()->minorValue());
+        $this->assertNull($order->shippingMethodName());
+        $this->assertSame(7500, $order->total()->minorValue());
+    }
 }

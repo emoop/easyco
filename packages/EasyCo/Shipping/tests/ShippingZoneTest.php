@@ -11,12 +11,13 @@ class ShippingZoneTest extends TestCase
 {
     public function test_a_valid_zone_keeps_its_fields(): void
     {
-        $zone = ShippingZone::create(' София-град ', 3, ['BG'], ['София', '1000']);
+        $zone = ShippingZone::create(' София-град ', 3, ['BG'], ['София', 'гр. София'], ['1000', '1111']);
 
         $this->assertSame('София-град', $zone->name());
         $this->assertSame(3, $zone->sortOrder());
         $this->assertSame(['BG'], $zone->countryCodes());
-        $this->assertSame(['София', '1000'], $zone->settlementPatterns(), 'a numeric-looking pattern stays a string');
+        $this->assertSame(['София', 'гр. София'], $zone->settlementNames(), 'names are kept as entered, "гр. София" included');
+        $this->assertSame(['1000', '1111'], $zone->postcodes(), 'a numeric postcode stays a string');
     }
 
     /** @return array<string, array{mixed}> */
@@ -61,19 +62,24 @@ class ShippingZoneTest extends TestCase
         $this->assertSame(['ZZ'], ShippingZone::create('Zone', 0, ['ZZ'])->countryCodes());
     }
 
-    public function test_an_empty_settlement_pattern_list_normalizes_to_null(): void
+    public function test_empty_name_and_postcode_lists_normalize_to_null(): void
     {
-        $this->assertNull(ShippingZone::create('Zone', 0, ['BG'], [])->settlementPatterns());
-        $this->assertNull(ShippingZone::create('Zone', 0, ['BG'], null)->settlementPatterns());
+        $this->assertNull(ShippingZone::create('Zone', 0, ['BG'], [], [])->settlementNames());
+        $this->assertNull(ShippingZone::create('Zone', 0, ['BG'], [], [])->postcodes());
+        $this->assertNull(ShippingZone::create('Zone', 0, ['BG'], null, null)->settlementNames());
+        $this->assertNull(ShippingZone::create('Zone', 0, ['BG'], null, null)->postcodes());
     }
 
-    public function test_settlement_patterns_are_trimmed(): void
+    public function test_settlement_names_are_trimmed_but_otherwise_kept_as_entered(): void
     {
-        $this->assertSame(['София', 'Пловдив'], ShippingZone::create('Zone', 0, ['BG'], ['  София ', "Пловдив\n"])->settlementPatterns());
+        $this->assertSame(
+            ['София', 'гр. Пловдив', 'с. Бояна'],
+            ShippingZone::create('Zone', 0, ['BG'], ['  София ', "гр. Пловдив\n", 'с. Бояна'])->settlementNames(),
+        );
     }
 
     /** @return array<string, array{array<mixed>}> */
-    public static function invalidPatternLists(): array
+    public static function invalidNameLists(): array
     {
         return [
             'blank entry' => [['София', '   ']],
@@ -84,13 +90,50 @@ class ShippingZoneTest extends TestCase
         ];
     }
 
-    /** @param array<mixed> $patterns */
-    #[DataProvider('invalidPatternLists')]
-    public function test_a_bad_settlement_pattern_list_is_rejected(array $patterns): void
+    /** @param array<mixed> $names */
+    #[DataProvider('invalidNameLists')]
+    public function test_a_bad_settlement_name_list_is_rejected(array $names): void
     {
         $this->expectException(InvalidShippingZoneException::class);
 
-        ShippingZone::create('Zone', 0, ['BG'], $patterns);
+        ShippingZone::create('Zone', 0, ['BG'], $names);
+    }
+
+    public function test_postcodes_are_trimmed_stripped_of_all_whitespace_and_uppercased(): void
+    {
+        $zone = ShippingZone::create('Zone', 0, ['GB'], null, ['sw1a 1aa', '  1000 ', "ec1a\t1bb", 'sw 1a  2aa', "1\u{00A0}000-A"]);
+
+        $this->assertSame(['SW1A1AA', '1000', 'EC1A1BB', 'SW1A2AA', '1000-A'], $zone->postcodes());
+    }
+
+    /** @return array<string, array{array<mixed>}> */
+    public static function invalidPostcodeLists(): array
+    {
+        return [
+            'invalid character' => [['10#00']],
+            'dot' => [['1000.']],
+            'cyrillic letters' => [['СОФИЯ']],
+            'too short' => [['1']],
+            'too long' => [['1234567890123']],
+            'blank' => [['   ']],
+            'non-string' => [[1000]],
+            'duplicate' => [['1000', '1000']],
+            'duplicate after normalization' => [['sw1a 1aa', 'SW1A1AA']],
+        ];
+    }
+
+    /** @param array<mixed> $postcodes */
+    #[DataProvider('invalidPostcodeLists')]
+    public function test_a_bad_postcode_list_is_rejected(array $postcodes): void
+    {
+        $this->expectException(InvalidShippingZoneException::class);
+
+        ShippingZone::create('Zone', 0, ['BG'], null, $postcodes);
+    }
+
+    public function test_postcode_length_limits_are_two_to_twelve(): void
+    {
+        $this->assertSame(['10', '123456789012'], ShippingZone::create('Zone', 0, ['BG'], null, ['10', '123456789012'])->postcodes());
     }
 
     public function test_an_empty_name_is_rejected(): void
@@ -109,7 +152,7 @@ class ShippingZoneTest extends TestCase
 
     public function test_a_rejected_update_leaves_the_zone_untouched(): void
     {
-        $zone = ShippingZone::create('Zone', 1, ['BG'], ['София']);
+        $zone = ShippingZone::create('Zone', 1, ['BG'], ['София'], ['1000']);
 
         try {
             $zone->update('Renamed', 2, ['bg']);
@@ -120,6 +163,7 @@ class ShippingZoneTest extends TestCase
         $this->assertSame('Zone', $zone->name());
         $this->assertSame(1, $zone->sortOrder());
         $this->assertSame(['BG'], $zone->countryCodes());
-        $this->assertSame(['София'], $zone->settlementPatterns());
+        $this->assertSame(['София'], $zone->settlementNames());
+        $this->assertSame(['1000'], $zone->postcodes());
     }
 }

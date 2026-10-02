@@ -77,19 +77,25 @@ ShippingZone                                   (package EasyCo\Shipping)
 ├── id
 ├── name                  "България", "София-град", "Европейски съюз"
 ├── sortOrder             the match order; lower is checked first
-├── countryCodes          the countries this zone covers
-└── settlementPatterns    nullable — optional narrowing within those countries
-                          (a settlement name or postcode list), so "София-град"
-                          can sit above "България"
+├── countryCodes          the countries this zone covers (uppercase ISO alpha-2)
+├── settlementNames       nullable — optional narrowing: a list of settlement
+│                         names, stored as entered ("София", "гр. София")
+└── postcodes             nullable — optional narrowing: a list of postcodes,
+                          normalized at construction (trim, ALL whitespace
+                          removed, uppercase; ^[A-Z0-9-]{2,12}$)
 ```
 
+Narrowing is what lets "София-град" sit above "България". The two lists replaced a single free-form `settlementPatterns` list that mixed names and postcodes; with nothing in the data to tell them apart, a postcode could be mistaken for a name. A zone with neither list is not narrowed at all.
+
 **Matching rule, taken from WooCommerce because it is proven and a merchant can hold it in his head:** zones are checked in `sortOrder`, the first one matching the delivery address wins, and **an order matches exactly one zone**. Narrow zones are placed above broad ones.
+
+**A zone matches the address when the country matches AND EITHER of these holds:** the zone has **no settlement names and no postcodes** (not narrowed), **or** the address's settlement matches one of the zone's **names**, **or** the address's postcode matches one of the zone's **postcodes**. A street address's **`city` is its settlement**; a pickup point's **`settlement`** is its settlement. **The delivery country is a validated ISO 3166-1 alpha-2 code on EVERY address, a `PICKUP_POINT` included** (owner decision D1, final; built in stage 3.0b), so the country test applies to a pickup point exactly as to a street address. The store country (`site.country`) is only the **default the checkout form preselects**; it is never substituted for a missing country. A pickup point has **no postcode**, so a zone narrowed by postcodes alone cannot match it. The matcher itself is stage 3a.
 
 **An address matching no zone cannot be shipped**, and checkout refuses with a clear message rather than silently offering nothing or falling back to a free delivery. There is no implicit "rest of the world" zone: a merchant who wants one creates a zone with no narrowing and puts it last, which is the same thing but visible in his own configuration rather than hidden in the code.
 
 **Which address is matched:** the order's delivery address. For a `PICKUP_POINT` address the `settlement` field is matched, since a pickup point has no street address of its own — another reason `Address` was right to carry it.
 
-**Settlement matching (addendum to §4):** patterns are compared after normalization by the STORE's configured locale (case folding, Unicode normalization, whitespace collapsing, locale-specific prefix stripping such as "гр."/"с." for bg). No cross-script transliteration in V1: a merchant lists each spelling he wants. Postcodes are compared exactly after trimming. Locale rules live behind a `SettlementNameNormalizer` contract so other locales are additions, not rewrites.
+**Settlement matching (addendum to §4):** settlement **names** are compared after normalization by the STORE's configured locale (case folding, Unicode normalization, whitespace collapsing, locale-specific prefix stripping such as "гр."/"с." for bg); the names are **stored as entered** and the normalization is applied only when matching. No cross-script transliteration in V1: a merchant lists each spelling he wants. **Postcodes** are normalized once, when the zone is built (trim, all whitespace removed, uppercase — "sw1a 1aa" becomes "SW1A1AA"), and the address's postcode is put through the same normalization; they are then compared **exactly**. Locale rules live behind a `SettlementNameNormalizer` contract so other locales are additions, not rewrites.
 
 ---
 

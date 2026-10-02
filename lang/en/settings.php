@@ -27,6 +27,13 @@ return [
         'invalid' => 'Enter a real time zone identifier, for example Europe/Sofia.',
     ],
 
+    'country' => [
+        'field_label' => 'Store country',
+        'field_help' => 'The country the shop is in. Used where a delivery has no country of its own, such as a pickup point. Nothing assumes a country until you choose one.',
+        'placeholder' => 'Not chosen',
+        'invalid' => 'Choose a country from the list.',
+    ],
+
     'catalog' => [
         'title' => 'Catalog',
         'season_enabled_label' => 'Show "Season" field',

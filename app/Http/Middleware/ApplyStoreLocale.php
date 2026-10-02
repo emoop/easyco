@@ -2,14 +2,15 @@
 
 namespace App\Http\Middleware;
 
-use App\Settings\Contracts\SiteSettingsRepository;
+use App\Settings\StoreLocale;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\App;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * Reads the `site.locale` setting on every request and applies it via
+ * Reads the store locale (App\Settings\StoreLocale, the one reader, with its
+ * one config('app.locale') fallback) on every request and applies it via
  * App::setLocale() before the rest of the request runs — the first real
  * consumer of the Site Settings mechanism
  * (site-settings-design.md). No caching: §8 is explicit that a single
@@ -29,15 +30,13 @@ use Symfony\Component\HttpFoundation\Response;
 class ApplyStoreLocale
 {
     public function __construct(
-        private readonly SiteSettingsRepository $settings,
+        private readonly StoreLocale $storeLocale,
     ) {
     }
 
     public function handle(Request $request, Closure $next): Response
     {
-        $locale = $this->settings->get('site.locale') ?? config('app.locale');
-
-        App::setLocale($locale);
+        App::setLocale($this->storeLocale->current());
 
         return $next($request);
     }

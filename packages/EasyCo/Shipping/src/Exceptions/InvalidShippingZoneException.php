@@ -39,15 +39,27 @@ final class InvalidShippingZoneException extends InvalidArgumentException
         return new self("ShippingZone country code \"{$code}\" is listed more than once.");
     }
 
-    public static function invalidSettlementPattern(mixed $pattern): self
+    public static function invalidSettlementName(mixed $name): self
     {
-        $shown = is_string($pattern) ? "\"{$pattern}\"" : get_debug_type($pattern);
+        $shown = is_string($name) ? "\"{$name}\"" : get_debug_type($name);
 
-        return new self("ShippingZone settlement pattern {$shown} is invalid: each must be a non-empty string.");
+        return new self("ShippingZone settlement name {$shown} is invalid: each must be a non-empty string.");
     }
 
-    public static function duplicateSettlementPattern(string $pattern): self
+    public static function duplicateSettlementName(string $name): self
     {
-        return new self("ShippingZone settlement pattern \"{$pattern}\" is listed more than once.");
+        return new self("ShippingZone settlement name \"{$name}\" is listed more than once.");
+    }
+
+    public static function invalidPostcode(mixed $postcode): self
+    {
+        $shown = is_string($postcode) ? "\"{$postcode}\"" : get_debug_type($postcode);
+
+        return new self("ShippingZone postcode {$shown} is invalid: after removing whitespace and uppercasing it must be 2 to 12 characters of A-Z, 0-9 and \"-\".");
+    }
+
+    public static function duplicatePostcode(string $postcode): self
+    {
+        return new self("ShippingZone postcode \"{$postcode}\" is listed more than once (after normalization).");
     }
 }

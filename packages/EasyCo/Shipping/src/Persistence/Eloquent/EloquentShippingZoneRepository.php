@@ -21,9 +21,8 @@ final class EloquentShippingZoneRepository implements ShippingZoneRepository
         $model->name = $zone->name();
         $model->sort_order = $zone->sortOrder();
         $model->country_codes = json_encode($zone->countryCodes(), JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
-        $model->settlement_patterns = $zone->settlementPatterns() === null
-            ? null
-            : json_encode($zone->settlementPatterns(), JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+        $model->settlement_names = $this->encodeList($zone->settlementNames());
+        $model->postcodes = $this->encodeList($zone->postcodes());
 
         $model->save();
 
@@ -50,18 +49,29 @@ final class EloquentShippingZoneRepository implements ShippingZoneRepository
             ->all();
     }
 
+    /** @param list<string>|null $list */
+    private function encodeList(?array $list): ?string
+    {
+        return $list === null ? null : json_encode($list, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+    }
+
+    /** @return list<string>|null */
+    private function decodeList(mixed $json): ?array
+    {
+        return $json === null
+            ? null
+            : array_map('strval', json_decode((string) $json, true, flags: JSON_THROW_ON_ERROR));
+    }
+
     private function toDomain(ShippingZoneModel $model): ShippingZone
     {
-        $patterns = $model->settlement_patterns === null
-            ? null
-            : array_map('strval', json_decode((string) $model->settlement_patterns, true, flags: JSON_THROW_ON_ERROR));
-
         return ShippingZone::reconstituteFromStorage(
             id: (string) $model->id,
             name: $model->name,
             sortOrder: (int) $model->sort_order,
             countryCodes: array_map('strval', json_decode((string) $model->country_codes, true, flags: JSON_THROW_ON_ERROR)),
-            settlementPatterns: $patterns,
+            settlementNames: $this->decodeList($model->settlement_names),
+            postcodes: $this->decodeList($model->postcodes),
         );
     }
 }

@@ -4,8 +4,12 @@ namespace App\Filament\Pages\Settings;
 
 use App\Filament\Concerns\AuthorizesViaStaffPermission;
 use App\Filament\NavigationGroup;
+use App\Rules\KnownCountryCode;
 use App\Rules\KnownTimezoneIdentifier;
 use App\Settings\Contracts\SiteSettingsRepository;
+use App\Settings\CountryNames;
+use App\Settings\StoreCountry;
+use App\Settings\StoreLocale;
 use BackedEnum;
 use DateTimeZone;
 use EasyCo\Staff\Enums\Permission;
@@ -130,7 +134,11 @@ class LocaleSettings extends Page
     {
         $settings = app(SiteSettingsRepository::class);
 
-        $locale = $settings->get('site.locale') ?? 'bg';
+        // The EFFECTIVE locale, from the one reader (StoreLocale) the middleware
+        // also uses — so with nothing stored the form shows what the panel is
+        // actually rendering in, not a second, separately maintained default.
+        $locale = app(StoreLocale::class)->current();
+        $country = app(StoreCountry::class)->currentOrNull();
         // Same two-layer fallback the middleware itself applies
         // (ApplyStoreTimezone), deliberately read from the SAME place — so
         // the zone the form shows before anyone has ever saved it is
@@ -147,6 +155,7 @@ class LocaleSettings extends Page
 
         $this->form->fill([
             'locale' => $locale,
+            'country' => $country,
             'timezone' => $timezone,
             'activity_log_enabled' => $activityLogEnabled,
             'activity_log_retention_months' => $activityLogRetentionMonths,
@@ -170,6 +179,17 @@ class LocaleSettings extends Page
                                         'en' => 'English',
                                     ])
                                     ->required(),
+                                // site.country (ISO 3166-1 alpha-2): names in the STORE locale,
+                                // from ext-intl (CountryNames) — no hand-written list. Optional
+                                // here: leaving it empty unsets it, and anything that needs it
+                                // fails loudly (StoreCountry::current()) rather than guessing.
+                                Select::make('country')
+                                    ->label(__('settings.country.field_label'))
+                                    ->helperText(__('settings.country.field_help'))
+                                    ->options(fn (): array => CountryNames::forLocale(app(StoreLocale::class)->current()))
+                                    ->searchable()
+                                    ->placeholder(__('settings.country.placeholder'))
+                                    ->rule(new KnownCountryCode),
                             ]),
                         Tab::make(__('settings.timezone.tab_label'))
                             ->schema([
@@ -293,7 +313,14 @@ class LocaleSettings extends Page
         // Falling back to the field's own default (12) keeps save()
         // correct in that state rather than assuming the key exists.
         $settings = app(SiteSettingsRepository::class);
-        $settings->set('site.locale', $data['locale']);
+        $settings->set(StoreLocale::KEY, $data['locale']);
+
+        if (filled($data['country'] ?? null)) {
+            $settings->set(StoreCountry::KEY, $data['country']);
+        } else {
+            $settings->forget(StoreCountry::KEY);
+        }
+
         // $data['timezone'] is a required, always-visible field, so it is
         // always dehydrated (unlike the retention select above) — the ??
         // is here for the same reason as the currency fallback below: if

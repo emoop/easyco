@@ -117,7 +117,7 @@ class EloquentShippingRepositoriesTest extends TestCase
 
     public function test_a_zone_round_trips_with_cyrillic_preserved_in_storage(): void
     {
-        $zone = ShippingZone::create('София-град', 2, ['BG', 'RO'], ['София', 'Пловдив', '1000']);
+        $zone = ShippingZone::create('София-град', 2, ['BG', 'RO'], ['София', 'гр. София', 'Пловдив'], ['1000', 'sw1a 1aa']);
         $this->zones()->save($zone);
 
         $found = $this->zones()->findById($zone->id());
@@ -125,26 +125,32 @@ class EloquentShippingRepositoriesTest extends TestCase
         $this->assertSame('София-град', $found->name());
         $this->assertSame(2, $found->sortOrder());
         $this->assertSame(['BG', 'RO'], $found->countryCodes());
-        $this->assertSame(['София', 'Пловдив', '1000'], $found->settlementPatterns());
+        $this->assertSame(['София', 'гр. София', 'Пловдив'], $found->settlementNames(), 'kept as entered, "гр. София" included');
+        $this->assertSame(['1000', 'SW1A1AA'], $found->postcodes(), '"sw1a 1aa" was normalized at construction');
 
-        $raw = (string) DB::table('shipping_zones')->where('id', $zone->id())->value('settlement_patterns');
-        $this->assertStringContainsString('София', $raw, 'stored as Cyrillic, not as \\uXXXX escapes');
+        $raw = (string) DB::table('shipping_zones')->where('id', $zone->id())->value('settlement_names');
+        $this->assertStringContainsString('гр. София', $raw, 'stored as Cyrillic, not as \\uXXXX escapes');
         $this->assertStringNotContainsString('\\u', $raw);
+        $this->assertSame(['1000', 'SW1A1AA'], json_decode((string) DB::table('shipping_zones')->where('id', $zone->id())->value('postcodes'), true), 'stored normalized (MySQL reformats the JSON text, so it is compared decoded)');
     }
 
-    public function test_a_zone_without_settlement_patterns_round_trips_as_null(): void
+    public function test_a_zone_without_names_or_postcodes_round_trips_as_null(): void
     {
         $zone = ShippingZone::create('Rest', 9, ['DE']);
         $this->zones()->save($zone);
 
-        $this->assertNull($this->zones()->findById($zone->id())->settlementPatterns());
-        $this->assertNull(DB::table('shipping_zones')->where('id', $zone->id())->value('settlement_patterns'));
+        $found = $this->zones()->findById($zone->id());
+
+        $this->assertNull($found->settlementNames());
+        $this->assertNull($found->postcodes());
+        $this->assertNull(DB::table('shipping_zones')->where('id', $zone->id())->value('settlement_names'));
+        $this->assertNull(DB::table('shipping_zones')->where('id', $zone->id())->value('postcodes'));
     }
 
     public function test_saving_an_existing_zone_updates_it(): void
     {
         $zone = $this->savedZone('Old', 1);
-        $zone->update('Нова', 4, ['GR'], ['Атина']);
+        $zone->update('Нова', 4, ['GR'], ['Атина'], ['10431']);
         $this->zones()->save($zone);
 
         $found = $this->zones()->findById($zone->id());
@@ -152,7 +158,8 @@ class EloquentShippingRepositoriesTest extends TestCase
         $this->assertSame('Нова', $found->name());
         $this->assertSame(4, $found->sortOrder());
         $this->assertSame(['GR'], $found->countryCodes());
-        $this->assertSame(['Атина'], $found->settlementPatterns());
+        $this->assertSame(['Атина'], $found->settlementNames());
+        $this->assertSame(['10431'], $found->postcodes());
         $this->assertSame(1, DB::table('shipping_zones')->count());
     }
 
