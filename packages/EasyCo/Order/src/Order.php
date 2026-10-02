@@ -33,9 +33,15 @@ use LogicException;
  * columns, not a foreign read into Address.
  *
  * TOTAL IS ALWAYS COMPUTED BY create(), NEVER TRUSTED AS A RAW INPUT —
- * create() only accepts subtotal/discount and derives total itself
- * (subtotal->subtract(discount)), so it can never mathematically
- * disagree with them. reconstituteFromStorage() is the one exception:
+ * create() only accepts subtotal/discount/shipping and derives total itself
+ * (subtotal - discount + shipping), so it can never mathematically
+ * disagree with them. SHIPPING (shipping-domain-design.md §7) is an
+ * order-level amount only: it is not a SaleLine and never part of the
+ * goods ledger, so `subtotal - discount` stays the sum of the lines'
+ * netPaidAmount and `shipping` rides on top. It is fixed at construction
+ * and never revised by an edit (an edit carries it through unchanged); the
+ * method name and code are plain-string snapshots — this package does not
+ * import the Shipping package. reconstituteFromStorage() is the one exception:
  * it accepts an explicit total because it is reading back already-
  * computed, already-validated data from storage and must not recompute
  * anything (same "trusts the caller" posture Address::
@@ -65,6 +71,11 @@ final class Order
         // together, one-shot, never partially (order-editing-design.md §2).
         private Money $subtotal,
         private Money $discount,
+        // Shipping (shipping stage 2): order-level, snapshotted at placement,
+        // never revised by reviseTotals() — see this class's docblock.
+        private readonly Money $shipping,
+        private readonly ?string $shippingMethodName,
+        private readonly ?string $shippingMethodCode,
         private Money $total,
         private ?string $appliedPromotionCode,
         // NOT readonly — the one field the mutators below change (see this
@@ -103,8 +114,8 @@ final class Order
         self::assertNotEmpty('clientId', $clientId);
         self::assertNotEmpty('transactionId', $transactionId);
         self::assertAccountIdNotEmptyString($accountId);
-        self::assertSameCurrency($currency, $subtotal, $discount, $total);
-        self::assertDiscountDoesNotExceedSubtotal($total);
+        self::assertSameCurrency($currency, $subtotal, $discount, $shipping, $total);
+        self::assertDiscountDoesNotExceedSubtotal($subtotal, $discount, $total);
         self::assertFieldsMatchDeliveryType(
             deliveryType: $deliveryType,
             country: $country,
@@ -139,10 +150,11 @@ final class Order
      * with. Names exactly which field mismatched rather than a generic
      * "currency mismatch."
      */
-    private static function assertSameCurrency(Currency $currency, Money $subtotal, Money $discount, Money $total): void
+    private static function assertSameCurrency(Currency $currency, Money $subtotal, Money $discount, Money $shipping, Money $total): void
     {
         self::assertMoneyCurrency('subtotal', $subtotal, $currency);
         self::assertMoneyCurrency('discount', $discount, $currency);
+        self::assertMoneyCurrency('shipping', $shipping, $currency);
         self::assertMoneyCurrency('total', $total, $currency);
     }
 
@@ -155,11 +167,61 @@ final class Order
         }
     }
 
-    private static function assertDiscountDoesNotExceedSubtotal(Money $total): void
+    /**
+     * Checked on the GOODS (subtotal - discount) AND on the total: with a
+     * shipping charge on top, a discount larger than the subtotal could
+     * otherwise hide behind it, and the original "total must not be
+     * negative" check (which also guards an explicit total read back from
+     * storage) is kept. For a zero-shipping order the two coincide.
+     */
+    private static function assertDiscountDoesNotExceedSubtotal(Money $subtotal, Money $discount, Money $total): void
     {
-        if ($total->isNegative()) {
+        if ($total->isNegative() || $subtotal->subtract($discount)->isNegative()) {
             throw new InvalidArgumentException('Order discount must not exceed subtotal; total would be negative.');
         }
+    }
+
+    /**
+     * Shipping's create()-time rules (shipping-domain-design.md §7.1): never
+     * negative; a name, when given, is trimmed, non-empty and at most 255
+     * characters; a code, when given, is trimmed, at most 64 characters and
+     * requires a name; a positive shipping amount requires a name. Returns
+     * the normalized [name, code]. Deliberately NOT run on the read path
+     * (reconstituteFromStorage() adds no new throw) — the database holds what
+     * create() once validated.
+     *
+     * @return array{0: ?string, 1: ?string}
+     */
+    private static function normalizeShipping(Money $shipping, ?string $methodName, ?string $methodCode): array
+    {
+        if ($shipping->isNegative()) {
+            throw new InvalidArgumentException('Order shipping must not be negative.');
+        }
+
+        $name = $methodName === null ? null : trim($methodName);
+        $code = $methodCode === null ? null : trim($methodCode);
+
+        if ($name !== null && $name === '') {
+            throw new InvalidArgumentException('Order shippingMethodName must not be empty when given; use null for no shipping method.');
+        }
+
+        if ($name !== null && mb_strlen($name) > 255) {
+            throw new InvalidArgumentException('Order shippingMethodName must not be longer than 255 characters.');
+        }
+
+        if ($code !== null && ($code === '' || mb_strlen($code) > 64)) {
+            throw new InvalidArgumentException('Order shippingMethodCode must be 1 to 64 characters when given; use null for none.');
+        }
+
+        if ($code !== null && $name === null) {
+            throw new InvalidArgumentException('Order shippingMethodCode requires a shippingMethodName.');
+        }
+
+        if ($shipping->isPositive() && $name === null) {
+            throw new InvalidArgumentException('Order shipping greater than zero requires a shippingMethodName.');
+        }
+
+        return [$name, $code];
     }
 
     /**
@@ -229,8 +291,10 @@ final class Order
     }
 
     /**
-     * total is ALWAYS subtotal->subtract(discount), computed here, never
-     * accepted as a parameter — see this class's own docblock. Note
+     * total is ALWAYS subtotal - discount + shipping, computed here, never
+     * accepted as a parameter — see this class's own docblock. $shipping
+     * defaults to zero in the order's currency, so an order with no shipping
+     * gets exactly the pre-shipping total. Note
      * placedAt has NO hidden now() default: the caller (eventually
      * Checkout) must supply it explicitly, keeping this entity trivially
      * testable with a fixed instant rather than a hidden wall-clock read.
@@ -259,6 +323,9 @@ final class Order
         ?string $pickupPointReference = null,
         ?string $settlement = null,
         int $editRevision = 0,
+        ?Money $shipping = null,
+        ?string $shippingMethodName = null,
+        ?string $shippingMethodCode = null,
     ): self {
         $normalizedCurrency = Currency::from($currency);
 
@@ -270,7 +337,11 @@ final class Order
         self::assertMoneyCurrency('subtotal', $subtotal, $normalizedCurrency);
         self::assertMoneyCurrency('discount', $discount, $normalizedCurrency);
 
-        $total = $subtotal->subtract($discount);
+        $shipping ??= Money::zero($normalizedCurrency);
+        self::assertMoneyCurrency('shipping', $shipping, $normalizedCurrency);
+        [$shippingMethodName, $shippingMethodCode] = self::normalizeShipping($shipping, $shippingMethodName, $shippingMethodCode);
+
+        $total = $subtotal->subtract($discount)->add($shipping);
 
         return new self(
             id: null,
@@ -281,6 +352,9 @@ final class Order
             currency: $normalizedCurrency,
             subtotal: $subtotal,
             discount: $discount,
+            shipping: $shipping,
+            shippingMethodName: $shippingMethodName,
+            shippingMethodCode: $shippingMethodCode,
             total: $total,
             appliedPromotionCode: $appliedPromotionCode,
             status: $status,
@@ -323,6 +397,9 @@ final class Order
         Currency|string $currency,
         Money $subtotal,
         Money $discount,
+        Money $shipping,
+        ?string $shippingMethodName,
+        ?string $shippingMethodCode,
         Money $total,
         ?string $appliedPromotionCode,
         OrderStatus $status,
@@ -350,6 +427,9 @@ final class Order
             currency: Currency::from($currency),
             subtotal: $subtotal,
             discount: $discount,
+            shipping: $shipping,
+            shippingMethodName: $shippingMethodName,
+            shippingMethodCode: $shippingMethodCode,
             total: $total,
             appliedPromotionCode: $appliedPromotionCode,
             status: $status,
@@ -417,6 +497,22 @@ final class Order
     public function discount(): Money
     {
         return $this->discount;
+    }
+
+    /** Order-level shipping charge, snapshotted at placement; zero for an order with no shipping. */
+    public function shipping(): Money
+    {
+        return $this->shipping;
+    }
+
+    public function shippingMethodName(): ?string
+    {
+        return $this->shippingMethodName;
+    }
+
+    public function shippingMethodCode(): ?string
+    {
+        return $this->shippingMethodCode;
     }
 
     public function total(): Money
@@ -523,20 +619,23 @@ final class Order
 
     /**
      * order-editing-design.md §2, stage 2 (D1) — one-shot, never partial:
-     * all three Money fields plus the promo code move together, because
-     * there is no such thing as editing just discount. Trusts its caller
-     * (stage 3's OrderEditor) to have computed these correctly from the
-     * order's real, current lines — no formula/consistency assertion is
-     * run here, the same trust create()'s own callers already get for
-     * these exact fields.
+     * subtotal, discount and the promo code move together, because there is
+     * no such thing as editing just discount. It NO LONGER ACCEPTS A TOTAL
+     * (shipping stage 2, shipping-domain-design.md §7.1): the total is
+     * computed here as subtotal - discount + the order's STORED shipping, so
+     * an edit can neither drop nor re-price shipping, and the caller can never
+     * supply a total that disagrees with its parts — the same rule create()
+     * has always applied. Trusts its caller (stage 3's OrderEditor) to have
+     * computed subtotal and discount correctly from the order's real,
+     * current lines.
      */
-    public function reviseTotals(Money $subtotal, Money $discount, Money $total, ?string $appliedPromotionCode): void
+    public function reviseTotals(Money $subtotal, Money $discount, ?string $appliedPromotionCode): void
     {
         $this->assertEditable();
 
         $this->subtotal = $subtotal;
         $this->discount = $discount;
-        $this->total = $total;
+        $this->total = $subtotal->subtract($discount)->add($this->shipping);
         $this->appliedPromotionCode = $appliedPromotionCode;
     }
 

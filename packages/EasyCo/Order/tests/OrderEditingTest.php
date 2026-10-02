@@ -82,6 +82,9 @@ final class OrderEditingTest extends TestCase
             currency: 'EUR',
             subtotal: Money::fromMinorUnits(1000, 'EUR'),
             discount: Money::fromMinorUnits(0, 'EUR'),
+            shipping: Money::fromMinorUnits(0, 'EUR'),
+            shippingMethodName: null,
+            shippingMethodCode: null,
             total: Money::fromMinorUnits(1000, 'EUR'),
             appliedPromotionCode: null,
             status: OrderStatus::PLACED,
@@ -115,6 +118,9 @@ final class OrderEditingTest extends TestCase
             currency: 'EUR',
             subtotal: Money::fromMinorUnits(1000, 'EUR'),
             discount: Money::fromMinorUnits(0, 'EUR'),
+            shipping: Money::fromMinorUnits(0, 'EUR'),
+            shippingMethodName: null,
+            shippingMethodCode: null,
             total: Money::fromMinorUnits(1000, 'EUR'),
             appliedPromotionCode: null,
             status: OrderStatus::PLACED,
@@ -221,7 +227,6 @@ final class OrderEditingTest extends TestCase
         $order->reviseTotals(
             Money::fromMinorUnits(2000, 'EUR'),
             Money::fromMinorUnits(500, 'EUR'),
-            Money::fromMinorUnits(1500, 'EUR'),
             'NEWCODE',
         );
 
@@ -241,7 +246,6 @@ final class OrderEditingTest extends TestCase
             $order->reviseTotals(
                 Money::fromMinorUnits(2000, 'EUR'),
                 Money::fromMinorUnits(500, 'EUR'),
-                Money::fromMinorUnits(1500, 'EUR'),
                 'NEWCODE',
             );
             $this->fail("reviseTotals() must refuse from status \"{$status->value}\".");
@@ -264,7 +268,6 @@ final class OrderEditingTest extends TestCase
         $order->reviseTotals(
             Money::fromMinorUnits(2000, 'EUR'),
             Money::fromMinorUnits(500, 'EUR'),
-            Money::fromMinorUnits(1500, 'EUR'),
             'NEWCODE',
         );
 
@@ -410,7 +413,7 @@ final class OrderEditingTest extends TestCase
         $this->assertSame(OrderStatus::SHIPPED, $order->status());
 
         try {
-            $order->reviseTotals(Money::fromMinorUnits(2000, 'EUR'), Money::fromMinorUnits(0, 'EUR'), Money::fromMinorUnits(2000, 'EUR'), null);
+            $order->reviseTotals(Money::fromMinorUnits(2000, 'EUR'), Money::fromMinorUnits(0, 'EUR'), null);
             $this->fail('reviseTotals() must refuse once shipped.');
         } catch (OrderNotEditableException $e) {
             $this->assertSame(OrderStatus::SHIPPED, $e->status());

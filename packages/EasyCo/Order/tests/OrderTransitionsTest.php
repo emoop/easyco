@@ -76,6 +76,8 @@ final class OrderTransitionsTest extends TestCase
         'id', 'assignId',
         'clientId', 'accountId', 'transactionId', 'email',
         'currency', 'subtotal', 'discount', 'total',
+        // shipping stage 2 — order-level shipping accessors, none touches $status.
+        'shipping', 'shippingMethodName', 'shippingMethodCode',
         'appliedPromotionCode', 'status',
         'confirm', 'ship', 'deliver', 'cancel', 'refund',
         'placedAt', 'addressId', 'deliveryType', 'recipientName', 'phone',

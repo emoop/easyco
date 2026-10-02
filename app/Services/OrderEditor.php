@@ -74,12 +74,17 @@ use InvalidArgumentException;
  * THING CHECKOUT NEVER HAS — a manual (discretionary) discount:
  * subtotal = sum of each line's amount (unit price x quantity, before any
  * discount); discount = sum of each line's promotionDiscountShare PLUS its
- * discretionaryDiscount; total = subtotal - discount = sum of netPaidAmount.
- * For a checkout order discretionary is zero on every line, so this
- * collapses exactly to CheckoutOrchestrator's own
+ * discretionaryDiscount; the GOODS total = subtotal - discount = sum of
+ * netPaidAmount. The ORDER's total is that plus the order's stored shipping
+ * (shipping-domain-design.md §7): an edit never re-prices shipping, so
+ * Order::reviseTotals() adds the shipping it already holds, and the
+ * pending-payment comparison and reissue use that resulting total. The
+ * ledger reconciliation stays goods-only — shipping is not a SaleLine.
+ * For a checkout order discretionary is zero on every line, so the goods
+ * formula collapses exactly to CheckoutOrchestrator's own
  * `subtotal - promotionDiscount`, and CheckoutOrchestrator::
  * assertSaleLinesReconcileWithOrder()'s two sums (shares == discount,
- * netPaid == total) hold by construction here too.
+ * netPaid == goods total) hold by construction here too.
  */
 final class OrderEditor
 {
@@ -223,7 +228,7 @@ final class OrderEditor
         }
 
         // 7. Totals from what was actually written.
-        [$subtotal, $discount, $total, $shareSum] = $this->totalsFrom($order, $resultingLines);
+        [$subtotal, $discount, $goodsTotal, $shareSum] = $this->totalsFrom($order, $resultingLines);
 
         if ($plan['promotionDiscount'] !== null && ! $shareSum->equals($plan['promotionDiscount'])) {
             throw new SaleLineOrderReconciliationException(
@@ -232,7 +237,11 @@ final class OrderEditor
             );
         }
 
-        $order->reviseTotals($subtotal, $discount, $total, $plan['appliedCode']);
+        // The ORDER's total is the goods total plus the stored shipping, which
+        // reviseTotals() adds itself; $goodsTotal (sum of netPaid) stays the
+        // ledger's number and was already reconciled inside totalsFrom().
+        $order->reviseTotals($subtotal, $discount, $plan['appliedCode']);
+        $total = $order->total();
 
         if ($delivery !== null) {
             $order->reviseDelivery(
@@ -608,7 +617,7 @@ final class OrderEditor
 
     /**
      * @param  array<int, SaleLine>  $lines  The lines totals are summed over.
-     * @return array{0: Money, 1: Money, 2: Money, 3: Money} [subtotal, discount, total, promotion-share sum]
+     * @return array{0: Money, 1: Money, 2: Money, 3: Money} [subtotal, discount, GOODS total (sum of netPaid, no shipping), promotion-share sum]
      */
     private function totalsFrom(Order $order, array $lines): array
     {

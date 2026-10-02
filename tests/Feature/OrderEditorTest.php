@@ -962,4 +962,85 @@ class OrderEditorTest extends TestCase
         // and the untouched lines' shares did not move, so none is rewritten).
         $this->assertSame($small, $large);
     }
+
+    // --- shipping stage 2: an edit carries shipping through unchanged ----------------------
+
+    /**
+     * Checkout does not create a non-zero-shipping order yet (stage 4), so one
+     * is built DIRECTLY: the placed order's row and its pending payment are
+     * raised by the shipping amount together, exactly the state stage 4 will
+     * write, and consistent with the orders_total_formula_check constraint.
+     */
+    private function withShipping(Order $order, int $shippingMinor, string $methodName = 'Доставка до адрес'): void
+    {
+        DB::table('orders')->where('id', $order->id())->update([
+            'shipping_minor' => $shippingMinor,
+            'shipping_method_name' => $methodName,
+            'shipping_method_code' => 'home-delivery',
+            'total_minor' => DB::raw('total_minor + '.$shippingMinor),
+        ]);
+
+        DB::table('payments')->where('order_id', $order->id())->update([
+            'amount_minor' => DB::raw('amount_minor + '.$shippingMinor),
+        ]);
+    }
+
+    public function test_an_edit_keeps_the_orders_shipping_and_reissues_the_pending_payment_for_the_total_with_shipping(): void
+    {
+        $order = $this->place();                       // A 2 x 10.00 + B 3 x 5.00 = 35.00
+        $this->withShipping($order, 500);
+
+        $this->assertSame(3500 + 500, (int) $this->payments($order->id())[0]->amount_minor);
+
+        $this->edit($order, [['change' => 'change_quantity', 'originatingLine' => $this->lineFor($order->id(), 'A'), 'quantity' => 1]]);
+
+        $row = DB::table('orders')->where('id', $order->id())->first();
+
+        $this->assertSame(2500, (int) $row->subtotal_minor, 'goods: 10.00 + 15.00');
+        $this->assertSame(500, (int) $row->shipping_minor, 'shipping is carried through, not re-priced');
+        $this->assertSame('Доставка до адрес', $row->shipping_method_name);
+        $this->assertSame('home-delivery', $row->shipping_method_code);
+        $this->assertSame(3000, (int) $row->total_minor, 'goods 25.00 + shipping 5.00');
+
+        $payments = $this->payments($order->id());
+        $this->assertCount(2, $payments, 'the old pending payment was voided and a new one issued');
+        $this->assertNotNull($payments[0]->voided_at);
+        $this->assertSame(4000, (int) $payments[0]->amount_minor);
+        $this->assertNull($payments[1]->voided_at);
+        $this->assertSame(3000, (int) $payments[1]->amount_minor, 'reissued for the order total WITH shipping, not the goods total');
+    }
+
+    public function test_an_edit_that_changes_nothing_in_the_total_leaves_the_pending_payment_alone_when_shipping_is_present(): void
+    {
+        $order = $this->place();
+        $this->withShipping($order, 500);
+
+        // A delivery-only edit: the total (with shipping) is unchanged and the pending payment
+        // already equals it. Compared against the GOODS total instead, it would look drifted and
+        // be voided and reissued for no reason.
+        $this->edit($order, [], delivery: $this->streetDelivery('Plovdiv'));
+
+        $payments = $this->payments($order->id());
+
+        $this->assertCount(1, $payments, 'no payment was touched');
+        $this->assertNull($payments[0]->voided_at);
+        $this->assertSame(4000, (int) $payments[0]->amount_minor);
+        $this->assertSame(4000, (int) DB::table('orders')->where('id', $order->id())->value('total_minor'));
+    }
+
+    public function test_the_goods_reconciliation_stays_goods_only_when_an_order_carries_shipping(): void
+    {
+        $order = $this->place();
+        $this->withShipping($order, 500);
+
+        // The editor's ledger check (subtotal - discount == sum of netPaid) would throw a
+        // SaleLineOrderReconciliationException if it were compared against the total with shipping.
+        $this->edit($order, [$this->addChange('C', 1)]);
+
+        $row = DB::table('orders')->where('id', $order->id())->first();
+
+        $this->assertSame(4300, (int) $row->subtotal_minor);
+        $this->assertSame(4800, (int) $row->total_minor);
+        $this->assertSame(['A' => [2, 2000], 'B' => [3, 1500], 'C' => [1, 800]], $this->state($order->id()), 'the ledger holds goods only; no shipping line');
+    }
 }

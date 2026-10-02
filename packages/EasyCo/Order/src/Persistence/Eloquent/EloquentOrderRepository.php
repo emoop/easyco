@@ -27,6 +27,9 @@ final class EloquentOrderRepository implements OrderRepository
         $model->currency = $order->currency()->code();
         $model->subtotal_minor = $order->subtotal()->minorValue();
         $model->discount_minor = $order->discount()->minorValue();
+        $model->shipping_minor = $order->shipping()->minorValue();
+        $model->shipping_method_name = $order->shippingMethodName();
+        $model->shipping_method_code = $order->shippingMethodCode();
         $model->total_minor = $order->total()->minorValue();
         $model->applied_promotion_code = $order->appliedPromotionCode();
         $model->status = $order->status()->value;
@@ -92,6 +95,9 @@ final class EloquentOrderRepository implements OrderRepository
             currency: $model->currency,
             subtotal: Money::fromMinorUnits($model->subtotal_minor, $model->currency),
             discount: Money::fromMinorUnits($model->discount_minor, $model->currency),
+            shipping: Money::fromMinorUnits((int) $model->shipping_minor, $model->currency),
+            shippingMethodName: $model->shipping_method_name,
+            shippingMethodCode: $model->shipping_method_code,
             total: Money::fromMinorUnits($model->total_minor, $model->currency),
             appliedPromotionCode: $model->applied_promotion_code,
             status: OrderStatus::from($model->status),

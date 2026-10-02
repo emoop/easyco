@@ -668,4 +668,109 @@ class EloquentOrderRepositoryTest extends TestCase
         $this->assertFalse($this->repository()->hasAnyForAccount($accountId, $order->id()), 'the only order, left out: no OTHER order');
         $this->assertTrue($this->repository()->hasAnyForAccount($accountId, '999999'), 'leaving out a different order changes nothing');
     }
+
+    // --- shipping stage 2 --------------------------------------------------------------------
+
+    public function test_shipping_round_trips_through_the_repository_including_a_cyrillic_method_name(): void
+    {
+        $clientId = $this->clientId();
+        $transactionId = $this->transactionId($clientId);
+
+        $order = Order::create(
+            clientId: $clientId,
+            transactionId: $transactionId,
+            email: 'buyer@example.com',
+            currency: 'EUR',
+            subtotal: Money::fromMinorUnits(8000, 'EUR'),
+            discount: Money::fromMinorUnits(1000, 'EUR'),
+            deliveryType: OrderDeliveryType::STREET_ADDRESS,
+            recipientName: 'Иван Иванов',
+            phone: '+359888123456',
+            placedAt: $this->placedAt(),
+            country: 'BG',
+            city: 'София',
+            addressLine1: 'бул. Витоша 1',
+            shipping: Money::fromMinorUnits(500, 'EUR'),
+            shippingMethodName: 'Еконт до офис — София-град',
+            shippingMethodCode: 'econt-office',
+        );
+
+        $this->repository()->save($order);
+
+        $reloaded = $this->repository()->findById($order->id());
+
+        $this->assertSame(500, $reloaded->shipping()->minorValue());
+        $this->assertSame('EUR', $reloaded->shipping()->currency()->code());
+        $this->assertSame('Еконт до офис — София-град', $reloaded->shippingMethodName());
+        $this->assertSame('econt-office', $reloaded->shippingMethodCode());
+        $this->assertSame(7500, $reloaded->total()->minorValue());
+        $this->assertSame(7500, (int) DB::table('orders')->where('id', $order->id())->value('total_minor'));
+    }
+
+    public function test_an_order_with_no_shipping_stores_zero_and_null_names(): void
+    {
+        $clientId = $this->clientId();
+        $order = Order::create(
+            clientId: $clientId,
+            transactionId: $this->transactionId($clientId),
+            email: 'buyer@example.com',
+            currency: 'EUR',
+            subtotal: Money::fromMinorUnits(1000, 'EUR'),
+            discount: Money::fromMinorUnits(300, 'EUR'),
+            deliveryType: OrderDeliveryType::STREET_ADDRESS,
+            recipientName: 'Ivan Ivanov',
+            phone: '+359888123456',
+            placedAt: $this->placedAt(),
+            country: 'BG',
+            city: 'Sofia',
+            addressLine1: 'Vitosha Blvd 1',
+        );
+        $this->repository()->save($order);
+
+        $row = DB::table('orders')->where('id', $order->id())->first();
+
+        $this->assertSame(0, (int) $row->shipping_minor);
+        $this->assertNull($row->shipping_method_name);
+        $this->assertNull($row->shipping_method_code);
+        $this->assertSame(700, (int) $row->total_minor, 'exactly the pre-shipping number');
+    }
+
+    public function test_the_database_check_refuses_an_order_row_whose_total_disagrees_with_its_parts(): void
+    {
+        if (! in_array(DB::getDriverName(), ['mysql', 'mariadb'], true)) {
+            $this->markTestSkipped('orders_total_formula_check is only created on MySQL/MariaDB.');
+        }
+
+        $clientId = $this->clientId();
+        $order = Order::create(
+            clientId: $clientId,
+            transactionId: $this->transactionId($clientId),
+            email: 'buyer@example.com',
+            currency: 'EUR',
+            subtotal: Money::fromMinorUnits(1000, 'EUR'),
+            discount: Money::fromMinorUnits(300, 'EUR'),
+            deliveryType: OrderDeliveryType::STREET_ADDRESS,
+            recipientName: 'Ivan Ivanov',
+            phone: '+359888123456',
+            placedAt: $this->placedAt(),
+            country: 'BG',
+            city: 'Sofia',
+            addressLine1: 'Vitosha Blvd 1',
+        );
+        $this->repository()->save($order);
+
+        try {
+            // 1000 - 300 + 500 = 1200, not 700: the stored total ignores the shipping column.
+            DB::table('orders')->where('id', $order->id())->update(['shipping_minor' => 500]);
+            $this->fail('the CHECK must refuse a row whose total disagrees with subtotal - discount + shipping');
+        } catch (\Illuminate\Database\QueryException $e) {
+            $this->assertStringContainsString('orders_total_formula_check', $e->getMessage());
+        }
+
+        $this->assertSame(0, (int) DB::table('orders')->where('id', $order->id())->value('shipping_minor'), 'and the row is unchanged');
+
+        // The consistent change is accepted.
+        DB::table('orders')->where('id', $order->id())->update(['shipping_minor' => 500, 'total_minor' => 1200]);
+        $this->assertSame(1200, (int) DB::table('orders')->where('id', $order->id())->value('total_minor'));
+    }
 }
