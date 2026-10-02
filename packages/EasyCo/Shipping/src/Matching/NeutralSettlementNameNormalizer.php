@@ -13,7 +13,8 @@ use Normalizer;
  *
  * In this order:
  *  1. Unicode NFC, so a decomposed "й" (и + U+0306) equals the composed one;
- *  2. case folding (MB_CASE_FOLD), not just lower-casing;
+ *  2. case folding (MB_CASE_FOLD), not just lower-casing, followed by NFC again
+ *     (folding can produce a decomposed sequence for some letters);
  *  3. every run of whitespace — ASCII, NBSP and every other Unicode separator —
  *     becomes ONE space, and the ends are trimmed;
  *  4. the dash variants U+2010 ‐, U+2011 ‑, U+2013 – and U+2014 — become "-".
@@ -37,7 +38,14 @@ class NeutralSettlementNameNormalizer implements SettlementNameNormalizer
             return '';
         }
 
-        $folded = mb_convert_case($composed, MB_CASE_FOLD, 'UTF-8');
+        // Folding can itself produce a DECOMPOSED sequence (U+0390 "ΐ" folds to
+        // ι + U+0308 + U+0301), so NFC is applied once more after it.
+        $folded = Normalizer::normalize(mb_convert_case($composed, MB_CASE_FOLD, 'UTF-8'), Normalizer::FORM_C);
+
+        if ($folded === false || $folded === null) {
+            return '';
+        }
+
         $spaced = preg_replace('/[\s\p{Z}]+/u', ' ', $folded);
 
         if ($spaced === null) {

@@ -32,6 +32,8 @@
 ## Checkout resilience audit: what the read-only audit must verify
 
 - API responses are translated with `config('app.locale')`, because the `api` middleware group never applies the store locale; a Bulgarian store's customer gets English error messages. The audit must decide how API responses choose their language (the store locale via `StoreLocale`, or the customer's `Accept-Language`) and test that the customer sees it.
+- Owner decision: an order whose total is exactly zero is refused at checkout for now with a controlled 422 (reason `zero_total`); free orders (no payment) are a later, separate feature.
+- A variation priced only in another currency must be treated as unpriced (cart: skipped and flagged; checkout: the existing `price_not_available` refusal), not a 500.
 - Two known 500s found while characterizing cart pricing (stage 3.0c; pinned in `CartCheckoutPricingCharacterizationTest`, not fixed there): (1) a cart discounted to exactly zero previews fine but checkout fails because `Payment` refuses a zero amount; (2) a variation priced only in another currency makes both the cart preview and checkout fail with `Currency mismatch` instead of being treated as unpriced. The audit must give each a controlled refusal.
 - Any domain `InvalidArgumentException` reaching `CheckoutController` is a 500 today. The audit must list every invariant reachable from checkout input and map each to a controlled 422 refusal with a reason code; nothing a customer can trigger may produce a 500. (First one done in stage 3.0b: a saved address without a country is refused with 422 `address_incomplete`.)
 - Phase 1 is one transaction with no external call inside; amounts are recomputed server-side; a changed amount refuses the order and writes nothing.

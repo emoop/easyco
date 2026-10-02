@@ -36,6 +36,23 @@ final class SettlementNameNormalizerTest extends TestCase
         $this->assertSame($this->bg->normalize($nfc), $this->bg->normalize($nfd));
     }
 
+    public function test_the_result_is_in_nfc_even_when_case_folding_decomposes_a_letter(): void
+    {
+        // U+0390 (Greek small iota with dialytika and tonos) FOLDS to iota + U+0308 + U+0301:
+        // folding alone leaves a decomposed sequence, so NFC must run again after it.
+        $folded = mb_convert_case("\u{0390}", MB_CASE_FOLD, 'UTF-8');
+        $this->assertFalse(\Normalizer::isNormalized($folded, \Normalizer::FORM_C), 'precondition: folding really decomposes this letter');
+
+        foreach ([$this->neutral, $this->bg] as $normalizer) {
+            $result = $normalizer->normalize("\u{0390}");
+
+            $this->assertTrue(\Normalizer::isNormalized($result, \Normalizer::FORM_C));
+            $this->assertSame("\u{0390}", $result);
+            $this->assertSame($result, $normalizer->normalize("\u{03B9}\u{0308}\u{0301}"), 'composed and decomposed spellings are one name');
+            $this->assertSame($result, $normalizer->normalize("\u{03AA}\u{0301}"), 'the capital form too');
+        }
+    }
+
     public function test_extra_spaces_and_non_breaking_spaces_collapse_to_one_space(): void
     {
         $this->assertSame('нова загора', $this->neutral->normalize("  Нова   Загора  "));

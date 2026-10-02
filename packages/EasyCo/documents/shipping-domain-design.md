@@ -152,6 +152,20 @@ So a 100 лв. cart with a 20% code and a 90 лв. threshold does **not** get fr
 
 The customer must be able to see why, so the storefront shows how much more is needed, computed on the same basis. A threshold that silently moves when a code is applied is worse than no threshold.
 
+### 5.2 The rate calculator: the exact rules (built in stage 3b)
+
+`EasyCo\Shipping\Rating\ShippingRateCalculator` is pure: its input is a `RateRequest` — `currency`, `goodsAfterDiscountMinor` (the shared `CartPricing` figure, §5.1) and a list of `RateLine {shippingClass: ?string, quantity: int}`; an empty list of lines is refused — and its output is, per method, a `MethodRate`: either a price in minor units or "needs a carrier quote". It is given the matched zone's methods and returns the **active** ones only, ordered by `sortOrder` ascending, then `id` ascending **numerically** (2 before 10).
+
+All of it is **per order, never per unit**:
+
+- **FREE:** 0, whatever the cart.
+- **FLAT:** `amountMinor`.
+- **PER_CLASS:** every line takes the rate of its class on this method. A line with **no class** (null or blank), or whose class **has no rate on this method**, or whose class code **Shipping does not know** (`Variation.shippingClass` is still free text, and codes are compared exactly, never case-folded), takes the method's `amountMinor` — the **fallback**. The order is charged the **single highest** of those per-line rates (§3.1), **never their sum**, and **quantities do not multiply it**: classes rated 3, 7 and 5 charge 7, not 15. A rate of 0 is valid; all lines at 0 charge 0.
+- **Free-shipping threshold (FLAT and PER_CLASS):** when `freeAboveMinor` is set and `goodsAfterDiscountMinor >= freeAboveMinor`, the charge is 0. **It is `>=`: an order exactly at the threshold is free** (7999 against 8000 is charged; 8000 and 8001 are free).
+- **CARRIER:** "needs a carrier quote" — never priced locally, not even 0. How `freeAboveMinor` combines with a live quote is still open (queue note) and is deliberately **not** applied.
+
+The value objects are named `RateRequest`, `RateLine` and `MethodRate` so they do not collide with the §6 provider types (`ShippingQuote`, `ShippingContext`, …), which arrive in stage 3c.
+
 ---
 
 ## 6. The doors: three contracts, zero implementations
