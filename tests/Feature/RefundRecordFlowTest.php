@@ -51,6 +51,14 @@ class RefundRecordFlowTest extends TestCase
 
     private static int $counter = 0;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        // Recording a refund on a settled payment needs the permission of its channel (R1b).
+        $this->actingAsAdministrator();
+    }
+
     private function changer(): OrderStatusChanger
     {
         return app(OrderStatusChanger::class);
@@ -87,13 +95,14 @@ class RefundRecordFlowTest extends TestCase
      *
      * @return array{orderId: string, saleLineId: string, variationId: string, payment: Payment}
      */
-    private function shippedOrder(int $quantity, int $unitMinor, string $method = 'cash_on_delivery', ?int $stock = null): array
+    private function shippedOrder(int $quantity, int $unitMinor, string $method = 'cash_on_delivery', ?int $stock = null, int $shippingMinor = 0): array
     {
         $variationId = $this->variationWithStock($stock ?? 10);
         $client = new Client(null, 'Ivan Ivanov');
         app(ClientRepository::class)->save($client);
 
         $total = $quantity * $unitMinor;
+        $paid = $total + $shippingMinor;
         $transaction = new Transaction(null, Channel::WEB);
         $transaction->addSaleLine(SaleLine::create(
             transactionId: '',
@@ -131,10 +140,12 @@ class RefundRecordFlowTest extends TestCase
             country: 'BG',
             city: 'Sofia',
             addressLine1: 'Vitosha Blvd 1',
+            shipping: $this->money($shippingMinor),
+            shippingMethodName: $shippingMinor > 0 ? 'Test courier' : null,
         );
         app(OrderRepository::class)->save($order);
 
-        $payment = Payment::create($order->id(), $method, $this->money($total), PaymentStatus::PENDING);
+        $payment = Payment::create($order->id(), $method, $this->money($paid), PaymentStatus::PENDING);
         $payment->recordAttemptResult(PaymentStatus::PENDING, null, null, new DateTimeImmutable('2026-09-28 09:00:00'));
         $payment->confirm(new DateTimeImmutable('2026-09-28 09:30:00'));
         app(PaymentRepository::class)->save($payment);
@@ -297,7 +308,7 @@ class RefundRecordFlowTest extends TestCase
 
     public function test_the_deduction_and_the_shipping_refund_are_on_the_refund_and_on_no_sale_line(): void
     {
-        $fixture = $this->shippedOrder(5, 1000);
+        $fixture = $this->shippedOrder(5, 1000, shippingMinor: 300);
 
         $this->changer()->recordReturn(
             $fixture['orderId'],

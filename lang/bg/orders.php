@@ -141,6 +141,22 @@ return [
     // One label per App\Enums\OrderRefusalReason value (order-lifecycle-
     // design.md §2.2, §10 stage 6a). Wording pending owner review — see this
     // stage's own report.
+    // Refunds R1b (shipping-domain-design.md §7.2.2, §7.2.3, §7.2.8): the sentences
+    // the refund caps, the operation key and the money permission refuse with.
+    'refund_caps' => [
+        'line' => 'Това възстановяване е повече от остатъка за един от редовете: за него могат да се върнат най-много :room.',
+        'shipping' => 'Връщането на доставката е повече от платената доставка: могат да се върнат най-много :room.',
+        'total' => 'Това възстановяване е повече от платеното от клиента: могат да се върнат най-много :room.',
+        'deduction' => 'Удръжката е по-голяма от стоките плюс доставката, които се връщат (най-много :room). Нищо не е записано.',
+    ],
+
+    'refund_permission_denied' => [
+        'cash' => 'Връщането в брой от касата изисква правото „връщане в брой“, което нямате. Нищо не е записано.',
+        'bank' => 'Връщането по банков път изисква правото „връщане по банка“, което нямате. Нищо не е записано.',
+    ],
+
+    'operation_key_reused' => 'Тази форма вече е изпратена, с различно съдържание. Нищо не е променено; отворете диалога отново и въведете каквото искате.',
+
     'refusal_reasons' => [
         'bank_transfer_not_settled' => 'Банковият превод за тази поръчка още не е отбелязан като получен.',
         'order_not_cancellable' => 'Тази поръчка не може да бъде отказана в текущия си статус.',

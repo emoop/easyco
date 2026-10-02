@@ -7,9 +7,12 @@ use App\Filament\NavigationGroup;
 use App\Filament\Resources\OrderResource\Pages\ListOrders;
 use App\Filament\Resources\OrderResource\Pages\ViewOrder;
 use App\Rules\KnownCountryCode;
+use App\Services\Exceptions\OperationKeyReusedException;
 use App\Services\Exceptions\OrderAddLineRefusedException;
 use App\Services\Exceptions\OrderTransitionRefusedException;
 use App\Services\Exceptions\PromotionNoLongerValidException;
+use App\Services\Exceptions\RefundCapExceededException;
+use App\Services\Exceptions\RefundPermissionDeniedException;
 use App\Services\Exceptions\ReturnExceedsRemainingQuantityException;
 use App\Services\Exceptions\StaleOrderEditException;
 use App\Services\OrderAddLinePricer;
@@ -27,6 +30,8 @@ use App\Services\OrderStatusChanger;
 use App\Services\PanelStaffActor;
 use App\Services\PriceDisplayFormatter;
 use App\Services\ProductPriceDisplay;
+use App\Services\RefundPermissionPolicy;
+use App\Services\RefundRequest;
 use App\Settings\CountryNames;
 use App\Settings\StoreLocale;
 use BackedEnum;
@@ -41,6 +46,7 @@ use EasyCo\Order\Exceptions\OrderNotEditableException;
 use EasyCo\OperationalSales\SaleLine;
 use EasyCo\Order\Persistence\Eloquent\OrderModel;
 use EasyCo\Payment\Enums\PaymentStatus;
+use EasyCo\Payment\Enums\RefundChannel;
 use EasyCo\Payment\Payment;
 use EasyCo\Pricing\Currency;
 use EasyCo\Pricing\Exceptions\PriceNotConfiguredException;
@@ -76,6 +82,7 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Lang;
 use Illuminate\Support\HtmlString;
+use Illuminate\Support\Str;
 use InvalidArgumentException;
 
 /**
@@ -998,7 +1005,7 @@ class OrderResource extends Resource
                 static::runOrderAction(
                     $record,
                     $livewire,
-                    fn () => app(OrderStatusChanger::class)->cancel((string) $record->id, new DateTimeImmutable, $data['reason'] ?? null, $restockOverrides),
+                    fn () => app(OrderStatusChanger::class)->cancel((string) $record->id, new DateTimeImmutable, $data['reason'] ?? null, $restockOverrides, static::refundRequestFrom($data)),
                     __('orders.actions.cancel_done', ['id' => $record->id]),
                 );
             });
@@ -1079,7 +1086,7 @@ class OrderResource extends Resource
                 static::runOrderAction(
                     $record,
                     $livewire,
-                    fn () => app(OrderStatusChanger::class)->recordReturn((string) $record->id, $lines, new DateTimeImmutable, $data['reason'] ?? null),
+                    fn () => app(OrderStatusChanger::class)->recordReturn((string) $record->id, $lines, new DateTimeImmutable, $data['reason'] ?? null, static::refundRequestFrom($data)),
                     __('orders.actions.record_return_done', ['id' => $record->id, 'count' => $totalQuantity]),
                 );
             });
@@ -1551,6 +1558,14 @@ class OrderResource extends Resource
      * permission ON TOP — REFUND_CASH for cash_on_delivery, REFUND_BANK
      * for every other method.
      */
+    /** The dialog's only money input today is the operation key; every amount is the default (R3 adds the rest). */
+    private static function refundRequestFrom(array $data): RefundRequest
+    {
+        $key = $data['operation_key'] ?? null;
+
+        return new RefundRequest(operationKey: is_string($key) && $key !== '' ? $key : null);
+    }
+
     private static function moneyPermissionClause(OrderModel $record): bool
     {
         $payment = static::forOrder($record)->latestPayment;
@@ -1559,8 +1574,10 @@ class OrderResource extends Resource
             return true;
         }
 
+        // The SAME derivation the service enforces (RefundPermissionPolicy), so the
+        // panel and OrderRefunder can never disagree about who may refund.
         return static::staffHasPermission(
-            $payment->method() === 'cash_on_delivery' ? Permission::REFUND_CASH : Permission::REFUND_BANK
+            RefundPermissionPolicy::permissionFor(RefundChannel::defaultForMethod($payment->method()))
         );
     }
 
@@ -1629,6 +1646,11 @@ class OrderResource extends Resource
         }
 
         $blocks[] = Textarea::make('reason')->label(__('orders.actions.reason_label'));
+
+        // ONE KEY PER OPENING OF THE DIALOG (shipping-domain-design.md §7.2.3): generated
+        // when the form is filled, submitted with it, so a double click or a retry of
+        // the same submission is one cancel/return, not two.
+        $blocks[] = Hidden::make('operation_key')->default(fn (): string => (string) Str::uuid());
 
         return $blocks;
     }
@@ -1732,6 +1754,16 @@ class OrderResource extends Resource
                     'from' => static::optionLabel('status', $e->from()->value),
                     'to' => static::optionLabel('status', $e->to()->value),
                 ]))
+                ->danger()
+                ->send();
+
+            return;
+        } catch (RefundCapExceededException|RefundPermissionDeniedException|OperationKeyReusedException $e) {
+            // The refund caps, the money permission and a reused operation key all
+            // carry their own translated sentence: shown as a refusal, never a 500.
+            Notification::make()
+                ->title(__('orders.actions.refused_title'))
+                ->body($e->getMessage())
                 ->danger()
                 ->send();
 

@@ -10,6 +10,7 @@ use EasyCo\OperationalSales\Contracts\TransactionRepository;
 use EasyCo\OperationalSales\Enums\Channel;
 use EasyCo\OperationalSales\SaleLine;
 use EasyCo\OperationalSales\Transaction;
+use EasyCo\Pricing\Money;
 use InvalidArgumentException;
 
 /**
@@ -164,6 +165,17 @@ final class ReturnGoodsRecorder
                 thisReturn: $quantityReturned,
             );
 
+            // What the line has not yet been credited with by earlier returns'
+            // computed shares: net paid - cumulative(alreadyReturned). Exactly 0
+            // means a fully discounted line (or one already credited in full), and
+            // only then may a computed share of 0 be returned (R1b).
+            $remainingNetPaid = $netPaidAmount->subtract(
+                Money::fromMinorUnits(
+                    intdiv($netPaidAmount->minorValue() * $alreadyReturnedByIndex[$index], $originatingLine->quantity()),
+                    $netPaidAmount->currency(),
+                ),
+            );
+
             // displayPriceAtReturn is always NULL from this class: a live
             // PriceResolver read is informational only (order-lifecycle-
             // design.md §7.2 item 1) and never drives the refund amount —
@@ -183,6 +195,7 @@ final class ReturnGoodsRecorder
                 recordedAt: $occurredAt,
                 effectiveAt: $occurredAt,
                 actualRefundAmount: $enteredGoodsByLine[$originatingLine->id()] ?? null,
+                originRemainingNetPaid: $remainingNetPaid,
             );
 
             $transaction->addSaleLine($refundLine);

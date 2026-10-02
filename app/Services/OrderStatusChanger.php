@@ -3,7 +3,10 @@
 namespace App\Services;
 
 use App\Enums\OrderEventType;
+use App\Services\Exceptions\OperationKeyReusedException;
 use App\Services\Exceptions\OrderTransitionRefusedException;
+use App\Services\Exceptions\RefundCapExceededException;
+use App\Services\Exceptions\RefundPermissionDeniedException;
 use Closure;
 use DateTimeImmutable;
 use EasyCo\Extensibility\Hook;
@@ -14,6 +17,7 @@ use EasyCo\OperationalSales\Transaction;
 use EasyCo\Order\Contracts\OrderRepository;
 use EasyCo\Order\Enums\OrderStatus;
 use EasyCo\Order\Order;
+use EasyCo\Payment\Contracts\PaymentRefundRepository;
 use EasyCo\Payment\Contracts\PaymentRepository;
 use EasyCo\Payment\Enums\PaymentRefundStatus;
 use EasyCo\Payment\Payment;
@@ -21,6 +25,7 @@ use EasyCo\Payment\RefundBreakdown;
 use EasyCo\Payment\RefundLine;
 use EasyCo\Pricing\Money;
 use EasyCo\Promotions\Contracts\PromotionRedemptionRepository;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 use Throwable;
@@ -98,6 +103,8 @@ final class OrderStatusChanger
         private readonly ReturnGoodsRecorder $returnGoodsRecorder,
         private readonly OrderRefunder $orderRefunder,
         private readonly PromotionRedemptionRepository $promotionRedemptions,
+        private readonly RefundCapGuard $capGuard,
+        private readonly PaymentRefundRepository $paymentRefunds,
     ) {}
 
     /**
@@ -162,22 +169,26 @@ final class OrderStatusChanger
      * restocks by default (true), and a line present with `false` does not.
      *
      * @param array<string, bool> $restockOverrides Keyed by originatingSaleLineId — read only when the order's locked status is `shipped`.
-     * @param RefundRequest|null $refund What the merchant decided about the money (shipping-domain-design.md §7.2.1); null is today's behaviour exactly — computed shares, no shipping, no deduction, derived channel.
+     * @param RefundRequest|null $refund What the merchant decided about the money (shipping-domain-design.md §7.2.1); null is today's behaviour exactly — computed shares, no shipping, no deduction, derived channel. Its operationKey makes the call idempotent (§7.2.3): the same key with the same contents returns the first result and writes nothing; the same key with other contents throws OperationKeyReusedException.
+     * @return OrderReturnResult wasReplay() true when this was a repeat of an operation already performed
+     * @throws RefundCapExceededException A refund cap would be broken — nothing was written.
+     * @throws RefundPermissionDeniedException Refunding a settled payment without the permission of its payout channel.
      *
      * @throws InvalidArgumentException If $orderId is empty or unknown.
      * @throws OrderTransitionRefusedException If the order's locked status is not placed/confirmed/shipped.
      */
-    public function cancel(string $orderId, DateTimeImmutable $occurredAt, ?string $reason = null, array $restockOverrides = [], ?RefundRequest $refund = null): void
+    public function cancel(string $orderId, DateTimeImmutable $occurredAt, ?string $reason = null, array $restockOverrides = [], ?RefundRequest $refund = null): OrderReturnResult
     {
         if (trim($orderId) === '') {
             throw new InvalidArgumentException('OrderStatusChanger: orderId must not be empty.');
         }
 
-        $this->performReturn(
+        return $this->performReturn(
             $orderId,
             $occurredAt,
             $reason,
             $refund,
+            $refund?->operationKey !== null ? RefundOperationFingerprint::of('cancel', [], $restockOverrides, $refund, $reason) : null,
             legalStartingStatuses: [OrderStatus::PLACED, OrderStatus::CONFIRMED, OrderStatus::SHIPPED],
             refusalException: static fn (string $orderId, OrderStatus $status): Throwable => OrderTransitionRefusedException::becauseOrderNotCancellable($orderId, $status),
             resolveLines: function (Order $order, array $saleLines) use ($restockOverrides): array {
@@ -227,7 +238,7 @@ final class OrderStatusChanger
      *   placement transaction.
      * @throws OrderTransitionRefusedException If the order's locked status is not shipped/delivered.
      */
-    public function recordReturn(string $orderId, array $lines, DateTimeImmutable $occurredAt, ?string $reason = null, ?RefundRequest $refund = null): void
+    public function recordReturn(string $orderId, array $lines, DateTimeImmutable $occurredAt, ?string $reason = null, ?RefundRequest $refund = null): OrderReturnResult
     {
         if (trim($orderId) === '') {
             throw new InvalidArgumentException('OrderStatusChanger: orderId must not be empty.');
@@ -266,11 +277,12 @@ final class OrderStatusChanger
             }
         }
 
-        $this->performReturn(
+        return $this->performReturn(
             $orderId,
             $occurredAt,
             $reason,
             $refund,
+            $refund?->operationKey !== null ? RefundOperationFingerprint::of('return', $lines, [], $refund, $reason) : null,
             legalStartingStatuses: [OrderStatus::SHIPPED, OrderStatus::DELIVERED],
             refusalException: static fn (string $orderId, OrderStatus $status): Throwable => OrderTransitionRefusedException::becauseOrderNotReturnable($orderId, $status),
             resolveLines: function (Order $order, array $saleLines) use ($lines): array {
@@ -363,176 +375,33 @@ final class OrderStatusChanger
         DateTimeImmutable $occurredAt,
         ?string $reason,
         ?RefundRequest $refundRequest,
+        ?string $payloadHash,
         array $legalStartingStatuses,
         Closure $refusalException,
         Closure $resolveLines,
-    ): void {
-        /** @var array{order: Order, returnTransaction: ?Transaction, from: ?OrderStatus, to: ?OrderStatus, outcome: ?OrderRefundOutcome} $result */
-        $result = DB::transaction(function () use ($orderId, $occurredAt, $reason, $refundRequest, $legalStartingStatuses, $refusalException, $resolveLines): array {
-            $order = $this->orders->findByIdForUpdate($orderId);
+        bool $afterDuplicateKey = false,
+    ): OrderReturnResult {
+        $operationKey = $refundRequest?->operationKey;
 
-            if ($order === null) {
-                throw new InvalidArgumentException(
-                    "OrderStatusChanger: no order exists with id \"{$orderId}\"."
-                );
+        try {
+            /** @var array{replayed?: bool, refundId?: ?string, order?: Order, returnTransaction?: ?Transaction, from?: ?OrderStatus, to?: ?OrderStatus, outcome?: ?OrderRefundOutcome} $result */
+            $result = DB::transaction(fn (): array => $this->performReturnLocked($orderId, $occurredAt, $reason, $refundRequest, $operationKey, $payloadHash, $legalStartingStatuses, $refusalException, $resolveLines));
+        } catch (QueryException $exception) {
+            // The UNIQUE (order_id, operation_key) is the backstop behind the order
+            // lock: if a concurrent submission got its row in first, this call is a
+            // repeat — run it once more, and it will find that row and replay it.
+            if ($operationKey !== null && ! $afterDuplicateKey && self::isDuplicateKey($exception)) {
+                return $this->performReturn($orderId, $occurredAt, $reason, $refundRequest, $payloadHash, $legalStartingStatuses, $refusalException, $resolveLines, true);
             }
 
-            $lockedStatus = $order->status();
+            throw $exception;
+        }
 
-            if (! in_array($lockedStatus, $legalStartingStatuses, true)) {
-                throw $refusalException($orderId, $lockedStatus);
-            }
-
-            // The order's TRUE lines (order-editing-design.md §4.4), not just
-            // its placement transaction's: an edited order's original lines
-            // may have been reversed away and replaced by lines in an edit's
-            // own transaction. A line whose units are wholly or partly
-            // returned is still listed — the R7 arithmetic below and in
-            // $resolveLines decides what remains.
-            $saleLines = $this->currentLines->resolveWithReturns($order);
-
-            $entries = $resolveLines($order, $saleLines);
-
-            $returnTransaction = null;
-            $zero = Money::zero($order->currency());
-            $totalRefundAmount = $zero;
-            $breakdown = null;
-
-            if ($entries !== []) {
-                $returnTransaction = $this->returnGoodsRecorder->record(
-                    $entries,
-                    $order->clientId(),
-                    $occurredAt,
-                    null,
-                    null,
-                    $reason,
-                    $refundRequest?->enteredGoodsByLine ?? [],
-                );
-
-                // The refund is made of what the merchant ENTERED: the goods amount
-                // of each new REFUND line (its actualRefundAmount — the computed
-                // share unless he entered another), plus a shipping refund, minus a
-                // deduction. A deduction is a refund-level figure; it is on no line.
-                $goods = $zero;
-                $lineRows = [];
-
-                foreach ($returnTransaction->saleLines() as $refundLine) {
-                    $goods = $goods->add($refundLine->actualRefundAmount());
-                    $lineRows[] = new RefundLine((string) $refundLine->originatingSaleLineId(), $refundLine->actualRefundAmount());
-                }
-
-                $breakdown = new RefundBreakdown(
-                    goods: $goods,
-                    shipping: $refundRequest?->shipping ?? $zero,
-                    adjustment: $zero,
-                    deduction: $refundRequest?->deduction ?? $zero,
-                    deductionReason: $refundRequest?->deductionReason,
-                    lines: $lineRows,
-                );
-                $totalRefundAmount = $breakdown->total();
-
-                $this->events->record(
-                    orderId: $orderId,
-                    type: OrderEventType::RETURNED,
-                    fromStatus: null,
-                    toStatus: null,
-                    reason: $reason,
-                    transactionId: $returnTransaction->id(),
-                    occurredAt: $occurredAt,
-                );
-            }
-
-            // R6/§2.3's compare-and-set — a FRESH read, under the same
-            // lock, never the figures $resolveLines/ReturnGoodsRecorder
-            // already used above.
-            $allEmptied = true;
-            foreach ($saleLines as $saleLine) {
-                $remaining = $saleLine->quantity() - $this->saleLineRepository->sumQuantityReturnedForOriginatingLine($saleLine->id());
-                if ($remaining > 0) {
-                    $allEmptied = false;
-                    break;
-                }
-            }
-
-            $from = null;
-            $to = null;
-
-            if ($allEmptied) {
-                $from = $lockedStatus;
-                $to = $lockedStatus === OrderStatus::DELIVERED ? OrderStatus::REFUNDED : OrderStatus::CANCELLED;
-
-                if ($to === OrderStatus::CANCELLED) {
-                    $order->cancel();
-                } else {
-                    $order->refund();
-                }
-
-                $this->orders->save($order);
-
-                $this->events->record(
-                    orderId: $orderId,
-                    type: OrderEventType::STATUS_CHANGED,
-                    fromStatus: $from,
-                    toStatus: $to,
-                    reason: $reason,
-                    transactionId: null,
-                    occurredAt: $occurredAt,
-                );
-            }
-
-            // R11: only a cancellation releases the promotion code — never
-            // a refund (§7.4).
-            if ($to === OrderStatus::CANCELLED) {
-                $redemption = $this->promotionRedemptions->findByOrderId($orderId);
-
-                if ($redemption !== null && ! $redemption->isReleased()) {
-                    $redemption->release($occurredAt);
-                    $this->promotionRedemptions->save($redemption);
-                }
-            }
-
-            // R8/§7.3: the money half, only when the goods step above
-            // actually moved money.
-            $outcome = null;
-
-            // A refund whose total is 0 creates NO PaymentRefund — the goods have
-            // already moved above, and there is no money to record.
-            if ($totalRefundAmount->isPositive()) {
-                $outcome = $this->orderRefunder->refund($orderId, $totalRefundAmount, $occurredAt, $reason, $breakdown, $refundRequest?->channel);
-
-                if ($outcome->isRefunded()) {
-                    // An offline refund is OWED — decided, not yet paid back — and the
-                    // history says so; REFUNDED is for money that has actually left.
-                    $this->events->record(
-                        orderId: $orderId,
-                        type: $outcome->refund()->status() === PaymentRefundStatus::OWED ? OrderEventType::REFUND_OWED : OrderEventType::REFUNDED,
-                        fromStatus: null,
-                        toStatus: null,
-                        reason: $reason,
-                        transactionId: $returnTransaction->id(),
-                        occurredAt: $occurredAt,
-                    );
-                } elseif ($outcome->isVoided()) {
-                    $this->events->record(
-                        orderId: $orderId,
-                        type: OrderEventType::PAYMENT_VOIDED,
-                        fromStatus: null,
-                        toStatus: null,
-                        reason: $reason,
-                        transactionId: $returnTransaction->id(),
-                        occurredAt: $occurredAt,
-                    );
-                }
-            }
-
-            return [
-                'order' => $order,
-                'returnTransaction' => $returnTransaction,
-                'from' => $from,
-                'to' => $to,
-                'outcome' => $outcome,
-            ];
-        });
+        if ($result['replayed'] ?? false) {
+            return OrderReturnResult::replayed(
+                $result['refundId'] !== null ? $this->paymentRefunds->findById($result['refundId']) : null,
+            );
+        }
 
         if ($result['returnTransaction'] !== null) {
             Hook::fire('order.returned', $result['order'], $result['returnTransaction']);
@@ -547,7 +416,229 @@ final class OrderStatusChanger
                 Hook::fire('order.refunded', $result['order'], $result['outcome']?->refund());
             }
         }
+
+        return OrderReturnResult::performed($result['outcome']?->refund());
     }
+
+    /** SQLSTATE 23000 + the driver's duplicate-key code (MySQL 1062, SQLite 19) — never the message (CLAUDE.md rule 3). */
+    private static function isDuplicateKey(QueryException $exception): bool
+    {
+        return ($exception->errorInfo[0] ?? null) === '23000' && in_array((int) ($exception->errorInfo[1] ?? 0), [1062, 19], true);
+    }
+
+    /**
+     * performReturn()'s body, INSIDE the transaction, order row locked first.
+     * Before anything else it REPLAYS an operation already performed under the
+     * same key (shipping-domain-design.md §7.2.3) — before the status guard, since
+     * a finished cancel has moved the order to a status that guard would refuse.
+     *
+     * @return array<string, mixed>
+     */
+    private function performReturnLocked(
+        string $orderId,
+        DateTimeImmutable $occurredAt,
+        ?string $reason,
+        ?RefundRequest $refundRequest,
+        ?string $operationKey,
+        ?string $payloadHash,
+        array $legalStartingStatuses,
+        Closure $refusalException,
+        Closure $resolveLines,
+    ): array {
+        $order = $this->orders->findByIdForUpdate($orderId);
+
+        if ($order === null) {
+            throw new InvalidArgumentException(
+                "OrderStatusChanger: no order exists with id \"{$orderId}\"."
+            );
+        }
+
+        if ($operationKey !== null) {
+            $prior = DB::table('order_events')->where('order_id', $orderId)->where('operation_key', $operationKey)->first();
+
+            if ($prior !== null) {
+                if (! hash_equals((string) $prior->operation_payload_hash, (string) $payloadHash)) {
+                    throw new OperationKeyReusedException();
+                }
+
+                $refundId = $prior->transaction_id === null ? null : DB::table('order_events')
+                    ->where('order_id', $orderId)
+                    ->where('transaction_id', $prior->transaction_id)
+                    ->whereNotNull('payment_refund_id')
+                    ->value('payment_refund_id');
+
+                return ['replayed' => true, 'refundId' => $refundId === null ? null : (string) $refundId];
+            }
+        }
+
+        $lockedStatus = $order->status();
+
+        if (! in_array($lockedStatus, $legalStartingStatuses, true)) {
+            throw $refusalException($orderId, $lockedStatus);
+        }
+
+        // The order's TRUE lines (order-editing-design.md §4.4), not just
+        // its placement transaction's: an edited order's original lines
+        // may have been reversed away and replaced by lines in an edit's
+        // own transaction. A line whose units are wholly or partly
+        // returned is still listed — the R7 arithmetic below and in
+        // $resolveLines decides what remains.
+        $saleLines = $this->currentLines->resolveWithReturns($order);
+
+        $entries = $resolveLines($order, $saleLines);
+
+        $returnTransaction = null;
+        $keyWritten = false;
+        $zero = Money::zero($order->currency());
+        $totalRefundAmount = $zero;
+        $breakdown = null;
+
+        if ($entries !== []) {
+            $returnTransaction = $this->returnGoodsRecorder->record(
+                $entries,
+                $order->clientId(),
+                $occurredAt,
+                null,
+                null,
+                $reason,
+                $refundRequest?->enteredGoodsByLine ?? [],
+            );
+
+            // The refund is made of what the merchant ENTERED: the goods amount
+            // of each new REFUND line (its actualRefundAmount — the computed
+            // share unless he entered another), plus a shipping refund, minus a
+            // deduction. A deduction is a refund-level figure; it is on no line.
+            $goods = $zero;
+            $lineRows = [];
+
+            foreach ($returnTransaction->saleLines() as $refundLine) {
+                $goods = $goods->add($refundLine->actualRefundAmount());
+                $lineRows[] = new RefundLine((string) $refundLine->originatingSaleLineId(), $refundLine->actualRefundAmount());
+            }
+
+            // The deduction cap is checked here, BEFORE the breakdown exists (which
+            // would refuse a negative total with a bare InvalidArgumentException):
+            // a named, translated refusal naming the room left.
+            $this->capGuard->assertDeductionWithinGoodsAndShipping($goods, $refundRequest?->shipping ?? $zero, $refundRequest?->deduction ?? $zero);
+
+            $breakdown = new RefundBreakdown(
+                goods: $goods,
+                shipping: $refundRequest?->shipping ?? $zero,
+                adjustment: $zero,
+                deduction: $refundRequest?->deduction ?? $zero,
+                deductionReason: $refundRequest?->deductionReason,
+                lines: $lineRows,
+            );
+            $totalRefundAmount = $breakdown->total();
+
+            $this->events->record(
+                orderId: $orderId,
+                type: OrderEventType::RETURNED,
+                fromStatus: null,
+                toStatus: null,
+                reason: $reason,
+                transactionId: $returnTransaction->id(),
+                occurredAt: $occurredAt,
+                operationKey: $operationKey,
+                operationPayloadHash: $operationKey !== null ? $payloadHash : null,
+            );
+            $keyWritten = $operationKey !== null;
+        }
+
+        // R6/§2.3's compare-and-set — a FRESH read, under the same
+        // lock, never the figures $resolveLines/ReturnGoodsRecorder
+        // already used above.
+        $allEmptied = true;
+        foreach ($saleLines as $saleLine) {
+            $remaining = $saleLine->quantity() - $this->saleLineRepository->sumQuantityReturnedForOriginatingLine($saleLine->id());
+            if ($remaining > 0) {
+                $allEmptied = false;
+                break;
+            }
+        }
+
+        $from = null;
+        $to = null;
+
+        if ($allEmptied) {
+            $from = $lockedStatus;
+            $to = $lockedStatus === OrderStatus::DELIVERED ? OrderStatus::REFUNDED : OrderStatus::CANCELLED;
+
+            if ($to === OrderStatus::CANCELLED) {
+                $order->cancel();
+            } else {
+                $order->refund();
+            }
+
+            $this->orders->save($order);
+
+            $this->events->record(
+                orderId: $orderId,
+                type: OrderEventType::STATUS_CHANGED,
+                fromStatus: $from,
+                toStatus: $to,
+                reason: $reason,
+                transactionId: null,
+                occurredAt: $occurredAt,
+                operationKey: $keyWritten ? null : $operationKey,
+                operationPayloadHash: $keyWritten || $operationKey === null ? null : $payloadHash,
+            );
+        }
+
+        // R11: only a cancellation releases the promotion code — never
+        // a refund (§7.4).
+        if ($to === OrderStatus::CANCELLED) {
+            $redemption = $this->promotionRedemptions->findByOrderId($orderId);
+
+            if ($redemption !== null && ! $redemption->isReleased()) {
+                $redemption->release($occurredAt);
+                $this->promotionRedemptions->save($redemption);
+            }
+        }
+
+        // R8/§7.3: the money half, only when the goods step above
+        // actually moved money.
+        $outcome = null;
+
+        // A refund whose total is 0 creates NO PaymentRefund — the goods have
+        // already moved above, and there is no money to record.
+        if ($totalRefundAmount->isPositive()) {
+            $outcome = $this->orderRefunder->refund($orderId, $totalRefundAmount, $occurredAt, $reason, $breakdown, $refundRequest?->channel);
+
+            if ($outcome->isRefunded()) {
+                // An offline refund is OWED — decided, not yet paid back — and the
+                // history says so; REFUNDED is for money that has actually left.
+                $this->events->record(
+                    orderId: $orderId,
+                    type: $outcome->refund()->status() === PaymentRefundStatus::OWED ? OrderEventType::REFUND_OWED : OrderEventType::REFUNDED,
+                    fromStatus: null,
+                    toStatus: null,
+                    reason: $reason,
+                    transactionId: $returnTransaction->id(),
+                    occurredAt: $occurredAt,
+                    paymentRefundId: $outcome->refund()->id(),
+                );
+            } elseif ($outcome->isVoided()) {
+                $this->events->record(
+                    orderId: $orderId,
+                    type: OrderEventType::PAYMENT_VOIDED,
+                    fromStatus: null,
+                    toStatus: null,
+                    reason: $reason,
+                    transactionId: $returnTransaction->id(),
+                    occurredAt: $occurredAt,
+                );
+            }
+        }
+
+        return [
+            'order' => $order,
+            'returnTransaction' => $returnTransaction,
+            'from' => $from,
+            'to' => $to,
+            'outcome' => $outcome,
+        ];
+}
 
     /**
      * The shared six-step shape (§5.2), parameterised by the one guard and

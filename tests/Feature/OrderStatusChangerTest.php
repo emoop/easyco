@@ -840,6 +840,7 @@ class OrderStatusChangerTest extends TestCase
 
     public function test_cancel_from_placed_restocks_unconditionally_fires_returned_and_cancelled_but_not_the_refunded_hook(): void
     {
+        $this->actingAsAdministrator();
         $variationId = $this->newVariationId();
         $this->setStock($variationId, 10);
 
@@ -914,6 +915,7 @@ class OrderStatusChangerTest extends TestCase
 
     public function test_record_return_partial_from_shipped_moves_no_status_and_fires_only_order_returned(): void
     {
+        $this->actingAsAdministrator();
         $variationId = $this->newVariationId();
         $this->setStock($variationId, 10);
 
@@ -958,6 +960,7 @@ class OrderStatusChangerTest extends TestCase
 
     public function test_record_return_from_delivered_that_empties_the_order_reaches_refunded_and_fires_order_refunded_with_the_real_refund(): void
     {
+        $this->actingAsAdministrator();
         $variationId = $this->newVariationId();
         $this->setStock($variationId, 10);
 

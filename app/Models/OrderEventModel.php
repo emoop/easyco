@@ -36,6 +36,9 @@ class OrderEventModel extends Model
         'staff_id',
         'staff_name',
         'occurred_at',
+        'operation_key',
+        'operation_payload_hash',
+        'payment_refund_id',
     ];
 
     protected $casts = [

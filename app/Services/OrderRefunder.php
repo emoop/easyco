@@ -56,6 +56,8 @@ final class OrderRefunder
         private readonly PaymentMethodAdapterResolver $adapterResolver,
         private readonly PanelStaffActor $staffActor,
         private readonly PendingPaymentReissuer $pendingPaymentReissuer,
+        private readonly RefundCapGuard $capGuard,
+        private readonly RefundPermissionPolicy $permissions,
     ) {}
 
     /**
@@ -151,21 +153,17 @@ final class OrderRefunder
         ?RefundBreakdown $breakdown,
         ?RefundChannel $channel,
     ): OrderRefundOutcome {
-        $alreadyRefunded = $this->paymentRefunds->sumCountingForPayment(
-            $settledPayment->id(),
-            $settledPayment->amount()->currency()->code(),
-        );
-        $remainingRefundable = $settledPayment->amount()->subtract($alreadyRefunded);
+        // Recording a payout on a SETTLED payment needs the permission of its payout
+        // channel — enforced HERE, so bypassing the panel's visibility rules stops
+        // at the service (shipping-domain-design.md §7.2.8). Before anything is read
+        // or written.
+        $effectiveChannel = $channel ?? RefundChannel::defaultForMethod($settledPayment->method());
+        $this->permissions->assertMayRecord($effectiveChannel);
 
-        if ($remainingRefundable->subtract($totalRefundAmount)->isNegative()) {
-            throw new InvalidArgumentException(sprintf(
-                'OrderRefunder: refunding %d minor unit(s) against payment "%s" would exceed its remaining refundable amount (%d minor unit(s) already refunded of %d captured).',
-                $totalRefundAmount->minorValue(),
-                $settledPayment->id(),
-                $alreadyRefunded->minorValue(),
-                $settledPayment->amount()->minorValue(),
-            ));
-        }
+        // The hard caps (§7.2.2), under the order lock the caller already holds and
+        // before any refund write: per line, shipping, total, deduction.
+        $breakdown ??= RefundBreakdown::goodsOnly($totalRefundAmount);
+        $this->capGuard->assertWithinCaps($orderId, $settledPayment, $totalRefundAmount, $breakdown);
 
         $adapter = $this->adapterResolver->resolve($settledPayment->method());
 
@@ -182,7 +180,7 @@ final class OrderRefunder
             orderId: $orderId,
             amount: $totalRefundAmount,
             status: $attempt->status(),
-            channel: $channel ?? RefundChannel::defaultForMethod($settledPayment->method()),
+            channel: $effectiveChannel,
             breakdown: $breakdown,
             reason: $reason,
             refundedBy: $staff !== null ? (string) $staff->id : null,

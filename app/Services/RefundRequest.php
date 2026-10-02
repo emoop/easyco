@@ -17,7 +17,11 @@ use InvalidArgumentException;
  *  - shipping refund: 0;
  *  - deduction: 0 (and a deduction REQUIRES a reason);
  *  - channel: derived from the payment method (cash on delivery -> cash,
- *    otherwise bank).
+ *    otherwise bank);
+ *  - operation key: none (no idempotency, as before). The dialog generates one
+ *    when it opens and submits it with the form; a repeat of the same key with
+ *    the same payload returns the first result, a different payload is refused
+ *    (shipping-domain-design.md §7.2.3).
  *
  * Until the new dialog (R3) and the caps (R1b) exist, a non-default request is
  * reachable only from tests. Amounts here are validated for shape only (not
@@ -34,7 +38,12 @@ final class RefundRequest
         public readonly ?Money $deduction = null,
         public readonly ?string $deductionReason = null,
         public readonly ?RefundChannel $channel = null,
+        public readonly ?string $operationKey = null,
     ) {
+        if ($operationKey !== null && (trim($operationKey) === '' || strlen($operationKey) > 64)) {
+            throw new InvalidArgumentException('RefundRequest: the operation key must be 1 to 64 characters.');
+        }
+
         foreach ($enteredGoodsByLine as $lineId => $amount) {
             if (! $amount instanceof Money || $amount->isNegative()) {
                 throw new InvalidArgumentException("RefundRequest: the entered goods amount for line \"{$lineId}\" must be a non-negative Money.");

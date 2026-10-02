@@ -81,6 +81,10 @@ final class OrderEventRecorder
      * `$occurredAt` is the instant the fact happened, supplied by the caller
      * (§6.1) — not "now", and never this class's own DateTimeImmutable.
      *
+     * `$operationKey`/`$operationPayloadHash` (refunds R1b) mark the FIRST event an
+     * idempotent money operation writes (shipping-domain-design.md §7.2.3);
+     * `$paymentRefundId` is the refund a `refunded` / `refund_owed` event records.
+     *
      * @throws InvalidArgumentException If only one of the two statuses is set,
      *   or if a NOTE_ADDED event carries a status change or a blank note.
      */
@@ -92,7 +96,16 @@ final class OrderEventRecorder
         ?string $reason,
         ?string $transactionId,
         DateTimeImmutable $occurredAt,
+        ?string $operationKey = null,
+        ?string $operationPayloadHash = null,
+        ?string $paymentRefundId = null,
     ): void {
+        if (($operationKey === null) !== ($operationPayloadHash === null)) {
+            throw new InvalidArgumentException(
+                'OrderEventRecorder: an operation key and its payload hash are both set or both NULL.'
+            );
+        }
+
         if (($fromStatus === null) !== ($toStatus === null)) {
             throw new InvalidArgumentException(
                 'OrderEventRecorder: from_status and to_status must be both set (a transition) or both NULL '.
@@ -126,6 +139,9 @@ final class OrderEventRecorder
             'staff_id' => $staff?->id,
             'staff_name' => $staff?->name,
             'occurred_at' => $occurredAt,
+            'operation_key' => $operationKey,
+            'operation_payload_hash' => $operationPayloadHash,
+            'payment_refund_id' => $paymentRefundId,
         ]);
     }
 }

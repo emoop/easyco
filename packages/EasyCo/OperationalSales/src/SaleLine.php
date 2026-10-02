@@ -653,6 +653,13 @@ final class SaleLine
      * §3.6's "included as a negative" describes a future REPORT's treatment of
      * type=REFUND rows, not this class's storage convention.
      *
+     * A FULLY DISCOUNTED LINE IS RETURNABLE (refunds R1b): the computed
+     * $defaultRefundAmount must be positive, EXCEPT exactly 0 is accepted when the
+     * caller states, in $originRemainingNetPaid, that the origin has no net paid
+     * left to give back (a gift, a 100% discount — the goods move, no money does).
+     * A negative share is always refused, and a zero share with net paid still
+     * remaining is still refused (it would silently drop money).
+     *
      * A REFUND LINE MAY CARRY 0: the goods came back and no money is paid for
      * that line. $actualRefundAmount must not be negative and must be in the
      * origin's currency; the computed $defaultRefundAmount still has to be
@@ -684,11 +691,12 @@ final class SaleLine
         DateTimeImmutable $recordedAt,
         DateTimeImmutable $effectiveAt,
         ?Money $actualRefundAmount = null,
+        ?Money $originRemainingNetPaid = null,
     ): self {
         self::assertOriginatingLineIsSale($originatingLine, 'createRefund');
         self::assertOriginatingLineIsPersisted($originatingLine, 'createRefund');
         self::assertQuantityReturnedIsValid($quantityReturned, $originatingLine->quantity(), 'createRefund');
-        self::assertDefaultRefundAmountIsValid($defaultRefundAmount, $originatingLine->amount());
+        self::assertDefaultRefundAmountIsValid($defaultRefundAmount, $originatingLine->amount(), $originRemainingNetPaid);
 
         $entered = $actualRefundAmount ?? $defaultRefundAmount;
         self::assertEnteredRefundAmountIsValid($entered, $originatingLine->amount());
@@ -892,9 +900,11 @@ final class SaleLine
         }
     }
 
-    private static function assertDefaultRefundAmountIsValid(Money $defaultRefundAmount, Money $originatingAmount): void
+    private static function assertDefaultRefundAmountIsValid(Money $defaultRefundAmount, Money $originatingAmount, ?Money $originRemainingNetPaid = null): void
     {
-        if (! $defaultRefundAmount->isPositive()) {
+        $zeroIsAllowed = $originRemainingNetPaid !== null && $originRemainingNetPaid->isZero();
+
+        if ($defaultRefundAmount->isNegative() || (! $defaultRefundAmount->isPositive() && ! $zeroIsAllowed)) {
             throw new InvalidArgumentException('SaleLine::createRefund(): defaultRefundAmount must be positive.');
         }
 

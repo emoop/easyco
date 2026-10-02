@@ -85,10 +85,46 @@ class EloquentPaymentRefundRepository implements PaymentRefundRepository
     public function sumCountingForPayment(string $paymentId, string $currency): Money
     {
         $sum = PaymentRefundModel::where('payment_id', $paymentId)
-            ->whereIn('status', array_map(static fn (PaymentRefundStatus $status): string => $status->value, PaymentRefundStatus::counting()))
+            ->whereIn('status', $this->countingValues())
             ->sum('amount_minor');
 
         return Money::fromMinorUnits((int) $sum, $currency);
+    }
+
+    /** @return list<string> the stored values of the counting states */
+    private function countingValues(): array
+    {
+        return array_map(static fn (PaymentRefundStatus $status): string => $status->value, PaymentRefundStatus::counting());
+    }
+
+    public function sumCountingLineAmounts(array $saleLineIds): array
+    {
+        if ($saleLineIds === []) {
+            return [];
+        }
+
+        $rows = DB::table('payment_refund_lines as l')
+            ->join('payment_refunds as r', 'r.id', '=', 'l.payment_refund_id')
+            ->whereIn('l.sale_line_id', $saleLineIds)
+            ->whereIn('r.status', $this->countingValues())
+            ->groupBy('l.sale_line_id')
+            ->selectRaw('l.sale_line_id as sale_line_id, SUM(l.amount_minor) as total')
+            ->get();
+
+        $sums = [];
+
+        foreach ($rows as $row) {
+            $sums[(string) $row->sale_line_id] = (int) $row->total;
+        }
+
+        return $sums;
+    }
+
+    public function sumCountingShippingForOrder(string $orderId): int
+    {
+        return (int) PaymentRefundModel::where('order_id', $orderId)
+            ->whereIn('status', $this->countingValues())
+            ->sum('shipping_minor');
     }
 
     /**

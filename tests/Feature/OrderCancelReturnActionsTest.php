@@ -614,6 +614,61 @@ class OrderCancelReturnActionsTest extends TestCase
         );
     }
 
+    /** Refunds R1b: a broken refund cap reaches the admin as a translated refusal notice (never a 500) and writes nothing. */
+    public function test_a_refund_cap_refusal_surfaces_as_a_translated_notice_through_the_real_action(): void
+    {
+        $this->actingAsStaffRole('Administrator');
+        $order = $this->placeOrderWithLines([['name' => 'Capped', 'price' => '10.00', 'quantity' => 5]]);
+        $this->transitionOrderTo($order->id(), 'shipped');
+        $this->applyPaymentState($order->id(), 'settled_cod');
+        // The payment that settled holds only 15.00 of the order's 50.00: returning 2 units (20.00) breaks the total cap.
+        DB::table('payments')->where('order_id', $order->id())->update(['amount_minor' => 1500]);
+
+        [$lineId] = $this->saleLineIds($order->id());
+        $stockBefore = $this->stock($this->variationIdForSaleLine($lineId));
+
+        Livewire::test(ViewOrder::class, ['record' => $order->id()])
+            ->callAction('record_return', data: ['quantity' => [$lineId => 2], 'restock' => [$lineId => true]]);
+
+        $this->assertStringContainsString('at most 15.00 EUR can still be refunded', (string) $this->lastNotificationBody());
+        $this->assertSame('shipped', DB::table('orders')->where('id', $order->id())->value('status'));
+        $this->assertSame(0, DB::table('operational_sales_sale_lines')->where('type', 'refund')->count(), 'the goods half rolled back');
+        $this->assertSame($stockBefore, $this->stock($this->variationIdForSaleLine($lineId)));
+        $this->assertSame(0, DB::table('payment_refunds')->count());
+    }
+
+    /** Refunds R1b: submitting the dialog twice with its one key is one return, through the real action. */
+    public function test_the_dialogs_hidden_key_makes_a_double_submit_one_return(): void
+    {
+        $this->actingAsStaffRole('Administrator');
+        $order = $this->placeOrderWithLines([['name' => 'Twice', 'price' => '10.00', 'quantity' => 5]]);
+        $this->transitionOrderTo($order->id(), 'shipped');
+        $this->applyPaymentState($order->id(), 'settled_cod');
+
+        [$lineId] = $this->saleLineIds($order->id());
+        $stockBefore = $this->stock($this->variationIdForSaleLine($lineId));
+        $data = ['quantity' => [$lineId => 2], 'restock' => [$lineId => true], 'operation_key' => 'one-opening-of-the-dialog'];
+
+        Livewire::test(ViewOrder::class, ['record' => $order->id()])->callAction('record_return', data: $data);
+        Livewire::test(ViewOrder::class, ['record' => $order->id()])->callAction('record_return', data: $data);
+
+        $this->assertSame($stockBefore + 2, $this->stock($this->variationIdForSaleLine($lineId)), 'the units came back once');
+        $this->assertSame(1, DB::table('operational_sales_sale_lines')->where('type', 'refund')->count());
+        $this->assertSame(1, DB::table('payment_refunds')->count());
+    }
+
+    public function test_the_dialog_form_carries_one_hidden_operation_key(): void
+    {
+        $this->actingAsStaffRole('Administrator');
+        $order = $this->placeOrderWithLines([['name' => 'Keyed', 'price' => '10.00', 'quantity' => 2]]);
+        $this->transitionOrderTo($order->id(), 'shipped');
+
+        $data = $this->mountedActionData('record_return', (string) $order->id());
+
+        $this->assertArrayHasKey('operation_key', $data);
+        $this->assertMatchesRegularExpression('/^[0-9a-f-]{36}$/', (string) $data['operation_key']);
+    }
+
     /** Mirrors stage 7b's own race test: Filament's own mountAction() re-check absorbs a status-based race before it ever reaches the service. */
     public function test_a_wrong_status_race_declines_to_mount_rather_than_reaching_the_service(): void
     {

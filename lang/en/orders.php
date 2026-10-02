@@ -145,6 +145,22 @@ return [
     // design.md §2.2, §10 stage 6a) — R9's "bank transfer must have arrived"
     // is the first. Minimal on purpose: one case, one key, added again only
     // when a real guard needs one.
+    // Refunds R1b (shipping-domain-design.md §7.2.2, §7.2.3, §7.2.8): the sentences
+    // the refund caps, the operation key and the money permission refuse with.
+    'refund_caps' => [
+        'line' => 'This refund is more than what is left to refund for one of the lines: at most :room can still be refunded for it.',
+        'shipping' => 'The shipping refund is more than the shipping that was paid: at most :room can still be refunded.',
+        'total' => 'This refund is more than the customer paid: at most :room can still be refunded.',
+        'deduction' => 'The deduction is larger than the goods plus the shipping being refunded (at most :room). Nothing was recorded.',
+    ],
+
+    'refund_permission_denied' => [
+        'cash' => 'Refunding in cash from the register needs the "refund in cash" permission, which you do not have. Nothing was recorded.',
+        'bank' => 'Refunding through the bank needs the "refund by bank" permission, which you do not have. Nothing was recorded.',
+    ],
+
+    'operation_key_reused' => 'This form was already submitted, with different contents. Nothing was changed; open the dialog again and re-enter what you want.',
+
     'refusal_reasons' => [
         'bank_transfer_not_settled' => 'This order\'s bank transfer has not been recorded as settled yet.',
         'order_not_cancellable' => 'This order cannot be cancelled from its current status.',

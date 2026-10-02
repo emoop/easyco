@@ -37,4 +37,23 @@ interface PaymentRefundRepository
      * never a null to be interpreted.
      */
     public function sumCountingForPayment(string $paymentId, string $currency): Money;
+
+    /**
+     * The goods already refunded per ORIGINAL sale line, by refunds that count
+     * (the same counting states), as minor units keyed by sale line id — the
+     * per-line cap's "refunded so far" (shipping-domain-design.md §7.2.2). One
+     * grouped SQL statement; a line with nothing refunded is simply absent from
+     * the map. A CANCELLED or FAILED refund's rows count for nothing, which is
+     * how cancelling a refund frees exactly its own room.
+     *
+     * @param  list<string>  $saleLineIds
+     * @return array<string, int>
+     */
+    public function sumCountingLineAmounts(array $saleLineIds): array;
+
+    /**
+     * The shipping already refunded on an ORDER, by refunds that count, in minor
+     * units — the shipping cap's "refunded so far".
+     */
+    public function sumCountingShippingForOrder(string $orderId): int;
 }

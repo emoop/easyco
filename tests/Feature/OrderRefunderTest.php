@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Filament\StaffPanelUser;
 use App\Services\OrderRefundOutcome;
 use App\Services\OrderRefunder;
+use App\Services\Exceptions\RefundCapExceededException;
 use DateTimeImmutable;
 use EasyCo\Payment\Contracts\PaymentRefundRepository;
 use EasyCo\Payment\Contracts\PaymentRepository;
@@ -129,6 +130,7 @@ class OrderRefunderTest extends TestCase
 
     public function test_branch_a_a_partial_refund_then_a_second_partial_refund_up_to_the_cap_both_succeed(): void
     {
+        $this->actingAsAdministrator();
         $orderId = 'order-1';
         $settled = $this->savedSettledPayment($orderId, 1000);
 
@@ -142,6 +144,7 @@ class OrderRefunderTest extends TestCase
 
     public function test_branch_a_a_refund_exceeding_the_remaining_cap_is_refused_and_writes_nothing(): void
     {
+        $this->actingAsAdministrator();
         $orderId = 'order-1';
         $settled = $this->savedSettledPayment($orderId, 1000);
 
@@ -150,8 +153,10 @@ class OrderRefunderTest extends TestCase
         try {
             DB::transaction(fn () => $this->refunder()->refund($orderId, $this->money(500), $this->now(), null)); // only 400 remains
             $this->fail('a refund exceeding the remaining cap must be refused.');
-        } catch (InvalidArgumentException $exception) {
-            $this->assertStringContainsString('would exceed its remaining refundable amount', $exception->getMessage());
+        } catch (RefundCapExceededException $exception) {
+            $this->assertSame(RefundCapExceededException::TOTAL, $exception->cap());
+            $this->assertSame(400, $exception->room()->minorValue(), 'the OWED first refund counts, so 400 is what is left');
+            $this->assertStringContainsString('4.00 EUR', $exception->getMessage());
         }
 
         $refunds = app(PaymentRefundRepository::class)->findByPaymentId($settled->id());
