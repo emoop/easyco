@@ -55,10 +55,13 @@ Order                                          (aggregate root, package EasyCo\O
 │                         stores order-level discount_total/cart_tax alongside line
 │                         items: fast, direct read for confirmation/receipt/admin-list
 │                         display without re-summing a ledger every time.
-│                         NO SHIPPING COMPONENT: totalMinor is exactly
-│                         subtotalMinor - discountMinor. Shipping is not priced anywhere
-│                         in the system yet — see §10's shipping entry for the full list
-│                         of what adding it would touch.
+│                         SHIPPING (shipping stage 2, `shipping-domain-design.md` §7):
+│                         totalMinor is subtotalMinor - discountMinor + shippingMinor.
+│                         Checkout does not price shipping yet (stage 4 wires it), so
+│                         every order it places carries shippingMinor = 0 and totalMinor
+│                         is still exactly subtotalMinor - discountMinor. This block
+│                         originally read "NO SHIPPING COMPONENT"; that stopped being
+│                         true when `Order` gained `shippingMinor`.
 ├── appliedPromotionCode   nullable string — display/audit snapshot of the code used.
 │                         The actual usage-tracking fact of record is Promotions'
 │                         PromotionRedemption (§7), not this field.
@@ -302,7 +305,7 @@ profit = amount - (unitCost × quantity)
 - **Order status transitions and their side effects** — §3's status column exists in V1, but no endpoint changes it and no side effect (restock on cancel, refund trigger, etc.) is built. **Answered by `order-lifecycle-design.md`** — the six statuses, the seven transitions between them, the cancel/return operation with its restock and money steps, the always-on history and the admin actions that perform them were designed in one piece, exactly as the domain-owner instruction here required. This entry stays as the record of that instruction rather than as an open gap.
 - **The admin/staff auth guard's actual design** — §9.2 confirms it needs real roles (full-access, product-entry-only operator, ...), not a binary second guard; deserves its own design pass when picked up, not designed here.
 - **Shipping/Tax integration** — no such domains exist yet; `checkout-orchestration-performance-note.md`'s external-API-timeout/fallback principle (§2 there) has nothing to apply to yet in V1, but the thin-orchestrator shape this document builds is what that future integration will slot into.
-  **The concrete consequence, stated plainly rather than left to inference** (raised in review, where "Shipping/Tax integration" was reasonably read as meaning only carrier API wiring): **`Order.total` is exactly `subtotal - discount`, and does NOT include any shipping charge.** The delivery *destination* is fully modelled — `deliveryType`, `carrierCode`, `pickupPointReference`, the whole address snapshot — but its *price* is not part of the amount the customer is charged, because no shipping-price concept exists anywhere in the system yet. For a V1 boutique where delivery is free or settled in cash with the courier, that is a coherent position. It stops being one the moment shipping is charged: adding it later means a new `shippingMinor` column on `Order`, a change to `total`'s definition (and to `Order::create()`'s computation of it, which today deliberately refuses to accept a separately-supplied total), and a decision about whether a promotion may discount shipping. Recorded now so that whoever adds shipping finds the full list rather than rediscovering it.
+  **The concrete consequence, updated (it originally said `Order.total` has no shipping component):** since shipping stage 2 (`shipping-domain-design.md` §7), `Order` carries `shippingMinor`, `shippingMethodName` and `shippingMethodCode`, and **`Order.total` is `subtotal - discount + shipping`**; `Order::create()` still computes it itself and still refuses a separately supplied total. What remains true from the original paragraph: the delivery *destination* is fully modelled and checkout does not yet *price* delivery — that wiring is shipping stage 4 — so every order checkout places today has `shippingMinor = 0` and a total identical to `subtotal - discount`. The decision the original paragraph left open is made: a promotion never discounts shipping (`shipping-domain-design.md` §8).
 - **Confirmation email itself** — the `order.placed` hook point exists (§8.3 step 14); no listener is registered in this task, matching this project's own "purely the extension point" precedent.
 - **Any Checkout/Order HTTP surface** — this document is domain design; HTTP is its own later, separate implementation prompt, per protocol.
 - **`ProductCost`'s HTTP surface specifically** — §9.2's decided path (a); the domain+persistence layer is not deferred, only its HTTP exposure.

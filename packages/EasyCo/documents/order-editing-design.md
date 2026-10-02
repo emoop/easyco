@@ -60,10 +60,13 @@ money is held.
    number field exists anywhere — a repository-wide search finds nothing real
    (every hit is either an unrelated Filament table-selection variable or
    prose stating tracking is out of scope). §3 below is what changes this.
-4. **`Order.total` still has no shipping component** — `total = subtotal -
-   subtract(discount)`, confirmed both in `Order::create()` and in
-   `checkout-domain-design.md` §3's own "shipping is not priced anywhere in
-   the system yet." Unchanged by this document (non-goal).
+4. **`Order.total` had no shipping component when this document was written**
+   — `total = subtotal - discount`. **Superseded by shipping stage 2**
+   (`shipping-domain-design.md` §7): `Order` now carries `shippingMinor` and
+   `total = subtotal - discount + shipping`. An edit does not re-price
+   shipping — it carries the order's stored shipping through unchanged
+   (`reviseTotals` computes the total from it) — and the pending-payment
+   comparison and reissue use the resulting total, shipping included.
 5. **A return only ever runs from `shipped`/`delivered`** —
    `OrderStatusChanger::recordReturn()`'s own `legalStartingStatuses`
    (`OrderStatusChanger.php:226`). E1's own "editing only at
@@ -702,8 +705,8 @@ written):
 ## Non-goals (unchanged from the brief, restated once for completeness)
 
 POS orders; customer-initiated edits; shipping price/recalculation
-(`Order.total` has no shipping component, §0 item 4 — deferred, not solved
-here); top-up or second payments; refunds inside an edit (E3's own
+(an edit carries the order's shipping through unchanged and never re-quotes
+it — §0 item 4, `shipping-domain-design.md` §7); top-up or second payments; refunds inside an edit (E3's own
 "never, ever"); free price overrides (E2's own "no free price override");
 edits after shipping (a return is the only path once goods leave); exchanges;
 any code, migration or test — this pass is the document alone.

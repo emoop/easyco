@@ -1,6 +1,6 @@
 # Shipping Domain Design — zones, classes, methods, and the doors a carrier plugs into
 
-**Status:** Draft v1 — approved scope, not yet implemented.
+**Status:** Draft v1 — approved scope. **Stage 1 (entities and persistence) is implemented** (commit `0fdbfad`); stage 2 (`Order` carries shipping, §7) is in progress; stages 3–5 are not started. The order of work is in `shipping-and-checkout-queue-note.md`.
 **Closes / supersedes:** `product-shipping-fields-note.md`'s open questions 1–4 (that note stays as the record of what was already true before this). Resolves `checkout-domain-design.md` §3/§10's standing statement that `Order.total` carries no shipping component.
 **Builds on:** `address-domain-design.md` (the `PICKUP_POINT` shape this design depends on and does not change), `checkout-domain-design.md` §8.3 (the two-phase placement this inserts into), `payment-domain-design.md` (whose adapter/resolver shape the provider contracts here deliberately mirror), `promotions-domain-design.md` (unchanged by this document — see §8).
 **Origin:** the domain owner's requirement, stated directly: this is not being built only for his own shop, so it has to be a working shipping system — zones, classes, a fixed amount, a free-shipping threshold, free or priced delivery driven by a product's class, all varying by zone — **with the foundation first and the doors for anyone to plug an extension into**. Econt / Speedy / BoxNow are explicitly NOT part of it; they come after, through those doors.
@@ -88,6 +88,8 @@ ShippingZone                                   (package EasyCo\Shipping)
 **An address matching no zone cannot be shipped**, and checkout refuses with a clear message rather than silently offering nothing or falling back to a free delivery. There is no implicit "rest of the world" zone: a merchant who wants one creates a zone with no narrowing and puts it last, which is the same thing but visible in his own configuration rather than hidden in the code.
 
 **Which address is matched:** the order's delivery address. For a `PICKUP_POINT` address the `settlement` field is matched, since a pickup point has no street address of its own — another reason `Address` was right to carry it.
+
+**Settlement matching (addendum to §4):** patterns are compared after normalization by the STORE's configured locale (case folding, Unicode normalization, whitespace collapsing, locale-specific prefix stripping such as "гр."/"с." for bg). No cross-script transliteration in V1: a merchant lists each spelling he wants. Postcodes are compared exactly after trimming. Locale rules live behind a `SettlementNameNormalizer` contract so other locales are additions, not rewrites.
 
 ---
 
@@ -180,6 +182,36 @@ Order
 **The method name is snapshotted, not referenced**, the same rule the address snapshot already follows: a merchant renaming "Еконт до офис" next year must not rewrite what last year's orders say they were charged for.
 
 **An edit that changes the goods does not re-price shipping in V1.** The merchant adjusts it deliberately if he wants to — consistent with §3.1's "he edits the placed order", and with the existing rule that an edit never re-prices goods either. Automatic re-quoting on edit is deferred (§10).
+
+### 7.1 Decisions taken for stage 2 (owner, final)
+
+- **Shipping is an order-level amount only.** There is NO `SaleLine` for shipping: `SaleLineType::SHIPPING` exists in the enum and stays unused. The ledger therefore stays goods-only, and the placement reconciliation (`CheckoutOrchestrator::assertSaleLinesReconcileWithOrder`) keeps comparing the sum of the lines' `netPaidAmount` to `subtotal - discount` — **not** to the order total, which now also holds shipping.
+- **`Order::reviseTotals` no longer accepts a total.** Its signature is `reviseTotals($subtotal, $discount, $appliedPromotionCode)`; it computes `total = subtotal - discount + (the order's stored shipping)` itself. This extends `Order::create()`'s existing rule — a total is never supplied by a caller — to the editing path, and it is how an edit carries shipping through unchanged. `OrderEditor` compares and reissues the pending payment against the order's resulting total (shipping included), while its goods reconciliation stays goods-only.
+- **Name and code are nullable.** `shippingMethodName` and `shippingMethodCode` are null on an order with no shipping method (every order placed before this stage). Invariants: `shippingMinor` is never negative and is in the order's currency; a name, when given, is trimmed, non-empty and at most 255 characters; a code, when given, is trimmed, at most 64 characters and requires a name; `shippingMinor > 0` requires a name. The `Order` package does not import the Shipping package — name and code are plain strings.
+- **Storage.** `orders.shipping_minor` (`bigInteger NOT NULL DEFAULT 0`), `shipping_method_name` (`string(255) NULL`), `shipping_method_code` (`string(64) NULL`). On MySQL/MariaDB the database also enforces `total_minor = subtotal_minor - discount_minor + shipping_minor` through a CHECK constraint (`orders_total_formula_check`), per CLAUDE.md rule 2.
+- **Placement snapshots carry shipping in a LATER stage**, not stage 2. `order_placement_snapshots` is a write-once copy of the order at placement; adding the shipping fields to it belongs with the checkout integration (stage 4), which is the first writer of a non-zero value.
+
+### 7.2 Refund of shipping is a POLICY behind ONE seam
+
+> **This is the shop's own policy — the owner's rules for his own store — and NOT a decided platform default.** The seam is built in stage 4; nothing in stage 2 changes any refund code. The rules below are recorded so the seam is designed against real inputs.
+
+The inputs the policy sees: the order's stage (shipped or not), the reason, a full or a partial return, whether the return is within the return window (the window counts from the delivery date and is a configurable store/jurisdiction setting, 14 days for this shop), and the payment method.
+
+| Situation | Refunds |
+|---|---|
+| Cancel before shipping | goods + shipping |
+| Full return within 14 days of delivery, cash on delivery or bank transfer | goods only — the shipping charge stays (the fixed shipping fee is usually below the real courier cost) |
+| Full return within 14 days, paid through a virtual POS (a future payment method) | goods + shipping |
+| Partial return | returned goods only — shipping stays |
+| Refused or never-collected parcel | goods only if prepaid; shipping stays; the shop bears the courier cost |
+
+**Return shipping** is paid by the customer, as the shop's terms state. Who bears return shipping is an informational store setting shown to the customer before ordering; no return-shipping money moves through the system in V1.
+
+**Two defects found in the reconnaissance must be closed in stage 4, before any non-zero-shipping order can be created.** Today the refund amount is taken from the line shares only, so once a payment's amount includes shipping:
+- **H1.** Cancelling an order before shipping while its payment is still pending leaves a remainder equal to the shipping charge; `OrderRefunder::voidAndMaybeReissue` then voids the pending payment and **reissues a new pending payment for the shipping amount on a CANCELLED order**.
+- **H2.** Cancelling an order whose payment is settled refunds the goods only, leaving the shipping charge held on an order that reads CANCELLED or REFUNDED.
+
+Both are policy questions as much as defects (what should the remainder be?), which is why they are closed by the seam, not patched separately. Stage 2 deliberately leaves them open because it cannot create a non-zero shipping order.
 
 ---
 
