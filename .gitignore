@@ -44,3 +44,5 @@ Thumbs.db
 # Local-only scratch notes/ideas — never tracked, never pushed. Anything
 # placed here is explicitly not meant to leave this machine.
 /notes/local/
+
+*.diff.txt
