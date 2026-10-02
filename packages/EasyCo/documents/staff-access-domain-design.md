@@ -96,6 +96,8 @@ Grouped by what they gate:
 
 **`REFUND_CASH` vs `REFUND_BANK` — split by method, not by action.** Domain-owner decision, from the shop floor rather than from theory: a trusted manager returns cash from the register on the spot, in front of the customer, and the matter is closed the moment the money leaves the drawer. A refund that goes through a bank is not closed — it is a request to a provider that can fail, be delayed for days, or need reconciling against a statement. Different work, different exposure, different authority. This is why the split is by *method* rather than "may refund / may not".
 
+> **DECIDED (owner, 2026-10-02), `shipping-domain-design.md` §7.2.8:** the permission for a refund follows the PAYOUT CHANNEL, not the payment method. The merchant chooses the channel when the refund is recorded: cash from the register needs `REFUND_CASH`, a bank payout needs `REFUND_BANK` (Administrator-only), and the same permission is needed to mark that refund paid out. This replaces the earlier derivation from the payment method (`REFUND_CASH` for cash on delivery, `REFUND_BANK` for everything else), which let a Manager record the refund of a cash-on-delivery order that is in fact paid by bank transfer. A refund on a pending payment moves no money and needs only `ORDER_MANAGE`.
+
 **`COST_VIEW` separate from `PRODUCT_VIEW`.** Cost price is what the merchant paid; it is the merchant's margin laid bare. A remote contractor entering products has no business seeing it, and Shopify reached the same conclusion after shipping the coarse version first. Note that this permission is only meaningful if enforced *everywhere* — see §6.
 
 **`PRODUCT_DELETE` separate from `PRODUCT_MANAGE`.** Domain-owner

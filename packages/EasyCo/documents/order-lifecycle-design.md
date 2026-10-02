@@ -342,6 +342,16 @@ appended for the remainder, or only the void when nothing remains (§7.3).
 (c) **Nothing settled and nothing pending** → no money is written at all; the
 system never knew about that money (§14 Q3).
 
+> **Superseded in part (2026-10-02), `shipping-domain-design.md` §7.2.** The
+> amount in (a) is no longer a rule EasyCo computes and applies: it is the
+> merchant's decision, entered per refund (goods per line, prefilled with the
+> share above; a shipping refund; an optional deduction with a reason), under
+> cumulative hard caps including a per-line cap, and each REFUND line records the
+> amount the merchant entered (its `actualRefundAmount`) while
+> `defaultRefundAmount` keeps the computed share. (b) changes for a full cancel or full return: the pending
+> payment is voided completely and **no new one is issued**; the remainder is
+> reissued only for a partial return.
+
 **R9 — `confirmed` → `shipped` is refused while a bank transfer has not
 arrived.** The guard is a read the aggregate cannot make: for a `bank_transfer`
 order, one of its payments must be `isSettled()` (§4.1). `cash_on_delivery` is
@@ -1130,7 +1140,7 @@ goes through exactly this code.
    - `quantityReturned` — the counted-back units: what R7 sums, and what R8's
      cumulative share is computed from.
    - `defaultRefundAmount`/`actualRefundAmount` — §3.13's two facts, and **this
-     lifecycle sets both to the same value**, the cumulative share R8 derives.
+     lifecycle sets both to the same value**, the cumulative share R8 derives. *(Superseded 2026-10-02, `shipping-domain-design.md` §7.2.1: `actualRefundAmount` is now the merchant-entered goods amount and `defaultRefundAmount` stays the computed share.)*
      §3.13 lets a register operator override `actualRefundAmount` for a goodwill
      over- or under-payment; that override is deliberately not exposed on this
      path, because §5.2 takes no amount and a `REFUND` line whose two amounts
@@ -1176,6 +1186,11 @@ writes money. It runs inside §5.2's transaction — after the goods (§7.2), be
 R6's compare-and-set — through one class, `App\Services\OrderRefunder`, so that
 "how much may still go back" is computed in exactly one place, under the payment's
 own row lock (payment §5.2's invariant).
+
+> **Superseded in part (2026-10-02), `shipping-domain-design.md` §7.2:** the
+> amount, the caps, the idempotency key, the offline OWED/PAID_OUT states and
+> the pending-payment rules there replace this table's single "returned units'
+> share" and its reissue of the remainder on a full cancel.
 
 **The three cases, and nothing else.** R8 states them; this is what each one
 actually writes:

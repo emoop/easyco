@@ -103,6 +103,8 @@ No `priority`/reservation concept here — mirrors how `inventory-domain-design.
 
 ## 3. Core entity: PaymentRefund
 
+> **Extended (2026-10-02), `shipping-domain-design.md` §7.2.** A refund also stores its breakdown (goods, shipping, deduction and its reason, total), an operation key, and — for offline methods — the states OWED then PAID_OUT instead of COMPLETED at creation. The status described below ("COMPLETED immediately" for an offline method) is the state of the code today and is superseded by that model.
+
 ```
 PaymentRefund
 ├── id

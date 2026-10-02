@@ -191,27 +191,120 @@ Order
 - **Storage.** `orders.shipping_minor` (`bigInteger NOT NULL DEFAULT 0`), `shipping_method_name` (`string(255) NULL`), `shipping_method_code` (`string(64) NULL`). On MySQL/MariaDB the database also enforces `total_minor = subtotal_minor - discount_minor + shipping_minor` through a CHECK constraint (`orders_total_formula_check`), per CLAUDE.md rule 2.
 - **Placement snapshots carry shipping in a LATER stage**, not stage 2. `order_placement_snapshots` is a write-once copy of the order at placement; adding the shipping fields to it belongs with the checkout integration (stage 4), which is the first writer of a non-zero value.
 
-### 7.2 Refund of shipping is a POLICY behind ONE seam
+### 7.2 Refunds: the merchant decides every amount; EasyCo keeps the records, the caps and the facts
 
-> **This is the shop's own policy — the owner's rules for his own store — and NOT a decided platform default.** The seam is built in stage 4; nothing in stage 2 changes any refund code. The rules below are recorded so the seam is designed against real inputs.
+**Owner decision (final), replacing the earlier "refund policy behind one seam":** EasyCo hard-codes **no refund rule and no platform default**. Not "goods only", not "shipping on a cancel", not a return window, not a payment-method rule. Every refund amount is the merchant's decision, entered per refund. What EasyCo owns is the part that must never depend on a person's judgement: **correct records, hard caps, safe execution, and showing the facts the merchant's own policy depends on.** (The earlier version of this section, a table of the shop's own situations behind a "policy seam", is superseded. The shop's policy is the merchant's to apply by typing the amounts; it is not code.)
 
-The inputs the policy sees: the order's stage (shipped or not), the reason, a full or a partial return, whether the return is within the return window (the window counts from the delivery date and is a configurable store/jurisdiction setting, 14 days for this shop), and the payment method.
+The points below that differ from the code as it stands are marked **(changes today's behaviour)**.
 
-| Situation | Refunds |
+#### 7.2.1 The refund form, and what the ledger records
+
+The cancel and return dialog collects one refund as these amounts:
+
+| Field | Prefill | Editable |
+|---|---|---|
+| **Goods**, per line | the returned lines' net paid share, as today (`cumulative(r + k) − cumulative(r)` of `netPaidAmount`) | yes, per line — except on a pending payment (§7.2.4) |
+| **Shipping refund** | 0 | yes |
+| **Deduction** (optional) | 0 | yes — and a deduction **requires a free-text reason** |
+
+`total = goods + shipping refund − deduction`. When the shipping refund is 0 the dialog shows a **neutral notice** stating the order's shipping amount (and how much of it has already been refunded); it never adds the shipping on its own and never suggests it. **(changes today's behaviour: the goods amount is no longer the only amount, and is no longer a value the caller cannot override.)**
+
+**The ledger records what the merchant entered.** Each REFUND `SaleLine` stores the **merchant-ENTERED goods amount of that line** as its `actualRefundAmount`, and the **computed share** as its `defaultRefundAmount` — the two facts `operational-sales-domain-design.md` §3.13 already defines for exactly this. **(changes today's behaviour: the lifecycle sets both to the computed share and exposes no override.)** The point is that product-level reports (what was refunded on this product, and for how much) stay true to the money that actually went back, not to a formula nobody applied.
+
+**The deduction never touches a SaleLine.** It is a refund-level figure and lives **on the refund record**, with its reason. It is **retained revenue** — money the merchant keeps from the customer's payment — and is not a goods figure: it is not subtracted from any line, it appears in no product report, and the REFUND lines of the same return add up to the goods component only.
+
+#### 7.2.2 Hard caps, cumulative across all refunds of the order
+
+These are checked on every refund, against everything refunded before it. A refund counts toward a cap while it is **OWED, PAID_OUT, REQUESTED or COMPLETED**; a FAILED or CANCELLED refund (§7.2.11) moved no money and counts for nothing.
+
+0. **Per line:** `goods refunded on this line so far + this line's goods refund ≤ that line's net paid amount`. A line can never be refunded more than the customer paid for it, however many partial returns it is spread over.
+1. **Shipping:** `shipping refunded so far + this shipping refund ≤ the order's shipping`.
+2. **Deduction:** `deduction ≤ goods + shipping refund (+ adjustment, §7.2.11)` of this refund — the refund total is never negative.
+3. **Paid:** `total refunded so far + this total ≤ the amount actually paid` — the payment's received amount where one is recorded (§7.2.7), otherwise its expected amount. **(changes today's behaviour: the cap sums only COMPLETED refunds, so an in-flight refund is not counted; it must count every refund listed above.)**
+
+A refund that breaks any cap is refused with a sentence naming the cap and the remaining room; nothing is written.
+
+**What the refund record stores.** Every refund stores its **breakdown** as plain integers in minor units: goods (and, per line, the goods amount of each line — the rows the per-line cap sums, so that cancelling a refund frees exactly its own room), shipping, adjustment (§7.2.11), deduction with its reason, and the total, with `total = goods + shipping + adjustment − deduction`. On MySQL/MariaDB the database enforces it (CLAUDE.md rule 2): **CHECK constraints that every breakdown component is ≥ 0, that the total is ≥ 0, and that the total equals that sum.** The caps are aggregate rules across rows and cannot be a CHECK; they are enforced under the lock in §7.2.3.
+
+#### 7.2.3 Concurrency, double submit, idempotency
+
+- **One serialization point.** Every operation that moves money for an order already starts by locking the order row (`findByIdForUpdate`); the cap checks, the refund write, the void and the reissue all happen inside that one locked transaction, and nothing else may be added that checks a cap outside it. The payment-row lock that older text mentions is not what serializes today (the order lock is); the model keeps the order lock as the single point and states it.
+- **Idempotency of the refund operation.** The dialog generates an **operation key** when it is opened and submits it with the form. The key is stored with a UNIQUE constraint — on the order's history row for the operation, so that an operation that writes **no** refund (a full cancel of a pending payment, §7.2.4) is covered too — and a second submission with the same key returns the first result and writes nothing. **(changes today's behaviour: there is no key. A cancel is protected only by the status guard, and a `recordReturn` submitted twice returns the units twice as long as enough remain.)**
+- **Every state-changing action is idempotent.** "Mark as received", "mark paid out", "cancel an owed refund" and "mark remitted" (§7.2.7) are each a **no-op when repeated**: a second identical request changes nothing and writes **no second history entry**, whether it comes from a double click or a retry. Each is a conditional update inside the order-locked transaction (it applies only from the state it is defined for), not a read-then-write outside it.
+- **No external call inside the transaction.** An offline refund calls nothing external. An online provider refund (§7.2.5) is never executed inside the database transaction: the transaction records it as REQUESTED and commits; the provider call happens after, and its result updates the record. **(today's `OrderRefunder` calls the adapter's `refund()` inside the open transaction; harmless for the two offline adapters, which call nothing, and not acceptable for an online one.)**
+
+#### 7.2.4 Pending versus settled payments (this closes H1 and H2)
+
+(H1 and H2 are the two defects found while preparing stage 2: H1, a cancelled order left with a new pending payment for its shipping amount; H2, a cancelled order whose paid shipping stays held without anyone deciding it.)
+
+- **Pending payment: nothing is paid back, because nothing was paid.** A **full cancel or full return voids the pending payment completely and never issues a new one.** A **partial return** voids it and issues a new pending payment for the remainder: `pending amount − goods reduction − shipping reduction`. **The goods reduction is NOT editable on a pending payment: it is exactly the returned lines' share** (the dialog shows the per-line amounts read-only), because what the customer still owes for goods that were kept is not a negotiation on an unpaid order. **Only the shipping reduction is editable** (it may reduce what the customer still owes for delivery). A **deduction stays refused** on a pending payment (there is no money to deduct from). **(changes today's behaviour: today the remainder, shipping included, is reissued even on a full cancel, leaving a pending payment for the shipping amount on a CANCELLED order — H1.)**
+- **Settled payment: a refund record is created** as §7.2.1–§7.2.2 describe, and the shipping that was paid is no longer silently left held, because the merchant now sees it and decides (H2).
+
+#### 7.2.5 Refund states
+
+One record, `PaymentRefund`, carries every kind, extended with the breakdown (§7.2.2), the operation key (§7.2.3), the payout channel (§7.2.8) and a state:
+
+| Method | States |
 |---|---|
-| Cancel before shipping | goods + shipping |
-| Full return within 14 days of delivery, cash on delivery or bank transfer | goods only — the shipping charge stays (the fixed shipping fee is usually below the real courier cost) |
-| Full return within 14 days, paid through a virtual POS (a future payment method) | goods + shipping |
-| Partial return | returned goods only — shipping stays |
-| Refused or never-collected parcel | goods only if prepaid; shipping stays; the shop bears the courier cost |
+| Offline (cash on delivery, bank transfer) | **OWED** — created by the cancel or return, dated; then **PAID_OUT** — the merchant confirms after paying in his bank app (or from the register): **date, reference, optional note**, and who. An OWED refund may instead be **CANCELLED** before payout (§7.2.11). |
+| Online (a future provider) | **REQUESTED**, then **COMPLETED** or **FAILED**. Never executed inside a database transaction (§7.2.3). A FAILED refund frees its cap room. |
 
-**Return shipping** is paid by the customer, as the shop's terms state. Who bears return shipping is an informational store setting shown to the customer before ordering; no return-shipping money moves through the system in V1.
+**(changes today's behaviour: an offline refund is recorded COMPLETED the moment it is created, which claims the money has been paid out when the system only knows it is owed.)** **Decided (owner, 2026-10-02): existing offline refund rows become PAID_OUT** with `paid_out_at` = their `created_at` and the note **"legacy: recorded before the owed/paid model"** (done by the migration that introduces the states, R1). Existing PENDING rows (online, none exist) become REQUESTED.
 
-**Two defects found in the reconnaissance must be closed in stage 4, before any non-zero-shipping order can be created.** Today the refund amount is taken from the line shares only, so once a payment's amount includes shipping:
-- **H1.** Cancelling an order before shipping while its payment is still pending leaves a remainder equal to the shipping charge; `OrderRefunder::voidAndMaybeReissue` then voids the pending payment and **reissues a new pending payment for the shipping amount on a CANCELLED order**.
-- **H2.** Cancelling an order whose payment is settled refunds the goods only, leaving the shipping charge held on an order that reads CANCELLED or REFUNDED.
+The order shows, from its refund records, four figures: **paid in**, **refunded and paid out**, **refunded but still owed**, and **still refundable** (paid in minus all counting refunds). The payout is recorded as a free-text reference; **no customer bank account number is stored in V1** (§7.2.10).
 
-Both are policy questions as much as defects (what should the remainder be?), which is why they are closed by the seam, not patched separately. Stage 2 deliberately leaves them open because it cannot create a non-zero shipping order.
+#### 7.2.6 Facts, not rules
+
+The dialog and the order show the facts a shop's own policy depends on, and enforce none of them: the **delivery date** (the order's `delivered` history entry), the **date the customer announced the return** (entered by staff), the **date the goods came back** (entered by staff; the REFUND lines' `effectiveAt`, which today equals `recordedAt`), and the **days elapsed** between them. **Decided (owner, 2026-10-02): the announced-return date lives on the return operation's history row** (the `returned` event the operation writes), not on the refund record, because a return that produces no refund still has one. EasyCo enforces **no deadline**. A **filter hook** may later *suggest* prefill values from a shop's own policy; **EasyCo ships none**, and a suggestion is only ever a prefill the merchant can overwrite (the hook is app-layer, never called from a domain package — CLAUDE.md rule 10 — and gets its row in the Hook Reference when it is built). Money that is waiting on the merchant is listed under "Needs attention" (§7.2.7), which also enforces nothing.
+
+#### 7.2.7 Payment verification, remittance, and "needs attention"
+
+- **Bank transfer, "mark as received":** today it writes only `confirmed_at`. It stores, instead, the **received amount, the date and the bank reference** (and the staff member). If the received amount **differs from the expected amount**, the payment is **not settled silently**: the facts are recorded and the order is flagged **"needs attention"** until a person resolves it (accept the received amount, with a reason, which settles it for exactly that amount; or leave it unsettled). Refund caps (§7.2.2) then use the received amount.
+- **Cash on delivery** has two facts that today are one. **Collected by the courier** — the cash was taken at the door — and **remitted to the merchant by the courier** — the courier's payout reaches the merchant's bank, usually days later. **Today "settled" for cash on delivery means neither exactly:** `deliver()` confirms any single eligible pending payment in the same transaction (`confirmDeliveryPaymentIfEligible`), so "settled" means "the order was marked delivered", i.e. collected, assumed. **Target:** keep that as **collected** (it is what unlocks refunds and reports), and add **remitted** as its own recorded fact.
+- **Remittance is recorded per order as four facts:** the **remitted amount**, the **courier fee** (couriers usually remit in batches and may deduct a COD fee), the **date**, and the **bank reference**. A **batch action** marks **many orders remitted in one go with one shared reference**, each order keeping its own amount and fee. **The mismatch test is `collected − fee ≠ remitted`** — not `collected ≠ remitted`, which would flag every order that carries a fee. A mismatch is a "needs attention" item, not a block.
+- **"Needs attention" lists facts and enforces nothing.** It shows, each with its **age in days** and **no threshold**: **OWED refunds** (days since created, oldest first), **payments with a received-amount mismatch**, **COD orders collected but not yet remitted** (days since collected), and **remittance mismatches**. Nothing is overdue by rule; the merchant reads the age and decides.
+
+#### 7.2.8 Permissions and audit
+
+- **The permission follows the PAYOUT CHANNEL. Decided (owner, 2026-10-02).** The merchant chooses the channel **when the refund is recorded** — **cash from the register** or **bank** — and that choice decides the permission for **both recording the refund and marking it paid out**: cash → `REFUND_CASH`, bank → `REFUND_BANK` (Administrator-only, per `staff-access-domain-design.md` §3.1). This replaces today's rule, which derives the permission from the *payment* method (`REFUND_CASH` for cash on delivery, `REFUND_BANK` for everything else) and lets a Manager record the refund of a cash-on-delivery order that will in fact be paid by bank transfer. A refund on a pending payment (§7.2.4) moves no money and needs only `ORDER_MANAGE`. **(changes today's behaviour.)**
+- **Everything else** needs `ORDER_MANAGE`: cancelling an owed refund needs the same permission as recording it (the channel's), so that whoever may create it may withdraw it and nobody can withdraw one they could not have created.
+- **Audit.** Every refund and every state change goes into the order's history with its breakdown and the staff member: the existing `refunded` event gains a reference to the refund record (today it carries only the return's transaction id and no amount), and new history entries are added for "refund paid out", "refund cancelled" (with its reason), "payment received (amount, reference)", "remittance recorded" and "needs attention".
+
+#### 7.2.9 Return shipping is unchanged
+
+Who bears return shipping is an **informational store setting** shown to the customer before ordering. No return-shipping money moves through the system.
+
+#### 7.2.10 Privacy
+
+The customer's bank account number is **not stored** in V1. The payout reference is free text the merchant types (for example his own bank reference).
+
+#### 7.2.11 Corrections
+
+Built in R2 (cancelling an owed refund) and R3 (the money-only refund).
+
+- **An OWED refund may be CANCELLED before payout.** The refund moves to **CANCELLED**, which **frees its cap room** (it no longer counts in §7.2.2, per line included), and writes **one history entry carrying the staff member and a mandatory reason**. A **PAID_OUT refund is never cancelled** — money that left cannot be un-recorded; a mistake after payout is corrected by a new refund or recorded outside the system. Cancelling a refund cancels the *money* only: the goods stay returned, stock stays restocked, and the REFUND `SaleLine`s are never edited or deleted (CLAUDE.md rule 4). Which of the two ways reports then exclude a cancelled refund's goods amounts — reading the refund records' per-line rows rather than the raw REFUND lines, or a compensating ledger row — is decided in R2's design note; the rule is only that a `SaleLine` is never rewritten.
+- **PAID_OUT confirms exactly the owed total.** Marking a refund paid out records that **the owed total** was paid; **a different amount is not a payout but a correction**: cancel the owed refund and record a new one for the amount actually to be paid.
+- **A money-only refund ("refund without return").** A refund with **goods 0**: a **shipping refund** and/or an **adjustment amount**, with a **mandatory free-text reason**. It runs under **the same caps** (§7.2.2, shipping and total; there is no goods line, so no per-line cap applies), **the same states** (§7.2.5), **the same idempotency** (§7.2.3) and the same permission by channel (§7.2.8). It covers **goodwill and corrections** and **touches no stock and no `SaleLine`**; the adjustment is a refund-level component stored on the refund record like the deduction, never a goods figure. (An adjustment is available only on a money-only refund; a return's refund uses the goods lines.)
+
+#### 7.2.12 Staged implementation plan
+
+Each stage ends in a review gate. **R1 must land before shipping stage 4** (checkout), so no non-zero-shipping order can exist without the pending-payment rules and the caps; R2–R4 follow shipping stage 3d; R5 comes with the first online payment method.
+
+**R1 — The refund record, the caps, the lock, the idempotency, the pending rules, the state set.** `PaymentRefund` gains the breakdown (goods, per-line goods rows, shipping, adjustment, deduction and reason, total), the operation key (UNIQUE), the payout channel and the state set (OWED, PAID_OUT, CANCELLED, REQUESTED, COMPLETED, FAILED); the CHECKs of §7.2.2; the migration that maps existing rows (§7.2.5); cap checks under the order lock counting every counting refund, including the per-line cap; the REFUND lines record the entered amount; the pending-payment rules, including the read-only goods reduction. No dialog change beyond passing the key and the prefilled amounts.
+Tests: a **cumulative cap across two partial returns** (shipping and total); a **per-line cap** (two partial returns of one line can never exceed its net paid amount); the **ledger records the entered amount** (the REFUND line's `actualRefundAmount` is the entered amount and `defaultRefundAmount` the computed share, and the deduction appears on no line); a **double submit creates one refund** (and one return); **concurrent refunds cannot exceed the paid amount** (two transactions racing the same order); a **full cancel on a pending payment never reissues**; a **deduction on a pending payment is refused**; the **goods reduction on a pending payment is not editable** (a submitted goods amount other than the returned lines' share is refused) while the shipping reduction is; a partial return on a pending payment reissues exactly `pending − goods − shipping`; a deduction larger than goods + shipping is refused; a FAILED refund frees its cap room; the CHECKs reject a negative component and an inconsistent total; the mapping migration turns an existing offline refund into PAID_OUT with the legacy note.
+
+**R2 — The owed/paid-out flow and corrections to an owed refund.** OWED → PAID_OUT with date, reference, note and actor, for exactly the owed total; CANCELLED with a mandatory reason; permission by payout channel; the order's four figures; the history entries; OWED refunds in "needs attention" by age.
+Tests: **cancelling an OWED refund frees the cap** (a following refund up to the freed amount succeeds, per line too) **and a PAID_OUT one cannot be cancelled**; marking paid out is refused for any amount but the owed total; **marking paid out twice, and cancelling twice, are no-ops that write no second history entry**; a Manager cannot record or pay out a bank-channel refund and can a cash-channel one; the four figures add up after two refunds, one paid; every state change writes one history entry with the staff member; the OWED list is ordered by age and enforces nothing.
+
+**R3 — The dialog, and the money-only refund.** Shipping refund, deduction plus reason, the neutral notice, the facts (§7.2.6), the operation key and the payout channel in the form; the money-only refund (§7.2.11).
+Tests: the notice shows the order's shipping and refunded-so-far and never prefills it; a deduction without a reason is refused; the form's key makes a double click one refund; the facts render and nothing is enforced after any number of days; a **money-only refund respects the shipping and total caps, requires its reason, writes no REFUND `SaleLine` and changes no stock**, and repeated with the same key creates one refund.
+
+**R4 — Payment verification.** Received amount, date and reference for a bank transfer; the mismatch flag and its resolution; cash on delivery collected versus remitted, per order (amount, fee, date, reference) and as a batch with one shared reference; the "needs attention" lists of §7.2.7.
+Tests: **a mismatch on mark-as-received flags the order and does not settle it**; accepting the received amount settles for exactly that amount and the cap follows it; **a batch remittance where every order carries a fee produces no false mismatch** (`collected − fee = remitted`) and one with a real difference flags only that order; a remittance recorded later does not change "collected"; **marking received and marking remitted twice are no-ops with no second history entry**; the collected-not-remitted list orders by days since collected.
+
+**R5 — Online provider refunds (later, with the first online method).** REQUESTED/COMPLETED/FAILED outside the transaction, reconciliation of REQUESTED refunds. Designed here, built with the provider.
+
+**Decided by the owner (2026-10-02)** — recorded above, no longer open: the existing offline refund rows become PAID_OUT with the legacy note (§7.2.5); the permission follows the payout channel chosen when the refund is recorded (§7.2.8); the announced-return date lives on the return operation's history row (§7.2.6).
 
 ---
 
