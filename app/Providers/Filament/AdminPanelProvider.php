@@ -2,6 +2,7 @@
 
 namespace App\Providers\Filament;
 
+use App\Filament\NavigationGroup;
 use App\Http\Middleware\ApplyStoreLocale;
 use App\Http\Middleware\ApplyStoreTimezone;
 use Filament\Http\Middleware\Authenticate;
@@ -64,6 +65,18 @@ class AdminPanelProvider extends PanelProvider
             ->pages([
                 Dashboard::class,
             ])
+            // Registers the SAME App\Filament\NavigationGroup enum every
+            // Resource/Page already returns from getNavigationGroup(), built
+            // via NavigationGroup::navigationGroups() as collapsed groups with
+            // LAZY translated labels. Registration is what makes the
+            // collapsed-by-default state take effect at all: the unregistered
+            // path never consults the enum's Collapsible contract (confirmed
+            // in v5.8.1's NavigationManager::get()). The lazy labels are what
+            // keep the group names translated at render time instead of frozen
+            // at boot — see that method's own docblock. Group render order is
+            // unaffected: NavigationManager still sorts groups by each enum
+            // case's own position among cases().
+            ->navigationGroups(NavigationGroup::navigationGroups())
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\Filament\Widgets')
             ->widgets([
                 AccountWidget::class,

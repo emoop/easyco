@@ -15,6 +15,7 @@ use App\Filament\Resources\SeasonResource;
 use App\Filament\Resources\StaffResource;
 use App\Filament\Resources\TagResource;
 use App\Settings\Contracts\SiteSettingsRepository;
+use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -137,6 +138,35 @@ class NavigationGroupingTest extends TestCase
         $this->applyLocale('en');
         $this->assertSame('Attributes', AttributeDefinitionResource::getNavigationLabel());
         $this->assertSame('Attributes', AttributeDefinitionResource::getPluralModelLabel());
+    }
+
+    public function test_the_panel_registered_groups_keep_both_the_collapsed_default_and_the_translated_labels(): void
+    {
+        // Regression guard for NavigationGroup::navigationGroups(). The panel
+        // registers these groups during service-provider boot, BEFORE
+        // ApplyStoreLocale's middleware runs, so Filament's own eager
+        // NavigationGroup::fromEnum() registration would freeze the default
+        // locale's labels onto them for every request (observed as an English
+        // "Catalog"/"Sales"/"Admin" sidebar under a Bulgarian site.locale).
+        // The labels are therefore declared as lazy closures and must track
+        // the active locale here, exactly like the enum cases above do —
+        // while still carrying the collapsed-by-default state that registration
+        // exists to deliver in the first place.
+        $groups = Filament::getPanel('admin')->getNavigationGroups();
+
+        $this->assertTrue($groups['CATALOG']->isCollapsed());
+        $this->assertTrue($groups['SALES']->isCollapsed());
+        $this->assertTrue($groups['ADMIN']->isCollapsed());
+
+        $this->applyLocale('bg');
+        $this->assertSame('Каталог', $groups['CATALOG']->getLabel());
+        $this->assertSame('Продажби', $groups['SALES']->getLabel());
+        $this->assertSame('Админ', $groups['ADMIN']->getLabel());
+
+        $this->applyLocale('en');
+        $this->assertSame('Catalog', $groups['CATALOG']->getLabel());
+        $this->assertSame('Sales', $groups['SALES']->getLabel());
+        $this->assertSame('Admin', $groups['ADMIN']->getLabel());
     }
 
     public function test_attribute_value_navigation_label_is_deliberately_different_from_its_plural_model_label(): void
