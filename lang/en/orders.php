@@ -20,6 +20,8 @@ return [
         'subtotal' => 'Subtotal',
         'discount' => 'Discount',
         'shipping' => 'Shipping',
+        'shipping_method' => 'Shipping method',
+        'tracking_number' => 'Tracking number',
         'status' => 'Status',
         'phone' => 'Phone',
         'account_id' => 'Account',
@@ -171,6 +173,7 @@ return [
     // Refunds R2b (shipping-domain-design.md §7.2.5, §7.2.17): the refunds section of the order page and its two actions.
     'refunds' => [
         'heading' => 'Refunds',
+        'heading_count' => 'Refunds (:count)',
         'refund_heading' => 'Refund #:id',
         'figures' => [
             'paid_in' => 'Paid in',
@@ -379,6 +382,9 @@ return [
         'superseded' => 'Superseded',
     ],
     'not_available' => '—',
+    'guest' => 'Guest',
+    'promotion_redeemed_yes' => 'redeemed',
+    'promotion_redeemed_no' => 'not redeemed',
     'legacy_line_note' => 'Recorded before full snapshot',
     // order_events.staff_id/staff_name NULL — a console/job caller recorded
     // the event (OrderAdminEventView's own docblock names this wording).

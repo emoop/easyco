@@ -76,11 +76,14 @@ use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\Fieldset;
+use Filament\Schemas\Components\Grid;
+use Filament\Schemas\Components\Group;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Text;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
+use Filament\Support\Enums\TextSize;
 use Filament\Support\Facades\FilamentTimezone;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Enums\FiltersLayout;
@@ -435,7 +438,12 @@ class OrderResource extends Resource
      * in this admin panel to link to. Flagged, not silently
      * downgraded.
      *
-     * ONE COLUMN, DELIBERATELY — the sections stack, they are never paired
+     * TWO COLUMNS SINCE THE ORDER-VIEW LAYOUT (a main column of 2/3 and a sidebar of 1/3 from the `lg` breakpoint,
+     * one column below it; History full width) — the paragraph below is the history of why the page was ONE column
+     * before, when sections of very different heights were paired by the default grid. The new layout puts a
+     * Group in each column, so a short card can never sit beside a tall one with a gap under it.
+     *
+     * ONE COLUMN, DELIBERATELY (until that layout) — the sections stack, they are never paired
      * side by side. Filament's default section grid goes to TWO columns from
      * the `lg` breakpoint, and with two columns a tall section (the lines
      * table) sat beside a short one and left a large empty gap under the
@@ -446,331 +454,359 @@ class OrderResource extends Resource
      */
     public static function infolist(Schema $schema): Schema
     {
-        return $schema->components([
-            Section::make(__('orders.sections.summary'))
+        return $schema->components(static::compactType([
+            // THE HEADER (order-view layout): the order number, its status and its payment status next to it, the
+            // placement date and the channel (a fact about the ORDER, not the customer). One compact row, no card.
+            Grid::make(['default' => 2, 'lg' => 5])
                 ->schema([
                     TextEntry::make('id')
-                        ->label(__('orders.fields.id')),
-                    TextEntry::make('placed_at')
-                        ->label(__('orders.fields.placed_at'))
-                        ->dateTime(),
+                        ->label(__('orders.fields.id'))
+                        ->weight('bold'),
                     TextEntry::make('status')
                         ->label(__('orders.fields.status'))
                         ->badge()
                         ->formatStateUsing(fn (string $state): string => __("orders.status_options.{$state}"))
                         ->color(fn (string $state): string => static::statusColor($state)),
-                    TextEntry::make('channel')
-                        ->label(__('orders.fields.channel'))
-                        ->getStateUsing(fn (OrderModel $record): string => static::optionLabel('channel', static::forOrder($record)->channel)),
-                ])
-                ->columns(4),
-            Section::make(__('orders.sections.client'))
-                ->schema([
-                    TextEntry::make('client_name')
-                        ->label(__('orders.fields.client_name'))
-                        ->getStateUsing(fn (OrderModel $record): string => static::forOrder($record)->clientName),
-                    TextEntry::make('client_id')
-                        ->label(__('orders.fields.client_id'))
-                        ->getStateUsing(fn (OrderModel $record): string => static::forOrder($record)->order->clientId()),
-                    TextEntry::make('email')
-                        ->label(__('orders.fields.email')),
-                    TextEntry::make('phone')
-                        ->label(__('orders.fields.phone')),
-                    TextEntry::make('account_id')
-                        ->label(__('orders.fields.account_id'))
-                        ->formatStateUsing(fn (?string $state): string => $state ?? __('orders.not_available')),
-                ])
-                ->columns(3),
-            Section::make(__('orders.sections.delivery'))
-                ->schema([
-                    TextEntry::make('delivery_type')
-                        ->label(__('orders.fields.delivery_type'))
-                        ->formatStateUsing(fn (string $state): string => __("orders.delivery_type_options.{$state}")),
-                    // Shown for BOTH delivery types: a pickup point is in a country too
-                    // (owner decision D1). A historical pickup order may have none: "n/a".
-                    TextEntry::make('country')
-                        ->label(__('orders.fields.country'))
-                        ->formatStateUsing(fn (?string $state): string => $state ?? __('orders.not_available')),
-                    TextEntry::make('city')
-                        ->label(__('orders.fields.city'))
-                        ->visible(fn (OrderModel $record): bool => $record->delivery_type === OrderDeliveryType::STREET_ADDRESS->value)
-                        ->formatStateUsing(fn (?string $state): string => $state ?? __('orders.not_available')),
-                    TextEntry::make('postal_code')
-                        ->label(__('orders.fields.postal_code'))
-                        ->visible(fn (OrderModel $record): bool => $record->delivery_type === OrderDeliveryType::STREET_ADDRESS->value)
-                        ->formatStateUsing(fn (?string $state): string => $state ?? __('orders.not_available')),
-                    TextEntry::make('address_line_1')
-                        ->label(__('orders.fields.address_line_1'))
-                        ->visible(fn (OrderModel $record): bool => $record->delivery_type === OrderDeliveryType::STREET_ADDRESS->value)
-                        ->formatStateUsing(fn (?string $state): string => $state ?? __('orders.not_available')),
-                    TextEntry::make('address_line_2')
-                        ->label(__('orders.fields.address_line_2'))
-                        ->visible(fn (OrderModel $record): bool => $record->delivery_type === OrderDeliveryType::STREET_ADDRESS->value
-                            && $record->address_line_2 !== null),
-                    TextEntry::make('carrier_code')
-                        ->label(__('orders.fields.carrier_code'))
-                        ->visible(fn (OrderModel $record): bool => $record->delivery_type === OrderDeliveryType::PICKUP_POINT->value),
-                    TextEntry::make('pickup_point_reference')
-                        ->label(__('orders.fields.pickup_point_reference'))
-                        ->visible(fn (OrderModel $record): bool => $record->delivery_type === OrderDeliveryType::PICKUP_POINT->value),
-                    TextEntry::make('settlement')
-                        ->label(__('orders.fields.settlement'))
-                        ->visible(fn (OrderModel $record): bool => $record->delivery_type === OrderDeliveryType::PICKUP_POINT->value),
-                ])
-                ->columns(3),
-            Section::make(__('orders.sections.lines'))
-                ->schema([
-                    RepeatableEntry::make('lines')
-                        ->hiddenLabel()
-                        ->getStateUsing(fn (OrderModel $record): array => static::lineRows($record))
-                        ->table(fn (OrderModel $record): array => array_map(
-                            // Same rule as the cells themselves: a column
-                            // whose line carries a name is a NUMBER column,
-                            // so its heading is end-aligned with it — only
-                            // visible in the wide/table mode, where the
-                            // stacked mode's own labels give way to this
-                            // header row.
-                            static fn (array $spec): RepeatableTableColumn => RepeatableTableColumn::make($spec['label'])
-                                ->alignEnd(static::lineValueLabel($spec['key']) !== null),
-                            static::lineColumnSpecs($record),
-                        ))
-                        ->schema(fn (OrderModel $record): array => array_map(
-                            static fn (array $spec): Entry => static::lineCell($spec['key']),
-                            static::lineColumnSpecs($record),
-                        )),
-                ])
-                // D5 (stage 4b-ii) — EDIT NOW LIVES HERE, IN THIS SECTION'S
-                // OWN HEADER, not in the page-wide action row above.
-                // Filament renders a Section's ->headerActions() at the
-                // RIGHT EDGE of its title bar with no alignment option
-                // needed, verified against the installed v5.8.1 source
-                // rather than assumed: Section::setUp() wires them into its
-                // `after_header` child schema
-                // (Schemas/Components/Section.php), Section::makeChildSchema()
-                // then calls $schema->alignEnd() on exactly that key, and the
-                // stylesheet's `.fi-section-header-text-ctn { @apply grid
-                // flex-1 }` (support/resources/css/components/section.css)
-                // is what pushes the action container to the far edge while
-                // `.fi-section-header-after-ctn { @apply self-center }`
-                // centres it vertically. The heading is what makes the row
-                // exist at all, so this section's own "Items" title is the
-                // left half of the pair.
-                //
-                // WHY THE MOVE AT ALL: an order's lines are edited from the
-                // lines, and the page-wide row above now holds exactly the
-                // actions that change the order's STATUS or record something
-                // about the order (see orderActions()'s own docblock). The
-                // action object itself is untouched — same ->visible()
-                // (ORDER_MANAGE, placed/confirmed, no settled payment), same
-                // dialog, same service call, same refusal mapping, same
-                // redirect. Only where Filament paints its trigger changed.
-                //
-                // A consequence worth naming, because it is visible to
-                // tests rather than to merchants: this action is no longer
-                // one of the page's cached HEADER actions, so mounting it by
-                // name alone no longer resolves — a Livewire round trip must
-                // carry the schema-component context Filament's own button
-                // sends (Action::getContext() → getSchemaComponent()'s key,
-                // resolved by InteractsWithActions::resolveSchemaComponentAction()).
-                // Every test drives it through that same context.
-                ->headerActions([static::editAction()]),
-            Section::make(__('orders.sections.promotion'))
-                ->schema([
-                    TextEntry::make('applied_promotion_code')
-                        ->label(__('orders.fields.promotion_code'))
-                        ->formatStateUsing(fn (?string $state): string => $state ?? __('orders.no_promotion')),
-                    TextEntry::make('discount_minor')
-                        ->label(__('orders.fields.discount'))
-                        ->visible(fn (OrderModel $record): bool => $record->applied_promotion_code !== null)
-                        ->getStateUsing(fn (OrderModel $record): string => static::formatOrderMoney($record, 'discount_minor')),
-                    TextEntry::make('promotion_redeemed')
-                        ->label(__('orders.fields.promotion_redeemed'))
-                        ->visible(fn (OrderModel $record): bool => $record->applied_promotion_code !== null)
-                        ->getStateUsing(fn (OrderModel $record): string => static::forOrder($record)->hasPromotionRedemption
-                            ? __('orders.yes')
-                            : __('orders.no')),
-                ])
-                ->columns(3),
-            Section::make(__('orders.sections.totals'))
-                ->schema([
-                    TextEntry::make('subtotal_minor')
-                        ->label(__('orders.fields.subtotal'))
-                        ->getStateUsing(fn (OrderModel $record): string => static::formatOrderMoney($record, 'subtotal_minor')),
-                    TextEntry::make('discount_minor_total')
-                        ->label(__('orders.fields.discount'))
-                        ->getStateUsing(fn (OrderModel $record): string => static::formatOrderMoney($record, 'discount_minor')),
-                    // Refunds R2b: the shipping line, with the method's name when there is one, so the
-                    // figures visibly add up (subtotal - discount + shipping = total).
-                    TextEntry::make('shipping_minor')
-                        ->label(__('orders.fields.shipping'))
-                        ->getStateUsing(fn (OrderModel $record): string => static::formatOrderMoney($record, 'shipping_minor')
-                            .(filled($record->shipping_method_name) ? ' ('.$record->shipping_method_name.')' : '')),
-                    TextEntry::make('total_minor')
-                        ->label(__('orders.fields.total'))
-                        ->getStateUsing(fn (OrderModel $record): string => static::formatOrderMoney($record, 'total_minor')),
-                ])
-                ->columns(4),
-            Section::make(__('orders.sections.payment'))
-                ->schema([
-                    TextEntry::make('payment_method')
-                        ->label(__('orders.fields.payment_method'))
-                        ->getStateUsing(function (OrderModel $record): string {
-                            $payment = static::forOrder($record)->latestPayment;
-
-                            return $payment !== null
-                                ? static::optionLabel('payment_method', $payment->method())
-                                : __('orders.no_payment');
-                        }),
-                    TextEntry::make('payment_status')
+                    TextEntry::make('header_payment_status')
                         ->label(__('orders.fields.payment_status'))
                         ->badge()
                         ->visible(fn (OrderModel $record): bool => static::forOrder($record)->latestPayment !== null)
-                        // Not just a defensive null-check — getStateUsing()
-                        // closures are not guaranteed to be skipped just
-                        // because ->visible() returned false (Filament
-                        // may still evaluate state internally), so this
-                        // reads defensively rather than trusting the
-                        // sibling ->visible() call above alone.
-                        ->getStateUsing(function (OrderModel $record): string {
-                            $payment = static::forOrder($record)->latestPayment;
-
-                            return $payment !== null
-                                ? static::optionLabel('payment_status', $payment->status()->value)
-                                : __('orders.no_payment');
-                        }),
-                    // §8.4's hole, closed (stage 7c-1): before these two
-                    // entries, NOT ONE fact in this section changed when
-                    // "Mark as received" ran — the section kept rendering
-                    // "Pending" and nothing moved at all, which reads like a
-                    // failed click. Both read the SAME forOrder() call every
-                    // other closure here makes, off the same Payment object,
-                    // so neither adds a query: the reader's own payment read
-                    // already carries the columns §4/§7.3 added, because
-                    // OrderAdminOrderView::latestPayment is the domain
-                    // Payment itself, not a copy of a few of its fields
-                    // (§8.4 puts it as "that DTO's latest-payment part gains
-                    // confirmedAt and voidedAt" — this DTO's latest-payment
-                    // part IS the aggregate that already exposes both, so the
-                    // intent is met without a second home for the two dates).
-                    //
-                    // IS "SETTLED" THE PREDICATE R8/R9 CALL? LITERALLY:
-                    // Payment::isSettled() is the one place §11 item 17 puts
-                    // "money is held" (§4.1), so this badge cannot disagree
-                    // with the guard that decides whether the order may ship
-                    // or how much may be refunded. It stays a SEPARATE entry
-                    // from payment_status on purpose: that one says exactly
-                    // what the adapter said (§4.2's whole argument, including
-                    // a raw value nothing here recognises), this one says
-                    // whether money is held — a captured row is settled with
-                    // no confirmation ever recorded, and only the pair can
-                    // say both facts at once.
-                    //
-                    // A BADGE ONLY FOR THE POSITIVE FACT, AND NO COLOUR
-                    // ANYWHERE. ->badge() takes a closure, so "settled" wears
-                    // a badge and the not-recorded case is a plain sentence —
-                    // §4.5 requires exactly that: the money stated as not
-                    // recorded, "no computed 'unpaid' badge" (§3 item 3) and
-                    // "no silence either". No ->color() for either state,
-                    // matching payment_status' own bare badge above: a green
-                    // "settled" beside a colourless "Captured" would rank two
-                    // facts §4.2 deliberately keeps side by side, and the
-                    // colour would say nothing the words do not.
-                    //
-                    // VISIBLE WHENEVER A PAYMENT ROW EXISTS — including the
-                    // COD delivery that could not confirm anything (§4.5's
-                    // first face), where it reads "Money not recorded" rather
-                    // than vanishing. For an order with NO payment row at
-                    // all, the two entries above already say it in this
-                    // page's own established words (orders.no_payment on
-                    // method and status), so this one has no subject to speak
-                    // about and stays hidden instead of repeating it a third
-                    // time. getStateUsing() still reads defensively, like the
-                    // sibling above: Filament may evaluate state itself.
-                    TextEntry::make('payment_settled')
-                        ->label(__('orders.fields.payment_settled'))
-                        ->badge(fn (OrderModel $record): bool => static::forOrder($record)->latestPayment?->isSettled() === true)
-                        ->visible(fn (OrderModel $record): bool => static::forOrder($record)->latestPayment !== null)
-                        ->getStateUsing(function (OrderModel $record): string {
-                            $payment = static::forOrder($record)->latestPayment;
-
-                            return $payment !== null && $payment->isSettled()
-                                ? __('orders.payment_settled_yes')
-                                : __('orders.payment_settled_no');
-                        }),
-                    // The instant §4.1's confirm() ran — NOT attemptedAt()
-                    // (when the adapter answered) and not the payment's
-                    // placement: the same honest, narrower claim Payment's
-                    // own confirmedAt() docblock makes, in this section's own
-                    // timestamp format. Hidden when NULL, the ordinary state
-                    // of an online-captured or still-pending payment — the
-                    // entry states a fact, it does not stand in for a missing
-                    // one ('—' would claim a record exists).
-                    //
-                    // The confirmation ACTION needs nothing here: it is
-                    // already hidden once the payment stops being confirmable
-                    // (markAsReceivedAction()'s own ->visible(), which
-                    // isConfirmable() makes false the moment confirmedAt is
-                    // set), so §8.4's "the button's absence is the correct
-                    // state, not a missing feature" holds today — this entry
-                    // is what turns that absence from silence into a
-                    // statement.
-                    TextEntry::make('payment_confirmed_at')
-                        ->label(__('orders.fields.payment_confirmed_at'))
-                        ->visible(fn (OrderModel $record): bool => static::forOrder($record)->latestPayment?->confirmedAt() !== null)
-                        ->getStateUsing(fn (OrderModel $record): ?string => static::forOrder($record)->latestPayment?->confirmedAt()?->format('Y-m-d H:i')),
-                    TextEntry::make('provider_reference')
-                        ->label(__('orders.fields.provider_reference'))
-                        ->visible(fn (OrderModel $record): bool => static::forOrder($record)->latestPayment?->providerReference() !== null)
-                        ->getStateUsing(fn (OrderModel $record): ?string => static::forOrder($record)->latestPayment?->providerReference()),
-                    TextEntry::make('failure_reason')
-                        ->label(__('orders.fields.failure_reason'))
-                        ->visible(fn (OrderModel $record): bool => static::forOrder($record)->latestPayment?->failureReason() !== null)
-                        ->getStateUsing(fn (OrderModel $record): ?string => static::forOrder($record)->latestPayment?->failureReason()),
-                    TextEntry::make('attempted_at')
-                        ->label(__('orders.fields.attempted_at'))
-                        ->visible(fn (OrderModel $record): bool => static::forOrder($record)->latestPayment?->attemptedAt() !== null)
-                        ->getStateUsing(fn (OrderModel $record): ?string => static::forOrder($record)->latestPayment?->attemptedAt()?->format('Y-m-d H:i')),
-                ])
-                // D3 (tightened): columns(4), matching Summary's own
-                // density (id/placed_at/status/channel, one row of 4) —
-                // not one fact per full-width row.
-                ->columns(4),
-            // Every payment that is NOT the current one, collapsed by default so
-            // the everyday view stays quiet. It replaces the old "N attempts"
-            // count, which added a customer's genuine retries to the reissues an
-            // edit or a return causes and so said nothing true. Hidden outright
-            // when there is nothing to disclose (an order with one payment).
-            Section::make(__('orders.payment_history.heading'))
-                ->collapsible()
-                ->collapsed()
-                ->visible(fn (OrderModel $record): bool => static::paymentHistoryRows($record) !== [])
-                ->schema([
-                    RepeatableEntry::make('payment_history')
-                        ->hiddenLabel()
-                        ->getStateUsing(fn (OrderModel $record): array => static::paymentHistoryRows($record))
-                        ->table([
-                            RepeatableTableColumn::make(__('orders.payment_history.amount')),
-                            RepeatableTableColumn::make(__('orders.fields.payment_method')),
-                            RepeatableTableColumn::make(__('orders.fields.payment_status')),
-                            RepeatableTableColumn::make(__('orders.fields.attempted_at')),
-                            RepeatableTableColumn::make(__('orders.payment_history.why')),
-                        ])
-                        ->schema([
-                            TextEntry::make('amount')->hiddenLabel(),
-                            TextEntry::make('method')->hiddenLabel(),
-                            TextEntry::make('status')->hiddenLabel(),
-                            TextEntry::make('attempted_at')->hiddenLabel(),
-                            TextEntry::make('why')->hiddenLabel(),
-                        ]),
+                        ->getStateUsing(fn (OrderModel $record): string => static::forOrder($record)->latestPayment !== null
+                            ? static::optionLabel('payment_status', static::forOrder($record)->latestPayment->status()->value)
+                            : __('orders.no_payment')),
+                    TextEntry::make('placed_at')
+                        ->label(__('orders.fields.placed_at'))
+                        ->dateTime(),
+                    TextEntry::make('channel')
+                        ->label(__('orders.fields.channel'))
+                        ->getStateUsing(fn (OrderModel $record): string => static::optionLabel('channel', static::forOrder($record)->channel)),
                 ]),
-            // Refunds R2b (shipping-domain-design.md §7.2.5, §7.2.17): nothing at all (no empty box)
-            // for an order that has no refund; otherwise the four figures and one block per refund.
-            Section::make(__('orders.refunds.heading'))
-                ->visible(fn (OrderModel $record): bool => static::refundsView($record)['rows'] !== [])
-                ->schema(fn (OrderModel $record): array => static::refundsSchema($record)),
-            Section::make(__('orders.sections.history'))
+            // TWO COLUMNS on a large screen — the main column (2/3) and the sidebar (1/3) — and ONE column below it, the main
+            // column first. Filament's own Grid/Group only: the column counts and spans are inline CSS variables, so no
+            // theme build is needed. History spans the full width underneath.
+            Grid::make(['default' => 1, 'lg' => 3])
                 ->schema([
-                    RepeatableEntry::make('history')
+                    Group::make([
+                    Section::make(__('orders.sections.lines'))
+                        ->compact()
+                        ->schema([
+                            static::scrollable(RepeatableEntry::make('lines')
+                                ->hiddenLabel()
+                                ->getStateUsing(fn (OrderModel $record): array => static::lineRows($record))
+                                ->table(fn (OrderModel $record): array => array_map(
+                                    // Same rule as the cells themselves: a column
+                                    // whose line carries a name is a NUMBER column,
+                                    // so its heading is end-aligned with it — only
+                                    // visible in the wide/table mode, where the
+                                    // stacked mode's own labels give way to this
+                                    // header row.
+                                    static fn (array $spec): RepeatableTableColumn => RepeatableTableColumn::make($spec['label'])
+                                        ->alignEnd(static::lineValueLabel($spec['key']) !== null),
+                                    static::lineColumnSpecs($record),
+                                ))
+                                ->schema(fn (OrderModel $record): array => static::compactType(array_map(
+                                    static fn (array $spec): Entry => static::lineCell($spec['key']),
+                                    static::lineColumnSpecs($record),
+                                ))), 56),
+                            // THE TOTALS, at the bottom of the same section (subtotal - discount + shipping = total). The discount's label
+                            // carries the promotion code (there is no separate promotion card), with a small suffix saying whether the
+                            // code is redeemed.
+                            Grid::make(['default' => 2, 'lg' => 4])
+                                ->schema([
+                                    TextEntry::make('subtotal_minor')
+                                        ->label(__('orders.fields.subtotal'))
+                                        ->getStateUsing(fn (OrderModel $record): string => static::formatOrderMoney($record, 'subtotal_minor')),
+                                    TextEntry::make('discount_minor_total')
+                                        ->label(fn (OrderModel $record): string => __('orders.fields.discount').($record->applied_promotion_code !== null ? ' ('.$record->applied_promotion_code.')' : ''))
+                                        ->getStateUsing(fn (OrderModel $record): string => static::formatOrderMoney($record, 'discount_minor'))
+                                        ->suffix(fn (OrderModel $record): ?string => $record->applied_promotion_code === null
+                                            ? null
+                                            : ' · '.(static::forOrder($record)->hasPromotionRedemption ? __('orders.promotion_redeemed_yes') : __('orders.promotion_redeemed_no'))),
+                                    // Refunds R2b: the shipping line, with the method's name when there is one.
+                                    TextEntry::make('shipping_minor')
+                                        ->label(__('orders.fields.shipping'))
+                                        ->getStateUsing(fn (OrderModel $record): string => static::formatOrderMoney($record, 'shipping_minor')
+                                            .(filled($record->shipping_method_name) ? ' ('.$record->shipping_method_name.')' : '')),
+                                    TextEntry::make('total_minor')
+                                        ->label(__('orders.fields.total'))
+                                        ->weight('bold')
+                                        ->getStateUsing(fn (OrderModel $record): string => static::formatOrderMoney($record, 'total_minor')),
+                                ]),
+                        ])
+                        // D5 (stage 4b-ii) — EDIT NOW LIVES HERE, IN THIS SECTION'S
+                        // OWN HEADER, not in the page-wide action row above.
+                        // Filament renders a Section's ->headerActions() at the
+                        // RIGHT EDGE of its title bar with no alignment option
+                        // needed, verified against the installed v5.8.1 source
+                        // rather than assumed: Section::setUp() wires them into its
+                        // `after_header` child schema
+                        // (Schemas/Components/Section.php), Section::makeChildSchema()
+                        // then calls $schema->alignEnd() on exactly that key, and the
+                        // stylesheet's `.fi-section-header-text-ctn { @apply grid
+                        // flex-1 }` (support/resources/css/components/section.css)
+                        // is what pushes the action container to the far edge while
+                        // `.fi-section-header-after-ctn { @apply self-center }`
+                        // centres it vertically. The heading is what makes the row
+                        // exist at all, so this section's own "Items" title is the
+                        // left half of the pair.
+                        //
+                        // WHY THE MOVE AT ALL: an order's lines are edited from the
+                        // lines, and the page-wide row above now holds exactly the
+                        // actions that change the order's STATUS or record something
+                        // about the order (see orderActions()'s own docblock). The
+                        // action object itself is untouched — same ->visible()
+                        // (ORDER_MANAGE, placed/confirmed, no settled payment), same
+                        // dialog, same service call, same refusal mapping, same
+                        // redirect. Only where Filament paints its trigger changed.
+                        //
+                        // A consequence worth naming, because it is visible to
+                        // tests rather than to merchants: this action is no longer
+                        // one of the page's cached HEADER actions, so mounting it by
+                        // name alone no longer resolves — a Livewire round trip must
+                        // carry the schema-component context Filament's own button
+                        // sends (Action::getContext() → getSchemaComponent()'s key,
+                        // resolved by InteractsWithActions::resolveSchemaComponentAction()).
+                        // Every test drives it through that same context.
+                        ->headerActions([static::editAction()]),
+                    Section::make(__('orders.sections.payment'))
+                        ->compact()
+                        ->schema([
+                            TextEntry::make('payment_method')
+                                ->label(__('orders.fields.payment_method'))
+                                ->getStateUsing(function (OrderModel $record): string {
+                                    $payment = static::forOrder($record)->latestPayment;
+
+                                    return $payment !== null
+                                        ? static::optionLabel('payment_method', $payment->method())
+                                        : __('orders.no_payment');
+                                }),
+                            TextEntry::make('payment_status')
+                                ->label(__('orders.fields.payment_status'))
+                                ->badge()
+                                ->visible(fn (OrderModel $record): bool => static::forOrder($record)->latestPayment !== null)
+                                // Not just a defensive null-check — getStateUsing()
+                                // closures are not guaranteed to be skipped just
+                                // because ->visible() returned false (Filament
+                                // may still evaluate state internally), so this
+                                // reads defensively rather than trusting the
+                                // sibling ->visible() call above alone.
+                                ->getStateUsing(function (OrderModel $record): string {
+                                    $payment = static::forOrder($record)->latestPayment;
+
+                                    return $payment !== null
+                                        ? static::optionLabel('payment_status', $payment->status()->value)
+                                        : __('orders.no_payment');
+                                }),
+                            // §8.4's hole, closed (stage 7c-1): before these two
+                            // entries, NOT ONE fact in this section changed when
+                            // "Mark as received" ran — the section kept rendering
+                            // "Pending" and nothing moved at all, which reads like a
+                            // failed click. Both read the SAME forOrder() call every
+                            // other closure here makes, off the same Payment object,
+                            // so neither adds a query: the reader's own payment read
+                            // already carries the columns §4/§7.3 added, because
+                            // OrderAdminOrderView::latestPayment is the domain
+                            // Payment itself, not a copy of a few of its fields
+                            // (§8.4 puts it as "that DTO's latest-payment part gains
+                            // confirmedAt and voidedAt" — this DTO's latest-payment
+                            // part IS the aggregate that already exposes both, so the
+                            // intent is met without a second home for the two dates).
+                            //
+                            // IS "SETTLED" THE PREDICATE R8/R9 CALL? LITERALLY:
+                            // Payment::isSettled() is the one place §11 item 17 puts
+                            // "money is held" (§4.1), so this badge cannot disagree
+                            // with the guard that decides whether the order may ship
+                            // or how much may be refunded. It stays a SEPARATE entry
+                            // from payment_status on purpose: that one says exactly
+                            // what the adapter said (§4.2's whole argument, including
+                            // a raw value nothing here recognises), this one says
+                            // whether money is held — a captured row is settled with
+                            // no confirmation ever recorded, and only the pair can
+                            // say both facts at once.
+                            //
+                            // A BADGE ONLY FOR THE POSITIVE FACT, AND NO COLOUR
+                            // ANYWHERE. ->badge() takes a closure, so "settled" wears
+                            // a badge and the not-recorded case is a plain sentence —
+                            // §4.5 requires exactly that: the money stated as not
+                            // recorded, "no computed 'unpaid' badge" (§3 item 3) and
+                            // "no silence either". No ->color() for either state,
+                            // matching payment_status' own bare badge above: a green
+                            // "settled" beside a colourless "Captured" would rank two
+                            // facts §4.2 deliberately keeps side by side, and the
+                            // colour would say nothing the words do not.
+                            //
+                            // VISIBLE WHENEVER A PAYMENT ROW EXISTS — including the
+                            // COD delivery that could not confirm anything (§4.5's
+                            // first face), where it reads "Money not recorded" rather
+                            // than vanishing. For an order with NO payment row at
+                            // all, the two entries above already say it in this
+                            // page's own established words (orders.no_payment on
+                            // method and status), so this one has no subject to speak
+                            // about and stays hidden instead of repeating it a third
+                            // time. getStateUsing() still reads defensively, like the
+                            // sibling above: Filament may evaluate state itself.
+                            TextEntry::make('payment_settled')
+                                ->label(__('orders.fields.payment_settled'))
+                                ->badge(fn (OrderModel $record): bool => static::forOrder($record)->latestPayment?->isSettled() === true)
+                                ->visible(fn (OrderModel $record): bool => static::forOrder($record)->latestPayment !== null)
+                                ->getStateUsing(function (OrderModel $record): string {
+                                    $payment = static::forOrder($record)->latestPayment;
+
+                                    return $payment !== null && $payment->isSettled()
+                                        ? __('orders.payment_settled_yes')
+                                        : __('orders.payment_settled_no');
+                                }),
+                            // The instant §4.1's confirm() ran — NOT attemptedAt()
+                            // (when the adapter answered) and not the payment's
+                            // placement: the same honest, narrower claim Payment's
+                            // own confirmedAt() docblock makes, in this section's own
+                            // timestamp format. Hidden when NULL, the ordinary state
+                            // of an online-captured or still-pending payment — the
+                            // entry states a fact, it does not stand in for a missing
+                            // one ('—' would claim a record exists).
+                            //
+                            // The confirmation ACTION needs nothing here: it is
+                            // already hidden once the payment stops being confirmable
+                            // (markAsReceivedAction()'s own ->visible(), which
+                            // isConfirmable() makes false the moment confirmedAt is
+                            // set), so §8.4's "the button's absence is the correct
+                            // state, not a missing feature" holds today — this entry
+                            // is what turns that absence from silence into a
+                            // statement.
+                            TextEntry::make('payment_confirmed_at')
+                                ->label(__('orders.fields.payment_confirmed_at'))
+                                ->visible(fn (OrderModel $record): bool => static::forOrder($record)->latestPayment?->confirmedAt() !== null)
+                                ->getStateUsing(fn (OrderModel $record): ?string => static::forOrder($record)->latestPayment?->confirmedAt()?->format('Y-m-d H:i')),
+                            TextEntry::make('provider_reference')
+                                ->label(__('orders.fields.provider_reference'))
+                                ->visible(fn (OrderModel $record): bool => static::forOrder($record)->latestPayment?->providerReference() !== null)
+                                ->getStateUsing(fn (OrderModel $record): ?string => static::forOrder($record)->latestPayment?->providerReference()),
+                            TextEntry::make('failure_reason')
+                                ->label(__('orders.fields.failure_reason'))
+                                ->visible(fn (OrderModel $record): bool => static::forOrder($record)->latestPayment?->failureReason() !== null)
+                                ->getStateUsing(fn (OrderModel $record): ?string => static::forOrder($record)->latestPayment?->failureReason()),
+                            TextEntry::make('attempted_at')
+                                ->label(__('orders.fields.attempted_at'))
+                                ->visible(fn (OrderModel $record): bool => static::forOrder($record)->latestPayment?->attemptedAt() !== null)
+                                ->getStateUsing(fn (OrderModel $record): ?string => static::forOrder($record)->latestPayment?->attemptedAt()?->format('Y-m-d H:i')),
+                        ])
+                        // D3 (tightened): columns(4), matching Summary's own
+                        // density (id/placed_at/status/channel, one row of 4) —
+                        // not one fact per full-width row.
+                        ->columns(3),
+                    // Every payment that is NOT the current one, collapsed by default so
+                    // the everyday view stays quiet. It replaces the old "N attempts"
+                    // count, which added a customer's genuine retries to the reissues an
+                    // edit or a return causes and so said nothing true. Hidden outright
+                    // when there is nothing to disclose (an order with one payment).
+                    Section::make(__('orders.payment_history.heading'))
+                        ->compact()
+                        ->collapsible()
+                        ->collapsed()
+                        ->visible(fn (OrderModel $record): bool => static::paymentHistoryRows($record) !== [])
+                        ->schema([
+                            RepeatableEntry::make('payment_history')
+                                ->hiddenLabel()
+                                ->getStateUsing(fn (OrderModel $record): array => static::paymentHistoryRows($record))
+                                ->table([
+                                    RepeatableTableColumn::make(__('orders.payment_history.amount')),
+                                    RepeatableTableColumn::make(__('orders.fields.payment_method')),
+                                    RepeatableTableColumn::make(__('orders.fields.payment_status')),
+                                    RepeatableTableColumn::make(__('orders.fields.attempted_at')),
+                                    RepeatableTableColumn::make(__('orders.payment_history.why')),
+                                ])
+                                ->schema([
+                                    TextEntry::make('amount')->hiddenLabel(),
+                                    TextEntry::make('method')->hiddenLabel(),
+                                    TextEntry::make('status')->hiddenLabel(),
+                                    TextEntry::make('attempted_at')->hiddenLabel(),
+                                    TextEntry::make('why')->hiddenLabel(),
+                                ]),
+                        ]),
+                    // Refunds R2b (shipping-domain-design.md §7.2.5, §7.2.17): nothing at all (no empty box)
+                    // for an order that has no refund; otherwise the four figures and one block per refund.
+                    Section::make(fn (OrderModel $record): string => __('orders.refunds.heading_count', ['count' => count(static::refundsView($record)['rows'])]))
+                        ->compact()
+                        ->collapsible()
+                        ->collapsed()
+                        ->visible(fn (OrderModel $record): bool => static::refundsView($record)['rows'] !== [])
+                        ->schema(fn (OrderModel $record): array => static::compactType(static::refundsSchema($record))),
+                    ])->columnSpan(['lg' => 2]),
+                    Group::make([
+                    Section::make(__('orders.sections.client'))
+                        ->compact()
+                        ->schema([
+                            TextEntry::make('client_name')
+                                ->label(__('orders.fields.client_name'))
+                                ->getStateUsing(fn (OrderModel $record): string => static::forOrder($record)->clientName),
+                            TextEntry::make('email')
+                                ->label(__('orders.fields.email'))
+                                ->copyable(),
+                            TextEntry::make('phone')
+                                ->label(__('orders.fields.phone'))
+                                ->copyable(),
+                            // Guest or account: the account id when there is one, "Guest" when there is not.
+                            TextEntry::make('account_id')
+                                ->label(__('orders.fields.account_id'))
+                                ->getStateUsing(fn (OrderModel $record): string => filled($record->account_id) ? (string) $record->account_id : __('orders.guest')),
+                            TextEntry::make('client_id')
+                                ->label(__('orders.fields.client_id'))
+                                ->getStateUsing(fn (OrderModel $record): string => static::forOrder($record)->order->clientId()),
+                        ])
+                        ->columns(1),
+                    Section::make(__('orders.sections.delivery'))
+                        ->compact()
+                        ->schema([
+                            TextEntry::make('delivery_type')
+                                ->label(__('orders.fields.delivery_type'))
+                                ->formatStateUsing(fn (string $state): string => __("orders.delivery_type_options.{$state}")),
+                            // Shown for BOTH delivery types: a pickup point is in a country too
+                            // (owner decision D1). A historical pickup order may have none: "n/a".
+                            TextEntry::make('country')
+                                ->label(__('orders.fields.country'))
+                                ->formatStateUsing(fn (?string $state): string => $state ?? __('orders.not_available')),
+                            TextEntry::make('city')
+                                ->label(__('orders.fields.city'))
+                                ->visible(fn (OrderModel $record): bool => $record->delivery_type === OrderDeliveryType::STREET_ADDRESS->value)
+                                ->formatStateUsing(fn (?string $state): string => $state ?? __('orders.not_available')),
+                            TextEntry::make('postal_code')
+                                ->label(__('orders.fields.postal_code'))
+                                ->visible(fn (OrderModel $record): bool => $record->delivery_type === OrderDeliveryType::STREET_ADDRESS->value)
+                                ->formatStateUsing(fn (?string $state): string => $state ?? __('orders.not_available')),
+                            TextEntry::make('address_line_1')
+                                ->label(__('orders.fields.address_line_1'))
+                                ->visible(fn (OrderModel $record): bool => $record->delivery_type === OrderDeliveryType::STREET_ADDRESS->value)
+                                ->formatStateUsing(fn (?string $state): string => $state ?? __('orders.not_available')),
+                            TextEntry::make('address_line_2')
+                                ->label(__('orders.fields.address_line_2'))
+                                ->visible(fn (OrderModel $record): bool => $record->delivery_type === OrderDeliveryType::STREET_ADDRESS->value
+                                    && $record->address_line_2 !== null),
+                            TextEntry::make('carrier_code')
+                                ->label(__('orders.fields.carrier_code'))
+                                ->visible(fn (OrderModel $record): bool => $record->delivery_type === OrderDeliveryType::PICKUP_POINT->value),
+                            TextEntry::make('pickup_point_reference')
+                                ->label(__('orders.fields.pickup_point_reference'))
+                                ->visible(fn (OrderModel $record): bool => $record->delivery_type === OrderDeliveryType::PICKUP_POINT->value),
+                            TextEntry::make('settlement')
+                                ->label(__('orders.fields.settlement'))
+                                ->visible(fn (OrderModel $record): bool => $record->delivery_type === OrderDeliveryType::PICKUP_POINT->value),
+                            // The shipping method the customer chose (the snapshot taken at placement) and the courier's tracking number.
+                            TextEntry::make('shipping_method_name')
+                                ->label(__('orders.fields.shipping_method'))
+                                ->visible(fn (OrderModel $record): bool => filled($record->shipping_method_name)),
+                            TextEntry::make('tracking_number')
+                                ->label(__('orders.fields.tracking_number'))
+                                ->visible(fn (OrderModel $record): bool => filled($record->tracking_number))
+                                ->copyable(),
+                        ])
+                        ->columns(1),
+                    ])->columnSpan(['lg' => 1]),
+                ]),
+            Section::make(__('orders.sections.history'))
+                ->compact()
+                ->columnSpanFull()
+                ->schema([
+                    static::scrollable(RepeatableEntry::make('history')
                         ->hiddenLabel()
                         ->getStateUsing(fn (OrderModel $record): array => static::historyRows($record))
                         ->table(array_map(
@@ -782,9 +818,62 @@ class OrderResource extends Resource
                                 ? TextEntry::make($spec['key'])->hiddenLabel()->listWithLineBreaks()
                                 : TextEntry::make($spec['key'])->hiddenLabel(),
                             static::historyColumnSpecs(),
-                        )),
+                        )), 64),
                 ]),
-        ])->columns(1);
+        ]))->columns(1);
+    }
+
+    /**
+     * THE ONE HELPER of the page's compact type (order-view layout): walks the components the infolist builds and
+     * sets TextSize::ExtraSmall on every TextEntry (a TextEntry's DEFAULT is already Small, so Small would change nothing;
+     * `fi-size-xs` exists in the precompiled panel CSS). LOCAL to this schema — no static or global configuration, so no other
+     * page, and no later request in a long-lived worker, is ever affected.
+     *
+     * It walks the components whose children are already built. A component whose schema is a Closure (the items
+     * table, the refunds section) cannot be walked here — its closure needs the record — so each of those passes
+     * what it builds through this same helper itself, where it builds it.
+     *
+     * @param  array<int, mixed>  $components
+     * @return array<int, mixed> the same components
+     */
+    private static function compactType(array $components): array
+    {
+        foreach ($components as $component) {
+            if ($component instanceof TextEntry) {
+                $component->size(TextSize::ExtraSmall);
+
+                continue;
+            }
+
+            if (is_object($component)) {
+                static::compactType(static::builtChildren($component));
+            }
+        }
+
+        return $components;
+    }
+
+    /** @return array<int, mixed> a component's default children when they are an array (not a Closure), else none */
+    private static function builtChildren(object $component): array
+    {
+        try {
+            $children = (new \ReflectionProperty($component, 'childComponents'))->getValue($component);
+        } catch (\ReflectionException) {
+            return [];
+        }
+
+        return is_array($children['default'] ?? null) ? $children['default'] : [];
+    }
+
+    /**
+     * A table that SCROLLS SIDEWAYS instead of squeezing its columns: the table sits in a container with
+     * `overflow-x: auto` and has a minimum width, so below that width the container scrolls and every column keeps
+     * its natural width. Inline styles only (no theme build); they carry no colours, so light and dark mode alike.
+     */
+    private static function scrollable(Entry $table, int $minWidthRem): Group
+    {
+        return Group::make([$table->extraAttributes(['style' => "min-width: {$minWidthRem}rem"])])
+            ->extraAttributes(['style' => 'overflow-x: auto', 'class' => 'fi-order-scroll']);
     }
 
     /**
@@ -2408,10 +2497,12 @@ class OrderResource extends Resource
             return $entry->hiddenLabel();
         }
 
+        // A number (quantity, a price, a line total) never wraps; the product name still may.
         return $entry
             ->label($label)
             ->inlineLabel()
-            ->alignEnd();
+            ->alignEnd()
+            ->extraAttributes(['style' => 'white-space: nowrap']);
     }
 
     /**

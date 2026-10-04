@@ -371,16 +371,31 @@ class OrderEditActionTest extends TestCase
         );
     }
 
-    /** The infolist's own "Items" Section — found by the heading it renders, never by a guessed key. */
+    /**
+     * The infolist's own "Items" Section — found by the heading it renders, never by a guessed key. Since the
+     * two-column layout it sits inside the grid's main-column group, so the search descends into containers.
+     */
     private function itemsSection(mixed $livewire): ?Section
     {
-        foreach ($livewire->getSchema('infolist')->getComponents() as $component) {
-            if ($component instanceof Section && $component->getHeading() === __('orders.sections.lines')) {
-                return $component;
-            }
-        }
+        $walk = function (array $components) use (&$walk): ?Section {
+            foreach ($components as $component) {
+                if ($component instanceof Section && $component->getHeading() === __('orders.sections.lines')) {
+                    return $component;
+                }
 
-        return null;
+                if (method_exists($component, 'getDefaultChildComponents')) {
+                    $found = $walk($component->getDefaultChildComponents());
+
+                    if ($found !== null) {
+                        return $found;
+                    }
+                }
+            }
+
+            return null;
+        };
+
+        return $walk($livewire->getSchema('infolist')->getComponents());
     }
 
     /** @return array<int, string> the line table's header labels. */

@@ -20,6 +20,8 @@ return [
         'subtotal' => 'Междинна сума',
         'discount' => 'Отстъпка',
         'shipping' => 'Доставка',
+        'shipping_method' => 'Начин на доставка',
+        'tracking_number' => 'Номер за проследяване',
         'status' => 'Статус',
         'phone' => 'Телефон',
         'account_id' => 'Профил',
@@ -167,6 +169,7 @@ return [
     // Refunds R2b (shipping-domain-design.md §7.2.5, §7.2.17): секцията за възстановяванията на поръчката и двете ѝ действия.
     'refunds' => [
         'heading' => 'Възстановявания',
+        'heading_count' => 'Възстановявания (:count)',
         'refund_heading' => 'Възстановяване №:id',
         'figures' => [
             'paid_in' => 'Платено',
@@ -364,6 +367,9 @@ return [
         'superseded' => 'Заменено',
     ],
     'not_available' => '—',
+    'guest' => 'Гост',
+    'promotion_redeemed_yes' => 'използван',
+    'promotion_redeemed_no' => 'неизползван',
     'legacy_line_note' => 'Записано преди пълния запис',
     // order_events.staff_id/staff_name NULL — записът е направен от конзолата
     // или фонова задача (виж en/orders.php's own comment).
