@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Http\ApiRateLimits;
 use App\Services\AuthenticatedStaffResolver;
 use App\Services\OrderAdminReader;
 use App\Services\PriceDisplayFormatter;
@@ -66,6 +67,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        //
+        // The named API rate limiters, in their one central place.
+        ApiRateLimits::register();
     }
 }

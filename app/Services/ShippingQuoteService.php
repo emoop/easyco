@@ -5,8 +5,10 @@ namespace App\Services;
 use App\Services\Exceptions\AddressIncompleteForCheckoutException;
 use App\Services\Exceptions\AddressNotFoundForCheckoutException;
 use App\Services\Exceptions\ShippingQuoteRefusedException;
+use App\Services\Exceptions\ShippingQuoteFilterException;
 use EasyCo\Cart\Cart;
 use EasyCo\Catalog\Contracts\VariationRepository;
+use EasyCo\Extensibility\Hook;
 use EasyCo\Pricing\DefaultCurrency;
 use EasyCo\Shipping\Carrier\CallBudget;
 use EasyCo\Shipping\Carrier\ShippingContext;
@@ -71,7 +73,89 @@ final class ShippingQuoteService
      */
     public function quote(Cart $cart, ?string $accountId, QuoteDestination $destination): ShippingQuoteResult
     {
-        return $this->issueHandles($this->offers($cart, $accountId, $destination));
+        return $this->issueHandles($this->applyQuotesFilter($this->offers($cart, $accountId, $destination), $destination));
+    }
+
+    /**
+     * The merchant hook `shipping.quotes` (shipping-domain-design.md §6.8): a filter over the offered methods,
+     * run BETWEEN building the list and issuing handles, so every handle binds the FINAL amount.
+     *
+     * A filter may REMOVE a method or CHANGE ITS AMOUNT (never below 0). It cannot add a method that is not
+     * an active method of the matched zone, rename one, change its kind, service or currency, or turn an
+     * unavailable method into a priced one (or the reverse): everything else in its output is refused, by name,
+     * with ShippingQuoteFilterException. The original order is kept (the first is preselected), whatever order
+     * the filter returned. With no listener, the list passes through untouched.
+     *
+     * @throws ShippingQuoteFilterException
+     */
+    public function applyQuotesFilter(QuoteOffers $offers, QuoteDestination $destination): QuoteOffers
+    {
+        $filtered = Hook::apply('shipping.quotes', $offers->methods, [
+            'cart_id' => $offers->cartId,
+            'currency' => $offers->currency,
+            'goods_after_discount_minor' => $offers->goodsAfterDiscountMinor,
+            'zone_id' => $offers->zoneId,
+            'country' => $destination->countryCode,
+            'settlement' => $destination->settlement,
+            'is_pickup_point' => $destination->isPickupPoint(),
+        ]);
+
+        return $offers->withMethods($this->validatedFilterOutput($offers->methods, $filtered));
+    }
+
+    /**
+     * @param  list<MethodQuote>  $original
+     * @return list<MethodQuote> the accepted methods, in the original order
+     *
+     * @throws ShippingQuoteFilterException
+     */
+    private function validatedFilterOutput(array $original, mixed $filtered): array
+    {
+        if (! is_array($filtered)) {
+            throw ShippingQuoteFilterException::because(ShippingQuoteFilterException::NOT_A_LIST);
+        }
+
+        $byId = [];
+        $order = [];
+
+        foreach ($original as $index => $method) {
+            $byId[$method->methodId] = $method;
+            $order[$method->methodId] = $index;
+        }
+
+        $accepted = [];
+
+        foreach ($filtered as $item) {
+            if (! $item instanceof MethodQuote) {
+                throw ShippingQuoteFilterException::because(ShippingQuoteFilterException::INVALID_ITEM);
+            }
+
+            $before = $byId[$item->methodId] ?? throw ShippingQuoteFilterException::because(ShippingQuoteFilterException::UNKNOWN_METHOD, $item->methodId);
+
+            if (isset($accepted[$item->methodId])) {
+                throw ShippingQuoteFilterException::because(ShippingQuoteFilterException::DUPLICATE_METHOD, $item->methodId);
+            }
+
+            if ($item->isAvailable() !== $before->isAvailable()) {
+                throw ShippingQuoteFilterException::because(ShippingQuoteFilterException::AVAILABILITY_CHANGED, $item->methodId);
+            }
+
+            if ($item->amountMinor !== null && $item->amountMinor < 0) {
+                throw ShippingQuoteFilterException::because(ShippingQuoteFilterException::NEGATIVE_AMOUNT, $item->methodId);
+            }
+
+            if ($item->name !== $before->name || $item->kind !== $before->kind || $item->requiresPickupPoint !== $before->requiresPickupPoint
+                || $item->currency !== $before->currency || $item->serviceCode !== $before->serviceCode
+                || $item->unavailableReason !== $before->unavailableReason || $item->handle !== null) {
+                throw ShippingQuoteFilterException::because(ShippingQuoteFilterException::CHANGED_FIELD, $item->methodId);
+            }
+
+            $accepted[$item->methodId] = $item;
+        }
+
+        uasort($accepted, static fn (MethodQuote $a, MethodQuote $b): int => $order[$a->methodId] <=> $order[$b->methodId]);
+
+        return array_values($accepted);
     }
 
     /**
@@ -177,7 +261,7 @@ final class ShippingQuoteService
 
         foreach ($offers->methods as $method) {
             $methods[] = $method->isAvailable()
-                ? $method->withHandle($this->handles->issue($offers->cartId, $method->methodId, (int) $method->amountMinor, $method->currency, $offers->pricingHash))
+                ? $method->withHandle($this->handles->issue($offers->cartId, $method->methodId, (int) $method->amountMinor, $method->currency, $offers->pricingHash, $method->serviceCode))
                 : $method;
         }
 

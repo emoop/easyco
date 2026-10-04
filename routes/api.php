@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\ApiRateLimits;
 use App\Http\Controllers\Api\AccountRegistrationController;
 use App\Http\Controllers\Api\AccountSessionController;
 use App\Http\Controllers\Api\AddressController;
@@ -16,6 +17,7 @@ use App\Http\Controllers\Api\ProductMediaController;
 use App\Http\Controllers\Api\ProductTagController;
 use App\Http\Controllers\Api\PromotionController;
 use App\Http\Controllers\Api\PromotionScopeController;
+use App\Http\Controllers\Api\ShippingQuoteController;
 use App\Http\Controllers\Api\StockLevelController;
 use App\Http\Controllers\Api\TagController;
 use App\Http\Controllers\Api\VariableProductController;
@@ -46,6 +48,11 @@ Route::delete('/cart/promotion', [CartController::class, 'removePromotion']);
 // Checkout is available to guests AND logged-in customers, so it must
 // NOT go inside the auth:customer group above.
 Route::post('/checkout', [CheckoutController::class, 'store']);
+
+// The shipping quote is public too (guests choose delivery before they have an
+// account), and throttled by the central named limiter (App\Http\ApiRateLimits).
+Route::post('/shipping/quote', [ShippingQuoteController::class, 'store'])
+    ->middleware('throttle:'.ApiRateLimits::SHIPPING_QUOTE);
 
 // ─────────────────────────────────────────────────────────────────
 // Merchant surface — everything below requires auth:staff plus a

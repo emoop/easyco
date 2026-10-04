@@ -53,6 +53,7 @@ class MerchantRoutesRequirePermissionTest extends TestCase
         'PUT api/cart/promotion',
         'DELETE api/cart/promotion',
         'POST api/checkout',
+        'POST api/shipping/quote',
     ];
 
     public function test_every_merchant_route_requires_auth_staff_and_a_declared_permission(): void

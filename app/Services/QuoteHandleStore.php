@@ -13,10 +13,11 @@ use Throwable;
  * shown instead of trusting a number from the client.
  *
  * A handle is stored in the cache for QuoteCachePolicy::HANDLE_TTL, bound to the
- * cart id, the method id, the amount and currency, and a hash of everything that
- * priced it (ShippingQuoteService::pricingHashFor()). verify() accepts a handle
+ * cart id, the method id, the amount and currency, the carrier SERVICE code (null
+ * for a local method — so checkout books exactly the service that was quoted), and
+ * a hash of everything that priced it (ShippingQuoteService::pricingHashFor()). verify() accepts a handle
  * ONLY if it exists, has not expired, and every one of those matches what the
- * caller presents now. Anything else — an unknown token, an expired one, another
+ * caller presents now (a CARRIER method's service code included). Anything else — an unknown token, an expired one, another
  * cart, another method, a different hash, a different amount or currency, a cache
  * that cannot be read — is simply false: a handle is evidence, never a thing that
  * can error its way into passing.
@@ -31,7 +32,7 @@ final class QuoteHandleStore
 {
     public const KEY_PREFIX = 'shipping:quote-handle:v1:';
 
-    public function issue(string $cartId, string $methodId, int $amountMinor, string $currency, string $pricingHash): string
+    public function issue(string $cartId, string $methodId, int $amountMinor, string $currency, string $pricingHash, ?string $serviceCode): string
     {
         $handle = 'qh_'.Str::random(40);
 
@@ -41,13 +42,14 @@ final class QuoteHandleStore
             'amount' => $amountMinor,
             'currency' => $currency,
             'hash' => $pricingHash,
+            'service' => $serviceCode,
             'expires_at' => Carbon::now()->getTimestamp() + QuoteCachePolicy::HANDLE_TTL,
         ], QuoteCachePolicy::HANDLE_TTL);
 
         return $handle;
     }
 
-    public function verify(string $handle, string $cartId, string $methodId, int $amountMinor, string $currency, string $pricingHash): bool
+    public function verify(string $handle, string $cartId, string $methodId, int $amountMinor, string $currency, string $pricingHash, ?string $serviceCode): bool
     {
         try {
             $entry = Cache::get(self::key($handle));
@@ -67,6 +69,8 @@ final class QuoteHandleStore
             && ($entry['method'] ?? null) === $methodId
             && ($entry['amount'] ?? null) === $amountMinor
             && ($entry['currency'] ?? null) === $currency
+            && array_key_exists('service', $entry)
+            && $entry['service'] === $serviceCode
             && is_string($entry['hash'] ?? null)
             && hash_equals($entry['hash'], $pricingHash);
     }

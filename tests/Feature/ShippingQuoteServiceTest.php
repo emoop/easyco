@@ -571,8 +571,8 @@ class ShippingQuoteServiceTest extends TestCase
 
         $handle = $result->methods[0]->handle;
         $store = app(QuoteHandleStore::class);
-        $this->assertTrue($store->verify($handle, (string) $cart->id(), $methodId, 250, 'EUR', $result->pricingHash));
-        $this->assertFalse($store->verify($handle, (string) $cart->id(), $methodId, 500, 'EUR', $result->pricingHash), 'the pre-filter price is not what the handle says');
+        $this->assertTrue($store->verify($handle, (string) $cart->id(), $methodId, 250, 'EUR', $result->pricingHash, null));
+        $this->assertFalse($store->verify($handle, (string) $cart->id(), $methodId, 500, 'EUR', $result->pricingHash, null), 'the pre-filter price is not what the handle says');
     }
 
     public function test_a_quote_writes_no_database_row_and_opens_no_transaction(): void
@@ -653,7 +653,7 @@ class ShippingQuoteServiceTest extends TestCase
     {
         [, $result, $cart, $methodId] = $this->quotedFlat();
 
-        $this->assertTrue(app(QuoteHandleStore::class)->verify($result->methods[0]->handle, (string) $cart->id(), $methodId, 500, 'EUR', $result->pricingHash));
+        $this->assertTrue(app(QuoteHandleStore::class)->verify($result->methods[0]->handle, (string) $cart->id(), $methodId, 500, 'EUR', $result->pricingHash, null));
     }
 
     public function test_verify_refuses_an_expired_handle(): void
@@ -662,10 +662,10 @@ class ShippingQuoteServiceTest extends TestCase
         $store = app(QuoteHandleStore::class);
 
         Carbon::setTestNow(Carbon::now()->addSeconds(QuoteCachePolicy::HANDLE_TTL - 1));
-        $this->assertTrue($store->verify($result->methods[0]->handle, (string) $cart->id(), $methodId, 500, 'EUR', $result->pricingHash), 'still valid just before the lifetime ends');
+        $this->assertTrue($store->verify($result->methods[0]->handle, (string) $cart->id(), $methodId, 500, 'EUR', $result->pricingHash, null), 'still valid just before the lifetime ends');
 
         Carbon::setTestNow(Carbon::now()->addSeconds(2));
-        $this->assertFalse($store->verify($result->methods[0]->handle, (string) $cart->id(), $methodId, 500, 'EUR', $result->pricingHash));
+        $this->assertFalse($store->verify($result->methods[0]->handle, (string) $cart->id(), $methodId, 500, 'EUR', $result->pricingHash, null));
         Carbon::setTestNow();
     }
 
@@ -677,13 +677,13 @@ class ShippingQuoteServiceTest extends TestCase
         $cartId = (string) $cart->id();
         $hash = $result->pricingHash;
 
-        $this->assertFalse($store->verify($handle, $cartId.'9', $methodId, 500, 'EUR', $hash), 'another cart');
-        $this->assertFalse($store->verify($handle, $cartId, $methodId.'9', 500, 'EUR', $hash), 'another method');
-        $this->assertFalse($store->verify($handle, $cartId, $methodId, 500, 'EUR', hash('sha256', 'something else')), 'a changed hash');
-        $this->assertFalse($store->verify($handle, $cartId, $methodId, 499, 'EUR', $hash), 'a changed amount');
-        $this->assertFalse($store->verify($handle, $cartId, $methodId, 500, 'USD', $hash), 'a changed currency');
-        $this->assertFalse($store->verify('qh_unknown', $cartId, $methodId, 500, 'EUR', $hash), 'a handle that never existed');
-        $this->assertFalse($store->verify('', $cartId, $methodId, 500, 'EUR', $hash));
+        $this->assertFalse($store->verify($handle, $cartId.'9', $methodId, 500, 'EUR', $hash, null), 'another cart');
+        $this->assertFalse($store->verify($handle, $cartId, $methodId.'9', 500, 'EUR', $hash, null), 'another method');
+        $this->assertFalse($store->verify($handle, $cartId, $methodId, 500, 'EUR', hash('sha256', 'something else'), null), 'a changed hash');
+        $this->assertFalse($store->verify($handle, $cartId, $methodId, 499, 'EUR', $hash, null), 'a changed amount');
+        $this->assertFalse($store->verify($handle, $cartId, $methodId, 500, 'USD', $hash, null), 'a changed currency');
+        $this->assertFalse($store->verify('qh_unknown', $cartId, $methodId, 500, 'EUR', $hash, null), 'a handle that never existed');
+        $this->assertFalse($store->verify('', $cartId, $methodId, 500, 'EUR', $hash, null));
     }
 
     public function test_the_pricing_hash_changes_with_anything_that_priced_the_quote(): void
