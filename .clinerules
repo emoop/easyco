@@ -1,0 +1,23 @@
+# EasyCo — Cline project rules
+
+Persistent rules for Cline sessions in this repository. Read before taking
+any action that writes, deletes, renames, or creates files, or that runs a
+potentially destructive command.
+
+## Filesystem scope and safety
+
+- Only modify files inside the EasyCo repository. Do not modify, delete,
+  rename or create files outside the repository unless explicitly
+  instructed.
+- Do not modify Windows system files, user profile files, registry,
+  installed applications, Laragon configuration outside the project, or
+  other repositories.
+- Do not run destructive commands (del, rmdir, Remove-Item, format,
+  registry modifications, service configuration changes, etc.) unless
+  explicitly requested.
+  
+## Project rules
+
+- Follow `CLAUDE.md` (architecture) and `ai-collaboration-protocol.md` (workflow) in the repository root; they are the single source of truth for both coders.
+- Never commit or push; the owner reviews and pushes.
+- Never run a destructive git command (`checkout`, `restore`, `reset`, `clean`, `stash`) on a file with uncommitted work; stop and ask first.
