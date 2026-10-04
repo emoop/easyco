@@ -1,0 +1,280 @@
+<?php
+
+namespace App\Services;
+
+use App\Services\Exceptions\AddressIncompleteForCheckoutException;
+use App\Services\Exceptions\AddressNotFoundForCheckoutException;
+use App\Services\Exceptions\ShippingQuoteRefusedException;
+use EasyCo\Cart\Cart;
+use EasyCo\Catalog\Contracts\VariationRepository;
+use EasyCo\Pricing\DefaultCurrency;
+use EasyCo\Shipping\Carrier\CallBudget;
+use EasyCo\Shipping\Carrier\ShippingContext;
+use EasyCo\Shipping\Carrier\ShippingQuote;
+use EasyCo\Shipping\Contracts\ShippingMethodRepository;
+use EasyCo\Shipping\Contracts\ShippingZoneRepository;
+use EasyCo\Shipping\Enums\ShippingMethodKind;
+use EasyCo\Shipping\Matching\PostcodeNormalizer;
+use EasyCo\Shipping\Matching\ZoneDestination;
+use EasyCo\Shipping\Matching\ZoneMatcher;
+use EasyCo\Shipping\Rating\MethodRate;
+use EasyCo\Shipping\Rating\RateLine;
+use EasyCo\Shipping\Rating\RateRequest;
+use EasyCo\Shipping\Rating\ShippingRateCalculator;
+use EasyCo\Shipping\ShippingMethod;
+
+/**
+ * The shipping quote (shipping-domain-design.md §6.7, stage 3d part 1): for a cart
+ * and a destination, every active method of the matched zone with its price, each
+ * price carrying a handle checkout can verify later.
+ *
+ * WRITES NOTHING TO THE DATABASE AND OPENS NO TRANSACTION. (It writes the cache:
+ * carrier answers and handles — nothing else.) The CART IS RESOLVED BY THE CALLER,
+ * server-side; this service never takes a client-supplied cart token. A saved
+ * address is read through AddressResolver::resolveExisting(), the one place the
+ * "belongs to this account, has a country" rules live.
+ *
+ * TWO STEPS, deliberately separate:
+ *   offers()       -> the complete, priced list of methods (QuoteOffers);
+ *   issueHandles() -> a handle for each method that finally has a price.
+ * Stage 3d part 2 inserts the merchant filter BETWEEN them, so a handle is never
+ * issued for a price the filter then changes. quote() is the two in a row.
+ *
+ * Steps of offers(): CartPricing in preview mode (an unpriced line is skipped, as
+ * the cart does, and does not count toward the threshold) for goodsAfterDiscount;
+ * the lines' shipping classes and weights in ONE query; the store's settlement
+ * normalizer; ZoneMatcher; ShippingRateCalculator for the local methods; CARRIER
+ * methods through CarrierQuoteCache -> CarrierCallGuard with an explicit budget.
+ * A carrier problem never throws: that method is "unavailable" with a reason and
+ * the local methods still answer.
+ */
+final class ShippingQuoteService
+{
+    public function __construct(
+        private readonly CartPricing $cartPricing,
+        private readonly VariationRepository $variations,
+        private readonly SettlementNormalizerResolver $normalizers,
+        private readonly ShippingZoneRepository $zones,
+        private readonly ShippingMethodRepository $methods,
+        private readonly ZoneMatcher $zoneMatcher,
+        private readonly ShippingRateCalculator $calculator,
+        private readonly CarrierQuoteCache $carrierQuotes,
+        private readonly QuoteHandleStore $handles,
+        private readonly AddressResolver $addressResolver,
+    ) {
+    }
+
+    /**
+     * @param string|null $accountId the customer (for the promotion's per-customer rules); null for a guest
+     *
+     * @throws ShippingQuoteRefusedException
+     */
+    public function quote(Cart $cart, ?string $accountId, QuoteDestination $destination): ShippingQuoteResult
+    {
+        return $this->issueHandles($this->offers($cart, $accountId, $destination));
+    }
+
+    /**
+     * Quote to one of the customer's saved addresses, scoped to their account.
+     *
+     * @throws ShippingQuoteRefusedException address_not_found (unknown OR another account's), address_incomplete, and the rest
+     */
+    public function quoteForSavedAddress(Cart $cart, string $accountId, string $addressId): ShippingQuoteResult
+    {
+        return $this->quote($cart, $accountId, $this->destinationOfSavedAddress($accountId, $addressId));
+    }
+
+    /** @throws ShippingQuoteRefusedException */
+    public function offersForSavedAddress(Cart $cart, string $accountId, string $addressId): QuoteOffers
+    {
+        return $this->offers($cart, $accountId, $this->destinationOfSavedAddress($accountId, $addressId));
+    }
+
+    /** @throws ShippingQuoteRefusedException */
+    public function offers(Cart $cart, ?string $accountId, QuoteDestination $destination): QuoteOffers
+    {
+        if ($cart->isEmpty()) {
+            throw new ShippingQuoteRefusedException(ShippingQuoteRefusedException::EMPTY_CART);
+        }
+
+        $cartId = (string) $cart->id();
+        $currency = DefaultCurrency::get()->code();
+
+        // 1. Goods after discount, from the ONE shared calculation (unpriced lines skipped).
+        $pricing = $this->cartPricing->price($cart, $accountId, $currency, UnpricedLines::SKIP, includeUnitCost: false);
+        $pricedLines = $pricing->pricedLines();
+
+        if ($pricedLines === []) {
+            throw new ShippingQuoteRefusedException(ShippingQuoteRefusedException::NO_PRICED_LINES);
+        }
+
+        // 2. Shipping classes and weights of the priced lines: ONE query.
+        $variations = $this->variations->findByIds(array_map(static fn ($line): string => $line->variationId(), $pricedLines));
+        $rateLines = [];
+        $weight = 0;
+        $weightKnown = true;
+
+        foreach ($pricedLines as $line) {
+            $variation = $variations[$line->variationId()] ?? null;
+            $rateLines[] = new RateLine($variation?->shippingClass(), $line->quantity());
+
+            if ($variation?->weightGrams() === null) {
+                $weightKnown = false;
+            } else {
+                $weight += $variation->weightGrams() * $line->quantity();
+            }
+        }
+
+        // 3. The zone.
+        $normalizer = $this->normalizers->forCurrentLocale();
+        $match = $this->zoneMatcher->match(
+            $this->zones->allOrdered(),
+            new ZoneDestination($destination->countryCode, $destination->settlement, $destination->postcode, $destination->isPickupPoint()),
+            $normalizer,
+        );
+
+        if (! $match->isMatched()) {
+            throw new ShippingQuoteRefusedException(ShippingQuoteRefusedException::NO_ZONE_FOR_DESTINATION);
+        }
+
+        $zone = $match->zone();
+        $goodsMinor = $pricing->goodsAfterDiscount()->minorValue();
+
+        // 4. The zone's active methods: local ones priced here, CARRIER ones asked.
+        $zoneMethods = $this->methods->forZone((string) $zone->id(), activeOnly: true);
+        $byId = [];
+
+        foreach ($zoneMethods as $method) {
+            $byId[(string) $method->id()] = $method;
+        }
+
+        $rates = $this->calculator->ratesFor($zoneMethods, new RateRequest($currency, $goodsMinor, $rateLines));
+        $context = $this->contextFor($destination, $currency, $goodsMinor, $weightKnown ? $weight : null);
+        $offered = [];
+
+        foreach ($rates as $rate) {
+            $method = $byId[$rate->methodId];
+            $offered[] = $rate->needsQuote() ? $this->carrierMethod($method, $rate, $context) : MethodQuote::priced(
+                $rate->methodId, $method->name(), $method->kind()->value, $method->requiresPickupPoint(), $currency, $rate->amountMinor(),
+            );
+        }
+
+        return new QuoteOffers(
+            $cartId,
+            $currency,
+            $goodsMinor,
+            (string) $zone->id(),
+            $zone->name(),
+            self::pricingHashFor($destination, $normalizer->normalize((string) $destination->settlement), (string) $zone->id(), $goodsMinor, $currency, $cart),
+            $offered,
+        );
+    }
+
+    /** Step two: a handle for every offered method that has a price. Nothing is issued for an unavailable one. */
+    public function issueHandles(QuoteOffers $offers): ShippingQuoteResult
+    {
+        $methods = [];
+
+        foreach ($offers->methods as $method) {
+            $methods[] = $method->isAvailable()
+                ? $method->withHandle($this->handles->issue($offers->cartId, $method->methodId, (int) $method->amountMinor, $method->currency, $offers->pricingHash))
+                : $method;
+        }
+
+        return new ShippingQuoteResult($offers->cartId, $offers->currency, $offers->goodsAfterDiscountMinor, $offers->zoneId, $offers->zoneName, $offers->pricingHash, $methods);
+    }
+
+    /**
+     * The hash of everything that priced a quote (shipping-domain-design.md §6.7): the destination as NORMALIZED
+     * (the settlement by the store's normalizer, the postcode by PostcodeNormalizer, ignored for a pickup point,
+     * exactly as ZoneMatcher reads them), the matched zone, goods after discount and currency, every cart line
+     * with its quantity (in a fixed order), and the promotion code. Checkout recomputes it the same way.
+     */
+    public static function pricingHashFor(QuoteDestination $destination, string $normalizedSettlement, string $zoneId, int $goodsAfterDiscountMinor, string $currency, Cart $cart): string
+    {
+        $lines = [];
+
+        foreach ($cart->lines() as $line) {
+            $lines[] = [$line->variationId(), $line->quantity()];
+        }
+
+        usort($lines, static fn (array $a, array $b): int => strcmp($a[0], $b[0]));
+
+        return hash('sha256', json_encode([
+            'v' => 1,
+            'country' => $destination->countryCode,
+            'settlement' => $normalizedSettlement,
+            'postcode' => $destination->isPickupPoint() || $destination->postcode === null ? '' : PostcodeNormalizer::normalize($destination->postcode),
+            'pickup' => $destination->isPickupPoint(),
+            'zone' => $zoneId,
+            'goods' => $goodsAfterDiscountMinor,
+            'currency' => $currency,
+            'lines' => $lines,
+            'promotion' => $cart->appliedPromotionCode(),
+        ], JSON_THROW_ON_ERROR));
+    }
+
+    /** @throws ShippingQuoteRefusedException */
+    private function destinationOfSavedAddress(string $accountId, string $addressId): QuoteDestination
+    {
+        try {
+            $address = $this->addressResolver->resolveExisting($addressId, $accountId);
+        } catch (AddressNotFoundForCheckoutException $e) {
+            throw new ShippingQuoteRefusedException(ShippingQuoteRefusedException::ADDRESS_NOT_FOUND, $e);
+        } catch (AddressIncompleteForCheckoutException $e) {
+            throw new ShippingQuoteRefusedException(ShippingQuoteRefusedException::ADDRESS_INCOMPLETE, $e);
+        }
+
+        $pickup = $address->deliveryType() === \EasyCo\Address\Enums\AddressDeliveryType::PICKUP_POINT;
+
+        return new QuoteDestination(
+            $address->deliveryType(),
+            (string) $address->country(),
+            $pickup ? $address->settlement() : $address->city(),
+            $pickup ? null : $address->postalCode(),
+        );
+    }
+
+    private function contextFor(QuoteDestination $destination, string $currency, int $goodsMinor, ?int $weightGrams): ?ShippingContext
+    {
+        if ($destination->settlement === null || trim($destination->settlement) === '') {
+            return null;
+        }
+
+        // Cash on delivery and dimensions are left null: the collected amount depends on the shipping price
+        // being asked for, and "summed dimensions" has no meaning for several items (§6.6) — both are for the
+        // first real carrier to define.
+        return new ShippingContext($destination->countryCode, $destination->settlement, $destination->isPickupPoint(), $currency, $goodsMinor, null, $weightGrams);
+    }
+
+    private function carrierMethod(ShippingMethod $method, MethodRate $rate, ?ShippingContext $context): MethodQuote
+    {
+        $id = $rate->methodId;
+        $make = static fn (string $reason): MethodQuote => MethodQuote::unavailable($id, $method->name(), ShippingMethodKind::CARRIER->value, $method->requiresPickupPoint(), $rate->currency, $reason);
+
+        if ($context === null) {
+            return $make(MethodQuote::NO_SETTLEMENT);
+        }
+
+        $result = $this->carrierQuotes->quotes((string) $rate->carrierCode, $context, CallBudget::milliseconds(QuoteCachePolicy::CARRIER_BUDGET_MS));
+
+        if (! $result->isAvailable()) {
+            return $make($result->reason()->value);
+        }
+
+        $cheapest = null;
+
+        foreach ($result->items() as $quote) {
+            /** @var ShippingQuote $quote */
+            if ($cheapest === null || [$quote->amountMinor, $quote->serviceCode] < [$cheapest->amountMinor, $cheapest->serviceCode]) {
+                $cheapest = $quote;
+            }
+        }
+
+        if ($cheapest === null) {
+            return $make(MethodQuote::NO_QUOTE);
+        }
+
+        return MethodQuote::priced($id, $method->name(), ShippingMethodKind::CARRIER->value, $method->requiresPickupPoint(), $rate->currency, $cheapest->amountMinor, $cheapest->serviceCode);
+    }
+}

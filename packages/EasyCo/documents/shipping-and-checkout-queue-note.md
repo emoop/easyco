@@ -16,7 +16,8 @@
 4. **Phone validation:** design document first (coder reads the real code), then implementation (libphonenumber, E.164 storage, filter hook for merchants).
 5. **Checkout resilience audit:** read-only, against the list below, BEFORE stage 4.
 6. **Shipping stage 4:** checkout integration, recompute-and-refuse in Phase 1.
-7. **Shipping stage 5:** admin screens (classes, zones, methods) plus the shipping-class field on product/variation forms and the migration of `Variation.shippingClass` from free text to codes. Admin must warn visibly when no shipping zone exists.
+7. **Shipping stage 5:** admin screens (classes, zones, methods) plus the shipping-class field on product/variation forms and the migration of `Variation.shippingClass` from free text to codes. Admin must warn visibly when no shipping zone exists. Also on the admin side: **a carrier `not_configured` result and repeated provider errors appear in the merchant's needs-attention list, not only in the log** (today `CarrierCallGuard` only logs them, and the quote shows the method as unavailable to the customer).
+   - **For the first real carrier integration (stage 3d part 1 note):** the cash-on-delivery amount depends on the shipping price itself, so the carrier integration must define which amount the courier is asked to collect (`ShippingContext::$cashOnDeliveryMinor` is passed as null until it does).
 8. **Later:** price-list admin (list screen, attach field on the product, bulk attach; part of it may be solved with the existing scopes, to be checked against real code).
 
 ## Owner decisions recorded here
