@@ -5,6 +5,7 @@ namespace EasyCo\Payment\Tests;
 use DateTimeImmutable;
 use EasyCo\Payment\Enums\PaymentRefundStatus;
 use EasyCo\Payment\Enums\RefundChannel;
+use EasyCo\Payment\Exceptions\InvalidRefundTransitionException;
 use EasyCo\Payment\PaymentRefund;
 use EasyCo\Payment\RefundBreakdown;
 use EasyCo\Payment\RefundLine;
@@ -255,5 +256,134 @@ final class PaymentRefundTest extends TestCase
         $this->assertSame('ref-1', $refund->paidOutReference());
         $this->assertSame('paid at the register', $refund->paidOutNote());
         $this->assertSame('staff-3', $refund->paidOutBy());
+    }
+
+    // --- the two transitions out of OWED (refunds R2a) ----------------------------------------------------------------
+
+    private function owed(RefundChannel $channel = RefundChannel::BANK): PaymentRefund
+    {
+        return PaymentRefund::create('payment-1', 'order-1', $this->amount(1500), PaymentRefundStatus::OWED, $channel);
+    }
+
+    private function t(string $when): DateTimeImmutable
+    {
+        return new DateTimeImmutable($when);
+    }
+
+    public function test_mark_paid_out_sets_every_paid_out_fact_and_keeps_the_owed_total(): void
+    {
+        $refund = $this->owed();
+
+        $refund->markPaidOut($this->t('2026-10-02 09:00:00'), 'REF-77', 'paid by the accountant', 'staff-3', $this->t('2026-10-03 12:00:00'));
+
+        $this->assertSame(PaymentRefundStatus::PAID_OUT, $refund->status());
+        $this->assertSame('2026-10-02 09:00:00', $refund->paidOutAt()->format('Y-m-d H:i:s'));
+        $this->assertSame('REF-77', $refund->paidOutReference());
+        $this->assertSame('paid by the accountant', $refund->paidOutNote());
+        $this->assertSame('staff-3', $refund->paidOutBy());
+        $this->assertSame(1500, $refund->amount()->minorValue(), 'the amount is not an input: PAID_OUT confirms exactly the owed total');
+    }
+
+    public function test_a_cash_payout_needs_no_reference_and_a_blank_one_is_stored_as_null(): void
+    {
+        $refund = $this->owed(RefundChannel::CASH);
+
+        $refund->markPaidOut($this->t('2026-10-03 11:00:00'), '  ', '', 'staff-3', $this->t('2026-10-03 12:00:00'));
+
+        $this->assertSame(PaymentRefundStatus::PAID_OUT, $refund->status());
+        $this->assertNull($refund->paidOutReference());
+        $this->assertNull($refund->paidOutNote());
+    }
+
+    public function test_a_bank_payout_requires_a_reference(): void
+    {
+        foreach ([null, '', '   '] as $reference) {
+            $refund = $this->owed(RefundChannel::BANK);
+
+            try {
+                $refund->markPaidOut($this->t('2026-10-03 11:00:00'), $reference, null, 'staff-3', $this->t('2026-10-03 12:00:00'));
+                $this->fail('a bank payout without a reference must be refused');
+            } catch (InvalidRefundTransitionException $e) {
+                $this->assertSame(InvalidRefundTransitionException::BANK_REFERENCE_REQUIRED, $e->reason);
+                $this->assertSame(PaymentRefundStatus::OWED, $refund->status(), 'a refused transition changes nothing');
+            }
+        }
+    }
+
+    public function test_a_payout_date_in_the_future_is_refused_and_now_itself_is_fine(): void
+    {
+        $refund = $this->owed(RefundChannel::CASH);
+
+        try {
+            $refund->markPaidOut($this->t('2026-10-03 12:00:01'), null, null, 'staff-3', $this->t('2026-10-03 12:00:00'));
+            $this->fail('a future payout date must be refused');
+        } catch (InvalidRefundTransitionException $e) {
+            $this->assertSame(InvalidRefundTransitionException::PAYOUT_IN_FUTURE, $e->reason);
+        }
+
+        $refund->markPaidOut($this->t('2026-10-03 12:00:00'), null, null, 'staff-3', $this->t('2026-10-03 12:00:00'));
+        $this->assertSame(PaymentRefundStatus::PAID_OUT, $refund->status());
+    }
+
+    public function test_only_an_owed_refund_can_be_paid_out_or_cancelled(): void
+    {
+        foreach ([PaymentRefundStatus::PAID_OUT, PaymentRefundStatus::CANCELLED, PaymentRefundStatus::REQUESTED, PaymentRefundStatus::COMPLETED, PaymentRefundStatus::FAILED] as $status) {
+            $refund = PaymentRefund::reconstituteFromStorage(
+                '1', 'payment-1', 'order-1', $this->amount(1500), RefundChannel::CASH, RefundBreakdown::goodsOnly($this->amount(1500)), null, null, $status,
+                $status === PaymentRefundStatus::FAILED ? 'declined' : null,
+                $status === PaymentRefundStatus::PAID_OUT ? $this->t('2026-10-01 10:00:00') : null,
+            );
+
+            foreach ([
+                fn () => $refund->markPaidOut($this->t('2026-10-02 10:00:00'), null, null, 'staff-3', $this->t('2026-10-03 10:00:00')),
+                fn () => $refund->cancelOwed($this->t('2026-10-03 10:00:00'), 'why', 'staff-3'),
+            ] as $transition) {
+                try {
+                    $transition();
+                    $this->fail("a {$status->value} refund must not transition");
+                } catch (InvalidRefundTransitionException $e) {
+                    $this->assertSame(InvalidRefundTransitionException::NOT_OWED, $e->reason);
+                    $this->assertSame($status, $refund->status());
+                }
+            }
+        }
+    }
+
+    public function test_cancelling_an_owed_refund_records_when_why_and_by_whom_and_frees_its_room(): void
+    {
+        $refund = $this->owed();
+
+        $refund->cancelOwed($this->t('2026-10-03 10:00:00'), 'customer withdrew the claim', 'staff-3');
+
+        $this->assertSame(PaymentRefundStatus::CANCELLED, $refund->status());
+        $this->assertSame('customer withdrew the claim', $refund->cancelledReason());
+        $this->assertSame('staff-3', $refund->cancelledBy());
+        $this->assertSame('2026-10-03 10:00:00', $refund->cancelledAt()->format('Y-m-d H:i:s'));
+        $this->assertFalse($refund->status()->counts(), 'a cancelled refund no longer counts toward any cap');
+    }
+
+    public function test_a_cancellation_needs_a_reason_and_an_actor(): void
+    {
+        foreach ([['', 'staff-3', InvalidRefundTransitionException::REASON_REQUIRED], ['  ', 'staff-3', InvalidRefundTransitionException::REASON_REQUIRED], ['why', '', InvalidRefundTransitionException::ACTOR_REQUIRED]] as [$reason, $by, $code]) {
+            $refund = $this->owed();
+
+            try {
+                $refund->cancelOwed($this->t('2026-10-03 10:00:00'), $reason, $by);
+                $this->fail('expected a refusal');
+            } catch (InvalidRefundTransitionException $e) {
+                $this->assertSame($code, $e->reason);
+                $this->assertSame(PaymentRefundStatus::OWED, $refund->status());
+            }
+        }
+    }
+
+    public function test_cancellation_facts_belong_to_a_cancelled_refund_only(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        PaymentRefund::reconstituteFromStorage(
+            '1', 'payment-1', 'order-1', $this->amount(1500), RefundChannel::CASH, RefundBreakdown::goodsOnly($this->amount(1500)), null, null, PaymentRefundStatus::OWED, null,
+            cancelledAt: $this->t('2026-10-03 10:00:00'), cancelledReason: 'x', cancelledBy: 'staff-3',
+        );
     }
 }

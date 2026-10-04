@@ -187,11 +187,11 @@ final class SaleLine
      */
     private static function assertOriginatingSaleLineIdMatchesType(?string $originatingSaleLineId, SaleLineType $type): void
     {
-        $allowed = [SaleLineType::REFUND, SaleLineType::SALE, SaleLineType::EDIT_REVERSAL];
+        $allowed = [SaleLineType::REFUND, SaleLineType::SALE, SaleLineType::EDIT_REVERSAL, SaleLineType::REFUND_REVERSAL];
 
         if ($originatingSaleLineId !== null && ! in_array($type, $allowed, true)) {
             throw new InvalidArgumentException(
-                "SaleLine originatingSaleLineId may only be set when type is REFUND, SALE, or EDIT_REVERSAL, got {$type->value}."
+                "SaleLine originatingSaleLineId may only be set when type is REFUND, SALE, EDIT_REVERSAL, or REFUND_REVERSAL, got {$type->value}."
             );
         }
     }
@@ -321,7 +321,7 @@ final class SaleLine
         ?string $returnReason,
         SaleLineType $type,
     ): void {
-        if ($type === SaleLineType::REFUND || $type === SaleLineType::EDIT_REVERSAL) {
+        if ($type === SaleLineType::REFUND || $type === SaleLineType::EDIT_REVERSAL || $type === SaleLineType::REFUND_REVERSAL) {
             return;
         }
 
@@ -824,6 +824,81 @@ final class SaleLine
             displayPriceAtReturn: $displayPriceAtEdit,
             returnedBy: $editedBy,
             returnedByName: $editedByName,
+            returnReason: $reason,
+        );
+    }
+
+    /**
+     * The strict factory for a fresh REFUND_REVERSAL line — the storno of ONE
+     * REFUND line (refunds R2a, shipping-domain-design.md §7.2.16). Called only
+     * when an OWED refund is cancelled: one storno per refund line, appended in the
+     * cancellation's own Transaction. The ledger is the source of truth for money
+     * refunded per product line, so a cancelled refund is cancelled by this new
+     * row, never by deleting or rewriting the REFUND line it undoes.
+     *
+     * Everything is DERIVED from the REFUND line, nothing is passed: `amount` is
+     * that line's entered amount (actualRefundAmount), stored POSITIVE like every
+     * refund amount in the ledger (and 0 when that line was entered as 0 — the
+     * storno of a line that moved no money moves none either); `quantity` is the
+     * line's own quantity, kept so the row reads as "these units' refund was
+     * cancelled"; `originatingSaleLineId` is the REFUND line itself (the
+     * "linked to it"), from which the SALE line is one hop further. quantityReturned
+     * and the two refund amounts are NULL: the goods stay returned, which is
+     * precisely why no quantity sum may ever see this row. returnedBy /
+     * returnedByName / returnReason carry the staff member and the mandatory
+     * reason. profit = Money::zero(), as for the REFUND line.
+     *
+     * @throws InvalidArgumentException If $refundLine is not type REFUND, has never
+     *   been persisted, or carries no actualRefundAmount.
+     */
+    public static function createRefundReversal(
+        self $refundLine,
+        string $transactionId,
+        ?string $reversedBy,
+        ?string $reversedByName,
+        string $reason,
+        DateTimeImmutable $recordedAt,
+        DateTimeImmutable $effectiveAt,
+    ): self {
+        if ($refundLine->type() !== SaleLineType::REFUND) {
+            throw new InvalidArgumentException(
+                "SaleLine::createRefundReversal(): the reversed line must be type refund, got {$refundLine->type()->value}."
+            );
+        }
+
+        if ($refundLine->id() === null) {
+            throw new InvalidArgumentException(
+                'SaleLine::createRefundReversal(): the reversed REFUND line must already be persisted (have a real id).'
+            );
+        }
+
+        $amount = $refundLine->actualRefundAmount();
+
+        if ($amount === null) {
+            throw new InvalidArgumentException(
+                "SaleLine::createRefundReversal(): REFUND line \"{$refundLine->id()}\" records no actualRefundAmount, so there is nothing to reverse."
+            );
+        }
+
+        if (trim($reason) === '') {
+            throw new InvalidArgumentException('SaleLine::createRefundReversal(): a reason is required.');
+        }
+
+        return new self(
+            id: null,
+            transactionId: $transactionId,
+            clientId: $refundLine->clientId(),
+            priceableId: $refundLine->priceableId(),
+            type: SaleLineType::REFUND_REVERSAL,
+            status: SaleLineStatus::COMPLETED,
+            quantity: $refundLine->quantity(),
+            amount: $amount,
+            profit: Money::zero($amount->currency()),
+            recordedAt: $recordedAt,
+            effectiveAt: $effectiveAt,
+            originatingSaleLineId: $refundLine->id(),
+            returnedBy: $reversedBy,
+            returnedByName: $reversedByName,
             returnReason: $reason,
         );
     }

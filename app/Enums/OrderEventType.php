@@ -18,6 +18,10 @@ namespace App\Enums;
  * - RETURNED          — goods came back (§7.2): `transaction_id` points at the
  *                       return's own Transaction rather than copying its lines.
  * - REFUNDED          — money went back (§7.3). Both statuses NULL.
+ * - REFUND_OWED / REFUND_PAID_OUT / REFUND_CANCELLED — the life of one PaymentRefund
+ *                       (refunds R1a/R2a): recorded as owed, paid out, cancelled. Each
+ *                       carries `payment_refund_id`; a cancellation also points
+ *                       `transaction_id` at the Transaction holding its storno lines.
  * - PAYMENT_VOIDED    — a pending payment row was voided and reissued (§7.3).
  * - NOTE_ADDED        — an internal note an operator left on the order: the one
  *                       value that is not a change to the order at all. Both
@@ -45,6 +49,8 @@ enum OrderEventType: string
     case RETURNED = 'returned';
     case REFUNDED = 'refunded';
     case REFUND_OWED = 'refund_owed';
+    case REFUND_PAID_OUT = 'refund_paid_out';
+    case REFUND_CANCELLED = 'refund_cancelled';
     case PAYMENT_VOIDED = 'payment_voided';
     case NOTE_ADDED = 'note_added';
     case EDITED = 'edited';

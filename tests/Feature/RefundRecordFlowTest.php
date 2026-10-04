@@ -242,21 +242,26 @@ class RefundRecordFlowTest extends TestCase
         $this->assertSame(RefundChannel::BANK, $this->refunds($fixture['payment'])[0]->channel());
     }
 
-    public function test_the_order_refunded_hook_receives_the_owed_refund(): void
+    public function test_the_refund_recorded_hook_receives_the_owed_refund_and_the_paid_out_hook_does_not_fire(): void
     {
         $fixture = $this->shippedOrder(1, 1000);
         $received = null;
-        Hook::action('order.refunded', function ($order, $refund) use (&$received): void {
+        $paidOut = 0;
+        Hook::action('order.refund_recorded', function ($order, $refund) use (&$received): void {
             $received = $refund;
         });
+        Hook::action('order.refund_paid_out', function () use (&$paidOut): void {
+            $paidOut++;
+        });
 
-        // The only unit comes back from SHIPPED: that reaches CANCELLED, which fires order.cancelled, not order.refunded.
-        // A DELIVERED order's full return is the one that fires order.refunded.
+        // A DELIVERED order's full return reaches REFUNDED; the refund it records is only OWED.
+        // (the status is moved to delivered below)
         DB::table('orders')->where('id', $fixture['orderId'])->update(['status' => 'delivered']);
         $this->changer()->recordReturn($fixture['orderId'], [['originatingSaleLineId' => $fixture['saleLineId'], 'quantityReturned' => 1, 'restock' => true]], $this->at());
 
         $this->assertInstanceOf(PaymentRefund::class, $received);
         $this->assertSame(PaymentRefundStatus::OWED, $received->status());
+        $this->assertSame(0, $paidOut, 'money was not returned yet: an extension must not be told it was');
     }
 
     // --- what the merchant ENTERED ----------------------------------------------------------------------

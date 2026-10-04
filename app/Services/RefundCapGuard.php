@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Services\Exceptions\PendingShippingInvariantBrokenException;
 use App\Services\Exceptions\RefundCapExceededException;
 use EasyCo\Order\Contracts\OrderRepository;
 use EasyCo\Payment\Contracts\PaymentRefundRepository;
@@ -112,6 +113,7 @@ final class RefundCapGuard
      * Goods credited by this return are already written (as REFUND lines) when this
      * runs, so they are taken out of the sum. Orders are not edited once a return is
      * possible, so the order total and the pending amount move only through returns.
+     * A negative result is an invariant broken, never "zero": PendingShippingInvariantBrokenException.
      *
      * @throws RefundCapExceededException
      */
@@ -136,7 +138,11 @@ final class RefundCapGuard
         $creditedEarlier = Money::fromMinorUnits($creditedInTotal, $currency)->subtract($goodsOfThisReturn);
 
         $reducedSoFar = $order->total()->subtract($creditedEarlier)->subtract($pending->amount());
-        $reducedSoFar = $reducedSoFar->isNegative() ? Money::zero($currency) : $reducedSoFar;
+
+        // Below zero means an invariant is broken, not "nothing was reduced": fail loudly.
+        if ($reducedSoFar->isNegative()) {
+            throw new PendingShippingInvariantBrokenException($orderId, (string) $pending->id(), $reducedSoFar->minorValue());
+        }
 
         $room = $order->shipping()->subtract($reducedSoFar);
 

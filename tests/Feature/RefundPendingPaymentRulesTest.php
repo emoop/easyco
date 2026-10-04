@@ -162,6 +162,25 @@ class RefundPendingPaymentRulesTest extends TestCase
         $this->assertSame(2000, $this->lastPaymentAmount($order['orderId']), '3100 - 1000 - the last 100 of the shipping');
     }
 
+    public function test_a_derived_reduced_so_far_below_zero_is_a_broken_invariant_and_fails_loudly(): void
+    {
+        $order = $this->unpaidOrder(300, quantity: 4);
+        // The pending payment now holds MORE than the order total (4300) less nothing credited: no return can produce that.
+        DB::table('payments')->where('order_id', $order['orderId'])->update(['amount_minor' => 5000]);
+
+        try {
+            $this->changer()->recordReturn($order['orderId'], $this->returning($order['saleLineIds'][0], 1), $this->at(), null, new RefundRequest(shipping: $this->eur(100)));
+            $this->fail('a negative derived figure must not be clamped to zero');
+        } catch (\App\Services\Exceptions\PendingShippingInvariantBrokenException $e) {
+            $this->assertSame(-700, $e->reducedSoFarMinor, 'order total 4300 - 0 credited - pending 5000');
+            $this->assertStringContainsString('below zero', $e->getMessage());
+        }
+
+        $this->assertSame([['amount' => 5000, 'voided' => false]], $this->paymentsOf($order['orderId']), 'nothing was reissued');
+        $this->assertSame(10, $this->stockOf($order['variationIds'][0]), 'the goods half rolled back');
+        $this->assertSame([], $this->eventTypesOf($order['orderId']));
+    }
+
     // --- refusals -----------------------------------------------------------------------------------------------------------
 
     public function test_a_deduction_is_refused_on_a_pending_payment_and_nothing_is_written(): void

@@ -836,9 +836,9 @@ class OrderStatusChangerTest extends TestCase
         app(TransactionRepository::class)->save($priorTransaction);
     }
 
-    // --- cancel(): restocks unconditionally before `shipped`, R11 release, the order.refunded/order.cancelled split ---
+    // --- cancel(): restocks unconditionally before `shipped`, R11 release, the order.refund_recorded/order.cancelled hooks ---
 
-    public function test_cancel_from_placed_restocks_unconditionally_fires_returned_and_cancelled_but_not_the_refunded_hook(): void
+    public function test_cancel_from_placed_restocks_unconditionally_fires_returned_cancelled_and_refund_recorded_but_not_paid_out(): void
     {
         $this->actingAsAdministrator();
         $variationId = $this->newVariationId();
@@ -862,7 +862,9 @@ class OrderStatusChangerTest extends TestCase
         Hook::action('order.returned', function () use (&$returnedFired): void { $returnedFired++; });
         Hook::action('order.status_changed', function () use (&$statusChangedFired): void { $statusChangedFired++; });
         Hook::action('order.cancelled', function () use (&$cancelledFired): void { $cancelledFired++; });
-        Hook::action('order.refunded', function () use (&$refundedFired): void { $refundedFired++; });
+        Hook::action('order.refund_recorded', function () use (&$refundedFired): void { $refundedFired++; });
+        $paidOutFired = 0;
+        Hook::action('order.refund_paid_out', function () use (&$paidOutFired): void { $paidOutFired++; });
 
         // The real line is named `false` here, to prove the override map is
         // IGNORED ENTIRELY before `shipped` (R3) — not merely absent.
@@ -882,7 +884,8 @@ class OrderStatusChangerTest extends TestCase
         $this->assertSame(1, $returnedFired);
         $this->assertSame(1, $statusChangedFired);
         $this->assertSame(1, $cancelledFired);
-        $this->assertSame(0, $refundedFired, 'order.refunded fires only for a REFUNDED terminal, never for a cancellation — see this stage\'s own report');
+        $this->assertSame(1, $refundedFired, 'a refund WAS recorded (owed), so order.refund_recorded fires once');
+        $this->assertSame(0, $paidOutFired, 'an OWED refund is not money returned: order.refund_paid_out must not fire for it');
 
         $this->assertTrue($this->isRedemptionReleased($orderId));
 
@@ -934,7 +937,7 @@ class OrderStatusChangerTest extends TestCase
         Hook::action('order.returned', function () use (&$returnedFired): void { $returnedFired++; });
         Hook::action('order.status_changed', function () use (&$statusChangedFired): void { $statusChangedFired++; });
         Hook::action('order.cancelled', function () use (&$cancelledFired): void { $cancelledFired++; });
-        Hook::action('order.refunded', function () use (&$refundedFired): void { $refundedFired++; });
+        Hook::action('order.refund_recorded', function () use (&$refundedFired): void { $refundedFired++; });
 
         $this->changer()->recordReturn($orderId, [
             ['originatingSaleLineId' => $saleLineId, 'quantityReturned' => 2, 'restock' => true],
@@ -951,14 +954,14 @@ class OrderStatusChangerTest extends TestCase
         $this->assertSame(1, $returnedFired);
         $this->assertSame(0, $statusChangedFired);
         $this->assertSame(0, $cancelledFired);
-        $this->assertSame(0, $refundedFired, 'no terminal was reached — order.refunded never fires for a partial return, even though a real PaymentRefund was written (see this stage\'s own report)');
+        $this->assertSame(1, $refundedFired, 'no terminal was reached, but a real PaymentRefund was written: order.refund_recorded fires for it');
 
         $refunds = app(PaymentRefundRepository::class)->findByPaymentId($payment->id());
         $this->assertCount(1, $refunds);
         $this->assertTrue($refunds[0]->amount()->equals(Money::fromMinorUnits(2000, 'EUR')), 'cumulative share: floor(5000 * 2 / 5) = 2000');
     }
 
-    public function test_record_return_from_delivered_that_empties_the_order_reaches_refunded_and_fires_order_refunded_with_the_real_refund(): void
+    public function test_record_return_from_delivered_that_empties_the_order_reaches_refunded_and_fires_refund_recorded_with_the_real_refund(): void
     {
         $this->actingAsAdministrator();
         $variationId = $this->newVariationId();
@@ -981,7 +984,7 @@ class OrderStatusChangerTest extends TestCase
         $refundedPayload = null;
         Hook::action('order.returned', function () use (&$returnedFired): void { $returnedFired++; });
         Hook::action('order.status_changed', function () use (&$statusChangedFired): void { $statusChangedFired++; });
-        Hook::action('order.refunded', function (Order $order, ?PaymentRefund $refund) use (&$refundedFired, &$refundedPayload): void {
+        Hook::action('order.refund_recorded', function (Order $order, PaymentRefund $refund) use (&$refundedFired, &$refundedPayload): void {
             $refundedFired++;
             $refundedPayload = $refund;
         });
@@ -1000,7 +1003,7 @@ class OrderStatusChangerTest extends TestCase
         $this->assertFalse($this->isRedemptionReleased($orderId), 'a refund never releases the promotion (R11) — only a cancellation does');
     }
 
-    public function test_record_return_from_delivered_that_empties_the_order_with_nothing_to_refund_still_reaches_refunded_with_a_null_payload(): void
+    public function test_record_return_from_delivered_that_empties_the_order_with_nothing_to_refund_still_reaches_refunded_and_records_no_refund(): void
     {
         $variationId = $this->newVariationId();
         $this->setStock($variationId, 10);
@@ -1011,8 +1014,8 @@ class OrderStatusChangerTest extends TestCase
         $orderId = $fixture['orderId'];
 
         $refundedFired = 0;
-        $refundedPayload = 'not yet set';
-        Hook::action('order.refunded', function (Order $order, ?PaymentRefund $refund) use (&$refundedFired, &$refundedPayload): void {
+        $refundedPayload = null;
+        Hook::action('order.refund_recorded', function (Order $order, PaymentRefund $refund) use (&$refundedFired, &$refundedPayload): void {
             $refundedFired++;
             $refundedPayload = $refund;
         });
@@ -1023,7 +1026,7 @@ class OrderStatusChangerTest extends TestCase
         ], new DateTimeImmutable('2026-09-28 14:00:00'));
 
         $this->assertSame('refunded', $this->orderStatus($orderId));
-        $this->assertSame(1, $refundedFired);
+        $this->assertSame(0, $refundedFired, 'nothing was refunded, so no refund was recorded and no refund hook fires');
         $this->assertNull($refundedPayload);
 
         $events = $this->eventRows($orderId);

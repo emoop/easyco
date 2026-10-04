@@ -39,6 +39,9 @@ class EloquentPaymentRefundRepository implements PaymentRefundRepository
             $model->paid_out_reference = $refund->paidOutReference();
             $model->paid_out_note = $refund->paidOutNote();
             $model->paid_out_by = $refund->paidOutBy();
+            $model->cancelled_at = $refund->cancelledAt();
+            $model->cancelled_reason = $refund->cancelledReason();
+            $model->cancelled_by = $refund->cancelledBy();
 
             $model->save();
 
@@ -177,6 +180,9 @@ class EloquentPaymentRefundRepository implements PaymentRefundRepository
             paidOutReference: $model->paid_out_reference,
             paidOutNote: $model->paid_out_note,
             paidOutBy: $model->paid_out_by,
+            cancelledAt: $model->cancelled_at !== null ? DateTimeImmutable::createFromInterface($model->cancelled_at) : null,
+            cancelledReason: $model->cancelled_reason,
+            cancelledBy: $model->cancelled_by,
         );
     }
 }

@@ -5,6 +5,7 @@ namespace EasyCo\Payment;
 use DateTimeImmutable;
 use EasyCo\Payment\Enums\PaymentRefundStatus;
 use EasyCo\Payment\Enums\RefundChannel;
+use EasyCo\Payment\Exceptions\InvalidRefundTransitionException;
 use EasyCo\Pricing\Money;
 use InvalidArgumentException;
 use LogicException;
@@ -34,9 +35,11 @@ use LogicException;
  * class enforces amount->isPositive() itself, same as Payment: a refund whose
  * total would be 0 moves no money and is simply not created.
  *
- * The paid-out fields (date, reference, note, who) belong to PAID_OUT only;
- * R2 adds the transition that sets them, R1a only reads them back (a legacy
- * row is mapped to PAID_OUT by its migration).
+ * The paid-out fields (date, reference, note, who) belong to PAID_OUT only,
+ * the cancellation fields (when, why, who) to CANCELLED only. Both are set by the
+ * two transitions out of OWED (refunds R2a, §7.2.16): markPaidOut() and
+ * cancelOwed(). Nothing leaves PAID_OUT or CANCELLED: a paid-out refund (a legacy
+ * row mapped to PAID_OUT included) is a fact, and a cancelled one is final.
  */
 final class PaymentRefund
 {
@@ -49,12 +52,15 @@ final class PaymentRefund
         private readonly RefundBreakdown $breakdown,
         private readonly ?string $reason,
         private readonly ?string $refundedBy,
-        private readonly PaymentRefundStatus $status,
+        private PaymentRefundStatus $status,
         private readonly ?string $failureReason,
-        private readonly ?DateTimeImmutable $paidOutAt,
-        private readonly ?string $paidOutReference,
-        private readonly ?string $paidOutNote,
-        private readonly ?string $paidOutBy,
+        private ?DateTimeImmutable $paidOutAt,
+        private ?string $paidOutReference,
+        private ?string $paidOutNote,
+        private ?string $paidOutBy,
+        private ?DateTimeImmutable $cancelledAt = null,
+        private ?string $cancelledReason = null,
+        private ?string $cancelledBy = null,
     ) {
         self::assertNotEmpty('paymentId', $paymentId);
         self::assertNotEmpty('orderId', $orderId);
@@ -62,6 +68,7 @@ final class PaymentRefund
         self::assertFailureReasonMatchesStatus($status, $failureReason);
         self::assertBreakdownMatchesAmount($amount, $breakdown);
         self::assertPaidOutFieldsMatchStatus($status, $paidOutAt, $paidOutReference, $paidOutNote, $paidOutBy);
+        self::assertCancellationFieldsMatchStatus($status, $cancelledAt, $cancelledReason, $cancelledBy);
     }
 
     private static function assertNotEmpty(string $fieldName, string $value): void
@@ -126,6 +133,17 @@ final class PaymentRefund
         }
     }
 
+    private static function assertCancellationFieldsMatchStatus(PaymentRefundStatus $status, ?DateTimeImmutable $at, ?string $reason, ?string $by): void
+    {
+        if ($status !== PaymentRefundStatus::CANCELLED && ($at !== null || $reason !== null || $by !== null)) {
+            throw new InvalidArgumentException('PaymentRefund cancellation fields may only be set when status is CANCELLED.');
+        }
+
+        if (($at === null) !== ($reason === null)) {
+            throw new InvalidArgumentException('PaymentRefund cancelledAt and cancelledReason are set together or not at all.');
+        }
+    }
+
     /**
      * $breakdown null means "all goods, no per-line rows" — a plain amount.
      * A refund is never created PAID_OUT (that is R2's transition and the
@@ -184,6 +202,9 @@ final class PaymentRefund
         ?string $paidOutReference = null,
         ?string $paidOutNote = null,
         ?string $paidOutBy = null,
+        ?DateTimeImmutable $cancelledAt = null,
+        ?string $cancelledReason = null,
+        ?string $cancelledBy = null,
     ): self {
         return new self(
             id: $id,
@@ -200,7 +221,73 @@ final class PaymentRefund
             paidOutReference: $paidOutReference,
             paidOutNote: $paidOutNote,
             paidOutBy: $paidOutBy,
+            cancelledAt: $cancelledAt,
+            cancelledReason: $cancelledReason,
+            cancelledBy: $cancelledBy,
         );
+    }
+
+    /**
+     * OWED -> PAID_OUT (refunds R2a, §7.2.16): the merchant has paid the money back
+     * and records it. The AMOUNT IS NOT AN INPUT: PAID_OUT confirms exactly the owed
+     * total. $paidOutAt is the payout date as entered, and may not be after $now (the
+     * caller's own clock, never read here). A BANK refund requires its payment
+     * reference; for cash it is optional. A blank reference or note is stored as null.
+     *
+     * @throws InvalidRefundTransitionException
+     */
+    public function markPaidOut(DateTimeImmutable $paidOutAt, ?string $reference, ?string $note, string $by, DateTimeImmutable $now): void
+    {
+        if ($this->status !== PaymentRefundStatus::OWED) {
+            throw InvalidRefundTransitionException::notOwed($this->status);
+        }
+
+        if (trim($by) === '') {
+            throw InvalidRefundTransitionException::actorRequired();
+        }
+
+        if ($paidOutAt > $now) {
+            throw InvalidRefundTransitionException::payoutInFuture();
+        }
+
+        $reference = trim((string) $reference) === '' ? null : $reference;
+
+        if ($this->channel === RefundChannel::BANK && $reference === null) {
+            throw InvalidRefundTransitionException::bankReferenceRequired();
+        }
+
+        $this->status = PaymentRefundStatus::PAID_OUT;
+        $this->paidOutAt = $paidOutAt;
+        $this->paidOutReference = $reference;
+        $this->paidOutNote = trim((string) $note) === '' ? null : $note;
+        $this->paidOutBy = $by;
+    }
+
+    /**
+     * OWED -> CANCELLED (refunds R2a, §7.2.16): the refund is called off before any
+     * money moved, with a mandatory reason. A PAID_OUT refund can never be cancelled.
+     * Its room in every cap is freed by the state alone (CANCELLED does not count).
+     *
+     * @throws InvalidRefundTransitionException
+     */
+    public function cancelOwed(DateTimeImmutable $at, string $reason, string $by): void
+    {
+        if ($this->status !== PaymentRefundStatus::OWED) {
+            throw InvalidRefundTransitionException::notOwed($this->status);
+        }
+
+        if (trim($reason) === '') {
+            throw InvalidRefundTransitionException::reasonRequired();
+        }
+
+        if (trim($by) === '') {
+            throw InvalidRefundTransitionException::actorRequired();
+        }
+
+        $this->status = PaymentRefundStatus::CANCELLED;
+        $this->cancelledAt = $at;
+        $this->cancelledReason = $reason;
+        $this->cancelledBy = $by;
     }
 
     public function id(): ?string
@@ -281,5 +368,20 @@ final class PaymentRefund
     public function paidOutBy(): ?string
     {
         return $this->paidOutBy;
+    }
+
+    public function cancelledAt(): ?DateTimeImmutable
+    {
+        return $this->cancelledAt;
+    }
+
+    public function cancelledReason(): ?string
+    {
+        return $this->cancelledReason;
+    }
+
+    public function cancelledBy(): ?string
+    {
+        return $this->cancelledBy;
     }
 }

@@ -34,9 +34,13 @@ class PaymentRefundModel extends Model
         'paid_out_reference',
         'paid_out_note',
         'paid_out_by',
+        'cancelled_at',
+        'cancelled_reason',
+        'cancelled_by',
     ];
 
     protected $casts = [
         'paid_out_at' => 'immutable_datetime',
+        'cancelled_at' => 'immutable_datetime',
     ];
 }

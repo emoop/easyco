@@ -452,6 +452,7 @@ final class SaleLineTest extends TestCase
      * other mutation method exists on this class. __construct() is no
      * longer in this list (stage 4b — it's private now, so
      * getMethods(IS_PUBLIC) never returns it); createNonSale() is new.
+     * Refunds R2a adds createRefundReversal() (the storno of a REFUND line), another static factory.
      * Stage 3a adds createEditReversal() — a second, equally static
      * factory, no more a mutator than createRefund() beside it is; this
      * allow-list is what forced that addition to be conscious rather than
@@ -469,6 +470,7 @@ final class SaleLineTest extends TestCase
             'createNonSale',
             'createRefund',
             'createEditReversal',
+            'createRefundReversal',
             'id',
             'assignId',
             'assignTransactionId',
@@ -1772,5 +1774,80 @@ final class SaleLineTest extends TestCase
         $this->assertTrue($readBack->profit()->isZero());
         $this->assertNull($readBack->netPaidAmount(), 'the reversal carries no §3.13 snapshot of its own, even after a round trip');
         $this->assertSame('staff-1', $readBack->returnedBy());
+    }
+
+    // --- REFUND_REVERSAL: the storno of one REFUND line (refunds R2a) -----------------------------------------------
+
+    private function persistedRefundLine(array $overrides = []): SaleLine
+    {
+        $line = $this->createRefund($this->persistedSaleLine(['quantity' => 2, 'amount' => $this->money(2000)]), array_merge(['quantityReturned' => 2, 'defaultRefundAmount' => $this->money(2000)], $overrides));
+        $line->assignId('refund-line-1');
+
+        return $line;
+    }
+
+    private function reversal(SaleLine $refundLine, string $reason = 'customer withdrew the claim'): SaleLine
+    {
+        return SaleLine::createRefundReversal($refundLine, 'storno-txn-1', 'staff-1', 'Ana Petrova', $reason, $this->now(), $this->now());
+    }
+
+    public function test_a_refund_reversal_derives_everything_from_the_refund_line_it_undoes(): void
+    {
+        $refund = $this->persistedRefundLine(['actualRefundAmount' => $this->money(1700)]);
+
+        $storno = $this->reversal($refund);
+
+        $this->assertSame(SaleLineType::REFUND_REVERSAL, $storno->type());
+        $this->assertSame('refund-line-1', $storno->originatingSaleLineId(), 'linked to the REFUND line it reverses');
+        $this->assertSame(1700, $storno->amount()->minorValue(), 'equal to the entered amount of that line, positive');
+        $this->assertSame($refund->quantity(), $storno->quantity());
+        $this->assertSame($refund->priceableId(), $storno->priceableId());
+        $this->assertNull($storno->quantityReturned(), 'the goods stay returned: no returned quantity');
+        $this->assertNull($storno->actualRefundAmount());
+        $this->assertNull($storno->defaultRefundAmount());
+        $this->assertTrue($storno->profit()->isZero());
+        $this->assertSame('customer withdrew the claim', $storno->returnReason());
+        $this->assertSame('staff-1', $storno->returnedBy());
+        $this->assertSame('storno-txn-1', $storno->transactionId());
+    }
+
+    public function test_a_refund_reversal_of_a_line_entered_as_zero_is_a_zero_storno(): void
+    {
+        $storno = $this->reversal($this->persistedRefundLine(['actualRefundAmount' => $this->money(0)]));
+
+        $this->assertTrue($storno->amount()->isZero());
+    }
+
+    public function test_a_refund_reversal_needs_a_persisted_refund_line_and_a_reason(): void
+    {
+        $sale = $this->persistedSaleLine();
+        $unsaved = $this->createRefund($sale);
+
+        foreach ([
+            fn () => SaleLine::createRefundReversal($sale, 't', null, null, 'why', $this->now(), $this->now()),
+            fn () => SaleLine::createRefundReversal($unsaved, 't', null, null, 'why', $this->now(), $this->now()),
+            fn () => $this->reversal($this->persistedRefundLine(), '   '),
+        ] as $attempt) {
+            try {
+                $attempt();
+                $this->fail('expected a refusal');
+            } catch (\InvalidArgumentException) {
+                $this->addToAssertionCount(1);
+            }
+        }
+    }
+
+    public function test_the_refund_reversal_type_is_in_both_allow_lists_and_no_other_type_gained_them(): void
+    {
+        // originatingSaleLineId and the refund-shaped fields are legal on a refund reversal (it was built through them)...
+        $this->assertSame('refund-line-1', $this->reversal($this->persistedRefundLine())->originatingSaleLineId());
+
+        // ...and still refused on a type that has no writer for them.
+        $this->expectException(\InvalidArgumentException::class);
+        SaleLine::createNonSale(
+            type: SaleLineType::SHIPPING, transactionId: 'txn-1', clientId: 'client-1', priceableId: null, status: SaleLineStatus::COMPLETED,
+            quantity: 1, amount: $this->money(100), profit: $this->money(0), recordedAt: $this->now(), effectiveAt: $this->now(),
+            originatingSaleLineId: 'refund-line-1',
+        );
     }
 }

@@ -346,13 +346,11 @@ final class OrderStatusChanger
      *     its returned OrderRefundOutcome.
      *
      * AFTER commit (§12, §11 item 9): order.returned when step 3 ran;
-     * order.status_changed, then order.cancelled or order.refunded, when
-     * step 4 reached a terminal status — order.refunded's payload is
-     * $outcome->refund() (§7.3's own PaymentRefund) whenever step 6's
-     * OrderRefunder actually produced a completed one, and NULL when the
-     * terminal was reached without step 6 ever running (an empty-list
-     * cancel/return of an order with nothing to refund) or when step 6 ran
-     * but only voided a payment.
+     * order.status_changed, then order.cancelled (only for CANCELLED; a REFUNDED
+     * terminal is announced by order.status_changed alone), when step 4 reached a
+     * terminal status; and, when step 6's OrderRefunder produced a refund,
+     * order.refund_recorded (+ order.refund_paid_out if it is already COMPLETED).
+     * `order.refunded` was REMOVED in refunds R2a (it fired for an OWED refund).
      *
      * REPORTED DIFFERENCE FROM order-lifecycle-design.md §12's own Hook
      * Reference table, per this stage's own explicit instruction: that
@@ -360,11 +358,10 @@ final class OrderStatusChanger
      * void` and order.refunded as `(Order $order, PaymentRefund $refund):
      * void` (non-nullable). This pass fires order.returned(Order,
      * Transaction) — the return's own Transaction, from which a listener
-     * reads saleLines() itself — and order.refunded(Order, ?PaymentRefund)
-     * — nullable, for exactly the "terminal reached without a refund"
-     * case above, which the non-nullable signature could not express. Both
-     * changes make that table's own rows stale; see this stage's own final
-     * report for the full list.
+     * reads saleLines() itself. (This pass also fired order.refunded with a
+     * nullable PaymentRefund; refunds R2a REMOVED that hook and replaced it
+     * with order.refund_recorded / order.refund_paid_out / order.refund_cancelled,
+     * see the Hook Reference.)
      *
      * NO AUTHENTICATED ACTOR: ReturnGoodsRecorder::record()'s
      * returnedBy/returnedByName are passed null (see this class's own
@@ -412,8 +409,21 @@ final class OrderStatusChanger
 
             if ($result['to'] === OrderStatus::CANCELLED) {
                 Hook::fire('order.cancelled', $result['order'], $reason);
-            } else {
-                Hook::fire('order.refunded', $result['order'], $result['outcome']?->refund());
+            }
+        }
+
+        // The money facts (refunds R2a, shipping-domain-design.md §7.2.16). `order.refunded` is gone: it
+        // fired for a refund that was only OWED, which would let an extension tell a customer money was
+        // returned before it was. A refund that was RECORDED fires order.refund_recorded; money that has
+        // actually left (an online refund that is already COMPLETED — none exists yet) also fires
+        // order.refund_paid_out. An OWED refund is paid out later, by RefundStatusChanger.
+        $recorded = $result['outcome']?->refund();
+
+        if ($recorded !== null) {
+            Hook::fire('order.refund_recorded', $result['order'], $recorded);
+
+            if ($recorded->status() === PaymentRefundStatus::COMPLETED) {
+                Hook::fire('order.refund_paid_out', $result['order'], $recorded);
             }
         }
 

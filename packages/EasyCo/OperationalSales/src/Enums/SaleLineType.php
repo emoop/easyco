@@ -21,4 +21,14 @@ enum SaleLineType: string
     // App\Services\OrderLineEditor — OrderLineEditor itself constructs no
     // line of this type.
     case EDIT_REVERSAL = 'edit_reversal';
+
+    // Refunds R2a (shipping-domain-design.md §7.2.16) — the storno of ONE
+    // REFUND line, appended when an OWED refund is cancelled: the ledger is
+    // append-only and the source of truth for money refunded per product line,
+    // so a cancelled refund is cancelled by a new row, never by deleting or
+    // rewriting the REFUND line. Modelled on EDIT_REVERSAL; written only by
+    // SaleLine::createRefundReversal(). It is NOT a return: the goods stay
+    // returned, and every quantity sum filters on type = refund, so a storno
+    // changes nothing about what counts as returned.
+    case REFUND_REVERSAL = 'refund_reversal';
 }

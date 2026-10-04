@@ -59,4 +59,31 @@ final class RefundOperationFingerprint
             'reason' => $reason !== null && trim($reason) !== '' ? trim($reason) : null,
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE));
     }
+
+    /** The fingerprint of "mark this OWED refund paid out" — everything the merchant entered. */
+    public static function forPayout(string $refundId, \DateTimeImmutable $paidOutAt, ?string $reference, ?string $note): string
+    {
+        return hash('sha256', json_encode([
+            'action' => 'refund_paid_out',
+            'refund' => $refundId,
+            'paidOutAt' => $paidOutAt->format('Y-m-d H:i:s'),
+            'reference' => self::text($reference),
+            'note' => self::text($note),
+        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE));
+    }
+
+    /** The fingerprint of "cancel this OWED refund". */
+    public static function forCancellation(string $refundId, string $reason): string
+    {
+        return hash('sha256', json_encode([
+            'action' => 'refund_cancelled',
+            'refund' => $refundId,
+            'reason' => self::text($reason),
+        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE));
+    }
+
+    private static function text(?string $value): ?string
+    {
+        return $value !== null && trim($value) !== '' ? trim($value) : null;
+    }
 }

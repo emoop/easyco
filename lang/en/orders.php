@@ -115,6 +115,8 @@ return [
         'returned' => 'Goods returned',
         'refunded' => 'Money refunded',
         'refund_owed' => 'Refund owed',
+        'refund_paid_out' => 'Refund paid out',
+        'refund_cancelled' => 'Refund cancelled',
         'payment_voided' => 'Pending payment voided',
         'note_added' => 'Internal note',
         'edited' => 'Order edited',
@@ -163,6 +165,17 @@ return [
     'refund_permission_denied' => [
         'cash' => 'Refunding in cash from the register needs the "refund in cash" permission, which you do not have. Nothing was recorded.',
         'bank' => 'Refunding through the bank needs the "refund by bank" permission, which you do not have. Nothing was recorded.',
+    ],
+
+    'refund_transition' => [
+        'refund_not_found' => 'That refund was not found.',
+        'not_owed' => 'Only a refund that is still owed can be paid out or cancelled. This one is not (it may already be paid out or cancelled). Nothing was changed.',
+        'payout_in_future' => 'The payout date cannot be in the future. Nothing was changed.',
+        'bank_reference_required' => 'A refund paid through the bank needs its payment reference. Nothing was changed.',
+        'reason_required' => 'Cancelling a refund needs a reason. Nothing was changed.',
+        'actor_required' => 'This needs a signed-in staff member. Nothing was changed.',
+        'refund_lines_unlinked' => 'This refund cannot be cancelled automatically: its goods lines cannot be matched to the return that created it. Nothing was changed.',
+        'storno_mismatch' => 'This refund cannot be cancelled: its recorded lines do not agree with the ledger. Nothing was changed.',
     ],
 
     'operation_key_reused' => 'This form was already submitted, with different contents. Nothing was changed; open the dialog again and re-enter what you want.',
