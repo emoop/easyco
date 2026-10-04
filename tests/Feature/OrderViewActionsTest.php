@@ -453,6 +453,9 @@ class OrderViewActionsTest extends TestCase
         // resolution: the EDITED-event read and the batched edited-away sum). The
         // ceiling was 25 with two of headroom; it is now met exactly, so the next
         // added read must update this number consciously.
-        $this->assertLessThanOrEqual(25, $count);
+        // Refunds R2b: 25 -> 26 (+1): the refunds section asks whether the order has any
+        // refund (one read, shared by the section's visibility and its content; an order
+        // with none stops there). Met exactly again.
+        $this->assertLessThanOrEqual(26, $count);
     }
 }

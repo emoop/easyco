@@ -878,7 +878,7 @@ partial return from drifting apart, and it is why "how much is left to return"
 every transition, plus each specific one — `order.cancelled` (all three
 cancellations), `order.returned` (every recorded return, partial included, and
 also a cancellation from `shipped`, because the goods really did come back),
-`order.refunded` (only when money actually went back) and
+`order.refund_recorded` (a refund record exists: owed, not yet paid back), `order.refund_paid_out` (only when money actually went back), `order.refund_cancelled` and
 `order.payment_confirmed` (§4.3's caller). Deliberately outside the transaction, so
 a listener can never roll back a recorded fact, and no listener can hold the
 order's row lock while doing external work.
@@ -1967,7 +1967,9 @@ signatures, and the one gap this pass found in
 | `order.status_changed` | Action | `App\Services\OrderStatusChanger` — every public transition method | `(Order $order, OrderStatus $from, OrderStatus $to): void` | After commit, once per transition |
 | `order.cancelled` | Action | `OrderStatusChanger::cancel()` | `(Order $order, ?string $reason): void` | With any of the three cancellations |
 | `order.returned` | Action | `OrderStatusChanger::cancel()` (from `shipped`) and `OrderStatusChanger::recordReturn()` | `(Order $order, array $returnedLines): void` | On **every** return, partial included — and on a cancellation of a shipped order, because that is a return of everything (§2.3) |
-| `order.refunded` | Action | `App\Services\OrderRefunder`, called by §5.2's cancel/return | `(Order $order, PaymentRefund $refund): void` | When a completed refund is written; a void fires nothing |
+| `order.refund_recorded` | Action | `App\Services\OrderStatusChanger`, via `OrderRefunder`, from §5.2's cancel/return | `(Order $order, PaymentRefund $refund): void` | When a refund record is written (an offline one is OWED); a void fires nothing. **Replaces `order.refunded`** (refunds R2a) |
+| `order.refund_paid_out` | Action | `App\Services\RefundStatusChanger::markPaidOut()` | `(Order $order, PaymentRefund $refund): void` | When money has actually left: an OWED refund was marked PAID_OUT (or an online one came back COMPLETED) |
+| `order.refund_cancelled` | Action | `App\Services\RefundStatusChanger::cancelOwed()` | `(Order $order, PaymentRefund $refund): void` | When an OWED refund was cancelled |
 | `order.payment_confirmed` | Action | `App\Services\OrderPaymentConfirmer::confirm()` | `(Payment $payment): void` | With §4.3's `payment_confirmed` event (no transition) |
 
 **The five names follow the one `order.*` hook that already exists.** §3's naming
@@ -1990,7 +1992,7 @@ fires twice for a single operation:
   listener that only wants "goods came back" registers this hook and needs no
   knowledge of the status; one that wants "the order ended" registers
   `order.status_changed` and reads the target.
-- `order.refunded` fires when a **completed** refund is written, partial included
+- `order.refund_recorded` fires when a refund record is written (an offline one is only OWED; `order.refund_paid_out` fires when the money has really left, `order.refund_cancelled` when an owed one is called off — refunds R2a, `shipping-domain-design.md` §7.2.16; the one hook this section first called `order.refunded` was split because it fired for money not yet returned), partial included
   (R8), and it is fired by the money step rather than by a transition: a
   cancellation that hands money back fires it, and so does a return, while §7.3's
   *void* fires **nothing** — no money moved, so no money hook, and the
@@ -2263,7 +2265,7 @@ after the code releases it — is worse than either state, so:
 ### `extensibility-design-and-hooks.md`
 
 - **§3's Hook Reference table (lines 48-54)** — five new rows, landing in Stage 8:
-  `order.status_changed`, `order.cancelled`, `order.returned`, `order.refunded` and
+  `order.status_changed`, `order.cancelled`, `order.returned`, `order.refunded` (since split into `order.refund_recorded`, `order.refund_paid_out` and `order.refund_cancelled`) and
   `order.payment_confirmed` (§12), each with its firing site, signature and purpose.
   The table's own rule — a row lands in the same commit as its call site — is why this
   is not optional, and why all five are listed there rather than left to be found in

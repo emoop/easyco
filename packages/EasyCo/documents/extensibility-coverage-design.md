@@ -98,7 +98,7 @@ architectural boundary, never a real call. The rule holds without exception.
 
 **Not-yet-built hook names — confirmed absent from all code**, `app/` and
 `packages/EasyCo/` alike: `order.status_changed`, `order.cancelled`,
-`order.returned`, `order.refunded`, `checkout.form.fields`,
+`order.returned`, `order.refund_recorded`, `order.refund_paid_out`, `order.refund_cancelled`, `checkout.form.fields`,
 `checkout.request.data`, and any `pricing.*` name. Docs only.
 
 ### 0.3 The Hook Reference table vs. reality — the mismatch this pass found
@@ -130,7 +130,7 @@ code dependency.
 ### 0.4 What is designed but not built
 
 `order-lifecycle-design.md` §12's five hooks (`order.status_changed`,
-`order.cancelled`, `order.returned`, `order.refunded` — Actions; that section
+`order.cancelled`, `order.returned`, `order.refund_recorded`, `order.refund_paid_out`, `order.refund_cancelled` — Actions; that section
 also states "No filter hooks in this design, deliberately"). `checkout-
 domain-design.md` §12.2's two hooks (`checkout.form.fields`,
 `checkout.request.data` — Filters) plus its one Site Settings key
@@ -401,7 +401,9 @@ discount the limits refuse.
 | `order.status_changed` | Action | `(Order $order, OrderStatus $from, OrderStatus $to): void` | `OrderStatusChanger`, every public transition method | After commit | Designed, lifecycle stage 8 |
 | `order.cancelled` | Action | `(Order $order, ?string $reason): void` | `OrderStatusChanger::cancel()` | After commit | Designed, lifecycle stage 8 |
 | `order.returned` | Action | `(Order $order, array $returnedLines): void` | `OrderStatusChanger::cancel()`/`recordReturn()` | After commit | Designed, lifecycle stage 8 |
-| `order.refunded` | Action | `(Order $order, PaymentRefund $refund): void` | `App\Services\OrderRefunder` | After commit | Designed, lifecycle stage 8 |
+| `order.refund_recorded` | Action | `(Order $order, PaymentRefund $refund): void` | `OrderStatusChanger::cancel()`/`recordReturn()` | After commit | Built (refunds R2a); replaces the designed `order.refunded` |
+| `order.refund_paid_out` | Action | `(Order $order, PaymentRefund $refund): void` | `RefundStatusChanger::markPaidOut()` | After commit | Built (refunds R2a) |
+| `order.refund_cancelled` | Action | `(Order $order, PaymentRefund $refund): void` | `RefundStatusChanger::cancelOwed()` | After commit | Built (refunds R2a) |
 
 ### Payment
 
@@ -414,7 +416,7 @@ discount the limits refuse.
 repeated `FAILED` attempts, or a follow-up email nudging an unpaid
 bank-transfer order. **`payment.voided` is a genuine gap this pass
 surfaces**, not a contradiction of order-lifecycle §12's "a void fires
-nothing" note — that note is scoped to `order.refunded` specifically (no
+nothing" note — that note is scoped to the refund hooks (`order.refund_recorded`, `order.refund_paid_out`) specifically (no
 money moved, so no *money* hook), and does not rule out a dedicated
 `payment.voided` hook for an accounting-export listener that wants the void
 fact itself, distinct from a completed refund.

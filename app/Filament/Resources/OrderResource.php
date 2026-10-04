@@ -11,9 +11,11 @@ use App\Services\Exceptions\OperationKeyReusedException;
 use App\Services\Exceptions\OrderAddLineRefusedException;
 use App\Services\Exceptions\OrderTransitionRefusedException;
 use App\Services\Exceptions\PendingPaymentRefundRuleException;
+use App\Services\Exceptions\PendingShippingInvariantBrokenException;
 use App\Services\Exceptions\PromotionNoLongerValidException;
 use App\Services\Exceptions\RefundCapExceededException;
 use App\Services\Exceptions\RefundPermissionDeniedException;
+use App\Services\Exceptions\RefundTransitionRefusedException;
 use App\Services\Exceptions\ReturnExceedsRemainingQuantityException;
 use App\Services\Exceptions\StaleOrderEditException;
 use App\Services\OrderAddLinePricer;
@@ -27,12 +29,14 @@ use App\Services\OrderEditor;
 use App\Services\OrderLineProductSearch;
 use App\Services\OrderNoteRecorder;
 use App\Services\OrderPaymentConfirmer;
+use App\Services\OrderRefundsReader;
 use App\Services\OrderStatusChanger;
 use App\Services\PanelStaffActor;
 use App\Services\PriceDisplayFormatter;
 use App\Services\ProductPriceDisplay;
 use App\Services\RefundPermissionPolicy;
 use App\Services\RefundRequest;
+use App\Services\RefundStatusChanger;
 use App\Settings\CountryNames;
 use App\Settings\StoreLocale;
 use BackedEnum;
@@ -55,6 +59,7 @@ use EasyCo\Pricing\Money;
 use EasyCo\Staff\Enums\Permission;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
+use Filament\Forms\Components\DateTimePicker;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Repeater\TableColumn as RepeaterTableColumn;
@@ -76,12 +81,16 @@ use Filament\Schemas\Components\Text;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
+use Filament\Support\Facades\FilamentTimezone;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Lang;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\HtmlString;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
@@ -590,11 +599,17 @@ class OrderResource extends Resource
                     TextEntry::make('discount_minor_total')
                         ->label(__('orders.fields.discount'))
                         ->getStateUsing(fn (OrderModel $record): string => static::formatOrderMoney($record, 'discount_minor')),
+                    // Refunds R2b: the shipping line, with the method's name when there is one, so the
+                    // figures visibly add up (subtotal - discount + shipping = total).
+                    TextEntry::make('shipping_minor')
+                        ->label(__('orders.fields.shipping'))
+                        ->getStateUsing(fn (OrderModel $record): string => static::formatOrderMoney($record, 'shipping_minor')
+                            .(filled($record->shipping_method_name) ? ' ('.$record->shipping_method_name.')' : '')),
                     TextEntry::make('total_minor')
                         ->label(__('orders.fields.total'))
                         ->getStateUsing(fn (OrderModel $record): string => static::formatOrderMoney($record, 'total_minor')),
                 ])
-                ->columns(3),
+                ->columns(4),
             Section::make(__('orders.sections.payment'))
                 ->schema([
                     TextEntry::make('payment_method')
@@ -748,6 +763,11 @@ class OrderResource extends Resource
                             TextEntry::make('why')->hiddenLabel(),
                         ]),
                 ]),
+            // Refunds R2b (shipping-domain-design.md §7.2.5, §7.2.17): nothing at all (no empty box)
+            // for an order that has no refund; otherwise the four figures and one block per refund.
+            Section::make(__('orders.refunds.heading'))
+                ->visible(fn (OrderModel $record): bool => static::refundsView($record)['rows'] !== [])
+                ->schema(fn (OrderModel $record): array => static::refundsSchema($record)),
             Section::make(__('orders.sections.history'))
                 ->schema([
                     RepeatableEntry::make('history')
@@ -1567,6 +1587,238 @@ class OrderResource extends Resource
         return new RefundRequest(operationKey: is_string($key) && $key !== '' ? $key : null);
     }
 
+    /** @var \WeakMap<OrderModel, array<string, mixed>>|null */
+    private static ?\WeakMap $refundsViews = null;
+
+    /**
+     * One read per record INSTANCE (a WeakMap, like OrderAdminReader's own per-instance cache): Filament asks
+     * for the section's visibility more than once per render, and the query budget of the page is tight. Keyed
+     * by the instance, never by the order id, so a later request — which rehydrates a NEW instance — always
+     * reads fresh and a refund paid out meanwhile cannot show as owed.
+     *
+     * @return array{currency: string, figures: array{paid_in: int, paid_out: int, owed: int, still_refundable: int}, rows: list<array<string, mixed>>}
+     */
+    private static function refundsView(OrderModel $record): array
+    {
+        static::$refundsViews ??= new \WeakMap();
+
+        return static::$refundsViews[$record] ??= app(OrderRefundsReader::class)->forOrder((string) $record->id, (string) $record->currency);
+    }
+
+    private static function formatMinor(int $minor, string $currency): string
+    {
+        return app(PriceDisplayFormatter::class)->format(Money::fromMinorUnits($minor, $currency)->decimalValue(), Currency::of($currency));
+    }
+
+    /**
+     * The refunds section's content: the four figures (§7.2.5), then one block per refund,
+     * newest first, each with the actions that apply to it.
+     *
+     * @return list<\Filament\Schemas\Components\Component>
+     */
+    private static function refundsSchema(OrderModel $record): array
+    {
+        $view = static::refundsView($record);
+        $currency = $view['currency'];
+        $money = static fn (int $minor): string => static::formatMinor($minor, $currency);
+
+        $components = [
+            Section::make()
+                ->schema(array_map(
+                    static fn (string $figure): TextEntry => TextEntry::make('refund_figure_'.$figure)
+                        ->label(__('orders.refunds.figures.'.$figure))
+                        ->getStateUsing(fn (): string => $money($view['figures'][$figure])),
+                    ['paid_in', 'paid_out', 'owed', 'still_refundable'],
+                ))
+                ->columns(4),
+        ];
+
+        foreach ($view['rows'] as $row) {
+            $id = $row['id'];
+            $stateKey = $row['is_legacy'] ? 'legacy_paid_out' : $row['status'];
+
+            $components[] = Section::make(__('orders.refunds.refund_heading', ['id' => $id]))
+                ->schema([
+                    TextEntry::make("refund_{$id}_status")
+                        ->label(__('orders.refunds.fields.status'))
+                        ->badge()
+                        ->getStateUsing(fn (): string => __('orders.refunds.status.'.$stateKey))
+                        ->color(fn (): string => match ($stateKey) {
+                            'owed', 'requested' => 'warning',
+                            'paid_out', 'completed' => 'success',
+                            'cancelled', 'failed' => 'danger',
+                            default => 'gray',   // a legacy paid-out row: money long since returned, quietly
+                        }),
+                    TextEntry::make("refund_{$id}_channel")
+                        ->label(__('orders.refunds.fields.channel'))
+                        ->getStateUsing(fn (): string => Lang::has('orders.refunds.channel.'.$row['channel']) ? __('orders.refunds.channel.'.$row['channel']) : $row['channel']),
+                    TextEntry::make("refund_{$id}_goods")
+                        ->label(__('orders.refunds.fields.goods'))
+                        ->getStateUsing(fn (): string => $money($row['goods'])),
+                    TextEntry::make("refund_{$id}_shipping")
+                        ->label(__('orders.refunds.fields.shipping'))
+                        ->getStateUsing(fn (): string => $money($row['shipping'])),
+                    TextEntry::make("refund_{$id}_adjustment")
+                        ->label(__('orders.refunds.fields.adjustment'))
+                        ->visible($row['adjustment'] !== 0)
+                        ->getStateUsing(fn (): string => $money($row['adjustment'])),
+                    TextEntry::make("refund_{$id}_deduction")
+                        ->label(__('orders.refunds.fields.deduction'))
+                        ->visible($row['deduction'] !== 0)
+                        ->getStateUsing(fn (): string => '-'.$money($row['deduction'])),
+                    TextEntry::make("refund_{$id}_deduction_reason")
+                        ->label(__('orders.refunds.fields.deduction_reason'))
+                        ->visible(filled($row['deduction_reason']))
+                        ->getStateUsing(fn (): ?string => $row['deduction_reason']),
+                    TextEntry::make("refund_{$id}_total")
+                        ->label(__('orders.refunds.fields.total'))
+                        ->weight('bold')
+                        ->getStateUsing(fn (): string => $money($row['total'])),
+                    TextEntry::make("refund_{$id}_recorded_at")
+                        ->label(__('orders.refunds.fields.recorded_at'))
+                        ->visible(filled($row['recorded_at']))
+                        ->getStateUsing(fn (): ?string => $row['recorded_at'])
+                        ->dateTime(),
+                    TextEntry::make("refund_{$id}_recorded_by")
+                        ->label(__('orders.refunds.fields.recorded_by'))
+                        ->visible(filled($row['recorded_by']))
+                        ->getStateUsing(fn (): ?string => $row['recorded_by']),
+                    TextEntry::make("refund_{$id}_reason")
+                        ->label(__('orders.refunds.fields.reason'))
+                        ->visible(filled($row['reason']))
+                        ->getStateUsing(fn (): ?string => $row['reason']),
+                    TextEntry::make("refund_{$id}_paid_out_at")
+                        ->label(__('orders.refunds.fields.paid_out_at'))
+                        ->visible(filled($row['paid_out_at']))
+                        ->getStateUsing(fn (): ?string => $row['paid_out_at'])
+                        ->dateTime(),
+                    TextEntry::make("refund_{$id}_paid_out_by")
+                        ->label(__('orders.refunds.fields.paid_out_by'))
+                        ->visible(filled($row['paid_out_by']))
+                        ->getStateUsing(fn (): ?string => $row['paid_out_by']),
+                    TextEntry::make("refund_{$id}_paid_out_reference")
+                        ->label(__('orders.refunds.fields.paid_out_reference'))
+                        ->visible(filled($row['paid_out_reference']))
+                        ->getStateUsing(fn (): ?string => $row['paid_out_reference']),
+                    TextEntry::make("refund_{$id}_paid_out_note")
+                        ->label(__('orders.refunds.fields.paid_out_note'))
+                        ->visible(filled($row['paid_out_note']))
+                        ->getStateUsing(fn (): ?string => $row['paid_out_note']),
+                    TextEntry::make("refund_{$id}_cancelled_at")
+                        ->label(__('orders.refunds.fields.cancelled_at'))
+                        ->visible(filled($row['cancelled_at']))
+                        ->getStateUsing(fn (): ?string => $row['cancelled_at'])
+                        ->dateTime(),
+                    TextEntry::make("refund_{$id}_cancelled_by")
+                        ->label(__('orders.refunds.fields.cancelled_by'))
+                        ->visible(filled($row['cancelled_by']))
+                        ->getStateUsing(fn (): ?string => $row['cancelled_by']),
+                    TextEntry::make("refund_{$id}_cancelled_reason")
+                        ->label(__('orders.refunds.fields.cancelled_reason'))
+                        ->visible(filled($row['cancelled_reason']))
+                        ->getStateUsing(fn (): ?string => $row['cancelled_reason']),
+                    Actions::make([
+                        static::markRefundPaidOutAction($id, $row['channel'], $row['total'], $currency),
+                        static::cancelRefundAction($id, $row['channel']),
+                    ])->key('refund_actions_'.$id),
+                ])
+                ->columns(4);
+        }
+
+        return $components;
+    }
+
+    /**
+     * Visible only for an OWED refund, and only to staff holding the permission of the refund's OWN
+     * channel, read through RefundPermissionPolicy::permissionFor() — the very derivation the service
+     * enforces, so the panel and RefundStatusChanger can never disagree. The state is a FRESH read of
+     * the refund, not the schema's snapshot, so a refund paid out in another tab loses its buttons.
+     */
+    private static function refundActionAllowed(string $refundId, string $channel): bool
+    {
+        return DB::table('payment_refunds')->where('id', $refundId)->value('status') === 'owed'
+            && static::staffHasPermission(RefundPermissionPolicy::permissionFor(RefundChannel::from($channel)));
+    }
+
+    public static function markRefundPaidOutAction(string $refundId, string $channel, int $totalMinor, string $currency): Action
+    {
+        return Action::make('mark_refund_paid_out')
+            ->label(__('orders.refunds.mark_paid_out.label'))
+            ->color('success')
+            ->icon('heroicon-o-banknotes')
+            ->modalHeading(__('orders.refunds.mark_paid_out.heading', ['id' => $refundId]))
+            ->modalDescription(__('orders.refunds.mark_paid_out.description', ['amount' => static::formatMinor($totalMinor, $currency)]))
+            ->schema([
+                DateTimePicker::make('paid_out_at')
+                    ->label(__('orders.refunds.mark_paid_out.paid_out_at'))
+                    ->required()
+                    ->seconds(false)
+                    ->default(fn (): string => now()->format('Y-m-d H:i'))
+                    // The picker holds the merchant's LOCAL time (Filament hydrates it from, and dehydrates it back to, the app
+                    // timezone), and the rule compares the typed value with this one as plain text: so "now" must be given in
+                    // the same timezone, or every payout time after midnight-UTC-minus-offset is refused as "in the future".
+                    ->maxDate(fn (): Carbon => now(FilamentTimezone::get())),
+                TextInput::make('reference')
+                    ->label(__('orders.refunds.mark_paid_out.reference'))
+                    ->required($channel === RefundChannel::BANK->value)
+                    ->maxLength(255),
+                Textarea::make('note')
+                    ->label(__('orders.refunds.mark_paid_out.note'))
+                    ->rows(2),
+                // One key per opening of the dialog: a double submit is one payout (§7.2.3).
+                Hidden::make('operation_key')->default(fn (): string => (string) Str::uuid()),
+            ])
+            ->visible(fn (): bool => static::refundActionAllowed($refundId, $channel))
+            ->action(function (array $data, OrderModel $record, $livewire) use ($refundId): void {
+                static::runOrderAction(
+                    $record,
+                    $livewire,
+                    fn () => app(RefundStatusChanger::class)->markPaidOut(
+                        $refundId,
+                        // The action receives the value already converted back to the APP timezone (UTC) by Filament
+                        // (the picker itself shows the store timezone: ApplyStoreTimezone -> FilamentTimezone).
+                        new DateTimeImmutable((string) $data['paid_out_at'], new \DateTimeZone(config('app.timezone'))),
+                        $data['reference'] ?? null,
+                        $data['note'] ?? null,
+                        now()->toDateTimeImmutable(),
+                        is_string($data['operation_key'] ?? null) && $data['operation_key'] !== '' ? $data['operation_key'] : null,
+                    ),
+                    __('orders.refunds.mark_paid_out.done', ['id' => $refundId]),
+                );
+            });
+    }
+
+    public static function cancelRefundAction(string $refundId, string $channel): Action
+    {
+        return Action::make('cancel_refund')
+            ->label(__('orders.refunds.cancel.label'))
+            ->color('danger')
+            ->icon('heroicon-o-x-circle')
+            ->modalHeading(__('orders.refunds.cancel.heading', ['id' => $refundId]))
+            ->schema([
+                Text::make(__('orders.refunds.cancel.warning')),
+                Textarea::make('reason')
+                    ->label(__('orders.refunds.cancel.reason'))
+                    ->required()
+                    ->rows(2),
+                Hidden::make('operation_key')->default(fn (): string => (string) Str::uuid()),
+            ])
+            ->visible(fn (): bool => static::refundActionAllowed($refundId, $channel))
+            ->action(function (array $data, OrderModel $record, $livewire) use ($refundId): void {
+                static::runOrderAction(
+                    $record,
+                    $livewire,
+                    fn () => app(RefundStatusChanger::class)->cancelOwed(
+                        $refundId,
+                        (string) $data['reason'],
+                        now()->toDateTimeImmutable(),
+                        is_string($data['operation_key'] ?? null) && $data['operation_key'] !== '' ? $data['operation_key'] : null,
+                    ),
+                    __('orders.refunds.cancel.done', ['id' => $refundId]),
+                );
+            });
+    }
+
     private static function moneyPermissionClause(OrderModel $record): bool
     {
         $payment = static::forOrder($record)->latestPayment;
@@ -1759,12 +2011,23 @@ class OrderResource extends Resource
                 ->send();
 
             return;
-        } catch (RefundCapExceededException|RefundPermissionDeniedException|OperationKeyReusedException|PendingPaymentRefundRuleException $e) {
+        } catch (RefundCapExceededException|RefundPermissionDeniedException|OperationKeyReusedException|PendingPaymentRefundRuleException|RefundTransitionRefusedException $e) {
             // The refund caps, the money permission and a reused operation key all
             // carry their own translated sentence: shown as a refusal, never a 500.
             Notification::make()
                 ->title(__('orders.actions.refused_title'))
                 ->body($e->getMessage())
+                ->danger()
+                ->send();
+
+            return;
+        } catch (PendingShippingInvariantBrokenException $e) {
+            // A broken invariant is not something the merchant can correct in a form: a plain notice, the detail in the log.
+            Log::error('Refund refused: a pending-payment invariant is broken.', ['order_id' => $e->orderId, 'payment_id' => $e->paymentId, 'reduced_so_far_minor' => $e->reducedSoFarMinor]);
+
+            Notification::make()
+                ->title(__('orders.actions.refused_title'))
+                ->body(__('orders.refunds.invariant_broken'))
                 ->danger()
                 ->send();
 
