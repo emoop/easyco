@@ -60,8 +60,8 @@ final class RefundOperationFingerprint
         ];
 
         // Only when given, so the hash of an operation without one is what it always was.
-        if ($request?->announcedReturnAt !== null) {
-            $contents['announcedReturnAt'] = $request->announcedReturnAt->format('Y-m-d H:i:s');
+        if ($request?->announcedReturnOn !== null) {
+            $contents['announcedReturnOn'] = $request->announcedReturnOn;
         }
 
         return hash('sha256', json_encode($contents, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE));

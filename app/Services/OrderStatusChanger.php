@@ -8,6 +8,7 @@ use App\Services\Exceptions\OrderTransitionRefusedException;
 use App\Services\Exceptions\RefundCapExceededException;
 use App\Services\Exceptions\RefundPermissionDeniedException;
 use App\Services\Exceptions\ReturnAnnouncedDateException;
+use App\Settings\StoreTimezone;
 use Closure;
 use DateTimeImmutable;
 use EasyCo\Extensibility\Hook;
@@ -106,6 +107,7 @@ final class OrderStatusChanger
         private readonly PromotionRedemptionRepository $promotionRedemptions,
         private readonly RefundCapGuard $capGuard,
         private readonly PaymentRefundRepository $paymentRefunds,
+        private readonly StoreTimezone $storeTimezone,
     ) {}
 
     /**
@@ -186,8 +188,8 @@ final class OrderStatusChanger
 
         // The announced-return date is what a CUSTOMER told staff about a return (recordReturn()); a
         // cancellation has none. Refused rather than silently dropped.
-        if ($refund?->announcedReturnAt !== null) {
-            throw new InvalidArgumentException('OrderStatusChanger: cancel() takes no announced-return date; only recordReturn() does.');
+        if ($refund?->announcedReturnOn !== null) {
+            throw new InvalidArgumentException('OrderStatusChanger: cancel() takes no announced-return day; only recordReturn() does.');
         }
 
         return $this->performReturn(
@@ -236,7 +238,7 @@ final class OrderStatusChanger
      * allows.
      *
      * @param array<int, array{originatingSaleLineId: string, quantityReturned: int, restock: bool}> $lines
-     * @param RefundRequest|null $refund Its announcedReturnAt (refunds R3) is the date the customer announced this return: stored on the `returned` history row, not in the future (relative to $occurredAt, UTC), never before the order was placed.
+     * @param RefundRequest|null $refund Its announcedReturnOn (refunds R3) is the calendar day the customer announced this return: stored on the `returned` history row; between the order's placement day and the recording day ($occurredAt), both in the STORE timezone, inclusive.
      *
      * @throws ReturnAnnouncedDateException The announced date is in the future or before the order was placed — nothing was written.
      * @throws InvalidArgumentException If $orderId is empty or unknown, if
@@ -498,14 +500,15 @@ final class OrderStatusChanger
 
         // A FACT checked for being possible, never for being on time (§7.2.6: no deadline is enforced):
         // the customer cannot have announced a return after it is recorded, nor before the order existed.
-        $announcedReturnAt = $refundRequest?->announcedReturnAt;
+        // CALENDAR DAYS in the store timezone (a plain 'Y-m-d' compares as text), both bounds inclusive.
+        $announcedReturnOn = $refundRequest?->announcedReturnOn;
 
-        if ($announcedReturnAt !== null) {
-            if ($announcedReturnAt > $occurredAt) {
+        if ($announcedReturnOn !== null) {
+            if ($announcedReturnOn > $this->storeTimezone->dayOf($occurredAt)) {
                 throw ReturnAnnouncedDateException::inFuture();
             }
 
-            if ($announcedReturnAt < $order->placedAt()) {
+            if ($announcedReturnOn < $this->storeTimezone->dayOf($order->placedAt())) {
                 throw ReturnAnnouncedDateException::beforePlacement();
             }
         }
@@ -579,7 +582,7 @@ final class OrderStatusChanger
                 occurredAt: $occurredAt,
                 operationKey: $operationKey,
                 operationPayloadHash: $operationKey !== null ? $payloadHash : null,
-                announcedReturnAt: $announcedReturnAt,
+                announcedReturnOn: $announcedReturnOn,
             );
             $keyWritten = $operationKey !== null;
         }

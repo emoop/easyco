@@ -62,14 +62,12 @@ final class RefundCapGuard
         // Per line.
         if ($breakdown->lines !== []) {
             $ids = array_map(static fn ($line): string => $line->saleLineId, $breakdown->lines);
-            $netPaid = $this->netPaidByLine($ids, $currency->code());
-            $refundedSoFar = $this->paymentRefunds->sumCountingLineAmounts($ids);
+            $rooms = $this->lineRooms($ids, $currency->code());
 
             foreach ($breakdown->lines as $line) {
-                $limit = $netPaid[$line->saleLineId] ?? throw new InvalidArgumentException(
+                $room = $rooms[$line->saleLineId] ?? throw new InvalidArgumentException(
                     "RefundCapGuard: sale line \"{$line->saleLineId}\" has no net paid amount recorded, so a refund against it cannot be capped."
                 );
-                $room = $limit->subtract(Money::fromMinorUnits($refundedSoFar[$line->saleLineId] ?? 0, $currency));
 
                 if ($line->amount->subtract($room)->isPositive()) {
                     throw RefundCapExceededException::forCap(RefundCapExceededException::LINE, $room, $line->saleLineId);
@@ -79,13 +77,7 @@ final class RefundCapGuard
 
         // Shipping — the order is read only when shipping is actually being refunded.
         if ($breakdown->shipping->isPositive()) {
-            $order = $this->orders->findById($orderId);
-
-            if ($order === null) {
-                throw new InvalidArgumentException("RefundCapGuard: no order exists with id \"{$orderId}\".");
-            }
-
-            $shippingRoom = $order->shipping()->subtract(Money::fromMinorUnits($this->paymentRefunds->sumCountingShippingForOrder($orderId), $currency));
+            $shippingRoom = $this->shippingRoom($orderId, $currency->code());
 
             if ($breakdown->shipping->subtract($shippingRoom)->isPositive()) {
                 throw RefundCapExceededException::forCap(RefundCapExceededException::SHIPPING, $shippingRoom);
@@ -93,8 +85,7 @@ final class RefundCapGuard
         }
 
         // Total: against what the settled payment actually holds.
-        $alreadyRefunded = $this->paymentRefunds->sumCountingForPayment((string) $settledPayment->id(), $currency->code());
-        $totalRoom = $settledPayment->amount()->subtract($alreadyRefunded);
+        $totalRoom = $this->totalRoom($settledPayment);
 
         if ($total->subtract($totalRoom)->isPositive()) {
             throw RefundCapExceededException::forCap(RefundCapExceededException::TOTAL, $totalRoom);
@@ -123,13 +114,82 @@ final class RefundCapGuard
             return;
         }
 
+        $room = $this->pendingShippingRoom($orderId, $pending, $goodsOfThisReturn);
+
+        if ($reduction->subtract($room)->isPositive()) {
+            throw RefundCapExceededException::forCap(RefundCapExceededException::PENDING_SHIPPING, $room);
+        }
+    }
+
+    // ---- THE ROOMS: the single source of "how much can still be refunded" ----------------------------
+    //
+    // The assert methods above and the refund dialog (RefundFormReader) both read these, so the form
+    // can never show a room the service does not enforce. They hold the cap arithmetic; nothing else
+    // does. Each is a plain read, correct only as of its moment — the service re-reads under the
+    // order lock before writing, which is what makes it the final guard.
+
+    /**
+     * Per original sale line: net paid minus goods already refunded on it (counting refunds only).
+     * A line with no net paid amount recorded (a legacy line) is absent from the result: it cannot be
+     * capped. A room may come back negative only for corrupt data; callers clamp for display.
+     *
+     * @param  list<string>  $saleLineIds
+     * @return array<string, Money>
+     */
+    public function lineRooms(array $saleLineIds, string $currency): array
+    {
+        if ($saleLineIds === []) {
+            return [];
+        }
+
+        $netPaid = $this->netPaidByLine($saleLineIds, $currency);
+        $refundedSoFar = $this->paymentRefunds->sumCountingLineAmounts($saleLineIds);
+        $rooms = [];
+
+        foreach ($netPaid as $id => $limit) {
+            $rooms[$id] = $limit->subtract(Money::fromMinorUnits($refundedSoFar[$id] ?? 0, $currency));
+        }
+
+        return $rooms;
+    }
+
+    /** The order's shipping minus the shipping already refunded (counting refunds only). */
+    public function shippingRoom(string $orderId, string $currency): Money
+    {
         $order = $this->orders->findById($orderId);
 
         if ($order === null) {
             throw new InvalidArgumentException("RefundCapGuard: no order exists with id \"{$orderId}\".");
         }
 
-        $currency = $reduction->currency();
+        return $order->shipping()->subtract(Money::fromMinorUnits($this->paymentRefunds->sumCountingShippingForOrder($orderId), $currency));
+    }
+
+    /** What the settled payment actually holds minus everything refunded against it (counting refunds only). */
+    public function totalRoom(Payment $settledPayment): Money
+    {
+        $alreadyRefunded = $this->paymentRefunds->sumCountingForPayment((string) $settledPayment->id(), $settledPayment->amount()->currency()->code());
+
+        return $settledPayment->amount()->subtract($alreadyRefunded);
+    }
+
+    /**
+     * The shipping that a partial return on a PENDING payment can still reduce (see
+     * assertPendingShippingReduction()). $goodsOfThisReturn is the goods of a return whose REFUND
+     * lines are already written (the service, mid-operation); a form reading BEFORE the return
+     * passes zero.
+     *
+     * @throws PendingShippingInvariantBrokenException
+     */
+    public function pendingShippingRoom(string $orderId, Payment $pending, Money $goodsOfThisReturn): Money
+    {
+        $order = $this->orders->findById($orderId);
+
+        if ($order === null) {
+            throw new InvalidArgumentException("RefundCapGuard: no order exists with id \"{$orderId}\".");
+        }
+
+        $currency = $pending->amount()->currency();
         $lineIds = array_map(static fn (array $entry): string => (string) $entry['row']->id, $this->currentLines->resolveRows($order));
         $creditedInTotal = $lineIds === [] ? 0 : (int) DB::table('operational_sales_sale_lines')
             ->where('type', 'refund')
@@ -144,11 +204,7 @@ final class RefundCapGuard
             throw new PendingShippingInvariantBrokenException($orderId, (string) $pending->id(), $reducedSoFar->minorValue());
         }
 
-        $room = $order->shipping()->subtract($reducedSoFar);
-
-        if ($reduction->subtract($room)->isPositive()) {
-            throw RefundCapExceededException::forCap(RefundCapExceededException::PENDING_SHIPPING, $room);
-        }
+        return $order->shipping()->subtract($reducedSoFar);
     }
 
     /**

@@ -10,7 +10,7 @@ use EasyCo\Staff\Enums\Permission;
  * THE ONE DERIVATION of "which permission records and pays out a refund": the
  * PAYOUT CHANNEL decides — cash from the register needs REFUND_CASH, bank needs
  * REFUND_BANK (shipping-domain-design.md §7.2.8). The panel's visibility clause
- * (OrderResource::moneyPermissionClause) and the service rule
+ * (OrderResource: the channel options of the refund dialogs) and the service rule
  * (OrderRefunder, via assertMayRecord) both read permissionFor(), so they can
  * never disagree.
  *

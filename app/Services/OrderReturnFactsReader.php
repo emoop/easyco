@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Enums\OrderEventType;
+use App\Settings\StoreTimezone;
 use DateTimeImmutable;
 use EasyCo\Order\Enums\OrderStatus;
 use Illuminate\Support\Facades\DB;
@@ -25,6 +26,11 @@ use Illuminate\Support\Facades\DB;
  */
 final class OrderReturnFactsReader
 {
+    public function __construct(
+        private readonly StoreTimezone $storeTimezone,
+    ) {
+    }
+
     public function forOrder(string $orderId): OrderReturnFacts
     {
         $rows = DB::table('order_events')
@@ -38,7 +44,7 @@ final class OrderReturnFactsReader
             })
             ->orderBy('occurred_at')
             ->orderBy('id')
-            ->get(['id', 'type', 'transaction_id', 'occurred_at', 'announced_return_at']);
+            ->get(['id', 'type', 'transaction_id', 'occurred_at', 'announced_return_on']);
 
         $deliveredAt = null;
 
@@ -50,6 +56,8 @@ final class OrderReturnFactsReader
             }
         }
 
+        $zone = $this->storeTimezone->zone();
+        $deliveredOn = $deliveredAt?->setTimezone($zone)->format('Y-m-d');
         $returns = [];
 
         foreach ($rows as $row) {
@@ -58,18 +66,18 @@ final class OrderReturnFactsReader
             }
 
             $recordedAt = new DateTimeImmutable((string) $row->occurred_at);
-            $announcedAt = $row->announced_return_at === null ? null : new DateTimeImmutable((string) $row->announced_return_at);
+            $announcedOn = $row->announced_return_on === null ? null : substr((string) $row->announced_return_on, 0, 10);
 
             $returns[] = new OrderReturnFact(
                 eventId: (string) $row->id,
                 transactionId: $row->transaction_id === null ? null : (string) $row->transaction_id,
                 recordedAt: $recordedAt,
-                announcedAt: $announcedAt,
-                daysFromDeliveryToAnnounced: $deliveredAt !== null && $announcedAt !== null ? OrderReturnFacts::wholeDays($deliveredAt, $announcedAt) : null,
-                daysFromDeliveryToRecorded: $deliveredAt !== null ? OrderReturnFacts::wholeDays($deliveredAt, $recordedAt) : null,
+                announcedOn: $announcedOn,
+                daysFromDeliveryToAnnounced: $deliveredOn !== null && $announcedOn !== null ? StoreTimezone::daysBetween($deliveredOn, $announcedOn) : null,
+                daysFromDeliveryToRecorded: $deliveredOn !== null ? StoreTimezone::daysBetween($deliveredOn, $recordedAt->setTimezone($zone)->format('Y-m-d')) : null,
             );
         }
 
-        return new OrderReturnFacts($deliveredAt, $returns);
+        return new OrderReturnFacts($deliveredAt, $returns, $zone);
     }
 }

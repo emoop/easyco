@@ -39,11 +39,12 @@ class OrderEventModel extends Model
         'operation_key',
         'operation_payload_hash',
         'payment_refund_id',
-        'announced_return_at',
+        'announced_return_on',
     ];
 
     protected $casts = [
         'occurred_at' => 'datetime',
-        'announced_return_at' => 'datetime',
+        // A calendar day ('Y-m-d') in the STORE timezone: no instant, so no timezone shifting.
+        'announced_return_on' => 'date:Y-m-d',
     ];
 }

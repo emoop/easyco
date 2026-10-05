@@ -7,6 +7,8 @@ use App\Filament\NavigationGroup;
 use App\Filament\Resources\OrderResource\Pages\ListOrders;
 use App\Filament\Resources\OrderResource\Pages\ViewOrder;
 use App\Rules\KnownCountryCode;
+use App\Filament\Resources\OrderResource\RefundDialog;
+use App\Services\Exceptions\MoneyOnlyRefundRefusedException;
 use App\Services\Exceptions\OperationKeyReusedException;
 use App\Services\Exceptions\OrderAddLineRefusedException;
 use App\Services\Exceptions\OrderTransitionRefusedException;
@@ -16,8 +18,12 @@ use App\Services\Exceptions\PromotionNoLongerValidException;
 use App\Services\Exceptions\RefundCapExceededException;
 use App\Services\Exceptions\RefundPermissionDeniedException;
 use App\Services\Exceptions\RefundTransitionRefusedException;
+use App\Services\Exceptions\ReturnAnnouncedDateException;
 use App\Services\Exceptions\ReturnExceedsRemainingQuantityException;
 use App\Services\Exceptions\StaleOrderEditException;
+use App\Services\MoneyInput;
+use App\Services\MoneyOnlyRefunder;
+use App\Services\MoneyOnlyRefundRequest;
 use App\Services\OrderAddLinePricer;
 use App\Services\OrderAdminEventView;
 use App\Services\OrderAdminOrderView;
@@ -36,6 +42,8 @@ use App\Services\OrderStatusChanger;
 use App\Services\PanelStaffActor;
 use App\Services\PriceDisplayFormatter;
 use App\Services\ProductPriceDisplay;
+use App\Services\RefundFormContext;
+use App\Services\RefundFormReader;
 use App\Services\RefundPermissionPolicy;
 use App\Services\RefundRequest;
 use App\Services\RefundStatusChanger;
@@ -1158,6 +1166,7 @@ class OrderResource extends Resource
             static::markAsReceivedAction(),
             static::cancelAction(),
             static::recordReturnAction(),
+            static::refundMoneyOnlyAction(),
             static::addNoteAction(),
         ];
     }
@@ -1358,9 +1367,12 @@ class OrderResource extends Resource
                 editableQuantity: false,
                 showRestockToggle: $record->status === OrderStatus::SHIPPED->value,
             ))
+            // A settled payment is refunded through a payout channel the staff member must hold the permission
+            // of — but the dialog is offered regardless, so that staff without either channel are TOLD why
+            // (a notice, and no submit button) instead of finding the button missing (refunds R3 part 2).
+            ->modalSubmitAction(fn (OrderModel $record): ?bool => static::hasNoRefundChannel($record) ? false : null)
             ->visible(fn (OrderModel $record): bool => static::staffHasPermission(Permission::ORDER_MANAGE)
-                && OrderStatus::from($record->status)->canTransitionTo(OrderStatus::CANCELLED)
-                && static::moneyPermissionClause($record))
+                && OrderStatus::from($record->status)->canTransitionTo(OrderStatus::CANCELLED))
             ->action(function (array $data, OrderModel $record, $livewire): void {
                 $restockOverrides = $record->status === OrderStatus::SHIPPED->value
                     ? static::restockOverridesFromData($data, static::forOrder($record))
@@ -1369,7 +1381,7 @@ class OrderResource extends Resource
                 static::runOrderAction(
                     $record,
                     $livewire,
-                    fn () => app(OrderStatusChanger::class)->cancel((string) $record->id, new DateTimeImmutable, $data['reason'] ?? null, $restockOverrides, static::refundRequestFrom($data)),
+                    fn () => app(OrderStatusChanger::class)->cancel((string) $record->id, new DateTimeImmutable, $data['reason'] ?? null, $restockOverrides, static::refundRequestFrom($data, $record, RefundDialog::CANCEL)),
                     __('orders.actions.cancel_done', ['id' => $record->id]),
                 );
             });
@@ -1406,9 +1418,9 @@ class OrderResource extends Resource
                 editableQuantity: true,
                 showRestockToggle: true,
             ))
+            ->modalSubmitAction(fn (OrderModel $record): ?bool => static::hasNoRefundChannel($record) ? false : null)
             ->visible(fn (OrderModel $record): bool => static::staffHasPermission(Permission::ORDER_MANAGE)
-                && in_array($record->status, [OrderStatus::SHIPPED->value, OrderStatus::DELIVERED->value], true)
-                && static::moneyPermissionClause($record))
+                && in_array($record->status, [OrderStatus::SHIPPED->value, OrderStatus::DELIVERED->value], true))
             ->action(function (array $data, OrderModel $record, $livewire): void {
                 $view = static::forOrder($record);
                 $lines = [];
@@ -1450,8 +1462,62 @@ class OrderResource extends Resource
                 static::runOrderAction(
                     $record,
                     $livewire,
-                    fn () => app(OrderStatusChanger::class)->recordReturn((string) $record->id, $lines, new DateTimeImmutable, $data['reason'] ?? null, static::refundRequestFrom($data)),
+                    fn () => app(OrderStatusChanger::class)->recordReturn((string) $record->id, $lines, new DateTimeImmutable, $data['reason'] ?? null, static::refundRequestFrom($data, $record, RefundDialog::RETURN)),
                     __('orders.actions.record_return_done', ['id' => $record->id, 'count' => $totalQuantity]),
+                );
+            });
+    }
+
+    /**
+     * "Refund money only" (refunds R3 part 2, shipping-domain-design.md §7.2.11): a refund of money with no goods
+     * coming back — goodwill or a correction: a shipping refund and/or an adjustment, a mandatory reason, a payout
+     * channel. Visible only with a SETTLED payment (nothing was paid otherwise) and at least one channel
+     * permission; NO order status is required, so it is there on a delivered and on a cancelled order too. The
+     * dialog sends one operation key generated when it opens; MoneyOnlyRefunder::record() is the service, and
+     * every refusal it makes is a notice (runOrderAction).
+     */
+    public static function refundMoneyOnlyAction(): Action
+    {
+        return Action::make('refund_money_only')
+            ->label(__('orders.money_only.label'))
+            ->color('warning')
+            ->icon('heroicon-o-banknotes')
+            ->modalHeading(fn (OrderModel $record): string => __('orders.money_only.heading', ['id' => $record->id]))
+            ->modalDescription(__('orders.money_only.description'))
+            ->schema(fn (OrderModel $record): array => RefundDialog::moneyOnlySchema(app(RefundFormReader::class)->forOrder((string) $record->id)))
+            ->visible(fn (OrderModel $record): bool => static::staffHasPermission(Permission::ORDER_MANAGE)
+                && (static::forOrder($record)->latestPayment?->isSettled() ?? false)
+                && ! static::hasNoRefundChannel($record, requireSettled: false))
+            ->action(function (array $data, OrderModel $record, $livewire): void {
+                $context = app(RefundFormReader::class)->forOrder((string) $record->id);
+                $shipping = MoneyInput::parseOrZero(is_scalar($data['shipping'] ?? null) ? (string) $data['shipping'] : '', $context->currency);
+                $adjustment = MoneyInput::parseOrZero(is_scalar($data['adjustment'] ?? null) ? (string) $data['adjustment'] : '', $context->currency);
+                $channel = filled($data['channel'] ?? null) ? RefundChannel::from((string) $data['channel']) : $context->defaultChannel;
+
+                if ($shipping === null || $adjustment === null || $channel === null) {
+                    Notification::make()
+                        ->title(__('orders.actions.refused_title'))
+                        ->body($channel === null ? __('orders.refund_dialog.no_channel') : __('orders.refund_dialog.invalid_amount'))
+                        ->danger()
+                        ->send();
+
+                    return;
+                }
+
+                $key = $data['operation_key'] ?? null;
+                $request = new MoneyOnlyRefundRequest(
+                    shipping: $shipping,
+                    adjustment: $adjustment,
+                    reason: (string) ($data['reason'] ?? ''),
+                    channel: $channel,
+                    operationKey: is_string($key) && $key !== '' ? $key : null,
+                );
+
+                static::runOrderAction(
+                    $record,
+                    $livewire,
+                    fn () => app(MoneyOnlyRefunder::class)->record((string) $record->id, $request, new DateTimeImmutable),
+                    __('orders.money_only.done', ['amount' => static::formatMinor($shipping->add($adjustment)->minorValue(), $context->currency)]),
                 );
             });
     }
@@ -1913,21 +1979,32 @@ class OrderResource extends Resource
     }
 
     /**
-     * D3 (order-lifecycle-design.md §8.2's own "money step adds a third
-     * question", R5) — shared by cancelAction()/recordReturnAction() so
-     * the rule is written once. Reads the SAME latestPayment the Payment
-     * section already reads (static::forOrder($record), no new query):
-     * nothing settled means nothing to refund, so ORDER_MANAGE alone
-     * suffices (§2.2 R8(c)); a settled payment needs R5's derived
-     * permission ON TOP — REFUND_CASH for cash_on_delivery, REFUND_BANK
-     * for every other method.
+     * The dialog's submission as a RefundRequest (refunds R3 part 2): the entered goods amounts, the shipping
+     * refund (or reduction), the deduction with its reason, the channel, the announced day and the operation
+     * key. A blank goods box is the computed share. See RefundDialog::requestFrom().
+     *
+     * (D3's old "money permission clause" that hid cancel/return from staff without the DEFAULT channel's
+     * permission is gone: the dialog is offered, the channel options follow the permissions, and staff with
+     * neither channel see a notice and no submit button — hasNoRefundChannel().)
      */
-    /** The dialog's only money input today is the operation key; every amount is the default (R3 adds the rest). */
-    private static function refundRequestFrom(array $data): RefundRequest
+    private static function refundRequestFrom(array $data, OrderModel $record, string $kind): RefundRequest
     {
-        $key = $data['operation_key'] ?? null;
+        $reader = app(RefundFormReader::class);
+        $lines = array_values(array_filter(static::forOrder($record)->lines, static fn (OrderAdminSaleLineView $line): bool => $line->remainingReturnable > 0));
+        $context = $reader->forOrder((string) $record->id, array_map(static fn (OrderAdminSaleLineView $line): string => (string) $line->id, $lines), $kind === RefundDialog::RETURN);
 
-        return new RefundRequest(operationKey: is_string($key) && $key !== '' ? $key : null);
+        return RefundDialog::requestFrom($data, $lines, $context, $kind, $reader);
+    }
+
+    /** A settled payment and a staff member who may use neither payout channel: the dialog tells them so and cannot submit. */
+    private static function hasNoRefundChannel(OrderModel $record, bool $requireSettled = true): bool
+    {
+        // The permission of a channel is RefundPermissionPolicy::permissionFor() — the one derivation the service enforces.
+        $mayUse = static fn (RefundChannel $channel): bool => static::staffHasPermission(RefundPermissionPolicy::permissionFor($channel));
+
+        return (! $requireSettled || (static::forOrder($record)->latestPayment?->isSettled() ?? false))
+            && ! $mayUse(RefundChannel::CASH)
+            && ! $mayUse(RefundChannel::BANK);
     }
 
     /** @var \WeakMap<OrderModel, array<string, mixed>>|null */
@@ -2162,21 +2239,6 @@ class OrderResource extends Resource
             });
     }
 
-    private static function moneyPermissionClause(OrderModel $record): bool
-    {
-        $payment = static::forOrder($record)->latestPayment;
-
-        if ($payment === null || ! $payment->isSettled()) {
-            return true;
-        }
-
-        // The SAME derivation the service enforces (RefundPermissionPolicy), so the
-        // panel and OrderRefunder can never disagree about who may refund.
-        return static::staffHasPermission(
-            RefundPermissionPolicy::permissionFor(RefundChannel::defaultForMethod($payment->method()))
-        );
-    }
-
     /**
      * D4/§0 item 7 — the cancel/return dialog's shared line-block
      * builder. ONE FIXED, DYNAMICALLY-GENERATED SET, NOT A Repeater:
@@ -2211,25 +2273,36 @@ class OrderResource extends Resource
      */
     private static function buildLineFormSchema(OrderModel $record, bool $editableQuantity, bool $showRestockToggle): array
     {
+        $kind = $editableQuantity ? RefundDialog::RETURN : RefundDialog::CANCEL;
+        $reader = app(RefundFormReader::class);
+        $shown = array_values(array_filter(static::forOrder($record)->lines, static fn (OrderAdminSaleLineView $line): bool => $line->remainingReturnable > 0));
+        // The money of this order, read once as the dialog opens: the rooms come from the service's own cap source.
+        $context = $reader->forOrder((string) $record->id, array_map(static fn (OrderAdminSaleLineView $line): string => (string) $line->id, $shown), $kind === RefundDialog::RETURN);
         $blocks = [];
 
-        foreach (static::forOrder($record)->lines as $line) {
-            if ($line->remainingReturnable <= 0) {
-                continue;
-            }
+        // A RETURN shows the facts a shop's own policy depends on (delivery, earlier returns) — facts only (§7.2.6).
+        if ($kind === RefundDialog::RETURN) {
+            $blocks[] = RefundDialog::factsPanel((string) $record->id);
+        }
 
-            $fields = [
-                $editableQuantity
-                    ? TextInput::make("quantity.{$line->id}")
-                        ->label(__('orders.actions.quantity_label'))
-                        ->numeric()
-                        ->minValue(0)
-                        ->maxValue($line->remainingReturnable)
-                        ->default(null)
-                    : TextEntry::make("quantity_display.{$line->id}")
-                        ->label(__('orders.actions.quantity_label'))
-                        ->state((string) $line->remainingReturnable),
-            ];
+        foreach ($shown as $line) {
+            $quantity = $editableQuantity
+                ? TextInput::make("quantity.{$line->id}")
+                    ->label(__('orders.actions.quantity_label'))
+                    ->numeric()
+                    ->minValue(0)
+                    ->maxValue($line->remainingReturnable)
+                    ->default(null)
+                : TextEntry::make("quantity_display.{$line->id}")
+                    ->label(__('orders.actions.quantity_label'))
+                    ->state((string) $line->remainingReturnable);
+
+            $fields = [$editableQuantity && $context->mode !== \App\Services\RefundFormContext::NONE ? RefundDialog::followQuantity($quantity, $line, $reader) : $quantity];
+
+            // The goods amount of the line: the computed share, editable on a settled payment, read-only on a pending one.
+            if ($context->mode !== \App\Services\RefundFormContext::NONE) {
+                $fields[] = RefundDialog::goodsField($line, $context, $kind, $reader);
+            }
 
             if ($showRestockToggle) {
                 $fields[] = Toggle::make("restock.{$line->id}")
@@ -2239,6 +2312,13 @@ class OrderResource extends Resource
 
             $blocks[] = Fieldset::make($line->productName ?? $line->sku ?? __('orders.not_available'))
                 ->schema($fields);
+        }
+
+        array_push($blocks, ...RefundDialog::moneySection($context, $shown, $kind, $reader));
+
+        // The day the customer announced the return — a calendar day, optional, returns only (§7.2.6).
+        if ($kind === RefundDialog::RETURN) {
+            $blocks[] = RefundDialog::announcedDayField();
         }
 
         $blocks[] = Textarea::make('reason')->label(__('orders.actions.reason_label'));
@@ -2354,9 +2434,9 @@ class OrderResource extends Resource
                 ->send();
 
             return;
-        } catch (RefundCapExceededException|RefundPermissionDeniedException|OperationKeyReusedException|PendingPaymentRefundRuleException|RefundTransitionRefusedException $e) {
-            // The refund caps, the money permission and a reused operation key all
-            // carry their own translated sentence: shown as a refusal, never a 500.
+        } catch (RefundCapExceededException|RefundPermissionDeniedException|OperationKeyReusedException|PendingPaymentRefundRuleException|RefundTransitionRefusedException|MoneyOnlyRefundRefusedException|ReturnAnnouncedDateException $e) {
+            // The refund caps, the money permission, a reused operation key, a money-only refusal and an
+            // impossible announced day all carry their own translated sentence: shown as a refusal, never a 500.
             Notification::make()
                 ->title(__('orders.actions.refused_title'))
                 ->body($e->getMessage())
@@ -2956,6 +3036,8 @@ class OrderResource extends Resource
                 'return_record' => $event->transactionId === null
                     ? __('orders.not_available')
                     : [
+                        // The day the customer announced the return (refunds R3): a plain calendar day, no time.
+                        ...($event->announcedReturnOn !== null ? [__('orders.history.announced_on', ['day' => $event->announcedReturnOn])] : []),
                         ...(in_array($event->type, ['returned', 'refunded', 'refund_owed', 'edited'], true)
                             ? array_map(static::movedLineLabel(...), $event->movedLines)
                             : []),

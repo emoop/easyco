@@ -187,13 +187,17 @@ class RefundServicePermissionTest extends TestCase
         $this->assertSame(Permission::REFUND_CASH, RefundPermissionPolicy::permissionFor(RefundChannel::CASH));
         $this->assertSame(Permission::REFUND_BANK, RefundPermissionPolicy::permissionFor(RefundChannel::BANK));
 
-        // The panel derives its channel from the payment method with RefundChannel::defaultForMethod(),
-        // then the permission with permissionFor() — the very pair the service uses.
+        // The panel reads a channel's permission with permissionFor() — the very derivation the service uses —
+        // and (RefundFormReader) derives the default channel from the payment method with defaultForMethod().
         $this->assertSame(Permission::REFUND_CASH, RefundPermissionPolicy::permissionFor(RefundChannel::defaultForMethod('cash_on_delivery')));
         $this->assertSame(Permission::REFUND_BANK, RefundPermissionPolicy::permissionFor(RefundChannel::defaultForMethod('bank_transfer')));
 
         $source = file_get_contents(app_path('Filament/Resources/OrderResource.php'));
-        $this->assertStringContainsString('RefundPermissionPolicy::permissionFor(RefundChannel::defaultForMethod(', $source);
+        // Refunds R3 part 2: the old "money permission clause" (the default channel's permission hid the buttons) is
+        // gone; the dialogs offer the channels the staff member may use, and the panel asks permissionFor() per channel.
+        $this->assertStringContainsString('RefundPermissionPolicy::permissionFor($channel)', $source);
+        $this->assertStringNotContainsString('moneyPermissionClause', $source);
+        $this->assertStringNotContainsString('Permission::REFUND_CASH', $source, 'no second, hand-kept list of which permission pays which channel');
         $this->assertStringNotContainsString("'cash_on_delivery' ? Permission::REFUND_CASH", $source, 'the old private derivation is gone');
     }
 

@@ -302,6 +302,7 @@ final class OrderAdminReader
                 transactionId: $row->transaction_id === null ? null : (string) $row->transaction_id,
                 staffName: $row->staff_name === null ? null : (string) $row->staff_name,
                 occurredAt: new DateTimeImmutable((string) $row->occurred_at),
+                announcedReturnOn: $row->announced_return_on === null ? null : substr((string) $row->announced_return_on, 0, 10),
             ))
             ->all();
 
@@ -321,6 +322,7 @@ final class OrderAdminReader
                     $event->staffName,
                     $event->occurredAt,
                     $movedLines[$event->transactionId] ?? [],
+                    $event->announcedReturnOn,
                 ),
             $events,
         );

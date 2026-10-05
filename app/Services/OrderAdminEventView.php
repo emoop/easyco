@@ -47,6 +47,8 @@ final class OrderAdminEventView
         public readonly DateTimeImmutable $occurredAt,
         /** @var list<array{kind: string, name: ?string, sku: ?string, quantity: int, attributes: list<string>}> */
         public readonly array $movedLines = [],
+        /** The CALENDAR DAY ('Y-m-d', store timezone) the customer announced a return; a `returned` event only. */
+        public readonly ?string $announcedReturnOn = null,
     ) {
     }
 }

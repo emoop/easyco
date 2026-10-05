@@ -45,7 +45,7 @@ use Tests\TestCase;
 /**
  * order-lifecycle-design.md §8.1/§8.2/§8.4 (its own §10 stage 7c-2) —
  * OrderResource::cancelAction()/recordReturnAction() and the shared line
- * form buildLineFormSchema()/moneyPermissionClause() they rely on.
+ * form buildLineFormSchema() they rely on.
  * Fixture helpers mirror OrderViewActionsTest's own established shapes.
  */
 class OrderCancelReturnActionsTest extends TestCase
@@ -253,11 +253,12 @@ class OrderCancelReturnActionsTest extends TestCase
         $statuses = ['placed', 'confirmed', 'shipped', 'delivered', 'cancelled', 'refunded'];
         $paymentStates = ['none', 'settled_cod', 'settled_bank', 'unsettled'];
 
-        $moneyClauseForManager = static fn (string $state): bool => match ($state) {
-            'none', 'unsettled' => true,
-            'settled_cod' => true,
-            'settled_bank' => false,
-        };
+        // Refunds R3 part 2: the dialog is offered for EVERY payment state to anyone with ORDER_MANAGE. What the
+        // money permission decides is which payout CHANNELS the dialog offers (a Manager holds REFUND_CASH, so a
+        // settled bank order now opens with the cash channel only), and staff with no channel at all are shown
+        // a notice and no submit button (OrderRefundDialogTest). It used to hide the button for a Manager on a
+        // settled bank-transfer order, which told them nothing.
+        $moneyClauseForManager = static fn (string $state): bool => true;
 
         // Built ONCE — staffWithRole() creates a real, uniquely-emailed
         // Staff row, so calling it once per iteration inside the sweep
@@ -759,7 +760,14 @@ class OrderCancelReturnActionsTest extends TestCase
 
         fwrite(STDERR, "\n[query-count] order view page (2-line, shipped): page load {$pageLoadCount} queries, mount cancel +{$cancelMountCount}, mount record_return +{$recordReturnMountCount}\n");
 
+        // REFUNDS R3 PART 2 CHANGED THESE NUMBERS ON PURPOSE (the pin was 10 for both; measured then: cancel +1,
+        // record_return +3). The dialogs now read the money of the order as they open — the payment kind, the cap
+        // rooms from RefundCapGuard, the payout channels the staff member may use — and a RETURN also reads the
+        // return facts (one query) and, on an unpaid order, the shipping-reduction room (the service's own
+        // derivation, several reads). None of it grows with the number of lines (the line rooms are two batched
+        // reads), and a CANCEL skips the shipping-reduction room because a cancel voids everything.
+        // Measured now: cancel +3, record_return +15.
         $this->assertLessThanOrEqual(10, $cancelMountCount);
-        $this->assertLessThanOrEqual(10, $recordReturnMountCount);
+        $this->assertLessThanOrEqual(16, $recordReturnMountCount);
     }
 }

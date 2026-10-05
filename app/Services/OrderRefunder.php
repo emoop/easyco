@@ -92,18 +92,8 @@ final class OrderRefunder
 
         $orderPayments = $this->payments->findByOrderId($orderId);
 
-        $settled = array_values(array_filter(
-            $orderPayments,
-            static fn (Payment $payment): bool => $payment->isSettled(),
-        ));
-
-        $pendingEligible = array_values(array_filter(
-            $orderPayments,
-            static fn (Payment $payment): bool => $payment->status() === PaymentStatus::PENDING
-                && $payment->attemptedAt() !== null
-                && $payment->confirmedAt() === null
-                && ! $payment->isVoided(),
-        ));
+        $settled = self::settledOf($orderPayments);
+        $pendingEligible = self::pendingEligibleOf($orderPayments);
 
         // "A real anomaly" (this stage's own wording): under normal
         // checkout/confirmation flow at most one payment is ever settled,
@@ -150,6 +140,34 @@ final class OrderRefunder
     }
 
     /**
+     * The payments a refund treats as SETTLED, and as PENDING-and-eligible (answered, unconfirmed,
+     * unvoided). One definition: the refund dialog (RefundFormReader) asks the same, so the form and
+     * the service can never disagree about which kind of payment an order has.
+     *
+     * @param  list<Payment>  $payments
+     * @return list<Payment>
+     */
+    public static function settledOf(array $payments): array
+    {
+        return array_values(array_filter($payments, static fn (Payment $payment): bool => $payment->isSettled()));
+    }
+
+    /**
+     * @param  list<Payment>  $payments
+     * @return list<Payment>
+     */
+    public static function pendingEligibleOf(array $payments): array
+    {
+        return array_values(array_filter(
+            $payments,
+            static fn (Payment $payment): bool => $payment->status() === PaymentStatus::PENDING
+                && $payment->attemptedAt() !== null
+                && $payment->confirmedAt() === null
+                && ! $payment->isVoided(),
+        ));
+    }
+
+    /**
      * A MONEY-ONLY refund (refunds R3, shipping-domain-design.md §7.2.11): goods 0, no sale line,
      * no stock. Only a SETTLED payment can be paid back; a pending one, or none, is refused by name
      * — nothing was paid, so unlike a return this never voids or reissues anything. Everything
@@ -160,10 +178,7 @@ final class OrderRefunder
      */
     public function refundMoneyOnly(string $orderId, RefundBreakdown $breakdown, ?string $reason, RefundChannel $channel): OrderRefundOutcome
     {
-        $settled = array_values(array_filter(
-            $this->payments->findByOrderId($orderId),
-            static fn (Payment $payment): bool => $payment->isSettled(),
-        ));
+        $settled = self::settledOf($this->payments->findByOrderId($orderId));
 
         if (count($settled) > 1) {
             throw new InvalidArgumentException(

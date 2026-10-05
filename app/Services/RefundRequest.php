@@ -24,9 +24,10 @@ use InvalidArgumentException;
  *    the same payload returns the first result, a different payload is refused
  *    (shipping-domain-design.md §7.2.3).
  *
- *  - announced return date (R3, recordReturn() only): the date the customer announced the
- *    return, entered by staff and stored on the `returned` history row; none by default.
- *    Not in the future, never before the order was placed (checked under the order lock).
+ *  - announced return DAY (R3, recordReturn() only): the calendar day ('Y-m-d', a plain string, no
+ *    time and no timezone) the customer announced the return, entered by staff and stored on the
+ *    `returned` history row; none by default. Between the order's placement day and the recording
+ *    day, both in the STORE timezone, inclusive (checked under the order lock).
  *
  * Until the new dialog (R3) and the caps (R1b) exist, a non-default request is
  * reachable only from tests. Amounts here are validated for shape only (not
@@ -44,10 +45,18 @@ final class RefundRequest
         public readonly ?string $deductionReason = null,
         public readonly ?RefundChannel $channel = null,
         public readonly ?string $operationKey = null,
-        public readonly ?DateTimeImmutable $announcedReturnAt = null,
+        public readonly ?string $announcedReturnOn = null,
     ) {
         if ($operationKey !== null && (trim($operationKey) === '' || strlen($operationKey) > 64)) {
             throw new InvalidArgumentException('RefundRequest: the operation key must be 1 to 64 characters.');
+        }
+
+        if ($announcedReturnOn !== null) {
+            $day = DateTimeImmutable::createFromFormat('!Y-m-d', $announcedReturnOn);
+
+            if ($day === false || $day->format('Y-m-d') !== $announcedReturnOn) {
+                throw new InvalidArgumentException("RefundRequest: the announced return day must be a real date written Y-m-d, got \"{$announcedReturnOn}\".");
+            }
         }
 
         foreach ($enteredGoodsByLine as $lineId => $amount) {

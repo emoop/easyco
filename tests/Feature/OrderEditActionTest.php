@@ -349,7 +349,7 @@ class OrderEditActionTest extends TestCase
 
         $this->assertNotContains('edit_order', $pageRows);
         $this->assertSame(
-            ['confirm', 'ship', 'deliver', 'mark_as_received', 'cancel', 'record_return', 'add_note'],
+            ['confirm', 'ship', 'deliver', 'mark_as_received', 'cancel', 'record_return', 'refund_money_only', 'add_note'],
             $pageRows,
         );
 

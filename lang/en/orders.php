@@ -265,6 +265,58 @@ return [
         'invariant_broken' => 'The numbers of this order do not add up, so the refund was not recorded. Nothing was changed. Please contact support.',
     ],
 
+    // Refunds R3 part 2: the cancel / return dialog's money part, the facts panel, the money-only action.
+    'history' => [
+        'announced_on' => 'Customer announced the return for: :day',
+    ],
+
+    'refund_dialog' => [
+        'section' => 'Refund',
+        'goods_label' => 'Goods refund',
+        'goods_hint' => 'Prefilled with the computed share; you may change it. Room left on this line: :room.',
+        'goods_hint_free' => 'Prefilled with the computed share; you may change it.',
+        'goods_readonly' => 'Nothing has been paid for this order, so nothing is refunded: this is the computed share and cannot be changed.',
+        'shipping_label' => 'Shipping refund',
+        'shipping_hint' => 'Room left: :room.',
+        'shipping_reduction_label' => 'Shipping reduction',
+        'shipping_reduction_hint' => 'Reduces what the customer still owes for delivery. Room left: :room. It has no effect if every unit is returned.',
+        'shipping_not_included' => 'Shipping (:amount) is not included.',
+        'deduction_label' => 'Deduction',
+        'deduction_hint' => 'Money the shop keeps from this refund. Needs a reason.',
+        'deduction_reason_label' => 'Reason for the deduction',
+        'channel_label' => 'Pay out through',
+        'channel_options' => [
+            'cash' => 'Cash from the register',
+            'bank' => 'Bank',
+        ],
+        'no_channel' => 'This order has been paid, and you have neither the "refund in cash" nor the "refund by bank" permission, so you cannot record this. Ask an administrator.',
+        'total' => 'Refund total: :total',
+        'still_refundable' => 'Still refundable on this order: :room',
+        'over_total' => 'This is more than can still be refunded (:room). The system will refuse it.',
+        'pending_total' => 'Nothing has been paid, so no money is refunded; the unpaid amount is reduced.',
+        'invalid_amount' => 'Enter an amount such as 12.50 or 12,50.',
+        'announced_label' => 'Date the customer announced the return',
+        'announced_help' => 'The day the customer said they would return the goods; no time needed. Optional.',
+        'facts_heading' => 'Facts about this order',
+        'facts_delivered' => 'Delivered :date · days since delivery: :days',
+        'facts_not_delivered' => 'Not marked as delivered.',
+        'facts_return' => 'Earlier return: recorded :recorded, announced :announced',
+        'facts_announced_none' => 'no day entered',
+        'facts_return_days' => ' (days after delivery: :recorded recorded, :announced announced)',
+    ],
+
+    'money_only' => [
+        'label' => 'Refund money only',
+        'heading' => 'Refund money only — order :id',
+        'description' => 'A refund of money without any goods coming back: goodwill or a correction. No stock changes.',
+        'shipping' => 'Shipping refund',
+        'adjustment' => 'Adjustment',
+        'reason' => 'Reason',
+        'hint' => 'Shipping room left: :shipping. Still refundable on this order: :total.',
+        'total' => 'Refund total: :total',
+        'done' => 'Refund of :amount recorded (owed).',
+    ],
+
     'refund_transition' => [
         'refund_not_found' => 'That refund was not found.',
         'not_owed' => 'Only a refund that is still owed can be paid out or cancelled. This one is not (it may already be paid out or cancelled). Nothing was changed.',

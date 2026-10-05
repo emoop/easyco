@@ -2,7 +2,7 @@
 
 namespace App\Http\Middleware;
 
-use App\Settings\Contracts\SiteSettingsRepository;
+use App\Settings\StoreTimezone;
 use Closure;
 use Filament\Support\Facades\FilamentTimezone;
 use Illuminate\Http\Request;
@@ -61,7 +61,7 @@ use Symfony\Component\HttpFoundation\Response;
 class ApplyStoreTimezone
 {
     public function __construct(
-        private readonly SiteSettingsRepository $settings,
+        private readonly StoreTimezone $storeTimezone,
     ) {}
 
     public function handle(Request $request, Closure $next): Response
@@ -71,9 +71,9 @@ class ApplyStoreTimezone
         // feature (config/services.php, this project's established place for
         // a developer-settable, env-overridable default) — never in this
         // class, and never as a Bulgaria-specific constant in the code path.
-        FilamentTimezone::set(
-            $this->settings->get('site.timezone') ?? config('services.site.default_timezone'),
-        );
+        // The service layer reads the same answer through StoreTimezone (refunds R3), so a screen and a
+        // service can never disagree about the store's zone.
+        FilamentTimezone::set($this->storeTimezone->current());
 
         return $next($request);
     }
