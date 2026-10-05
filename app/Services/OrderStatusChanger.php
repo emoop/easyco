@@ -108,6 +108,7 @@ final class OrderStatusChanger
         private readonly RefundCapGuard $capGuard,
         private readonly PaymentRefundRepository $paymentRefunds,
         private readonly StoreTimezone $storeTimezone,
+        private readonly PaymentReceiptReader $paymentReceipts,
     ) {}
 
     /**
@@ -497,6 +498,11 @@ final class OrderStatusChanger
         if (! in_array($lockedStatus, $legalStartingStatuses, true)) {
             throw $refusalException($orderId, $lockedStatus);
         }
+
+        // A bank transfer was received for this order and has not been reconciled (refunds R4a-2): the
+        // money is in hand, and a cancel / return would void the pending payment and orphan it. Refused by
+        // name until the receipt is settled or accepted (shipping-domain-design.md §7.2.20 §3).
+        $this->paymentReceipts->assertReconciled($this->payments->findByOrderId($orderId));
 
         // A FACT checked for being possible, never for being on time (§7.2.6: no deadline is enforced):
         // the customer cannot have announced a return after it is recorded, nor before the order existed.

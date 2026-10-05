@@ -111,6 +111,7 @@ final class OrderEditor
         private readonly PromotionDiscountCalculator $promotionDiscountCalculator,
         private readonly PromotionUsageContextAssembler $usageContextAssembler,
         private readonly CatalogScopeResolver $scopeResolver,
+        private readonly PaymentReceiptReader $paymentReceipts,
     ) {}
 
     /**
@@ -120,6 +121,7 @@ final class OrderEditor
      * @throws InvalidArgumentException Empty/unknown order id; a malformed or contradictory change; a legacy line with no §3.13 snapshot; an anomalous payment state.
      * @throws StaleOrderEditException If $expectedRevision is no longer the order's edit_revision.
      * @throws OrderNotEditableException If the status is not placed/confirmed, or a payment has already settled.
+     * @throws \App\Services\Exceptions\PaymentReceiptUnreconciledException If a bank transfer was received for the order and not reconciled.
      * @throws PromotionNoLongerValidException If a code that is kept or newly set is not valid for the resulting lines — never silently dropped; the merchant removes it explicitly.
      * @throws \EasyCo\Inventory\Exceptions\InsufficientStockException If an added/increased unit cannot be reserved.
      */
@@ -196,6 +198,10 @@ final class OrderEditor
                 throw OrderNotEditableException::becausePaymentSettled($order->status());
             }
         }
+
+        // 3b. A bank transfer received and not reconciled (refunds R4a-2): the edit would void and reissue
+        // the pending payment under money already in hand. Refused by name.
+        $this->paymentReceipts->assertReconciled($orderPayments);
 
         $pendingPayment = $this->paymentReissuer->currentPending($orderPayments, $orderId);
 

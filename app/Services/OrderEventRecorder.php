@@ -88,6 +88,9 @@ final class OrderEventRecorder
      * `$announcedReturnOn` (refunds R3) is the CALENDAR DAY ('Y-m-d', store timezone) the customer
      * announced a return, entered by staff; it belongs to a RETURNED event only.
      *
+     * `$paymentId` / `$paymentReceiptId` (refunds R4a) point a payment-receipt event at its payment and
+     * its receipt (real FKs, like `$paymentRefundId`).
+     *
      * @throws InvalidArgumentException If only one of the two statuses is set,
      *   or if a NOTE_ADDED event carries a status change or a blank note,
      *   or if an announced-return day is given to any event but RETURNED.
@@ -104,6 +107,8 @@ final class OrderEventRecorder
         ?string $operationPayloadHash = null,
         ?string $paymentRefundId = null,
         ?string $announcedReturnOn = null,
+        ?string $paymentId = null,
+        ?string $paymentReceiptId = null,
     ): void {
         if ($announcedReturnOn !== null && $type !== OrderEventType::RETURNED) {
             throw new InvalidArgumentException('OrderEventRecorder: an announced-return date belongs to a returned event only.');
@@ -151,6 +156,8 @@ final class OrderEventRecorder
             'operation_key' => $operationKey,
             'operation_payload_hash' => $operationPayloadHash,
             'payment_refund_id' => $paymentRefundId,
+            'payment_id' => $paymentId,
+            'payment_receipt_id' => $paymentReceiptId,
             'announced_return_on' => $announcedReturnOn,
         ]);
     }

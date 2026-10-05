@@ -38,6 +38,15 @@ namespace App\Enums;
  *                       second row rather than rewriting the first
  *                       (append-only) — the admin view shows the latest one.
  *
+ * - PAYMENT_RECEIPT_RECORDED — a bank transfer the merchant saw arrive was recorded
+ *                       (refunds R4a-2, shipping-domain-design.md §7.2.20): `reason` is the
+ *                       bank reference, `payment_id` and `payment_receipt_id` point at the
+ *                       payment and the receipt, the key and hash mark the operation. Both
+ *                       statuses NULL. An exact receipt is followed by `payment_confirmed`.
+ * - PAYMENT_RECEIPT_CORRECTED / PAYMENT_MISMATCH_ACCEPTED — reserved for R4a-3 (a correction
+ *                       of a receipt; the acceptance of a short or over transfer). Declared now so
+ *                       one change serves all three; nothing writes them yet.
+ *
  * STORED AS A PLAIN STRING COLUMN, like every other enum column in this schema
  * (`orders.status`, `operational_sales_sale_lines.type`) — never a native DB
  * enum.
@@ -55,4 +64,7 @@ enum OrderEventType: string
     case NOTE_ADDED = 'note_added';
     case EDITED = 'edited';
     case TRACKING_RECORDED = 'tracking_recorded';
+    case PAYMENT_RECEIPT_RECORDED = 'payment_receipt_recorded';
+    case PAYMENT_RECEIPT_CORRECTED = 'payment_receipt_corrected';
+    case PAYMENT_MISMATCH_ACCEPTED = 'payment_mismatch_accepted';
 }

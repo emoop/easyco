@@ -80,6 +80,19 @@ final class RefundOperationFingerprint
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE));
     }
 
+    /** The fingerprint of "record this bank-transfer receipt" — everything the merchant entered. */
+    public static function forReceipt(string $paymentId, int $amountMinor, string $currency, string $receivedOn, string $reference): string
+    {
+        return hash('sha256', json_encode([
+            'action' => 'payment_receipt',
+            'payment' => $paymentId,
+            'amount' => $amountMinor,
+            'currency' => $currency,
+            'receivedOn' => $receivedOn,
+            'reference' => $reference,
+        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE));
+    }
+
     /** The fingerprint of "mark this OWED refund paid out" — everything the merchant entered. */
     public static function forPayout(string $refundId, \DateTimeImmutable $paidOutAt, ?string $reference, ?string $note): string
     {

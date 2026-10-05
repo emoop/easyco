@@ -39,6 +39,8 @@ class OrderEventModel extends Model
         'operation_key',
         'operation_payload_hash',
         'payment_refund_id',
+        'payment_id',
+        'payment_receipt_id',
         'announced_return_on',
     ];
 

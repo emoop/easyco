@@ -404,6 +404,7 @@ discount the limits refuse.
 | `order.refund_recorded` | Action | `(Order $order, PaymentRefund $refund): void` | `OrderStatusChanger::cancel()`/`recordReturn()`, and `MoneyOnlyRefunder::record()` (refunds R3: a refund with goods 0) | After commit | Built (refunds R2a); replaces the designed `order.refunded` |
 | `order.refund_paid_out` | Action | `(Order $order, PaymentRefund $refund): void` | `RefundStatusChanger::markPaidOut()` | After commit | Built (refunds R2a) |
 | `order.refund_cancelled` | Action | `(Order $order, PaymentRefund $refund): void` | `RefundStatusChanger::cancelOwed()` | After commit | Built (refunds R2a) |
+| `order.payment_receipt_recorded` | Action | `(Order $order, Payment $payment, PaymentReceipt $receipt): void` | `PaymentReceiptRecorder::record()` (refunds R4a-2; bank transfer only) | After commit; never on a replay or a refusal | Built (refunds R4a-2). Fires for a matching receipt AND a short/over one; a matching one is followed by `order.payment_confirmed`. `order.payment_receipt_corrected` and `order.payment_mismatch_accepted` are designed (shipping-domain-design.md §7.2.20 §5) and arrive with R4a-3 |
 
 ### Payment
 

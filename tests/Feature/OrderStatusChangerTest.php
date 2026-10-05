@@ -1311,8 +1311,10 @@ class OrderStatusChangerTest extends TestCase
         fwrite(STDERR, "\n[query-count] OrderStatusChanger — cancel(), single-line full, placed: {$cancelCount} queries\n");
         fwrite(STDERR, "[query-count] OrderStatusChanger — recordReturn(), single-line partial, shipped: {$returnCount} queries\n");
 
-        // Bounded, not exact — a real number is reported above for review.
-        $this->assertLessThanOrEqual(20, $cancelCount);
-        $this->assertLessThanOrEqual(15, $returnCount);
+       // +1 each since refunds R4a-2 (cancel 20 -> 21, return 15 -> 16): the unreconciled-receipt guard reads the
+        // order's payments once, before the refund path, in performReturnLocked (both go through it). A constant
+        // read, it does not grow with the number of lines.
+        $this->assertLessThanOrEqual(21, $cancelCount);
+        $this->assertLessThanOrEqual(16, $returnCount);
     }
 }

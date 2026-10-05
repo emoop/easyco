@@ -104,6 +104,7 @@ final class OrderPaymentConfirmer
         private readonly PaymentRepository $payments,
         private readonly OrderRepository $orders,
         private readonly OrderEventRecorder $events,
+        private readonly PaymentReceiptReader $receipts,
     ) {}
 
     /**
@@ -159,8 +160,31 @@ final class OrderPaymentConfirmer
      *
      * @throws InvalidArgumentException If no payment has that id, if its order does not exist, or if the order already has a settled payment.
      * @throws \LogicException If Payment::confirm()'s own guards refuse it — an unanswered, captured, failed or voided attempt, or a second confirmation.
+     * @throws \App\Services\Exceptions\PaymentReceiptUnreconciledException If it is a bank transfer with an effective receipt (refunds R4a-2): see confirmReconciledWithinOpenTransaction().
      */
     public function confirmWithinOpenTransaction(string $paymentId, DateTimeImmutable $confirmedAt): Payment
+    {
+        return $this->settle($paymentId, $confirmedAt, true);
+    }
+
+    /**
+     * The SAME settlement, for ONE caller: PaymentReceiptRecorder's exact-match path (refunds R4a-2,
+     * shipping-domain-design.md §7.2.20 §3), which has just written the receipt that completes the
+     * expected amount and so is the reconciliation itself. confirmWithinOpenTransaction() REFUSES a
+     * bank-transfer payment that already has an effective receipt (PaymentReceiptUnreconciledException):
+     * until the dialog of R4a-4 replaces the old one-click "mark as received", that one-click path
+     * would settle for the full expected amount over a receipt that does not match it. Settling is
+     * still ONE implementation — this is the same private steps with the receipt check switched off —
+     * and the bypass has its own name rather than a boolean a caller could pass by mistake.
+     *
+     * Same contract as confirmWithinOpenTransaction(): inside an open transaction, no hook.
+     */
+    public function confirmReconciledWithinOpenTransaction(string $paymentId, DateTimeImmutable $confirmedAt): Payment
+    {
+        return $this->settle($paymentId, $confirmedAt, false);
+    }
+
+    private function settle(string $paymentId, DateTimeImmutable $confirmedAt, bool $refuseUnreconciledReceipts): Payment
     {
         // 1. The payment itself — a plain read, and deliberately the first
         //    statement, because the order to lock is only known from this
@@ -203,6 +227,13 @@ final class OrderPaymentConfirmer
                     self::describeSettled($attempt),
                 ));
             }
+        }
+
+        // 3b. Money seen arriving that does not add up to this payment (R4a-2): the settlement is the
+        //     receipt service's to make, not the one-click's. No read at all for a payment that is not a
+        //     pending bank transfer (cash on delivery, R10).
+        if ($refuseUnreconciledReceipts) {
+            $this->receipts->assertReconciled([$payment]);
         }
 
         // 4. The domain's own guards (§4.1) — they throw before anything

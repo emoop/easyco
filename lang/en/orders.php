@@ -129,6 +129,9 @@ return [
         'note_added' => 'Internal note',
         'edited' => 'Order edited',
         'tracking_recorded' => 'Tracking number recorded',
+        'payment_receipt_recorded' => 'Bank transfer received',
+        'payment_receipt_corrected' => 'Bank transfer record corrected',
+        'payment_mismatch_accepted' => 'Different transfer amount accepted',
     ],
 
     'delivery_type_options' => [
@@ -334,6 +337,29 @@ return [
         'payment_not_settled' => 'This order has no settled payment, so nothing has been paid and nothing can be refunded. Nothing was recorded.',
         'deduction_not_allowed' => 'A refund without a return cannot have a deduction: there are no goods to deduct from. Nothing was recorded.',
         'nothing_to_refund' => 'Enter a shipping refund or an adjustment: the refund would be 0. Nothing was recorded.',
+    ],
+
+    // Refunds R4a-2 (shipping-domain-design.md §7.2.20): recording a bank-transfer receipt.
+    'payment_receipt' => [
+        'unreconciled' => 'A transfer of :received was received for this order and has not been reconciled — accept it or record the rest first. Nothing was changed.',
+        'refused' => [
+            'not_bank_transfer' => 'Only a bank-transfer payment takes a receipt. Nothing was recorded.',
+            'payment_settled' => 'This payment is already settled. Nothing was recorded.',
+            'payment_voided' => 'This payment was voided and no longer counts. Nothing was recorded.',
+            'payment_unanswered' => 'This payment has not been answered yet, so it cannot take a receipt. Nothing was recorded.',
+            'payment_not_confirmable' => 'This payment cannot take a receipt in its current state. Nothing was recorded.',
+            'too_many_effective_receipts' => 'A payment takes at most :max receipts. Nothing was recorded.',
+            'too_many_receipt_rows' => 'This payment has reached its limit of :max recorded rows, corrections included. Nothing was recorded.',
+            'amount_not_positive' => 'Enter an amount greater than 0. Nothing was recorded.',
+            'amount_too_large' => 'The amount can have at most :digits digits before the decimal point. Nothing was recorded.',
+            'currency_mismatch' => 'The amount must be in the currency of the payment (:currency). Nothing was recorded.',
+            'day_malformed' => 'Enter the day the money arrived as a real date. Nothing was recorded.',
+            'day_in_future' => 'The day the money arrived cannot be in the future. Nothing was recorded.',
+            'day_before_placement' => 'The day the money arrived cannot be before the order was placed. Nothing was recorded.',
+            'reference_blank' => 'Enter the bank reference of the transfer. Nothing was recorded.',
+            'reference_too_long' => 'The bank reference can have at most :max characters. Nothing was recorded.',
+            'reference_invalid' => 'The bank reference can only hold visible text on one line. Nothing was recorded.',
+        ],
     ],
 
     'return_announced_date' => [

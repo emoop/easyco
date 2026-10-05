@@ -10,6 +10,7 @@ use App\Rules\KnownCountryCode;
 use App\Filament\Resources\OrderResource\RefundDialog;
 use App\Services\Exceptions\MoneyOnlyRefundRefusedException;
 use App\Services\Exceptions\OperationKeyReusedException;
+use App\Services\Exceptions\PaymentReceiptUnreconciledException;
 use App\Services\Exceptions\OrderAddLineRefusedException;
 use App\Services\Exceptions\OrderTransitionRefusedException;
 use App\Services\Exceptions\PendingPaymentRefundRuleException;
@@ -2438,7 +2439,7 @@ class OrderResource extends Resource
                 ->send();
 
             return;
-        } catch (RefundCapExceededException|RefundPermissionDeniedException|OperationKeyReusedException|PendingPaymentRefundRuleException|RefundTransitionRefusedException|MoneyOnlyRefundRefusedException|ReturnAnnouncedDateException $e) {
+        } catch (RefundCapExceededException|RefundPermissionDeniedException|OperationKeyReusedException|PendingPaymentRefundRuleException|RefundTransitionRefusedException|MoneyOnlyRefundRefusedException|ReturnAnnouncedDateException|PaymentReceiptUnreconciledException $e) {
             // The refund caps, the money permission, a reused operation key, a money-only refusal and an
             // impossible announced day all carry their own translated sentence: shown as a refusal, never a 500.
             Notification::make()
@@ -2491,6 +2492,15 @@ class OrderResource extends Resource
                     'expected' => $e->expectedRevision(),
                     'actual' => $e->actualRevision(),
                 ]))
+                ->danger()
+                ->send();
+
+            return;
+        } catch (PaymentReceiptUnreconciledException $e) {
+            // A transfer was received and not reconciled (refunds R4a-2): a translated sentence naming the amount.
+            Notification::make()
+                ->title(__('orders.actions.refused_title'))
+                ->body($e->getMessage())
                 ->danger()
                 ->send();
 
