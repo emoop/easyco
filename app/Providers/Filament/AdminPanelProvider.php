@@ -15,8 +15,10 @@ use Filament\PanelProvider;
 use Filament\Support\Assets\Css;
 use Filament\Support\Colors\Color;
 use Filament\Support\Facades\FilamentAsset;
+use Filament\View\PanelsRenderHook;
 use Filament\Widgets\AccountWidget;
 use Filament\Widgets\FilamentInfoWidget;
+use Illuminate\Contracts\View\View;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
@@ -133,6 +135,40 @@ class AdminPanelProvider extends PanelProvider
             // which hides the sidebar completely) — this task's own
             // "collapses to icon-only" requirement.
             ->sidebarWidth('17rem')
-            ->sidebarCollapsibleOnDesktop();
+            ->sidebarCollapsibleOnDesktop()
+            // Filament already ships the light/dark/system switcher
+            // (<x-filament-panels::theme-switcher />), but out of the box the
+            // user-menu dropdown is the ONLY place it ever appears — hidden
+            // behind the avatar rather than in the top bar, which is where
+            // this panel wants it. This line switches that one dropdown
+            // rendering off so the same Filament component can be re-rendered
+            // by the render hook below instead of appearing twice. Verified
+            // against the installed v5.8.1 source that user-menu.blade.php is
+            // the single consumer of hasThemeSwitcher(), so nothing else
+            // loses anything: dark mode itself stays enabled (HasDarkMode's
+            // own default), and that — not this flag — is what includes
+            // Filament's dark-mode.js and its localStorage-backed theme
+            // store.
+            ->themeSwitcher(false)
+            // The switcher plus the "View store" icon link, in the top bar
+            // immediately before the avatar. USER_MENU_BEFORE is the precise
+            // hook for that position: it renders as the first thing inside
+            // <x-filament-panels::user-menu />, so it sits directly before
+            // the avatar's own dropdown even on the days when a
+            // topbar-positioned global search or database notifications would
+            // otherwise come between them (something GLOBAL_SEARCH_AFTER
+            // cannot promise).
+            //
+            // Registered on the panel itself with Filament's default
+            // (all-panels) hook scope on purpose: the topbar and user-menu
+            // blades call renderHook() without any scopes, and
+            // ViewManager::renderHook() Arr::wrap()s that null into an empty
+            // list — so the default scope is the only one ever consulted for
+            // this hook and a panel-scoped registration here would silently
+            // never render.
+            ->renderHook(
+                PanelsRenderHook::USER_MENU_BEFORE,
+                fn (): View => view('filament.admin.topbar-actions'),
+            );
     }
 }
