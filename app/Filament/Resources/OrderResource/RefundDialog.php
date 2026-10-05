@@ -97,13 +97,51 @@ final class RefundDialog
             });
     }
 
-    /** The quantity box of a RETURN follows into the goods box: the computed share of what was typed. */
+    /** A quantity box holds at most this many digits, so a 30-digit value cannot reach an (int) cast. */
+    public const QUANTITY_MAX_LENGTH = 6;
+
+    /**
+     * The quantity box of a RETURN, on blur: a whole number above what remains becomes what remains, a negative or
+     * non-numeric value becomes empty (0), and the goods box follows the CORRECTED quantity — it is never blank just
+     * because the value was too high. A decimal is left as typed (the integer rule refuses it at submit — never
+     * silently cut) and the goods box is cleared, since no share is computed for a quantity that is not whole.
+     * maxValue() stays the submit-time guard and ReturnExceedsRemainingQuantityException the service's final one.
+     */
     public static function followQuantity(TextInput $quantity, OrderAdminSaleLineView $line, RefundFormReader $reader): TextInput
     {
         return $quantity
             ->live(onBlur: true)
-            ->afterStateUpdated(function (mixed $state, Set $set) use ($line, $reader): void {
-                $set("goods.{$line->id}", $reader->computedShare($line, (int) $state)?->decimalValue());
+            ->afterStateUpdated(function (TextInput $component, Set $set) use ($line, $reader): void {
+                // The RAW value as typed: the state a numeric box hands a hook (and Get) is already cast ('1.5' -> 1, 'abc' -> 0).
+                $typed = $component->getRawState();
+                $raw = is_scalar($typed) ? trim((string) $typed) : '';
+
+                if (! preg_match('/^-?\d{1,'.self::QUANTITY_MAX_LENGTH.'}$/', $raw)) {
+                    // Empty, a decimal, or text: a decimal stays for the integer rule; anything else is emptied.
+                    if (! is_numeric($raw)) {
+                        $set("quantity.{$line->id}", null);
+                    }
+
+                    $set("goods.{$line->id}", null);
+
+                    return;
+                }
+
+                $quantity = (int) $raw;
+
+                if ($quantity < 0) {
+                    $set("quantity.{$line->id}", null);
+                    $set("goods.{$line->id}", null);
+
+                    return;
+                }
+
+                if ($quantity > $line->remainingReturnable) {
+                    $quantity = $line->remainingReturnable;
+                    $set("quantity.{$line->id}", $quantity);
+                }
+
+                $set("goods.{$line->id}", $reader->computedShare($line, $quantity)?->decimalValue());
             });
     }
 

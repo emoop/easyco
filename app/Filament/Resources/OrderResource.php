@@ -2289,9 +2289,13 @@ class OrderResource extends Resource
             $quantity = $editableQuantity
                 ? TextInput::make("quantity.{$line->id}")
                     ->label(__('orders.actions.quantity_label'))
-                    ->numeric()
+                    // Whole units only (a decimal is a field error, never cut to an integer), at most six digits so a
+                    // 30-digit value never reaches an (int) cast; maxValue is the submit-time guard, and on blur
+                    // RefundDialog::followQuantity() clamps to what remains.
+                    ->integer()
                     ->minValue(0)
                     ->maxValue($line->remainingReturnable)
+                    ->maxLength(RefundDialog::QUANTITY_MAX_LENGTH)
                     ->default(null)
                 : TextEntry::make("quantity_display.{$line->id}")
                     ->label(__('orders.actions.quantity_label'))
