@@ -401,7 +401,7 @@ discount the limits refuse.
 | `order.status_changed` | Action | `(Order $order, OrderStatus $from, OrderStatus $to): void` | `OrderStatusChanger`, every public transition method | After commit | Designed, lifecycle stage 8 |
 | `order.cancelled` | Action | `(Order $order, ?string $reason): void` | `OrderStatusChanger::cancel()` | After commit | Designed, lifecycle stage 8 |
 | `order.returned` | Action | `(Order $order, array $returnedLines): void` | `OrderStatusChanger::cancel()`/`recordReturn()` | After commit | Designed, lifecycle stage 8 |
-| `order.refund_recorded` | Action | `(Order $order, PaymentRefund $refund): void` | `OrderStatusChanger::cancel()`/`recordReturn()` | After commit | Built (refunds R2a); replaces the designed `order.refunded` |
+| `order.refund_recorded` | Action | `(Order $order, PaymentRefund $refund): void` | `OrderStatusChanger::cancel()`/`recordReturn()`, and `MoneyOnlyRefunder::record()` (refunds R3: a refund with goods 0) | After commit | Built (refunds R2a); replaces the designed `order.refunded` |
 | `order.refund_paid_out` | Action | `(Order $order, PaymentRefund $refund): void` | `RefundStatusChanger::markPaidOut()` | After commit | Built (refunds R2a) |
 | `order.refund_cancelled` | Action | `(Order $order, PaymentRefund $refund): void` | `RefundStatusChanger::cancelOwed()` | After commit | Built (refunds R2a) |
 
