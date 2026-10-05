@@ -42,7 +42,10 @@ class VariationMediaController extends Controller
         $validated = $request->validate([
             'variation_id' => 'required|exists:catalog_variations,id',
             'media_id' => 'required|exists:catalog_media,id',
-            'sort_order' => 'nullable|integer|min:0',
+            // Ceiling = catalog_variation_media.sort_order's own column width
+            // (unsignedInteger): the widest value it can hold is accepted, one
+            // above it is a 422 rather than a 500.
+            'sort_order' => 'nullable|integer|min:0|max:4294967295',
         ]);
 
         try {

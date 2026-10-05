@@ -48,10 +48,13 @@ detail here.
   reconciling when this is actually designed. The Cloudflare example
   there is also at odds with production-requirements.md's "no CDN, no
   Cloudflare" stance, which is the stance this note follows.
-- The only rate limiting in the codebase today is `throttle:6,1` on
+- Rate limiting in the codebase today guards one endpoint each, and is
+  not bot-traffic mitigation: the inline `throttle:6,1` on
   `POST /api/account/login` (routes/api.php; account-domain-design.md)
-  - brute-force protection for one endpoint, not bot-traffic
-  mitigation.
+  is brute-force protection, and `POST /api/shipping/quote` carries the
+  named limiter `ApiRateLimits::SHIPPING_QUOTE` (routes/api.php:55, its
+  budget in config/ratelimits.php) — two guarded endpoints, no general
+  throttling anywhere.
 
 ## Validation plan, once designed
 

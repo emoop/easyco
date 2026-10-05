@@ -28,7 +28,10 @@ class AttributeValueController extends Controller
         $validated = $request->validate([
             'attribute_definition_id' => 'required|exists:catalog_attribute_definitions,id',
             'value' => 'required|string|max:255',
-            'sort_order' => 'nullable|integer',
+            // min:0 and the ceiling are catalog_attribute_values.sort_order's
+            // own column (unsignedInteger): a negative or over-wide value is a
+            // 422 field error, never a 500 from MySQL.
+            'sort_order' => 'nullable|integer|min:0|max:4294967295',
         ]);
 
         $value = new AttributeValue(

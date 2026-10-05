@@ -214,4 +214,72 @@ class PromotionScopeControllerTest extends TestCase
 
         $response->assertStatus(404);
     }
+
+    // --- Input hardening pass 2: scope_reference_id -------------------------------------
+
+    /**
+     * promotion_scopes.scope_reference_id is a varchar(255). NOTE what is NOT
+     * asserted anywhere here: that the reference resolves to a real brand,
+     * category or account — that is the deliberate cross-domain gap this class's
+     * own docblock keeps. This is only the width and the character set.
+     */
+    public function test_a_255_character_scope_reference_id_is_accepted_and_stored_unchanged(): void
+    {
+        $promotionId = $this->promotionId();
+        $referenceId = str_repeat('я', 255);
+
+        $response = $this->postJson("/api/promotions/{$promotionId}/scopes", [
+            'scope_type' => 'brand',
+            'scope_reference_id' => $referenceId,
+            'mode' => 'include',
+        ]);
+
+        $response->assertStatus(201);
+        $response->assertJsonPath('scope_reference_id', $referenceId);
+
+        $this->assertSame($referenceId, PromotionScopeModel::findOrFail($response->json('id'))->scope_reference_id);
+        $this->assertSame(255, mb_strlen(PromotionScopeModel::findOrFail($response->json('id'))->scope_reference_id));
+    }
+
+    public function test_a_256_character_scope_reference_id_is_a_422_field_error_and_writes_nothing(): void
+    {
+        $promotionId = $this->promotionId();
+
+        $response = $this->postJson("/api/promotions/{$promotionId}/scopes", [
+            'scope_type' => 'brand',
+            'scope_reference_id' => str_repeat('я', 256),
+            'mode' => 'include',
+        ]);
+
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors(['scope_reference_id']);
+        $this->assertSame(0, PromotionScopeModel::count());
+    }
+
+    /** @return array<string, array{string}> */
+    public static function refusedReferenceIdValues(): array
+    {
+        return [
+            'a newline' => ["brand-1\n2"],
+            'a NUL byte' => ["brand-\0x"],
+            'a tab' => ["brand\t1"],
+            'a right-to-left override' => ['brand-'."\u{202E}".'1'],
+        ];
+    }
+
+    #[DataProvider('refusedReferenceIdValues')]
+    public function test_a_scope_reference_id_carrying_a_control_or_bidirectional_character_is_a_422_and_writes_nothing(string $referenceId): void
+    {
+        $promotionId = $this->promotionId();
+
+        $response = $this->postJson("/api/promotions/{$promotionId}/scopes", [
+            'scope_type' => 'brand',
+            'scope_reference_id' => $referenceId,
+            'mode' => 'include',
+        ]);
+
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors(['scope_reference_id']);
+        $this->assertSame(0, PromotionScopeModel::count());
+    }
 }

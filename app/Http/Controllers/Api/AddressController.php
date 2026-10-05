@@ -149,9 +149,15 @@ class AddressController extends Controller
             'address_line_1' => ['required_if:delivery_type,street_address', 'prohibited_if:delivery_type,pickup_point', 'string', 'max:255', new PlainText()],
             'postal_code' => ['nullable', 'prohibited_if:delivery_type,pickup_point', 'string', 'max:255', new PlainText()],
             'address_line_2' => ['nullable', 'prohibited_if:delivery_type,pickup_point', 'string', 'max:255', new PlainText()],
-            'carrier_code' => 'required_if:delivery_type,pickup_point|prohibited_if:delivery_type,street_address|string',
-            'pickup_point_reference' => 'required_if:delivery_type,pickup_point|prohibited_if:delivery_type,street_address|string',
-            'settlement' => 'required_if:delivery_type,pickup_point|prohibited_if:delivery_type,street_address|string',
+            // Delivery type is the only thing that may vary these three: they
+            // keep their required_if/prohibited_if shape exactly. What is added
+            // is a WIDTH and CONTENT guard — each is stored in a varchar(255)
+            // column, so max:255 makes an overlong value a 422 field error
+            // rather than a 500 from MySQL, and PlainText refuses a control
+            // character or a bidirectional override.
+            'carrier_code' => ['required_if:delivery_type,pickup_point', 'prohibited_if:delivery_type,street_address', 'string', 'max:255', new PlainText()],
+            'pickup_point_reference' => ['required_if:delivery_type,pickup_point', 'prohibited_if:delivery_type,street_address', 'string', 'max:255', new PlainText()],
+            'settlement' => ['required_if:delivery_type,pickup_point', 'prohibited_if:delivery_type,street_address', 'string', 'max:255', new PlainText()],
         ];
     }
 

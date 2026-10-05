@@ -2,6 +2,8 @@
 
 namespace Tests\Feature;
 
+use EasyCo\Pricing\Currency;
+use EasyCo\Pricing\DefaultCurrency;
 use EasyCo\Promotions\Persistence\Eloquent\PromotionModel;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -15,6 +17,19 @@ class PromotionControllerTest extends TestCase
     {
         parent::setUp();
         $this->actingAsAdministrator();
+    }
+
+    /**
+     * DefaultCurrency is plain static state, not container-scoped, so a test
+     * that points it at a 0-decimal currency has to put the host application's
+     * own configured currency back for the tests that run after it in the same
+     * PHP process (the same reason DefaultCurrencyTest resets in tearDown).
+     */
+    protected function tearDown(): void
+    {
+        DefaultCurrency::set(Currency::of((string) config('services.pricing.default_currency')));
+
+        parent::tearDown();
     }
 
     public function test_happy_path_store_for_a_percentage_promotion_returns_201_and_persists(): void
@@ -291,5 +306,106 @@ class PromotionControllerTest extends TestCase
             'minimum_spend_amount_minor' => 1050,
             'maximum_spend_amount_minor' => 100000,
         ]);
+    }
+
+    // --- Input hardening pass 2: the usage limits and a 0-decimal currency --------------
+
+    /**
+     * promotions.usage_limit_* are unsignedIntegers: 4294967295 is the widest
+     * value each column can hold, so it round-trips unchanged.
+     */
+    public function test_a_usage_limit_of_the_columns_own_maximum_is_accepted_and_stored_unchanged(): void
+    {
+        $response = $this->postJson('/api/promotions', [
+            'code' => 'MAXUSAGE',
+            'discount_type' => 'percentage',
+            'percentage_basis_points' => 2000,
+            'usage_limit_total' => 4294967295,
+            'usage_limit_per_customer' => 4294967295,
+            'usage_limit_items' => 4294967295,
+        ]);
+
+        $response->assertStatus(201);
+
+        $this->assertDatabaseHas('promotions', [
+            'code' => 'maxusage',
+            'usage_limit_total' => 4294967295,
+            'usage_limit_per_customer' => 4294967295,
+            'usage_limit_items' => 4294967295,
+        ]);
+    }
+
+    /**
+     * Every limit crossed with every out-of-range value, built here rather than
+     * with two attributes: PHPUnit runs one data provider at a time, it does not
+     * take their product.
+     *
+     * @return array<string, array{string, int}>
+     */
+    public static function refusedUsageLimits(): array
+    {
+        $cases = [];
+
+        foreach (['usage_limit_total', 'usage_limit_per_customer', 'usage_limit_items'] as $field) {
+            $cases["{$field} one above the column"] = [$field, 4294967296];
+            $cases["{$field} zero"] = [$field, 0];
+            $cases["{$field} negative"] = [$field, -1];
+        }
+
+        return $cases;
+    }
+
+    #[DataProvider('refusedUsageLimits')]
+    public function test_a_usage_limit_outside_the_columns_range_is_a_422_field_error_and_writes_nothing(string $field, int $value): void
+    {
+        $response = $this->postJson('/api/promotions', [
+            'code' => 'BADLIMIT',
+            'discount_type' => 'percentage',
+            'percentage_basis_points' => 2000,
+            $field => $value,
+        ]);
+
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors([$field]);
+        $this->assertSame(0, PromotionModel::count());
+    }
+
+    /**
+     * A 0-decimal currency (JPY here) makes the shared amount pattern take its
+     * own branch. Before that branch existed the interpolated `\d{1,0}` was an
+     * INVALID regex, which Laravel's `regex` rule refuses as a malformed
+     * pattern — a 500 on EVERY request to this endpoint while such a currency was
+     * configured, whatever the amount was. A whole-unit amount is accepted and
+     * round-trips; a fractional one is a 422 rather than being silently rounded.
+     */
+    public function test_with_a_zero_decimal_currency_a_whole_amount_is_accepted_and_a_fractional_one_is_a_422_field_error(): void
+    {
+        DefaultCurrency::set(Currency::of('JPY'));
+
+        $accepted = $this->postJson('/api/promotions', [
+            'code' => 'YEN100',
+            'discount_type' => 'fixed_amount',
+            'discount_amount' => '100',
+        ]);
+
+        $accepted->assertStatus(201);
+        $accepted->assertJsonPath('discount_amount.amount', '100');
+        $accepted->assertJsonPath('discount_amount.currency', 'JPY');
+
+        $this->assertDatabaseHas('promotions', [
+            'code' => 'yen100',
+            'discount_amount_minor' => 100,
+            'discount_amount_currency' => 'JPY',
+        ]);
+
+        $refused = $this->postJson('/api/promotions', [
+            'code' => 'YEN1005',
+            'discount_type' => 'fixed_amount',
+            'discount_amount' => '100.5',
+        ]);
+
+        $refused->assertStatus(422);
+        $refused->assertJsonValidationErrors(['discount_amount']);
+        $this->assertSame(1, PromotionModel::count());
     }
 }

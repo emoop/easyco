@@ -781,6 +781,159 @@ class CheckoutControllerTest extends TestCase
         $page->assertSeeHtml('&lt;script&gt;alert(1)&lt;/script&gt;');
         $page->assertDontSeeHtml('<script>alert(1)');
     }
+
+    // --- Input hardening pass 2: the pickup-point fields and the two echoed ids ----------
+
+    /**
+     * The three fields only a PICKUP_POINT delivery carries — all three stored in
+     * varchar(255) columns on orders. Their required_if/prohibited_if shape is
+     * untouched; what these tests pin is the width and the character set.
+     *
+     * @return array<string, array{string, int}>
+     */
+    public static function hardenedPickupPointFields(): array
+    {
+        return [
+            'carrier_code' => ['carrier_code', 255],
+            'pickup_point_reference' => ['pickup_point_reference', 255],
+            'settlement' => ['settlement', 255],
+        ];
+    }
+
+    #[DataProvider('hardenedPickupPointFields')]
+    public function test_a_pickup_point_value_at_the_limit_is_accepted_and_stored_unchanged(string $field, int $limit): void
+    {
+        $variationId = $this->pricedPurchasableVariation('10.00', 10);
+        $this->addLineViaHttp($variationId, 1);
+
+        $value = str_repeat('я', $limit);
+
+        $response = $this->postJson('/api/checkout', $this->pickupPayload([$field => $value]));
+
+        $response->assertStatus(201);
+        $response->assertJsonPath("order.{$field}", $value);
+
+        $order = OrderModel::findOrFail($response->json('order.id'));
+
+        $this->assertSame($value, $order->{$field});
+        $this->assertSame($limit, mb_strlen($order->{$field}), 'The bound is in characters, not bytes.');
+    }
+
+    #[DataProvider('hardenedPickupPointFields')]
+    public function test_a_pickup_point_value_one_character_too_many_is_a_422_field_error_and_places_no_order(string $field, int $limit): void
+    {
+        $variationId = $this->pricedPurchasableVariation('10.00', 10);
+        $this->addLineViaHttp($variationId, 1);
+
+        $response = $this->postJson('/api/checkout', $this->pickupPayload([
+            $field => str_repeat('я', $limit + 1),
+        ]));
+
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors([$field]);
+        $this->assertSame(0, OrderModel::count());
+    }
+
+    /**
+     * Every pickup-point field crossed with every refused character (the same
+     * character list the pass-1 section above uses), built here rather than with
+     * two attributes: PHPUnit runs one data provider at a time.
+     *
+     * @return array<string, array{string, string}>
+     */
+    public static function refusedPickupPointCharacterCases(): array
+    {
+        $cases = [];
+
+        foreach (array_keys(self::hardenedPickupPointFields()) as $field) {
+            foreach (self::refusedCharacters() as $description => [$value]) {
+                $cases["{$field} carrying {$description}"] = [$field, $value];
+            }
+        }
+
+        return $cases;
+    }
+
+    #[DataProvider('refusedPickupPointCharacterCases')]
+    public function test_a_control_or_bidirectional_character_in_a_pickup_point_field_is_a_422_and_places_no_order(string $field, string $value): void
+    {
+        $variationId = $this->pricedPurchasableVariation('10.00', 10);
+        $this->addLineViaHttp($variationId, 1);
+
+        $response = $this->postJson('/api/checkout', $this->pickupPayload([$field => $value]));
+
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors([$field]);
+        $this->assertSame(0, OrderModel::count());
+    }
+
+    public function test_a_256_character_cart_id_is_a_422_field_error_and_places_no_order(): void
+    {
+        $variationId = $this->pricedPurchasableVariation('10.00', 10);
+        $this->addLineViaHttp($variationId, 1);
+
+        $response = $this->postJson('/api/checkout', $this->checkoutPayload([
+            'cart_id' => str_repeat('я', 256),
+        ]));
+
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors(['cart_id']);
+        $this->assertSame(0, OrderModel::count());
+    }
+
+    /**
+     * A 255-character cart id is a legitimate VALUE as far as this layer is
+     * concerned — it is the CART that is unknown, which is the orchestrator's own
+     * 404 (the answer any unknown id gets). This is what pins that max:255
+     * refuses a width and not a shape.
+     */
+    public function test_a_255_character_cart_id_passes_the_width_rule_and_is_a_404_for_the_unknown_cart(): void
+    {
+        $variationId = $this->pricedPurchasableVariation('10.00', 10);
+        $this->addLineViaHttp($variationId, 1);
+
+        $response = $this->postJson('/api/checkout', $this->checkoutPayload([
+            'cart_id' => str_repeat('я', 255),
+        ]));
+
+        $response->assertStatus(404);
+        $response->assertJsonMissingValidationErrors(['cart_id']);
+        $this->assertSame(0, OrderModel::count());
+    }
+
+    public function test_a_256_character_payment_method_is_a_422_field_error_and_places_no_order(): void
+    {
+        $variationId = $this->pricedPurchasableVariation('10.00', 10);
+        $this->addLineViaHttp($variationId, 1);
+
+        $response = $this->postJson('/api/checkout', $this->checkoutPayload([
+            'payment_method' => str_repeat('я', 256),
+        ]));
+
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors(['payment_method']);
+        $this->assertSame(0, OrderModel::count());
+    }
+
+    /**
+     * At the limit the width rule lets the value through, and what refuses it is
+     * the adapter resolver's own unknown-method answer — a 422 that is NOT a
+     * validation error, which is exactly the difference max:255 draws.
+     */
+    public function test_a_255_character_payment_method_is_not_a_validation_failure_but_an_unknown_method(): void
+    {
+        $variationId = $this->pricedPurchasableVariation('10.00', 10);
+        $this->addLineViaHttp($variationId, 1);
+
+        $response = $this->postJson('/api/checkout', $this->checkoutPayload([
+            'payment_method' => str_repeat('я', 255),
+        ]));
+
+        $response->assertStatus(422);
+        $response->assertJsonMissingValidationErrors(['payment_method']);
+        $response->assertJsonPath('reason', 'unknown_payment_method');
+        $this->assertSame(0, OrderModel::count());
+    }
 }
 
 

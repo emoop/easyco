@@ -41,7 +41,12 @@ class StockLevelController extends Controller
         $request->merge(['variation_id' => $variationId]);
         $validated = $request->validate([
             'variation_id' => 'required|exists:catalog_variations,id',
-            'quantity' => 'required|integer|min:0',
+            // The ceiling is stock_levels.quantity's own column width
+            // (unsignedInteger) — the widest value the column can hold is a
+            // legitimate value, and anything above it is a 422 field error
+            // rather than a 500 from MySQL. A narrower business cap is a
+            // later decision, not this one.
+            'quantity' => 'required|integer|min:0|max:4294967295',
         ]);
 
         $stockLevel = $this->stockLevels->findByVariationId($variationId);

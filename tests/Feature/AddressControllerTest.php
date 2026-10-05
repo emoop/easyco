@@ -464,4 +464,105 @@ class AddressControllerTest extends TestCase
 
         $this->assertSame('Ivan Ivanov', $reloaded->recipientName());
     }
+
+    // --- Input hardening pass 2: the three pickup-point fields --------------------------
+
+    /**
+     * The three fields only a PICKUP_POINT delivery carries, all three stored in
+     * varchar(255) columns. Their required_if/prohibited_if shape is untouched —
+     * what these tests pin is the width and the character set.
+     *
+     * @return array<string, array{string, int}>
+     */
+    public static function hardenedPickupPointFields(): array
+    {
+        return [
+            'carrier_code' => ['carrier_code', 255],
+            'pickup_point_reference' => ['pickup_point_reference', 255],
+            'settlement' => ['settlement', 255],
+        ];
+    }
+
+    #[DataProvider('hardenedPickupPointFields')]
+    public function test_a_pickup_point_value_at_the_limit_is_accepted_and_stored_unchanged(string $field, int $limit): void
+    {
+        $value = str_repeat('я', $limit);
+
+        $response = $this->postJson('/api/addresses', $this->pickupPointPayload([$field => $value]));
+
+        $response->assertStatus(201);
+        $response->assertJsonPath($field, $value);
+
+        $model = AddressModel::findOrFail($response->json('id'));
+
+        $this->assertSame($value, $model->{$field});
+        $this->assertSame($limit, mb_strlen($model->{$field}), 'The bound is in characters, not bytes.');
+    }
+
+    #[DataProvider('hardenedPickupPointFields')]
+    public function test_a_pickup_point_value_one_character_too_many_is_a_422_field_error_and_writes_nothing(string $field, int $limit): void
+    {
+        $response = $this->postJson('/api/addresses', $this->pickupPointPayload([
+            $field => str_repeat('я', $limit + 1),
+        ]));
+
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors([$field]);
+        $this->assertSame(0, AddressModel::count());
+    }
+
+    /**
+     * Every pickup-point field crossed with every refused character, built here
+     * rather than with two attributes: PHPUnit runs one data provider at a time,
+     * it does not take their product.
+     *
+     * @return array<string, array{string, string}>
+     */
+    public static function refusedPickupPointCharacters(): array
+    {
+        $characters = [
+            'a newline' => "office\n1234",
+            'a NUL byte' => 'office'."\0".'1234',
+            'a tab' => "office\t1234",
+            'a right-to-left override' => 'office'."\u{202E}".'1234',
+        ];
+
+        $cases = [];
+
+        foreach (array_keys(self::hardenedPickupPointFields()) as $field) {
+            foreach ($characters as $description => $value) {
+                $cases["{$field} carrying {$description}"] = [$field, $value];
+            }
+        }
+
+        return $cases;
+    }
+
+    #[DataProvider('refusedPickupPointCharacters')]
+    public function test_a_control_or_bidirectional_character_in_a_pickup_point_field_is_a_422_and_writes_nothing(string $field, string $value): void
+    {
+        $response = $this->postJson('/api/addresses', $this->pickupPointPayload([$field => $value]));
+
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors([$field]);
+        $this->assertSame(0, AddressModel::count());
+    }
+
+    /** store() and update() share one rule set — this proves update() carries these too. */
+    public function test_update_refuses_an_overlong_pickup_point_value_and_leaves_the_stored_address_unchanged(): void
+    {
+        $this->loggedInAccount();
+        $created = $this->postJson('/api/addresses', $this->pickupPointPayload())->json();
+
+        $response = $this->putJson("/api/addresses/{$created['id']}", $this->pickupPointPayload([
+            'settlement' => str_repeat('я', 256),
+        ]));
+
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors(['settlement']);
+
+        $reloaded = app(AddressRepository::class)->findById((string) $created['id']);
+
+        $this->assertSame('Sofia', $reloaded->settlement());
+    }
 }

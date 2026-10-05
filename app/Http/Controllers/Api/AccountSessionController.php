@@ -13,11 +13,18 @@ use Illuminate\Support\Facades\Auth;
  */
 class AccountSessionController extends Controller
 {
+    /**
+     * `string` and a 255-character ceiling on both: the ceiling is the width of
+     * accounts.email, so a value longer than the column is a 422 field error
+     * instead of a query against a column it could never have come out of.
+     * The 401 for a real mismatch is unchanged, and deliberately still identical
+     * whether the address exists or not.
+     */
     public function store(Request $request): JsonResponse
     {
         $credentials = $request->validate([
-            'email' => 'required|string',
-            'password' => 'required|string',
+            'email' => 'required|string|max:255',
+            'password' => 'required|string|max:255',
         ]);
 
         // Auth::attempt() itself calls Hash::check() internally via

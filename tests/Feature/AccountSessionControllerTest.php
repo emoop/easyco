@@ -138,4 +138,83 @@ class AccountSessionControllerTest extends TestCase
 
         $seventh->assertStatus(429);
     }
+
+    // --- Input hardening pass 2: the two credential fields' width limit -----------------
+
+    /** Built exactly as AccountRegistrationControllerTest::emailOfLength() builds it. */
+    private function emailOfLength(int $characters): string
+    {
+        $localLength = 65;                       // 64 'a's and the '@'
+        $finalLabel = 'com';                     // its own leading dot is counted below
+        $domainCharacters = $characters - $localLength - mb_strlen($finalLabel) - 1;
+
+        $labels = (int) ceil(($domainCharacters + 1) / 11);
+        $labelCharacters = $domainCharacters - ($labels - 1);
+        $base = intdiv($labelCharacters, $labels);
+        $longer = $labelCharacters % $labels;
+
+        $domain = [];
+
+        for ($i = 0; $i < $labels; $i++) {
+            $domain[] = str_repeat(chr(98 + ($i % 24)), $base + ($i < $longer ? 1 : 0));
+        }
+
+        $email = str_repeat('a', 64).'@'.implode('.', $domain).'.'.$finalLabel;
+
+        $this->assertSame($characters, mb_strlen($email), 'The builder must produce an address of exactly the requested length.');
+
+        return $email;
+    }
+
+    /**
+     * The longest credential pair this endpoint can actually see log in: 254
+     * characters is the Account domain's own ceiling for an address (see
+     * AccountRegistrationControllerTest), 255 the width this layer allows for
+     * the password. Both reach the credential check and are accepted, so
+     * `max:255` is not refusing a legitimate long value.
+     */
+    public function test_a_254_character_email_and_a_255_character_password_log_in(): void
+    {
+        $email = $this->emailOfLength(254);
+        $password = str_repeat('p', 255);
+
+        $this->registerAccount($email, $password);
+
+        $response = $this->postJson('/api/account/login', [
+            'email' => $email,
+            'password' => $password,
+        ]);
+
+        $response->assertStatus(200);
+        $response->assertJsonPath('email', $email);
+    }
+
+    /**
+     * 422, not the endpoint's usual 401: an over-wide value is refused by the
+     * rules before any credential is looked at, so it can never be confused with
+     * "wrong email or password".
+     */
+    public function test_a_256_character_email_is_a_422_field_error_rather_than_a_401(): void
+    {
+        $response = $this->postJson('/api/account/login', [
+            'email' => $this->emailOfLength(256),
+            'password' => 'password123',
+        ]);
+
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors(['email']);
+    }
+
+    public function test_a_256_character_password_is_a_422_field_error_rather_than_a_401(): void
+    {
+        $this->registerAccount();
+
+        $response = $this->postJson('/api/account/login', [
+            'email' => 'user@example.com',
+            'password' => str_repeat('p', 256),
+        ]);
+
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors(['password']);
+    }
 }

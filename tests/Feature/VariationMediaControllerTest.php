@@ -318,4 +318,54 @@ class VariationMediaControllerTest extends TestCase
         $response->assertStatus(200);
         $this->assertSame(0, VariationMediaModel::where('variation_id', $variationId)->count());
     }
+
+    // --- Input hardening pass 2: the sort_order ceiling ---------------------------------
+
+    /**
+     * catalog_variation_media.sort_order is an unsignedInteger: 4294967295 is
+     * the widest value the column can hold, so it is accepted and stored as
+     * typed, while one above it and any negative are 422 field errors that
+     * write nothing — never a 500 from MySQL.
+     */
+    public function test_a_sort_order_of_the_columns_own_maximum_is_accepted_and_stored_unchanged(): void
+    {
+        $variationId = $this->variationId();
+
+        $response = $this->postJson("/api/variations/{$variationId}/media", [
+            'media_id' => $this->mediaId(),
+            'sort_order' => 4294967295,
+        ]);
+
+        $response->assertStatus(201);
+        $response->assertJsonPath('sort_order', 4294967295);
+        $this->assertSame(4294967295, VariationMediaModel::first()->sort_order);
+    }
+
+    public function test_a_sort_order_one_above_the_columns_own_maximum_is_a_422_field_error_and_writes_nothing(): void
+    {
+        $variationId = $this->variationId();
+
+        $response = $this->postJson("/api/variations/{$variationId}/media", [
+            'media_id' => $this->mediaId(),
+            'sort_order' => 4294967296,
+        ]);
+
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors(['sort_order']);
+        $this->assertSame(0, VariationMediaModel::count());
+    }
+
+    public function test_a_negative_sort_order_is_a_422_field_error_and_writes_nothing(): void
+    {
+        $variationId = $this->variationId();
+
+        $response = $this->postJson("/api/variations/{$variationId}/media", [
+            'media_id' => $this->mediaId(),
+            'sort_order' => -1,
+        ]);
+
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors(['sort_order']);
+        $this->assertSame(0, VariationMediaModel::count());
+    }
 }

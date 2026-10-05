@@ -104,4 +104,64 @@ class AttributeValueControllerTest extends TestCase
         $materialValues->assertJsonCount(1);
         $this->assertSame('Cotton', $materialValues->json('0.value'));
     }
+
+    // --- Input hardening pass 2: the sort_order ceiling ---------------------------------
+
+    /**
+     * catalog_attribute_values.sort_order is an unsignedInteger: 4294967295 is
+     * the widest value the column can hold. `nullable|integer` alone let one
+     * above it reach the column (a 500) and let a negative through to a column
+     * that cannot hold it — both are 422 field errors that write nothing now.
+     */
+    public function test_a_sort_order_of_the_columns_own_maximum_is_accepted_and_stored_unchanged(): void
+    {
+        $definitionId = $this->createDefinition('size');
+
+        $response = $this->postJson('/api/attribute-values', [
+            'attribute_definition_id' => $definitionId,
+            'value' => 'XL',
+            'sort_order' => 4294967295,
+        ]);
+
+        $response->assertStatus(201);
+        $response->assertJsonPath('sort_order', 4294967295);
+
+        $this->assertDatabaseHas('catalog_attribute_values', [
+            'attribute_definition_id' => $definitionId,
+            'value' => 'XL',
+            'sort_order' => 4294967295,
+        ]);
+    }
+
+    public function test_a_sort_order_one_above_the_columns_own_maximum_is_a_422_field_error_and_writes_nothing(): void
+    {
+        $definitionId = $this->createDefinition('size');
+
+        $response = $this->postJson('/api/attribute-values', [
+            'attribute_definition_id' => $definitionId,
+            'value' => 'XL',
+            'sort_order' => 4294967296,
+        ]);
+
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors(['sort_order']);
+
+        $this->assertDatabaseMissing('catalog_attribute_values', ['value' => 'XL']);
+    }
+
+    public function test_a_negative_sort_order_is_a_422_field_error_and_writes_nothing(): void
+    {
+        $definitionId = $this->createDefinition('size');
+
+        $response = $this->postJson('/api/attribute-values', [
+            'attribute_definition_id' => $definitionId,
+            'value' => 'XL',
+            'sort_order' => -1,
+        ]);
+
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors(['sort_order']);
+
+        $this->assertDatabaseMissing('catalog_attribute_values', ['value' => 'XL']);
+    }
 }

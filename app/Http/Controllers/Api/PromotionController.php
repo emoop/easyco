@@ -66,9 +66,14 @@ class PromotionController extends Controller
             'new_customers_only' => 'boolean',
             'minimum_spend' => ['nullable', 'numeric', 'min:0', 'regex:'.$amount],
             'maximum_spend' => ['nullable', 'numeric', 'min:0', 'regex:'.$amount],
-            'usage_limit_total' => 'nullable|integer|min:1',
-            'usage_limit_per_customer' => 'nullable|integer|min:1',
-            'usage_limit_items' => 'nullable|integer|min:1',
+            // The ceiling is each column's own width (unsignedInteger):
+            // usage_limit_* are counts, and 4294967295 is the widest value the
+            // column can hold — its refusal of 4294967296 is what makes the
+            // difference a 422 field error rather than a 500 from MySQL. min:1
+            // stays: "0 uses allowed" is not a limit, it is a disabled coupon.
+            'usage_limit_total' => 'nullable|integer|min:1|max:4294967295',
+            'usage_limit_per_customer' => 'nullable|integer|min:1|max:4294967295',
+            'usage_limit_items' => 'nullable|integer|min:1|max:4294967295',
             'valid_from' => 'nullable|date',
             'valid_until' => 'nullable|date',
         ], self::amountFormatMessages());
@@ -122,10 +127,22 @@ class PromotionController extends Controller
      * with at most as many decimals as the currency has minor-unit places, at
      * most nine integer digits, anchored at both ends so a leading/trailing
      * space is a refusal rather than a silent trim.
+     *
+     * A 0-decimal currency takes the branch below, not the common pattern:
+     * interpolating `{1,0}` would hand the `regex` rule the invalid pattern
+     * `\d{1,0}`, which Laravel refuses as malformed — a 500 for EVERY request
+     * through this endpoint while that currency is configured, whatever the
+     * amount. JPY/KRW amounts are whole units, so no fractional group at all.
      */
     private static function plainAmountPattern(Currency $currency): string
     {
-        return '/^\d{1,9}(\.\d{1,'.$currency->decimalPlaces().'})?$/';
+        $places = $currency->decimalPlaces();
+
+        if ($places === 0) {
+            return '/^\d{1,9}$/';
+        }
+
+        return '/^\d{1,9}(\.\d{1,'.$places.'})?$/';
     }
 
     /**

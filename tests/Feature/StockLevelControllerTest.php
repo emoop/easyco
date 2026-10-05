@@ -91,4 +91,35 @@ class StockLevelControllerTest extends TestCase
         $this->assertSame(1, StockLevelModel::count());
         $this->assertSame(25, StockLevelModel::first()->quantity);
     }
+
+    // --- Input hardening pass 2: the quantity ceiling -----------------------------------
+
+    /**
+     * stock_levels.quantity is an unsignedInteger, so 4294967295 is the widest
+     * value the column can hold and must be a legitimate quantity, not a
+     * refusal. A narrower business cap is a later decision.
+     */
+    public function test_a_quantity_of_the_columns_own_maximum_is_accepted_and_stored_unchanged(): void
+    {
+        $variationId = $this->variationId();
+
+        $response = $this->putJson("/api/variations/{$variationId}/stock", ['quantity' => 4294967295]);
+
+        $response->assertStatus(200);
+        $response->assertJsonPath('quantity', 4294967295);
+
+        $this->assertSame(1, StockLevelModel::count());
+        $this->assertSame(4294967295, StockLevelModel::first()->quantity);
+    }
+
+    public function test_a_quantity_one_above_the_columns_own_maximum_is_a_422_field_error_and_writes_nothing(): void
+    {
+        $variationId = $this->variationId();
+
+        $response = $this->putJson("/api/variations/{$variationId}/stock", ['quantity' => 4294967296]);
+
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors(['quantity']);
+        $this->assertSame(0, StockLevelModel::count());
+    }
 }

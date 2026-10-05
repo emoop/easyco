@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Rules\PlainText;
 use EasyCo\Promotions\Contracts\PromotionScopeRepository;
 use EasyCo\Promotions\Enums\PromotionScopeMode;
 use EasyCo\Promotions\Enums\PromotionScopeType;
@@ -54,7 +55,14 @@ class PromotionScopeController extends Controller
         $validated = $request->validate([
             'promotion_id' => 'required|exists:promotions,id',
             'scope_type' => 'required|in:brand,category,tag,attribute_value,product,account',
-            'scope_reference_id' => 'required|string',
+            // Still NO `exists:` — see this class's docblock; the reference is
+            // deliberately never validated against whatever domain owns it. A
+            // WIDTH and CONTENT guard is a different question: the id is stored
+            // in promotion_scopes.scope_reference_id (varchar(255)), so max:255
+            // makes an overlong value a 422 instead of a 500 from MySQL, and
+            // PlainText refuses a control character or a bidirectional override
+            // in what is meant to be an opaque identifier.
+            'scope_reference_id' => ['required', 'string', 'max:255', new PlainText()],
             'mode' => 'required|in:include,exclude',
         ]);
 

@@ -26,11 +26,20 @@ class AccountRegistrationController extends Controller
     ) {
     }
 
+    /**
+     * max:255 on both fields, not just a shape check: accounts.email is a
+     * varchar(255) and `email` carries NO length bound of its own (an
+     * 80-character local part is perfectly legal), while `password` is an
+     * arbitrary-length string. Without the bound an overlong value is a 500
+     * from MySQL in the first case, and a multi-kilobyte password hashed for
+     * nothing in the second — with it, both are a 422 field error and no
+     * account row is written.
+     */
     public function store(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'email' => 'required|email',
-            'password' => 'required|min:8|confirmed',
+            'email' => 'required|email|max:255',
+            'password' => 'required|min:8|max:255|confirmed',
         ]);
 
         $account = Account::register(

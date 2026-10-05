@@ -221,14 +221,21 @@ class CheckoutController extends Controller
             // REQUIRED, not optional — cart-domain-design.md §14.2: the cart the page
             // displayed is the only thing that can answer a replay after the claim has
             // taken that cart out of "the current cart" for this identity.
-            'cart_id' => 'required|string',
+            // max:255 is an echoed-id ceiling, not a column width: carts.id is a
+            // bigint, so no id can ever come close to it — the bound exists so a
+            // body carrying a kilobyte where an id belongs is a 422 field error
+            // instead of a lookup of it.
+            'cart_id' => 'required|string|max:255',
             'email' => 'required|email|max:255',
             'recipient_name' => ['required', 'string', 'max:255', new PlainText()],
             // INTERIM LIMIT: 32 characters is a stop-gap, NOT a design — the
             // column is varchar(255). The forthcoming phone-validation design
             // replaces both this bound and the plain `string` shape.
             'phone' => ['required', 'string', 'max:32', new PlainText()],
-            'payment_method' => 'required|string',
+            // Stored in payments.method (varchar(255)) by the orchestrator, and
+            // resolved against a payment adapter above: max:255 keeps an
+            // overlong value a 422 field error rather than a 500 from MySQL.
+            'payment_method' => 'required|string|max:255',
             'address_id' => 'nullable|string|prohibits:delivery_type,country,city,postal_code,address_line_1,address_line_2,carrier_code,pickup_point_reference,settlement',
             'delivery_type' => 'required_without:address_id|in:street_address,pickup_point',
             // Required whenever the address is typed fresh, for BOTH delivery types (owner
@@ -239,9 +246,15 @@ class CheckoutController extends Controller
             'address_line_1' => ['required_if:delivery_type,street_address', 'prohibited_if:delivery_type,pickup_point', 'string', 'max:255', new PlainText()],
             'postal_code' => ['nullable', 'prohibited_if:delivery_type,pickup_point', 'string', 'max:255', new PlainText()],
             'address_line_2' => ['nullable', 'prohibited_if:delivery_type,pickup_point', 'string', 'max:255', new PlainText()],
-            'carrier_code' => 'required_if:delivery_type,pickup_point|prohibited_if:delivery_type,street_address|string',
-            'pickup_point_reference' => 'required_if:delivery_type,pickup_point|prohibited_if:delivery_type,street_address|string',
-            'settlement' => 'required_if:delivery_type,pickup_point|prohibited_if:delivery_type,street_address|string',
+            // Delivery type is the only thing that may vary these three: they
+            // keep their required_if/prohibited_if shape exactly. What is added
+            // is a WIDTH and CONTENT guard — each is stored in a varchar(255)
+            // column, so max:255 makes an overlong value a 422 field error
+            // rather than a 500 from MySQL, and PlainText refuses a control
+            // character or a bidirectional override.
+            'carrier_code' => ['required_if:delivery_type,pickup_point', 'prohibited_if:delivery_type,street_address', 'string', 'max:255', new PlainText()],
+            'pickup_point_reference' => ['required_if:delivery_type,pickup_point', 'prohibited_if:delivery_type,street_address', 'string', 'max:255', new PlainText()],
+            'settlement' => ['required_if:delivery_type,pickup_point', 'prohibited_if:delivery_type,street_address', 'string', 'max:255', new PlainText()],
         ];
     }
 
