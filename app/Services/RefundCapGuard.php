@@ -165,12 +165,16 @@ final class RefundCapGuard
         return $order->shipping()->subtract(Money::fromMinorUnits($this->paymentRefunds->sumCountingShippingForOrder($orderId), $currency));
     }
 
-    /** What the settled payment actually holds minus everything refunded against it (counting refunds only). */
+    /**
+     * What the settled payment was SETTLED FOR (settledAmount(): the accepted amount of a mismatch,
+     * else the expected amount — never amount() directly, shipping-domain-design.md §7.2.20 §4)
+     * minus everything refunded against it (counting refunds only).
+     */
     public function totalRoom(Payment $settledPayment): Money
     {
-        $alreadyRefunded = $this->paymentRefunds->sumCountingForPayment((string) $settledPayment->id(), $settledPayment->amount()->currency()->code());
+        $alreadyRefunded = $this->paymentRefunds->sumCountingForPayment((string) $settledPayment->id(), $settledPayment->settledAmount()->currency()->code());
 
-        return $settledPayment->amount()->subtract($alreadyRefunded);
+        return $settledPayment->settledAmount()->subtract($alreadyRefunded);
     }
 
     /**

@@ -32,6 +32,8 @@ class PaymentModel extends Model
         'attempted_at',
         'confirmed_at',
         'voided_at',
+        'settled_amount_minor',
+        'settlement_reason',
     ];
 
     protected $casts = [

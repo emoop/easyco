@@ -39,6 +39,9 @@ final class EloquentPaymentRepository implements PaymentRepository
         $model->attempted_at = $payment->attemptedAt();
         $model->confirmed_at = $payment->confirmedAt();
         $model->voided_at = $payment->voidedAt();
+        // Written only by an ACCEPTED mismatch (Payment::confirm with an amount); NULL = settled for `amount`.
+        $model->settled_amount_minor = $payment->settlementReason() !== null ? $payment->settledAmount()->minorValue() : null;
+        $model->settlement_reason = $payment->settlementReason();
 
         $model->save();
 
@@ -99,6 +102,10 @@ final class EloquentPaymentRepository implements PaymentRepository
             attemptedAt: $model->attempted_at,
             confirmedAt: $model->confirmed_at,
             voidedAt: $model->voided_at,
+            settledAmount: $model->settled_amount_minor !== null
+                ? Money::fromMinorUnits((int) $model->settled_amount_minor, $model->amount_currency)
+                : null,
+            settlementReason: $model->settlement_reason,
         );
     }
 }

@@ -99,11 +99,53 @@ final class Payment
         private ?DateTimeImmutable $attemptedAt,
         private ?DateTimeImmutable $confirmedAt = null,
         private ?DateTimeImmutable $voidedAt = null,
+        private ?Money $settledAmount = null,
+        private ?string $settlementReason = null,
     ) {
         self::assertNotEmpty('orderId', $orderId);
         self::assertNotEmpty('method', $method);
         self::assertPositiveAmount($amount);
         self::assertFailureReasonMatchesStatus($status, $failureReason);
+        self::assertAcceptedSettlement($amount, $settledAmount, $settlementReason);
+
+        if ($settledAmount !== null && $confirmedAt === null) {
+            throw new InvalidArgumentException('Payment settledAmount may only be set on a confirmed payment.');
+        }
+    }
+
+    /** The longest settlement reason (the column's width). */
+    public const MAX_SETTLEMENT_REASON_LENGTH = 255;
+
+    /**
+     * An ACCEPTED settlement amount and its reason go together, or neither exists: the amount is
+     * positive, in the payment's currency and DIFFERENT from the expected amount (an acceptance
+     * exists only for a real difference), and the reason is not blank and fits its column.
+     */
+    private static function assertAcceptedSettlement(Money $expected, ?Money $accepted, ?string $reason): void
+    {
+        if (($accepted === null) !== ($reason === null)) {
+            throw new InvalidArgumentException('Payment: an accepted settlement amount and its reason are both given or both absent.');
+        }
+
+        if ($accepted === null) {
+            return;
+        }
+
+        if (! $accepted->currency()->equals($expected->currency())) {
+            throw new InvalidArgumentException('Payment: the accepted settlement amount must be in the same currency as the payment.');
+        }
+
+        if (! $accepted->isPositive()) {
+            throw new InvalidArgumentException('Payment: the accepted settlement amount must be positive.');
+        }
+
+        if ($accepted->equals($expected)) {
+            throw new InvalidArgumentException('Payment: an accepted settlement amount must differ from the expected amount.');
+        }
+
+        if (trim((string) $reason) === '' || mb_strlen((string) $reason) > self::MAX_SETTLEMENT_REASON_LENGTH) {
+            throw new InvalidArgumentException('Payment: the settlement reason must be not blank and at most '.self::MAX_SETTLEMENT_REASON_LENGTH.' characters.');
+        }
     }
 
     private static function assertNotEmpty(string $fieldName, string $value): void
@@ -188,6 +230,8 @@ final class Payment
         ?DateTimeImmutable $attemptedAt,
         ?DateTimeImmutable $confirmedAt = null,
         ?DateTimeImmutable $voidedAt = null,
+        ?Money $settledAmount = null,
+        ?string $settlementReason = null,
     ): self {
         return new self(
             id: $id,
@@ -200,6 +244,8 @@ final class Payment
             attemptedAt: $attemptedAt,
             confirmedAt: $confirmedAt,
             voidedAt: $voidedAt,
+            settledAmount: $settledAmount,
+            settlementReason: $settlementReason,
         );
     }
 
@@ -227,9 +273,28 @@ final class Payment
         return $this->method;
     }
 
+    /** The EXPECTED amount — what the order asked this payment to carry. It never changes. */
     public function amount(): Money
     {
         return $this->amount;
+    }
+
+    /**
+     * What this payment was SETTLED for (shipping-domain-design.md §7.2.20 §2): the amount a merchant
+     * ACCEPTED when the money received differed from the expected amount, else the expected amount
+     * itself — which is every legacy row, every exact receipt, every captured payment and every
+     * cash on delivery confirmation. EVERY report or screen that shows what was PAID IN, and the
+     * refund caps, read this, never amount().
+     */
+    public function settledAmount(): Money
+    {
+        return $this->settledAmount ?? $this->amount;
+    }
+
+    /** Why a differing amount was accepted; null unless one was. */
+    public function settlementReason(): ?string
+    {
+        return $this->settlementReason;
     }
 
     public function status(): PaymentStatus
@@ -402,8 +467,12 @@ final class Payment
      * The only state confirm() accepts is therefore PENDING with an
      * answered attempt.
      */
-    public function confirm(DateTimeImmutable $confirmedAt): void
+    public function confirm(DateTimeImmutable $confirmedAt, ?Money $acceptedAmount = null, ?string $reason = null): void
     {
+        // An accepted amount and its reason are validated first: a malformed ARGUMENT is the caller's
+        // bug whatever state the payment is in. Every existing call passes neither, and is unchanged.
+        self::assertAcceptedSettlement($this->amount, $acceptedAmount, $reason);
+
         if ($this->confirmedAt !== null) {
             throw new LogicException(
                 "Payment was already confirmed at {$this->confirmedAt->format(DATE_ATOM)}; confirm() is a one-time operation."
@@ -435,6 +504,8 @@ final class Payment
         }
 
         $this->confirmedAt = $confirmedAt;
+        $this->settledAmount = $acceptedAmount;
+        $this->settlementReason = $acceptedAmount !== null ? trim((string) $reason) : null;
     }
 
     /**

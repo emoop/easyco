@@ -4,8 +4,10 @@ namespace EasyCo\Payment\Providers;
 
 use EasyCo\Payment\Adapters\BankTransferPaymentMethodAdapter;
 use EasyCo\Payment\Adapters\CashOnDeliveryPaymentMethodAdapter;
+use EasyCo\Payment\Contracts\PaymentReceiptRepository;
 use EasyCo\Payment\Contracts\PaymentRefundRepository;
 use EasyCo\Payment\Contracts\PaymentRepository;
+use EasyCo\Payment\Persistence\Eloquent\EloquentPaymentReceiptRepository;
 use EasyCo\Payment\Persistence\Eloquent\EloquentPaymentRefundRepository;
 use EasyCo\Payment\Persistence\Eloquent\EloquentPaymentRepository;
 use Illuminate\Support\ServiceProvider;
@@ -16,6 +18,7 @@ class PaymentServiceProvider extends ServiceProvider
     {
         $this->app->bind(PaymentRepository::class, EloquentPaymentRepository::class);
         $this->app->bind(PaymentRefundRepository::class, EloquentPaymentRefundRepository::class);
+        $this->app->bind(PaymentReceiptRepository::class, EloquentPaymentReceiptRepository::class);
 
         /**
          * Named bindings, not the PaymentMethodAdapter interface itself

@@ -1112,7 +1112,7 @@ class OrderResource extends Resource
         $settled = $payment !== null && $payment->isSettled();
 
         if ($settled || $refunds['rows'] !== []) {
-            $paid = $refunds['rows'] !== [] ? $refunds['figures']['paid_in'] : $payment->amount()->minorValue();
+            $paid = $refunds['rows'] !== [] ? $refunds['figures']['paid_in'] : $payment->settledAmount()->minorValue();
             $format = static fn (int $minor): string => static::formatMinor($minor, $refunds['currency']);
 
             $html .= '<tr><td colspan="2" style="border-top: 1px solid rgba(128, 128, 128, 0.3); padding: 0.125rem 0"></td></tr>'

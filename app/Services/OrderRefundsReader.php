@@ -52,7 +52,7 @@ final class OrderRefundsReader
 
         foreach ($this->payments->findByOrderId($orderId) as $payment) {
             if ($payment->isSettled()) {
-                $paidIn += $payment->amount()->minorValue();
+                $paidIn += $payment->settledAmount()->minorValue();
             }
         }
 
