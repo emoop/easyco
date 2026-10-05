@@ -7,6 +7,7 @@ use App\Services\Exceptions\OperationKeyReusedException;
 use App\Services\Exceptions\OrderTransitionRefusedException;
 use App\Services\Exceptions\RefundCapExceededException;
 use App\Services\Exceptions\RefundPermissionDeniedException;
+use App\Services\Exceptions\ReturnAnnouncedDateException;
 use Closure;
 use DateTimeImmutable;
 use EasyCo\Extensibility\Hook;
@@ -183,6 +184,12 @@ final class OrderStatusChanger
             throw new InvalidArgumentException('OrderStatusChanger: orderId must not be empty.');
         }
 
+        // The announced-return date is what a CUSTOMER told staff about a return (recordReturn()); a
+        // cancellation has none. Refused rather than silently dropped.
+        if ($refund?->announcedReturnAt !== null) {
+            throw new InvalidArgumentException('OrderStatusChanger: cancel() takes no announced-return date; only recordReturn() does.');
+        }
+
         return $this->performReturn(
             $orderId,
             $occurredAt,
@@ -229,7 +236,9 @@ final class OrderStatusChanger
      * allows.
      *
      * @param array<int, array{originatingSaleLineId: string, quantityReturned: int, restock: bool}> $lines
+     * @param RefundRequest|null $refund Its announcedReturnAt (refunds R3) is the date the customer announced this return: stored on the `returned` history row, not in the future (relative to $occurredAt, UTC), never before the order was placed.
      *
+     * @throws ReturnAnnouncedDateException The announced date is in the future or before the order was placed — nothing was written.
      * @throws InvalidArgumentException If $orderId is empty or unknown, if
      *   $lines is empty, if any quantityReturned is not a positive integer,
      *   if $lines references the same originatingSaleLineId more than once
@@ -487,6 +496,20 @@ final class OrderStatusChanger
             throw $refusalException($orderId, $lockedStatus);
         }
 
+        // A FACT checked for being possible, never for being on time (§7.2.6: no deadline is enforced):
+        // the customer cannot have announced a return after it is recorded, nor before the order existed.
+        $announcedReturnAt = $refundRequest?->announcedReturnAt;
+
+        if ($announcedReturnAt !== null) {
+            if ($announcedReturnAt > $occurredAt) {
+                throw ReturnAnnouncedDateException::inFuture();
+            }
+
+            if ($announcedReturnAt < $order->placedAt()) {
+                throw ReturnAnnouncedDateException::beforePlacement();
+            }
+        }
+
         // The order's TRUE lines (order-editing-design.md §4.4), not just
         // its placement transaction's: an edited order's original lines
         // may have been reversed away and replaced by lines in an edit's
@@ -556,6 +579,7 @@ final class OrderStatusChanger
                 occurredAt: $occurredAt,
                 operationKey: $operationKey,
                 operationPayloadHash: $operationKey !== null ? $payloadHash : null,
+                announcedReturnAt: $announcedReturnAt,
             );
             $keyWritten = $operationKey !== null;
         }

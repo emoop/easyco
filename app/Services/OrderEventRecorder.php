@@ -85,8 +85,12 @@ final class OrderEventRecorder
      * idempotent money operation writes (shipping-domain-design.md §7.2.3);
      * `$paymentRefundId` is the refund a `refunded` / `refund_owed` event records.
      *
+     * `$announcedReturnAt` (refunds R3) is the date the customer announced a return, entered
+     * by staff; it belongs to a RETURNED event only (UTC, like `$occurredAt`).
+     *
      * @throws InvalidArgumentException If only one of the two statuses is set,
-     *   or if a NOTE_ADDED event carries a status change or a blank note.
+     *   or if a NOTE_ADDED event carries a status change or a blank note,
+     *   or if an announced-return date is given to any event but RETURNED.
      */
     public function record(
         string $orderId,
@@ -99,7 +103,12 @@ final class OrderEventRecorder
         ?string $operationKey = null,
         ?string $operationPayloadHash = null,
         ?string $paymentRefundId = null,
+        ?DateTimeImmutable $announcedReturnAt = null,
     ): void {
+        if ($announcedReturnAt !== null && $type !== OrderEventType::RETURNED) {
+            throw new InvalidArgumentException('OrderEventRecorder: an announced-return date belongs to a returned event only.');
+        }
+
         if (($operationKey === null) !== ($operationPayloadHash === null)) {
             throw new InvalidArgumentException(
                 'OrderEventRecorder: an operation key and its payload hash are both set or both NULL.'
@@ -142,6 +151,7 @@ final class OrderEventRecorder
             'operation_key' => $operationKey,
             'operation_payload_hash' => $operationPayloadHash,
             'payment_refund_id' => $paymentRefundId,
+            'announced_return_at' => $announcedReturnAt,
         ]);
     }
 }

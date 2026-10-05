@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use DateTimeImmutable;
 use EasyCo\Payment\Enums\RefundChannel;
 use EasyCo\Pricing\Money;
 use InvalidArgumentException;
@@ -23,6 +24,10 @@ use InvalidArgumentException;
  *    the same payload returns the first result, a different payload is refused
  *    (shipping-domain-design.md §7.2.3).
  *
+ *  - announced return date (R3, recordReturn() only): the date the customer announced the
+ *    return, entered by staff and stored on the `returned` history row; none by default.
+ *    Not in the future, never before the order was placed (checked under the order lock).
+ *
  * Until the new dialog (R3) and the caps (R1b) exist, a non-default request is
  * reachable only from tests. Amounts here are validated for shape only (not
  * negative); the caps are R1b's.
@@ -39,6 +44,7 @@ final class RefundRequest
         public readonly ?string $deductionReason = null,
         public readonly ?RefundChannel $channel = null,
         public readonly ?string $operationKey = null,
+        public readonly ?DateTimeImmutable $announcedReturnAt = null,
     ) {
         if ($operationKey !== null && (trim($operationKey) === '' || strlen($operationKey) > 64)) {
             throw new InvalidArgumentException('RefundRequest: the operation key must be 1 to 64 characters.');

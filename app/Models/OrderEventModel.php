@@ -39,9 +39,11 @@ class OrderEventModel extends Model
         'operation_key',
         'operation_payload_hash',
         'payment_refund_id',
+        'announced_return_at',
     ];
 
     protected $casts = [
         'occurred_at' => 'datetime',
+        'announced_return_at' => 'datetime',
     ];
 }

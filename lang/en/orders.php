@@ -276,6 +276,19 @@ return [
         'storno_mismatch' => 'This refund cannot be cancelled: its recorded lines do not agree with the ledger. Nothing was changed.',
     ],
 
+    // Refunds R3 part 1 (shipping-domain-design.md §7.2.6, §7.2.11).
+    'money_only_refund' => [
+        'reason_required' => 'A refund without a return needs a reason. Nothing was recorded.',
+        'payment_not_settled' => 'This order has no settled payment, so nothing has been paid and nothing can be refunded. Nothing was recorded.',
+        'deduction_not_allowed' => 'A refund without a return cannot have a deduction: there are no goods to deduct from. Nothing was recorded.',
+        'nothing_to_refund' => 'Enter a shipping refund or an adjustment: the refund would be 0. Nothing was recorded.',
+    ],
+
+    'return_announced_date' => [
+        'in_future' => 'The date the customer announced the return cannot be in the future. Nothing was recorded.',
+        'before_placement' => 'The date the customer announced the return cannot be before the order was placed. Nothing was recorded.',
+    ],
+
     'operation_key_reused' => 'This form was already submitted, with different contents. Nothing was changed; open the dialog again and re-enter what you want.',
 
     'refusal_reasons' => [

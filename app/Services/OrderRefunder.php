@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Services\Exceptions\MoneyOnlyRefundRefusedException;
 use App\Services\Exceptions\NonOfflineRefundAdapterException;
 use App\Services\Exceptions\PendingPaymentRefundRuleException;
 use DateTimeImmutable;
@@ -146,6 +147,35 @@ final class OrderRefunder
         // there is no recorded money to move — write nothing, not an
         // error (order-lifecycle-design.md §7.3, its own R8(c)/§14 Q3).
         return OrderRefundOutcome::nothingRecorded();
+    }
+
+    /**
+     * A MONEY-ONLY refund (refunds R3, shipping-domain-design.md §7.2.11): goods 0, no sale line,
+     * no stock. Only a SETTLED payment can be paid back; a pending one, or none, is refused by name
+     * — nothing was paid, so unlike a return this never voids or reissues anything. Everything
+     * after that is the settled-refund path unchanged: permission of the payout channel, the caps
+     * (shipping and total; no line, so no per-line cap), the offline adapter, the OWED record.
+     *
+     * @throws MoneyOnlyRefundRefusedException No settled payment.
+     */
+    public function refundMoneyOnly(string $orderId, RefundBreakdown $breakdown, ?string $reason, RefundChannel $channel): OrderRefundOutcome
+    {
+        $settled = array_values(array_filter(
+            $this->payments->findByOrderId($orderId),
+            static fn (Payment $payment): bool => $payment->isSettled(),
+        ));
+
+        if (count($settled) > 1) {
+            throw new InvalidArgumentException(
+                "OrderRefunder: order \"{$orderId}\" has more than one settled payment simultaneously — a real anomaly."
+            );
+        }
+
+        if ($settled === []) {
+            throw new MoneyOnlyRefundRefusedException(MoneyOnlyRefundRefusedException::PAYMENT_NOT_SETTLED);
+        }
+
+        return $this->refundSettled($orderId, $settled[0], $breakdown->total(), $reason, $breakdown, $channel);
     }
 
     /**

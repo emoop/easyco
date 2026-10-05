@@ -47,7 +47,7 @@ final class RefundOperationFingerprint
 
         ksort($entered);
 
-        return hash('sha256', json_encode([
+        $contents = [
             'action' => $action,
             'lines' => $returnLines,
             'restockOverrides' => $overrides,
@@ -57,6 +57,26 @@ final class RefundOperationFingerprint
             'deductionReason' => $request?->deductionReason !== null ? trim($request->deductionReason) : null,
             'channel' => $request?->channel?->value,
             'reason' => $reason !== null && trim($reason) !== '' ? trim($reason) : null,
+        ];
+
+        // Only when given, so the hash of an operation without one is what it always was.
+        if ($request?->announcedReturnAt !== null) {
+            $contents['announcedReturnAt'] = $request->announcedReturnAt->format('Y-m-d H:i:s');
+        }
+
+        return hash('sha256', json_encode($contents, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE));
+    }
+
+    /** The fingerprint of "record this money-only refund" — everything the merchant entered. */
+    public static function forMoneyOnly(MoneyOnlyRefundRequest $request): string
+    {
+        return hash('sha256', json_encode([
+            'action' => 'money_only_refund',
+            'shipping' => $request->shipping->minorValue(),
+            'adjustment' => $request->adjustment->minorValue(),
+            'deduction' => $request->deduction?->minorValue() ?? 0,
+            'channel' => $request->channel->value,
+            'reason' => self::text($request->reason),
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE));
     }
 
