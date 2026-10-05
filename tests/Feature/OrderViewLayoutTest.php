@@ -73,7 +73,7 @@ class OrderViewLayoutTest extends TestCase
             ->assertOk()
             // header
             ->assertSee(__('orders.fields.id'))->assertSee(__('orders.status_options.shipped'))->assertSee(__('orders.fields.payment_status'))
-            ->assertSee(__('orders.fields.placed_at'))->assertSee(__('orders.fields.channel'))
+            ->assertSeeInOrder([__('orders.payment_method_options.cash_on_delivery'), __('orders.channel_options.web'), 'Sep 28, 2026'])   // the subtitle line
             // items + totals
             ->assertSee(__('orders.sections.lines'))->assertSee(__('orders.fields.subtotal'))->assertSee(__('orders.fields.shipping'))->assertSee(__('orders.fields.total'))
             // payment
@@ -83,7 +83,7 @@ class OrderViewLayoutTest extends TestCase
             ->assertSee(__('orders.guest'))->assertSee(__('orders.fields.client_id'))
             // delivery
             ->assertSee(__('orders.sections.delivery'))->assertSee('BG')->assertSee('Sofia')->assertSee('Vitosha Blvd 1')
-            ->assertSee(__('orders.fields.shipping_method'))->assertSee(__('orders.fields.tracking_number'))->assertSee('TRK-123')
+            ->assertSee(__('orders.sections.payment_shipping'))->assertSee(__('orders.fields.shipping_method'))->assertSee(__('orders.fields.tracking_number'))->assertSee('TRK-123')
             // history
             ->assertSee(__('orders.sections.history'));
     }
@@ -97,7 +97,7 @@ class OrderViewLayoutTest extends TestCase
         $this->assertSame((int) $row->subtotal_minor - (int) $row->discount_minor + (int) $row->shipping_minor, (int) $row->total_minor);
 
         $this->page($order['orderId'])
-            ->assertSeeInOrder([__('orders.sections.lines'), __('orders.fields.subtotal'), '20.00', 'Discount (SUMMER20)', '2.00', __('orders.fields.shipping'), '3.50', '(Test courier)', __('orders.fields.total'), '21.50', __('orders.sections.payment')])
+            ->assertSeeInOrder([__('orders.sections.lines'), __('orders.fields.subtotal'), '20.00', 'Discount (SUMMER20)', '2.00', __('orders.fields.shipping'), '(Test courier)', '3.50', __('orders.fields.total'), '21.50', __('orders.sections.payment')])
             ->assertDontSee(__('orders.sections.promotion'), false);
     }
 
@@ -133,12 +133,14 @@ class OrderViewLayoutTest extends TestCase
         $this->assertTrue($section->isCollapsed());
     }
 
-    public function test_an_order_without_an_invoice_shows_no_invoice_or_origin_section(): void
+    public function test_the_invoice_and_origin_cards_exist_and_say_n_a_for_what_is_not_recorded(): void
     {
         $this->actingAsAdmin();
         $order = $this->fullOrder();
 
-        $this->page($order['orderId'])->assertDontSee('Invoice')->assertDontSee('Origin');
+        $this->page($order['orderId'])
+            ->assertSee(__('orders.sections.invoice'))->assertSee(__('orders.sections.origin'))
+            ->assertSee(__('orders.context.fields.company_name'))->assertSee(__('orders.context.fields.referrer'));
     }
 
     public function test_the_grid_is_a_main_column_of_two_thirds_a_sidebar_of_one_third_and_a_full_width_history(): void
@@ -164,7 +166,10 @@ class OrderViewLayoutTest extends TestCase
 
         $headings = fn (Group $group): array => array_map(static fn ($c): string => (string) $c->getHeading(), array_filter($group->getDefaultChildComponents(), static fn ($c) => $c instanceof Section));
         $this->assertSame([__('orders.sections.lines'), __('orders.sections.payment')], array_slice(array_values($headings($main)), 0, 2));
-        $this->assertSame([__('orders.sections.client'), __('orders.sections.delivery')], array_values($headings($sidebar)));
+        $this->assertSame(
+            [__('orders.sections.client'), __('orders.sections.delivery'), __('orders.sections.payment_shipping'), __('orders.sections.order_details'), __('orders.sections.invoice'), __('orders.sections.origin')],
+            array_values($headings($sidebar)),
+        );
     }
 
     public function test_the_text_is_small_on_the_order_page_and_no_other_page_in_the_same_process_is_touched(): void
@@ -209,17 +214,16 @@ class OrderViewLayoutTest extends TestCase
         }
     }
 
-    public function test_the_items_and_history_tables_scroll_sideways_with_a_minimum_width_and_numbers_do_not_wrap(): void
+    public function test_only_the_history_table_scrolls_sideways_the_items_wrap_like_blocks(): void
     {
         $this->actingAsAdmin();
         $order = $this->fullOrder();
         $html = $this->page($order['orderId'])->html();
 
-        // Two containers carry the overflow, and inside each the table's own wrapper has the minimum width.
-        $this->assertSame(2, substr_count($html, 'overflow-x: auto'), 'the items table and the history table');
-        $this->assertMatchesRegularExpression('/overflow-x: auto.*?min-width: 56rem/s', $html, 'items: the scroll container, then the table with its minimum width');
-        $this->assertMatchesRegularExpression('/min-width: 56rem.*?overflow-x: auto.*?min-width: 64rem/s', $html, 'history: its own container, then its table with its minimum width');
-        $this->assertStringContainsString('white-space: nowrap', $html, 'numeric cells do not wrap');
+        // The items are blocks now: no scroll container and no minimum width. History keeps its own.
+        $this->assertSame(1, substr_count($html, 'overflow-x: auto'), 'only the History table');
+        $this->assertMatchesRegularExpression('/overflow-x: auto.*?min-width: 64rem/s', $html);
+        $this->assertStringNotContainsString('min-width: 56rem', $html);
     }
 
     public function test_tracking_number_and_shipping_method_show_only_when_there_are_some(): void

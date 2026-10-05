@@ -279,7 +279,10 @@ class OrderAdminReaderEventsTest extends TestCase
 
         fwrite(STDERR, "\n[query-count] forOrder(): 9 queries on 01398d9 (no events, no returns read), {$queries} with the events read and stage 7c-1's returns read\n");
 
-        $this->assertSame(13, $queries, 'forOrder() must cost the pre-stage-3 9 queries plus ONE for the events list, ONE for stage 7c-1 s batched returns read, and TWO for stage 4a s current-lines resolution (the EDITED-event read and the batched edited-away sum)');
+        // 13 -> 12 in the order-view polish (a REDUCTION, not a raised ceiling): the line photo and the product id now come
+        // from ONE joined read instead of two reads (the variation's own media, then the product's), because the page
+        // needs the product id for each line's link and the fixture here has no variation media of its own.
+        $this->assertSame(12, $queries, 'forOrder() must cost the pre-stage-3 9 queries plus ONE for the events list, ONE for stage 7c-1 s batched returns read, and TWO for stage 4a s current-lines resolution, MINUS ONE since the two photo reads became one');
     }
 
     /**
@@ -363,7 +366,7 @@ class OrderAdminReaderEventsTest extends TestCase
         fwrite(STDERR, "\n[query-count] forOrder(): 1 line = {$queriesForOne} queries, 5 lines = {$queriesForFive} queries\n");
 
         $this->assertSame(
-            13,
+            12,   // was 13: the line photo and product id are ONE joined read now (order-view polish)
             $queriesForFive,
             'nine reads for the order and its lines, one for its history, one for the returns summed across those lines, and two for the current-lines resolution (EDITED events, edited-away sum)'
         );

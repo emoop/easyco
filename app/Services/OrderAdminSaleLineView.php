@@ -111,6 +111,7 @@ final class OrderAdminSaleLineView
         public readonly ?string $imagePath,
         public readonly array $soldAttributes,
         public readonly bool $isLegacy,
+        public readonly ?string $productId = null,
     ) {
     }
 }

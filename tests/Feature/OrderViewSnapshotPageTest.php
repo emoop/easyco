@@ -269,70 +269,50 @@ class OrderViewSnapshotPageTest extends TestCase
      */
     private function linesBodyRows(string $html): array
     {
-        $sectionStart = strpos($html, __('orders.sections.lines'));
-        $bodyStart = ($sectionStart === false) ? false : strpos($html, '<tbody>', $sectionStart);
-        $bodyEnd = ($bodyStart === false) ? false : strpos($html, '</tbody>', $bodyStart);
+        return $this->itemBlocks($this->itemsArea($html));
+    }
 
-        $this->assertNotFalse($sectionStart, 'Items section heading not found in the rendered page');
-        $this->assertNotFalse($bodyStart, 'Items table body not found in the rendered page');
-        $this->assertNotFalse($bodyEnd, 'Items table body end not found in the rendered page');
+    /** The Items section from its heading to the money summary — where the line blocks are, and nothing else. */
+    private function itemsArea(string $html): string
+    {
+        $start = strpos($html, __('orders.sections.lines'));
+        $end = ($start === false) ? false : strpos($html, '<table style="margin-inline-start', $start);
 
-        $body = substr($html, $bodyStart, $bodyEnd - $bodyStart);
-        preg_match_all('#<tr>(.*?)</tr>#s', $body, $matches);
+        $this->assertNotFalse($start, 'Items section heading not found in the rendered page');
+        $this->assertNotFalse($end, 'the money summary (the end of the item blocks) not found in the rendered page');
+
+        return substr($html, $start, $end - $start);
+    }
+
+    /**
+     * Since the order-view polish each line is ONE BLOCK (a repeatable item), not a table row.
+     *
+     * @return array<int, string>
+     */
+    private function itemBlocks(string $area): array
+    {
+        preg_match_all('#<li class="fi-in-repeatable-item[^"]*">(.*?)</li>#s', $area, $matches);
 
         return $matches[1];
     }
 
     /**
-     * The rendered Lines table's own header area — everything from the
-     * Items section heading down to its table body. Filament renders the
-     * column LABELS there (every body cell is label-less — TextEntry::
-     * hiddenLabel()), so this slice is exactly where a column either
-     * appears or does not, independent of the rest of the page.
-     */
-    private function linesHeaderArea(string $html): string
-    {
-        $sectionStart = strpos($html, __('orders.sections.lines'));
-        $bodyStart = ($sectionStart === false) ? false : strpos($html, '<tbody>', $sectionStart);
-
-        $this->assertNotFalse($sectionStart, 'Items section heading not found in the rendered page');
-        $this->assertNotFalse($bodyStart, 'Items table body not found in the rendered page');
-
-        return substr($html, $sectionStart, $bodyStart - $sectionStart);
-    }
-
-    /**
-     * §14's column pass — the Lines table carries NO unit-cost column for
-     * any role, in either locale. Asserted two ways so this cannot pass
-     * vacuously: the seven labels it DOES carry must really be in the
-     * header, and the header must hold exactly seven `<th>` cells — so ANY
-     * eighth column (a re-added cost column under any label, in any locale)
-     * fails here. The default fixtures below write no register discount, so
-     * §14 D4's own seventh column is legitimately absent.
+     * §14's column pass, carried over to the item blocks — a line shows NO unit cost for any role, in either locale.
+     * Asserted so it cannot pass vacuously: the blocks really are there (price, SKU, total), there is no table (no
+     * `<th>`) any more, and no block carries a cost wording.
      */
     private function assertNoUnitCostColumn(string $html): void
     {
-        $header = $this->linesHeaderArea($html);
+        $area = $this->itemsArea($html);
+        $blocks = $this->itemBlocks($area);
 
-        $expectedLabels = [
-            __('orders.fields.image'),
-            __('orders.fields.product_name'),
-            __('orders.fields.sku'),
-            __('orders.fields.quantity'),
-            __('orders.fields.unit_price'),
-            __('orders.fields.promotion_discount'),
-            __('orders.fields.net_paid'),
-        ];
+        $this->assertNotEmpty($blocks, 'the item blocks must be there');
+        $this->assertSame(0, preg_match_all('#<th\b#', $area), 'the items are blocks, not a table');
 
-        foreach ($expectedLabels as $label) {
-            $this->assertStringContainsString($label, $header, "the Lines table must still carry its '{$label}' column");
+        foreach ($blocks as $block) {
+            $this->assertStringContainsString(__('orders.line_labels.sku'), $block);
+            $this->assertDoesNotMatchRegularExpression('/cost|себестойност/iu', strip_tags($block));
         }
-
-        $this->assertSame(
-            count($expectedLabels),
-            preg_match_all('#<th\b#', $header),
-            'the Lines table must render exactly the seven columns §14 leaves it — no unit cost',
-        );
     }
 
     /**
@@ -446,7 +426,7 @@ class OrderViewSnapshotPageTest extends TestCase
 
         // Line 2: SIMPLE, out of scope — no struck price, zero share, net 10.00.
         $this->assertStringNotContainsString('<s>', $rows[1]);
-        $this->assertStringContainsString('0.00 €', $rows[1]);
+        $this->assertStringNotContainsString(__('orders.line_labels.discount'), $rows[1], 'no discount line when there is no discount');
         $this->assertStringContainsString('10.00 €', $rows[1]);
     }
 
@@ -666,73 +646,34 @@ class OrderViewSnapshotPageTest extends TestCase
     }
 
     /**
-     * §14's line labels — every line names its own four numbers AND their
-     * values are end-aligned, so a line's numbers sit in one right-hand
-     * column: Бройка 2 · Цена 10.00 € · Отстъпка 0.00 € · Сума 20.00 €.
-     *
-     * Asserted twice on purpose: on the rendered row (the label really is
-     * there, next to its value) and on the cells themselves — the names are
-     * the entries' OWN labels now, not text glued onto the values, so
-     * "labelled and end-aligned" is a property of the cell, not of a string.
+     * Each line is one BLOCK: the product name as a link to the product's edit page (a new tab), and under it, muted,
+     * "10.00 € × 2", the SKU; on the right the line total. The block has no minimum width and no sideways scroll.
      */
-    public function test_each_line_names_and_end_aligns_its_own_numbers(): void
+    public function test_each_line_block_links_to_the_product_and_shows_price_times_quantity_the_sku_and_the_total(): void
     {
         $this->seedPricingLists();
 
+        $variationId = $this->simpleVariation('10.00');
         $cart = $this->guestCart();
-        $this->addLine($cart, $this->simpleVariation('10.00'), 2);
+        $this->addLine($cart, $variationId, 2);
         app(CartRepository::class)->save($cart);
 
         $order = $this->place($cart);
         $this->actingAsRole('Administrator');
-        $row = $this->linesBodyRows($this->viewHtml($order))[0];
+        $html = $this->viewHtml($order);
+        $row = $this->linesBodyRows($html)[0];
 
-        foreach ([
-            __('orders.line_labels.quantity'),
-            __('orders.line_labels.unit_price'),
-            __('orders.line_labels.discount'),
-            __('orders.line_labels.amount'),
-        ] as $label) {
-            $this->assertStringContainsString($label, $row, "the line must name its own '{$label}' value");
-        }
+        $editUrl = \App\Filament\Resources\ProductResource::getUrl('edit', ['record' => $this->productIdOfVariation($variationId)]);
+        $this->assertMatchesRegularExpression('#<a class="fi-link" href="'.preg_quote(e($editUrl), '#').'" target="_blank" rel="noopener noreferrer"[^>]*>Simple #', $row, 'the name links to the product edit page, in a new tab');
+        $this->assertStringContainsString('10.00 € × 2', $row, 'unit price × quantity');
+        $this->assertStringContainsString(__('orders.line_labels.sku').': ', $row);
+        $this->assertStringContainsString('20.00 €', $row, 'the line total');
 
-        // The quantity value itself, as its own node (2 x 10.00 = 20.00).
-        $this->assertMatchesRegularExpression('#>\s*2\s*<#', $row);
-        $this->assertStringContainsString('10.00 €', $row);
-        $this->assertStringContainsString('0.00 €', $row);
-        $this->assertStringContainsString('20.00 €', $row);
-
-        // ONE right-hand column: only the four named values are end-aligned.
-        // Filament emits that class twice per entry — once on the entry's own
-        // text element, once on its content wrapper — so four named values
-        // account for exactly eight occurrences: ten would mean some fifth
-        // cell got pushed into the numbers' column, four would mean a named
-        // value lost its alignment.
-        $this->assertSame(8, substr_count($row, 'fi-align-end'), 'only the four named values may be end-aligned');
-
-        $cell = new \ReflectionMethod(OrderResource::class, 'lineCell');
-
-        foreach ([
-            'quantity' => __('orders.line_labels.quantity'),
-            'unit_price' => __('orders.line_labels.unit_price'),
-            'promotion_discount' => __('orders.line_labels.discount'),
-            'net_paid' => __('orders.line_labels.amount'),
-        ] as $key => $label) {
-            $named = $cell->invoke(null, $key);
-
-            $this->assertSame($label, $named->getLabel(), "the '{$key}' cell must be named");
-            $this->assertTrue($named->hasInlineLabel(), "the '{$key}' name must sit beside its value");
-            $this->assertSame(Alignment::End, $named->getAlignment(), "the '{$key}' value must be end-aligned");
-        }
-
-        // Product name, SKU and the register discount are NOT named, and are
-        // therefore not pushed into the numbers' column.
-        foreach (['product_name', 'sku', 'discretionary_discount'] as $key) {
-            $unnamed = $cell->invoke(null, $key);
-
-            $this->assertTrue($unnamed->isLabelHidden(), "the '{$key}' cell must not gain a name");
-            $this->assertNull($unnamed->getAlignment());
-        }
+        // Muted secondary level, and a block that wraps on a phone: no minimum width, no overflow container.
+        $this->assertStringContainsString('opacity: 0.65', $row);
+        $this->assertStringContainsString('flex-wrap: wrap', $row);
+        $this->assertStringNotContainsString('min-width: 5', $this->itemsArea($html), 'the items have no minimum width (History keeps its own)');
+        $this->assertStringNotContainsString('overflow-x', $this->itemsArea($html));
     }
 
     /**

@@ -21,6 +21,7 @@ return [
         'discount' => 'Отстъпка',
         'shipping' => 'Доставка',
         'shipping_method' => 'Начин на доставка',
+        'delivery_address' => 'Адрес',
         'tracking_number' => 'Номер за проследяване',
         'status' => 'Статус',
         'phone' => 'Телефон',
@@ -74,6 +75,10 @@ return [
         'promotion' => 'Промоция',
         'totals' => 'Суми',
         'payment' => 'Плащане',
+        'payment_shipping' => 'Плащане и доставка',
+        'order_details' => 'Детайли на поръчката',
+        'invoice' => 'Фактура',
+        'origin' => 'Произход',
         'history' => 'История',
     ],
 
@@ -167,6 +172,33 @@ return [
     ],
 
     // Refunds R2b (shipping-domain-design.md §7.2.5, §7.2.17): секцията за възстановяванията на поръчката и двете ѝ действия.
+    // Order view polish: полетата на контекста на поръчката са проектирани (order-context-design.md) и още не са изградени,
+    // затова всяко се показва като „не е записано“ — НИКОГА като „Не“.
+    'context' => [
+        'not_recorded' => 'н/д',
+        'fields' => [
+            'customer_ip' => 'IP адрес',
+            'ip_short' => 'IP',
+            'visitor_id' => 'ID посетител',
+            'terms_accepted' => 'Приети условия',
+            'confirmation_requested' => 'Поискано потвърждение на поръчката',
+            'call_before_shipping' => 'Обаждане преди изпращане',
+            'company_name' => 'Име на фирмата',
+            'vat_number' => 'ДДС / ЕИК номер',
+            'billing_address' => 'Адрес за фактуриране',
+            'source_type' => 'Вид източник',
+            'campaign' => 'Кампания / реклама',
+            'landing_page' => 'Входна страница',
+            'referrer' => 'Препращащ сайт',
+        ],
+    ],
+
+    'money' => [
+        'paid' => 'Платено',
+        'refunded' => 'Възстановено (изплатено)',
+        'refund_owed' => 'Дължимо възстановяване',
+    ],
+
     'refunds' => [
         'heading' => 'Възстановявания',
         'heading_count' => 'Възстановявания (:count)',
@@ -380,6 +412,8 @@ return [
     // sideways scrolls its header row out of sight, so every line names its own
     // numbers, in the words the merchant reads them off in.
     'line_labels' => [
+        'sku' => 'Арт. №',
+        'returned_or_removed' => 'върнати или премахнати: :count',
         'quantity' => 'Бройка',
         'unit_price' => 'Цена',
         'discount' => 'Отстъпка',

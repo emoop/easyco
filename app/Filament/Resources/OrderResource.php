@@ -24,6 +24,8 @@ use App\Services\OrderAdminOrderView;
 use App\Services\OrderAdminReader;
 use App\Services\OrderAdminSaleLineView;
 use App\Services\OrderCurrentLinesResolver;
+use App\Services\OrderContextReader;
+use App\Services\OrderContextView;
 use App\Services\OrderEditFormMapper;
 use App\Services\OrderEditor;
 use App\Services\OrderLineProductSearch;
@@ -68,7 +70,6 @@ use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Infolists\Components\Entry;
-use Filament\Infolists\Components\ImageEntry;
 use Filament\Infolists\Components\RepeatableEntry;
 use Filament\Infolists\Components\RepeatableEntry\TableColumn as RepeatableTableColumn;
 use Filament\Infolists\Components\TextEntry;
@@ -78,6 +79,7 @@ use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\Fieldset;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Group;
+use Filament\Schemas\Components\Html;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Text;
 use Filament\Schemas\Components\Utilities\Get;
@@ -455,9 +457,9 @@ class OrderResource extends Resource
     public static function infolist(Schema $schema): Schema
     {
         return $schema->components(static::compactType([
-            // THE HEADER (order-view layout): the order number, its status and its payment status next to it, the
-            // placement date and the channel (a fact about the ORDER, not the customer). One compact row, no card.
-            Grid::make(['default' => 2, 'lg' => 5])
+            // THE HEADER (order-view layout): the order number, its status and its payment status next to it, and under
+            // them ONE muted line: payment method · channel · placement date · customer IP.
+            Grid::make(['default' => 2, 'lg' => 4])
                 ->schema([
                     TextEntry::make('id')
                         ->label(__('orders.fields.id'))
@@ -474,12 +476,10 @@ class OrderResource extends Resource
                         ->getStateUsing(fn (OrderModel $record): string => static::forOrder($record)->latestPayment !== null
                             ? static::optionLabel('payment_status', static::forOrder($record)->latestPayment->status()->value)
                             : __('orders.no_payment')),
-                    TextEntry::make('placed_at')
-                        ->label(__('orders.fields.placed_at'))
-                        ->dateTime(),
-                    TextEntry::make('channel')
-                        ->label(__('orders.fields.channel'))
-                        ->getStateUsing(fn (OrderModel $record): string => static::optionLabel('channel', static::forOrder($record)->channel)),
+                    TextEntry::make('header_subtitle')
+                        ->hiddenLabel()
+                        ->columnSpanFull()
+                        ->getStateUsing(fn (OrderModel $record): string => static::headerSubtitle($record)),
                 ]),
             // TWO COLUMNS on a large screen — the main column (2/3) and the sidebar (1/3) — and ONE column below it, the main
             // column first. Filament's own Grid/Group only: the column counts and spans are inline CSS variables, so no
@@ -490,48 +490,21 @@ class OrderResource extends Resource
                     Section::make(__('orders.sections.lines'))
                         ->compact()
                         ->schema([
-                            static::scrollable(RepeatableEntry::make('lines')
+                            // EACH LINE IS ONE BLOCK, not a table row: thumbnail, product name (a link to the product's edit page),
+                            // muted details under it, the line total on the right. It wraps naturally on a phone, so it has no
+                            // minimum width and no sideways scroll (History keeps its own).
+                            RepeatableEntry::make('lines')
                                 ->hiddenLabel()
                                 ->getStateUsing(fn (OrderModel $record): array => static::lineRows($record))
-                                ->table(fn (OrderModel $record): array => array_map(
-                                    // Same rule as the cells themselves: a column
-                                    // whose line carries a name is a NUMBER column,
-                                    // so its heading is end-aligned with it — only
-                                    // visible in the wide/table mode, where the
-                                    // stacked mode's own labels give way to this
-                                    // header row.
-                                    static fn (array $spec): RepeatableTableColumn => RepeatableTableColumn::make($spec['label'])
-                                        ->alignEnd(static::lineValueLabel($spec['key']) !== null),
-                                    static::lineColumnSpecs($record),
-                                ))
-                                ->schema(fn (OrderModel $record): array => static::compactType(array_map(
-                                    static fn (array $spec): Entry => static::lineCell($spec['key']),
-                                    static::lineColumnSpecs($record),
-                                ))), 56),
-                            // THE TOTALS, at the bottom of the same section (subtotal - discount + shipping = total). The discount's label
-                            // carries the promotion code (there is no separate promotion card), with a small suffix saying whether the
-                            // code is redeemed.
-                            Grid::make(['default' => 2, 'lg' => 4])
-                                ->schema([
-                                    TextEntry::make('subtotal_minor')
-                                        ->label(__('orders.fields.subtotal'))
-                                        ->getStateUsing(fn (OrderModel $record): string => static::formatOrderMoney($record, 'subtotal_minor')),
-                                    TextEntry::make('discount_minor_total')
-                                        ->label(fn (OrderModel $record): string => __('orders.fields.discount').($record->applied_promotion_code !== null ? ' ('.$record->applied_promotion_code.')' : ''))
-                                        ->getStateUsing(fn (OrderModel $record): string => static::formatOrderMoney($record, 'discount_minor'))
-                                        ->suffix(fn (OrderModel $record): ?string => $record->applied_promotion_code === null
-                                            ? null
-                                            : ' · '.(static::forOrder($record)->hasPromotionRedemption ? __('orders.promotion_redeemed_yes') : __('orders.promotion_redeemed_no'))),
-                                    // Refunds R2b: the shipping line, with the method's name when there is one.
-                                    TextEntry::make('shipping_minor')
-                                        ->label(__('orders.fields.shipping'))
-                                        ->getStateUsing(fn (OrderModel $record): string => static::formatOrderMoney($record, 'shipping_minor')
-                                            .(filled($record->shipping_method_name) ? ' ('.$record->shipping_method_name.')' : '')),
-                                    TextEntry::make('total_minor')
-                                        ->label(__('orders.fields.total'))
-                                        ->weight('bold')
-                                        ->getStateUsing(fn (OrderModel $record): string => static::formatOrderMoney($record, 'total_minor')),
-                                ]),
+                                ->schema(static::compactType([
+                                    TextEntry::make('block')->hiddenLabel()->html(),
+                                ])),
+                            // THE MONEY SUMMARY under the items: subtotal, discount (code and redeemed suffix), shipping (method),
+                            // TOTAL; then paid / refunded / owed when they are relevant. Right-aligned, two columns.
+                            TextEntry::make('money_summary')
+                                ->hiddenLabel()
+                                ->html()
+                                ->getStateUsing(fn (OrderModel $record): string => static::moneySummaryHtml($record)),
                         ])
                         // D5 (stage 4b-ii) — EDIT NOW LIVES HERE, IN THIS SECTION'S
                         // OWN HEADER, not in the page-wide action row above.
@@ -738,19 +711,31 @@ class OrderResource extends Resource
                         ->schema([
                             TextEntry::make('client_name')
                                 ->label(__('orders.fields.client_name'))
+                                ->inlineLabel()
+                                ->extraEntryWrapperAttributes(['style' => self::PAIR_STYLE])
+                                ->weight('medium')
                                 ->getStateUsing(fn (OrderModel $record): string => static::forOrder($record)->clientName),
                             TextEntry::make('email')
                                 ->label(__('orders.fields.email'))
+                                ->inlineLabel()
+                                ->extraEntryWrapperAttributes(['style' => self::PAIR_STYLE])
                                 ->copyable(),
                             TextEntry::make('phone')
                                 ->label(__('orders.fields.phone'))
+                                ->inlineLabel()
+                                ->extraEntryWrapperAttributes(['style' => self::PAIR_STYLE])
                                 ->copyable(),
                             // Guest or account: the account id when there is one, "Guest" when there is not.
                             TextEntry::make('account_id')
                                 ->label(__('orders.fields.account_id'))
+                                ->inlineLabel()
+                                ->extraEntryWrapperAttributes(['style' => self::PAIR_STYLE])
                                 ->getStateUsing(fn (OrderModel $record): string => filled($record->account_id) ? (string) $record->account_id : __('orders.guest')),
+                            static::divider(),
                             TextEntry::make('client_id')
                                 ->label(__('orders.fields.client_id'))
+                                ->inlineLabel()
+                                ->extraEntryWrapperAttributes(['style' => self::PAIR_STYLE])
                                 ->getStateUsing(fn (OrderModel $record): string => static::forOrder($record)->order->clientId()),
                         ])
                         ->columns(1),
@@ -759,45 +744,120 @@ class OrderResource extends Resource
                         ->schema([
                             TextEntry::make('delivery_type')
                                 ->label(__('orders.fields.delivery_type'))
+                                ->inlineLabel()
+                                ->extraEntryWrapperAttributes(['style' => self::PAIR_STYLE])
                                 ->formatStateUsing(fn (string $state): string => __("orders.delivery_type_options.{$state}")),
-                            // Shown for BOTH delivery types: a pickup point is in a country too
-                            // (owner decision D1). A historical pickup order may have none: "n/a".
-                            TextEntry::make('country')
-                                ->label(__('orders.fields.country'))
-                                ->formatStateUsing(fn (?string $state): string => $state ?? __('orders.not_available')),
-                            TextEntry::make('city')
-                                ->label(__('orders.fields.city'))
-                                ->visible(fn (OrderModel $record): bool => $record->delivery_type === OrderDeliveryType::STREET_ADDRESS->value)
-                                ->formatStateUsing(fn (?string $state): string => $state ?? __('orders.not_available')),
-                            TextEntry::make('postal_code')
-                                ->label(__('orders.fields.postal_code'))
-                                ->visible(fn (OrderModel $record): bool => $record->delivery_type === OrderDeliveryType::STREET_ADDRESS->value)
-                                ->formatStateUsing(fn (?string $state): string => $state ?? __('orders.not_available')),
-                            TextEntry::make('address_line_1')
-                                ->label(__('orders.fields.address_line_1'))
-                                ->visible(fn (OrderModel $record): bool => $record->delivery_type === OrderDeliveryType::STREET_ADDRESS->value)
-                                ->formatStateUsing(fn (?string $state): string => $state ?? __('orders.not_available')),
-                            TextEntry::make('address_line_2')
-                                ->label(__('orders.fields.address_line_2'))
-                                ->visible(fn (OrderModel $record): bool => $record->delivery_type === OrderDeliveryType::STREET_ADDRESS->value
-                                    && $record->address_line_2 !== null),
-                            TextEntry::make('carrier_code')
-                                ->label(__('orders.fields.carrier_code'))
-                                ->visible(fn (OrderModel $record): bool => $record->delivery_type === OrderDeliveryType::PICKUP_POINT->value),
-                            TextEntry::make('pickup_point_reference')
-                                ->label(__('orders.fields.pickup_point_reference'))
-                                ->visible(fn (OrderModel $record): bool => $record->delivery_type === OrderDeliveryType::PICKUP_POINT->value),
-                            TextEntry::make('settlement')
-                                ->label(__('orders.fields.settlement'))
-                                ->visible(fn (OrderModel $record): bool => $record->delivery_type === OrderDeliveryType::PICKUP_POINT->value),
-                            // The shipping method the customer chose (the snapshot taken at placement) and the courier's tracking number.
+                            static::divider(),
+                            // The address (a street address) or the pickup point: every part the order stores, in one block.
+                            TextEntry::make('delivery_address')
+                                ->hiddenLabel()
+                                ->html()
+                                ->getStateUsing(fn (OrderModel $record): string => static::deliveryAddressHtml($record)),
+                        ])
+                        ->columns(1),
+                    Section::make(__('orders.sections.payment_shipping'))
+                        ->compact()
+                        ->schema([
+                            TextEntry::make('side_payment_method')
+                                ->label(__('orders.fields.payment_method'))
+                                ->inlineLabel()
+                                ->extraEntryWrapperAttributes(['style' => self::PAIR_STYLE])
+                                ->getStateUsing(fn (OrderModel $record): string => static::forOrder($record)->latestPayment !== null
+                                    ? static::optionLabel('payment_method', static::forOrder($record)->latestPayment->method())
+                                    : __('orders.no_payment')),
+                            // The shipping method the customer chose (the snapshot taken at placement) with its price.
                             TextEntry::make('shipping_method_name')
                                 ->label(__('orders.fields.shipping_method'))
-                                ->visible(fn (OrderModel $record): bool => filled($record->shipping_method_name)),
+                                ->inlineLabel()
+                                ->extraEntryWrapperAttributes(['style' => self::PAIR_STYLE])
+                                ->visible(fn (OrderModel $record): bool => filled($record->shipping_method_name))
+                                ->getStateUsing(fn (OrderModel $record): string => $record->shipping_method_name.' · '.static::formatOrderMoney($record, 'shipping_minor')),
                             TextEntry::make('tracking_number')
                                 ->label(__('orders.fields.tracking_number'))
+                                ->inlineLabel()
+                                ->extraEntryWrapperAttributes(['style' => self::PAIR_STYLE])
                                 ->visible(fn (OrderModel $record): bool => filled($record->tracking_number))
                                 ->copyable(),
+                        ])
+                        ->columns(1),
+                    // The order-context fields: designed, not built. Read ONLY through OrderContextReader; a null is "n/a".
+                    Section::make(__('orders.sections.order_details'))
+                        ->compact()
+                        ->schema([
+                            TextEntry::make('ctx_terms_accepted')
+                                ->label(__('orders.context.fields.terms_accepted'))
+                                ->inlineLabel()
+                                ->extraEntryWrapperAttributes(['style' => self::PAIR_STYLE])
+                                ->getStateUsing(fn (OrderModel $record): string => static::contextText(static::context($record)->termsAccepted)),
+                            TextEntry::make('ctx_confirmation_requested')
+                                ->label(__('orders.context.fields.confirmation_requested'))
+                                ->inlineLabel()
+                                ->extraEntryWrapperAttributes(['style' => self::PAIR_STYLE])
+                                ->getStateUsing(fn (OrderModel $record): string => static::contextText(static::context($record)->confirmationRequested)),
+                            TextEntry::make('ctx_call_before_shipping')
+                                ->label(__('orders.context.fields.call_before_shipping'))
+                                ->inlineLabel()
+                                ->extraEntryWrapperAttributes(['style' => self::PAIR_STYLE])
+                                ->getStateUsing(fn (OrderModel $record): string => static::contextText(static::context($record)->callBeforeShipping)),
+                        ])
+                        ->columns(1),
+                    // Later it appears only when an invoice was requested; for now there is nothing recorded, so it shows n/a.
+                    Section::make(__('orders.sections.invoice'))
+                        ->compact()
+                        ->schema([
+                            TextEntry::make('ctx_company_name')
+                                ->label(__('orders.context.fields.company_name'))
+                                ->inlineLabel()
+                                ->extraEntryWrapperAttributes(['style' => self::PAIR_STYLE])
+                                ->getStateUsing(fn (OrderModel $record): string => static::contextText(static::context($record)->invoiceCompanyName)),
+                            TextEntry::make('ctx_vat_number')
+                                ->label(__('orders.context.fields.vat_number'))
+                                ->inlineLabel()
+                                ->extraEntryWrapperAttributes(['style' => self::PAIR_STYLE])
+                                ->getStateUsing(fn (OrderModel $record): string => static::contextText(static::context($record)->invoiceVatNumber)),
+                            TextEntry::make('ctx_billing_address')
+                                ->label(__('orders.context.fields.billing_address'))
+                                ->inlineLabel()
+                                ->extraEntryWrapperAttributes(['style' => self::PAIR_STYLE])
+                                ->getStateUsing(fn (OrderModel $record): string => static::contextText(static::context($record)->invoiceBillingAddress)),
+                        ])
+                        ->columns(1),
+                    Section::make(__('orders.sections.origin'))
+                        ->compact()
+                        ->collapsible()
+                        ->collapsed()
+                        ->schema([
+                            // The visitor's anonymous id (a UUIDv4, order-context-design.md §2.1): its first 8 characters and an
+                            // ellipsis; the FULL value is the tooltip and what the copy button copies. Not recorded: "n/a", no tooltip.
+                            TextEntry::make('ctx_visitor_id')
+                                ->label(__('orders.context.fields.visitor_id'))
+                                ->inlineLabel()
+                                ->extraEntryWrapperAttributes(['style' => self::PAIR_STYLE])
+                                ->getStateUsing(fn (OrderModel $record): string => static::contextText(static::context($record)->visitorId))
+                                ->formatStateUsing(fn (OrderModel $record): string => static::shortId(static::context($record)->visitorId))
+                                ->tooltip(fn (OrderModel $record): ?string => static::context($record)->visitorId)
+                                ->copyable(fn (OrderModel $record): bool => static::context($record)->visitorId !== null)
+                                ->copyableState(fn (OrderModel $record): string => (string) static::context($record)->visitorId),
+                            TextEntry::make('ctx_source_type')
+                                ->label(__('orders.context.fields.source_type'))
+                                ->inlineLabel()
+                                ->extraEntryWrapperAttributes(['style' => self::PAIR_STYLE])
+                                ->getStateUsing(fn (OrderModel $record): string => static::contextText(static::context($record)->originSourceType)),
+                            TextEntry::make('ctx_campaign')
+                                ->label(__('orders.context.fields.campaign'))
+                                ->inlineLabel()
+                                ->extraEntryWrapperAttributes(['style' => self::PAIR_STYLE])
+                                ->getStateUsing(fn (OrderModel $record): string => static::contextText(static::context($record)->originCampaign)),
+                            TextEntry::make('ctx_landing_page')
+                                ->label(__('orders.context.fields.landing_page'))
+                                ->inlineLabel()
+                                ->extraEntryWrapperAttributes(['style' => self::PAIR_STYLE])
+                                ->getStateUsing(fn (OrderModel $record): string => static::contextText(static::context($record)->originLandingPage)),
+                            TextEntry::make('ctx_referrer')
+                                ->label(__('orders.context.fields.referrer'))
+                                ->inlineLabel()
+                                ->extraEntryWrapperAttributes(['style' => self::PAIR_STYLE])
+                                ->getStateUsing(fn (OrderModel $record): string => static::contextText(static::context($record)->originReferrer)),
                         ])
                         ->columns(1),
                     ])->columnSpan(['lg' => 1]),
@@ -842,6 +902,10 @@ class OrderResource extends Resource
             if ($component instanceof TextEntry) {
                 $component->size(TextSize::ExtraSmall);
 
+                if (static::isSecondaryEntry($component->getName())) {
+                    $component->color('gray')->extraAttributes(['style' => self::SECONDARY_ENTRY_STYLE], merge: true);
+                }
+
                 continue;
             }
 
@@ -863,6 +927,196 @@ class OrderResource extends Resource
         }
 
         return is_array($children['default'] ?? null) ? $children['default'] : [];
+    }
+
+    /** The muted style of the page's SECONDARY level of text (labels' companions: dates, references, SKU, unit prices). */
+    private const SECONDARY_ENTRY_STYLE = 'font-size: 0.6875rem';
+
+    /**
+     * A "label: value" pair of a sidebar card is a WRAPPING flex row (not Filament's fixed 1/3 + 2/3 grid): a long label can
+     * never run into its value — when the two do not fit side by side the value drops BELOW the label, and long words break.
+     */
+    private const PAIR_STYLE = 'display: flex; flex-wrap: wrap; column-gap: 0.75rem; row-gap: 0.125rem; overflow-wrap: anywhere';
+
+    private const SECONDARY_HTML_STYLE = 'font-size: 0.6875rem; opacity: 0.65';
+
+    /**
+     * ONE place decides which text is SECONDARY on this page (smaller and muted) and which is primary (names, amounts,
+     * totals, the customer's name — left as they are): the entries named here. compactType() applies it.
+     */
+    private static function isSecondaryEntry(string $name): bool
+    {
+        return in_array($name, [
+            'payment_confirmed_at', 'attempted_at', 'provider_reference', 'failure_reason', 'client_id', 'header_subtitle',
+            'occurred_at', 'staff_name', 'return_record',
+        ], true) || preg_match('/^refund_\d+_(recorded_at|recorded_by|reason|paid_out_at|paid_out_by|paid_out_reference|paid_out_note|cancelled_at|cancelled_by|cancelled_reason|deduction_reason)$/', $name) === 1;
+    }
+
+    /** A thin divider between groups of a card, theme-safe in light and dark mode (a translucent line, no colour). */
+    private static function divider(): Html
+    {
+        return Html::make('<hr style="border: 0; border-top: 1px solid rgba(128, 128, 128, 0.3); margin: 0.25rem 0">');
+    }
+
+    private static function context(OrderModel $record): OrderContextView
+    {
+        return app(OrderContextReader::class)->forOrder((string) $record->id);
+    }
+
+    /** The first 8 characters of an id and an ellipsis (a UUID's first group); not recorded is "n/a". */
+    private static function shortId(?string $id): string
+    {
+        return $id === null ? __('orders.context.not_recorded') : mb_substr($id, 0, 8).'…';
+    }
+
+    /** A recorded value as text; null is "n/a" (not recorded) — never "No". */
+    private static function contextText(string|bool|null $value): string
+    {
+        return match (true) {
+            $value === null => __('orders.context.not_recorded'),
+            is_bool($value) => $value ? __('orders.yes') : __('orders.no'),
+            default => $value,
+        };
+    }
+
+    /** payment method · channel · placement date · customer IP — the muted line under the order number. */
+    private static function headerSubtitle(OrderModel $record): string
+    {
+        $view = static::forOrder($record);
+        $placed = $record->placed_at instanceof \DateTimeInterface ? Carbon::instance($record->placed_at) : Carbon::parse((string) $record->placed_at);
+
+        return implode(' · ', array_filter([
+            $view->latestPayment !== null ? static::optionLabel('payment_method', $view->latestPayment->method()) : null,
+            static::optionLabel('channel', $view->channel),
+            $placed->timezone(FilamentTimezone::get())->format('M j, Y H:i'),
+            __('orders.context.fields.ip_short').' '.static::contextText(static::context($record)->customerIp),
+        ]));
+    }
+
+    /** The street address, or the pickup point, with every part the order stores. */
+    private static function deliveryAddressHtml(OrderModel $record): string
+    {
+        $na = __('orders.not_available');
+        $lines = $record->delivery_type === OrderDeliveryType::STREET_ADDRESS->value
+            ? [
+                $record->address_line_1 ?? $na,
+                $record->address_line_2,
+                trim(($record->postal_code ?? '').' '.($record->city ?? $na)),
+                $record->country ?? $na,
+            ]
+            : [
+                __('orders.fields.carrier_code').': '.($record->carrier_code ?? $na),
+                __('orders.fields.pickup_point_reference').': '.($record->pickup_point_reference ?? $na),
+                $record->settlement ?? $na,
+                $record->country ?? $na,
+            ];
+
+        return implode('<br>', array_map(static fn (string $line): string => e($line), array_filter($lines, static fn (?string $line): bool => $line !== null && $line !== '')));
+    }
+
+    /** One line as a BLOCK: thumbnail, name (a link to the product's edit page), muted details, the total on the right. */
+    private static function lineBlockHtml(OrderAdminSaleLineView $line): string
+    {
+        $muted = 'style="'.self::SECONDARY_HTML_STYLE.'"';
+        $name = e($line->productName ?? __('orders.not_available'));
+
+        $title = $line->productId !== null
+            ? '<a class="fi-link" href="'.e(ProductResource::getUrl('edit', ['record' => $line->productId])).'" target="_blank" rel="noopener noreferrer" style="font-weight: 600; word-break: break-word">'.$name.'</a>'
+            : '<span style="font-weight: 600; word-break: break-word">'.$name.'</span>';
+
+        $details = [];
+
+        // "€50.00 × 1": the sold unit price (its struck regular price kept) and the quantity.
+        $details[] = static::lineUnitPriceHtml($line).' × '.e((string) $line->quantity);
+
+        foreach ($line->soldAttributes as $attribute) {
+            $details[] = e(($attribute['definitionName'] ?? '').': '.($attribute['value'] ?? ''));
+        }
+
+        if ($line->sku !== null) {
+            $details[] = e(__('orders.line_labels.sku').': '.$line->sku);
+        }
+
+        if (! $line->isLegacy && $line->promotionDiscountShare !== null && $line->promotionDiscountShare->minorValue() !== 0) {
+            $details[] = e(__('orders.line_labels.discount').': -'.static::formatLineMoney($line->promotionDiscountShare));
+        }
+
+        if ($line->discretionaryDiscount !== null && $line->discretionaryDiscount->minorValue() !== 0) {
+            $details[] = e(__('orders.fields.discretionary_discount').': -'.static::formatLineMoney($line->discretionaryDiscount));
+        }
+
+        // Returned or removed units stay visible: what is no longer returnable or editable of the ordered quantity.
+        $gone = $line->quantity - $line->remainingReturnable;
+
+        if ($gone > 0) {
+            $details[] = e(__('orders.line_labels.returned_or_removed', ['count' => $gone]));
+        }
+
+        if ($line->isLegacy) {
+            $details[] = e(__('orders.legacy_line_note'));
+        }
+
+        // HEIGHT ONLY, never a width (LINE_THUMBNAIL_HEIGHT_PX's docblock has the why); and fail-soft like the ImageEntry it
+        // replaces: a file that is not there renders no image, never a broken one.
+        $disk = \Illuminate\Support\Facades\Storage::disk(config('services.media.default_disk', 'public'));
+        $image = $line->imagePath !== null && $disk->exists($line->imagePath)
+            ? '<img src="'.e($disk->url($line->imagePath)).'" alt="" style="height: '.self::LINE_THUMBNAIL_HEIGHT_PX.'px; flex: none; border-radius: 0.375rem">'
+            : '';
+
+        return '<div style="display: flex; flex-wrap: wrap; gap: 0.5rem 0.75rem; align-items: flex-start; width: 100%">'
+            .$image
+            .'<div style="flex: 1 1 12rem; min-width: 0">'.$title
+            .implode('', array_map(static fn (string $detail): string => '<div '.$muted.'>'.$detail.'</div>', $details))
+            .'</div>'
+            .'<div style="margin-inline-start: auto; font-weight: 700; white-space: nowrap">'.e(static::formatLineMoney($line->isLegacy ? null : $line->netPaidAmount)).'</div>'
+            .'</div>';
+    }
+
+    /**
+     * The money summary under the items: a compact, right-aligned two-column block. Subtotal, discount (with the code and
+     * whether it is redeemed), shipping (with the method), TOTAL in bold; then — when there is a settled payment or any
+     * refund — paid, refunded (paid out) and refund owed (only when not zero). The refund figures are R2b's
+     * (OrderRefundsReader): nothing is computed here.
+     */
+    private static function moneySummaryHtml(OrderModel $record): string
+    {
+        $money = static fn (string $field): string => static::formatOrderMoney($record, $field);
+        $row = static fn (string $label, string $value, bool $bold = false): string => '<tr'.($bold ? ' style="font-weight: 700"' : '').'>'
+            .'<td style="padding: 0.125rem 1rem 0.125rem 0; text-align: end">'.$label.'</td>'
+            .'<td style="padding: 0.125rem 0; text-align: end; white-space: nowrap">'.e($value).'</td></tr>';
+
+        $discountLabel = e(__('orders.fields.discount'));
+
+        if ($record->applied_promotion_code !== null) {
+            $discountLabel .= ' ('.e($record->applied_promotion_code).')'
+                .' <span style="'.self::SECONDARY_HTML_STYLE.'">· '.e(static::forOrder($record)->hasPromotionRedemption ? __('orders.promotion_redeemed_yes') : __('orders.promotion_redeemed_no')).'</span>';
+        }
+
+        $shippingLabel = e(__('orders.fields.shipping')).(filled($record->shipping_method_name) ? ' ('.e($record->shipping_method_name).')' : '');
+
+        $html = $row(e(__('orders.fields.subtotal')), $money('subtotal_minor'))
+            .$row($discountLabel, '-'.$money('discount_minor'))
+            .$row($shippingLabel, $money('shipping_minor'))
+            .$row(e(__('orders.fields.total')), $money('total_minor'), true);
+
+        $refunds = static::refundsView($record);
+        $payment = static::forOrder($record)->latestPayment;
+        $settled = $payment !== null && $payment->isSettled();
+
+        if ($settled || $refunds['rows'] !== []) {
+            $paid = $refunds['rows'] !== [] ? $refunds['figures']['paid_in'] : $payment->amount()->minorValue();
+            $format = static fn (int $minor): string => static::formatMinor($minor, $refunds['currency']);
+
+            $html .= '<tr><td colspan="2" style="border-top: 1px solid rgba(128, 128, 128, 0.3); padding: 0.125rem 0"></td></tr>'
+                .$row(e(__('orders.money.paid')), $format($paid))
+                .$row(e(__('orders.money.refunded')), $format($refunds['figures']['paid_out']));
+
+            if ($refunds['figures']['owed'] !== 0) {
+                $html .= $row(e(__('orders.money.refund_owed')), $format($refunds['figures']['owed']));
+            }
+        }
+
+        return '<table style="margin-inline-start: auto; border-collapse: collapse">'.$html.'</table>';
     }
 
     /**
@@ -2325,228 +2579,19 @@ class OrderResource extends Resource
     }
 
     /**
-     * The row data behind every Lines-table cell, keyed to match
-     * lineColumnSpecs()'s own keys. The values for the two HTML cells
-     * (product_name, unit_price) are already-escaped markup; every other
-     * value is plain text Filament escapes itself. One OrderAdminReader
-     * read backs the whole table — no per-line query.
+     * The items, one entry per line: the line's whole BLOCK as markup (lineBlockHtml(), every interpolated piece escaped
+     * there). One OrderAdminReader read backs the whole list — no per-line query. (Before the order-view polish this
+     * was the row data of a seven-column table; the unit cost never was, and still is not, shown for any role — a
+     * per-line cost on an order screen is margin analysis by another name.)
      *
-     * line_total and unit_cost are deliberately NOT among these keys: the
-     * first repeated Price x Quantity, Discount and Final price, and the
-     * second was removed for every role — see lineColumnSpecs()'s own
-     * docblock for both reasons. The view object still CARRIES both
-     * values (OrderAdminSaleLineView); this page simply stops showing
-     * them.
-     *
-     * `image` IS NULLABLE, unlike every other value here: the line's
-     * thumbnail is live data (no snapshot stores one) and a line with no
-     * usable photo legitimately has none — lineCell() hides the cell
-     * entirely for it rather than rendering a broken image.
-     *
-     * The four numbers a merchant reads off a line are NAMED on the line
-     * itself as well as in the header row, by lineCell() — see its own
-     * docblock; the values here stay pure values.
-     *
-     * @return array<int, array<string, string|null>>
+     * @return array<int, array{block: string}>
      */
     private static function lineRows(OrderModel $record): array
     {
         return array_map(
-            fn (OrderAdminSaleLineView $line): array => [
-                'image' => $line->imagePath,
-                'product_name' => static::lineProductHtml($line),
-                'sku' => $line->sku ?? __('orders.not_available'),
-                'quantity' => (string) $line->quantity,
-                'unit_price' => static::lineUnitPriceHtml($line),
-                // D5: a legacy line's net is NEVER derived from the
-                // order-level discount — it renders '—' (unknown), and so
-                // does its promotion share, which it never had.
-                'promotion_discount' => static::formatLineMoney($line->isLegacy ? null : $line->promotionDiscountShare),
-                'discretionary_discount' => static::formatLineMoney($line->discretionaryDiscount),
-                'net_paid' => static::formatLineMoney($line->isLegacy ? null : $line->netPaidAmount),
-            ],
+            static fn (OrderAdminSaleLineView $line): array => ['block' => static::lineBlockHtml($line)],
             static::forOrder($record)->lines,
         );
-    }
-
-    /**
-     * The Lines table's own column set, in order — ONE list drives both
-     * the header row (->table()) and the per-row cells (->schema()), so
-     * the two can never drift out of positional alignment:
-     * RepeatableEntry maps the Nth cell to the Nth column.
-     *
-     * The price columns read, in order, Price (the sold unit price, its
-     * struck regular price kept exactly as it was), Discount (the line's
-     * own promotion share), Merchant discount (a register discount — D4:
-     * shown only when some line on this order actually has one) and Final
-     * price (net paid). Labels live in lang/{bg,en}/orders.php.
-     *
-     * TWO COLUMNS ARE DELIBERATELY ABSENT, both removed on purpose:
-     *
-     *  - unit cost, for EVERY role, Administrator included — COST_VIEW no
-     *    longer affects this page at all. A per-line cost on an order
-     *    screen is margin analysis by another name, and that belongs to a
-     *    future reports screen holding REPORT_VIEW *and* COST_VIEW
-     *    explicitly (staff-access-domain-design.md §6), not to a page
-     *    gated by ORDER_VIEW alone. The value is untouched — it stays in
-     *    the sale line's §3.13 snapshot (a return reverses profit from it)
-     *    and in OrderAdminSaleLineView — so nothing here narrows what a
-     *    report can read later.
-     *  - line total (the amount before discounts): with Price x Quantity,
-     *    Discount and Final price it only repeated information.
-     *
-     * A THUMBNAIL COMES FIRST, before the product name — 36 px tall, the
-     * merchant's own size for it (LINE_THUMBNAIL_HEIGHT_PX), and HEIGHT
-     * ONLY so a photo keeps its own aspect ratio (that constant's own
-     * docblock has the why) — so a line reads like the physical article
-     * rather than as a wall of values. It is the
-     * only LIVE value on this page (no snapshot stores an image — see
-     * OrderAdminReader::imagePathsFor()), and it fails soft: a line with no
-     * usable photo renders no image cell at all.
-     *
-     * @return array<int, array{key: string, label: string}>
-     */
-    private static function lineColumnSpecs(OrderModel $record): array
-    {
-        $specs = [
-            ['key' => 'image', 'label' => __('orders.fields.image')],
-            ['key' => 'product_name', 'label' => __('orders.fields.product_name')],
-            ['key' => 'sku', 'label' => __('orders.fields.sku')],
-            ['key' => 'quantity', 'label' => __('orders.fields.quantity')],
-            ['key' => 'unit_price', 'label' => __('orders.fields.unit_price')],
-            ['key' => 'promotion_discount', 'label' => __('orders.fields.promotion_discount')],
-        ];
-
-        // D4: the discretionary (register) discount column appears only
-        // when at least one line on THIS order actually carries a non-zero
-        // value — web checkout always writes zero, so it does not clutter
-        // the table for the common case.
-        if (static::hasDiscretionaryDiscount(static::forOrder($record))) {
-            $specs[] = ['key' => 'discretionary_discount', 'label' => __('orders.fields.discretionary_discount')];
-        }
-
-        $specs[] = ['key' => 'net_paid', 'label' => __('orders.fields.net_paid')];
-
-        return $specs;
-    }
-
-    /** D4's own "show the discretionary column only if any line has one" check. */
-    private static function hasDiscretionaryDiscount(OrderAdminOrderView $view): bool
-    {
-        foreach ($view->lines as $line) {
-            if ($line->discretionaryDiscount !== null && $line->discretionaryDiscount->minorValue() !== 0) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    /**
-     * One body cell. product_name and unit_price carry deliberate,
-     * already-escaped markup (the sold attributes; the D3 struck price),
-     * so they render as HTML — every other cell is plain text, escaped by
-     * Filament. See lineRows() for what each key's value is.
-     *
-     * §14's LINE LABELS live here, not in lineRows(): the four numbers a
-     * merchant reads off a line carry their own name as the entry's OWN
-     * label, and their value is END-ALIGNED — so every line's numbers sit
-     * in one right-hand column, the way amounts read on a receipt, instead
-     * of trailing their labels at the left. lineRows() keeps returning pure
-     * values; naming and aligning a value are presentation decisions of its
-     * cell.
-     *
-     * Why the entry's label rather than a prefix on the value: Filament
-     * renders a table repeatable as a stacked card below its container
-     * breakpoint — the header row is `hidden` there (repeatable.css), and
-     * the label column is exactly the slot that shows a name in that mode
-     * while the CSS hides it again in the wide/table mode, where the header
-     * row takes over.
-     *
-     * THE THUMBNAIL IS THE ONE CELL THAT IS NOT A TextEntry — and the only
-     * one hidden outright when it has nothing to show, because an image
-     * cell with an empty state would render an empty <img> box that reads
-     * as a broken picture (lineRows() explains why its value is nullable).
-     */
-    private static function lineCell(string $key): Entry
-    {
-        if ($key === 'image') {
-            return ImageEntry::make($key)
-                ->label(__('orders.fields.image'))
-                // Same disk rule as ProductResource's own list thumbnail —
-                // config, never a hardcoded 'public'.
-                ->disk(config('services.media.default_disk', 'public'))
-                // HEIGHT ONLY, never a width: NOT ->imageSize() and NOT
-                // ->square(), because either one writes a width beside the
-                // height, and that height/width pair crops a non-square
-                // photo into its square box. See
-                // LINE_THUMBNAIL_HEIGHT_PX's own docblock.
-                ->imageHeight(self::LINE_THUMBNAIL_HEIGHT_PX)
-                ->hidden(fn (?string $state): bool => blank($state));
-        }
-
-        $entry = TextEntry::make($key);
-
-        if ($key === 'product_name' || $key === 'unit_price') {
-            $entry->html();
-        }
-
-        $label = static::lineValueLabel($key);
-
-        if ($label === null) {
-            return $entry->hiddenLabel();
-        }
-
-        // A number (quantity, a price, a line total) never wraps; the product name still may.
-        return $entry
-            ->label($label)
-            ->inlineLabel()
-            ->alignEnd()
-            ->extraAttributes(['style' => 'white-space: nowrap']);
-    }
-
-    /**
-     * The name a line puts on one of its own values, in the words the
-     * merchant uses for them (admin-panel-design.md §14) — or null for the
-     * values a line does NOT name:
-     *
-     *  - image / product_name / sku are identified by their own content (the
-     *    photo, the product name, the SKU), not by a label;
-     *  - discretionary_discount (a register discount, D4) appears only when
-     *    some line has one, and keeps its own column header only — adding a
-     *    fifth label for it was not asked for.
-     */
-    private static function lineValueLabel(string $key): ?string
-    {
-        return match ($key) {
-            'quantity' => __('orders.line_labels.quantity'),
-            'unit_price' => __('orders.line_labels.unit_price'),
-            'promotion_discount' => __('orders.line_labels.discount'),
-            'net_paid' => __('orders.line_labels.amount'),
-            default => null,
-        };
-    }
-
-    /**
-     * D4: the product name, with the sold variation attributes underneath
-     * as `Name: value` pairs in their stored order. D5: a legacy line
-     * appends a small translated note saying it predates the full
-     * snapshot. Every interpolated piece is escaped here because this
-     * cell renders as HTML.
-     */
-    private static function lineProductHtml(OrderAdminSaleLineView $line): string
-    {
-        $html = e($line->productName ?? __('orders.not_available'));
-
-        foreach ($line->soldAttributes as $attribute) {
-            $html .= '<br>'.e(($attribute['definitionName'] ?? '').': '.($attribute['value'] ?? ''));
-        }
-
-        if ($line->isLegacy) {
-            $html .= '<br><span>'.e(__('orders.legacy_line_note')).'</span>';
-        }
-
-        return $html;
     }
 
     /**
@@ -2834,7 +2879,7 @@ class OrderResource extends Resource
      * docblock (that class's own note) — this is the consumer.
      *
      * RENDERED THE SAME TABLE WAY Lines renders its own RepeatableEntry
-     * (lineRows()/lineColumnSpecs() above), not stacked/labelled-field-per-
+     * (lineRows() above), not stacked/labelled-field-per-
      * event — one row per order_events row.
      *
      * NEWEST FIRST (§8.4's own words: "newest first, since a merchant opening
@@ -2854,7 +2899,7 @@ class OrderResource extends Resource
      * A FIXED COLUMN SET, UNLIKE Lines' OWN CONDITIONAL discretionary_discount
      * COLUMN — nothing here varies per record, so historyColumnSpecs() takes
      * no $record and neither ->table() nor ->schema() in infolist() needs a
-     * per-record closure the way lineColumnSpecs()'s callers do.
+     * per-record closure the way the former items table's callers did.
      *
      * SEVEN COLUMNS: Date (occurred_at), Event (type, via the SAME
      * event_type_options group the label-parity test already pins),

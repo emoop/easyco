@@ -1033,6 +1033,16 @@ accepted — so this design adds the two columns §2.3 defines and three small r
   message a law requires — a decision in *that* document, recorded here so it is not
   discovered later (§15 Q9).
 
+#### 9.2.1 Owner decision: "call before shipping" — a third checkout choice, next to the terms and the confirmation
+
+**Decided (owner, 2026-10-05).** The customer may tick **"call me before shipping"** at checkout — a yes/no choice that sits **next to the terms acceptance and the confirmation choice** and is recorded the same way as the confirmation preference (§9.2):
+
+- **A nullable boolean on `orders`, `call_before_shipping`, beside `confirmation_requested` (§2.3).** `true` = the customer asked for the call; `false` = the customer was offered the choice and declined; **NULL = "not asked"** (an API or integration caller that did not send it, or an order placed before the field existed) and **never `false`**: inventing a preference the customer never expressed is what "never fabricate" forbids. It is therefore a fourth column in §2.3's migration, nullable, no index.
+- **API contract (§9.5):** a `call_before_shipping` request field, `sometimes|boolean`, absent meaning NULL, exactly like `confirmation_requested`.
+- **What it controls: nothing automatically.** It is information for the merchant's staff — a note that the customer wants a phone call before the parcel goes out. It gates no status transition (shipping is never blocked by it) and sends nothing. A later stage may surface it in a fulfilment queue; that is not decided here.
+- **The admin shows it** on the order's View page in the **"Order details"** card, next to "terms accepted" and "order confirmation requested" (§11.1). Until the data exists the page renders **"n/a" — not recorded — and never "No"**; it reads the value only through the order-context reader.
+- This is the field `checkout-domain-design.md` §12 sketched as `requiresPhoneCallBeforeShipping` / the `phone_call_field_enabled` Site Setting (§0 item 9: design only, nothing built). Whether the checkbox is *offered* to every customer or switched by that Site Setting stays the open question of that document; the **stored fact** is decided here.
+
 ### 9.3 The invoice request — a snapshot, and never a document
 
 **Decision (D12): the request and a billing snapshot live in
@@ -1305,6 +1315,9 @@ command shaped like this one, over the order rather than over its context).
 **Decision (D9): one new Section on `ViewOrder`, read-only, added to
 `OrderAdminReader::forOrder()`'s existing single read** (D5) — no new reader class,
 no second query per field, and no write anywhere:
+
+*Interim (order-view polish, 2026-10-05):* the page already renders these fields — and the order details, invoice and customer fields of §9 — through ONE app-layer reader, `App\Services\OrderContextReader`, which returns "not recorded" (shown as "n/a", never "No") for everything until these stages build the data and make no query. The stages replace that reader's body and nothing else on the page; folding it into `OrderAdminReader::forOrder()`, as D9 says, remains the target shape.
+
 
 | Line | Source | Rendered when empty as |
 |---|---|---|

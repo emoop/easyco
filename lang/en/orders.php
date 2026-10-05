@@ -21,6 +21,7 @@ return [
         'discount' => 'Discount',
         'shipping' => 'Shipping',
         'shipping_method' => 'Shipping method',
+        'delivery_address' => 'Address',
         'tracking_number' => 'Tracking number',
         'status' => 'Status',
         'phone' => 'Phone',
@@ -76,6 +77,10 @@ return [
         'promotion' => 'Promotion',
         'totals' => 'Totals',
         'payment' => 'Payment',
+        'payment_shipping' => 'Payment and shipping',
+        'order_details' => 'Order details',
+        'invoice' => 'Invoice',
+        'origin' => 'Origin',
         'history' => 'History',
     ],
 
@@ -171,6 +176,33 @@ return [
     ],
 
     // Refunds R2b (shipping-domain-design.md §7.2.5, §7.2.17): the refunds section of the order page and its two actions.
+    // Order view polish: the order-context fields are designed (order-context-design.md) and not built, so each renders
+    // "not recorded" — NEVER "No".
+    'context' => [
+        'not_recorded' => 'n/a',
+        'fields' => [
+            'customer_ip' => 'IP address',
+            'ip_short' => 'IP',
+            'visitor_id' => 'Visitor ID',
+            'terms_accepted' => 'Terms accepted',
+            'confirmation_requested' => 'Order confirmation requested',
+            'call_before_shipping' => 'Call before shipping',
+            'company_name' => 'Company name',
+            'vat_number' => 'VAT / company number',
+            'billing_address' => 'Billing address',
+            'source_type' => 'Source type',
+            'campaign' => 'Campaign / ad',
+            'landing_page' => 'Landing page',
+            'referrer' => 'Referrer',
+        ],
+    ],
+
+    'money' => [
+        'paid' => 'Paid',
+        'refunded' => 'Refunded (paid out)',
+        'refund_owed' => 'Refund owed',
+    ],
+
     'refunds' => [
         'heading' => 'Refunds',
         'heading_count' => 'Refunds (:count)',
@@ -395,6 +427,8 @@ return [
     // sideways scrolls its header row out of sight, so every line names its own
     // numbers, in the words the merchant reads them off in.
     'line_labels' => [
+        'sku' => 'SKU',
+        'returned_or_removed' => 'returned or removed: :count',
         'quantity' => 'Qty',
         'unit_price' => 'Price',
         'discount' => 'Discount',

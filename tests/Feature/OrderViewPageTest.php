@@ -315,9 +315,10 @@ class OrderViewPageTest extends TestCase
         // column pass), but </tbody> stays: it is locale-safe and a
         // tighter scope than any heading-based boundary.
         $linesSectionStart = strpos($html, __('orders.sections.lines'));
-        $linesSectionEnd = strpos($html, '</tbody>', $linesSectionStart);
+        // Since the order-view polish each line is a BLOCK, not a table row; the blocks end where the money summary begins.
+        $linesSectionEnd = strpos($html, '<table style="margin-inline-start', $linesSectionStart);
         $this->assertNotFalse($linesSectionStart, 'Items section heading not found in the rendered page');
-        $this->assertNotFalse($linesSectionEnd, 'the Items table body was not found in the rendered page');
+        $this->assertNotFalse($linesSectionEnd, 'the end of the item blocks (the money summary) was not found in the rendered page');
 
         $lineRowHtml = substr($html, $linesSectionStart, $linesSectionEnd - $linesSectionStart);
 

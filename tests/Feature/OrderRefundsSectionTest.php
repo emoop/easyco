@@ -398,7 +398,7 @@ class OrderRefundsSectionTest extends TestCase
         $this->assertSame((int) $row->subtotal_minor - (int) $row->discount_minor + (int) $row->shipping_minor, (int) $row->total_minor, 'the figures add up');
 
         $this->page($order['orderId'])
-            ->assertSeeInOrder(['Subtotal', '20.00', 'Discount', '2.00', 'Shipping', '3.50', '(Test courier)', 'Total', '21.50']);
+            ->assertSeeInOrder(['Subtotal', '20.00', 'Discount', '2.00', 'Shipping', '(Test courier)', '3.50', 'Total', '21.50']);
     }
 
     public function test_an_order_without_a_shipping_method_shows_zero_and_no_name(): void

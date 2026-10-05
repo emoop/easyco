@@ -231,9 +231,9 @@ final class OrderAdminReader
         // imagePathsFor()'s own docblock. The View page's query-count test
         // pins the page's count to the line COUNT, not to how much data a
         // line carries.
-        $imagePathsByVariationId = $this->imagePathsFor(
-            $rows->pluck('priceable_id')->filter()->unique()->values()->all()
-        );
+        $media = $this->mediaFor($rows->pluck('priceable_id')->filter()->unique()->values()->all());
+        $imagePathsByVariationId = $media['paths'];
+        $productIdsByVariationId = $media['products'];
 
         $lines = array_map(
             fn (array $entry): OrderAdminSaleLineView => $this->buildLineView(
@@ -241,6 +241,7 @@ final class OrderAdminReader
                 $entry['row']->priceable_id === null ? null : ($imagePathsByVariationId[$entry['row']->priceable_id] ?? null),
                 $entry['returned'],
                 $entry['editedAway'],
+                $entry['row']->priceable_id === null ? null : ($productIdsByVariationId[$entry['row']->priceable_id] ?? null),
             ),
             $entries,
         );
@@ -453,7 +454,7 @@ final class OrderAdminReader
      * nonsense max. Never rounded up to the quantity either: a line whose
      * units have all come back is legitimately 0.
      */
-    private function buildLineView(object $row, ?string $imagePath, int $returnedQuantity, int $editedAwayQuantity): OrderAdminSaleLineView
+    private function buildLineView(object $row, ?string $imagePath, int $returnedQuantity, int $editedAwayQuantity, ?string $productId = null): OrderAdminSaleLineView
     {
         $quantity = (int) $row->quantity;
         $amountMinor = (int) $row->amount_minor;
@@ -498,6 +499,7 @@ final class OrderAdminReader
             netPaidAmount: $netPaidAmount,
             unitCost: SaleLineMapper::moneyOrNull($row->unit_cost_minor, $row->unit_cost_currency, 'unitCost'),
             imagePath: $imagePath,
+            productId: $productId,
             soldAttributes: self::decodeSoldAttributes($row->sold_attributes, $netPaidAmount === null, (string) $row->id),
             isLegacy: $netPaidAmount === null,
         );
@@ -530,56 +532,84 @@ final class OrderAdminReader
      */
     private function imagePathsFor(array $variationIds): array
     {
+        return $this->mediaFor($variationIds)['paths'];
+    }
+
+    /**
+     * The thumbnail path AND the product id of every line's variation, in ONE query (never one per line, and no
+     * query more than the page already paid for its photos — the product id rides along: the order page links each
+     * line to its product's edit page). A variation that no longer exists simply has neither.
+     *
+     * The photo rule is unchanged: the variation's OWN first READY image (by the attachment's sort_order, then the
+     * asset id), else its product's first READY image by the same order. It is decided here in PHP over the joined
+     * rows, because the variation's media and the product's media are two independent one-to-many joins of the
+     * same variation row.
+     *
+     * @param  list<string>  $variationIds
+     * @return array{paths: array<string, string>, products: array<string, string>}
+     */
+    private function mediaFor(array $variationIds): array
+    {
         if ($variationIds === []) {
-            return [];
+            return ['paths' => [], 'products' => []];
         }
 
-        // 1. The variation's OWN photo (what a VARIABLE product's merchant
-        //    attaches per variation), ordered by the attachment's own
-        //    sort_order with the asset id as a stable tie-break — the exact
-        //    ordering rule the two existing call sites use.
-        $rows = DB::table('catalog_variation_media')
-            ->join('catalog_media', 'catalog_media.id', '=', 'catalog_variation_media.media_id')
-            ->whereIn('catalog_variation_media.variation_id', $variationIds)
-            ->where('catalog_media.type', MediaType::IMAGE->value)
-            ->where('catalog_media.processing_status', ProcessingStatus::READY->value)
-            ->orderBy('catalog_variation_media.sort_order')
-            ->orderBy('catalog_media.id')
-            ->select(['catalog_variation_media.variation_id', 'catalog_media.path'])
-            ->get();
+        $rows = DB::table('catalog_variations as v')
+            ->leftJoin('catalog_variation_media as vm', 'vm.variation_id', '=', 'v.id')
+            ->leftJoin('catalog_media as vmed', function ($join): void {
+                $join->on('vmed.id', '=', 'vm.media_id')
+                    ->where('vmed.type', MediaType::IMAGE->value)
+                    ->where('vmed.processing_status', ProcessingStatus::READY->value);
+            })
+            ->leftJoin('catalog_product_media as pm', 'pm.product_id', '=', 'v.product_id')
+            ->leftJoin('catalog_media as pmed', function ($join): void {
+                $join->on('pmed.id', '=', 'pm.media_id')
+                    ->where('pmed.type', MediaType::IMAGE->value)
+                    ->where('pmed.processing_status', ProcessingStatus::READY->value);
+            })
+            ->whereIn('v.id', $variationIds)
+            ->get([
+                'v.id as variation_id', 'v.product_id',
+                'vm.sort_order as vm_sort', 'vmed.id as vm_media', 'vmed.path as vm_path',
+                'pm.sort_order as pm_sort', 'pmed.id as pm_media', 'pmed.path as pm_path',
+            ]);
+
+        $products = [];
+        $own = [];
+        $fromProduct = [];
+
+        foreach ($rows as $row) {
+            $id = (string) $row->variation_id;
+            $products[$id] = (string) $row->product_id;
+
+            if ($row->vm_path !== null) {
+                $key = [(int) $row->vm_sort, (int) $row->vm_media];
+
+                if (! isset($own[$id]) || $key < $own[$id]['key']) {
+                    $own[$id] = ['key' => $key, 'path' => (string) $row->vm_path];
+                }
+            }
+
+            if ($row->pm_path !== null) {
+                $key = [(int) $row->pm_sort, (int) $row->pm_media];
+
+                if (! isset($fromProduct[$id]) || $key < $fromProduct[$id]['key']) {
+                    $fromProduct[$id] = ['key' => $key, 'path' => (string) $row->pm_path];
+                }
+            }
+        }
 
         $paths = [];
-        foreach ($rows as $row) {
-            $paths[(string) $row->variation_id] ??= (string) $row->path;
+
+        foreach (array_keys($products) as $id) {
+            $best = $own[$id] ?? $fromProduct[$id] ?? null;
+
+            if ($best !== null) {
+                $paths[$id] = $best['path'];
+            }
         }
 
-        // 2. The product's own photo, for every line still without one —
-        //    one query, reached THROUGH catalog_variations so no separate
-        //    variation -> product lookup is needed either. A SIMPLE
-        //    product's UNIVERSAL variation has no variation media at all,
-        //    so this is the branch the common case takes.
-        $withoutImage = array_values(array_diff($variationIds, array_keys($paths)));
-
-        if ($withoutImage === []) {
-            return $paths;
-        }
-
-        $productRows = DB::table('catalog_product_media')
-            ->join('catalog_media', 'catalog_media.id', '=', 'catalog_product_media.media_id')
-            ->join('catalog_variations', 'catalog_variations.product_id', '=', 'catalog_product_media.product_id')
-            ->whereIn('catalog_variations.id', $withoutImage)
-            ->where('catalog_media.type', MediaType::IMAGE->value)
-            ->where('catalog_media.processing_status', ProcessingStatus::READY->value)
-            ->orderBy('catalog_product_media.sort_order')
-            ->orderBy('catalog_media.id')
-            ->select(['catalog_variations.id as variation_id', 'catalog_media.path'])
-            ->get();
-
-        foreach ($productRows as $row) {
-            $paths[(string) $row->variation_id] ??= (string) $row->path;
-        }
-
-        return $paths;
+        return ['paths' => $paths, 'products' => $products];
     }
 
     /**
