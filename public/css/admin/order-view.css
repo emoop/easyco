@@ -1,0 +1,28 @@
+/*
+ * Vertically centres the VALUE of a "label: value" pair against its LABEL on
+ * the order's View page.
+ *
+ * Filament lays an inline-label entry out as two columns and top-aligns them
+ * (`.fi-in-entry.fi-in-entry-has-inline-label { align-items: flex-start }` in
+ * the precompiled panel CSS). The value is one size smaller than the label
+ * (this page's own compact type), so a value pinned to the top reads as
+ * floating above the label it belongs to. `align-self: center` lines the two
+ * up on the same middle; `flex-end` was tried first but sits the smaller
+ * value a touch too low. No font size is changed.
+ *
+ * The label itself keeps its own alignment and is never pushed down by a
+ * value that wraps onto more lines than the label has.
+ *
+ * This relies on the pair being the wrapping flex row OrderResource's own
+ * PAIR_STYLE already makes of the entry (the inline `display: flex` is what
+ * turns the two columns into flex items an `align-self` can move) — a
+ * Filament class hook, the same public rendering contract the
+ * product-media-gallery rule next door targets, not a private detail.
+ *
+ * Inline labels (`->inlineLabel()`) are used nowhere else in the panel, so
+ * this rule never reaches another page even though the selector is
+ * Filament's own class.
+ */
+.fi-in-entry-has-inline-label > .fi-in-entry-content-col {
+    align-self: center;
+}

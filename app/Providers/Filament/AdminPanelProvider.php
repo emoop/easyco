@@ -27,19 +27,25 @@ use Illuminate\View\Middleware\ShareErrorsFromSession;
 class AdminPanelProvider extends PanelProvider
 {
     /**
-     * A plain static file under public/, not a Vite-built/published
-     * asset — no `php artisan filament:assets` publish step needed.
-     * Currently just horizontal padding for ProductResource's own main
-     * photo/video "hero" upload tiles (see
-     * ProductResource::mainPhotoComponents()/videoComponents()'s
-     * `.ec-product-main-photo`/`.ec-product-video` class hooks) — small
-     * enough that a dedicated panel-wide CSS file isn't warranted yet;
-     * revisit if more panel-level style overrides accumulate.
+     * Plain static files under public/, not Vite-built/published assets —
+     * no `php artisan filament:assets` publish step needed. Both are small
+     * and single-purpose (one file per surface, registered panel-wide):
+     *
+     *   - admin-product-media-gallery: horizontal padding around
+     *     ProductResource's own main photo/video "hero" upload tiles (see
+     *     ProductResource::mainPhotoComponents()/videoComponents()'s
+     *     `.ec-product-main-photo`/`.ec-product-video` class hooks).
+     *   - admin-order-view: vertically centres the value of the order View
+     *     page's inline "label: value" pairs against its label
+     *     (OrderResource's own PAIR_STYLE flex rows), a tweak the pair's
+     *     inline style alone cannot reach because the value lives in
+     *     Filament's own content column.
      */
     public function boot(): void
     {
         FilamentAsset::register([
             Css::make('admin-product-media-gallery', asset('css/admin/product-media-gallery.css')),
+            Css::make('admin-order-view', asset('css/admin/order-view.css')),
         ]);
     }
 
