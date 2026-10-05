@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Rules\PlainText;
 use DateTimeImmutable;
+use EasyCo\Pricing\Currency;
 use EasyCo\Pricing\DefaultCurrency;
 use EasyCo\Pricing\Money;
 use EasyCo\Promotions\Contracts\PromotionRepository;
@@ -30,26 +32,47 @@ class PromotionController extends Controller
     ) {
     }
 
+    /**
+     * The three amounts (discount_amount, minimum_spend, maximum_spend) are
+     * plain decimal STRINGS, checked against exactly the shape and the
+     * precision Money::fromDecimal() parses them with further down:
+     *
+     *  - at most 9 integer digits, so the biginteger of minor units cannot
+     *    overflow (999999999.99 EUR is 99999999999 minor units);
+     *  - no more fractional digits than the currency has places;
+     *  - no sign (a negative discount is not something this endpoint accepts),
+     *    no exponent, no thousands separator, no spaces, no comma.
+     *
+     * `numeric|min:0` alone is NOT enough, and its failure mode is a 500 rather
+     * than a 422: `1e5` passes `numeric`, and then Money::fromDecimal() throws
+     * an uncaught InvalidArgumentException; `1,5` does the same. A value with
+     * more decimals than the currency uses is silently ROUNDED half-up by Money
+     * — Money is deliberately left exactly as it is (see its own docblock), so
+     * the scale is refused here instead: a merchant who typed 10.999 must be
+     * told, not quietly charged 11.00.
+     */
     public function store(Request $request): JsonResponse
     {
+        $currency = DefaultCurrency::get();
+        $amount = self::plainAmountPattern($currency);
+
         $validated = $request->validate([
-            'code' => 'required|string|max:255',
+            'code' => ['required', 'string', 'max:255', new PlainText()],
             'discount_type' => 'required|in:percentage,fixed_amount',
             'percentage_basis_points' => 'required_if:discount_type,percentage|prohibited_if:discount_type,fixed_amount|integer|min:0|max:10000',
-            'discount_amount' => 'required_if:discount_type,fixed_amount|prohibited_if:discount_type,percentage|numeric|min:0',
+            'discount_amount' => ['required_if:discount_type,fixed_amount', 'prohibited_if:discount_type,percentage', 'numeric', 'min:0', 'regex:'.$amount],
             'individual_use_only' => 'boolean',
             'exclude_sale_items' => 'boolean',
             'new_customers_only' => 'boolean',
-            'minimum_spend' => 'nullable|numeric|min:0',
-            'maximum_spend' => 'nullable|numeric|min:0',
+            'minimum_spend' => ['nullable', 'numeric', 'min:0', 'regex:'.$amount],
+            'maximum_spend' => ['nullable', 'numeric', 'min:0', 'regex:'.$amount],
             'usage_limit_total' => 'nullable|integer|min:1',
             'usage_limit_per_customer' => 'nullable|integer|min:1',
             'usage_limit_items' => 'nullable|integer|min:1',
             'valid_from' => 'nullable|date',
             'valid_until' => 'nullable|date',
-        ]);
+        ], self::amountFormatMessages());
 
-        $currency = DefaultCurrency::get();
         $discountType = PromotionDiscountType::from($validated['discount_type']);
 
         $promotion = Promotion::create(
@@ -92,6 +115,33 @@ class PromotionController extends Controller
         );
 
         return response()->json($promotions);
+    }
+
+    /**
+     * The one pattern all three amounts share: digits only, an optional dot
+     * with at most as many decimals as the currency has minor-unit places, at
+     * most nine integer digits, anchored at both ends so a leading/trailing
+     * space is a refusal rather than a silent trim.
+     */
+    private static function plainAmountPattern(Currency $currency): string
+    {
+        return '/^\d{1,9}(\.\d{1,'.$currency->decimalPlaces().'})?$/';
+    }
+
+    /**
+     * `regex` is the only rule here whose framework message would be the bare
+     * "format is invalid" sentence, and this project's own lang key says what a
+     * merchant actually has to type.
+     *
+     * @return array<string, string>
+     */
+    private static function amountFormatMessages(): array
+    {
+        return [
+            'discount_amount.regex' => __('validation.money_format'),
+            'minimum_spend.regex' => __('validation.money_format'),
+            'maximum_spend.regex' => __('validation.money_format'),
+        ];
     }
 
     private function toListItem(Promotion $promotion): array

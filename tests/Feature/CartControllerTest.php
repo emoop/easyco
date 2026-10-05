@@ -46,6 +46,7 @@ use EasyCo\Promotions\PromotionRedemption;
 use EasyCo\Promotions\PromotionScope;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class CartControllerTest extends TestCase
@@ -727,5 +728,92 @@ class CartControllerTest extends TestCase
         $touchedRedemptions = array_filter($queries, fn (string $sql) => str_contains($sql, '`promotion_redemptions`'));
 
         $this->assertNotSame([], array_values($touchedRedemptions), 'Expected a query against `promotion_redemptions`.');
+    }
+
+    // --- Input hardening: the promo code's own limits (input-hardening pass 1) -----
+
+    /**
+     * A code wider than carts.applied_promotion_code (varchar(255)) used to reach
+     * the column and come back as a 500. It must be a field error, and it must
+     * never reach the promotion lookup: validation runs before any of it.
+     */
+    public function test_a_256_character_code_is_a_422_field_error_and_never_reaches_the_promotion_lookup(): void
+    {
+        $variationId = $this->pricedPurchasableVariation();
+        $this->postJson('/api/cart/lines', ['variation_id' => $variationId, 'quantity' => 1])->assertStatus(201);
+
+        $queries = [];
+        DB::listen(function ($query) use (&$queries): void {
+            $queries[] = $query->sql;
+        });
+
+        $response = $this->putJson('/api/cart/promotion', ['code' => str_repeat('я', 256)]);
+
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors(['code']);
+
+        $this->assertSame(
+            [],
+            array_values(array_filter($queries, fn (string $sql) => str_contains($sql, '`promotions`'))),
+            'A refused code must not be looked up.'
+        );
+
+        $this->assertNull(CartModel::first()->applied_promotion_code);
+    }
+
+    public function test_a_255_character_cyrillic_code_is_accepted_and_stored_unchanged(): void
+    {
+        $code = str_repeat('я', 255);
+
+        $variationId = $this->pricedPurchasableVariation();
+        $this->postJson('/api/cart/lines', ['variation_id' => $variationId, 'quantity' => 1])->assertStatus(201);
+        $this->createPromotion($code);
+
+        $response = $this->putJson('/api/cart/promotion', ['code' => $code]);
+
+        $response->assertStatus(200);
+        $response->assertJsonPath('promotion.code', $code);
+        $response->assertJsonPath('promotion.valid', true);
+        $this->assertSame($code, CartModel::first()->applied_promotion_code);
+    }
+
+    /** @return array<string, array{string}> */
+    public static function refusedCodeValues(): array
+    {
+        return [
+            'a newline' => ["SUMMER\n20"],
+            'a NUL byte' => ["SUMMER\020"],
+            'a tab' => ["SUMMER\t20"],
+            'a right-to-left override' => ['SUMMER'."\u{202E}".'20'],
+        ];
+    }
+
+    #[DataProvider('refusedCodeValues')]
+    public function test_a_code_carrying_a_control_or_bidirectional_character_is_a_422_and_writes_nothing(string $code): void
+    {
+        $variationId = $this->pricedPurchasableVariation();
+        $this->postJson('/api/cart/lines', ['variation_id' => $variationId, 'quantity' => 1])->assertStatus(201);
+
+        $response = $this->putJson('/api/cart/promotion', ['code' => $code]);
+
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors(['code']);
+        $this->assertNull(CartModel::first()->applied_promotion_code);
+    }
+
+    /** A quote, an ampersand and a `<` are legitimate code characters: stored as typed (case aside, which Promotion has always normalized). */
+    public function test_a_code_with_special_characters_is_accepted_and_stored_unchanged(): void
+    {
+        $code = 'o\'brien & sons <ltd>';
+
+        $variationId = $this->pricedPurchasableVariation();
+        $this->postJson('/api/cart/lines', ['variation_id' => $variationId, 'quantity' => 1])->assertStatus(201);
+        $this->createPromotion($code);
+
+        $response = $this->putJson('/api/cart/promotion', ['code' => $code]);
+
+        $response->assertStatus(200);
+        $response->assertJsonPath('promotion.code', $code);
+        $this->assertSame($code, CartModel::first()->applied_promotion_code);
     }
 }

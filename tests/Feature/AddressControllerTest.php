@@ -10,6 +10,7 @@ use EasyCo\Address\Contracts\AddressRepository;
 use EasyCo\Address\Enums\AddressDeliveryType;
 use EasyCo\Address\Persistence\Eloquent\AddressModel;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class AddressControllerTest extends TestCase
@@ -314,5 +315,153 @@ class AddressControllerTest extends TestCase
         $this->assertSame('Ivan Ivanov', $reloaded->recipientName());
         $this->assertSame('Sofia', $reloaded->city());
         $this->assertNull($reloaded->carrierCode());
+    }
+
+    // --- Input hardening: length and content limits (input-hardening pass 1) -----
+
+    /**
+     * Every text field this endpoint stores in a varchar(255) column, plus the
+     * phone, whose interim bound is 32 characters. The limit is in CHARACTERS,
+     * never bytes — the Cyrillic values below are what proves that.
+     *
+     * @return array<string, array{string, int}>
+     */
+    public static function hardenedTextFields(): array
+    {
+        return [
+            'recipient_name' => ['recipient_name', 255],
+            'phone' => ['phone', 32],
+            'city' => ['city', 255],
+            'postal_code' => ['postal_code', 255],
+            'address_line_1' => ['address_line_1', 255],
+            'address_line_2' => ['address_line_2', 255],
+        ];
+    }
+
+    #[DataProvider('hardenedTextFields')]
+    public function test_one_character_too_many_is_a_422_field_error_and_writes_nothing(string $field, int $limit): void
+    {
+        $response = $this->postJson('/api/addresses', $this->streetAddressPayload([
+            $field => str_repeat('я', $limit + 1),
+        ]));
+
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors([$field]);
+        $this->assertSame(0, AddressModel::count());
+    }
+
+    #[DataProvider('hardenedTextFields')]
+    public function test_a_value_at_the_limit_is_accepted_and_stored_unchanged(string $field, int $limit): void
+    {
+        $value = str_repeat('я', $limit);
+
+        $response = $this->postJson('/api/addresses', $this->streetAddressPayload([$field => $value]));
+
+        $response->assertStatus(201);
+        $response->assertJsonPath($field, $value);
+
+        $model = AddressModel::findOrFail($response->json('id'));
+
+        $this->assertSame($value, $model->{$field});
+        $this->assertSame($limit, mb_strlen($model->{$field}), 'The bound is in characters, not bytes.');
+    }
+
+    /**
+     * Every field crossed with every refused character, built here rather than
+     * with two attributes: PHPUnit runs one data provider at a time, it does not
+     * take their product.
+     *
+     * @return array<string, array{string, string}>
+     */
+    public static function refusedCharacterCases(): array
+    {
+        $characters = [
+            'a newline' => "line\nbreak",
+            'a NUL byte' => "nul\0byte",
+            'a tab' => "tab\tseparated",
+            'a right-to-left override' => 'Prague'."\u{202E}".'Ames',
+        ];
+
+        $cases = [];
+
+        foreach (array_keys(self::hardenedTextFields()) as $field) {
+            foreach ($characters as $description => $value) {
+                $cases["{$field} carrying {$description}"] = [$field, $value];
+            }
+        }
+
+        return $cases;
+    }
+
+    #[DataProvider('refusedCharacterCases')]
+    public function test_a_control_or_bidirectional_character_is_a_422_field_error_and_writes_nothing(string $field, string $value): void
+    {
+        $response = $this->postJson('/api/addresses', $this->streetAddressPayload([$field => $value]));
+
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors([$field]);
+        $this->assertSame(0, AddressModel::count());
+    }
+
+    /** @return array<string, array{string}> */
+    public static function specialCharacterValues(): array
+    {
+        return [
+            'a script tag' => ['<script>alert(1)</script>'],
+            'an apostrophe, an ampersand and quotes' => ["O'Brien & Sons \"Ltd\""],
+            'Cyrillic with punctuation' => ['ул. Витоша 1, София'],
+        ];
+    }
+
+    /** Special characters are allowed and stored as typed — never stripped here. */
+    #[DataProvider('specialCharacterValues')]
+    public function test_special_characters_are_accepted_and_stored_unchanged(string $value): void
+    {
+        $response = $this->postJson('/api/addresses', $this->streetAddressPayload([
+            'recipient_name' => $value,
+            'address_line_1' => $value,
+        ]));
+
+        $response->assertStatus(201);
+
+        $model = AddressModel::findOrFail($response->json('id'));
+
+        $this->assertSame($value, $model->recipient_name);
+        $this->assertSame($value, $model->address_line_1);
+    }
+
+    /** store() and update() share one rule set — this proves update() carries them too. */
+    public function test_update_refuses_an_overlong_value_and_leaves_the_stored_address_unchanged(): void
+    {
+        $this->loggedInAccount();
+        $created = $this->postJson('/api/addresses', $this->streetAddressPayload())->json();
+
+        $response = $this->putJson("/api/addresses/{$created['id']}", $this->streetAddressPayload([
+            'city' => str_repeat('я', 256),
+        ]));
+
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors(['city']);
+
+        $reloaded = app(AddressRepository::class)->findById((string) $created['id']);
+
+        $this->assertSame('Sofia', $reloaded->city());
+    }
+
+    public function test_update_refuses_a_control_character_and_leaves_the_stored_address_unchanged(): void
+    {
+        $this->loggedInAccount();
+        $created = $this->postJson('/api/addresses', $this->streetAddressPayload())->json();
+
+        $response = $this->putJson("/api/addresses/{$created['id']}", $this->streetAddressPayload([
+            'recipient_name' => "Ivan\nIvanov",
+        ]));
+
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors(['recipient_name']);
+
+        $reloaded = app(AddressRepository::class)->findById((string) $created['id']);
+
+        $this->assertSame('Ivan Ivanov', $reloaded->recipientName());
     }
 }

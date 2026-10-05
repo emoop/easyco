@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Rules\PlainText;
 use App\Services\CartPricing;
 use App\Services\CartPricingResult;
 use App\Services\CatalogScopeResolver;
@@ -186,8 +187,13 @@ class CartController extends Controller
      */
     public function applyPromotion(Request $request): JsonResponse
     {
+        // max:255 is carts.applied_promotion_code's own width, and
+        // promotions.code's: without it a 256-character code reached the column
+        // and came back as a 500 instead of a field error. PlainText refuses a
+        // control or bidirectional-formatting character; anything else (a quote,
+        // a `<`, Cyrillic) is a legitimate code and is stored as typed.
         $validated = $request->validate([
-            'code' => 'required|string',
+            'code' => ['required', 'string', 'max:255', new PlainText()],
         ]);
 
         $cart = $this->findCurrentCart($request);

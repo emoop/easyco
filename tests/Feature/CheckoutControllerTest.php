@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Filament\Resources\OrderResource\Pages\ViewOrder;
 use DateTimeImmutable;
 use EasyCo\Account\Account;
 use EasyCo\Account\Contracts\AccountRepository;
@@ -25,6 +26,9 @@ use EasyCo\Promotions\Contracts\PromotionRepository;
 use EasyCo\Promotions\Enums\PromotionDiscountType;
 use EasyCo\Promotions\Promotion;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Validator;
+use Livewire\Livewire;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 /**
@@ -517,4 +521,267 @@ class CheckoutControllerTest extends TestCase
 
         $response->assertStatus(422);
     }
+
+    // --- Input hardening: length and content limits (input-hardening pass 1) -----
+
+    /**
+     * Every text field this endpoint stores in a varchar(255) column plus the
+     * phone, whose interim bound is 32 characters. The limit is in CHARACTERS,
+     * never bytes: a 255-character Cyrillic value is 510 bytes and must still be
+     * accepted, which is exactly what the Cyrillic values below prove.
+     *
+     * @return array<string, array{string, int}>
+     */
+    public static function hardenedTextFields(): array
+    {
+        return [
+            'email' => ['email', 255],
+            'recipient_name' => ['recipient_name', 255],
+            'phone' => ['phone', 32],
+            'city' => ['city', 255],
+            'postal_code' => ['postal_code', 255],
+            'address_line_1' => ['address_line_1', 255],
+            'address_line_2' => ['address_line_2', 255],
+        ];
+    }
+
+    /** The value a test uses for $field when it wants exactly $characters of it. */
+    private function valueOfLength(string $field, int $characters): string
+    {
+        return $field === 'email' ? $this->emailOfLength($characters) : str_repeat('я', $characters);
+    }
+
+    /**
+     * The longest value the field's own rules actually accept: $limit characters
+     * of Cyrillic for the free-text fields, 32 for the phone, and 255 characters
+     * of ASCII for the email — an address, unlike a name, cannot be Cyrillic.
+     */
+    private function longestAcceptedValue(string $field, int $limit): string
+    {
+        return $field === 'email' ? $this->emailOfLength($limit) : str_repeat('я', $limit);
+    }
+
+    /**
+     * A syntactically valid address of exactly $characters ASCII characters: a
+     * 64-character local part, then short (at most 10-character) domain labels
+     * and a three-character final one.
+     *
+     * THE BUILDER IS NOT DECORATION: `email` carries NO length bound of its own
+     * — a 266-character address built this way passes it — so a long-enough
+     * address is exactly the input that would reach orders.email's varchar(255)
+     * and come back as a 500 without max:255. Labels of 63 characters are
+     * deliberately avoided: the validator refuses those constructions whatever
+     * their total length, which would make this test prove nothing.
+     */
+    private function emailOfLength(int $characters): string
+    {
+        $localLength = 65;                       // 64 'a's and the '@'
+        $finalLabel = 'com';                     // its own leading dot is counted below
+        $domainCharacters = $characters - $localLength - mb_strlen($finalLabel) - 1;
+
+        $labels = (int) ceil(($domainCharacters + 1) / 11);
+        $labelCharacters = $domainCharacters - ($labels - 1);
+        $base = intdiv($labelCharacters, $labels);
+        $longer = $labelCharacters % $labels;
+
+        $domain = [];
+
+        for ($i = 0; $i < $labels; $i++) {
+            $domain[] = str_repeat(chr(98 + ($i % 24)), $base + ($i < $longer ? 1 : 0));
+        }
+
+        $email = str_repeat('a', 64).'@'.implode('.', $domain).'.'.$finalLabel;
+
+        $this->assertSame($characters, mb_strlen($email), 'The builder must produce an address of exactly the requested length.');
+
+        return $email;
+    }
+
+    #[DataProvider('hardenedTextFields')]
+    public function test_one_character_too_many_is_a_422_field_error_and_writes_nothing(string $field, int $limit): void
+    {
+        $variationId = $this->pricedPurchasableVariation('10.00', 10);
+        $this->addLineViaHttp($variationId, 1);
+
+        $response = $this->postJson('/api/checkout', $this->checkoutPayload([
+            $field => $this->valueOfLength($field, $limit + 1),
+        ]));
+
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors([$field]);
+        $this->assertSame(0, OrderModel::count());
+        $this->assertSame(10, app(StockLevelRepository::class)->findByVariationId($variationId)->quantity());
+    }
+
+    #[DataProvider('hardenedTextFields')]
+    public function test_a_value_within_the_limit_is_accepted_and_stored_unchanged(string $field, int $limit): void
+    {
+        $variationId = $this->pricedPurchasableVariation('10.00', 10);
+        $this->addLineViaHttp($variationId, 1);
+
+        $value = $this->longestAcceptedValue($field, $limit);
+
+        $response = $this->postJson('/api/checkout', $this->checkoutPayload([$field => $value]));
+
+        $response->assertStatus(201);
+
+        $order = OrderModel::findOrFail($response->json('order.id'));
+
+        $this->assertSame($value, $order->{$field});
+        $this->assertSame(mb_strlen($value), mb_strlen($order->{$field}), 'The bound is in characters, not bytes.');
+        $this->assertLessThanOrEqual($limit, mb_strlen($value));
+    }
+
+    /**
+     * `email` carries no length bound of its own: a 256-character address built
+     * from short domain labels passes it, and only max:255 keeps it out of
+     * orders.email's varchar(255). This pins that the refusal is the WIDTH limit
+     * and not the address's shape — the 500 this rule exists to prevent.
+     */
+    public function test_a_256_character_email_is_refused_by_the_width_limit_not_the_email_rule(): void
+    {
+        $email = $this->emailOfLength(256);
+
+        $this->assertTrue(
+            Validator::make(['email' => $email], ['email' => 'email'])->passes(),
+            'The address rule itself accepts this address, so only the width limit refuses it.'
+        );
+
+        $variationId = $this->pricedPurchasableVariation('10.00', 10);
+        $this->addLineViaHttp($variationId, 1);
+
+        $response = $this->postJson('/api/checkout', $this->checkoutPayload(['email' => $email]));
+
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors(['email']);
+        $this->assertSame(0, OrderModel::count());
+    }
+
+    /** @return array<string, array{string}> */
+    public static function refusedCharacters(): array
+    {
+        return [
+            'a newline' => ["line\nbreak"],
+            'a NUL byte' => ["nul\0byte"],
+            'a tab' => ["tab\tseparated"],
+            'a right-to-left override' => ['Prague'."\u{202E}".'Ames'],
+        ];
+    }
+
+    /**
+     * Every text field crossed with every refused character, built here rather
+     * than with two attributes: PHPUnit runs one data provider at a time, it
+     * does not take their product.
+     *
+     * @return array<string, array{string, string}>
+     */
+    public static function refusedCharacterCases(): array
+    {
+        $cases = [];
+
+        foreach (array_keys(self::hardenedTextFields()) as $field) {
+            foreach (self::refusedCharacters() as $description => [$value]) {
+                $cases["{$field} carrying {$description}"] = [$field, $value];
+            }
+        }
+
+        return $cases;
+    }
+
+    /**
+     * Every text field, every refused character: a single-line field that
+     * carries a line break, a NUL, a tab or a bidirectional override is a field
+     * error, and nothing is written.
+     */
+    #[DataProvider('refusedCharacterCases')]
+    public function test_a_control_or_bidirectional_character_is_a_422_field_error(string $field, string $value): void
+    {
+        $variationId = $this->pricedPurchasableVariation('10.00', 10);
+        $this->addLineViaHttp($variationId, 1);
+
+        $response = $this->postJson('/api/checkout', $this->checkoutPayload([$field => $value]));
+
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors([$field]);
+        $this->assertSame(0, OrderModel::count());
+    }
+
+    /** @return array<string, array{string}> */
+    public static function specialCharacterValues(): array
+    {
+        return [
+            'a script tag' => ['<script>alert(1)</script>'],
+            'an apostrophe, an ampersand and quotes' => ["O'Brien & Sons \"Ltd\""],
+            'an ampersand entity' => ['A &amp; B'],
+            'Cyrillic with punctuation' => ['ул. Витоша 1, София'],
+        ];
+    }
+
+    /**
+     * Special characters are NOT rejected or stripped: they are stored exactly
+     * as typed, and escaped only where they are displayed (the admin page test
+     * below is the second half of that promise).
+     */
+    #[DataProvider('specialCharacterValues')]
+    public function test_special_characters_are_accepted_and_stored_unchanged(string $value): void
+    {
+        $variationId = $this->pricedPurchasableVariation('10.00', 10);
+        $this->addLineViaHttp($variationId, 1);
+
+        $response = $this->postJson('/api/checkout', $this->checkoutPayload([
+            'recipient_name' => $value,
+            'address_line_1' => $value,
+        ]));
+
+        $response->assertStatus(201);
+        $response->assertJsonPath('order.recipient_name', $value);
+
+        $order = OrderModel::findOrFail($response->json('order.id'));
+
+        $this->assertSame($value, $order->recipient_name);
+        $this->assertSame($value, $order->address_line_1);
+    }
+
+    /**
+     * The whole promise in one round trip: markup typed by a customer is stored
+     * VERBATIM (the API never strips or encodes it) and is ESCAPED when the
+     * merchant's own order page renders it, so it can neither be executed nor
+     * break the page out of its markup.
+     *
+     * The recipient name reaches the page as the client name (a guest checkout
+     * creates its Client with the recipient's own name), and the address line
+     * reaches it in the delivery block, which the resource escapes line by line
+     * while it inserts its own <br> separators.
+     */
+    public function test_customer_markup_is_stored_raw_and_escaped_on_the_admin_order_page(): void
+    {
+        $script = '<script>alert(1)</script>';
+
+        $variationId = $this->pricedPurchasableVariation('10.00', 10);
+        $this->addLineViaHttp($variationId, 1);
+
+        $response = $this->postJson('/api/checkout', $this->checkoutPayload([
+            'recipient_name' => $script,
+            'address_line_1' => $script,
+        ]));
+
+        $response->assertStatus(201);
+
+        $orderId = (string) $response->json('order.id');
+        $order = OrderModel::findOrFail($orderId);
+
+        $this->assertSame($script, $order->recipient_name);
+        $this->assertSame($script, $order->address_line_1);
+
+        $this->actingAsAdministrator();
+
+        $page = Livewire::test(ViewOrder::class, ['record' => $orderId]);
+
+        $page->assertOk();
+        $page->assertSeeHtml('&lt;script&gt;alert(1)&lt;/script&gt;');
+        $page->assertDontSeeHtml('<script>alert(1)');
+    }
 }
+
+
+

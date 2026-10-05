@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Rules\KnownCountryCode;
+use App\Rules\PlainText;
 use App\Services\CheckoutInput;
 use App\Services\CheckoutOrchestrator;
 use App\Services\Exceptions\AddressIncompleteForCheckoutException;
@@ -206,7 +207,13 @@ class CheckoutController extends Controller
      * Otherwise mirrors AddressController::validationRules()'s exact
      * required_if/prohibited_if delivery-type conditional shape.
      *
-     * @return array<string, string>
+     * The address and contact fields also carry the two input-hardening rules
+     * this layer owns: max:255 (max:32 for the phone, see its own note) so a
+     * value wider than its column is a 422 field error rather than a 500 from
+     * MySQL, and PlainText so a control character or a bidirectional
+     * formatting character is refused instead of stored.
+     *
+     * @return array<string, mixed>
      */
     private function validationRules(): array
     {
@@ -215,9 +222,12 @@ class CheckoutController extends Controller
             // displayed is the only thing that can answer a replay after the claim has
             // taken that cart out of "the current cart" for this identity.
             'cart_id' => 'required|string',
-            'email' => 'required|email',
-            'recipient_name' => 'required|string',
-            'phone' => 'required|string',
+            'email' => 'required|email|max:255',
+            'recipient_name' => ['required', 'string', 'max:255', new PlainText()],
+            // INTERIM LIMIT: 32 characters is a stop-gap, NOT a design — the
+            // column is varchar(255). The forthcoming phone-validation design
+            // replaces both this bound and the plain `string` shape.
+            'phone' => ['required', 'string', 'max:32', new PlainText()],
             'payment_method' => 'required|string',
             'address_id' => 'nullable|string|prohibits:delivery_type,country,city,postal_code,address_line_1,address_line_2,carrier_code,pickup_point_reference,settlement',
             'delivery_type' => 'required_without:address_id|in:street_address,pickup_point',
@@ -225,10 +235,10 @@ class CheckoutController extends Controller
             // decision D1). With address_id the saved address's own country is used and the
             // `prohibits` on address_id refuses a second one.
             'country' => ['required_without:address_id', 'string', new KnownCountryCode('delivery.country.invalid')],
-            'city' => 'required_if:delivery_type,street_address|prohibited_if:delivery_type,pickup_point|string',
-            'address_line_1' => 'required_if:delivery_type,street_address|prohibited_if:delivery_type,pickup_point|string',
-            'postal_code' => 'nullable|prohibited_if:delivery_type,pickup_point|string',
-            'address_line_2' => 'nullable|prohibited_if:delivery_type,pickup_point|string',
+            'city' => ['required_if:delivery_type,street_address', 'prohibited_if:delivery_type,pickup_point', 'string', 'max:255', new PlainText()],
+            'address_line_1' => ['required_if:delivery_type,street_address', 'prohibited_if:delivery_type,pickup_point', 'string', 'max:255', new PlainText()],
+            'postal_code' => ['nullable', 'prohibited_if:delivery_type,pickup_point', 'string', 'max:255', new PlainText()],
+            'address_line_2' => ['nullable', 'prohibited_if:delivery_type,pickup_point', 'string', 'max:255', new PlainText()],
             'carrier_code' => 'required_if:delivery_type,pickup_point|prohibited_if:delivery_type,street_address|string',
             'pickup_point_reference' => 'required_if:delivery_type,pickup_point|prohibited_if:delivery_type,street_address|string',
             'settlement' => 'required_if:delivery_type,pickup_point|prohibited_if:delivery_type,street_address|string',

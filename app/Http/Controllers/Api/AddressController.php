@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Rules\KnownCountryCode;
+use App\Rules\PlainText;
 use EasyCo\Address\Address;
 use EasyCo\Address\Contracts\AddressRepository;
 use EasyCo\Address\Enums\AddressDeliveryType;
@@ -123,19 +124,31 @@ class AddressController extends Controller
         ]);
     }
 
-    /** @return array<string, mixed> */
+    /**
+     * Every field here is stored in a varchar(255) column, so max:255 makes an
+     * overlong value a 422 field error rather than a 500 from MySQL, and
+     * PlainText refuses a control character or a bidirectional formatting
+     * character (special characters such as `<` and `&` are allowed and are
+     * escaped where they are displayed, never stripped here).
+     *
+     * INTERIM LIMIT: the phone's max:32 is a stop-gap, NOT a design — its
+     * column is varchar(255). The forthcoming phone-validation design replaces
+     * both that bound and the plain `string` shape.
+     *
+     * @return array<string, mixed>
+     */
     private function validationRules(): array
     {
         return [
             'delivery_type' => 'required|in:street_address,pickup_point',
-            'recipient_name' => 'required|string',
-            'phone' => 'required|string',
+            'recipient_name' => ['required', 'string', 'max:255', new PlainText()],
+            'phone' => ['required', 'string', 'max:32', new PlainText()],
             // Required for BOTH delivery types (owner decision D1): a pickup point is in a country too.
             'country' => ['required', 'string', new KnownCountryCode('delivery.country.invalid')],
-            'city' => 'required_if:delivery_type,street_address|prohibited_if:delivery_type,pickup_point|string',
-            'address_line_1' => 'required_if:delivery_type,street_address|prohibited_if:delivery_type,pickup_point|string',
-            'postal_code' => 'nullable|prohibited_if:delivery_type,pickup_point|string',
-            'address_line_2' => 'nullable|prohibited_if:delivery_type,pickup_point|string',
+            'city' => ['required_if:delivery_type,street_address', 'prohibited_if:delivery_type,pickup_point', 'string', 'max:255', new PlainText()],
+            'address_line_1' => ['required_if:delivery_type,street_address', 'prohibited_if:delivery_type,pickup_point', 'string', 'max:255', new PlainText()],
+            'postal_code' => ['nullable', 'prohibited_if:delivery_type,pickup_point', 'string', 'max:255', new PlainText()],
+            'address_line_2' => ['nullable', 'prohibited_if:delivery_type,pickup_point', 'string', 'max:255', new PlainText()],
             'carrier_code' => 'required_if:delivery_type,pickup_point|prohibited_if:delivery_type,street_address|string',
             'pickup_point_reference' => 'required_if:delivery_type,pickup_point|prohibited_if:delivery_type,street_address|string',
             'settlement' => 'required_if:delivery_type,pickup_point|prohibited_if:delivery_type,street_address|string',

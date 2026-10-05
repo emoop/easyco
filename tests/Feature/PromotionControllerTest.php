@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use EasyCo\Promotions\Persistence\Eloquent\PromotionModel;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class PromotionControllerTest extends TestCase
@@ -155,5 +156,140 @@ class PromotionControllerTest extends TestCase
         $this->assertNull($byCode['tenoff']['percentage_basis_points']);
         $this->assertSame('10.00', $byCode['tenoff']['discount_amount']['amount']);
         $this->assertSame('EUR', $byCode['tenoff']['discount_amount']['currency']);
+    }
+
+    // --- Input hardening: the code and the three amounts (input-hardening pass 1) -----
+
+    public function test_a_256_character_code_is_a_422_field_error_and_writes_nothing(): void
+    {
+        $response = $this->postJson('/api/promotions', [
+            'code' => str_repeat('я', 256),
+            'discount_type' => 'percentage',
+            'percentage_basis_points' => 2000,
+        ]);
+
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors(['code']);
+        $this->assertSame(0, PromotionModel::count());
+    }
+
+    public function test_a_255_character_cyrillic_code_is_accepted_and_stored_unchanged(): void
+    {
+        $code = str_repeat('я', 255);
+
+        $response = $this->postJson('/api/promotions', [
+            'code' => $code,
+            'discount_type' => 'percentage',
+            'percentage_basis_points' => 2000,
+        ]);
+
+        $response->assertStatus(201);
+        $response->assertJsonPath('code', $code);
+        $this->assertDatabaseHas('promotions', ['code' => $code]);
+    }
+
+    /** @return array<string, array{string}> */
+    public static function refusedCodeValues(): array
+    {
+        return [
+            'a newline' => ["SUMMER\n20"],
+            'a NUL byte' => ["SUMMER\020"],
+            'a tab' => ["SUMMER\t20"],
+            'a right-to-left override' => ['SUMMER'."\u{202E}".'20'],
+        ];
+    }
+
+    #[DataProvider('refusedCodeValues')]
+    public function test_a_code_carrying_a_control_or_bidirectional_character_is_a_422_and_writes_nothing(string $code): void
+    {
+        $response = $this->postJson('/api/promotions', [
+            'code' => $code,
+            'discount_type' => 'percentage',
+            'percentage_basis_points' => 2000,
+        ]);
+
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors(['code']);
+        $this->assertSame(0, PromotionModel::count());
+    }
+
+    /** Special characters are legitimate in a code and are never stripped. */
+    public function test_a_code_with_special_characters_is_accepted_and_stored_unchanged(): void
+    {
+        $code = "o'brien & sons <ltd>";
+
+        $response = $this->postJson('/api/promotions', [
+            'code' => $code,
+            'discount_type' => 'percentage',
+            'percentage_basis_points' => 2000,
+        ]);
+
+        $response->assertStatus(201);
+        $response->assertJsonPath('code', $code);
+        $this->assertDatabaseHas('promotions', ['code' => $code]);
+    }
+
+    /**
+     * Everything that used to reach Money::fromDecimal() as something it cannot
+     * parse — the 500s — plus an amount with more decimals than EUR has, which
+     * Money would silently round half-up. Each one is checked on all three
+     * amount fields, and nothing may be written.
+     *
+     * @return array<string, array{string}>
+     */
+    public static function refusedAmounts(): array
+    {
+        return [
+            'a 30-digit amount' => [str_repeat('9', 30)],
+            'scientific notation' => ['1e5'],
+            'a negative amount' => ['-1'],
+            'a comma decimal' => ['1,5'],
+            'more decimals than EUR has' => ['10.999'],
+            'a trailing decimal point' => ['10.'],
+            'an internal space' => ['1 0'],
+            'a thousands separator' => ['1.000'],
+        ];
+    }
+
+    #[DataProvider('refusedAmounts')]
+    public function test_a_non_plain_amount_is_a_422_field_error_on_every_amount_field_and_writes_nothing(string $amount): void
+    {
+        foreach (['discount_amount', 'minimum_spend', 'maximum_spend'] as $field) {
+            $payload = [
+                'code' => 'PLAINAMOUNT',
+                'discount_type' => 'fixed_amount',
+                'discount_amount' => '10.00',
+                $field => $amount,
+            ];
+
+            $response = $this->postJson('/api/promotions', $payload);
+
+            $response->assertStatus(422);
+            $response->assertJsonValidationErrors([$field]);
+        }
+
+        $this->assertSame(0, PromotionModel::count());
+    }
+
+    public function test_plain_amounts_with_the_currencys_own_precision_are_accepted(): void
+    {
+        $response = $this->postJson('/api/promotions', [
+            'code' => 'NINETYNINE',
+            'discount_type' => 'fixed_amount',
+            'discount_amount' => '99.99',
+            'minimum_spend' => '10.5',
+            'maximum_spend' => '1000',
+        ]);
+
+        $response->assertStatus(201);
+        $response->assertJsonPath('discount_amount.amount', '99.99');
+
+        $this->assertDatabaseHas('promotions', [
+            'id' => $response->json('id'),
+            'code' => 'ninetynine',
+            'discount_amount_minor' => 9999,
+            'minimum_spend_amount_minor' => 1050,
+            'maximum_spend_amount_minor' => 100000,
+        ]);
     }
 }
