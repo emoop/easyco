@@ -47,6 +47,16 @@ final class RefundDialog
 
     public const RETURN = 'return';
 
+    /** An amount box holds at most this many characters (MoneyInput refuses more than 32 anyway; this is the form's own, tighter, limit). */
+    public const AMOUNT_MAX_LENGTH = 20;
+
+    /**
+     * A free-text box (a reason) holds at most this many characters: a longer text is a field error. 255, not 1000:
+     * `payment_refunds.reason` and `.deduction_reason` are varchar(255), and a longer text would be a database
+     * error (a 500) when the refund is written. Widening those columns is a migration, not part of this pass.
+     */
+    public const TEXT_MAX_LENGTH = 255;
+
     // ---- the components ------------------------------------------------------------------------
 
     /** The validation every amount box shares: blank is fine, anything typed must be an amount. */
@@ -78,6 +88,7 @@ final class RefundDialog
             ->default($default)
             ->disabled($context->isPending())
             ->dehydrated($context->isSettled())
+            ->maxLength(self::AMOUNT_MAX_LENGTH)
             ->rules(self::amountRules($context->currency))
             ->helperText(match (true) {
                 $context->isPending() => __('orders.refund_dialog.goods_readonly'),
@@ -122,7 +133,7 @@ final class RefundDialog
                     ->suffix($currency)
                     ->inputMode('decimal')
                     ->default('0')
-                    ->rules(self::amountRules($currency))
+                    ->maxLength(self::AMOUNT_MAX_LENGTH)->rules(self::amountRules($currency))
                     ->helperText(__('orders.refund_dialog.shipping_reduction_hint', ['room' => self::format($context->shippingRoom)]));
             }
 
@@ -143,7 +154,7 @@ final class RefundDialog
                 ->inputMode('decimal')
                 ->default('0')
                 ->live(onBlur: true)
-                ->rules(self::amountRules($currency))
+                ->maxLength(self::AMOUNT_MAX_LENGTH)->rules(self::amountRules($currency))
                 ->helperText(__('orders.refund_dialog.shipping_hint', ['room' => self::format($context->shippingRoom)])),
             TextInput::make('deduction')
                 ->label(__('orders.refund_dialog.deduction_label'))
@@ -151,7 +162,7 @@ final class RefundDialog
                 ->inputMode('decimal')
                 ->default('0')
                 ->live(onBlur: true)
-                ->rules(self::amountRules($currency))
+                ->maxLength(self::AMOUNT_MAX_LENGTH)->rules(self::amountRules($currency))
                 ->helperText(__('orders.refund_dialog.deduction_hint')),
         ]);
 
@@ -164,6 +175,7 @@ final class RefundDialog
         $components[] = Textarea::make('deduction_reason')
             ->label(__('orders.refund_dialog.deduction_reason_label'))
             ->rows(2)
+            ->maxLength(self::TEXT_MAX_LENGTH)
             ->visible(fn (Get $get): bool => self::isPositive($get('deduction'), $currency))
             ->required(fn (Get $get): bool => self::isPositive($get('deduction'), $currency));
 
@@ -364,18 +376,19 @@ final class RefundDialog
                     ->inputMode('decimal')
                     ->default('0')
                     ->live(onBlur: true)
-                    ->rules(self::amountRules($currency)),
+                    ->maxLength(self::AMOUNT_MAX_LENGTH)->rules(self::amountRules($currency)),
                 TextInput::make('adjustment')
                     ->label(__('orders.money_only.adjustment'))
                     ->suffix($currency)
                     ->inputMode('decimal')
                     ->default('0')
                     ->live(onBlur: true)
-                    ->rules(self::amountRules($currency)),
+                    ->maxLength(self::AMOUNT_MAX_LENGTH)->rules(self::amountRules($currency)),
             ]),
             Textarea::make('reason')
                 ->label(__('orders.money_only.reason'))
                 ->rows(2)
+                ->maxLength(self::TEXT_MAX_LENGTH)
                 ->required(),
             Select::make('channel')
                 ->label(__('orders.refund_dialog.channel_label'))

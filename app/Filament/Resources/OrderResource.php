@@ -2321,7 +2321,7 @@ class OrderResource extends Resource
             $blocks[] = RefundDialog::announcedDayField();
         }
 
-        $blocks[] = Textarea::make('reason')->label(__('orders.actions.reason_label'));
+        $blocks[] = Textarea::make('reason')->label(__('orders.actions.reason_label'))->maxLength(RefundDialog::TEXT_MAX_LENGTH);
 
         // ONE KEY PER OPENING OF THE DIALOG (shipping-domain-design.md §7.2.3): generated
         // when the form is filled, submitted with it, so a double click or a retry of

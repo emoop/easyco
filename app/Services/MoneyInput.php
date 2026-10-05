@@ -15,9 +15,28 @@ use InvalidArgumentException;
  */
 final class MoneyInput
 {
+    /**
+     * Input longer than this is refused BEFORE any regex or string work runs on it: a form field is
+     * attacker-controllable text, and no real amount (9 integer digits, a separator, a few decimals,
+     * some spaces) needs more.
+     */
+    public const MAX_LENGTH = 32;
+
+    /**
+     * At most this many integer digits. 999 999 999 in minor units is under 10^11, so every sum the
+     * refund dialogs add up (lines, shipping, deduction, caps) stays far below PHP_INT_MAX — the
+     * limit lives here, in the admin layer, and Money itself is untouched.
+     */
+    public const MAX_INTEGER_DIGITS = 9;
+
     public static function parse(?string $input, Currency|string $currency): ?Money
     {
         $currency = Currency::from($currency);
+
+        if (strlen((string) $input) > self::MAX_LENGTH) {
+            return null;
+        }
+
         $text = preg_replace('/[\s\x{00A0}\x{202F}]+/u', '', (string) $input);
         $text = str_replace(',', '.', (string) $text);
 
@@ -25,7 +44,13 @@ final class MoneyInput
             return null;
         }
 
-        $decimals = strlen(explode('.', $text)[1] ?? '');
+        [$integerPart, $fraction] = array_pad(explode('.', $text), 2, '');
+
+        if (strlen($integerPart) > self::MAX_INTEGER_DIGITS) {
+            return null;
+        }
+
+        $decimals = strlen($fraction);
 
         if ($decimals > $currency->decimalPlaces()) {
             return null;
