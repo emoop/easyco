@@ -53,9 +53,11 @@ use EasyCo\Staff\Role;
 use EasyCo\Staff\Seeders\StaffSystemRolesSeeder;
 use EasyCo\Staff\Staff;
 use Filament\Actions\ActionGroup;
+use Filament\Support\Enums\IconPosition;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Lang;
 use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
 use Tests\TestCase;
@@ -822,16 +824,42 @@ class ProductResourceTest extends TestCase
     }
 
     /**
-     * Edit is the most-used action on this list, so a row click routes
-     * there by default for anyone who can edit — the three-dot
-     * ActionGroup (View/Edit/Duplicate) stays available regardless.
+     * THE ROW IS NOT A LINK ANY MORE. The list used to carry a row-wide
+     * recordUrl() (admin-panel-design.md §13.5) that turned EVERY cell
+     * into an <a>, so no cell's text — the SKU, the price — could be
+     * selected by dragging. The link now lives on the two cells a click
+     * is aimed at: the name and the thumbnail photo, both resolving
+     * through the ONE ProductResource::recordLinkUrl(). For a staff member
+     * who can edit, that destination is Edit — unchanged from the
+     * recordUrl() it replaces — and the three-dot action group is
+     * untouched.
+     *
+     * WHY ->recordUrl(null) IS ASSERTED HERE, not just the columns:
+     * merely DELETING the old ->recordUrl(...) call does not remove the
+     * row link. Filament v5.8.1's ListRecords installs its own default
+     * row URL whenever the table carries no CUSTOM one
+     * (ListRecords.php:161, `if (! $table->hasCustomRecordUrl())`),
+     * resolving it to the visible 'view'/'edit' action's URL — i.e. a
+     * link to ViewProduct on every row. Confirmed by running it: with the
+     * call deleted, getRecordUrl() returned '/admin/products/{id}'; with
+     * an explicit ->recordUrl(null) it is null and no row renders
+     * Filament's own `fi-clickable` class.
      */
-    public function test_a_products_row_navigates_to_edit_by_default_for_a_staff_member_who_can_edit(): void
+    public function test_a_products_row_is_not_a_link_but_its_name_and_photo_link_to_edit_for_a_staff_member_who_can_edit(): void
     {
         $this->actingAsPanelAdministrator();
 
+        Storage::fake(config('services.media.default_disk', 'public'));
+
         Livewire::test(CreateProduct::class)
-            ->fillForm(['name' => 'Navigable Product', 'slug' => 'navigable-product', 'base_sku' => 'SKU-NAV', 'status' => ProductStatus::DRAFT->value, 'catalog_visibility' => CatalogVisibility::HIDDEN->value])
+            ->fillForm([
+                'name' => 'Navigable Product',
+                'slug' => 'navigable-product',
+                'base_sku' => 'SKU-NAV',
+                'status' => ProductStatus::DRAFT->value,
+                'catalog_visibility' => CatalogVisibility::HIDDEN->value,
+                'main_photo' => UploadedFile::fake()->image('navigable.jpg'),
+            ])
             ->call('create')
             ->assertHasNoFormErrors();
         $productModel = ProductModel::where('slug', 'navigable-product')->firstOrFail();
@@ -839,22 +867,43 @@ class ProductResourceTest extends TestCase
         $component = Livewire::test(ListProducts::class)->set('statusView', 'all');
         $component->assertTableActionVisible('edit', $productModel);
 
-        $recordUrl = $component->instance()->getTable()->getRecordUrl($productModel);
-        $this->assertSame(ProductResource::getUrl('edit', ['record' => $productModel]), $recordUrl);
+        $table = $component->instance()->getTable();
+        $expectedUrl = ProductResource::getUrl('edit', ['record' => $productModel]);
 
-        $this->get($recordUrl)->assertOk();
+        $this->assertNull($table->getRecordUrl($productModel), 'the row itself must carry no record URL');
+        $this->assertNull($table->getRecordAction($productModel), 'and no row-wide record action either');
+        $component->assertDontSeeHtml('fi-clickable');
+
+        $nameColumn = $table->getColumn('name')->record($productModel);
+        $this->assertSame($expectedUrl, $nameColumn->getUrl($nameColumn->getState()));
+
+        $thumbnailColumn = $table->getColumn('thumbnail_path')->record($productModel);
+        $this->assertSame($expectedUrl, $thumbnailColumn->getUrl($thumbnailColumn->getState()));
+
+        // ...AND both are really RENDERED as links — around the name text
+        // and around the <img> — not merely resolvable from the column
+        // object: a url() closure that does not declare a `$state`
+        // parameter resolves to null at render time (see recordLinkUrl()'s
+        // docblock), which is exactly the regression these two assertions
+        // catch.
+        $component->assertSeeHtml('<a href="'.$expectedUrl.'">Navigable Product</a>');
+        $component->assertSeeHtml('<a href="'.$expectedUrl.'"><img');
+
+        $this->get($expectedUrl)->assertOk();
         $this->get(ProductResource::getUrl('view', ['record' => $productModel]))->assertOk();
     }
 
     /**
-     * A real regression guard for the recordUrl() ternary itself: every
+     * A real regression guard for recordLinkUrl()'s own ternary: every
      * shipped system role (Administrator/Manager/Product Entry) happens
      * to hold PRODUCT_MANAGE, so this proves the View-only fallback
      * branch with a custom Role that deliberately does NOT — otherwise
      * a swapped ternary (or one hardcoded to always resolve 'edit')
-     * would pass every other test in this file undetected.
+     * would pass every other test in this file undetected. BOTH cells
+     * that link are checked, because they read the same helper and must
+     * therefore agree.
      */
-    public function test_a_products_row_falls_back_to_view_for_a_staff_member_who_cannot_edit(): void
+    public function test_a_products_name_and_photo_link_to_view_for_a_staff_member_who_cannot_edit(): void
     {
         $this->actingAsPanelAdministrator();
 
@@ -874,10 +923,21 @@ class ProductResourceTest extends TestCase
         $component = Livewire::test(ListProducts::class)->set('statusView', 'all');
         $component->assertTableActionHidden('edit', $productModel);
 
-        $recordUrl = $component->instance()->getTable()->getRecordUrl($productModel);
-        $this->assertSame(ProductResource::getUrl('view', ['record' => $productModel]), $recordUrl);
+        $table = $component->instance()->getTable();
+        $expectedUrl = ProductResource::getUrl('view', ['record' => $productModel]);
 
-        $this->get($recordUrl)->assertOk();
+        $this->assertNull($table->getRecordUrl($productModel), 'the row itself must carry no record URL');
+        $component->assertDontSeeHtml('fi-clickable');
+
+        $nameColumn = $table->getColumn('name')->record($productModel);
+        $this->assertSame($expectedUrl, $nameColumn->getUrl($nameColumn->getState()));
+
+        $thumbnailColumn = $table->getColumn('thumbnail_path')->record($productModel);
+        $this->assertSame($expectedUrl, $thumbnailColumn->getUrl($thumbnailColumn->getState()));
+
+        $component->assertSeeHtml('<a href="'.$expectedUrl.'">View Only Product</a>');
+
+        $this->get($expectedUrl)->assertOk();
         $this->get(ProductResource::getUrl('edit', ['record' => $productModel]))->assertForbidden();
     }
 
@@ -1063,6 +1123,139 @@ class ProductResourceTest extends TestCase
             ->set('statusView', 'all')
             ->assertTableColumnStateSet('thumbnail_path', null, record: $productModel);
     }
+    /**
+     * EVERY column's header, in BOTH languages — the full column list, so
+     * a new column that forgets its ->label() fails here rather than being
+     * spotted by eye. This is the guard for the `name` column's own bug:
+     * without ->label() Filament does not fail, it silently falls back to
+     * the humanised attribute name ('Name' — untranslated English inside an
+     * otherwise Bulgarian panel), which `getColumn(...)->getLabel()` returns
+     * verbatim.
+     *
+     * The comparison is against the LANG value (Lang::get with
+     * $fallback = false, the same convention as OrderStatusLabelsTest), not
+     * a hardcoded string, so both the missing ->label() and a missing/
+     * untranslated lang key are caught. The rendered header cell is checked
+     * separately below, because a correct label on the column object is
+     * only half the story — the <th> is what a merchant actually reads.
+     */
+    public function test_every_products_list_column_header_is_translated_including_the_name_column(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        $expectedLabelKeys = [
+            'thumbnail_path' => 'products.fields.thumbnail',
+            'name' => 'products.fields.name',
+            'price_display' => 'products.fields.price_display',
+            'base_sku' => 'products.fields.base_sku',
+            'status' => 'products.fields.status',
+            'catalog_visibility' => 'products.fields.catalog_visibility_column',
+            'brand.name' => 'products.fields.brand_id',
+            'categories.name' => 'products.fields.categories',
+        ];
+
+        foreach (['en', 'bg'] as $locale) {
+            app()->setLocale($locale);
+
+            $table = Livewire::test(ListProducts::class)->instance()->getTable();
+
+            // The exact column set, so a ninth column added without a
+            // ->label() cannot slip past this audit unnoticed.
+            $this->assertSame(
+                array_keys($expectedLabelKeys),
+                array_keys($table->getColumns()),
+                'a new products-list column must be added to $expectedLabelKeys in this test, labelled, before it ships.',
+            );
+
+            foreach ($expectedLabelKeys as $columnName => $labelKey) {
+                $this->assertTrue(
+                    Lang::has($labelKey, $locale, false),
+                    "lang/{$locale}/products.php must carry a {$labelKey} entry.",
+                );
+
+                $expected = Lang::get($labelKey, [], $locale, false);
+
+                $this->assertIsString($expected, "{$labelKey} must be a plain string in {$locale}.");
+                $this->assertNotSame('', trim($expected), "{$labelKey} must not be blank in {$locale}.");
+
+                $this->assertSame(
+                    $expected,
+                    (string) $table->getColumn($columnName)->getLabel(),
+                    "The '{$columnName}' column must be labelled from {$labelKey} ({$locale}).",
+                );
+            }
+        }
+
+        app()->setLocale('bg');
+
+        $this->assertSame('Име', __('products.fields.name'), 'lang/bg/products.php must translate products.fields.name.');
+
+        $this->assertMatchesRegularExpression(
+            '/fi-ta-header-cell-name[^>]*>.*?'.preg_quote(__('products.fields.name'), '/').'/s',
+            Livewire::test(ListProducts::class)->html(),
+            "the name column's <th> must render the translated 'Име' header, not Filament's raw 'Name' fallback.",
+        );
+    }
+
+    /**
+     * The SKU is the one value a staff member copies OUT of this screen (into
+     * a stock sheet, a supplier email, and so on), so the cell is copyable.
+     * Asserted on the RENDERED cell, in pieces, because each part is
+     * load-bearing: the copyable wrapper (with its own click handler and the
+     * real base_sku as the payload), the icon that makes the affordance
+     * visible at all (->copyable() alone sets only a pointer cursor and the
+     * handler — confirmed against the installed theme's own CSS), and
+     * Filament's OWN translated tooltip string rather than one of ours.
+     *
+     * The cell must NOT be navigable: the copy handler is x-on:click
+     * .prevent.stop and the column carries no ->url() of its own — the
+     * row-wide link is gone (see the row-link tests above).
+     */
+    public function test_the_base_sku_column_is_copyable_with_a_visible_icon_and_the_real_slug_value(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        Livewire::test(CreateProduct::class)
+            ->fillForm(['name' => 'Copyable Product', 'slug' => 'copyable-product', 'base_sku' => 'SKU-COPY-ME', 'status' => ProductStatus::DRAFT->value, 'catalog_visibility' => CatalogVisibility::HIDDEN->value])
+            ->call('create')
+            ->assertHasNoFormErrors();
+
+        $productModel = ProductModel::where('slug', 'copyable-product')->firstOrFail();
+
+        $component = Livewire::test(ListProducts::class)->set('statusView', 'all');
+        $column = $component->instance()->getTable()->getColumn('base_sku')->record($productModel);
+
+        $this->assertTrue($column->isCopyable($column->getState()), 'the base_sku cell must be copyable');
+        $this->assertSame('heroicon-o-clipboard', $column->getIcon($column->getState()));
+        $this->assertSame(IconPosition::After, $column->getIconPosition());
+
+        $this->assertNull($column->getUrl($column->getState()), 'the copyable SKU cell must not be a link itself');
+
+        $component->assertSeeHtml("window.navigator.clipboard.writeText('SKU-COPY-ME')");
+        $component->assertSeeHtml('fi-copyable');
+        $component->assertSeeHtml("\$tooltip('Copied', {");
+
+        // The icon is INSIDE the copyable span and AFTER the value, i.e. part
+        // of the one click target rather than a second affordance beside it.
+        $this->assertMatchesRegularExpression(
+            '/class="fi-copyable"[^>]*>.*?SKU-COPY-ME.*?<svg.*?<\/span>/s',
+            $component->html(),
+            'the copy icon must sit inside the copyable span, after the SKU it copies.',
+        );
+
+        $this->assertSame('Copied', $column->getCopyMessage($column->getState()), "Filament's own default, not a local string");
+
+        app()->setLocale('bg');
+
+        $bgComponent = Livewire::test(ListProducts::class)->set('statusView', 'all');
+        $bgColumn = $bgComponent->instance()->getTable()->getColumn('base_sku')->record($productModel);
+
+        $this->assertSame('Копирано', $bgColumn->getCopyMessage($bgColumn->getState()));
+        $bgComponent->assertSeeHtml("\$tooltip('Копирано', {");
+    }
+
+
+
 
     public function test_duplicating_a_simple_product_persists_a_real_new_product_with_every_rule_applied(): void
     {
@@ -1278,14 +1471,17 @@ class ProductResourceTest extends TestCase
     }
 
     /**
-     * UPDATED: now that EditVariableProduct exists, recordUrl() no
-     * longer routes a VARIABLE row away from editing entirely — a
-     * staff member who can genuinely edit (canEdit() true) is routed
-     * to 'edit-variable', mirroring exactly how a SIMPLE row routes to
-     * 'edit'. A view-only staff member still always falls back to
-     * 'view', for both types, unchanged.
+     * UPDATED: the two linking cells of a VARIABLE row go to
+     * 'edit-variable' for a staff member who can genuinely edit
+     * (canEdit() true), mirroring exactly how a SIMPLE row goes to
+     * 'edit'. A view-only staff member still always goes to 'view', for
+     * both types, unchanged.
+     *
+     * The ROW itself is no longer a link at all (see the SIMPLE-product
+     * test above for why ->recordUrl(null) is needed rather than merely
+     * omitting the call).
      */
-    public function test_a_variable_products_record_url_points_to_edit_variable_for_a_staff_member_who_can_edit(): void
+    public function test_a_variable_products_name_and_photo_link_to_edit_variable_for_a_staff_member_who_can_edit(): void
     {
         $this->actingAsPanelAdministrator();
 
@@ -1302,12 +1498,18 @@ class ProductResourceTest extends TestCase
         $variableModel = ProductModel::find($variableProduct->id());
 
         $table = Livewire::test(ListProducts::class)->instance()->getTable();
-        $recordUrl = $table->getRecordUrl($variableModel);
+        $expectedUrl = ProductResource::getUrl('edit-variable', ['record' => $variableModel]);
 
-        $this->assertSame(ProductResource::getUrl('edit-variable', ['record' => $variableModel]), $recordUrl);
+        $this->assertNull($table->getRecordUrl($variableModel));
+
+        $nameColumn = $table->getColumn('name')->record($variableModel);
+        $this->assertSame($expectedUrl, $nameColumn->getUrl($nameColumn->getState()));
+
+        $thumbnailColumn = $table->getColumn('thumbnail_path')->record($variableModel);
+        $this->assertSame($expectedUrl, $thumbnailColumn->getUrl($thumbnailColumn->getState()));
     }
 
-    public function test_a_variable_products_record_url_still_falls_back_to_view_for_a_staff_member_without_edit_rights(): void
+    public function test_a_variable_products_name_and_photo_still_link_to_view_for_a_staff_member_without_edit_rights(): void
     {
         $viewOnlyRole = Role::create('View Only For Record Url', [Permission::PRODUCT_VIEW]);
         app(RoleRepository::class)->save($viewOnlyRole);
@@ -1328,9 +1530,15 @@ class ProductResourceTest extends TestCase
         $variableModel = ProductModel::find($variableProduct->id());
 
         $table = Livewire::test(ListProducts::class)->instance()->getTable();
-        $recordUrl = $table->getRecordUrl($variableModel);
+        $expectedUrl = ProductResource::getUrl('view', ['record' => $variableModel]);
 
-        $this->assertSame(ProductResource::getUrl('view', ['record' => $variableModel]), $recordUrl);
+        $this->assertNull($table->getRecordUrl($variableModel));
+
+        $nameColumn = $table->getColumn('name')->record($variableModel);
+        $this->assertSame($expectedUrl, $nameColumn->getUrl($nameColumn->getState()));
+
+        $thumbnailColumn = $table->getColumn('thumbnail_path')->record($variableModel);
+        $this->assertSame($expectedUrl, $thumbnailColumn->getUrl($thumbnailColumn->getState()));
     }
 
     /**

@@ -79,6 +79,7 @@ use Filament\Schemas\Components\Tabs\Tab;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
+use Filament\Support\Enums\IconPosition;
 use Filament\Tables\Columns\ImageColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Contracts\HasTable;
@@ -1148,6 +1149,53 @@ class ProductResource extends Resource
         return $normalized;
     }
 
+    /**
+     * WHERE a product row's own name and photo link to — the ONE
+     * definition of that destination, shared by the `name` and
+     * `thumbnail_path` columns in the table below, so the two can never
+     * drift apart.
+     *
+     * THE DESTINATION ITSELF IS UNCHANGED from the row-wide
+     * `recordUrl()` this list used to carry: a staff member without edit
+     * rights goes to View, a SIMPLE product goes to Edit, anything else
+     * (a VARIABLE product) goes to `EditVariableProduct` — the same three
+     * branches, checked in the same order, that `recordUrl()` resolved.
+     * Every destination the list had is therefore still reachable,
+     * exactly once.
+     *
+     * WHAT CHANGED IS WHERE IT IS APPLIED: the ROW is no longer a link
+     * (the row-wide `recordUrl()` is gone — see its own replacement
+     * comment inside table()), so every cell's text is selectable by
+     * dragging again, and the link lives on the two cells a staff member
+     * actually clicks: the name and the photo. The three-dot action group
+     * is untouched.
+     *
+     * WHY IT IS A SHARED METHOD RATHER THAN ONE INLINE MATCH PER COLUMN:
+     * two copies of a three-branch match is exactly how a link quietly
+     * starts disagreeing with its twin. One definition, two readers.
+     *
+     * WHY EACH COLUMN'S OWN ->url() CLOSURE ALSO DECLARES AN UNUSED
+     * `$state` PARAMETER — not a mistake, and deliberately not this
+     * method's business: Filament v5.8.1 only evaluates a table column's
+     * url() for a CELL when the closure has a parameter NAMED `state`
+     * (CanOpenUrl::hasStateBasedUrls(), consulted by getUrl($state),
+     * which is what the cell renderers of both TextColumn and ImageColumn
+     * call — confirmed by reading the installed source, not assumed: the
+     * `$formatState` closures in TextColumn.php and ImageColumn.php both
+     * pass a single state argument). A closure taking only `($record)`
+     * evaluates to null at render time, and the cell silently stops being
+     * a link. The destination is still decided here, from the record
+     * alone — the state parameter is only what makes Filament ask.
+     */
+    public static function recordLinkUrl(ProductModel $record): string
+    {
+        return match (true) {
+            ! static::canEdit($record) => static::getUrl('view', ['record' => $record]),
+            $record->type === ProductType::SIMPLE->value => static::getUrl('edit', ['record' => $record]),
+            default => static::getUrl('edit-variable', ['record' => $record]),
+        };
+    }
+
     public static function table(Table $table): Table
     {
         return $table
@@ -1245,10 +1293,31 @@ class ProductResource extends Resource
                     // and that height/width pair is what made these
                     // thumbnails look wrong (a non-square photo is cropped
                     // into a square box instead of keeping its own shape).
-                    ->imageHeight(self::THUMBNAIL_HEIGHT_PX),
+                    ->imageHeight(self::THUMBNAIL_HEIGHT_PX)
+                    // THE PHOTO IS THE SECOND OF THE TWO LINKS (the name
+                    // is the other). Both resolve through the ONE
+                    // recordLinkUrl() above, so they cannot disagree
+                    // about the destination. The declared-but-unused
+                    // `$state` is what makes Filament render the link at
+                    // all — see that method's own docblock.
+                    ->url(fn (mixed $state, ProductModel $record): string => static::recordLinkUrl($record)),
                 TextColumn::make('name')
+                    // The translated field label, matching the form and
+                    // the infolist. WITHOUT it Filament falls back to the
+                    // raw attribute name ("Name") — untranslated English
+                    // inside an otherwise Bulgarian panel, which is
+                    // exactly how this column read. Every other column of
+                    // this table already carries a translated label (all
+                    // eight are asserted in ProductResourceTest).
+                    ->label(__('products.fields.name'))
                     ->searchable()
-                    ->sortable(),
+                    ->sortable()
+                    // THE NAME IS THE FIRST OF THE TWO LINKS — the same
+                    // recordLinkUrl() the photo uses, and the same
+                    // destination the row-wide recordUrl() used to
+                    // produce. See recordLinkUrl()'s docblock for why the
+                    // unused `$state` parameter is required.
+                    ->url(fn (mixed $state, ProductModel $record): string => static::recordLinkUrl($record)),
                 TextColumn::make('price_display')
                     ->label(__('products.fields.price_display'))
                     ->html()
@@ -1264,7 +1333,32 @@ class ProductResource extends Resource
                     )),
                 TextColumn::make('base_sku')
                     ->label(__('products.fields.base_sku'))
-                    ->searchable(),
+                    ->searchable()
+                    // COPYABLE (D-products-list-links): the SKU is the
+                    // value a staff member pastes elsewhere, so clicking
+                    // the value — or the small copy icon after it, below —
+                    // puts it on the clipboard and tooltips Filament's own
+                    // translated message
+                    // (filament::components/copyable.messages.copied —
+                    // "Копирано" in the Bulgarian panel, 'Copied' in
+                    // English), not a string of ours to keep in sync.
+                    //
+                    // IT CANNOT NAVIGATE: Filament's copy handler is
+                    // `x-on:click.prevent.stop`, and this column carries no
+                    // ->url() of its own — the row-wide link is gone (see
+                    // the end of table()).
+                    ->copyable()
+                    // The icon is what makes the affordance visible at all:
+                    // ->copyable() alone only sets a pointer cursor and
+                    // the click handler (confirmed in the installed theme:
+                    // `.fi-ta-text-item > .fi-copyable { cursor: pointer;
+                    // … }` carries no glyph). IconPosition::After puts it
+                    // after the value, and the closure keeps it off a blank
+                    // cell. It sits INSIDE the copyable span, so the icon
+                    // is part of the click target, not a second one.
+                    ->icon(fn (?string $state): ?string => filled($state) ? 'heroicon-o-clipboard' : null)
+                    ->iconPosition(IconPosition::After)
+                    ->iconColor('gray'),
                 TextColumn::make('status')
                     ->label(__('products.fields.status'))
                     ->badge()
@@ -1534,20 +1628,40 @@ class ProductResource extends Resource
                     static::bulkDeleteAction(),
                 ]),
             ])
-            // Edit by default on row click — the most-used action on
-            // this list — falling back to View only for a staff member
-            // without edit rights. canEdit() is the same real
-            // Staff::can(Permission) check EditAction's own ->visible()
-            // above already uses, so this never routes a click
-            // somewhere the three-dot menu itself would refuse. A
-            // VARIABLE row with edit rights now routes to
-            // 'edit-variable' — EditVariableProduct exists — matching
-            // EditAction's own ->url() above exactly.
-            ->recordUrl(fn (ProductModel $record): string => match (true) {
-                ! static::canEdit($record) => static::getUrl('view', ['record' => $record]),
-                $record->type === ProductType::SIMPLE->value => static::getUrl('edit', ['record' => $record]),
-                default => static::getUrl('edit-variable', ['record' => $record]),
-            });
+            // NO ROW LINK ANY MORE — and ->recordUrl(null) is NOT the same
+            // as deleting this call, which is why it is written out
+            // explicitly rather than removed. Filament v5.8.1's ListRecords
+            // installs its OWN default row URL whenever the table carries no
+            // CUSTOM one (vendor/filament/filament/src/Resources/Pages/
+            // ListRecords.php:161 — `if (! $table->hasCustomRecordUrl())`),
+            // resolving it to the first visible 'view'/'edit' action's URL,
+            // which on this list is ViewProduct's page. Deleting the call
+            // would therefore leave every row — and with it every cell,
+            // through the cell wrapper at tables/resources/views/
+            // index.blade.php:2337 — a link to View. ->recordUrl(null) sets
+            // that flag and resolves to no URL, so no anchor is rendered at
+            // all: confirmed against the installed source and by running
+            // the list (with the call merely deleted, getRecordUrl()
+            // returned /admin/products/{id}; with ->recordUrl(null) it is
+            // null, and the cells' own text is selectable again).
+            //
+            // WHY THE ROW IS NO LONGER A LINK: it made every cell
+            // unselectable by dragging — including the SKU and the price,
+            // the two values a staff member lifts out of this list. The link
+            // now lives on the two cells a click is actually aimed at — the
+            // name and the photo — through the ONE recordLinkUrl() above,
+            // with the same three destinations (Edit; View for a staff
+            // member without edit rights; 'edit-variable' for a VARIABLE
+            // product) and the same canEdit() test EditAction's own
+            // ->visible() uses, so neither link ever routes a click
+            // somewhere the three-dot action group itself would refuse. The
+            // action group is unchanged.
+            //
+            // This supersedes the row-click rule admin-panel-design.md §13.5
+            // recorded for this list; §13.5's own justification — Edit is
+            // the action a click on a product row overwhelmingly wants — is
+            // preserved by pointing the name and the photo straight at it.
+            ->recordUrl(null);
     }
 
     public static function infolist(Schema $schema): Schema
