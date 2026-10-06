@@ -106,11 +106,12 @@ class HelpPageTest extends TestCase
         }
     }
 
-    public function test_the_skeleton_bodies_are_the_placeholder_and_the_action_headings_are_the_real_button_labels(): void
+    public function test_the_action_headings_are_the_real_button_labels(): void
     {
-        foreach (['en' => 'Content to follow.', 'bg' => 'Съдържанието предстои.'] as $locale => $placeholder) {
+        // The help now has its real content (it was a placeholder skeleton in Help 1): what stays pinned is that every
+        // action's heading is the label the button really shows, in both languages.
+        foreach (['en', 'bg'] as $locale) {
             $markdown = (string) file_get_contents(resource_path("help/{$locale}/orders.md"));
-            $this->assertSame(count(self::ANCHORS), substr_count($markdown, $placeholder), $locale);
 
             App::setLocale($locale);
 
@@ -233,7 +234,7 @@ class HelpPageTest extends TestCase
 
     public function test_the_help_page_renders_for_a_staff_member_in_bg_and_en_with_the_right_file_and_a_contents_list(): void
     {
-        foreach (['bg' => ['Как върви една поръчка', 'Съдържание', 'Съдържанието предстои.'], 'en' => ['How an order moves', 'Contents', 'Content to follow.']] as $locale => [$heading, $contents, $body]) {
+        foreach (['bg' => ['Как върви една поръчка', 'Съдържание', 'Пътят напред е един'], 'en' => ['How an order moves', 'Contents', 'There is one way forward']] as $locale => [$heading, $contents, $body]) {
             app(SiteSettingsRepository::class)->set('site.locale', $locale);
             $this->actingAsPanelStaff();
 
