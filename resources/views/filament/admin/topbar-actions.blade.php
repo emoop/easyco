@@ -23,6 +23,9 @@
 
       2. The "View store" link out to the storefront, opened in a new tab so
          an admin checking the shop never loses a half-finished edit.
+
+      3. The help icon (Help 1): a link to the in-app help page, in a new tab
+         for the same reason, with the same icon-button style.
 --}}
 
 @if (filament()->hasDarkMode() && (! filament()->hasDarkModeForced()))
@@ -73,6 +76,18 @@
         panel via window.opener.
     --}}
     :href="url('/')"
+    target="_blank"
+    rel="noopener noreferrer"
+/>
+
+<x-filament::icon-button
+    color="gray"
+    icon-size="lg"
+    :icon="Heroicon::OutlinedQuestionMarkCircle"
+    :label="__('help.topbar')"
+    :tooltip="__('help.topbar')"
+    tag="a"
+    :href="\App\Filament\Pages\Help::getUrl()"
     target="_blank"
     rel="noopener noreferrer"
 />

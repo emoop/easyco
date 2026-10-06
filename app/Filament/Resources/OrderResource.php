@@ -9,6 +9,7 @@ use App\Filament\Resources\OrderResource\Pages\ViewOrder;
 use App\Rules\KnownCountryCode;
 use App\Filament\Resources\OrderResource\PaymentReceiptDialog;
 use App\Filament\Resources\OrderResource\RefundDialog;
+use App\Filament\Support\HelpLink;
 use App\Services\Exceptions\MoneyOnlyRefundRefusedException;
 use App\Services\Exceptions\OperationKeyReusedException;
 use App\Services\Exceptions\PaymentReceiptRefusedException;
@@ -1259,9 +1260,9 @@ class OrderResource extends Resource
             ->requiresConfirmation()
             ->modalHeading(fn (OrderModel $record): string => __('orders.actions.confirm_heading', ['id' => $record->id]))
             ->modalDescription(fn (OrderModel $record): string => __('orders.actions.confirm_description', ['id' => $record->id]))
-            ->schema([
+            ->schema(HelpLink::append([
                 Textarea::make('note')->label(__('orders.actions.note_label')),
-            ])
+            ], 'confirm'))
             ->visible(fn (OrderModel $record): bool => static::staffHasPermission(Permission::ORDER_MANAGE)
                 && OrderStatus::from($record->status)->canTransitionTo(OrderStatus::CONFIRMED))
             ->action(function (array $data, OrderModel $record, $livewire): void {
@@ -1285,9 +1286,9 @@ class OrderResource extends Resource
             ->requiresConfirmation()
             ->modalHeading(fn (OrderModel $record): string => __('orders.actions.ship_heading', ['id' => $record->id]))
             ->modalDescription(fn (OrderModel $record): string => __('orders.actions.ship_description', ['id' => $record->id]))
-            ->schema([
+            ->schema(HelpLink::append([
                 Textarea::make('note')->label(__('orders.actions.note_label')),
-            ])
+            ], 'ship'))
             // D3: no ADDITIONAL gate on isSettled() here — every confirmed
             // order offers Ship, regardless of R9's own guard.
             ->visible(fn (OrderModel $record): bool => static::staffHasPermission(Permission::ORDER_MANAGE)
@@ -1313,9 +1314,9 @@ class OrderResource extends Resource
             ->requiresConfirmation()
             ->modalHeading(fn (OrderModel $record): string => __('orders.actions.deliver_heading', ['id' => $record->id]))
             ->modalDescription(fn (OrderModel $record): string => __('orders.actions.deliver_description', ['id' => $record->id]))
-            ->schema([
+            ->schema(HelpLink::append([
                 Textarea::make('note')->label(__('orders.actions.note_label')),
-            ])
+            ], 'deliver'))
             ->visible(fn (OrderModel $record): bool => static::staffHasPermission(Permission::ORDER_MANAGE)
                 && OrderStatus::from($record->status)->canTransitionTo(OrderStatus::DELIVERED))
             ->action(function (array $data, OrderModel $record, $livewire): void {
@@ -1354,7 +1355,7 @@ class OrderResource extends Resource
             ->modalDescription(fn (OrderModel $record): string => PaymentReceiptDialog::bankPayment($record) !== null
                 ? __('orders.receipt.record.description')
                 : __('orders.actions.mark_as_received_description', ['id' => $record->id]))
-            ->schema(fn (OrderModel $record): array => PaymentReceiptDialog::recordSchema($record))
+            ->schema(fn (OrderModel $record): array => HelpLink::append(PaymentReceiptDialog::recordSchema($record), 'mark_as_received'))
             ->visible(fn (OrderModel $record): bool => static::staffHasPermission(Permission::ORDER_MANAGE)
                 && (static::forOrder($record)->latestPayment?->isConfirmable() ?? false))
             ->action(function (array $data, OrderModel $record, $livewire): void {
@@ -1433,11 +1434,11 @@ class OrderResource extends Resource
             ->requiresConfirmation()
             ->modalHeading(fn (OrderModel $record): string => __('orders.actions.cancel_heading', ['id' => $record->id]))
             ->modalDescription(fn (OrderModel $record): string => __('orders.actions.cancel_description', ['id' => $record->id]))
-            ->schema(fn (OrderModel $record): array => static::buildLineFormSchema(
+            ->schema(fn (OrderModel $record): array => HelpLink::append(static::buildLineFormSchema(
                 $record,
                 editableQuantity: false,
                 showRestockToggle: $record->status === OrderStatus::SHIPPED->value,
-            ))
+            ), 'cancel'))
             // A settled payment is refunded through a payout channel the staff member must hold the permission
             // of — but the dialog is offered regardless, so that staff without either channel are TOLD why
             // (a notice, and no submit button) instead of finding the button missing (refunds R3 part 2).
@@ -1486,11 +1487,11 @@ class OrderResource extends Resource
             ->requiresConfirmation()
             ->modalHeading(fn (OrderModel $record): string => __('orders.actions.record_return_heading', ['id' => $record->id]))
             ->modalDescription(fn (OrderModel $record): string => __('orders.actions.record_return_description', ['id' => $record->id]))
-            ->schema(fn (OrderModel $record): array => static::buildLineFormSchema(
+            ->schema(fn (OrderModel $record): array => HelpLink::append(static::buildLineFormSchema(
                 $record,
                 editableQuantity: true,
                 showRestockToggle: true,
-            ))
+            ), 'record_return'))
             ->modalSubmitAction(fn (OrderModel $record): ?bool => static::hasNoRefundChannel($record) ? false : null)
             ->visible(fn (OrderModel $record): bool => static::staffHasPermission(Permission::ORDER_MANAGE)
                 && in_array($record->status, [OrderStatus::SHIPPED->value, OrderStatus::DELIVERED->value], true))
@@ -1559,7 +1560,7 @@ class OrderResource extends Resource
             ->icon('heroicon-o-banknotes')
             ->modalHeading(fn (OrderModel $record): string => __('orders.money_only.heading', ['id' => $record->id]))
             ->modalDescription(__('orders.money_only.description'))
-            ->schema(fn (OrderModel $record): array => RefundDialog::moneyOnlySchema(app(RefundFormReader::class)->forOrder((string) $record->id)))
+            ->schema(fn (OrderModel $record): array => HelpLink::append(RefundDialog::moneyOnlySchema(app(RefundFormReader::class)->forOrder((string) $record->id)), 'refund_money_only'))
             ->visible(fn (OrderModel $record): bool => static::staffHasPermission(Permission::ORDER_MANAGE)
                 && (static::forOrder($record)->latestPayment?->isSettled() ?? false)
                 && ! static::hasNoRefundChannel($record, requireSettled: false))
@@ -1644,7 +1645,7 @@ class OrderResource extends Resource
             ->modalHeading(fn (OrderModel $record): string => __('orders.actions.edit_heading', ['id' => $record->id]))
             ->modalDescription(fn (OrderModel $record): string => __('orders.actions.edit_description', ['id' => $record->id]))
             ->modalWidth('5xl')
-            ->schema(fn (OrderModel $record): array => static::buildEditFormSchema($record))
+            ->schema(fn (OrderModel $record): array => HelpLink::append(static::buildEditFormSchema($record), 'edit_order'))
             ->visible(fn (OrderModel $record): bool => static::staffHasPermission(Permission::ORDER_MANAGE)
                 && in_array($record->status, [OrderStatus::PLACED->value, OrderStatus::CONFIRMED->value], true)
                 && ! (static::forOrder($record)->latestPayment?->isSettled() ?? false))
@@ -2041,9 +2042,9 @@ class OrderResource extends Resource
             ->requiresConfirmation()
             ->modalHeading(fn (OrderModel $record): string => __('orders.actions.add_note_heading', ['id' => $record->id]))
             ->modalDescription(fn (OrderModel $record): string => __('orders.actions.add_note_description', ['id' => $record->id]))
-            ->schema([
+            ->schema(HelpLink::append([
                 Textarea::make('note')->label(__('orders.actions.note_field_label'))->required(),
-            ])
+            ], 'add_note'))
             ->visible(fn (): bool => static::staffHasPermission(Permission::ORDER_MANAGE))
             ->action(function (array $data, OrderModel $record, $livewire): void {
                 static::runOrderAction(
@@ -2245,7 +2246,7 @@ class OrderResource extends Resource
             ->icon('heroicon-o-banknotes')
             ->modalHeading(__('orders.refunds.mark_paid_out.heading', ['id' => $refundId]))
             ->modalDescription(__('orders.refunds.mark_paid_out.description', ['amount' => static::formatMinor($totalMinor, $currency)]))
-            ->schema([
+            ->schema(HelpLink::append([
                 DateTimePicker::make('paid_out_at')
                     ->label(__('orders.refunds.mark_paid_out.paid_out_at'))
                     ->required()
@@ -2264,7 +2265,7 @@ class OrderResource extends Resource
                     ->rows(2),
                 // One key per opening of the dialog: a double submit is one payout (§7.2.3).
                 Hidden::make('operation_key')->default(fn (): string => (string) Str::uuid()),
-            ])
+            ], 'mark_refund_paid_out'))
             ->visible(fn (): bool => static::refundActionAllowed($refundId, $channel))
             ->action(function (array $data, OrderModel $record, $livewire) use ($refundId): void {
                 static::runOrderAction(
@@ -2292,14 +2293,14 @@ class OrderResource extends Resource
             ->color('danger')
             ->icon('heroicon-o-x-circle')
             ->modalHeading(__('orders.refunds.cancel.heading', ['id' => $refundId]))
-            ->schema([
+            ->schema(HelpLink::append([
                 Text::make(__('orders.refunds.cancel.warning')),
                 Textarea::make('reason')
                     ->label(__('orders.refunds.cancel.reason'))
                     ->required()
                     ->rows(2),
                 Hidden::make('operation_key')->default(fn (): string => (string) Str::uuid()),
-            ])
+            ], 'cancel_refund'))
             ->visible(fn (): bool => static::refundActionAllowed($refundId, $channel))
             ->action(function (array $data, OrderModel $record, $livewire) use ($refundId): void {
                 static::runOrderAction(

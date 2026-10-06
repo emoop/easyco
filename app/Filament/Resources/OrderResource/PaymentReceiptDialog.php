@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\OrderResource;
 
 use App\Filament\Resources\OrderResource;
+use App\Filament\Support\HelpLink;
 use App\Services\Exceptions\PaymentReceiptRefusedException;
 use App\Services\MoneyInput;
 use App\Services\OrderAdminReader;
@@ -167,7 +168,7 @@ final class PaymentReceiptDialog
             ->icon('heroicon-o-scale')
             ->modalHeading(fn (OrderModel $record): string => __('orders.receipt.accept.heading', ['id' => $record->id]))
             ->modalDescription(__('orders.receipt.accept.description'))
-            ->schema(fn (OrderModel $record): array => self::acceptSchema($record))
+            ->schema(fn (OrderModel $record): array => HelpLink::append(self::acceptSchema($record), 'accept_mismatch'))
             ->visible(fn (OrderModel $record): bool => self::canAccept($record))
             ->action(fn (array $data, OrderModel $record, $livewire) => self::accept($data, $record, $livewire, $run));
     }
@@ -183,7 +184,7 @@ final class PaymentReceiptDialog
             ->icon('heroicon-o-pencil-square')
             ->modalHeading(fn (OrderModel $record): string => __('orders.receipt.correct.heading', ['id' => $record->id]))
             ->modalDescription(__('orders.receipt.correct.description'))
-            ->schema(fn (OrderModel $record): array => self::correctSchema($record))
+            ->schema(fn (OrderModel $record): array => HelpLink::append(self::correctSchema($record), 'correct_receipt'))
             ->visible(fn (OrderModel $record): bool => self::canCorrect($record))
             ->action(fn (array $data, OrderModel $record, $livewire) => self::correct($data, $record, $livewire, $run));
     }
