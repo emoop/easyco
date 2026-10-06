@@ -3,6 +3,9 @@
 namespace App\Providers;
 
 use App\Http\ApiRateLimits;
+use App\NeedsAttention\NeedsAttentionSource;
+use App\NeedsAttention\OwedRefundSource;
+use App\NeedsAttention\ReceiptMismatchSource;
 use App\Services\AuthenticatedStaffResolver;
 use App\Services\OrderAdminReader;
 use App\Services\PriceDisplayFormatter;
@@ -60,6 +63,15 @@ class AppServiceProvider extends ServiceProvider
         // reasoning, including why scoped() (not singleton()) is the
         // only safe lifetime here too.
         $this->app->scoped(AuthenticatedStaffResolver::class);
+
+        // The "Needs attention" page's sources (shipping-domain-design.md §7.2.20 §6). TAGGED, not
+        // listed in the page: the tag's own array order IS the order of the page's sections, and
+        // R4b adds its two cash-on-delivery sources here, by this same one line, without touching
+        // App\Filament\Pages\NeedsAttention. The page reads them with app()->tagged(TAG).
+        $this->app->tag([
+            OwedRefundSource::class,
+            ReceiptMismatchSource::class,
+        ], NeedsAttentionSource::TAG);
     }
 
     /**
