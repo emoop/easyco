@@ -16,6 +16,7 @@ return [
         'channel' => 'Канал',
         'payment_method' => 'Начин на плащане',
         'payment_status' => 'Статус на плащане',
+        'payment_method_status' => 'Статус от платежния метод',
         'total' => 'Обща сума',
         'subtotal' => 'Междинна сума',
         'discount' => 'Отстъпка',
@@ -52,7 +53,7 @@ return [
         // before "Mark as received" (see en/orders.php's own comment for the
         // wording). 'Money held' is §4.1's settled fact; 'Received at' follows
         // attempted_at's own '<participle> at' shape.
-        'payment_settled' => 'Държани пари',
+        'payment_settled' => 'Парите са получени',
         'payment_confirmed_at' => 'Получено на',
         'occurred_at' => 'Дата',
         'event_type' => 'Събитие',
@@ -369,19 +370,48 @@ return [
         ],
     ],
 
+    // UI pass 1: бутоните на всеки диалог на страницата на поръчката. „Затвори“ винаги, никога „Откажи“ (на страница на
+    // поръчка това звучи като отказ на ПОРЪЧКАТА), а бутонът за потвърждение казва какво прави.
+    'modal' => [
+        'close' => 'Затвори',
+        'submit' => [
+            'confirm' => 'Потвърди поръчката',
+            'ship' => 'Изпрати поръчката',
+            'deliver' => 'Маркирай като доставена',
+            'mark_as_received' => 'Запиши получаването',
+            'accept_mismatch' => 'Приеми сумата',
+            'correct_receipt' => 'Запази корекцията',
+            'cancel' => 'Откажи поръчката',
+            'record_return' => 'Запиши връщането',
+            'refund_money_only' => 'Запиши връщането на сума',
+            'add_note' => 'Добави бележката',
+        ],
+    ],
+
+    'actions_menu' => 'Действия',
+
+    // UI pass 1: ЕДНО състояние на плащането за търговеца в заглавието (само факти, без цвят).
+    'payment_state' => [
+        'awaiting' => 'Чака плащане',
+        'partial' => 'Получено частично (:received от :expected)',
+        'over' => 'Получено повече (:received от :expected)',
+        'paid' => 'Платено',
+        'paid_accepted' => 'Платено, прието разминаване (:received от :expected)',
+    ],
+
     // Refunds R4a-4 (shipping-domain-design.md §7.2.20 §6, §7): администрация на банковите постъпления.
     'receipt' => [
         'record' => [
             'heading' => 'Записване на получен превод за поръчка :id',
-            'description' => 'Въведете какво е постъпило по банковата сметка. Ако преводите се равняват на очакваната сума, плащането се уреждва.',
+            'description' => 'Въведете какво е постъпило по банковата сметка. Ако преводите се равняват на очакваната сума, плащането се уреждва. Това само записва превода; не изпраща и не потвърждава поръчката.',
             'amount' => 'Получена сума',
             'received_on' => 'Получена на',
             'bank_reference' => 'Банкова референция',
             'done' => 'Преводът е записан.',
             'hint' => 'Очаквано :expected · записано досега :recorded · този превод :this',
             'hint_matches' => '→ съвпада, плащането ще бъде уредено',
-            'hint_short' => '→ не съвпада: по-малко с :difference; плащането остава неуредено и поръчката отива в „Изискват внимание“',
-            'hint_over' => '→ не съвпада: повече с :difference; плащането остава неуредено и поръчката отива в „Изискват внимание“',
+            'hint_short' => '→ не съвпада: по-малко с :difference; плащането остава неуредено, докато не дойде остатъкът или не приемете получената сума',
+            'hint_over' => '→ не съвпада: повече с :difference; плащането остава неуредено, докато не дойде остатъкът или не приемете получената сума',
         ],
         'accept' => [
             'label' => 'Приемане на получената сума',
@@ -546,8 +576,8 @@ return [
     // badge (en/orders.php's own comment carries the full argument): the
     // positive one is §4.1's "money is held", the negative one states the money
     // as NOT RECORDED, never "unpaid" (§4.5 / §3 item 3).
-    'payment_settled_yes' => 'Получени',
-    'payment_settled_no' => 'Няма запис',
+    'payment_settled_yes' => 'Да',
+    'payment_settled_no' => 'Не',
     'payment_history' => [
         'heading' => 'История на плащанията',
         'amount' => 'Сума',

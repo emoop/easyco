@@ -342,23 +342,27 @@ class OrderEditActionTest extends TestCase
         $this->actingAsStaffRole('Administrator');
         $order = $this->place();
 
+        // UI pass 1: the header is the "Add note" button and ONE "Actions" menu; orderActionList() is the flat list.
         $pageRows = array_map(
             static fn ($action): string => $action->getName(),
-            OrderResource::orderActions(),
+            OrderResource::orderActionList(),
         );
 
         $this->assertNotContains('edit_order', $pageRows);
         $this->assertSame(
-            // Refunds R4a-4 added the two receipt actions (accept the received amount, correct a receipt) after mark_as_received.
-            ['confirm', 'ship', 'deliver', 'mark_as_received', 'accept_mismatch', 'correct_receipt', 'cancel', 'record_return', 'refund_money_only', 'add_note'],
+            // The add-note button, then the menu's three sections: the order flow, the payment, returns and cancellation.
+            ['add_note', 'confirm', 'ship', 'deliver', 'mark_as_received', 'accept_mismatch', 'correct_receipt', 'record_return', 'refund_money_only', 'cancel'],
             $pageRows,
         );
 
         $component = Livewire::test(ViewOrder::class, ['record' => $order->id()]);
-        $pageHeaderNames = array_map(
-            static fn ($action): string => $action->getName(),
-            $component->instance()->getCachedHeaderActions(),
-        );
+        $pageHeaderNames = [];
+
+        foreach ($component->instance()->getCachedHeaderActions() as $headerAction) {
+            foreach ($headerAction instanceof \Filament\Actions\ActionGroup ? $headerAction->getFlatActions() : [$headerAction] as $action) {
+                $pageHeaderNames[] = $action->getName();
+            }
+        }
 
         $this->assertNotContains('edit_order', $pageHeaderNames, 'Edit must not be a PAGE header action any more.');
 

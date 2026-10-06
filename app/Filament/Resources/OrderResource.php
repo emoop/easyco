@@ -95,6 +95,7 @@ use Filament\Schemas\Components\Html;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Text;
 use Filament\Schemas\Components\Utilities\Get;
+use Filament\Support\Enums\IconPosition;
 use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Filament\Support\Enums\TextSize;
@@ -481,12 +482,14 @@ class OrderResource extends Resource
                         ->badge()
                         ->formatStateUsing(fn (string $state): string => __("orders.status_options.{$state}"))
                         ->color(fn (string $state): string => static::statusColor($state)),
+                    // UI pass 1: ONE state a merchant understands, derived from facts the page already read (the latest
+                    // payment and, for a bank transfer, its receipts): the adapter's own status stays in the Payment section.
                     TextEntry::make('header_payment_status')
                         ->label(__('orders.fields.payment_status'))
                         ->badge()
                         ->visible(fn (OrderModel $record): bool => static::forOrder($record)->latestPayment !== null)
                         ->getStateUsing(fn (OrderModel $record): string => static::forOrder($record)->latestPayment !== null
-                            ? static::optionLabel('payment_status', static::forOrder($record)->latestPayment->status()->value)
+                            ? PaymentReceiptDialog::paymentState($record, fn (string $status): string => static::optionLabel('payment_status', $status))
                             : __('orders.no_payment')),
                     TextEntry::make('header_subtitle')
                         ->hiddenLabel()
@@ -566,7 +569,7 @@ class OrderResource extends Resource
                                         : __('orders.no_payment');
                                 }),
                             TextEntry::make('payment_status')
-                                ->label(__('orders.fields.payment_status'))
+                                ->label(__('orders.fields.payment_method_status'))
                                 ->badge()
                                 ->visible(fn (OrderModel $record): bool => static::forOrder($record)->latestPayment !== null)
                                 // Not just a defensive null-check — getStateUsing()
@@ -1165,18 +1168,55 @@ class OrderResource extends Resource
      */
     public static function orderActions(): array
     {
+        // UI pass 1: ONE button ("Add note") and ONE "Actions" dropdown. The dropdown holds three divided sections —
+        // the order flow, the payment, returns and cancellation — each a nested group without a dropdown of its own,
+        // which Filament renders as a separate list with a divider. Every action keeps its name, visibility rule,
+        // permission and behaviour (callAction by name works inside a group); a group with no visible action, and the
+        // menu itself when every section is empty, is not rendered.
         return [
-            static::confirmAction(),
-            static::shipAction(),
-            static::deliverAction(),
-            static::markAsReceivedAction(),
-            PaymentReceiptDialog::acceptAction(static::runOrderAction(...)),
-            PaymentReceiptDialog::correctAction(static::runOrderAction(...)),
-            static::cancelAction(),
-            static::recordReturnAction(),
-            static::refundMoneyOnlyAction(),
             static::addNoteAction(),
+            ActionGroup::make([
+                ActionGroup::make([
+                    static::confirmAction(),
+                    static::shipAction(),
+                    static::deliverAction(),
+                ])->dropdown(false),
+                ActionGroup::make([
+                    static::markAsReceivedAction(),
+                    PaymentReceiptDialog::acceptAction(static::runOrderAction(...)),
+                    PaymentReceiptDialog::correctAction(static::runOrderAction(...)),
+                ])->dropdown(false),
+                ActionGroup::make([
+                    static::recordReturnAction(),
+                    static::refundMoneyOnlyAction(),
+                    static::cancelAction(),
+                ])->dropdown(false),
+            ])
+                ->label(__('orders.actions_menu'))
+                ->icon('heroicon-m-chevron-down')
+                ->iconPosition(IconPosition::After)
+                ->color('gray')
+                ->button(),
         ];
+    }
+
+    /**
+     * Every action of the page's header, flat and in the order the menu shows them (the add-note button, then the
+     * three sections of the Actions menu) — for tests and for anything that needs the names.
+     *
+     * @return list<Action>
+     */
+    public static function orderActionList(): array
+    {
+        $actions = [];
+
+        foreach (static::orderActions() as $entry) {
+            foreach ($entry instanceof ActionGroup ? $entry->getFlatActions() : [$entry] as $action) {
+                $actions[] = $action;
+            }
+        }
+
+        return $actions;
     }
 
     /**
@@ -1212,6 +1252,8 @@ class OrderResource extends Resource
     {
         return Action::make('confirm')
             ->label(__('orders.actions.confirm'))
+            ->modalSubmitActionLabel(__('orders.modal.submit.confirm'))
+            ->modalCancelActionLabel(__('orders.modal.close'))
             ->color('primary')
             ->icon('heroicon-o-check-circle')
             ->requiresConfirmation()
@@ -1236,6 +1278,8 @@ class OrderResource extends Resource
     {
         return Action::make('ship')
             ->label(__('orders.actions.ship'))
+            ->modalSubmitActionLabel(__('orders.modal.submit.ship'))
+            ->modalCancelActionLabel(__('orders.modal.close'))
             ->color('warning')
             ->icon('heroicon-o-truck')
             ->requiresConfirmation()
@@ -1262,6 +1306,8 @@ class OrderResource extends Resource
     {
         return Action::make('deliver')
             ->label(__('orders.actions.deliver'))
+            ->modalSubmitActionLabel(__('orders.modal.submit.deliver'))
+            ->modalCancelActionLabel(__('orders.modal.close'))
             ->color('success')
             ->icon('heroicon-o-check-badge')
             ->requiresConfirmation()
@@ -1295,6 +1341,8 @@ class OrderResource extends Resource
     {
         return Action::make('mark_as_received')
             ->label(__('orders.actions.mark_as_received'))
+            ->modalSubmitActionLabel(__('orders.modal.submit.mark_as_received'))
+            ->modalCancelActionLabel(__('orders.modal.close'))
             ->color('success')
             ->icon('heroicon-o-banknotes')
             // A bank transfer opens the record dialog (refunds R4a-4: amount, day, reference); cash on delivery keeps
@@ -1378,6 +1426,8 @@ class OrderResource extends Resource
     {
         return Action::make('cancel')
             ->label(__('orders.actions.cancel'))
+            ->modalSubmitActionLabel(__('orders.modal.submit.cancel'))
+            ->modalCancelActionLabel(__('orders.modal.close'))
             ->color('danger')
             ->icon('heroicon-o-x-circle')
             ->requiresConfirmation()
@@ -1429,6 +1479,8 @@ class OrderResource extends Resource
     {
         return Action::make('record_return')
             ->label(__('orders.actions.record_return'))
+            ->modalSubmitActionLabel(__('orders.modal.submit.record_return'))
+            ->modalCancelActionLabel(__('orders.modal.close'))
             ->color('warning')
             ->icon('heroicon-o-arrow-uturn-left')
             ->requiresConfirmation()
@@ -1501,6 +1553,8 @@ class OrderResource extends Resource
     {
         return Action::make('refund_money_only')
             ->label(__('orders.money_only.label'))
+            ->modalSubmitActionLabel(__('orders.modal.submit.refund_money_only'))
+            ->modalCancelActionLabel(__('orders.modal.close'))
             ->color('warning')
             ->icon('heroicon-o-banknotes')
             ->modalHeading(fn (OrderModel $record): string => __('orders.money_only.heading', ['id' => $record->id]))
@@ -1980,6 +2034,8 @@ class OrderResource extends Resource
     {
         return Action::make('add_note')
             ->label(__('orders.actions.add_note'))
+            ->modalSubmitActionLabel(__('orders.modal.submit.add_note'))
+            ->modalCancelActionLabel(__('orders.modal.close'))
             ->color('gray')
             ->icon('heroicon-o-pencil-square')
             ->requiresConfirmation()

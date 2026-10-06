@@ -16,6 +16,7 @@ return [
         'channel' => 'Channel',
         'payment_method' => 'Payment method',
         'payment_status' => 'Payment status',
+        'payment_method_status' => 'Status from the payment method',
         'total' => 'Total',
         'subtotal' => 'Subtotal',
         'discount' => 'Discount',
@@ -53,7 +54,7 @@ return [
         // 'Money held' names the fact §4.1 means by settled (a held hold, not a
         // debt settled); 'Received at' follows attempted_at's own
         // '<participle> at' shape for the instant §4.1's confirm() ran.
-        'payment_settled' => 'Money held',
+        'payment_settled' => 'Money received',
         'payment_confirmed_at' => 'Received at',
         'occurred_at' => 'Date',
         'event_type' => 'Event',
@@ -373,19 +374,48 @@ return [
         ],
     ],
 
+    // UI pass 1: the buttons of every order-page dialog. The dismiss button is always "Close" (never "Cancel": on an order page
+    // that reads as cancelling the ORDER), and each submit button names what it does.
+    'modal' => [
+        'close' => 'Close',
+        'submit' => [
+            'confirm' => 'Confirm the order',
+            'ship' => 'Ship the order',
+            'deliver' => 'Mark as delivered',
+            'mark_as_received' => 'Record the receipt',
+            'accept_mismatch' => 'Accept the amount',
+            'correct_receipt' => 'Save the correction',
+            'cancel' => 'Cancel the order',
+            'record_return' => 'Record the return',
+            'refund_money_only' => 'Record the money-only refund',
+            'add_note' => 'Add the note',
+        ],
+    ],
+
+    'actions_menu' => 'Actions',
+
+    // UI pass 1: the ONE merchant-facing payment state of the header (facts only, no colour).
+    'payment_state' => [
+        'awaiting' => 'Awaiting payment',
+        'partial' => 'Partly received (:received of :expected)',
+        'over' => 'Over-received (:received of :expected)',
+        'paid' => 'Paid',
+        'paid_accepted' => 'Paid, mismatch accepted (:received of :expected)',
+    ],
+
     // Refunds R4a-4 (shipping-domain-design.md §7.2.20 §6, §7): the admin of bank-transfer receipts.
     'receipt' => [
         'record' => [
             'heading' => 'Record a received transfer for order :id',
-            'description' => 'Enter what arrived in the bank account. If the transfers add up to the expected amount the payment is settled.',
+            'description' => 'Enter what arrived in the bank account. If the transfers add up to the expected amount the payment is settled. This only records the transfer; it does not ship or confirm the order.',
             'amount' => 'Received amount',
             'received_on' => 'Received on',
             'bank_reference' => 'Bank reference',
             'done' => 'Transfer recorded.',
             'hint' => 'Expected :expected · recorded so far :recorded · this transfer :this',
             'hint_matches' => '→ matches, the payment will be settled',
-            'hint_short' => '→ does not match: short by :difference; the payment stays unsettled and the order goes to Needs attention',
-            'hint_over' => '→ does not match: over by :difference; the payment stays unsettled and the order goes to Needs attention',
+            'hint_short' => '→ does not match: short by :difference; the payment stays unsettled until the rest arrives or you accept the received amount',
+            'hint_over' => '→ does not match: over by :difference; the payment stays unsettled until the rest arrives or you accept the received amount',
         ],
         'accept' => [
             'label' => 'Accept the received amount',
@@ -561,8 +591,8 @@ return [
     // computed 'unpaid' badge, because a payment row with no confirmation can
     // just as truthfully be a COD delivery that never had to confirm (§3
     // item 3 — "no computed 'unpaid' badge — but no silence either").
-    'payment_settled_yes' => 'Settled',
-    'payment_settled_no' => 'Not recorded',
+    'payment_settled_yes' => 'Yes',
+    'payment_settled_no' => 'No',
     'payment_history' => [
         'heading' => 'Payment history',
         'amount' => 'Amount',

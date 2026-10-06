@@ -8,6 +8,7 @@ use App\Services\MoneyInput;
 use App\Services\OrderAdminReader;
 use App\Services\PaymentReceiptRecorder;
 use App\Services\PaymentReceiptReader;
+use App\Services\PaymentReceiptState;
 use App\Services\PaymentReceiptStatus;
 use App\Services\PaymentReconcilePolicy;
 use App\Settings\StoreTimezone;
@@ -15,6 +16,7 @@ use Closure;
 use DateTimeImmutable;
 use EasyCo\Order\Persistence\Eloquent\OrderModel;
 use EasyCo\Payment\Contracts\PaymentReceiptRepository;
+use EasyCo\Payment\Enums\PaymentStatus;
 use EasyCo\Payment\Payment;
 use EasyCo\Payment\PaymentReceipt;
 use EasyCo\Pricing\Money;
@@ -159,6 +161,8 @@ final class PaymentReceiptDialog
     {
         return Action::make('accept_mismatch')
             ->label(__('orders.receipt.accept.label'))
+            ->modalSubmitActionLabel(__('orders.modal.submit.accept_mismatch'))
+            ->modalCancelActionLabel(__('orders.modal.close'))
             ->color('warning')
             ->icon('heroicon-o-scale')
             ->modalHeading(fn (OrderModel $record): string => __('orders.receipt.accept.heading', ['id' => $record->id]))
@@ -173,6 +177,8 @@ final class PaymentReceiptDialog
     {
         return Action::make('correct_receipt')
             ->label(__('orders.receipt.correct.label'))
+            ->modalSubmitActionLabel(__('orders.modal.submit.correct_receipt'))
+            ->modalCancelActionLabel(__('orders.modal.close'))
             ->color('gray')
             ->icon('heroicon-o-pencil-square')
             ->modalHeading(fn (OrderModel $record): string => __('orders.receipt.correct.heading', ['id' => $record->id]))
@@ -524,6 +530,52 @@ final class PaymentReceiptDialog
             ->body($body)
             ->danger()
             ->send();
+    }
+
+    // ---- the header state ----------------------------------------------------------------------------
+
+    /**
+     * The ONE payment state of the order header (UI pass 1), in a merchant's words, derived only from what the page
+     * already read: the latest payment and, for a bank transfer, its receipts (view(), memoised — no query of its
+     * own; cash on delivery reads nothing). A failed or voided payment keeps the label of the adapter's status.
+     * Facts, not severity: the caller shows it as a plain badge.
+     *
+     * @param  Closure(string): string  $adapterLabel  the label of a payment status (OrderResource::optionLabel)
+     */
+    public static function paymentState(OrderModel $record, Closure $adapterLabel): string
+    {
+        $payment = app(OrderAdminReader::class)->forOrder((string) $record->id)->latestPayment;
+
+        if ($payment === null) {
+            return __('orders.no_payment');
+        }
+
+        if ($payment->status() === PaymentStatus::FAILED || $payment->isVoided()) {
+            return $adapterLabel($payment->status()->value);
+        }
+
+        if ($payment->method() !== PaymentReceiptReader::BANK_TRANSFER) {
+            return $payment->isSettled() ? __('orders.payment_state.paid') : __('orders.payment_state.awaiting');
+        }
+
+        $view = self::view($record);
+        $status = $view['status'];
+        $figures = fn (Money $received): array => [
+            'received' => $received->decimalValue(),
+            'expected' => self::format($payment->amount()),
+        ];
+
+        if ($payment->isSettled()) {
+            return $payment->settlementReason() !== null
+                ? __('orders.payment_state.paid_accepted', $figures($payment->settledAmount()))
+                : __('orders.payment_state.paid');
+        }
+
+        return match ($status->state()) {
+            PaymentReceiptState::NONE => __('orders.payment_state.awaiting'),
+            PaymentReceiptState::PARTIAL => __('orders.payment_state.partial', $figures($status->received())),
+            default => __('orders.payment_state.over', $figures($status->received())),
+        };
     }
 
     // ---- the order page ------------------------------------------------------------------------------

@@ -566,8 +566,8 @@ class OrderViewPageTest extends TestCase
             $paymentHtml,
             'a payment row exists, so this entry always has an answer to give'
         );
-        $this->assertStringContainsString(__('orders.payment_settled_no'), $paymentHtml);
-        $this->assertStringNotContainsString(__('orders.payment_settled_yes'), $paymentHtml);
+        $this->assertMatchesRegularExpression('/>\s*'.preg_quote(__('orders.payment_settled_no'), '/').'\s*</', $paymentHtml);
+        $this->assertDoesNotMatchRegularExpression('/>\s*'.preg_quote(__('orders.payment_settled_yes'), '/').'\s*</', $paymentHtml);
         $this->assertStringNotContainsString(__('orders.fields.payment_confirmed_at'), $paymentHtml);
     }
 
@@ -591,8 +591,8 @@ class OrderViewPageTest extends TestCase
 
         $this->assertStringContainsString(__('orders.no_payment'), $paymentHtml);
         $this->assertStringNotContainsString(__('orders.fields.payment_settled'), $paymentHtml);
-        $this->assertStringNotContainsString(__('orders.payment_settled_yes'), $paymentHtml);
-        $this->assertStringNotContainsString(__('orders.payment_settled_no'), $paymentHtml);
+        $this->assertDoesNotMatchRegularExpression('/>\s*'.preg_quote(__('orders.payment_settled_yes'), '/').'\s*</', $paymentHtml);
+        $this->assertDoesNotMatchRegularExpression('/>\s*'.preg_quote(__('orders.payment_settled_no'), '/').'\s*</', $paymentHtml);
     }
 
     /**
