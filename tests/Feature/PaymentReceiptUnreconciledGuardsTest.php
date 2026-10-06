@@ -297,16 +297,20 @@ class PaymentReceiptUnreconciledGuardsTest extends TestCase
         $this->assertSame(1, DB::table('payment_receipts')->count());
     }
 
-    public function test_the_panels_mark_as_received_action_shows_the_refusal_as_a_notice_and_settles_nothing(): void
+    public function test_the_panel_no_longer_offers_a_one_click_confirmation_of_a_bank_transfer(): void
     {
+        // Refunds R4a-4 replaced the one-click "mark as received" of a bank transfer with the record dialog (this test
+        // used to call it bare and expect the service's refusal as a notice; the service backstop is tested above).
+        // Submitted without the dialog's fields the action is a validation error and nothing is written.
         $order = $this->bankOrder();
         $this->receive($order, 9000);
 
         Livewire::test(ViewOrder::class, ['record' => $order['orderId']])
             ->callAction('mark_as_received')
-            ->assertNotified(__('orders.actions.refused_title'));
+            ->assertHasActionErrors(['bank_reference' => 'required']);
 
         $this->assertFalse($this->freshPayment($order['payment'])->isSettled());
+        $this->assertSame(1, DB::table('payment_receipts')->count());
     }
 
     public function test_a_failed_payment_with_no_receipts_is_not_affected(): void

@@ -7,10 +7,13 @@ use App\Filament\NavigationGroup;
 use App\Filament\Resources\OrderResource\Pages\ListOrders;
 use App\Filament\Resources\OrderResource\Pages\ViewOrder;
 use App\Rules\KnownCountryCode;
+use App\Filament\Resources\OrderResource\PaymentReceiptDialog;
 use App\Filament\Resources\OrderResource\RefundDialog;
 use App\Services\Exceptions\MoneyOnlyRefundRefusedException;
 use App\Services\Exceptions\OperationKeyReusedException;
+use App\Services\Exceptions\PaymentReceiptRefusedException;
 use App\Services\Exceptions\PaymentReceiptUnreconciledException;
+use App\Services\Exceptions\PaymentReconcilePermissionDeniedException;
 use App\Services\Exceptions\OrderAddLineRefusedException;
 use App\Services\Exceptions\OrderTransitionRefusedException;
 use App\Services\Exceptions\PendingPaymentRefundRuleException;
@@ -676,6 +679,8 @@ class OrderResource extends Resource
                         // density (id/placed_at/status/channel, one row of 4) —
                         // not one fact per full-width row.
                         ->columns(3),
+                    // Refunds R4a-4: the bank transfers received (a bank-transfer latest payment only).
+                    PaymentReceiptDialog::section(),
                     // Every payment that is NOT the current one, collapsed by default so
                     // the everyday view stays quiet. It replaces the old "N attempts"
                     // count, which added a customer's genuine retries to the reissues an
@@ -1165,6 +1170,8 @@ class OrderResource extends Resource
             static::shipAction(),
             static::deliverAction(),
             static::markAsReceivedAction(),
+            PaymentReceiptDialog::acceptAction(static::runOrderAction(...)),
+            PaymentReceiptDialog::correctAction(static::runOrderAction(...)),
             static::cancelAction(),
             static::recordReturnAction(),
             static::refundMoneyOnlyAction(),
@@ -1290,12 +1297,25 @@ class OrderResource extends Resource
             ->label(__('orders.actions.mark_as_received'))
             ->color('success')
             ->icon('heroicon-o-banknotes')
-            ->requiresConfirmation()
-            ->modalHeading(fn (OrderModel $record): string => __('orders.actions.mark_as_received_heading', ['id' => $record->id]))
-            ->modalDescription(fn (OrderModel $record): string => __('orders.actions.mark_as_received_description', ['id' => $record->id]))
+            // A bank transfer opens the record dialog (refunds R4a-4: amount, day, reference); cash on delivery keeps
+            // today's one-click confirmation, untouched.
+            ->requiresConfirmation(fn (OrderModel $record): bool => PaymentReceiptDialog::bankPayment($record) === null)
+            ->modalHeading(fn (OrderModel $record): string => PaymentReceiptDialog::bankPayment($record) !== null
+                ? __('orders.receipt.record.heading', ['id' => $record->id])
+                : __('orders.actions.mark_as_received_heading', ['id' => $record->id]))
+            ->modalDescription(fn (OrderModel $record): string => PaymentReceiptDialog::bankPayment($record) !== null
+                ? __('orders.receipt.record.description')
+                : __('orders.actions.mark_as_received_description', ['id' => $record->id]))
+            ->schema(fn (OrderModel $record): array => PaymentReceiptDialog::recordSchema($record))
             ->visible(fn (OrderModel $record): bool => static::staffHasPermission(Permission::ORDER_MANAGE)
                 && (static::forOrder($record)->latestPayment?->isConfirmable() ?? false))
-            ->action(function (OrderModel $record, $livewire): void {
+            ->action(function (array $data, OrderModel $record, $livewire): void {
+                if (PaymentReceiptDialog::bankPayment($record) !== null) {
+                    PaymentReceiptDialog::record($data, $record, $livewire, static::runOrderAction(...));
+
+                    return;
+                }
+
                 // A GRACEFUL RACE GUARD, NOT A FATAL ERROR: the button's
                 // own ->visible() read this same fact at render time: by
                 // the click it may no longer hold (another operator acted
@@ -2439,7 +2459,7 @@ class OrderResource extends Resource
                 ->send();
 
             return;
-        } catch (RefundCapExceededException|RefundPermissionDeniedException|OperationKeyReusedException|PendingPaymentRefundRuleException|RefundTransitionRefusedException|MoneyOnlyRefundRefusedException|ReturnAnnouncedDateException|PaymentReceiptUnreconciledException $e) {
+        } catch (RefundCapExceededException|RefundPermissionDeniedException|OperationKeyReusedException|PendingPaymentRefundRuleException|RefundTransitionRefusedException|MoneyOnlyRefundRefusedException|ReturnAnnouncedDateException|PaymentReceiptUnreconciledException|PaymentReconcilePermissionDeniedException $e) {
             // The refund caps, the money permission, a reused operation key, a money-only refusal and an
             // impossible announced day all carry their own translated sentence: shown as a refusal, never a 500.
             Notification::make()
@@ -2447,6 +2467,12 @@ class OrderResource extends Resource
                 ->body($e->getMessage())
                 ->danger()
                 ->send();
+
+            return;
+        } catch (PaymentReceiptRefusedException $e) {
+            // A refusal of the receipt service (refunds R4a-4): an error on the field it belongs to, which keeps the
+            // dialog open (a ValidationException), or a translated notice when it belongs to no field.
+            PaymentReceiptDialog::refuse($e, $livewire);
 
             return;
         } catch (PendingShippingInvariantBrokenException $e) {

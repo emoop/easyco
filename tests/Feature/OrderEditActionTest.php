@@ -349,7 +349,8 @@ class OrderEditActionTest extends TestCase
 
         $this->assertNotContains('edit_order', $pageRows);
         $this->assertSame(
-            ['confirm', 'ship', 'deliver', 'mark_as_received', 'cancel', 'record_return', 'refund_money_only', 'add_note'],
+            // Refunds R4a-4 added the two receipt actions (accept the received amount, correct a receipt) after mark_as_received.
+            ['confirm', 'ship', 'deliver', 'mark_as_received', 'accept_mismatch', 'correct_receipt', 'cancel', 'record_return', 'refund_money_only', 'add_note'],
             $pageRows,
         );
 

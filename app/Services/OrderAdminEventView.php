@@ -49,6 +49,8 @@ final class OrderAdminEventView
         public readonly array $movedLines = [],
         /** The CALENDAR DAY ('Y-m-d', store timezone) the customer announced a return; a `returned` event only. */
         public readonly ?string $announcedReturnOn = null,
+        /** The bank-transfer receipt a `payment_receipt_recorded` / `payment_receipt_corrected` event is about (refunds R4a-4): lets the order page say who recorded each receipt without a query of its own. */
+        public readonly ?string $paymentReceiptId = null,
     ) {
     }
 }
