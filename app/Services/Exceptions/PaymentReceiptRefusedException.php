@@ -5,10 +5,10 @@ namespace App\Services\Exceptions;
 use RuntimeException;
 
 /**
- * Recording a bank-transfer receipt (shipping-domain-design.md §7.2.20 §3) was refused, by name.
+ * Recording, accepting or correcting a bank-transfer receipt (shipping-domain-design.md §7.2.20 §3, §4) was refused, by name.
  * Nothing has been written when this is thrown. The message is a translated sentence
  * (orders.payment_receipt.refused.*, en + bg); field() names the form field a dialog should attach
- * it to ('amount', 'received_on', 'bank_reference'), or null for a refusal about the payment itself.
+ * it to ('amount', 'received_on', 'bank_reference', 'reason', 'accepted_amount'), or null for a refusal about the payment itself.
  */
 final class PaymentReceiptRefusedException extends RuntimeException
 {
@@ -26,6 +26,29 @@ final class PaymentReceiptRefusedException extends RuntimeException
     public const TOO_MANY_EFFECTIVE_RECEIPTS = 'too_many_effective_receipts';
 
     public const TOO_MANY_RECEIPT_ROWS = 'too_many_receipt_rows';
+
+    // Accepting a mismatch (R4a-3).
+    public const NO_EFFECTIVE_RECEIPT = 'no_effective_receipt';
+
+    public const NOTHING_TO_ACCEPT = 'nothing_to_accept';
+
+    public const ACCEPTED_AMOUNT_CHANGED = 'accepted_amount_changed';
+
+    // Correcting a receipt (R4a-3).
+    public const RECEIPT_UNKNOWN = 'receipt_unknown';
+
+    public const RECEIPT_NOT_EFFECTIVE = 'receipt_not_effective';
+
+    public const NOTHING_TO_CORRECT = 'nothing_to_correct';
+
+    public const RECEIPT_AMOUNT_CHANGE_AFTER_SETTLEMENT = 'receipt_amount_change_after_settlement';
+
+    // About the reason of an acceptance or a correction.
+    public const REASON_BLANK = 'reason_blank';
+
+    public const REASON_TOO_LONG = 'reason_too_long';
+
+    public const REASON_INVALID = 'reason_invalid';
 
     // About the amount.
     public const AMOUNT_NOT_POSITIVE = 'amount_not_positive';
@@ -49,6 +72,11 @@ final class PaymentReceiptRefusedException extends RuntimeException
     public const REFERENCE_INVALID = 'reference_invalid';
 
     private const FIELDS = [
+        self::ACCEPTED_AMOUNT_CHANGED => 'accepted_amount',
+        self::RECEIPT_AMOUNT_CHANGE_AFTER_SETTLEMENT => 'amount',
+        self::REASON_BLANK => 'reason',
+        self::REASON_TOO_LONG => 'reason',
+        self::REASON_INVALID => 'reason',
         self::AMOUNT_NOT_POSITIVE => 'amount',
         self::AMOUNT_TOO_LARGE => 'amount',
         self::CURRENCY_MISMATCH => 'amount',

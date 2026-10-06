@@ -9,6 +9,7 @@ use EasyCo\Extensibility\Hook;
 use EasyCo\Order\Contracts\OrderRepository;
 use EasyCo\Payment\Contracts\PaymentRepository;
 use EasyCo\Payment\Payment;
+use EasyCo\Pricing\Money;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
@@ -184,7 +185,21 @@ final class OrderPaymentConfirmer
         return $this->settle($paymentId, $confirmedAt, false);
     }
 
-    private function settle(string $paymentId, DateTimeImmutable $confirmedAt, bool $refuseUnreconciledReceipts): Payment
+    /**
+     * The SAME settlement once more, for the ONE other caller that may settle around receipts:
+     * PaymentReceiptRecorder::acceptMismatch() (refunds R4a-3, shipping-domain-design.md §7.2.20 §4a) —
+     * the merchant has accepted what was received, so the payment is settled for exactly $acceptedAmount
+     * and the reason is stored on it (Payment::confirm()'s own validation of the pair applies). The
+     * one-click path stays refused for a mismatching receipt; this one has its own name for the same
+     * reason confirmReconciledWithinOpenTransaction() does. Same contract: inside an open transaction,
+     * no hook, and the caller has already decided and checked the permission.
+     */
+    public function confirmAcceptedWithinOpenTransaction(string $paymentId, DateTimeImmutable $confirmedAt, Money $acceptedAmount, string $reason): Payment
+    {
+        return $this->settle($paymentId, $confirmedAt, false, $acceptedAmount, $reason);
+    }
+
+    private function settle(string $paymentId, DateTimeImmutable $confirmedAt, bool $refuseUnreconciledReceipts, ?Money $acceptedAmount = null, ?string $acceptedReason = null): Payment
     {
         // 1. The payment itself — a plain read, and deliberately the first
         //    statement, because the order to lock is only known from this
@@ -238,7 +253,7 @@ final class OrderPaymentConfirmer
 
         // 4. The domain's own guards (§4.1) — they throw before anything
         //    is written, and their LogicExceptions are not caught here.
-        $payment->confirm($confirmedAt);
+        $payment->confirm($confirmedAt, $acceptedAmount, $acceptedReason);
 
         // 5. The row.
         $this->payments->save($payment);

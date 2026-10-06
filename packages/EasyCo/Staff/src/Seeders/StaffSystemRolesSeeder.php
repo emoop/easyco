@@ -35,6 +35,7 @@ class StaffSystemRolesSeeder extends Seeder
             Permission::REFUND_CASH,
             Permission::REFUND_BANK,
             Permission::ORDER_DISCOUNT,
+            Permission::PAYMENT_RECONCILE,
             Permission::POS_OPERATE,
             Permission::POS_DISCOUNT,
             Permission::PROMOTION_MANAGE,

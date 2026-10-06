@@ -41,6 +41,8 @@ enum Permission: string
     case REFUND_BANK = 'refund_bank';
     /** give an order line a manual discount while editing an order (order-editing-design.md E5) */
     case ORDER_DISCOUNT = 'order_discount';
+    /** accept a bank transfer that is short or over as the payment's settled amount: a money decision, Administrator only (shipping-domain-design.md §7.2.20 §5) */
+    case PAYMENT_RECONCILE = 'payment_reconcile';
 
     // Point of sale
     /** take sales at the register */

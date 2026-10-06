@@ -93,6 +93,32 @@ final class RefundOperationFingerprint
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE));
     }
 
+    /** The fingerprint of "accept this mismatch" — the payment, the figure the merchant saw and the reason. */
+    public static function forAcceptance(string $paymentId, int $acceptedMinor, string $currency, string $reason): string
+    {
+        return hash('sha256', json_encode([
+            'action' => 'payment_mismatch_accepted',
+            'payment' => $paymentId,
+            'accepted' => $acceptedMinor,
+            'currency' => $currency,
+            'reason' => $reason,
+        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE));
+    }
+
+    /** The fingerprint of "correct this receipt" — everything the merchant entered. */
+    public static function forCorrection(string $receiptId, int $amountMinor, string $currency, string $receivedOn, string $reference, string $reason): string
+    {
+        return hash('sha256', json_encode([
+            'action' => 'payment_receipt_corrected',
+            'receipt' => $receiptId,
+            'amount' => $amountMinor,
+            'currency' => $currency,
+            'receivedOn' => $receivedOn,
+            'reference' => $reference,
+            'reason' => $reason,
+        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE));
+    }
+
     /** The fingerprint of "mark this OWED refund paid out" — everything the merchant entered. */
     public static function forPayout(string $refundId, \DateTimeImmutable $paidOutAt, ?string $reference, ?string $note): string
     {

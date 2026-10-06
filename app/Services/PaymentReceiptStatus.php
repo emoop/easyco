@@ -70,6 +70,12 @@ final class PaymentReceiptStatus
         return in_array($this->state(), [PaymentReceiptState::PARTIAL, PaymentReceiptState::MISMATCH], true);
     }
 
+    /** What this payment would look like if an effective receipt of $old were replaced by one of $new (a correction before settlement). */
+    public function withReceiptReplaced(Money $old, Money $new): self
+    {
+        return new self($this->expected, $this->received->subtract($old)->add($new), $this->effectiveCount, false);
+    }
+
     /** What this payment would look like with one more receipt of $amount (the live hint, the exact-match test). */
     public function withReceipt(Money $amount): self
     {

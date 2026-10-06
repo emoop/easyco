@@ -42,6 +42,7 @@ return [
         'refund_cash' => 'Refund in cash',
         'refund_bank' => 'Refund via bank',
         'order_discount' => 'Give order lines a manual discount',
+        'payment_reconcile' => 'Accept a bank transfer that is short or over',
         'pos_operate' => 'Operate the register',
         'pos_discount' => 'Apply register discounts',
         'promotion_manage' => 'Manage promotions',

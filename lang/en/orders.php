@@ -342,6 +342,7 @@ return [
     // Refunds R4a-2 (shipping-domain-design.md §7.2.20): recording a bank-transfer receipt.
     'payment_receipt' => [
         'unreconciled' => 'A transfer of :received was received for this order and has not been reconciled — accept it or record the rest first. Nothing was changed.',
+        'reconcile_denied' => 'Accepting a transfer that is short or over needs the permission to reconcile payments, which you do not have. Nothing was changed.',
         'refused' => [
             'not_bank_transfer' => 'Only a bank-transfer payment takes a receipt. Nothing was recorded.',
             'payment_settled' => 'This payment is already settled. Nothing was recorded.',
@@ -359,6 +360,16 @@ return [
             'reference_blank' => 'Enter the bank reference of the transfer. Nothing was recorded.',
             'reference_too_long' => 'The bank reference can have at most :max characters. Nothing was recorded.',
             'reference_invalid' => 'The bank reference can only hold visible text on one line. Nothing was recorded.',
+            'no_effective_receipt' => 'No transfer has been recorded for this payment, so there is nothing to accept. Nothing was changed.',
+            'nothing_to_accept' => 'The recorded transfers add up to exactly the expected amount, so there is nothing to accept. Nothing was changed.',
+            'accepted_amount_changed' => 'The amount received changed since you opened this window — it is now :received. Check it and accept again. Nothing was changed.',
+            'receipt_unknown' => 'This transfer record does not exist. Nothing was changed.',
+            'receipt_not_effective' => 'This transfer record has already been corrected; correct the newer one. Nothing was changed.',
+            'nothing_to_correct' => 'Nothing was changed in the amount, the day or the reference, so there is nothing to correct. Nothing was recorded.',
+            'receipt_amount_change_after_settlement' => 'An amount cannot be corrected after settlement; the day and the reference can. A wrong amount is put right with a refund. Nothing was changed.',
+            'reason_blank' => 'Enter a reason. Nothing was changed.',
+            'reason_too_long' => 'The reason can have at most :max characters. Nothing was changed.',
+            'reason_invalid' => 'The reason can only hold visible text on one line. Nothing was changed.',
         ],
     ],
 
