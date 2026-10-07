@@ -644,3 +644,260 @@ If the recomputed amount differs from what the customer was shown, placement **r
 - **§8**: a promotion never reduces `shippingMinor`, asserted directly.
 - Real MySQL Feature tests for each repository; a `SHOW CREATE TABLE` confirmation of the new `orders.shipping_minor` column and of the zone/method foreign keys.
 - `ShippingRateProvider` is **not** tested against a real carrier — there is none. A fake provider in the test suite proves the resolver refuses an unknown carrier code and never falls back to a default, mirroring `PaymentMethodAdapterResolver`'s own tests.
+
+---
+
+## 12. Stage 5: the admin (designed 2026-10-07; NOT built)
+
+**Status:** design only. No screen, service, migration or language file exists for this yet. Stages 1–3 are built; stage 4 (checkout integration) is not, and nothing here depends on it. §12.12 records every place the real code and this document disagreed.
+
+### 12.0 Scope, and what stage 5 delivers
+
+Built here: the merchant-facing admin of the shipping domain — **classes**, **zones** (with their ordered list and reordering), **methods** (per kind, with the class-mode switch of §12.2), the **class field on the product and variation forms**, the **"Try it" tool**, and the app-layer **writers** every write goes through. It also carries the migration of `Variation.shippingClass` from free text to class codes (§12.10) and the two admin-side warnings the queue note already requires: a visible warning when **no shipping zone exists**, and **carrier `not_configured` / repeated provider errors** surfaced in the merchant's needs-attention list rather than only in the log.
+
+Not built here (named so they are not silently assumed): price lists and the bulk-attach form (later, per the owner); weight tiers (§5/§10; the prompt's Part C decides now-or-later); CARRIER configuration (no carrier is registered in V1 — §6 — so CARRIER stays **unselectable**, §12.3.3); any goods-price change (a shipping class never changes the price of goods — §8, restated in §12.2).
+
+### 12.1 Where it lives
+
+- All screens are Filament v5 resources and pages under `app/Filament/Resources/` and `app/Filament/Pages/`, following the existing shape (a `Resource` + `Pages/{List,Create,Edit,View}`, `AuthorizesViaStaffPermission`, `getNavigationGroup()` returning a `NavigationGroup` case).
+- A new **`NavigationGroup::SHIPPING`** case is added between `CATALOG` and `SALES` — the enum's own docblock already names `Shipping` as the next group, and adding a case is the whole mechanism. Shipping is its own domain with its own screens; it belongs in neither Catalog (it is not a product attribute) nor Admin (it is not a system setting).
+- Every **read** goes through the existing domain readers — `EasyCo\Shipping\Matching\ZoneMatcher`, `EasyCo\Shipping\Rating\ShippingRateCalculator`, `PostcodeNormalizer`, and the app's `SettlementNormalizerResolver` — never re-implemented. Every **write** goes through a new app-layer service (§12.6).
+
+
+### 12.2 How classes act on a price — REPLACE and ADJUST (owner decision, final)
+
+§3.1's rule — *the most expensive class wins, never a sum* — **stays**, and stays the default. But the owner's own example cannot hold under it: a base of 5.00 with a classless item and an item in a class meant as a *discount* must charge less than 5.00, and replacement can only ever charge the highest per-line rate (the classless line's 5.00 fallback) — never a sum, never a subtraction. Money is signed nowhere today either: a negative class rate is **refused at construction** (`InvalidShippingMethodException::invalidClassRate` — verified, §12.12 test 6). So the field that decides how a class acts is new, with exactly two modes:
+
+- **REPLACE** — today's behaviour, unchanged, the default for every existing method. A `PER_CLASS` method charges the single highest of the per-line rates (§3.1); the class rate *replaces* the base; class rates are **non-negative** (the existing invariant).
+- **ADJUST** — new. A `PER_CLASS` method charges its base `amountMinor` **plus the signed delta of every DISTINCT class present in the cart**, each such class added **once whatever its quantity**; the sum is then floored at 0. A line with no class, or a class with no rate on this method, contributes nothing (the base is the base; no fallback bids in this mode). Class rates here are **signed** deltas.
+
+  Example (the owner's): base 5.00, one item in class `heavy` (+25.00) and one in `discount` (−3.00) charges `500 + 2500 − 300 = 2700` minor = 27.00. Adding a classless item still charges 27.00; a cart with only a classless item charges the base, 5.00.
+
+**The free-shipping threshold still applies to both modes and still wins:** when `freeAboveMinor` is set and `goodsAfterDiscountMinor >= freeAboveMinor` the charge is 0 whatever the classes (§5.1; verified for REPLACE in §12.12 test 3 — a threshold over a heavy class gives 0). The floor at 0 in ADJUST concerns only the delta sum; the threshold is a separate, later rule.
+
+**A shipping class never changes the price of goods.** The owner's "or the shirt's price drops by 3 EUR" is a catalogue or promotion matter (`promotions-domain-design.md`, and §8 here) and is explicitly out of scope: a class rate is a shipping-price adjustment and nothing else.
+
+**The domain change.** A new enum `EasyCo\Shipping\Enums\ShippingClassMode` (`REPLACE = 'replace'`, `ADJUST = 'adjust'`); a new `classMode` field on `ShippingMethod` (default `REPLACE`) with `classMode()`; a new column `shipping_methods.class_mode` (`string(32) NOT NULL DEFAULT 'replace'`). The per-kind invariants gain one rule: **a mode other than REPLACE is allowed only on `PER_CLASS`** (FLAT/FREE/CARRIER have no class rates and so no mode) — otherwise refused with a new `InvalidShippingMethodException` message. Class-rate validation branches on the mode: **non-negative in REPLACE** (unchanged), **signed within `MoneyInput`'s bounds** (§12.7) **in ADJUST**. The deterministic `ksort(SORT_STRING)` of `classRates` is unchanged.
+
+**The calculator branch.** `ShippingRateCalculator` stays pure and gains one private method; `perClassCharge()` chooses by `$method->classMode()`: REPLACE → the existing `max()` over lines, untouched; ADJUST → `max(0, amountMinor + Σ deltas of the distinct present classes)`. It reads only the method and the request it already has; no new dependency. `null`/blank classes and unknown class codes contribute nothing in ADJUST, exactly as the "once, whatever the quantity" rule says.
+
+**The summary sentence says the mode** (§12.4): an ADJUST method reads `5.00 EUR; Heavy +25.00 EUR; Discount −3.00 EUR; free from 100.00 EUR`; a REPLACE one reads `5.00 EUR; Heavy 30.00 EUR; free from 100.00 EUR`.
+
+**Migration.** `2026_10_07_000001_add_class_mode_to_shipping_methods_table.php` adds the column `default('replace')` — a pure add, no add-first/drop-last needed. **Every existing method is REPLACE**, byte-for-byte its current behaviour, so no rate row and no test changes.
+
+**Cache and handle (§6.5, §6.7).** A mode change changes a method's **amount**, and that is the whole invalidation: the offered list is never cached (only carrier answers and handles are), so the next `ShippingQuoteService::offers()` recomputes in the new mode, and a handle issued before the change binds the old amount so `verify()` **fails on the amount** — exactly the designed refusal (§9, stage 4's recompute-and-refuse). The admin writes flush **nothing**; §12.6 states the obligation exactly.
+
+
+### 12.3 The screens
+
+Every screen is **compact, one phone-friendly column** by default (a single-column schema; the only wide element is a class-rate repeater table), **bg + en**, with **no severity colours** (facts and counts, never red/green judgements), and **explicit dialog button labels** (never bare "Изпрати"/"Откажи"). Any write is an **Actions dropdown** (`ActionGroup`, the pattern `OrderResource` uses) of explicitly-labelled actions.
+
+#### 12.3.1 Shipping classes (`ShippingClassResource`)
+
+- **List** (compact table): `code`, `name`, `description` (truncated), and a **usage count** — how many variations and how many method rates reference the code (one reader, §12.4, so the two numbers have one home). Row → View; Edit and Delete via an Actions dropdown.
+- **Create / Edit**: `name` (required, ≤ `ShippingClass::NAME_MAX_LENGTH`), `code` (required on create, **immutable after** — the entity has no setter and a variation refers to it, §3; shown read-only on edit with a hint that it cannot change), `description` (optional PlainText). The code field validates against `ShippingCode::isValid` (`^[a-z0-9]+(?:[_-][a-z0-9]+)*$`, 1–64) and rejects a duplicate with the domain's own `ShippingClassCodeAlreadyExistsException` translated, never a raw SQL error.
+- **Delete**: refused by the app layer when the class is in use — any `catalog_variations.shipping_class` equal to the code, or any `shipping_method_class_rates` row for it — with a translated message naming the counts (the FK `ship_class_rates_class_code_foreign` is the DB backstop, `restrictOnDelete`). A class has no active flag, so there is no "deactivate instead" for it; the merchant detaches the variation(s) / removes the rate(s) first (§12.6, Part C item 7).
+
+#### 12.3.2 Shipping zones (`ShippingZoneResource`)
+
+- **List = the ordered list, because the order IS the rule** (§4: check order is the match order). Columns: an order affordance, `name`, the **one-sentence coverage summary**, and the country codes. Rows are ordered `sortOrder ASC, id ASC` (`ShippingZoneRepository::allOrdered()`, unchanged).
+- **Reordering**: **"Move up" / "Move down" row actions**, each calling a `ShippingZoneReorderer` service that swaps the two neighbours' `sortOrder` (rewriting the affected values to a dense 0..n−1 sequence in one transaction, one audit entry, hook after commit). *Deliberately not Filament's built-in table/column drag-reorder* (`->reorderable()`): that mass-updates the column outside the service layer, which would break §12.6's "every write is one audited service call", and a drag handle is poor on a phone. Buttons are also clearer about what "the order is the rule" means. (No such drag-reorder exists in this codebase today — verified; only `Repeater`/`FileUpload` reorder is used.)
+- **Create / Edit**: `name` (required, ≤255); `sortOrder` (a non-negative bounded integer, default = "last"; the service may also just append — see the reorderer); **countries** (a required multi-select from `App\Settings\CountryNames`, storing uppercase ISO-2 codes — the same list the address country Select uses); **settlement names** (a `TagsInput`/repeater of trimmed non-empty strings, stored **as entered**); **postcodes** (a `TagsInput`, validated/normalised to `^[A-Z0-9-]{2,12}$`). An empty list means "no narrowing" and stores `null` (the entity does this itself).
+- **The matcher's own normalisation is SHOWN, not re-implemented**: under the settlement and postcode fields, a small live preview runs the **same** `SettlementNameNormalizerResolver::forCurrentLocale()` and `PostcodeNormalizer::normalize()` the match uses, so the merchant sees `гр. София → софия` and `sw1a 1aa → SW1A1AA` exactly as the matcher will compare them. The field stores what was typed; only the preview normalises.
+- **Delete**: refused while the zone has any method (FK `ship_methods_zone_id_foreign`, `restrictOnDelete`); the message points the merchant at deactivating the zone's methods. A zone has no active flag today (Part C item 7).
+
+
+#### 12.3.3 A zone's methods (`ShippingMethodResource`, scoped to a zone)
+
+- **List (compact table)**: `active` toggle (an inline action, one write, §12.6), `name`, `kind`, the **one-sentence summary** (§12.4), `requiresPickupPoint`, and reorder via the same **Move up / Move down** actions (`ShippingMethodReorderer`, per zone). "Add method" → the method editor. The zone's own page carries this table (a repeated "methods" `RelationManager`/embedded table), so the merchant configures methods in the context of the zone whose order decides them.
+- **Method editor, by kind**:
+  - common: `name` (required, ≤255), `kind`, `isActive` (toggle), `requiresPickupPoint` (toggle), `sortOrder`.
+  - **FLAT**: `amountMinor` (required, money) and `freeAboveMinor` (optional, money).
+  - **FREE**: nothing but the common fields — explicitly no amount and no threshold (`freeAboveNotAllowed` on a FREE method is the domain's own refusal, surfaced translated).
+  - **PER_CLASS**: `amountMinor` (the base/fallback, required), `freeAboveMinor` (optional), the **`classMode` select** (REPLACE / ADJUST, §12.2), and a **class-rate table** — a `Repeater` (the codebase's bulk-vs-per-row convention) of `class` (a Select of class codes) → `amount` (a MoneyInput; **signed** in ADJUST, **non-negative** in REPLACE). The base is the fallback for a classless line and for a class with no rate.
+  - **CARRIER**: **unselectable** — no carrier is registered in V1 (§6), so the kind Select offers FLAT/FREE/PER_CLASS only. A CARRIER method that already exists (stage-1 data or a future extension) renders read-only with "carrier not configured" and is not editable here.
+- The class Select on the rate table and in the product forms read the class list by **code** (§12.3.4), so a rate can only name a class that exists.
+
+#### 12.3.4 The class field on the product and variation forms (§3.2)
+
+§3.2's route stands: a SIMPLE product carries its shipping values on its **single variation**, and the SIMPLE form writes to that variation's fields — one storage shape for both product types, no second source of truth. So the field is added in **two** places, both reading the class list:
+
+- `EditVariableProduct` / `CreateVariableProduct`: a `shipping_class` Select **in the per-variation rows** (the existing `existing_variations` / `new_variations` repeaters, reusing their bulk/per-row pattern), listing class codes+names.
+- `ProductResource` (SIMPLE): a `shipping_class` Select on the Price & Stock tab (the note's own "a third pair drops in verbatim"), writing to the single variation.
+
+The field is **required** (owner decision, carried here): a product/variation must name a class. Because "no class = a normal supported state" (§3) and this reverses it, "required" must not retroactively break existing data — see §12.10 (the migration seeds/assigns a class so every existing variation has a valid code before the field is made required).
+
+#### 12.3.5 The overview and the "Try it" tool (`ShippingOverview` page)
+
+- **Overview**: a read-only page in the Shipping group that states, in one place, whether the shop is configured — the count of zones, the count of active methods, and a **visible warning when there are no zones at all** (the queue note's requirement: today a store with no zone refuses every quote with `no_zone_for_destination`, and nothing tells the merchant why). A link to the needs-attention list, where carrier `not_configured` and repeated provider errors also appear (§12.0).
+- **"Try it"** — the debugging tool the owner asked for. Inputs: an **address** (country, settlement, postcode, pickup-point yes/no) and a **cart** (goods total after discount, plus lines each with an optional class). It shows the **matched zone** (or the `no_zone_for_destination` refusal) and **each of that zone's active methods with its price**, computed through the **REAL** `ZoneMatcher` and `ShippingRateCalculator` — no second implementation.
+  - It cannot reuse `ShippingQuoteService` directly: that service takes a `Cart` (§6.7), a real cart is not built for a hypothetical address, and running a real carrier would spend the merchant's quota. So a thin new **`ShippingTester`** app service composes the same pure pieces — `SettlementNormalizerResolver::forCurrentLocale()` → `ZoneMatcher` over `ShippingZoneRepository::allOrdered()` → `ShippingMethodRepository::forZone(zone, activeOnly: true)` → `ShippingRateCalculator` over a `RateRequest` built from the entered goods and `RateLine`s. It **issues no handle and writes nothing**. A local kind shows its price; a CARRIER method shows "needs a carrier quote" (the tester does not call carriers in 5a — calling a live carrier from the admin is a later addition, and it would be the same `CarrierQuoteCache` path if added).
+  - The tester SHOWS the destination as the matcher sees it (the normalised settlement and postcode), so the merchant understands why a zone did or did not match — the same normalisation the zone editor previews (§12.3.2).
+
+
+### 12.4 The readable summary — one reader, one sentence
+
+For every method, **one generated sentence**, built from the **same domain readers** the calculator uses (`kind()`, `amountMinor()`, `classRates()`, `freeAboveMinor()`, `classMode()`) plus `ShippingClassRepository` for the class **names** — never duplicated arithmetic in a form. It is shown on the zone's method table and the method list, so a merchant reads what a method will do without opening it. Shapes (money in the store currency, class names from the class list, the mode stated):
+
+- FLAT `5.00 EUR` / FLAT+threshold `5.00 EUR; free from 100.00 EUR`
+- FREE `Free`
+- PER_CLASS REPLACE `5.00 EUR; Heavy 30.00 EUR; free from 100.00 EUR`
+- PER_CLASS ADJUST `5.00 EUR; Heavy +25.00 EUR; Discount −3.00 EUR; free from 100.00 EUR`
+- CARRIER `Carrier: <code> · not configured`
+
+One reader class (e.g. `ShippingMethodSummaryReader` in `app/`), read-only, used by the zone card, the method list and the "Try it" results — the single place the sentence is assembled.
+
+### 12.5 Copying a method to other zones
+
+The owner has ONE courier per zone but MANY zones; the same Econt method must exist in each. The design offers a **"Copy to zones…" action** on a method (`ShippingMethodCopier`): the merchant picks one or more target zones, and for each the service creates a **new method** with the same `kind`, `name`, `amountMinor`, `classRates`, `freeAboveMinor`, `classMode` and `requiresPickupPoint`, appended at the end of the target zone's order. Origin and copies are **independent rows from creation** — no link, no drift to keep: each is edited on its own, which is the honest model when a zone's price is allowed to differ.
+
+- A one-name-per-zone rule is **not** enforced (two zones may both carry "Econt"; a method is identified by id, not by name).
+- Copying needs no class check beyond the domain's own (classes are global), but it still saves through `ShippingMethodRepository`, so an unknown class code is refused by `UnknownShippingClassException`.
+- Part C item 2 asks whether a **per-zone price table on one method** beats duplicate rows. The recommendation (in the reply) is **duplicate rows + this copy action**: it needs **no domain change** (a method already keys to one zone), leaves the calculator and the quote cache untouched, and matches how the merchant thinks ("this courier, these prices, in this zone"). A shared method with a price table is a real domain change (a new table, a precedence rule, a migration) and is deferred unless the owner asks for it.
+
+
+### 12.6 Writes: services, audit, hooks, permissions
+
+**Services, never forms.** Every write is one call to an app-layer service; no Filament form or table writes a shipping row itself (the rule `performance-and-channel-strategy.md` states for the whole admin). The services:
+
+| Service | Does | Audit (one entry) | Hook after commit |
+|---|---|---|---|
+| `ShippingClassWriter` | create / rename+describe / delete | created / updated / deleted snapshot | `shipping.class.created`, `shipping.class.updated`, `shipping.class.deleted` |
+| `ShippingZoneWriter` | create / update / delete | created / updated / deleted snapshot | `shipping.zone.created`, `shipping.zone.updated`, `shipping.zone.deleted` |
+| `ShippingZoneReorderer` | move up / move down (dense 0..n−1) | one `reordered` entry naming the two zones | `shipping.zone.reordered` |
+| `ShippingMethodWriter` | create / update / delete / toggle active | created / updated / deleted snapshot | `shipping.method.created`, `shipping.method.updated`, `shipping.method.deleted` |
+| `ShippingMethodReorderer` | move up / move down, per zone | one `reordered` entry | `shipping.method.reordered` |
+| `ShippingMethodCopier` | copy a method to zones | one entry per created copy | `shipping.method.created` (per copy) |
+
+Each service **validates through the domain entity** (construct/`update` the `ShippingClass`/`ShippingZone`/`ShippingMethod`; the entity throws its `Invalid…Exception`), maps those to **translated** field errors, saves through the repository (which owns its transaction and the `UnknownShippingClassException` / `ShippingClassCodeAlreadyExistsException` mapping), writes **exactly one** history/audit entry, and fires **one hook after commit**. All app-layer; no `EasyCo\Shipping` class calls a hook or the container (§2 of `extensibility-design-and-hooks.md`).
+
+- **Audit**: `App\Services\ActivityLogger`, entity types `shipping_class` / `shipping_zone` / `shipping_method`. Create → `logCreated`; delete → `logDeleted` (a JSON snapshot — the established "one row carries the whole operation" shape). **Update → one `logFieldChanged` with `field = null`** and `old_value`/`new_value` holding compact JSON snapshots before/after — the table's `field` column is nullable (verified), and this yields **one entry per write** (the owner's rule) without inventing a new logger method. The actor is resolved inside `ActivityLogger` from the panel guard, so a console/seeded write records a null actor as everywhere else.
+- **Hook after commit**: fires **after** the repository's transaction commits, never inside it, mirroring `order.*` "after commit" (`extensibility-design-and-hooks.md` §3). No listener is registered (extension points only), and each gets a **Hook Reference row in the same commit** (that document's own standing rule).
+- **Permissions**: one new permission **`Permission::SHIPPING_MANAGE = 'shipping_manage'`**. Every Shipping screen's `viewAny`/`create`/`edit`/`view`/`delete` uses it. Default roles (`StaffSystemRolesSeeder`): **Administrator** and **Manager** granted; **Product Entry** not. *The class **Select** on the product/variation forms must NOT require `SHIPPING_MANAGE`* — a Product Entry staffer builds products and must pick a class — so that Select reads the class list through a read path gated by `PRODUCT_MANAGE` (codes+names are not sensitive), never the shipping screens' permission.
+- **Refusal of deleting what is in use** (never a silent cascade into history): a **class** used by any variation or rate, and a **zone** with any method, are refused with a **translated** message naming the count; the merchant **deactivates** instead (methods have the active toggle; zones/classes have none today — Part C item 7). A **method** may be deleted (its class-rate rows cascade; no order references it). The queue note's "no delete … application-layer deletability check and an archive-versus-delete decision" is thereby answered.
+- **Retroactive safety**: a placed order stores its **own snapshot** — `orders.shipping_minor`, `orders.shipping_method_name`, `orders.shipping_method_code` (`2026_10_02_000011`) — and references **no** zone/method row by FK. So editing or deleting a zone/method/class **never changes a placed order**. (Quotes differ: the offered list is not cached, so the next quote reflects the change, and a handle issued before it fails on the amount by design — §12.2.)
+- **Quote-cache / handle obligation (exact).** The admin writes flush **nothing**. Reasons, verified against the code: `ShippingQuoteService::offers()` recomputes the zone, the methods and every amount on every call and caches none of it; only `CarrierQuoteCache` (keyed by carrier + `ShippingContext`, not by method config) and `QuoteHandleStore` (keyed by the token) hold cache entries. A zone/method/class edit is therefore picked up by the very next quote; a handle already issued binds the old amount, so `verify()` returns false on the amount and stage 4 refuses — the intended behaviour, not a bug. The only thing the admin owes the merchant is the note in the UI (§12.8 help) that a price change can make an in-flight quote refuse at checkout within the 10-minute handle window.
+
+
+### 12.7 Input limits and rules (every field), and the query budget
+
+Input security is a standing rule: every field is bounded before it reaches the domain, and the domain's own limits are the source of truth, not a looser form rule.
+
+| Field | Rule / limit (source) |
+|---|---|
+| class `code` | `^[a-z0-9]+(?:[_-][a-z0-9]+)*$`, 1–64 (`ShippingCode::MAX_LENGTH`); immutable after create; `max:64` on the field |
+| class `name` | required, trimmed, 1–255 (`ShippingClass::NAME_MAX_LENGTH`); `max:255` |
+| class `description` | optional PlainText (no HTML); DB `text`; bound the form at a sane length (e.g. 1000) |
+| zone `name` | required, trimmed, 1–255 (`ShippingZone::NAME_MAX_LENGTH`); `max:255` |
+| zone `sortOrder` | integer, non-negative, bounded (`unsignedInteger` column; e.g. 0–100000); the entity refuses a negative |
+| zone `countryCodes` | a **non-empty** list of unique uppercase ISO-2 codes, each from `CountryNames` (the `KnownCountryCode` list); a multi-select, so nothing outside the list can be stored |
+| zone `settlementNames` | trimmed, non-empty, **unique** strings, stored as entered; each ≤255; **count bounded** (e.g. ≤500) so the JSON stays bounded |
+| zone `postcodes` | normalised to `^[A-Z0-9-]{2,12}$` (`PostcodeNormalizer` + `ShippingZone`); each input pre-checked ≤20 chars; **count bounded** (e.g. ≤500); duplicates after normalisation refused |
+| method `name` | required, trimmed, 1–255 (`ShippingMethod::NAME_MAX_LENGTH`); `max:255` |
+| method `kind` | one of FLAT/FREE/PER_CLASS (CARRIER unselectable); the entity's per-kind invariants decide which fields are allowed |
+| method `sortOrder` | integer, non-negative, bounded (`unsignedInteger`) |
+| method `isActive`, `requiresPickupPoint` | booleans |
+| method `amountMinor` | required for FLAT/PER_CLASS; **money** via `MoneyInput` (≤32 chars, ≤9 integer digits, the currency's decimals); integer minor units; never negative |
+| method `freeAboveMinor` | optional money, same limits; refused on a FREE method |
+| method `classMode` | REPLACE / ADJUST; ADJUST **only** on PER_CLASS |
+| method `classRates` | a list of `{class_code, amount}`; `class_code` must exist (repository check); `amount` is **money** — **non-negative in REPLACE**, **signed in ADJUST**, both within `MoneyInput`'s bounds; duplicate codes refused by the table's primary key and the domain |
+| method `carrierCode` | CARRIER only (not settable here); `^[a-z0-9_-]{1,64}$` |
+| tester cart | goods total: money (≥0, `MoneyInput` bounds); lines: class code (optional) + quantity (integer ≥1, bounded e.g. ≤9999) |
+| tester address | country from `CountryNames`; settlement ≤255; postcode ≤20 |
+
+**Query budget (per screen render).** The point is to avoid N+1 on the lists, exactly as the Orders list was fixed (`AuthorizesViaStaffPermission`'s docblock).
+- Zones list: **1** query for the zones (`allOrdered()`) + **1** grouped query for their methods, + **1** for usage counts if shown — the reorderer and the summary reader must batch, never one query per zone.
+- Zone editor: 1 for the zone; 1 for its methods + 1 for their rates (`EloquentShippingMethodRepository::forZone()` already reads rates in one query); the class list is read once per request.
+- Method editor: 1 for the method + 1 batched for its rates + 1 for the class list.
+- Classes list: 1 for the classes + 1 grouped query for the two usage counts.
+- "Try it": 1 for zones, 1 for the matched zone's methods, 1 for their rates, 0 writes.
+A regression test asserts a **bounded** query count on each list (a fixed ceiling, the pattern the Orders list's own test uses), so a future per-row reader fails the suite.
+
+
+### 12.8 Help anchors (the screens link to these; the text is the owner's reviewer's)
+
+Help lives in a **new tab**, stable anchors, in `resources/help/{en,bg}/shipping.md`, registered as a `HelpTopics` topic `shipping`, each linked from the screen or dialog through `HelpLink::append(..., '<anchor>')` / `HelpLink::component('<anchor>')`. The anchors (snake_case names; `HelpLink::anchor()` turns `zone_editor` into `action-zone-editor`):
+
+`shipping_overview`, `zone_editor`, `zone_order`, `zone_settlement_matching`, `method_editor`, `method_class_mode`, `method_replace`, `method_adjust`, `method_free_above`, `class_editor`, `class_delete_blocked`, `product_class_field`, `try_it`, `method_copy`.
+
+No anchor text is written here. `HelpPageTest`'s existing completeness check gains a shipping pass (every screen anchor has a section in both locales).
+
+### 12.9 Staging (small, separately reviewable prompts) and the test plan
+
+Each stage is its own prompt with scope, files and "must not touch", and its own tests. **Cheap-safe** marks the stages needing no judgement beyond the brief.
+
+- **5a — read-only overview + "Try it" (cheap-safe).** Scope: `NavigationGroup::SHIPPING`, the `ShippingOverview` page (counts + the "no zones" warning), the `ShippingTester` service, the "Try it" screen, `ShippingMethodSummaryReader`, a `shipping` help topic skeleton with the anchors above, `lang/{en,bg}/shipping.php`. Files: `app/Filament/Pages/…`, `app/Services/{ShippingTester,ShippingMethodSummaryReader}.php`, `resources/help/*`, lang. Tests: the tester returns the **real** calculator's numbers for the owner's scenarios (§12.12), a `no_zone` destination is refused with a reason, no writes. **Must not touch** the domain package, the quote service, migrations.
+- **5b — classes CRUD + the class field on product/variation forms.** Scope: `ShippingClassResource` (+pages), `ShippingClassWriter`, the `shipping.class.*` hooks + Hook Reference rows, the class Select on `ProductResource` and the variation repeaters, the "required" rule. Files: `app/Filament/Resources/ShippingClassResource*`, `app/Services/ShippingClassWriter.php`, the two product form pages, lang. Tests: create/rename/duplicate-code/delete-blocked; the field is required; an unknown code cannot be stored. **Must not touch** zone/method code.
+- **5c — zones.** Scope: `ShippingZoneResource` (+pages), `ShippingZoneWriter`, `ShippingZoneReorderer`, hooks, the matcher-normalisation preview. Files under `app/Filament/Resources/ShippingZoneResource*`, `app/Services/Shipping*.php`, lang. Tests: create/update/narrowing round-trips; the reorderer rewrites a dense order and writes one audit entry; delete blocked while methods exist.
+- **5d — methods (carries the ONLY domain change).** Scope: `ShippingMethodResource` (the zone's method table + editor), `ShippingMethodWriter`, `ShippingMethodReorderer`, `ShippingMethodCopier`, and the **domain** change of §12.2: the `ShippingClassMode` enum, the `ShippingMethod` field + invariants, the `class_mode` column migration, the calculator branch and its tests. Tests: per-kind validation; REPLACE unchanged (byte-for-byte); ADJUST's `base + once-per-distinct-class`, floored at 0, threshold still wins; CARRIER unselectable; copy creates independent rows.
+
+**Dependency notes:** 5b/5c/5d's screens are independent, but 5d carries the only domain change and 5b makes the class field required, so the domain change + migration land with 5d and the "required" flip with 5b, each in its own commit. 5a is read-only and can precede all three.
+
+**Test plan, named after the rules** (so a future "fix" to a rule fails loudly):
+- `...the_most_expensive_class_wins_not_the_sum` (REPLACE, unchanged, §3.1).
+- `...adjust_adds_each_distinct_class_once_regardless_of_quantity`.
+- `...adjust_total_is_never_below_zero`.
+- `...the_free_threshold_wins_over_a_heavy_class`.
+- `...the_threshold_is_measured_after_the_discount` (§5.1).
+- `...a_narrower_zone_above_the_broad_one_matches_first` (§4).
+- `...an_inactive_method_is_not_offered`.
+- `...a_placed_order_does_not_change_when_its_method_is_edited_or_deleted` (snapshot).
+- `...every_write_writes_exactly_one_audit_entry_and_fires_its_hook_after_commit`.
+- `...a_class_or_zone_in_use_cannot_be_deleted`.
+- `...reordering_the_zones_rewrites_the_match_order`.
+
+
+### 12.10 The `Variation.shippingClass` migration (free text → codes) and the "required" rule
+
+Today `catalog_variations.shipping_class` is a nullable `string` holding **free text** (`2026_08_23_000006`, line 55 — no length limit, nothing normalised), and `Catalog\Variation::setShippingClass()` accepts any `?string`. The rate calculator compares it **exactly** to a class-rate key, so an unknown or mis-cased value silently falls back (verified — §12.12 table). Two things change when the class field becomes real:
+
+1. **The field is a Select of codes** (§12.3.4), so from stage 5b the admin can only write a real class code. The **column and the entity stay free text** (a code is a plain cross-domain value, §3 — `Catalog` must not depend on `Shipping`), so the *domain* does not change; the **admin** is what guarantees a valid code. (A stricter option — validating the code inside `Variation` — is **rejected**: it would make Catalog depend on Shipping, breaking the cross-domain rule.)
+2. **A data migration** (a one-off console command, the `BackfillPickupCountry` precedent) maps existing free-text values, guarding the "required, but existing rows have none" trap:
+   - a value already matching a class code → kept;
+   - a value matching a class **name** (case-insensitively) → rewritten to that class's code;
+   - a value matching nothing, or `NULL` → assigned the shop's **default class** (a class the merchant names, e.g. `standard`), or left `NULL` and **listed as a warning**. Because "no class is a normal state" (§3) but the owner wants the field required, **the merchant reconciles the two** by assigning the listed variations; only once none remain does "required" match the stored data. The command **never invents a code** from an unknown value (per CLAUDE.md rule 6, DDL is not transactional — it refuses to guess).
+
+Until a value is a real code it still falls back to `amountMinor`, exactly as §5.2 says.
+
+### 12.11 Decisions left to the owner (recorded here; the reply carries options, recommendation and cost)
+
+These are **not** decided in this document — each is the owner's; the design above assumes only the class-mode decision (§12.2, already given):
+1. **The same courier in many zones** — duplicate methods + copy (§12.5, recommended) vs a per-zone price table on one method (a domain change).
+2. **Weight tiers** — now or later; the source is `Variation.weightGrams` (grams); a new `WEIGHT` kind per §5/§10.
+3. **Availability period** — two nullable `from`/`until` dates or the on/off toggle only (the owner says the toggle suffices).
+4. **Free-above vs classes** — the threshold wins today (§12.2); whether a specific class may be *excluded* from free shipping is open.
+5. **What the customer sees** — "Free" vs a price, and the "add X more for free shipping" message (§5.1): who computes it (the storefront, from the same `goodsAfterDiscountMinor` basis) and where it is shown.
+6. **Zone/class deactivation** — neither has an active flag today (only a method does), which is why only methods are "deactivated instead of deleted".
+
+
+### 12.12 What the real code says — verified findings and every contradiction with this document
+
+Reconnaissance against the code as it stands (2026-10-07), with the exact observations. **No contradiction was silently resolved in favour of either side.**
+
+1. **No shipping admin exists yet.** `app/Filament/` has no shipping resource or page; the only shipping-aware screens are the order page (which reads `orders.shipping_method_name`/`shipping_minor`) and the refund dialogs. There is **no service that writes a zone, method or class** — only the three `EloquentShipping…Repository` classes implement `save()`, and nothing in `app/` calls them. §12.6's services are genuinely new.
+2. **No shipping permission and no shipping navigation group.** `Permission` has no shipping case; `StaffSystemRolesSeeder` seeds none; `NavigationGroup` has only CATALOG/SALES/ADMIN (its docblock names Shipping as a *future* case). §12.1/§12.6 add both.
+3. **`ZoneMatcher` and the calculator are exactly as the document says** — verified by running them (table below). No contradiction.
+4. **The calculator contradicts the OWNER'S shown example, not the document.** §3.1 "most expensive wins, never a sum" is exactly what the code does, and a negative class rate **cannot even be constructed** (`InvalidShippingMethodException::invalidClassRate` — the docs call negative rates invalid; the code enforces it at construction). That is why §12.2 adds a *new* field rather than changing §3.1: the owner's `base 5.00 + discount −3.00 = 2.00` is unreachable under REPLACE, and this is the single most important finding for the class-mode work.
+5. **`freeAboveMinor` on a CARRIER method** is still open in code as in the document (`ShippingRateCalculator` deliberately does not apply the threshold to CARRIER; §6 says the same). No contradiction — but it means the editor's threshold field is FLAT/PER_CLASS only (§12.3.3).
+6. **`Variation.shippingClass` is still free text and unlimited** (`2026_08_23_000006:55`, `Variation::setShippingClass()`): no length limit, no list, nothing normalised — the document's §3.2 says so; the code confirms it, so §12.10 is a real migration, not a formality.
+7. **Orders store a snapshot, not a reference** (`2026_10_02_000011`; `EloquentOrderRepository:30-32`): editing/deleting a method cannot change a placed order. Confirms §12.6's retroactive-safety claim.
+8. **The quote cache holds only carrier answers** (`CarrierQuoteCache`, keyed by carrier + `ShippingContext`) **and handles** (`QuoteHandleStore`, keyed by the token, binding cart/method/amount/currency/service/pricing-hash). The offered list is computed fresh each call, so §12.6's "flush nothing" is correct — verified by reading `ShippingQuoteService::offers()` (it builds `QuoteOffers` every call) and both cache classes.
+9. **The pricing hash does NOT include a method's own amount** (`ShippingQuoteService::pricingHashFor()` hashes destination/zone/goods/currency/lines/promotion only). Its job is the handle's amount binding, so this is by design — a config change is caught by the **amount** check, not the hash. Stated so nobody "fixes" the hash to include the price.
+10. **`SettlementNameNormalizer` exists and is container-bound per locale** (`ShippingServiceProvider` binds `…neutral` and `….bg`; `SettlementNormalizerResolver` picks by `StoreLocale`), so §12.3.2's preview reuses it directly — no second normaliser.
+11. **No table drag-reorder exists in this codebase** (only `Repeater`/`FileUpload` `->reorderable()`; no `TextColumn::reorderable()`), which is why §12.3.2 uses audited move-up/down service actions rather than Filament's built-in table reorder.
+12. **`activity_logs.field` is nullable** (`2026_09_17_000001:34`), which is what lets §12.6 write one entry per update with a JSON snapshot in `old_value`/`new_value` and `field = NULL`.
+13. **This document's OWN status line (line 3) contradicts the code.** It still reads "*stage 2 … is in progress; stages 3–5 are not started*", but stages 3a–3d are built (the `ZoneMatcher`, the calculator, `SettlementNameNormalizer`, the quote service/endpoint and the `shipping.quotes` hook all exist and are tested) and stage 2 is built (`orders.shipping_minor`). The queue note's own final bullet already records this as a pending "docs pass" ("the status line ('not yet implemented'), the settlement-matching addendum to §4, and the product-form note need a docs pass"). Printed here so it is not mistaken for a live contradiction of §12; updating it is that docs pass, not this design.
+
+**Tested scenario table (run against the real `ShippingRateCalculator` + `ZoneMatcher`; minor units; EUR):**
+
+| Scenario | Input | Result (real code) |
+|---|---|---|
+| (a) FLAT 5.00, freeAbove 100.00, after discount | goods 99.99 / 100.00 / 100.01 | **500 / 0 / 0** (the `>=` threshold; 100.00 exactly is free) |
+| (b) PER_CLASS heavy=30.00, classless base=5.00, one cart | lines `heavy`, `null` | **3000** (most expensive wins — REPLACE) |
+| (c) threshold 100.00 above a heavy class 30.00 | PER_CLASS heavy, goods 120.00 | **0** (the threshold overrides the class) |
+| (d) narrower zone above the broad one | Sofia zone sort 0 `{BG,[София]}` over Bulgaria sort 1 `{BG}`; dest Sofia / Varna | **Sofia-city** / **Bulgaria** |
+| (e) inactive method | one inactive FLAT | **not returned** by `ratesFor()` (0 methods) |
+| owner's REPLACE example | base 5.00, a −3 class | a negative rate is **refused at construction**; a positive 3.00 class + classless line charges **500** (base) |
+
+This table is the acceptance fixture for 5a's "Try it" tests and for 5d's calculator tests.
+
