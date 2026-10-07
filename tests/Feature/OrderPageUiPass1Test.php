@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Filament\Resources\OrderResource;
 use App\Filament\Resources\OrderResource\Pages\ViewOrder;
+use App\Services\OrderStatusChanger;
 use App\Services\PaymentReceiptRecorder;
 use DateTimeImmutable;
 use EasyCo\Order\Enums\OrderStatus;
@@ -18,6 +19,7 @@ use EasyCo\Staff\Persistence\Eloquent\StaffModel;
 use EasyCo\Staff\Role;
 use EasyCo\Staff\Staff;
 use Filament\Actions\ActionGroup;
+use Filament\Actions\Testing\TestAction;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\App;
 use Illuminate\Support\Facades\DB;
@@ -130,6 +132,87 @@ class OrderPageUiPass1Test extends TestCase
 
             foreach ($this->actionsByName() as $name => $action) {
                 $this->assertSame(__('orders.modal.close'), $action->getModalCancelActionLabel(), "{$name} ({$locale})");
+            }
+        }
+    }
+
+    /**
+     * The three dialogs of this page that the header menu does NOT hold: §10 stage 4b-ii moved the edit button
+     * into the items section's own header, and the two refund buttons sit on a refund's own row. They are the
+     * other half of "every dialog on the order page has buttons that say what they do".
+     */
+    private const DIALOGS_OUTSIDE_THE_MENU = [
+        'edit_order' => ['Запази редакцията', 'Save the edit'],
+        'mark_refund_paid_out' => ['Запиши изплащането', 'Record the payout'],
+        'cancel_refund' => ['Отмени възстановяването', 'Cancel the refund'],
+    ];
+
+    /** @return array<string, \Filament\Actions\Action> the three dialogs above, built exactly as the page builds them */
+    private function dialogsOutsideTheMenu(string $refundId): array
+    {
+        return [
+            'edit_order' => OrderResource::editAction(),
+            'mark_refund_paid_out' => OrderResource::markRefundPaidOutAction($refundId, 'bank', 2000, 'EUR'),
+            'cancel_refund' => OrderResource::cancelRefundAction($refundId, 'bank'),
+        ];
+    }
+
+    /** A settled order with one OWED refund — the only state in which the two refund buttons exist. */
+    private function owedRefund(string $method = 'bank_transfer'): array
+    {
+        $order = $this->refundableOrder([['quantity' => 4, 'unit' => 1000]], method: $method);
+        app(OrderStatusChanger::class)->recordReturn($order['orderId'], [['originatingSaleLineId' => $order['saleLineIds'][0], 'quantityReturned' => 2, 'restock' => true]], $this->at());
+
+        return ['order' => $order, 'refund' => $this->refundsOf($order['payment'])[0]];
+    }
+
+    /** One of a refund row's own two buttons, addressed as the page mounts it. */
+    private function refundAction(string $name, string $refundId): TestAction
+    {
+        return TestAction::make($name)->schemaComponent('refund_actions_'.$refundId);
+    }
+
+    public function test_the_three_dialogs_outside_the_menu_have_explicit_buttons_too(): void
+    {
+        $refund = $this->owedRefund()['refund'];
+
+        foreach (['bg' => 0, 'en' => 1] as $locale => $column) {
+            App::setLocale($locale);
+            $close = $locale === 'bg' ? 'Затвори' : 'Close';
+            $dialogs = $this->dialogsOutsideTheMenu($refund->id());
+
+            $this->assertEqualsCanonicalizing(array_keys(self::DIALOGS_OUTSIDE_THE_MENU), array_keys($dialogs), 'every dialog outside the menu is covered');
+
+            // Filament's own defaults, in this locale: what those buttons used to say.
+            $defaults = array_map(
+                'strval',
+                [__('filament-actions::modal.actions.submit.label'), __('filament-actions::modal.actions.cancel.label'), __('filament-actions::modal.actions.confirm.label')],
+            );
+
+            foreach (self::DIALOGS_OUTSIDE_THE_MENU as $name => $labels) {
+                $action = $dialogs[$name];
+
+                $this->assertSame($labels[$column], $action->getModalSubmitActionLabel(), "{$name} submit ({$locale})");
+                $this->assertSame($close, $action->getModalCancelActionLabel(), "{$name} dismiss ({$locale})");
+                $this->assertNotContains($action->getModalSubmitActionLabel(), $defaults, "{$name}: not a Filament default");
+                $this->assertNotContains($action->getModalCancelActionLabel(), $defaults, "{$name}: not a Filament default");
+            }
+        }
+    }
+
+    public function test_a_refund_s_own_dialog_renders_those_buttons_on_the_page(): void
+    {
+        ['order' => $order, 'refund' => $refund] = $this->owedRefund();
+
+        foreach (['bg' => 0, 'en' => 1] as $locale => $column) {
+            App::setLocale($locale);
+            $close = $locale === 'bg' ? 'Затвори' : 'Close';
+
+            foreach (['mark_refund_paid_out', 'cancel_refund'] as $name) {
+                $modal = preg_replace('/\s+/', ' ', $this->page($order)->mountAction($this->refundAction($name, $refund->id()))->getMountedActionModalHtml());
+
+                $this->assertStringContainsString(self::DIALOGS_OUTSIDE_THE_MENU[$name][$column], $modal, "{$name} ({$locale})");
+                $this->assertStringContainsString($close, $modal, "{$name} dismiss ({$locale})");
             }
         }
     }

@@ -389,6 +389,12 @@ return [
             'record_return' => 'Record the return',
             'refund_money_only' => 'Record the money-only refund',
             'add_note' => 'Add the note',
+
+            // UI pass 1: the three dialogs of this page that the header menu does NOT hold — the items section's
+            // own edit button, and the two buttons on a refund's own row — name their submit button the same way.
+            'edit_order' => 'Save the edit',
+            'mark_refund_paid_out' => 'Record the payout',
+            'cancel_refund' => 'Cancel the refund',
         ],
     ],
 

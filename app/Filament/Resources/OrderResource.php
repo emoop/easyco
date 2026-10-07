@@ -1640,6 +1640,8 @@ class OrderResource extends Resource
     {
         return Action::make('edit_order')
             ->label(__('orders.actions.edit'))
+            ->modalSubmitActionLabel(__('orders.modal.submit.edit_order'))
+            ->modalCancelActionLabel(__('orders.modal.close'))
             ->color('primary')
             ->icon('heroicon-o-pencil')
             ->modalHeading(fn (OrderModel $record): string => __('orders.actions.edit_heading', ['id' => $record->id]))
@@ -2242,6 +2244,8 @@ class OrderResource extends Resource
     {
         return Action::make('mark_refund_paid_out')
             ->label(__('orders.refunds.mark_paid_out.label'))
+            ->modalSubmitActionLabel(__('orders.modal.submit.mark_refund_paid_out'))
+            ->modalCancelActionLabel(__('orders.modal.close'))
             ->color('success')
             ->icon('heroicon-o-banknotes')
             ->modalHeading(__('orders.refunds.mark_paid_out.heading', ['id' => $refundId]))
@@ -2290,6 +2294,8 @@ class OrderResource extends Resource
     {
         return Action::make('cancel_refund')
             ->label(__('orders.refunds.cancel.label'))
+            ->modalSubmitActionLabel(__('orders.modal.submit.cancel_refund'))
+            ->modalCancelActionLabel(__('orders.modal.close'))
             ->color('danger')
             ->icon('heroicon-o-x-circle')
             ->modalHeading(__('orders.refunds.cancel.heading', ['id' => $refundId]))

@@ -11,12 +11,16 @@
  *
  * section_empty is what a section says when it has nothing while other sections do; empty is what the
  * WHOLE page says when there is nothing anywhere (§6's own promise).
+ *
+ * THE INTRO NAMES WHAT IS WAITING AND NOTHING ELSE: one sentence for the two sources, then the ONE thing
+ * this page may say about a wait (how long it has been), so nobody reading it expects a judgement of
+ * urgency the page never makes (§7.2.7: no severity, no threshold, no "overdue").
  */
 return [
     'title' => 'Needs attention',
     'navigation_label' => 'Needs attention',
 
-    'intro' => 'Money that is waiting on someone: refunds that were recorded and not paid out yet, and bank transfers that do not add up. Nothing here is late by any rule — the days only say how long it has waited, and the oldest is first.',
+    'intro' => 'Money that is waiting on someone: refunds that were recorded and not paid out yet, and bank transfers that do not add up. The days only say how long it has waited, and the oldest is first.',
     'empty' => 'Nothing is waiting.',
     'section_empty' => 'Nothing here.',
     'today' => 'today',

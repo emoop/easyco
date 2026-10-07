@@ -59,7 +59,20 @@ class NeedsAttention extends Page
     /** One page of one source — the panel's own table-sized page, and enough for a merchant to clear. */
     public const PER_PAGE = 25;
 
-    protected static string|BackedEnum|null $navigationIcon = 'heroicon-o-exclamation-triangle';
+    /**
+     * The most a page number may be. A page number arrives in a URL, and a URL is typed by whoever opens
+     * the link: `?owed_refund=2100000000` is a valid integer that no page is, so the page is capped HERE,
+     * before it becomes an offset, and a source is never asked for a page a read cannot hold. Anything
+     * above the cap is the empty section it already was, reached in bounded time.
+     */
+    public const MAX_PAGE = 1_000_000;
+
+    /**
+     * A neutral tray, deliberately (§7.2.7: nothing here is an alarm — no severity, no colour, no
+     * threshold). A warning triangle would say the page is a mistake to be fixed rather than money that is
+     * simply still moving, which is exactly the reading this screen must not invite.
+     */
+    protected static string|BackedEnum|null $navigationIcon = 'heroicon-o-inbox';
 
     protected string $view = 'filament.pages.needs-attention';
 
@@ -121,9 +134,9 @@ class NeedsAttention extends Page
 
         foreach (app()->tagged(NeedsAttentionSource::TAG) as $source) {
             $count = $source->count();
-            // This source's OWN page, from this source's own query-string key (getPage() is
-            // Livewire's: it reads ?<key>=n through Paginator::resolveCurrentPage()).
-            $page = max(1, (int) $this->getPage($source->key()));
+            // This source's OWN page, from this source's own query-string key — sanitised first, because
+            // the number in a URL is not a promise; pageFor() below is the rule.
+            $page = $this->pageFor($source->key());
 
             $sections[] = [
                 'key' => $source->key(),
@@ -145,6 +158,25 @@ class NeedsAttention extends Page
         }
 
         return $sections;
+    }
+
+    /**
+     * One source's page, from that source's own query-string key — SANITISED here, because a page number is
+     * a URL parameter and no URL is a promise. The rule is Livewire's own, deliberately
+     * (SupportPagination::setPageResolvers(): filter_var(..., FILTER_VALIDATE_INT)): what it refuses — '',
+     * 'abc', '1.5', '0', '-5', an integer PHP's own int cannot hold, and an array (`?owed_refund[]=2`) — is
+     * page ONE, never page zero and never a negative page. What is above MAX_PAGE is capped BEFORE it
+     * becomes an offset, so the number a source is asked for is always a number a read can hold.
+     */
+    private function pageFor(string $key): int
+    {
+        $page = $this->getPage($key);
+
+        if (! is_scalar($page) || filter_var($page, FILTER_VALIDATE_INT) === false || (int) $page < 1) {
+            return 1;
+        }
+
+        return min((int) $page, self::MAX_PAGE);
     }
 
     /** @return array<string, mixed> */

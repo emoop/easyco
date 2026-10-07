@@ -684,6 +684,116 @@ class NeedsAttentionPageTest extends TestCase
         $this->assertSame(1, $this->rowsIn($this->section($html, 'receipt_mismatch')));
     }
 
+    // =====================================================================================================
+    // A page number is a URL parameter, not a promise: nonsense is page one, and huge is the cap
+    // =====================================================================================================
+
+    public function test_a_page_number_the_query_string_cannot_mean_is_page_one(): void
+    {
+        $this->actingAsStaff('Administrator');
+        $this->seedTwentySixOwedRefunds();
+        $mismatch = $this->bankOrder();
+        $this->appendReceipt($mismatch['payment'], 8000, day: $this->storeDayAgo(2));
+
+        // Everything Livewire's OWN resolver refuses (SupportPagination::setPageResolvers() is
+        // filter_var(..., FILTER_VALIDATE_INT)): '', 'abc', '1.5', '0', '-5', and a number no PHP int holds.
+        // A section asked for one of them is on page ONE — twenty-five rows where there are twenty-six, and
+        // the one row where there is one — never on page zero, never on a negative page, never on the last
+        // page a thirty-digit number would otherwise ask for, and never a broken offset.
+        foreach (['', 'abc', '1.5', '0', '-5', '999999999999999999999999999999'] as $value) {
+            foreach (['owed_refund', 'receipt_mismatch'] as $key) {
+                $section = $this->section($this->visit('?'.$key.'='.rawurlencode($value))->assertOk()->getContent(), $key);
+
+                if ($key === 'owed_refund') {
+                    $this->assertStringContainsString(__('needs_attention.pagination.status', ['page' => 1, 'last' => 2]), $section, "?{$key}={$value}");
+                    $this->assertSame(25, $this->rowsIn($section), "?{$key}={$value} is page one of two");
+                } else {
+                    // One row, one page, so no status line to read (the pager only draws when hasPages()) —
+                    // the row itself is the proof it is page one and not a page past this section's end.
+                    $this->assertSame(1, $this->rowsIn($section), "?{$key}={$value} is page one, not a page past the end");
+                    $this->assertStringNotContainsString(__('needs_attention.section_empty'), $section, "?{$key}={$value}");
+                }
+            }
+        }
+
+        // The array form is not a page number either: `?owed_refund[]=2` is page one.
+        $section = $this->section($this->visit('?owed_refund[]=2')->assertOk()->getContent(), 'owed_refund');
+
+        $this->assertSame(25, $this->rowsIn($section), 'a query-string array is page one');
+        $this->assertStringContainsString(__('needs_attention.pagination.status', ['page' => 1, 'last' => 2]), $section);
+    }
+
+    public function test_a_page_number_above_the_cap_is_asked_for_at_the_cap_and_not_as_typed(): void
+    {
+        $this->actingAsStaff('Administrator');
+        $this->keepThePageAlive();
+        $spy = $this->spySource();
+
+        // Inside the cap, the number in the URL is the number the source is asked for — all three sources.
+        foreach (['1' => 1, '2' => 2, '99' => 99] as $query => $expected) {
+            $this->visit('?spy='.$query)->assertOk();
+
+            $this->assertSame($expected, $spy->lastAsked(), "?spy={$query}");
+        }
+
+        // 2,100,000,000 is a VALID integer — Livewire would take it exactly as typed. A second source is
+        // asked page 2,100,000,001 on its own, but this page caps it BEFORE it becomes an offset, so no URL
+        // can turn one read into a fifty-billion-row skip.
+        $this->visit('?spy=2100000000&owed_refund=2100000001')->assertOk();
+
+        $this->assertSame(1_000_000, $spy->lastAsked(), 'the cap, applied before the offset');
+        $this->assertSame(1_000_000, NeedsAttention::MAX_PAGE, "and the cap is the page's own constant");
+    }
+
+    /**
+     * A third source that records the page number it is asked for. Tagged exactly as R4b's own two sources
+     * are — the page's documented extension point — so what is under test is the page's own guard, through a
+     * real GET, and not a helper called directly.
+     *
+     * Under the cap a section past its own end is an empty section, as designed; over it the page refuses to
+     * pass the number on, which is the only behaviour a store can see for a number that absurd.
+     */
+    private function spySource(): object
+    {
+        $spy = new class implements NeedsAttentionSource
+        {
+            /** @var list<int> every page this source was asked for, in order */
+            public array $asked = [];
+
+            public function key(): string
+            {
+                return 'spy';
+            }
+
+            public function label(): string
+            {
+                return 'Spy';
+            }
+
+            public function count(): int
+            {
+                return 0;
+            }
+
+            public function page(int $page, int $perPage): array
+            {
+                $this->asked[] = $page;
+
+                return [];
+            }
+
+            public function lastAsked(): int
+            {
+                return $this->asked[count($this->asked) - 1];
+            }
+        };
+
+        $this->app->instance('needs_attention.spy', $spy);
+        $this->app->tag(['needs_attention.spy'], NeedsAttentionSource::TAG);
+
+        return $spy;
+    }
+
     private function seedTwentySixOwedRefunds(): void
     {
         // Twenty-six refunds on one order — one more than a page. The times run forward, so the first
@@ -837,6 +947,54 @@ class NeedsAttentionPageTest extends TestCase
         $this->assertStringNotContainsString($en['title'], $html, 'and not the English title');
         $this->assertStringNotContainsString($en['sources']['owed_refund']['label'], $html);
         $this->assertStringNotContainsString($en['section_empty'], $html);
+    }
+
+    public function test_the_page_names_a_queue_of_money_in_the_plural_and_never_a_warning(): void
+    {
+        // The words themselves, in both languages: one page, one name, and the store's own.
+        foreach (['bg' => 'Изискват внимание', 'en' => 'Needs attention'] as $locale => $expected) {
+            $strings = require lang_path($locale.'/needs_attention.php');
+
+            $this->assertSame($expected, $strings['title'], "{$locale}: the page's own title");
+            $this->assertSame($expected, $strings['navigation_label'], "{$locale}: the sidebar item carries the same name");
+
+            // NOT ONE STRING on this page names a rule, a lateness or an urgency: the page lists facts and
+            // judges nothing (§7.2.7), so the word for a judgement must not appear anywhere in it at all.
+            $forbidden = $locale === 'bg'
+                ? ['просрочено', 'Просрочено', 'спешно', 'Спешно', 'закъснял']
+                : ['overdue', 'Overdue', 'late', 'Late', 'urgent', 'Urgent'];
+
+            foreach ($this->leaves($strings) as $key => $sentence) {
+                foreach ($forbidden as $word) {
+                    $this->assertStringNotContainsString($word, $sentence, "{$locale}: {$key} may not judge");
+                }
+            }
+
+            // ...and the intro says what is waiting, then the one thing the page may say about a wait.
+            $this->assertStringContainsString($locale === 'bg' ? 'възстановявания' : 'refunds', $strings['intro']);
+            $this->assertStringContainsString($locale === 'bg' ? 'банкови преводи' : 'bank transfers', $strings['intro']);
+        }
+    }
+
+    public function test_the_page_s_own_icon_is_a_neutral_one_and_not_a_warning(): void
+    {
+        // An inbox is a queue of things waiting; a triangle is a verdict on them, and this page passes none.
+        $this->assertSame('heroicon-o-inbox', NeedsAttention::getNavigationIcon());
+        $this->assertNotContains(NeedsAttention::getNavigationIcon(), ['heroicon-o-exclamation-triangle', 'heroicon-o-exclamation-circle']);
+    }
+
+    public function test_the_drawn_page_shows_the_new_name_and_none_of_the_words_it_forbids_itself(): void
+    {
+        app(SiteSettingsRepository::class)->set('site.locale', 'bg');
+        $this->actingAsStaff('Administrator');
+        $this->keepThePageAlive();
+
+        $html = $this->visit()->assertOk()->getContent();
+
+        $this->assertStringContainsString('Изискват внимание', $html, 'the new name, on the page and in the sidebar');
+        $this->assertStringNotContainsString('Изисква внимание', $html, 'and not the old singular');
+        $this->assertStringNotContainsString('просрочено', $html);
+        $this->assertStringNotContainsString('спешно', $html);
     }
 
     public function test_both_languages_carry_the_same_sentences_with_the_same_placeholders(): void
