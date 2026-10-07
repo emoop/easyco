@@ -30,6 +30,7 @@ use Filament\Support\Contracts\HasLabel;
 enum NavigationGroup implements Collapsible, HasLabel
 {
     case CATALOG;
+    case SHIPPING;
     case SALES;
     case ADMIN;
 
@@ -37,6 +38,7 @@ enum NavigationGroup implements Collapsible, HasLabel
     {
         return match ($this) {
             self::CATALOG => __('navigation.groups.catalog'),
+            self::SHIPPING => __('navigation.groups.shipping'),
             self::SALES => __('navigation.groups.sales'),
             self::ADMIN => __('navigation.groups.admin'),
         };

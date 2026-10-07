@@ -23,4 +23,16 @@ interface ShippingMethodRepository
      * @return ShippingMethod[]
      */
     public function forZone(string $zoneId, bool $activeOnly = false): array;
+
+    /**
+     * MANY zones' methods at once, keyed by zone id (int), each list in
+     * sortOrder ASC, id ASC — so an overview of every zone reads them in a
+     * bounded number of queries, never one query per zone. A zone with no
+     * methods simply has no key. Added for the admin overview (shipping stage
+     * 5a, shipping-domain-design.md §12.3.5); it changes nothing else.
+     *
+     * @param  list<string|int>  $zoneIds
+     * @return array<int, ShippingMethod[]>
+     */
+    public function forZones(array $zoneIds, bool $activeOnly = false): array;
 }

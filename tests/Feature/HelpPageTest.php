@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Filament\Pages\Help;
+use App\Filament\Pages\ShippingOverview;
 use App\Filament\Resources\OrderResource;
 use App\Filament\Resources\OrderResource\Pages\ViewOrder;
 use App\Filament\StaffPanelUser;
@@ -358,13 +359,77 @@ class HelpPageTest extends TestCase
 
     public function test_the_registry_knows_one_topic_and_labels_it_in_both_languages(): void
     {
-        $this->assertSame(['orders'], HelpTopics::all());
+        $this->assertSame(['orders', 'shipping'], HelpTopics::all());
         $this->assertTrue(HelpTopics::has('orders'));
+        $this->assertTrue(HelpTopics::has('shipping'));
         $this->assertFalse(HelpTopics::has('nope'));
         $this->assertFalse(HelpTopics::has(null));
         $this->assertSame('Orders and payments', trans('help.topics.orders', [], 'en'));
         $this->assertSame('Поръчки и плащания', trans('help.topics.orders', [], 'bg'));
+        $this->assertSame('Shipping', trans('help.topics.shipping', [], 'en'));
+        $this->assertSame('Доставка', trans('help.topics.shipping', [], 'bg'));
         $this->assertNull(HelpTopics::path('orders', '../../x'));
         $this->assertNull(HelpTopics::path('../secret', 'en'));
+    }
+
+    // =====================================================================================================
+    // The shipping topic (shipping-domain-design.md §12.8, stage 5a)
+    // =====================================================================================================
+
+    /** The shipping skeleton's anchors, in order — a CONTRACT: later content edits must never rename them. */
+    private const SHIPPING_ANCHORS = [
+        'action-shipping-overview', 'action-zone-editor', 'action-zone-order', 'action-zone-settlement-matching',
+        'action-method-editor', 'action-method-class-mode', 'action-method-replace', 'action-method-adjust',
+        'action-method-free-above', 'action-class-editor', 'action-class-delete-blocked', 'action-product-class-field',
+        'action-try-it', 'action-method-copy',
+    ];
+
+    private function anchorsOfTopic(string $topic, string $locale): array
+    {
+        $markdown = (string) file_get_contents(resource_path("help/{$locale}/{$topic}.md"));
+        preg_match_all('/^#{2,3} .+ \{#([a-z0-9-]+)\}\s*$/m', $markdown, $matches);
+
+        return $matches[1];
+    }
+
+    public function test_the_shipping_topic_loads_in_both_languages(): void
+    {
+        foreach (['en', 'bg'] as $locale) {
+            $this->assertFileExists(resource_path("help/{$locale}/shipping.md"));
+            $this->assertNotNull(HelpTopics::path('shipping', $locale));
+        }
+    }
+
+    public function test_the_shipping_skeleton_has_the_same_anchors_in_the_same_order_each_once_in_both_files(): void
+    {
+        $en = $this->anchorsOfTopic('shipping', 'en');
+        $bg = $this->anchorsOfTopic('shipping', 'bg');
+
+        $this->assertSame(self::SHIPPING_ANCHORS, $en);
+        $this->assertSame(self::SHIPPING_ANCHORS, $bg);
+        $this->assertSame($en, array_values(array_unique($en)), 'each anchor once');
+
+        // Every heading line carries an anchor: no heading without one.
+        foreach (['en', 'bg'] as $locale) {
+            $this->assertSame(count(self::SHIPPING_ANCHORS), preg_match_all('/^#{2,3} /m', (string) file_get_contents(resource_path("help/{$locale}/shipping.md"))));
+        }
+    }
+
+    public function test_every_help_link_on_the_shipping_page_points_to_an_anchor_that_exists_in_both_files(): void
+    {
+        $this->actingAsPanelStaff();
+
+        $html = (string) $this->get(ShippingOverview::getUrl())->assertOk()->getContent();
+
+        preg_match_all('~help/shipping#([a-z0-9-]+)~', $html, $matches);
+        $found = array_values(array_unique($matches[1]));
+
+        $this->assertSame(['action-shipping-overview', 'action-try-it'], $found, 'the page links to the two anchors it documents');
+
+        foreach ($found as $anchor) {
+            foreach (['en', 'bg'] as $locale) {
+                $this->assertContains($anchor, $this->anchorsOfTopic('shipping', $locale), "{$anchor} is missing from the {$locale} help file");
+            }
+        }
     }
 }

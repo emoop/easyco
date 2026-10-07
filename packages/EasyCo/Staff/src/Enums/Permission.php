@@ -50,6 +50,10 @@ enum Permission: string
     /** apply a discretionary discount at the register */
     case POS_DISCOUNT = 'pos_discount';
 
+    // Shipping
+    /** shipping zones, methods and classes (shipping-domain-design.md §12) */
+    case SHIPPING_MANAGE = 'shipping_manage';
+
     // Marketing
     /** promotion codes and their scopes */
     case PROMOTION_MANAGE = 'promotion_manage';

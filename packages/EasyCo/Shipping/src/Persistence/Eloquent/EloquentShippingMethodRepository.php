@@ -109,6 +109,39 @@ final class EloquentShippingMethodRepository implements ShippingMethodRepository
     }
 
     /**
+     * @param  list<string|int>  $zoneIds
+     * @return array<int, ShippingMethod[]>  zone id (int) => its methods, sortOrder ASC then id ASC
+     */
+    public function forZones(array $zoneIds, bool $activeOnly = false): array
+    {
+        $ids = array_values(array_unique(array_map('intval', $zoneIds)));
+
+        if ($ids === []) {
+            return [];
+        }
+
+        // Query 1: the methods of every zone, in one read.
+        $query = ShippingMethodModel::query()->whereIn('zone_id', $ids);
+
+        if ($activeOnly) {
+            $query->where('is_active', true);
+        }
+
+        $models = $query->orderBy('sort_order')->orderBy('id')->get();
+
+        // Query 2: every method's rates, in one read (none when there are no methods).
+        $rates = $this->ratesFor($models->pluck('id')->map(fn ($id) => (int) $id)->all());
+
+        $grouped = [];
+
+        foreach ($models as $model) {
+            $grouped[(int) $model->zone_id][] = $this->toDomain($model, $rates[(int) $model->id] ?? []);
+        }
+
+        return $grouped;
+    }
+
+    /**
      * Every given method's rates in ONE query.
      *
      * @param  list<int>  $methodIds

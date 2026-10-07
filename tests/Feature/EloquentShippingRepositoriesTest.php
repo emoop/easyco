@@ -401,6 +401,61 @@ class EloquentShippingRepositoriesTest extends TestCase
         $this->assertSame(0, DB::table('shipping_methods')->count());
     }
 
+    // --- forZones (shipping stage 5a) --------------------------------------
+
+    public function test_for_zones_reads_many_zones_methods_keyed_by_zone(): void
+    {
+        $a = $this->savedZone('A', 0);
+        $b = $this->savedZone('B', 1);
+        $c = $this->savedZone('C', 2); // no methods
+        $this->savedClass('bulky');
+
+        $this->savedMethod($a->id(), 'First', 0);
+        $second = ShippingMethod::create($a->id(), 'Second', ShippingMethodKind::PER_CLASS, 1, true, 100, ['bulky' => 900]);
+        $this->methods()->save($second);
+        $this->savedMethod($b->id(), 'Other', 0, false); // inactive
+
+        $byZone = $this->methods()->forZones([$a->id(), $b->id(), $c->id()]);
+
+        $this->assertSame(['First', 'Second'], array_map(static fn (ShippingMethod $m): string => $m->name(), $byZone[(int) $a->id()]));
+        $this->assertSame(['Other'], array_map(static fn (ShippingMethod $m): string => $m->name(), $byZone[(int) $b->id()]));
+        $this->assertArrayNotHasKey((int) $c->id(), $byZone, 'a zone with no methods has no key');
+        $this->assertSame(['bulky' => 900], $byZone[(int) $a->id()][1]->classRates(), 'the rates come with the methods');
+    }
+
+    public function test_for_zones_active_only_excludes_inactive_methods(): void
+    {
+        $zone = $this->savedZone();
+        $this->savedMethod($zone->id(), 'On', 0, true);
+        $this->savedMethod($zone->id(), 'Off', 1, false);
+
+        $byZone = $this->methods()->forZones([$zone->id()], activeOnly: true);
+
+        $this->assertSame(['On'], array_map(static fn (ShippingMethod $m): string => $m->name(), $byZone[(int) $zone->id()]));
+    }
+
+    public function test_for_zones_reads_in_at_most_two_queries_and_none_for_an_empty_list(): void
+    {
+        $a = $this->savedZone('A', 0);
+        $b = $this->savedZone('B', 1);
+        $this->savedClass('bulky');
+        $this->savedMethod($a->id(), 'First', 0);
+        $this->methods()->save(ShippingMethod::create($b->id(), 'By class', ShippingMethodKind::PER_CLASS, 0, true, 100, ['bulky' => 900]));
+
+        $queries = 0;
+        DB::listen(function () use (&$queries): void {
+            $queries++;
+        });
+
+        $this->methods()->forZones([$a->id(), $b->id()]);
+
+        $this->assertSame(2, $queries, 'one query for the methods, one for their rates');
+
+        $queries = 0;
+        $this->assertSame([], $this->methods()->forZones([]));
+        $this->assertSame(0, $queries, 'an empty zone list issues no query at all');
+    }
+
     // --- DB constraints, via raw SQL ---------------------------------------
 
     public function test_deleting_a_zone_that_has_methods_fails_at_the_database(): void

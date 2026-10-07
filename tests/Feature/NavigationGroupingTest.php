@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Filament\NavigationGroup;
 use App\Filament\Pages\ActivityLogJournal;
 use App\Filament\Pages\Settings\LocaleSettings;
+use App\Filament\Pages\ShippingOverview;
 use App\Filament\Resources\AttributeDefinitionResource;
 use App\Filament\Resources\AttributeValueResource;
 use App\Filament\Resources\BrandResource;
@@ -80,6 +81,17 @@ class NavigationGroupingTest extends TestCase
         $this->assertSame('Sales', NavigationGroup::SALES->getLabel());
     }
 
+    public function test_the_shipping_group_reports_the_real_translated_group_name_in_both_locales(): void
+    {
+        $this->assertSame(NavigationGroup::SHIPPING, ShippingOverview::getNavigationGroup());
+
+        $this->applyLocale('bg');
+        $this->assertSame('Доставка', NavigationGroup::SHIPPING->getLabel());
+
+        $this->applyLocale('en');
+        $this->assertSame('Shipping', NavigationGroup::SHIPPING->getLabel());
+    }
+
     public function test_admin_group_items_report_the_real_translated_group_name_in_both_locales(): void
     {
         $this->assertSame(NavigationGroup::ADMIN, RoleResource::getNavigationGroup());
@@ -93,20 +105,21 @@ class NavigationGroupingTest extends TestCase
         $this->assertSame('Admin', NavigationGroup::ADMIN->getLabel());
     }
 
-    public function test_the_groups_declare_in_catalog_sales_admin_render_order(): void
+    public function test_the_groups_declare_in_catalog_shipping_sales_admin_render_order(): void
     {
         // Real Filament ordering gotcha this enum fixes (see its own
         // docblock): with no panel-registered groups, group render
         // order follows a UnitEnum's own cases() declaration order,
         // not any individual item's getNavigationSort() value. A
         // regression here would silently reorder the sidebar's own
-        // top-level groups. Sales was added between Catalog and Admin
-        // (admin-panel-design.md §14) — this asserts all three, not
-        // just the original two.
+        // top-level groups. Shipping was added between Catalog and
+        // Sales (shipping-domain-design.md §12.1, stage 5a) — this
+        // asserts all four, not just the original three.
         $cases = NavigationGroup::cases();
         $this->assertSame(NavigationGroup::CATALOG, $cases[0]);
-        $this->assertSame(NavigationGroup::SALES, $cases[1]);
-        $this->assertSame(NavigationGroup::ADMIN, $cases[2]);
+        $this->assertSame(NavigationGroup::SHIPPING, $cases[1]);
+        $this->assertSame(NavigationGroup::SALES, $cases[2]);
+        $this->assertSame(NavigationGroup::ADMIN, $cases[3]);
     }
 
     public function test_the_six_catalog_group_items_sort_in_the_exact_stated_order(): void

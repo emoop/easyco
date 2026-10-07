@@ -9,5 +9,6 @@ return [
     'link' => 'Help: how this works →',
     'topics' => [
         'orders' => 'Orders and payments',
+        'shipping' => 'Shipping',
     ],
 ];

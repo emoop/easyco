@@ -7,6 +7,7 @@ return [
 
     'groups' => [
         'catalog' => 'Catalog',
+        'shipping' => 'Shipping',
         'sales' => 'Sales',
         'admin' => 'Admin',
     ],
