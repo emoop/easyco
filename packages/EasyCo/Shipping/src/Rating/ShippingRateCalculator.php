@@ -60,9 +60,30 @@ final class ShippingRateCalculator
         return match ($method->kind()) {
             ShippingMethodKind::CARRIER => MethodRate::needsCarrierQuote($id, $request->currency, (string) $method->carrierCode()),
             ShippingMethodKind::FREE => MethodRate::priced($id, $request->currency, 0),
-            ShippingMethodKind::FLAT => MethodRate::priced($id, $request->currency, $this->applyThreshold($method, $request, (int) $method->amountMinor())),
-            ShippingMethodKind::PER_CLASS => MethodRate::priced($id, $request->currency, $this->applyThreshold($method, $request, $this->perClassCharge($method, $request))),
+            ShippingMethodKind::FLAT => $this->pricedLocally($id, $method, $request, (int) $method->amountMinor()),
+            ShippingMethodKind::PER_CLASS => $this->pricedLocally($id, $method, $request, $this->perClassCharge($method, $request)),
         };
+    }
+
+    /**
+     * A FLAT or PER_CLASS method: the threshold-adjusted charge, plus the free-
+     * shipping facts that go with it (stage 3e, §5.1). The charge itself is
+     * byte-for-byte what applyThreshold() has always returned; the two extra
+     * fields only REPORT the threshold — they never price anything.
+     */
+    private function pricedLocally(string $id, ShippingMethod $method, RateRequest $request, int $charge): MethodRate
+    {
+        $threshold = $method->freeAboveMinor();
+        $amount = $this->applyThreshold($method, $request, $charge);
+
+        if ($threshold === null) {
+            return MethodRate::priced($id, $request->currency, $amount);
+        }
+
+        // ">=": at or above the threshold the goods are free and nothing remains.
+        $remaining = $request->goodsAfterDiscountMinor >= $threshold ? 0 : $threshold - $request->goodsAfterDiscountMinor;
+
+        return MethodRate::priced($id, $request->currency, $amount, $threshold, $remaining);
     }
 
     private function perClassCharge(ShippingMethod $method, RateRequest $request): int

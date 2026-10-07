@@ -47,7 +47,20 @@ use Illuminate\Validation\ValidationException;
  * `available`, `price` {minor, currency} and `handle` (priced methods) or
  * `unavailable_reason` (carrier problems: provider_error, timed_out,
  * invalid_response, not_configured, no_quote, no_settlement); `service_code` for a
- * carrier method.
+ * carrier method. For a FLAT or PER_CLASS method that has a free-shipping
+ * threshold, each method also carries `free_above_minor` and
+ * `remaining_to_free_minor` (the threshold and how much MORE the goods must reach
+ * it, 0 once met); both are null for a method without a threshold, for FREE and
+ * for CARRIER. They are INFORMATION — the handle binds the amount, never these.
+ *
+ * The response also carries a top-level `free_shipping_hint` (stage 3e, §5.1):
+ * null, or {state: remaining|unlocked, method_id, method_name, free_above_minor,
+ * remaining_minor, currency, text} — the ONE sentence the storefront shows
+ * ("Add 23.50 EUR more for free shipping with “Econt office”"), computed on the
+ * same goods-after-discount basis and through the same matcher/calculator as the
+ * methods. Its `text` embeds the MERCHANT's own method name (never any customer
+ * input); it is plain text and the client renders the field escaped, like every
+ * other merchant string.
  *
  * ERRORS, all `{message, reason}`: 422 `empty_cart`, `no_priced_lines`,
  * `no_zone_for_destination`, `address_incomplete`; 404 `address_not_found` (an
@@ -166,10 +179,13 @@ class ShippingQuoteController extends Controller
                 'requires_pickup_point' => $m->requiresPickupPoint,
                 'available' => $m->isAvailable(),
                 'price' => $m->isAvailable() ? ['minor' => $m->amountMinor, 'currency' => $m->currency] : null,
+                'free_above_minor' => $m->freeAboveMinor,
+                'remaining_to_free_minor' => $m->remainingToFreeMinor,
                 'service_code' => $m->serviceCode,
                 'handle' => $m->handle,
                 'unavailable_reason' => $m->unavailableReason,
             ], $result->methods),
+            'free_shipping_hint' => $result->freeShippingHint?->toArray(),
         ];
     }
 }

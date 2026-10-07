@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Rules\PlainText;
+use App\Services\CartFreeShippingHint;
 use App\Services\CartPricing;
 use App\Services\CartPricingResult;
 use App\Services\CatalogScopeResolver;
@@ -62,6 +63,7 @@ class CartController extends Controller
         private readonly PromotionRepository $promotions,
         private readonly CartPricing $cartPricing,
         private readonly VariationDisplayReader $displayReader,
+        private readonly CartFreeShippingHint $freeShippingHint,
     ) {
     }
 
@@ -311,6 +313,8 @@ class CartController extends Controller
                 'subtotal' => $this->moneyToArray($subtotal),
                 'total' => $this->moneyToArray($subtotal),
                 'promotion' => null,
+                // No cart: no zone, no methods, nothing to say about free shipping.
+                'free_shipping_hint' => null,
             ];
         }
 
@@ -394,6 +398,12 @@ class CartController extends Controller
             );
         }
 
+        // The free-shipping hint (shipping stage 3e, §5.1): the SAME goods-after-
+        // discount figure the totals above use (never recomputed), matched against
+        // the store country's broad zone and its active methods — a FIXED few
+        // reads, never one per cart line, and null whenever nothing applies.
+        $freeShippingHint = $this->freeShippingHint->forCart($cart, $pricing->goodsAfterDiscount()->minorValue(), $currency->code());
+
         return [
             // The live cart's id, so a client can name the cart it is buying at
             // checkout — REQUIRED there since cart-domain-design.md §14.2, and the
@@ -403,6 +413,7 @@ class CartController extends Controller
             'subtotal' => $this->moneyToArray($subtotal),
             'total' => $this->moneyToArray($total),
             'promotion' => $promotion,
+            'free_shipping_hint' => $freeShippingHint?->toArray(),
         ];
     }
 

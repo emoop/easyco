@@ -101,10 +101,10 @@ class ShippingQuoteEndpointTest extends TestCase
         return $this->zoneId = (string) $zone->id();
     }
 
-    private function method(ShippingMethodKind $kind, string $name, int $sort = 0, ?int $amount = null, ?string $carrier = null): string
+    private function method(ShippingMethodKind $kind, string $name, int $sort = 0, ?int $amount = null, ?string $carrier = null, ?int $freeAbove = null): string
     {
         $this->zoneId ??= $this->zone();
-        $method = ShippingMethod::create($this->zoneId, $name, $kind, $sort, true, $amount, [], null, $carrier, false);
+        $method = ShippingMethod::create($this->zoneId, $name, $kind, $sort, true, $amount, [], $freeAbove, $carrier, false);
         app(ShippingMethodRepository::class)->save($method);
 
         return (string) $method->id();
@@ -518,5 +518,141 @@ class ShippingQuoteEndpointTest extends TestCase
         $this->assertFalse($store->verify($carrier->handle, $cartId, $carrierId, 450, 'EUR', $result->pricingHash, null), 'no service named');
         $this->assertTrue($store->verify($flat->handle, $cartId, $flatId, 500, 'EUR', $result->pricingHash, null));
         $this->assertFalse($store->verify($flat->handle, $cartId, $flatId, 500, 'EUR', $result->pricingHash, 'address'), 'a local method has no service to book');
+    }
+
+    // --- the free-shipping threshold facts (stage 3e, §5.1) --------------------------------------------------------
+
+    public function test_each_method_reports_its_free_above_and_remaining(): void
+    {
+        $a = $this->variation('10.00');
+        $threshold = $this->method(ShippingMethodKind::FLAT, 'Econt office', 0, 500, freeAbove: 10000);
+        $plain = $this->method(ShippingMethodKind::FLAT, 'To address', 1, 500);
+        $this->guestCartWith($a, 1); // 10.00 goods
+
+        $response = $this->postJson('/api/shipping/quote', $this->body())->assertOk();
+
+        $response->assertJsonPath('methods.0.id', $threshold)
+            ->assertJsonPath('methods.0.free_above_minor', 10000)
+            ->assertJsonPath('methods.0.remaining_to_free_minor', 9000)
+            ->assertJsonPath('methods.1.id', $plain)
+            ->assertJsonPath('methods.1.free_above_minor', null)
+            ->assertJsonPath('methods.1.remaining_to_free_minor', null);
+    }
+
+    public function test_the_top_level_hint_reports_the_smallest_remaining(): void
+    {
+        $a = $this->variation('10.00');
+        $this->method(ShippingMethodKind::FLAT, 'Econt office', 0, 500, freeAbove: 10000);
+        $this->method(ShippingMethodKind::FLAT, 'To address', 1, 500, freeAbove: 5000);
+        $this->guestCartWith($a, 2); // 20.00 goods: 5000 - 2000 = 3000 is smaller than 8000
+
+        $response = $this->postJson('/api/shipping/quote', $this->body())->assertOk();
+
+        $response->assertJsonPath('free_shipping_hint.state', 'remaining')
+            ->assertJsonPath('free_shipping_hint.method_name', 'To address')
+            ->assertJsonPath('free_shipping_hint.free_above_minor', 5000)
+            ->assertJsonPath('free_shipping_hint.remaining_minor', 3000);
+    }
+
+    public function test_the_top_level_hint_is_null_when_no_method_has_a_threshold(): void
+    {
+        $a = $this->variation('10.00');
+        $this->method(ShippingMethodKind::FLAT, 'Flat', 0, 500);
+        $this->guestCartWith($a, 1);
+
+        $this->postJson('/api/shipping/quote', $this->body())->assertOk()->assertJsonPath('free_shipping_hint', null);
+    }
+
+    public function test_the_handle_is_issued_for_a_threshold_method_and_binds_its_amount_only(): void
+    {
+        $a = $this->variation('10.00');
+        $flat = $this->method(ShippingMethodKind::FLAT, 'Econt office', 0, 500, freeAbove: 10000);
+        $cart = $this->cartFor($a); // quantity 2 -> 20.00 goods
+
+        $result = app(ShippingQuoteService::class)->quote($cart, null, new QuoteDestination(AddressDeliveryType::STREET_ADDRESS, 'BG', 'Sofia'));
+        $method = $result->method($flat);
+
+        $this->assertSame(10000, $method->freeAboveMinor);
+        $this->assertSame(8000, $method->remainingToFreeMinor);
+        $this->assertTrue(
+            app(QuoteHandleStore::class)->verify($method->handle, (string) $cart->id(), $flat, 500, 'EUR', $result->pricingHash, null),
+            'the handle binds the amount; the threshold facts never enter it',
+        );
+    }
+
+    public function test_a_filter_may_still_change_the_amount_of_a_threshold_method(): void
+    {
+        $a = $this->variation('10.00');
+        $this->method(ShippingMethodKind::FLAT, 'Econt office', 0, 500, freeAbove: 10000);
+        $this->guestCartWith($a, 1);
+
+        // A filter that rebuilds the quote via MethodQuote::priced() carries no threshold facts,
+        // and that must NOT be refused: they are information, not part of the method's identity.
+        Hook::filter('shipping.quotes', fn (array $methods): array => [
+            MethodQuote::priced($methods[0]->methodId, $methods[0]->name, $methods[0]->kind, $methods[0]->requiresPickupPoint, $methods[0]->currency, 250),
+        ]);
+
+        $this->postJson('/api/shipping/quote', $this->body())->assertOk()->assertJsonPath('methods.0.price.minor', 250);
+    }
+
+    public function test_the_quote_without_a_hint_reads_no_extra_settings_row(): void
+    {
+        $a = $this->variation('10.00');
+        $this->method(ShippingMethodKind::FLAT, 'Plain', 0, 500); // no threshold -> no hint
+        $this->guestCartWith($a, 1);
+
+        $counts = $this->measureQuoteCold();
+
+        fwrite(STDERR, sprintf(
+            "\n[query-count] POST /api/shipping/quote (cold, no hint): %d shipping + %d settings reads (%d total)\n",
+            $counts['shipping'], $counts['settings'], $counts['total'],
+        ));
+
+        $this->assertSame(3, $counts['shipping'], 'the zones, the methods and their rates');
+        $this->assertSame(1, $counts['settings'], 'the store locale the controller already reads');
+    }
+
+    public function test_the_quote_with_a_hint_reuses_those_reads_and_adds_one_settings_row(): void
+    {
+        $a = $this->variation('10.00');
+        $this->method(ShippingMethodKind::FLAT, 'Econt office', 0, 500, freeAbove: 10000);
+        $this->guestCartWith($a, 1);
+
+        $counts = $this->measureQuoteCold();
+
+        fwrite(STDERR, sprintf(
+            "\n[query-count] POST /api/shipping/quote (cold, with a hint): %d shipping + %d settings reads (%d total)\n",
+            $counts['shipping'], $counts['settings'], $counts['total'],
+        ));
+
+        $this->assertSame(3, $counts['shipping'], 'the hint reuses the quote pipeline, it does not re-read zones/methods/rates');
+        $this->assertSame(2, $counts['settings'], 'the store locale plus the currency symbol position the hint formats with');
+    }
+
+    /**
+     * A COLD measured POST /api/shipping/quote (a fresh set of scoped instances). One cold
+     * measurement per test: the container's forgetScopedInstances() reliably resets the memo once.
+     *
+     * @return array{shipping: int, settings: int, total: int}
+     */
+    private function measureQuoteCold(): array
+    {
+        $this->app->forgetScopedInstances();
+
+        $counts = ['shipping' => 0, 'settings' => 0, 'total' => 0];
+        DB::listen(function ($query) use (&$counts): void {
+            $counts['total']++;
+            if (str_contains($query->sql, 'shipping_')) {
+                $counts['shipping']++;
+            } elseif (str_contains($query->sql, 'site_settings')) {
+                $counts['settings']++;
+            }
+        });
+
+        $this->postJson('/api/shipping/quote', $this->body())->assertOk();
+
+        DB::flushQueryLog();
+
+        return $counts;
     }
 }

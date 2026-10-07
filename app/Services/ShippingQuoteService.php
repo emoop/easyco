@@ -63,6 +63,7 @@ final class ShippingQuoteService
         private readonly CarrierQuoteCache $carrierQuotes,
         private readonly QuoteHandleStore $handles,
         private readonly AddressResolver $addressResolver,
+        private readonly FreeShippingHintReader $freeShippingHint,
     ) {
     }
 
@@ -239,7 +240,8 @@ final class ShippingQuoteService
         foreach ($rates as $rate) {
             $method = $byId[$rate->methodId];
             $offered[] = $rate->needsQuote() ? $this->carrierMethod($method, $rate, $context) : MethodQuote::priced(
-                $rate->methodId, $method->name(), $method->kind()->value, $method->requiresPickupPoint(), $currency, $rate->amountMinor(),
+                $rate->methodId, $method->name(), $method->kind()->value, $method->requiresPickupPoint(), $currency, $rate->amountMinor(), null,
+                $rate->freeAboveMinor, $rate->remainingToFreeMinor,
             );
         }
 
@@ -251,6 +253,7 @@ final class ShippingQuoteService
             $zone->name(),
             self::pricingHashFor($destination, $normalizer->normalize((string) $destination->settlement), (string) $zone->id(), $goodsMinor, $currency, $cart),
             $offered,
+            $this->freeShippingHint->read($zoneMethods, $rates, $currency),
         );
     }
 
@@ -265,7 +268,7 @@ final class ShippingQuoteService
                 : $method;
         }
 
-        return new ShippingQuoteResult($offers->cartId, $offers->currency, $offers->goodsAfterDiscountMinor, $offers->zoneId, $offers->zoneName, $offers->pricingHash, $methods);
+        return new ShippingQuoteResult($offers->cartId, $offers->currency, $offers->goodsAfterDiscountMinor, $offers->zoneId, $offers->zoneName, $offers->pricingHash, $methods, $offers->freeShippingHint);
     }
 
     /**

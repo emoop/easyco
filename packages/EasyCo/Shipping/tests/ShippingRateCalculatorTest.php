@@ -260,4 +260,60 @@ final class ShippingRateCalculatorTest extends TestCase
             }
         }
     }
+
+    // --- the free-shipping threshold as reported facts (stage 3e, §5.1) --------------------------------
+
+    public function test_a_flat_methods_remaining_to_free_is_reported_below_at_and_above_the_threshold(): void
+    {
+        $method = $this->flat(500, freeAbove: 10000);
+
+        $below = $this->calculator->rateFor($method, $this->request([[null, 1]], goods: 9999));
+        $this->assertSame(10000, $below->freeAboveMinor);
+        $this->assertSame(1, $below->remainingToFreeMinor, '100.00 - 99.99 = 0.01');
+        $this->assertSame(500, $below->amountMinor(), 'the price is untouched');
+
+        $at = $this->calculator->rateFor($method, $this->request([[null, 1]], goods: 10000));
+        $this->assertSame(10000, $at->freeAboveMinor);
+        $this->assertSame(0, $at->remainingToFreeMinor, 'exactly at the threshold is free (>=)');
+        $this->assertSame(0, $at->amountMinor());
+
+        $above = $this->calculator->rateFor($method, $this->request([[null, 1]], goods: 10001));
+        $this->assertSame(0, $above->remainingToFreeMinor);
+        $this->assertSame(0, $above->amountMinor());
+    }
+
+    public function test_a_per_class_methods_remaining_is_reported_the_same_way(): void
+    {
+        $method = $this->perClass(['large' => 3000], fallback: 500, freeAbove: 10000);
+
+        $below = $this->calculator->rateFor($method, $this->request([['large', 1]], goods: 7650));
+        $this->assertSame(10000, $below->freeAboveMinor);
+        $this->assertSame(2350, $below->remainingToFreeMinor);
+        $this->assertSame(3000, $below->amountMinor(), 'the class price is untouched');
+
+        $at = $this->calculator->rateFor($method, $this->request([['large', 1]], goods: 10000));
+        $this->assertSame(0, $at->remainingToFreeMinor);
+        $this->assertSame(0, $at->amountMinor());
+    }
+
+    public function test_a_method_without_a_threshold_reports_no_free_shipping_facts(): void
+    {
+        foreach ([$this->flat(500), $this->perClass(['large' => 700], fallback: 500)] as $method) {
+            $rate = $this->calculator->rateFor($method, $this->request([[null, 1]], goods: 1));
+            $this->assertNull($rate->freeAboveMinor);
+            $this->assertNull($rate->remainingToFreeMinor);
+        }
+    }
+
+    public function test_free_and_carrier_report_no_free_shipping_facts_even_with_a_threshold_on_a_carrier(): void
+    {
+        $free = $this->calculator->rateFor($this->free(), $this->request([[null, 1]], goods: 1));
+        $this->assertNull($free->freeAboveMinor);
+        $this->assertNull($free->remainingToFreeMinor);
+
+        $carrier = $this->calculator->rateFor($this->carrier(freeAbove: 10000), $this->request([[null, 1]], goods: 9999));
+        $this->assertNull($carrier->freeAboveMinor, 'the threshold is not applied to a live carrier quote');
+        $this->assertNull($carrier->remainingToFreeMinor);
+        $this->assertTrue($carrier->needsQuote());
+    }
 }

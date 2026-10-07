@@ -18,6 +18,7 @@ final class ShippingQuoteResult
         public readonly string $zoneName,
         public readonly string $pricingHash,
         public readonly array $methods,
+        public readonly ?FreeShippingHint $freeShippingHint = null,
     ) {
     }
 
