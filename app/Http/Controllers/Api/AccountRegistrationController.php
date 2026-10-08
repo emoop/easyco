@@ -27,18 +27,28 @@ class AccountRegistrationController extends Controller
     }
 
     /**
-     * max:255 on both fields, not just a shape check: accounts.email is a
-     * varchar(255) and `email` carries NO length bound of its own (an
-     * 80-character local part is perfectly legal), while `password` is an
-     * arbitrary-length string. Without the bound an overlong value is a 500
-     * from MySQL in the first case, and a multi-kilobyte password hashed for
-     * nothing in the second — with it, both are a 422 field error and no
-     * account row is written.
+     * max:254 on the email — the WIDEST address that can actually be registered —
+     * and max:255 on the password.
+     *
+     * WHY 254 AND NOT 255: accounts.email is a varchar(255) and `email` carries NO
+     * length bound of its own (an 80-character local part is perfectly legal), while
+     * `password` is an arbitrary-length string. Without a bound an overlong email is
+     * a 500 from MySQL, and a multi-kilobyte password is hashed for nothing — with
+     * one, both are a 422 field error and no account row is written.
+     *
+     * 255 was the ONE width that got past this layer and still failed: the Account
+     * domain normalises and validates the address with filter_var(FILTER_VALIDATE_
+     * EMAIL), which refuses anything longer than 254 characters, so a 255-character
+     * address passed `email|max:255` and then threw an InvalidArgumentException
+     * this controller does not catch — a 500, not a 422. Reported as a gap by
+     * tests\Feature\AccountRegistrationControllerTest's own 255 case in the second
+     * hardening pass and settled here: the API layer now refuses the width itself,
+     * so the domain's ceiling is never reached with an address it will reject.
      */
     public function store(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'email' => 'required|email|max:255',
+            'email' => 'required|email|max:254',
             'password' => 'required|min:8|max:255|confirmed',
         ]);
 

@@ -557,6 +557,48 @@ class OrderEditActionTest extends TestCase
         $this->assertSame(__('orders.actions.edit_nothing_to_change'), $this->lastNotificationBody());
     }
 
+    /**
+     * INPUT HARDENING (third pass, 3a): the discount cell carries a rule of its own
+     * (OrderResource::discountRules()) whose ceiling is MoneyInput's — at most nine
+     * integer digits and no more decimals than the currency uses — and this is what
+     * a merchant sees when they type past it: a FIELD error on the cell, with the
+     * order untouched. Before that rule the cell accepted a 19-digit amount and
+     * OrderEditFormMapper::lineChanges() handed the text to Money::fromDecimal(),
+     * whose own `(int) $digits` cast saturated SILENTLY to PHP_INT_MAX minor units
+     * of discount — a number nobody typed, saved onto a real order. The cell
+     * refuses the shape now, and the mapper refuses it independently, because a
+     * form value is only ever a request (see OrderEditFormMapperTest).
+     */
+    public function test_a_discount_the_app_cannot_read_is_a_field_error_and_the_order_is_untouched(): void
+    {
+        $this->actingAsStaffRole('Administrator');
+        $order = $this->place();
+
+        // Nine integer digits fit; the tenth does not, and neither does the
+        // float-cast shape a numeric box's own state cast can produce.
+        foreach (['1000000000.00', '1.0E+19'] as $unreadable) {
+            $component = $this->mount($order);
+            $this->submitLines($component, ['Beta' => ['discount' => $unreadable]]);
+
+            $component->assertHasFormErrors();
+            $this->assertContains(
+                __('orders.actions.edit_invalid_discount'),
+                collect($component->instance()->getErrorBag()->all())->flatten()->all(),
+                "{$unreadable} must be refused on the discount cell itself.",
+            );
+
+            $row = $this->row($order->id());
+            $this->assertSame(0, (int) $row->discount_minor);
+            $this->assertSame(0, (int) $row->edit_revision);
+        }
+
+        // The same cell with an amount the app reads still goes through: the refusal
+        // above is the amount's shape, not the field and not the permission.
+        $this->submitLines($this->mount($order), ['Beta' => ['discount' => '3.00']]);
+
+        $this->assertSame(300, (int) $this->row($order->id())->discount_minor);
+    }
+
     public function test_changing_delivery_only(): void
     {
         $this->actingAsStaffRole('Administrator');

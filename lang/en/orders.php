@@ -562,6 +562,7 @@ return [
         'edit_current_quantity' => 'Now',
         'edit_new_quantity' => 'New quantity',
         'edit_discount' => 'Manual discount',
+        'edit_invalid_discount' => 'Enter a discount such as 12.50.',
         'edit_promotion_code' => 'Promotion code',
         'edit_promotion_code_hint' => 'Leave as is to keep the code, type another code to replace it.',
         'edit_remove_promotion_code' => 'Remove the promotion code entirely',

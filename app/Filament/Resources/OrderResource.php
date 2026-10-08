@@ -1791,6 +1791,35 @@ class OrderResource extends Resource
     }
 
     /**
+     * The edit dialog's discount cell follows every amount box in this panel
+     * (RefundDialog::amountRules(), and the receipt dialog's own): blank is
+     * fine, and anything typed must be an amount MoneyInput reads — at most
+     * MoneyInput::MAX_INTEGER_DIGITS integer digits and no more decimals than
+     * the order's currency uses.
+     *
+     * `numeric|minValue(0)` alone is not that rule: it accepts a 19-digit
+     * amount, which OrderEditFormMapper::lineChanges() then has to read as a
+     * discount (Money::fromDecimal()'s own `(int)` cast saturated it to
+     * PHP_INT_MAX minor units), and it accepts the float-cast shapes a numeric
+     * box's state cast produces ("1.0E+19"), which are not decimals at all.
+     * Refusing them here makes the refusal a field error on the cell; the
+     * mapper refuses the same shapes too, because a form value is only a
+     * request ("input hardening", pass 3a).
+     *
+     * @return array<int, Closure>
+     */
+    private static function discountRules(string $currency): array
+    {
+        return [
+            static fn (): Closure => static function (string $attribute, mixed $value, Closure $fail) use ($currency): void {
+                if (filled($value) && MoneyInput::parse((string) $value, $currency) === null) {
+                    $fail(__('orders.actions.edit_invalid_discount'));
+                }
+            },
+        ];
+    }
+
+    /**
      * The edit dialog's form: line table, delivery, promotion, reason, and
      * the hidden concurrency token. Delivery labels and the delivery-type
      * options are the SAME `orders.fields.*` / `orders.delivery_type_options`
@@ -1851,7 +1880,23 @@ class OrderResource extends Resource
 
         if ($mayDiscount) {
             $columns[] = RepeaterTableColumn::make(__('orders.actions.edit_discount'))->alignEnd();
-            $cells[] = TextInput::make('discount')->hiddenLabel()->numeric()->minValue(0);
+
+            // The cell's text goes straight into OrderEditFormMapper::lineChanges(),
+            // which parses it with MoneyInput — so the rule every other amount box in
+            // this panel carries (§ the refund dialog's amount boxes) belongs HERE,
+            // where an unreadable amount is a FIELD error on the box the merchant is
+            // typing in rather than an exception from further in: `numeric|minValue(0)`
+            // alone accepts a 19-digit amount (Money::fromDecimal()'s own `(int)` cast
+            // turned it into PHP_INT_MAX minor units of discount — a figure nobody
+            // typed) and accepts the float-cast shapes a numeric box's state cast
+            // produces ("1.0E+19"), which are not decimals at all. No maxLength: the
+            // rule below already refuses MoneyInput's own 32-character ceiling, and a
+            // table cell is not one of the dialog's amount boxes.
+            $cells[] = TextInput::make('discount')
+                ->hiddenLabel()
+                ->numeric()
+                ->minValue(0)
+                ->rules(static::discountRules($record->currency));
         }
 
         $columns[] = RepeaterTableColumn::make(__('orders.actions.edit_remove_line'))->hiddenHeaderLabel();

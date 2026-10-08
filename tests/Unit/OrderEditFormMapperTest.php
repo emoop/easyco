@@ -205,6 +205,30 @@ class OrderEditFormMapperTest extends TestCase
         $this->assertSame([], $changes);
     }
 
+    /**
+     * The other side of the same rule (input hardening pass 3, item 3a): the widest
+     * amount this app reads anywhere — nine integer digits, MoneyInput's own
+     * ceiling, the one OrderResource::discountRules() enforces on the cell — is a
+     * legal discount and is read EXACTLY; one integer digit more is refused, not
+     * saturated. Money::fromDecimal()'s own `(int)` cast turned the refused case
+     * into PHP_INT_MAX minor units without a word, which is what this pass removed.
+     */
+    public function test_the_widest_amount_the_app_reads_is_a_legal_discount_and_one_digit_more_is_not(): void
+    {
+        $changes = OrderEditFormMapper::lineChanges([
+            ['line_id' => '10', 'quantity' => 3, 'discount' => '999999999.99'],
+        ], $this->lines(), true, 'EUR');
+
+        $this->assertSame(['discount'], array_column($changes, 'change'));
+        $this->assertSame(99999999999, $changes[0]['discretionaryDiscount']->minorValue());
+
+        $this->expectException(InvalidArgumentException::class);
+
+        OrderEditFormMapper::lineChanges([
+            ['line_id' => '10', 'quantity' => 3, 'discount' => '1000000000.00'],
+        ], $this->lines(), true, 'EUR');
+    }
+
     #[DataProvider('refusedRows')]
     public function test_a_malformed_or_tampered_row_is_refused(array $rows): void
     {
@@ -224,6 +248,8 @@ class OrderEditFormMapperTest extends TestCase
             'a negative quantity' => [[['line_id' => '10', 'quantity' => -1]]],
             'a fractional quantity' => [[['line_id' => '10', 'quantity' => '1.5']]],
             'a non-numeric quantity' => [[['line_id' => '10', 'quantity' => 'abc']]],
+            'a discount of nineteen digits' => [[['line_id' => '10', 'quantity' => 3, 'discount' => '9999999999999999999']]],
+            'a discount in a float-cast shape' => [[['line_id' => '10', 'quantity' => 3, 'discount' => '1.0E+19']]],
         ];
     }
 

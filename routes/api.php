@@ -25,7 +25,15 @@ use App\Http\Controllers\Api\VariationController;
 use App\Http\Controllers\Api\VariationMediaController;
 use Illuminate\Support\Facades\Route;
 
-Route::post('/account/register', [AccountRegistrationController::class, 'store']);
+// The public WRITE endpoints of the storefront carry a named limiter from
+// App\Http\ApiRateLimits (the ONE place they are defined): registration and
+// applying a promo code by IP alone, checkout and address writes by IP + cart
+// — the reason each key is shaped the way it is, and each budget, is in that
+// class's own docblock / config/ratelimits.php. The login route below keeps
+// its older inline `throttle:6,1` on purpose: it predates the convention, and
+// replacing it is a separate decision about credential-stuffing budgets.
+Route::post('/account/register', [AccountRegistrationController::class, 'store'])
+    ->middleware('throttle:'.ApiRateLimits::REGISTRATION);
 Route::post('/account/login', [AccountSessionController::class, 'store'])
     ->middleware('throttle:6,1');
 
@@ -33,21 +41,25 @@ Route::middleware('auth:customer')->group(function () {
     Route::post('/account/logout', [AccountSessionController::class, 'destroy']);
     Route::get('/account/me', [AccountSessionController::class, 'show']);
     Route::get('/addresses', [AddressController::class, 'index']);
-    Route::put('/addresses/{addressId}', [AddressController::class, 'update']);
+    Route::put('/addresses/{addressId}', [AddressController::class, 'update'])
+        ->middleware('throttle:'.ApiRateLimits::ADDRESS);
 });
 
-Route::post('/addresses', [AddressController::class, 'store']);
+Route::post('/addresses', [AddressController::class, 'store'])
+    ->middleware('throttle:'.ApiRateLimits::ADDRESS);
 
 Route::get('/cart', [CartController::class, 'index']);
 Route::post('/cart/lines', [CartController::class, 'store']);
 Route::patch('/cart/lines/{variationId}', [CartController::class, 'update']);
 Route::delete('/cart/lines/{variationId}', [CartController::class, 'destroy']);
-Route::put('/cart/promotion', [CartController::class, 'applyPromotion']);
+Route::put('/cart/promotion', [CartController::class, 'applyPromotion'])
+    ->middleware('throttle:'.ApiRateLimits::PROMOTION);
 Route::delete('/cart/promotion', [CartController::class, 'removePromotion']);
 
 // Checkout is available to guests AND logged-in customers, so it must
 // NOT go inside the auth:customer group above.
-Route::post('/checkout', [CheckoutController::class, 'store']);
+Route::post('/checkout', [CheckoutController::class, 'store'])
+    ->middleware('throttle:'.ApiRateLimits::CHECKOUT);
 
 // The shipping quote is public too (guests choose delivery before they have an
 // account), and throttled by the central named limiter (App\Http\ApiRateLimits).

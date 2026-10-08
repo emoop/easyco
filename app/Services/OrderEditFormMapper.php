@@ -120,6 +120,13 @@ final class OrderEditFormMapper
      *    change_quantity + discount for one line as TWO entries which it
      *    merges into a single reversal + replacement (its plan() says so) —
      *    so a row that changes both yields exactly those two entries.
+     *  - a discount the app cannot read as an amount (MoneyInput's own limits:
+     *    9 integer digits, and no more decimals than the currency uses) is
+     *    REFUSED, never saturated: `numeric|minValue(0)` on the cell passed a
+     *    19-digit amount to Money::fromDecimal(), whose own `(int)` cast
+     *    turned it into PHP_INT_MAX minor units. The cell's rule refuses it
+     *    first; this is the same rule enforced where the submission is read,
+     *    since a form value is only a request (input hardening pass 3a).
      *  - $mayDiscount false (no ORDER_DISCOUNT): the discount is never read,
      *    whatever the submission carries.
      *
@@ -166,7 +173,7 @@ final class OrderEditFormMapper
             }
 
             if ($mayDiscount && trim((string) ($row['discount'] ?? '')) !== '') {
-                $discount = Money::fromDecimal((string) $row['discount'], $currency);
+                $discount = self::moneyFromTypedAmount((string) $row['discount'], $currency);
                 $current = $line->discretionaryDiscount() ?? Money::zero($currency);
 
                 if (! $discount->equals($current)) {
@@ -271,5 +278,40 @@ final class OrderEditFormMapper
         }
 
         throw new InvalidArgumentException("OrderEditFormMapper: {$label} has a quantity that is not a whole number.");
+    }
+
+    /**
+     * The discount cell's text as Money — through MoneyInput, never
+     * Money::fromDecimal() on the submission (input hardening pass 3a).
+     *
+     * Money::decimalStringToMinorUnits() ends in `(int) $digits`, so a digit
+     * string long enough to overflow becomes PHP_INT_MAX SILENTLY:
+     * Money::fromDecimal('9999999999999999999.00') is exactly
+     * 9223372036854775807 minor units of discretionary discount — a figure
+     * nobody typed, and not a sum of money. Shorter but still over-wide
+     * values (10 to 14 integer digits) went through as literal amounts far
+     * above the 999 999 999.99 this app lets anyone type in any other amount
+     * box. MoneyInput's ceiling (MoneyInput::MAX_INTEGER_DIGITS, plus the
+     * currency's own decimals) is the app's answer to both, and the same one
+     * the refund and receipt dialogs' amount boxes get from their own rules —
+     * the cell's rule in OrderResource::buildEditFormSchema() refuses these
+     * first, and this is the same rule where the value is actually read.
+     *
+     * @throws InvalidArgumentException A value that is not an amount MoneyInput reads —
+     *   including the float-cast shapes a numeric box's own state cast produces
+     *   ("1.0E+19"), which Money::fromDecimal() refused with the same exception class.
+     */
+    private static function moneyFromTypedAmount(string $decimal, Currency|string $currency): Money
+    {
+        $money = MoneyInput::parse($decimal, $currency);
+
+        if ($money === null) {
+            throw new InvalidArgumentException(
+                'OrderEditFormMapper: the discount "'.mb_substr($decimal, 0, 40).'" is not an amount of at most '.
+                MoneyInput::MAX_INTEGER_DIGITS.' integer digits.'
+            );
+        }
+
+        return $money;
     }
 }

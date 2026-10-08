@@ -7,6 +7,7 @@ use App\Filament\Resources\ProductResource\Pages\EditProduct;
 use App\Filament\Resources\ProductResource\Pages\ViewProduct;
 use App\Filament\StaffPanelUser;
 use App\Models\ActivityLogModel;
+use App\Services\ProductPricingAndStock;
 use App\Settings\Contracts\SiteSettingsRepository;
 use EasyCo\Catalog\Enums\CatalogVisibility;
 use EasyCo\Catalog\Enums\ProductStatus;
@@ -304,5 +305,55 @@ class ProductPricingAndStockTest extends TestCase
         Livewire::test(ViewProduct::class, ['record' => $product->id])
             ->assertSchemaComponentStateSet('regular_price', '29.99 €')
             ->assertSchemaComponentStateSet('sale_price', null);
+    }
+
+    /**
+     * INPUT HARDENING (third pass, 3a) — the WRITER half of the same rule, with no
+     * Filament form in the way: every amount these pages submit is parsed by
+     * ProductPricingAndStock::moneyFromTypedAmount(), i.e. MoneyInput, never by
+     * Money::fromDecimal() on the submitted text. Money::decimalStringToMinorUnits()
+     * ends in `(int) $digits`, so a long enough digit string saturated SILENTLY:
+     * Money::fromDecimal('9999999999999999999.00') is exactly PHP_INT_MAX minor
+     * units — a price nobody typed, stored as fact.
+     *
+     * TWO REPORTED LIMITS, both deliberate and both stated in this pass's report:
+     *  1. The refusal is LOUD (InvalidArgumentException), because EditProduct's and
+     *     CreateProduct's price fields still carry only `numeric|minValue(0)|step(0.01)`
+     *     — giving them the refund dialogs' shared money rule is a separate, unclaimed
+     *     item. What this test pins is that nothing is written in the meantime: no
+     *     saturated row, no price at all, rather than a wrong one.
+     *  2. The widest amount the app reads anywhere — nine integer digits — still
+     *     writes, and writes exactly.
+     */
+    public function test_an_amount_wider_than_the_app_reads_is_refused_by_the_writer_instead_of_saturating(): void
+    {
+        $this->actingAsStaffRole('Administrator');
+
+        $product = $this->createSimpleProduct('Wide Price', 'wide-price', ['cost' => '10.00']);
+        $variationId = $this->universalVariationId($product);
+        $pricing = app(ProductPricingAndStock::class);
+
+        try {
+            $pricing->writeRegularPrice($variationId, '999999999999999999999999999999');
+            $this->fail('A 30-digit amount must be refused, not saturated to PHP_INT_MAX minor units.');
+        } catch (\InvalidArgumentException $exception) {
+            $this->assertStringContainsString(
+                '999999999999999999999999999999',
+                $exception->getMessage(),
+                'the refusal names the amount it refused',
+            );
+        }
+
+        $regularList = app(PriceListRepository::class)->findSystemListByName('Regular Prices');
+        $this->assertNull(
+            app(PriceListItemRepository::class)->findByPriceListIdAndTarget($regularList->id(), PriceListItemTargetType::VARIATION, $variationId),
+            'a refused amount writes nothing at all — not a saturated price either',
+        );
+
+        $pricing->writeRegularPrice($variationId, '999999999.99');
+
+        $item = app(PriceListItemRepository::class)->findByPriceListIdAndTarget($regularList->id(), PriceListItemTargetType::VARIATION, $variationId);
+        $this->assertNotNull($item);
+        $this->assertSame('999999999.99', $item->price()->gross()->decimalValue());
     }
 }

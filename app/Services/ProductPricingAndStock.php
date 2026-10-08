@@ -13,6 +13,7 @@ use EasyCo\Pricing\Price;
 use EasyCo\Pricing\PriceList;
 use EasyCo\Pricing\PriceListItem;
 use EasyCo\Pricing\ProductCost;
+use InvalidArgumentException;
 use RuntimeException;
 
 /**
@@ -78,6 +79,14 @@ use RuntimeException;
  * real, reported no-op: it neither creates nor removes a row. A
  * previously-set cost stays exactly as it was until overwritten with a
  * different value.
+ *
+ * INPUT HARDENING (third pass, 3a): every amount that reaches a money
+ * write from OUTSIDE this class is parsed by moneyFromTypedAmount(),
+ * which routes it through MoneyInput instead of calling
+ * Money::fromDecimal() on the submitted text directly — see that
+ * method's own docblock for the saturation it prevents and why
+ * MoneyInput's own ceiling is the right answer rather than a wider
+ * (int) cast.
  */
 final class ProductPricingAndStock
 {
@@ -107,6 +116,16 @@ final class ProductPricingAndStock
      * Round-tripping the submitted value through Money first (same
      * currency, same decimalValue() call regularPriceDisplay() itself
      * uses) is the real fix, not a workaround around Filament's cast.
+     *
+     * The parse itself goes through moneyFromTypedAmount() (i.e.
+     * MoneyInput), never Money::fromDecimal() directly: this method's
+     * own argument is a submitted FORM FIELD, and a NumberStateCast
+     * hands over a float-cast string for anything too wide for it
+     * ("1.0E+19") — which Money::fromDecimal() cannot read at all.
+     * Anything that is not an amount this app accepts is REFUSED here
+     * (InvalidArgumentException, moneyFromTypedAmount()'s own
+     * docblock), so a value that could never be stored cannot reach the
+     * diff-guard as a normalized "80.00"-like string either.
      */
     public function normalizeDecimalDisplay(?string $decimal): ?string
     {
@@ -114,7 +133,7 @@ final class ProductPricingAndStock
             return null;
         }
 
-        return Money::fromDecimal($decimal, DefaultCurrency::get())->decimalValue();
+        return $this->moneyFromTypedAmount($decimal)->decimalValue();
     }
 
     public function regularPriceDisplay(string $priceableId): ?string
@@ -214,7 +233,7 @@ final class ProductPricingAndStock
         }
 
         $currency = DefaultCurrency::get();
-        $money = Money::fromDecimal($decimal, $currency);
+        $money = $this->moneyFromTypedAmount($decimal);
         $existing = $this->productCosts->findByPriceableIdAndCurrency($priceableId, $currency->code());
 
         if ($existing !== null) {
@@ -283,7 +302,7 @@ final class ProductPricingAndStock
         $list = $this->requireSystemList($listName);
         $existing = $this->priceListItems->findByPriceListIdAndTarget($list->id(), $targetType, $targetId);
 
-        $money = Money::fromDecimal($decimal, DefaultCurrency::get());
+        $money = $this->moneyFromTypedAmount($decimal);
         $taxRateBasisPoints = (int) config('services.pricing.default_tax_rate_basis_points', 0);
         $price = Price::inclusiveOfTax($money, $taxRateBasisPoints);
 
@@ -301,6 +320,51 @@ final class ProductPricingAndStock
             targetId: $targetId,
             price: $price,
         ));
+    }
+
+    /**
+     * An amount box's submitted text as Money — through MoneyInput, never
+     * Money::fromDecimal() straight on the submitted value (input
+     * hardening pass 3, item 3a).
+     *
+     * WHY THIS METHOD EXISTS, I.E. WHAT IT PREVENTS: Money::
+     * decimalStringToMinorUnits() ends in `(int) $digits`, so a digit
+     * string long enough to overflow converts SILENTLY to PHP_INT_MAX —
+     * Money::fromDecimal('9999999999999999999.00', ...) is exactly
+     * 9223372036854775807 minor units, a price nobody typed, stored as
+     * fact. Casting via a float first does not help: PHP's default
+     * precision=14 discards the low digits ("123456789012345.67" becomes
+     * 1.2345678901235E+14) — for some widths an unreadable exponent that
+     * Money refuses, for others a rounded amount that Money accepts as if
+     * it were entered.
+     *
+     * MoneyInput owns the app-wide answer instead: at most
+     * MoneyInput::MAX_INTEGER_DIGITS (9) integer digits, the same ceiling
+     * ShippingMethodWriter and PaymentReceiptRecorder already apply to
+     * their own amounts, with everything else about the text (separators,
+     * spaces, currency decimals) treated the same way the rest of the
+     * admin panel treats it. So a value this app could never have meant is
+     * refused HERE, deterministically, in every format it can arrive in —
+     * and a refused value is never written, in whole or in saturated part.
+     *
+     * @throws InvalidArgumentException A value that is not an amount, or is wider than
+     *   MoneyInput::MAX_INTEGER_DIGITS integer digits. The same exception class
+     *   Money::fromDecimal() already threw for text it could not read, so no caller's
+     *   failure mode changes — what changes is that PHP_INT_MAX saturation can no
+     *   longer reach storage at all.
+     */
+    private function moneyFromTypedAmount(string $decimal): Money
+    {
+        $money = MoneyInput::parse($decimal, DefaultCurrency::get());
+
+        if ($money === null) {
+            throw new InvalidArgumentException(
+                'Refused an amount that is not a plain decimal of at most '.MoneyInput::MAX_INTEGER_DIGITS.
+                ' integer digits: "'.mb_substr($decimal, 0, 40).'".'
+            );
+        }
+
+        return $money;
     }
 
     private function requireSystemList(string $name): PriceList

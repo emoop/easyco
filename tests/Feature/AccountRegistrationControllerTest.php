@@ -131,9 +131,11 @@ class AccountRegistrationControllerTest extends TestCase
      * THE BUILDER IS NOT DECORATION: `email` carries NO length bound of its own
      * — a 256-character address built this way passes it — so a long-enough
      * address is exactly the input that would reach accounts.email's
-     * varchar(255) and come back as a 500 without max:255. Labels of 63
-     * characters are deliberately avoided: the validator refuses those
-     * constructions whatever their total length, which would prove nothing.
+     * varchar(255), or the Account domain's own 254-character filter_var()
+     * ceiling, and come back as a 500 if this layer carried no width rule of its
+     * own. Labels of 63 characters are deliberately avoided: the validator
+     * refuses those constructions whatever their total length, which would prove
+     * nothing.
      */
     private function emailOfLength(int $characters): string
     {
@@ -160,12 +162,13 @@ class AccountRegistrationControllerTest extends TestCase
     }
 
     /**
-     * 254 is the longest address this endpoint accepts, and that ceiling is the
-     * DOMAIN's, not this layer's: `max:255` is accounts.email's own column width
-     * (see the 256 case below), while Account::normalizeAndValidateEmail()
-     * checks the address with filter_var(FILTER_VALIDATE_EMAIL), which refuses
-     * anything longer than 254 characters — see the 255 case, which is the one
-     * width between the two ceilings.
+     * 254 is the longest address this endpoint accepts, and the controller's own
+     * `max:254` is exactly that ceiling — deliberately the DOMAIN's number, not
+     * accounts.email's column width: Account::normalizeAndValidateEmail() checks
+     * the address with filter_var(FILTER_VALIDATE_EMAIL), which refuses anything
+     * longer than 254 characters, so 255 is the ONE width between the column and
+     * that ceiling — the one width `max:255` let through to an uncaught
+     * InvalidArgumentException, i.e. a 500 (the case directly below).
      */
     public function test_a_254_character_email_is_accepted_and_creates_the_account(): void
     {
@@ -205,21 +208,24 @@ class AccountRegistrationControllerTest extends TestCase
     }
 
     /**
-     * REPORTED GAP, NOT A DESIGN. 255 characters is the ONE width that gets past
-     * `max:255` and is then refused by the Account domain's own 254-character
-     * filter_var() ceiling — an InvalidArgumentException this controller does not
-     * catch, so the answer is a 500 rather than a 422. `max:255` cannot prevent
-     * it (the column is 255 wide, which is what this layer knows about) and the
-     * domain is out of this pass's scope; the forthcoming email-validation
-     * design, or the domain's own ceiling, is where it has to be settled.
+     * INPUT HARDENING (third pass, 3b) — this WAS a reported gap, and this test is
+     * the one that changed with it. 255 characters is the ONE width between
+     * accounts.email's varchar(255) and the Account domain's own 254-character
+     * filter_var() ceiling: with `max:255` on the field it passed this layer and
+     * was then refused by the domain with an InvalidArgumentException the
+     * controller does not catch — an uncaught 500 rather than a field error,
+     * confirmed against the running app. The controller's `max:254` closes it, so
+     * the refusal is now THIS layer's own, a 422 naming the field, and nothing is
+     * written. The address rule is asserted to still accept the address, because
+     * the point is that the WIDTH is what refuses it.
      */
-    public function test_a_255_character_email_is_refused_by_the_domain_after_the_width_rule_lets_it_through(): void
+    public function test_a_255_character_email_is_refused_by_the_width_rule_as_a_field_error_not_a_500(): void
     {
         $email = $this->emailOfLength(255);
 
         $this->assertTrue(
-            Validator::make(['email' => $email], ['email' => 'email|max:255'])->passes(),
-            'Both of this layer\'s rules accept this address — the refusal below is not this layer\'s.'
+            Validator::make(['email' => $email], ['email' => 'email'])->passes(),
+            'The address rule itself accepts this address — the width rule is what refuses it.'
         );
 
         $response = $this->postJson('/api/account/register', [
@@ -228,7 +234,10 @@ class AccountRegistrationControllerTest extends TestCase
             'password_confirmation' => 'password123',
         ]);
 
-        $response->assertStatus(500);
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors([
+            'email' => __('validation.max.string', ['attribute' => 'email', 'max' => 254], 'en'),
+        ]);
         $this->assertSame(0, AccountModel::count());
     }
 

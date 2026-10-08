@@ -550,6 +550,7 @@ return [
         'edit_current_quantity' => 'Сега',
         'edit_new_quantity' => 'Ново количество',
         'edit_discount' => 'Ръчна отстъпка',
+        'edit_invalid_discount' => 'Въведете отстъпка, например 12.50.',
         'edit_promotion_code' => 'Промо код',
         'edit_promotion_code_hint' => 'Оставете непроменен, за да запазите кода, или въведете друг код, за да го замените.',
         'edit_remove_promotion_code' => 'Премахни промо кода изцяло',
