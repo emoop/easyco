@@ -19,7 +19,10 @@ use Illuminate\Support\Facades\RateLimiter;
  *  - the key is "who is asking, about what": the client IP, plus the identity of
  *    the cart being worked on (the signed-in customer's id, else the guest session's
  *    cart token, else none) — so one shopper cannot exhaust everyone behind the same
- *    IP, and one IP cannot hammer many carts under one limit;
+ *    IP, and one IP cannot hammer many carts under one limit — which is
+ *    shipping-quote's key; the four limiters whose caller must not be handed a fresh
+ *    budget by a fresh cookie are keyed by the IP alone — "TWO KEY SHAPES" below says
+ *    which, and why;
  *  - the key never contains the cart token itself (it is a secret) but a hash of it;
  *  - the refusal is a 429 `{message, reason: "too_many_requests"}`, the message
  *    translated in the STORE locale (the framework's own locale never applies it),
@@ -34,19 +37,29 @@ use Illuminate\Support\Facades\RateLimiter;
  * Their budgets are rows in config/ratelimits.php — one row each, asserted by a test.
  *
  * TWO KEY SHAPES, DELIBERATELY — IP + cart identity, or the IP ALONE:
- * registration and promotion are keyed by the IP alone, and NOT because their
- * endpoints happen to be cart-less (registration is, promotion is not): in both, the
- * caller gets to CHOOSE the identity half of an IP + cart key — a fresh session
- * cookie hands them a fresh budget — which is right for a limiter counting work on a
- * cart (a rotated cart is a genuinely different cart, and shipping-quote's budget is
- * per cart by design) but worthless against the two attacks these two exist for.
- * Registration is account spam; applying a promo code is a SECRET being guessed.
- * Neither may be resettable at the price of a cookie, so both pay the convention's
- * own documented price instead: a whole IP shares one budget — which is exactly what
- * an abuser sitting behind a NAT should be sharing — and the numbers (5 and 10 a
- * minute) leave a human, who does each of these once, untouched.
- * checkout and address keep the IP + cart identity shape: their work is per cart, so
- * the convention's fairness argument applies to them unchanged.
+ * registration, checkout, address and promotion are keyed by the IP alone, and NOT
+ * because their endpoints happen to be cart-less (registration is, the other three are
+ * not): in all four the caller gets to CHOOSE the identity half of an IP + cart key — a
+ * fresh session cookie hands them a fresh budget — so the cart half is not a ceiling
+ * but an allowance the caller declines at will. A per-cart key is right for a limiter
+ * counting work on a cart (a rotated cart is a genuinely different cart) and worthless
+ * against the four attacks these four exist for: account spam, order spam, address rows
+ * written for free, and a promo code — a SECRET — being guessed. None of the four may
+ * be resettable at the price of a cookie, so all four pay the convention's own
+ * documented price instead: a whole IP shares one budget — which is exactly what an
+ * abuser sitting behind a NAT should be sharing — and the numbers (5, 10, 20 and 10 a
+ * minute) leave a human, who does each of these once, untouched. The two order limiters
+ * (checkout, address) carried the cart half until the follow-up to this pass: the
+ * owner's own decision was IP-alone keying for checkout (shipping-domain-design.md
+ * §9.1.8, "keyed by IP ONLY"), and address — a public write of rows, whose key half the
+ * caller chooses just as freely — followed it for the same reason.
+ * shipping-quote is the ONE limiter that keeps the IP + cart identity shape, and that
+ * is the same argument read the other way: its work IS per cart — a quote prices one
+ * specific cart's goods, so a rotated cart is a genuinely different quote — and the
+ * convention's fairness argument (one shopper must not exhaust everyone behind one IP)
+ * applies to it unchanged. What the shape can be made to cost is stated where it is
+ * paid, not hidden: a client that rotates its cart token asks for more quotes than the
+ * ceiling, which is the same free identity the four above refuse to sell.
  */
 final class ApiRateLimits
 {
@@ -79,7 +92,7 @@ final class ApiRateLimits
     ];
 
     /** The limiters keyed by the IP alone — see this class's own docblock, "TWO KEY SHAPES". */
-    private const KEYED_BY_IP_ALONE = [self::REGISTRATION, self::PROMOTION];
+    private const KEYED_BY_IP_ALONE = [self::REGISTRATION, self::CHECKOUT, self::ADDRESS, self::PROMOTION];
 
     public static function register(): void
     {

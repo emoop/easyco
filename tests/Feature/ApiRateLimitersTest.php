@@ -26,8 +26,9 @@ use Tests\TestCase;
  * config row and only the routes that document it, that a budget is spent the same way
  * at every one of them (the last request inside it is answered, the next one is a 429
  * in the STORE locale with the standard headers), and that the two key shapes the
- * class documents — the IP alone, and the IP plus the identity of the cart — behave
- * the way its docblock says they do.
+ * class documents — the IP alone (four of the five), and the IP plus the identity of
+ * the cart (shipping-quote, whose work is per cart) — behave the way its docblock says
+ * they do.
  *
  * WHY A BUDGET IS SPENT HERE WITH REQUESTS THE ENDPOINT REFUSES (a validation error,
  * no cart to promote): a limiter counts a request the moment it arrives, whatever the
@@ -89,7 +90,10 @@ class ApiRateLimitersTest extends TestCase
 
         ApiRateLimits::CHECKOUT => [
             'config' => 'ratelimits.'.ApiRateLimits::CHECKOUT,
-            'key' => self::KEYED_BY_IP_AND_CART,
+            // IP alone: the cart half of an IP + cart key is the caller's to choose
+            // with a fresh session cookie, and the owner's decision for checkout is
+            // the per-IP limit (shipping-domain-design.md §9.1.8, "keyed by IP ONLY").
+            'key' => self::KEYED_BY_IP_ALONE,
             'refusal' => 'rate_limit.too_many_requests',
             'routes' => [['POST', 'api/checkout']],
             // No cart_id: a 422 from the controller's own rules, before the
@@ -99,7 +103,9 @@ class ApiRateLimitersTest extends TestCase
 
         ApiRateLimits::ADDRESS => [
             'config' => 'ratelimits.'.ApiRateLimits::ADDRESS,
-            'key' => self::KEYED_BY_IP_AND_CART,
+            // IP alone too, for the same reason: a public write of rows whose cart
+            // half the caller chooses just as freely.
+            'key' => self::KEYED_BY_IP_ALONE,
             'refusal' => 'rate_limit.too_many_requests',
             // Two routes, and this file spends the budget at the PUBLIC one:
             // PUT /api/addresses/{addressId} sits inside auth:customer, where
@@ -284,10 +290,11 @@ class ApiRateLimitersTest extends TestCase
     }
 
     /**
-     * The two limiters keyed by the IP alone exist because in BOTH of them the caller
+     * The four limiters keyed by the IP alone exist because in ALL of them the caller
      * gets to choose the other half of an IP + cart key — a fresh session cookie is a
      * fresh budget (ApiRateLimits's own docblock, "TWO KEY SHAPES"). This is that claim,
-     * spent: a new session does not reset the budget, and a second IP has its own.
+     * spent at every one of them (the provider takes the LIMITERS map's own four):
+     * a new session does not reset the budget, and a second IP has its own.
      *
      * @param  array<string, mixed>  $limiter
      */
@@ -315,34 +322,42 @@ class ApiRateLimitersTest extends TestCase
     }
 
     /**
-     * The other half of the same argument: the limiters keyed by the IP AND the cart
-     * exist so that one shopper cannot exhaust everyone behind the same IP (its own
-     * docblock again). Three identities behind one IP, and then the first of them
-     * behind a second IP, spent with the checkout limiter — one of the three whose key
-     * shape ADDRESS and SHIPPING_QUOTE share.
+     * The other half of the same argument: the ONE limiter keyed by the IP AND the cart
+     * is shipping-quote, because its work is per cart — a quote prices one specific
+     * cart's goods, so a rotated cart is a genuinely different quote, and the
+     * convention's fairness argument (one shopper must not exhaust everyone behind the
+     * same IP) applies to it unchanged. Request, budget and status come from the map
+     * above, so this cannot drift from what the limiter is actually attached to.
      */
     public function test_a_budget_keyed_by_the_cart_gives_another_cart_and_a_cartless_visitor_their_own_budgets(): void
     {
-        config(['ratelimits.checkout' => 2]);
+        $limiter = self::LIMITERS[ApiRateLimits::SHIPPING_QUOTE];
+
+        config([$limiter['config'] => 2]);
+
+        // No cart of its own exists for any of these tokens, so the quote is refused
+        // (422, an empty cart) whatever the limiter answers — the budget is what is
+        // being spent here, not a price.
+        [$method, $uri, $body, $insideStatus] = $limiter['inside'];
 
         $this->withSession(['cart_token' => 'cart-one']);
-        $this->postJson('/api/checkout', [])->assertStatus(422);
-        $this->postJson('/api/checkout', [])->assertStatus(422);
-        $this->postJson('/api/checkout', [])->assertStatus(429);
+        $this->send($method, $uri, $body)->assertStatus($insideStatus);
+        $this->send($method, $uri, $body)->assertStatus($insideStatus);
+        $this->send($method, $uri, $body)->assertStatus(429);
 
         // The same visitor, a different cart: a genuinely different cart is a
         // genuinely different budget.
         $this->withSession(['cart_token' => 'cart-two']);
-        $this->postJson('/api/checkout', [])->assertStatus(422);
+        $this->send($method, $uri, $body)->assertStatus($insideStatus);
 
         // A visitor with no cart at all is the third identity, and has one too.
         $this->flushSession();
-        $this->postJson('/api/checkout', [])->assertStatus(422);
+        $this->send($method, $uri, $body)->assertStatus($insideStatus);
 
         // And the first cart, at its limit here, is not at its limit from another IP.
         $this->withServerVariables(['REMOTE_ADDR' => self::OTHER_IP]);
         $this->withSession(['cart_token' => 'cart-one']);
-        $this->postJson('/api/checkout', [])->assertStatus(422);
+        $this->send($method, $uri, $body)->assertStatus($insideStatus);
     }
 
     // --- helpers -----------------------------------------------------------------------------------------------------------
