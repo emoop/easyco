@@ -2,6 +2,7 @@
 
 namespace EasyCo\Shipping;
 
+use EasyCo\Shipping\Enums\ShippingClassMode;
 use EasyCo\Shipping\Enums\ShippingMethodKind;
 use EasyCo\Shipping\Exceptions\InvalidShippingMethodException;
 use LogicException;
@@ -21,6 +22,8 @@ use LogicException;
  *               no rate for its class); classRates may be empty and a rate of 0
  *               is valid; no carrierCode.
  *  - CARRIER:   carrierCode required; no amountMinor; no classRates.
+ * classMode (shipping-domain-design.md §12.2) is REPLACE for every kind but PER_CLASS, which may also ADJUST; in
+ * REPLACE the class rates are non-negative, in ADJUST they are SIGNED integers (a discount is negative).
  * freeAboveMinor is allowed on FLAT, PER_CLASS and CARRIER (its semantics are
  * stage 3's). requiresPickupPoint is allowed on any kind. CARRIER methods can
  * be CONSTRUCTED; the resolver's behaviour for them comes later.
@@ -55,6 +58,8 @@ final class ShippingMethod
 
     private bool $requiresPickupPoint;
 
+    private ShippingClassMode $classMode;
+
     /** @param array<string, int> $classRates */
     private function __construct(
         private ?string $id,
@@ -68,12 +73,13 @@ final class ShippingMethod
         ?int $freeAboveMinor,
         ?string $carrierCode,
         bool $requiresPickupPoint,
+        ShippingClassMode $classMode = ShippingClassMode::REPLACE,
     ) {
         if (trim($zoneId) === '') {
             throw InvalidShippingMethodException::emptyZoneId();
         }
 
-        $this->apply($name, $kind, $sortOrder, $isActive, $amountMinor, $classRates, $freeAboveMinor, $carrierCode, $requiresPickupPoint);
+        $this->apply($name, $kind, $sortOrder, $isActive, $amountMinor, $classRates, $freeAboveMinor, $carrierCode, $requiresPickupPoint, $classMode);
     }
 
     /** @param array<string, int> $classRates */
@@ -88,8 +94,9 @@ final class ShippingMethod
         ?int $freeAboveMinor = null,
         ?string $carrierCode = null,
         bool $requiresPickupPoint = false,
+        ShippingClassMode $classMode = ShippingClassMode::REPLACE,
     ): self {
-        return new self(null, $zoneId, $name, $kind, $sortOrder, $isActive, $amountMinor, $classRates, $freeAboveMinor, $carrierCode, $requiresPickupPoint);
+        return new self(null, $zoneId, $name, $kind, $sortOrder, $isActive, $amountMinor, $classRates, $freeAboveMinor, $carrierCode, $requiresPickupPoint, $classMode);
     }
 
     /**
@@ -110,8 +117,9 @@ final class ShippingMethod
         ?int $freeAboveMinor,
         ?string $carrierCode,
         bool $requiresPickupPoint,
+        ShippingClassMode $classMode = ShippingClassMode::REPLACE,
     ): self {
-        return new self($id, $zoneId, $name, $kind, $sortOrder, $isActive, $amountMinor, $classRates, $freeAboveMinor, $carrierCode, $requiresPickupPoint);
+        return new self($id, $zoneId, $name, $kind, $sortOrder, $isActive, $amountMinor, $classRates, $freeAboveMinor, $carrierCode, $requiresPickupPoint, $classMode);
     }
 
     /**
@@ -131,8 +139,9 @@ final class ShippingMethod
         ?int $freeAboveMinor,
         ?string $carrierCode,
         bool $requiresPickupPoint,
+        ShippingClassMode $classMode = ShippingClassMode::REPLACE,
     ): void {
-        $this->apply($name, $kind, $sortOrder, $isActive, $amountMinor, $classRates, $freeAboveMinor, $carrierCode, $requiresPickupPoint);
+        $this->apply($name, $kind, $sortOrder, $isActive, $amountMinor, $classRates, $freeAboveMinor, $carrierCode, $requiresPickupPoint, $classMode);
     }
 
     /** @param array<mixed> $classRates */
@@ -146,6 +155,7 @@ final class ShippingMethod
         ?int $freeAboveMinor,
         ?string $carrierCode,
         bool $requiresPickupPoint,
+        ShippingClassMode $classMode = ShippingClassMode::REPLACE,
     ): void {
         $name = trim($name);
 
@@ -169,13 +179,13 @@ final class ShippingMethod
             throw InvalidShippingMethodException::negativeAmount('freeAboveMinor', $freeAboveMinor);
         }
 
-        $classRates = self::normalizeClassRates($classRates);
+        $classRates = self::normalizeClassRates($classRates, $classMode);
 
         if ($carrierCode !== null && ! ShippingCode::isValid($carrierCode)) {
             throw InvalidShippingMethodException::invalidCarrierCode($carrierCode);
         }
 
-        self::assertKindInvariants($kind, $amountMinor, $classRates, $freeAboveMinor, $carrierCode);
+        self::assertKindInvariants($kind, $amountMinor, $classRates, $freeAboveMinor, $carrierCode, $classMode);
 
         $this->name = $name;
         $this->kind = $kind;
@@ -186,20 +196,26 @@ final class ShippingMethod
         $this->freeAboveMinor = $freeAboveMinor;
         $this->carrierCode = $carrierCode;
         $this->requiresPickupPoint = $requiresPickupPoint;
+        $this->classMode = $classMode;
     }
 
     /**
      * @param  array<mixed>  $classRates
      * @return array<string, int>
      */
-    private static function normalizeClassRates(array $classRates): array
+    private static function normalizeClassRates(array $classRates, ShippingClassMode $classMode): array
     {
         foreach ($classRates as $classCode => $amount) {
             if (! ShippingCode::isValid((string) $classCode)) {
                 throw InvalidShippingMethodException::invalidClassRateCode($classCode);
             }
 
-            if (! is_int($amount) || $amount < 0) {
+            if ($classMode === ShippingClassMode::ADJUST) {
+                // Signed: a discount is a negative amount.
+                if (! is_int($amount)) {
+                    throw InvalidShippingMethodException::invalidSignedClassRate((string) $classCode, $amount);
+                }
+            } elseif (! is_int($amount) || $amount < 0) {
                 throw InvalidShippingMethodException::invalidClassRate((string) $classCode, $amount);
             }
         }
@@ -217,7 +233,12 @@ final class ShippingMethod
         array $classRates,
         ?int $freeAboveMinor,
         ?string $carrierCode,
+        ShippingClassMode $classMode,
     ): void {
+        if ($kind !== ShippingMethodKind::PER_CLASS && $classMode !== ShippingClassMode::REPLACE) {
+            throw InvalidShippingMethodException::classModeNotAllowed($kind);
+        }
+
         if ($kind !== ShippingMethodKind::PER_CLASS && $classRates !== []) {
             throw InvalidShippingMethodException::classRatesNotAllowed($kind);
         }
@@ -322,5 +343,11 @@ final class ShippingMethod
     public function requiresPickupPoint(): bool
     {
         return $this->requiresPickupPoint;
+    }
+
+    /** REPLACE for every kind but PER_CLASS, which may ADJUST (shipping-domain-design.md §12.2). */
+    public function classMode(): ShippingClassMode
+    {
+        return $this->classMode;
     }
 }

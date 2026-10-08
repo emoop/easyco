@@ -249,6 +249,7 @@ class ShippingOverview extends Page
             'overviewHelpUrl' => HelpLink::url('shipping_overview', 'shipping'),
             'tryItHelpUrl' => HelpLink::url('try_it', 'shipping'),
             'zonesUrl' => \App\Filament\Resources\ShippingZoneResource::getUrl('index'),
+            'methodsUrl' => \App\Filament\Resources\ShippingMethodResource::getUrl('index'),
         ];
     }
 
@@ -270,6 +271,7 @@ class ShippingOverview extends Page
             'price' => $method->amountMinor === null ? null : $money($method->amountMinor),
             'freeAbove' => $method->freeAboveMinor === null ? null : $money($method->freeAboveMinor),
             'remaining' => $method->remainingToFreeMinor === null ? null : $money($method->remainingToFreeMinor),
+            'classMode' => $method->classMode === null ? null : __('shipping.class_mode.'.$method->classMode),
             'needsMore' => $method->remainingToFreeMinor !== null && $method->remainingToFreeMinor > 0,
         ], $result->methods);
 

@@ -55,6 +55,18 @@ final class InvalidShippingMethodException extends InvalidArgumentException
         return new self("ShippingMethod class rate for \"{$classCode}\" must be a non-negative integer amount in minor units, got {$shown}.");
     }
 
+    public static function invalidSignedClassRate(string $classCode, mixed $amount): self
+    {
+        $shown = is_scalar($amount) ? var_export($amount, true) : get_debug_type($amount);
+
+        return new self("ShippingMethod class adjustment for \"{$classCode}\" must be an integer amount in minor units (negative for a discount), got {$shown}.");
+    }
+
+    public static function classModeNotAllowed(ShippingMethodKind $kind): self
+    {
+        return new self("A {$kind->name} ShippingMethod has no class amounts and so no class mode: only PER_CLASS can ADJUST.");
+    }
+
     public static function invalidClassRateCode(mixed $classCode): self
     {
         $shown = is_string($classCode) ? $classCode : get_debug_type($classCode);

@@ -65,6 +65,15 @@ final class ActivityLogger
         $this->write($entityType, $entityId, 'created', null, null, null);
     }
 
+    /**
+     * A record created by COPYING another (shipping stage 5d): an ordinary `created` entry that also names its
+     * source — `field` = copied_from, `new_value` = the source id. Added next to logCreated(); nothing else changed.
+     */
+    public function logCopied(string $entityType, string $entityId, string $sourceId): void
+    {
+        $this->write($entityType, $entityId, 'created', 'copied_from', null, $sourceId);
+    }
+
     public function logFieldChanged(string $entityType, string $entityId, string $field, ?string $oldValue, ?string $newValue): void
     {
         $this->write($entityType, $entityId, 'updated', $field, $oldValue, $newValue);

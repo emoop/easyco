@@ -2,6 +2,7 @@
 
 namespace EasyCo\Shipping\Rating;
 
+use EasyCo\Shipping\Enums\ShippingClassMode;
 use EasyCo\Shipping\Enums\ShippingMethodKind;
 use EasyCo\Shipping\ShippingMethod;
 
@@ -19,6 +20,9 @@ use EasyCo\Shipping\ShippingMethod;
  *    amountMinor, the fallback. The order is charged the SINGLE HIGHEST of
  *    those per-line rates — the most-expensive-class rule — NEVER their sum, and
  *    quantities do not multiply it. A rate of 0 is valid (all lines at 0 charge 0).
+ *  - PER_CLASS in ADJUST mode (shipping-domain-design.md §12.2): the base amountMinor PLUS the signed amount
+ *    of every DISTINCT class present in the cart, each added ONCE whatever its quantity, floored at 0. A
+ *    line with no class, or a class with no amount here, adds nothing. (REPLACE, above, is untouched.)
  *  - FREE-SHIPPING THRESHOLD (FLAT and PER_CLASS): when freeAboveMinor is set and
  *    goodsAfterDiscountMinor >= freeAboveMinor the charge is 0. It is ">=": an
  *    order exactly at the threshold IS free. The basis is the order's
@@ -88,6 +92,10 @@ final class ShippingRateCalculator
 
     private function perClassCharge(ShippingMethod $method, RateRequest $request): int
     {
+        if ($method->classMode() === ShippingClassMode::ADJUST) {
+            return $this->adjustedCharge($method, $request);
+        }
+
         $fallback = (int) $method->amountMinor();
         $rates = $method->classRates();
         $highest = null;
@@ -102,6 +110,27 @@ final class ShippingRateCalculator
 
         // RateRequest refuses an empty list, so at least one line set it.
         return (int) $highest;
+    }
+
+    /** ADJUST: max(0, base + the signed amount of each distinct class present, once). */
+    private function adjustedCharge(ShippingMethod $method, RateRequest $request): int
+    {
+        $rates = $method->classRates();
+        $present = [];
+
+        foreach ($request->lines as $line) {
+            if ($line->shippingClass !== null && array_key_exists($line->shippingClass, $rates)) {
+                $present[$line->shippingClass] = true;
+            }
+        }
+
+        $total = (int) $method->amountMinor();
+
+        foreach (array_keys($present) as $class) {
+            $total += $rates[$class];
+        }
+
+        return max(0, $total);
     }
 
     private function applyThreshold(ShippingMethod $method, RateRequest $request, int $charge): int

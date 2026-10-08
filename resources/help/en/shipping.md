@@ -18,6 +18,10 @@ Content to follow.
 
 Content to follow.
 
+## The kinds of shipping method {#action-method-kinds}
+
+Content to follow.
+
 ## How classes act on the price {#action-method-class-mode}
 
 Content to follow.
@@ -27,6 +31,10 @@ Content to follow.
 Content to follow.
 
 ## Adjust mode {#action-method-adjust}
+
+Content to follow.
+
+## Class mode: replace or adjust {#action-class-mode}
 
 Content to follow.
 

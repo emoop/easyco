@@ -3,6 +3,7 @@
 namespace EasyCo\Shipping\Persistence\Eloquent;
 
 use EasyCo\Shipping\Contracts\ShippingMethodRepository;
+use EasyCo\Shipping\Enums\ShippingClassMode;
 use EasyCo\Shipping\Enums\ShippingMethodKind;
 use EasyCo\Shipping\Exceptions\UnknownShippingClassException;
 use EasyCo\Shipping\ShippingMethod;
@@ -54,6 +55,7 @@ final class EloquentShippingMethodRepository implements ShippingMethodRepository
                 $model->free_above_minor = $method->freeAboveMinor();
                 $model->carrier_code = $method->carrierCode();
                 $model->requires_pickup_point = $method->requiresPickupPoint();
+                $model->class_mode = $method->classMode()->value;
                 $model->save();
 
                 DB::table('shipping_method_class_rates')->where('method_id', $model->id)->delete();
@@ -89,6 +91,12 @@ final class EloquentShippingMethodRepository implements ShippingMethodRepository
         }
 
         return $this->toDomain($model, $this->ratesFor([(int) $model->id])[(int) $model->id] ?? []);
+    }
+
+    public function delete(string $id): void
+    {
+        // The class rates go with it (ON DELETE CASCADE on ship_class_rates_method_id_foreign).
+        ShippingMethodModel::query()->whereKey($id)->delete();
     }
 
     /** @return ShippingMethod[] */
@@ -177,6 +185,7 @@ final class EloquentShippingMethodRepository implements ShippingMethodRepository
             freeAboveMinor: $model->free_above_minor,
             carrierCode: $model->carrier_code,
             requiresPickupPoint: (bool) $model->requires_pickup_point,
+            classMode: ShippingClassMode::from((string) ($model->class_mode ?? ShippingClassMode::REPLACE->value)),
         );
     }
 

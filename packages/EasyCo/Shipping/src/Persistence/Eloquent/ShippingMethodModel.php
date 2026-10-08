@@ -23,6 +23,7 @@ class ShippingMethodModel extends Model
         'free_above_minor',
         'carrier_code',
         'requires_pickup_point',
+        'class_mode',
     ];
 
     protected $casts = [

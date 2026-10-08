@@ -18,6 +18,13 @@ interface ShippingMethodRepository
     public function findById(string $id): ?ShippingMethod;
 
     /**
+     * Permanently removes the method; its class rates go with it (cascade). An UNKNOWN id is a NO-OP.
+     * Nothing references a method by foreign key (a placed order keeps its own snapshot — name, code and
+     * amount), so there is no history to protect. Added for the shipping admin (stage 5d).
+     */
+    public function delete(string $id): void;
+
+    /**
      * A zone's methods, sortOrder ASC, id ASC.
      *
      * @return ShippingMethod[]

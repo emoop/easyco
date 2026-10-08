@@ -379,8 +379,8 @@ class HelpPageTest extends TestCase
     /** The shipping skeleton's anchors, in order — a CONTRACT: later content edits must never rename them. */
     private const SHIPPING_ANCHORS = [
         'action-shipping-overview', 'action-zone-editor', 'action-zone-order', 'action-zone-settlement-matching',
-        'action-method-editor', 'action-method-class-mode', 'action-method-replace', 'action-method-adjust',
-        'action-method-free-above', 'action-class-editor', 'action-class-delete-blocked', 'action-product-class-field',
+        'action-method-editor', 'action-method-kinds', 'action-method-class-mode', 'action-method-replace', 'action-method-adjust',
+        'action-class-mode', 'action-method-free-above', 'action-class-editor', 'action-class-delete-blocked', 'action-product-class-field',
         'action-try-it', 'action-method-copy',
     ];
 

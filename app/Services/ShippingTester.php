@@ -95,6 +95,7 @@ final class ShippingTester
                 $rate->needsQuote() ? null : $rate->amountMinor(),
                 $rate->freeAboveMinor,
                 $rate->remainingToFreeMinor,
+                $method->kind() === \EasyCo\Shipping\Enums\ShippingMethodKind::PER_CLASS ? $method->classMode()->value : null,
             );
         }
 

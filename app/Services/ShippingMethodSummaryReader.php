@@ -6,6 +6,7 @@ use EasyCo\Pricing\Currency;
 use EasyCo\Pricing\DefaultCurrency;
 use EasyCo\Pricing\Money;
 use EasyCo\Shipping\Contracts\ShippingClassRepository;
+use EasyCo\Shipping\Enums\ShippingClassMode;
 use EasyCo\Shipping\Enums\ShippingMethodKind;
 use EasyCo\Shipping\ShippingMethod;
 
@@ -26,7 +27,7 @@ use EasyCo\Shipping\ShippingMethod;
  *  - CARRIER `Carrier: econt · not configured`
  *  - a method that requires a pickup point appends `pickup point`; an inactive
  *    method appends `inactive`.
- * The ADJUST class mode does not exist yet (stage 5d), so it is not represented.
+ * An ADJUST method (stage 5d) reads its class amounts as signed adjustments: `5.00 €; Heavy +25.00 €; Discount −3.00 €`.
  *
  * The separator and every fragment are lang keys (`lang/*\/shipping.php`); the
  * whole reader is used by the overview and by "Try it".
@@ -100,7 +101,10 @@ final class ShippingMethodSummaryReader
             $classCode = (string) $classCode;
             $parts[] = __('shipping.summary.class_rate', [
                 'class' => $names[$classCode] ?? $classCode,
-                'amount' => $this->money((int) $amount, $currency),
+                // ADJUST (shipping-domain-design.md §12.2/§12.4): a signed adjustment — "+25.00 €" / "−3.00 €".
+                'amount' => $method->classMode() === ShippingClassMode::ADJUST
+                    ? $this->signedMoney((int) $amount, $currency)
+                    : $this->money((int) $amount, $currency),
             ]);
         }
 
@@ -121,6 +125,18 @@ final class ShippingMethodSummaryReader
         }
 
         return $this->classNamesCache = $names;
+    }
+
+    /** A signed adjustment: a plus for a surcharge, a true minus sign (U+2212) for a discount, nothing for zero. */
+    private function signedMoney(int $minorUnits, Currency $currency): string
+    {
+        $text = $this->money(abs($minorUnits), $currency);
+
+        return match (true) {
+            $minorUnits > 0 => '+'.$text,
+            $minorUnits < 0 => "\u{2212}".$text,
+            default => $text,
+        };
     }
 
     private function money(int $minorUnits, Currency $currency): string
