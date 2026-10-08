@@ -10,6 +10,10 @@ use Filament\Support\Contracts\HasLabel;
  * The admin sidebar's top-level groups, in the exact order they should
  * render — admin-panel-design.md's own stated structure (this task).
  *
+ * THE RENDER ORDER IS THIS FILE'S CASE ORDER: SALES (Продажби) first — the
+ * day's orders are what a merchant opens the panel for — then CATALOG, then
+ * SHIPPING, then ADMIN.
+ *
  * Deliberately an enum case's identity, NOT a raw translated string,
  * returned from every Resource/Page's getNavigationGroup(): Filament's
  * real NavigationManager::get() (confirmed directly against the
@@ -29,9 +33,9 @@ use Filament\Support\Contracts\HasLabel;
  */
 enum NavigationGroup implements Collapsible, HasLabel
 {
+    case SALES;
     case CATALOG;
     case SHIPPING;
-    case SALES;
     case ADMIN;
 
     public function getLabel(): string
@@ -45,13 +49,16 @@ enum NavigationGroup implements Collapsible, HasLabel
     }
 
     /**
-     * Every group renders COLLAPSED by default — the sidebar's top-level
-     * headings open as closed disclosures, so its items stay hidden until a
-     * merchant clicks a group. Consumed by navigationGroups() below.
+     * SALES renders EXPANDED — the orders waiting for a decision are what a
+     * merchant opens the panel for, and a badge behind a closed disclosure is a
+     * badge nobody sees. Every OTHER group renders COLLAPSED by default: the
+     * sidebar's remaining top-level headings open as closed disclosures, so their
+     * items stay hidden until a merchant clicks a group. Consumed by
+     * navigationGroups() below.
      */
     public function isCollapsed(): bool
     {
-        return true;
+        return $this !== self::SALES;
     }
 
     /**

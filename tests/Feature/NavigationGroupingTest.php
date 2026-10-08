@@ -16,8 +16,10 @@ use App\Filament\Resources\SeasonResource;
 use App\Filament\Resources\StaffResource;
 use App\Filament\Resources\TagResource;
 use App\Settings\Contracts\SiteSettingsRepository;
+use EasyCo\Order\Enums\OrderStatus;
 use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\Concerns\BuildsBankTransferOrders;
 use Tests\TestCase;
 
 /**
@@ -36,9 +38,14 @@ use Tests\TestCase;
  * tests below go through NavigationGroup::getLabel(), the real render
  * path, rather than calling getNavigationGroup() and comparing to a
  * string directly.
+ *
+ * The per-item sidebar behaviour that is just as easy to lose lives
+ * here too: which group opens by default, and the badge on Поръчки
+ * (the orders still waiting for a merchant decision).
  */
 class NavigationGroupingTest extends TestCase
 {
+    use BuildsBankTransferOrders;
     use RefreshDatabase;
 
     private function applyLocale(string $locale): void
@@ -105,20 +112,21 @@ class NavigationGroupingTest extends TestCase
         $this->assertSame('Admin', NavigationGroup::ADMIN->getLabel());
     }
 
-    public function test_the_groups_declare_in_catalog_shipping_sales_admin_render_order(): void
+    public function test_the_groups_declare_in_sales_catalog_shipping_admin_render_order(): void
     {
         // Real Filament ordering gotcha this enum fixes (see its own
         // docblock): with no panel-registered groups, group render
         // order follows a UnitEnum's own cases() declaration order,
         // not any individual item's getNavigationSort() value. A
         // regression here would silently reorder the sidebar's own
-        // top-level groups. Shipping was added between Catalog and
-        // Sales (shipping-domain-design.md §12.1, stage 5a) — this
-        // asserts all four, not just the original three.
+        // top-level groups. SALES leads now — Продажби above Каталог,
+        // the orders waiting for a decision being the first thing the
+        // panel is opened for — and this asserts all four positions,
+        // not just the ends.
         $cases = NavigationGroup::cases();
-        $this->assertSame(NavigationGroup::CATALOG, $cases[0]);
-        $this->assertSame(NavigationGroup::SHIPPING, $cases[1]);
-        $this->assertSame(NavigationGroup::SALES, $cases[2]);
+        $this->assertSame(NavigationGroup::SALES, $cases[0]);
+        $this->assertSame(NavigationGroup::CATALOG, $cases[1]);
+        $this->assertSame(NavigationGroup::SHIPPING, $cases[2]);
         $this->assertSame(NavigationGroup::ADMIN, $cases[3]);
     }
 
@@ -153,7 +161,7 @@ class NavigationGroupingTest extends TestCase
         $this->assertSame('Attributes', AttributeDefinitionResource::getPluralModelLabel());
     }
 
-    public function test_the_panel_registered_groups_keep_both_the_collapsed_default_and_the_translated_labels(): void
+    public function test_the_panel_registered_groups_keep_sales_open_the_rest_collapsed_and_the_translated_labels(): void
     {
         // Regression guard for NavigationGroup::navigationGroups(). The panel
         // registers these groups during service-provider boot, BEFORE
@@ -163,12 +171,13 @@ class NavigationGroupingTest extends TestCase
         // "Catalog"/"Sales"/"Admin" sidebar under a Bulgarian site.locale).
         // The labels are therefore declared as lazy closures and must track
         // the active locale here, exactly like the enum cases above do —
-        // while still carrying the collapsed-by-default state that registration
-        // exists to deliver in the first place.
+        // while still carrying each group's own open/collapsed default that
+        // registration exists to deliver in the first place.
         $groups = Filament::getPanel('admin')->getNavigationGroups();
 
+        $this->assertFalse($groups['SALES']->isCollapsed(), 'Sales opens: the orders waiting are what the panel is opened for');
         $this->assertTrue($groups['CATALOG']->isCollapsed());
-        $this->assertTrue($groups['SALES']->isCollapsed());
+        $this->assertTrue($groups['SHIPPING']->isCollapsed());
         $this->assertTrue($groups['ADMIN']->isCollapsed());
 
         $this->applyLocale('bg');
@@ -195,5 +204,45 @@ class NavigationGroupingTest extends TestCase
         $this->applyLocale('en');
         $this->assertSame('Attribute Values', AttributeValueResource::getNavigationLabel());
         $this->assertSame('Attribute Values', AttributeValueResource::getPluralModelLabel());
+    }
+
+    // =====================================================================================================
+    // The Поръчки badge: how many orders are still waiting for a decision
+    // =====================================================================================================
+
+    public function test_the_orders_navigation_badge_is_null_while_nothing_is_waiting_for_a_decision(): void
+    {
+        $this->assertNull(OrderResource::getNavigationBadge(), 'no placed order: no badge at all, rather than a 0');
+    }
+
+    public function test_the_orders_navigation_badge_counts_the_placed_orders(): void
+    {
+        $this->bankOrder(OrderStatus::PLACED);
+        $this->bankOrder(OrderStatus::PLACED);
+        $this->bankOrder(OrderStatus::PLACED);
+
+        $this->assertSame('3', OrderResource::getNavigationBadge(), 'the count is handed over as a string');
+
+        // Information, not severity — the panel's own rule for this badge.
+        $this->assertSame('gray', OrderResource::getNavigationBadgeColor());
+    }
+
+    public function test_the_orders_navigation_badge_ignores_orders_a_merchant_has_already_moved(): void
+    {
+        $this->bankOrder(OrderStatus::PLACED);
+        $this->bankOrder(OrderStatus::CONFIRMED);
+        $this->bankOrder(OrderStatus::SHIPPED);
+        $this->bankOrder(OrderStatus::CANCELLED);
+
+        $this->assertSame('1', OrderResource::getNavigationBadge(), 'only the placed order is still waiting');
+    }
+
+    public function test_the_orders_navigation_badge_tooltip_is_translated_in_both_locales(): void
+    {
+        $this->applyLocale('bg');
+        $this->assertSame('Приети поръчки, които още не са потвърдени', OrderResource::getNavigationBadgeTooltip());
+
+        $this->applyLocale('en');
+        $this->assertSame('Accepted orders not yet confirmed', OrderResource::getNavigationBadgeTooltip());
     }
 }

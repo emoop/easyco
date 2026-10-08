@@ -5,6 +5,7 @@ return [
     'label' => 'Order',
     'plural_label' => 'Orders',
     'navigation_label' => 'Orders',
+    'navigation_badge_tooltip' => 'Accepted orders not yet confirmed',
 
     'fields' => [
         'id' => '№',

@@ -271,6 +271,40 @@ class OrderResource extends Resource
         return 10;
     }
 
+    /**
+     * The sidebar badge on Поръчки: how many orders are still waiting for a merchant
+     * decision — the PLACED status („Приета“), an order that exists and nobody has
+     * touched yet. ONE count query against orders.status and no cache: the number has
+     * to be right on the page being looked at, and the panel builds its navigation once
+     * per request anyway. NULL rather than "0" when nothing is waiting, which is how
+     * Filament renders no badge at all.
+     *
+     * NOTHING EXTRA IS CHECKED HERE, deliberately: Filament only builds a resource's
+     * navigation item for staff who can access the resource
+     * (Resource\Concerns\HasNavigation::registerNavigationItems() returns early unless
+     * static::canAccess()), and the badge is evaluated inside that item's own
+     * construction — so this runs only for staff who already hold ORDER_VIEW, the
+     * permission canViewAny() below carries.
+     */
+    public static function getNavigationBadge(): ?string
+    {
+        $waiting = OrderModel::query()->where('status', OrderStatus::PLACED->value)->count();
+
+        return $waiting === 0 ? null : (string) $waiting;
+    }
+
+    /** What the number means, in the merchant's words — not "PLACED", and not every order there is. */
+    public static function getNavigationBadgeTooltip(): ?string
+    {
+        return __('orders.navigation_badge_tooltip');
+    }
+
+    /** Information, not severity: this panel carries no severity colours (project rule). */
+    public static function getNavigationBadgeColor(): ?string
+    {
+        return 'gray';
+    }
+
     protected static function viewAnyPermission(): ?Permission
     {
         return Permission::ORDER_VIEW;

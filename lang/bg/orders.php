@@ -5,6 +5,7 @@ return [
     'label' => 'Поръчка',
     'plural_label' => 'Поръчки',
     'navigation_label' => 'Поръчки',
+    'navigation_badge_tooltip' => 'Приети поръчки, които още не са потвърдени',
 
     'fields' => [
         'id' => '№',
