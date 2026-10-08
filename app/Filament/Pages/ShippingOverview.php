@@ -13,6 +13,7 @@ use App\Services\ShippingMethodSummaryReader;
 use App\Services\ShippingTestMethod;
 use App\Services\ShippingTestResult;
 use App\Services\ShippingTester;
+use App\Services\ShippingZoneCoverageReader;
 use App\Settings\CountryNames;
 use App\Settings\StoreCountry;
 use App\Settings\StoreLocale;
@@ -211,6 +212,7 @@ class ShippingOverview extends Page
 
         $countryNames = CountryNames::forLocale(app(StoreLocale::class)->current());
         $reader = app(ShippingMethodSummaryReader::class);
+        $coverage = app(ShippingZoneCoverageReader::class);
 
         $zoneRows = [];
         $activeMethods = 0;
@@ -232,7 +234,7 @@ class ShippingOverview extends Page
             $zoneRows[] = [
                 'number' => $index + 1,
                 'name' => $zone->name(),
-                'coverage' => $this->coverage($zone, $countryNames),
+                'coverage' => $coverage->sentence($zone, $countryNames),
                 'methods' => $methodRows,
             ];
         }
@@ -246,30 +248,8 @@ class ShippingOverview extends Page
             'classOptions' => $classNames,
             'overviewHelpUrl' => HelpLink::url('shipping_overview', 'shipping'),
             'tryItHelpUrl' => HelpLink::url('try_it', 'shipping'),
+            'zonesUrl' => \App\Filament\Resources\ShippingZoneResource::getUrl('index'),
         ];
-    }
-
-    /** One sentence: the countries by name, then the settlement / postcode narrowing. */
-    private function coverage(ShippingZone $zone, array $countryNames): string
-    {
-        $parts = [implode(', ', array_map(
-            static fn (string $code): string => $countryNames[$code] ?? $code,
-            $zone->countryCodes(),
-        ))];
-
-        $settlements = $zone->settlementNames();
-
-        if ($settlements !== null) {
-            $parts[] = __('shipping.coverage.only_settlements', ['names' => implode(', ', $settlements)]);
-        }
-
-        $postcodes = $zone->postcodes();
-
-        if ($postcodes !== null) {
-            $parts[] = __('shipping.coverage.only_postcodes', ['count' => count($postcodes)]);
-        }
-
-        return implode('; ', $parts);
     }
 
     /** @return array<string, mixed> */

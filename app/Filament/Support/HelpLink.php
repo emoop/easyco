@@ -28,12 +28,18 @@ final class HelpLink
         return Help::getUrl(['topic' => $topic]).'#'.self::anchor($actionName);
     }
 
-    public static function component(string $actionName): Text
+    public static function component(string $actionName, string $topic = HelpTopics::DEFAULT): Text
     {
-        $link = '<a href="'.e(self::url($actionName)).'" target="_blank" rel="noopener noreferrer" class="help-link" style="text-decoration: underline;">'
+        return Text::make(self::html($actionName, $topic))->color('gray')->size('sm');
+    }
+
+    /** The same muted link as plain, escaped HTML (for a page that has no schema: a subheading, a blade). */
+    public static function html(string $actionName, string $topic = HelpTopics::DEFAULT): HtmlString
+    {
+        $link = '<a href="'.e(self::url($actionName, $topic)).'" target="_blank" rel="noopener noreferrer" class="help-link" style="text-decoration: underline;">'
             .e(__('help.link')).'</a>';
 
-        return Text::make(new HtmlString($link))->color('gray')->size('sm');
+        return new HtmlString($link);
     }
 
     /**
@@ -42,8 +48,8 @@ final class HelpLink
      * @param  array<int, \Filament\Schemas\Components\Component>  $schema
      * @return array<int, \Filament\Schemas\Components\Component>
      */
-    public static function append(array $schema, string $actionName): array
+    public static function append(array $schema, string $actionName, string $topic = HelpTopics::DEFAULT): array
     {
-        return [...$schema, self::component($actionName)];
+        return [...$schema, self::component($actionName, $topic)];
     }
 }

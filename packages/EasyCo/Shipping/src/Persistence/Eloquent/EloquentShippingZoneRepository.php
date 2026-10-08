@@ -49,6 +49,11 @@ final class EloquentShippingZoneRepository implements ShippingZoneRepository
             ->all();
     }
 
+    public function delete(string $id): void
+    {
+        ShippingZoneModel::query()->whereKey($id)->delete();
+    }
+
     /** @param list<string>|null $list */
     private function encodeList(?array $list): ?string
     {
