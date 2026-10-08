@@ -21,6 +21,8 @@ use EasyCo\Staff\Enums\Permission;
 use EasyCo\Staff\Role;
 use EasyCo\Staff\Seeders\StaffSystemRolesSeeder;
 use EasyCo\Staff\Staff;
+use Filament\Schemas\Components\Text;
+use Filament\Support\Enums\TextSize;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\App;
 use Illuminate\Support\Facades\DB;
@@ -431,5 +433,149 @@ class HelpPageTest extends TestCase
                 $this->assertContains($anchor, $this->anchorsOfTopic('shipping', $locale), "{$anchor} is missing from the {$locale} help file");
             }
         }
+    }
+
+    // =====================================================================================================
+    // The grouped help line: ONE line, several anchors (HelpLink::group())
+    // =====================================================================================================
+
+    /**
+     * A help line's `<a>` labels, in order.
+     *
+     * @return list<string>
+     */
+    private function groupLabels(string $html): array
+    {
+        preg_match_all('~<a [^>]*>(.*?)</a>~s', $html, $matches);
+
+        return $matches[1];
+    }
+
+    /**
+     * Five anchors used to be five identical "Help: how this works →" lines under one form. They are one line now:
+     * the first link still carries that label, and every later one is named by the heading of the section it opens,
+     * in the locale the form is being shown in.
+     */
+    public function test_a_grouped_help_line_is_one_line_whose_first_link_is_the_plain_label_and_the_rest_are_section_headings(): void
+    {
+        $expected = [
+            'en' => [
+                'Help: how this works →',
+                'The kinds of shipping method',
+                'Class mode: replace or adjust',
+                'Copying a method to other zones',
+                'Grouping methods by courier',
+            ],
+            'bg' => [
+                'Помощ: как работи това →',
+                'Видове методи за доставка',
+                'Режим на класовете: замести или коригирай',
+                'Копиране на метод в други зони',
+                'Групиране на методите по куриер',
+            ],
+        ];
+
+        foreach ($expected as $locale => $labels) {
+            App::setLocale($locale);
+
+            $component = HelpLink::group(['method_editor', 'method_kinds', 'class_mode', 'method_copy', 'method_grouping'], 'shipping');
+            $html = (string) $component->getContent();
+
+            $this->assertInstanceOf(Text::class, $component, 'the line is ONE schema component, not five');
+            $this->assertSame('gray', $component->getColor(), 'still the muted line');
+            $this->assertSame(TextSize::Small, $component->getSize(), 'still sm');
+
+            $this->assertSame($labels, $this->groupLabels($html), "{$locale}: the labels, in the order the form lists them");
+            $this->assertSame(5, substr_count($html, '<a '), 'five anchors, one line');
+            $this->assertSame(4, substr_count($html, ' · '), 'joined by the middle dot');
+            $this->assertStringNotContainsString("\n", $html, 'one line: nothing breaks it');
+            $this->assertStringNotContainsString('<br', $html);
+        }
+    }
+
+    /**
+     * The four forms that used to stack their help links, as the group they now render: one link per anchor, in the
+     * same order, every href the one it has always been, and every anchor present in BOTH language files — the
+     * contract the page-level test above holds the overview page to.
+     */
+    public function test_every_grouped_help_link_points_to_an_anchor_that_exists_in_both_shipping_files(): void
+    {
+        App::setLocale('en');
+
+        $groups = [
+            ['method_editor', 'method_kinds', 'class_mode', 'method_copy', 'method_grouping'],
+            ['zone_editor', 'zone_settlement_matching'],
+            ['class_mode', 'class_editor'],
+            ['class_assignment', 'class_required'],
+        ];
+
+        foreach ($groups as $actions) {
+            $html = (string) HelpLink::groupHtml($actions, 'shipping');
+
+            preg_match_all('~help/shipping#([a-z0-9-]+)~', $html, $matches);
+
+            $this->assertSame(
+                array_map(static fn (string $action): string => HelpLink::anchor($action), $actions),
+                $matches[1],
+                'each anchor once, in the order the form lists them',
+            );
+
+            foreach ($actions as $action) {
+                $this->assertSame(1, substr_count($html, e(HelpLink::url($action, 'shipping'))), "the {$action} link goes where it always went");
+            }
+
+            foreach ($matches[1] as $anchor) {
+                foreach (['en', 'bg'] as $locale) {
+                    $this->assertContains($anchor, $this->anchorsOfTopic('shipping', $locale), "{$anchor} is missing from the {$locale} help file");
+                }
+            }
+        }
+    }
+
+    /** A section (or a whole file) that is not there is a label fallback: never an error, never a missing link. */
+    public function test_a_grouped_help_line_falls_back_to_the_plain_label_when_a_section_or_a_file_is_missing(): void
+    {
+        App::setLocale('en');
+
+        // An anchor with no heading of its own in the file.
+        $this->assertSame(
+            [__('help.link'), __('help.link')],
+            $this->groupLabels((string) HelpLink::groupHtml(['zone_editor', 'no_such_anchor'], 'shipping')),
+            'an unknown anchor keeps the line, with the plain label',
+        );
+
+        // A topic that is not registered: HelpTopics::path() refuses it, so there is no file and no headings.
+        $this->assertSame(
+            [__('help.link'), __('help.link')],
+            $this->groupLabels((string) HelpLink::groupHtml(['zone_editor', 'zone_order'], 'not-a-topic')),
+            'an unknown topic is a fallback, not an exception',
+        );
+
+        // A locale with no file for a topic that does exist.
+        App::setLocale('de');
+        $this->assertSame(
+            [__('help.link'), __('help.link')],
+            $this->groupLabels((string) HelpLink::groupHtml(['zone_editor', 'zone_order'], 'shipping')),
+            'a locale without a help file is a fallback too',
+        );
+    }
+
+    /** The one line's markup IS the line's markup — the shared `<a>`, with everything it is handed escaped. */
+    public function test_a_grouped_help_line_uses_the_same_markup_and_escapes_what_it_is_handed(): void
+    {
+        App::setLocale('en');
+
+        // One anchor renders byte-for-byte the single help line this helper has always rendered.
+        $this->assertSame(
+            (string) HelpLink::html('zone_editor', 'shipping'),
+            (string) HelpLink::groupHtml(['zone_editor'], 'shipping'),
+        );
+
+        $html = (string) HelpLink::groupHtml(['zone_editor', 'a<b"c'], 'shipping');
+
+        $this->assertStringNotContainsString('<b"c', $html, 'an anchor cannot become markup');
+        $this->assertStringContainsString('action-a&lt;b&quot;c', $html, 'it is escaped inside the href');
+        $this->assertSame(2, substr_count($html, '<a '), 'still one line of two links');
+        $this->assertSame(1, substr_count($html, ' · '));
     }
 }

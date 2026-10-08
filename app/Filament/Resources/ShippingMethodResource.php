@@ -270,11 +270,9 @@ class ShippingMethodResource extends Resource
             Toggle::make('is_active')
                 ->label(__('shipping.methods.fields.active'))
                 ->default(true),
-            HelpLink::component('method_editor', 'shipping'),
-            HelpLink::component('method_kinds', 'shipping'),
-            HelpLink::component('class_mode', 'shipping'),
-            HelpLink::component('method_copy', 'shipping'),
-            HelpLink::component('method_grouping', 'shipping'),
+            // One line, five anchors: the first link is the plain help label, the rest are named by their
+            // sections (method kinds, class mode, copying, courier grouping) — see HelpLink::group().
+            HelpLink::group(['method_editor', 'method_kinds', 'class_mode', 'method_copy', 'method_grouping'], 'shipping'),
         ]);
     }
 

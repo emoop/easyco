@@ -941,8 +941,7 @@ class ProductResource extends Resource
             // by ShippingClassAssigner after the product is saved — see shippingClassSelect().
             static::shippingClassSelect('create'),
             Text::make(__('shipping.classes.assignment.required_fact'))->color('gray')->size('sm'),
-            HelpLink::component('class_assignment', 'shipping'),
-            HelpLink::component('class_required', 'shipping'),
+            HelpLink::group(['class_assignment', 'class_required'], 'shipping'),
         ];
     }
 

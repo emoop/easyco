@@ -157,8 +157,7 @@ class ShippingZoneResource extends Resource
                 'postcodes',
                 static fn (string $entry): string => PostcodeNormalizer::normalize($entry),
             ))->color('gray')->size('sm'),
-            HelpLink::component('zone_editor', 'shipping'),
-            HelpLink::component('zone_settlement_matching', 'shipping'),
+            HelpLink::group(['zone_editor', 'zone_settlement_matching'], 'shipping'),
         ]);
     }
 

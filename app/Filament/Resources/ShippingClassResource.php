@@ -136,8 +136,7 @@ class ShippingClassResource extends Resource
                 ->label(__('shipping.classes.fields.is_default')),
             Text::make(__('shipping.classes.help.is_default'))->color('gray')->size('sm'),
             Text::make(__('shipping.classes.help.modes'))->color('gray')->size('sm'),
-            HelpLink::component('class_mode', 'shipping'),
-            HelpLink::component('class_editor', 'shipping'),
+            HelpLink::group(['class_mode', 'class_editor'], 'shipping'),
         ]);
     }
 
