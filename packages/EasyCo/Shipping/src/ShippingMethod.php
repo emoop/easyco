@@ -3,6 +3,7 @@
 namespace EasyCo\Shipping;
 
 use EasyCo\Shipping\Enums\ShippingClassMode;
+use EasyCo\Shipping\Enums\ShippingDeliveryType;
 use EasyCo\Shipping\Enums\ShippingMethodKind;
 use EasyCo\Shipping\Exceptions\InvalidShippingMethodException;
 use LogicException;
@@ -60,6 +61,10 @@ final class ShippingMethod
 
     private ShippingClassMode $classMode;
 
+    private ?string $courier;
+
+    private ?ShippingDeliveryType $deliveryType;
+
     /** @param array<string, int> $classRates */
     private function __construct(
         private ?string $id,
@@ -74,12 +79,14 @@ final class ShippingMethod
         ?string $carrierCode,
         bool $requiresPickupPoint,
         ShippingClassMode $classMode = ShippingClassMode::REPLACE,
+        ?string $courier = null,
+        ?ShippingDeliveryType $deliveryType = null,
     ) {
         if (trim($zoneId) === '') {
             throw InvalidShippingMethodException::emptyZoneId();
         }
 
-        $this->apply($name, $kind, $sortOrder, $isActive, $amountMinor, $classRates, $freeAboveMinor, $carrierCode, $requiresPickupPoint, $classMode);
+        $this->apply($name, $kind, $sortOrder, $isActive, $amountMinor, $classRates, $freeAboveMinor, $carrierCode, $requiresPickupPoint, $classMode, $courier, $deliveryType);
     }
 
     /** @param array<string, int> $classRates */
@@ -95,8 +102,10 @@ final class ShippingMethod
         ?string $carrierCode = null,
         bool $requiresPickupPoint = false,
         ShippingClassMode $classMode = ShippingClassMode::REPLACE,
+        ?string $courier = null,
+        ?ShippingDeliveryType $deliveryType = null,
     ): self {
-        return new self(null, $zoneId, $name, $kind, $sortOrder, $isActive, $amountMinor, $classRates, $freeAboveMinor, $carrierCode, $requiresPickupPoint, $classMode);
+        return new self(null, $zoneId, $name, $kind, $sortOrder, $isActive, $amountMinor, $classRates, $freeAboveMinor, $carrierCode, $requiresPickupPoint, $classMode, $courier, $deliveryType);
     }
 
     /**
@@ -118,8 +127,10 @@ final class ShippingMethod
         ?string $carrierCode,
         bool $requiresPickupPoint,
         ShippingClassMode $classMode = ShippingClassMode::REPLACE,
+        ?string $courier = null,
+        ?ShippingDeliveryType $deliveryType = null,
     ): self {
-        return new self($id, $zoneId, $name, $kind, $sortOrder, $isActive, $amountMinor, $classRates, $freeAboveMinor, $carrierCode, $requiresPickupPoint, $classMode);
+        return new self($id, $zoneId, $name, $kind, $sortOrder, $isActive, $amountMinor, $classRates, $freeAboveMinor, $carrierCode, $requiresPickupPoint, $classMode, $courier, $deliveryType);
     }
 
     /**
@@ -140,8 +151,10 @@ final class ShippingMethod
         ?string $carrierCode,
         bool $requiresPickupPoint,
         ShippingClassMode $classMode = ShippingClassMode::REPLACE,
+        ?string $courier = null,
+        ?ShippingDeliveryType $deliveryType = null,
     ): void {
-        $this->apply($name, $kind, $sortOrder, $isActive, $amountMinor, $classRates, $freeAboveMinor, $carrierCode, $requiresPickupPoint, $classMode);
+        $this->apply($name, $kind, $sortOrder, $isActive, $amountMinor, $classRates, $freeAboveMinor, $carrierCode, $requiresPickupPoint, $classMode, $courier, $deliveryType);
     }
 
     /** @param array<mixed> $classRates */
@@ -156,6 +169,8 @@ final class ShippingMethod
         ?string $carrierCode,
         bool $requiresPickupPoint,
         ShippingClassMode $classMode = ShippingClassMode::REPLACE,
+        ?string $courier = null,
+        ?ShippingDeliveryType $deliveryType = null,
     ): void {
         $name = trim($name);
 
@@ -179,6 +194,8 @@ final class ShippingMethod
             throw InvalidShippingMethodException::negativeAmount('freeAboveMinor', $freeAboveMinor);
         }
 
+        $courier = ShippingCourier::normalize($courier);
+
         $classRates = self::normalizeClassRates($classRates, $classMode);
 
         if ($carrierCode !== null && ! ShippingCode::isValid($carrierCode)) {
@@ -197,6 +214,8 @@ final class ShippingMethod
         $this->carrierCode = $carrierCode;
         $this->requiresPickupPoint = $requiresPickupPoint;
         $this->classMode = $classMode;
+        $this->courier = $courier;
+        $this->deliveryType = $deliveryType;
     }
 
     /**
@@ -346,6 +365,18 @@ final class ShippingMethod
     }
 
     /** REPLACE for every kind but PER_CLASS, which may ADJUST (shipping-domain-design.md §12.2). */
+    /** The courier group's display name (shipping stage 5f), or null: not grouped. Grouping uses ShippingCourier::key(). */
+    public function courier(): ?string
+    {
+        return $this->courier;
+    }
+
+    /** How the method delivers (stage 5f), or null: not typed. A display fact; it changes no price and no rule. */
+    public function deliveryType(): ?ShippingDeliveryType
+    {
+        return $this->deliveryType;
+    }
+
     public function classMode(): ShippingClassMode
     {
         return $this->classMode;

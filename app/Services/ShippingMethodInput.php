@@ -17,6 +17,8 @@ final class ShippingMethodInput
     /**
      * @param  string  $kind  flat | free | per_class | carrier
      * @param  string  $classMode  replace | adjust (PER_CLASS only)
+     * @param  ?string  $courier  the courier group's display name (stage 5f); blank = none
+     * @param  ?string  $deliveryType  address | office | locker | other; blank = none
      * @param  array<int, array{class: mixed, amount: mixed}>  $classRates  rows of a class code and its amount (Money); a list, so a duplicate class is visible and refused
      */
     public function __construct(
@@ -29,6 +31,8 @@ final class ShippingMethodInput
         public readonly array $classRates = [],
         public readonly bool $requiresPickupPoint = false,
         public readonly ?string $carrierCode = null,
+        public readonly ?string $courier = null,
+        public readonly ?string $deliveryType = null,
     ) {
     }
 }

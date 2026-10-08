@@ -87,6 +87,7 @@ final class ShippingMethodCopier
                     $copy = ShippingMethod::create(
                         $zoneId, $source->name(), $source->kind(), $next, $source->isActive(), $source->amountMinor(), $source->classRates(),
                         $source->freeAboveMinor(), $source->carrierCode(), $source->requiresPickupPoint(), $source->classMode(),
+                        $source->courier(), $source->deliveryType(),
                     );
                     $this->methods->save($copy);
                 } catch (InvalidShippingMethodException|UnknownShippingClassException) {

@@ -93,4 +93,14 @@ final class InvalidShippingMethodException extends InvalidArgumentException
     {
         return new self("A {$kind->name} ShippingMethod must not have a freeAboveMinor threshold: it is already free, so the threshold is contradictory.");
     }
+
+    public static function courierTooLong(int $max): self
+    {
+        return new self("ShippingMethod courier is longer than {$max} characters.");
+    }
+
+    public static function courierNotPlain(): self
+    {
+        return new self('ShippingMethod courier must be a single line of plain text: no control or direction-override characters.');
+    }
 }

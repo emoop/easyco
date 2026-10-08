@@ -168,8 +168,12 @@
                         @if ($result['methods'] === [])
                             <p class="shop-note">{{ __('shipping.try_it.no_methods') }}</p>
                         @else
+                            @foreach ($result['groups'] as $group)
+                            @if ($result['showGroupNames'])
+                                <p class="shop-zone-name">{{ $group['courier'] ?? __('shipping.try_it.ungrouped') }}</p>
+                            @endif
                             <ul class="shop-methods">
-                                @foreach ($result['methods'] as $method)
+                                @foreach ($group['methods'] as $method)
                                     <li>
                                         <span class="shop-method-name">{{ $method['name'] }}</span>
                                         <span class="shop-method-summary">— {{ $method['summary'] }}</span>
@@ -189,6 +193,7 @@
                                     </li>
                                 @endforeach
                             </ul>
+                            @endforeach
                         @endif
 
                         @if ($result['hint'] !== null)

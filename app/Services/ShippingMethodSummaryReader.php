@@ -48,11 +48,17 @@ final class ShippingMethodSummaryReader
      *         read the class list (so a page of many methods stays at ONE classes query);
      *         null makes the reader read it itself (and cache it for its next call)
      */
-    public function summary(ShippingMethod $method, ?array $classNames = null): string
+    public function summary(ShippingMethod $method, ?array $classNames = null, bool $withGrouping = true): string
     {
         $currency = DefaultCurrency::get();
 
         $parts = $this->core($method, $currency, $classNames);
+
+        // Courier and delivery type lead the sentence (stage 5f) — "Econt · to office; 5.00 €" — unless the caller
+        // shows them in columns of their own.
+        if ($withGrouping && ($grouping = $this->grouping($method)) !== null) {
+            array_unshift($parts, $grouping);
+        }
 
         if ($method->freeAboveMinor() !== null) {
             $parts[] = __('shipping.summary.free_from', ['amount' => $this->money($method->freeAboveMinor(), $currency)]);
@@ -67,6 +73,20 @@ final class ShippingMethodSummaryReader
         }
 
         return implode('; ', $parts);
+    }
+
+    /**
+     * "Econt · to office", "Econt", "to office" — the courier group of a method as text from the lang files, or null
+     * when it has neither (stage 5f). The one place this phrase is built.
+     */
+    public function grouping(ShippingMethod $method): ?string
+    {
+        $parts = array_values(array_filter([
+            $method->courier(),
+            $method->deliveryType() === null ? null : __('shipping.methods.delivery_types_lower.'.$method->deliveryType()->value),
+        ], static fn (?string $part): bool => $part !== null));
+
+        return $parts === [] ? null : implode(' · ', $parts);
     }
 
     /**

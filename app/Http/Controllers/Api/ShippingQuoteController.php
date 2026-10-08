@@ -8,6 +8,7 @@ use App\Services\Exceptions\ShippingQuoteFilterException;
 use App\Services\Exceptions\ShippingQuoteRefusedException;
 use App\Services\MethodQuote;
 use App\Services\QuoteDestination;
+use App\Services\QuoteGroups;
 use App\Services\ShippingQuoteResult;
 use App\Services\ShippingQuoteService;
 use App\Settings\StoreLocale;
@@ -61,6 +62,13 @@ use Illuminate\Validation\ValidationException;
  * methods. Its `text` embeds the MERCHANT's own method name (never any customer
  * input); it is plain text and the client renders the field escaped, like every
  * other merchant string.
+ *
+ * COURIER GROUPING (stage 5f): each method also carries `courier` (string|null) and `delivery_type`
+ * (address|office|locker|other|null) — the method row's own display facts. The response carries a top-level `groups`:
+ * the same methods grouped by courier (App\Services\QuoteGroups), built from the final list after the
+ * `shipping.quotes` filter — one entry per courier in order of its first method, ungrouped methods in ONE trailing entry
+ * with `courier: null`; each entry is {courier, methods: [method ids in order], from_minor (the lowest price among
+ * its AVAILABLE methods, null if none), currency}. `methods` stays the flat list; nothing was removed or renamed.
  *
  * ERRORS, all `{message, reason}`: 422 `empty_cart`, `no_priced_lines`,
  * `no_zone_for_destination`, `address_incomplete`; 404 `address_not_found` (an
@@ -184,7 +192,10 @@ class ShippingQuoteController extends Controller
                 'service_code' => $m->serviceCode,
                 'handle' => $m->handle,
                 'unavailable_reason' => $m->unavailableReason,
+                'courier' => $m->courier,
+                'delivery_type' => $m->deliveryType,
             ], $result->methods),
+            'groups' => QuoteGroups::build($result->methods, $result->currency),
             'free_shipping_hint' => $result->freeShippingHint?->toArray(),
         ];
     }

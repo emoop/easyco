@@ -21,6 +21,7 @@ final class ShippingTestMethod
         public readonly ?int $remainingToFreeMinor,
         /** 'replace' | 'adjust' for a PER_CLASS method (shipping-domain-design.md §12.2), null for any other kind. */
         public readonly ?string $classMode = null,
+        public readonly ?string $courier = null,
     ) {
     }
 }

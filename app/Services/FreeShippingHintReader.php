@@ -119,7 +119,8 @@ final class FreeShippingHintReader
     private function build(string $state, ShippingMethod $method, MethodRate $rate, string $currency): FreeShippingHint
     {
         $locale = $this->storeLocale->current();
-        $methodName = $method->name();
+        // The sentence names the method inside its courier group: "Econt – To office" (stage 5f); no courier = the name as ever.
+        $methodName = \EasyCo\Shipping\ShippingCourier::displayName($method->courier(), $method->name());
 
         if ($state === FreeShippingHint::REMAINING) {
             $amount = $this->formatter->format(
@@ -135,7 +136,7 @@ final class FreeShippingHintReader
         return new FreeShippingHint(
             $state,
             (string) $method->id(),
-            $methodName,
+            $method->name(),
             (int) $rate->freeAboveMinor,
             (int) $rate->remainingToFreeMinor,
             $currency,

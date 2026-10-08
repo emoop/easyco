@@ -15,6 +15,8 @@ class ShippingMethodModel extends Model
 
     protected $fillable = [
         'zone_id',
+        'courier',
+        'delivery_type',
         'name',
         'kind',
         'sort_order',

@@ -27,9 +27,11 @@ use EasyCo\Shipping\Carrier\CarrierRegistry;
 use EasyCo\Shipping\Contracts\ShippingClassRepository;
 use EasyCo\Shipping\Contracts\ShippingMethodRepository;
 use EasyCo\Shipping\Contracts\ShippingZoneRepository;
+use EasyCo\Shipping\Enums\ShippingDeliveryType;
 use EasyCo\Shipping\Enums\ShippingMethodKind;
 use EasyCo\Shipping\Persistence\Eloquent\ShippingMethodModel;
 use EasyCo\Shipping\Persistence\Eloquent\ShippingZoneModel;
+use EasyCo\Shipping\ShippingCourier;
 use EasyCo\Shipping\ShippingMethod;
 use EasyCo\Staff\Enums\Permission;
 use Filament\Actions\Action;
@@ -42,6 +44,7 @@ use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Text;
 use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Filament\Support\Enums\IconPosition;
 use Filament\Tables\Columns\TextColumn;
@@ -195,6 +198,22 @@ class ShippingMethodResource extends Resource
                 ->label(__('shipping.methods.fields.name'))
                 ->required()
                 ->maxLength(255),
+            TextInput::make('courier')
+                ->label(__('shipping.methods.fields.courier'))
+                ->maxLength(ShippingCourier::MAX_LENGTH)
+                ->datalist(fn (): array => static::courierSuggestions()),
+            Select::make('delivery_type')
+                ->label(__('shipping.methods.fields.delivery_type'))
+                ->options(static::deliveryTypeOptions())
+                ->placeholder(__('shipping.methods.delivery_types.none'))
+                ->live()
+                // Convenience only: office and locker usually need a pickup point; the admin can untick it.
+                ->afterStateUpdated(function (mixed $state, Set $set): void {
+                    if (in_array($state, [ShippingDeliveryType::OFFICE->value, ShippingDeliveryType::LOCKER->value], true)) {
+                        $set('requires_pickup_point', true);
+                    }
+                }),
+            Text::make(__('shipping.methods.facts.grouping'))->color('gray')->size('sm'),
             Select::make('kind')
                 ->label(__('shipping.methods.fields.kind'))
                 ->options(fn (?Model $record): array => static::kindOptions($record?->kind))
@@ -247,6 +266,7 @@ class ShippingMethodResource extends Resource
             ...$rateFields,
             Toggle::make('requires_pickup_point')
                 ->label(__('shipping.methods.fields.requires_pickup_point')),
+            Text::make(__('shipping.methods.facts.pickup_convenience'))->color('gray')->size('sm'),
             Toggle::make('is_active')
                 ->label(__('shipping.methods.fields.active'))
                 ->default(true),
@@ -254,7 +274,38 @@ class ShippingMethodResource extends Resource
             HelpLink::component('method_kinds', 'shipping'),
             HelpLink::component('class_mode', 'shipping'),
             HelpLink::component('method_copy', 'shipping'),
+            HelpLink::component('method_grouping', 'shipping'),
         ]);
+    }
+
+    /**
+     * The couriers already used in the store, for the form's datalist: ONE distinct read on the form page only, at
+     * most 50, in alphabetical order. A new name typed there simply starts a new group.
+     *
+     * @return list<string>
+     */
+    public static function courierSuggestions(): array
+    {
+        return ShippingMethodModel::query()
+            ->whereNotNull('courier')
+            ->distinct()
+            ->orderBy('courier')
+            ->limit(50)
+            ->pluck('courier')
+            ->map(static fn ($courier): string => (string) $courier)
+            ->all();
+    }
+
+    /** @return array<string, string> */
+    public static function deliveryTypeOptions(): array
+    {
+        $options = [];
+
+        foreach (ShippingDeliveryType::cases() as $type) {
+            $options[$type->value] = __('shipping.methods.delivery_types.'.$type->value);
+        }
+
+        return $options;
     }
 
     /** CARRIER is offered only when a carrier is registered (none is in V1, §6) — or when the method being edited already is one. */
@@ -371,6 +422,8 @@ class ShippingMethodResource extends Resource
             classRates: $rows,
             requiresPickupPoint: (bool) ($data['requires_pickup_point'] ?? false),
             carrierCode: isset($data['carrier_code']) ? (string) $data['carrier_code'] : null,
+            courier: isset($data['courier']) ? (string) $data['courier'] : null,
+            deliveryType: isset($data['delivery_type']) ? (string) $data['delivery_type'] : null,
         );
     }
 
@@ -398,6 +451,8 @@ class ShippingMethodResource extends Resource
             'rates' => $rates,
             'requires_pickup_point' => $method->requiresPickupPoint(),
             'carrier_code' => $method->carrierCode(),
+            'courier' => $method->courier(),
+            'delivery_type' => $method->deliveryType()?->value,
         ];
     }
 
@@ -439,6 +494,12 @@ class ShippingMethodResource extends Resource
                 TextColumn::make('position')
                     ->label(__('shipping.methods.fields.number'))
                     ->state(fn (ShippingMethodModel $record, $livewire): int => static::facts($livewire)['position'][(int) $record->id] ?? 0),
+                TextColumn::make('courier')
+                    ->label(__('shipping.methods.fields.courier'))
+                    ->placeholder('—'),
+                TextColumn::make('delivery_type')
+                    ->label(__('shipping.methods.fields.delivery_type'))
+                    ->formatStateUsing(fn (?string $state): string => $state === null ? '—' : __('shipping.methods.delivery_types.'.$state)),
                 TextColumn::make('name')
                     ->label(__('shipping.methods.fields.name'))
                     ->weight('bold'),
@@ -543,7 +604,7 @@ class ShippingMethodResource extends Resource
         $facts = static::facts($livewire);
         $entity = $facts['entities'][(int) $record->id] ?? null;
 
-        return $entity === null ? '' : app(ShippingMethodSummaryReader::class)->summary($entity, $facts['classNames']);
+        return $entity === null ? '' : app(ShippingMethodSummaryReader::class)->summary($entity, $facts['classNames'], withGrouping: false);
     }
 
     private static function editAction(): Action

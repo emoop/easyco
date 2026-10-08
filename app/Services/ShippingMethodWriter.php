@@ -12,10 +12,12 @@ use EasyCo\Shipping\Contracts\ShippingClassRepository;
 use EasyCo\Shipping\Contracts\ShippingMethodRepository;
 use EasyCo\Shipping\Contracts\ShippingZoneRepository;
 use EasyCo\Shipping\Enums\ShippingClassMode;
+use EasyCo\Shipping\Enums\ShippingDeliveryType;
 use EasyCo\Shipping\Enums\ShippingMethodKind;
 use EasyCo\Shipping\Exceptions\InvalidShippingMethodException;
 use EasyCo\Shipping\Exceptions\UnknownShippingClassException;
 use EasyCo\Shipping\ShippingCode;
+use EasyCo\Shipping\ShippingCourier;
 use EasyCo\Shipping\ShippingMethod;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
@@ -88,7 +90,7 @@ final class ShippingMethodWriter
 
             $method = $this->guarded(fn (): ShippingMethod => ShippingMethod::create(
                 $zoneId, $clean['name'], $clean['kind'], $next, $clean['active'], $clean['price'], $clean['rates'],
-                $clean['free_above'], $clean['carrier_code'], $clean['pickup'], $clean['mode'],
+                $clean['free_above'], $clean['carrier_code'], $clean['pickup'], $clean['mode'], $clean['courier'], $clean['delivery_type'],
             ));
 
             $this->saveGuarded($method);
@@ -118,7 +120,7 @@ final class ShippingMethodWriter
 
             $this->guarded(fn () => $method->update(
                 $clean['name'], $clean['kind'], $method->sortOrder(), $clean['active'], $clean['price'], $clean['rates'],
-                $clean['free_above'], $clean['carrier_code'], $clean['pickup'], $clean['mode'],
+                $clean['free_above'], $clean['carrier_code'], $clean['pickup'], $clean['mode'], $clean['courier'], $clean['delivery_type'],
             ));
 
             if (self::snapshot($method) === $before) {
@@ -157,6 +159,7 @@ final class ShippingMethodWriter
             $method->update(
                 $method->name(), $method->kind(), $method->sortOrder(), $active, $method->amountMinor(), $method->classRates(),
                 $method->freeAboveMinor(), $method->carrierCode(), $method->requiresPickupPoint(), $method->classMode(),
+                $method->courier(), $method->deliveryType(),
             );
 
             $this->saveGuarded($method);
@@ -205,7 +208,7 @@ final class ShippingMethodWriter
     /**
      * The compact, stable picture of a method that the audit entries and the hooks carry.
      *
-     * @return array{id: ?string, zone_id: string, name: string, kind: string, sort_order: int, active: bool, price_minor: ?int, free_above_minor: ?int, class_mode: string, class_rates: array<string, int>, requires_pickup_point: bool, carrier_code: ?string}
+     * @return array{id: ?string, zone_id: string, name: string, kind: string, sort_order: int, active: bool, price_minor: ?int, free_above_minor: ?int, class_mode: string, class_rates: array<string, int>, requires_pickup_point: bool, carrier_code: ?string, courier: ?string, delivery_type: ?string}
      */
     public static function snapshot(ShippingMethod $method): array
     {
@@ -222,6 +225,8 @@ final class ShippingMethodWriter
             'class_rates' => array_map('intval', $method->classRates()),
             'requires_pickup_point' => $method->requiresPickupPoint(),
             'carrier_code' => $method->carrierCode(),
+            'courier' => $method->courier(),
+            'delivery_type' => $method->deliveryType()?->value,
         ];
     }
 
@@ -234,7 +239,7 @@ final class ShippingMethodWriter
     // ---- validation ----------------------------------------------------------------------------------------
 
     /**
-     * @return array{name: string, kind: ShippingMethodKind, active: bool, price: ?int, free_above: ?int, mode: ShippingClassMode, rates: array<string, int>, pickup: bool, carrier_code: ?string}
+     * @return array{name: string, kind: ShippingMethodKind, active: bool, price: ?int, free_above: ?int, mode: ShippingClassMode, rates: array<string, int>, pickup: bool, carrier_code: ?string, courier: ?string, delivery_type: ?ShippingDeliveryType}
      */
     private function clean(ShippingMethodInput $input): array
     {
@@ -299,6 +304,31 @@ final class ShippingMethodWriter
             $rates = $this->cleanRates($input->classRates, $mode, $errors);
         }
 
+        // courier and delivery type — optional, allowed for every kind (stage 5f)
+        $courier = null;
+
+        if ($input->courier !== null && trim($input->courier) !== '') {
+            $trimmed = trim($input->courier);
+
+            if (mb_strlen($trimmed) > ShippingCourier::MAX_LENGTH) {
+                $errors['courier'][] = __('shipping.methods.errors.too_long', ['max' => ShippingCourier::MAX_LENGTH]);
+            } elseif (! self::isPlain($trimmed)) {
+                $errors['courier'][] = __('validation.plain_text', ['attribute' => $label('courier')]);
+            } else {
+                $courier = $trimmed;
+            }
+        }
+
+        $deliveryType = null;
+
+        if ($input->deliveryType !== null && trim($input->deliveryType) !== '') {
+            $deliveryType = ShippingDeliveryType::tryFrom(trim($input->deliveryType));
+
+            if ($deliveryType === null) {
+                $errors['delivery_type'][] = __('shipping.methods.errors.delivery_type_unknown');
+            }
+        }
+
         // carrier code — CARRIER only
         $carrierCode = null;
 
@@ -328,6 +358,8 @@ final class ShippingMethodWriter
             'rates' => $rates,
             'pickup' => $input->requiresPickupPoint,
             'carrier_code' => $carrierCode,
+            'courier' => $courier,
+            'delivery_type' => $deliveryType,
         ];
     }
 
@@ -428,6 +460,7 @@ final class ShippingMethodWriter
             $field = match (true) {
                 str_contains($message, 'class') && str_contains($message, 'mode') => 'class_mode',
                 str_contains($message, 'class') => 'class_rates',
+                str_contains($message, 'courier') => 'courier',
                 str_contains($message, 'carrierCode') => 'carrier_code',
                 str_contains($message, 'freeAbove') => 'free_above',
                 str_contains($message, 'amount') => 'price',

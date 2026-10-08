@@ -23,6 +23,7 @@ use EasyCo\Pricing\Currency;
 use EasyCo\Pricing\DefaultCurrency;
 use EasyCo\Pricing\Money;
 use EasyCo\Shipping\Contracts\ShippingClassRepository;
+use EasyCo\Shipping\ShippingCourier;
 use EasyCo\Shipping\Contracts\ShippingMethodRepository;
 use EasyCo\Shipping\Contracts\ShippingZoneRepository;
 use EasyCo\Shipping\Rating\RateLine;
@@ -274,7 +275,11 @@ class ShippingOverview extends Page
             'remaining' => $method->remainingToFreeMinor === null ? null : $money($method->remainingToFreeMinor),
             'classMode' => $method->classMode === null ? null : __('shipping.class_mode.'.$method->classMode),
             'needsMore' => $method->remainingToFreeMinor !== null && $method->remainingToFreeMinor > 0,
+            'courier' => $method->courier,
         ], $result->methods);
+
+        // The result grouped by courier (stage 5f), the same grouping the quote API returns; methods without a courier come last.
+        $groups = array_map(static fn (array $group): array => ['courier' => $group['courier'], 'methods' => $group['items']], ShippingCourier::group($methods, static fn (array $method): ?string => $method['courier']));
 
         return [
             'matched' => $result->isMatched(),
@@ -285,6 +290,8 @@ class ShippingOverview extends Page
             'pickup' => $result->isPickupPoint,
             'goods' => $money($result->goodsAfterDiscountMinor),
             'methods' => $methods,
+            'groups' => $groups,
+            'showGroupNames' => $groups !== [] && array_filter($groups, static fn (array $group): bool => $group['courier'] !== null) !== [],
             'hint' => $result->hint?->text,
         ];
     }

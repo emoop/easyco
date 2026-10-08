@@ -69,3 +69,7 @@ Content to follow.
 ## Assigning a class to a product {#action-class-assignment}
 
 Content to follow.
+
+## Grouping methods by courier {#action-method-grouping}
+
+Content to follow.
