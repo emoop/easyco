@@ -399,7 +399,8 @@ class CheckoutControllerTest extends TestCase
         $second->assertStatus(201);
         $first->assertJsonPath('already_placed', false);
         $second->assertJsonPath('already_placed', true);
-        $second->assertJsonPath('payment', null);
+        // Stage 4c: the replay carries the stored payment (it used to be null); the same row, never a second charge.
+        $this->assertSame($first->json('payment'), $second->json('payment'));
         $this->assertSame($first->json('order.id'), $second->json('order.id'));
         $this->assertSame(1, OrderModel::count());
     }

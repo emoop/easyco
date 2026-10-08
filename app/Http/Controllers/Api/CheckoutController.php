@@ -7,13 +7,18 @@ use App\Rules\KnownCountryCode;
 use App\Rules\PlainText;
 use App\Services\CheckoutInput;
 use App\Services\CheckoutOrchestrator;
+use App\Services\CheckoutResult;
 use App\Services\Exceptions\AddressIncompleteForCheckoutException;
 use App\Services\Exceptions\AddressNotFoundForCheckoutException;
 use App\Services\Exceptions\CartNotFoundForCheckoutException;
+use App\Services\Exceptions\CheckoutCurrencyMismatchException;
 use App\Services\Exceptions\EmptyCartException;
 use App\Services\Exceptions\PromotionNoLongerValidException;
+use App\Services\Exceptions\SaleLineOrderReconciliationException;
 use App\Services\Exceptions\UnknownPaymentMethodException;
+use App\Services\Exceptions\ZeroTotalException;
 use App\Services\PaymentMethodAdapterResolver;
+use App\Settings\StoreLocale;
 use DateTimeImmutable;
 use EasyCo\Address\Enums\AddressDeliveryType;
 use EasyCo\Inventory\Exceptions\InsufficientStockException;
@@ -25,8 +30,12 @@ use EasyCo\Pricing\Exceptions\PriceNotConfiguredException;
 use EasyCo\Pricing\Money;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\App;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
+use InvalidArgumentException;
 use LogicException;
+use Throwable;
 
 /**
  * The Checkout HTTP surface — the final piece over checkout-domain-
@@ -45,6 +54,7 @@ class CheckoutController extends Controller
         private readonly CheckoutOrchestrator $orchestrator,
         private readonly PaymentMethodAdapterResolver $adapterResolver,
         private readonly TransactionRepository $transactions,
+        private readonly StoreLocale $storeLocale,
     ) {
     }
 
@@ -54,8 +64,25 @@ class CheckoutController extends Controller
      * order body, never an error. A double-clicked "Pay" button is a
      * successful, idempotent outcome (checkout-domain-design.md §6),
      * not a failure — do not "fix" this into a 409 later.
+     *
+     * THE STORE'S LOCALE (stage 4c, B3): the `api` group never applies it, so every
+     * message this endpoint produces — validation errors included — would come out in
+     * the app locale. It is set here for the request from StoreLocale::current() and
+     * restored afterwards, exactly as ShippingQuoteController does.
      */
     public function store(Request $request): JsonResponse
+    {
+        $previous = App::getLocale();
+        App::setLocale($this->storeLocale->current());
+
+        try {
+            return $this->respond($request);
+        } finally {
+            App::setLocale($previous);
+        }
+    }
+
+    private function respond(Request $request): JsonResponse
     {
         // The submitted country is trimmed and uppercased before validation, then
         // checked against the country list for BOTH delivery types (the domain
@@ -81,22 +108,13 @@ class CheckoutController extends Controller
         // site rather than relying on it: Phase 2 (the actual charge)
         // runs AFTER Phase 1 has committed, so an unknown method
         // discovered only inside place() would leave a real Order with
-        // no Payment and a claimed cart — and a retry hits the
-        // idempotent-replay fast path (payment: null), never
-        // re-attempting the charge. The result would be an order the
-        // customer can never pay for. Failing here, before place() is
-        // ever called, makes the whole request a clean no-op the
-        // customer can simply retry with a valid method. The
-        // orchestrator's own throw stays exactly as it is — it remains
-        // correct for any non-HTTP caller — and this is a guard in
-        // front of it, not a replacement.
+        // no charge attempted and a claimed cart. Failing here, before
+        // place() is ever called, makes the whole request a clean no-op the
+        // customer can simply retry with a valid method.
         try {
             $this->adapterResolver->resolve($validated['payment_method']);
-        } catch (UnknownPaymentMethodException $e) {
-            return response()->json([
-                'message' => $e->getMessage(),
-                'reason' => 'unknown_payment_method',
-            ], 422);
+        } catch (UnknownPaymentMethodException) {
+            return $this->refusal('unknown_payment_method', 422);
         }
 
         $accountId = Auth::guard('customer')->check() ? (string) Auth::guard('customer')->id() : null;
@@ -121,37 +139,37 @@ class CheckoutController extends Controller
             settlement: $validated['settlement'] ?? null,
         );
 
-        // Each caught explicitly — never a broad \Throwable/\RuntimeException
-        // catch, which would also swallow a genuine bug. InvalidArgumentException
-        // is deliberately NOT caught here: the orchestrator only throws it for
-        // caller-contract violations the validation rules below already
-        // prevent (e.g. address_id with no account), so it surfacing as a 500
-        // would mean a real bug in this controller, not bad user input.
+        // Each refusal is caught by type and answered with a stable `reason` and a FIXED,
+        // translated sentence (lang/{en,bg}/checkout.php): no exception message and no
+        // customer-typed id is ever echoed. Every one of them leaves the cart untouched and
+        // writes nothing (Phase 1 is a single transaction that rolled back, or never started).
         try {
             $result = $this->orchestrator->place($input, new DateTimeImmutable());
-        } catch (EmptyCartException $e) {
-            return response()->json(['message' => $e->getMessage()], 422);
-        } catch (PromotionNoLongerValidException $e) {
-            return response()->json([
-                'message' => $e->getMessage(),
-                'reason' => 'promotion_no_longer_valid',
-            ], 422);
-        } catch (InsufficientStockException $e) {
+
+            return $this->placedResponse($result);
+        } catch (EmptyCartException) {
+            return $this->refusal('empty_cart', 422);
+        } catch (PromotionNoLongerValidException) {
+            return $this->refusal('promotion_no_longer_valid', 422);
+        } catch (ZeroTotalException) {
+            return $this->refusal('zero_total', 422);
+        } catch (CheckoutCurrencyMismatchException) {
+            return $this->refusal('currency_mismatch', 422);
+        } catch (InsufficientStockException) {
             // 409, not 422 — the request was well-formed, the world
             // changed underneath it.
-            return response()->json([
-                'message' => $e->getMessage(),
-                'reason' => 'insufficient_stock',
-            ], 409);
-        } catch (PriceNotConfiguredException $e) {
-            return response()->json([
-                'message' => $e->getMessage(),
-                'reason' => 'price_not_available',
-            ], 409);
-        } catch (AddressNotFoundForCheckoutException $e) {
+            return $this->refusal('insufficient_stock', 409);
+        } catch (PriceNotConfiguredException) {
+            return $this->refusal('price_not_available', 409);
+        } catch (SaleLineOrderReconciliationException $e) {
+            // The cart's lines no longer add up to the order built from them: the state moved under the request.
+            $this->logFailure('checkout.state_changed', $input, $e);
+
+            return $this->refusal('checkout_state_changed', 409);
+        } catch (AddressNotFoundForCheckoutException) {
             // 404, not 403 — the posture that exception's own docblock
             // documents; never "improved" to reveal existence.
-            return response()->json(['message' => $e->getMessage()], 404);
+            return $this->refusal('address_not_found', 404, withReason: false);
         } catch (AddressIncompleteForCheckoutException $e) {
             // A historical saved address without a country: the customer must
             // update it. Nothing was written and the cart is untouched.
@@ -159,27 +177,66 @@ class CheckoutController extends Controller
                 'message' => $e->getMessage(),
                 'reason' => 'address_incomplete',
             ], 422);
-        } catch (UnknownPaymentMethodException $e) {
-            // Unreachable via this controller now that the pre-check
-            // above rejects an unknown method before place() is ever
-            // called — kept, not deleted, as a genuine belt-and-braces:
-            // a resolver binding could in principle change between the
-            // pre-check and this call.
-            return response()->json([
-                'message' => $e->getMessage(),
-                'reason' => 'unknown_payment_method',
-            ], 422);
-        } catch (CartNotFoundForCheckoutException $e) {
-            // Belt-and-braces — findCurrentCart()'s own 404 above should
-            // already have caught this.
-            return response()->json(['message' => $e->getMessage()], 404);
-        }
+        } catch (UnknownPaymentMethodException) {
+            // Unreachable via this controller now that the pre-check above rejects an unknown
+            // method before place() is ever called; kept as belt-and-braces.
+            return $this->refusal('unknown_payment_method', 422);
+        } catch (CartNotFoundForCheckoutException) {
+            return $this->refusal('cart_not_found', 404, withReason: false);
+        } catch (InvalidArgumentException $e) {
+            // A domain invariant tripped by something the request carried (a guest naming a saved address, a
+            // value an Address refuses, ...). The real message is for the log, with the cart id; the customer
+            // gets one generic sentence.
+            $this->logFailure('checkout.invalid', $input, $e, withMessage: true);
 
-        return response()->json([
+            return $this->refusal('checkout_invalid', 422);
+        } catch (Throwable $e) {
+            // Anything unforeseen: a JSON body in the store language, never a stack trace (APP_DEBUG or not).
+            // The cart is kept; a retry is safe (a placed order replays).
+            $this->logFailure('checkout.failed', $input, $e);
+
+            return $this->refusal('checkout_failed', 500);
+        }
+    }
+
+    /** The 201: the order, its payment as the database holds it, and the "needs attention" sentence when the payment step failed. */
+    private function placedResponse(CheckoutResult $result): JsonResponse
+    {
+        $body = [
             'order' => $this->orderToArray($result->order()),
             'payment' => $result->payment() !== null ? $this->paymentToArray($result->payment()) : null,
             'already_placed' => $result->isAlreadyPlaced(),
-        ], 201);
+        ];
+
+        if ($result->paymentNeedsAttention()) {
+            $body['message'] = __('checkout.payment_needs_attention');
+        }
+
+        return response()->json($body, 201);
+    }
+
+    /** `{message, reason}` with the fixed translated sentence for the reason; the 404s keep their historical `{message}` shape. */
+    private function refusal(string $reason, int $status, bool $withReason = true): JsonResponse
+    {
+        $body = ['message' => __('checkout.'.$reason)];
+
+        if ($withReason) {
+            $body['reason'] = $reason;
+        }
+
+        return response()->json($body, $status);
+    }
+
+    /** The cart id and the exception class always; the exception's own message only where the caller asks (never card or customer data by design). */
+    private function logFailure(string $event, CheckoutInput $input, Throwable $e, bool $withMessage = false): void
+    {
+        $context = ['cart_id' => $input->cartId, 'exception' => $e::class];
+
+        if ($withMessage) {
+            $context['message'] = $e->getMessage();
+        }
+
+        Log::error($event, $context);
     }
 
     // findCurrentCart() used to live here, and is deliberately GONE rather than

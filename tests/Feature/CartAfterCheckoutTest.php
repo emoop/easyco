@@ -160,7 +160,9 @@ final class CartAfterCheckoutTest extends TestCase
         $this->assertFalse($first->json('already_placed'));
         $this->assertTrue($second->json('already_placed'));
         $this->assertSame($first->json('order.id'), $second->json('order.id'));
-        $this->assertNull($second->json('payment'), 'a replay never re-charges');
+        // Stage 4c: a replay shows the payment AS STORED (it used to be null) and never re-charges: same row, one row.
+        $this->assertSame($first->json('payment'), $second->json('payment'), 'a replay never re-charges');
+        $this->assertSame(1, \Illuminate\Support\Facades\DB::table('payments')->count());
         $this->assertSame(1, OrderModel::count());
         $this->assertSame(7, app(StockLevelRepository::class)->findByVariationId($variationId)->quantity());
     }

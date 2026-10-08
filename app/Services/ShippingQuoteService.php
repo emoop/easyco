@@ -85,7 +85,8 @@ final class ShippingQuoteService
      * an active method of the matched zone, rename one, change its kind, service or currency, or turn an
      * unavailable method into a priced one (or the reverse): everything else in its output is refused, by name,
      * with ShippingQuoteFilterException. The original order is kept (the first is preselected), whatever order
-     * the filter returned. With no listener, the list passes through untouched.
+     * the filter returned. With no listener, the list passes through untouched. The free-shipping hint is
+     * recomputed from the final list (it carries no amount, so an amount change does not move it).
      *
      * @throws ShippingQuoteFilterException
      */
@@ -101,7 +102,16 @@ final class ShippingQuoteService
             'is_pickup_point' => $destination->isPickupPoint(),
         ]);
 
-        return $offers->withMethods($this->validatedFilterOutput($offers->methods, $filtered));
+        $final = $this->validatedFilterOutput($offers->methods, $filtered);
+
+        // The hint was computed before the filter: recompute it from what is finally offered (stage 4b, §9.1.7),
+        // so it never names a method the customer cannot choose. No query: the facts are on the quotes. The facts
+        // are read from the method's own PRE-filter quote, in its original order: a filter that rebuilds a quote
+        // (to change its amount) carries no threshold facts, and the hint is goods against the threshold, not price.
+        $surviving = array_flip(array_map(static fn (MethodQuote $quote): string => $quote->methodId, $final));
+        $remaining = array_values(array_filter($offers->methods, static fn (MethodQuote $quote): bool => isset($surviving[$quote->methodId])));
+
+        return $offers->withMethods($final)->withFreeShippingHint($this->freeShippingHint->readFromQuotes($remaining, $offers->currency));
     }
 
     /**

@@ -253,9 +253,9 @@ class CartCheckoutPricingCharacterizationTest extends TestCase
     }
 
     /**
-     * KNOWN GAP, PINNED NOT ENDORSED (reported in the 3.0c Part A, queued for the checkout
-     * resilience audit): a cart discounted to exactly zero is previewed fine, but checkout
-     * 500s because Payment refuses a zero amount. Stage 3.0c must not change it.
+     * A cart discounted to exactly zero is previewed fine, but cannot be placed because Payment refuses a
+     * zero amount. It USED to 500 (a known gap pinned here); since shipping stage 4c it is a controlled
+     * 422 `zero_total` (owner decision O8) and nothing is written.
      */
     public function test_a_cart_discounted_to_zero_previews_but_checkout_fails_today(): void
     {
@@ -270,8 +270,8 @@ class CartCheckoutPricingCharacterizationTest extends TestCase
         $this->assertSame(1333, $cart['promotion']['discount_amount']['minor']);
         $this->assertTrue($cart['promotion']['discount_capped']);
 
-        $this->checkout()->assertStatus(500);
-        $this->assertSame(0, DB::table('orders')->count(), 'the transaction rolled back');
+        $this->checkout()->assertStatus(422)->assertJsonPath('reason', 'zero_total');
+        $this->assertSame(0, DB::table('orders')->count(), 'nothing was written');
     }
 
     // --- 5. usage_limit_items partially covering lines -------------------------------------------
@@ -339,10 +339,9 @@ class CartCheckoutPricingCharacterizationTest extends TestCase
     }
 
     /**
-     * KNOWN GAP, PINNED NOT ENDORSED (reported in the 3.0c Part A): a price held in another
-     * currency is NOT treated as "no price" — the resolver returns it and adding it to the
-     * EUR subtotal throws, so the preview AND checkout both 500 (Currency mismatch). 3.0c
-     * must not change it.
+     * A price held in another currency is NOT treated as "no price" — the resolver returns it and adding
+     * it to the EUR subtotal throws, so the PREVIEW still 500s (not part of stage 4c). Checkout USED to 500
+     * too; since shipping stage 4c it is a controlled 422 `currency_mismatch` and nothing is written.
      */
     public function test_a_price_held_in_another_currency_fails_on_both_paths_today(): void
     {
@@ -353,7 +352,7 @@ class CartCheckoutPricingCharacterizationTest extends TestCase
         $this->setPrice($d, '4.00', 'USD');
 
         $this->getJson('/api/cart')->assertStatus(500);
-        $this->checkout()->assertStatus(500);
+        $this->checkout()->assertStatus(422)->assertJsonPath('reason', 'currency_mismatch');
         $this->assertSame(0, DB::table('orders')->count());
     }
 

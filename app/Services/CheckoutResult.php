@@ -18,14 +18,17 @@ use EasyCo\Payment\Payment;
  * used elsewhere in this codebase (Promotion::isActive(),
  * PromotionValidationResult::isValid()).
  *
- * payment() IS NULL ONLY ON AN IDEMPOTENT REPLAY (isAlreadyPlaced() ===
- * true) — a freshly placed order always has a real Payment (§8.3 step
- * 13 always produces one, even a FAILED one). ::alreadyPlaced() never
- * looks up the original order's existing Payment row: the replay path's
- * job is to hand back the same Order idempotently, not to re-report a
- * charge the caller already saw on the original call.
- * EasyCo\Payment\Contracts\PaymentRepository::findByOrderId() exists for
- * anyone who genuinely needs the attempt history.
+ * payment() on a replay is the Payment row AS THE DATABASE HOLDS IT (shipping
+ * stage 4c: it used to be null, which hid a PENDING payment from a customer who
+ * retried after a failed payment step). A replay still never re-charges and never
+ * writes; payment() is null only if the order somehow has no payment row. On a
+ * fresh placement it is the row the attempt was recorded on — or, when the payment
+ * step threw after the commit, the row reloaded from the database (PENDING, no
+ * attempt date).
+ *
+ * paymentNeedsAttention() is true only on a fresh placement whose payment step
+ * threw after the commit (§9.1.5): the order, the PENDING payment and the claimed
+ * cart stand, and the controller tells the customer not to place it again.
  */
 final class CheckoutResult
 {
@@ -33,17 +36,18 @@ final class CheckoutResult
         private readonly Order $order,
         private readonly bool $alreadyPlaced,
         private readonly ?Payment $payment,
+        private readonly bool $paymentNeedsAttention = false,
     ) {
     }
 
-    public static function placed(Order $order, ?Payment $payment = null): self
+    public static function placed(Order $order, ?Payment $payment = null, bool $paymentNeedsAttention = false): self
     {
-        return new self($order, false, $payment);
+        return new self($order, false, $payment, $paymentNeedsAttention);
     }
 
-    public static function alreadyPlaced(Order $order): self
+    public static function alreadyPlaced(Order $order, ?Payment $payment = null): self
     {
-        return new self($order, true, null);
+        return new self($order, true, $payment);
     }
 
     public function order(): Order
@@ -59,5 +63,10 @@ final class CheckoutResult
     public function payment(): ?Payment
     {
         return $this->payment;
+    }
+
+    public function paymentNeedsAttention(): bool
+    {
+        return $this->paymentNeedsAttention;
     }
 }

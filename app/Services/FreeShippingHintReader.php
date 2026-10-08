@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Settings\StoreLocale;
 use EasyCo\Pricing\Currency;
 use EasyCo\Pricing\Money;
+use EasyCo\Shipping\Enums\ShippingMethodKind;
 use EasyCo\Shipping\Rating\MethodRate;
 use EasyCo\Shipping\ShippingMethod;
 use Illuminate\Support\Facades\Lang;
@@ -74,32 +75,76 @@ final class FreeShippingHintReader
 
         usort($candidates, static fn (array $a, array $b): int => self::byPrecedence($a[0], $b[0]));
 
-        $chosen = $this->choose($candidates);
-
-        if ($chosen === null) {
-            return null;
-        }
-
-        [$method, $rate, $state] = $chosen;
-
-        return $this->build($state, $method, $rate, $currency);
+        return $this->hintFrom(array_map(
+            static fn (array $c): array => [
+                'id' => (string) $c[0]->id(),
+                'name' => $c[0]->name(),
+                'courier' => $c[0]->courier(),
+                'free' => (int) $c[1]->freeAboveMinor,
+                'remaining' => (int) $c[1]->remainingToFreeMinor,
+            ],
+            $candidates,
+        ), $currency);
     }
 
     /**
-     * @param  list<array{0: ShippingMethod, 1: MethodRate}>  $candidates  already in precedence order
-     * @return array{0: ShippingMethod, 1: MethodRate, 2: string}|null
+     * The same hint, read from the FINAL quote list (stage 4b, §9.1.7): what is left after the merchant's
+     * `shipping.quotes` filter, so the hint never names a method the customer is not offered. The list is
+     * already in precedence order (sortOrder, id), so it is NOT re-sorted. Unavailable and CARRIER quotes
+     * and quotes with no threshold are skipped. A filter that changed an amount changes nothing here: the hint
+     * is goods against the threshold, and the threshold facts are the quote's own.
+     *
+     * @param  list<MethodQuote>  $quotes
+     */
+    public function readFromQuotes(array $quotes, string $currency): ?FreeShippingHint
+    {
+        $candidates = [];
+
+        foreach ($quotes as $quote) {
+            if (! $quote->isAvailable() || $quote->kind === ShippingMethodKind::CARRIER->value
+                || $quote->freeAboveMinor === null || $quote->remainingToFreeMinor === null) {
+                continue;
+            }
+
+            $candidates[] = [
+                'id' => $quote->methodId,
+                'name' => $quote->name,
+                'courier' => $quote->courier,
+                'free' => $quote->freeAboveMinor,
+                'remaining' => $quote->remainingToFreeMinor,
+            ];
+        }
+
+        return $this->hintFrom($candidates, $currency);
+    }
+
+    /** @param list<array{id: string, name: string, courier: ?string, free: int, remaining: int}> $candidates already in precedence order */
+    private function hintFrom(array $candidates, string $currency): ?FreeShippingHint
+    {
+        if ($candidates === []) {
+            return null;
+        }
+
+        $chosen = $this->choose($candidates);
+
+        return $chosen === null ? null : $this->build($chosen[1], $chosen[0], $currency);
+    }
+
+    /**
+     * @param  list<array{id: string, name: string, courier: ?string, free: int, remaining: int}>  $candidates  already in precedence order
+     * @return array{0: array{id: string, name: string, courier: ?string, free: int, remaining: int}, 1: string}|null
      */
     private function choose(array $candidates): ?array
     {
         $best = null;
 
-        foreach ($candidates as [$method, $rate]) {
-            if ($rate->remainingToFreeMinor <= 0) {
+        foreach ($candidates as $c) {
+            if ($c['remaining'] <= 0) {
                 continue;
             }
 
-            if ($best === null || $rate->remainingToFreeMinor < $best[1]->remainingToFreeMinor) {
-                $best = [$method, $rate, FreeShippingHint::REMAINING];
+            if ($best === null || $c['remaining'] < $best[0]['remaining']) {
+                $best = [$c, FreeShippingHint::REMAINING];
             }
         }
 
@@ -107,24 +152,25 @@ final class FreeShippingHintReader
             return $best;
         }
 
-        foreach ($candidates as [$method, $rate]) {
-            if ($best === null || $rate->freeAboveMinor < $best[1]->freeAboveMinor) {
-                $best = [$method, $rate, FreeShippingHint::UNLOCKED];
+        foreach ($candidates as $c) {
+            if ($best === null || $c['free'] < $best[0]['free']) {
+                $best = [$c, FreeShippingHint::UNLOCKED];
             }
         }
 
         return $best;
     }
 
-    private function build(string $state, ShippingMethod $method, MethodRate $rate, string $currency): FreeShippingHint
+    /** @param array{id: string, name: string, courier: ?string, free: int, remaining: int} $c */
+    private function build(string $state, array $c, string $currency): FreeShippingHint
     {
         $locale = $this->storeLocale->current();
         // The sentence names the method inside its courier group: "Econt – To office" (stage 5f); no courier = the name as ever.
-        $methodName = \EasyCo\Shipping\ShippingCourier::displayName($method->courier(), $method->name());
+        $methodName = \EasyCo\Shipping\ShippingCourier::displayName($c['courier'], $c['name']);
 
         if ($state === FreeShippingHint::REMAINING) {
             $amount = $this->formatter->format(
-                Money::fromMinorUnits($rate->remainingToFreeMinor, $currency)->decimalValue(),
+                Money::fromMinorUnits($c['remaining'], $currency)->decimalValue(),
                 Currency::from($currency),
             );
 
@@ -133,15 +179,7 @@ final class FreeShippingHintReader
             $text = Lang::get('shipping_hint.unlocked', ['method' => $methodName], $locale);
         }
 
-        return new FreeShippingHint(
-            $state,
-            (string) $method->id(),
-            $method->name(),
-            (int) $rate->freeAboveMinor,
-            (int) $rate->remainingToFreeMinor,
-            $currency,
-            (string) $text,
-        );
+        return new FreeShippingHint($state, $c['id'], $c['name'], $c['free'], $c['remaining'], $currency, (string) $text);
     }
 
     /** sortOrder ascending, then id ascending (numerically when both are numbers). */

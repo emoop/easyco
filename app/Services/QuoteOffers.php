@@ -18,8 +18,8 @@ final class QuoteOffers
     /**
      * @param list<MethodQuote> $methods
      * @param FreeShippingHint|null $freeShippingHint the zone's "add X more" fact
-     *        (stage 3e, §5.1), or null when nothing applies; carried through the
-     *        merchant filter untouched
+     *        (stage 3e, §5.1), or null when nothing applies; recomputed from the
+     *        final list after the merchant filter (stage 4b)
      */
     public function __construct(
         public readonly string $cartId,
@@ -37,5 +37,11 @@ final class QuoteOffers
     public function withMethods(array $methods): self
     {
         return new self($this->cartId, $this->currency, $this->goodsAfterDiscountMinor, $this->zoneId, $this->zoneName, $this->pricingHash, $methods, $this->freeShippingHint);
+    }
+
+    /** The same offers with another hint (stage 4b: recomputed from the list the filter left). */
+    public function withFreeShippingHint(?FreeShippingHint $hint): self
+    {
+        return new self($this->cartId, $this->currency, $this->goodsAfterDiscountMinor, $this->zoneId, $this->zoneName, $this->pricingHash, $this->methods, $hint);
     }
 }

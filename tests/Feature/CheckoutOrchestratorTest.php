@@ -529,11 +529,12 @@ class CheckoutOrchestratorTest extends TestCase
 
         $this->assertNotNull($first->payment());
         $this->assertTrue($second->isAlreadyPlaced());
-        $this->assertNull($second->payment());
+        // Stage 4c: the replay carries the stored payment (it used to be null): the same row, not a second one.
+        $this->assertSame($first->payment()->id(), $second->payment()?->id());
         $this->assertCount(1, app(PaymentRepository::class)->findByOrderId($first->order()->id()));
     }
 
-    public function test_an_unknown_payment_method_throws_but_phase_ones_committed_order_and_stock_decrement_survive(): void
+    public function test_an_unknown_payment_method_is_contained_after_phase_one_and_the_committed_order_and_stock_decrement_survive(): void
     {
         $variationId = $this->pricedPurchasableVariation('10.00', 10);
         $cart = $this->guestCart();
@@ -541,12 +542,13 @@ class CheckoutOrchestratorTest extends TestCase
 
         $input = $this->guestCheckoutInput($cart->id(), ['paymentMethod' => 'bitcoin']);
 
-        try {
-            app(CheckoutOrchestrator::class)->place($input, new DateTimeImmutable('2026-09-05 12:00:00'));
-            $this->fail('Expected UnknownPaymentMethodException.');
-        } catch (UnknownPaymentMethodException) {
-            // expected
-        }
+        // Stage 4c: Phase 2 never throws. It used to propagate UnknownPaymentMethodException; now the order stands
+        // and the result says the payment step needs attention (the HTTP controller pre-checks the method anyway).
+        $result = app(CheckoutOrchestrator::class)->place($input, new DateTimeImmutable('2026-09-05 12:00:00'));
+
+        $this->assertTrue($result->paymentNeedsAttention());
+        $this->assertSame(PaymentStatus::PENDING, $result->payment()->status());
+        $this->assertNull($result->payment()->attemptedAt());
 
         // Phase 2 runs AFTER Phase 1's transaction has already committed
         // — this is the documented Phase-1/Phase-2 boundary, not a bug:
@@ -626,12 +628,10 @@ class CheckoutOrchestratorTest extends TestCase
         $cart = $this->guestCart();
         $this->addLine($cart, $variationId, 1);
 
-        try {
-            app(CheckoutOrchestrator::class)->place($this->guestCheckoutInput($cart->id()), new DateTimeImmutable('2026-09-05 12:00:00'));
-            $this->fail('Expected the simulated adapter exception to propagate.');
-        } catch (RuntimeException $e) {
-            $this->assertSame('Simulated crash mid-Phase-2, before the adapter ever answered.', $e->getMessage());
-        }
+        // Stage 4c: the adapter's exception no longer escapes (it used to propagate as a 500 for an existing
+        // order): it is contained, and the result carries the "needs attention" flag.
+        $result = app(CheckoutOrchestrator::class)->place($this->guestCheckoutInput($cart->id()), new DateTimeImmutable('2026-09-05 12:00:00'));
+        $this->assertTrue($result->paymentNeedsAttention());
 
         $orderId = OrderModel::sole()->id;
         $rows = app(PaymentRepository::class)->findByOrderId((string) $orderId);

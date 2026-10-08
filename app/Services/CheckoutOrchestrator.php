@@ -4,9 +4,11 @@ namespace App\Services;
 
 use App\Services\Exceptions\CartClaimLostException;
 use App\Services\Exceptions\CartNotFoundForCheckoutException;
+use App\Services\Exceptions\CheckoutCurrencyMismatchException;
 use App\Services\Exceptions\EmptyCartException;
 use App\Services\Exceptions\PromotionNoLongerValidException;
 use App\Services\Exceptions\SaleLineOrderReconciliationException;
+use App\Services\Exceptions\ZeroTotalException;
 use DateTimeImmutable;
 use EasyCo\Address\Address;
 use EasyCo\Cart\Cart;
@@ -30,7 +32,9 @@ use EasyCo\Payment\PaymentContext;
 use EasyCo\Pricing\DefaultCurrency;
 use EasyCo\Pricing\Money;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
+use Throwable;
 
 /**
  * The full order-placement flow — checkout-domain-design.md §8.3, both
@@ -95,7 +99,13 @@ final class CheckoutOrchestrator
      * @throws CartNotFoundForCheckoutException
      * @throws EmptyCartException
      * @throws PromotionNoLongerValidException
-     * @throws \App\Services\Exceptions\UnknownPaymentMethodException Propagates uncaught from Phase 2 — the Order/stock/Transaction/Payment(PENDING) from Phase 1 have already committed by this point (see this method's own inline note).
+     * @throws \App\Services\Exceptions\ZeroTotalException The total after discount is not positive; nothing written (stage 4c).
+     * @throws \App\Services\Exceptions\CheckoutCurrencyMismatchException A price in another currency; nothing written (stage 4c).
+     * @throws SaleLineOrderReconciliationException Aborts Phase 1; nothing written.
+     *
+     * Phase 2 (the payment attempt and the `order.placed` hook) NEVER throws (stage 4c): a failure there is logged and
+     * reported through CheckoutResult::paymentNeedsAttention(), the committed order standing. That includes an unknown
+     * payment method, which is only discovered there if the caller skipped the controller's pre-check.
      * @throws \EasyCo\Pricing\Exceptions\PriceNotConfiguredException Propagates uncaught — aborts the transaction (§8.3 step 3).
      * @throws \EasyCo\Inventory\Exceptions\InsufficientStockException Propagates uncaught — aborts the transaction (§8.3 step 7).
      * @throws \App\Services\Exceptions\AddressNotFoundForCheckoutException Propagates uncaught from AddressResolver::resolveExisting().
@@ -177,15 +187,37 @@ final class CheckoutOrchestrator
         // recordAttemptResult() is written to accept it, not reject it;
         // see Payment's own class docblock for why the "already
         // recorded" guard lives on attemptedAt rather than on status.
-        $adapter = $this->adapterResolver->resolve($input->paymentMethod);
-        $attempt = $adapter->charge($order->total(), new PaymentContext($order->id()));
-        $payment->recordAttemptResult(
-            status: $attempt->status(),
-            providerReference: $attempt->providerReference(),
-            failureReason: $attempt->failureReason(),
-            attemptedAt: new DateTimeImmutable(),
-        );
-        $this->payments->save($payment);
+        //
+        // CONTAINED (shipping stage 4c, §9.1.5, O5): the order is COMMITTED here, so nothing
+        // thrown by the payment step may escape as a 500 for an order that exists. A Throwable
+        // is logged (order id, payment id, exception class — never the message, which a
+        // provider could fill with card or customer data), the Payment is left exactly as
+        // Phase 1 committed it (PENDING, no attempt date: no status is invented), and the
+        // result tells the controller the payment step needs attention.
+        $paymentNeedsAttention = false;
+
+        try {
+            $adapter = $this->adapterResolver->resolve($input->paymentMethod);
+            $attempt = $adapter->charge($order->total(), new PaymentContext($order->id()));
+            $payment->recordAttemptResult(
+                status: $attempt->status(),
+                providerReference: $attempt->providerReference(),
+                failureReason: $attempt->failureReason(),
+                attemptedAt: new DateTimeImmutable(),
+            );
+            $this->payments->save($payment);
+        } catch (Throwable $e) {
+            Log::error('checkout.payment_step_failed', [
+                'order_id' => $order->id(),
+                'payment_id' => $payment->id(),
+                'exception' => $e::class,
+            ]);
+
+            $paymentNeedsAttention = true;
+            // The in-memory row may already carry an answer the database never received:
+            // report what the database holds.
+            $payment = $this->storedPayment($order->id());
+        }
 
         // Step 14 — the extension point extensibility-design-and-
         // hooks.md §1 already names. Fires regardless of payment outcome
@@ -193,9 +225,21 @@ final class CheckoutOrchestrator
         // genuinely was placed. A future listener that cares about money
         // should read the Payment, not assume this hook implies payment
         // succeeded.
-        Hook::fire('order.placed', $order);
+        //
+        // CONTAINED (stage 4c, O6): the Hook registry never catches a listener's exception
+        // (HookRegistry::doAction) and that rule stays. THIS call site is where a listener
+        // may no longer turn a placed order into a 500: it is logged (order id and the
+        // exception class only) and the checkout carries on, the payment result untouched.
+        try {
+            Hook::fire('order.placed', $order);
+        } catch (Throwable $e) {
+            Log::error('checkout.order_placed_listener_failed', [
+                'order_id' => $order->id(),
+                'exception' => $e::class,
+            ]);
+        }
 
-        return CheckoutResult::placed($order, $payment);
+        return CheckoutResult::placed($order, $payment, $paymentNeedsAttention);
     }
 
     /** The claim on this request's cart, iff the requester is the identity it was claimed by. */
@@ -224,7 +268,20 @@ final class CheckoutOrchestrator
             throw new CartNotFoundForCheckoutException($input->cartId);
         }
 
-        return CheckoutResult::alreadyPlaced($order);
+        return CheckoutResult::alreadyPlaced($order, $this->storedPayment($order->id()));
+    }
+
+    /**
+     * The order's payment row as the database holds it (a read only), or null when there is none or the read fails.
+     * V1 has one payment per order; the first is the one.
+     */
+    private function storedPayment(string $orderId): ?Payment
+    {
+        try {
+            return $this->payments->findByOrderId($orderId)[0] ?? null;
+        } catch (Throwable) {
+            return null;
+        }
     }
 
     /**
@@ -269,10 +326,28 @@ final class CheckoutOrchestrator
         // (PriceNotConfiguredException propagates, aborting the transaction), and a
         // promotion that is no longer valid is turned into PromotionNoLongerValidException.
         $currency = DefaultCurrency::get()->code();
-        $pricing = $this->cartPricing->price($cart, $input->accountId, $currency, UnpricedLines::REFUSE, includeUnitCost: true);
+        try {
+            $pricing = $this->cartPricing->price($cart, $input->accountId, $currency, UnpricedLines::REFUSE, includeUnitCost: true);
+        } catch (InvalidArgumentException $e) {
+            // A price held only in another currency is not "no price": the resolver returns it and Money
+            // refuses to add it to the store's currency (pinned in CartCheckoutPricingCharacterizationTest).
+            // Money's exception is a plain InvalidArgumentException with no type of its own (Pricing is not
+            // touched by this stage), so it is recognised by the start of its message; anything else rethrows.
+            if (str_starts_with($e->getMessage(), 'Currency mismatch')) {
+                throw new CheckoutCurrencyMismatchException($e);
+            }
+
+            throw $e;
+        }
 
         if ($pricing->promotionRefusal() !== null) {
             throw new PromotionNoLongerValidException((string) $pricing->appliedPromotionCode(), $pricing->promotionRefusal());
+        }
+
+        // Nothing to pay: a Payment cannot be for zero, so refuse BEFORE anything is written (stage 4c, O8).
+        // Judged on the order total as it is today; shipping is not part of the order yet.
+        if (! $pricing->goodsAfterDiscount()->isPositive()) {
+            throw new ZeroTotalException('The order total is not positive.');
         }
 
         $pricingResults = $pricing->pricedLines();
