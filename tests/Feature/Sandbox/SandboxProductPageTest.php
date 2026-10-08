@@ -38,6 +38,7 @@ use EasyCo\Staff\Seeders\StaffSystemRolesSeeder;
 use EasyCo\Staff\Staff;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\Concerns\GivesProductsAShippingClass;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -58,6 +59,7 @@ use Tests\TestCase;
  */
 final class SandboxProductPageTest extends TestCase
 {
+    use GivesProductsAShippingClass;
     use RefreshDatabase;
 
     private static int $counter = 0;
@@ -349,6 +351,7 @@ final class SandboxProductPageTest extends TestCase
     public function test_activating_a_draft_variation_through_the_admin_editor_makes_it_appear_on_the_sandbox_page(): void
     {
         $this->seedPricingLists();
+        $this->giveProductsAShippingClass(); // the admin editor requires a class (stage 5e)
 
         $product = $this->variableProduct('activated', [
             ['label' => 'M', 'sku' => 'SKU-WAS-DRAFT', 'status' => 'draft', 'regular' => '15.00'],

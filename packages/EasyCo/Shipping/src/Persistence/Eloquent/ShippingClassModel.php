@@ -12,5 +12,5 @@ class ShippingClassModel extends Model
 {
     protected $table = 'shipping_classes';
 
-    protected $fillable = ['code', 'name', 'description'];
+    protected $fillable = ['code', 'name', 'description', 'is_default', 'default_marker'];
 }

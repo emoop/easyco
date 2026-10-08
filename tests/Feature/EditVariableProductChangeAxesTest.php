@@ -38,6 +38,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 use Tests\TestCase;
+use Tests\Concerns\GivesProductsAShippingClass;
 
 /**
  * The "Change axes" action on EditVariableProduct's Axes tab —
@@ -55,11 +56,14 @@ use Tests\TestCase;
  */
 class EditVariableProductChangeAxesTest extends TestCase
 {
+    use GivesProductsAShippingClass;
     use RefreshDatabase;
 
     protected function setUp(): void
     {
         parent::setUp();
+
+        $this->giveProductsAShippingClass();
 
         // Off by default (ActivityLogger::write()'s own real gate) — this file
         // asserts the restructure's own log entries (the same posture

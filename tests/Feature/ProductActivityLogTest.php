@@ -28,6 +28,7 @@ use EasyCo\Staff\Staff;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
 use Tests\TestCase;
+use Tests\Concerns\GivesProductsAShippingClass;
 
 /**
  * Exercises the real, production ActivityLogger + ProductActivityLog
@@ -37,6 +38,7 @@ use Tests\TestCase;
  */
 class ProductActivityLogTest extends TestCase
 {
+    use GivesProductsAShippingClass;
     use RefreshDatabase;
 
     /**
@@ -48,6 +50,8 @@ class ProductActivityLogTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+
+        $this->giveProductsAShippingClass();
 
         app(SiteSettingsRepository::class)->set('admin.activity_log_enabled', '1');
     }

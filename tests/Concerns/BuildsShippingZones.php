@@ -169,12 +169,12 @@ trait BuildsShippingZones
         return DB::table('activity_log')->where('entity_type', 'shipping_method')->orderBy('id')->get()->all();
     }
 
-    /** Spies on the four class hooks (arguments, and the transaction depth at the moment the listener ran). */
+    /** Spies on the class hooks (arguments, and the transaction depth at the moment the listener ran). */
     private function spyOnClassHooks(): int
     {
         $baseline = DB::transactionLevel();
 
-        foreach (['created', 'updated', 'deleted', 'assigned'] as $suffix) {
+        foreach (['created', 'updated', 'deleted', 'assigned', 'default_changed', 'assigned_bulk'] as $suffix) {
             $name = 'shipping.class.'.$suffix;
             Hook::action($name, function (...$arguments) use ($name): void {
                 $this->hookCalls[] = [$name, $arguments, DB::transactionLevel(), true];

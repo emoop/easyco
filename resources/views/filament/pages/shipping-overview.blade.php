@@ -48,6 +48,11 @@
             @if ($noZone)
                 <p class="shop-note">{{ __('shipping.status.no_zone') }}</p>
             @endif
+            @if ($classlessCount > 0)
+                <p class="shop-note">{{ trans_choice('shipping.overview.classless', $classlessCount, ['count' => $classlessCount]) }}
+                    {{ __('shipping.overview.classless_command') }}
+                    <a href="{{ $classMigrationHelpUrl }}" target="_blank" rel="noopener noreferrer" style="text-decoration: underline;">{{ __('help.link') }}</a></p>
+            @endif
         </section>
 
         {{-- Overview --}}

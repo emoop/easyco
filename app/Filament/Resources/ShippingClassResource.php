@@ -8,6 +8,7 @@ use App\Filament\Resources\ShippingClassResource\Pages\CreateShippingClass;
 use App\Filament\Resources\ShippingClassResource\Pages\EditShippingClass;
 use App\Filament\Resources\ShippingClassResource\Pages\ListShippingClasses;
 use App\Filament\Support\HelpLink;
+use App\Services\Exceptions\ShippingClassDefaultException;
 use App\Services\Exceptions\ShippingClassInUseException;
 use App\Services\Exceptions\ShippingClassInvalidException;
 use App\Services\Exceptions\ShippingClassNotFoundException;
@@ -20,6 +21,7 @@ use EasyCo\Staff\Enums\Permission;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
 use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Text;
@@ -130,6 +132,9 @@ class ShippingClassResource extends Resource
             TextInput::make('description')
                 ->label(__('shipping.classes.fields.description'))
                 ->maxLength(ShippingClassWriter::DESCRIPTION_MAX_LENGTH),
+            Toggle::make('is_default')
+                ->label(__('shipping.classes.fields.is_default')),
+            Text::make(__('shipping.classes.help.is_default'))->color('gray')->size('sm'),
             Text::make(__('shipping.classes.help.modes'))->color('gray')->size('sm'),
             HelpLink::component('class_mode', 'shipping'),
             HelpLink::component('class_editor', 'shipping'),
@@ -150,6 +155,10 @@ class ShippingClassResource extends Resource
                 TextColumn::make('name')
                     ->label(__('shipping.classes.fields.name'))
                     ->wrap(),
+                // a plain marker, no colour
+                TextColumn::make('is_default')
+                    ->label(__('shipping.classes.fields.is_default'))
+                    ->formatStateUsing(fn ($state): string => $state ? __('shipping.classes.default_marker') : ''),
                 TextColumn::make('description')
                     ->label(__('shipping.classes.fields.description'))
                     ->limit(60)
@@ -223,7 +232,7 @@ class ShippingClassResource extends Resource
             ->action(function (ShippingClassModel $record): void {
                 try {
                     app(ShippingClassWriter::class)->delete((string) $record->id);
-                } catch (ShippingClassInUseException|ShippingClassNotFoundException $exception) {
+                } catch (ShippingClassInUseException|ShippingClassDefaultException|ShippingClassNotFoundException $exception) {
                     Notification::make()->title(__('shipping.classes.notice.refused'))->body($exception->getMessage())->danger()->send();
 
                     return;

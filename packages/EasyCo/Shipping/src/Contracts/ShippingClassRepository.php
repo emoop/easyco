@@ -21,6 +21,15 @@ interface ShippingClassRepository
      */
     public function all(): array;
 
+    /** The store's default class (shipping stage 5e), or null when none is marked. */
+    public function findDefault(): ?ShippingClass;
+
+    /**
+     * Makes $id the one default class and clears the previous one (null clears the default), atomically: one
+     * transaction, the current default row locked. The database guarantees there is never more than one.
+     */
+    public function markDefault(?string $id): void;
+
     /**
      * Removes the class. A class a rate still refers to is refused by the database (the restrict foreign key) and
      * the QueryException is left to the caller; deleting an unknown id is a no-op.

@@ -26,7 +26,9 @@ use EasyCo\Staff\Staff;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Filament\Actions\Testing\TestAction;
 use Livewire\Livewire;
+use Tests\Concerns\GivesProductsAShippingClass;
 use Tests\TestCase;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Covers EditVariableProduct's new "Axes" tab (extending declared
@@ -41,11 +43,14 @@ use Tests\TestCase;
  */
 class EditVariableProductAxesAndRestoreTest extends TestCase
 {
+    use GivesProductsAShippingClass;
     use RefreshDatabase;
 
     protected function setUp(): void
     {
         parent::setUp();
+
+        $this->giveProductsAShippingClass();
 
         // Off by default (ActivityLogger::write()'s own real gate) —
         // ProductActivityLogTest's own established precedent for
@@ -284,6 +289,7 @@ class EditVariableProductAxesAndRestoreTest extends TestCase
                 'sku' => 'SKU-VAR-RED',
                 'barcode' => '',
                 'is_active' => false,
+                'shipping_class' => (string) DB::table('shipping_classes')->value('id'),
             ]])
             ->call('save')
             ->assertHasNoFormErrors();
@@ -364,6 +370,7 @@ class EditVariableProductAxesAndRestoreTest extends TestCase
                 'sku' => 'SKU-VAR-WHITE',
                 'barcode' => '',
                 'is_active' => false,
+                'shipping_class' => (string) DB::table('shipping_classes')->value('id'),
             ]])
             ->call('save')
             ->assertHasNoFormErrors();
@@ -394,6 +401,7 @@ class EditVariableProductAxesAndRestoreTest extends TestCase
                 'sku' => 'SKU-VAR-BLACK-DUP',
                 'barcode' => '',
                 'is_active' => false,
+                'shipping_class' => (string) DB::table('shipping_classes')->value('id'),
             ]])
             ->set('data.name', 'Should Not Be Saved Either')
             ->call('save')

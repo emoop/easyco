@@ -37,6 +37,7 @@ final class ShippingClassAssigner
         private readonly ProductRepository $products,
         private readonly VariationRepository $variations,
         private readonly ActivityLogger $audit,
+        private readonly ShippingClassMissingReader $missing,
     ) {
     }
 
@@ -81,6 +82,82 @@ final class ShippingClassAssigner
             }
 
             throw new ShippingClassNotFoundException(target: true);
+        });
+    }
+
+    /**
+     * Gives the class to variations that still have none (shipping stage 5e, the assign-missing command): one
+     * TRANSACTION for the whole batch. Each variation row is locked and re-read first, and one that is no longer
+     * missing — another process (or an admin) gave it a class meanwhile — is SKIPPED, never overwritten; a valid
+     * class is never replaced. The class goes through the domain (Variation::setShippingClass and the product
+     * repository, once per product), not raw SQL. No `shipping.class.assigned` hook per variation: the caller fires
+     * ONE `shipping.class.assigned_bulk` after the run. With $auditEach every changed variation gets the usual audit
+     * entry (entity `product`, field `variation[<id>].shipping_class`); without it none does (the caller writes the
+     * run's summary entry).
+     *
+     * @param  list<string>  $variationIds
+     * @return array{assigned: int, skipped: int, ids: list<string>} the variations changed
+     *
+     * @throws ShippingClassInvalidException an unknown class
+     */
+    public function assignMissing(array $variationIds, string $classId, bool $auditEach): array
+    {
+        $class = $this->classes->findById($classId);
+
+        if ($class === null) {
+            throw new ShippingClassInvalidException(['shipping_class' => [__('shipping.classes.errors.unknown_class')]]);
+        }
+
+        $codes = array_map(static fn ($existing): string => $existing->code(), $this->classes->all());
+
+        return DB::transaction(function () use ($variationIds, $class, $codes, $auditEach): array {
+            $rows = DB::table('catalog_variations')->whereIn('id', $variationIds)->orderBy('id')->lockForUpdate()->get(['id', 'product_id', 'shipping_class']);
+            $byProduct = [];
+            $skipped = count($variationIds) - $rows->count();
+
+            foreach ($rows as $row) {
+                if ($this->missing->isMissing($row->shipping_class === null ? null : (string) $row->shipping_class, $codes)) {
+                    $byProduct[(string) $row->product_id][(string) $row->id] = $row->shipping_class === null ? null : (string) $row->shipping_class;
+                } else {
+                    $skipped++;
+                }
+            }
+
+            $changed = [];
+
+            foreach ($byProduct as $productId => $olds) {
+                $product = $this->products->findByIdWithVariations((string) $productId);
+
+                if ($product === null) {
+                    $skipped += count($olds);
+
+                    continue;
+                }
+
+                $done = false;
+
+                foreach ($product->variations() as $variation) {
+                    $id = (string) $variation->id();
+
+                    if (! array_key_exists($id, $olds)) {
+                        continue;
+                    }
+
+                    $variation->setShippingClass($class->code());
+                    $done = true;
+                    $changed[] = $id;
+
+                    if ($auditEach) {
+                        $this->audit->logFieldChanged('product', (string) $productId, 'variation['.$id.'].shipping_class', self::normalised($olds[$id]), $class->code());
+                    }
+                }
+
+                if ($done) {
+                    $this->products->save($product);
+                }
+            }
+
+            return ['assigned' => count($changed), 'skipped' => $skipped, 'ids' => $changed];
         });
     }
 

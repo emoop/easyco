@@ -349,6 +349,8 @@ class CreateVariableProduct extends CreateRecord
                             Toggle::make('is_active')
                                 ->label(__('products.wizard.variations.active_label'))
                                 ->default(false),
+                            // shipping stage 5e: required, pre-filled with the store's default class
+                            ProductResource::shippingClassSelect('always'),
                         ]),
                 ]),
         ];
@@ -424,6 +426,10 @@ class CreateVariableProduct extends CreateRecord
         );
 
         $rows = [];
+        // shipping stage 5e: every generated row starts with the store's default class (the rows are filled by code,
+        // so the field's own default is not applied)
+        $defaultClassId = app(\EasyCo\Shipping\Contracts\ShippingClassRepository::class)->findDefault()?->id();
+        $defaultClassId = $defaultClassId === null ? null : (string) $defaultClassId;
 
         foreach ($variations as $variation) {
             $labelParts = [];
@@ -440,6 +446,7 @@ class CreateVariableProduct extends CreateRecord
                 'sku' => $variation->sku(),
                 'barcode' => '',
                 'is_active' => false,
+                'shipping_class' => $defaultClassId,
             ];
         }
 
@@ -598,9 +605,10 @@ class CreateVariableProduct extends CreateRecord
                     $combination,
                     (string) ($row['sku'] ?? ''),
                     $row['barcode'] ?? '',
-                    (bool) ($row['is_active'] ?? false)
+                    (bool) ($row['is_active'] ?? false),
+                    $row['shipping_class'] ?? null
                 );
-            } catch (DuplicateVariationCombinationException $e) {
+            } catch (DuplicateVariationCombinationException|\App\Services\Exceptions\ShippingClassNotFoundException $e) {
                 Notification::make()
                     ->title($e->getMessage())
                     ->danger()

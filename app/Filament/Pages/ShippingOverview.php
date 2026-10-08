@@ -245,6 +245,9 @@ class ShippingOverview extends Page
             'zoneCount' => count($zones),
             'activeMethodCount' => $activeMethods,
             'noZone' => $zones === [],
+            // shipping stage 5e: a fact, never a block — ONE count query (see ShippingClassMissingReader)
+            'classMigrationHelpUrl' => HelpLink::url('class_migration', 'shipping'),
+            'classlessCount' => app(\App\Services\ShippingClassMissingReader::class)->total(),
             'countryOptions' => $countryNames,
             'classOptions' => $classNames,
             'overviewHelpUrl' => HelpLink::url('shipping_overview', 'shipping'),

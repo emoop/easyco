@@ -74,6 +74,7 @@ use App\Services\Exceptions\ShippingClassInvalidException;
 use App\Services\Exceptions\ShippingClassNotFoundException;
 use App\Services\ShippingClassAssigner;
 use EasyCo\Shipping\Contracts\ShippingClassRepository;
+use Illuminate\Support\HtmlString;
 use WeakMap;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Component;
@@ -81,6 +82,7 @@ use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Group;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Tabs;
+use Filament\Schemas\Components\Text;
 use Filament\Schemas\Components\Tabs\Tab;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
@@ -937,31 +939,54 @@ class ProductResource extends Resource
                 ]),
             // The optional shipping class (shipping stage 5b): stored on the single universal variation and written
             // by ShippingClassAssigner after the product is saved — see shippingClassSelect().
-            static::shippingClassSelect()
-                ->helperText(__('shipping.classes.assignment.fact')),
+            static::shippingClassSelect('create'),
+            Text::make(__('shipping.classes.assignment.required_fact'))->color('gray')->size('sm'),
             HelpLink::component('class_assignment', 'shipping'),
+            HelpLink::component('class_required', 'shipping'),
         ];
     }
 
     /**
-     * The ONE optional "Shipping class" select (shipping stage 5b) of the SIMPLE product form and of every row of the
-     * variable product's variations: the options are every class by name (the value is the class id; empty = no
-     * class). The list is read once per Livewire component, however many rows ask for it. The write is NOT this
-     * field's: the pages call applyShippingClass() after the product itself is saved.
+     * The ONE "Shipping class" select of the SIMPLE product form and of every variation row of a VARIABLE product
+     * (shipping stages 5b/5e): the options are every class by name (the value is the class id).
+     *
+     * THE CLASS IS REQUIRED HERE — in the admin forms only (stage 5e). The domain, the quote, importers and the API stay
+     * permissive: a variation with no class still quotes (a blank class means "no class") and is not blocked anywhere
+     * else; the requirement is this form rule, plus the overview's health line and the assign-missing command that
+     * gives existing data a class. A refusal is a translated field error on the select. The assigner itself has no
+     * such rule (a system caller may still clear a class).
+     *
+     * $prefill says when the store's DEFAULT class is pre-selected: 'never' (an existing row — a legacy blank or
+     * free-text value shows as empty and must be chosen), 'create' (the SIMPLE form while creating) or 'always' (a
+     * brand-new variation row). When the store has no class at all the field carries a fact line with a link to the
+     * classes page (the form's state is not kept there). The write is NOT this field's: the pages call
+     * applyShippingClass() after the product itself is saved.
+     *
+     * @param  'never'|'create'|'always'  $prefill
      */
-    public static function shippingClassSelect(): Select
+    public static function shippingClassSelect(string $prefill = 'never'): Select
     {
         return Select::make('shipping_class')
             ->label(__('shipping.classes.assignment.label'))
-            ->placeholder(__('shipping.classes.assignment.none'))
-            ->options(fn ($livewire): array => static::shippingClassOptions($livewire))
+            ->placeholder(__('shipping.classes.assignment.choose'))
+            ->options(fn ($livewire): array => static::shippingClassFacts($livewire)['options'])
+            ->required()
+            ->validationMessages(['required' => __('shipping.classes.errors.class_required')])
+            ->default(fn ($livewire, ?string $operation = null): ?string => $prefill === 'always' || ($prefill === 'create' && $operation === 'create')
+                ? static::shippingClassDefaultId($livewire)
+                : null)
+            ->helperText(fn ($livewire): ?HtmlString => static::shippingClassFacts($livewire)['options'] === []
+                ? new HtmlString(e(__('shipping.classes.assignment.none_exist')).' <a href="'.e(ShippingClassResource::getUrl('index')).'" style="text-decoration: underline;">'.e(__('shipping.classes.assignment.go_to_classes')).'</a> '.e(__('shipping.classes.assignment.state_not_kept')))
+                : null)
             ->disabled(fn (): bool => ! static::staffCanForAction(Permission::PRODUCT_MANAGE));
     }
 
     /**
-     * @return array<string, string> class id => "name (code)", ordered by code
+     * The class options, read ONCE per Livewire component however many rows ask.
+     *
+     * @return array{options: array<string, string>}
      */
-    private static function shippingClassOptions($livewire): array
+    private static function shippingClassFacts($livewire): array
     {
         static $memo = null;
         $memo ??= new WeakMap();
@@ -973,8 +998,22 @@ class ProductResource extends Resource
                 $options[(string) $class->id()] = $class->name().' ('.$class->code().')';
             }
 
-            return $options;
+            return ['options' => $options];
         })();
+    }
+
+    /** The store's default class id — read only when a field asks to pre-select it (once per component), else never. */
+    private static function shippingClassDefaultId($livewire): ?string
+    {
+        static $memo = null;
+        $memo ??= new WeakMap();
+
+        if (! isset($memo[$livewire])) {
+            $default = static::shippingClassFacts($livewire)['options'] === [] ? null : app(ShippingClassRepository::class)->findDefault()?->id();
+            $memo[$livewire] = ['id' => $default === null ? null : (string) $default];
+        }
+
+        return $memo[$livewire]['id'];
     }
 
     /**
@@ -2551,9 +2590,17 @@ class ProductResource extends Resource
      *
      * @param array<int|string, int|string> $combination
      */
-    public static function writeStandardVariation(Product $product, array $combination, string $sku, mixed $barcodeInput, bool $activate): Variation
+    public static function writeStandardVariation(Product $product, array $combination, string $sku, mixed $barcodeInput, bool $activate, mixed $shippingClassId = null): Variation
     {
         $variation = $product->addStandardVariation($combination, $sku);
+
+        // The class chosen on the new row (shipping stage 5e), set on the variation before the product is saved: a
+        // creation, so it is covered by the product's own save and needs no separate assignment. A class that
+        // vanished meanwhile is a ShippingClassNotFoundException the page turns into a notice and a rollback.
+        if (is_scalar($shippingClassId) && (string) $shippingClassId !== '') {
+            $class = app(ShippingClassRepository::class)->findById((string) $shippingClassId) ?? throw new ShippingClassNotFoundException();
+            $variation->setShippingClass($class->code());
+        }
 
         $barcode = Hook::apply('catalog.variation.barcode', filled($barcodeInput) ? $barcodeInput : '', $variation);
         if ($barcode !== '') {

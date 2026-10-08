@@ -78,7 +78,7 @@ class ProductShippingClassFieldTest extends TestCase
     // SIMPLE product
     // =====================================================================================================
 
-    public function test_the_simple_form_has_one_optional_select_of_all_classes_by_name_and_the_fact_line(): void
+    public function test_the_simple_form_has_one_required_select_of_all_classes_by_name_and_the_fact_line(): void
     {
         $heavy = $this->classId('heavy', 'Heavy parcels');
         $light = $this->classId('light', 'Light');
@@ -92,17 +92,19 @@ class ProductShippingClassFieldTest extends TestCase
         $this->assertStringContainsString('Shipping class', $html);
         $this->assertStringContainsString('Heavy parcels (heavy)', $html);
         $this->assertStringContainsString('Light (light)', $html);
-        $this->assertStringContainsString('No class: no class amount is added or used for this item', $html);
+        $this->assertStringContainsString('A shipping class is required.', $html);
+        $this->assertStringContainsString('Choose a class', $html);
         $this->assertStringContainsString('/admin/help/shipping#action-class-assignment', $html);
+        $this->assertStringContainsString('/admin/help/shipping#action-class-required', $html);
         $this->assertNotSame($heavy, $light);
 
         App::setLocale('bg');
         $bg = html_entity_decode(Livewire::test(EditProduct::class, ['record' => $productId])->html());
         $this->assertStringContainsString('Клас за доставка', $bg);
-        $this->assertStringContainsString('Без клас: за този артикул не се добавя', $bg);
+        $this->assertStringContainsString('Класът за доставка е задължителен.', $bg);
     }
 
-    public function test_the_stored_class_code_is_shown_as_the_class_and_saving_assigns_changes_and_clears_it(): void
+    public function test_the_stored_class_code_is_shown_as_the_class_and_saving_assigns_a_change_but_cannot_clear_it(): void
     {
         $heavy = $this->classId('heavy');
         $light = $this->classId('light');
@@ -115,32 +117,35 @@ class ProductShippingClassFieldTest extends TestCase
         $component->fillForm(['shipping_class' => $light])->call('save')->assertHasNoFormErrors();
         $this->assertSame('light', $this->stored($variationId));
 
-        $component->fillForm(['shipping_class' => null])->call('save')->assertHasNoFormErrors();
-        $this->assertNull($this->stored($variationId));
+        // stage 5e: the class is required in the form — clearing it is refused, with a field error and no write
+        $component->fillForm(['shipping_class' => null])->call('save')->assertHasFormErrors(['shipping_class' => __('shipping.classes.errors.class_required')]);
+        $this->assertSame('light', $this->stored($variationId));
 
-        $this->assertSame(['shipping.class.assigned', 'shipping.class.assigned'], $this->hookNames());
+        $this->assertSame(['shipping.class.assigned'], $this->hookNames());
         $this->assertSame(['product', $productId, 'heavy', 'light'], $this->hookCalls[0][1]);
-        $this->assertSame(['product', $productId, 'light', null], $this->hookCalls[1][1]);
 
         $fields = DB::table('activity_log')->where('entity_id', $productId)->where('field', 'shipping_class')->orderBy('id')->get();
-        $this->assertCount(2, $fields, 'one audit entry per change');
+        $this->assertCount(1, $fields, 'one audit entry per change');
     }
 
-    public function test_saving_with_the_select_untouched_writes_no_assignment_and_keeps_a_legacy_free_text_value(): void
+    public function test_a_legacy_free_text_value_shows_as_empty_and_the_save_is_refused_until_a_class_is_chosen(): void
     {
-        $this->classId('heavy');
+        $heavy = $this->classId('heavy');
         [$productId, $variationId] = $this->simpleProduct('Fragile things'); // free text from before the classes were real
         $this->spyOnClassHooks();
 
-        Livewire::test(EditProduct::class, ['record' => $productId])
+        $component = Livewire::test(EditProduct::class, ['record' => $productId])
             ->assertFormSet(['shipping_class' => null])
             ->fillForm(['name' => 'Renamed product'])
             ->call('save')
-            ->assertHasNoFormErrors();
+            ->assertHasFormErrors(['shipping_class' => __('shipping.classes.errors.class_required')]);
 
-        $this->assertSame('Fragile things', $this->stored($variationId), 'an unrelated save never clears the legacy value');
+        $this->assertSame('Fragile things', $this->stored($variationId), 'a refused save writes nothing, the legacy text is untouched');
         $this->assertSame([], $this->hookCalls);
-        $this->assertSame(0, DB::table('activity_log')->where('entity_id', $productId)->where('field', 'shipping_class')->count());
+
+        $component->fillForm(['shipping_class' => $heavy])->call('save')->assertHasNoFormErrors();
+        $this->assertSame('heavy', $this->stored($variationId));
+        $this->assertSame(['product', $productId, 'Fragile things', 'heavy'], $this->hookCalls[0][1], 'the old text is the audit and hook old value');
     }
 
     public function test_a_class_chosen_on_create_is_assigned_after_the_product_exists(): void
@@ -162,17 +167,17 @@ class ProductShippingClassFieldTest extends TestCase
         $this->assertSame('product', $this->hookCalls[0][1][0]);
     }
 
-    public function test_create_without_a_class_assigns_nothing(): void
+    public function test_create_without_a_class_is_refused_with_a_field_error_and_creates_nothing(): void
     {
         $this->classId('heavy');
         $this->spyOnClassHooks();
 
         Livewire::test(CreateProduct::class)
-            ->fillForm(['name' => 'Plain', 'slug' => 'plain', 'base_sku' => 'SKU-PLAIN', 'status' => ProductStatus::DRAFT->value])
+            ->fillForm(['name' => 'Plain', 'slug' => 'plain', 'base_sku' => 'SKU-PLAIN', 'status' => ProductStatus::DRAFT->value, 'shipping_class' => null])
             ->call('create')
-            ->assertHasNoFormErrors();
+            ->assertHasFormErrors(['shipping_class' => __('shipping.classes.errors.class_required')]);
 
-        $this->assertNull($this->stored((string) DB::table('catalog_variations')->value('id')));
+        $this->assertSame(0, DB::table('catalog_products')->count());
         $this->assertSame([], $this->hookCalls);
     }
 
@@ -285,17 +290,29 @@ class ProductShippingClassFieldTest extends TestCase
         $this->assertSame([], $this->hookCalls);
     }
 
-    public function test_a_variation_row_cleared_to_no_class_is_cleared(): void
+    public function test_a_variation_row_cleared_to_no_class_is_refused_and_nothing_is_saved(): void
     {
         $this->classId('heavy');
-        [$productId, $black] = $this->variableProduct('heavy');
+        [$productId, $black, $white] = $this->variableProduct('heavy');
+        $heavy = (string) app(ShippingClassRepository::class)->findByCode('heavy')->id();
 
         $component = Livewire::test(EditVariableProduct::class, ['record' => $productId]);
         $keys = $this->rowKeys($component);
 
-        $component->set("data.existing_variations.{$keys[$black]}.shipping_class", null)->call('save')->assertHasNoFormErrors();
+        // the white row has no class yet (a legacy blank): the form refuses until BOTH rows have one
+        $component->set("data.existing_variations.{$keys[$black]}.shipping_class", null)->call('save')
+            ->assertHasFormErrors([
+                "existing_variations.{$keys[$black]}.shipping_class" => __('shipping.classes.errors.class_required'),
+                "existing_variations.{$keys[$white]}.shipping_class" => __('shipping.classes.errors.class_required'),
+            ]);
 
-        $this->assertNull($this->stored($black));
+        $this->assertSame('heavy', $this->stored($black));
+        $this->assertNull($this->stored($white));
+
+        $component->set("data.existing_variations.{$keys[$black]}.shipping_class", $heavy)
+            ->set("data.existing_variations.{$keys[$white]}.shipping_class", $heavy)
+            ->call('save')->assertHasNoFormErrors();
+        $this->assertSame('heavy', $this->stored($white));
     }
 
     public function test_the_class_list_is_read_once_per_form_however_many_variation_rows_there_are(): void

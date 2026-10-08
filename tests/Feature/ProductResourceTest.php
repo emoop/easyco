@@ -61,6 +61,7 @@ use Illuminate\Support\Facades\Lang;
 use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
 use Tests\TestCase;
+use Tests\Concerns\GivesProductsAShippingClass;
 
 /**
  * Exercises the real, production ProductResource — SIMPLE products only
@@ -76,7 +77,15 @@ use Tests\TestCase;
  */
 class ProductResourceTest extends TestCase
 {
+    use GivesProductsAShippingClass;
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $this->giveProductsAShippingClass();
+    }
 
     private function staffWithRole(string $roleName): StaffPanelUser
     {

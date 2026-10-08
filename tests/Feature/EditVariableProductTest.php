@@ -59,6 +59,7 @@ use Illuminate\Support\Facades\Storage;
 use Filament\Actions\Testing\TestAction;
 use Livewire\Livewire;
 use Tests\TestCase;
+use Tests\Concerns\GivesProductsAShippingClass;
 
 /**
  * EditVariableProduct — Step 1 (parent fields) + Step 2a (per-
@@ -75,7 +76,15 @@ use Tests\TestCase;
  */
 class EditVariableProductTest extends TestCase
 {
+    use GivesProductsAShippingClass;
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $this->giveProductsAShippingClass();
+    }
 
     private function actingAsPanelAdministrator(): StaffPanelUser
     {
@@ -676,6 +685,7 @@ class EditVariableProductTest extends TestCase
             "axis_value_{$definition->id()}" => $white->id(),
             'sku' => 'SKU-VAR-WHITE',
             'barcode' => '',
+            'shipping_class' => (string) DB::table('shipping_classes')->value('id'),
             // 'is_active' deliberately OMITTED — simulating a merchant
             // who never touched the toggle, the real untouched-default
             // case.

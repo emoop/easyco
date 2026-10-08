@@ -26,6 +26,7 @@ use EasyCo\Staff\Staff;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
 use Tests\TestCase;
+use Tests\Concerns\GivesProductsAShippingClass;
 
 /**
  * Exercises Phase 2 — Price + Stock for SIMPLE products. Fixture
@@ -34,12 +35,15 @@ use Tests\TestCase;
  */
 class ProductPricingAndStockTest extends TestCase
 {
+    use GivesProductsAShippingClass;
     use RefreshDatabase;
 
     /** Real dev-DB precedent for this task: PricingSystemListsSeeder must actually run once — see this task's own report on that gap. */
     protected function setUp(): void
     {
         parent::setUp();
+
+        $this->giveProductsAShippingClass();
 
         app(PricingSystemListsSeeder::class)->run(app(PriceListRepository::class));
     }

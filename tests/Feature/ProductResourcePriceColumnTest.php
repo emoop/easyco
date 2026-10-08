@@ -38,6 +38,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 use Tests\TestCase;
+use Tests\Concerns\GivesProductsAShippingClass;
 
 /**
  * Exercises ProductResource's table price column — now backed by
@@ -50,7 +51,15 @@ use Tests\TestCase;
  */
 class ProductResourcePriceColumnTest extends TestCase
 {
+    use GivesProductsAShippingClass;
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $this->giveProductsAShippingClass();
+    }
 
     private function staffWithRole(string $roleName): StaffPanelUser
     {

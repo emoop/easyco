@@ -6,6 +6,7 @@ use EasyCo\Shipping\Contracts\ShippingClassRepository;
 use EasyCo\Shipping\Exceptions\ShippingClassCodeAlreadyExistsException;
 use EasyCo\Shipping\ShippingClass;
 use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Maps the ShippingClass entity onto `shipping_classes`. A duplicate code is
@@ -64,6 +65,26 @@ final class EloquentShippingClassRepository implements ShippingClassRepository
             ->get()
             ->map(fn (ShippingClassModel $model) => $this->toDomain($model))
             ->all();
+    }
+
+    public function findDefault(): ?ShippingClass
+    {
+        $model = ShippingClassModel::query()->where('is_default', true)->first();
+
+        return $model !== null ? $this->toDomain($model) : null;
+    }
+
+    public function markDefault(?string $id): void
+    {
+        DB::transaction(function () use ($id): void {
+            // lock the current default first; clear it BEFORE setting the new one, so the unique marker is never doubled
+            ShippingClassModel::query()->where('is_default', true)->lockForUpdate()->get();
+            ShippingClassModel::query()->where('is_default', true)->update(['is_default' => false, 'default_marker' => null]);
+
+            if ($id !== null) {
+                ShippingClassModel::query()->whereKey($id)->update(['is_default' => true, 'default_marker' => 1]);
+            }
+        });
     }
 
     public function delete(string $id): void

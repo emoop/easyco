@@ -34,6 +34,13 @@ class EditShippingClass extends EditRecord
             $this->halt();
         }
 
+        // the default class is its own write (its own audit entry and hook)
+        $wantsDefault = (bool) ($data['is_default'] ?? false);
+
+        if ($wantsDefault !== (bool) $record->is_default) {
+            $wantsDefault ? app(ShippingClassWriter::class)->setDefault((string) $record->id) : app(ShippingClassWriter::class)->clearDefault();
+        }
+
         return $record->refresh();
     }
 

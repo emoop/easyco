@@ -64,6 +64,7 @@ use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\RichEditor;
+use EasyCo\Shipping\Contracts\ShippingClassRepository;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
@@ -1664,6 +1665,8 @@ class EditVariableProduct extends EditRecord
                         $components[] = Toggle::make('is_active')
                             ->label(__('products.wizard.variations.active_label'))
                             ->default(false);
+                        // shipping stage 5e: required, pre-filled with the store's default class
+                        $components[] = ProductResource::shippingClassSelect('always');
 
                         return $components;
                     })
@@ -2280,9 +2283,17 @@ class EditVariableProduct extends EditRecord
         $createdCount = 0;
         $restoredCount = 0;
 
+        // shipping stage 5e: a variation generated here is born with the store's default class (when one is defined),
+        // so "generate missing" does not create classless variations; a restored one keeps what it had.
+        $defaultClass = app(ShippingClassRepository::class)->findDefault();
+
         foreach ($variations as $variation) {
             if ($variation->id() === null) {
                 $createdCount++;
+
+                if ($defaultClass !== null) {
+                    $variation->setShippingClass($defaultClass->code());
+                }
             } else {
                 $restoredCount++;
             }
@@ -3301,9 +3312,10 @@ class EditVariableProduct extends EditRecord
                     $combination,
                     (string) ($row['sku'] ?? ''),
                     $row['barcode'] ?? '',
-                    (bool) ($row['is_active'] ?? false)
+                    (bool) ($row['is_active'] ?? false),
+                    $row['shipping_class'] ?? null
                 );
-            } catch (InvalidVariationAxisException|DuplicateVariationCombinationException $e) {
+            } catch (InvalidVariationAxisException|DuplicateVariationCombinationException|\App\Services\Exceptions\ShippingClassNotFoundException $e) {
                 Notification::make()
                     ->title($e->getMessage())
                     ->danger()

@@ -73,3 +73,11 @@ Content to follow.
 ## Grouping methods by courier {#action-method-grouping}
 
 Content to follow.
+
+## Why the shipping class is required {#action-class-required}
+
+Content to follow.
+
+## Giving existing products a class {#action-class-migration}
+
+Content to follow.

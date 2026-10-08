@@ -19,7 +19,9 @@ use EasyCo\Staff\Seeders\StaffSystemRolesSeeder;
 use EasyCo\Staff\Staff;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
+use Tests\Concerns\GivesProductsAShippingClass;
 use Tests\TestCase;
+use Illuminate\Support\Facades\DB;
 
 /**
  * VARIABLE product creation wizard, Step C ("Variations" — preview
@@ -32,7 +34,15 @@ use Tests\TestCase;
  */
 class CreateVariableProductVariationsStepTest extends TestCase
 {
+    use GivesProductsAShippingClass;
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $this->giveProductsAShippingClass();
+    }
 
     private function actingAsPanelAdministrator(): StaffPanelUser
     {
@@ -300,6 +310,7 @@ class CreateVariableProductVariationsStepTest extends TestCase
                         'sku' => 'DIRECT-BLACK-SKU',
                         'barcode' => '2222222222222',
                         'is_active' => true,
+                        'shipping_class' => (string) DB::table('shipping_classes')->value('id'),
                     ],
                 ],
             ])

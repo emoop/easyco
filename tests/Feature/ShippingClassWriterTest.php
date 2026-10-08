@@ -190,6 +190,16 @@ class ShippingClassWriterTest extends TestCase
                 return $this->inner->all();
             }
 
+            public function findDefault(): ?ShippingClass
+            {
+                return $this->inner->findDefault();
+            }
+
+            public function markDefault(?string $id): void
+            {
+                $this->inner->markDefault($id);
+            }
+
             public function delete(string $id): void
             {
                 $this->inner->delete($id);

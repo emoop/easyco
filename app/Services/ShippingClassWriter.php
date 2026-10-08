@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Services\Exceptions\ShippingClassDefaultException;
 use App\Services\Exceptions\ShippingClassInUseException;
 use App\Services\Exceptions\ShippingClassInvalidException;
 use App\Services\Exceptions\ShippingClassNotFoundException;
@@ -128,12 +129,17 @@ final class ShippingClassWriter
     /**
      * @throws ShippingClassNotFoundException
      * @throws ShippingClassInUseException the class is still used by a method or a variation
+     * @throws ShippingClassDefaultException the class is the store's default (make another the default first)
      */
     public function delete(string $id): void
     {
         $snapshot = DB::transaction(function () use ($id): array {
             $class = $this->classes->findById($id) ?? throw new ShippingClassNotFoundException();
             $snapshot = self::snapshot($class);
+
+            if ($this->classes->findDefault()?->id() === $class->id()) {
+                throw new ShippingClassDefaultException($class->name());
+            }
 
             $this->refuseWhenUsed($class);
 
@@ -154,6 +160,92 @@ final class ShippingClassWriter
         });
 
         Hook::fire('shipping.class.deleted', $snapshot);
+    }
+
+    /**
+     * Makes the class the store's DEFAULT (shipping stage 5e) — the one used for new products and by the
+     * assign-missing command — and clears the previous default, atomically (one transaction, the current default row
+     * locked; the database's unique marker is the backstop). ONE audit entry on the new default (field `is_default`,
+     * old = the previous default's code or null, new = this code) and ONE hook after the commit:
+     * `shipping.class.default_changed (?string $oldCode, ?string $newCode)`. Already the default: nothing is written.
+     *
+     * @return bool whether anything changed
+     *
+     * @throws ShippingClassNotFoundException
+     */
+    public function setDefault(string $id): bool
+    {
+        $change = DB::transaction(function () use ($id): ?array {
+            $class = $this->classes->findById($id) ?? throw new ShippingClassNotFoundException();
+            $previous = $this->classes->findDefault();
+
+            if ($previous?->id() === $class->id()) {
+                return null;
+            }
+
+            $this->classes->markDefault($id);
+            $this->audit->logFieldChanged(self::ENTITY, (string) $class->id(), 'is_default', $previous?->code(), $class->code());
+
+            return ['old' => $previous?->code(), 'new' => $class->code()];
+        });
+
+        if ($change === null) {
+            return false;
+        }
+
+        Hook::fire('shipping.class.default_changed', $change['old'], $change['new']);
+
+        return true;
+    }
+
+    /**
+     * The store has no default class any more. ONE audit entry on the class that was the default, ONE hook after the
+     * commit. No default: nothing is written.
+     *
+     * @return bool whether anything changed
+     */
+    public function clearDefault(): bool
+    {
+        $old = DB::transaction(function (): ?ShippingClass {
+            $previous = $this->classes->findDefault();
+
+            if ($previous === null) {
+                return null;
+            }
+
+            $this->classes->markDefault(null);
+            $this->audit->logFieldChanged(self::ENTITY, (string) $previous->id(), 'is_default', $previous->code(), null);
+
+            return $previous;
+        });
+
+        if ($old === null) {
+            return false;
+        }
+
+        Hook::fire('shipping.class.default_changed', $old->code(), null);
+
+        return true;
+    }
+
+    /**
+     * Creates the store's first class, "Standard" / "Стандартен" (code `standard`, named in the store's locale), and
+     * makes it the default — ONLY when the store has no class at all, never when classes exist. Two writes, each with
+     * its own audit entry and hook (created, default_changed).
+     *
+     * @throws ShippingClassInvalidException a class already exists
+     */
+    public function createDefault(?string $name = null): ShippingClass
+    {
+        if ($this->classes->all() !== []) {
+            throw new ShippingClassInvalidException(['code' => [__('shipping.classes.errors.default_only_when_empty')]]);
+        }
+
+        $name ??= (string) \Illuminate\Support\Facades\Lang::get('shipping.classes.default_name', [], app(\App\Settings\StoreLocale::class)->current());
+        $class = $this->create(new ShippingClassInput($name, 'standard', null));
+        $this->setDefault((string) $class->id());
+
+        return $class;
     }
 
     /**

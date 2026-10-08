@@ -462,7 +462,9 @@ class ShippingOverviewPageTest extends TestCase
             $oneZone, $oneTotal, $twelveZones, $twelveTotal,
         ));
 
-        $this->assertSame(4, $oneZone, 'the zones, the methods, their rates and the classes');
+        // 5 since stage 5e: the zones, the methods, their rates, the classes, and the class health line (ONE count over
+        // catalog_variations that sub-selects shipping_classes) — still the same for 1 and 12 zones.
+        $this->assertSame(5, $oneZone, 'the zones, the methods, their rates, the classes and the class health line');
         $this->assertSame($oneZone, $twelveZones, 'the overview never reads per zone');
     }
 

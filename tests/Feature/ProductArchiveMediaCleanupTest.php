@@ -24,6 +24,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
 use Tests\TestCase;
+use Tests\Concerns\GivesProductsAShippingClass;
 
 /**
  * Exercises the real, production archive-transition photo cleanup —
@@ -33,11 +34,14 @@ use Tests\TestCase;
  */
 class ProductArchiveMediaCleanupTest extends TestCase
 {
+    use GivesProductsAShippingClass;
     use RefreshDatabase;
 
     protected function setUp(): void
     {
         parent::setUp();
+
+        $this->giveProductsAShippingClass();
 
         Storage::fake('public');
     }

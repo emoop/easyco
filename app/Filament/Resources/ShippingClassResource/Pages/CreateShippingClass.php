@@ -27,6 +27,11 @@ class CreateShippingClass extends CreateRecord
             ShippingClassResource::fieldErrors($exception);
         }
 
+        // the default class is its own write (its own audit entry and hook), made after the class exists
+        if (! empty($data['is_default'])) {
+            app(ShippingClassWriter::class)->setDefault((string) $class->id());
+        }
+
         return ShippingClassModel::findOrFail($class->id());
     }
 
