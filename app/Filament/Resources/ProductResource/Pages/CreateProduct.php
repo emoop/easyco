@@ -65,7 +65,12 @@ class CreateProduct extends CreateRecord
 
     protected function handleRecordCreation(array $data): Model
     {
-        return DB::transaction(fn (): Model => $this->createProduct($data));
+        $created = DB::transaction(fn (): Model => $this->createProduct($data));
+
+        // After the commit: ShippingClassAssigner is its own write (one audit entry, hook after commit).
+        ProductResource::applyShippingClass('product', (string) $created->id, $data['shipping_class'] ?? null, null);
+
+        return $created;
     }
 
     private function createProduct(array $data): Model

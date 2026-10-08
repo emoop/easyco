@@ -1515,7 +1515,10 @@ class EditVariableProduct extends EditRecord
                     Hidden::make('regular_price_placeholder')
                         ->dehydrated(false),
                     Hidden::make('sale_price_placeholder')
-                        ->dehydrated(false)
+                        ->dehydrated(false),
+                    // shipping stage 5b: the optional shipping class of this variation (written by
+                    // ShippingClassAssigner after the save — see handleRecordUpdate()).
+                    ProductResource::shippingClassSelect(),
                 ]),
                     // Per-variation photos — a SEPARATE MediaType::IMAGE
                     // collection from the product-level main_photo/
@@ -2012,6 +2015,12 @@ class EditVariableProduct extends EditRecord
         $productRegularPrice = $pricingAndStock->regularPriceDisplayForProduct($product->id());
         $productSalePrice = $pricingAndStock->salePriceDisplayForProduct($product->id());
 
+        // shipping stage 5b: the class id each stored class code stands for, read once for all the rows
+        $classIds = [];
+        foreach (app(\EasyCo\Shipping\Contracts\ShippingClassRepository::class)->all() as $class) {
+            $classIds[$class->code()] = (string) $class->id();
+        }
+
         return array_values(array_map(
             fn (Variation $variation): array => [
                 'variation_id' => $variation->id(),
@@ -2026,6 +2035,7 @@ class EditVariableProduct extends EditRecord
                 'stock_quantity' => $pricingAndStock->stockQuantity($variation->id()),
                 'regular_price' => $pricingAndStock->regularPriceDisplay($variation->id()),
                 'sale_price' => $pricingAndStock->salePriceDisplay($variation->id()),
+                'shipping_class' => $classIds[(string) $variation->shippingClass()] ?? null,
                 'regular_price_placeholder' => $productRegularPrice,
                 'sale_price_placeholder' => $productSalePrice,
                 'variation_photos' => $this->variationPhotoPaths($variationMediaRepository, $variation->id()),
@@ -2115,7 +2125,23 @@ class EditVariableProduct extends EditRecord
 
     protected function handleRecordUpdate(Model $record, array $data): Model
     {
-        return DB::transaction(fn (): Model => $this->updateProduct($record, $data));
+        $storedCodes = [];
+        foreach (app(ProductRepository::class)->findByIdWithVariations((string) $record->id)?->variations() ?? [] as $variation) {
+            $storedCodes[(string) $variation->id()] = $variation->shippingClass();
+        }
+
+        $saved = DB::transaction(fn (): Model => $this->updateProduct($record, $data));
+
+        // After the commit: ShippingClassAssigner is its own write per variation (one audit entry and one hook each).
+        foreach ($data['existing_variations'] ?? [] as $row) {
+            $variationId = (string) ($row['variation_id'] ?? '');
+
+            if ($variationId !== '' && array_key_exists($variationId, $storedCodes)) {
+                ProductResource::applyShippingClass('variation', $variationId, $row['shipping_class'] ?? null, $storedCodes[$variationId]);
+            }
+        }
+
+        return $saved;
     }
 
     /**

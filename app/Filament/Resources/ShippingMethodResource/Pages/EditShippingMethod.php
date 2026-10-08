@@ -18,7 +18,7 @@ use Illuminate\Database\Eloquent\Model;
  * field; the zone is read-only). A CARRIER method is not editable here (the resource refuses the page).
  *
  * Switching a method that already has class amounts from REPLACE to ADJUST asks first — "Switch to adjustments" /
- * "Keep replacement prices" — because the same numbers then mean something else.
+ * "Back to the form" — because the same numbers then mean something else.
  */
 class EditShippingMethod extends EditRecord
 {

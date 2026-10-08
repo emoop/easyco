@@ -20,4 +20,10 @@ interface ShippingClassRepository
      * @return ShippingClass[]
      */
     public function all(): array;
+
+    /**
+     * Removes the class. A class a rate still refers to is refused by the database (the restrict foreign key) and
+     * the QueryException is left to the caller; deleting an unknown id is a no-op.
+     */
+    public function delete(string $id): void;
 }

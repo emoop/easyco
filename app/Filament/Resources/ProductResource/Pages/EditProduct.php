@@ -139,12 +139,22 @@ class EditProduct extends EditRecord
         $data['cost'] = $pricingAndStock->costDisplay($priceableId);
         $data['stock_quantity'] = $pricingAndStock->stockQuantity($priceableId);
 
+        // The optional shipping class of the single variation, as the class id the select holds.
+        $data['shipping_class'] = ProductResource::shippingClassIdForCode($universal->shippingClass());
+
         return $data;
     }
 
     protected function handleRecordUpdate(Model $record, array $data): Model
     {
-        return DB::transaction(fn (): Model => $this->updateProduct($record, $data));
+        $storedCode = app(ProductRepository::class)->findByIdWithVariations((string) $record->id)?->universalVariation()?->shippingClass();
+
+        $saved = DB::transaction(fn (): Model => $this->updateProduct($record, $data));
+
+        // After the commit: ShippingClassAssigner is its own write (one audit entry, hook after commit).
+        ProductResource::applyShippingClass('product', (string) $record->id, $data['shipping_class'] ?? null, $storedCode);
+
+        return $saved;
     }
 
     private function updateProduct(Model $record, array $data): Model

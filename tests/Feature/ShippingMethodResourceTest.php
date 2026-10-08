@@ -634,7 +634,7 @@ class ShippingMethodResourceTest extends TestCase
         $page->fillForm(['rates' => ['heavy' => '0']]);
         $this->assertFalse($asks(), 'all amounts zero or empty: nothing to confirm');
 
-        foreach (['en' => ['Switch to adjustments', 'Keep replacement prices'], 'bg' => ['Превключи към корекции', 'Остави заместващите цени']] as $locale => [$submit, $cancel]) {
+        foreach (['en' => ['Switch to adjustments', 'Back to the form'], 'bg' => ['Превключи към корекции', 'Назад към формата']] as $locale => [$submit, $cancel]) {
             App::setLocale($locale);
             $action = (function () {
                 return $this->getSaveFormAction();

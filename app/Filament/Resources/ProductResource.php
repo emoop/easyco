@@ -69,6 +69,12 @@ use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Notifications\Notification;
+use App\Filament\Support\HelpLink;
+use App\Services\Exceptions\ShippingClassInvalidException;
+use App\Services\Exceptions\ShippingClassNotFoundException;
+use App\Services\ShippingClassAssigner;
+use EasyCo\Shipping\Contracts\ShippingClassRepository;
+use WeakMap;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\Grid;
@@ -929,7 +935,93 @@ class ProductResource extends Resource
                         ->default(0)
                         ->disabled(fn (): bool => ! static::staffCanForAction(Permission::PRODUCT_MANAGE)),
                 ]),
+            // The optional shipping class (shipping stage 5b): stored on the single universal variation and written
+            // by ShippingClassAssigner after the product is saved — see shippingClassSelect().
+            static::shippingClassSelect()
+                ->helperText(__('shipping.classes.assignment.fact')),
+            HelpLink::component('class_assignment', 'shipping'),
         ];
+    }
+
+    /**
+     * The ONE optional "Shipping class" select (shipping stage 5b) of the SIMPLE product form and of every row of the
+     * variable product's variations: the options are every class by name (the value is the class id; empty = no
+     * class). The list is read once per Livewire component, however many rows ask for it. The write is NOT this
+     * field's: the pages call applyShippingClass() after the product itself is saved.
+     */
+    public static function shippingClassSelect(): Select
+    {
+        return Select::make('shipping_class')
+            ->label(__('shipping.classes.assignment.label'))
+            ->placeholder(__('shipping.classes.assignment.none'))
+            ->options(fn ($livewire): array => static::shippingClassOptions($livewire))
+            ->disabled(fn (): bool => ! static::staffCanForAction(Permission::PRODUCT_MANAGE));
+    }
+
+    /**
+     * @return array<string, string> class id => "name (code)", ordered by code
+     */
+    private static function shippingClassOptions($livewire): array
+    {
+        static $memo = null;
+        $memo ??= new WeakMap();
+
+        return $memo[$livewire] ??= (function (): array {
+            $options = [];
+
+            foreach (app(ShippingClassRepository::class)->all() as $class) {
+                $options[(string) $class->id()] = $class->name().' ('.$class->code().')';
+            }
+
+            return $options;
+        })();
+    }
+
+    /**
+     * The class id the stored class CODE stands for, or null (no class — or a legacy free-text value that names no
+     * class, which the select shows as empty).
+     */
+    public static function shippingClassIdForCode(?string $code): ?string
+    {
+        if ($code === null || trim($code) === '') {
+            return null;
+        }
+
+        foreach (app(ShippingClassRepository::class)->all() as $class) {
+            if ($class->code() === $code) {
+                return (string) $class->id();
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Writes the submitted shipping class through ShippingClassAssigner — called by the product pages AFTER their own
+     * save has committed (the assigner's hook must fire after a commit). Only a CHANGE is written: the submitted id is
+     * compared with the id the stored code stands for, so an untouched select never clears a legacy free-text value.
+     * A refusal (the class was deleted meanwhile, ...) is told to the merchant; the product itself is already saved.
+     *
+     * @param  string  $target  product (a SIMPLE product's single variation) | variation
+     */
+    public static function applyShippingClass(string $target, string $id, mixed $submitted, ?string $storedCode): void
+    {
+        // a select of numeric ids hands the value back as an int
+        $submittedId = is_scalar($submitted) && (string) $submitted !== '' ? (string) $submitted : null;
+
+        if ($submittedId === static::shippingClassIdForCode($storedCode)) {
+            return;
+        }
+
+        try {
+            $assigner = app(ShippingClassAssigner::class);
+            $target === 'product' ? $assigner->setForProduct($id, $submittedId) : $assigner->setForVariation($id, $submittedId);
+        } catch (ShippingClassInvalidException|ShippingClassNotFoundException $exception) {
+            Notification::make()
+                ->title(__('shipping.classes.assignment.not_saved', ['reason' => $exception->getMessage()]))
+                ->warning()
+                ->send();
+        }
     }
 
     /**

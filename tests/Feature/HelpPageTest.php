@@ -381,7 +381,7 @@ class HelpPageTest extends TestCase
         'action-shipping-overview', 'action-zone-editor', 'action-zone-order', 'action-zone-settlement-matching',
         'action-method-editor', 'action-method-kinds', 'action-method-class-mode', 'action-method-replace', 'action-method-adjust',
         'action-class-mode', 'action-method-free-above', 'action-class-editor', 'action-class-delete-blocked', 'action-product-class-field',
-        'action-try-it', 'action-method-copy',
+        'action-try-it', 'action-method-copy', 'action-classes', 'action-class-assignment',
     ];
 
     private function anchorsOfTopic(string $topic, string $locale): array

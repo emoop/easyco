@@ -54,7 +54,7 @@
         <section class="shop-section">
             <h2>{{ __('shipping.overview.heading') }}</h2>
             <p class="shop-coverage">{{ __('shipping.overview.first_match_wins') }}</p>
-            <p class="shop-help"><a href="{{ $zonesUrl }}">{{ __('shipping.overview.edit_zones') }}</a> · <a href="{{ $methodsUrl }}">{{ __('shipping.overview.edit_methods') }}</a></p>
+            <p class="shop-help"><a href="{{ $zonesUrl }}">{{ __('shipping.overview.edit_zones') }}</a> · <a href="{{ $methodsUrl }}">{{ __('shipping.overview.edit_methods') }}</a> · <a href="{{ $classesUrl }}">{{ __('shipping.overview.edit_classes') }}</a></p>
 
             @if ($zones === [])
                 <p class="shop-note">{{ __('shipping.overview.no_zones') }}</p>

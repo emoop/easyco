@@ -250,6 +250,7 @@ class ShippingOverview extends Page
             'tryItHelpUrl' => HelpLink::url('try_it', 'shipping'),
             'zonesUrl' => \App\Filament\Resources\ShippingZoneResource::getUrl('index'),
             'methodsUrl' => \App\Filament\Resources\ShippingMethodResource::getUrl('index'),
+            'classesUrl' => \App\Filament\Resources\ShippingClassResource::getUrl('index'),
         ];
     }
 

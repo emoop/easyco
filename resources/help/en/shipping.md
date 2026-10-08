@@ -61,3 +61,11 @@ Content to follow.
 ## Copying a method to other zones {#action-method-copy}
 
 Content to follow.
+
+## Shipping classes list {#action-classes}
+
+Content to follow.
+
+## Assigning a class to a product {#action-class-assignment}
+
+Content to follow.

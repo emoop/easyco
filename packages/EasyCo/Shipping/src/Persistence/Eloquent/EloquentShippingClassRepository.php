@@ -66,6 +66,11 @@ final class EloquentShippingClassRepository implements ShippingClassRepository
             ->all();
     }
 
+    public function delete(string $id): void
+    {
+        ShippingClassModel::query()->whereKey($id)->delete();
+    }
+
     private function isCodeUniqueViolation(QueryException $e): bool
     {
         $errorInfo = $e->errorInfo ?? [];
