@@ -279,7 +279,17 @@ class ShippingOverview extends Page
             'classMode' => $method->classMode === null ? null : __('shipping.class_mode.'.$method->classMode),
             'needsMore' => $method->remainingToFreeMinor !== null && $method->remainingToFreeMinor > 0,
             'courier' => $method->courier,
+            // The destination scope in words (stage 6d, design 9.2.8) and whether this method serves the tested kind.
+            'scope' => __('shipping.summary.scope.'.$method->destinationScope),
+            'serves' => $method->servesDestination,
         ], $result->methods);
+
+        // The methods that do NOT serve the tested destination kind, each named with its scope so the merchant sees
+        // what to switch to. The rule is the tester's own servesDestination flag, never re-derived here.
+        $unserved = array_values(array_map(
+            static fn (array $method): string => $method['name'].' ('.$method['scope'].')',
+            array_filter($methods, static fn (array $method): bool => ! $method['serves']),
+        ));
 
         // The result grouped by courier (stage 5f), the same grouping the quote API returns; methods without a courier come last.
         $groups = array_map(static fn (array $group): array => ['courier' => $group['courier'], 'methods' => $group['items']], ShippingCourier::group($methods, static fn (array $method): ?string => $method['courier']));
@@ -294,6 +304,7 @@ class ShippingOverview extends Page
             'goods' => $money($result->goodsAfterDiscountMinor),
             'methods' => $methods,
             'groups' => $groups,
+            'unserved' => $unserved,
             'showGroupNames' => $groups !== [] && array_filter($groups, static fn (array $group): bool => $group['courier'] !== null) !== [],
             'hint' => $result->hint?->text,
         ];

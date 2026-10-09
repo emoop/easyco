@@ -46,15 +46,15 @@ class ShippingMethodSummaryReaderTest extends TestCase
         return ShippingMethod::create($zoneId, $name, $kind, 0, $active, $amount, $rates, $freeAbove, $carrier, $pickup);
     }
 
-    public function test_a_flat_method_is_just_its_price_in_both_languages(): void
+    public function test_a_flat_method_is_just_its_price_and_its_scope_in_both_languages(): void
     {
         $method = $this->method($this->zoneId(), ShippingMethodKind::FLAT);
 
         App::setLocale('en');
-        $this->assertSame('5.00 €', $this->reader()->summary($method));
+        $this->assertSame('5.00 €; Address only', $this->reader()->summary($method));
 
         App::setLocale('bg');
-        $this->assertSame('5.00 €', $this->reader()->summary($method));
+        $this->assertSame('5.00 €; Само адрес', $this->reader()->summary($method));
     }
 
     public function test_a_flat_method_with_a_threshold_appends_the_free_from_clause(): void
@@ -62,10 +62,10 @@ class ShippingMethodSummaryReaderTest extends TestCase
         $method = $this->method($this->zoneId(), ShippingMethodKind::FLAT, freeAbove: 10000);
 
         App::setLocale('en');
-        $this->assertSame('5.00 €; free from 100.00 €', $this->reader()->summary($method));
+        $this->assertSame('5.00 €; free from 100.00 €; Address only', $this->reader()->summary($method));
 
         App::setLocale('bg');
-        $this->assertSame('5.00 €; безплатна над 100.00 €', $this->reader()->summary($method));
+        $this->assertSame('5.00 €; безплатна над 100.00 €; Само адрес', $this->reader()->summary($method));
     }
 
     public function test_a_free_method_reads_free_in_both_languages(): void
@@ -73,10 +73,10 @@ class ShippingMethodSummaryReaderTest extends TestCase
         $method = $this->method($this->zoneId(), ShippingMethodKind::FREE, amount: null);
 
         App::setLocale('en');
-        $this->assertSame('Free', $this->reader()->summary($method));
+        $this->assertSame('Free; Address only', $this->reader()->summary($method));
 
         App::setLocale('bg');
-        $this->assertSame('Безплатна', $this->reader()->summary($method));
+        $this->assertSame('Безплатна; Само адрес', $this->reader()->summary($method));
     }
 
     public function test_a_per_class_method_shows_the_base_then_the_class_names_then_the_threshold(): void
@@ -85,10 +85,10 @@ class ShippingMethodSummaryReaderTest extends TestCase
         $method = $this->method($this->zoneId(), ShippingMethodKind::PER_CLASS, rates: ['heavy' => 3000], freeAbove: 10000);
 
         App::setLocale('en');
-        $this->assertSame('5.00 €; Heavy 30.00 €; free from 100.00 €', $this->reader()->summary($method));
+        $this->assertSame('5.00 €; Heavy 30.00 €; free from 100.00 €; Address only', $this->reader()->summary($method));
 
         App::setLocale('bg');
-        $this->assertSame('5.00 €; Heavy 30.00 €; безплатна над 100.00 €', $this->reader()->summary($method));
+        $this->assertSame('5.00 €; Heavy 30.00 €; безплатна над 100.00 €; Само адрес', $this->reader()->summary($method));
     }
 
     public function test_a_per_class_rate_for_an_unknown_code_falls_back_to_the_code(): void
@@ -96,7 +96,7 @@ class ShippingMethodSummaryReaderTest extends TestCase
         $method = $this->method($this->zoneId(), ShippingMethodKind::PER_CLASS, rates: ['ghost' => 700]);
 
         App::setLocale('en');
-        $this->assertSame('5.00 €; ghost 7.00 €', $this->reader()->summary($method));
+        $this->assertSame('5.00 €; ghost 7.00 €; Address only', $this->reader()->summary($method));
     }
 
     public function test_a_carrier_method_names_the_carrier_as_not_configured(): void
@@ -104,21 +104,21 @@ class ShippingMethodSummaryReaderTest extends TestCase
         $method = $this->method($this->zoneId(), ShippingMethodKind::CARRIER, amount: null, carrier: 'econt');
 
         App::setLocale('en');
-        $this->assertSame('Carrier: econt · not configured', $this->reader()->summary($method));
+        $this->assertSame('Carrier: econt · not configured; Address only', $this->reader()->summary($method));
 
         App::setLocale('bg');
-        $this->assertSame('Куриер: econt · не е настроен', $this->reader()->summary($method));
+        $this->assertSame('Куриер: econt · не е настроен; Само адрес', $this->reader()->summary($method));
     }
 
-    public function test_a_pickup_point_and_an_inactive_method_append_their_facts(): void
+    public function test_the_scope_and_an_inactive_method_append_their_facts(): void
     {
         $method = $this->method($this->zoneId(), ShippingMethodKind::FLAT, pickup: true, active: false);
 
         App::setLocale('en');
-        $this->assertSame('5.00 €; pickup point; inactive', $this->reader()->summary($method));
+        $this->assertSame('5.00 €; Pickup point only; inactive', $this->reader()->summary($method));
 
         App::setLocale('bg');
-        $this->assertSame('5.00 €; до офис/автомат; неактивен', $this->reader()->summary($method));
+        $this->assertSame('5.00 €; Само офис или автомат; неактивен', $this->reader()->summary($method));
     }
 
     public function test_the_sentence_changes_when_the_data_changes(): void
@@ -127,10 +127,10 @@ class ShippingMethodSummaryReaderTest extends TestCase
         $method = $this->method($zone, ShippingMethodKind::FLAT);
 
         App::setLocale('en');
-        $this->assertSame('5.00 €', $this->reader()->summary($method));
+        $this->assertSame('5.00 €; Address only', $this->reader()->summary($method));
 
         $changed = $this->method($zone, ShippingMethodKind::FLAT, amount: 1200);
 
-        $this->assertSame('12.00 €', $this->reader()->summary($changed));
+        $this->assertSame('12.00 €; Address only', $this->reader()->summary($changed));
     }
 }

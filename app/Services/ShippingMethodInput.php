@@ -19,6 +19,9 @@ final class ShippingMethodInput
      * @param  string  $classMode  replace | adjust (PER_CLASS only)
      * @param  ?string  $courier  the courier group's display name (stage 5f); blank = none
      * @param  ?string  $deliveryType  address | office | locker | other; blank = none
+     * @param  ?string  $destinationScope  address | pickup | any — the admin form's "Serves" Select (stage 6d,
+     *         design 9.2.8); null/blank means the caller did NOT send one and the writer falls back to the old
+     *         toggle mapping, so every pre-6d caller keeps its meaning
      * @param  array<int, array{class: mixed, amount: mixed}>  $classRates  rows of a class code and its amount (Money); a list, so a duplicate class is visible and refused
      */
     public function __construct(
@@ -33,6 +36,7 @@ final class ShippingMethodInput
         public readonly ?string $carrierCode = null,
         public readonly ?string $courier = null,
         public readonly ?string $deliveryType = null,
+        public readonly ?string $destinationScope = null,
     ) {
     }
 }

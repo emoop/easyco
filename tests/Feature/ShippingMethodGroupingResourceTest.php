@@ -88,7 +88,7 @@ class ShippingMethodGroupingResourceTest extends TestCase
 
         Livewire::test(EditShippingMethod::class, ['record' => $row->id])
             ->assertFormSet(['courier' => 'Econt', 'delivery_type' => 'office'])
-            ->fillForm(['courier' => 'Speedy', 'delivery_type' => 'address', 'requires_pickup_point' => false])
+            ->fillForm(['courier' => 'Speedy', 'delivery_type' => 'address', 'destination_scope' => 'address'])
             ->call('save')
             ->assertHasNoFormErrors();
 
@@ -120,20 +120,30 @@ class ShippingMethodGroupingResourceTest extends TestCase
         $this->assertSame(0, DB::table('shipping_methods')->count());
     }
 
-    public function test_choosing_office_or_locker_ticks_the_pickup_box_and_address_does_not_untick_it(): void
+    public function test_the_delivery_type_sets_and_locks_the_destination_scope(): void
     {
         $this->zone('Z', 0);
         $this->actingAsStaff('Administrator');
 
-        $page = Livewire::test(CreateShippingMethod::class)->assertFormSet(['requires_pickup_point' => false]);
+        // Stage 6d: a new method starts as "any destination", with all three choices offered.
+        $page = Livewire::test(CreateShippingMethod::class)->assertFormSet(['destination_scope' => 'any']);
 
-        $page->fillForm(['delivery_type' => 'office'])->assertFormSet(['requires_pickup_point' => true]);
-        $page->fillForm(['requires_pickup_point' => false])->assertFormSet(['requires_pickup_point' => false]);
-        $page->fillForm(['delivery_type' => 'locker'])->assertFormSet(['requires_pickup_point' => true]);
-        $page->fillForm(['delivery_type' => 'address'])->assertFormSet(['requires_pickup_point' => true]);
+        // "To address" forces address-only and locks the Select to that one option (design 9.2.3).
+        $page->fillForm(['delivery_type' => 'address'])->assertFormSet(['destination_scope' => 'address']);
+        $this->assertSame(['address' => 'Street address only'], ShippingMethodResource::destinationScopeOptionsFor('address'));
+
+        // office and locker force pickup-only.
+        $page->fillForm(['delivery_type' => 'office'])->assertFormSet(['destination_scope' => 'pickup']);
+        $this->assertSame(['pickup' => 'Pickup point only'], ShippingMethodResource::destinationScopeOptionsFor('office'));
+        $page->fillForm(['delivery_type' => 'locker'])->assertFormSet(['destination_scope' => 'pickup']);
+
+        // No label (and "other") keep all three, and the merchant's own scope stands.
+        $page->fillForm(['delivery_type' => null])->assertFormSet(['destination_scope' => 'pickup']);
+        $this->assertSame(['address', 'pickup', 'any'], array_keys(ShippingMethodResource::destinationScopeOptionsFor(null)));
+        $this->assertSame(['address', 'pickup', 'any'], array_keys(ShippingMethodResource::destinationScopeOptionsFor('other')));
 
         $this->assertStringContainsString(
-            'Choosing office or locker ticks this box for convenience',
+            'The delivery type sets and locks this',
             html_entity_decode($page->html()),
         );
     }
@@ -257,9 +267,9 @@ class ShippingMethodGroupingResourceTest extends TestCase
         $this->assertSame('to locker', $reader->grouping($onlyType));
         $this->assertNull($reader->grouping($plain));
 
-        $this->assertSame('Econt · to office; 5.00 €; pickup point', $reader->summary($office), 'an office method is pickup-only (stage 6a), which the summary says');
-        $this->assertSame('5.00 €', $reader->summary($plain), 'a method without them reads exactly as before');
-        $this->assertSame('5.00 €; pickup point', $reader->summary($office, null, withGrouping: false));
+        $this->assertSame('Econt · to office; 5.00 €; Pickup point only', $reader->summary($office), 'an office method is pickup-only (stage 6a), which the summary says');
+        $this->assertSame('5.00 €; Address only', $reader->summary($plain), 'a method with no courier and no type serves an address only (stage 6d)');
+        $this->assertSame('5.00 €; Pickup point only', $reader->summary($office, null, withGrouping: false));
 
         App::setLocale('bg');
         $this->assertSame('Econt · до офис', $reader->grouping($office));

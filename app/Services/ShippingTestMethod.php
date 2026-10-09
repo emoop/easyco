@@ -7,13 +7,21 @@ namespace App\Services;
  * calculator's answer for a hypothetical destination and cart, plus the method's
  * own readable summary. A CARRIER method has no local price — `needsCarrierQuote`
  * is true and `amountMinor` is null (the tester never calls a carrier).
+ *
+ * destinationScope / servesDestination (stage 6d, design 9.2.8): the method's scope
+ * (address | pickup | any) and whether it serves the destination KIND the tester was
+ * asked about — the scope's ONE rule (ShippingMethod::servesPickupPoint()), never a
+ * second copy of it here.
  */
 final class ShippingTestMethod
 {
     public function __construct(
         public readonly string $methodId,
         public readonly string $name,
-        public readonly bool $requiresPickupPoint,
+        /** address | pickup | any — the method's destination scope. */
+        public readonly string $destinationScope,
+        /** Whether this method serves the destination kind the tester was asked about. */
+        public readonly bool $servesDestination,
         public readonly string $summary,
         public readonly bool $needsCarrierQuote,
         public readonly ?int $amountMinor,

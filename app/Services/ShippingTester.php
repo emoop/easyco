@@ -89,7 +89,8 @@ final class ShippingTester
             $testMethods[] = new ShippingTestMethod(
                 $rate->methodId,
                 $method->name(),
-                $method->requiresPickupPoint(),
+                $method->destinationScope()->value,
+                $method->servesPickupPoint($isPickupPoint),
                 $this->summaries->summary($method),
                 $rate->needsQuote(),
                 $rate->needsQuote() ? null : $rate->amountMinor(),

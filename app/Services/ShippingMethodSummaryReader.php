@@ -25,8 +25,8 @@ use EasyCo\Shipping\ShippingMethod;
  *  - PER_CLASS `5.00 €; Heavy 30.00 €; free from 100.00 €` (base, then the class
  *    rates by class name, then the threshold)
  *  - CARRIER `Carrier: econt · not configured`
- *  - a method that requires a pickup point appends `pickup point`; an inactive
- *    method appends `inactive`.
+ *  - every method also states its destination SCOPE (stage 6d): `Address only`, `Pickup point only` or
+ *    `Serves any destination`; an inactive method appends `inactive`.
  * An ADJUST method (stage 5d) reads its class amounts as signed adjustments: `5.00 €; Heavy +25.00 €; Discount −3.00 €`.
  *
  * The separator and every fragment are lang keys (`lang/*\/shipping.php`); the
@@ -64,9 +64,9 @@ final class ShippingMethodSummaryReader
             $parts[] = __('shipping.summary.free_from', ['amount' => $this->money($method->freeAboveMinor(), $currency)]);
         }
 
-        if ($method->requiresPickupPoint()) {
-            $parts[] = __('shipping.summary.pickup_point');
-        }
+        // The destination SCOPE in words (stage 6d, design 9.2.8): "Address only" / "Pickup point only" / "Serves any
+        // destination" — the one sentence says where a method may go.
+        $parts[] = __('shipping.summary.scope.'.$method->destinationScope()->value);
 
         if (! $method->isActive()) {
             $parts[] = __('shipping.summary.inactive');

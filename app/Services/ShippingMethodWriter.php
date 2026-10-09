@@ -92,7 +92,7 @@ final class ShippingMethodWriter
             $method = $this->guarded(fn (): ShippingMethod => ShippingMethod::create(
                 $zoneId, $clean['name'], $clean['kind'], $next, $clean['active'], $clean['price'], $clean['rates'],
                 $clean['free_above'], $clean['carrier_code'], $clean['pickup'], $clean['mode'], $clean['courier'], $clean['delivery_type'],
-                self::scopeFromToggle($clean['pickup'], $clean['delivery_type'], null),
+                $clean['scope'] ?? self::scopeFromToggle($clean['pickup'], $clean['delivery_type'], null),
             ));
 
             $this->saveGuarded($method);
@@ -123,7 +123,7 @@ final class ShippingMethodWriter
             $this->guarded(fn () => $method->update(
                 $clean['name'], $clean['kind'], $method->sortOrder(), $clean['active'], $clean['price'], $clean['rates'],
                 $clean['free_above'], $clean['carrier_code'], $clean['pickup'], $clean['mode'], $clean['courier'], $clean['delivery_type'],
-                self::scopeFromToggle($clean['pickup'], $clean['delivery_type'], $method->destinationScope()),
+                $clean['scope'] ?? self::scopeFromToggle($clean['pickup'], $clean['delivery_type'], $method->destinationScope()),
             ));
 
             if (self::snapshot($method) === $before) {
@@ -243,7 +243,7 @@ final class ShippingMethodWriter
     // ---- validation ----------------------------------------------------------------------------------------
 
     /**
-     * @return array{name: string, kind: ShippingMethodKind, active: bool, price: ?int, free_above: ?int, mode: ShippingClassMode, rates: array<string, int>, pickup: bool, carrier_code: ?string, courier: ?string, delivery_type: ?ShippingDeliveryType}
+     * @return array{name: string, kind: ShippingMethodKind, active: bool, price: ?int, free_above: ?int, mode: ShippingClassMode, rates: array<string, int>, pickup: bool, scope: ?ShippingDestinationScope, carrier_code: ?string, courier: ?string, delivery_type: ?ShippingDeliveryType}
      */
     private function clean(ShippingMethodInput $input): array
     {
@@ -348,6 +348,19 @@ final class ShippingMethodWriter
             }
         }
 
+        // destination scope — the admin form's "Serves" Select (stage 6d, design 9.2.8). A value the caller sent
+        // is used as-is; when none is sent the OLD toggle mapping decides (scopeFromToggle), so every pre-6d
+        // caller — including the writer's own tests — keeps exactly its former meaning.
+        $scope = null;
+
+        if ($input->destinationScope !== null && trim($input->destinationScope) !== '') {
+            $scope = ShippingDestinationScope::tryFrom(trim($input->destinationScope));
+
+            if ($scope === null) {
+                $errors['destination_scope'][] = __('shipping.methods.errors.destination_scope_unknown');
+            }
+        }
+
         if ($errors !== []) {
             throw new ShippingMethodInvalidException($errors);
         }
@@ -361,6 +374,7 @@ final class ShippingMethodWriter
             'mode' => $mode,
             'rates' => $rates,
             'pickup' => $input->requiresPickupPoint,
+            'scope' => $scope,
             'carrier_code' => $carrierCode,
             'courier' => $courier,
             'delivery_type' => $deliveryType,

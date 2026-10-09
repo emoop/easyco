@@ -28,6 +28,7 @@ use EasyCo\Shipping\Contracts\ShippingClassRepository;
 use EasyCo\Shipping\Contracts\ShippingMethodRepository;
 use EasyCo\Shipping\Contracts\ShippingZoneRepository;
 use EasyCo\Shipping\Enums\ShippingDeliveryType;
+use EasyCo\Shipping\Enums\ShippingDestinationScope;
 use EasyCo\Shipping\Enums\ShippingMethodKind;
 use EasyCo\Shipping\Persistence\Eloquent\ShippingMethodModel;
 use EasyCo\Shipping\Persistence\Eloquent\ShippingZoneModel;
@@ -207,13 +208,27 @@ class ShippingMethodResource extends Resource
                 ->options(static::deliveryTypeOptions())
                 ->placeholder(__('shipping.methods.delivery_types.none'))
                 ->live()
-                // Convenience only: office and locker usually need a pickup point; the admin can untick it.
+                // The label and the scope are coupled (shipping-domain-design.md 9.2.3): a label that FORCES one
+                // scope sets it here, so the pair can never be saved invalid; a label that allows a choice leaves
+                // the merchant's own scope untouched.
                 ->afterStateUpdated(function (mixed $state, Set $set): void {
-                    if (in_array($state, [ShippingDeliveryType::OFFICE->value, ShippingDeliveryType::LOCKER->value], true)) {
-                        $set('requires_pickup_point', true);
+                    $forced = static::forcedScope(is_string($state) ? $state : null);
+
+                    if ($forced !== null) {
+                        $set('destination_scope', $forced);
                     }
                 }),
             Text::make(__('shipping.methods.facts.grouping'))->color('gray')->size('sm'),
+            Select::make('destination_scope')
+                ->label(__('shipping.methods.fields.destination_scope'))
+                ->options(fn (Get $get): array => static::destinationScopeOptionsFor(is_string($get('delivery_type')) ? $get('delivery_type') : null))
+                ->default(ShippingDestinationScope::ANY->value)
+                ->required()
+                // A label that forces one scope LOCKS this field to it (design 9.2.3): the wrong pair is not even
+                // offered. A label with no forcing leaves all three, and the merchant's own choice stands.
+                ->disabled(fn (Get $get): bool => static::forcedScope(is_string($get('delivery_type')) ? $get('delivery_type') : null) !== null)
+                ->dehydrated(),
+            Text::make(__('shipping.methods.facts.destination_scope'))->color('gray')->size('sm'),
             Select::make('kind')
                 ->label(__('shipping.methods.fields.kind'))
                 ->options(fn (?Model $record): array => static::kindOptions($record?->kind))
@@ -264,9 +279,6 @@ class ShippingMethodResource extends Resource
                 ->color('gray')->size('sm')
                 ->visible($isPerClass),
             ...$rateFields,
-            Toggle::make('requires_pickup_point')
-                ->label(__('shipping.methods.fields.requires_pickup_point')),
-            Text::make(__('shipping.methods.facts.pickup_convenience'))->color('gray')->size('sm'),
             Toggle::make('is_active')
                 ->label(__('shipping.methods.fields.active'))
                 ->default(true),
@@ -304,6 +316,39 @@ class ShippingMethodResource extends Resource
         }
 
         return $options;
+    }
+
+    /** @return array<string, string> the three destination scopes (design 9.2.8), for the form's "Serves" Select. */
+    public static function destinationScopeOptions(): array
+    {
+        return [
+            ShippingDestinationScope::ADDRESS->value => __('shipping.methods.scopes.address'),
+            ShippingDestinationScope::PICKUP->value => __('shipping.methods.scopes.pickup'),
+            ShippingDestinationScope::ANY->value => __('shipping.methods.scopes.any'),
+        ];
+    }
+
+    /**
+     * The scope a delivery-type label FORCES (shipping-domain-design.md 9.2.3): address -> address, office or locker ->
+     * pickup, anything else (other, or no label) -> null, meaning the merchant chooses. THE ONE PLACE the label x scope
+     * matrix is stated in the admin — the Select's options and the coupling both read it.
+     */
+    public static function forcedScope(?string $deliveryType): ?string
+    {
+        return match ($deliveryType) {
+            ShippingDeliveryType::ADDRESS->value => ShippingDestinationScope::ADDRESS->value,
+            ShippingDeliveryType::OFFICE->value, ShippingDeliveryType::LOCKER->value => ShippingDestinationScope::PICKUP->value,
+            default => null,
+        };
+    }
+
+    /** The "Serves" Select's options: the forced scope ALONE when the label forces one, else all three. */
+    public static function destinationScopeOptionsFor(?string $deliveryType): array
+    {
+        $forced = static::forcedScope($deliveryType);
+        $options = static::destinationScopeOptions();
+
+        return $forced === null ? $options : [$forced => $options[$forced]];
     }
 
     /** CARRIER is offered only when a carrier is registered (none is in V1, §6) — or when the method being edited already is one. */
@@ -418,7 +463,7 @@ class ShippingMethodResource extends Resource
             freeAbove: $freeAbove,
             classMode: (string) ($data['class_mode'] ?? 'replace'),
             classRates: $rows,
-            requiresPickupPoint: (bool) ($data['requires_pickup_point'] ?? false),
+            destinationScope: isset($data['destination_scope']) ? (string) $data['destination_scope'] : null,
             carrierCode: isset($data['carrier_code']) ? (string) $data['carrier_code'] : null,
             courier: isset($data['courier']) ? (string) $data['courier'] : null,
             deliveryType: isset($data['delivery_type']) ? (string) $data['delivery_type'] : null,
@@ -447,7 +492,7 @@ class ShippingMethodResource extends Resource
             'free_above' => $method->freeAboveMinor() === null ? null : Money::fromMinorUnits($method->freeAboveMinor(), DefaultCurrency::get())->decimalValue(),
             'class_mode' => $method->classMode()->value,
             'rates' => $rates,
-            'requires_pickup_point' => $method->requiresPickupPoint(),
+            'destination_scope' => $method->destinationScope()->value,
             'carrier_code' => $method->carrierCode(),
             'courier' => $method->courier(),
             'delivery_type' => $method->deliveryType()?->value,
@@ -527,9 +572,9 @@ class ShippingMethodResource extends Resource
 
                         return $state;
                     }),
-                TextColumn::make('requires_pickup_point')
-                    ->label(__('shipping.methods.fields.pickup'))
-                    ->formatStateUsing(fn ($state): string => $state ? __('orders.payment_settled_yes') : '—'),
+                TextColumn::make('destination_scope')
+                    ->label(__('shipping.methods.fields.destination_scope'))
+                    ->formatStateUsing(fn (string $state): string => __('shipping.summary.scope.'.$state)),
             ])
             ->filters([
                 SelectFilter::make('zone_id')

@@ -194,11 +194,18 @@
                                             @if ($method['needsMore'])
                                                 · {{ __('shipping.try_it.remaining', ['amount' => $method['remaining']]) }}
                                             @endif
+                                            @if (! $method['serves'])
+                                                · {{ __('shipping.try_it.not_served') }}
+                                            @endif
                                         </div>
                                     </li>
                                 @endforeach
                             </ul>
                             @endforeach
+                        @endif
+
+                        @if ($result['unserved'] !== [])
+                            <p class="shop-result-facts">{{ __('shipping.try_it.unserved', ['methods' => implode(', ', $result['unserved'])]) }}</p>
                         @endif
 
                         @if ($result['hint'] !== null)

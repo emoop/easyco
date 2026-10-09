@@ -479,7 +479,7 @@ class ShippingMethodResourceTest extends TestCase
         Livewire::test(CreateShippingMethod::class)
             ->fillForm([
                 'zone_id' => $zone, 'name' => 'Adjusting', 'kind' => 'per_class', 'price' => '5', 'class_mode' => 'adjust',
-                'rates' => ['heavy' => '25', 'discount' => '-3'], 'requires_pickup_point' => true,
+                'rates' => ['heavy' => '25', 'discount' => '-3'], 'destination_scope' => 'pickup',
             ])
             ->call('create')
             ->assertHasNoFormErrors();
