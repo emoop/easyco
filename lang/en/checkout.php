@@ -25,4 +25,10 @@ return [
     'checkout_invalid' => 'We could not place the order with the details given. Check them and try again.',
     'checkout_failed' => 'We could not place your order. Your cart is kept. Try again in a moment, and contact the shop if it keeps failing.',
     'payment_needs_attention' => 'Your order is placed, but the payment step needs attention. Do not place it again; the shop will contact you.',
+    'shipping_required' => 'Choose a delivery method before placing the order.',
+    'shipping_invalid' => 'The delivery choice could not be read. Choose the delivery method again.',
+    'shipping_method_unavailable' => 'That delivery method is not available for this order. Choose another one.',
+    'shipping_quote_expired' => 'The delivery price has expired. Choose the delivery method again to see the current price.',
+    'shipping_price_changed' => 'The delivery price has changed. Check the new price and confirm the order again.',
+    'shipping_pickup_mismatch' => 'That delivery method does not match the delivery address (office or locker versus home address). Choose another method or address.',
 ];

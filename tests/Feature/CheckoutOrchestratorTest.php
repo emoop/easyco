@@ -59,6 +59,7 @@ use EasyCo\Promotions\PromotionRedemption;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 use RuntimeException;
+use Tests\Concerns\ProvidesCheckoutShipping;
 use Tests\TestCase;
 
 /**
@@ -71,6 +72,7 @@ use Tests\TestCase;
 class CheckoutOrchestratorTest extends TestCase
 {
     use RefreshDatabase;
+    use ProvidesCheckoutShipping;
 
     private static int $productCounter = 0;
     private ?PriceList $priceList = null;
@@ -250,6 +252,7 @@ class CheckoutOrchestratorTest extends TestCase
             country: 'BG',
             city: 'Sofia',
             addressLine1: 'Vitosha Blvd 1',
+            shippingMethodId: $this->shippingMethodId(), quoteHandle: $this->lostShippingHandle(), expectedShippingMinor: 0,
         );
     }
 
@@ -324,6 +327,7 @@ class CheckoutOrchestratorTest extends TestCase
             paymentMethod: 'cash_on_delivery',
             accountId: $accountId,
             addressId: $savedAddress->id(),
+            shippingMethodId: $this->shippingMethodId(), quoteHandle: $this->lostShippingHandle(), expectedShippingMinor: 0,
         );
 
         $result = app(CheckoutOrchestrator::class)->place($input, new DateTimeImmutable('2026-09-05 13:00:00'));

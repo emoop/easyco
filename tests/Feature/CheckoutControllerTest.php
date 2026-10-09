@@ -29,6 +29,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Validator;
 use Livewire\Livewire;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Tests\Concerns\ProvidesCheckoutShipping;
 use Tests\TestCase;
 
 /**
@@ -49,6 +50,7 @@ use Tests\TestCase;
 class CheckoutControllerTest extends TestCase
 {
     use RefreshDatabase;
+    use ProvidesCheckoutShipping;
 
     private static int $productCounter = 0;
     private ?PriceList $priceList = null;
@@ -157,6 +159,7 @@ class CheckoutControllerTest extends TestCase
             'country' => 'BG',
             'city' => 'Sofia',
             'address_line_1' => 'Vitosha Blvd 1',
+            ...$this->shippingPayload(),
         ], $overrides);
     }
 
@@ -235,7 +238,8 @@ class CheckoutControllerTest extends TestCase
         ], $overrides));
         unset($payload['city'], $payload['address_line_1']);
 
-        return $payload;
+        // A pickup point is delivered by a pickup method (stage 4e: the method's flag must agree with the address).
+        return array_merge($payload, $this->shippingPayload(true));
     }
 
     public function test_checkout_copies_a_pickup_points_country_onto_the_order_and_the_http_layer_uppercases_it(): void
@@ -267,7 +271,7 @@ class CheckoutControllerTest extends TestCase
         $variationId = $this->pricedPurchasableVariation('10.00', 10);
         $this->addLineViaHttp($variationId, 1);
 
-        $payload = $this->checkoutPayload(['address_id' => $addressId]);
+        $payload = $this->checkoutPayload(array_merge(['address_id' => $addressId], $this->shippingPayload(true)));
         unset($payload['delivery_type'], $payload['country'], $payload['city'], $payload['address_line_1']);
 
         $response = $this->postJson('/api/checkout', $payload)->assertStatus(201);
@@ -327,7 +331,7 @@ class CheckoutControllerTest extends TestCase
         $variationId = $this->pricedPurchasableVariation('10.00', 10);
         $this->addLineViaHttp($variationId, 1);
 
-        $payload = $this->checkoutPayload(['address_id' => $addressId]);
+        $payload = $this->checkoutPayload(array_merge(['address_id' => $addressId], $this->shippingPayload(true)));
         unset($payload['delivery_type'], $payload['country'], $payload['city'], $payload['address_line_1']);
 
         \Illuminate\Support\Facades\Log::spy();

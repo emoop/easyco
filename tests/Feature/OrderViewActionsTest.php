@@ -40,6 +40,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Livewire\Livewire;
+use Tests\Concerns\ProvidesCheckoutShipping;
 use Tests\TestCase;
 
 /**
@@ -52,6 +53,7 @@ use Tests\TestCase;
 class OrderViewActionsTest extends TestCase
 {
     use RefreshDatabase;
+    use ProvidesCheckoutShipping;
 
     private static int $productCounter = 0;
     private ?PriceList $priceList = null;
@@ -148,6 +150,7 @@ class OrderViewActionsTest extends TestCase
             country: 'BG',
             city: 'Sofia',
             addressLine1: 'Vitosha Blvd 1',
+            shippingMethodId: $this->shippingMethodId(), quoteHandle: $this->lostShippingHandle(), expectedShippingMinor: 0,
         );
 
         return app(CheckoutOrchestrator::class)->place($input, new DateTimeImmutable('2026-09-25 09:00:00'))->order();

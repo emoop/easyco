@@ -48,6 +48,11 @@ final class CheckoutInput
         public readonly ?string $carrierCode = null,
         public readonly ?string $pickupPointReference = null,
         public readonly ?string $settlement = null,
+        // The shipping choice (stage 4e): the method id and the quote handle the quote endpoint issued, and optionally the
+        // amount the customer was shown. Shapes are validated by the resolver; the expected amount is only compared.
+        public readonly ?string $shippingMethodId = null,
+        public readonly ?string $quoteHandle = null,
+        public readonly ?int $expectedShippingMinor = null,
     ) {
     }
 }

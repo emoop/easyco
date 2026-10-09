@@ -60,6 +60,7 @@ use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
 use PHPUnit\Framework\Attributes\DataProvider;
 use ReflectionMethod;
+use Tests\Concerns\ProvidesCheckoutShipping;
 use Tests\TestCase;
 
 /**
@@ -79,6 +80,7 @@ use Tests\TestCase;
 class OrderEditActionTest extends TestCase
 {
     use RefreshDatabase;
+    use ProvidesCheckoutShipping;
 
     private ?PriceList $priceList = null;
 
@@ -183,6 +185,7 @@ class OrderEditActionTest extends TestCase
             country: 'BG',
             city: 'Sofia',
             addressLine1: 'Vitosha Blvd 1',
+            shippingMethodId: $this->shippingMethodId(), quoteHandle: $this->lostShippingHandle(), expectedShippingMinor: 0,
         ), new DateTimeImmutable('2026-09-29 12:00:00'))->order();
     }
 

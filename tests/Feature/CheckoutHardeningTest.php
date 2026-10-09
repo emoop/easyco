@@ -32,6 +32,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Testing\TestResponse;
 use RuntimeException;
+use Tests\Concerns\ProvidesCheckoutShipping;
 use Tests\TestCase;
 
 /**
@@ -42,6 +43,7 @@ use Tests\TestCase;
 class CheckoutHardeningTest extends TestCase
 {
     use RefreshDatabase;
+    use ProvidesCheckoutShipping;
 
     private const SCRIPT = '<script>alert("x")</script>';
 
@@ -96,6 +98,7 @@ class CheckoutHardeningTest extends TestCase
             'country' => 'BG',
             'city' => 'Sofia',
             'address_line_1' => 'Vitosha Blvd 1',
+            ...$this->shippingPayload(),
         ], $override);
     }
 
@@ -489,7 +492,7 @@ class CheckoutHardeningTest extends TestCase
 
         // Measured on HEAD before stage 4c (same scenario): fresh 32 total / 0 settings reads, replay 5 total / 0 payment selects.
         $this->assertSame(1, $fresh['settings'], 'the store locale: the one new read of a fresh checkout');
-        $this->assertSame(33, $fresh['total'], 'fresh: 32 before 4c + the locale read');
+        $this->assertSame(56, $fresh['total'], 'fresh: 33 before 4e (32 before 4c + the locale read) + the shipping step, i.e. the quote pipeline once (23 on this 1-line cart)');
         $this->assertSame(1, $replay['payments'], 'a replay reads the stored payment once (stage 4c)');
         $this->assertSame(6, $replay['total'], 'replay: 5 before 4c + the stored-payment select (the locale is already memoised)');
     }

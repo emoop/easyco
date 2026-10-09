@@ -23,6 +23,7 @@ use EasyCo\Promotions\Enums\PromotionDiscountType;
 use EasyCo\Promotions\Promotion;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\Concerns\ProvidesCheckoutShipping;
 use Tests\TestCase;
 
 /**
@@ -47,6 +48,7 @@ use Tests\TestCase;
 final class SandboxCheckoutFlowTest extends TestCase
 {
     use RefreshDatabase;
+    use ProvidesCheckoutShipping;
 
     private static int $counter = 0;
 
@@ -154,6 +156,7 @@ final class SandboxCheckoutFlowTest extends TestCase
             'country' => 'BG',
             'city' => 'Sofia',
             'address_line_1' => 'Vitosha Blvd 1',
+            ...$this->shippingPayload(),
         ], $overrides);
     }
 

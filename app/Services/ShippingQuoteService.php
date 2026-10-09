@@ -323,14 +323,7 @@ final class ShippingQuoteService
             throw new ShippingQuoteRefusedException(ShippingQuoteRefusedException::ADDRESS_INCOMPLETE, $e);
         }
 
-        $pickup = $address->deliveryType() === \EasyCo\Address\Enums\AddressDeliveryType::PICKUP_POINT;
-
-        return new QuoteDestination(
-            $address->deliveryType(),
-            (string) $address->country(),
-            $pickup ? $address->settlement() : $address->city(),
-            $pickup ? null : $address->postalCode(),
-        );
+        return QuoteDestination::fromAddress($address);
     }
 
     private function contextFor(QuoteDestination $destination, string $currency, int $goodsMinor, ?int $weightGrams): ?ShippingContext

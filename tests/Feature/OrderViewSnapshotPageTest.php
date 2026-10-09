@@ -58,6 +58,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Tests\Concerns\ProvidesCheckoutShipping;
 use Tests\TestCase;
 
 /**
@@ -73,6 +74,7 @@ use Tests\TestCase;
 class OrderViewSnapshotPageTest extends TestCase
 {
     use RefreshDatabase;
+    use ProvidesCheckoutShipping;
 
     private static int $counter = 0;
 
@@ -233,6 +235,7 @@ class OrderViewSnapshotPageTest extends TestCase
             country: 'BG',
             city: 'Sofia',
             addressLine1: 'Vitosha Blvd 1',
+            shippingMethodId: $this->shippingMethodId(), quoteHandle: $this->lostShippingHandle(), expectedShippingMinor: 0,
         );
 
         return app(CheckoutOrchestrator::class)

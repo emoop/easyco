@@ -17,6 +17,8 @@ use App\Services\Exceptions\PromotionNoLongerValidException;
 use App\Services\Exceptions\SaleLineOrderReconciliationException;
 use App\Services\Exceptions\UnknownPaymentMethodException;
 use App\Services\Exceptions\ZeroTotalException;
+use App\Services\ShippingRefusal;
+use App\Services\ShippingRefusalReason;
 use App\Services\PaymentMethodAdapterResolver;
 use App\Settings\StoreLocale;
 use DateTimeImmutable;
@@ -91,6 +93,11 @@ class CheckoutController extends Controller
             $request->merge(['country' => KnownCountryCode::normalize($request->input('country'))]);
         }
 
+        // A JSON number is a fine method id; the rules below want a string.
+        if (is_int($request->input('shipping_method_id'))) {
+            $request->merge(['shipping_method_id' => (string) $request->input('shipping_method_id')]);
+        }
+
         $validated = $request->validate($this->validationRules(), [
             'country.required_without' => __('delivery.country.required'),
         ]);
@@ -137,6 +144,9 @@ class CheckoutController extends Controller
             carrierCode: $validated['carrier_code'] ?? null,
             pickupPointReference: $validated['pickup_point_reference'] ?? null,
             settlement: $validated['settlement'] ?? null,
+            shippingMethodId: $validated['shipping_method_id'] ?? null,
+            quoteHandle: $validated['quote_handle'] ?? null,
+            expectedShippingMinor: isset($validated['expected_shipping_minor']) ? (int) $validated['expected_shipping_minor'] : null,
         );
 
         // Each refusal is caught by type and answered with a stable `reason` and a FIXED,
@@ -147,6 +157,8 @@ class CheckoutController extends Controller
             $result = $this->orchestrator->place($input, new DateTimeImmutable());
 
             return $this->placedResponse($result);
+        } catch (ShippingRefusal $e) {
+            return $this->shippingRefusal($e);
         } catch (EmptyCartException) {
             return $this->refusal('empty_cart', 422);
         } catch (PromotionNoLongerValidException) {
@@ -204,6 +216,7 @@ class CheckoutController extends Controller
     {
         $body = [
             'order' => $this->orderToArray($result->order()),
+            'shipping' => $this->shippingToArray($result->order()),
             'payment' => $result->payment() !== null ? $this->paymentToArray($result->payment()) : null,
             'already_placed' => $result->isAlreadyPlaced(),
         ];
@@ -213,6 +226,50 @@ class CheckoutController extends Controller
         }
 
         return response()->json($body, 201);
+    }
+
+    /**
+     * The shipping facts the order stored at placement (stage 4e), read from the ORDER only — never from the method row,
+     * which may have changed or gone — and identical on a replay. Null for an order placed before shipping existed.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function shippingToArray(Order $order): ?array
+    {
+        if ($order->shippingMethodName() === null) {
+            return null;
+        }
+
+        return [
+            'method_id' => $order->shippingMethodCode(),
+            'method_name' => $order->shippingMethodName(),
+            'courier' => $order->shippingCourier(),
+            'delivery_type' => $order->shippingDeliveryType(),
+            'service_code' => $order->shippingServiceCode(),
+            'amount_minor' => $order->shipping()->minorValue(),
+            'currency' => $order->shipping()->currency()->code(),
+        ];
+    }
+
+    /**
+     * A shipping refusal (stage 4e): the stable `reason` is the API code, the sentence is fixed and translated (nothing
+     * the customer typed, nothing from the exception), and price_changed also carries the new figure in the quote API's
+     * `{minor, currency}` shape under `price`.
+     */
+    private function shippingRefusal(ShippingRefusal $e): JsonResponse
+    {
+        $status = match ($e->reason) {
+            ShippingRefusalReason::REQUIRED, ShippingRefusalReason::INVALID, ShippingRefusalReason::PICKUP_MISMATCH => 422,
+            ShippingRefusalReason::METHOD_UNAVAILABLE, ShippingRefusalReason::QUOTE_EXPIRED, ShippingRefusalReason::PRICE_CHANGED => 409,
+        };
+
+        $body = ['message' => __('checkout.'.$e->reason->value), 'reason' => $e->reason->value];
+
+        if ($e->reason === ShippingRefusalReason::PRICE_CHANGED && $e->newAmount() !== null) {
+            $body['price'] = $this->moneyToArray($e->newAmount());
+        }
+
+        return response()->json($body, $status);
     }
 
     /** `{message, reason}` with the fixed translated sentence for the reason; the 404s keep their historical `{message}` shape. */
@@ -312,6 +369,12 @@ class CheckoutController extends Controller
             'carrier_code' => ['required_if:delivery_type,pickup_point', 'prohibited_if:delivery_type,street_address', 'string', 'max:255', new PlainText()],
             'pickup_point_reference' => ['required_if:delivery_type,pickup_point', 'prohibited_if:delivery_type,street_address', 'string', 'max:255', new PlainText()],
             'settlement' => ['required_if:delivery_type,pickup_point', 'prohibited_if:delivery_type,street_address', 'string', 'max:255', new PlainText()],
+            // The shipping choice (stage 4e). Only the TYPE and size are checked here, so an array, an object or a huge
+            // string never reaches the resolver; the shape rules (digits, `qh_` + 40) are the resolver's alone, and a
+            // missing value is its `shipping_required`, not a validation error. Validation messages never echo input.
+            'shipping_method_id' => ['nullable', 'string', 'max:64'],
+            'quote_handle' => ['nullable', 'string', 'max:128'],
+            'expected_shipping_minor' => ['nullable', 'integer', 'min:0', 'max:1000000000000'],
         ];
     }
 

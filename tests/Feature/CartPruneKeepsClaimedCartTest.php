@@ -19,6 +19,7 @@ use EasyCo\Pricing\PriceList;
 use EasyCo\Pricing\PriceListItem;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Tests\Concerns\ProvidesCheckoutShipping;
 use Tests\TestCase;
 
 /**
@@ -29,6 +30,7 @@ use Tests\TestCase;
 class CartPruneKeepsClaimedCartTest extends TestCase
 {
     use RefreshDatabase;
+    use ProvidesCheckoutShipping;
 
     protected function setUp(): void
     {
@@ -61,6 +63,7 @@ class CartPruneKeepsClaimedCartTest extends TestCase
         $payload = [
             'cart_id' => $cartId, 'email' => 'guest@example.com', 'recipient_name' => 'Guest Buyer', 'phone' => '+359888000000',
             'payment_method' => 'cash_on_delivery', 'delivery_type' => 'street_address', 'country' => 'BG', 'city' => 'Sofia', 'address_line_1' => 'Vitosha Blvd 1',
+            ...$this->shippingPayload(),
         ];
 
         // An unrelated, expired, UNCLAIMED cart: the prune must still do its job.

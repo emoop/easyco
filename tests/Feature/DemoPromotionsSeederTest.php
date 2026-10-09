@@ -21,6 +21,7 @@ use EasyCo\Promotions\Enums\PromotionDiscountType;
 use EasyCo\Promotions\PromotionScope;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use RuntimeException;
+use Tests\Concerns\ProvidesCheckoutShipping;
 use Tests\TestCase;
 
 /**
@@ -30,6 +31,7 @@ use Tests\TestCase;
 class DemoPromotionsSeederTest extends TestCase
 {
     use RefreshDatabase;
+    use ProvidesCheckoutShipping;
 
     private static int $productCounter = 0;
     private ?PriceList $priceList = null;
@@ -231,6 +233,7 @@ class DemoPromotionsSeederTest extends TestCase
             country: 'BG',
             city: 'Sofia',
             addressLine1: 'Vitosha Blvd 1',
+            shippingMethodId: $this->shippingMethodId(), quoteHandle: $this->lostShippingHandle(), expectedShippingMinor: 0,
         );
 
         app(\App\Services\CheckoutOrchestrator::class)->place($firstInput, new \DateTimeImmutable('2026-09-20 10:00:00'));
@@ -252,6 +255,7 @@ class DemoPromotionsSeederTest extends TestCase
             country: 'BG',
             city: 'Sofia',
             addressLine1: 'Vitosha Blvd 1',
+            shippingMethodId: $this->shippingMethodId(), quoteHandle: $this->lostShippingHandle(), expectedShippingMinor: 0,
         );
 
         // The real, atomic enforcement

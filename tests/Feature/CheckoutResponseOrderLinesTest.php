@@ -15,6 +15,7 @@ use EasyCo\Pricing\Price;
 use EasyCo\Pricing\PriceList;
 use EasyCo\Pricing\PriceListItem;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\Concerns\ProvidesCheckoutShipping;
 use Tests\TestCase;
 
 /**
@@ -35,6 +36,7 @@ use Tests\TestCase;
 class CheckoutResponseOrderLinesTest extends TestCase
 {
     use RefreshDatabase;
+    use ProvidesCheckoutShipping;
 
     private static int $productCounter = 0;
 
@@ -101,6 +103,7 @@ class CheckoutResponseOrderLinesTest extends TestCase
             'country' => 'BG',
             'city' => 'Sofia',
             'address_line_1' => 'Vitosha Blvd 1',
+            ...$this->shippingPayload(),
         ], $overrides);
     }
 

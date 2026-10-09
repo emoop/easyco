@@ -131,6 +131,8 @@ final class CheckoutShippingResolver
             $quote->serviceCode,
             $quote->requiresPickupPoint,
             $quote->kind,
+            $offers->zoneId,
+            $offers->pricingHash,
         );
     }
 }

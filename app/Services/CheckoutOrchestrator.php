@@ -8,6 +8,7 @@ use App\Services\Exceptions\CheckoutCurrencyMismatchException;
 use App\Services\Exceptions\EmptyCartException;
 use App\Services\Exceptions\PromotionNoLongerValidException;
 use App\Services\Exceptions\SaleLineOrderReconciliationException;
+use App\Services\Exceptions\ShippingQuoteRefusedException;
 use App\Services\Exceptions\ZeroTotalException;
 use DateTimeImmutable;
 use EasyCo\Address\Address;
@@ -19,7 +20,6 @@ use EasyCo\Inventory\Contracts\StockLevelRepository;
 use EasyCo\Order\Contracts\OrderRepository;
 use EasyCo\Order\Enums\OrderDeliveryType;
 use EasyCo\Order\Order;
-use EasyCo\Order\Persistence\Eloquent\OrderPlacementSnapshotModel;
 use EasyCo\OperationalSales\Enums\Channel;
 use EasyCo\OperationalSales\Enums\SaleLineStatus;
 use EasyCo\OperationalSales\Contracts\TransactionRepository;
@@ -30,6 +30,7 @@ use EasyCo\Payment\Enums\PaymentStatus;
 use EasyCo\Payment\Payment;
 use EasyCo\Payment\PaymentContext;
 use EasyCo\Pricing\DefaultCurrency;
+use EasyCo\Pricing\Exceptions\PriceNotConfiguredException;
 use EasyCo\Pricing\Money;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -88,6 +89,9 @@ final class CheckoutOrchestrator
         private readonly PaymentRepository $payments,
         private readonly PaymentMethodAdapterResolver $adapterResolver,
         private readonly SaleLineSnapshotBuilder $saleLineSnapshotBuilder,
+        private readonly CheckoutShippingResolver $shippingResolver,
+        private readonly SettlementNormalizerResolver $normalizers,
+        private readonly OrderPlacementSnapshotWriter $snapshotWriter,
     ) {
     }
 
@@ -99,7 +103,8 @@ final class CheckoutOrchestrator
      * @throws CartNotFoundForCheckoutException
      * @throws EmptyCartException
      * @throws PromotionNoLongerValidException
-     * @throws \App\Services\Exceptions\ZeroTotalException The total after discount is not positive; nothing written (stage 4c).
+     * @throws ShippingRefusal The shipping choice was refused (stage 4e): thrown before the transaction opens, nothing written, the cart untouched.
+     * @throws \App\Services\Exceptions\ZeroTotalException The ORDER total (goods after discount + shipping) is not positive; nothing written (stage 4c, 4e).
      * @throws \App\Services\Exceptions\CheckoutCurrencyMismatchException A price in another currency; nothing written (stage 4c).
      * @throws SaleLineOrderReconciliationException Aborts Phase 1; nothing written.
      *
@@ -128,12 +133,66 @@ final class CheckoutOrchestrator
         // BEFORE Phase 1: a saved address that cannot make an order (no country,
         // a pre-D1 pickup point) is refused while nothing has been written. The
         // same resolution runs again inside the transaction; it is one cheap read.
+        $savedAddress = null;
+
         if ($input->addressId !== null && $input->accountId !== null) {
-            $this->addressResolver->resolveExisting($input->addressId, $input->accountId);
+            $savedAddress = $this->addressResolver->resolveExisting($input->addressId, $input->accountId);
+        }
+
+        // STEP 0 (shipping stage 4e) — BEFORE the transaction, so no lock is held while the quote pipeline runs
+        // (it re-prices the cart and may ask a carrier). The cart is read here only to price its shipping; the
+        // transaction below loads it again and is the authority on everything it writes. A refusal (ShippingRefusal)
+        // leaves nothing written and the cart untouched. A replay never reaches this point: it returned above.
+        $cart = $this->carts->findById($input->cartId);
+
+        if ($cart === null) {
+            // Vanished since the fast path: claimed in that window (a double submit) or genuinely unknown.
+            if ($this->claimFor($input) !== null) {
+                return $this->replayFor($input);
+            }
+
+            throw new CartNotFoundForCheckoutException($input->cartId);
+        }
+
+        if (! $this->isOwnedByRequester($cart, $input)) {
+            throw new CartNotFoundForCheckoutException($input->cartId);
+        }
+
+        if ($cart->isEmpty()) {
+            throw new EmptyCartException("Cart \"{$input->cartId}\" has no lines to check out.");
+        }
+
+        $destination = $this->destinationFor($input, $savedAddress);
+        try {
+            $selection = $this->shippingResolver->resolve(
+                $cart,
+                $input->accountId,
+                $destination,
+                $input->shippingMethodId,
+                $input->quoteHandle,
+                $input->expectedShippingMinor,
+            );
+        } catch (ShippingQuoteRefusedException $e) {
+            // The quote pipeline prices the cart in its lenient mode, so a cart in which EVERY line is unpriced is refused
+            // there before the transaction's strict pricing can say so. Checkout's answer for it has always been the
+            // unpriced-line refusal (409 price_not_available): keep it. The reason is the only thing read from $e.
+            if ($e->reason === ShippingQuoteRefusedException::NO_PRICED_LINES) {
+                throw PriceNotConfiguredException::forPriceableId($cart->lines()[0]->variationId());
+            }
+
+            if ($e->reason === ShippingQuoteRefusedException::EMPTY_CART) {
+                throw new EmptyCartException('The cart has no lines to check out.');
+            }
+
+            throw $e;
+        } catch (InvalidArgumentException $e) {
+            // The quote pipeline prices the cart too, so a price held only in another currency surfaces here before
+            // the transaction does: the same controlled refusal (see the pricing call in placeWithinTransaction()).
+            throw $this->asCurrencyMismatch($e);
         }
 
         try {
-            $result = DB::transaction(fn () => $this->placeWithinTransaction($input, $placedAt));
+            $result = DB::transaction(fn () => $this->placeWithinTransaction($input, $placedAt, $selection, $destination));
         } catch (CartClaimLostException) {
             // A concurrent request claimed this cart between the fast
             // path above and this attempt's own claim (step 10) —
@@ -242,6 +301,41 @@ final class CheckoutOrchestrator
         return CheckoutResult::placed($order, $payment, $paymentNeedsAttention);
     }
 
+    /**
+     * A price held only in another currency is not "no price": the resolver returns it and Money refuses to add it to the
+     * store's currency (pinned in CartCheckoutPricingCharacterizationTest). Money's exception is a plain
+     * InvalidArgumentException with no type of its own (Pricing is not touched by these stages), so it is recognised by the
+     * start of its message; anything else is returned unchanged to be thrown as it was.
+     */
+    private function asCurrencyMismatch(InvalidArgumentException $e): Throwable
+    {
+        return str_starts_with($e->getMessage(), 'Currency mismatch') ? new CheckoutCurrencyMismatchException($e) : $e;
+    }
+
+    /**
+     * Where this order is going, built by the same QuoteDestination builder the quote endpoint uses: a saved address from
+     * its stored facts, a typed one from the checkout fields (a street address's city, a pickup point's settlement).
+     */
+    private function destinationFor(CheckoutInput $input, ?Address $savedAddress): QuoteDestination
+    {
+        if ($savedAddress !== null) {
+            return QuoteDestination::fromAddress($savedAddress);
+        }
+
+        if ($input->addressId !== null) {
+            // Impossible per §8.4 (guests have no saved addresses); resolveAddress() refuses it loudly in the transaction.
+            throw new InvalidArgumentException('CheckoutInput::$addressId requires a non-null accountId; guests have no saved addresses.');
+        }
+
+        if ($input->deliveryType === null) {
+            throw new InvalidArgumentException('CheckoutInput::$deliveryType is required when $addressId is null.');
+        }
+
+        $pickup = $input->deliveryType === \EasyCo\Address\Enums\AddressDeliveryType::PICKUP_POINT;
+
+        return QuoteDestination::forAddress($input->deliveryType, (string) $input->country, $pickup ? $input->settlement : $input->city, $input->postalCode);
+    }
+
     /** The claim on this request's cart, iff the requester is the identity it was claimed by. */
     private function claimFor(CheckoutInput $input): ?CartClaim
     {
@@ -300,7 +394,7 @@ final class CheckoutOrchestrator
         return $input->guestCartToken !== null && $cart->sessionToken() === $input->guestCartToken;
     }
 
-    private function placeWithinTransaction(CheckoutInput $input, DateTimeImmutable $placedAt): CheckoutResult
+    private function placeWithinTransaction(CheckoutInput $input, DateTimeImmutable $placedAt, ShippingSelection $selection, QuoteDestination $destination): CheckoutResult
     {
         // Step 1: load the cart, reject empty.
         $cart = $this->carts->findById($input->cartId);
@@ -329,24 +423,35 @@ final class CheckoutOrchestrator
         try {
             $pricing = $this->cartPricing->price($cart, $input->accountId, $currency, UnpricedLines::REFUSE, includeUnitCost: true);
         } catch (InvalidArgumentException $e) {
-            // A price held only in another currency is not "no price": the resolver returns it and Money
-            // refuses to add it to the store's currency (pinned in CartCheckoutPricingCharacterizationTest).
-            // Money's exception is a plain InvalidArgumentException with no type of its own (Pricing is not
-            // touched by this stage), so it is recognised by the start of its message; anything else rethrows.
-            if (str_starts_with($e->getMessage(), 'Currency mismatch')) {
-                throw new CheckoutCurrencyMismatchException($e);
-            }
-
-            throw $e;
+            throw $this->asCurrencyMismatch($e);
         }
 
         if ($pricing->promotionRefusal() !== null) {
             throw new PromotionNoLongerValidException((string) $pricing->appliedPromotionCode(), $pricing->promotionRefusal());
         }
 
-        // Nothing to pay: a Payment cannot be for zero, so refuse BEFORE anything is written (stage 4c, O8).
-        // Judged on the order total as it is today; shipping is not part of the order yet.
-        if (! $pricing->goodsAfterDiscount()->isPositive()) {
+        // The goods are priced here for real. If they are not the goods the shipping was resolved against (a line, a
+        // price or the promotion moved since step 0), the shipping price may be wrong: refuse with the existing, retryable
+        // "your cart changed" answer (409 checkout_state_changed) before anything is written. Only local facts are
+        // re-derived — the zone and the destination are the ones step 0 matched.
+        $hash = ShippingQuoteService::pricingHashFor(
+            $destination,
+            $this->normalizers->forCurrentLocale()->normalize((string) $destination->settlement),
+            $selection->zoneId,
+            $pricing->goodsAfterDiscount()->minorValue(),
+            $currency,
+            $cart,
+        );
+
+        if (! hash_equals($selection->pricingHash, $hash)) {
+            throw new SaleLineOrderReconciliationException('The cart changed between resolving the shipping and placing the order.');
+        }
+
+        // Nothing to pay: a Payment cannot be for zero, so refuse BEFORE anything is written (stage 4c, O8). Judged on
+        // the ORDER total — goods after discount plus shipping (stage 4e): free goods with a paid delivery is a payable order.
+        $shipping = $selection->amount;
+
+        if (! $pricing->goodsAfterDiscount()->add($shipping)->isPositive()) {
             throw new ZeroTotalException('The order total is not positive.');
         }
 
@@ -447,6 +552,12 @@ final class CheckoutOrchestrator
             carrierCode: $address->carrierCode(),
             pickupPointReference: $address->pickupPointReference(),
             settlement: $address->settlement(),
+            shipping: $shipping,
+            shippingMethodName: $selection->methodName,
+            shippingMethodCode: $selection->methodId,
+            shippingCourier: $selection->courier,
+            shippingDeliveryType: $selection->deliveryType,
+            shippingServiceCode: $selection->serviceCode,
         );
 
         $this->orders->save($order);
@@ -455,28 +566,7 @@ final class CheckoutOrchestrator
         // pure, mechanical copy of the Order row just saved above. Inside
         // this same placement transaction, so a rollback anywhere else in
         // Phase 1 takes this row with it, exactly like the Order itself.
-        OrderPlacementSnapshotModel::create([
-            'order_id' => $order->id(),
-            'subtotal_minor' => $order->subtotal()->minorValue(),
-            'subtotal_currency' => $order->subtotal()->currency()->code(),
-            'discount_minor' => $order->discount()->minorValue(),
-            'discount_currency' => $order->discount()->currency()->code(),
-            'total_minor' => $order->total()->minorValue(),
-            'total_currency' => $order->total()->currency()->code(),
-            'applied_promotion_code' => $order->appliedPromotionCode(),
-            'delivery_type' => $order->deliveryType()->value,
-            'recipient_name' => $order->recipientName(),
-            'phone' => $order->phone(),
-            'country' => $order->country(),
-            'city' => $order->city(),
-            'postal_code' => $order->postalCode(),
-            'address_line_1' => $order->addressLine1(),
-            'address_line_2' => $order->addressLine2(),
-            'carrier_code' => $order->carrierCode(),
-            'pickup_point_reference' => $order->pickupPointReference(),
-            'settlement' => $order->settlement(),
-            'created_at' => $placedAt,
-        ]);
+        $this->snapshotWriter->write($order, $placedAt);
 
         // Write the Payment row NOW, as PENDING with no attempt outcome
         // yet — see class docblock for why this moved into Phase 1. A

@@ -41,6 +41,7 @@ use EasyCo\Promotions\Promotion;
 use EasyCo\Promotions\PromotionScope;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
+use Tests\Concerns\ProvidesCheckoutShipping;
 use Tests\TestCase;
 
 /**
@@ -52,6 +53,7 @@ use Tests\TestCase;
 class CheckoutSaleLineSnapshotTest extends TestCase
 {
     use RefreshDatabase;
+    use ProvidesCheckoutShipping;
 
     private static int $productCounter = 0;
     private ?PriceList $priceList = null;
@@ -135,6 +137,7 @@ class CheckoutSaleLineSnapshotTest extends TestCase
             country: 'BG',
             city: 'Sofia',
             addressLine1: 'Vitosha Blvd 1',
+            shippingMethodId: $this->shippingMethodId(), quoteHandle: $this->lostShippingHandle(), expectedShippingMinor: 0,
         );
     }
 

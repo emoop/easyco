@@ -23,11 +23,13 @@ use EasyCo\Pricing\Price;
 use EasyCo\Pricing\PriceList;
 use EasyCo\Pricing\PriceListItem;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\Concerns\ProvidesCheckoutShipping;
 use Tests\TestCase;
 
 class CartMergeOnLoginTest extends TestCase
 {
     use RefreshDatabase;
+    use ProvidesCheckoutShipping;
 
     private static int $productCounter = 0;
     private ?PriceList $priceList = null;
@@ -120,6 +122,7 @@ class CartMergeOnLoginTest extends TestCase
             'country' => 'BG',
             'city' => 'Sofia',
             'address_line_1' => 'Vitosha Blvd 1',
+            ...$this->shippingPayload(),
         ])->assertStatus(201)->json('order.id');
 
         return ['cart_id' => $cartId, 'order_id' => $orderId];

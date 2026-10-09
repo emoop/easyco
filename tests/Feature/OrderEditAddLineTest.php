@@ -55,6 +55,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
+use Tests\Concerns\ProvidesCheckoutShipping;
 use Tests\TestCase;
 
 /**
@@ -77,6 +78,7 @@ use Tests\TestCase;
 class OrderEditAddLineTest extends TestCase
 {
     use RefreshDatabase;
+    use ProvidesCheckoutShipping;
 
     private ?PriceList $priceList = null;
 
@@ -230,6 +232,7 @@ class OrderEditAddLineTest extends TestCase
             country: 'BG',
             city: 'Sofia',
             addressLine1: 'Vitosha Blvd 1',
+            shippingMethodId: $this->shippingMethodId(), quoteHandle: $this->lostShippingHandle(), expectedShippingMinor: 0,
         ), new DateTimeImmutable('2026-09-29 12:00:00'))->order();
     }
 

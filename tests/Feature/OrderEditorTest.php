@@ -53,6 +53,7 @@ use Illuminate\Support\Str;
 use PHPUnit\Framework\Attributes\DataProvider;
 use InvalidArgumentException;
 use RuntimeException;
+use Tests\Concerns\ProvidesCheckoutShipping;
 use Tests\TestCase;
 
 /**
@@ -68,6 +69,7 @@ use Tests\TestCase;
 class OrderEditorTest extends TestCase
 {
     use RefreshDatabase;
+    use ProvidesCheckoutShipping;
 
     private static int $productCounter = 0;
 
@@ -168,6 +170,7 @@ class OrderEditorTest extends TestCase
             country: 'BG',
             city: 'Sofia',
             addressLine1: 'Vitosha Blvd 1',
+            shippingMethodId: $this->shippingMethodId(), quoteHandle: $this->lostShippingHandle(), expectedShippingMinor: 0,
         ), new DateTimeImmutable('2026-09-29 12:00:00'));
 
         return $result->order();

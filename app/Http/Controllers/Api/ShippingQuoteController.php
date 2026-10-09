@@ -136,7 +136,7 @@ class ShippingQuoteController extends Controller
 
             $result = $addressId !== null
                 ? $this->quotes->quoteForSavedAddress($cart, (string) $accountId, (string) $addressId)
-                : $this->quotes->quote($cart, $accountId, new QuoteDestination(
+                : $this->quotes->quote($cart, $accountId, QuoteDestination::forAddress(
                     AddressDeliveryType::from($validated['delivery_type']),
                     $validated['country'],
                     $validated['settlement'],

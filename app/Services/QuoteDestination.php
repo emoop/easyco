@@ -22,6 +22,30 @@ final class QuoteDestination
     ) {
     }
 
+    /**
+     * THE ONE BUILDER of a destination from address facts (stage 4e): the quote endpoint's typed fields, a saved address
+     * and the checkout's address all come through here, so a quote and the checkout that follows it can never read the
+     * same address two ways. $settlement is a street address's CITY or a pickup point's settlement; the postcode is
+     * dropped for a pickup point (ZoneMatcher and the pricing hash ignore it there anyway).
+     */
+    public static function forAddress(AddressDeliveryType $deliveryType, string $countryCode, ?string $settlement, ?string $postcode = null): self
+    {
+        return new self(
+            $deliveryType,
+            $countryCode,
+            $settlement === null ? null : trim($settlement),
+            $deliveryType === AddressDeliveryType::PICKUP_POINT ? null : $postcode,
+        );
+    }
+
+    /** A saved or resolved Address as a destination: a pickup point's settlement, a street address's city and postal code. */
+    public static function fromAddress(\EasyCo\Address\Address $address): self
+    {
+        $pickup = $address->deliveryType() === AddressDeliveryType::PICKUP_POINT;
+
+        return self::forAddress($address->deliveryType(), (string) $address->country(), $pickup ? $address->settlement() : $address->city(), $address->postalCode());
+    }
+
     public function isPickupPoint(): bool
     {
         return $this->deliveryType === AddressDeliveryType::PICKUP_POINT;

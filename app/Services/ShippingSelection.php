@@ -20,6 +20,11 @@ final class ShippingSelection
         public readonly ?string $serviceCode,
         public readonly bool $requiresPickupPoint,
         public readonly string $kind,
+        // What priced the selection (stage 4e): the matched zone and the hash of everything that priced it. Placement
+        // re-derives the hash from the goods it prices inside the transaction; a difference means the cart changed
+        // since the shipping was resolved.
+        public readonly string $zoneId = '',
+        public readonly string $pricingHash = '',
     ) {
     }
 

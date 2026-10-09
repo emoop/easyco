@@ -20,6 +20,7 @@ use EasyCo\Promotions\Enums\PromotionDiscountType;
 use EasyCo\Promotions\Promotion;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Tests\Concerns\ProvidesCheckoutShipping;
 use Tests\TestCase;
 
 /**
@@ -46,6 +47,7 @@ use Tests\TestCase;
 class CartCheckoutPricingCharacterizationTest extends TestCase
 {
     use RefreshDatabase;
+    use ProvidesCheckoutShipping;
 
     private static int $counter = 0;
     private ?PriceList $priceList = null;
@@ -146,6 +148,7 @@ class CartCheckoutPricingCharacterizationTest extends TestCase
             'country' => 'BG',
             'city' => 'Sofia',
             'address_line_1' => 'Vitosha Blvd 1',
+            ...$this->shippingPayload(),
         ]);
     }
 
