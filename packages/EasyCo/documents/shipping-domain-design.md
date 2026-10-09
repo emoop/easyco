@@ -782,6 +782,146 @@ Order of work: **4b and 4c first (small, safe, independent), 4a, 4d, 4e, then 4f
 - **O10 — Rate limit.** 10 per minute per IP on `/checkout`, as requested; recommend also keeping the existing 30 per minute on the quote. A customer re-quoting after choosing a pickup point is within it.
 - **O11 — `APP_DEBUG` in `.env.example`.** Recommend `false` in the example file (documentation change, not code).
 
+### 9.2 Destination scope of a shipping method (2026-10-09, DESIGN ONLY — nothing here is built)
+
+**Owner intent (translated).** A shipping method is a courier with a price. In checkout the customer sees the couriers (Econt / Speedy / BoxNow / Europat …) as radio buttons in the merchant's order, with the first or the cheapest preselected, and THEN, still in checkout, chooses where it goes — address, office or locker — and fills the matching fields. A method left with "no delivery type" must mean "serves every kind of destination", so the merchant does not create three methods per courier. A merchant who charges differently per kind may still create one method per kind. Principle: complexity only when needed.
+
+#### 9.2.1 What is true today (verified against the code, V = read in the code, I = my inference)
+
+- **V — `requires_pickup_point` is a boolean, and it is the only thing that decides where a method may go.** Column: `shipping_methods.requires_pickup_point` (`2026_10_02_000003_create_shipping_methods_table.php:38`); domain field `ShippingMethod.php:60`, getter `:362`; the admin toggle `ShippingMethodResource.php:267-268`; the table column `:530`; the summary line `ShippingMethodSummaryReader.php:67`; the "Try it" checkbox `shipping-overview.blade.php:116` → `ShippingTester.php`.
+- **V — `delivery_type` is a LABEL, not a rule.** Values address | office | locker | other | null, guarded only by `ship_methods_delivery_type_check` (`2026_10_08_000001_add_courier_and_delivery_type_to_shipping_methods_table.php:26`); the admin Select (`ShippingMethodResource.php:205-215`) merely ticks the pickup toggle for office/locker as a convenience (`:211-214`). Nothing in the backend reads the label to decide eligibility; it feeds grouping (`ShippingCourier`, `QuoteGroups`), the display name, and the order's stored `shipping_delivery_type` (`CheckoutShippingResolver.php:129`).
+- **V — resolver rule d is an equality, so your reading is right: a null label does NOT mean "any".** `CheckoutShippingResolver.php:105` refuses with `shipping_pickup_mismatch` (422) unless `method.requiresPickupPoint === destination.isPickupPoint()`. A toggle-off method serves street addresses only, whatever its label.
+- **V — the quote does not filter by destination kind at all.** `ShippingQuoteService::offers()` takes every ACTIVE method of the matched zone (`forZone(..., activeOnly: true)`, `:240`), prices it (`:247`), and lists it; a street quote therefore includes pickup methods and vice versa, each with `requires_pickup_point` (`ShippingQuoteController.php:187`). The client is expected to filter — the sandbox does, with `method.requires_pickup_point !== pickupWanted` (`resources/views/sandbox/checkout.blade.php:253`), and treats a null/`other` label as generic **within** the kind (`:251-259`).
+- **V — the filter contract compares `requiresPickupPoint`** (`ShippingQuoteService.php:158`): a `shipping.quotes` listener may not change it.
+- **V — the destination KIND is part of the handle's hash.** `pricingHashFor()` binds `'pickup' => $destination->isPickupPoint()` and the normalized postcode (`ShippingQuoteService.php:305-306`, the postcode is `''` for a pickup point). So a handle issued for a street destination cannot verify for a pickup destination: `QuoteHandleStore::verify()` returns false → `shipping_quote_expired`.
+- **V — but the kind changes little else.** Zone matching ignores the postcode for a pickup point (`ZoneMatcher.php:38-40`), so a zone can differ between kinds ONLY when it is narrowed by postcode. A LOCAL method's price does not read the kind (`RateRequest` carries currency, goods and lines only, `ShippingQuoteService.php:247`). A CARRIER method is asked with the real kind: `contextFor()` (`:248`) puts `isPickupPoint` into `ShippingContext`, and it is part of the carrier cache key (`ShippingContext.php:85`).
+- **V — the order already knows the kind.** `orders.delivery_type` is `street_address | pickup_point`; `orders.shipping_delivery_type` is the METHOD's label copied at placement (4a/4e). The backend has no office-vs-locker distinction for an address: `AddressDeliveryType` has two cases.
+- **V — the free-shipping hint and the groups are not kind-aware.** `FreeShippingHintReader::readFromQuotes()` (`:99`) reads every available local quote with a threshold; `QuoteGroups::build()` (`:23-45`) groups every method and `from_minor` is the lowest price among all available ones. So today a street quote's hint can name a pickup-only method the customer cannot use for that address (I — a latent quirk, harmless while few methods exist).
+- **V — dev data:** one method exists (`per_class`, requires_pickup_point = 1, no label).
+
+#### 9.2.2 Storage (question 1)
+
+**Proposal (I): a three-state scope on the method — `address | pickup | any`.** Three options compared:
+
+| | Idea | For | Against |
+|---|---|---|---|
+| **(a) new column `destination_scope`** | `VARCHAR(8) NOT NULL`, CHECK in (address, pickup, any); backfilled from the boolean | One honest fact per column; the label stays a label; one enum in the domain; admin shows one Select; trivially extended | One migration and a domain change; the old boolean must go or be tied |
+| (b) reuse `delivery_type` | add `any` to the label list; null = any | No new column | Mixes two facts: the label also feeds grouping, the order's CHECKs (`ord_ship_delivery_type_check`, `ops_…`) and display, so `any` would leak into orders; loses "label To office" on a method that is deliberately pickup-only; "other" already means something |
+| (c) two booleans (`serves_address`, `serves_pickup`) | independent flags | Very explicit | One of four states (neither) is invalid and needs a CHECK; two toggles to explain; the API would carry two fields |
+
+**Recommendation: (a).** Domain: a `ShippingDestinationScope` enum (ADDRESS, PICKUP, ANY) in the Shipping package; `ShippingMethod` stores it and keeps `requiresPickupPoint()` as a DERIVED getter (`scope === PICKUP`) so readers (`ShippingMethodSummaryReader`, `ShippingTester`, the writers) keep compiling; `ShippingMethod::create(...)` keeps its positional `bool $requiresPickupPoint` (false → ADDRESS, true → PICKUP, which preserves the ~75 existing `create()` call sites and their meaning) and gains a trailing optional `?ShippingDestinationScope $destinationScope` that wins when given. New methods created through the admin default to `any`.
+
+**Migration shape (not written):** one migration in the Shipping package, timestamped after the newest, idempotent (`Schema::hasColumn` guards, rule 6), short explicit names (rule 5):
+1. add `destination_scope` VARCHAR(8) NULL;
+2. backfill: `requires_pickup_point = 1` → `pickup`, `0` → `address` (existing methods keep their present meaning, see 9.2.3);
+3. GATE FIRST for the label rule below (count offenders — label office/locker with scope not pickup, label address with scope not address — throw with ids, change nothing, as 2026_10_02_000011 does), then make the column NOT NULL;
+4. CHECKs (MySQL/MariaDB, like the existing ones): `ship_methods_scope_check` (scope in address|pickup|any, 24 chars) and `ship_methods_label_scope_check` (the label × scope matrix, 30 chars);
+5. **drop `requires_pickup_point`** in the same migration (single source of truth; the platform has no live clients). `down()` re-creates it from the scope (pickup → 1, otherwise 0), documented as lossy for `any`. Alternative if you want a safer rollback window: keep the column for one release tied by `CHECK (requires_pickup_point = (destination_scope = 'pickup'))` and drop it in a later cleanup stage — more moving parts, so I do not recommend it.
+
+#### 9.2.3 The label and the scope (question 2)
+
+- **I — a rule that keeps the two facts coherent (O14):** label **address** ⇒ scope **address**; label **office** or **locker** ⇒ scope **pickup**; label **other** or **none** ⇒ any scope. Reasoning: a method labelled "To office" that also serves a street address would be grouped and displayed as "Econt – To office" for a home delivery; a merchant who wants a courier to serve every kind leaves the label empty (exactly the owner's "no delivery type means any"). The same matrix is the CHECK and the domain rule in `ShippingMethod::apply()`.
+- **Existing methods keep their present meaning (O13):** backfill is `requires_pickup_point` → `pickup`/`address`, NOT "null label → any". Turning an existing null-label home method into `any` silently would let a pickup destination be shipped by a "home delivery" method; the merchant switches methods to `any` deliberately. On the dev database there is nothing to convert (one pickup method, no label).
+- **Admin form (I):** a **"Serves"** Select (Address / Pickup point (office or locker) / Any destination) replaces the toggle; default **Any** for a new method. Choosing a label **sets and locks** the options: address → Address only; office/locker → Pickup point only; none/other → all three. This replaces today's "ticks the box for convenience" behaviour (`ShippingMethodResource.php:211-214`) with an enforced, visible rule. The table column shows the scope word; the summary line says "Serves any destination" / "Address only" / "Pickup point only". The copy action, the reorderer, the writer and `ShippingMethodInput` carry the scope through (they all pass the boolean positionally today: `ShippingMethodWriter.php:93,123,161`, `ShippingMethodCopier.php:89`, `ShippingMethodReorderer.php:80`).
+
+#### 9.2.4 Resolver and quote (question 3)
+
+- **Rule d becomes "the method's scope covers the destination kind"** (I): `ADDRESS` covers a street address, `PICKUP` covers a pickup point, `ANY` covers both. A tiny domain method, `ShippingMethod::servesPickupPoint(bool $isPickup): bool`, is the one implementation; `MethodQuote` carries the scope so the resolver does not need the method row.
+- **Keep the reason `shipping_pickup_mismatch` (O15).** It still means exactly "this method does not serve this kind of destination"; the translated sentence already says "office or locker versus home address"; the sandbox and any client already map it (`checkout.blade.php:472`). A rename would be a breaking API change for no gain. If you later want a more general code, change the code and the sentence together in one stage.
+- **Quote JSON (I, additive):** each method gains `destination_scope` (`address|pickup|any`). `requires_pickup_point` stays, with a DEFINED meaning: **true only for scope `pickup`**; `false` means "not pickup-only" (address-only OR any). A legacy client that treats `false` as "street only" will hide an `any` method for pickup destinations — a safe failure (it hides, it never misroutes). New clients read `destination_scope`. Optionally also `serves_destination: bool` computed against the request's own kind, so no client has to re-implement the matrix (O16: recommend yes — one tiny field, and the sandbox's client-side logic shrinks to `method.serves_destination`).
+- **The filter contract (`ShippingQuoteService.php:158`)** gains `destinationScope` in the unchanged-fields comparison; `requiresPickupPoint` is derived, so it needs no separate check but stays harmless.
+- **The quote still lists every active method of the zone** (no server-side removal by kind): removing methods would hide couriers in step 1 of the owner's flow, where the kind is not yet chosen (see 9.2.5).
+- **CARRIER methods:** scope is the MERCHANT's restriction, not the carrier's. `ANY` means "ask the carrier with the real destination kind" — which the quote already does (`contextFor()`, `:248`; the kind is in the carrier cache key, `ShippingContext.php:85`) — and the carrier answers per kind; `ADDRESS`/`PICKUP` mean the method is only offered for that kind (e.g. a BoxNow locker method). A carrier method whose scope covers the kind but which gets no answer is `unavailable (no_quote)` exactly as today. The handle still binds the cheapest quote's service code.
+
+#### 9.2.5 The re-quote question (question 4)
+
+- **When must the client re-quote?** Whenever anything in the hash changes (`pricingHashFor`, `:296-310`): the kind (street ↔ pickup), the settlement (a pickup point's settlement can differ from the city typed in step 1), the postcode, the cart lines or goods, the promotion code. A handle for a street destination is **never** accepted for a pickup destination: the hash binds `'pickup'` (`:306`), `verify()` is a plain equality, and the resolver would answer `shipping_quote_expired`. I do **not** propose changing the hash: it is per quote, not per method, a postcode-narrowed zone or a carrier really can price the two kinds differently, and dropping `pickup` for local methods would need a per-method hash — safe in principle for a local method outside a postcode-narrowed zone, but not worth the new surface while a re-quote costs one request (~95 queries on an 8-line cart, 4e report).
+- **Lowest-friction client flow (I):**
+  1. Step 1 — the customer gives country and city (and postcode if asked): ONE quote, asked as a street address (the default kind). Its `methods` carry every courier of the zone with `destination_scope`; the client groups them by courier (the existing `groups`), ordered by the merchant's order, preselecting the first or the cheapest. Local prices do not depend on the kind, so what is shown is final for local methods; a carrier's price is indicative until step 3.
+  2. Step 2 — the customer chooses address / office / locker. The client shows the kinds the chosen courier supports (union of its methods' scopes: a courier with one `any` method supports all; a courier with separate address and locker methods supports those) and the matching fields (the sandbox already has them).
+  3. Step 3 — **at "Place order", always re-quote with the final kind and settlement**, take the chosen method's fresh handle, and send checkout. Always re-quoting (not only on a kind change) also covers the 600-second handle lifetime (`QuoteCachePolicy::HANDLE_TTL`) while the customer fills fields. If the fresh price differs from the one shown, show the new figure before submitting (the 409 `shipping_price_changed` path exists as the safety net).
+- **No kind-agnostic quote mode now (O18).** A quote with no kind would have to return no handles and no carrier prices; it is an API addition with its own contract and tests. The flow above needs none of it. Revisit only if step 1 must show carrier prices before the kind is known.
+- **Rate limit (V/I):** the quote has its own limiter (30/min per IP + cart, `ApiRateLimits`); a customer who changes the kind a few times stays far inside it.
+
+#### 9.2.6 What the order stores (question 5)
+
+- **I — keep storing the METHOD's label as `shipping_delivery_type` (O19).** For an `any` method with no label it is simply null; the kind of destination is already on the order (`orders.delivery_type`, the pickup reference, name and address from 4f). Do not derive a label from the destination: it would put into a column named "the method's delivery type" a fact that is not the method's, and the CHECK list does not allow a value for "pickup".
+- **Office vs locker (O20): recommend DEFER.** The backend only knows `street_address` / `pickup_point`. Today a merchant who needs the distinction (a different price, a different parcel instruction) creates separate methods with the label office/locker and scope pickup — which the label×scope rule supports. If you want the customer to state it for an `any` method: add `pickup_point_kind` (`office|locker`) NULL to `addresses`, `orders`, `order_placement_snapshots` (CHECK like 4f's), a `required_if pickup_point` request rule in checkout and the address API, `ShippingContext` (and therefore the carrier cache key) and the pricing hash (`v` → 2, so every outstanding handle expires once), the order JSON and the admin view, the writer/snapshot copy — i.e. roughly a repeat of stage 4f plus a hash version bump. Only worth building when a real carrier needs it.
+
+#### 9.2.7 Hint, groups, from_minor, order (question 6)
+
+- **Sort order and the course of the radio buttons: unaffected** — `sort_order, id` (`forZone`) and the group order are not touched.
+- **`groups` and `from_minor`: unchanged by design.** They stay computed over all listed methods so step 1 shows every courier (a courier with only pickup methods must still appear). `from_minor` becomes an "indicative from-price"; the client may recompute over the chosen kind (it has the methods and their scopes). I do not recommend a server change (O17).
+- **The free-shipping hint DOES move, in one small, optional way (O16b).** Today it can name a method the customer cannot use for the quoted kind (9.2.1). With the kind known inside `applyQuotesFilter()` the hint can be recomputed from the quotes that SERVE the destination (`readFromQuotes` over a filtered list — no new query). The cart's hint (`GET /api/cart`) has no destination and stays unfiltered (O9). Recommend yes, as its own small stage.
+
+#### 9.2.8 Admin, help, lang (question 7)
+
+- `ShippingMethodResource`: form (the "Serves" Select, the label/scope coupling, a fact line explaining it — replacing `pickup_convenience`), table column (`:530`), the copy action (carries the scope), the reorderer and writer; `ShippingMethodSummaryReader` (one summary phrase), `ShippingOverview` "Try it" (the checkbox `pickupPoint` stays — it is the destination kind of the test, not the method's scope; its result list should mark methods that do not serve the tested kind).
+- **Lang** (bg + en together): `shipping.methods.fields.destination_scope`, three option labels, the coupling fact line, the summary words, the validation sentence for a refused label×scope pair; `fields.requires_pickup_point` and `facts.pickup_convenience` are removed (`lang/*/shipping.php:172,199`).
+- **Help (`resources/help/{bg,en}/shipping.md`)**: edit the TEXT of existing sections only — "Shipping methods" (`#action-method-editor`: add the "Serves" bullet), "The kinds of shipping method" (`#action-method-kinds`: the pickup sentence at `:64`), "Grouping methods by courier" (`#action-method-grouping`) and "Try it" (`#action-try-it`, `:145`). **No anchor and no heading changes**, so `HelpPageTest`'s `SHIPPING_ANCHORS` (20 anchors, `:382`) and the heading-count assertion (`:416`) stay as they are. Adding a NEW section would require updating both anchor arrays and the count in the same commit; I do not propose one.
+
+#### 9.2.9 Sandbox checkout for the new model (question 8 — description only)
+
+Step 1 "Where to": country + city (+ postcode) → one quote → the couriers as radio buttons (grouped by courier, merchant order, first/cheapest preselected, each with its price, a "free from …" line from the hint). Step 2 "How": below the chosen courier, the kinds it supports as Address / Office / Locker choices (only those the courier's methods cover; if only one, it is preselected and the choice is not shown), then the fields for that kind (address: line 1/2, postcode; office/locker: carrier code, reference, name, address, settlement — the sandbox has no courier map, 4f). Step 3 "Review": totals; pressing "Place order" first re-quotes with the final kind and settlement, replaces the handle, shows a changed price if there is one, and only then posts checkout. The sandbox's current filter (`servesDestination`, `:251-259`) is replaced by `method.serves_destination`; the "other destinations" hint (`removedKinds`) is built from the scopes of the methods that do not serve the current kind.
+
+#### 9.2.10 Blast radius (question 9)
+
+Approximate counts are the number of lines mentioning the pickup flag in each file (the signal for "touched or re-read"), not the number of failing tests.
+
+| Area | Files (≈ mentions) | What moves |
+|---|---|---|
+| Domain | `ShippingMethodTest` (9), `EloquentShippingRepositoriesTest` (3) | the new enum, the label×scope refusal, the derived getter; round trips |
+| Writers / admin | `ShippingMethodWriterTest` (6), `ShippingMethodGroupingWriterTest` (5), `ShippingMethodGroupingResourceTest` (10), `ShippingMethodResourceTest` (2), `ShippingMethodSummaryReaderTest` (5), `ShippingMethodReordererAndCopierTest` (1) | the form field and its coupling, summary words, copy keeps the scope |
+| Quote | `ShippingQuoteEndpointTest` (12), `ShippingQuoteGroupingTest` (2), `ShippingQuoteHintAfterFilterTest` (1) | the new JSON field; the filter-contract case gains a scope flip; hint-by-kind tests (new) |
+| Resolver / checkout | `CheckoutShippingResolverTest` (13), `CheckoutShippingWiringTest` (9), `PickupPointContractTest` | rule d cases: the three mismatch cases keep their meaning (address method → pickup and pickup method → street still mismatch); new `any` cases |
+| Fixtures | `tests/Concerns/ProvidesCheckoutShipping.php` (11), `SandboxCheckoutFlowTest` (14), `ShippingOverviewPageTest` (7), `CarrierCallGuardTest` (12, `ShippingContext` only — unaffected) | the fixture methods may become `any`; the sandbox test follows the new flow |
+| Help | `HelpPageTest` | **nothing moves** if only section text changes (see 9.2.8) |
+| Query-count pins | none expected | the quote adds no query; the form reads the same rows |
+
+Existing call sites keep compiling through the positional-bool compatibility parameter, so the sweep is mostly additive tests rather than edits to existing ones.
+
+#### 9.2.11 Risks
+
+| # | Severity | Risk | Mitigation |
+|---|---|---|---|
+| R1 | Medium | A legacy client reads `requires_pickup_point = false` as "street only" and hides `any` methods for pickup | defined meaning ("true only for pickup-only"), the new `destination_scope`, and it fails by hiding, not by misrouting; there are no live clients |
+| R2 | Medium | Backfilling null-label methods to `any` would silently widen delivery | backfill preserves the present meaning (O13); `any` is a deliberate merchant choice |
+| R3 | Medium | A handle issued for one kind is used for another | the hash binds the kind; the resolver answers `shipping_quote_expired`; the client always re-quotes at submit (9.2.5) |
+| R4 | Low-Medium | The label×scope rule refuses an existing odd row (label office, toggle off) at migration | the migration is gated: it lists the ids and changes nothing (dev has none) |
+| R5 | Low | Two sources of truth if the boolean is kept | drop it in the same migration |
+| R6 | Low | The hint names a method of the other kind | recompute from serving quotes (O16b) |
+| R7 | Low | Merchants expect "any" to mean the same price for every kind of a carrier method | documented: for a carrier the carrier answers per kind; for a local method the price is one number |
+| R8 | Low | An `any` method with no label shows no "(office)/(address)" word on the order | by design; the order's own delivery block says street or pickup point |
+
+#### 9.2.12 Proposed stages
+
+Each stage ends in a review gate and a full-suite run in a private database; none commits without the owner. (Numbered 6a–6g to leave 4x and 5x alone.)
+
+- **6a — Domain and storage.** Goal: `ShippingDestinationScope`; `ShippingMethod` stores it, derives `requiresPickupPoint()`, enforces the label×scope matrix; the migration (gate, backfill, NOT NULL, two CHECKs, drop the boolean); repository, model, `ShippingMethodInput`/`Writer`/`Copier`/`Reorderer` pass-through (admin form unchanged in behaviour: it still offers the old toggle mapped to address/pickup). Files: `packages/EasyCo/Shipping/src/**`, one migration, the four `app/Services/ShippingMethod*`. Tests: round trips, the matrix (entity and DB CHECK), backfill on both values, gate refuses an offender. **Must not touch:** quote, resolver, checkout, admin views. **Needs me.**
+- **6b — Quote and resolver.** Goal: `MethodQuote` carries the scope; quote JSON `destination_scope` (+ `serves_destination`, O16); `requires_pickup_point` redefined; filter contract; resolver rule d via `servesPickupPoint()`; `ShippingSelection` unchanged in shape. Files: `MethodQuote`, `ShippingQuoteService`, `ShippingQuoteController`, `CheckoutShippingResolver`, tests. Tests: the four flag×kind combinations plus `any` both ways; filter cannot change the scope; JSON; handle for another kind still `shipping_quote_expired`. **Must not touch:** the hash, `QuoteHandleStore`, the decision table of price rows. **Needs me.**
+- **6c — Hint by kind (optional, small).** Goal: 9.2.7. Files: `ShippingQuoteService::applyQuotesFilter`, `FreeShippingHintReader` caller. Tests: a street quote's hint never names a pickup-only method and vice versa; unchanged without such methods. **Needs me** (touches the 4b logic) — small.
+- **6d — Admin form, table, summary, "Try it", lang.** Goal: the "Serves" Select with the label coupling, table/summary words, bg + en strings. Files: `ShippingMethodResource`, `ShippingMethodSummaryReader`, `ShippingOverview` view/lang. Tests: form behaviour, coupling, copy, summary, bg/en parity. **Cheaper coder, after 6a is reviewed** (UI + lang against a fixed domain API).
+- **6e — Help text.** Goal: edit the four existing sections in bg + en. Files: `resources/help/{bg,en}/shipping.md` only. Tests: `HelpPageTest` unchanged and green. **Cheaper coder; safe** (text only).
+- **6f — Sandbox flow.** Goal: 9.2.9. Files: `resources/views/sandbox/checkout.blade.php` (+ its test fixtures). Tests: `SandboxCheckoutFlowTest` updated/added for courier-first, kind-second, re-quote at submit. **Cheaper coder, after 6b** (views/JS against a fixed JSON).
+- **6g — Optional `pickup_point_kind` (office|locker).** Only if O20 is answered yes; a stage the size of 4f plus a hash version bump. **Needs me.**
+
+Order: **6a → 6b → (6c) → 6d, 6e and 6f in parallel → (6g only if wanted).** 6d–6f are the cheaper-coder stages; 6a, 6b, 6c and 6g are not.
+
+#### 9.2.13 Decisions needed from the owner (with my recommendation)
+
+- **O12 — Storage.** Recommend **(a) a new `destination_scope` column** (address | pickup | any), not the label and not two booleans (9.2.2).
+- **O13 — Existing methods.** Recommend the backfill **preserves the present meaning** (`requires_pickup_point` → pickup/address); nothing becomes `any` by itself; new methods default to `any`.
+- **O14 — Label × scope.** Recommend: address ⇒ address-only; office/locker ⇒ pickup-only; none/other ⇒ any scope; enforced in the entity, the CHECK and the form.
+- **O15 — The reason code.** Recommend **keep `shipping_pickup_mismatch`** (still accurate, no API break).
+- **O16 — Quote JSON.** Recommend adding `destination_scope` and `serves_destination`, and defining `requires_pickup_point` as "pickup-only". **O16b — Hint by kind:** recommend yes (stage 6c).
+- **O17 — `groups` / `from_minor`.** Recommend unchanged (indicative; all couriers visible in step 1).
+- **O18 — Re-quote and the hash.** Recommend the hash is **not** changed, no kind-agnostic quote mode, and the client **always re-quotes at "Place order"** with the final kind.
+- **O19 — Stored `shipping_delivery_type`.** Recommend the method's label as is (null for an unlabelled method).
+- **O20 — Office vs locker for an `any` method.** Recommend **defer** (stage 6g only when a real carrier needs it); merchants who care use separate methods.
+- **O21 — Dropping `requires_pickup_point`.** Recommend drop it in the same migration (no live clients); the safer alternative is a one-release CHECK-tied copy.
+- **O22 — Help.** Recommend text edits to existing sections only, no new heading or anchor.
+- **O23 — Carrier methods.** Recommend: scope restricts what the merchant offers; `any` asks the carrier with the real kind; nothing else changes.
+
 ---
 
 ## 10. Explicitly out of scope for V1 (deferred, not forgotten)
