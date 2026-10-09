@@ -104,8 +104,12 @@
         },
 
         /** D6: the confirmation page's ONLY source of truth — this browser's own storage. */
-        storeOrder: function (order, payment) {
-            sessionStorage.setItem('sandbox.lastOrder', JSON.stringify({ order: order, payment: payment }));
+        storeOrder: function (order, payment, shipping) {
+            sessionStorage.setItem('sandbox.lastOrder', JSON.stringify({
+                order: order,
+                payment: payment,
+                shipping: shipping === undefined ? null : shipping,
+            }));
         },
 
         readOrder: function () {

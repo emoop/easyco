@@ -21,8 +21,13 @@ use EasyCo\Pricing\PriceListItem;
 use EasyCo\Promotions\Contracts\PromotionRepository;
 use EasyCo\Promotions\Enums\PromotionDiscountType;
 use EasyCo\Promotions\Promotion;
+use EasyCo\Shipping\Contracts\ShippingMethodRepository;
+use EasyCo\Shipping\Enums\ShippingMethodKind;
+use EasyCo\Shipping\ShippingMethod;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use RuntimeException;
 use Tests\Concerns\ProvidesCheckoutShipping;
 use Tests\TestCase;
 
@@ -160,6 +165,61 @@ final class SandboxCheckoutFlowTest extends TestCase
         ], $overrides);
     }
 
+    /**
+     * A priced FLAT method in the SAME zone the trait's free methods use, so the
+     * quote resolves one zone and the delivery has a non-zero price to assert on.
+     */
+    private function pricedDeliveryMethod(bool $pickup, int $amountMinor = 500): string
+    {
+        $zoneId = app(ShippingMethodRepository::class)->findById($this->shippingMethodId(false))->zoneId();
+
+        $method = ShippingMethod::create(
+            $zoneId,
+            $pickup ? 'Paid pickup' : 'Paid delivery',
+            ShippingMethodKind::FLAT,
+            sortOrder: 10,
+            amountMinor: $amountMinor,
+            requiresPickupPoint: $pickup,
+        );
+        app(ShippingMethodRepository::class)->save($method);
+
+        return (string) $method->id();
+    }
+
+    /** A real page load (session + cart identity), then the cart line the product page's own control adds. */
+    private function openSessionAndAddLine(array $product, int $quantity): void
+    {
+        $this->get(route('sandbox.products.show', ['productId' => $product['product_id']]))->assertOk();
+        $this->withHeader('Referer', 'http://localhost/')->withHeader('X-CSRF-TOKEN', $this->sessionToken());
+
+        $this->cartId = (string) $this->postJson('/api/cart/lines', [
+            'variation_id' => $product['variation_id'],
+            'quantity' => $quantity,
+        ])->assertStatus(201)->json('cart_id');
+    }
+
+    /** @return array<string, mixed> the quote endpoint's whole body, as the button's fetch reads it */
+    private function shippingQuote(string $deliveryType, string $settlement): array
+    {
+        return $this->postJson('/api/shipping/quote', [
+            'delivery_type' => $deliveryType,
+            'country' => 'BG',
+            'settlement' => $settlement,
+        ])->assertOk()->json();
+    }
+
+    /** The quote's own method, looked up by id the way the page picks one from the response. @return array<string, mixed> */
+    private function offeredMethod(array $methods, string $methodId): array
+    {
+        foreach ($methods as $method) {
+            if ($method['id'] === $methodId) {
+                return $method;
+            }
+        }
+
+        throw new RuntimeException("The quote did not offer method {$methodId}.");
+    }
+
     public function test_a_sandbox_visitor_can_add_a_line_apply_a_promotion_and_place_a_real_order(): void
     {
         $product = $this->pricedStockedProduct(5);
@@ -254,5 +314,108 @@ final class SandboxCheckoutFlowTest extends TestCase
             ->assertStatus(201);
         $this->assertTrue($lateReplay->json('already_placed'));
         $this->assertSame($orderId, $lateReplay->json('order.id'));
+    }
+
+    /**
+     * The street-address path the page's JavaScript now performs, over real HTTP and
+     * in the same order: add a line, quote, pick a method FROM THE QUOTE, check out.
+     */
+    public function test_the_checkout_flow_quotes_a_street_delivery_and_places_the_order_with_it(): void
+    {
+        $product = $this->pricedStockedProduct(5);
+        $this->openSessionAndAddLine($product, 2);
+
+        $methodId = $this->pricedDeliveryMethod(false, 500);
+
+        // 1. "Show delivery options": the quote the page's own button sends.
+        $quote = $this->shippingQuote('street_address', 'Sofia');
+        $goods = $quote['goods_after_discount']['minor'];
+        $this->assertSame(2000, $goods);
+
+        $method = $this->offeredMethod($quote['methods'], $methodId);
+        $this->assertTrue($method['available']);
+        $this->assertSame(500, $method['price']['minor']);
+
+        // 2. Checkout with the method id, handle and shown price taken FROM THE QUOTE.
+        $response = $this->postJson('/api/checkout', $this->checkoutPayload([
+            'shipping_method_id' => $method['id'],
+            'quote_handle' => $method['handle'],
+            'expected_shipping_minor' => $method['price']['minor'],
+        ]))->assertStatus(201);
+
+        $response->assertJsonPath('shipping.method_id', $method['id'])
+            ->assertJsonPath('shipping.method_name', $method['name'])
+            ->assertJsonPath('shipping.amount_minor', 500)
+            ->assertJsonPath('shipping.currency', 'EUR')
+            ->assertJsonPath('order.total.minor', $goods + 500)
+            ->assertJsonPath('payment.amount.minor', $goods + 500);
+    }
+
+    /** The pickup-point path: the office the customer typed is required and stored. */
+    public function test_the_checkout_flow_quotes_a_pickup_point_and_places_the_order_with_the_office(): void
+    {
+        $product = $this->pricedStockedProduct(5);
+        $this->openSessionAndAddLine($product, 1);
+
+        $methodId = $this->pricedDeliveryMethod(true, 350);
+
+        $quote = $this->shippingQuote('pickup_point', 'Sofia');
+        $goods = $quote['goods_after_discount']['minor'];
+
+        $method = $this->offeredMethod($quote['methods'], $methodId);
+        $this->assertTrue($method['requires_pickup_point']);
+        $this->assertSame(350, $method['price']['minor']);
+
+        // A pickup order carries no street fields at all; the office is named.
+        $payload = $this->checkoutPayload([
+            'delivery_type' => 'pickup_point',
+            'carrier_code' => 'econt',
+            'pickup_point_reference' => 'office-1',
+            'pickup_point_name' => 'Econt office Center',
+            'pickup_point_address' => 'Vitosha Blvd 100, Sofia',
+            'settlement' => 'Sofia',
+            'shipping_method_id' => $method['id'],
+            'quote_handle' => $method['handle'],
+            'expected_shipping_minor' => $method['price']['minor'],
+        ]);
+        unset($payload['city'], $payload['address_line_1']);
+
+        $response = $this->postJson('/api/checkout', $payload)->assertStatus(201);
+
+        $response->assertJsonPath('shipping.method_id', $method['id'])
+            ->assertJsonPath('shipping.amount_minor', 350)
+            ->assertJsonPath('order.pickup_point_name', 'Econt office Center')
+            ->assertJsonPath('order.pickup_point_address', 'Vitosha Blvd 100, Sofia')
+            ->assertJsonPath('order.total.minor', $goods + 350);
+    }
+
+    /** A price changed between the quote and the checkout: the refusal names the new figure. */
+    public function test_the_checkout_flow_refuses_a_stale_delivery_price_and_reports_the_new_one(): void
+    {
+        $product = $this->pricedStockedProduct(5);
+        $this->openSessionAndAddLine($product, 1);
+
+        $methodId = $this->pricedDeliveryMethod(false, 500);
+
+        $quote = $this->shippingQuote('street_address', 'Sofia');
+        $method = $this->offeredMethod($quote['methods'], $methodId);
+        $this->assertSame(500, $method['price']['minor']);
+
+        // The merchant changes the price after the quote — the customer still holds
+        // the old handle and the old figure.
+        DB::table('shipping_methods')->where('id', $methodId)->update(['amount_minor' => 650]);
+
+        $response = $this->postJson('/api/checkout', $this->checkoutPayload([
+            'shipping_method_id' => $method['id'],
+            'quote_handle' => $method['handle'],
+            'expected_shipping_minor' => $method['price']['minor'],
+        ]))->assertStatus(409)->assertJsonPath('reason', 'shipping_price_changed');
+
+        // The refusal carries the new price the page prints ("New delivery price: …").
+        $response->assertJsonPath('price', ['minor' => 650, 'currency' => 'EUR']);
+
+        // Nothing was placed.
+        $this->assertNull(DB::table('carts')->where('id', $this->cartId)->value('order_id'));
+        $this->assertSame(0, DB::table('orders')->count());
     }
 }

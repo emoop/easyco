@@ -20,6 +20,8 @@
     <div id="order-body" hidden>
         <h2 id="order-heading"></h2>
         <p class="muted" id="order-meta"></p>
+        <p class="muted" id="order-shipping" hidden></p>
+        <p class="muted" id="order-office" hidden></p>
         <p class="message ok" id="order-already" hidden>This order had already been placed when you submitted again (idempotent replay).</p>
 
         <table>
@@ -32,6 +34,7 @@
         <div class="totals">
             <div>Subtotal: <strong id="order-subtotal">—</strong></div>
             <div>Discount: <strong id="order-discount">—</strong></div>
+            <div>Delivery: <strong id="order-delivery">—</strong></div>
             <div>Total: <strong id="order-total">—</strong></div>
             <div>Payment: <strong id="order-payment">—</strong></div>
         </div>
@@ -56,6 +59,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
     var order = stored.order;
     var payment = stored.payment;
+    // The shipping facts of the 201 response (stage 4e). An order stored before
+    // shipping existed has none — the page must still render.
+    var shipping = stored.shipping;
     var lines = order.lines || [];
 
     document.getElementById('order-heading').textContent = 'Order ' + (order.id === null ? '(id pending)' : order.id);
@@ -63,6 +69,31 @@ document.addEventListener('DOMContentLoaded', function () {
         order.status + ' · ' + order.email + ' · ' + order.recipient_name + ' · ' + order.delivery_type +
         (order.applied_promotion_code ? ' · promotion ' + order.applied_promotion_code : '');
     document.getElementById('order-already').hidden = stored.already_placed !== true;
+
+    var shippingLine = document.getElementById('order-shipping');
+    var officeLine = document.getElementById('order-office');
+    var deliveryTotal = document.getElementById('order-delivery');
+
+    if (shipping === null || shipping === undefined) {
+        shippingLine.hidden = true;
+        officeLine.hidden = true;
+        deliveryTotal.textContent = '—';
+    } else {
+        var shipMoney = { minor: shipping.amount_minor, currency: shipping.currency };
+
+        shippingLine.textContent = 'Delivery: ' + shipping.method_name +
+            ' (' + (shipping.courier || '-') + ', ' + (shipping.delivery_type || '-') + ') - ' + api.money(shipMoney);
+        shippingLine.hidden = false;
+        deliveryTotal.textContent = api.money(shipMoney);
+
+        // A pickup order carries the office the customer chose, as they saw it.
+        if (order.pickup_point_name && order.pickup_point_address) {
+            officeLine.textContent = 'Office: ' + order.pickup_point_name + ', ' + order.pickup_point_address;
+            officeLine.hidden = false;
+        } else {
+            officeLine.hidden = true;
+        }
+    }
 
     var body = document.getElementById('order-lines');
     lines.forEach(function (line) {

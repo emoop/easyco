@@ -30,6 +30,7 @@
         </table>
 
         <p class="notice" id="cart-price-note" hidden></p>
+        <p class="notice" id="cart-shipping-hint" hidden></p>
 
         <div class="field" style="margin-top: 1rem">
             <label for="promotion-code">Promotion code</label>
@@ -44,6 +45,7 @@
             <div>Discount: <strong id="cart-discount">—</strong></div>
             <div>Total: <strong id="cart-total">—</strong></div>
         </div>
+        <p class="muted">Delivery is calculated at checkout.</p>
 
         <div class="actions">
             <a id="cart-checkout" href="{{ route('sandbox.checkout') }}"
@@ -62,6 +64,7 @@ document.addEventListener('DOMContentLoaded', function () {
     var error = document.getElementById('cart-error');
     var message = document.getElementById('cart-message');
     var priceNote = document.getElementById('cart-price-note');
+    var shippingHint = document.getElementById('cart-shipping-hint');
 
     function fail(text) { error.textContent = text; error.hidden = false; message.hidden = true; }
     function ok(text) { message.textContent = text; message.hidden = false; error.hidden = true; }
@@ -149,6 +152,17 @@ document.addEventListener('DOMContentLoaded', function () {
 
         priceNote.textContent = notes.join(' ');
         priceNote.hidden = notes.length === 0;
+
+        // The free-shipping sentence the Cart API produces (null when it has none).
+        var hint = cart.free_shipping_hint;
+
+        if (hint && hint.text) {
+            shippingHint.textContent = hint.text;
+            shippingHint.hidden = false;
+        } else {
+            shippingHint.textContent = '';
+            shippingHint.hidden = true;
+        }
 
         var promotion = cart.promotion;
         var applied = promotion !== null && promotion !== undefined;

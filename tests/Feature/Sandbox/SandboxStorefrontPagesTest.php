@@ -328,6 +328,50 @@ final class SandboxStorefrontPagesTest extends TestCase
         }
     }
 
+    public function test_the_checkout_page_carries_the_real_delivery_step(): void
+    {
+        $html = $this->get('/_sandbox/checkout')->assertOk()->getContent();
+
+        foreach (['quote-button', 'quote-status', 'shipping-options', 'order-totals', 'pickup_point_name', 'pickup_point_address'] as $id) {
+            $this->assertStringContainsString('id="'.$id.'"', $html, "the checkout page must carry #{$id}");
+        }
+
+        // The delivery step asks the real quote endpoint and names the choice back
+        // to checkout with the three fields the shipping resolver requires.
+        $this->assertStringContainsString("'/api/shipping/quote'", $html);
+        $this->assertStringContainsString('shipping_method_id', $html);
+        $this->assertStringContainsString('quote_handle', $html);
+        $this->assertStringContainsString('expected_shipping_minor', $html);
+
+        // Every string that comes from the API is placed with textContent /
+        // createTextNode / setAttribute — never by assembling HTML.
+        $this->assertStringNotContainsString('innerHTML', $html);
+    }
+
+    public function test_the_cart_page_shows_the_free_shipping_hint_element(): void
+    {
+        $html = $this->get('/_sandbox/cart')->assertOk()->getContent();
+
+        $this->assertStringContainsString('id="cart-shipping-hint"', $html);
+        $this->assertStringContainsString('free_shipping_hint', $html);
+        $this->assertStringContainsString('Delivery is calculated at checkout.', $html);
+    }
+
+    public function test_the_order_confirmation_page_renders_the_delivery_line(): void
+    {
+        $html = $this->get('/_sandbox/order-placed')->assertOk()->getContent();
+
+        foreach (['order-shipping', 'order-office', 'order-delivery'] as $id) {
+            $this->assertStringContainsString('id="'.$id.'"', $html, "the confirmation page must carry #{$id}");
+        }
+
+        // The delivery line and the pickup office line are built with textContent
+        // from the stored shipping object — never assembled as HTML.
+        $this->assertStringContainsString("shippingLine.textContent = 'Delivery: ' + shipping.method_name", $html);
+        $this->assertStringContainsString("officeLine.textContent = 'Office: ' + order.pickup_point_name", $html);
+        $this->assertStringNotContainsString('innerHTML', $html);
+    }
+
     public function test_a_guessed_order_placed_id_is_not_a_route_at_all(): void
     {
         $this->assertTrue(Route::has('sandbox.order-placed'));
