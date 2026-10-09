@@ -21,7 +21,12 @@ VPS you administer yourself.
   Supervisor on Linux, NSSM (or an equivalent Windows service wrapper)
   on Windows, not a terminal window left open. Required for
   image-variant processing (the Media domain) to actually run; without
-  it, uploaded images stay pending forever. After any deploy touching
+  it, uploaded images stay pending forever, and no customer email is ever
+  sent. The worker command must serve the mail queues as well:
+  `php artisan queue:work database --queue=mail-transactional,default,mail-marketing --sleep=3 --tries=3 --max-time=3600`
+  (without `--queue` a worker serves only `default`, and mail jobs wait
+  unprocessed; the order is the priority, so a campaign can never delay an
+  order confirmation). After any deploy touching
   queued job code, the worker needs `php artisan queue:restart` (or an
   equivalent reload) — it silently keeps running the old code
   otherwise.

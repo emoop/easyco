@@ -466,6 +466,9 @@ class CheckoutHardeningTest extends TestCase
         $this->fillCart($this->variation('10.00', 10), 1);
 
         $this->app->forgetScopedInstances();
+        // The test environment's sync queue would run the confirmation job INSIDE the request (+14 queries). A real queue only
+        // reserves the mail_log row and pushes the job, so the job is faked here: the pin measures a production request.
+        \Illuminate\Support\Facades\Bus::fake([\App\Mail\SendMailJob::class]);
         $counts = ['total' => 0, 'settings' => 0, 'payments' => 0];
         DB::listen(function ($query) use (&$counts): void {
             $counts['total']++;
@@ -492,7 +495,9 @@ class CheckoutHardeningTest extends TestCase
 
         // Measured on HEAD before stage 4c (same scenario): fresh 32 total / 0 settings reads, replay 5 total / 0 payment selects.
         $this->assertSame(1, $fresh['settings'], 'the store locale: the one new read of a fresh checkout');
-        $this->assertSame(56, $fresh['total'], 'fresh: 33 before 4e (32 before 4c + the locale read) + the shipping step, i.e. the quote pipeline once (23 on this 1-line cart)');
+        $this->assertSame(57, $fresh['total'], 'fresh: 33 before 4e (32 before 4c + the locale read) + the shipping step, i.e. the quote pipeline once (23 on this 1-line cart) = 56, + 1 for the mail_log reservation of the order confirmation (mail stage M1); the job itself is queued, not run');
+        \Illuminate\Support\Facades\Bus::assertDispatchedTimes(\App\Mail\SendMailJob::class, 1);
+        \Illuminate\Support\Facades\Bus::assertDispatched(\App\Mail\SendMailJob::class, fn (\App\Mail\SendMailJob $job): bool => $job->queue === 'mail-transactional');
         $this->assertSame(1, $replay['payments'], 'a replay reads the stored payment once (stage 4c)');
         $this->assertSame(6, $replay['total'], 'replay: 5 before 4c + the stored-payment select (the locale is already memoised)');
     }

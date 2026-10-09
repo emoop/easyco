@@ -14,7 +14,8 @@ use Throwable;
  * Order of operations (each step is a barrier; the last one is the safety net):
  *   1. VALIDATE  — only listed variables, well-formed tokens, blocks alone on their own line between blank lines.
  *   2. MARKDOWN  — league/commonmark with html_input=strip and allow_unsafe_links=false, tokens still in place.
- *   3. SUBSTITUTE — scalars HTML-escaped; blocks are HTML built by code from escaped values.
+ *   3. SUBSTITUTE — scalars HTML-escaped first; then blocks (HTML built by code from escaped values) are inserted, and
+ *      never scanned for tokens again.
  *   4. SANITIZE  — the final allow-list (HtmlSanitizer): nothing outside it can leave, whatever steps 1-3 did.
  *
  * A stored (merchant) template that cannot be rendered for ANY reason falls back to the shipped default, and
@@ -105,14 +106,21 @@ final class TemplateRenderer
 
         $html = $this->markdown()->convert($body)->getContent();
 
-        foreach ($definition->blocks as $name) {
-            $pattern = '#<p>\s*\{\{\s*'.preg_quote($name, '#').'\s*\}\}\s*</p>#';
-            $html = (string) preg_replace_callback($pattern, static fn (): string => $blocks[$name] ?? '', $html);
-        }
-
+        // SCALARS FIRST, BLOCKS LAST: block HTML carries customer-typed text (a product name, an address), and text such as
+        // "{{ customer_name }}" inside it must stay literal, so no scalar pass may run over it. Only listed scalars are
+        // replaced here; a block token is left for the next step.
         $html = (string) preg_replace_callback(
             self::TOKEN,
-            static fn (array $m): string => htmlspecialchars($scalars[$m[1]] ?? '', ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
+            static fn (array $m): string => in_array($m[1], $definition->scalars, true)
+                ? htmlspecialchars($scalars[$m[1]] ?? '', ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8')
+                : $m[0],
+            $html,
+        );
+
+        // One pass over the template's own paragraphs: what a block inserts is never scanned again, not even for another block.
+        $html = (string) preg_replace_callback(
+            '#<p>\s*\{\{\s*('.implode('|', array_map(static fn (string $name): string => preg_quote($name, '#'), $definition->blocks)).')\s*\}\}\s*</p>#',
+            static fn (array $m): string => $blocks[$m[1]] ?? '',
             $html,
         );
 

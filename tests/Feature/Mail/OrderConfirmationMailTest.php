@@ -273,6 +273,24 @@ class OrderConfirmationMailTest extends TestCase
         $this->assertStringNotContainsString('Totally Renamed Product', $html);
     }
 
+    public function test_text_that_looks_like_a_token_inside_a_block_is_shown_literally_and_never_substituted(): void
+    {
+        $this->setting(BankTransferDetails::IBAN, 'BG80BNBG96611020345678');
+        $this->setting(BankTransferDetails::INSTRUCTIONS, 'Pay to {{ customer_name }} {{ order_lines }}');
+
+        $this->placeMailOrder(['payment_method' => 'bank_transfer', 'recipient_name' => 'Guest Buyer'], '{{ customer_name }} and {{ unknown }}');
+
+        $email = $this->email($this->sent()[0]);
+        $html = $email->getHtmlBody();
+
+        // The product name (inside the order_lines block) and the free-text instructions stay literal, escaped.
+        $this->assertStringContainsString('{{ customer_name }} and {{ unknown }}', $html);
+        $this->assertStringContainsString('Pay to {{ customer_name }} {{ order_lines }}', $html);
+        $this->assertSame(1, substr_count($html, 'Pay to {{ customer_name }}'));
+        $this->assertStringContainsString('{{ customer_name }} and {{ unknown }}', $email->getTextBody());
+        $this->assertSame('sent', $this->logRows()[0]->status);
+    }
+
     public function test_both_locales_are_rendered_in_the_store_language(): void
     {
         $this->setting('site.locale', 'bg');
