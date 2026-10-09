@@ -276,12 +276,14 @@ class DestinationScopeQuoteAndResolverTest extends TestCase
 
     // --- the filter contract ---------------------------------------------------------------------------------------------------
 
-    public function test_a_filter_that_changes_the_scope_is_refused_like_any_other_changed_field(): void
+    public function test_a_filter_that_states_another_scope_is_refused_even_when_the_pickup_boolean_is_unchanged(): void
     {
-        $address = $this->method('Home', ShippingDestinationScope::ADDRESS, 0);
+        // An address-only and an `any` method both have requires_pickup_point = false, so the OLD comparison cannot see the
+        // difference: only the new scope comparison can refuse this filter.
+        $this->method('Home', ShippingDestinationScope::ADDRESS, 0);
         $cart = $this->domainCart();
         Hook::filter('shipping.quotes', fn (array $methods): array => array_map(
-            fn (MethodQuote $m) => MethodQuote::priced($m->methodId, $m->name, $m->kind, true, $m->currency, 1, null, null, null, null, null, 'pickup'),
+            fn (MethodQuote $m) => MethodQuote::priced($m->methodId, $m->name, $m->kind, $m->requiresPickupPoint, $m->currency, $m->amountMinor, null, null, null, null, null, 'any'),
             $methods,
         ));
 
@@ -291,7 +293,20 @@ class DestinationScopeQuoteAndResolverTest extends TestCase
         } catch (ShippingQuoteFilterException $e) {
             $this->assertSame(ShippingQuoteFilterException::CHANGED_FIELD, $e->reason);
         }
-        $this->assertNotNull($address);
+    }
+
+    public function test_a_filter_that_states_the_same_scope_as_the_method_row_is_accepted(): void
+    {
+        $address = $this->method('Home', ShippingDestinationScope::ADDRESS, 0);
+        $cart = $this->domainCart();
+        Hook::filter('shipping.quotes', fn (array $methods): array => array_map(
+            fn (MethodQuote $m) => MethodQuote::priced($m->methodId, $m->name, $m->kind, $m->requiresPickupPoint, $m->currency, 250, null, null, null, null, null, 'address'),
+            $methods,
+        ));
+
+        $quote = app(ShippingQuoteService::class)->quote($cart, null, $this->street())->method($address);
+
+        $this->assertSame([250, 'address'], [$quote->amountMinor, $quote->destinationScope]);
     }
 
     public function test_a_filter_that_rebuilds_a_quote_the_old_way_cannot_narrow_an_any_method_and_gets_the_scope_back(): void
