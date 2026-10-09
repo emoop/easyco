@@ -157,7 +157,11 @@ final class EloquentCartRepository implements CartRepository
 
     public function deleteExpired(DateTimeImmutable $now): int
     {
-        return CartModel::where('expires_at', '<=', $now)->delete();
+        // A CLAIMED cart (order_id set) is never deleted here (shipping stage 4h, B6): claimForOrder leaves
+        // expires_at alone, and the claimed row is the evidence a replay of its checkout is answered from
+        // (cart-domain-design.md §14.2, §14.4). It leaves the table only with its order (carts.order_id is
+        // nullOnDelete) or by an explicit delete().
+        return CartModel::where('expires_at', '<=', $now)->whereNull('order_id')->delete();
     }
 
     /**

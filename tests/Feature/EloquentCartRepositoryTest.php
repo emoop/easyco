@@ -486,15 +486,39 @@ class EloquentCartRepositoryTest extends TestCase
         $this->assertNull($this->repository()->findClaimForIdentity($cart->id(), null, 'token-live-claim'));
     }
 
-    public function test_a_claimed_cart_is_still_pruned_on_its_own_expiry_and_then_has_no_claim(): void
+    public function test_a_claimed_cart_is_kept_past_its_own_expiry_and_still_answers_its_claim(): void
     {
         $cart = Cart::forGuest('token-expiring-claimed', new DateTimeImmutable('-1 day'));
         $this->repository()->save($cart);
         $this->repository()->claimForOrder($cart->id(), $this->orderId());
 
-        $this->assertSame(1, $this->repository()->deleteExpired(new DateTimeImmutable()));
+        // Shipping stage 4h (B6): this used to pin the opposite (§14.4's original decision, the replay window
+        // ending with the cart's expiry). A claimed cart is now the evidence a replay is answered from.
+        $this->assertSame(0, $this->repository()->deleteExpired(new DateTimeImmutable()));
 
-        // §14.4: the replay window ends with the cart — documented, not discovered.
-        $this->assertNull($this->repository()->findClaimForIdentity($cart->id(), null, 'token-expiring-claimed'));
+        $this->assertNotNull($this->repository()->findClaimForIdentity($cart->id(), null, 'token-expiring-claimed'));
+        $this->assertSame(1, CartModel::count());
+    }
+
+    public function test_delete_expired_counts_only_the_rows_it_deleted_when_expired_claimed_and_live_carts_mix(): void
+    {
+        $unclaimed = Cart::forGuest('token-expired-unclaimed', new DateTimeImmutable('-1 day'));
+        $claimed = Cart::forGuest('token-expired-claimed', new DateTimeImmutable('-1 day'));
+        $live = Cart::forGuest('token-live-untouched', new DateTimeImmutable('+10 days'));
+        $liveClaimed = Cart::forGuest('token-live-claimed', new DateTimeImmutable('+10 days'));
+
+        foreach ([$unclaimed, $claimed, $live, $liveClaimed] as $cart) {
+            $this->repository()->save($cart);
+        }
+        $this->repository()->claimForOrder($claimed->id(), $this->orderId());
+        $this->repository()->claimForOrder($liveClaimed->id(), $this->orderId());
+
+        $this->assertSame(1, $this->repository()->deleteExpired(new DateTimeImmutable()), 'only the expired UNCLAIMED cart');
+
+        $this->assertNull($this->repository()->findById($unclaimed->id()));
+        $this->assertNotNull($this->repository()->findById($live->id()), 'a non-expired cart is untouched');
+        $this->assertNotNull($this->repository()->findClaimForIdentity($claimed->id(), null, 'token-expired-claimed'));
+        $this->assertNotNull($this->repository()->findClaimForIdentity($liveClaimed->id(), null, 'token-live-claimed'));
+        $this->assertSame(3, CartModel::count());
     }
 }

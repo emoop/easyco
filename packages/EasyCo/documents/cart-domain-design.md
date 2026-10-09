@@ -96,7 +96,7 @@ This relies on Sanctum's stateful session pipeline, already wired up for the `cu
 
 ## 9. Expiry: two numbers, a column, and a manual command — deliberately no scheduler
 
-30 days for account carts, 10 for guest carts (the domain owner's own numbers). Implemented as a plain `expires_at` column, set on cart creation and **refreshed on every write** (add/update/remove a line) so an actively-used cart never expires out from under someone mid-session — a read never refreshes it. Cleanup itself is `php artisan cart:prune` (`App\Console\Commands\PruneExpiredCarts`, calling `CartRepository::deleteExpired()`), **not** a job wired into Laravel's scheduler. This project has no scheduler configured at all yet, and quietly introducing one as a side effect of Cart would be a separate infrastructure decision this task has no business making unilaterally. Nothing runs `cart:prune` automatically today — that's a deliberate, flagged gap for a future deployment/scheduling task (§13), not an oversight.
+30 days for account carts, 10 for guest carts (the domain owner's own numbers). Implemented as a plain `expires_at` column, set on cart creation and **refreshed on every write** (add/update/remove a line) so an actively-used cart never expires out from under someone mid-session — a read never refreshes it. Cleanup itself is `php artisan cart:prune` (`App\Console\Commands\PruneExpiredCarts`, calling `CartRepository::deleteExpired()`, which deletes **unclaimed** carts only — §14.4), **not** a job wired into Laravel's scheduler. This project has no scheduler configured at all yet, and quietly introducing one as a side effect of Cart would be a separate infrastructure decision this task has no business making unilaterally. Nothing runs `cart:prune` automatically today — that's a deliberate, flagged gap for a future deployment/scheduling task (§13), not an oversight.
 
 ---
 
@@ -202,9 +202,11 @@ Without the source-side check, logging in after a guest purchase would have merg
 
 ### 14.4 Expiry and cleanup: claimed carts stay disposable
 
-**Decision:** `deleteExpired()` — and therefore `cart:prune` (§9, §13) — keeps deleting claimed carts on exactly the same rules. A claimed cart is still working state with no historical value of its own (§10's own reasoning, the same one `checkout-domain-design.md` §6 quotes). No exemption, no separate retention policy, no second command.
+**SUPERSEDED (shipping stage 4h, B6).** The original decision here was that `deleteExpired()` — and so `cart:prune` — keeps deleting claimed carts, accepting that a replay after the cart's expiry answers `404`. That was reversed when the shipping checkout audit (`shipping-domain-design.md` §9.1) found the consequence unacceptable once `cart:prune` is scheduled: a customer retrying after a failed payment step would be told their cart does not exist.
 
-**Consequence, documented rather than discovered:** once a claimed cart is pruned, a replay carrying its `cart_id` finds no claim and is answered like any other unknown cart — `404`, not `already_placed`. That window is the cart's own expiry (10 days guest / 30 days account, §9), orders of magnitude longer than any double-click. The alternative — exempting claimed carts from pruning — would keep every checked-out cart forever while no customer can see it, which is precisely what §10 says this table's rows should not become. Since `cart:prune` is deliberately manual and unscheduled (§13's deferred item), the window is in practice whatever an operator's schedule makes it; noted here because that is now a replay-relevant fact and not only a disk-space one.
+**Decision now:** `deleteExpired()` — and therefore `cart:prune` (§9, §13) — deletes only **unclaimed** carts (`WHERE order_id IS NULL`). A claimed cart is the evidence a replay of its checkout is answered from (§14.2); it stays after its `expires_at` and leaves the table only with its order (`carts.order_id` is `nullOnDelete`) or by an explicit `delete()`. No data migration, no change to `claimForOrder`, the Cart aggregate untouched (the filter lives in the Eloquent repository).
+
+**Consequence, documented rather than discovered:** claimed carts and their lines now accumulate, one per placed order, with no retention rule. That is the price of an unconditional replay answer; a retention rule (for example, deleting claimed carts whose order is older than a stated period) is a separate owner decision, not made here. `cart:prune` is now safe to schedule; it is still not scheduled (§13).
 
 ### 14.5 The migration (Cart package, after `2026_09_06_000002`)
 
@@ -220,7 +222,7 @@ Without the source-side check, logging in after a guest purchase would have merg
 2. `findByAccountId()`/`findBySessionToken()` return `null` after a claim (the claimed cart is no longer the identity's current cart).
 3. A new cart for the same identity then saves **without** a duplicate-key error, and is the one both lookups return — the unique indexes' new meaning, proven rather than assumed.
 4. `findClaimForIdentity()` answers for a matching account **and** for a matching session token, and returns `null` for a foreign identity, for an unknown id and for a live cart.
-5. `deleteExpired()` still removes an expired claimed cart, after which the same lookup returns `null` (the §14.4 window, pinned).
+5. `deleteExpired()` keeps an expired claimed cart, and the same lookup still answers (the §14.4 decision as amended by shipping stage 4h, pinned).
 6. The `SHOW CREATE TABLE carts` assertions extended to the new columns, their indexes and the claimed FK; the existing `order_id` uniqueness/`nullOnDelete` assertions unchanged.
 
 **HTTP level** (`CheckoutControllerTest` plus a focused new file, one test per row of §14.2's table):

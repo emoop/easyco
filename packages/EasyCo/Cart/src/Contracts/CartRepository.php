@@ -30,10 +30,12 @@ interface CartRepository
     public function delete(string $cartId): void;
 
     /**
-     * Deletes every cart whose expires_at is at or before $now. Returns
-     * the number of carts deleted — used by the cart:prune Artisan
-     * command (cart-domain-design.md §9). Nothing calls this
-     * automatically yet.
+     * Deletes every UNCLAIMED cart whose expires_at is at or before $now.
+     * A cart claimed by an order is never deleted by expiry (it is the
+     * evidence a replay of its checkout is answered from —
+     * cart-domain-design.md §14.4). Returns the number of carts deleted —
+     * used by the cart:prune Artisan command (cart-domain-design.md §9).
+     * Nothing calls this automatically yet.
      */
     public function deleteExpired(DateTimeImmutable $now): int;
 

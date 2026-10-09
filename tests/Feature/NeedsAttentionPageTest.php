@@ -7,6 +7,7 @@ use App\Filament\Pages\NeedsAttention;
 use App\Filament\Resources\OrderResource;
 use App\Filament\StaffPanelUser;
 use App\NeedsAttention\NeedsAttentionSource;
+use App\NeedsAttention\PaymentStepUnfinishedSource;
 use App\Settings\Contracts\SiteSettingsRepository;
 use App\Settings\StoreTimezone;
 use DateInterval;
@@ -24,6 +25,7 @@ use EasyCo\Staff\Role;
 use EasyCo\Staff\Seeders\StaffSystemRolesSeeder;
 use EasyCo\Staff\Staff;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
@@ -298,12 +300,12 @@ class NeedsAttentionPageTest extends TestCase
         $this->assertStringNotContainsString(NeedsAttention::getNavigationLabel(), $withheld);
     }
 
-    public function test_the_two_sources_are_registered_under_the_page_s_own_tag_in_the_stated_order(): void
+    public function test_the_three_sources_are_registered_under_the_page_s_own_tag_in_the_stated_order(): void
     {
         $sources = iterator_to_array(app()->tagged(NeedsAttentionSource::TAG));
 
-        $this->assertCount(2, $sources);
-        $this->assertSame(['owed_refund', 'receipt_mismatch'], array_map(fn (NeedsAttentionSource $source): string => $source->key(), array_values($sources)));
+        $this->assertCount(3, $sources);
+        $this->assertSame(['owed_refund', 'receipt_mismatch', 'payment_step_unfinished'], array_map(fn (NeedsAttentionSource $source): string => $source->key(), array_values($sources)));
     }
 
     // =====================================================================================================
@@ -627,6 +629,139 @@ class NeedsAttentionPageTest extends TestCase
         $this->assertStringContainsString('<td class="na-right">-50.00 €</td>', $row);
         $this->assertStringContainsString('title="'.$this->storeDayAgo(2).'"', $row, 'the wait is counted from the receipt that counts');
         $this->assertStringContainsString(trans_choice('needs_attention.age_days', 2), $row, 'had the wrong row still counted, this would read four days');
+    }
+
+    // =====================================================================================================
+    // Orders whose payment step did not finish — PENDING with no attempt date, past the in-flight grace
+    // =====================================================================================================
+
+    /** A saved payment the adapter never answered for (PENDING, attempted_at NULL), created $minutesAgo minutes before "now". */
+    private function unfinishedPayment(string $orderId, int $minor = 2500, int $minutesAgo = 60): Payment
+    {
+        $payment = Payment::create($orderId, 'cash_on_delivery', Money::fromMinorUnits($minor, 'EUR'), PaymentStatus::PENDING);
+        app(PaymentRepository::class)->save($payment);
+        DB::table('payments')->where('id', $payment->id())->update(['created_at' => now()->subMinutes($minutesAgo)->format('Y-m-d H:i:s')]);
+
+        return $payment;
+    }
+
+    public function test_a_payment_step_that_never_finished_is_listed_with_its_amount_the_fixed_sentence_and_its_wait(): void
+    {
+        $this->actingAsStaff('Administrator');
+        $this->unfinishedPayment('order-stuck-1', 4321, 3 * 24 * 60);
+
+        $html = $this->visit()->assertOk()->getContent();
+        $section = $this->section($html, 'payment_step_unfinished');
+        $row = $this->rowContaining($section, 'order-stuck-1');
+
+        $this->assertSame(1, $this->rowsIn($section));
+        $this->assertStringContainsString(__('needs_attention.sources.payment_step_unfinished.fact'), $row);
+        $this->assertStringContainsString('43.21', $row, 'the payment amount');
+        $this->assertStringContainsString(trans_choice('needs_attention.age_days', 3), $row);
+        $this->assertStringContainsString(__('needs_attention.sources.payment_step_unfinished.label'), $section);
+    }
+
+    public function test_an_answered_pending_payment_is_a_normal_offline_order_and_is_not_listed(): void
+    {
+        $this->bankOrder(method: 'bank_transfer');
+        $this->bankOrder(method: 'cash_on_delivery');
+        DB::table('payments')->update(['created_at' => now()->subDays(5)->format('Y-m-d H:i:s')]);
+
+        $this->assertSame(2, DB::table('payments')->whereNotNull('attempted_at')->where('status', 'pending')->count(), 'the fixture really holds two answered pending payments');
+        $this->assertSame(0, app(PaymentStepUnfinishedSource::class)->count());
+    }
+
+    public function test_a_voided_a_confirmed_a_captured_and_a_failed_payment_are_not_listed(): void
+    {
+        $source = app(PaymentStepUnfinishedSource::class);
+        $voided = $this->unfinishedPayment('order-voided');
+        $confirmed = $this->unfinishedPayment('order-confirmed');
+        $captured = $this->unfinishedPayment('order-captured');
+        $failed = $this->unfinishedPayment('order-failed');
+        $this->unfinishedPayment('order-listed');
+
+        $this->assertSame(5, $source->count());
+
+        DB::table('payments')->where('id', $voided->id())->update(['voided_at' => now()]);
+        DB::table('payments')->where('id', $confirmed->id())->update(['confirmed_at' => now()]);
+        DB::table('payments')->where('id', $captured->id())->update(['status' => 'captured']);
+        DB::table('payments')->where('id', $failed->id())->update(['status' => 'failed', 'failure_reason' => 'declined']);
+
+        $this->assertSame(1, $source->count());
+        $this->assertSame(['order-listed'], array_map(fn ($item) => $item->orderId, $source->page(1, 25)));
+    }
+
+    public function test_a_payment_younger_than_the_grace_is_still_in_flight_and_the_boundary_is_ten_minutes(): void
+    {
+        $source = app(PaymentStepUnfinishedSource::class);
+        Carbon::setTestNow('2026-10-09 12:00:00');
+
+        try {
+            foreach ([0, 5, 9] as $minutes) {
+                DB::table('payments')->delete();
+                $this->unfinishedPayment('order-young', minutesAgo: $minutes);
+                $this->assertSame(0, $source->count(), "{$minutes} minutes old is still in flight");
+            }
+
+            foreach ([10, 11, 120] as $minutes) {
+                DB::table('payments')->delete();
+                $this->unfinishedPayment('order-old', minutesAgo: $minutes);
+                $this->assertSame(1, $source->count(), "{$minutes} minutes old is listed");
+            }
+
+            $this->assertSame(10, PaymentStepUnfinishedSource::GRACE_MINUTES);
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
+    public function test_unfinished_payments_are_listed_oldest_first_then_by_payment_id(): void
+    {
+        $source = app(PaymentStepUnfinishedSource::class);
+        $this->unfinishedPayment('order-c', minutesAgo: 60);
+        $this->unfinishedPayment('order-a', minutesAgo: 3 * 24 * 60);
+        $tieFirst = $this->unfinishedPayment('order-b1');
+        $tieSecond = $this->unfinishedPayment('order-b2');
+        DB::table('payments')->whereIn('id', [$tieFirst->id(), $tieSecond->id()])->update(['created_at' => now()->subDays(2)->format('Y-m-d H:i:s')]);
+
+        $items = $source->page(1, 25);
+
+        $this->assertSame(['order-a', 'order-b1', 'order-b2', 'order-c'], array_map(fn ($item) => $item->orderId, $items));
+        $this->assertSame([3, 2, 2, 0], array_map(fn ($item) => $item->ageDays, $items));
+        $this->assertSame(2500, $items[0]->amount->minorValue());
+        $this->assertSame($source->count(), count($items));
+    }
+
+    public function test_the_source_costs_one_count_and_one_page_on_payments_whatever_the_number_of_rows(): void
+    {
+        $this->actingAsStaff('Administrator');
+        $this->keepThePageAlive();
+        $this->unfinishedPayment('order-one');
+
+        $payments = static fn (array $queries): array => array_values(array_filter(
+            $queries,
+            static fn (array $entry): bool => preg_match('/from `payments`/', $entry['query']) === 1 && ! str_contains($entry['query'], 'payment_receipts'),
+        ));
+
+        $this->assertCount(2, $payments($this->queriesOf()), 'a COUNT and one page of unfinished payments');
+
+        for ($i = 0; $i < 25; $i++) {
+            $this->unfinishedPayment('order-many-'.$i, minutesAgo: 30 + $i);
+        }
+
+        $this->assertCount(2, $payments($this->queriesOf()), 'still a COUNT and one page, not one read per row');
+    }
+
+    public function test_the_unfinished_section_speaks_the_store_s_language(): void
+    {
+        app(SiteSettingsRepository::class)->set('site.locale', 'bg');
+        $this->actingAsStaff('Administrator');
+        $this->unfinishedPayment('order-bg');
+
+        $section = $this->section($this->visit()->assertOk()->getContent(), 'payment_step_unfinished');
+
+        $this->assertStringContainsString('Поръчката е направена, но стъпката с плащането не е завършила', $section);
+        $this->assertStringContainsString('Поръчки с незавършена стъпка за плащане', $section);
     }
 
     // =====================================================================================================

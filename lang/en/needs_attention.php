@@ -12,7 +12,7 @@
  * section_empty is what a section says when it has nothing while other sections do; empty is what the
  * WHOLE page says when there is nothing anywhere (§6's own promise).
  *
- * THE INTRO NAMES WHAT IS WAITING AND NOTHING ELSE: one sentence for the two sources, then the ONE thing
+ * THE INTRO NAMES WHAT IS WAITING AND NOTHING ELSE: one sentence for the three sources, then the ONE thing
  * this page may say about a wait (how long it has been), so nobody reading it expects a judgement of
  * urgency the page never makes (§7.2.7: no severity, no threshold, no "overdue").
  */
@@ -20,7 +20,7 @@ return [
     'title' => 'Needs attention',
     'navigation_label' => 'Needs attention',
 
-    'intro' => 'Money that is waiting on someone: refunds that were recorded and not paid out yet, and bank transfers that do not add up. The days only say how long it has waited, and the oldest is first.',
+    'intro' => 'Money and orders that are waiting on someone: refunds that were recorded and not paid out yet, bank transfers that do not add up, and orders whose payment step did not finish. The days only say how long it has waited, and the oldest is first.',
     'empty' => 'Nothing is waiting.',
     'section_empty' => 'Nothing here.',
     'today' => 'today',
@@ -55,6 +55,10 @@ return [
             'label' => 'Bank transfers that do not add up',
             'fact_short' => 'Short by :difference (received :received of :expected)',
             'fact_over' => 'Over by :difference (received :received of :expected)',
+        ],
+        'payment_step_unfinished' => [
+            'label' => 'Orders whose payment step did not finish',
+            'fact' => 'The order is placed but its payment step did not finish',
         ],
     ],
 ];

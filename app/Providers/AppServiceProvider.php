@@ -5,6 +5,7 @@ namespace App\Providers;
 use App\Http\ApiRateLimits;
 use App\NeedsAttention\NeedsAttentionSource;
 use App\NeedsAttention\OwedRefundSource;
+use App\NeedsAttention\PaymentStepUnfinishedSource;
 use App\NeedsAttention\ReceiptMismatchSource;
 use App\Services\AuthenticatedStaffResolver;
 use App\Services\OrderAdminReader;
@@ -71,6 +72,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->tag([
             OwedRefundSource::class,
             ReceiptMismatchSource::class,
+            PaymentStepUnfinishedSource::class,
         ], NeedsAttentionSource::TAG);
     }
 
