@@ -30,6 +30,9 @@ final class EloquentOrderRepository implements OrderRepository
         $model->shipping_minor = $order->shipping()->minorValue();
         $model->shipping_method_name = $order->shippingMethodName();
         $model->shipping_method_code = $order->shippingMethodCode();
+        $model->shipping_courier = $order->shippingCourier();
+        $model->shipping_delivery_type = $order->shippingDeliveryType();
+        $model->shipping_service_code = $order->shippingServiceCode();
         $model->total_minor = $order->total()->minorValue();
         $model->applied_promotion_code = $order->appliedPromotionCode();
         $model->status = $order->status()->value;
@@ -115,6 +118,9 @@ final class EloquentOrderRepository implements OrderRepository
             pickupPointReference: $model->pickup_point_reference,
             settlement: $model->settlement,
             editRevision: (int) $model->edit_revision,
+            shippingCourier: $model->shipping_courier,
+            shippingDeliveryType: $model->shipping_delivery_type,
+            shippingServiceCode: $model->shipping_service_code,
         );
     }
 }

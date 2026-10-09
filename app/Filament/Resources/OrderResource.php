@@ -823,7 +823,7 @@ class OrderResource extends Resource
                                 ->inlineLabel()
                                 ->extraEntryWrapperAttributes(['style' => self::PAIR_STYLE])
                                 ->visible(fn (OrderModel $record): bool => filled($record->shipping_method_name))
-                                ->getStateUsing(fn (OrderModel $record): string => $record->shipping_method_name.' · '.static::formatOrderMoney($record, 'shipping_minor')),
+                                ->getStateUsing(fn (OrderModel $record): string => $record->shipping_method_name.' · '.static::formatOrderMoney($record, 'shipping_minor').static::shippingFactsSuffix($record)),
                             TextEntry::make('tracking_number')
                                 ->label(__('orders.fields.tracking_number'))
                                 ->inlineLabel()
@@ -2749,6 +2749,26 @@ class OrderResource extends Resource
     private static function forOrder(OrderModel $record): OrderAdminOrderView
     {
         return app(OrderAdminReader::class)->forOrder((string) $record->id);
+    }
+
+    /**
+     * " (Econt, To office)" after the shipping name and price (shipping stage 4a): the courier and the delivery type
+     * the order stored at placement, each only when present, the type in the words the method form uses. Plain strings
+     * from the order's own columns; empty for an order with neither.
+     */
+    private static function shippingFactsSuffix(OrderModel $record): string
+    {
+        $parts = [];
+
+        if (filled($record->shipping_courier)) {
+            $parts[] = (string) $record->shipping_courier;
+        }
+
+        if (filled($record->shipping_delivery_type)) {
+            $parts[] = __('shipping.methods.delivery_types.'.$record->shipping_delivery_type);
+        }
+
+        return $parts === [] ? '' : ' ('.implode(', ', $parts).')';
     }
 
     /**

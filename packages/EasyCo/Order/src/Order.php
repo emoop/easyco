@@ -103,6 +103,12 @@ final class Order
         // successful edit (order-editing-design.md §2.2). Last and
         // defaulted so every existing call site keeps compiling unchanged.
         private int $editRevision = 0,
+        // Shipping facts beyond the name/code (shipping stage 4a, §9.1.4): the courier, the delivery type and the
+        // carrier service the customer chose, snapshotted at placement. Trailing and nullable like the pre-4a
+        // shape, so an order placed before (or with no shipping method) simply has none.
+        private readonly ?string $shippingCourier = null,
+        private readonly ?string $shippingDeliveryType = null,
+        private readonly ?string $shippingServiceCode = null,
     ) {
         if ($editRevision < 0) {
             throw new InvalidArgumentException('Order editRevision must not be negative.');
@@ -222,6 +228,44 @@ final class Order
         }
 
         return [$name, $code];
+    }
+
+    /**
+     * The delivery types a shipping method can carry (the same list as shipping_methods.delivery_type and the CHECK on
+     * orders / order_placement_snapshots). A plain list here, not the Shipping package's enum: the Order domain does not
+     * import another domain (CLAUDE.md rule 9).
+     */
+    public const SHIPPING_DELIVERY_TYPES = ['address', 'office', 'locker', 'other'];
+
+    /**
+     * Stage 4a: courier (1-100), delivery type (one of SHIPPING_DELIVERY_TYPES) and carrier service code (1-64) are each
+     * optional, trimmed, and only allowed when the order names a shipping method (they describe it).
+     *
+     * @return array{0: ?string, 1: ?string, 2: ?string}
+     */
+    private static function normalizeShippingFacts(?string $methodName, ?string $courier, ?string $deliveryType, ?string $serviceCode): array
+    {
+        $courier = $courier === null ? null : trim($courier);
+        $deliveryType = $deliveryType === null ? null : trim($deliveryType);
+        $serviceCode = $serviceCode === null ? null : trim($serviceCode);
+
+        if ($courier !== null && ($courier === '' || mb_strlen($courier) > 100)) {
+            throw new InvalidArgumentException('Order shippingCourier must be 1 to 100 characters when given; use null for none.');
+        }
+
+        if ($deliveryType !== null && ! in_array($deliveryType, self::SHIPPING_DELIVERY_TYPES, true)) {
+            throw new InvalidArgumentException('Order shippingDeliveryType must be one of: '.implode(', ', self::SHIPPING_DELIVERY_TYPES).'; use null for none.');
+        }
+
+        if ($serviceCode !== null && ($serviceCode === '' || mb_strlen($serviceCode) > 64)) {
+            throw new InvalidArgumentException('Order shippingServiceCode must be 1 to 64 characters when given; use null for none.');
+        }
+
+        if ($methodName === null && ($courier !== null || $deliveryType !== null || $serviceCode !== null)) {
+            throw new InvalidArgumentException('Order shippingCourier, shippingDeliveryType and shippingServiceCode require a shippingMethodName.');
+        }
+
+        return [$courier, $deliveryType, $serviceCode];
     }
 
     /**
@@ -351,6 +395,9 @@ final class Order
         ?Money $shipping = null,
         ?string $shippingMethodName = null,
         ?string $shippingMethodCode = null,
+        ?string $shippingCourier = null,
+        ?string $shippingDeliveryType = null,
+        ?string $shippingServiceCode = null,
     ): self {
         self::assertCountryShape($country);
 
@@ -367,6 +414,7 @@ final class Order
         $shipping ??= Money::zero($normalizedCurrency);
         self::assertMoneyCurrency('shipping', $shipping, $normalizedCurrency);
         [$shippingMethodName, $shippingMethodCode] = self::normalizeShipping($shipping, $shippingMethodName, $shippingMethodCode);
+        [$shippingCourier, $shippingDeliveryType, $shippingServiceCode] = self::normalizeShippingFacts($shippingMethodName, $shippingCourier, $shippingDeliveryType, $shippingServiceCode);
 
         $total = $subtotal->subtract($discount)->add($shipping);
 
@@ -399,6 +447,9 @@ final class Order
             pickupPointReference: $pickupPointReference,
             settlement: $settlement,
             editRevision: $editRevision,
+            shippingCourier: $shippingCourier,
+            shippingDeliveryType: $shippingDeliveryType,
+            shippingServiceCode: $shippingServiceCode,
         );
     }
 
@@ -444,6 +495,9 @@ final class Order
         ?string $pickupPointReference,
         ?string $settlement,
         int $editRevision = 0,
+        ?string $shippingCourier = null,
+        ?string $shippingDeliveryType = null,
+        ?string $shippingServiceCode = null,
     ): self {
         return new self(
             id: $id,
@@ -474,6 +528,9 @@ final class Order
             pickupPointReference: $pickupPointReference,
             settlement: $settlement,
             editRevision: $editRevision,
+            shippingCourier: $shippingCourier,
+            shippingDeliveryType: $shippingDeliveryType,
+            shippingServiceCode: $shippingServiceCode,
         );
     }
 
@@ -540,6 +597,24 @@ final class Order
     public function shippingMethodCode(): ?string
     {
         return $this->shippingMethodCode;
+    }
+
+    /** The courier of the chosen method, snapshotted at placement (stage 4a); null when none. */
+    public function shippingCourier(): ?string
+    {
+        return $this->shippingCourier;
+    }
+
+    /** address | office | locker | other, snapshotted at placement (stage 4a); null when none. */
+    public function shippingDeliveryType(): ?string
+    {
+        return $this->shippingDeliveryType;
+    }
+
+    /** The carrier service the price was quoted for, snapshotted at placement (stage 4a); null for a local method. */
+    public function shippingServiceCode(): ?string
+    {
+        return $this->shippingServiceCode;
     }
 
     public function total(): Money
