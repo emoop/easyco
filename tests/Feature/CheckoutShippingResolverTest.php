@@ -184,7 +184,7 @@ class CheckoutShippingResolverTest extends TestCase
             'replace' => $this->method(ShippingMethodKind::PER_CLASS, 'Per class', 2, 400, ['light' => 300, 'heavy' => 900]),
             'adjust' => $this->method(ShippingMethodKind::PER_CLASS, 'Adjusting', 3, 400, ['heavy' => 250, 'light' => -50], mode: ShippingClassMode::ADJUST),
             'threshold' => $this->method(ShippingMethodKind::FLAT, 'Threshold', 4, 700, freeAbove: 3000),
-            'office' => $this->method(ShippingMethodKind::FLAT, 'To office', 5, 450, courier: 'Econt', type: ShippingDeliveryType::OFFICE),
+            'office' => $this->method(ShippingMethodKind::FLAT, 'To address', 5, 450, courier: 'Econt', type: ShippingDeliveryType::ADDRESS),
         ];
         $cart = $this->cart([[$light, 2], [$heavy, 1]]);
         $quote = app(ShippingQuoteService::class)->quote($cart, null, $this->bg());
@@ -205,7 +205,7 @@ class CheckoutShippingResolverTest extends TestCase
         }
 
         $office = $this->resolver()->resolve($cart, null, $this->bg(), $ids['office'], $quote->method($ids['office'])->handle, null);
-        $this->assertSame(['To office', 'Econt', 'office', 450, false], [$office->methodName, $office->courier, $office->deliveryType, $office->amount->minorValue(), $office->requiresPickupPoint]);
+        $this->assertSame(['To address', 'Econt', 'address', 450, false], [$office->methodName, $office->courier, $office->deliveryType, $office->amount->minorValue(), $office->requiresPickupPoint]);
     }
 
     public function test_the_handle_is_not_consumed_by_a_successful_resolve(): void

@@ -99,6 +99,12 @@ final class InvalidShippingMethodException extends InvalidArgumentException
         return new self("ShippingMethod courier is longer than {$max} characters.");
     }
 
+    /** Label x scope (shipping-domain-design.md 9.2.3): address => address; office or locker => pickup; other or none => any scope. */
+    public static function labelScopeMismatch(string $deliveryType, string $scope): self
+    {
+        return new self("ShippingMethod delivery type \"{$deliveryType}\" does not match the destination scope \"{$scope}\" (address needs scope address; office and locker need scope pickup).");
+    }
+
     public static function courierNotPlain(): self
     {
         return new self('ShippingMethod courier must be a single line of plain text: no control or direction-override characters.');

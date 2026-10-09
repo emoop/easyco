@@ -43,11 +43,18 @@ class ShippingMethodGroupingWriterTest extends TestCase
     /** @param array<string, mixed> $overrides */
     private function input(array $overrides = []): ShippingMethodInput
     {
-        return new ShippingMethodInput(...array_merge([
+        $input = array_merge([
             'name' => 'To office',
             'kind' => 'flat',
             'price' => Money::fromMinorUnits(500, 'EUR'),
-        ], $overrides));
+        ], $overrides);
+
+        // Stage 6a: an office or locker method is pickup-only (label x scope), so the old form's toggle must be on for it.
+        if (! array_key_exists('requiresPickupPoint', $input) && in_array($input['deliveryType'] ?? null, ['office', 'locker'], true)) {
+            $input['requiresPickupPoint'] = true;
+        }
+
+        return new ShippingMethodInput(...$input);
     }
 
     /** @return array<string, list<string>> */
@@ -276,13 +283,18 @@ class ShippingMethodGroupingWriterTest extends TestCase
         $this->assertSame('Econt', $this->hookCalls[0][1][0]->courier());
     }
 
-    public function test_the_pickup_flag_is_never_derived_from_the_delivery_type(): void
+    public function test_a_label_and_a_pickup_toggle_that_disagree_are_refused_on_the_delivery_type_field_and_nothing_is_saved(): void
     {
-        $office = $this->writer()->create($this->zoneId, $this->input(['courier' => 'Econt', 'deliveryType' => 'office', 'requiresPickupPoint' => false]));
-        $address = $this->writer()->create($this->zoneId, $this->input(['name' => 'Addr', 'courier' => 'Econt', 'deliveryType' => 'address', 'requiresPickupPoint' => true]));
+        // Stage 6a replaced "the pickup flag is never derived from the delivery type" (label x scope, design 9.2.3): an office
+        // method that is not pickup-only, and an address method that is, are both refused instead of stored.
+        $before = DB::table('shipping_methods')->count();
 
-        $this->assertFalse($office->requiresPickupPoint());
-        $this->assertTrue($address->requiresPickupPoint());
+        $office = $this->refusal(fn () => $this->writer()->create($this->zoneId, $this->input(['courier' => 'Econt', 'deliveryType' => 'office', 'requiresPickupPoint' => false])));
+        $address = $this->refusal(fn () => $this->writer()->create($this->zoneId, $this->input(['name' => 'Addr', 'courier' => 'Econt', 'deliveryType' => 'address', 'requiresPickupPoint' => true])));
+
+        $this->assertSame(['delivery_type'], array_keys($office));
+        $this->assertSame(['delivery_type'], array_keys($address));
+        $this->assertSame($before, DB::table('shipping_methods')->count());
     }
 
     public function test_the_check_constraint_refuses_an_unknown_type_in_the_database(): void
@@ -291,7 +303,7 @@ class ShippingMethodGroupingWriterTest extends TestCase
             $this->markTestSkipped('the CHECK exists on MySQL/MariaDB only');
         }
 
-        $method = $this->writer()->create($this->zoneId, $this->input());
+        $method = $this->writer()->create($this->zoneId, $this->input(['requiresPickupPoint' => true]));  // pickup-only, so the later locker label is coherent (stage 6a)
 
         try {
             DB::table('shipping_methods')->where('id', $method->id())->update(['delivery_type' => 'drone']);

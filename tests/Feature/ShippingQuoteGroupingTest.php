@@ -81,7 +81,7 @@ class ShippingQuoteGroupingTest extends TestCase
     private function method(string $name, ?string $courier, ?ShippingDeliveryType $type, int $sort, int $amount = 500, ?int $freeAbove = null, ShippingMethodKind $kind = ShippingMethodKind::FLAT, ?string $carrier = null): string
     {
         $this->zoneId ??= $this->zone();
-        $method = ShippingMethod::create($this->zoneId, $name, $kind, $sort, true, $kind === ShippingMethodKind::CARRIER ? null : $amount, [], $freeAbove, $carrier, false, ShippingClassMode::REPLACE, $courier, $type);
+        $method = ShippingMethod::create($this->zoneId, $name, $kind, $sort, true, $kind === ShippingMethodKind::CARRIER ? null : $amount, [], $freeAbove, $carrier, in_array($type, [ShippingDeliveryType::OFFICE, ShippingDeliveryType::LOCKER], true), ShippingClassMode::REPLACE, $courier, $type);
         app(ShippingMethodRepository::class)->save($method);
 
         return (string) $method->id();

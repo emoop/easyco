@@ -23,7 +23,7 @@ final class ShippingCourierTest extends TestCase
     {
         return ShippingMethod::create(
             '1', 'To office', $kind, 0, true, $kind === ShippingMethodKind::FLAT ? 500 : null, [], null,
-            $kind === ShippingMethodKind::CARRIER ? 'econt' : null, false, \EasyCo\Shipping\Enums\ShippingClassMode::REPLACE, $courier, $type,
+            $kind === ShippingMethodKind::CARRIER ? 'econt' : null, in_array($type, [ShippingDeliveryType::OFFICE, ShippingDeliveryType::LOCKER], true), \EasyCo\Shipping\Enums\ShippingClassMode::REPLACE, $courier, $type,
         );
     }
 
@@ -86,7 +86,7 @@ final class ShippingCourierTest extends TestCase
         foreach ([ShippingMethodKind::FLAT, ShippingMethodKind::FREE, ShippingMethodKind::PER_CLASS, ShippingMethodKind::CARRIER] as $kind) {
             $method = ShippingMethod::create(
                 '1', 'M', $kind, 0, true, $kind === ShippingMethodKind::FLAT || $kind === ShippingMethodKind::PER_CLASS ? 100 : null, [], null,
-                $kind === ShippingMethodKind::CARRIER ? 'econt' : null, false, \EasyCo\Shipping\Enums\ShippingClassMode::REPLACE, 'Econt', ShippingDeliveryType::LOCKER,
+                $kind === ShippingMethodKind::CARRIER ? 'econt' : null, true, \EasyCo\Shipping\Enums\ShippingClassMode::REPLACE, 'Econt', ShippingDeliveryType::LOCKER,
             );
 
             $this->assertSame('Econt', $method->courier(), $kind->name);
@@ -118,7 +118,7 @@ final class ShippingCourierTest extends TestCase
         $calculator = new ShippingRateCalculator();
 
         $this->assertSame($calculator->rateFor($plain, $request)->amountMinor(), $calculator->rateFor($typed, $request)->amountMinor());
-        $this->assertFalse($typed->requiresPickupPoint(), 'a locker is not a pickup point by itself');
+        $this->assertTrue($typed->requiresPickupPoint(), 'a locker method is pickup-only (stage 6a label x scope rule); it still prices exactly like the plain one');
     }
 
     // ---- the group key and the grouping --------------------------------------------------------------------

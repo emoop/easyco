@@ -78,7 +78,7 @@ final class ShippingMethodReorderer
                     $method->update(
                         $method->name(), $method->kind(), $position, $method->isActive(), $method->amountMinor(), $method->classRates(),
                         $method->freeAboveMinor(), $method->carrierCode(), $method->requiresPickupPoint(), $method->classMode(),
-                        $method->courier(), $method->deliveryType(),
+                        $method->courier(), $method->deliveryType(), $method->destinationScope(),
                     );
                     $this->methods->save($method);
                 }

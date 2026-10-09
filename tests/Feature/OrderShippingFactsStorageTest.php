@@ -273,7 +273,7 @@ class OrderShippingFactsStorageTest extends TestCase
     {
         $zone = ShippingZone::create('Pin zone', 0, ['BG']);
         app(ShippingZoneRepository::class)->save($zone);
-        $method = ShippingMethod::create((string) $zone->id(), 'To office', ShippingMethodKind::FLAT, 0, true, 450, [], null, null, false, ShippingClassMode::REPLACE, 'Econt', ShippingDeliveryType::OFFICE);
+        $method = ShippingMethod::create((string) $zone->id(), 'To office', ShippingMethodKind::FLAT, 0, true, 450, [], null, null, true, ShippingClassMode::REPLACE, 'Econt', ShippingDeliveryType::OFFICE);
         app(ShippingMethodRepository::class)->save($method);
 
         // The order carries the three snapshot strings; it references the method by id string only (no FK).

@@ -4,6 +4,7 @@ namespace EasyCo\Shipping;
 
 use EasyCo\Shipping\Enums\ShippingClassMode;
 use EasyCo\Shipping\Enums\ShippingDeliveryType;
+use EasyCo\Shipping\Enums\ShippingDestinationScope;
 use EasyCo\Shipping\Enums\ShippingMethodKind;
 use EasyCo\Shipping\Exceptions\InvalidShippingMethodException;
 use LogicException;
@@ -57,7 +58,7 @@ final class ShippingMethod
 
     private ?string $carrierCode;
 
-    private bool $requiresPickupPoint;
+    private ShippingDestinationScope $destinationScope;
 
     private ShippingClassMode $classMode;
 
@@ -77,7 +78,7 @@ final class ShippingMethod
         array $classRates,
         ?int $freeAboveMinor,
         ?string $carrierCode,
-        bool $requiresPickupPoint,
+        ShippingDestinationScope $destinationScope,
         ShippingClassMode $classMode = ShippingClassMode::REPLACE,
         ?string $courier = null,
         ?ShippingDeliveryType $deliveryType = null,
@@ -86,7 +87,7 @@ final class ShippingMethod
             throw InvalidShippingMethodException::emptyZoneId();
         }
 
-        $this->apply($name, $kind, $sortOrder, $isActive, $amountMinor, $classRates, $freeAboveMinor, $carrierCode, $requiresPickupPoint, $classMode, $courier, $deliveryType);
+        $this->apply($name, $kind, $sortOrder, $isActive, $amountMinor, $classRates, $freeAboveMinor, $carrierCode, $destinationScope, $classMode, $courier, $deliveryType);
     }
 
     /** @param array<string, int> $classRates */
@@ -104,8 +105,9 @@ final class ShippingMethod
         ShippingClassMode $classMode = ShippingClassMode::REPLACE,
         ?string $courier = null,
         ?ShippingDeliveryType $deliveryType = null,
+        ?ShippingDestinationScope $destinationScope = null,
     ): self {
-        return new self(null, $zoneId, $name, $kind, $sortOrder, $isActive, $amountMinor, $classRates, $freeAboveMinor, $carrierCode, $requiresPickupPoint, $classMode, $courier, $deliveryType);
+        return new self(null, $zoneId, $name, $kind, $sortOrder, $isActive, $amountMinor, $classRates, $freeAboveMinor, $carrierCode, self::scopeOf($requiresPickupPoint, $destinationScope), $classMode, $courier, $deliveryType);
     }
 
     /**
@@ -129,8 +131,9 @@ final class ShippingMethod
         ShippingClassMode $classMode = ShippingClassMode::REPLACE,
         ?string $courier = null,
         ?ShippingDeliveryType $deliveryType = null,
+        ?ShippingDestinationScope $destinationScope = null,
     ): self {
-        return new self($id, $zoneId, $name, $kind, $sortOrder, $isActive, $amountMinor, $classRates, $freeAboveMinor, $carrierCode, $requiresPickupPoint, $classMode, $courier, $deliveryType);
+        return new self($id, $zoneId, $name, $kind, $sortOrder, $isActive, $amountMinor, $classRates, $freeAboveMinor, $carrierCode, self::scopeOf($requiresPickupPoint, $destinationScope), $classMode, $courier, $deliveryType);
     }
 
     /**
@@ -153,8 +156,9 @@ final class ShippingMethod
         ShippingClassMode $classMode = ShippingClassMode::REPLACE,
         ?string $courier = null,
         ?ShippingDeliveryType $deliveryType = null,
+        ?ShippingDestinationScope $destinationScope = null,
     ): void {
-        $this->apply($name, $kind, $sortOrder, $isActive, $amountMinor, $classRates, $freeAboveMinor, $carrierCode, $requiresPickupPoint, $classMode, $courier, $deliveryType);
+        $this->apply($name, $kind, $sortOrder, $isActive, $amountMinor, $classRates, $freeAboveMinor, $carrierCode, self::scopeOf($requiresPickupPoint, $destinationScope), $classMode, $courier, $deliveryType);
     }
 
     /** @param array<mixed> $classRates */
@@ -167,7 +171,7 @@ final class ShippingMethod
         array $classRates,
         ?int $freeAboveMinor,
         ?string $carrierCode,
-        bool $requiresPickupPoint,
+        ShippingDestinationScope $destinationScope,
         ShippingClassMode $classMode = ShippingClassMode::REPLACE,
         ?string $courier = null,
         ?ShippingDeliveryType $deliveryType = null,
@@ -203,6 +207,7 @@ final class ShippingMethod
         }
 
         self::assertKindInvariants($kind, $amountMinor, $classRates, $freeAboveMinor, $carrierCode, $classMode);
+        self::assertLabelMatchesScope($deliveryType, $destinationScope);
 
         $this->name = $name;
         $this->kind = $kind;
@@ -212,10 +217,37 @@ final class ShippingMethod
         $this->classRates = $classRates;
         $this->freeAboveMinor = $freeAboveMinor;
         $this->carrierCode = $carrierCode;
-        $this->requiresPickupPoint = $requiresPickupPoint;
+        $this->destinationScope = $destinationScope;
         $this->classMode = $classMode;
         $this->courier = $courier;
         $this->deliveryType = $deliveryType;
+    }
+
+    /**
+     * The scope a caller means: the TRAILING scope when given, otherwise the old boolean (false -> ADDRESS, true -> PICKUP), so
+     * every call site that still passes the boolean keeps its meaning (shipping stage 6a).
+     */
+    private static function scopeOf(bool $requiresPickupPoint, ?ShippingDestinationScope $destinationScope): ShippingDestinationScope
+    {
+        return $destinationScope ?? ($requiresPickupPoint ? ShippingDestinationScope::PICKUP : ShippingDestinationScope::ADDRESS);
+    }
+
+    /**
+     * Label x scope (shipping-domain-design.md 9.2.3): a delivery type of address needs the scope ADDRESS; office or locker need
+     * PICKUP; other, or no label at all, accept any scope. The label stays a display fact, but a method labelled "To office" must
+     * not also serve a street address.
+     */
+    private static function assertLabelMatchesScope(?ShippingDeliveryType $deliveryType, ShippingDestinationScope $scope): void
+    {
+        $required = match ($deliveryType) {
+            ShippingDeliveryType::ADDRESS => ShippingDestinationScope::ADDRESS,
+            ShippingDeliveryType::OFFICE, ShippingDeliveryType::LOCKER => ShippingDestinationScope::PICKUP,
+            default => null,
+        };
+
+        if ($required !== null && $scope !== $required) {
+            throw InvalidShippingMethodException::labelScopeMismatch($deliveryType->value, $scope->value);
+        }
     }
 
     /**
@@ -359,9 +391,25 @@ final class ShippingMethod
         return $this->carrierCode;
     }
 
+    /** DERIVED (stage 6a): true only for a pickup-only method. False means "not pickup-only" — address-only OR any. */
     public function requiresPickupPoint(): bool
     {
-        return $this->requiresPickupPoint;
+        return $this->destinationScope === ShippingDestinationScope::PICKUP;
+    }
+
+    public function destinationScope(): ShippingDestinationScope
+    {
+        return $this->destinationScope;
+    }
+
+    /** THE ONE implementation of "does this method serve this kind of destination": ADDRESS only false, PICKUP only true, ANY both. */
+    public function servesPickupPoint(bool $isPickup): bool
+    {
+        return match ($this->destinationScope) {
+            ShippingDestinationScope::ADDRESS => ! $isPickup,
+            ShippingDestinationScope::PICKUP => $isPickup,
+            ShippingDestinationScope::ANY => true,
+        };
     }
 
     /** REPLACE for every kind but PER_CLASS, which may ADJUST (shipping-domain-design.md §12.2). */

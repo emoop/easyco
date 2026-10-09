@@ -2,6 +2,9 @@
 
 namespace EasyCo\Shipping\Tests;
 
+use EasyCo\Shipping\Enums\ShippingClassMode;
+use EasyCo\Shipping\Enums\ShippingDeliveryType;
+use EasyCo\Shipping\Enums\ShippingDestinationScope;
 use EasyCo\Shipping\Enums\ShippingMethodKind;
 use EasyCo\Shipping\Exceptions\InvalidShippingMethodException;
 use EasyCo\Shipping\ShippingMethod;
@@ -256,5 +259,106 @@ class ShippingMethodTest extends TestCase
         $this->assertSame(ShippingMethodKind::FLAT, $method->kind());
         $this->assertSame(500, $method->amountMinor());
         $this->assertTrue($method->isActive());
+    }
+    // --- destination scope (shipping stage 6a, design 9.2) -------------------
+
+    private function scoped(?ShippingDestinationScope $scope, bool $pickup = false, ?ShippingDeliveryType $type = null): ShippingMethod
+    {
+        return ShippingMethod::create('1', 'Delivery', ShippingMethodKind::FLAT, 0, true, 500, [], null, null, $pickup, ShippingClassMode::REPLACE, null, $type, $scope);
+    }
+
+    public function test_the_scope_enum_has_exactly_the_three_values(): void
+    {
+        $this->assertSame(['address', 'pickup', 'any'], array_map(fn (ShippingDestinationScope $s): string => $s->value, ShippingDestinationScope::cases()));
+    }
+
+    public function test_the_old_boolean_still_means_what_it_meant_when_no_scope_is_given(): void
+    {
+        $this->assertSame(ShippingDestinationScope::ADDRESS, $this->scoped(null, false)->destinationScope());
+        $this->assertSame(ShippingDestinationScope::PICKUP, $this->scoped(null, true)->destinationScope());
+        $this->assertSame(ShippingDestinationScope::ADDRESS, $this->flat()->destinationScope(), 'a default call is address-only, as before');
+    }
+
+    public function test_the_trailing_scope_wins_over_the_boolean(): void
+    {
+        $this->assertSame(ShippingDestinationScope::ANY, $this->scoped(ShippingDestinationScope::ANY, true)->destinationScope());
+        $this->assertSame(ShippingDestinationScope::ADDRESS, $this->scoped(ShippingDestinationScope::ADDRESS, true)->destinationScope());
+        $this->assertSame(ShippingDestinationScope::PICKUP, $this->scoped(ShippingDestinationScope::PICKUP, false)->destinationScope());
+    }
+
+    public function test_requires_pickup_point_is_derived_true_only_for_a_pickup_only_method(): void
+    {
+        $this->assertFalse($this->scoped(ShippingDestinationScope::ADDRESS)->requiresPickupPoint());
+        $this->assertTrue($this->scoped(ShippingDestinationScope::PICKUP)->requiresPickupPoint());
+        $this->assertFalse($this->scoped(ShippingDestinationScope::ANY)->requiresPickupPoint(), 'any is not pickup-only');
+    }
+
+    public function test_serves_pickup_point_truth_table(): void
+    {
+        $this->assertTrue($this->scoped(ShippingDestinationScope::ADDRESS)->servesPickupPoint(false));
+        $this->assertFalse($this->scoped(ShippingDestinationScope::ADDRESS)->servesPickupPoint(true));
+        $this->assertFalse($this->scoped(ShippingDestinationScope::PICKUP)->servesPickupPoint(false));
+        $this->assertTrue($this->scoped(ShippingDestinationScope::PICKUP)->servesPickupPoint(true));
+        $this->assertTrue($this->scoped(ShippingDestinationScope::ANY)->servesPickupPoint(false));
+        $this->assertTrue($this->scoped(ShippingDestinationScope::ANY)->servesPickupPoint(true));
+    }
+
+    /** @return array<string, array{?ShippingDeliveryType, ShippingDestinationScope, bool}> label, scope, allowed */
+    public static function labelScopeMatrix(): array
+    {
+        $cases = [];
+
+        foreach ([null, ...ShippingDeliveryType::cases()] as $label) {
+            foreach (ShippingDestinationScope::cases() as $scope) {
+                $allowed = match ($label) {
+                    ShippingDeliveryType::ADDRESS => $scope === ShippingDestinationScope::ADDRESS,
+                    ShippingDeliveryType::OFFICE, ShippingDeliveryType::LOCKER => $scope === ShippingDestinationScope::PICKUP,
+                    default => true,
+                };
+                $cases[($label?->value ?? 'none').' x '.$scope->value] = [$label, $scope, $allowed];
+            }
+        }
+
+        return $cases;
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('labelScopeMatrix')]
+    public function test_the_label_scope_matrix_on_create(?ShippingDeliveryType $label, ShippingDestinationScope $scope, bool $allowed): void
+    {
+        if (! $allowed) {
+            $this->expectException(InvalidShippingMethodException::class);
+            $this->expectExceptionMessage('destination scope');
+        }
+
+        $method = $this->scoped($scope, false, $label);
+
+        $this->assertSame([$label, $scope], [$method->deliveryType(), $method->destinationScope()]);
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('labelScopeMatrix')]
+    public function test_the_label_scope_matrix_on_update_and_a_refused_update_changes_nothing(?ShippingDeliveryType $label, ShippingDestinationScope $scope, bool $allowed): void
+    {
+        $method = $this->scoped(ShippingDestinationScope::ANY);
+
+        try {
+            $method->update('Renamed', ShippingMethodKind::FLAT, 3, true, 700, [], null, null, false, ShippingClassMode::REPLACE, null, $label, $scope);
+        } catch (InvalidShippingMethodException) {
+            $this->assertFalse($allowed);
+            $this->assertSame(['Delivery', ShippingDestinationScope::ANY, null, 500], [$method->name(), $method->destinationScope(), $method->deliveryType(), $method->amountMinor()]);
+
+            return;
+        }
+
+        $this->assertTrue($allowed);
+        $this->assertSame(['Renamed', $scope, $label], [$method->name(), $method->destinationScope(), $method->deliveryType()]);
+    }
+
+    public function test_reconstitute_carries_the_scope_and_keeps_the_boolean_form_working(): void
+    {
+        $any = ShippingMethod::reconstituteFromStorage('9', '1', 'M', ShippingMethodKind::FLAT, 0, true, 100, [], null, null, false, ShippingClassMode::REPLACE, null, null, ShippingDestinationScope::ANY);
+        $this->assertSame(ShippingDestinationScope::ANY, $any->destinationScope());
+
+        $old = ShippingMethod::reconstituteFromStorage('9', '1', 'M', ShippingMethodKind::FLAT, 0, true, 100, [], null, null, true);
+        $this->assertSame(ShippingDestinationScope::PICKUP, $old->destinationScope());
     }
 }

@@ -5,6 +5,7 @@ namespace EasyCo\Shipping\Persistence\Eloquent;
 use EasyCo\Shipping\Contracts\ShippingMethodRepository;
 use EasyCo\Shipping\Enums\ShippingClassMode;
 use EasyCo\Shipping\Enums\ShippingDeliveryType;
+use EasyCo\Shipping\Enums\ShippingDestinationScope;
 use EasyCo\Shipping\Enums\ShippingMethodKind;
 use EasyCo\Shipping\Exceptions\UnknownShippingClassException;
 use EasyCo\Shipping\ShippingMethod;
@@ -55,7 +56,7 @@ final class EloquentShippingMethodRepository implements ShippingMethodRepository
                 $model->amount_minor = $method->amountMinor();
                 $model->free_above_minor = $method->freeAboveMinor();
                 $model->carrier_code = $method->carrierCode();
-                $model->requires_pickup_point = $method->requiresPickupPoint();
+                $model->destination_scope = $method->destinationScope()->value;
                 $model->class_mode = $method->classMode()->value;
                 $model->courier = $method->courier();
                 $model->delivery_type = $method->deliveryType()?->value;
@@ -187,10 +188,11 @@ final class EloquentShippingMethodRepository implements ShippingMethodRepository
             classRates: $rates,
             freeAboveMinor: $model->free_above_minor,
             carrierCode: $model->carrier_code,
-            requiresPickupPoint: (bool) $model->requires_pickup_point,
+            requiresPickupPoint: $model->destination_scope === ShippingDestinationScope::PICKUP->value,
             classMode: ShippingClassMode::from((string) ($model->class_mode ?? ShippingClassMode::REPLACE->value)),
             courier: $model->courier,
             deliveryType: $model->delivery_type === null ? null : ShippingDeliveryType::from((string) $model->delivery_type),
+            destinationScope: ShippingDestinationScope::from((string) $model->destination_scope),
         );
     }
 

@@ -241,10 +241,10 @@ class CheckoutShippingWiringTest extends TestCase
             'replace' => $this->method(ShippingMethodKind::PER_CLASS, 'Per class', 2, 400, ['light' => 300, 'heavy' => 900]),
             'adjust' => $this->method(ShippingMethodKind::PER_CLASS, 'Adjusting', 3, 400, ['heavy' => 250, 'light' => -50], mode: ShippingClassMode::ADJUST),
             'threshold' => $this->method(ShippingMethodKind::FLAT, 'Threshold', 4, 700, freeAbove: 3000),
-            'office' => $this->method(ShippingMethodKind::FLAT, 'To office', 5, 450, courier: 'Econt', type: ShippingDeliveryType::OFFICE),
+            'office' => $this->method(ShippingMethodKind::FLAT, 'To office', 5, 450, pickup: true, courier: 'Econt', type: ShippingDeliveryType::OFFICE),
             'locker' => $this->method(ShippingMethodKind::FLAT, 'To locker', 6, 300, pickup: true, courier: 'Econt', type: ShippingDeliveryType::LOCKER),
         ];
-        $address = $kind === 'locker' ? $this->pickupPoint() : $this->street();
+        $address = in_array($kind, ['office', 'locker'], true) ? $this->pickupPoint() : $this->street();
         $quoted = $this->quote($address);
         $id = $ids[$kind];
         $amount = $quoted[$id]['price']['minor'];
@@ -285,7 +285,7 @@ class CheckoutShippingWiringTest extends TestCase
 
     public function test_the_placement_snapshot_carries_the_shipping_facts_and_matches_the_snapshot_writer(): void
     {
-        $id = $this->method(ShippingMethodKind::FLAT, 'To office', 0, 450, courier: 'Econt', type: ShippingDeliveryType::OFFICE);
+        $id = $this->method(ShippingMethodKind::FLAT, 'To address', 0, 450, courier: 'Econt', type: ShippingDeliveryType::ADDRESS);
         $cartId = $this->standardCart();
         $quoted = $this->quote($this->street());
 
@@ -301,7 +301,7 @@ class CheckoutShippingWiringTest extends TestCase
             }
             $this->assertEquals($value, $row[$column], "snapshot column {$column}");
         }
-        $this->assertSame([450, $id, 'To office', 'Econt', 'office'], [(int) $row['shipping_minor'], $row['shipping_method_code'], $row['shipping_method_name'], $row['shipping_courier'], $row['shipping_delivery_type']]);
+        $this->assertSame([450, $id, 'To address', 'Econt', 'address'], [(int) $row['shipping_minor'], $row['shipping_method_code'], $row['shipping_method_name'], $row['shipping_courier'], $row['shipping_delivery_type']]);
         $this->assertSame((int) $row['total_minor'], (int) $row['subtotal_minor'] - (int) $row['discount_minor'] + (int) $row['shipping_minor']);
     }
 
@@ -691,7 +691,7 @@ class CheckoutShippingWiringTest extends TestCase
 
     public function test_the_order_editor_and_the_order_page_work_on_an_order_that_checkout_placed_with_shipping(): void
     {
-        $flat = $this->method(ShippingMethodKind::FLAT, 'Flat', 0, 500, courier: 'Econt', type: ShippingDeliveryType::OFFICE);
+        $flat = $this->method(ShippingMethodKind::FLAT, 'Flat', 0, 500, courier: 'Econt', type: ShippingDeliveryType::ADDRESS);
         $cartId = $this->standardCart();
         $quoted = $this->quote($this->street());
         $orderId = (string) $this->postJson('/api/checkout', $this->payload($cartId, $this->street(), $this->choose($quoted, $flat)))->assertStatus(201)->json('order.id');

@@ -13,6 +13,7 @@ use EasyCo\Shipping\Contracts\ShippingMethodRepository;
 use EasyCo\Shipping\Contracts\ShippingZoneRepository;
 use EasyCo\Shipping\Enums\ShippingClassMode;
 use EasyCo\Shipping\Enums\ShippingDeliveryType;
+use EasyCo\Shipping\Enums\ShippingDestinationScope;
 use EasyCo\Shipping\Enums\ShippingMethodKind;
 use EasyCo\Shipping\Exceptions\InvalidShippingMethodException;
 use EasyCo\Shipping\Exceptions\UnknownShippingClassException;
@@ -91,6 +92,7 @@ final class ShippingMethodWriter
             $method = $this->guarded(fn (): ShippingMethod => ShippingMethod::create(
                 $zoneId, $clean['name'], $clean['kind'], $next, $clean['active'], $clean['price'], $clean['rates'],
                 $clean['free_above'], $clean['carrier_code'], $clean['pickup'], $clean['mode'], $clean['courier'], $clean['delivery_type'],
+                self::scopeFromToggle($clean['pickup'], $clean['delivery_type'], null),
             ));
 
             $this->saveGuarded($method);
@@ -121,6 +123,7 @@ final class ShippingMethodWriter
             $this->guarded(fn () => $method->update(
                 $clean['name'], $clean['kind'], $method->sortOrder(), $clean['active'], $clean['price'], $clean['rates'],
                 $clean['free_above'], $clean['carrier_code'], $clean['pickup'], $clean['mode'], $clean['courier'], $clean['delivery_type'],
+                self::scopeFromToggle($clean['pickup'], $clean['delivery_type'], $method->destinationScope()),
             ));
 
             if (self::snapshot($method) === $before) {
@@ -159,7 +162,7 @@ final class ShippingMethodWriter
             $method->update(
                 $method->name(), $method->kind(), $method->sortOrder(), $active, $method->amountMinor(), $method->classRates(),
                 $method->freeAboveMinor(), $method->carrierCode(), $method->requiresPickupPoint(), $method->classMode(),
-                $method->courier(), $method->deliveryType(),
+                $method->courier(), $method->deliveryType(), $method->destinationScope(),
             );
 
             $this->saveGuarded($method);
@@ -208,7 +211,7 @@ final class ShippingMethodWriter
     /**
      * The compact, stable picture of a method that the audit entries and the hooks carry.
      *
-     * @return array{id: ?string, zone_id: string, name: string, kind: string, sort_order: int, active: bool, price_minor: ?int, free_above_minor: ?int, class_mode: string, class_rates: array<string, int>, requires_pickup_point: bool, carrier_code: ?string, courier: ?string, delivery_type: ?string}
+     * @return array{id: ?string, zone_id: string, name: string, kind: string, sort_order: int, active: bool, price_minor: ?int, free_above_minor: ?int, class_mode: string, class_rates: array<string, int>, requires_pickup_point: bool, destination_scope: string, carrier_code: ?string, courier: ?string, delivery_type: ?string}
      */
     public static function snapshot(ShippingMethod $method): array
     {
@@ -224,6 +227,7 @@ final class ShippingMethodWriter
             'class_mode' => $method->classMode()->value,
             'class_rates' => array_map('intval', $method->classRates()),
             'requires_pickup_point' => $method->requiresPickupPoint(),
+            'destination_scope' => $method->destinationScope()->value,
             'carrier_code' => $method->carrierCode(),
             'courier' => $method->courier(),
             'delivery_type' => $method->deliveryType()?->value,
@@ -460,6 +464,7 @@ final class ShippingMethodWriter
             $field = match (true) {
                 str_contains($message, 'class') && str_contains($message, 'mode') => 'class_mode',
                 str_contains($message, 'class') => 'class_rates',
+                str_contains($message, 'destination scope') => 'delivery_type',
                 str_contains($message, 'courier') => 'courier',
                 str_contains($message, 'carrierCode') => 'carrier_code',
                 str_contains($message, 'freeAbove') => 'free_above',
@@ -469,6 +474,31 @@ final class ShippingMethodWriter
 
             throw new ShippingMethodInvalidException([$field => [__('shipping.methods.errors.invalid')]]);
         }
+    }
+
+    /**
+     * The scope the OLD form's single toggle means (shipping stage 6a; the form offers only that toggle until stage 6d), chosen so
+     * that saving a form can never SILENTLY narrow a method:
+     *  - toggle ON -> PICKUP (the admin explicitly asked for pickup-only);
+     *  - toggle OFF with the delivery type "address" -> ADDRESS (the label itself says address-only);
+     *  - toggle OFF on an existing method whose scope is not pickup -> its own scope is kept, so an `any` method saved from this
+     *    form without touching the toggle stays `any` (the form shows the toggle off for both address and any, so "off" cannot
+     *    tell them apart);
+     *  - otherwise (a new method) -> ADDRESS, exactly what an unticked box has always meant.
+     * An office or locker label with the toggle off is left as ADDRESS on purpose: the entity refuses that pair loudly instead of
+     * the writer guessing which of the two the admin meant.
+     */
+    private static function scopeFromToggle(bool $pickup, ?ShippingDeliveryType $deliveryType, ?ShippingDestinationScope $existing): ShippingDestinationScope
+    {
+        if ($pickup) {
+            return ShippingDestinationScope::PICKUP;
+        }
+
+        if ($deliveryType === ShippingDeliveryType::ADDRESS) {
+            return ShippingDestinationScope::ADDRESS;
+        }
+
+        return $existing !== null && $existing !== ShippingDestinationScope::PICKUP ? $existing : ShippingDestinationScope::ADDRESS;
     }
 
     /** Saves through the repository; a class removed meanwhile is the same translated error as an unknown one. */

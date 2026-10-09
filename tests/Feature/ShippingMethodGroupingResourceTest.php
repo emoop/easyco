@@ -33,7 +33,7 @@ class ShippingMethodGroupingResourceTest extends TestCase
 
     private function grouped(string $zoneId, string $name, ?string $courier, ?ShippingDeliveryType $type, int $sort, int $amount = 500, ?int $freeAbove = null, bool $pickup = false): ShippingMethod
     {
-        $method = ShippingMethod::create($zoneId, $name, ShippingMethodKind::FLAT, $sort, true, $amount, [], $freeAbove, null, $pickup, ShippingClassMode::REPLACE, $courier, $type);
+        $method = ShippingMethod::create($zoneId, $name, ShippingMethodKind::FLAT, $sort, true, $amount, [], $freeAbove, null, $pickup || in_array($type, [ShippingDeliveryType::OFFICE, ShippingDeliveryType::LOCKER], true), ShippingClassMode::REPLACE, $courier, $type);
         app(ShippingMethodRepository::class)->save($method);
 
         return $method;
@@ -88,7 +88,7 @@ class ShippingMethodGroupingResourceTest extends TestCase
 
         Livewire::test(EditShippingMethod::class, ['record' => $row->id])
             ->assertFormSet(['courier' => 'Econt', 'delivery_type' => 'office'])
-            ->fillForm(['courier' => 'Speedy', 'delivery_type' => 'address'])
+            ->fillForm(['courier' => 'Speedy', 'delivery_type' => 'address', 'requires_pickup_point' => false])
             ->call('save')
             ->assertHasNoFormErrors();
 
@@ -257,9 +257,9 @@ class ShippingMethodGroupingResourceTest extends TestCase
         $this->assertSame('to locker', $reader->grouping($onlyType));
         $this->assertNull($reader->grouping($plain));
 
-        $this->assertSame('Econt · to office; 5.00 €', $reader->summary($office));
+        $this->assertSame('Econt · to office; 5.00 €; pickup point', $reader->summary($office), 'an office method is pickup-only (stage 6a), which the summary says');
         $this->assertSame('5.00 €', $reader->summary($plain), 'a method without them reads exactly as before');
-        $this->assertSame('5.00 €', $reader->summary($office, null, withGrouping: false));
+        $this->assertSame('5.00 €; pickup point', $reader->summary($office, null, withGrouping: false));
 
         App::setLocale('bg');
         $this->assertSame('Econt · до офис', $reader->grouping($office));

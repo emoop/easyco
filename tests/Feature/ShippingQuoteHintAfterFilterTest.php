@@ -78,7 +78,7 @@ class ShippingQuoteHintAfterFilterTest extends TestCase
             $this->zoneId = (string) $zone->id();
         }
 
-        $method = ShippingMethod::create($this->zoneId, $name, ShippingMethodKind::FLAT, $sort, true, $amount, [], $freeAbove, null, false, ShippingClassMode::REPLACE, $courier, $type);
+        $method = ShippingMethod::create($this->zoneId, $name, ShippingMethodKind::FLAT, $sort, true, $amount, [], $freeAbove, null, in_array($type, [ShippingDeliveryType::OFFICE, ShippingDeliveryType::LOCKER], true), ShippingClassMode::REPLACE, $courier, $type);
         app(ShippingMethodRepository::class)->save($method);
 
         return (string) $method->id();
