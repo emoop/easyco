@@ -45,7 +45,6 @@ use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Text;
 use Filament\Schemas\Components\Utilities\Get;
-use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Filament\Support\Enums\IconPosition;
 use Filament\Tables\Columns\TextColumn;
@@ -203,32 +202,18 @@ class ShippingMethodResource extends Resource
                 ->label(__('shipping.methods.fields.courier'))
                 ->maxLength(ShippingCourier::MAX_LENGTH)
                 ->datalist(fn (): array => static::courierSuggestions()),
-            Select::make('delivery_type')
-                ->label(__('shipping.methods.fields.delivery_type'))
-                ->options(static::deliveryTypeOptions())
-                ->placeholder(__('shipping.methods.delivery_types.none'))
-                ->live()
-                // The label and the scope are coupled (shipping-domain-design.md 9.2.3): a label that FORCES one
-                // scope sets it here, so the pair can never be saved invalid; a label that allows a choice leaves
-                // the merchant's own scope untouched.
-                ->afterStateUpdated(function (mixed $state, Set $set): void {
-                    $forced = static::forcedScope(is_string($state) ? $state : null);
-
-                    if ($forced !== null) {
-                        $set('destination_scope', $forced);
-                    }
-                }),
             Text::make(__('shipping.methods.facts.grouping'))->color('gray')->size('sm'),
-            Select::make('destination_scope')
-                ->label(__('shipping.methods.fields.destination_scope'))
-                ->options(fn (Get $get): array => static::destinationScopeOptionsFor(is_string($get('delivery_type')) ? $get('delivery_type') : null))
-                ->default(ShippingDestinationScope::ANY->value)
+            // ONE field for where the method delivers (owner decision, stage 6d2). `delivers_to` is a UI value only —
+            // no column, no domain concept — and becomes the stored (delivery-type label, destination scope) pair in
+            // inputFrom() alone, through labelAndScopeFrom().
+            Select::make('delivers_to')
+                ->label(__('shipping.methods.fields.delivers_to'))
+                ->options(static::deliversToOptions())
+                ->default('any')
                 ->required()
-                // A label that forces one scope LOCKS this field to it (design 9.2.3): the wrong pair is not even
-                // offered. A label with no forcing leaves all three, and the merchant's own choice stands.
-                ->disabled(fn (Get $get): bool => static::forcedScope(is_string($get('delivery_type')) ? $get('delivery_type') : null) !== null)
-                ->dehydrated(),
-            Text::make(__('shipping.methods.facts.destination_scope'))->color('gray')->size('sm'),
+                ->live(),
+            Text::make(fn (Get $get): string => static::deliversToHelp(is_string($get('delivers_to')) ? $get('delivers_to') : null))
+                ->color('gray')->size('sm'),
             Select::make('kind')
                 ->label(__('shipping.methods.fields.kind'))
                 ->options(fn (?Model $record): array => static::kindOptions($record?->kind))
@@ -306,49 +291,61 @@ class ShippingMethodResource extends Resource
             ->all();
     }
 
-    /** @return array<string, string> */
-    public static function deliveryTypeOptions(): array
-    {
-        $options = [];
-
-        foreach (ShippingDeliveryType::cases() as $type) {
-            $options[$type->value] = __('shipping.methods.delivery_types.'.$type->value);
-        }
-
-        return $options;
-    }
-
-    /** @return array<string, string> the three destination scopes (design 9.2.8), for the form's "Serves" Select. */
-    public static function destinationScopeOptions(): array
+    /** @return array<string, string> the ONE "Delivers to" Select's five options (owner decision, stage 6d2). */
+    public static function deliversToOptions(): array
     {
         return [
-            ShippingDestinationScope::ADDRESS->value => __('shipping.methods.scopes.address'),
-            ShippingDestinationScope::PICKUP->value => __('shipping.methods.scopes.pickup'),
-            ShippingDestinationScope::ANY->value => __('shipping.methods.scopes.any'),
+            'any' => __('shipping.methods.delivers_to.any'),
+            'address' => __('shipping.methods.delivers_to.address'),
+            'pickup' => __('shipping.methods.delivers_to.pickup'),
+            'office' => __('shipping.methods.delivers_to.office'),
+            'locker' => __('shipping.methods.delivers_to.locker'),
         ];
     }
 
-    /**
-     * The scope a delivery-type label FORCES (shipping-domain-design.md 9.2.3): address -> address, office or locker ->
-     * pickup, anything else (other, or no label) -> null, meaning the merchant chooses. THE ONE PLACE the label x scope
-     * matrix is stated in the admin — the Select's options and the coupling both read it.
-     */
-    public static function forcedScope(?string $deliveryType): ?string
+    /** The one-line explanation of the chosen "Delivers to" (stage 6d2); an unknown or missing value reads as `any`. */
+    public static function deliversToHelp(?string $deliversTo): string
     {
-        return match ($deliveryType) {
-            ShippingDeliveryType::ADDRESS->value => ShippingDestinationScope::ADDRESS->value,
-            ShippingDeliveryType::OFFICE->value, ShippingDeliveryType::LOCKER->value => ShippingDestinationScope::PICKUP->value,
-            default => null,
+        $key = array_key_exists((string) $deliversTo, static::deliversToOptions()) ? (string) $deliversTo : 'any';
+
+        return __('shipping.methods.delivers_to_help.'.$key);
+    }
+
+    /**
+     * The stored (label, scope) pair as the ONE "Delivers to" value the form shows (owner decision, stage 6d2). The
+     * mapping table is authoritative: address+address, office+pickup and locker+pickup are their own options; a method
+     * with no label or the `other` label maps by its scope; a pair the table cannot express (the DB CHECK forbids one)
+     * reads as `any`.
+     */
+    public static function deliversToFrom(?string $deliveryType, string $scope): string
+    {
+        $plain = $deliveryType === null || $deliveryType === ShippingDeliveryType::OTHER->value;
+
+        return match (true) {
+            $deliveryType === ShippingDeliveryType::ADDRESS->value && $scope === ShippingDestinationScope::ADDRESS->value => 'address',
+            $deliveryType === ShippingDeliveryType::OFFICE->value && $scope === ShippingDestinationScope::PICKUP->value => 'office',
+            $deliveryType === ShippingDeliveryType::LOCKER->value && $scope === ShippingDestinationScope::PICKUP->value => 'locker',
+            $plain && $scope === ShippingDestinationScope::PICKUP->value => 'pickup',
+            $plain && $scope === ShippingDestinationScope::ADDRESS->value => 'address',
+            default => 'any',
         };
     }
 
-    /** The "Serves" Select's options: the forced scope ALONE when the label forces one, else all three. */
-    public static function destinationScopeOptionsFor(?string $deliveryType): array
+    /**
+     * The "Delivers to" value as the stored (label, scope) pair — the ONE place the two are derived (stage 6d2). An
+     * unknown value reads as `any`; the Select's own option list refuses one before this is reached.
+     *
+     * @return array{0: ?string, 1: string}
+     */
+    public static function labelAndScopeFrom(string $deliversTo): array
     {
-        $forced = static::forcedScope($deliveryType);
-        $options = static::destinationScopeOptions();
-
-        return $forced === null ? $options : [$forced => $options[$forced]];
+        return match ($deliversTo) {
+            'address' => [ShippingDeliveryType::ADDRESS->value, ShippingDestinationScope::ADDRESS->value],
+            'pickup' => [null, ShippingDestinationScope::PICKUP->value],
+            'office' => [ShippingDeliveryType::OFFICE->value, ShippingDestinationScope::PICKUP->value],
+            'locker' => [ShippingDeliveryType::LOCKER->value, ShippingDestinationScope::PICKUP->value],
+            default => [null, ShippingDestinationScope::ANY->value],
+        };
     }
 
     /** CARRIER is offered only when a carrier is registered (none is in V1, §6) — or when the method being edited already is one. */
@@ -455,6 +452,9 @@ class ShippingMethodResource extends Resource
             throw new ShippingMethodInvalidException($errors);
         }
 
+        // The form's ONE "Delivers to" value becomes the stored (label, scope) pair here and nowhere else (stage 6d2).
+        [$deliveryType, $destinationScope] = static::labelAndScopeFrom(is_string($data['delivers_to'] ?? null) ? $data['delivers_to'] : '');
+
         return new ShippingMethodInput(
             name: (string) ($data['name'] ?? ''),
             kind: (string) ($data['kind'] ?? ''),
@@ -463,10 +463,10 @@ class ShippingMethodResource extends Resource
             freeAbove: $freeAbove,
             classMode: (string) ($data['class_mode'] ?? 'replace'),
             classRates: $rows,
-            destinationScope: isset($data['destination_scope']) ? (string) $data['destination_scope'] : null,
+            destinationScope: $destinationScope,
             carrierCode: isset($data['carrier_code']) ? (string) $data['carrier_code'] : null,
             courier: isset($data['courier']) ? (string) $data['courier'] : null,
-            deliveryType: isset($data['delivery_type']) ? (string) $data['delivery_type'] : null,
+            deliveryType: $deliveryType,
         );
     }
 
@@ -492,10 +492,9 @@ class ShippingMethodResource extends Resource
             'free_above' => $method->freeAboveMinor() === null ? null : Money::fromMinorUnits($method->freeAboveMinor(), DefaultCurrency::get())->decimalValue(),
             'class_mode' => $method->classMode()->value,
             'rates' => $rates,
-            'destination_scope' => $method->destinationScope()->value,
+            'delivers_to' => static::deliversToFrom($method->deliveryType()?->value, $method->destinationScope()->value),
             'carrier_code' => $method->carrierCode(),
             'courier' => $method->courier(),
-            'delivery_type' => $method->deliveryType()?->value,
         ];
     }
 
@@ -572,9 +571,9 @@ class ShippingMethodResource extends Resource
 
                         return $state;
                     }),
-                TextColumn::make('destination_scope')
-                    ->label(__('shipping.methods.fields.destination_scope'))
-                    ->formatStateUsing(fn (string $state): string => __('shipping.summary.scope.'.$state)),
+                TextColumn::make('delivers_to')
+                    ->label(__('shipping.methods.fields.delivers_to'))
+                    ->state(fn (ShippingMethodModel $record): string => __('shipping.methods.delivers_to.'.static::deliversToFrom(is_string($record->delivery_type) ? $record->delivery_type : null, (string) $record->destination_scope))),
             ])
             ->filters([
                 SelectFilter::make('zone_id')

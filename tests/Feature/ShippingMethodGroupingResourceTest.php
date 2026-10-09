@@ -46,21 +46,21 @@ class ShippingMethodGroupingResourceTest extends TestCase
 
     // ---- the form -------------------------------------------------------------------------------------------
 
-    public function test_the_form_has_the_two_optional_fields_a_fact_line_and_the_help_link_in_both_languages(): void
+    public function test_the_form_has_the_courier_and_delivers_to_fields_a_fact_line_and_the_help_link_in_both_languages(): void
     {
         $this->zone('Z', 0);
         $this->actingAsStaff('Administrator');
 
         $page = Livewire::test(CreateShippingMethod::class)
             ->assertFormFieldExists('courier')
-            ->assertFormFieldExists('delivery_type');
+            ->assertFormFieldExists('delivers_to');
         $html = html_entity_decode($page->html());
 
         $this->assertStringContainsString('Courier (optional)', $html);
-        $this->assertStringContainsString('Delivery type (optional)', $html);
+        $this->assertStringContainsString('Delivers to', $html);
         $this->assertStringContainsString('Customers first choose the courier, then the delivery type. Methods without a courier are listed on their own.', $html);
         $this->assertStringContainsString('/admin/help/shipping#action-method-grouping', $html);
-        foreach (['To address', 'To office', 'To locker', 'Other'] as $option) {
+        foreach (['All (address, office, locker)', 'Address only', 'Office or locker only', 'Office only', 'Locker only'] as $option) {
             $this->assertStringContainsString($option, $html);
         }
         $this->assertStringContainsString('target="_blank" rel="noopener noreferrer"', $html);
@@ -69,7 +69,10 @@ class ShippingMethodGroupingResourceTest extends TestCase
         $bg = html_entity_decode(Livewire::test(CreateShippingMethod::class)->html());
         $this->assertStringContainsString('Куриер (по избор)', $bg);
         $this->assertStringContainsString('Клиентите първо избират куриер, после вида доставка.', $bg);
-        $this->assertStringContainsString('До офис', $bg);
+        $this->assertStringContainsString('Доставя до', $bg);
+        foreach (['Всички (адрес, офис, автомат)', 'Само адрес', 'Само офис или автомат', 'Само офис', 'Само автомат'] as $option) {
+            $this->assertStringContainsString($option, $bg);
+        }
     }
 
     public function test_a_method_is_created_with_a_courier_and_a_type_through_the_form_and_kept_by_the_edit_form(): void
@@ -78,7 +81,7 @@ class ShippingMethodGroupingResourceTest extends TestCase
         $this->actingAsStaff('Administrator');
 
         Livewire::test(CreateShippingMethod::class)
-            ->fillForm(['zone_id' => $zone, 'name' => 'To office', 'kind' => 'flat', 'price' => '4,50', 'courier' => '  Econt ', 'delivery_type' => 'office'])
+            ->fillForm(['zone_id' => $zone, 'name' => 'To office', 'kind' => 'flat', 'price' => '4,50', 'courier' => '  Econt ', 'delivers_to' => 'office'])
             ->call('create')
             ->assertHasNoFormErrors()
             ->assertNotified(__('shipping.methods.notice.created'));
@@ -87,8 +90,8 @@ class ShippingMethodGroupingResourceTest extends TestCase
         $this->assertSame(['Econt', 'office'], [$row->courier, $row->delivery_type]);
 
         Livewire::test(EditShippingMethod::class, ['record' => $row->id])
-            ->assertFormSet(['courier' => 'Econt', 'delivery_type' => 'office'])
-            ->fillForm(['courier' => 'Speedy', 'delivery_type' => 'address', 'destination_scope' => 'address'])
+            ->assertFormSet(['courier' => 'Econt', 'delivers_to' => 'office'])
+            ->fillForm(['courier' => 'Speedy', 'delivers_to' => 'address'])
             ->call('save')
             ->assertHasNoFormErrors();
 
@@ -106,7 +109,7 @@ class ShippingMethodGroupingResourceTest extends TestCase
             ['courier' => "Eco\x07nt", 'field' => 'courier'],
             ['courier' => "Eco\u{202E}nt", 'field' => 'courier'],
             ['courier' => "Eco\nnt", 'field' => 'courier'],
-            ['delivery_type' => 'drone', 'field' => 'delivery_type'],
+            ['delivers_to' => 'drone', 'field' => 'delivers_to'],
         ] as $case) {
             $field = $case['field'];
             unset($case['field']);
@@ -120,32 +123,26 @@ class ShippingMethodGroupingResourceTest extends TestCase
         $this->assertSame(0, DB::table('shipping_methods')->count());
     }
 
-    public function test_the_delivery_type_sets_and_locks_the_destination_scope(): void
+    public function test_the_delivers_to_field_defaults_to_all_destinations_and_its_help_line_follows_the_choice(): void
     {
         $this->zone('Z', 0);
         $this->actingAsStaff('Administrator');
 
-        // Stage 6d: a new method starts as "any destination", with all three choices offered.
-        $page = Livewire::test(CreateShippingMethod::class)->assertFormSet(['destination_scope' => 'any']);
-
-        // "To address" forces address-only and locks the Select to that one option (design 9.2.3).
-        $page->fillForm(['delivery_type' => 'address'])->assertFormSet(['destination_scope' => 'address']);
-        $this->assertSame(['address' => 'Street address only'], ShippingMethodResource::destinationScopeOptionsFor('address'));
-
-        // office and locker force pickup-only.
-        $page->fillForm(['delivery_type' => 'office'])->assertFormSet(['destination_scope' => 'pickup']);
-        $this->assertSame(['pickup' => 'Pickup point only'], ShippingMethodResource::destinationScopeOptionsFor('office'));
-        $page->fillForm(['delivery_type' => 'locker'])->assertFormSet(['destination_scope' => 'pickup']);
-
-        // No label (and "other") keep all three, and the merchant's own scope stands.
-        $page->fillForm(['delivery_type' => null])->assertFormSet(['destination_scope' => 'pickup']);
-        $this->assertSame(['address', 'pickup', 'any'], array_keys(ShippingMethodResource::destinationScopeOptionsFor(null)));
-        $this->assertSame(['address', 'pickup', 'any'], array_keys(ShippingMethodResource::destinationScopeOptionsFor('other')));
-
+        // Stage 6d2: ONE required field replaces the delivery type and the scope; a new method serves everything.
+        $page = Livewire::test(CreateShippingMethod::class)->assertFormSet(['delivers_to' => 'any']);
+        $this->assertSame(['any', 'address', 'pickup', 'office', 'locker'], array_keys(ShippingMethodResource::deliversToOptions()));
         $this->assertStringContainsString(
-            'The delivery type sets and locks this',
+            'The method delivers to an address, an office and a locker.',
             html_entity_decode($page->html()),
         );
+
+        $page->fillForm(['delivers_to' => 'locker'])->assertFormSet(['delivers_to' => 'locker']);
+        $this->assertStringContainsString('The method delivers to a locker only.', html_entity_decode($page->html()));
+        $this->assertStringNotContainsString('The method delivers to an address, an office and a locker.', html_entity_decode($page->html()));
+
+        // The default line is the one a Bulgarian merchant sees first: a mount renders in the store locale.
+        App::setLocale('bg');
+        $this->assertStringContainsString('Методът доставя до адрес, офис и автомат.', html_entity_decode(Livewire::test(CreateShippingMethod::class)->html()));
     }
 
     public function test_the_datalist_offers_the_couriers_in_use_once_escaped_and_capped_at_fifty(): void
@@ -331,7 +328,7 @@ class ShippingMethodGroupingResourceTest extends TestCase
         $this->actingAsStaff('Administrator');
 
         Livewire::test(CreateShippingMethod::class)
-            ->fillForm(['zone_id' => $zone, 'name' => 'To locker', 'kind' => 'flat', 'price' => '3,50', 'free_above' => '50', 'courier' => 'BoxNow', 'delivery_type' => 'locker'])
+            ->fillForm(['zone_id' => $zone, 'name' => 'To locker', 'kind' => 'flat', 'price' => '3,50', 'free_above' => '50', 'courier' => 'BoxNow', 'delivers_to' => 'locker'])
             ->call('create')
             ->assertHasNoFormErrors();
 

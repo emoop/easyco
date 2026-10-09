@@ -174,7 +174,7 @@ return [
             'courier' => 'Courier (optional)',
             'delivery_type' => 'Delivery type (optional)',
             'class_rates' => 'Class amounts',
-            'destination_scope' => 'Serves',
+            'delivers_to' => 'Delivers to',
         ],
         'delivery_types' => [
             'none' => 'No delivery type',
@@ -189,10 +189,19 @@ return [
             'locker' => 'to locker',
             'other' => 'other delivery',
         ],
-        'scopes' => [
-            'address' => 'Street address only',
-            'pickup' => 'Pickup point only',
-            'any' => 'Street address and pickup point',
+        'delivers_to' => [
+            'any' => 'All (address, office, locker)',
+            'address' => 'Address only',
+            'pickup' => 'Office or locker only',
+            'office' => 'Office only',
+            'locker' => 'Locker only',
+        ],
+        'delivers_to_help' => [
+            'any' => 'The method delivers to an address, an office and a locker.',
+            'address' => 'The method delivers to an address only.',
+            'pickup' => 'The method delivers to an office or a locker only.',
+            'office' => 'The method delivers to an office only.',
+            'locker' => 'The method delivers to a locker only.',
         ],
         'kinds' => [
             'flat' => 'Flat price',
@@ -206,7 +215,6 @@ return [
         ],
         'facts' => [
             'grouping' => 'Customers first choose the courier, then the delivery type. Methods without a courier are listed on their own.',
-            'destination_scope' => 'The delivery type sets and locks this: "To address" serves a street address only; "To office" or "To locker" a pickup point only. With no delivery type the method serves both.',
             'zone_fixed' => 'A method stays in its zone. To use it in another zone, copy it there, then delete this one.',
             'kind_clears' => 'Fields that do not belong to the chosen kind are cleared when you save.',
             'free_above' => 'From :amount of goods after discount, shipping is free.',
