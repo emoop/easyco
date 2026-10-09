@@ -13,4 +13,17 @@ enum ShippingDestinationScope: string
     case ADDRESS = 'address';
     case PICKUP = 'pickup';
     case ANY = 'any';
+
+    /**
+     * THE ONE RULE of which kind of destination a scope serves (stage 6b): ADDRESS only a street address, PICKUP only a pickup
+     * point, ANY both. ShippingMethod::servesPickupPoint() and the quote's MethodQuote both call this, so the matrix exists once.
+     */
+    public function serves(bool $isPickupPoint): bool
+    {
+        return match ($this) {
+            self::ADDRESS => ! $isPickupPoint,
+            self::PICKUP => $isPickupPoint,
+            self::ANY => true,
+        };
+    }
 }

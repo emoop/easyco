@@ -20,9 +20,12 @@ use EasyCo\Pricing\Money;
  *     pricing logic is duplicated, and issueHandles() is deliberately NOT called (nothing is written to the cache).
  *     No zone for the destination means no method can be offered: `method_unavailable`.
  *  c. the method must be among the offered, AVAILABLE methods (offers() lists only the matched zone's active methods;
- *     a method the filter removed was never offered to the customer) — else `method_unavailable`.
- *  d. pickup agreement (§9.1.6) — the method's requires_pickup_point must equal whether the destination is a pickup point,
- *     else `pickup_mismatch`.
+ *     a method the filter removed was never offered to the customer) — else `method_unavailable`. A CARRIER method that
+ *     is unavailable only because its scope does not serve the destination (`destination_not_served`) is NOT this
+ *     refusal: it falls through to rule d, which names it precisely.
+ *  d. destination agreement (§9.1.6, stage 6b) — the method's destination SCOPE must serve the destination's kind
+ *     (address-only: a street address; pickup-only: a pickup point; any: both; the one rule is
+ *     ShippingDestinationScope::serves()), else `pickup_mismatch` (the reason code and its 422 are unchanged).
  *  e. the PRICE decision table, on the recomputed amount R (and its pricing hash and service code):
  *       1. the handle verifies against (cart, method, R, currency, hash, service)            -> ACCEPT
  *       2. it does not, expected_shipping_minor is given and differs from R                  -> `price_changed` (carries R)
@@ -97,13 +100,13 @@ final class CheckoutShippingResolver
             }
         }
 
-        if ($quote === null || ! $quote->isAvailable()) {
+        if ($quote === null || (! $quote->isAvailable() && $quote->unavailableReason !== MethodQuote::DESTINATION_NOT_SERVED)) {
             throw ShippingRefusal::because(ShippingRefusalReason::METHOD_UNAVAILABLE, 'The shipping method is not offered for this cart and destination.');
         }
 
-        // d. pickup agreement.
-        if ($quote->requiresPickupPoint !== $destination->isPickupPoint()) {
-            throw ShippingRefusal::because(ShippingRefusalReason::PICKUP_MISMATCH, 'The shipping method and the address disagree about a pickup point.');
+        // d. destination agreement: the scope serves the kind of destination (a not-served carrier always lands here).
+        if (! $quote->servesPickupPoint($destination->isPickupPoint())) {
+            throw ShippingRefusal::because(ShippingRefusalReason::PICKUP_MISMATCH, 'The shipping method does not serve this kind of destination (address or pickup point).');
         }
 
         // e. the price.
@@ -129,7 +132,7 @@ final class CheckoutShippingResolver
             $quote->deliveryType,
             Money::fromMinorUnits($amountMinor, $quote->currency),
             $quote->serviceCode,
-            $quote->requiresPickupPoint,
+            $destination->isPickupPoint(),
             $quote->kind,
             $offers->zoneId,
             $offers->pricingHash,

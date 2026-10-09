@@ -405,11 +405,7 @@ final class ShippingMethod
     /** THE ONE implementation of "does this method serve this kind of destination": ADDRESS only false, PICKUP only true, ANY both. */
     public function servesPickupPoint(bool $isPickup): bool
     {
-        return match ($this->destinationScope) {
-            ShippingDestinationScope::ADDRESS => ! $isPickup,
-            ShippingDestinationScope::PICKUP => $isPickup,
-            ShippingDestinationScope::ANY => true,
-        };
+        return $this->destinationScope->serves($isPickup);
     }
 
     /** REPLACE for every kind but PER_CLASS, which may ADJUST (shipping-domain-design.md §12.2). */

@@ -155,14 +155,17 @@ final class ShippingQuoteService
                 throw ShippingQuoteFilterException::because(ShippingQuoteFilterException::NEGATIVE_AMOUNT, $item->methodId);
             }
 
+            // The scope is the method row's: a filter that rebuilt the quote the pre-6b way carries none (null = not stated, restored
+            // below), but one that STATES another scope is refused like any other changed field.
             if ($item->name !== $before->name || $item->kind !== $before->kind || $item->requiresPickupPoint !== $before->requiresPickupPoint
+                || ($item->destinationScope !== null && $item->destinationScope !== $before->destinationScope)
                 || $item->currency !== $before->currency || $item->serviceCode !== $before->serviceCode
                 || $item->unavailableReason !== $before->unavailableReason || $item->handle !== null) {
                 throw ShippingQuoteFilterException::because(ShippingQuoteFilterException::CHANGED_FIELD, $item->methodId);
             }
 
             // The courier group facts are the method row's, whatever a filter rebuilt (stage 5f).
-            $accepted[$item->methodId] = $item->withGrouping($before->courier, $before->deliveryType);
+            $accepted[$item->methodId] = $item->withGrouping($before->courier, $before->deliveryType)->withDestination($before->destinationScope, $before->servesDestination);
         }
 
         uasort($accepted, static fn (MethodQuote $a, MethodQuote $b): int => $order[$a->methodId] <=> $order[$b->methodId]);
@@ -250,9 +253,10 @@ final class ShippingQuoteService
 
         foreach ($rates as $rate) {
             $method = $byId[$rate->methodId];
-            $offered[] = $rate->needsQuote() ? $this->carrierMethod($method, $rate, $context) : MethodQuote::priced(
+            $offered[] = $rate->needsQuote() ? $this->carrierMethod($method, $rate, $context, $destination->isPickupPoint()) : MethodQuote::priced(
                 $rate->methodId, $method->name(), $method->kind()->value, $method->requiresPickupPoint(), $currency, $rate->amountMinor(), null,
                 $rate->freeAboveMinor, $rate->remainingToFreeMinor, $method->courier(), $method->deliveryType()?->value,
+                $method->destinationScope()->value, $method->servesPickupPoint($destination->isPickupPoint()),
             );
         }
 
@@ -338,10 +342,16 @@ final class ShippingQuoteService
         return new ShippingContext($destination->countryCode, $destination->settlement, $destination->isPickupPoint(), $currency, $goodsMinor, null, $weightGrams);
     }
 
-    private function carrierMethod(ShippingMethod $method, MethodRate $rate, ?ShippingContext $context): MethodQuote
+    private function carrierMethod(ShippingMethod $method, MethodRate $rate, ?ShippingContext $context, bool $isPickupPoint): MethodQuote
     {
         $id = $rate->methodId;
-        $make = static fn (string $reason): MethodQuote => MethodQuote::unavailable($id, $method->name(), ShippingMethodKind::CARRIER->value, $method->requiresPickupPoint(), $rate->currency, $reason, $method->courier(), $method->deliveryType()?->value);
+        $serves = $method->servesPickupPoint($isPickupPoint);
+        $make = static fn (string $reason): MethodQuote => MethodQuote::unavailable($id, $method->name(), ShippingMethodKind::CARRIER->value, $method->requiresPickupPoint(), $rate->currency, $reason, $method->courier(), $method->deliveryType()?->value, $method->destinationScope()->value, $serves);
+
+        // The merchant restricted this method to the other kind of destination: the carrier is NOT asked (no wasted call, no cost).
+        if (! $serves) {
+            return $make(MethodQuote::DESTINATION_NOT_SERVED);
+        }
 
         if ($context === null) {
             return $make(MethodQuote::NO_SETTLEMENT);
@@ -366,6 +376,6 @@ final class ShippingQuoteService
             return $make(MethodQuote::NO_QUOTE);
         }
 
-        return MethodQuote::priced($id, $method->name(), ShippingMethodKind::CARRIER->value, $method->requiresPickupPoint(), $rate->currency, $cheapest->amountMinor, $cheapest->serviceCode, null, null, $method->courier(), $method->deliveryType()?->value);
+        return MethodQuote::priced($id, $method->name(), ShippingMethodKind::CARRIER->value, $method->requiresPickupPoint(), $rate->currency, $cheapest->amountMinor, $cheapest->serviceCode, null, null, $method->courier(), $method->deliveryType()?->value, $method->destinationScope()->value, true);
     }
 }

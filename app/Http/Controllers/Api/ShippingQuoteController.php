@@ -45,10 +45,22 @@ use Illuminate\Validation\ValidationException;
  *
  * RESPONSE 200: cart_id, currency, goods_after_discount, zone {id, name}, and
  * `methods` — every offered method with id, name, kind, requires_pickup_point,
- * `available`, `price` {minor, currency} and `handle` (priced methods) or
+ * destination_scope, serves_destination, `available`, `price` {minor, currency} and `handle` (priced methods) or
  * `unavailable_reason` (carrier problems: provider_error, timed_out,
- * invalid_response, not_configured, no_quote, no_settlement); `service_code` for a
- * carrier method. For a FLAT or PER_CLASS method that has a free-shipping
+ * invalid_response, not_configured, no_quote, no_settlement, destination_not_served); `service_code` for a
+ * carrier method.
+ *
+ * DESTINATION SCOPE (shipping stage 6b, design 9.2.4): `destination_scope` is the merchant's rule —
+ * `address` (a street address only), `pickup` (a pickup point only) or `any` (both) — and
+ * `serves_destination` says whether the method serves THIS request's own kind of destination (the
+ * scope's one rule, ShippingDestinationScope::serves()). `requires_pickup_point` stays, now DERIVED:
+ * TRUE ONLY FOR A PICKUP-ONLY METHOD; false means "not pickup-only" (address-only OR any), so a client
+ * that wants to know where a method may go reads `destination_scope`. The quote still lists EVERY
+ * active method of the zone, whatever its scope; the client shows the ones that serve the destination.
+ * A CARRIER method whose scope does not serve the destination is not asked: it is unavailable with
+ * `unavailable_reason: destination_not_served`.
+ *
+ * For a FLAT or PER_CLASS method that has a free-shipping
  * threshold, each method also carries `free_above_minor` and
  * `remaining_to_free_minor` (the threshold and how much MORE the goods must reach
  * it, 0 once met); both are null for a method without a threshold, for FREE and
@@ -185,6 +197,8 @@ class ShippingQuoteController extends Controller
                 'name' => $m->name,
                 'kind' => $m->kind,
                 'requires_pickup_point' => $m->requiresPickupPoint,
+                'destination_scope' => $m->scope(),
+                'serves_destination' => $m->servesDestination,
                 'available' => $m->isAvailable(),
                 'price' => $m->isAvailable() ? ['minor' => $m->amountMinor, 'currency' => $m->currency] : null,
                 'free_above_minor' => $m->freeAboveMinor,

@@ -18,6 +18,8 @@ final class ShippingSelection
         public readonly ?string $deliveryType,
         public readonly Money $amount,
         public readonly ?string $serviceCode,
+        // Whether the placed delivery goes to a PICKUP POINT (stage 6b). Until 6b it copied the method's boolean; with a scope of `any`
+        // the method alone no longer says, so it is the DESTINATION's kind — identical for address-only and pickup-only methods.
         public readonly bool $requiresPickupPoint,
         public readonly string $kind,
         // What priced the selection (stage 4e): the matched zone and the hash of everything that priced it. Placement
