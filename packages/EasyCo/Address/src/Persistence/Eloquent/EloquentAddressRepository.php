@@ -33,6 +33,8 @@ final class EloquentAddressRepository implements AddressRepository
         $model->carrier_code = $address->carrierCode();
         $model->pickup_point_reference = $address->pickupPointReference();
         $model->settlement = $address->settlement();
+        $model->pickup_point_name = $address->pickupPointName();
+        $model->pickup_point_address = $address->pickupPointAddress();
 
         $model->save();
 
@@ -73,6 +75,8 @@ final class EloquentAddressRepository implements AddressRepository
             carrierCode: $model->carrier_code,
             pickupPointReference: $model->pickup_point_reference,
             settlement: $model->settlement,
+            pickupPointName: $model->pickup_point_name,
+            pickupPointAddress: $model->pickup_point_address,
         );
     }
 }

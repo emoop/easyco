@@ -109,7 +109,12 @@ final class Order
         private readonly ?string $shippingCourier = null,
         private readonly ?string $shippingDeliveryType = null,
         private readonly ?string $shippingServiceCode = null,
+        // Display snapshot of the chosen pickup point (stage 4f).
+        private ?string $pickupPointName = null,
+        private ?string $pickupPointAddress = null,
     ) {
+        self::assertPickupDisplay($deliveryType, $pickupPointName, $pickupPointAddress);
+
         if ($editRevision < 0) {
             throw new InvalidArgumentException('Order editRevision must not be negative.');
         }
@@ -268,6 +273,34 @@ final class Order
         return [$courier, $deliveryType, $serviceCode];
     }
 
+
+    /**
+     * The pickup point's DISPLAY SNAPSHOT (shipping stage 4f), copied from the address at placement: allowed only for a
+     * PICKUP_POINT, null for a STREET_ADDRESS, 1 to 255 characters when given. Null on a pickup order is legal (an order from a
+     * historical saved pickup address). The reference stays the identifier; these are text for people.
+     */
+    private static function assertPickupDisplay(OrderDeliveryType $deliveryType, ?string $pickupPointName, ?string $pickupPointAddress): void
+    {
+        foreach (['pickupPointName' => $pickupPointName, 'pickupPointAddress' => $pickupPointAddress] as $name => $value) {
+            if ($value === null) {
+                continue;
+            }
+
+            if ($deliveryType === OrderDeliveryType::STREET_ADDRESS) {
+                throw new InvalidArgumentException("Order {$name} must be null when deliveryType is STREET_ADDRESS, got a non-null value.");
+            }
+
+            if (trim($value) === '' || mb_strlen($value) > 255) {
+                throw new InvalidArgumentException("Order {$name} must be 1 to 255 characters when given; use null for none.");
+            }
+        }
+    }
+
+    private static function trimmedOrNull(?string $value): ?string
+    {
+        return $value === null ? null : trim($value);
+    }
+
     /**
      * Enforces exclusivity between STREET_ADDRESS fields
      * (city/postalCode/addressLine1/addressLine2) and
@@ -398,6 +431,8 @@ final class Order
         ?string $shippingCourier = null,
         ?string $shippingDeliveryType = null,
         ?string $shippingServiceCode = null,
+        ?string $pickupPointName = null,
+        ?string $pickupPointAddress = null,
     ): self {
         self::assertCountryShape($country);
 
@@ -450,6 +485,8 @@ final class Order
             shippingCourier: $shippingCourier,
             shippingDeliveryType: $shippingDeliveryType,
             shippingServiceCode: $shippingServiceCode,
+            pickupPointName: self::trimmedOrNull($pickupPointName),
+            pickupPointAddress: self::trimmedOrNull($pickupPointAddress),
         );
     }
 
@@ -498,6 +535,8 @@ final class Order
         ?string $shippingCourier = null,
         ?string $shippingDeliveryType = null,
         ?string $shippingServiceCode = null,
+        ?string $pickupPointName = null,
+        ?string $pickupPointAddress = null,
     ): self {
         return new self(
             id: $id,
@@ -531,6 +570,8 @@ final class Order
             shippingCourier: $shippingCourier,
             shippingDeliveryType: $shippingDeliveryType,
             shippingServiceCode: $shippingServiceCode,
+            pickupPointName: $pickupPointName,
+            pickupPointAddress: $pickupPointAddress,
         );
     }
 
@@ -763,8 +804,22 @@ final class Order
         ?string $carrierCode,
         ?string $pickupPointReference,
         ?string $settlement,
+        ?string $pickupPointName = null,
+        ?string $pickupPointAddress = null,
     ): void {
         $this->assertEditable();
+
+        // The display snapshot (stage 4f) is not part of what an edit form carries. Replacing the delivery must not silently
+        // wipe it, and must not leave it describing an office the order no longer goes to: it is KEPT while the order still
+        // goes to the SAME office (a pickup point with the same carrier and reference) unless the caller supplies new text, and
+        // it is cleared otherwise.
+        $sameOffice = $deliveryType === OrderDeliveryType::PICKUP_POINT
+            && $this->deliveryType === OrderDeliveryType::PICKUP_POINT
+            && $carrierCode === $this->carrierCode
+            && $pickupPointReference === $this->pickupPointReference;
+        $pickupPointName = self::trimmedOrNull($pickupPointName) ?? ($sameOffice ? $this->pickupPointName : null);
+        $pickupPointAddress = self::trimmedOrNull($pickupPointAddress) ?? ($sameOffice ? $this->pickupPointAddress : null);
+        self::assertPickupDisplay($deliveryType, $pickupPointName, $pickupPointAddress);
         self::assertNotEmpty('recipientName', $recipientName);
         self::assertNotEmpty('phone', $phone);
         self::assertCountryShape($country);
@@ -791,6 +846,8 @@ final class Order
         $this->carrierCode = $carrierCode;
         $this->pickupPointReference = $pickupPointReference;
         $this->settlement = $settlement;
+        $this->pickupPointName = $pickupPointName;
+        $this->pickupPointAddress = $pickupPointAddress;
     }
 
     /**
@@ -883,5 +940,17 @@ final class Order
     public function settlement(): ?string
     {
         return $this->settlement;
+    }
+
+    /** The office's name as the customer saw it at placement (stage 4f display snapshot); null for a street order or a historical one. */
+    public function pickupPointName(): ?string
+    {
+        return $this->pickupPointName;
+    }
+
+    /** The office's address line as the customer saw it at placement (stage 4f display snapshot); null for a street order or a historical one. */
+    public function pickupPointAddress(): ?string
+    {
+        return $this->pickupPointAddress;
     }
 }

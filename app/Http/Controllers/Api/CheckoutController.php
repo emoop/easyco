@@ -147,6 +147,8 @@ class CheckoutController extends Controller
             shippingMethodId: $validated['shipping_method_id'] ?? null,
             quoteHandle: $validated['quote_handle'] ?? null,
             expectedShippingMinor: isset($validated['expected_shipping_minor']) ? (int) $validated['expected_shipping_minor'] : null,
+            pickupPointName: $validated['pickup_point_name'] ?? null,
+            pickupPointAddress: $validated['pickup_point_address'] ?? null,
         );
 
         // Each refusal is caught by type and answered with a stable `reason` and a FIXED,
@@ -368,6 +370,10 @@ class CheckoutController extends Controller
             // character or a bidirectional override.
             'carrier_code' => ['required_if:delivery_type,pickup_point', 'prohibited_if:delivery_type,street_address', 'string', 'max:255', new PlainText()],
             'pickup_point_reference' => ['required_if:delivery_type,pickup_point', 'prohibited_if:delivery_type,street_address', 'string', 'max:255', new PlainText()],
+            // The display snapshot of the chosen office (stage 4f): what the customer saw, required for a NEW pickup address and
+            // refused for a street address. Text for people; the reference above is the identifier, and nothing verifies these.
+            'pickup_point_name' => ['required_if:delivery_type,pickup_point', 'prohibited_if:delivery_type,street_address', 'string', 'max:255', new PlainText()],
+            'pickup_point_address' => ['required_if:delivery_type,pickup_point', 'prohibited_if:delivery_type,street_address', 'string', 'max:255', new PlainText()],
             'settlement' => ['required_if:delivery_type,pickup_point', 'prohibited_if:delivery_type,street_address', 'string', 'max:255', new PlainText()],
             // The shipping choice (stage 4e). Only the TYPE and size are checked here, so an array, an object or a huge
             // string never reaches the resolver; the shape rules (digits, `qh_` + 40) are the resolver's alone, and a
@@ -399,6 +405,8 @@ class CheckoutController extends Controller
             'carrier_code' => $order->carrierCode(),
             'pickup_point_reference' => $order->pickupPointReference(),
             'settlement' => $order->settlement(),
+            'pickup_point_name' => $order->pickupPointName(),
+            'pickup_point_address' => $order->pickupPointAddress(),
             'lines' => $this->saleLinesToArray($order->transactionId()),
         ];
     }

@@ -49,6 +49,9 @@ final class Address
         private ?string $carrierCode,
         private ?string $pickupPointReference,
         private ?string $settlement,
+        // Display snapshot of the chosen pickup point (stage 4f); trailing and nullable like every later addition.
+        private ?string $pickupPointName = null,
+        private ?string $pickupPointAddress = null,
     ) {
         self::assertNotEmpty('recipientName', $recipientName);
         self::assertNotEmpty('phone', $phone);
@@ -64,6 +67,7 @@ final class Address
             pickupPointReference: $pickupPointReference,
             settlement: $settlement,
         );
+        self::assertPickupDisplay($deliveryType, $pickupPointName, $pickupPointAddress);
     }
 
     private static function assertNotEmpty(string $fieldName, string $value): void
@@ -146,6 +150,39 @@ final class Address
         }
     }
 
+
+    /**
+     * The pickup point's DISPLAY SNAPSHOT (shipping stage 4f, shipping-domain-design.md section 9.1.6): the office's name and
+     * address as the customer saw them, kept so an order still reads correctly if the courier renames or closes the office.
+     * They are display text, never an identity (the reference is), and nothing here verifies them against a courier.
+     *
+     * Allowed only for a PICKUP_POINT; a STREET_ADDRESS must have both null; when given, each is 1 to 255 characters.
+     * Both being null on a pickup point is LEGAL here — a historical saved pickup address (saved before 4f) has neither and
+     * must still load and still check out. That both are REQUIRED for a NEW pickup address is the request layer's rule
+     * (checkout and the address API), not the entity's.
+     */
+    private static function assertPickupDisplay(AddressDeliveryType $deliveryType, ?string $pickupPointName, ?string $pickupPointAddress): void
+    {
+        foreach (['pickupPointName' => $pickupPointName, 'pickupPointAddress' => $pickupPointAddress] as $name => $value) {
+            if ($value === null) {
+                continue;
+            }
+
+            if ($deliveryType === AddressDeliveryType::STREET_ADDRESS) {
+                throw new InvalidArgumentException("Address {$name} must be null when deliveryType is STREET_ADDRESS, got a non-null value.");
+            }
+
+            if (trim($value) === '' || mb_strlen($value) > 255) {
+                throw new InvalidArgumentException("Address {$name} must be 1 to 255 characters when given; use null for none.");
+            }
+        }
+    }
+
+    private static function trimmedOrNull(?string $value): ?string
+    {
+        return $value === null ? null : trim($value);
+    }
+
     /**
      * The delivery country, for EITHER type: required, exactly two uppercase
      * ASCII letters. Shape only — whether the code is a real country is the
@@ -176,6 +213,8 @@ final class Address
         ?string $carrierCode = null,
         ?string $pickupPointReference = null,
         ?string $settlement = null,
+        ?string $pickupPointName = null,
+        ?string $pickupPointAddress = null,
     ): self {
         self::assertCountryShape($country);
 
@@ -193,6 +232,8 @@ final class Address
             carrierCode: $carrierCode,
             pickupPointReference: $pickupPointReference,
             settlement: $settlement,
+            pickupPointName: self::trimmedOrNull($pickupPointName),
+            pickupPointAddress: self::trimmedOrNull($pickupPointAddress),
         );
     }
 
@@ -219,6 +260,8 @@ final class Address
         ?string $carrierCode,
         ?string $pickupPointReference,
         ?string $settlement,
+        ?string $pickupPointName = null,
+        ?string $pickupPointAddress = null,
     ): self {
         return new self(
             id: $id,
@@ -234,6 +277,8 @@ final class Address
             carrierCode: $carrierCode,
             pickupPointReference: $pickupPointReference,
             settlement: $settlement,
+            pickupPointName: $pickupPointName,
+            pickupPointAddress: $pickupPointAddress,
         );
     }
 
@@ -272,7 +317,12 @@ final class Address
         ?string $carrierCode = null,
         ?string $pickupPointReference = null,
         ?string $settlement = null,
+        ?string $pickupPointName = null,
+        ?string $pickupPointAddress = null,
     ): void {
+        $pickupPointName = self::trimmedOrNull($pickupPointName);
+        $pickupPointAddress = self::trimmedOrNull($pickupPointAddress);
+        self::assertPickupDisplay($deliveryType, $pickupPointName, $pickupPointAddress);
         self::assertNotEmpty('recipientName', $recipientName);
         self::assertNotEmpty('phone', $phone);
         self::assertCountryShape($country);
@@ -299,6 +349,8 @@ final class Address
         $this->carrierCode = $carrierCode;
         $this->pickupPointReference = $pickupPointReference;
         $this->settlement = $settlement;
+        $this->pickupPointName = $pickupPointName;
+        $this->pickupPointAddress = $pickupPointAddress;
     }
 
     public function accountId(): ?string
@@ -359,5 +411,17 @@ final class Address
     public function settlement(): ?string
     {
         return $this->settlement;
+    }
+
+    /** The office's name as the customer saw it (stage 4f display snapshot); null for a street address or a historical pickup address. */
+    public function pickupPointName(): ?string
+    {
+        return $this->pickupPointName;
+    }
+
+    /** The office's address line as the customer saw it (stage 4f display snapshot); null for a street address or a historical pickup address. */
+    public function pickupPointAddress(): ?string
+    {
+        return $this->pickupPointAddress;
     }
 }

@@ -51,6 +51,8 @@ class OrderPlacementSnapshotModel extends Model
         'carrier_code',
         'pickup_point_reference',
         'settlement',
+        'pickup_point_name',
+        'pickup_point_address',
         'created_at',
     ];
 

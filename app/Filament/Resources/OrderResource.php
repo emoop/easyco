@@ -1059,6 +1059,9 @@ class OrderResource extends Resource
             : [
                 __('orders.fields.carrier_code').': '.($record->carrier_code ?? $na),
                 __('orders.fields.pickup_point_reference').': '.($record->pickup_point_reference ?? $na),
+                // The office as the customer saw it (stage 4f display snapshot), only when the order stored it.
+                filled($record->pickup_point_name) ? __('orders.fields.pickup_point_name').': '.$record->pickup_point_name : null,
+                filled($record->pickup_point_address) ? __('orders.fields.pickup_point_address').': '.$record->pickup_point_address : null,
                 $record->settlement ?? $na,
                 $record->country ?? $na,
             ];

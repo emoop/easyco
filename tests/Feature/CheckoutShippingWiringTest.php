@@ -162,7 +162,7 @@ class CheckoutShippingWiringTest extends TestCase
     /** @return array<string, mixed> */
     private function pickupPoint(): array
     {
-        return ['delivery_type' => 'pickup_point', 'country' => 'BG', 'carrier_code' => 'econt', 'pickup_point_reference' => 'office-1', 'settlement' => 'Sofia'];
+        return ['delivery_type' => 'pickup_point', 'country' => 'BG', 'carrier_code' => 'econt', 'pickup_point_reference' => 'office-1', 'settlement' => 'Sofia', 'pickup_point_name' => 'Econt office Center', 'pickup_point_address' => 'Vitosha Blvd 100, Sofia'];
     }
 
     /** The real quote for an address (the quote endpoint's own body), keyed by method id. @return array<string, array<string, mixed>> */

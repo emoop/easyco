@@ -36,6 +36,8 @@ return [
         'address_line_2' => 'Адрес (продължение)',
         'carrier_code' => 'Куриер',
         'pickup_point_reference' => 'Офис на куриер',
+        'pickup_point_name' => 'Име на офиса',
+        'pickup_point_address' => 'Адрес на офиса',
         'settlement' => 'Населено място',
         'image' => 'Снимка',
         'product_name' => 'Продукт',

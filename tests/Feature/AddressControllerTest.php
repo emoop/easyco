@@ -50,6 +50,7 @@ class AddressControllerTest extends TestCase
             'country' => 'BG',
             'carrier_code' => 'econt',
             'pickup_point_reference' => 'office-1234',
+            'pickup_point_name' => 'Econt office Center', 'pickup_point_address' => 'Vitosha Blvd 100, Sofia',
             'settlement' => 'Sofia',
         ], $overrides);
     }

@@ -552,6 +552,8 @@ final class CheckoutOrchestrator
             carrierCode: $address->carrierCode(),
             pickupPointReference: $address->pickupPointReference(),
             settlement: $address->settlement(),
+            pickupPointName: $address->pickupPointName(),
+            pickupPointAddress: $address->pickupPointAddress(),
             shipping: $shipping,
             shippingMethodName: $selection->methodName,
             shippingMethodCode: $selection->methodId,
@@ -667,6 +669,8 @@ final class CheckoutOrchestrator
             carrierCode: $input->carrierCode,
             pickupPointReference: $input->pickupPointReference,
             settlement: $input->settlement,
+            pickupPointName: $input->pickupPointName,
+            pickupPointAddress: $input->pickupPointAddress,
         );
     }
 }

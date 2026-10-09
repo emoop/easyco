@@ -80,6 +80,8 @@ class AddressResolver
         ?string $carrierCode = null,
         ?string $pickupPointReference = null,
         ?string $settlement = null,
+        ?string $pickupPointName = null,
+        ?string $pickupPointAddress = null,
     ): Address {
         $address = Address::create(
             deliveryType: $deliveryType,
@@ -94,6 +96,8 @@ class AddressResolver
             carrierCode: $carrierCode,
             pickupPointReference: $pickupPointReference,
             settlement: $settlement,
+            pickupPointName: $pickupPointName,
+            pickupPointAddress: $pickupPointAddress,
         );
 
         $this->addresses->save($address);

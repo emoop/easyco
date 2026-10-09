@@ -53,6 +53,9 @@ final class CheckoutInput
         public readonly ?string $shippingMethodId = null,
         public readonly ?string $quoteHandle = null,
         public readonly ?int $expectedShippingMinor = null,
+        // The pickup point's display snapshot (stage 4f): text the customer saw, never an identity.
+        public readonly ?string $pickupPointName = null,
+        public readonly ?string $pickupPointAddress = null,
     ) {
     }
 }

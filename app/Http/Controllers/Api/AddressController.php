@@ -56,6 +56,8 @@ class AddressController extends Controller
             carrierCode: $validated['carrier_code'] ?? null,
             pickupPointReference: $validated['pickup_point_reference'] ?? null,
             settlement: $validated['settlement'] ?? null,
+            pickupPointName: $validated['pickup_point_name'] ?? null,
+            pickupPointAddress: $validated['pickup_point_address'] ?? null,
         );
 
         $this->addresses->save($address);
@@ -99,6 +101,8 @@ class AddressController extends Controller
             carrierCode: $validated['carrier_code'] ?? null,
             pickupPointReference: $validated['pickup_point_reference'] ?? null,
             settlement: $validated['settlement'] ?? null,
+            pickupPointName: $validated['pickup_point_name'] ?? null,
+            pickupPointAddress: $validated['pickup_point_address'] ?? null,
         );
 
         $this->addresses->save($address);
@@ -157,6 +161,10 @@ class AddressController extends Controller
             // character or a bidirectional override.
             'carrier_code' => ['required_if:delivery_type,pickup_point', 'prohibited_if:delivery_type,street_address', 'string', 'max:255', new PlainText()],
             'pickup_point_reference' => ['required_if:delivery_type,pickup_point', 'prohibited_if:delivery_type,street_address', 'string', 'max:255', new PlainText()],
+            // The display snapshot of the chosen office (stage 4f): what the customer saw, required for a NEW pickup address and
+            // refused for a street address. Text for people; the reference above is the identifier, and nothing verifies these.
+            'pickup_point_name' => ['required_if:delivery_type,pickup_point', 'prohibited_if:delivery_type,street_address', 'string', 'max:255', new PlainText()],
+            'pickup_point_address' => ['required_if:delivery_type,pickup_point', 'prohibited_if:delivery_type,street_address', 'string', 'max:255', new PlainText()],
             'settlement' => ['required_if:delivery_type,pickup_point', 'prohibited_if:delivery_type,street_address', 'string', 'max:255', new PlainText()],
         ];
     }
@@ -182,6 +190,8 @@ class AddressController extends Controller
             'carrier_code' => $address->carrierCode(),
             'pickup_point_reference' => $address->pickupPointReference(),
             'settlement' => $address->settlement(),
+            'pickup_point_name' => $address->pickupPointName(),
+            'pickup_point_address' => $address->pickupPointAddress(),
         ];
     }
 }

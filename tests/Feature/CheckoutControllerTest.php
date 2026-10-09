@@ -234,6 +234,7 @@ class CheckoutControllerTest extends TestCase
             'country' => 'bg',
             'carrier_code' => 'econt',
             'pickup_point_reference' => 'office-1234',
+            'pickup_point_name' => 'Econt office Center', 'pickup_point_address' => 'Vitosha Blvd 100, Sofia',
             'settlement' => 'Plovdiv',
         ], $overrides));
         unset($payload['city'], $payload['address_line_1']);
@@ -265,6 +266,7 @@ class CheckoutControllerTest extends TestCase
             'country' => 'GR',
             'carrier_code' => 'speedy',
             'pickup_point_reference' => 'office-9',
+            'pickup_point_name' => 'Econt office Center', 'pickup_point_address' => 'Vitosha Blvd 100, Sofia',
             'settlement' => 'Athens',
         ])->assertStatus(201)->json('id');
 
@@ -323,7 +325,7 @@ class CheckoutControllerTest extends TestCase
         $account = $this->loggedInAccount();
         $addressId = $this->postJson('/api/addresses', [
             'delivery_type' => 'pickup_point', 'recipient_name' => 'Ivan Ivanov', 'phone' => '+359888111222',
-            'country' => 'BG', 'carrier_code' => 'econt', 'pickup_point_reference' => 'office-1', 'settlement' => 'Varna',
+            'country' => 'BG', 'carrier_code' => 'econt', 'pickup_point_reference' => 'office-1', 'settlement' => 'Varna', 'pickup_point_name' => 'Econt office Center', 'pickup_point_address' => 'Vitosha Blvd 100, Sofia',
         ])->assertStatus(201)->json('id');
         // A historical pickup point, saved before the country became mandatory.
         \Illuminate\Support\Facades\DB::table('addresses')->where('id', $addressId)->update(['country' => null]);
@@ -357,7 +359,7 @@ class CheckoutControllerTest extends TestCase
         // The customer updates the address; the same cart now checks out.
         $this->putJson("/api/addresses/{$addressId}", [
             'delivery_type' => 'pickup_point', 'recipient_name' => 'Ivan Ivanov', 'phone' => '+359888111222',
-            'country' => 'bg', 'carrier_code' => 'econt', 'pickup_point_reference' => 'office-1', 'settlement' => 'Varna',
+            'country' => 'bg', 'carrier_code' => 'econt', 'pickup_point_reference' => 'office-1', 'settlement' => 'Varna', 'pickup_point_name' => 'Econt office Center', 'pickup_point_address' => 'Vitosha Blvd 100, Sofia',
         ])->assertStatus(200);
 
         $response = $this->postJson('/api/checkout', $payload)->assertStatus(201);

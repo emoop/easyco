@@ -36,6 +36,8 @@ return [
         'address_line_2' => 'Address (line 2)',
         'carrier_code' => 'Carrier',
         'pickup_point_reference' => 'Pickup point',
+        'pickup_point_name' => 'Office name',
+        'pickup_point_address' => 'Office address',
         'settlement' => 'Settlement',
         'image' => 'Image',
         'product_name' => 'Product',
