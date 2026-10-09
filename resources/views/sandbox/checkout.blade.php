@@ -30,8 +30,9 @@
 
         <h2>Delivery</h2>
         <div class="field">
-            <label><input type="radio" name="delivery_type" value="street_address" checked> Street address</label>
-            <label><input type="radio" name="delivery_type" value="pickup_point"> Pickup point</label>
+            <label><input type="radio" name="destination_kind" value="address" checked> Address</label>
+            <label><input type="radio" name="destination_kind" value="office"> Office</label>
+            <label><input type="radio" name="destination_kind" value="locker"> Locker</label>
         </div>
 
         {{-- The delivery country belongs to BOTH delivery types (owner decision D1): always sent. --}}
@@ -94,7 +95,11 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function fail(text) { error.textContent = text; error.hidden = false; }
 
-    function deliveryType() { return form.querySelector('input[name="delivery_type"]:checked').value; }
+    // The customer's mental model: one of Address / Office / Locker.
+    function destinationKind() { return form.querySelector('input[name="destination_kind"]:checked').value; }
+
+    // The backend's model: a street address, or a pickup point (office or locker).
+    function deliveryType() { return destinationKind() === 'address' ? 'street_address' : 'pickup_point'; }
 
     function deliveryLabel(code) { return deliveryLabels[code] || code; }
 
@@ -122,7 +127,7 @@ document.addEventListener('DOMContentLoaded', function () {
         quoteStatus.textContent = 'Delivery options changed - show them again';
     }
 
-    form.querySelectorAll('input[name="delivery_type"]').forEach(function (radio) {
+    form.querySelectorAll('input[name="destination_kind"]').forEach(function (radio) {
         radio.addEventListener('change', function () {
             toggleDelivery();
 
@@ -237,12 +242,49 @@ document.addEventListener('DOMContentLoaded', function () {
             : [{ courier: null, methods: (quote.methods || []).map(function (method) { return method.id; }) }];
 
         var shown = 0;
+        // The methods the filter removed, and the destination kinds they DO serve,
+        // in the order they were offered — never hidden silently.
+        var removedCount = 0;
+        var removedKinds = [];
+
+        // A generic method (no type, or the catch-all 'other') serves any destination;
+        // a typed method serves only its own kind (address / office / locker).
+        function servesDestination(method) {
+            if (method.requires_pickup_point !== pickupWanted) { return false; }
+
+            var type = method.delivery_type;
+
+            if (type === null || type === undefined || type === 'other') { return true; }
+
+            return type === (pickupWanted ? destinationKind() : 'address');
+        }
+
+        // The destination kind a removed method belongs to, or null when it cannot be
+        // told (never invented).
+        function kindOf(method) {
+            if (method.requires_pickup_point) {
+                return method.delivery_type === 'office' || method.delivery_type === 'locker' ? method.delivery_type : null;
+            }
+
+            return method.delivery_type === 'address' ? 'address' : null;
+        }
 
         groups.forEach(function (group) {
-            // Only the methods whose pickup requirement matches the chosen delivery
-            // type; a group left with nothing is skipped entirely.
+            // Only the methods that can serve the chosen destination; a group left
+            // with nothing is skipped entirely.
             var methods = (group.methods || []).map(function (id) { return byId[id]; }).filter(function (method) {
-                return method && method.requires_pickup_point === pickupWanted;
+                return method && servesDestination(method);
+            });
+
+            (group.methods || []).forEach(function (id) {
+                var method = byId[id];
+
+                if (!method || servesDestination(method)) { return; }
+
+                removedCount++;
+                var kind = kindOf(method);
+
+                if (kind !== null && removedKinds.indexOf(kind) === -1) { removedKinds.push(kind); }
             });
 
             if (methods.length === 0) { return; }
@@ -263,6 +305,19 @@ document.addEventListener('DOMContentLoaded', function () {
             none.className = 'muted';
             none.textContent = 'No delivery method is available for this destination.';
             options.appendChild(none);
+        }
+
+        if (removedCount > 0) {
+            var removed = document.createElement('p');
+            removed.className = 'muted';
+            removed.textContent = removedCount + ' other delivery option(s) are available for another destination';
+
+            if (removedKinds.length > 0) {
+                removed.textContent += ' (' + removedKinds.map(deliveryLabel).join(' / ') + ')';
+            }
+
+            removed.textContent += '.';
+            options.appendChild(removed);
         }
 
         renderTotals();

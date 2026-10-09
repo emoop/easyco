@@ -348,6 +348,28 @@ final class SandboxStorefrontPagesTest extends TestCase
         $this->assertStringNotContainsString('innerHTML', $html);
     }
 
+    public function test_the_checkout_page_lets_the_customer_choose_the_destination_kind(): void
+    {
+        $html = $this->get('/_sandbox/checkout')->assertOk()->getContent();
+
+        // THREE destination choices, in the customer's own words: Address / Office / Locker.
+        $this->assertSame(3, substr_count($html, 'type="radio" name="destination_kind"'));
+        $this->assertSame(1, substr_count($html, 'value="address"'));
+        $this->assertSame(1, substr_count($html, 'value="office"'));
+        $this->assertSame(1, substr_count($html, 'value="locker"'));
+
+        // The backend's two-value split is no longer offered as a control at all: the
+        // customer chooses a destination, and the page derives the API's delivery_type.
+        $this->assertStringNotContainsString('name="delivery_type"', $html);
+
+        // The script reads the destination and still calls the real quote endpoint,
+        // naming the choice back with the handle — and never assembles HTML.
+        $this->assertStringContainsString('destination_kind', $html);
+        $this->assertStringContainsString("'/api/shipping/quote'", $html);
+        $this->assertStringContainsString('quote_handle', $html);
+        $this->assertStringNotContainsString('innerHTML', $html);
+    }
+
     public function test_the_cart_page_shows_the_free_shipping_hint_element(): void
     {
         $html = $this->get('/_sandbox/cart')->assertOk()->getContent();
