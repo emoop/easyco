@@ -2,10 +2,10 @@
 
 **Status:** DESIGN ONLY (2026-10-09). Nothing in this document is built. It extends and, in the places listed in §0.2, supersedes
 `storefront-frontend-design.md` (the earlier draft: Blade + Alpine, URL structure, JSON-LD, hydration of personal fragments).
-It is written for the owner (decisions in §13) and for the coders (stages in §12).
+It is written for the owner (decisions in §14) and for the coders (stages in §13).
 
 **Conventions.** **V** = verified by reading the code or documents named. **I** = my inference or proposal. Anything I could not verify
-is under *Unknowns* in §13.2. Everything in code and documents is English; the shop's language is chosen by `site.locale`.
+is under *Unknowns* in §14.2. Everything in code and documents is English; the shop's language is chosen by `site.locale`.
 
 ---
 
@@ -75,7 +75,7 @@ is under *Unknowns* in §13.2. Everything in code and documents is English; the 
 **Non-goals (this document).** A page builder or CMS; reviews and ratings; wishlists; customer accounts UI (deferred by `storefront-frontend-design.md` §9); multi-currency display; AI-agent feeds
 (ACP/UCP/MCP, `channel-native-commerce-vision.md`); an external search engine implementation (only the swap point); campaign mail (see `mail-design.md`).
 
-**Speed budget (targets, to be measured on the running app — see §13.2).**
+**Speed budget (targets, to be measured on the running app — see §14.2).**
 - LCP < 2.5 s on a mid-range mobile over 4G for home, category and product pages; the LCP image is never lazy-loaded (§4.4).
 - **< 20 database queries per catalog page** (home, category, product, search), **no N+1**; the query count is a pinned test number per page type (§2.5).
 - Cacheable anonymous HTML served by the proxy without PHP when warm; a cold render stays inside the query budget.
@@ -318,20 +318,46 @@ One Filament page "Storefront" with tabs: *Home* (block type, slides/banners), *
 
 ---
 
-## 10. Funnel events with consent (decision 5)
+## 10. Measurement — two tiers (decision 5, amended by the owner 2026-10-09)
+
+**Decided by the owner 2026-10-09:** measurement has two tiers. **Tier 1 (no consent):** aggregate counters with no visitor identifier and nothing stored on the device. **Tier 2 (consent):** per-visitor funnel events. **Hashing does not remove the need for consent for tier 2** — a hashed, salted or random per-visitor identifier is still an identifier that links events of one person, so it is treated as personal data and as information stored on the device. Tier 2 is therefore OFF by default (`storefront.analytics.tier2_enabled`, §8.4 tab *Consent & analytics*), and with it off no consent banner is shown at all; tier 1 is ON by default and needs no banner.
 
 ### 10.1 Legal reading — to be confirmed by the owner (not legal advice)
 
-The EU ePrivacy rules (cookie/"similar technologies" consent) and GDPR apply to a visitor identifier stored on the device and to events linked to it. My working reading: an identifier **used only to measure the funnel of this shop** is still analytics and needs consent in most EU member states unless the national authority has exempted strictly-aggregated first-party audience measurement (some do under strict conditions — Bulgaria's reading must be confirmed). **The owner must confirm with his legal adviser** (a) whether first-party analytics here is exempt, (b) the wording of the consent text, (c) the retention period. The design below is built so that the **strict reading** (consent required) costs nothing extra: without consent there is no identifier and no record. Strictly necessary (no consent needed): the session for the cart and checkout (V: the cart token), CSRF, the consent choice itself.
+The EU ePrivacy rules (cookie/"similar technologies" consent) apply to **storing information on, or reading it from, a visitor's device**; GDPR applies to **personal data**. My working reading: **tier 1** does neither — it stores nothing on the device, reads nothing from it, and stores no data that identifies or can single out a person (a daily count per metric and product) — so it needs no consent. **Tier 2** stores an identifier on the device and links events to it, so it needs consent in most EU member states unless the national authority has exempted strictly-aggregated first-party audience measurement under strict conditions (some do — Bulgaria's reading must be confirmed). **The legal reading must still be confirmed by the owner with a legal adviser:** (a) that tier 1 is indeed outside consent in Bulgaria, including the IP-based throttling described in §10.2 (kept only in a short-lived cache, never in the database); (b) whether tier 2 is exempt anywhere or always needs consent; (c) the wording of the consent text; (d) the retention periods of §12.1. The design below is built so that the **strict reading** (consent required for tier 2) costs nothing extra: without consent there is no identifier and no per-visitor record. Strictly necessary (no consent needed in either tier): the session for the cart and checkout (V: the cart token), CSRF, the consent choice itself.
 
-### 10.2 The consent mechanism (I)
+### 10.2 Tier 1 — aggregate counters (no consent)
 
-- A small banner (Alpine, ~1 KB of logic) on first visit with two equal buttons: *Accept analytics* / *Only necessary*; a persistent "Cookie settings" link in the footer.
+**What is stored — one table, `traffic_daily`:**
+
+| Column | Type | Meaning |
+|---|---|---|
+| `day` | date | The store-time day (`site.timezone`) |
+| `metric` | varchar(24), closed list | `page_view`, `product_view`, `category_view`, `search`, `add_to_cart`, `checkout_start` |
+| `subject_id` | bigint unsigned NOT NULL DEFAULT 0 | The product id for `product_view` / `add_to_cart`, the category id for `category_view`, otherwise 0 (a real 0, not NULL, so the unique index below works on MySQL) |
+| `hits` | bigint unsigned | The count |
+| PRIMARY/UNIQUE | `(day, metric, subject_id)` | one row per day, metric and subject |
+
+That is **everything**: no timestamp finer than the day, no IP address, no user agent, no referrer, no session or cart id, no cookie value, no search term (the `search` metric counts searches, not words; terms are never stored), no email. Orders are **not** counted here: `order_placed` per day is read from the `orders` table, the authoritative figure. `checkout_start` and `add_to_cart` may be counted on the server where the request already reaches the cart/checkout API (the seam is decided in S12, Unknown: whether the cart API fires a hook or needs a one-line call); `page_view`, `product_view`, `category_view` and `search` need the beacon below because cached pages never reach PHP.
+
+**Why no identifier and no device storage:** a counter needs neither. Without an identifier nothing can be linked to a person and nothing is read from or written to the visitor's device (no cookie, no `localStorage`, no fingerprint), which is exactly what keeps this tier outside the consent rule in the working reading above. The price is stated plainly: **it measures views, not people** — "unique visitors" and returning-visitor figures do not exist in tier 1; the ratios available are hits per metric (add-to-cart per product view, orders per product view).
+
+**How a cached page still counts — the beacon.** The page HTML is identical for every visitor (Varnish serves it, §3.4), and it contains a tiny inline script (~15 lines, no library) with the metric and subject already rendered into the markup (`data-metric="product_view" data-subject="123"`). When the page has been visible for ~1.5 seconds (`document.visibilityState`, a timer — most simple crawlers never wait), the script sends **one** request: `POST /t/c` (an uncached, session-less route in the cacheable middleware group of §3.4) with `fetch(..., {keepalive: true, credentials: 'omit'})` and a body of a few bytes (`m=product_view&s=123&t=<page token>`). `credentials: 'omit'` means the browser sends no cookies and the response sets none: the route sits in the group WITHOUT the session middleware, so there is no `Set-Cookie` (the same test as the cacheable pages, §3.4). The response is `204 No Content` with `Cache-Control: no-store`. The page token `t` is a signed value (HMAC with the app key) over `metric:subject:day` rendered into the cached page, so the endpoint accepts only a metric/subject pair the server itself emitted for today; a replayed token can only add to that same counter and is covered by the throttle. An unknown or hidden subject id is ignored (one cached existence check).
+
+**Counting without hot-row contention (I):** the endpoint does `INCR` on a cache key per `(day, metric, subject)` and a scheduled command (every minute) flushes the keys into `traffic_daily` with one upsert per key (`hits = hits + n`); with the file/array cache driver (no Redis) it upserts directly. A lost minute of counts on a cache flush is acceptable for aggregate numbers.
+
+**Bot filtering without storing an IP address (I), cheapest first:** (1) **Requires JavaScript and a visible page for ~1.5 s** — most crawlers and scanners never send the beacon; (2) the request must carry the browser-set `Sec-Fetch-Mode: cors` / `Sec-Fetch-Site: same-origin` headers (absent on most scripted clients); (3) a small **User-Agent denylist regex in code** (known crawlers and HTTP libraries), evaluated in memory and **never stored**; (4) the signed page token (above) — cannot invent metrics or ids; (5) a **short-lived throttle**: Laravel's `RateLimiter` key = `hash_hmac('sha256', ip, app key + today's date)` held **in the cache with a 60-second TTL only** (e.g. 30 beacons per minute per key) — the IP is used transiently as the throttle key, it is never written to the database or a log, and the salt changes daily so the key is useless tomorrow; (6) **anomaly flag on the report**: a day whose hits for a metric exceed 5× the median of the previous seven days is shown with a "possible bot traffic" note (facts, not enforcement — nothing is dropped or corrected silently). Residual limit, stated plainly: a determined script that runs a real browser can still inflate the counters; the numbers are for trends and ratios, not for billing.
+
+**Retention:** `traffic_daily` holds no personal data and is kept indefinitely by default (`privacy.retention.aggregates_months`, 0 = keep, §12.1).
+
+### 10.3 Tier 2 — the consent mechanism (I)
+
+- The banner appears **only while `storefront.analytics.tier2_enabled` is on** (default off, §10); with it off the storefront shows no banner and sets nothing. A small banner (Alpine, ~1 KB of logic) on first visit with two equal buttons: *Accept analytics* / *Only necessary*; a persistent "Cookie settings" link in the footer.
 - The choice is stored **client-side** in `localStorage` key `easyco.consent` = `{v:1, analytics: bool, at: iso}` — not as a server cookie, so cacheable pages stay cookie-free (§0.2). A server-side record of consent is not required by the strict reading for analytics (no personal data is stored server-side without it); if the owner wants proof, a `consent_log` row is written *by the events endpoint with the visitor id* only when the visitor accepted.
 - When `analytics = true` the JS creates a random visitor id (UUID v4) and a session id (per tab session) in `localStorage`; when `false` or absent **nothing is generated and nothing is sent**; withdrawing consent deletes both ids and sends a single `DELETE /api/v1/funnel/visitor/{visitorId}` (erasure) request.
 - The endpoint is **uncached, throttled and idempotent** (below). It works even if the page came from the proxy cache.
 
-### 10.3 The events table and the six events
+### 10.4 Tier 2 — the events table and the six events
 
 `funnel_events` — `id` (bigint), `occurred_at` (timestamp(3)), `visitor_id` (char(36)), `session_id` (char(36)), `event` (closed list: `product_viewed|added_to_cart|checkout_started|order_placed|checkout_failed|cart_abandoned`), `product_id` null, `variation_id` null, `cart_id` null, `order_id` null, `value_minor` null, `currency` char(3) null, `source` (varchar 40, whitelisted: direct|search|category|home|email|other) null, `event_key` (char(36), UNIQUE — client-generated UUID, makes the endpoint idempotent), `created_at`. Indexes: `(event, occurred_at)`, `(visitor_id, occurred_at)`, `(product_id, occurred_at)`, UNIQUE `event_key`. **No email, no IP, no user agent, no free text.**
 
@@ -339,13 +365,13 @@ The six events (the brief says "the six events" without naming them; these are m
 
 Validation at the endpoint: event name from the closed list; ids must be ids of real, visible products (checked in one query for a batch); body ≤ 2 KB; at most 20 events per request; `value_minor` ≤ 10^9; unknown fields dropped; throttle 60 events/min per visitor id and 120/min per IP; reject if the visitor id is not a UUID. Bots that do not run JS never produce events.
 
-### 10.4 Retention and aggregation
+### 10.5 Tier 2 — retention and aggregation
 
-Raw rows are kept 13 months (O13) then deleted by a scheduled command; before deletion they are rolled up into `funnel_daily` — `day`, `event`, `product_id` null, `count`, `value_minor_sum`, unique `(day, event, product_id)` — which holds no visitor ids and can be kept indefinitely. The report reads `funnel_daily` for history and raw rows for the last 30 days.
+Raw rows are kept 13 months by default (O13; the period is the setting `privacy.retention.funnel_events_months`, §12.1) then deleted by a scheduled command; before deletion they are rolled up into `funnel_daily` — `day`, `event`, `product_id` null, `count`, `value_minor_sum`, unique `(day, event, product_id)` — which holds no visitor ids and can be kept indefinitely. The report reads `funnel_daily` for history and raw rows for the last 30 days.
 
-### 10.5 The owner's report (read-only Filament page, `report_view` permission, V: exists)
+### 10.6 The owner's report (read-only Filament page, `report_view` permission, V: exists)
 
-Four numbers over a chosen period, each with the previous period beside it: **add-to-cart per viewed product** (`added_to_cart / product_viewed`), **checkout per cart** (`checkout_started / carts_with_a_line` — carts counted from `added_to_cart` distinct sessions), **order per checkout** (`order_placed / checkout_started`), **average order** (from the `orders` table, not from events — the authoritative figure). Plus a ranked list of the most viewed products with their add-to-cart rates, and the abandoned-cart recovery rate (§11). Limits stated on the page: counts cover **only visitors who accepted analytics**; the page shows the acceptance rate so nobody mistakes it for total traffic.
+Four numbers over a chosen period, each with the previous period beside it: **add-to-cart per viewed product** (`added_to_cart / product_viewed`), **checkout per cart** (`checkout_started / carts_with_a_line` — carts counted from `added_to_cart` distinct sessions), **order per checkout** (`order_placed / checkout_started`), **average order** (from the `orders` table, not from events — the authoritative figure). Plus a ranked list of the most viewed products with their add-to-cart rates, and the abandoned-cart recovery rate (§11). Limits stated on the page: the tier 2 numbers cover **only visitors who accepted analytics**; the page shows the acceptance rate so nobody mistakes them for total traffic. **The tier 1 counters (§10.2) are shown beside them as the unconsented, unbiased totals** (views and add-to-carts per day for everybody), so the page can say "of N product views, M visitors accepted analytics".
 
 ---
 
@@ -354,7 +380,8 @@ Four numbers over a chosen period, each with the previous period beside it: **ad
 - **Definition (decision 6):** a cart with at least one line, not claimed by an order (`order_id IS NULL`, V), whose `updated_at` is older than the **abandon threshold** (default 60 minutes; setting `storefront.cart.abandon_minutes`), and for which no order exists from the same identity since. States (computed, stored on the cart-recovery table, §below): `active → abandoned → reminded_1 → reminded_2 → (reminded_3) → recovered | expired | opted_out`.
 - **A scheduled command** (every 10 minutes) selects candidate carts with a **single indexed query** (V: the carts migration indexes `expires_at` only; `updated_at` is not indexed in that migration, so the stage checks the live schema and adds a plain index on `updated_at` if it is missing), inserts missing rows into `cart_recoveries` and fires the existing planned hook `cart.abandoned` (named in `cart-abandoned-recovery-note.md`; it must be registered in the Hook Reference in that stage). Mail sending is a LISTENER (as the note says), not part of Cart.
 - **`cart_recoveries`:** `id`, `cart_id` (unique FK), `state`, `abandoned_at`, `last_sent_at`, `sent_count` (tinyint), `recovered_order_id` null, `recipient_email_hash` null, `created_at/updated_at`. No email is stored here; the recipient is resolved at send time (below).
-- **Who can be mailed — the real constraint (V):** a guest cart has no email; an account cart has the account's email. Therefore the default is: **account carts of customers who consented to cart-reminder mail**; for guests the email must be captured *voluntarily before the order* (a checkout-form field "email me my cart" with its own consent, or the email field blurred with an explicit checkbox) and stored on the cart (`carts.reminder_email` + `reminder_consent_at`) — a new nullable pair of columns; without them a guest cart can never be mailed. This is the biggest gap in the brief and is decision O14.
+- **Who can be mailed — the real constraint (V):** a guest cart has no email; an account cart has the account's email. Therefore: **account carts of customers who consented to cart-reminder mail**, and **guests who voluntarily tick the reminder checkbox at checkout (decided by the owner 2026-10-09, below)**. Without the checkbox a guest cart can never be mailed.
+- **The guest-email checkbox (decided by the owner 2026-10-09):** next to the email field at checkout there is an **unticked** checkbox: "Send me a reminder if I do not finish my order" (bg/en; the wording is versioned in `mail_consent_texts` with `purpose = cart_reminder`, the table of `mail-design.md` §7 gaining a `purpose` column and UNIQUE `(purpose, version, locale)`). It is never pre-ticked and never required for the order. **Its own consent record:** a table **`consent_records`** — `id`, `purpose` (`cart_reminder`), `subject_type` (`cart|account`), `subject_id` (varchar 64), `granted` (bool), `text_version` (varchar 20), `ip_hash` (char(64) null, HMAC of the IP with the app key — proof without the raw IP, as in `mail-design.md` §7), `created_at`; **append-only**: ticking inserts `granted = 1`, unticking or the unsubscribe link inserts `granted = 0`, and the mail job reads the **latest** row per subject. When the box is ticked, the page sends the typed email to an uncached endpoint `POST /api/cart/reminder` (validated address, throttled, neutral answer, the cart id must be the visitor's own cart by the existing identity check, V: carts are identified by account id or session token) which writes `carts.reminder_email` and `carts.reminder_consent_at` (two new nullable columns, stage S15) and a `consent_records` row, so the email is captured **before** the order exists. Unticking clears `reminder_email` at once. When an order is placed from the cart the columns are cleared by the claimed-cart rules (§12.1), and a reminder is never sent for a claimed cart. Logged-in customers use the account email with the same checkbox (consent stored against the account). The checkbox state is not remembered across carts: each cart asks again.
 - **Thresholds (decision 6):** first email 2 h after abandonment (configurable 1–4 h), second at 24 h, optional third at 72 h (default OFF — O15), default **1 email** total. Never mailed when: an order exists for the identity after the cart's last update; the cart is empty or all lines are unavailable; the recipient has no consent or unsubscribed; the last send was < the spacing ago; the cart is older than 14 days; quiet hours 21:00–08:00 store time (send at 08:00).
 - **Claimed-cart retention (V + I):** a claimed cart (order placed) is **kept** past `expires_at` by `cart:prune` (stage 4h) because it answers checkout replays; the recovery table ignores claimed carts. A separate retention rule for old claimed carts is still an open owner decision from stage 4h — proposal: delete claimed carts 90 days after the order's last status change.
 - **Discount in the reminder:** `cart-abandoned-recovery-note.md` wants a single-use, time-limited code generated by Pricing/Promotions, not by Cart. Default: **no discount** in the first email (measure first); a later option "offer code X% in email 2" generates one promotion with `usage_limit_total = 1`, `valid_until = +3 days`, scoped to nothing (whole cart), created through the promotions writer and stored on `cart_recoveries`. Decision O16.
@@ -363,7 +390,49 @@ Four numbers over a chosen period, each with the previous period beside it: **ad
 
 ---
 
-## 12. Staged plan
+## 12. Privacy tools and retention (decision 4, decided by the owner 2026-10-09)
+
+Two things the owner asked for: **retention periods as settings** and a **per-customer personal-data export and "forget" (anonymise — orders are never deleted)**. Orders are accounting records and CLAUDE.md rule 4 forbids destroying historical identity; "forget" therefore clears the *person* from the records and keeps the *business facts*.
+
+### 12.1 Retention table (settings, with proposed defaults)
+
+All periods live in `site_settings` under `privacy.retention.*`, are edited on one Filament page "Privacy" (permission `settings_manage`; Unknown: whether a dedicated `privacy_manage` permission is wanted), and are enforced by one scheduled command `privacy:prune` (daily, off-peak; deletes in chunks of 500; reports counts; journalled through `ActivityLogger` with counts only). A period of `0` means "keep until another rule removes it". **The defaults are my proposals; none is legal advice — the owner confirms them with an adviser (O17, O21).**
+
+| Data | Where it lives | Setting key | Proposed default | At the end of the period |
+|---|---|---|---|---|
+| Per-visitor funnel events (tier 2) | `funnel_events` | `privacy.retention.funnel_events_months` | 13 months | rolled up into `funnel_daily`, then raw rows deleted |
+| Aggregates (tier 1 counters, daily funnel) | `traffic_daily`, `funnel_daily` | `privacy.retention.aggregates_months` | 0 (keep) | none — they hold no personal data; a positive value deletes older days |
+| Mail log | `mail_log` (`mail-design.md` §6) | `privacy.retention.mail_log_days` | 180 days | rows deleted (addresses and facts only; bodies were never stored) |
+| Newsletter subscribers | `mail_subscribers` | `privacy.retention.subscribers_unsubscribed_months` | 24 months after unsubscribe/bounce | row deleted; **active subscribers are kept while active** |
+| Cart recoveries | `cart_recoveries` (§11) | `privacy.retention.cart_recoveries_days` | 90 days after the recovery reached a final state | rows deleted |
+| Guest reminder email on a cart | `carts.reminder_email` | `privacy.retention.cart_reminder_email_days` | 30 days after the last reminder, or at once when the cart is claimed or the box unticked | the email and consent timestamp cleared (the `consent_records` rows stay as proof, 24 months, `privacy.retention.consent_records_months`) |
+| Inactive customer accounts | `accounts` | `privacy.retention.inactive_account_months` and `privacy.retention.inactive_account_action` | 36 months without login or order; action `report` | `report` = listed on the Privacy page only; `anonymise` runs the same routine as "forget" (§12.3) — switching the action on is a deliberate owner act, and a warning mail 30 days before is proposed (Unknown: wording and legal need) |
+| Claimed carts (cart of a placed order) | `carts` with `order_id` | `privacy.retention.claimed_cart_days` | 90 days after the order's last status change (the open question from stage 4h) | cart and lines deleted — they are configuration, not history (CLAUDE.md rule 4) and the order keeps its own sale lines |
+| Admin activity journal | `activity_log` | `admin.activity_log_retention_months` (V: exists, 6/12/18) | 12 months | already implemented, unchanged |
+| **Orders, their sale lines, payments, receipts, refunds** | `orders` and children | none | **never deleted** | accounting records; only anonymised on request (§12.3). The accounting retention duty (years) is for the adviser |
+
+### 12.2 Export — the customer's data in JSON
+
+`php artisan privacy:export {--account=ID | --email=ADDRESS}` writes one JSON file (UTF-8, pretty-printed, LF) to a private storage path and prints its location; an admin action on the customer later calls the same service. **Format (I):** `{"schema": "easyco.privacy-export.v1", "generated_at": ISO-8601 UTC, "subject": {"account_id", "email"}, "account": {registered_at, email, name?}, "addresses": [...saved addresses...], "orders": [{"id", "placed_at", "status", "currency", "subtotal", "discount", "shipping", "total", "promotion_code", "delivery": {type, recipient_name, phone, country, city, postal_code, address lines or pickup point}, "shipping_method": {...}, "payments": [{method, status, amount}], "lines": [{product_name, sku, attributes, quantity, final_unit_price, line_total}]}], "carts": [...open carts...], "newsletter": {status, consent_at, text_version}, "consents": [{purpose, granted, text_version, at}], "mail_log": [{template_key, status, queued_at}], "funnel_events": [...events linked to the customer's order or cart ids...]}`. **Never included:** password hashes, API tokens, unit costs, profit or margin, internal staff notes about the customer (Unknown for the owner and adviser: whether staff notes are personal data to disclose — the default is to list *that* notes exist), other customers' data. The file is generated for a person the staff member identified; a guest is found by email through their orders. The writer is read-only, queries by indexed keys, and streams per order so a large history does not exhaust memory.
+
+### 12.3 Forget — anonymise, never delete orders
+
+`php artisan privacy:forget {--account=ID | --email=ADDRESS}` (and the same service behind a confirmed admin action; a dry-run `--report` lists what would change). **Rule: orders are never deleted; the person is removed from them.**
+
+| Cleared or replaced | Kept |
+|---|---|
+| `orders.email` → `deleted-{orderId}@anonymized.invalid` (the `.invalid` TLD is reserved, RFC 2606; the column is NOT NULL); `recipient_name` → a fixed "Anonymised customer" text; `phone` → empty/neutral; `address_line_1/2`, `postal_code`, `city` → cleared; pickup-point name, address, reference and settlement → cleared; the same fields in `order_placement_snapshots` | order id, placed-at, status and history, currency and every amount (subtotal, discount, shipping, total), promotion code, shipping method name/courier/delivery type/service code, **country** (needed for tax treatment), tracking number (a shipment identifier — flagged for the adviser), all sale lines (product name, SKU, attributes, quantities, prices), payment rows and receipts' amounts and dates, refund records |
+| The account: email → `deleted-{accountId}@anonymized.invalid`; password hash → a random unusable hash; name cleared; API tokens and sessions revoked; saved addresses cleared or deleted (Unknown: whether `orders.address_id` is a foreign key that forces *anonymise* instead of *delete* — to verify in S16); open carts deleted | the account row itself and its id (orders reference it) |
+| Newsletter row deleted; `mail_log` rows for the address deleted; `consent_records` for the account/carts kept as proof for their period; `funnel_events` of visitor ids that appear together with the customer's order or cart ids deleted (events hold no email, so the link is the order/cart id) | the aggregates (no personal data) |
+| Free text that may contain a name (order notes, event notes, receipt/payment references) | **Unknown — S16 starts with an inventory** of every column that can hold personal data and a test that fails when a new such column appears unclassified (a registry `PersonalDataRegistry` lists table, column, class: `identifying|business|free_text`, and the forget routine handles each class) |
+
+**Safety rules:** (1) idempotent — a second run changes nothing; (2) **refused while an order of the subject is still open** (status `placed`, `confirmed` or `shipped`, a payment not settled or a refund owed — the facts the Needs-attention page already derives) with the list of blocking orders, so a package in transit is never orphaned (decision O22); (3) one database transaction per subject, then the deletions that cannot be transactional (files) run after commit; (4) the action is journalled with the subject's id (never the email) and counts; (5) a forgotten subject cannot log in and receives no mail (the address no longer exists); (6) nothing in the routine touches the frozen Catalog classes or the Order domain's invariants — it writes through a dedicated `PersonalDataEraser` in `app/`, with a documented narrow write path on `orders` (these are PII columns, not business facts, in the same sense as CLAUDE.md rule 7's structural-reference exception — to be documented there when built).
+
+### 12.4 Stage
+
+Built in **S16** (§13): the Privacy page and settings, `privacy:prune`, `privacy:export`, `privacy:forget`, the registry and its completeness test. S12–S15 each register their own data in the registry and honour its retention setting from the day they ship, so nothing has to be retrofitted.
+
+## 13. Staged plan
 
 Each stage ends in a review gate and a full-suite run in a private test database (the house rule); no stage commits without the owner; every stage lists **Must not touch**. "Main" = the main coder (risky, cross-cutting, schema); "Cheap" = a cheaper coder (views, JS, lang, text) against a fixed read-model API.
 
@@ -380,15 +449,17 @@ Each stage ends in a review gate and a full-suite run in a private test database
 | **S9** | URLs: slug history + redirects | `catalog_slug_history`, writer hooks, `storefront_redirects`, importer command | migration, writers (minimal), command | 301 after rename; loop guard; import | frozen Catalog classes (`Product.php`, `Variation.php`, `VariationSignature.php`) — slug writes go through the existing writer/service seam, to be located first | Main |
 | **S10** | Merchandising: card extras | `BadgeResolver`, settings, `promo_promotions.is_public`, admin tab "Product cards" | migration (1 column), resolver, settings page | OFF = zero queries; sale % maths; new window; sizes; ordering/max | pricing/promotions rules | Main (resolver) + Cheap (admin lang/views) |
 | **S11** | Merchandising: home blocks | slider + banners tables, admin page, rendering | migrations, Filament page, partials | one active block; max slides; link validation; reduced-motion markup | Media domain | Main (schema, writers) + Cheap (views) |
-| **S12** | Consent + funnel events | banner, `localStorage` logic, endpoint, table, validation, throttling, erasure | migration, controller, JS | no consent ⇒ no request; idempotency; validation limits; erasure; no cookie on cached pages | cached routes' cookie-freeness | Main |
-| **S13** | Funnel report | aggregation command, retention, report page | command, Filament page | rates maths; retention delete; acceptance rate shown | orders | Main |
-| **S14** | Abandoned carts | `cart_recoveries`, command, `cart.abandoned`, guest email capture, thresholds | migrations, command, hook, checkout form field (consent) | candidate query count; never-when-ordered; quiet hours; spacing | Cart domain internals (listener only) | Main (needs `mail-design.md` M1 first) |
+| **S12** | Tier 1 counters | `traffic_daily`, the beacon script and `POST /t/c`, signed page tokens, flush command, bot filters, anomaly flag, report numbers | migration, controller, JS, command | no cookie and no `Set-Cookie`; unknown metric/subject ignored; token replay bounded; denylist; throttle key is cache-only (no DB write of IP); flush adds up; page works with JS off | cached routes' cookie-freeness | Main |
+| **S13** | Tier 2: consent + funnel events | banner (only when `tier2_enabled`), `localStorage` logic, endpoint, table, validation, throttling, erasure | migration, controller, JS | no consent ⇒ no request; banner off by default; idempotency; validation limits; erasure; no cookie on cached pages | cached routes' cookie-freeness | Main |
+| **S14** | Measurement report | aggregation command, report page showing tier 1 and tier 2 side by side, acceptance rate | command, Filament page | rates maths; acceptance rate shown; anomaly note | orders | Main |
+| **S15** | Abandoned carts | `cart_recoveries`, command, `cart.abandoned`, **guest reminder checkbox + `consent_records` + `carts.reminder_*` columns**, thresholds | migrations, command, hook, checkout form field (consent) | candidate query count; never-when-ordered; quiet hours; spacing; unticked by default; untick clears the email; consent read as latest row | Cart domain internals (listener only) | Main (needs `mail-design.md` M1 first) |
+| **S16** | Privacy tools and retention | Privacy page and `privacy.retention.*` settings, `privacy:prune`, `privacy:export`, `privacy:forget`, `PersonalDataRegistry` and its completeness test | settings page, commands, `PersonalDataEraser`, one narrow write path on `orders` PII columns | retention cutoffs exact; export shape and exclusions; forget keeps every listed business fact and clears every listed PII field; idempotent; refused while an order is open; journalled without the email; registry fails on an unclassified new column | Order domain invariants, frozen Catalog classes | Main |
 
-**Order:** S1 → S2 (first visible result: category + product) → S3 (home + cart) → S4 → S5 → S6 → S7 → S8 → S9 → S10 → S11 → S12 → S13 → S14. S5/S6/S7 can interleave. S14 waits for the mail stages M1–M3.
+**Order:** S1 → S2 (first visible result: category + product) → S3 (home + cart) → S4 → S5 → S6 → S7 → S8 → S9 → S10 → S11 → S12 → S13 → S14 → S15 → S16. S5/S6/S7 can interleave. S15 waits for the mail stages M1–M3; S16 may be built earlier (it only needs the data it protects to exist).
 
 ---
 
-## 13. Decisions needed from the owner (with my recommendation)
+## 14. Decisions needed from the owner (with my recommendation)
 
 - **O1 — Where the read layer lives:** `App\Storefront` (recommended) vs a new domain package. A package would have to import Catalog, Pricing and Media, which the cross-domain rule (CLAUDE.md rule 9) forbids for domain packages; `app/` is allowed to compose them.
 - **O2 — URL scheme:** keep raf.bg's `/product/{slug}`, `/product-category/{path}`, `/product-tag/{slug}` (already confirmed in `storefront-frontend-design.md` §10), add `/brand/{slug}`. Recommend yes.
@@ -402,15 +473,18 @@ Each stage ends in a review gate and a full-suite run in a private test database
 - **O10 — Promo badge needs an explicit `is_public` flag on promotions** (codes are secret today). Recommend yes; default false.
 - **O11 — `hasMerchantReturnPolicy` / `shippingDetails` in JSON-LD** only once the merchant enters a returns policy and shipping facts (settings). Recommend; both are weighted heavily by shopping surfaces, so enter them early.
 - **O12 — One language at a time** (`site.locale`), no hreflang in V1.
-- **O13 — Funnel raw-event retention 13 months,** then daily aggregates. Confirm with the legal adviser (§10.1).
-- **O14 — Abandoned-cart recipients:** account carts with consent + guests who voluntarily leave an email at checkout with explicit consent. Recommend; without a guest-email capture the default recipient set is only registered customers (probably a minority at this shop).
+- **O13 — Funnel raw-event retention 13 months,** then daily aggregates; now the setting `privacy.retention.funnel_events_months` (§12.1). Confirm with the legal adviser (§10.1).
+- **O14 — Abandoned-cart recipients (decided by the owner 2026-10-09):** account carts with consent + guests through an **unticked checkbox** next to the email field at checkout ("Send me a reminder if I do not finish my order") with its own append-only consent record (§11).
 - **O15 — Third reminder at 3 days:** default OFF; default total = 1 email (decision 6).
 - **O16 — Discount code in the reminder:** none in V1; measure first, then offer a single-use 3-day code in the second email.
-- **O17 — Consent text and the strict-reading default** (§10.1): confirm with the legal adviser; I recommend building for the strict reading.
+- **O17 — Consent text and the strict-reading default** (§10.1): confirm with the legal adviser; I recommend building for the strict reading. The two-tier structure itself is decided (O20).
 - **O19 — The six funnel events:** `product_viewed`, `added_to_cart`, `checkout_started`, `order_placed`, `checkout_failed`, `cart_abandoned`. Recommend; tell me if you meant a different six.
+- **O20 — Two-tier measurement (decided by the owner 2026-10-09):** tier 1 = aggregate counters, no identifier, nothing on the device, no consent; tier 2 = per-visitor events with consent; hashing does not remove the need for consent for tier 2 (§10). Still to confirm legally: that tier 1 needs no consent (§10.1).
+- **O21 — Privacy tools and retention (decided by the owner 2026-10-09):** retention periods are settings; per-customer JSON export; "forget" anonymises and never deletes orders (§12). Open inside the decision: the default periods of §12.1 (mine), the inactive-account action (`report` until switched), and whether staff notes belong in the export.
+- **O22 — Forget is refused while the customer has an open order** (placed/confirmed/shipped, unsettled payment, refund owed). Recommend yes; the alternative is to anonymise anyway and lose the delivery details of a parcel in transit.
 - **O18 — Order of the first stages:** S1 → S2 → S3 gives home + category + product + cart earliest; recommend this over starting with SEO or search.
 
-### 13.2 Unknowns (need the running app, or a decision I did not read)
+### 14.2 Unknowns (need the running app, or a decision I did not read)
 
 - Real LCP and the real query counts of the sandbox pages on the owner's hosting; whether Cloudways' Varnish passes `Cache-Control`/`Vary` as designed and what its purge API is.
 - Whether merchants actually fill `alt_text` (the column exists; fill rate unknown) — decides whether the name fallback is the common case.- Whether a `1200 px` or `200 px` image tier is wanted (measure the LCP image size on mobile first).

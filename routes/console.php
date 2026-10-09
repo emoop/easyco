@@ -19,3 +19,8 @@ Artisan::command('inspire', function () {
 // so a tight cadence costs nothing and keeps the log from growing
 // unbounded for longer than a day past the merchant's own setting.
 Schedule::command('activity-log:prune')->daily();
+
+// mail-design.md section 6.1: the process can die between an order's commit and the order.placed hook, and then no
+// confirmation mail is ever queued. Every 10 minutes the orders of the last 24 hours (older than 5 minutes) that have
+// no mail_log row are queued. withoutOverlapping: a slow run must not start a second one on top of it.
+Schedule::command('mail:reconcile-order-confirmations')->everyTenMinutes()->withoutOverlapping();

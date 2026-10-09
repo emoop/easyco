@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use App\Http\ApiRateLimits;
+use App\Mail\SendOrderConfirmation;
 use App\NeedsAttention\NeedsAttentionSource;
 use App\NeedsAttention\OwedRefundSource;
 use App\NeedsAttention\PaymentStepUnfinishedSource;
@@ -11,6 +12,8 @@ use App\Services\AuthenticatedStaffResolver;
 use App\Services\OrderAdminReader;
 use App\Services\PriceDisplayFormatter;
 use App\Services\ProductPriceRangeProvider;
+use EasyCo\Extensibility\Hook;
+use EasyCo\Order\Order;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -83,5 +86,9 @@ class AppServiceProvider extends ServiceProvider
     {
         // The named API rate limiters, in their one central place.
         ApiRateLimits::register();
+
+        // mail-design.md section 6.1: the order confirmation. The listener only DISPATCHES (after the order
+        // transaction committed); domain packages never call Hook:: themselves, so the registration lives here.
+        Hook::action('order.placed', static fn (Order $order) => app(SendOrderConfirmation::class)->handle($order));
     }
 }
