@@ -48,7 +48,7 @@ A method is one concrete way of delivering in one zone. Press "New method" and s
 - **Active**: an inactive method is not offered but stays saved.
 - **Price**: for the kinds that have a price.
 - **Free shipping above (optional)**: see "Free shipping above an amount".
-- **Courier (optional)** and **Delivery type (optional)**: for grouping at checkout.
+- **Courier (optional)** and **Delivers to**: for grouping at checkout. **Delivers to** is required: "All (address, office, locker)", "Address only", "Office or locker only", "Office only" or "Locker only".
 
 A zone can have several methods; the customer chooses among the active ones.
 
@@ -61,7 +61,7 @@ A zone can have several methods; the customer chooses among the active ones.
 | Price by shipping class | A base price that the classes of the products in the cart can replace or adjust. |
 | Carrier | A courier method; tied to a **Carrier code** and may need a pickup point. |
 
-If the method is for collection from an office or locker, tick "Needs a pickup point (office or locker)": the customer then has to choose a point.
+If a method delivers only to a pickup point — set **Delivers to** to "Office or locker only", "Office only" or "Locker only" — the customer has to choose a point at checkout.
 
 ## How classes act on the price {#action-method-class-mode}
 
@@ -142,7 +142,7 @@ The field is required in the admin forms.
 
 The "Try it" tool at the bottom of the "Shipping" page shows what a customer would get for a given address and cart.
 
-1. Enter "Country" and, optionally, "Settlement" and "Postcode". The "Pickup point (office or locker)" box shows pickup-point methods.
+1. Enter "Country" and, optionally, "Settlement" and "Postcode". The "Pickup point (office or locker)" box tests a pickup destination: methods whose "Delivers to" does not serve it are listed separately, with the reason.
 2. Enter "Goods total after discount" and the cart lines: for each a "Shipping class" and "Quantity" ("Add a line" / "Remove").
 3. Press "Show the result".
 
@@ -170,12 +170,14 @@ The default class is pre-selected for new products. Products created before clas
 
 ## Grouping methods by courier {#action-method-grouping}
 
-The "Courier (optional)" and "Delivery type (optional)" fields help show the methods in order.
+The "Courier (optional)" and "Delivers to" fields help show the methods in order.
 
 - **Courier**: free text (for example "Econt"). Methods with the same courier are grouped together, regardless of letter case and spaces around the name.
-- **Delivery type**: "To address", "To office", "To locker" or "Other".
+- **Delivers to**: where the method may take the order — "All (address, office, locker)", "Address only", "Office or locker only", "Office only" or "Locker only".
 
 This lets the customer first choose a courier, then address, office or locker. Each method keeps its own price; the group shows the lowest ("from").
+
+A method is only offered for a destination kind it serves: an "Address only" method is not shown to a customer who chose a pickup point, and a "Locker only" method is not shown for an address. When a method is missing for this reason, the checkout says why.
 
 ## Why the shipping class is required {#action-class-required}
 

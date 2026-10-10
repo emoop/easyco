@@ -539,9 +539,6 @@ class ShippingMethodResource extends Resource
                 TextColumn::make('courier')
                     ->label(__('shipping.methods.fields.courier'))
                     ->placeholder('—'),
-                TextColumn::make('delivery_type')
-                    ->label(__('shipping.methods.fields.delivery_type'))
-                    ->formatStateUsing(fn (?string $state): string => $state === null ? '—' : __('shipping.methods.delivery_types.'.$state)),
                 TextColumn::make('name')
                     ->label(__('shipping.methods.fields.name'))
                     ->weight('bold'),

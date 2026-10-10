@@ -203,8 +203,8 @@ class ShippingMethodGroupingResourceTest extends TestCase
         $html = html_entity_decode($page->html());
 
         $this->assertStringContainsString('Courier (optional)', $html);
-        $this->assertStringContainsString('Delivery type (optional)', $html);
-        $this->assertStringContainsString('To office', $html);
+        $this->assertStringContainsString('Delivers to', $html);
+        $this->assertStringContainsString('Office only', $html);
         $this->assertSame(['Econt to office', 'Plain', 'Speedy to address'], ShippingMethodResource::getEloquentQuery()->pluck('name')->all(), 'the method order is unchanged');
 
         // the summary column does not repeat what the two columns show
@@ -212,7 +212,7 @@ class ShippingMethodGroupingResourceTest extends TestCase
 
         App::setLocale('bg');
         $bg = html_entity_decode(Livewire::test(ListShippingMethods::class)->html());
-        $this->assertStringContainsString('До адрес', $bg);
+        $this->assertStringContainsString('Само адрес', $bg);
     }
 
     public function test_the_list_reads_the_same_queries_for_3_and_12_grouped_methods_as_before(): void

@@ -172,12 +172,10 @@ return [
             'free_above' => 'Free shipping above (optional)',
             'carrier_code' => 'Carrier code',
             'courier' => 'Courier (optional)',
-            'delivery_type' => 'Delivery type (optional)',
             'class_rates' => 'Class amounts',
             'delivers_to' => 'Delivers to',
         ],
         'delivery_types' => [
-            'none' => 'No delivery type',
             'address' => 'To address',
             'office' => 'To office',
             'locker' => 'To locker',
