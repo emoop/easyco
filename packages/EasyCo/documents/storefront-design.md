@@ -187,6 +187,30 @@ How a test asserts it: `DB::listen`/`DB::getQueryLog()` around the real request 
 - **ImageSet** carries `src` (the `medium` tier, else the largest ready variant) besides the design's fields; `lqip` is not built.
 - `sizes` (S10), badges (S10) and facets (S7) are empty arrays.
 
+### 2.7 As built in S2a (routes, controllers, view data contract, security)
+
+**Routes** (`routes/storefront.php`, included from `routes/web.php`; names `storefront.home|product|category`): `GET /`, `GET /product/{slug}`, `GET /product-category/{path}`. They are loaded in the `web` group and then STRIPPED (`withoutMiddleware`) of `EncryptCookies`, `AddQueuedCookiesToResponse`, `StartSession`, `ShareErrorsFromSession` and `PreventRequestForgery`: no session, no cookie, no CSRF token. Kept from `web`: `ApplyStoreLocale` and `ApplyStoreTimezone` (they read settings, not a session). `App\Storefront\Support\SecurityHeaders` adds `X-Content-Type-Options: nosniff` and `Referrer-Policy: strict-origin-when-cross-origin`; no caching header is set (S4). The route constraints are deliberately `[\s\S]*`: the controller decides, so every invalid input ends in the storefront's own 404.
+
+**One 404** (`NotFoundResponse`): missing, hidden, draft, archived, soft-deleted, invalid slug or path, an invalid or price-sort query, and a page past the last all give the same status and the same body (no menu, nothing request-dependent). A page past the last is a 404; page 1 of an empty listing is a 200. Malformed percent-encoding (`%E0%A4%A`) is answered 400 by the framework before the storefront runs.
+
+**Canonical redirects** (301, the Location is the read model's `url`, never built by a controller): a product slug that matches only by case (database collation; MySQL), a category path that is not the canonical one (wrong parent prefix, other case; the whitelisted query keys are kept).
+
+**Query string:** read only through `ListingRequest` (`page`, `per_page`, `sort` via `ListingQuery::fromRequestArray`); everything else is ignored, price filters are not reachable, a price sort is refused (404) so the reader's `ListingOptionNotAvailable` can never occur. Pagination links (`PaginationLinks`) carry only those three keys, only when not default.
+
+**View data contract** (also in each controller's docblock; the views print nothing else):
+- `storefront.product`: `product` ProductPage, `descriptionHtml` string (the description after `DescriptionSanitizer`: the ONLY value printed with `{!! !!}`), `categories` list<CategoryNode> (menu), `seo`.
+- `storefront.category`: `category` CategoryPage, `listing` ListingPage, `pagination` array{current,last,prev,next,pages[{number,url,current}]}, `categories`, `seo`.
+- `storefront.home`: `listing` ListingPage (newest 12), `categories`, `seo`.
+- `storefront.404`: `categories` (always `[]`), `seo`.
+- `seo` = array{title, description, canonical} from `SeoMeta`: title "{name} — {config('app.name')}" (no site setting holds a shop name yet), description = short description (else description) as plain text of at most 160 characters ("" omits the tag), canonical = `config('app.url')` + the read model url (`?page=n` for n > 1); `canonical` is null on the 404, which then carries `noindex`.
+- Prices are formatted in the view through `@inject PriceFormatter` (minor units + currency; symbol position from `site.currency_symbol_position`).
+
+**Views** (`resources/views/storefront/`: `layout`, `home`, `category`, `product`, `404`, partials `card`, `pagination`, `breadcrumbs` and the extra `menu`, `price`, `image`): semantic HTML, no CSS and no JS, only marker classes `sf-*` for the designer; every text from `lang/{bg,en}/storefront.php`; images with `width`/`height`/`srcset`/`sizes`, the first two card images and the main product image eager (the main one `fetchpriority="high"`), the rest `loading="lazy"`; a variable product has a plain `<select>` of its variations, and add-to-cart is a disabled placeholder `<button data-variation-id>` (the first purchasable in-stock variation, "" when none).
+
+**Description sanitiser:** `DescriptionSanitizer` (`App\Mail\HtmlSanitizer` has a fixed mail allow-list and cannot add `rel`): allow-list p br strong em b i ul ol li h2-h4 blockquote table thead tbody tr th td a; only `href` on `a` (https, mailto or relative; control characters stripped before the scheme is read), `rel="noopener nofollow"` added; everything dangerous dropped with its content.
+
+**Query counts** (a real request, identical for 5 and 24 products; the reader's ceilings plus the request's own settings reads: locale, time zone, currency position): home 24, category page 24, product page 25 (variable product, with 1 or 7 images and 1 or 5 variations; a simple product 24). The menu is free once `CategoryIndex` is loaded (category structure and visible-product pairs are each read once per request).
+
 ---
 
 ## 3. Caching

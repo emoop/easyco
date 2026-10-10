@@ -1,0 +1,33 @@
+<?php
+
+// The storefront's own texts (stage S2a). Every string a storefront view prints comes from here; bg and en move together.
+return [
+    'home' => 'Home',
+    'menu' => 'Categories',
+    'breadcrumbs' => 'You are here',
+    'newest_products' => 'Newest products',
+    'products_in_category' => 'Products',
+    'subcategories' => 'Subcategories',
+    'no_products' => 'There are no products here yet.',
+    'in_stock' => 'In stock',
+    'out_of_stock' => 'Out of stock',
+    'price_from_to' => ':from – :to',
+    'regular_price' => 'Regular price',
+    'brand' => 'Brand',
+    'sku' => 'SKU',
+    'choose_variation' => 'Choose an option',
+    'variation_option' => ':label — :price',
+    'variation_option_unavailable' => ':label — :price (:reason)',
+    'unavailable' => 'unavailable',
+    'add_to_cart' => 'Add to cart',
+    'description' => 'Description',
+    'gallery' => 'Product images',
+    'pagination' => 'Pages',
+    'previous' => 'Previous',
+    'next' => 'Next',
+    'page_of' => 'Page :page of :last',
+    'not_found_title' => 'Page not found',
+    'not_found_heading' => 'This page does not exist',
+    'not_found_text' => 'The page you are looking for is not available.',
+    'back_home' => 'Back to the shop',
+];

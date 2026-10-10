@@ -1,0 +1,33 @@
+<?php
+
+// Текстовете на витрината (етап S2a). Всичко, което шаблон на витрината печата, идва оттук; bg и en се променят заедно.
+return [
+    'home' => 'Начало',
+    'menu' => 'Категории',
+    'breadcrumbs' => 'Вие сте тук',
+    'newest_products' => 'Най-нови продукти',
+    'products_in_category' => 'Продукти',
+    'subcategories' => 'Подкатегории',
+    'no_products' => 'Тук все още няма продукти.',
+    'in_stock' => 'В наличност',
+    'out_of_stock' => 'Изчерпан',
+    'price_from_to' => ':from – :to',
+    'regular_price' => 'Редовна цена',
+    'brand' => 'Марка',
+    'sku' => 'Артикулен номер',
+    'choose_variation' => 'Изберете вариант',
+    'variation_option' => ':label — :price',
+    'variation_option_unavailable' => ':label — :price (:reason)',
+    'unavailable' => 'няма наличност',
+    'add_to_cart' => 'Добави в количката',
+    'description' => 'Описание',
+    'gallery' => 'Снимки на продукта',
+    'pagination' => 'Страници',
+    'previous' => 'Предишна',
+    'next' => 'Следваща',
+    'page_of' => 'Страница :page от :last',
+    'not_found_title' => 'Страницата не е намерена',
+    'not_found_heading' => 'Тази страница не съществува',
+    'not_found_text' => 'Страницата, която търсите, не е налична.',
+    'back_home' => 'Обратно към магазина',
+];
