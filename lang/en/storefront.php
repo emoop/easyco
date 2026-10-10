@@ -4,6 +4,7 @@
 return [
     'home' => 'Home',
     'menu' => 'Categories',
+    'cart' => 'Cart',
     'breadcrumbs' => 'You are here',
     'newest_products' => 'Newest products',
     'products_in_category' => 'Products',

@@ -48,8 +48,11 @@
         @apply mr-auto text-lg font-semibold tracking-tight text-neutral-900 no-underline;
     }
 
+    /* Base (no JS): the toggle would do nothing, so it is hidden, and the nav is a normal block — the
+       categories stay reachable. The script adds `.js` to <html>, and only then does the mobile menu
+       collapse behind the toggle (see also the desktop rules at the end of this file). */
     .sf-menu-toggle {
-        @apply inline-flex items-center gap-2 rounded-md border border-neutral-300 px-3 py-2 text-sm font-medium text-neutral-800 lg:hidden;
+        display: none;
     }
 
     .sf-menu-toggle::before {
@@ -62,10 +65,18 @@
     }
 
     .sf-nav {
-        @apply hidden border-t border-neutral-200 bg-white;
+        @apply border-t border-neutral-200 bg-white;
     }
 
-    .sf-nav.sf-nav-open {
+    html.js .sf-menu-toggle {
+        @apply inline-flex items-center gap-2 rounded-md border border-neutral-300 px-3 py-2 text-sm font-medium text-neutral-800;
+    }
+
+    html.js .sf-nav {
+        display: none;
+    }
+
+    html.js .sf-nav.sf-nav-open {
         @apply block;
     }
 
@@ -122,7 +133,7 @@
 
     .sf-breadcrumb + .sf-breadcrumb::before {
         content: '/';
-        @apply text-neutral-300;
+        @apply text-neutral-500;
     }
 
     .sf-breadcrumb a {
@@ -195,7 +206,7 @@
     }
 
     .sf-price-regular {
-        @apply text-sm text-neutral-400;
+        @apply text-sm text-neutral-500;
     }
 
     .sf-price-current {
@@ -216,7 +227,7 @@
     }
 
     .sf-stock-out {
-        @apply text-neutral-400;
+        @apply text-neutral-500;
     }
 
     /* ---- pagination ----------------------------------------------------------------------------- */
@@ -320,7 +331,7 @@
     }
 
     .sf-add-to-cart:disabled {
-        @apply cursor-not-allowed bg-neutral-200 text-neutral-500;
+        @apply cursor-not-allowed bg-neutral-200 text-neutral-600;
     }
 
     /* ---- description as readable prose (no typography plugin) ------------------------------------ */
@@ -404,7 +415,12 @@
 }
 
 @media (min-width: 64rem) {
-    .sf-nav {
+    html.js .sf-menu-toggle {
+        display: none;
+    }
+
+    .sf-nav,
+    html.js .sf-nav {
         display: block;
         border-top: 0;
     }

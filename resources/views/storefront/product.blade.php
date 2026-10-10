@@ -8,11 +8,10 @@
         $images = $product->images;
     @endphp
     <article class="sf-product">
-        <section class="sf-gallery" aria-label="{{ __('storefront.gallery') }}" x-data="{ active: 0 }">
+        <section class="sf-gallery" aria-label="{{ __('storefront.gallery') }}" data-sf-gallery>
             <div class="sf-gallery-main">
                 @foreach ($images as $image)
-                    <div class="sf-gallery-item @if ($loop->first) sf-gallery-active @endif"
-                         x-bind:class="{ 'sf-gallery-active': active === {{ $loop->index }} }">
+                    <div class="sf-gallery-item @if ($loop->first) sf-gallery-active @endif">
                         @include('storefront.partials.image', ['image' => $image, 'eager' => $loop->first, 'priority' => $loop->first])
                     </div>
                 @endforeach
@@ -22,9 +21,8 @@
                     @foreach ($images as $image)
                         <button type="button"
                                 class="sf-gallery-thumb @if ($loop->first) sf-gallery-thumb-active @endif"
-                                x-bind:class="{ 'sf-gallery-thumb-active': active === {{ $loop->index }} }"
-                                x-bind:aria-current="active === {{ $loop->index }} ? 'true' : 'false'"
-                                x-on:click="active = {{ $loop->index }}">
+                                data-sf-gallery-index="{{ $loop->index }}"
+                                @if ($loop->first) aria-current="true" @endif>
                             @include('storefront.partials.image', ['image' => $image, 'eager' => false])
                         </button>
                     @endforeach

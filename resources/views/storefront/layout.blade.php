@@ -17,20 +17,18 @@
     @endif
 </head>
 <body class="sf-layout">
-    <header class="sf-header" x-data="{ menuOpen: false }">
+    <header class="sf-header">
         <div class="sf-header-bar">
             <a class="sf-logo" href="{{ route('storefront.home', [], false) }}">{{ config('app.name') }}</a>
             @if (! empty($categories))
-                <button class="sf-menu-toggle" type="button" aria-controls="sf-menu"
-                        x-on:click="menuOpen = ! menuOpen"
-                        x-bind:aria-expanded="menuOpen ? 'true' : 'false'">
+                <button class="sf-menu-toggle" type="button" aria-controls="sf-menu" aria-expanded="false" data-sf-menu-toggle>
                     <span>{{ __('storefront.menu') }}</span>
                 </button>
             @endif
-            <a class="sf-cart" href="/cart">{{ app()->getLocale() === 'bg' ? 'Количка' : 'Cart' }}</a>
+            <a class="sf-cart" href="/cart">{{ __('storefront.cart') }}</a>
         </div>
         @if (! empty($categories))
-            <nav class="sf-nav" id="sf-menu" aria-label="{{ __('storefront.menu') }}" x-bind:class="{ 'sf-nav-open': menuOpen }">
+            <nav class="sf-nav" id="sf-menu" aria-label="{{ __('storefront.menu') }}">
                 <div class="sf-nav-inner">
                     @include('storefront.partials.menu', ['nodes' => $categories])
                 </div>

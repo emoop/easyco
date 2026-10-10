@@ -4,6 +4,7 @@
 return [
     'home' => 'Начало',
     'menu' => 'Категории',
+    'cart' => 'Количка',
     'breadcrumbs' => 'Вие сте тук',
     'newest_products' => 'Най-нови продукти',
     'products_in_category' => 'Продукти',
