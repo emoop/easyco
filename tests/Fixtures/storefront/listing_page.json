@@ -80,7 +80,7 @@
             },
             "price": {
                 "from_minor": 4000,
-                "to_minor": null,
+                "to_minor": 4500,
                 "currency": "EUR",
                 "regular_from_minor": null
             },

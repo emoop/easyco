@@ -7,10 +7,8 @@ namespace App\Storefront\ReadModels;
  * customer pays: the same figure ProductPriceDisplay shows).
  *
  * - from_minor           the lowest final price.
- * - to_minor             the highest final price when it is KNOWN. A product CARD is priced through
- *                        ProductPriceRangeProvider, whose PriceRange exposes no maximum: there to_minor equals
- *                        from_minor when every price is the same and is NULL when they differ ("from X").
- *                        A product PAGE prices every shown variation and fills it exactly.
+ * - to_minor             the highest final price (equal to from_minor when every price is the same). Cards and
+ *                        product pages are priced by the same code from the SHOWN variations (S1b).
  * - regular_from_minor   the regular price of the cheapest-final quote, ONLY when that quote is discounted;
  *                        null otherwise.
  */
@@ -18,13 +16,13 @@ final readonly class PriceBlock
 {
     public function __construct(
         public int $fromMinor,
-        public ?int $toMinor,
+        public int $toMinor,
         public string $currency,
         public ?int $regularFromMinor,
     ) {
     }
 
-    /** @return array{from_minor: int, to_minor: ?int, currency: string, regular_from_minor: ?int} */
+    /** @return array{from_minor: int, to_minor: int, currency: string, regular_from_minor: ?int} */
     public function toArray(): array
     {
         return [

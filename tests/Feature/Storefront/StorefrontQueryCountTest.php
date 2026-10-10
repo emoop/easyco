@@ -23,17 +23,18 @@ class StorefrontQueryCountTest extends TestCase
     /**
      * The DESIGN budgets (storefront-design.md §2.5) are 14 / 16 / 3. The listing and the product page DO NOT meet
      * theirs, and cannot without changing code outside App\Storefront: price resolution through the mandated services
-     * (ProductPriceRangeProvider -> CatalogScopeResolver -> PriceRangeResolver) costs 14 queries on a listing and 13
-     * on a product page by itself, whatever the page holds. The numbers below are the MEASURED ceilings, pinned so
+     * (ProductPriceRangeProvider -> CatalogScopeResolver -> PriceRangeResolver) costs 13 queries on a listing and 13
+     * on a product page by itself (CatalogScopeResolver 6 + PriceRangeResolver 7; since S1b cards are priced from the shown variations through the same
+     * two services, which removed the provider's own variation read: listing 20 -> 19), whatever the page holds. The numbers below are the MEASURED ceilings, pinned so
      * that the count can never grow; DESIGN_* keep the unmet targets visible (see the skipped test at the bottom).
      */
     public const DESIGN_LISTING_BUDGET = 14;
 
     public const DESIGN_PRODUCT_BUDGET = 16;
 
-    public const LISTING_BUDGET = 20;
+    public const LISTING_BUDGET = 19;
 
-    public const CATEGORY_LISTING_BUDGET = 22;
+    public const CATEGORY_LISTING_BUDGET = 21;
 
     public const PRODUCT_BUDGET = 22;
 
@@ -222,8 +223,8 @@ class StorefrontQueryCountTest extends TestCase
     {
         $this->markTestSkipped(
             'NOT MET, reported in the S1 report: the design budgets (listing 14, product page 16) are below the cost of price '
-            .'resolution alone through ProductPriceRangeProvider/CatalogScopeResolver/PriceRangeResolver (14 and 13 queries). '
-            .'Pinned ceilings (20 / 22) hold until the owner decides how to close the gap.'
+            .'resolution alone through ProductPriceRangeProvider/CatalogScopeResolver/PriceRangeResolver (13 queries each, CatalogScopeResolver + PriceRangeResolver). '
+            .'Pinned ceilings (19 / 22) hold until the owner decides how to close the gap.'
         );
     }
 }

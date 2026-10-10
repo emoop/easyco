@@ -3,7 +3,6 @@
 namespace App\Storefront\Reader;
 
 use App\Services\CatalogScopeResolver;
-use App\Services\ProductPriceRangeProvider;
 use App\Storefront\Exceptions\ListingOptionNotAvailable;
 use App\Storefront\ReadModels\Breadcrumb;
 use App\Storefront\ReadModels\CategoryNode;
@@ -45,7 +44,7 @@ use Illuminate\Support\Facades\DB;
  * QUERY BUDGET (§2.5), pinned by tests with 5 and with 24 products, and EQUAL for both: one query per concern per
  * page, never per row.
  *   listing:        category structure (2, only for a category scope) + page rows (1) + brand eager load (1)
- *                   + count (1) + the page's assets (1) + shown variations (1) + stock (1) + prices (ProductPriceRangeProvider)
+ *                   + count (1) + the page's assets (1) + shown variations (1) + stock (1) + prices (CatalogScopeResolver + PriceRangeResolver, for the SHOWN variations only)
  *   product page:   product (1) + brand (1) + shown variations (1) + their attribute values (1) + stock (1) + prices
  *                   (CatalogScopeResolver + PriceRangeResolver) + gallery with variants (1) + the product's categories
  *                   (1) + category structure (2)
@@ -69,7 +68,6 @@ final class CatalogReader
         private readonly CategoryIndex $categories,
         private readonly StorefrontUrls $urls,
         private readonly ImageSetBuilder $images,
-        private readonly ProductPriceRangeProvider $priceRanges,
         private readonly CatalogScopeResolver $scopeResolver,
         private readonly PriceRangeResolver $priceResolver,
     ) {
@@ -145,7 +143,7 @@ final class CatalogReader
                 sku: $variation->sku === null ? null : (string) $variation->sku,
                 label: implode(' / ', array_column($attributes, 'value')),
                 attributes: $attributes,
-                price: isset($quotes[$id]) ? $this->priceBlock([$id => $quotes[$id]]) : null,
+                price: $this->productPrice([$id], $quotes),
                 inStock: ($stock[$id] ?? 0) > 0,
                 purchasable: $variation->status === StorefrontVisibility::VARIATION_STATUS->value && (bool) $variation->is_purchasable,
             );
@@ -162,7 +160,7 @@ final class CatalogReader
             brand: $this->brandOf($product),
             breadcrumbs: $this->productBreadcrumbs($productId, (string) $product->name, (string) $product->slug),
             images: $this->gallery($productId, (string) $product->name),
-            price: $quotes === [] ? null : $this->priceBlock($quotes),
+            price: $this->productPrice($variationIds, $quotes),
             inStock: array_filter($stock, fn (int $quantity): bool => $quantity > 0) !== [],
             options: $options,
             variations: $views,
@@ -304,7 +302,8 @@ final class CatalogReader
         }
 
         $stock = $this->stockByVariation(array_merge([], ...array_values($variationIdsByProduct)));
-        $ranges = $this->priceRanges->forProducts($productIds);
+        $allVariationIds = array_merge([], ...array_values($variationIdsByProduct));
+        $quotes = $this->quotesByVariation($allVariationIds);
 
         $cards = [];
 
@@ -320,7 +319,7 @@ final class CatalogReader
                 name: (string) $product->name,
                 brand: $this->brandOf($product),
                 image: $asset === null ? null : $this->images->build($asset, (string) $product->name, ImageSetBuilder::SIZES_CARD),
-                price: $this->cardPrice($ranges[$id] ?? null),
+                price: $this->productPrice($variationIdsByProduct[$id] ?? [], $quotes),
                 badges: [],
                 inStock: array_filter(
                     array_map(fn (string $variationId): int => $stock[$variationId] ?? 0, $variationIdsByProduct[$id] ?? []),
@@ -332,21 +331,24 @@ final class CatalogReader
         return $cards;
     }
 
-    private function cardPrice(?PriceRange $range): ?PriceBlock
+    /**
+     * ONE price rule for a card and a product page: the exact block of the quotes of the product's SHOWN variations
+     * (a variation with no price is absent), or null when none is priced.
+     *
+     * @param list<string> $variationIds the product's shown variations
+     * @param array<string, PriceQuote> $quotes quotes by variation id (any superset)
+     */
+    private function productPrice(array $variationIds, array $quotes): ?PriceBlock
     {
-        if ($range === null || $range->isEmpty()) {
-            return null;
+        $own = [];
+
+        foreach ($variationIds as $variationId) {
+            if (isset($quotes[$variationId])) {
+                $own[$variationId] = $quotes[$variationId];
+            }
         }
 
-        $cheapest = $range->lowestFinalQuote();
-        $from = $cheapest->final->gross()->minorValue();
-
-        return new PriceBlock(
-            fromMinor: $from,
-            toMinor: $range->hasUniformFinalPrice() ? $from : null,
-            currency: $cheapest->final->currency()->code(),
-            regularFromMinor: $cheapest->isDiscounted() ? $cheapest->regular->gross()->minorValue() : null,
-        );
+        return $own === [] ? null : $this->priceBlock($own);
     }
 
     // ================================================================== internals: product page

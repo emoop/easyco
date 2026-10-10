@@ -123,7 +123,7 @@ class CatalogReaderListingTest extends TestCase
         $this->assertNull($cards['empty-variants']->image, 'a ready asset with no usable variant has no image');
     }
 
-    public function test_a_discounted_card_carries_the_regular_price_and_a_ranged_card_has_no_upper_bound(): void
+    public function test_a_discounted_card_carries_the_regular_price_and_a_ranged_card_has_an_exact_upper_bound(): void
     {
         $this->makeAttribute(1, 'Size', ['S', 'M']);
         $this->makeProduct(1, ['slug' => 'sale', 'price' => '100.00', 'sale' => '75.00', 'stock' => 1]);
@@ -136,7 +136,7 @@ class CatalogReaderListingTest extends TestCase
 
         $this->assertSame(['from_minor' => 7500, 'to_minor' => 7500, 'currency' => 'EUR', 'regular_from_minor' => 10000], $cards['sale']->price->toArray());
         $this->assertSame(1000, $cards['ranged']->price->fromMinor);
-        $this->assertNull($cards['ranged']->price->toMinor, 'PriceRange exposes no maximum: a ranged card says "from"');
+        $this->assertSame(2000, $cards['ranged']->price->toMinor, 'the card carries the exact highest price, like the page');
         $this->assertNull($cards['ranged']->price->regularFromMinor);
     }
 
@@ -152,5 +152,45 @@ class CatalogReaderListingTest extends TestCase
                 $this->addToAssertionCount(1);
             }
         }
+    }
+
+    public function test_a_cheaper_draft_or_hidden_variation_never_lowers_the_card_price(): void
+    {
+        $this->makeAttribute(1, 'Size', ['S', 'M', 'L', 'XL']);
+        $this->makeProduct(1, ['type' => 'variable', 'slug' => 'trap', 'variations' => [
+            ['attrs' => [1 => 'S'], 'price' => '30.00', 'stock' => 1],
+            ['attrs' => [1 => 'M'], 'price' => '50.00', 'stock' => 1],
+            ['attrs' => [1 => 'L'], 'price' => '1.00', 'status' => 'draft'],
+            ['attrs' => [1 => 'XL'], 'price' => '2.00', 'visible' => false],
+        ]]);
+
+        $card = $this->listing()->items[0];
+        $page = app(CatalogReader::class)->product('trap');
+
+        $this->assertSame(3000, $card->price->fromMinor);
+        $this->assertSame(5000, $card->price->toMinor);
+        $this->assertSame($page->price->toArray(), $card->price->toArray(), 'card and page share one price');
+    }
+
+    public function test_card_and_product_page_agree_for_simple_variable_discounted_and_unpriced_products(): void
+    {
+        $this->makeAttribute(1, 'Size', ['S', 'M']);
+        $this->makeProduct(1, ['slug' => 'simple', 'price' => '12.50', 'stock' => 1]);
+        $this->makeProduct(2, ['slug' => 'discounted', 'price' => '100.00', 'sale' => '60.00', 'stock' => 1]);
+        $this->makeProduct(3, ['type' => 'variable', 'slug' => 'variable', 'variations' => [
+            ['attrs' => [1 => 'S'], 'price' => '20.00', 'sale' => '15.00', 'stock' => 1],
+            ['attrs' => [1 => 'M'], 'price' => '25.00', 'stock' => 1],
+        ]]);
+        $this->makeProduct(4, ['slug' => 'unpriced', 'stock' => 1]);
+
+        $cards = collect($this->listing()->items)->keyBy('slug');
+        $reader = app(CatalogReader::class);
+
+        foreach (['simple', 'discounted', 'variable', 'unpriced'] as $slug) {
+            $this->assertSame($reader->product($slug)->price?->toArray(), $cards[$slug]->price?->toArray(), $slug);
+        }
+
+        $this->assertSame(['from_minor' => 1500, 'to_minor' => 2500, 'currency' => 'EUR', 'regular_from_minor' => 2000], $cards['variable']->price->toArray());
+        $this->assertNull($cards['unpriced']->price);
     }
 }
