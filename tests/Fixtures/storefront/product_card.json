@@ -1,0 +1,39 @@
+{
+    "id": "1",
+    "slug": "summer-dress",
+    "url": "/product/summer-dress",
+    "name": "Summer dress",
+    "brand": {
+        "name": "Acme",
+        "slug": "acme"
+    },
+    "image": {
+        "src": "https://cdn.test/storage/p/1-medium.webp",
+        "alt": "Front view",
+        "width": 900,
+        "height": 675,
+        "srcset": [
+            {
+                "url": "https://cdn.test/storage/p/1-thumbnail.webp",
+                "width": 400
+            },
+            {
+                "url": "https://cdn.test/storage/p/1-medium.webp",
+                "width": 900
+            },
+            {
+                "url": "https://cdn.test/storage/p/1-large.webp",
+                "width": 1600
+            }
+        ],
+        "sizes_hint": "(min-width: 1024px) 25vw, (min-width: 640px) 50vw, 100vw"
+    },
+    "price": {
+        "from_minor": 7990,
+        "to_minor": 7990,
+        "currency": "EUR",
+        "regular_from_minor": 10000
+    },
+    "badges": [],
+    "in_stock": true
+}

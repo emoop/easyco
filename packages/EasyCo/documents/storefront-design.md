@@ -162,6 +162,32 @@ Every page type has an explicit budget and a test that fails when it is exceeded
 
 How a test asserts it: `DB::listen`/`DB::getQueryLog()` around the real request with fixtures of 5 and 24 products (as the sandbox test does); assert (a) total ≤ budget and (b) **equal counts** for 5 and 24 products. A second assertion pins the query for each feature OFF vs ON (an OFF feature adds zero queries — §8.1).
 
+### 2.6 As built in S1 (facts found in the code, and where the build differs from the text above)
+
+**Built:** `App\Storefront\Visibility\StorefrontVisibility`, the read models (`final readonly`, exact `toArray()`), `Reader\CatalogReader` (`product`, `category`, `listing`, `categoryTree`), `Reader\CategoryIndex`, `Reader\ImageSetBuilder`, `Url\StorefrontUrls`, `ReadModels\ListingQuery`. No route, view, controller, cache, hook, migration or JSON API; `App\Sandbox` is untouched. Golden files are in `tests/Fixtures/storefront/`.
+
+**Facts located in the code (these replace the "to be located" unknowns):**
+- **Ids** are auto-increment integers (`catalog_*` tables), carried as strings; `ListingQuery` accepts `[1-9][0-9]{0,18}`.
+- **Categories:** `catalog_categories` (`id`, `parent_id`, `name`, `slug` unique); no soft delete, no active flag, no description. The tree is `parent_id`. A product belongs to many (`catalog_product_categories`).
+- **Stock:** `stock_levels` (`variation_id` unique, `quantity`), one row per variation, no row = 0. Read in one `whereIn`.
+- **Images:** renditions are NOT rows. They are a JSON column `variants` on `catalog_media` (`{tier,width,height,quality,path}`), written when processing is `ready`. "Variants for the page's media ids in ONE query" is therefore one `catalog_media` read. Only `thumbnail`/`medium`/`large` reach a customer (`admin_grid` never).
+- **Prices:** per variation, `PriceRangeResolver::resolveQuotes()` fed by `CatalogScopeResolver::forVariations()`; `ProductPriceRangeProvider::forProducts()` wraps both. `PriceRange` exposes the lowest final quote, the lowest regular price and the lowest discounted quote, but **no maximum**.
+- **`description` is rich text** (the admin edits it with a RichEditor), so it may hold HTML. `ProductPage` carries it as stored; S2 must sanitise it before printing it as markup. Every other text field is plain and raw.
+
+**Where the build differs from, or fills in, the design:**
+- **Query budgets are NOT met for the listing and the product page.** Measured: listing 20 (design 14), category listing 22, product page 22 / 21 (design 16), category tree 2 and category page 2 (design 3). All are identical for 5 and 24 products, with 2 and 6 variations, with 1 and 8 images: there is no N+1. The gap is price resolution through the mandated services alone: 14 queries on a listing (the provider's variation read, 6 in `CatalogScopeResolver`, 7 in the pricing resolver) and 13 on a product page. The tests pin the measured ceilings; the design numbers stay as constants and a skipped test. Options for the owner: raise the budgets to 20 / 22; or feed `PriceRangeResolver` directly from the rows the reader already holds (reaches 14 / 16 but re-implements the scope assembly of `CatalogScopeResolver`); or change the pricing services.
+- **`to_minor` of a card** is `from_minor` when every price is the same and `null` otherwise ("from X"), because `PriceRange` has no maximum; a product PAGE prices every shown variation and fills it exactly. `regular_from_minor` is the regular price of the cheapest-final quote, only when that quote is discounted.
+- **Card prices include non-shown variations.** `ProductPriceRangeProvider` prices every non-archived variation, so a draft or `is_visible = 0` variation can lower a card's "from" price. The product page (which prices only shown variations) can then disagree with the card. Not fixed in S1 (the provider is outside this stage); to be settled with the budget decision above.
+- **Price filter and price sort are validated by `ListingQuery` but refused by the reader** (`ListingOptionNotAvailable`): they need S7's `price_from_minor`. Nothing is silently ignored.
+- **A category listing includes the products of its descendants**; `ListingScope::ALL` (no scope id) lists the whole catalog. `ListingQuery` takes at most one scope.
+- **Category counts** are distinct visible products of the subtree, from one read of the visible (category, product) pairs (the scaling cost of exact counts; S4 caches it). A category outside the "shown" rule is `null` from `category()`.
+- **URLs** are root-relative paths with percent-encoded segments (`/product/{slug}`, `/product-category/{path}`, plus `/product-tag/{slug}` and `/brand/{slug}`); a segment is `[\p{L}\p{M}\p{N}-]`, 1 to 200 characters, a path 1 to 8 segments; anything else is refused before any query.
+- **Lookup case:** the product lookup follows the database collation (case- and accent-insensitive on MySQL, case-sensitive on SQLite) and the page carries the stored slug and canonical url so a caller can redirect; the category lookup lower-cases both sides.
+- **A SIMPLE product's page** lists its universal variation in `variations` (with no attributes): its id is what add-to-cart needs. `purchasable` mirrors `Variation::isEffectivelyPurchasable()` and is pinned against the domain method.
+- **Variation order** is `sort_order, id` (the column exists since the 2026-09-23 migration; the sandbox still orders by id). `options` follow the attribute definition id and the value `sort_order`.
+- **ImageSet** carries `src` (the `medium` tier, else the largest ready variant) besides the design's fields; `lqip` is not built.
+- `sizes` (S10), badges (S10) and facets (S7) are empty arrays.
+
 ---
 
 ## 3. Caching

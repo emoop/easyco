@@ -1,0 +1,112 @@
+{
+    "query": {
+        "scope": "all",
+        "scope_id": null,
+        "sort": "newest",
+        "page": 1,
+        "per_page": 12,
+        "price_min_minor": null,
+        "price_max_minor": null
+    },
+    "items": [
+        {
+            "id": "1",
+            "slug": "summer-dress",
+            "url": "/product/summer-dress",
+            "name": "Summer dress",
+            "brand": {
+                "name": "Acme",
+                "slug": "acme"
+            },
+            "image": {
+                "src": "https://cdn.test/storage/p/1-medium.webp",
+                "alt": "Front view",
+                "width": 900,
+                "height": 675,
+                "srcset": [
+                    {
+                        "url": "https://cdn.test/storage/p/1-thumbnail.webp",
+                        "width": 400
+                    },
+                    {
+                        "url": "https://cdn.test/storage/p/1-medium.webp",
+                        "width": 900
+                    },
+                    {
+                        "url": "https://cdn.test/storage/p/1-large.webp",
+                        "width": 1600
+                    }
+                ],
+                "sizes_hint": "(min-width: 1024px) 25vw, (min-width: 640px) 50vw, 100vw"
+            },
+            "price": {
+                "from_minor": 7990,
+                "to_minor": 7990,
+                "currency": "EUR",
+                "regular_from_minor": 10000
+            },
+            "badges": [],
+            "in_stock": true
+        },
+        {
+            "id": "2",
+            "slug": "linen-shirt",
+            "url": "/product/linen-shirt",
+            "name": "Linen shirt",
+            "brand": {
+                "name": "Acme",
+                "slug": "acme"
+            },
+            "image": {
+                "src": "https://cdn.test/storage/p/3-medium.webp",
+                "alt": "Linen shirt",
+                "width": 900,
+                "height": 675,
+                "srcset": [
+                    {
+                        "url": "https://cdn.test/storage/p/3-thumbnail.webp",
+                        "width": 400
+                    },
+                    {
+                        "url": "https://cdn.test/storage/p/3-medium.webp",
+                        "width": 900
+                    },
+                    {
+                        "url": "https://cdn.test/storage/p/3-large.webp",
+                        "width": 1600
+                    }
+                ],
+                "sizes_hint": "(min-width: 1024px) 25vw, (min-width: 640px) 50vw, 100vw"
+            },
+            "price": {
+                "from_minor": 4000,
+                "to_minor": null,
+                "currency": "EUR",
+                "regular_from_minor": null
+            },
+            "badges": [],
+            "in_stock": true
+        },
+        {
+            "id": "3",
+            "slug": "sold-out-scarf",
+            "url": "/product/sold-out-scarf",
+            "name": "Sold-out scarf",
+            "brand": null,
+            "image": null,
+            "price": {
+                "from_minor": 1500,
+                "to_minor": 1500,
+                "currency": "EUR",
+                "regular_from_minor": null
+            },
+            "badges": [],
+            "in_stock": false
+        }
+    ],
+    "page": 1,
+    "per_page": 12,
+    "total": 3,
+    "last_page": 1,
+    "facets": []
+}

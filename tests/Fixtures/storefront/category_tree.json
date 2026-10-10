@@ -1,0 +1,21 @@
+[
+    {
+        "id": "1",
+        "name": "Clothing",
+        "slug": "clothing",
+        "path": "clothing",
+        "url": "/product-category/clothing",
+        "product_count": 2,
+        "children": [
+            {
+                "id": "2",
+                "name": "Dresses",
+                "slug": "dresses",
+                "path": "clothing/dresses",
+                "url": "/product-category/clothing/dresses",
+                "product_count": 1,
+                "children": []
+            }
+        ]
+    }
+]

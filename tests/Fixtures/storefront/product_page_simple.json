@@ -1,0 +1,96 @@
+{
+    "id": "1",
+    "slug": "summer-dress",
+    "url": "/product/summer-dress",
+    "name": "Summer dress",
+    "type": "simple",
+    "short_description": "Light and airy",
+    "description": "<p>Soft <strong>cotton</strong></p>",
+    "brand": {
+        "name": "Acme",
+        "slug": "acme"
+    },
+    "breadcrumbs": [
+        {
+            "label": "Clothing",
+            "url": "/product-category/clothing"
+        },
+        {
+            "label": "Dresses",
+            "url": "/product-category/clothing/dresses"
+        },
+        {
+            "label": "Summer dress",
+            "url": "/product/summer-dress"
+        }
+    ],
+    "images": [
+        {
+            "src": "https://cdn.test/storage/p/1-medium.webp",
+            "alt": "Front view",
+            "width": 900,
+            "height": 675,
+            "srcset": [
+                {
+                    "url": "https://cdn.test/storage/p/1-thumbnail.webp",
+                    "width": 400
+                },
+                {
+                    "url": "https://cdn.test/storage/p/1-medium.webp",
+                    "width": 900
+                },
+                {
+                    "url": "https://cdn.test/storage/p/1-large.webp",
+                    "width": 1600
+                }
+            ],
+            "sizes_hint": "(min-width: 1024px) 50vw, 100vw"
+        },
+        {
+            "src": "https://cdn.test/storage/p/2-medium.webp",
+            "alt": "Summer dress — 2",
+            "width": 900,
+            "height": 675,
+            "srcset": [
+                {
+                    "url": "https://cdn.test/storage/p/2-thumbnail.webp",
+                    "width": 400
+                },
+                {
+                    "url": "https://cdn.test/storage/p/2-medium.webp",
+                    "width": 900
+                },
+                {
+                    "url": "https://cdn.test/storage/p/2-large.webp",
+                    "width": 1600
+                }
+            ],
+            "sizes_hint": "(min-width: 1024px) 50vw, 100vw"
+        }
+    ],
+    "price": {
+        "from_minor": 7990,
+        "to_minor": 7990,
+        "currency": "EUR",
+        "regular_from_minor": 10000
+    },
+    "in_stock": true,
+    "options": [],
+    "variations": [
+        {
+            "id": "101",
+            "sku": "SKU-101",
+            "label": "",
+            "attributes": [],
+            "price": {
+                "from_minor": 7990,
+                "to_minor": 7990,
+                "currency": "EUR",
+                "regular_from_minor": 10000
+            },
+            "in_stock": true,
+            "purchasable": true
+        }
+    ],
+    "badges": []
+}

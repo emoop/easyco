@@ -1,0 +1,103 @@
+{
+    "id": "2",
+    "slug": "linen-shirt",
+    "url": "/product/linen-shirt",
+    "name": "Linen shirt",
+    "type": "variable",
+    "short_description": null,
+    "description": null,
+    "brand": {
+        "name": "Acme",
+        "slug": "acme"
+    },
+    "breadcrumbs": [
+        {
+            "label": "Clothing",
+            "url": "/product-category/clothing"
+        },
+        {
+            "label": "Linen shirt",
+            "url": "/product/linen-shirt"
+        }
+    ],
+    "images": [
+        {
+            "src": "https://cdn.test/storage/p/3-medium.webp",
+            "alt": "Linen shirt",
+            "width": 900,
+            "height": 675,
+            "srcset": [
+                {
+                    "url": "https://cdn.test/storage/p/3-thumbnail.webp",
+                    "width": 400
+                },
+                {
+                    "url": "https://cdn.test/storage/p/3-medium.webp",
+                    "width": 900
+                },
+                {
+                    "url": "https://cdn.test/storage/p/3-large.webp",
+                    "width": 1600
+                }
+            ],
+            "sizes_hint": "(min-width: 1024px) 50vw, 100vw"
+        }
+    ],
+    "price": {
+        "from_minor": 4000,
+        "to_minor": 4500,
+        "currency": "EUR",
+        "regular_from_minor": null
+    },
+    "in_stock": true,
+    "options": [
+        {
+            "name": "Size",
+            "values": [
+                "S",
+                "M"
+            ]
+        }
+    ],
+    "variations": [
+        {
+            "id": "201",
+            "sku": "SKU-201",
+            "label": "S",
+            "attributes": [
+                {
+                    "name": "Size",
+                    "value": "S"
+                }
+            ],
+            "price": {
+                "from_minor": 4000,
+                "to_minor": 4000,
+                "currency": "EUR",
+                "regular_from_minor": null
+            },
+            "in_stock": false,
+            "purchasable": true
+        },
+        {
+            "id": "202",
+            "sku": "SKU-202",
+            "label": "M",
+            "attributes": [
+                {
+                    "name": "Size",
+                    "value": "M"
+                }
+            ],
+            "price": {
+                "from_minor": 4500,
+                "to_minor": 4500,
+                "currency": "EUR",
+                "regular_from_minor": null
+            },
+            "in_stock": true,
+            "purchasable": true
+        }
+    ],
+    "badges": []
+}
