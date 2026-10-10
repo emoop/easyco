@@ -361,7 +361,7 @@ class HelpPageTest extends TestCase
 
     public function test_the_registry_knows_one_topic_and_labels_it_in_both_languages(): void
     {
-        $this->assertSame(['orders', 'shipping'], HelpTopics::all());
+        $this->assertSame(['orders', 'shipping', 'mail'], HelpTopics::all());
         $this->assertTrue(HelpTopics::has('orders'));
         $this->assertTrue(HelpTopics::has('shipping'));
         $this->assertFalse(HelpTopics::has('nope'));

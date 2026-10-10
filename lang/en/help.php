@@ -10,5 +10,6 @@ return [
     'topics' => [
         'orders' => 'Orders and payments',
         'shipping' => 'Shipping',
+        'mail' => 'Email sending',
     ],
 ];

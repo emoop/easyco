@@ -32,6 +32,16 @@ final class MailHeader
     }
 
     /**
+     * True when the value carries no control and no bidi character at all (CR, LF, NUL, tab, C1, line separators,
+     * bidi overrides, zero-width marks) and is valid UTF-8. For FORM VALIDATION: clean() silently rewrites, this
+     * says "refuse it" so a merchant sees the error instead of a quietly altered sender name.
+     */
+    public static function isPlain(string $value): bool
+    {
+        return preg_match(self::CONTROL, $value) === 0 && preg_match(self::BIDI, $value) === 0;
+    }
+
+    /**
      * A single valid address (no display name, no list, no group) of at most 254 characters, or null.
      * Stricter than filter_var alone: whitespace, control characters, commas, semicolons, angle brackets,
      * quotes and non-ASCII are refused outright (those are how a second recipient or a header is smuggled in).
