@@ -1,0 +1,434 @@
+@import 'tailwindcss';
+
+/*
+ * The storefront's own stylesheet (stage S2b). Only the storefront views are scanned, so the admin's
+ * utilities never leak into the customer pages and the sheet stays small. System fonts only: the
+ * storefront loads no webfont, no icon font, no CDN.
+ */
+@source '../views/storefront/**/*.blade.php';
+
+@theme {
+    --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+@layer base {
+    html {
+        -webkit-text-size-adjust: 100%;
+    }
+
+    body {
+        @apply bg-neutral-50 text-neutral-900 antialiased;
+    }
+
+    a {
+        @apply underline-offset-2;
+    }
+
+    :focus-visible {
+        outline: 2px solid #0369a1;
+        outline-offset: 2px;
+    }
+}
+
+@layer components {
+    /* ---- shell ----------------------------------------------------------------------------------- */
+    .sf-layout {
+        @apply flex min-h-screen flex-col bg-neutral-50;
+    }
+
+    .sf-header {
+        @apply sticky top-0 z-30 border-b border-neutral-200 bg-white shadow-sm;
+    }
+
+    .sf-header-bar {
+        @apply mx-auto flex w-full max-w-6xl items-center gap-3 px-4 py-3;
+    }
+
+    .sf-logo {
+        @apply mr-auto text-lg font-semibold tracking-tight text-neutral-900 no-underline;
+    }
+
+    .sf-menu-toggle {
+        @apply inline-flex items-center gap-2 rounded-md border border-neutral-300 px-3 py-2 text-sm font-medium text-neutral-800 lg:hidden;
+    }
+
+    .sf-menu-toggle::before {
+        content: '\2261';
+        @apply text-base leading-none;
+    }
+
+    .sf-cart {
+        @apply inline-flex items-center rounded-md px-3 py-2 text-sm font-medium text-neutral-700 no-underline hover:text-neutral-900;
+    }
+
+    .sf-nav {
+        @apply hidden border-t border-neutral-200 bg-white;
+    }
+
+    .sf-nav.sf-nav-open {
+        @apply block;
+    }
+
+    .sf-nav-inner {
+        @apply mx-auto w-full max-w-6xl px-4 py-2;
+    }
+
+    .sf-menu {
+        @apply m-0 list-none p-0;
+    }
+
+    .sf-nav > .sf-nav-inner > .sf-menu {
+        @apply flex flex-col;
+    }
+
+    .sf-menu .sf-menu {
+        @apply ml-4 border-l border-neutral-200 pl-3;
+    }
+
+    .sf-menu-link {
+        @apply block rounded px-1 py-1.5 text-sm text-neutral-700 no-underline hover:text-neutral-900;
+    }
+
+    .sf-main {
+        @apply mx-auto w-full max-w-6xl flex-1 px-4 py-6;
+    }
+
+    .sf-title {
+        @apply text-2xl font-bold tracking-tight text-neutral-900;
+    }
+
+    .sf-listing .sf-title {
+        @apply mb-4;
+    }
+
+    .sf-empty {
+        @apply rounded-lg border border-dashed border-neutral-300 bg-white p-8 text-center text-neutral-500;
+    }
+}
+
+@layer components {
+    /* ---- breadcrumbs ---------------------------------------------------------------------------- */
+    .sf-breadcrumbs {
+        @apply mb-4 text-sm text-neutral-500;
+    }
+
+    .sf-breadcrumbs-list {
+        @apply m-0 flex list-none flex-wrap items-center gap-1 p-0;
+    }
+
+    .sf-breadcrumb {
+        @apply flex items-center gap-1;
+    }
+
+    .sf-breadcrumb + .sf-breadcrumb::before {
+        content: '/';
+        @apply text-neutral-300;
+    }
+
+    .sf-breadcrumb a {
+        @apply no-underline hover:text-neutral-900;
+    }
+
+    .sf-breadcrumb-current {
+        @apply font-medium text-neutral-900;
+    }
+
+    /* ---- subcategory chips ---------------------------------------------------------------------- */
+    .sf-subcategories {
+        @apply mb-4;
+    }
+
+    .sf-subcategory-list {
+        @apply m-0 flex list-none flex-wrap gap-2 p-0;
+    }
+
+    .sf-subcategory > a {
+        @apply inline-flex items-center rounded-full border border-neutral-200 bg-white px-3 py-1.5 text-sm text-neutral-700 no-underline hover:border-neutral-300 hover:bg-neutral-100;
+    }
+
+    /* ---- product grid: 2 / 3 / 4 ---------------------------------------------------------------- */
+    .sf-grid {
+        @apply grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4;
+    }
+
+    /* ---- card ----------------------------------------------------------------------------------- */
+    .sf-card {
+        @apply flex flex-col overflow-hidden rounded-lg border border-neutral-200 bg-white transition hover:shadow-md;
+    }
+
+    .sf-card-link {
+        @apply flex flex-1 flex-col no-underline;
+    }
+
+    .sf-card-image {
+        @apply w-full overflow-hidden bg-neutral-100;
+        aspect-ratio: 4 / 3;
+    }
+
+    .sf-card-image > .sf-image {
+        @apply h-full w-full object-cover;
+    }
+
+    .sf-card-brand {
+        @apply mt-2 px-3 text-xs uppercase tracking-wide text-neutral-500;
+    }
+
+    .sf-card-name {
+        @apply px-3 pt-0.5 text-sm font-medium leading-snug text-neutral-900;
+        display: -webkit-box;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+        overflow: hidden;
+    }
+
+    .sf-image {
+        display: block;
+    }
+
+    /* ---- price ---------------------------------------------------------------------------------- */
+    .sf-price {
+        @apply m-0 flex flex-wrap items-baseline gap-2;
+    }
+
+    .sf-card > .sf-price {
+        @apply px-3 pb-3 pt-1;
+    }
+
+    .sf-price-regular {
+        @apply text-sm text-neutral-400;
+    }
+
+    .sf-price-current {
+        @apply text-base font-semibold text-neutral-900;
+    }
+
+    /* ---- stock ---------------------------------------------------------------------------------- */
+    .sf-stock {
+        @apply m-0 text-xs font-medium uppercase tracking-wide;
+    }
+
+    .sf-card > .sf-stock {
+        @apply px-3 pb-3 pt-1;
+    }
+
+    .sf-stock-in {
+        @apply text-emerald-700;
+    }
+
+    .sf-stock-out {
+        @apply text-neutral-400;
+    }
+
+    /* ---- pagination ----------------------------------------------------------------------------- */
+    .sf-pagination {
+        @apply mt-8 flex flex-wrap items-center justify-center gap-2;
+    }
+
+    .sf-pagination-status {
+        @apply m-0 w-full text-center text-sm text-neutral-500;
+    }
+
+    .sf-pagination-pages {
+        @apply m-0 flex list-none items-center gap-1 p-0;
+    }
+
+    .sf-pagination-page > a,
+    .sf-pagination-page > span {
+        @apply inline-flex min-w-10 items-center justify-center rounded-md border border-neutral-300 px-3 py-2 text-sm no-underline;
+    }
+
+    .sf-pagination-page > span {
+        @apply border-neutral-900 bg-neutral-900 font-semibold text-white;
+    }
+
+    .sf-pagination-prev,
+    .sf-pagination-next {
+        @apply inline-flex items-center rounded-md border border-neutral-300 px-4 py-2 text-sm font-medium no-underline hover:bg-neutral-100;
+    }
+}
+
+@layer components {
+    /* ---- product page: gallery + summary, single column on mobile -------------------------------- */
+    .sf-product {
+        @apply grid grid-cols-1 gap-6 lg:grid-cols-2;
+    }
+
+    .sf-gallery {
+        @apply flex flex-col gap-3;
+    }
+
+    .sf-gallery-main {
+        @apply overflow-hidden rounded-lg border border-neutral-200 bg-neutral-100;
+        aspect-ratio: 4 / 3;
+    }
+
+    .sf-gallery-item {
+        @apply hidden h-full;
+    }
+
+    .sf-gallery-item.sf-gallery-active {
+        @apply block;
+    }
+
+    .sf-gallery-main .sf-image {
+        @apply h-full w-full object-contain;
+    }
+
+    .sf-gallery-thumbs {
+        @apply grid grid-cols-4 gap-2;
+    }
+
+    .sf-gallery-thumb {
+        @apply overflow-hidden rounded-md border border-neutral-200 bg-white p-0;
+        aspect-ratio: 1 / 1;
+    }
+
+    .sf-gallery-thumb.sf-gallery-thumb-active {
+        box-shadow: 0 0 0 2px #171717;
+    }
+
+    .sf-gallery-thumb .sf-image {
+        @apply h-full w-full object-cover;
+    }
+
+    .sf-summary {
+        @apply flex flex-col gap-2;
+    }
+
+    .sf-product-brand {
+        @apply m-0 text-sm uppercase tracking-wide text-neutral-500;
+    }
+
+    .sf-short-description {
+        @apply m-0 text-neutral-600;
+    }
+
+    .sf-variations {
+        @apply mt-2 flex flex-col gap-1;
+    }
+
+    .sf-variation-label {
+        @apply text-sm font-medium text-neutral-700;
+    }
+
+    .sf-variation-select {
+        @apply w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm;
+    }
+
+    .sf-add-to-cart {
+        @apply mt-3 inline-flex w-full items-center justify-center rounded-md bg-neutral-900 px-5 py-3 text-base font-semibold text-white;
+    }
+
+    .sf-add-to-cart:disabled {
+        @apply cursor-not-allowed bg-neutral-200 text-neutral-500;
+    }
+
+    /* ---- description as readable prose (no typography plugin) ------------------------------------ */
+    .sf-description {
+        @apply mt-8 border-t border-neutral-200 pt-6 lg:col-span-2;
+    }
+
+    .sf-description-title {
+        @apply mb-4 text-lg font-semibold text-neutral-900;
+    }
+
+    .sf-description :where(p, ul, ol, table, blockquote) {
+        @apply my-3 text-neutral-700 leading-relaxed;
+    }
+
+    .sf-description :where(h2) {
+        @apply mb-2 mt-6 text-lg font-semibold text-neutral-900;
+    }
+
+    .sf-description :where(h3) {
+        @apply mb-2 mt-5 text-base font-semibold text-neutral-900;
+    }
+
+    .sf-description :where(ul) {
+        @apply list-disc pl-6;
+    }
+
+    .sf-description :where(ol) {
+        @apply list-decimal pl-6;
+    }
+
+    .sf-description :where(li) {
+        @apply my-1;
+    }
+
+    .sf-description :where(a) {
+        @apply font-medium text-sky-700 underline;
+    }
+
+    .sf-description :where(table) {
+        @apply w-full border-collapse text-sm;
+    }
+
+    .sf-description :where(th, td) {
+        @apply border border-neutral-200 px-3 py-2 text-left;
+    }
+
+    .sf-description :where(th) {
+        @apply bg-neutral-50 font-semibold;
+    }
+
+    /* ---- 404 ------------------------------------------------------------------------------------ */
+    .sf-404 {
+        @apply mx-auto max-w-lg py-20 text-center;
+    }
+
+    .sf-404 h1 {
+        @apply text-3xl font-bold tracking-tight text-neutral-900;
+    }
+
+    .sf-404 p {
+        @apply mt-4 text-neutral-600;
+    }
+
+    .sf-404 a {
+        @apply mt-2 inline-flex items-center rounded-md bg-neutral-900 px-5 py-3 font-semibold text-white no-underline;
+    }
+
+    /* ---- footer --------------------------------------------------------------------------------- */
+    .sf-footer {
+        @apply mt-12 border-t border-neutral-200 bg-white;
+    }
+
+    .sf-footer-inner {
+        @apply mx-auto flex w-full max-w-6xl flex-wrap items-center gap-3 px-4 py-6 text-sm text-neutral-500;
+    }
+
+    .sf-footer a {
+        @apply no-underline hover:text-neutral-900;
+    }
+}
+
+@media (min-width: 64rem) {
+    .sf-nav {
+        display: block;
+        border-top: 0;
+    }
+
+    .sf-nav-inner {
+        @apply py-0;
+    }
+
+    .sf-nav > .sf-nav-inner > .sf-menu {
+        @apply flex-row flex-wrap items-center gap-x-5 gap-y-1;
+    }
+
+    .sf-nav > .sf-nav-inner > .sf-menu > .sf-menu-item {
+        position: relative;
+    }
+
+    .sf-nav > .sf-nav-inner > .sf-menu > .sf-menu-item > .sf-menu {
+        @apply absolute left-0 top-full z-40 ml-0 hidden min-w-48 rounded-md border border-neutral-200 bg-white p-2 shadow-lg;
+    }
+
+    .sf-nav > .sf-nav-inner > .sf-menu > .sf-menu-item:hover > .sf-menu,
+    .sf-nav > .sf-nav-inner > .sf-menu > .sf-menu-item:focus-within > .sf-menu {
+        @apply block;
+    }
+}
+
+

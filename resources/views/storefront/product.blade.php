@@ -5,14 +5,31 @@
     @inject('prices', 'App\Storefront\Support\PriceFormatter')
     @php
         $purchasable = collect($product->variations)->first(fn ($variation) => $variation->purchasable && $variation->inStock);
+        $images = $product->images;
     @endphp
     <article class="sf-product">
-        <section class="sf-gallery" aria-label="{{ __('storefront.gallery') }}">
-            @foreach ($product->images as $image)
-                <div class="sf-gallery-item @if ($loop->first) sf-gallery-main @endif">
-                    @include('storefront.partials.image', ['image' => $image, 'eager' => $loop->first, 'priority' => $loop->first])
+        <section class="sf-gallery" aria-label="{{ __('storefront.gallery') }}" x-data="{ active: 0 }">
+            <div class="sf-gallery-main">
+                @foreach ($images as $image)
+                    <div class="sf-gallery-item @if ($loop->first) sf-gallery-active @endif"
+                         x-bind:class="{ 'sf-gallery-active': active === {{ $loop->index }} }">
+                        @include('storefront.partials.image', ['image' => $image, 'eager' => $loop->first, 'priority' => $loop->first])
+                    </div>
+                @endforeach
+            </div>
+            @if (count($images) > 1)
+                <div class="sf-gallery-thumbs">
+                    @foreach ($images as $image)
+                        <button type="button"
+                                class="sf-gallery-thumb @if ($loop->first) sf-gallery-thumb-active @endif"
+                                x-bind:class="{ 'sf-gallery-thumb-active': active === {{ $loop->index }} }"
+                                x-bind:aria-current="active === {{ $loop->index }} ? 'true' : 'false'"
+                                x-on:click="active = {{ $loop->index }}">
+                            @include('storefront.partials.image', ['image' => $image, 'eager' => false])
+                        </button>
+                    @endforeach
                 </div>
-            @endforeach
+            @endif
         </section>
         <section class="sf-summary">
             @if ($product->brand !== null)

@@ -80,7 +80,7 @@ class StorefrontPagesTest extends TestCase
     {
         $html = $this->get('/product/summer-dress')->assertOk()->getContent();
 
-        $this->assertSame(2, substr_count($html, '<img '));
+        $this->assertSame(4, substr_count($html, '<img '), 'each image appears twice: once as the main image, once as a thumbnail (2 images)');
         $this->assertMatchesRegularExpression('/<img class="sf-image"\s+src="https:\/\/cdn\.test\/storage\/p\/1-medium\.webp"\s+srcset="[^"]*1-thumbnail\.webp 400w, [^"]*1-medium\.webp 900w, [^"]*1-large\.webp 1600w"\s+sizes="[^"]+"\s+width="900"\s+height="675"\s+alt="Front view"\s+loading="eager"\s+fetchpriority="high"\s+decoding="async">/s', $html);
         $this->assertMatchesRegularExpression('/alt="Summer dress — 2"\s+loading="lazy"/s', $html);
         $this->assertSame(1, substr_count($html, 'fetchpriority="high"'));
