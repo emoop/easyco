@@ -86,6 +86,22 @@ class StorefrontPagesTest extends TestCase
         $this->assertSame(1, substr_count($html, 'fetchpriority="high"'));
     }
 
+    public function test_a_product_without_an_image_renders_the_placeholder_and_no_img(): void
+    {
+        // The home listing has three products: 'Summer dress' (with images) and 'Linen shirt' and
+        // 'Sold-out scarf' (without). So it carries two placeholders and exactly one real <img>.
+        $listing = $this->get('/')->assertOk()->getContent();
+
+        $this->assertStringContainsString('sf-image-placeholder', $listing, 'a card without an image keeps its box');
+        $this->assertSame(1, substr_count($listing, '<img '), 'only the product that has an image renders <img>');
+
+        // The product page of a product with no images: the gallery shows the same placeholder and no <img>.
+        $page = $this->get('/product/sold-out-scarf')->assertOk()->getContent();
+
+        $this->assertStringContainsString('sf-image-placeholder', $page, 'the gallery placeholder');
+        $this->assertStringNotContainsString('<img', $page, 'no image anywhere on a product page without images');
+    }
+
     public function test_a_variable_product_shows_a_select_of_variations_with_unavailable_ones_disabled(): void
     {
         $html = $this->get('/product/linen-shirt')->assertOk()->getContent();

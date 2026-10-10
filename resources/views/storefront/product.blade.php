@@ -9,24 +9,28 @@
     @endphp
     <article class="sf-product">
         <section class="sf-gallery" aria-label="{{ __('storefront.gallery') }}" data-sf-gallery>
-            <div class="sf-gallery-main">
-                @foreach ($images as $image)
-                    <div class="sf-gallery-item @if ($loop->first) sf-gallery-active @endif">
-                        @include('storefront.partials.image', ['image' => $image, 'eager' => $loop->first, 'priority' => $loop->first])
-                    </div>
-                @endforeach
-            </div>
-            @if (count($images) > 1)
-                <div class="sf-gallery-thumbs">
+            @if (count($images) === 0)
+                <div class="sf-gallery-main sf-image-placeholder" aria-hidden="true" role="presentation"></div>
+            @else
+                <div class="sf-gallery-main">
                     @foreach ($images as $image)
-                        <button type="button"
-                                class="sf-gallery-thumb @if ($loop->first) sf-gallery-thumb-active @endif"
-                                data-sf-gallery-index="{{ $loop->index }}"
-                                @if ($loop->first) aria-current="true" @endif>
-                            @include('storefront.partials.image', ['image' => $image, 'eager' => false])
-                        </button>
+                        <div class="sf-gallery-item @if ($loop->first) sf-gallery-active @endif">
+                            @include('storefront.partials.image', ['image' => $image, 'eager' => $loop->first, 'priority' => $loop->first])
+                        </div>
                     @endforeach
                 </div>
+                @if (count($images) > 1)
+                    <div class="sf-gallery-thumbs">
+                        @foreach ($images as $image)
+                            <button type="button"
+                                    class="sf-gallery-thumb @if ($loop->first) sf-gallery-thumb-active @endif"
+                                    data-sf-gallery-index="{{ $loop->index }}"
+                                    @if ($loop->first) aria-current="true" @endif>
+                                @include('storefront.partials.image', ['image' => $image, 'eager' => false])
+                            </button>
+                        @endforeach
+                    </div>
+                @endif
             @endif
         </section>
         <section class="sf-summary">
