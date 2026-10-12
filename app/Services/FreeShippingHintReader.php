@@ -17,11 +17,12 @@ use Illuminate\Support\Facades\Lang;
  * nothing else. It NEVER throws — anything missing (no threshold-carrying
  * method, a rate with no method to name) simply yields null.
  *
- * The rule, over the matched zone's ACTIVE local methods that carry a threshold:
- *  - if any still has a POSITIVE remaining, take the smallest remaining (ties:
- *    lowest sortOrder, then id numerically) -> state "remaining";
- *  - otherwise, if one is already unlocked by its threshold, take the LOWEST
- *    threshold (ties as above) -> state "unlocked";
+ * The rule, over the matched zone's ACTIVE local methods that carry a threshold
+ * (owner decision, shipping-domain-design.md §5.1: a customer who ALREADY has free shipping must be told so, never
+ * "add X more" for another method):
+ *  - if any is already UNLOCKED (remaining <= 0), take the one with the LOWEST
+ *    threshold (ties: lowest sortOrder, then id numerically) -> state "unlocked";
+ *  - otherwise take the smallest remaining (ties as above) -> state "remaining";
  *  - otherwise null.
  * CARRIER methods are ignored (their price is quoted live, §5.2) and so is any
  * method with no threshold.
@@ -136,29 +137,28 @@ final class FreeShippingHintReader
      */
     private function choose(array $candidates): ?array
     {
-        $best = null;
+        // The candidates arrive in precedence order, so a strict "<" keeps the earlier one on a tie.
+        $unlocked = null;
 
         foreach ($candidates as $c) {
-            if ($c['remaining'] <= 0) {
-                continue;
-            }
-
-            if ($best === null || $c['remaining'] < $best[0]['remaining']) {
-                $best = [$c, FreeShippingHint::REMAINING];
+            if ($c['remaining'] <= 0 && ($unlocked === null || $c['free'] < $unlocked['free'])) {
+                $unlocked = $c;
             }
         }
 
-        if ($best !== null) {
-            return $best;
+        if ($unlocked !== null) {
+            return [$unlocked, FreeShippingHint::UNLOCKED];
         }
+
+        $short = null;
 
         foreach ($candidates as $c) {
-            if ($best === null || $c['free'] < $best[0]['free']) {
-                $best = [$c, FreeShippingHint::UNLOCKED];
+            if ($short === null || $c['remaining'] < $short['remaining']) {
+                $short = $c;
             }
         }
 
-        return $best;
+        return $short === null ? null : [$short, FreeShippingHint::REMAINING];
     }
 
     /** @param array{id: string, name: string, courier: ?string, free: int, remaining: int} $c */
