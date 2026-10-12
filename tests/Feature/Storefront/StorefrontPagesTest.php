@@ -20,7 +20,8 @@ class StorefrontPagesTest extends TestCase
         // (and a storefront page renders no Livewire component), so it must not inject Livewire's <script>/<style> here.
         SupportAutoInjectedAssets::$hasRenderedAComponentThisRequest = false;
 
-        config(['filesystems.disks.public.url' => 'https://cdn.test/storage', 'app.url' => 'https://shop.test', 'app.name' => 'Raf Shop']);
+        config(['app.url' => 'https://shop.test', 'app.name' => 'Raf Shop']);
+        $this->fakePublicDiskWithUrl('https://cdn.test/storage');
         $this->seedPricing();
         $this->world();
     }

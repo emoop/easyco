@@ -23,7 +23,7 @@ class StorefrontGoldenTest extends TestCase
     {
         parent::setUp();
 
-        config(['filesystems.disks.public.url' => 'https://cdn.test/storage']);
+        $this->fakePublicDiskWithUrl('https://cdn.test/storage');
         $this->seedPricing();
         $this->showcase();
         $this->app->forgetScopedInstances();

@@ -12,7 +12,7 @@ class ImageSetBuilderTest extends TestCase
     {
         parent::setUp();
 
-        config(['filesystems.disks.public.url' => 'https://cdn.test/storage']);
+        $this->fakePublicDiskWithUrl('https://cdn.test/storage');
     }
 
     /** @param list<array<string, mixed>> $variants */

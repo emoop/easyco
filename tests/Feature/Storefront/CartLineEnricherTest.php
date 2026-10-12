@@ -19,7 +19,7 @@ class CartLineEnricherTest extends TestCase
         parent::setUp();
 
         SupportAutoInjectedAssets::$hasRenderedAComponentThisRequest = false;
-        config(['filesystems.disks.public.url' => 'https://cdn.test/storage']);
+        $this->fakePublicDiskWithUrl('https://cdn.test/storage');
         $this->seedPricing();
         $this->withHeader('Referer', 'http://localhost/');
     }
