@@ -612,11 +612,10 @@ function initCartPage() {
             content.appendChild(el('p', 'sf-cart-shipping-hint', cart.free_shipping_hint.text));
         }
 
-        var checkout = el('button', 'sf-cart-checkout', t('checkout_label'));
-        checkout.setAttribute('type', 'button');
-        checkout.disabled = true;
+        // C1: the checkout is a page now (the same cookie-free storefront group); the cart page just links to it.
+        var checkout = el('a', 'sf-cart-checkout', t('checkout_label'));
+        checkout.setAttribute('href', localUrl(i18n ? i18n.getAttribute('data-checkout-url') : null) || '/checkout');
         content.appendChild(checkout);
-        content.appendChild(el('p', 'sf-cart-checkout-note', t('checkout_note')));
     }
 
     async function start() {
@@ -654,6 +653,11 @@ function initCartPage() {
 initAddToCart();
 initCartPage();
 
-if (! document.querySelector('[data-sf-cart-page]')) {
+// The cart page and the checkout page read the cart themselves (and set the header count from it).
+if (! document.querySelector('[data-sf-cart-page]') && ! document.querySelector('[data-sf-checkout]')) {
     refreshCount();
 }
+
+// What the checkout script (storefront-checkout.js) reuses: ONE implementation of the cookie gate, the API call with its
+// CSRF handling, the price format and the safe DOM helpers.
+export { api, apiMessage, el, formatMoney, hasCartCookie, lineImage, localUrl, message, setCount, t };

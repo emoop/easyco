@@ -2,8 +2,11 @@
 
 use App\Http\Controllers\Storefront\CartPageController;
 use App\Http\Controllers\Storefront\CategoryController;
+use App\Http\Controllers\Storefront\CheckoutPageController;
 use App\Http\Controllers\Storefront\HomeController;
+use App\Http\Controllers\Storefront\OrderReceivedController;
 use App\Http\Controllers\Storefront\ProductController;
+use App\Storefront\Orders\OrderReceivedHeaders;
 use App\Storefront\Support\SecurityHeaders;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
@@ -25,14 +28,16 @@ use Illuminate\View\Middleware\ShareErrorsFromSession;
 | The constraints are `.*`-wide ON PURPOSE: whatever the path is, the CONTROLLER decides (StorefrontUrls rules inside the
 | reader), so an invalid, hidden or missing slug all end in the same storefront 404 body instead of the framework's.
 */
+$withoutSession = [
+    EncryptCookies::class,
+    AddQueuedCookiesToResponse::class,
+    StartSession::class,
+    ShareErrorsFromSession::class,
+    PreventRequestForgery::class,
+];
+
 Route::middleware([SecurityHeaders::class])
-    ->withoutMiddleware([
-        EncryptCookies::class,
-        AddQueuedCookiesToResponse::class,
-        StartSession::class,
-        ShareErrorsFromSession::class,
-        PreventRequestForgery::class,
-    ])
+    ->withoutMiddleware($withoutSession)
     ->group(function (): void {
         Route::get('/', [HomeController::class, 'index'])->name('storefront.home');
 
@@ -43,7 +48,24 @@ Route::middleware([SecurityHeaders::class])
         // A server shell filled by the browser from GET /api/cart (S3). `private, no-store`, noindex.
         Route::get('/cart', [CartPageController::class, 'show'])->name('storefront.cart');
 
+        // The one-page checkout (C1): a server shell driven by the browser on the existing API. `private, no-store`, noindex.
+        Route::get('/checkout', [CheckoutPageController::class, 'show'])->name('storefront.checkout');
+
         Route::get('/product-category/{path}', [CategoryController::class, 'show'])
             ->where('path', '[\s\S]*')
             ->name('storefront.category');
+    });
+
+/*
+| The order-received page (C1, owner decision D1): reached only through the signed, temporary url the checkout returns. Its
+| own group because it needs `Referrer-Policy: no-referrer` (the url is the key to the order), which SecurityHeaders would
+| overwrite; OrderReceivedHeaders sets the rest of the storefront's headers too. Same cookie-free pipeline. The signature is
+| checked in the controller (a failure is the storefront's own 404, not the framework's 403).
+*/
+Route::middleware([OrderReceivedHeaders::class])
+    ->withoutMiddleware($withoutSession)
+    ->group(function (): void {
+        Route::get('/order/received/{orderNumber}', [OrderReceivedController::class, 'show'])
+            ->where('orderNumber', '[\s\S]*')
+            ->name('storefront.order.received');
     });

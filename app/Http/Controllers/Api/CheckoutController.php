@@ -221,6 +221,8 @@ class CheckoutController extends Controller
             'shipping' => $this->shippingToArray($result->order()),
             'payment' => $result->payment() !== null ? $this->paymentToArray($result->payment()) : null,
             'already_placed' => $result->isAlreadyPlaced(),
+            // The signed, temporary url of the order-received page (storefront-design.md §2.10): a replay gets one too.
+            'confirmation_url' => app(\App\Storefront\Orders\OrderConfirmationUrl::class)->forOrder((string) $result->order()->id()),
         ];
 
         if ($result->paymentNeedsAttention()) {

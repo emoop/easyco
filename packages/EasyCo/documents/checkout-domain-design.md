@@ -317,6 +317,8 @@ profit = amount - (unitCost × quantity)
 
 ---
 
+**Note (storefront stage C1): the guest's order view is a signed link.** There is no account and no order page for a guest, so `POST /api/checkout` now also returns `confirmation_url`: a signed, temporary (30 days) url of the storefront's order-received page (`App\Storefront\Orders\OrderConfirmationUrl`), for a fresh placement and for an `already_placed` replay alike (nothing is stored: the url is computed from the order id and the application key). The page shows that one order and nothing else; without a valid signature it is the storefront's 404. It is NOT a general "look up my order" feature (no lookup by number or email), and a customer account's order history, when it exists, is a separate thing. The checkout orchestration and the Order domain are unchanged. See `storefront-design.md` §2.10.
+
 ## 11. Testing plan
 
 - `Order` domain unit tests: construction/validation mirroring `Address`'s own STREET_ADDRESS/PICKUP_POINT exclusivity rules on the embedded snapshot fields; required fields (`email`, `clientId`, `transactionId`) rejected when missing/empty.

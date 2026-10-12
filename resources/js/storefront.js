@@ -6,6 +6,7 @@
 // resources/views/storefront/layout.blade.php, so a checkout without a build gets no script at all.
 // S3 adds the cart (add to cart, header count, cart page) in storefront-cart.js, imported below and bundled into this file.
 import './storefront-cart.js';
+import './storefront-checkout.js';
 
 document.documentElement.classList.add('js');
 
