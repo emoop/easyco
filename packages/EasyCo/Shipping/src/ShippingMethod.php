@@ -487,8 +487,6 @@ final class ShippingMethod
         return $this->destinationScope->serves($isPickup);
     }
 
-    /** REPLACE for every kind but PER_CLASS, which may ADJUST (shipping-domain-design.md §12.2). */
-    /** The courier group's display name (shipping stage 5f), or null: not grouped. Grouping uses ShippingCourier::key(). */
     /**
      * The kinds of destination this method serves (design 9.3.3), derived from its delivery type and scope.
      *
@@ -555,6 +553,7 @@ final class ShippingMethod
         return true;
     }
 
+    /** The courier group's display name (shipping stage 5f), or null: not grouped. Grouping uses ShippingCourier::key(). */
     public function courier(): ?string
     {
         return $this->courier;
@@ -566,6 +565,7 @@ final class ShippingMethod
         return $this->deliveryType;
     }
 
+    /** REPLACE for every kind but PER_CLASS, which may ADJUST (shipping-domain-design.md §12.2). */
     public function classMode(): ShippingClassMode
     {
         return $this->classMode;

@@ -52,6 +52,9 @@ use RuntimeException;
  */
 final class SandboxTestEnvironment
 {
+    /** @var array{putenv: string|false, env: array{0: bool, 1: mixed}, server: array{0: bool, 1: mixed}}|null DB_DATABASE as it was before the last force */
+    private static ?array $savedDatabase = null;
+
     /**
      * The env file a PHPUnit run loads — Laravel picks it because
      * phpunit.xml puts APP_ENV=testing into the process environment (see
@@ -77,18 +80,28 @@ final class SandboxTestEnvironment
         // what keeps this test off it.
         $testDatabase = self::configuredTestDatabase();
 
+        // DB_DATABASE as it is NOW, source by source, so restoreProductionEnvironment() can put back exactly that. `??=`: a second
+        // force without a restore in between must not overwrite the original with the pinned value.
+        self::$savedDatabase ??= self::captureDatabase();
+
         self::set('APP_ENV', 'production');
         self::set('DB_DATABASE', $testDatabase);
     }
 
     /**
-     * APP_ENV goes back to 'testing' (the value phpunit.xml itself sets),
-     * and DB_DATABASE is forgotten so .env.testing supplies it again —
-     * exactly the state every other test class in the suite expects.
+     * APP_ENV goes back to 'testing' (the value phpunit.xml itself sets), and DB_DATABASE goes back to EXACTLY what it was
+     * before forceProductionEnvironment() — the value in each of $_SERVER, $_ENV and the process environment, or "not set" for
+     * a source that had none. It is NOT forgotten unconditionally: a real process-level DB_DATABASE (a private test database
+     * exported for the run) would be lost for the rest of the run, and every later test class would fall back to whatever
+     * .env.testing names — the shared test database. Called without a preceding force, it leaves DB_DATABASE alone.
      */
     public static function restoreProductionEnvironment(): void
     {
-        self::forget('DB_DATABASE');
+        if (self::$savedDatabase !== null) {
+            self::putBackDatabase(self::$savedDatabase);
+            self::$savedDatabase = null;
+        }
+
         self::set('APP_ENV', 'testing');
     }
 
@@ -167,6 +180,34 @@ final class SandboxTestEnvironment
         $value = getenv($name);
 
         return $value === false || $value === '' ? null : (string) $value;
+    }
+
+    /** @return array{putenv: string|false, env: array{0: bool, 1: mixed}, server: array{0: bool, 1: mixed}} */
+    private static function captureDatabase(): array
+    {
+        return [
+            'putenv' => getenv('DB_DATABASE'),
+            'env' => [array_key_exists('DB_DATABASE', $_ENV), $_ENV['DB_DATABASE'] ?? null],
+            'server' => [array_key_exists('DB_DATABASE', $_SERVER), $_SERVER['DB_DATABASE'] ?? null],
+        ];
+    }
+
+    /** @param array{putenv: string|false, env: array{0: bool, 1: mixed}, server: array{0: bool, 1: mixed}} $saved */
+    private static function putBackDatabase(array $saved): void
+    {
+        $saved['putenv'] === false ? putenv('DB_DATABASE') : putenv('DB_DATABASE='.$saved['putenv']);
+
+        if ($saved['env'][0]) {
+            $_ENV['DB_DATABASE'] = $saved['env'][1];
+        } else {
+            unset($_ENV['DB_DATABASE']);
+        }
+
+        if ($saved['server'][0]) {
+            $_SERVER['DB_DATABASE'] = $saved['server'][1];
+        } else {
+            unset($_SERVER['DB_DATABASE']);
+        }
     }
 
     private static function set(string $name, string $value): void

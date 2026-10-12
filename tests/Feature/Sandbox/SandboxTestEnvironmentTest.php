@@ -197,6 +197,116 @@ final class SandboxTestEnvironmentTest extends TestCase
         });
     }
 
+    // --- force / restore must give DB_DATABASE back exactly as it was -------------------------------------------------
+
+    /** @return array{putenv: string|false, env: array{0: bool, 1: mixed}, server: array{0: bool, 1: mixed}, app: string|false} */
+    private function snapshotEnvironment(): array
+    {
+        return [
+            'putenv' => getenv('DB_DATABASE'),
+            'env' => [array_key_exists('DB_DATABASE', $_ENV), $_ENV['DB_DATABASE'] ?? null],
+            'server' => [array_key_exists('DB_DATABASE', $_SERVER), $_SERVER['DB_DATABASE'] ?? null],
+            'app' => getenv('APP_ENV'),
+        ];
+    }
+
+    /** @param array{putenv: string|false, env: array{0: bool, 1: mixed}, server: array{0: bool, 1: mixed}, app: string|false} $saved */
+    private function restoreEnvironment(array $saved): void
+    {
+        $saved['putenv'] === false ? putenv('DB_DATABASE') : putenv('DB_DATABASE='.$saved['putenv']);
+
+        if ($saved['env'][0]) {
+            $_ENV['DB_DATABASE'] = $saved['env'][1];
+        } else {
+            unset($_ENV['DB_DATABASE']);
+        }
+
+        if ($saved['server'][0]) {
+            $_SERVER['DB_DATABASE'] = $saved['server'][1];
+        } else {
+            unset($_SERVER['DB_DATABASE']);
+        }
+
+        $saved['app'] === false ? putenv('APP_ENV') : putenv('APP_ENV='.$saved['app']);
+    }
+
+    /**
+     * THE LEAK THIS PINS: restore used to FORGET DB_DATABASE, so a process-level private test database (exported for the run)
+     * was lost and every later test class fell back to .env.testing, the shared test database. A value set before the force
+     * must be exactly what is there after the restore, in all three sources — even when something changed it in between.
+     */
+    public function test_force_then_restore_leaves_a_process_database_exactly_as_it_was(): void
+    {
+        $saved = $this->snapshotEnvironment();
+
+        putenv('DB_DATABASE=private_test_database');
+        $_ENV['DB_DATABASE'] = 'private_test_database';
+        $_SERVER['DB_DATABASE'] = 'private_test_database';
+
+        try {
+            SandboxTestEnvironment::forceProductionEnvironment();
+
+            // The production-environment app is built with the pinned value; whatever it left behind must not survive the restore.
+            putenv('DB_DATABASE=changed_in_between');
+            $_ENV['DB_DATABASE'] = 'changed_in_between';
+            $_SERVER['DB_DATABASE'] = 'changed_in_between';
+
+            SandboxTestEnvironment::restoreProductionEnvironment();
+
+            $this->assertSame('private_test_database', getenv('DB_DATABASE'));
+            $this->assertSame('private_test_database', $_ENV['DB_DATABASE']);
+            $this->assertSame('private_test_database', $_SERVER['DB_DATABASE']);
+            $this->assertSame('testing', getenv('APP_ENV'));
+        } finally {
+            SandboxTestEnvironment::restoreProductionEnvironment();
+            $this->restoreEnvironment($saved);
+        }
+    }
+
+    public function test_force_then_restore_leaves_an_absent_database_absent(): void
+    {
+        $saved = $this->snapshotEnvironment();
+
+        putenv('DB_DATABASE');
+        unset($_ENV['DB_DATABASE'], $_SERVER['DB_DATABASE']);
+
+        try {
+            // With no process value the pin comes from .env.testing, and force sets it for the production application.
+            SandboxTestEnvironment::forceProductionEnvironment();
+            $this->assertNotFalse(getenv('DB_DATABASE'), 'force pins a database');
+
+            SandboxTestEnvironment::restoreProductionEnvironment();
+
+            $this->assertFalse(getenv('DB_DATABASE'));
+            $this->assertArrayNotHasKey('DB_DATABASE', $_ENV);
+            $this->assertArrayNotHasKey('DB_DATABASE', $_SERVER);
+        } finally {
+            SandboxTestEnvironment::restoreProductionEnvironment();
+            $this->restoreEnvironment($saved);
+        }
+    }
+
+    public function test_a_second_force_without_a_restore_does_not_lose_the_original(): void
+    {
+        $saved = $this->snapshotEnvironment();
+
+        putenv('DB_DATABASE=private_test_database');
+        $_ENV['DB_DATABASE'] = $_SERVER['DB_DATABASE'] = 'private_test_database';
+
+        try {
+            SandboxTestEnvironment::forceProductionEnvironment();
+            putenv('DB_DATABASE=something_else');
+            $_ENV['DB_DATABASE'] = $_SERVER['DB_DATABASE'] = 'something_else';
+            SandboxTestEnvironment::forceProductionEnvironment();
+            SandboxTestEnvironment::restoreProductionEnvironment();
+
+            $this->assertSame('private_test_database', getenv('DB_DATABASE'), 'the original, not the value pinned by the first force');
+        } finally {
+            SandboxTestEnvironment::restoreProductionEnvironment();
+            $this->restoreEnvironment($saved);
+        }
+    }
+
     /** The same refusal for the other half of "no source": a file that exists but names no database. */
     public function test_it_throws_when_the_given_file_names_no_database(): void
     {
