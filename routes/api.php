@@ -49,9 +49,12 @@ Route::post('/addresses', [AddressController::class, 'store'])
     ->middleware('throttle:'.ApiRateLimits::ADDRESS);
 
 Route::get('/cart', [CartController::class, 'index']);
-Route::post('/cart/lines', [CartController::class, 'store']);
-Route::patch('/cart/lines/{variationId}', [CartController::class, 'update']);
-Route::delete('/cart/lines/{variationId}', [CartController::class, 'destroy']);
+Route::post('/cart/lines', [CartController::class, 'store'])
+    ->middleware('throttle:'.ApiRateLimits::CART_WRITE);
+Route::patch('/cart/lines/{variationId}', [CartController::class, 'update'])
+    ->middleware('throttle:'.ApiRateLimits::CART_WRITE);
+Route::delete('/cart/lines/{variationId}', [CartController::class, 'destroy'])
+    ->middleware('throttle:'.ApiRateLimits::CART_WRITE);
 Route::put('/cart/promotion', [CartController::class, 'applyPromotion'])
     ->middleware('throttle:'.ApiRateLimits::PROMOTION);
 Route::delete('/cart/promotion', [CartController::class, 'removePromotion']);

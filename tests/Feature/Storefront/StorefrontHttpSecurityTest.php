@@ -41,7 +41,7 @@ class StorefrontHttpSecurityTest extends TestCase
     /** @return list<string> every storefront url that renders a page */
     private function pageUrls(): array
     {
-        return ['/', '/product/summer-dress', '/product-category/clothing', '/product-category/clothing/dresses', '/product/missing', '/product-category/missing'];
+        return ['/', '/product/summer-dress', '/product-category/clothing', '/product-category/clothing/dresses', '/cart', '/product/missing', '/product-category/missing'];
     }
 
     public function test_no_storefront_route_sets_a_cookie_or_starts_a_session(): void
@@ -62,6 +62,29 @@ class StorefrontHttpSecurityTest extends TestCase
         $response->assertOk();
         $this->assertFalse($response->headers->has('Set-Cookie'));
         $this->assertFalse($this->app['session']->driver()->isStarted());
+    }
+
+    public function test_the_home_product_category_and_cart_pages_set_no_cookie_even_for_a_visitor_who_has_one(): void
+    {
+        foreach (['/', '/product/summer-dress', '/product-category/clothing', '/cart'] as $url) {
+            $response = $this->withUnencryptedCookies(['laravel_session' => 'abc', 'XSRF-TOKEN' => 'xyz'])->get($url);
+
+            $response->assertOk();
+            $this->assertFalse($response->headers->has('Set-Cookie'), $url);
+            $this->assertSame([], $response->headers->getCookies(), $url);
+            $this->assertFalse($this->app['session']->driver()->isStarted(), $url);
+        }
+    }
+
+    public function test_the_cart_page_has_private_no_store_and_the_other_pages_have_no_cache_header_of_ours(): void
+    {
+        $cart = (string) $this->get('/cart')->headers->get('Cache-Control');
+        $this->assertStringContainsString('no-store', $cart);
+        $this->assertStringContainsString('private', $cart);
+
+        foreach (['/', '/product/summer-dress', '/product-category/clothing'] as $url) {
+            $this->assertStringNotContainsString('no-store', (string) $this->get($url)->headers->get('Cache-Control'), $url);
+        }
     }
 
     public function test_no_page_carries_a_csrf_token(): void

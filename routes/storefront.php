@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Storefront\CartPageController;
 use App\Http\Controllers\Storefront\CategoryController;
 use App\Http\Controllers\Storefront\HomeController;
 use App\Http\Controllers\Storefront\ProductController;
@@ -38,6 +39,9 @@ Route::middleware([SecurityHeaders::class])
         Route::get('/product/{slug}', [ProductController::class, 'show'])
             ->where('slug', '[\s\S]*')
             ->name('storefront.product');
+
+        // A server shell filled by the browser from GET /api/cart (S3). `private, no-store`, noindex.
+        Route::get('/cart', [CartPageController::class, 'show'])->name('storefront.cart');
 
         Route::get('/product-category/{path}', [CategoryController::class, 'show'])
             ->where('path', '[\s\S]*')

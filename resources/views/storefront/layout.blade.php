@@ -17,6 +17,7 @@
     @endif
 </head>
 <body class="sf-layout">
+    @include('storefront.partials.messages')
     <header class="sf-header">
         <div class="sf-header-bar">
             <a class="sf-logo" href="{{ route('storefront.home', [], false) }}">{{ config('app.name') }}</a>
@@ -25,7 +26,10 @@
                     <span>{{ __('storefront.menu') }}</span>
                 </button>
             @endif
-            <a class="sf-cart" href="/cart">{{ __('storefront.cart') }}</a>
+            <a class="sf-cart" href="{{ route('storefront.cart', [], false) }}" data-sf-cart-link>
+                <span>{{ __('storefront.cart') }}</span>
+                <span class="sf-cart-count" data-sf-cart-count hidden></span>
+            </a>
         </div>
         @if (! empty($categories))
             <nav class="sf-nav" id="sf-menu" aria-label="{{ __('storefront.menu') }}">

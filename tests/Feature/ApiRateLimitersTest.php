@@ -22,12 +22,12 @@ use Tests\TestCase;
  * ShippingQuoteEndpointTest already tests shipping-quote where it lives — its budget
  * against two SUCCESSFUL requests, its Bulgarian sentence, the fact that its budget is
  * per cart. What this file tests is the REGISTRY the pass turned ApiRateLimits into:
- * that the five limiters are exactly the five the class names, that each has one
+ * that the six limiters are exactly the six the class names, that each has one
  * config row and only the routes that document it, that a budget is spent the same way
  * at every one of them (the last request inside it is answered, the next one is a 429
  * in the STORE locale with the standard headers), and that the two key shapes the
- * class documents — the IP alone (four of the five), and the IP plus the identity of
- * the cart (shipping-quote, whose work is per cart) — behave the way its docblock says
+ * class documents — the IP alone (four of the six), and the IP plus the identity of
+ * the cart (shipping-quote and cart-write, whose work is per cart) — behave the way its docblock says
  * they do.
  *
  * WHY A BUDGET IS SPENT HERE WITH REQUESTS THE ENDPOINT REFUSES (a validation error,
@@ -60,7 +60,7 @@ class ApiRateLimitersTest extends TestCase
      *
      * This array IS the expectation the assertions below read, so a limiter added to
      * ApiRateLimits and forgotten here fails
-     * test_the_registry_holds_exactly_the_five_limiters_this_file_tests — which is the
+     * test_the_registry_holds_exactly_the_six_limiters_this_file_tests — which is the
      * point of writing it down twice.
      *
      * @var array<string, array{config: string, key: string, refusal: string, routes: list<array{0: string, 1: string}>, inside: array{0: string, 1: string, 2: array<string, mixed>, 3: int}}>
@@ -125,6 +125,18 @@ class ApiRateLimitersTest extends TestCase
             // A well-formed code with no cart to apply it to: 404, and counted.
             'inside' => ['PUT', 'api/cart/promotion', ['code' => 'SAVE10'], 404],
         ],
+
+        ApiRateLimits::CART_WRITE => [
+            'config' => 'ratelimits.'.ApiRateLimits::CART_WRITE,
+            // IP + cart identity: it counts work ON A CART, where a different cart really is
+            // different work (a session's first write has no token yet and is counted under
+            // the cart-less key, `none`).
+            'key' => self::KEYED_BY_IP_AND_CART,
+            'refusal' => 'rate_limit.too_many_requests',
+            'routes' => [['POST', 'api/cart/lines'], ['PATCH', 'api/cart/lines/{variationId}'], ['DELETE', 'api/cart/lines/{variationId}']],
+            // A variation that does not exist: the controller's own validation answers 422, and the request is counted.
+            'inside' => ['POST', 'api/cart/lines', ['variation_id' => '999999999', 'quantity' => 1], 422],
+        ],
     ];
 
     protected function setUp(): void
@@ -170,7 +182,7 @@ class ApiRateLimitersTest extends TestCase
         );
     }
 
-    public function test_the_registry_holds_exactly_the_five_limiters_this_file_tests(): void
+    public function test_the_registry_holds_exactly_the_six_limiters_this_file_tests(): void
     {
         $expected = array_keys(self::LIMITERS);
         sort($expected);
@@ -181,7 +193,7 @@ class ApiRateLimitersTest extends TestCase
         $this->assertSame(
             $expected,
             $registered,
-            'ApiRateLimits::register() defines exactly these five named limiters, and nothing else in the application defines one',
+            'ApiRateLimits::register() defines exactly these six named limiters, and nothing else in the application defines one',
         );
     }
 

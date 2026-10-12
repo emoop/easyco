@@ -34,6 +34,19 @@ use Illuminate\Support\Facades\RateLimiter;
  *  - checkout       — POST /api/checkout;
  *  - address        — POST /api/addresses, PUT /api/addresses/{addressId};
  *  - promotion      — PUT /api/cart/promotion.
+ *
+ * THE SIXTH, cart-write (storefront stage S3) — POST /api/cart/lines, PATCH and DELETE /api/cart/lines/{variationId}:
+ * the storefront's add-to-cart, quantity change and remove. Keyed by the IP + the guest's session cart token when the
+ * request has one, else by the IP alone (the "ip + cart identity" shape, `none` for a cart-less visitor): this limiter
+ * counts WORK ON A CART, where a different cart really is different work, and one shopper behind a shared IP must not
+ * exhaust everyone else's adding. The price of that shape is stated, not hidden: a client that throws its session away
+ * between requests gets a fresh budget per cart, which is bounded by the sessions it can create (each one is a Set-Cookie
+ * round trip through Sanctum, and the other limiters cap what a cart can do afterwards). A session's very first write has
+ * no cart token yet, so it is counted under the cart-less key; a browser that keeps its session therefore gets at most the
+ * budget + 1 answers a minute, and a client that rotates sessions stays in the cart-less bucket of its IP (30 a minute). Budget: 30 a minute
+ * (config/ratelimits.php) — a person adding, changing and removing lines makes a handful of writes a minute; 30 leaves a
+ * quick shopper untouched. GET /api/cart and the promotion routes are NOT under it (the promotion has its own limiter).
+ *
  * Their budgets are rows in config/ratelimits.php — one row each, asserted by a test.
  *
  * TWO KEY SHAPES, DELIBERATELY — IP + cart identity, or the IP ALONE:
@@ -73,6 +86,8 @@ final class ApiRateLimits
 
     public const PROMOTION = 'promotion';
 
+    public const CART_WRITE = 'cart-write';
+
     public const DEFAULT_PER_MINUTE = 30;
 
     /**
@@ -89,6 +104,7 @@ final class ApiRateLimits
         self::CHECKOUT => 'rate_limit.too_many_requests',
         self::ADDRESS => 'rate_limit.too_many_requests',
         self::PROMOTION => 'rate_limit.too_many_requests',
+        self::CART_WRITE => 'rate_limit.too_many_requests',
     ];
 
     /** The limiters keyed by the IP alone — see this class's own docblock, "TWO KEY SHAPES". */

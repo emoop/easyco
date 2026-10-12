@@ -4,6 +4,9 @@
 // the nav is shown by default and the first gallery image is the main one (see the `.js` rules in
 // storefront.css). The file is loaded only from the guarded @vite in
 // resources/views/storefront/layout.blade.php, so a checkout without a build gets no script at all.
+// S3 adds the cart (add to cart, header count, cart page) in storefront-cart.js, imported below and bundled into this file.
+import './storefront-cart.js';
+
 document.documentElement.classList.add('js');
 
 document.addEventListener('click', function (event) {

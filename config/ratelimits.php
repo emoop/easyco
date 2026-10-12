@@ -32,5 +32,10 @@ return [
     // Applying a promo code — a secret the caller is guessing. Ten a minute
     // leaves room for typos and caps guessing at 600 an hour per IP.
     'promotion' => (int) env('RATE_LIMIT_PROMOTION', 10),
+
+    // POST /api/cart/lines and PATCH|DELETE /api/cart/lines/{variationId}: the storefront's add, change-quantity and remove.
+    // 30 a minute, ONE shared budget: a shopper makes a handful of line writes a minute, so 30 never touches a person and
+    // still caps a script (the key is IP + the session's cart token, see App\Http\ApiRateLimits).
+    'cart-write' => (int) env('RATE_LIMIT_CART_WRITE', 30),
 ];
 

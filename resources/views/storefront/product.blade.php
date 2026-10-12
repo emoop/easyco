@@ -71,7 +71,10 @@
                     </select>
                 </div>
             @endif
-            <button class="sf-add-to-cart" type="button" disabled data-variation-id="{{ $purchasable?->id }}">{{ __('storefront.add_to_cart') }}</button>
+            <div class="sf-add-to-cart-box" data-sf-add-to-cart>
+                <button class="sf-add-to-cart" type="button" disabled data-variation-id="{{ $purchasable?->id }}">{{ __('storefront.add_to_cart') }}</button>
+                <p class="sf-cart-status" role="status" aria-live="polite" data-sf-cart-status></p>
+            </div>
         </section>
         @if ($descriptionHtml !== '')
             <section class="sf-description">
