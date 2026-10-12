@@ -20,6 +20,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Tests\Concerns\BuildsShippingZones;
+use Tests\Concerns\RestoresSchemaWithoutRemigrating;
 use Tests\TestCase;
 
 /**
@@ -34,8 +35,16 @@ class ShippingFreeSetStorageTest extends TestCase
 {
     use BuildsShippingZones;
     use RefreshDatabase;
+    use RestoresSchemaWithoutRemigrating;
 
     private const MIGRATION_PATH = 'packages/EasyCo/Shipping/database/migrations/2026_10_12_000001_add_free_destinations_to_shipping_methods_table.php';
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $this->captureDatabaseFingerprint();
+    }
 
     protected function tearDown(): void
     {
@@ -47,7 +56,11 @@ class ShippingFreeSetStorageTest extends TestCase
         DB::table('shipping_methods')->delete();
         DB::table('shipping_zones')->delete();
 
+        $this->databaseMatchesFingerprint();
+
         parent::tearDown();
+
+        $this->skipRemigrationIfClean();
     }
 
     private function migration(): Migration

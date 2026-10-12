@@ -21,6 +21,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use RuntimeException;
 use Tests\Concerns\BuildsShippingZones;
+use Tests\Concerns\RestoresSchemaWithoutRemigrating;
 use Tests\TestCase;
 
 /**
@@ -35,8 +36,16 @@ class ShippingDestinationScopeStorageTest extends TestCase
 {
     use BuildsShippingZones;
     use RefreshDatabase;
+    use RestoresSchemaWithoutRemigrating;
 
     private const MIGRATION_PATH = 'packages/EasyCo/Shipping/database/migrations/2026_10_09_000005_replace_requires_pickup_point_with_destination_scope.php';
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $this->captureDatabaseFingerprint();
+    }
 
     protected function tearDown(): void
     {
@@ -52,7 +61,11 @@ class ShippingDestinationScopeStorageTest extends TestCase
             $this->freeSetMigration()->up();
         }
 
+        $this->databaseMatchesFingerprint();
+
         parent::tearDown();
+
+        $this->skipRemigrationIfClean();
     }
 
     private function migration(): Migration
