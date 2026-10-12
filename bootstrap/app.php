@@ -3,6 +3,7 @@
 use App\Http\Middleware\ApplyStoreLocale;
 use App\Http\Middleware\ApplyStoreTimezone;
 use App\Http\Middleware\EnsureStaffHasPermission;
+use App\Http\Middleware\PersistGuestCartToken;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -51,11 +52,19 @@ return Application::configure(basePath: dirname(__DIR__))
             ApplyStoreTimezone::class,
         ]);
 
+        // The guest cart's READABLE marker cookie is plain text on purpose (value "1", no token): the storefront script
+        // reads it with document.cookie (App\Http\Middleware\PersistGuestCartToken). Sanctum's stateful pipeline uses
+        // this same EncryptCookies class, so the exception applies to the API routes that set it.
+        $middleware->encryptCookies(except: [PersistGuestCartToken::MARKER]);
+
         // The merchant-surface permission-enforcement point —
         // staff-access-domain-design.md §1/§5. Used as
         // `staff.can:product_manage` alongside `auth:staff` on a route.
         $middleware->alias([
             'staff.can' => EnsureStaffHasPermission::class,
+            // The long-lived guest cart cookie (cart-domain-design.md §10): only on the API routes that read or write
+            // the guest cart token, always listed BEFORE the throttle that keys on it.
+            'cart.cookie' => PersistGuestCartToken::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

@@ -170,6 +170,8 @@ class CartLineDisplayFieldsTest extends TestCase
             'product_name',
             'sku',
             'attributes',
+            'product_url',
+            'image',
         ], array_keys($line));
     }
 

@@ -48,12 +48,36 @@ class StorefrontCartScriptTest extends TestCase
         $this->assertDoesNotMatchRegularExpression('/cart[_-]?token|localStorage|sessionStorage/i', $script);
     }
 
-    public function test_the_header_count_asks_the_api_only_when_an_xsrf_cookie_exists(): void
+    public function test_the_header_count_and_the_cart_page_ask_the_api_only_when_a_cart_cookie_exists(): void
     {
         $script = $this->script();
 
-        $this->assertMatchesRegularExpression("/async function refreshCount\\(\\) \\{\\s*if \\(! readCookie\\(XSRF_COOKIE\\)\\) \\{\\s*return;/", $script);
-        $this->assertMatchesRegularExpression("/async function start\\(\\) \\{\\s*if \\(! readCookie\\(XSRF_COOKIE\\)\\) \\{/", $script, 'the cart page too (R1)');
+        $this->assertMatchesRegularExpression("/async function refreshCount\\(\\) \\{\\s*if \\(! hasCartCookie\\(\\)\\) \\{\\s*return;/", $script);
+        $this->assertMatchesRegularExpression("/async function start\\(\\) \\{\\s*if \\(! hasCartCookie\\(\\)\\) \\{/", $script, 'the cart page too (R1)');
+    }
+
+    public function test_the_gate_is_exactly_the_xsrf_cookie_or_the_marker_and_nothing_else(): void
+    {
+        $script = $this->script();
+
+        $this->assertStringContainsString("var XSRF_COOKIE = 'XSRF-TOKEN';", $script);
+        $this->assertStringContainsString("var CART_MARKER_COOKIE = 'easyco_has_cart';", $script);
+        $this->assertMatchesRegularExpression('/function hasCartCookie\(\) \{\s*return Boolean\(readCookie\(XSRF_COOKIE\) \|\| readCookie\(CART_MARKER_COOKIE\)\);\s*\}/', $script);
+        $this->assertStringNotContainsString("'easyco_cart'", $script, 'the HttpOnly token cookie is never named by the script: it cannot see it');
+    }
+
+    public function test_no_api_request_is_made_outside_the_gate(): void
+    {
+        $script = $this->script();
+
+        // The read calls (the header count's and the cart page's first load) are each behind the gate...
+        $this->assertSame(2, preg_match_all("/if \(! hasCartCookie\(\)\) \{/", $script));
+
+        // ... and GET /api/cart is requested from exactly four places: those two, and the cart page's own reload()/act() after a
+        // write the visitor made (a write needs the csrf-cookie request first, which is the only request without a cookie).
+        preg_match_all("/api\('GET', '\/api\/cart'\)/", $script, $gets);
+        $this->assertCount(3, $gets[0]);
+        $this->assertSame(1, substr_count($script, "'/sanctum/csrf-cookie'"));
     }
 
     public function test_every_text_key_the_script_asks_for_exists_in_both_languages(): void
@@ -67,5 +91,18 @@ class StorefrontCartScriptTest extends TestCase
 
             $this->assertSame([], array_values(array_diff($keys, $available)), "{$locale}: a text key the script asks for is missing");
         }
+    }
+
+    public function test_the_line_image_and_link_come_only_from_checked_values_through_setattribute(): void
+    {
+        $script = $this->script();
+
+        $this->assertStringContainsString('localUrl(line.product_url)', $script, 'the product link is root-relative or nothing');
+        $this->assertStringContainsString("setAttribute('href', href)", $script);
+        $this->assertStringContainsString("node.setAttribute('loading', 'lazy')", $script);
+        $this->assertStringContainsString("node.setAttribute('decoding', 'async')", $script);
+        $this->assertStringContainsString("node.setAttribute('alt',", $script);
+        $this->assertDoesNotMatchRegularExpression('/\.(href|src|srcset)\s*=[^=]/', preg_replace('#//[^
+]*#', '', $script), 'urls are set with setAttribute, never by property assignment');
     }
 }

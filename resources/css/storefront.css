@@ -660,3 +660,28 @@
         grid-column: auto;
     }
 }
+
+/* ===== Stage S3b: image and product link on a cart line ================================================== */
+@layer components {
+    .sf-cart-line-image {
+        @apply col-span-2 flex items-start;
+    }
+
+    .sf-cart-line-img {
+        @apply h-20 w-20 rounded-md border border-neutral-200 bg-neutral-100 object-cover;
+    }
+
+    .sf-cart-line-link {
+        @apply text-neutral-900 underline decoration-neutral-400 underline-offset-2 hover:decoration-neutral-900;
+    }
+}
+
+@media (min-width: 40rem) {
+    .sf-cart-line:has(.sf-cart-line-image) {
+        grid-template-columns: auto minmax(0, 1fr) auto auto auto auto;
+    }
+
+    .sf-cart-line-image {
+        grid-column: auto;
+    }
+}

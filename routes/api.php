@@ -33,9 +33,9 @@ use Illuminate\Support\Facades\Route;
 // its older inline `throttle:6,1` on purpose: it predates the convention, and
 // replacing it is a separate decision about credential-stuffing budgets.
 Route::post('/account/register', [AccountRegistrationController::class, 'store'])
-    ->middleware('throttle:'.ApiRateLimits::REGISTRATION);
+    ->middleware(['cart.cookie:passive', 'throttle:'.ApiRateLimits::REGISTRATION]);
 Route::post('/account/login', [AccountSessionController::class, 'store'])
-    ->middleware('throttle:6,1');
+    ->middleware(['cart.cookie:passive', 'throttle:6,1']);
 
 Route::middleware('auth:customer')->group(function () {
     Route::post('/account/logout', [AccountSessionController::class, 'destroy']);
@@ -48,26 +48,30 @@ Route::middleware('auth:customer')->group(function () {
 Route::post('/addresses', [AddressController::class, 'store'])
     ->middleware('throttle:'.ApiRateLimits::ADDRESS);
 
-Route::get('/cart', [CartController::class, 'index']);
+// `cart.cookie` (PersistGuestCartToken) restores a guest's cart token from the long-lived cart cookie; it comes BEFORE any
+// throttle, whose key reads that token.
+Route::get('/cart', [CartController::class, 'index'])
+    ->middleware('cart.cookie:read');
 Route::post('/cart/lines', [CartController::class, 'store'])
-    ->middleware('throttle:'.ApiRateLimits::CART_WRITE);
+    ->middleware(['cart.cookie:write', 'throttle:'.ApiRateLimits::CART_WRITE]);
 Route::patch('/cart/lines/{variationId}', [CartController::class, 'update'])
-    ->middleware('throttle:'.ApiRateLimits::CART_WRITE);
+    ->middleware(['cart.cookie:write', 'throttle:'.ApiRateLimits::CART_WRITE]);
 Route::delete('/cart/lines/{variationId}', [CartController::class, 'destroy'])
-    ->middleware('throttle:'.ApiRateLimits::CART_WRITE);
+    ->middleware(['cart.cookie:write', 'throttle:'.ApiRateLimits::CART_WRITE]);
 Route::put('/cart/promotion', [CartController::class, 'applyPromotion'])
-    ->middleware('throttle:'.ApiRateLimits::PROMOTION);
-Route::delete('/cart/promotion', [CartController::class, 'removePromotion']);
+    ->middleware(['cart.cookie:write', 'throttle:'.ApiRateLimits::PROMOTION]);
+Route::delete('/cart/promotion', [CartController::class, 'removePromotion'])
+    ->middleware('cart.cookie:write');
 
 // Checkout is available to guests AND logged-in customers, so it must
 // NOT go inside the auth:customer group above.
 Route::post('/checkout', [CheckoutController::class, 'store'])
-    ->middleware('throttle:'.ApiRateLimits::CHECKOUT);
+    ->middleware(['cart.cookie:passive', 'throttle:'.ApiRateLimits::CHECKOUT]);
 
 // The shipping quote is public too (guests choose delivery before they have an
 // account), and throttled by the central named limiter (App\Http\ApiRateLimits).
 Route::post('/shipping/quote', [ShippingQuoteController::class, 'store'])
-    ->middleware('throttle:'.ApiRateLimits::SHIPPING_QUOTE);
+    ->middleware(['cart.cookie:passive', 'throttle:'.ApiRateLimits::SHIPPING_QUOTE]);
 
 // ─────────────────────────────────────────────────────────────────
 // Merchant surface — everything below requires auth:staff plus a

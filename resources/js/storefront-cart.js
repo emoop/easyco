@@ -6,8 +6,10 @@
 //  - the catalog pages set no cookie, so there is no XSRF-TOKEN cookie yet: the first WRITE fetches
 //    GET /sanctum/csrf-cookie (it sets XSRF-TOKEN and the session cookie), then sends X-XSRF-TOKEN with the write;
 //  - a 419 (a stale token) refreshes the cookie ONCE and repeats the write; a second 419 is shown as a generic error;
-//  - R1: GET /api/cart (which starts a session too) is called ONLY when an XSRF-TOKEN cookie already exists, i.e.
-//    when this browser has done something with a cart before. A first-time visitor costs the server nothing.
+//  - R1: GET /api/cart (which starts a session too) is called ONLY when this browser has a cart cookie: an XSRF-TOKEN
+//    (it lives as long as the session) OR the `easyco_has_cart` marker (a plain, readable cookie the server sets with the
+//    HttpOnly `easyco_cart`, which the script cannot see; it is what lets a guest whose session ended get their cart
+//    back). A first-time visitor has neither and costs the server nothing.
 //
 // Everything that comes from the API is put on the page with textContent, never innerHTML. The only numbers computed
 // here are the quantity of items for the header badge (a sum of the API's own quantities) and the decimal point of a
@@ -15,6 +17,7 @@
 // #sf-i18n). Every total, discount and hint is the API's.
 
 var XSRF_COOKIE = 'XSRF-TOKEN';
+var CART_MARKER_COOKIE = 'easyco_has_cart';
 var i18n = document.getElementById('sf-i18n');
 
 function t(key, vars) {
@@ -47,6 +50,11 @@ function readCookie(name) {
 
 function baseHeaders() {
     return { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' };
+}
+
+/** The R1 gate: does this browser have any sign of a cart? Neither cookie = a first-time visitor = no request at all. */
+function hasCartCookie() {
+    return Boolean(readCookie(XSRF_COOKIE) || readCookie(CART_MARKER_COOKIE));
 }
 
 async function ensureCsrf(force) {
@@ -119,6 +127,44 @@ function el(tag, className, text) {
     return node;
 }
 
+/** A product url from the API: a root-relative path only (never a scheme, never protocol-relative). */
+function localUrl(value) {
+    return typeof value === 'string' && value.charAt(0) === '/' && value.charAt(1) !== '/' && value.indexOf('\\') === -1 ? value : null;
+}
+
+/** The line's image from the API, or null when it is missing or not shaped like one: attributes are set with setAttribute only. */
+function lineImage(image) {
+    if (! image || typeof image !== 'object') {
+        return null;
+    }
+
+    var srcPattern = /^(https?:\/\/|\/(?!\/))\S+$/i;
+    var srcsetPattern = /^\S+ [0-9]+w(, \S+ [0-9]+w)*$/;
+
+    if (typeof image.src !== 'string' || ! srcPattern.test(image.src) || ! Number.isInteger(image.width) || ! Number.isInteger(image.height)) {
+        return null;
+    }
+
+    var node = el('img', 'sf-cart-line-img');
+    node.setAttribute('src', image.src);
+
+    if (typeof image.srcset === 'string' && srcsetPattern.test(image.srcset)) {
+        node.setAttribute('srcset', image.srcset);
+
+        if (typeof image.sizes === 'string') {
+            node.setAttribute('sizes', image.sizes);
+        }
+    }
+
+    node.setAttribute('width', String(image.width));
+    node.setAttribute('height', String(image.height));
+    node.setAttribute('alt', typeof image.alt === 'string' ? image.alt : '');
+    node.setAttribute('loading', 'lazy');
+    node.setAttribute('decoding', 'async');
+
+    return node;
+}
+
 function message(target, text) {
     if (target) {
         target.textContent = text;
@@ -162,7 +208,7 @@ function setCount(cart) {
 }
 
 async function refreshCount() {
-    if (! readCookie(XSRF_COOKIE)) {
+    if (! hasCartCookie()) {
         return;
     }
 
@@ -369,8 +415,28 @@ function initCartPage() {
 
     function lineItem(line) {
         var item = el('li', 'sf-cart-line');
+        var picture = lineImage(line.image);
+
+        if (picture) {
+            var pictureBox = el('div', 'sf-cart-line-image');
+            pictureBox.appendChild(picture);
+            item.appendChild(pictureBox);
+        }
+
         var info = el('div', 'sf-cart-line-info');
-        info.appendChild(el('p', 'sf-cart-line-name', line.product_name === null || line.product_name === undefined ? line.sku : line.product_name));
+        var nameText = line.product_name === null || line.product_name === undefined ? line.sku : line.product_name;
+        var name = el('p', 'sf-cart-line-name');
+        var href = localUrl(line.product_url);
+
+        if (href) {
+            var nameLink = el('a', 'sf-cart-line-link', nameText);
+            nameLink.setAttribute('href', href);
+            name.appendChild(nameLink);
+        } else {
+            name.textContent = String(nameText);
+        }
+
+        info.appendChild(name);
 
         var label = labelOf(line);
 
@@ -554,8 +620,8 @@ function initCartPage() {
     }
 
     async function start() {
-        if (! readCookie(XSRF_COOKIE)) {
-            // R1: no cookie means no cart was ever touched in this browser: do not start a session just to show "empty".
+        if (! hasCartCookie()) {
+            // R1: neither cookie means no cart was ever touched in this browser: do not start a session just to show "empty".
             render(null);
             setCount(null);
 

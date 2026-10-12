@@ -10,6 +10,7 @@ use App\Services\CartPricingResult;
 use App\Services\CatalogScopeResolver;
 use App\Services\UnpricedLines;
 use App\Services\VariationDisplayReader;
+use App\Storefront\Cart\CartLineEnricher;
 use DateTimeImmutable;
 use EasyCo\Cart\Cart;
 use EasyCo\Cart\CartLine;
@@ -64,6 +65,7 @@ class CartController extends Controller
         private readonly CartPricing $cartPricing,
         private readonly VariationDisplayReader $displayReader,
         private readonly CartFreeShippingHint $freeShippingHint,
+        private readonly CartLineEnricher $lineEnricher,
     ) {
     }
 
@@ -330,6 +332,13 @@ class CartController extends Controller
             $cart->lines(),
         ));
 
+        // S3b: each line's storefront product url and image, ONE batched call for the whole cart (CartLineEnricher),
+        // merged by variation id below. Additive display fields; nothing about pricing or identity depends on them.
+        $storefrontByVariationId = $this->lineEnricher->enrich(array_map(
+            static fn (CartLine $line): string => $line->variationId(),
+            $cart->lines(),
+        ));
+
         // The subtotal, the promotion and the discount come from the ONE shared
         // calculation checkout also uses (CartPricing, stage 3.0c). The preview's two
         // decisions are explicit: an unpriced line is SKIPPED and flagged (never
@@ -358,6 +367,8 @@ class CartController extends Controller
                     'product_name' => $displayByVariationId[$line->variationId()]['product_name'],
                     'sku' => $displayByVariationId[$line->variationId()]['sku'],
                     'attributes' => $displayByVariationId[$line->variationId()]['attributes'],
+                    'product_url' => $storefrontByVariationId[$line->variationId()]['product_url'] ?? null,
+                    'image' => $storefrontByVariationId[$line->variationId()]['image'] ?? null,
                 ];
 
                 continue;
@@ -382,6 +393,8 @@ class CartController extends Controller
                 'product_name' => $displayByVariationId[$line->variationId()]['product_name'],
                 'sku' => $displayByVariationId[$line->variationId()]['sku'],
                 'attributes' => $displayByVariationId[$line->variationId()]['attributes'],
+                'product_url' => $storefrontByVariationId[$line->variationId()]['product_url'] ?? null,
+                'image' => $storefrontByVariationId[$line->variationId()]['image'] ?? null,
             ];
         }
 
