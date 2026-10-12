@@ -60,6 +60,9 @@ final class EloquentShippingMethodRepository implements ShippingMethodRepository
                 $model->class_mode = $method->classMode()->value;
                 $model->courier = $method->courier();
                 $model->delivery_type = $method->deliveryType()?->value;
+                $model->free_for_address = in_array(ShippingDeliveryType::ADDRESS, $method->freeDestinations(), true);
+                $model->free_for_office = in_array(ShippingDeliveryType::OFFICE, $method->freeDestinations(), true);
+                $model->free_for_locker = in_array(ShippingDeliveryType::LOCKER, $method->freeDestinations(), true);
                 $model->save();
 
                 DB::table('shipping_method_class_rates')->where('method_id', $model->id)->delete();
@@ -193,7 +196,18 @@ final class EloquentShippingMethodRepository implements ShippingMethodRepository
             courier: $model->courier,
             deliveryType: $model->delivery_type === null ? null : ShippingDeliveryType::from((string) $model->delivery_type),
             destinationScope: ShippingDestinationScope::from((string) $model->destination_scope),
+            freeDestinations: self::freeSetOf($model),
         );
+    }
+
+    /** @return list<ShippingDeliveryType> the stored free set, in canonical order */
+    private static function freeSetOf(ShippingMethodModel $model): array
+    {
+        return array_values(array_filter([
+            $model->free_for_address ? ShippingDeliveryType::ADDRESS : null,
+            $model->free_for_office ? ShippingDeliveryType::OFFICE : null,
+            $model->free_for_locker ? ShippingDeliveryType::LOCKER : null,
+        ]));
     }
 
     private function isClassForeignKeyViolation(QueryException $e): bool

@@ -7,6 +7,7 @@ use EasyCo\Shipping\Enums\ShippingDeliveryType;
 use EasyCo\Shipping\Enums\ShippingDestinationScope;
 use EasyCo\Shipping\Enums\ShippingMethodKind;
 use EasyCo\Shipping\Exceptions\InvalidShippingMethodException;
+use EasyCo\Shipping\Rating\RateDestination;
 use LogicException;
 
 /**
@@ -33,6 +34,12 @@ use LogicException;
  * classRates keys use the same code format as a ShippingClass code. NOTE: PHP
  * turns a numeric-looking array key such as "123" into an int, so code that
  * iterates classRates() and needs a string must cast the key.
+ *
+ * THE FREE SET (shipping stage 5g, shipping-domain-design.md 9.3.3): freeDestinations is the subset of {address, office, locker}
+ * the free-shipping threshold applies to. NULL (the entity's default) means "every kind the method serves", which is exactly the
+ * behaviour before 5g; the merchant-facing default (office + locker) is applied where a merchant's intent is made (the admin
+ * input, the migration), not here. The EFFECTIVE free set is the stored set intersected with servedKinds(); a method with a
+ * threshold must have a non-empty effective set, or the threshold could never apply.
  *
  * zoneId is a structural reference (the zone the method is offered in) and is
  * not rewritten by update().
@@ -66,7 +73,13 @@ final class ShippingMethod
 
     private ?ShippingDeliveryType $deliveryType;
 
-    /** @param array<string, int> $classRates */
+    /** @var list<ShippingDeliveryType> the stored free set, in canonical order (address, office, locker) */
+    private array $freeDestinations;
+
+    /**
+     * @param array<string, int> $classRates
+     * @param list<ShippingDeliveryType>|null $freeDestinations
+     */
     private function __construct(
         private ?string $id,
         private readonly string $zoneId,
@@ -82,15 +95,19 @@ final class ShippingMethod
         ShippingClassMode $classMode = ShippingClassMode::REPLACE,
         ?string $courier = null,
         ?ShippingDeliveryType $deliveryType = null,
+        ?array $freeDestinations = null,
     ) {
         if (trim($zoneId) === '') {
             throw InvalidShippingMethodException::emptyZoneId();
         }
 
-        $this->apply($name, $kind, $sortOrder, $isActive, $amountMinor, $classRates, $freeAboveMinor, $carrierCode, $destinationScope, $classMode, $courier, $deliveryType);
+        $this->apply($name, $kind, $sortOrder, $isActive, $amountMinor, $classRates, $freeAboveMinor, $carrierCode, $destinationScope, $classMode, $courier, $deliveryType, $freeDestinations);
     }
 
-    /** @param array<string, int> $classRates */
+    /**
+     * @param array<string, int> $classRates
+     * @param list<ShippingDeliveryType>|null $freeDestinations null = every kind the method serves
+     */
     public static function create(
         string $zoneId,
         string $name,
@@ -106,8 +123,9 @@ final class ShippingMethod
         ?string $courier = null,
         ?ShippingDeliveryType $deliveryType = null,
         ?ShippingDestinationScope $destinationScope = null,
+        ?array $freeDestinations = null,
     ): self {
-        return new self(null, $zoneId, $name, $kind, $sortOrder, $isActive, $amountMinor, $classRates, $freeAboveMinor, $carrierCode, self::scopeOf($requiresPickupPoint, $destinationScope), $classMode, $courier, $deliveryType);
+        return new self(null, $zoneId, $name, $kind, $sortOrder, $isActive, $amountMinor, $classRates, $freeAboveMinor, $carrierCode, self::scopeOf($requiresPickupPoint, $destinationScope), $classMode, $courier, $deliveryType, $freeDestinations);
     }
 
     /**
@@ -115,6 +133,7 @@ final class ShippingMethod
      * is already-valid data read back from storage.
      *
      * @param array<string, int> $classRates
+     * @param list<ShippingDeliveryType>|null $freeDestinations null = every kind the method serves
      */
     public static function reconstituteFromStorage(
         string $id,
@@ -132,8 +151,9 @@ final class ShippingMethod
         ?string $courier = null,
         ?ShippingDeliveryType $deliveryType = null,
         ?ShippingDestinationScope $destinationScope = null,
+        ?array $freeDestinations = null,
     ): self {
-        return new self($id, $zoneId, $name, $kind, $sortOrder, $isActive, $amountMinor, $classRates, $freeAboveMinor, $carrierCode, self::scopeOf($requiresPickupPoint, $destinationScope), $classMode, $courier, $deliveryType);
+        return new self($id, $zoneId, $name, $kind, $sortOrder, $isActive, $amountMinor, $classRates, $freeAboveMinor, $carrierCode, self::scopeOf($requiresPickupPoint, $destinationScope), $classMode, $courier, $deliveryType, $freeDestinations);
     }
 
     /**
@@ -142,6 +162,8 @@ final class ShippingMethod
      * assigned, so a rejected update leaves the entity as it was.
      *
      * @param array<string, int> $classRates
+     * @param list<ShippingDeliveryType>|null $freeDestinations null = every kind the method serves (a caller that keeps the
+     *        stored set passes freeDestinations())
      */
     public function update(
         string $name,
@@ -157,11 +179,15 @@ final class ShippingMethod
         ?string $courier = null,
         ?ShippingDeliveryType $deliveryType = null,
         ?ShippingDestinationScope $destinationScope = null,
+        ?array $freeDestinations = null,
     ): void {
-        $this->apply($name, $kind, $sortOrder, $isActive, $amountMinor, $classRates, $freeAboveMinor, $carrierCode, self::scopeOf($requiresPickupPoint, $destinationScope), $classMode, $courier, $deliveryType);
+        $this->apply($name, $kind, $sortOrder, $isActive, $amountMinor, $classRates, $freeAboveMinor, $carrierCode, self::scopeOf($requiresPickupPoint, $destinationScope), $classMode, $courier, $deliveryType, $freeDestinations);
     }
 
-    /** @param array<mixed> $classRates */
+    /**
+     * @param array<mixed> $classRates
+     * @param array<mixed>|null $freeDestinations
+     */
     private function apply(
         string $name,
         ShippingMethodKind $kind,
@@ -175,6 +201,7 @@ final class ShippingMethod
         ShippingClassMode $classMode = ShippingClassMode::REPLACE,
         ?string $courier = null,
         ?ShippingDeliveryType $deliveryType = null,
+        ?array $freeDestinations = null,
     ): void {
         $name = trim($name);
 
@@ -209,6 +236,12 @@ final class ShippingMethod
         self::assertKindInvariants($kind, $amountMinor, $classRates, $freeAboveMinor, $carrierCode, $classMode);
         self::assertLabelMatchesScope($deliveryType, $destinationScope);
 
+        $free = self::normalizeFreeDestinations($freeDestinations, $deliveryType, $destinationScope);
+
+        if ($freeAboveMinor !== null && array_filter(self::servedKindsFor($deliveryType, $destinationScope), static fn (ShippingDeliveryType $k): bool => in_array($k, $free, true)) === []) {
+            throw InvalidShippingMethodException::noFreeDestination();
+        }
+
         $this->name = $name;
         $this->kind = $kind;
         $this->sortOrder = $sortOrder;
@@ -221,6 +254,7 @@ final class ShippingMethod
         $this->classMode = $classMode;
         $this->courier = $courier;
         $this->deliveryType = $deliveryType;
+        $this->freeDestinations = $free;
     }
 
     /**
@@ -248,6 +282,51 @@ final class ShippingMethod
         if ($required !== null && $scope !== $required) {
             throw InvalidShippingMethodException::labelScopeMismatch($deliveryType->value, $scope->value);
         }
+    }
+
+    /**
+     * The kinds a method's (label, scope) serves: THE ONE MATRIX (design 9.3.3). address+address: address; office+pickup: office;
+     * locker+pickup: locker; no label or "other": scope address: address, scope pickup: office and locker, scope any: all three.
+     * The label x scope rule has already refused every other pair.
+     *
+     * @return list<ShippingDeliveryType> in canonical order (address, office, locker)
+     */
+    public static function servedKindsFor(?ShippingDeliveryType $deliveryType, ShippingDestinationScope $scope): array
+    {
+        return match (true) {
+            $deliveryType === ShippingDeliveryType::ADDRESS => [ShippingDeliveryType::ADDRESS],
+            $deliveryType === ShippingDeliveryType::OFFICE => [ShippingDeliveryType::OFFICE],
+            $deliveryType === ShippingDeliveryType::LOCKER => [ShippingDeliveryType::LOCKER],
+            $scope === ShippingDestinationScope::ADDRESS => [ShippingDeliveryType::ADDRESS],
+            $scope === ShippingDestinationScope::PICKUP => [ShippingDeliveryType::OFFICE, ShippingDeliveryType::LOCKER],
+            default => ShippingDeliveryType::destinationKinds(),
+        };
+    }
+
+    /**
+     * The stored free set: null = every served kind; otherwise each item must be a destination kind (OTHER is a label, never a
+     * destination), duplicates collapse and the order is canonical, so equal sets compare and persist equal.
+     *
+     * @param  array<mixed>|null  $given
+     * @return list<ShippingDeliveryType>
+     */
+    private static function normalizeFreeDestinations(?array $given, ?ShippingDeliveryType $deliveryType, ShippingDestinationScope $scope): array
+    {
+        if ($given === null) {
+            return self::servedKindsFor($deliveryType, $scope);
+        }
+
+        $present = [];
+
+        foreach ($given as $kind) {
+            if (! $kind instanceof ShippingDeliveryType || ! $kind->isDestinationKind()) {
+                throw InvalidShippingMethodException::invalidFreeDestination($kind instanceof ShippingDeliveryType ? $kind->value : get_debug_type($kind));
+            }
+
+            $present[$kind->value] = true;
+        }
+
+        return array_values(array_filter(ShippingDeliveryType::destinationKinds(), static fn (ShippingDeliveryType $k): bool => isset($present[$k->value])));
     }
 
     /**
@@ -410,6 +489,72 @@ final class ShippingMethod
 
     /** REPLACE for every kind but PER_CLASS, which may ADJUST (shipping-domain-design.md §12.2). */
     /** The courier group's display name (shipping stage 5f), or null: not grouped. Grouping uses ShippingCourier::key(). */
+    /**
+     * The kinds of destination this method serves (design 9.3.3), derived from its delivery type and scope.
+     *
+     * @return list<ShippingDeliveryType>
+     */
+    public function servedKinds(): array
+    {
+        return self::servedKindsFor($this->deliveryType, $this->destinationScope);
+    }
+
+    /**
+     * The stored free set (what the merchant ticked, or every served kind when none was stated), in canonical order. It may name
+     * a kind the method no longer serves; see effectiveFreeDestinations().
+     *
+     * @return list<ShippingDeliveryType>
+     */
+    public function freeDestinations(): array
+    {
+        return $this->freeDestinations;
+    }
+
+    /**
+     * The kinds the free-shipping threshold really applies to: the stored set intersected with the served kinds.
+     *
+     * @return list<ShippingDeliveryType>
+     */
+    public function effectiveFreeDestinations(): array
+    {
+        return array_values(array_filter(
+            $this->servedKinds(),
+            fn (ShippingDeliveryType $kind): bool => in_array($kind, $this->freeDestinations, true),
+        ));
+    }
+
+    /**
+     * Does the free-shipping threshold apply to THIS destination? (design 9.3.3) NEVER CHEAPER THAN WHAT IS STATED: let K be the
+     * kinds in question: the stated kind; or, for a pickup point of unstated kind, the served pickup kinds; or, for no destination
+     * at all, every served kind. Free applies iff K is not empty and EVERY kind in K is in the effective free set.
+     */
+    public function freeAppliesTo(?RateDestination $destination): bool
+    {
+        $served = $this->servedKinds();
+
+        if ($destination === null) {
+            $kinds = $served;
+        } elseif ($destination->kind !== null) {
+            $kinds = in_array($destination->kind, $served, true) ? [$destination->kind] : [];
+        } else {
+            $kinds = array_values(array_filter($served, static fn (ShippingDeliveryType $k): bool => in_array($k, ShippingDeliveryType::pickupKinds(), true)));
+        }
+
+        if ($kinds === []) {
+            return false;
+        }
+
+        $free = $this->effectiveFreeDestinations();
+
+        foreach ($kinds as $kind) {
+            if (! in_array($kind, $free, true)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     public function courier(): ?string
     {
         return $this->courier;

@@ -23,10 +23,14 @@ use EasyCo\Shipping\ShippingMethod;
  *  - PER_CLASS in ADJUST mode (shipping-domain-design.md §12.2): the base amountMinor PLUS the signed amount
  *    of every DISTINCT class present in the cart, each added ONCE whatever its quantity, floored at 0. A
  *    line with no class, or a class with no amount here, adds nothing. (REPLACE, above, is untouched.)
- *  - FREE-SHIPPING THRESHOLD (FLAT and PER_CLASS): when freeAboveMinor is set and
- *    goodsAfterDiscountMinor >= freeAboveMinor the charge is 0. It is ">=": an
- *    order exactly at the threshold IS free. The basis is the order's
- *    subtotal - discount, what the customer actually pays for goods (§5.1).
+ *  - FREE-SHIPPING THRESHOLD (FLAT and PER_CLASS): when freeAboveMinor is set,
+ *    goodsAfterDiscountMinor >= freeAboveMinor AND the method's free set covers the
+ *    destination (ShippingMethod::freeAppliesTo(); shipping stage 5g, design 9.3.3) the
+ *    charge is 0. It is ">=": an order exactly at the threshold IS free. The basis is
+ *    the order's subtotal - discount, what the customer actually pays for goods (§5.1).
+ *    Where the free set does not cover the destination the normal charge applies, the
+ *    class rules untouched. NEVER CHEAPER THAN WHAT IS STATED: an unstated pickup kind
+ *    or no destination is free only if every kind it could be is free.
  *  - CARRIER: "needs a carrier quote". It is never priced locally, and how
  *    freeAboveMinor combines with a live quote is still open (queue note), so it
  *    is deliberately NOT applied here.
@@ -84,6 +88,13 @@ final class ShippingRateCalculator
             return MethodRate::priced($id, $request->currency, $amount);
         }
 
+        // Per-kind facts (5g): for a STATED destination the free set does not cover, there is nothing to unlock, so no threshold
+        // facts ("add X more" is never shown for a kind that will never be free). With NO destination stated the facts are
+        // reported whenever some kind is free (the cart hint reads them before any address exists).
+        if ($request->destination !== null ? ! $method->freeAppliesTo($request->destination) : $method->effectiveFreeDestinations() === []) {
+            return MethodRate::priced($id, $request->currency, $amount);
+        }
+
         // ">=": at or above the threshold the goods are free and nothing remains.
         $remaining = $request->goodsAfterDiscountMinor >= $threshold ? 0 : $threshold - $request->goodsAfterDiscountMinor;
 
@@ -137,7 +148,7 @@ final class ShippingRateCalculator
     {
         $threshold = $method->freeAboveMinor();
 
-        return $threshold !== null && $request->goodsAfterDiscountMinor >= $threshold ? 0 : $charge;
+        return $threshold !== null && $request->goodsAfterDiscountMinor >= $threshold && $method->freeAppliesTo($request->destination) ? 0 : $charge;
     }
 
     /** sortOrder ascending, then id ascending (numerically when both are numbers). */

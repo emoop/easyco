@@ -105,6 +105,17 @@ final class InvalidShippingMethodException extends InvalidArgumentException
         return new self("ShippingMethod delivery type \"{$deliveryType}\" does not match the destination scope \"{$scope}\" (address needs scope address; office and locker need scope pickup).");
     }
 
+    /** Free set (shipping-domain-design.md 9.3.3): a threshold needs at least one free destination kind the method actually serves. */
+    public static function noFreeDestination(): self
+    {
+        return new self('A ShippingMethod with a freeAboveMinor threshold must have at least one free destination kind that its delivery scope serves: otherwise the threshold could never apply.');
+    }
+
+    public static function invalidFreeDestination(string $value): self
+    {
+        return new self("A ShippingMethod free destination must be address, office or locker, got \"{$value}\".");
+    }
+
     public static function courierNotPlain(): self
     {
         return new self('ShippingMethod courier must be a single line of plain text: no control or direction-override characters.');

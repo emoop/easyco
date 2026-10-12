@@ -16,7 +16,11 @@ use InvalidArgumentException;
  *    (shipping-domain-design.md §5.1). Zero is valid (a fully discounted
  *    cart), a negative number is a programmer error;
  *  - lines: one RateLine per cart line. An empty list is refused — there is no
- *    shipping to price for nothing.
+ *    shipping to price for nothing;
+ *  - destination (shipping stage 5g, optional): where the order goes — an address, an
+ *    office, a locker, or a pickup point of unstated kind. It decides ONE thing, whether
+ *    the free-shipping threshold applies (ShippingMethod::freeAppliesTo()). null = the
+ *    caller states none, which is priced as cautiously as an unstated kind.
  *
  * The names deliberately differ from the §6 provider value objects
  * (ShippingQuote, ShippingContext, …), which belong to stage 3c.
@@ -28,6 +32,7 @@ final class RateRequest
         public readonly string $currency,
         public readonly int $goodsAfterDiscountMinor,
         public readonly array $lines,
+        public readonly ?RateDestination $destination = null,
     ) {
         if (preg_match('/^[A-Z]{3}$/D', $currency) !== 1) {
             throw new InvalidArgumentException("RateRequest currency must be an uppercase 3-letter code, got \"{$currency}\".");

@@ -89,10 +89,14 @@ final class ShippingMethodWriter
                 $next = max($next, $existing->sortOrder() + 1);
             }
 
+            $scope = $clean['scope'] ?? self::scopeFromToggle($clean['pickup'], $clean['delivery_type'], null);
+
             $method = $this->guarded(fn (): ShippingMethod => ShippingMethod::create(
                 $zoneId, $clean['name'], $clean['kind'], $next, $clean['active'], $clean['price'], $clean['rates'],
                 $clean['free_above'], $clean['carrier_code'], $clean['pickup'], $clean['mode'], $clean['courier'], $clean['delivery_type'],
-                $clean['scope'] ?? self::scopeFromToggle($clean['pickup'], $clean['delivery_type'], null),
+                $scope,
+                // A NEW method: what the caller ticked, else the owner's default (office + locker, limited to what it serves).
+                $clean['free'] ?? ShippingMethodInput::ownerDefaultFreeDestinations(ShippingMethod::servedKindsFor($clean['delivery_type'], $scope)),
             ));
 
             $this->saveGuarded($method);
@@ -120,10 +124,20 @@ final class ShippingMethodWriter
             $method = $this->methods->findById($id) ?? throw new ShippingMethodNotFoundException();
             $before = self::snapshot($method);
 
+            $scope = $clean['scope'] ?? self::scopeFromToggle($clean['pickup'], $clean['delivery_type'], $method->destinationScope());
+            $served = ShippingMethod::servedKindsFor($clean['delivery_type'], $scope);
+            $free = $clean['free'] ?? $method->freeDestinations();
+
+            // No set sent (the form of before stage 5g-3) keeps the stored one; but a set that no longer touches what the method
+            // serves (an `any` method narrowed to address only) is replaced by the owner's default instead of failing the save.
+            if ($clean['free'] === null && array_filter($served, static fn ($kind): bool => in_array($kind, $free, true)) === []) {
+                $free = ShippingMethodInput::ownerDefaultFreeDestinations($served);
+            }
+
             $this->guarded(fn () => $method->update(
                 $clean['name'], $clean['kind'], $method->sortOrder(), $clean['active'], $clean['price'], $clean['rates'],
                 $clean['free_above'], $clean['carrier_code'], $clean['pickup'], $clean['mode'], $clean['courier'], $clean['delivery_type'],
-                $clean['scope'] ?? self::scopeFromToggle($clean['pickup'], $clean['delivery_type'], $method->destinationScope()),
+                $scope, $free,
             ));
 
             if (self::snapshot($method) === $before) {
@@ -162,7 +176,7 @@ final class ShippingMethodWriter
             $method->update(
                 $method->name(), $method->kind(), $method->sortOrder(), $active, $method->amountMinor(), $method->classRates(),
                 $method->freeAboveMinor(), $method->carrierCode(), $method->requiresPickupPoint(), $method->classMode(),
-                $method->courier(), $method->deliveryType(), $method->destinationScope(),
+                $method->courier(), $method->deliveryType(), $method->destinationScope(), $method->freeDestinations(),
             );
 
             $this->saveGuarded($method);
@@ -231,6 +245,7 @@ final class ShippingMethodWriter
             'carrier_code' => $method->carrierCode(),
             'courier' => $method->courier(),
             'delivery_type' => $method->deliveryType()?->value,
+            'free_destinations' => array_map(static fn (ShippingDeliveryType $kind): string => $kind->value, $method->freeDestinations()),
         ];
     }
 
@@ -361,6 +376,24 @@ final class ShippingMethodWriter
             }
         }
 
+        // free destinations (stage 5g) — the kinds the threshold applies to; null = the caller states none
+        $free = null;
+
+        if ($input->freeDestinations !== null) {
+            $free = [];
+
+            foreach ($input->freeDestinations as $value) {
+                $kindOfFree = is_string($value) ? ShippingDeliveryType::tryFrom(trim($value)) : null;
+
+                if ($kindOfFree === null || ! $kindOfFree->isDestinationKind()) {
+                    $errors['free_destinations'][] = __('shipping.methods.errors.invalid');
+                    break;
+                }
+
+                $free[] = $kindOfFree;
+            }
+        }
+
         if ($errors !== []) {
             throw new ShippingMethodInvalidException($errors);
         }
@@ -378,6 +411,7 @@ final class ShippingMethodWriter
             'carrier_code' => $carrierCode,
             'courier' => $courier,
             'delivery_type' => $deliveryType,
+            'free' => $free,
         ];
     }
 
@@ -481,6 +515,7 @@ final class ShippingMethodWriter
                 str_contains($message, 'destination scope') => 'delivery_type',
                 str_contains($message, 'courier') => 'courier',
                 str_contains($message, 'carrierCode') => 'carrier_code',
+                str_contains($message, 'free destination') => 'free_destinations',
                 str_contains($message, 'freeAbove') => 'free_above',
                 str_contains($message, 'amount') => 'price',
                 default => 'name',

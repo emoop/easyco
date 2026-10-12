@@ -48,12 +48,26 @@ class ShippingDestinationScopeStorageTest extends TestCase
         DB::table('shipping_methods')->delete();
         DB::table('shipping_zones')->delete();
 
+        if (! Schema::hasColumn('shipping_methods', 'free_for_office')) {
+            $this->freeSetMigration()->up();
+        }
+
         parent::tearDown();
     }
 
     private function migration(): Migration
     {
         return require base_path(self::MIGRATION_PATH);
+    }
+
+    /**
+     * Stage 5g-1 added two CHECKs and three columns that depend on `destination_scope`, and MySQL will not drop a column a CHECK
+     * uses. These tests run the 6a migration's down() directly, out of the order `migrate:rollback` would use, so the 5g-1
+     * migration is rolled back first here (and put back in tearDown). Setup only: no expectation of any test below changed.
+     */
+    private function freeSetMigration(): Migration
+    {
+        return require base_path('packages/EasyCo/Shipping/database/migrations/2026_10_12_000001_add_free_destinations_to_shipping_methods_table.php');
     }
 
     private function repository(): ShippingMethodRepository
@@ -171,6 +185,7 @@ class ShippingDestinationScopeStorageTest extends TestCase
     public function test_up_backfills_the_old_boolean_into_the_scope_and_drops_it(): void
     {
         $zone = (string) $this->zone('Z', 0)->id();
+        $this->freeSetMigration()->down();
         $this->migration()->down();
 
         $this->assertTrue(Schema::hasColumn('shipping_methods', 'requires_pickup_point'));
@@ -194,6 +209,7 @@ class ShippingDestinationScopeStorageTest extends TestCase
     public function test_the_gate_refuses_a_label_that_disagrees_with_the_old_boolean_names_the_ids_and_changes_nothing(): void
     {
         $zone = (string) $this->zone('Z', 0)->id();
+        $this->freeSetMigration()->down();
         $this->migration()->down();
 
         $good = $this->insertOld($zone, 'Fine', 1, 'locker');
@@ -241,6 +257,7 @@ class ShippingDestinationScopeStorageTest extends TestCase
         $pickup = $this->saved($zone, 'P', ShippingDestinationScope::PICKUP, sort: 1);
         $any = $this->saved($zone, 'N', ShippingDestinationScope::ANY, sort: 2);
 
+        $this->freeSetMigration()->down();
         $this->migration()->down();
 
         $this->assertFalse(Schema::hasColumn('shipping_methods', 'destination_scope'));

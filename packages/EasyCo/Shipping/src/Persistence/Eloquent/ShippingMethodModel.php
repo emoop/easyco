@@ -26,6 +26,9 @@ class ShippingMethodModel extends Model
         'carrier_code',
         'destination_scope',
         'class_mode',
+        'free_for_address',
+        'free_for_office',
+        'free_for_locker',
     ];
 
     protected $casts = [
@@ -33,6 +36,9 @@ class ShippingMethodModel extends Model
         'is_active' => 'boolean',
         'amount_minor' => 'integer',
         'free_above_minor' => 'integer',
+        'free_for_address' => 'boolean',
+        'free_for_office' => 'boolean',
+        'free_for_locker' => 'boolean',
     ];
 
     /**
