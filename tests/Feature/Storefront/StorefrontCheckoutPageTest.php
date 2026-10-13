@@ -217,6 +217,18 @@ class StorefrontCheckoutPageTest extends TestCase
         $this->assertStringContainsString('<label for="sf-note">Бележка към поръчката</label>', $html);
     }
 
+    public function test_the_promo_box_is_in_the_summary_above_the_totals_and_outside_the_form(): void
+    {
+        $html = $this->get('/checkout')->getContent();
+
+        // Inside the summary aside (so inside the mobile panel), after the lines and before the totals...
+        $this->assertMatchesRegularExpression('/<aside class="sf-checkout-summary".*?data-sf-summary-lines><\/ul>.*?<div class="sf-summary-promo" data-sf-promo hidden><\/div>\s*<p class="sf-field-error" id="sf-err-promo" role="alert" data-sf-promo-error hidden><\/p>.*?<dl class="sf-cart-totals" data-sf-summary-totals><\/dl>.*?<\/aside>/s', $html);
+        // ...and the checkout form (where nothing may submit the order by accident) starts after the aside closes.
+        $this->assertLessThan(strpos($html, '<form class="sf-checkout-form"'), strpos($html, 'data-sf-promo hidden'));
+        $this->assertSame(1, substr_count($html, '<form '), 'the promo form is built by the script; the page holds only the checkout form');
+        $this->assertStringNotContainsString('<fieldset class="sf-fieldset"><div class="sf-summary-promo"', $html);
+    }
+
     public function test_the_summary_is_a_sticky_right_column_with_a_mobile_toggle_bar(): void
     {
         $html = $this->get('/checkout')->getContent();

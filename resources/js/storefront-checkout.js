@@ -14,7 +14,7 @@
 // courier (shipping-domain-design.md 9.3.4). Before a place is typed it is a PREVIEW (indicative prices, no handles, no order);
 // with a place it is FINAL. The choice is a (method, kind) pair: first the COURIER, then, if it serves more than one kind, the
 // KIND from a native <select> ("To an office - 3.00 EUR"). Switching among already-quoted options needs no new request.
-import { api, apiMessage, el, formatMoney, hasCartCookie, lineImage, localUrl, message, setCount, t } from './storefront-cart.js';
+import { api, apiMessage, el, formatMoney, hasCartCookie, lineImage, localUrl, message, promotionBox, setCount, t } from './storefront-cart.js';
 
 var DEBOUNCE_MS = 500;
 var STREET_FIELDS = ['postal_code', 'address_line_1', 'address_line_2'];
@@ -83,6 +83,8 @@ function initCheckout(root) {
     var pickupBox = root.querySelector('[data-sf-pickup-fields]');
     var regionBox = root.querySelector('[data-sf-region-field]');
     var noteCounter = root.querySelector('[data-sf-note-counter]');
+    var promoHost = root.querySelector('[data-sf-promo]');
+    var promoError = root.querySelector('[data-sf-promo-error]');
 
     var cartUrl = localUrl(i18n ? i18n.getAttribute('data-cart-url') : null) || '/cart';
     var regionPolicy = { default: 'optional', countries: {} };
@@ -111,6 +113,8 @@ function initCheckout(root) {
     var quoteDirty = false;    // the destination changed while a quote was running: that answer is stale
     var quotePending = false;  // a new quote is scheduled or running: the chosen handle may be outdated
     var submitting = false;
+    var promoBusy = false;     // a promo request (and the reload and re-quote it starts) is running
+    var promoCompare = null;   // the chosen option and its price before a promo change: the first fresh quote is compared with it
     var announcedMinor = null; // the delivery price the status line last announced as changed (until the next press)
 
     function fieldValue(name) {
@@ -155,7 +159,7 @@ function initCheckout(root) {
 
     function refreshPlaceOrder() {
         // Never while a quote is unfinished, before a FINAL (non-preview) price is chosen, or while a pick-up point is half typed.
-        placeOrder.disabled = submitting || cart === null || selection === null || quotePending || ! selection.final || (isPickupKind(selection.kind) && ! pointFieldsFilled());
+        placeOrder.disabled = submitting || promoBusy || cart === null || selection === null || quotePending || ! selection.final || (isPickupKind(selection.kind) && ! pointFieldsFilled());
     }
 
     function setStatus(text, state) {
@@ -278,7 +282,70 @@ function initCheckout(root) {
             summaryLines.appendChild(li);
         });
 
+        renderPromo();
         renderTotals();
+    }
+
+    // ------------------------------------------------------------------------------------------- promo code
+
+    /** The cart page's promo box (ONE implementation, storefront-cart.js), in the summary: it only ever fills its own host, never the form. */
+    function renderPromo() {
+        clear(promoHost);
+        promoHost.hidden = cart === null;
+
+        if (cart !== null) {
+            promoHost.appendChild(promotionBox(cart, runPromo));
+        }
+    }
+
+    function lockPromo(locked) {
+        promoHost.querySelectorAll('button, input').forEach(function (node) {
+            node.disabled = locked;
+        });
+    }
+
+    /**
+     * What a promo call means on the checkout: lock the box and "Place order", ask, then on success reload the cart (the summary and the
+     * totals follow) and ask for ONE fresh `all` quote (the goods total moved, thresholds and handles may too; the (courier, method, kind)
+     * is kept by renderQuote when still offered). The form's fields are never touched. An error stays under the field.
+     */
+    async function runPromo(call) {
+        if (promoBusy || submitting) {
+            return;
+        }
+
+        promoBusy = true;
+        promoError.hidden = true;
+        promoError.textContent = '';
+        lockPromo(true);
+        refreshPlaceOrder();
+
+        try {
+            var result = await call();
+
+            if (result.status >= 200 && result.status < 300) {
+                promoCompare = selection !== null && selection.final ? { id: selection.id, kind: selection.kind, minor: selection.priceMinor } : null;
+
+                // The goods figure of the old quote is stale now: until the new quote the totals use the cart's own total.
+                if (quote !== null) {
+                    quote.goods_after_discount = null;
+                }
+
+                if (await loadCart()) {
+                    scheduleQuote(true);
+                }
+            } else {
+                promoError.textContent = apiMessage(result);
+                promoError.hidden = false;
+            }
+        } catch (e) {
+            promoError.textContent = t('generic_error');
+            promoError.hidden = false;
+        }
+
+        promoBusy = false;
+        lockPromo(false);
+        refreshPlaceOrder();
     }
 
     function renderTotals() {
@@ -450,6 +517,7 @@ function initCheckout(root) {
 
     function clearOptions(statusText) {
         quote = null;
+        promoCompare = null;
         selection = null;
         couriers = [];
         chosenCourier = null;
@@ -852,6 +920,15 @@ function initCheckout(root) {
         renderKinds();
         afterChoice(true);
         message(quoteStatus, gone ? t('ck_choice_gone') : statusForState());
+
+        // Rule (A) after a promo change: the kept choice costs another delivery price now. Shown and announced; nothing is submitted.
+        if (promoCompare !== null) {
+            if (selection !== null && selection.final && selection.id === promoCompare.id && selection.kind === promoCompare.kind && selection.priceMinor !== promoCompare.minor) {
+                announcePrice({ minor: selection.priceMinor, currency: selection.currency });
+            }
+
+            promoCompare = null;
+        }
 
         // A fresh quote that disagrees with the price announced after a refusal: the latest figure, one line.
         if (announcedMinor !== null && selection !== null && selection.final && selection.priceMinor !== announcedMinor) {

@@ -324,6 +324,64 @@ function formatMoney(money) {
     return money.minor < 0 ? '-' + text : text;
 }
 
+/**
+ * The promo code box (apply / applied + remove / invalid + remove), ONE implementation for the cart page and the checkout summary. It builds
+ * the markup from `cart.promotion` and hands every API call to `act(call, successText)`: the page decides what a call means (lock, reload,
+ * re-quote, show an error). The apply form submits on Enter and never reaches any other form.
+ */
+function promotionBox(cart, act) {
+    var box = el('div', 'sf-cart-promo');
+    var promotion = cart.promotion;
+
+    if (promotion && promotion.code) {
+        var applied = el('p', promotion.valid ? 'sf-cart-promo-applied' : 'sf-cart-promo-invalid');
+        applied.textContent = promotion.valid ? t('promo_applied', { code: promotion.code }) : t('promo_invalid', { code: promotion.code });
+        box.appendChild(applied);
+
+        var removeCode = el('button', 'sf-cart-promo-remove', t('promo_remove'));
+        removeCode.setAttribute('type', 'button');
+        removeCode.addEventListener('click', function () {
+            act(function () {
+                return api('DELETE', '/api/cart/promotion');
+            }, t('promo_removed'));
+        });
+        box.appendChild(removeCode);
+
+        return box;
+    }
+
+    var form = el('form', 'sf-cart-promo-form');
+    var inputId = 'sf-promo-code';
+    var label = el('label', 'sf-cart-line-caption', t('promo_label'));
+    label.setAttribute('for', inputId);
+    var code = el('input', 'sf-cart-promo-input');
+    code.setAttribute('id', inputId);
+    code.setAttribute('type', 'text');
+    code.setAttribute('maxlength', '64');
+    code.setAttribute('autocomplete', 'off');
+    code.setAttribute('autocapitalize', 'characters');
+    var apply = el('button', 'sf-cart-promo-apply', t('promo_apply'));
+    apply.setAttribute('type', 'submit');
+    form.appendChild(label);
+    form.appendChild(code);
+    form.appendChild(apply);
+    form.addEventListener('submit', function (event) {
+        event.preventDefault();
+        var value = code.value.trim();
+
+        if (value === '') {
+            return;
+        }
+
+        act(function () {
+            return api('PUT', '/api/cart/promotion', { code: value });
+        }, null);
+    });
+    box.appendChild(form);
+
+    return box;
+}
+
 function initCartPage() {
     var root = document.querySelector('[data-sf-cart-page]');
 
@@ -508,59 +566,6 @@ function initCartPage() {
         return item;
     }
 
-    function promotionBox(cart) {
-        var box = el('div', 'sf-cart-promo');
-        var promotion = cart.promotion;
-
-        if (promotion && promotion.code) {
-            var applied = el('p', promotion.valid ? 'sf-cart-promo-applied' : 'sf-cart-promo-invalid');
-            applied.textContent = promotion.valid ? t('promo_applied', { code: promotion.code }) : t('promo_invalid', { code: promotion.code });
-            box.appendChild(applied);
-
-            var removeCode = el('button', 'sf-cart-promo-remove', t('promo_remove'));
-            removeCode.setAttribute('type', 'button');
-            removeCode.addEventListener('click', function () {
-                act(function () {
-                    return api('DELETE', '/api/cart/promotion');
-                }, t('promo_removed'));
-            });
-            box.appendChild(removeCode);
-
-            return box;
-        }
-
-        var form = el('form', 'sf-cart-promo-form');
-        var inputId = 'sf-promo-code';
-        var label = el('label', 'sf-cart-line-caption', t('promo_label'));
-        label.setAttribute('for', inputId);
-        var code = el('input', 'sf-cart-promo-input');
-        code.setAttribute('id', inputId);
-        code.setAttribute('type', 'text');
-        code.setAttribute('maxlength', '64');
-        code.setAttribute('autocomplete', 'off');
-        code.setAttribute('autocapitalize', 'characters');
-        var apply = el('button', 'sf-cart-promo-apply', t('promo_apply'));
-        apply.setAttribute('type', 'submit');
-        form.appendChild(label);
-        form.appendChild(code);
-        form.appendChild(apply);
-        form.addEventListener('submit', function (event) {
-            event.preventDefault();
-            var value = code.value.trim();
-
-            if (value === '') {
-                return;
-            }
-
-            act(function () {
-                return api('PUT', '/api/cart/promotion', { code: value });
-            }, null);
-        });
-        box.appendChild(form);
-
-        return box;
-    }
-
     function totals(cart) {
         var list = el('dl', 'sf-cart-totals');
 
@@ -605,7 +610,7 @@ function initCartPage() {
             list.appendChild(lineItem(line));
         });
         content.appendChild(list);
-        content.appendChild(promotionBox(cart));
+        content.appendChild(promotionBox(cart, act));
         content.appendChild(totals(cart));
 
         if (cart.free_shipping_hint && typeof cart.free_shipping_hint.text === 'string' && cart.free_shipping_hint.text !== '') {
@@ -660,4 +665,4 @@ if (! document.querySelector('[data-sf-cart-page]') && ! document.querySelector(
 
 // What the checkout script (storefront-checkout.js) reuses: ONE implementation of the cookie gate, the API call with its
 // CSRF handling, the price format and the safe DOM helpers.
-export { api, apiMessage, el, formatMoney, hasCartCookie, lineImage, localUrl, message, setCount, t };
+export { api, apiMessage, el, formatMoney, hasCartCookie, lineImage, localUrl, message, promotionBox, setCount, t };

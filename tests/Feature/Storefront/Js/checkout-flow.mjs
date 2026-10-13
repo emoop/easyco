@@ -90,7 +90,11 @@ class FakeNode {
         return true;
     }
 
-    querySelectorAll(selector) { return this.all().filter((n) => n.matches(selector)); }
+    querySelectorAll(selector) {
+        const parts = selector.split(',').map((part) => part.trim());
+
+        return this.all().filter((n) => parts.some((part) => n.matches(part)));
+    }
     querySelector(selector) { return this.querySelectorAll(selector)[0] ?? null; }
 
     get elements() {
@@ -158,6 +162,10 @@ let generation = 1;
 let dropped = [];
 let unavailable = [];
 let priceOf = {};
+let promo = null;          // the code applied to the scripted cart: {code, valid, discount}
+let promoReply = null;     // a scripted refusal of PUT/DELETE /api/cart/promotion
+let promoDelay = 0;
+let promoValid = true;
 let checkoutResponse = { status: 201, data: { confirmation_url: 'http://shop.test/order/received/5?expires=1&signature=abc' } };
 
 globalThis.document = {
@@ -175,11 +183,17 @@ globalThis.window = {
 
 const money = (minor) => ({ minor, currency: 'EUR' });
 const fmt = (minor) => `${(minor / 100).toFixed(2)} €`;
-const cart = {
+const baseCart = {
     cart_id: 11,
     lines: [{ sku: 'S1', product_name: 'Dress', quantity: 2, attributes: [{ value: 'Red' }, { value: 'M' }], line_total: money(2000), image: null }],
-    subtotal: money(2000), promotion: null, total: money(2000),
+    subtotal: money(2000),
 };
+// The scripted cart follows the applied code: the discount comes off the goods, the API's own figures.
+const currentCart = () => ({
+    ...baseCart,
+    promotion: promo === null ? null : { code: promo.code, valid: promo.valid, discount_amount: promo.valid ? money(promo.discount) : null },
+    total: money(2000 - (promo !== null && promo.valid ? promo.discount : 0)),
+});
 
 // The scripted `all` answer (shipping-domain-design.md 9.3.4). Methods: 1 Econt address 5.00, 4 Econt office 3.00, 5 Econt locker FREE,
 // 6 Speedy office 3.50 (courier Спиди, one kind), 2 a courier-less address method 7.00. A request that is not an `all` request is a
@@ -214,7 +228,7 @@ function quoteAll(body) {
         .filter((g) => g.methods.length > 0);
 
     return {
-        cart_id: 11, currency: 'EUR', goods_after_discount: money(2000), mode: 'all', preview, methods: all.map((m) => ({ ...m, id: String(m.id) })), groups,
+        cart_id: 11, currency: 'EUR', goods_after_discount: currentCart().total, mode: 'all', preview, methods: all.map((m) => ({ ...m, id: String(m.id) })), groups,
         free_shipping_hint: { text: 'Add 5 € more for free delivery', destinations: ['office', 'locker'] },
     };
 }
@@ -225,7 +239,20 @@ globalThis.fetch = async (path, init = {}) => {
     calls.push({ method: method_, path, body });
     let result = { status: 404, data: null };
 
-    if (method_ === 'GET' && path === '/api/cart') result = { status: 200, data: cart };
+    if (method_ === 'GET' && path === '/api/cart') result = { status: 200, data: currentCart() };
+    if (path === '/api/cart/promotion') {
+        if (promoDelay > 0) await new Promise((resolve) => setTimeout(resolve, promoDelay));
+
+        if (promoReply !== null) {
+            result = promoReply;
+        } else if (method_ === 'PUT') {
+            promo = { code: body.code, valid: promoValid, discount: 200 };
+            result = { status: 200, data: currentCart() };
+        } else {
+            promo = null;
+            result = { status: 200, data: currentCart() };
+        }
+    }
     if (method_ === 'POST' && path === '/api/shipping/quote') result = { status: 200, data: quoteAll(body) };
     if (method_ === 'POST' && path === '/api/checkout') result = checkoutResponse;
 
@@ -247,6 +274,33 @@ const checkoutPosts = () => calls.filter((c) => c.path === '/api/checkout');
 const lastCheckout = () => checkoutPosts().at(-1);
 const from = (minor) => T('ck_from').replace(':price', minor === 0 ? T('ck_free') : fmt(minor));
 const status = () => q('[data-sf-quote-status]').textContent;
+const promoHost = () => q('[data-sf-promo]');
+const promoForm = () => promoHost().querySelector('form');
+const promoInput = () => promoHost().querySelector('input');
+const cartGets = () => calls.filter((c) => c.method === 'GET' && c.path === '/api/cart').length;
+
+async function applyCode(code) {
+    promoInput().value = code;
+    const event = promoForm().dispatch('submit');
+    await flush();
+
+    return event;
+}
+
+async function removeCode() {
+    promoHost().querySelectorAll('button')[0].dispatch('click');
+    await flush();
+}
+
+// A pick-up order half typed: courier Speedy (one kind: office), contact, the point and a note.
+async function halfTypedPickup() {
+    await typeInto('city', 'Sofia');
+    choose(courierRows()[1].radio);
+    fillContact();
+    fillPoint('S-1');
+    set('customer_note', 'Please call');
+    form.elements.customer_note.dispatch('input');
+}
 
 function choose(radio) {
     form.all().filter((n) => n.tag === 'input' && n.attrs.type === 'radio' && n.name === radio.name).forEach((n) => { n.checked = false; });
@@ -769,6 +823,144 @@ const scenarios = {
         for (const c of cases) {
             assert.equal(checkoutModule.regionModeFor(c.policy, c.country), c.expected, JSON.stringify(c));
         }
+    },
+
+    // The promo box lives in the summary (so in the mobile panel), above the totals, OUTSIDE the checkout form.
+    async promo_box_in_summary() {
+        const host = promoHost();
+        const panel = q('#sf-summary-panel');
+        const totals = q('[data-sf-summary-totals]');
+
+        assert.ok(panel.all().includes(host), 'inside the summary panel (the mobile toggle opens that same panel)');
+        assert.ok(! form.all().includes(host), 'not inside the checkout form');
+        assert.ok(panel.all().indexOf(q('[data-sf-summary-lines]')) < panel.all().indexOf(host), 'below the item lines');
+        assert.ok(panel.all().indexOf(host) < panel.all().indexOf(totals), 'above the totals');
+        assert.equal(host.hidden, false, 'shown once the cart is loaded');
+        assert.equal(promoInput().attrs.type, 'text');
+        assert.equal(promoForm().tag, 'form');
+        assert.notEqual(promoForm(), form);
+        assert.equal(promoHost().querySelectorAll('button')[0].textContent, T('promo_apply'));
+        assert.equal(promoHost().querySelectorAll('button')[0].attrs.type, 'submit');
+    },
+
+    // Applying a code: the cart is reloaded, ONE fresh `all` quote, the choice kept, everything typed untouched, the discount in the totals.
+    async promo_apply_requotes_and_keeps_choice() {
+        await halfTypedPickup();
+        const carts = cartGets();
+        const quotes = quotePosts().length;
+
+        generation = 2;
+        await applyCode('SAVE10');
+
+        assert.equal(cartGets() - carts, 1, 'the cart is reloaded');
+        assert.equal(quotePosts().length - quotes, 1, 'exactly ONE new quote');
+        assert.ok(q('[data-sf-summary-totals]').textContent.includes(fmt(-200)), 'the discount row');
+        assert.equal(q('[data-sf-summary-toggle-total]').textContent, fmt(2150), 'goods after the discount + delivery');
+        assert.equal(courierRows()[1].radio.checked, true, 'the (courier, method, kind) is kept');
+        assert.equal(q('[data-sf-pickup-fields]').hidden, false);
+        assert.deepEqual(PICKUP.map((n) => form.elements[n].value), ['S-1', 'Point S-1', 'S-1 Main St'], 'the point stays');
+        assert.equal(form.elements.customer_note.value, 'Please call');
+        assert.equal(form.elements.email.value, 'a@example.com');
+        assert.equal(placeOrder.disabled, false);
+        assert.equal(checkoutPosts().length, 0, 'nothing is submitted');
+        assert.equal(promoHost().textContent.includes(T('promo_applied').replace(':code', 'SAVE10')), true);
+
+        await submit();
+        assert.equal(lastCheckout().body.quote_handle, 'h6-office-2', 'the handle of the NEW quote');
+    },
+
+    // Rule (A) on the screen: the re-quote prices the kept choice differently: the new figure and the announcement, nothing submitted.
+    async promo_changes_delivery_price_rule_a() {
+        await halfTypedPickup();
+
+        priceOf = { '6:office': 450 };
+        await applyCode('SAVE10');
+
+        assert.equal(courierRows()[1].text, `Спиди — ${T('ck_kind_office')} — ${fmt(450)}`);
+        assert.equal(q('[data-sf-checkout-status]').textContent, T('ck_price_changed').replace(':price', fmt(450)));
+        assert.equal(q('[data-sf-checkout-status]').getAttribute('data-state'), 'price-changed');
+        assert.equal(q('[data-sf-summary-toggle-total]').textContent, fmt(1800 + 450));
+        assert.equal(checkoutPosts().length, 0);
+        assert.equal(placeOrder.disabled, false);
+    },
+
+    async promo_remove_requotes() {
+        await halfTypedPickup();
+        await applyCode('SAVE10');
+        const carts = cartGets();
+        const quotes = quotePosts().length;
+
+        await removeCode();
+
+        assert.equal(cartGets() - carts, 1);
+        assert.equal(quotePosts().length - quotes, 1);
+        assert.equal(q('[data-sf-summary-totals]').textContent.includes(fmt(-200)), false, 'the discount row is gone');
+        assert.equal(q('[data-sf-summary-toggle-total]').textContent, fmt(2350));
+        assert.equal(promoForm().tag, 'form', 'the apply form is back');
+        assert.equal(courierRows()[1].radio.checked, true);
+        assert.equal(form.elements.pickup_point_reference.value, 'S-1');
+        assert.equal(checkoutPosts().length, 0);
+    },
+
+    // An invalid code shows its message and a Remove button; an API refusal shows under the field and the box is usable again.
+    async promo_invalid_and_error() {
+        const quotes = quotePosts().length;
+
+        promoReply = { status: 422, data: { message: 'This code is not valid.' } };
+        await applyCode('NOPE');
+        assert.equal(q('[data-sf-promo-error]').textContent, 'This code is not valid.');
+        assert.equal(q('[data-sf-promo-error]').hidden, false);
+        assert.equal(promoHost().querySelectorAll('button')[0].disabled, false, 'usable again');
+        assert.equal(promoInput().disabled, false);
+        assert.equal(quotePosts().length, quotes, 'a refused code re-quotes nothing');
+
+        promoReply = { status: 429, data: { message: 'Too many attempts.' } };
+        await applyCode('NOPE');
+        assert.equal(q('[data-sf-promo-error]').textContent, 'Too many attempts.');
+
+        promoReply = { status: 500, data: null };
+        await applyCode('NOPE');
+        assert.equal(q('[data-sf-promo-error]').textContent, T('generic_error'));
+
+        // A code the cart holds but can no longer use: the message and Remove.
+        promoReply = null;
+        promoValid = false;
+        await applyCode('OLD');
+        assert.equal(q('[data-sf-promo-error]').hidden, true, 'the earlier error is cleared');
+        assert.ok(promoHost().textContent.includes(T('promo_invalid').replace(':code', 'OLD')));
+        assert.equal(promoHost().querySelectorAll('button')[0].textContent, T('promo_remove'));
+    },
+
+    // Enter in the code field applies the code; it never reaches the checkout form.
+    async promo_does_not_submit_the_form() {
+        await halfTypedPickup();
+
+        const event = await applyCode('SAVE10');
+
+        assert.equal(event.defaultPrevented, true, 'the browser does not post the promo form');
+        assert.equal(checkoutPosts().length, 0, 'no order was placed');
+        assert.equal(replaced.length, 0);
+        assert.ok(! form.all().includes(promoForm()), 'the promo form is not part of the checkout form');
+        assert.equal(calls.filter((c) => c.path === '/api/cart/promotion' && c.method === 'PUT').length, 1);
+    },
+
+    // While the promo request runs the box and "Place order" are locked; afterwards everything is as before.
+    async promo_busy_locks_place_order() {
+        await halfTypedPickup();
+        assert.equal(placeOrder.disabled, false);
+
+        promoDelay = 80;
+        promoInput().value = 'SAVE10';
+        promoForm().dispatch('submit');
+        await new Promise((resolve) => setTimeout(resolve, 10));
+
+        assert.equal(placeOrder.disabled, true, 'locked while the promo request runs');
+        assert.equal(promoHost().querySelectorAll('button')[0].disabled, true);
+        assert.equal(promoInput().disabled, true);
+
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        assert.equal(placeOrder.disabled, false, 'free again');
+        assert.equal(promoHost().querySelectorAll('button')[0].disabled, false);
     },
 
     // The mobile bar: a real button that opens the same summary in place.

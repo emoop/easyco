@@ -22,6 +22,9 @@
             <aside class="sf-checkout-summary" id="sf-summary-panel" data-open="false" aria-labelledby="sf-summary-title">
                 <h2 class="sf-section-title" id="sf-summary-title">{{ __('storefront.checkout_summary_title') }}</h2>
                 <ul class="sf-summary-lines" data-sf-summary-lines></ul>
+                {{-- The promo code box (the cart page's own, filled by the script): inside the summary, so inside the mobile panel too, and OUTSIDE the checkout form. --}}
+                <div class="sf-summary-promo" data-sf-promo hidden></div>
+                <p class="sf-field-error" id="sf-err-promo" role="alert" data-sf-promo-error hidden></p>
                 <dl class="sf-cart-totals" data-sf-summary-totals></dl>
             </aside>
 

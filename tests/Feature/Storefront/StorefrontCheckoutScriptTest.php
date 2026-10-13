@@ -58,7 +58,7 @@ class StorefrontCheckoutScriptTest extends TestCase
 
         $this->assertMatchesRegularExpression('/if \(submitting \|\| cart === null\) \{\s*return;/', $code);
         // C1b (A7): also locked until the price is FINAL (not a preview) and while a pick-up point's fields are empty.
-        $this->assertStringContainsString('placeOrder.disabled = submitting || cart === null || selection === null || quotePending || ! selection.final || (isPickupKind(selection.kind) && ! pointFieldsFilled());', $code);
+        $this->assertStringContainsString('placeOrder.disabled = submitting || promoBusy || cart === null || selection === null || quotePending || ! selection.final || (isPickupKind(selection.kind) && ! pointFieldsFilled());', $code);
         $this->assertMatchesRegularExpression('/submitting = true;\s*refreshPlaceOrder\(\);/', $code);
         $this->assertStringContainsString('keepLocked = true;', $code, 'after a success the button stays locked while the page navigates');
     }
@@ -161,6 +161,22 @@ class StorefrontCheckoutScriptTest extends TestCase
         // ...and exactly ONE automatic quote follows (the handle is bound to the old amount), once per refusal site.
         $this->assertMatchesRegularExpression('/adoptFreshPrice\(price\);\s*selection\.handle = null;\s*scheduleQuote\(true\);/', $code);
         $this->assertMatchesRegularExpression('/function adoptFreshPrice\(price\) \{\s*selection\.priceMinor = price\.minor;/', $code);
+    }
+
+    public function test_the_promo_box_is_the_carts_own_and_the_checkout_adds_no_second_implementation_or_endpoint(): void
+    {
+        $code = $this->code();
+        $cart = (string) file_get_contents(dirname(__DIR__, 3).'/resources/js/storefront-cart.js');
+
+        $this->assertStringContainsString("message, promotionBox, setCount, t } from './storefront-cart.js';", $code);
+        $this->assertStringContainsString('promotionBox(cart, runPromo)', $code);
+        $this->assertStringContainsString('export { api, apiMessage, el, formatMoney, hasCartCookie, lineImage, localUrl, message, promotionBox, setCount, t };', $cart);
+        $this->assertStringContainsString('content.appendChild(promotionBox(cart, act));', $cart, 'the cart page uses the same function');
+        $this->assertSame(1, substr_count($cart, 'function promotionBox('), 'ONE implementation');
+
+        foreach (['sf-cart-promo', 'promo_label', "'/api/cart/promotion'", 'promo_apply'] as $needle) {
+            $this->assertStringNotContainsString($needle, $code, "the checkout does not rebuild the box ({$needle})");
+        }
     }
 
     public function test_the_note_counts_code_points_and_the_region_rule_is_exported_for_the_agreement_test(): void
