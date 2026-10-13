@@ -126,6 +126,10 @@ class AdminPanelProvider extends PanelProvider
             ])
             ->favicon(asset('favicon.svg'))
             ->brandLogo(asset('images/logo.svg'))
+            // The mark's light variant, for the panel's own dark mode: Filament
+            // renders THIS one whenever the panel is dark. Same 596x150 viewBox as
+            // logo.svg, so the one logo height serves both.
+            ->darkModeBrandLogo(asset('images/easyco-logo-white.svg'))
             // Narrower than Filament's own 20rem default, plus
             // desktop collapse-to-icon-only with expand-on-demand —
             // both real, direct fluent Panel methods (confirmed

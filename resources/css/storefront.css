@@ -40,12 +40,32 @@
         @apply sticky top-0 z-30 border-b border-neutral-200 bg-white shadow-sm;
     }
 
+    /* Three columns — the menu toggle left, the mark in the MIDDLE, the cart right — so the mark stays centred
+       whatever either side happens to be (a flex bar could not: the two sides differ on a phone without JS).
+       The storefront has no dark mode, so the mark is the logo's dark (currentColor) variant. */
     .sf-header-bar {
-        @apply mx-auto flex w-full max-w-6xl items-center gap-3 px-4 py-3;
+        @apply mx-auto grid w-full max-w-6xl items-center gap-3 px-4 py-3;
+        grid-template-columns: 1fr auto 1fr;
     }
 
-    .sf-logo {
-        @apply mr-auto text-lg font-semibold tracking-tight text-neutral-900 no-underline;
+    .sf-header-bar > .sf-menu-toggle {
+        grid-column: 1;
+        justify-self: start;
+    }
+
+    .sf-header-bar > .sf-logo {
+        @apply block text-neutral-900 no-underline;
+        grid-column: 2;
+        justify-self: center;
+    }
+
+    .sf-logo img {
+        @apply block h-8 w-auto;
+    }
+
+    .sf-header-bar > .sf-cart {
+        grid-column: 3;
+        justify-self: end;
     }
 
     /* Base (no JS): the toggle would do nothing, so it is hidden, and the nav is a normal block — the

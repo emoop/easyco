@@ -81,7 +81,7 @@ class StorefrontPagesTest extends TestCase
     {
         $html = $this->get('/product/summer-dress')->assertOk()->getContent();
 
-        $this->assertSame(4, substr_count($html, '<img '), 'each image appears twice: once as the main image, once as a thumbnail (2 images)');
+        $this->assertSame(4, substr_count($this->pageContent($html), '<img '), 'each image appears twice: once as the main image, once as a thumbnail (2 images)');
         $this->assertMatchesRegularExpression('/<img class="sf-image"\s+src="https:\/\/cdn\.test\/storage\/p\/1-medium\.webp"\s+srcset="[^"]*1-thumbnail\.webp 400w, [^"]*1-medium\.webp 900w, [^"]*1-large\.webp 1600w"\s+sizes="[^"]+"\s+width="900"\s+height="675"\s+alt="Front view"\s+loading="eager"\s+fetchpriority="high"\s+decoding="async">/s', $html);
         $this->assertMatchesRegularExpression('/alt="Summer dress — 2"\s+loading="lazy"/s', $html);
         $this->assertSame(1, substr_count($html, 'fetchpriority="high"'));
@@ -94,13 +94,13 @@ class StorefrontPagesTest extends TestCase
         $listing = $this->get('/')->assertOk()->getContent();
 
         $this->assertStringContainsString('sf-image-placeholder', $listing, 'a card without an image keeps its box');
-        $this->assertSame(1, substr_count($listing, '<img '), 'only the product that has an image renders <img>');
+        $this->assertSame(1, substr_count($this->pageContent($listing), '<img '), 'only the product that has an image renders <img>');
 
         // The product page of a product with no images: the gallery shows the same placeholder and no <img>.
         $page = $this->get('/product/sold-out-scarf')->assertOk()->getContent();
 
         $this->assertStringContainsString('sf-image-placeholder', $page, 'the gallery placeholder');
-        $this->assertStringNotContainsString('<img', $page, 'no image anywhere on a product page without images');
+        $this->assertStringNotContainsString('<img', $this->pageContent($page), 'no product image anywhere on a page without images');
     }
 
     public function test_a_variable_product_shows_a_select_of_variations_with_unavailable_ones_disabled(): void
@@ -175,5 +175,17 @@ class StorefrontPagesTest extends TestCase
         \Illuminate\Support\Facades\DB::table('catalog_products')->update(['catalog_visibility' => 'hidden']);
 
         $this->get('/')->assertOk()->assertSee('There are no products here yet.');
+    }
+
+    /**
+     * The page's OWN content, without the site chrome: the header carries the shop's logo as an <img> (the text
+     * title was replaced by the mark), so a whole-document <img> count would count the logo too.
+     */
+    private function pageContent(string $html): string
+    {
+        $start = strpos($html, '<main class="sf-main">');
+        $end = strpos($html, '</main>');
+
+        return $start === false || $end === false ? $html : substr($html, $start, $end - $start);
     }
 }
