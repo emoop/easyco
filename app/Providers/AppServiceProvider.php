@@ -23,6 +23,10 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        // Shipping stage 5g-2a: where a pickup point's kind comes from. A client CLAIM today; the courier stage rebinds this to a
+        // record-derived source (shipping-domain-design.md 9.3.7).
+        $this->app->bind(\App\Services\PickupKindSource::class, \App\Services\ClientClaimedPickupKindSource::class);
+
         // This project's first scoped() binding — deliberately NOT
         // singleton(): ProductPriceRangeProvider itself holds no mutable
         // state of its own, but per-REQUEST memoization is exactly what

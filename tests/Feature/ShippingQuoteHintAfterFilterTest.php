@@ -89,9 +89,12 @@ class ShippingQuoteHintAfterFilterTest extends TestCase
         $this->postJson('/api/cart/lines', ['variation_id' => $variationId, 'quantity' => $quantity])->assertStatus(201);
     }
 
-    private function quote(): \Illuminate\Testing\TestResponse
+    /** @param string|null $pickupKind null = a street address; 'office' | 'locker' = a pickup point of that kind (stage 5g-2a) */
+    private function quote(?string $pickupKind = null): \Illuminate\Testing\TestResponse
     {
-        return $this->postJson('/api/shipping/quote', ['delivery_type' => 'street_address', 'country' => 'BG', 'settlement' => 'Sofia'])->assertOk();
+        return $this->postJson('/api/shipping/quote', $pickupKind === null
+            ? ['delivery_type' => 'street_address', 'country' => 'BG', 'settlement' => 'Sofia']
+            : ['delivery_type' => 'pickup_point', 'country' => 'BG', 'settlement' => 'Sofia', 'pickup_kind' => $pickupKind])->assertOk();
     }
 
     /** A `shipping.quotes` filter that drops the given method ids. */
@@ -198,7 +201,7 @@ class ShippingQuoteHintAfterFilterTest extends TestCase
         $this->cartWith($this->variation('10.00'), 2);
 
         $this->removing('does-not-exist-so-the-filter-runs');
-        $response = $this->quote();
+        $response = $this->quote('office'); // 5g-2a: asked as an office, the kind this method serves (setup only)
 
         $response->assertJsonPath('free_shipping_hint.method_id', $near)
             ->assertJsonPath('free_shipping_hint.method_name', 'To office');

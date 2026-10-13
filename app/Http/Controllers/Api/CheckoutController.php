@@ -149,6 +149,7 @@ class CheckoutController extends Controller
             expectedShippingMinor: isset($validated['expected_shipping_minor']) ? (int) $validated['expected_shipping_minor'] : null,
             pickupPointName: $validated['pickup_point_name'] ?? null,
             pickupPointAddress: $validated['pickup_point_address'] ?? null,
+            pickupPointKind: $validated['pickup_point_kind'] ?? null,
         );
 
         // Each refusal is caught by type and answered with a stable `reason` and a FIXED,
@@ -354,7 +355,7 @@ class CheckoutController extends Controller
             // resolved against a payment adapter above: max:255 keeps an
             // overlong value a 422 field error rather than a 500 from MySQL.
             'payment_method' => 'required|string|max:255',
-            'address_id' => 'nullable|string|prohibits:delivery_type,country,city,postal_code,address_line_1,address_line_2,carrier_code,pickup_point_reference,settlement',
+            'address_id' => 'nullable|string|prohibits:delivery_type,country,city,postal_code,address_line_1,address_line_2,carrier_code,pickup_point_reference,pickup_point_kind,settlement',
             'delivery_type' => 'required_without:address_id|in:street_address,pickup_point',
             // Required whenever the address is typed fresh, for BOTH delivery types (owner
             // decision D1). With address_id the saved address's own country is used and the
@@ -377,6 +378,9 @@ class CheckoutController extends Controller
             'pickup_point_name' => ['required_if:delivery_type,pickup_point', 'prohibited_if:delivery_type,street_address', 'string', 'max:255', new PlainText()],
             'pickup_point_address' => ['required_if:delivery_type,pickup_point', 'prohibited_if:delivery_type,street_address', 'string', 'max:255', new PlainText()],
             'settlement' => ['required_if:delivery_type,pickup_point', 'prohibited_if:delivery_type,street_address', 'string', 'max:255', new PlainText()],
+            // The KIND of the pickup point (stage 5g-2a, design 9.3.6): office | locker, OPTIONAL in this stage (a pickup order with none is
+            // priced as "kind unspecified", never cheaper than a stated kind). Today a CLAIM, read once through PickupKindSource.
+            'pickup_point_kind' => ['nullable', 'prohibited_if:delivery_type,street_address', 'string', 'in:office,locker'],
             // The shipping choice (stage 4e). Only the TYPE and size are checked here, so an array, an object or a huge
             // string never reaches the resolver; the shape rules (digits, `qh_` + 40) are the resolver's alone, and a
             // missing value is its `shipping_required`, not a validation error. Validation messages never echo input.
@@ -409,6 +413,7 @@ class CheckoutController extends Controller
             'settlement' => $order->settlement(),
             'pickup_point_name' => $order->pickupPointName(),
             'pickup_point_address' => $order->pickupPointAddress(),
+            'pickup_point_kind' => $order->pickupPointKind(),
             'lines' => $this->saleLinesToArray($order->transactionId()),
         ];
     }

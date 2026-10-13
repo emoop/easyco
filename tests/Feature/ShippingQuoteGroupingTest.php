@@ -92,9 +92,12 @@ class ShippingQuoteGroupingTest extends TestCase
         $this->postJson('/api/cart/lines', ['variation_id' => $variationId, 'quantity' => $quantity])->assertStatus(201);
     }
 
-    private function quote(): TestResponse
+    /** @param string|null $pickupKind null = a street address; 'office' | 'locker' = a pickup point of that kind (stage 5g-2a: the kind prices the quote) */
+    private function quote(?string $pickupKind = null): TestResponse
     {
-        return $this->postJson('/api/shipping/quote', ['delivery_type' => 'street_address', 'country' => 'BG', 'settlement' => 'Sofia'])->assertOk();
+        return $this->postJson('/api/shipping/quote', $pickupKind === null
+            ? ['delivery_type' => 'street_address', 'country' => 'BG', 'settlement' => 'Sofia']
+            : ['delivery_type' => 'pickup_point', 'country' => 'BG', 'settlement' => 'Sofia', 'pickup_kind' => $pickupKind])->assertOk();
     }
 
     /** Two couriers x three delivery types, in an interleaved method order, plus one ungrouped method. */
@@ -287,13 +290,18 @@ class ShippingQuoteGroupingTest extends TestCase
         $below = $this->quote();
         $this->assertSame([400, 350, 700], array_column(array_column($below->json('methods'), 'price'), 'minor'));
         $this->assertSame(350, $below->json('groups.0.from_minor'));
-        $this->assertSame(2000, $below->json('methods.0.remaining_to_free_minor'));
+        // 5g-2a: the office method does not serve a street address, so the threshold is no fact of THIS quote (was 2000).
+        $this->assertNull($below->json('methods.0.remaining_to_free_minor'));
+        $this->assertSame(2000, $this->quote('office')->json('methods.0.remaining_to_free_minor'), 'asked as an office, the office method still says what is missing');
         $this->assertNull($below->json('methods.2.free_above_minor'), 'the address method has no threshold');
 
         $this->cartWith($variation, 1); // 60.00: at or above it
         $above = $this->quote();
-        $this->assertSame([0, 0, 700], array_column(array_column($above->json('methods'), 'price'), 'minor'), 'free to office and locker, still paid to address');
-        $this->assertSame(0, $above->json('groups.0.from_minor'));
+        // 5g-2a: a street quote is never free for an office or a locker method (was [0, 0, 700] and from_minor 0); each is free for its own kind.
+        $this->assertSame([400, 350, 700], array_column(array_column($above->json('methods'), 'price'), 'minor'), 'paid to the address, whatever the method');
+        $this->assertSame(350, $above->json('groups.0.from_minor'));
+        $this->assertSame(0, $this->quote('office')->json('methods.0.price.minor'), 'free to the office');
+        $this->assertSame(0, $this->quote('locker')->json('methods.1.price.minor'), 'free to the locker');
         $this->assertSame([$office, $locker, $address], $above->json('groups.0.methods'));
         $this->assertCount(1, $above->json('groups'), 'one courier group, three delivery types');
     }
@@ -307,7 +315,7 @@ class ShippingQuoteGroupingTest extends TestCase
         $this->method('To office', 'Econt', ShippingDeliveryType::OFFICE, 0, 400, 5000);
         $this->cartWith($this->variation('30.00'), 1);
 
-        $with = $this->quote();
+        $with = $this->quote('office');
         $this->assertSame('Add 20.00 € more for free shipping with “Econt – To office”.', html_entity_decode((string) $with->json('free_shipping_hint.text')));
         $this->assertSame('To office', $with->json('free_shipping_hint.method_name'), 'the field keeps the plain method name');
     }
@@ -317,7 +325,7 @@ class ShippingQuoteGroupingTest extends TestCase
         $this->method('To office', null, ShippingDeliveryType::OFFICE, 0, 400, 5000);
         $this->cartWith($this->variation('30.00'), 1);
 
-        $this->assertSame('Add 20.00 € more for free shipping with “To office”.', html_entity_decode((string) $this->quote()->json('free_shipping_hint.text')));
+        $this->assertSame('Add 20.00 € more for free shipping with “To office”.', html_entity_decode((string) $this->quote('office')->json('free_shipping_hint.text')));
     }
 
     public function test_the_hint_in_bulgarian_and_when_unlocked(): void
@@ -327,12 +335,12 @@ class ShippingQuoteGroupingTest extends TestCase
         $variation = $this->variation('30.00');
         $this->cartWith($variation, 1);
 
-        $this->assertStringContainsString('„Еконт – До офис“', (string) $this->quote()->json('free_shipping_hint.text'));
+        $this->assertStringContainsString('„Еконт – До офис“', (string) $this->quote('office')->json('free_shipping_hint.text'));
 
         $this->cartWith($variation, 1);
-        $unlocked = (string) $this->quote()->json('free_shipping_hint.text');
+        $unlocked = (string) $this->quote('office')->json('free_shipping_hint.text');
         $this->assertStringContainsString('„Еконт – До офис“', $unlocked);
-        $this->assertSame('unlocked', $this->quote()->json('free_shipping_hint.state'));
+        $this->assertSame('unlocked', $this->quote('office')->json('free_shipping_hint.state'));
     }
 
     public function test_the_cart_hint_uses_the_same_display_name_with_no_extra_query(): void

@@ -112,8 +112,11 @@ final class Order
         // Display snapshot of the chosen pickup point (stage 4f).
         private ?string $pickupPointName = null,
         private ?string $pickupPointAddress = null,
+        // The KIND of the pickup point that priced this order (stage 5g-2a): 'office' | 'locker' | null = not stated. A plain validated string, no import from Shipping.
+        private ?string $pickupPointKind = null,
     ) {
         self::assertPickupDisplay($deliveryType, $pickupPointName, $pickupPointAddress);
+        self::assertPickupKind($deliveryType, $pickupPointKind);
 
         if ($editRevision < 0) {
             throw new InvalidArgumentException('Order editRevision must not be negative.');
@@ -296,6 +299,22 @@ final class Order
         }
     }
 
+    /** The pickup point's kind (shipping stage 5g-2a): only for a PICKUP_POINT, only 'office' or 'locker'; null = not stated (legal: an order from a historical pickup address). */
+    private static function assertPickupKind(OrderDeliveryType $deliveryType, ?string $pickupPointKind): void
+    {
+        if ($pickupPointKind === null) {
+            return;
+        }
+
+        if ($deliveryType === OrderDeliveryType::STREET_ADDRESS) {
+            throw new InvalidArgumentException('Order pickupPointKind must be null when deliveryType is STREET_ADDRESS, got a non-null value.');
+        }
+
+        if (! in_array($pickupPointKind, ['office', 'locker'], true)) {
+            throw new InvalidArgumentException('Order pickupPointKind must be "office" or "locker" when given; use null for not stated.');
+        }
+    }
+
     private static function trimmedOrNull(?string $value): ?string
     {
         return $value === null ? null : trim($value);
@@ -433,6 +452,7 @@ final class Order
         ?string $shippingServiceCode = null,
         ?string $pickupPointName = null,
         ?string $pickupPointAddress = null,
+        ?string $pickupPointKind = null,
     ): self {
         self::assertCountryShape($country);
 
@@ -487,6 +507,7 @@ final class Order
             shippingServiceCode: $shippingServiceCode,
             pickupPointName: self::trimmedOrNull($pickupPointName),
             pickupPointAddress: self::trimmedOrNull($pickupPointAddress),
+            pickupPointKind: self::trimmedOrNull($pickupPointKind),
         );
     }
 
@@ -537,6 +558,7 @@ final class Order
         ?string $shippingServiceCode = null,
         ?string $pickupPointName = null,
         ?string $pickupPointAddress = null,
+        ?string $pickupPointKind = null,
     ): self {
         return new self(
             id: $id,
@@ -572,6 +594,7 @@ final class Order
             shippingServiceCode: $shippingServiceCode,
             pickupPointName: $pickupPointName,
             pickupPointAddress: $pickupPointAddress,
+            pickupPointKind: $pickupPointKind,
         );
     }
 
@@ -806,6 +829,7 @@ final class Order
         ?string $settlement,
         ?string $pickupPointName = null,
         ?string $pickupPointAddress = null,
+        ?string $pickupPointKind = null,
     ): void {
         $this->assertEditable();
 
@@ -819,7 +843,10 @@ final class Order
             && $pickupPointReference === $this->pickupPointReference;
         $pickupPointName = self::trimmedOrNull($pickupPointName) ?? ($sameOffice ? $this->pickupPointName : null);
         $pickupPointAddress = self::trimmedOrNull($pickupPointAddress) ?? ($sameOffice ? $this->pickupPointAddress : null);
+        // The kind (stage 5g-2a) follows the same rule: kept for the same office, cleared for another office or a street address. An edit never re-prices shipping (section 7), so the kind is display.
+        $pickupPointKind = self::trimmedOrNull($pickupPointKind) ?? ($sameOffice ? $this->pickupPointKind : null);
         self::assertPickupDisplay($deliveryType, $pickupPointName, $pickupPointAddress);
+        self::assertPickupKind($deliveryType, $pickupPointKind);
         self::assertNotEmpty('recipientName', $recipientName);
         self::assertNotEmpty('phone', $phone);
         self::assertCountryShape($country);
@@ -848,6 +875,7 @@ final class Order
         $this->settlement = $settlement;
         $this->pickupPointName = $pickupPointName;
         $this->pickupPointAddress = $pickupPointAddress;
+        $this->pickupPointKind = $pickupPointKind;
     }
 
     /**
@@ -952,5 +980,11 @@ final class Order
     public function pickupPointAddress(): ?string
     {
         return $this->pickupPointAddress;
+    }
+
+    /** 'office' | 'locker' | null (not stated). Only ever non-null for a pickup point. */
+    public function pickupPointKind(): ?string
+    {
+        return $this->pickupPointKind;
     }
 }

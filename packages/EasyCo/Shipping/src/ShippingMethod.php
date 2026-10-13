@@ -488,6 +488,26 @@ final class ShippingMethod
     }
 
     /**
+     * Does this method serve a destination of this KIND? (shipping stage 5g-2a, design 9.3.3): a street address is the scope's own
+     * rule (servesPickupPoint(false)); a pickup point of a STATED kind must be in servedKinds() (so an office-labelled method does
+     * not serve a locker); a pickup point of UNSTATED kind is served when the method serves any pickup kind.
+     */
+    public function servesKind(?ShippingDeliveryType $kind, bool $isPickup): bool
+    {
+        if (! $isPickup) {
+            return $this->servesPickupPoint(false);
+        }
+
+        $served = $this->servedKinds();
+
+        if ($kind === null) {
+            return array_filter($served, static fn (ShippingDeliveryType $k): bool => in_array($k, ShippingDeliveryType::pickupKinds(), true)) !== [];
+        }
+
+        return in_array($kind, ShippingDeliveryType::pickupKinds(), true) && in_array($kind, $served, true);
+    }
+
+    /**
      * The kinds of destination this method serves (design 9.3.3), derived from its delivery type and scope.
      *
      * @return list<ShippingDeliveryType>

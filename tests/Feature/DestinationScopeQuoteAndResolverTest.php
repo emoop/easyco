@@ -222,7 +222,9 @@ class DestinationScopeQuoteAndResolverTest extends TestCase
         ];
         $this->assertSame($expectedGroups, $street->json('groups'), 'from_minor counts the pickup-only method although the request is a street address');
         $this->assertSame($expectedGroups, $pickup->json('groups'));
-        $this->assertSame($street->json('free_shipping_hint'), $pickup->json('free_shipping_hint'), 'the hint is not kind-aware (stage 6c)');
+        // 5g-2a: the only method with a threshold is address-only, so a PICKUP quote has nothing free to say (it is never free for a
+        // pickup point): the single-kind hint is kind-aware now. The street quote still names it.
+        $this->assertNull($pickup->json('free_shipping_hint'), 'a pickup quote never names an address-only method (stage 5g-2a)');
         $this->assertSame([5000, 3000], [$street->json('free_shipping_hint.free_above_minor'), $street->json('free_shipping_hint.remaining_minor')]);
     }
 

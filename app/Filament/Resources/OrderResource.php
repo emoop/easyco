@@ -1062,6 +1062,8 @@ class OrderResource extends Resource
                 // The office as the customer saw it (stage 4f display snapshot), only when the order stored it.
                 filled($record->pickup_point_name) ? __('orders.fields.pickup_point_name').': '.$record->pickup_point_name : null,
                 filled($record->pickup_point_address) ? __('orders.fields.pickup_point_address').': '.$record->pickup_point_address : null,
+                // The KIND that priced the order (stage 5g-2a), display only: the order editor never changes it (an edit does not re-price shipping).
+                __('orders.fields.pickup_point_kind').': '.__('orders.pickup_kind.'.(filled($record->pickup_point_kind) ? $record->pickup_point_kind : 'not_stated')),
                 $record->settlement ?? $na,
                 $record->country ?? $na,
             ];

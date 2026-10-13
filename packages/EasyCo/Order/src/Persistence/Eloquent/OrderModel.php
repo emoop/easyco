@@ -50,6 +50,7 @@ class OrderModel extends Model
         'settlement',
         'pickup_point_name',
         'pickup_point_address',
+        'pickup_point_kind',
     ];
 
     protected $casts = [

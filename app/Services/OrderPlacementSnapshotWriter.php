@@ -52,6 +52,7 @@ final class OrderPlacementSnapshotWriter
             'settlement' => $order->settlement(),
             'pickup_point_name' => $order->pickupPointName(),
             'pickup_point_address' => $order->pickupPointAddress(),
+            'pickup_point_kind' => $order->pickupPointKind(),
             'created_at' => $placedAt,
         ];
     }

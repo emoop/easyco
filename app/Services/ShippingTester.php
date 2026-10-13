@@ -130,11 +130,8 @@ final class ShippingTester
      */
     private function servesDestination(ShippingMethod $method, ?RateDestination $destination, bool $isPickupPoint): bool
     {
-        return match (true) {
-            $destination === null => $method->servesPickupPoint($isPickupPoint),
-            $destination->kind === null => $method->servesPickupPoint(true),
-            $destination->kind === ShippingDeliveryType::ADDRESS => $method->servesPickupPoint(false),
-            default => in_array($destination->kind, $method->servedKinds(), true),
-        };
+        return $destination === null
+            ? $method->servesPickupPoint($isPickupPoint)
+            : $method->servesKind($destination->kind, $destination->isPickupPoint);
     }
 }

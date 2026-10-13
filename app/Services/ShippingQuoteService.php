@@ -247,16 +247,17 @@ final class ShippingQuoteService
             $byId[(string) $method->id()] = $method;
         }
 
-        $rates = $this->calculator->ratesFor($zoneMethods, new RateRequest($currency, $goodsMinor, $rateLines));
+        // The destination goes into the rating (stage 5g-2a): the free-shipping set is per kind, never cheaper than what is stated.
+        $rates = $this->calculator->ratesFor($zoneMethods, new RateRequest($currency, $goodsMinor, $rateLines, $destination->rateDestination()));
         $context = $this->contextFor($destination, $currency, $goodsMinor, $weightKnown ? $weight : null);
         $offered = [];
 
         foreach ($rates as $rate) {
             $method = $byId[$rate->methodId];
-            $offered[] = $rate->needsQuote() ? $this->carrierMethod($method, $rate, $context, $destination->isPickupPoint()) : MethodQuote::priced(
+            $offered[] = $rate->needsQuote() ? $this->carrierMethod($method, $rate, $context, $destination) : MethodQuote::priced(
                 $rate->methodId, $method->name(), $method->kind()->value, $method->requiresPickupPoint(), $currency, $rate->amountMinor(), null,
                 $rate->freeAboveMinor, $rate->remainingToFreeMinor, $method->courier(), $method->deliveryType()?->value,
-                $method->destinationScope()->value, $method->servesPickupPoint($destination->isPickupPoint()),
+                $method->destinationScope()->value, $method->servesKind($destination->kind(), $destination->isPickupPoint()),
             );
         }
 
@@ -303,11 +304,14 @@ final class ShippingQuoteService
         usort($lines, static fn (array $a, array $b): int => strcmp($a[0], $b[0]));
 
         return hash('sha256', json_encode([
-            'v' => 1,
+            // v2 (stage 5g-2a, design 9.3.6): the pickup KIND joined the hash, so every handle issued before expires once.
+            'v' => 2,
             'country' => $destination->countryCode,
             'settlement' => $normalizedSettlement,
             'postcode' => $destination->isPickupPoint() || $destination->postcode === null ? '' : PostcodeNormalizer::normalize($destination->postcode),
             'pickup' => $destination->isPickupPoint(),
+            // address | office | locker | pickup (unspecified): a handle quoted for one kind never verifies for another.
+            'kind' => $destination->hashKind(),
             'zone' => $zoneId,
             'goods' => $goodsAfterDiscountMinor,
             'currency' => $currency,
@@ -342,10 +346,10 @@ final class ShippingQuoteService
         return new ShippingContext($destination->countryCode, $destination->settlement, $destination->isPickupPoint(), $currency, $goodsMinor, null, $weightGrams);
     }
 
-    private function carrierMethod(ShippingMethod $method, MethodRate $rate, ?ShippingContext $context, bool $isPickupPoint): MethodQuote
+    private function carrierMethod(ShippingMethod $method, MethodRate $rate, ?ShippingContext $context, QuoteDestination $destination): MethodQuote
     {
         $id = $rate->methodId;
-        $serves = $method->servesPickupPoint($isPickupPoint);
+        $serves = $method->servesKind($destination->kind(), $destination->isPickupPoint());
         $make = static fn (string $reason): MethodQuote => MethodQuote::unavailable($id, $method->name(), ShippingMethodKind::CARRIER->value, $method->requiresPickupPoint(), $rate->currency, $reason, $method->courier(), $method->deliveryType()?->value, $method->destinationScope()->value, $serves);
 
         // The merchant restricted this method to the other kind of destination: the carrier is NOT asked (no wasted call, no cost).

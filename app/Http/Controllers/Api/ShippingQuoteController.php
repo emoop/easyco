@@ -13,6 +13,7 @@ use App\Services\ShippingQuoteResult;
 use App\Services\ShippingQuoteService;
 use App\Settings\StoreLocale;
 use EasyCo\Address\Enums\AddressDeliveryType;
+use EasyCo\Shipping\Enums\ShippingDeliveryType;
 use EasyCo\Cart\Cart;
 use EasyCo\Cart\Contracts\CartRepository;
 use Illuminate\Http\JsonResponse;
@@ -35,8 +36,15 @@ use Illuminate\Validation\ValidationException;
  * REQUEST: `delivery_type` (street_address|pickup_point), `country` (the two-letter
  * code, trimmed and uppercased, checked against the country list), `settlement`
  * (required, trimmed: a street address's city, or the pickup point's settlement),
- * `postal_code` (optional, ignored for a pickup point) — OR `address_id` alone, one
- * of the customer's saved addresses (customer session only; scoped to the account).
+ * `postal_code` (optional, ignored for a pickup point), `pickup_kind` (optional, office|locker, pickup
+ * point only — shipping stage 5g-2a) — OR `address_id` alone, one
+ * of the customer's saved addresses (customer session only; scoped to the account; it uses its own
+ * stored kind, so `pickup_kind` is refused with it).
+ *
+ * THE PICKUP KIND (stage 5g-2a, design 9.3.6): the free-shipping set of a method is per kind (address, office, locker), so a
+ * pickup quote with `pickup_kind` is priced for THAT kind; without it the pickup point is "kind unspecified" and is free only
+ * when BOTH office and locker are free (never cheaper than a stated kind). The kind is part of the pricing hash, so a handle
+ * quoted for one kind never verifies for another at checkout. The response shape is unchanged.
  *
  * A PICKUP-POINT DELIVERY IS QUOTED FROM THE SETTLEMENT THE CLIENT SENDS. The client
  * MUST QUOTE AGAIN AFTER THE CUSTOMER CHOOSES A POINT: the chosen point's settlement
@@ -123,11 +131,14 @@ class ShippingQuoteController extends Controller
         }
 
         $validated = $request->validate([
-            'address_id' => 'nullable|string|prohibits:delivery_type,country,settlement,postal_code',
+            'address_id' => 'nullable|string|prohibits:delivery_type,country,settlement,postal_code,pickup_kind',
             'delivery_type' => 'required_without:address_id|in:street_address,pickup_point',
             'country' => ['required_without:address_id', 'string', new KnownCountryCode('delivery.country.invalid')],
             'settlement' => 'required_without:address_id|string|min:1|max:255',
             'postal_code' => 'nullable|string|max:20',
+            // The pickup point's KIND (stage 5g-2a): the customer's dropdown choice, so the free-shipping set of each kind prices it. Optional:
+            // none = a pickup point of unspecified kind, priced as cautiously as the dearest kind. A street address has none.
+            'pickup_kind' => ['nullable', 'prohibited_if:delivery_type,street_address', 'string', 'in:office,locker'],
         ], [
             'country.required_without' => __('delivery.country.required'),
         ]);
@@ -153,6 +164,7 @@ class ShippingQuoteController extends Controller
                     $validated['country'],
                     $validated['settlement'],
                     $validated['postal_code'] ?? null,
+                    isset($validated['pickup_kind']) ? ShippingDeliveryType::from($validated['pickup_kind']) : null,
                 ));
         } catch (ShippingQuoteRefusedException $e) {
             return response()->json([

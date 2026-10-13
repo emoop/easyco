@@ -38,6 +38,7 @@ return [
         'pickup_point_reference' => 'Офис на куриер',
         'pickup_point_name' => 'Име на офиса',
         'pickup_point_address' => 'Адрес на офиса',
+        'pickup_point_kind' => 'Вид на мястото',
         'settlement' => 'Населено място',
         'image' => 'Снимка',
         'product_name' => 'Продукт',
@@ -135,6 +136,13 @@ return [
         'payment_receipt_recorded' => 'Получен е банков превод',
         'payment_receipt_corrected' => 'Коригиран е запис на банков превод',
         'payment_mismatch_accepted' => 'Приета е различна сума на превода',
+    ],
+
+    // The kind of the pickup point that priced the order (shipping stage 5g-2a); "not stated" for an order placed with none.
+    'pickup_kind' => [
+        'office' => 'Офис',
+        'locker' => 'Автомат',
+        'not_stated' => 'Не е посочен',
     ],
 
     'delivery_type_options' => [

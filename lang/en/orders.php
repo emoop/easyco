@@ -38,6 +38,7 @@ return [
         'pickup_point_reference' => 'Pickup point',
         'pickup_point_name' => 'Office name',
         'pickup_point_address' => 'Office address',
+        'pickup_point_kind' => 'Pickup kind',
         'settlement' => 'Settlement',
         'image' => 'Image',
         'product_name' => 'Product',
@@ -136,6 +137,13 @@ return [
         'payment_receipt_recorded' => 'Bank transfer received',
         'payment_receipt_corrected' => 'Bank transfer record corrected',
         'payment_mismatch_accepted' => 'Different transfer amount accepted',
+    ],
+
+    // The kind of the pickup point that priced the order (shipping stage 5g-2a); "not stated" for an order placed with none.
+    'pickup_kind' => [
+        'office' => 'Office',
+        'locker' => 'Locker',
+        'not_stated' => 'Not stated',
     ],
 
     'delivery_type_options' => [

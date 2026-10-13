@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Services\PickupKindSource;
 use App\Rules\KnownCountryCode;
 use App\Rules\PlainText;
 use EasyCo\Address\Address;
@@ -36,6 +37,7 @@ class AddressController extends Controller
 {
     public function __construct(
         private readonly AddressRepository $addresses,
+        private readonly PickupKindSource $pickupKinds,
     ) {
     }
 
@@ -58,6 +60,7 @@ class AddressController extends Controller
             settlement: $validated['settlement'] ?? null,
             pickupPointName: $validated['pickup_point_name'] ?? null,
             pickupPointAddress: $validated['pickup_point_address'] ?? null,
+            pickupPointKind: $this->kindOf($validated),
         );
 
         $this->addresses->save($address);
@@ -103,6 +106,7 @@ class AddressController extends Controller
             settlement: $validated['settlement'] ?? null,
             pickupPointName: $validated['pickup_point_name'] ?? null,
             pickupPointAddress: $validated['pickup_point_address'] ?? null,
+            pickupPointKind: $this->kindOf($validated),
         );
 
         $this->addresses->save($address);
@@ -166,7 +170,23 @@ class AddressController extends Controller
             'pickup_point_name' => ['required_if:delivery_type,pickup_point', 'prohibited_if:delivery_type,street_address', 'string', 'max:255', new PlainText()],
             'pickup_point_address' => ['required_if:delivery_type,pickup_point', 'prohibited_if:delivery_type,street_address', 'string', 'max:255', new PlainText()],
             'settlement' => ['required_if:delivery_type,pickup_point', 'prohibited_if:delivery_type,street_address', 'string', 'max:255', new PlainText()],
+            // The KIND of the pickup point (stage 5g-2a): office | locker, optional; a street address has none.
+            'pickup_point_kind' => ['nullable', 'prohibited_if:delivery_type,street_address', 'string', 'in:office,locker'],
         ];
+    }
+
+    /**
+     * The pickup kind to store, read through the ONE seam (stage 5g-2a): a claim today. Null for a street address or when none is stated.
+     *
+     * @param  array<string, mixed>  $validated
+     */
+    private function kindOf(array $validated): ?string
+    {
+        if (($validated['delivery_type'] ?? null) !== AddressDeliveryType::PICKUP_POINT->value) {
+            return null;
+        }
+
+        return $this->pickupKinds->kindFor((string) $validated['carrier_code'], (string) $validated['pickup_point_reference'], $validated['pickup_point_kind'] ?? null)?->value;
     }
 
     private function currentAccountId(): ?string
@@ -192,6 +212,7 @@ class AddressController extends Controller
             'settlement' => $address->settlement(),
             'pickup_point_name' => $address->pickupPointName(),
             'pickup_point_address' => $address->pickupPointAddress(),
+            'pickup_point_kind' => $address->pickupPointKind(),
         ];
     }
 }

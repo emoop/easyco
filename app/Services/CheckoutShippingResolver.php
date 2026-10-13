@@ -23,9 +23,10 @@ use EasyCo\Pricing\Money;
  *     a method the filter removed was never offered to the customer) — else `method_unavailable`. A CARRIER method that
  *     is unavailable only because its scope does not serve the destination (`destination_not_served`) is NOT this
  *     refusal: it falls through to rule d, which names it precisely.
- *  d. destination agreement (§9.1.6, stage 6b) — the method's destination SCOPE must serve the destination's kind
- *     (address-only: a street address; pickup-only: a pickup point; any: both; the one rule is
- *     ShippingDestinationScope::serves()), else `pickup_mismatch` (the reason code and its 422 are unchanged).
+ *  d. destination agreement (§9.1.6, stages 6b and 5g-2a) — the method must serve the destination's KIND: the quote's own
+ *     `servesDestination`, computed with ShippingMethod::servesKind() and surviving the merchant filter (address-only: a
+ *     street address; pickup-only: a pickup point; any: both; an office-labelled method does not serve a locker), falling
+ *     back to the scope rule only when a quote carries none; else `pickup_mismatch` (the reason code and its 422 are unchanged).
  *  e. the PRICE decision table, on the recomputed amount R (and its pricing hash and service code):
  *       1. the handle verifies against (cart, method, R, currency, hash, service)            -> ACCEPT
  *       2. it does not, expected_shipping_minor is given and differs from R                  -> `price_changed` (carries R)
@@ -105,7 +106,7 @@ final class CheckoutShippingResolver
         }
 
         // d. destination agreement: the scope serves the kind of destination (a not-served carrier always lands here).
-        if (! $quote->servesPickupPoint($destination->isPickupPoint())) {
+        if (! ($quote->servesDestination ?? $quote->servesPickupPoint($destination->isPickupPoint()))) {
             throw ShippingRefusal::because(ShippingRefusalReason::PICKUP_MISMATCH, 'The shipping method does not serve this kind of destination (address or pickup point).');
         }
 

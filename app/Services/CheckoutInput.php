@@ -56,6 +56,8 @@ final class CheckoutInput
         // The pickup point's display snapshot (stage 4f): text the customer saw, never an identity.
         public readonly ?string $pickupPointName = null,
         public readonly ?string $pickupPointAddress = null,
+        // The kind the CLIENT claims for a typed pickup point: 'office' | 'locker' (stage 5g-2a). Read ONCE, through PickupKindSource.
+        public readonly ?string $pickupPointKind = null,
     ) {
     }
 }

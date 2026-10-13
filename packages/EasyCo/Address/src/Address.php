@@ -35,6 +35,9 @@ use LogicException;
  */
 final class Address
 {
+    /** The kinds a pickup point can have (shipping stage 5g-2a). */
+    private const PICKUP_KINDS = ['office', 'locker'];
+
     private function __construct(
         private ?string $id,
         private readonly ?string $accountId,
@@ -52,6 +55,8 @@ final class Address
         // Display snapshot of the chosen pickup point (stage 4f); trailing and nullable like every later addition.
         private ?string $pickupPointName = null,
         private ?string $pickupPointAddress = null,
+        // The KIND of the pickup point (stage 5g-2a): 'office' | 'locker' | null = not stated. A plain validated string: this package imports nothing from Shipping.
+        private ?string $pickupPointKind = null,
     ) {
         self::assertNotEmpty('recipientName', $recipientName);
         self::assertNotEmpty('phone', $phone);
@@ -68,6 +73,7 @@ final class Address
             settlement: $settlement,
         );
         self::assertPickupDisplay($deliveryType, $pickupPointName, $pickupPointAddress);
+        self::assertPickupKind($deliveryType, $pickupPointKind);
     }
 
     private static function assertNotEmpty(string $fieldName, string $value): void
@@ -178,6 +184,22 @@ final class Address
         }
     }
 
+    /** The pickup point's kind (shipping stage 5g-2a, design 9.3.2 B): only for a PICKUP_POINT, and only 'office' or 'locker'; null = not stated (also LEGAL, so a historical pickup address loads). */
+    private static function assertPickupKind(AddressDeliveryType $deliveryType, ?string $pickupPointKind): void
+    {
+        if ($pickupPointKind === null) {
+            return;
+        }
+
+        if ($deliveryType === AddressDeliveryType::STREET_ADDRESS) {
+            throw new InvalidArgumentException('Address pickupPointKind must be null when deliveryType is STREET_ADDRESS, got a non-null value.');
+        }
+
+        if (! in_array($pickupPointKind, self::PICKUP_KINDS, true)) {
+            throw new InvalidArgumentException('Address pickupPointKind must be "office" or "locker" when given; use null for not stated.');
+        }
+    }
+
     private static function trimmedOrNull(?string $value): ?string
     {
         return $value === null ? null : trim($value);
@@ -215,6 +237,7 @@ final class Address
         ?string $settlement = null,
         ?string $pickupPointName = null,
         ?string $pickupPointAddress = null,
+        ?string $pickupPointKind = null,
     ): self {
         self::assertCountryShape($country);
 
@@ -234,6 +257,7 @@ final class Address
             settlement: $settlement,
             pickupPointName: self::trimmedOrNull($pickupPointName),
             pickupPointAddress: self::trimmedOrNull($pickupPointAddress),
+            pickupPointKind: self::trimmedOrNull($pickupPointKind),
         );
     }
 
@@ -262,6 +286,7 @@ final class Address
         ?string $settlement,
         ?string $pickupPointName = null,
         ?string $pickupPointAddress = null,
+        ?string $pickupPointKind = null,
     ): self {
         return new self(
             id: $id,
@@ -279,6 +304,7 @@ final class Address
             settlement: $settlement,
             pickupPointName: $pickupPointName,
             pickupPointAddress: $pickupPointAddress,
+            pickupPointKind: $pickupPointKind,
         );
     }
 
@@ -319,10 +345,13 @@ final class Address
         ?string $settlement = null,
         ?string $pickupPointName = null,
         ?string $pickupPointAddress = null,
+        ?string $pickupPointKind = null,
     ): void {
         $pickupPointName = self::trimmedOrNull($pickupPointName);
         $pickupPointAddress = self::trimmedOrNull($pickupPointAddress);
+        $pickupPointKind = self::trimmedOrNull($pickupPointKind);
         self::assertPickupDisplay($deliveryType, $pickupPointName, $pickupPointAddress);
+        self::assertPickupKind($deliveryType, $pickupPointKind);
         self::assertNotEmpty('recipientName', $recipientName);
         self::assertNotEmpty('phone', $phone);
         self::assertCountryShape($country);
@@ -351,6 +380,7 @@ final class Address
         $this->settlement = $settlement;
         $this->pickupPointName = $pickupPointName;
         $this->pickupPointAddress = $pickupPointAddress;
+        $this->pickupPointKind = $pickupPointKind;
     }
 
     public function accountId(): ?string
@@ -423,5 +453,11 @@ final class Address
     public function pickupPointAddress(): ?string
     {
         return $this->pickupPointAddress;
+    }
+
+    /** 'office' | 'locker' | null (not stated). Only ever non-null for a pickup point. */
+    public function pickupPointKind(): ?string
+    {
+        return $this->pickupPointKind;
     }
 }

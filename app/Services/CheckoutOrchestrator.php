@@ -92,6 +92,7 @@ final class CheckoutOrchestrator
         private readonly CheckoutShippingResolver $shippingResolver,
         private readonly SettlementNormalizerResolver $normalizers,
         private readonly OrderPlacementSnapshotWriter $snapshotWriter,
+        private readonly PickupKindSource $pickupKinds,
     ) {
     }
 
@@ -333,7 +334,11 @@ final class CheckoutOrchestrator
 
         $pickup = $input->deliveryType === \EasyCo\Address\Enums\AddressDeliveryType::PICKUP_POINT;
 
-        return QuoteDestination::forAddress($input->deliveryType, (string) $input->country, $pickup ? $input->settlement : $input->city, $input->postalCode);
+        // The pickup kind is read through the ONE seam, ONCE (stage 5g-2a): this result prices the order AND is what the Address
+        // and the Order record (resolveAddress() takes it from this destination), so there is no second reading of the request.
+        $kind = $pickup ? $this->pickupKinds->kindFor((string) $input->carrierCode, (string) $input->pickupPointReference, $input->pickupPointKind) : null;
+
+        return QuoteDestination::forAddress($input->deliveryType, (string) $input->country, $pickup ? $input->settlement : $input->city, $input->postalCode, $kind);
     }
 
     /** The claim on this request's cart, iff the requester is the identity it was claimed by. */
@@ -462,7 +467,7 @@ final class CheckoutOrchestrator
         $perLineShares = $pricing->perLineShares();
 
         // Step 5: resolve the Address.
-        $address = $this->resolveAddress($input);
+        $address = $this->resolveAddress($input, $destination);
 
         // Step 6: resolve the Client.
         $client = $this->clientResolver->resolve($input->accountId, $input->recipientName);
@@ -554,6 +559,7 @@ final class CheckoutOrchestrator
             settlement: $address->settlement(),
             pickupPointName: $address->pickupPointName(),
             pickupPointAddress: $address->pickupPointAddress(),
+            pickupPointKind: $address->pickupPointKind(),
             shipping: $shipping,
             shippingMethodName: $selection->methodName,
             shippingMethodCode: $selection->methodId,
@@ -635,7 +641,7 @@ final class CheckoutOrchestrator
         }
     }
 
-    private function resolveAddress(CheckoutInput $input): Address
+    private function resolveAddress(CheckoutInput $input, QuoteDestination $destination): Address
     {
         if ($input->addressId !== null) {
             if ($input->accountId === null) {
@@ -671,6 +677,7 @@ final class CheckoutOrchestrator
             settlement: $input->settlement,
             pickupPointName: $input->pickupPointName,
             pickupPointAddress: $input->pickupPointAddress,
+            pickupPointKind: $destination->pickupKind?->value,
         );
     }
 }
