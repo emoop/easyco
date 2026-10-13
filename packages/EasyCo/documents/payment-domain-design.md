@@ -179,6 +179,10 @@ A real online provider adapter (Stripe or otherwise) is not built in V1 — see 
 
 ---
 
+### 4.1 The registry and the descriptor (checkout form v2, C1d-B)
+
+The adapter says how a method is PAID; the checkout also has to know how it is OFFERED. Every payment method registers a `PaymentMethodDescriptor` in the `PaymentMethodRegistry` (`EasyCo\Payment\Registry`, pure PHP) from its own service provider, next to its `payment.adapter.<code>` binding (`PaymentServiceProvider` does it for the two built-in methods). The descriptor is the code, `label(locale)`, an optional `description(locale)` and `placeOrderLabel(locale)` (it must keep the obligation wording of checkout-form-v2-design.md section 7), an optional logo URL, a `PaymentFlow` (OFFLINE | REDIRECT | EMBEDDED), a sort order and an `availability(PaymentAvailabilityContext)` function (country, currency, total in minor units, delivery kind) that says "not for this order". `PaymentMethodAdapterResolver::availableMethods()` answers from the registry; the invariant is "every descriptor has an adapter and every adapter a descriptor" (a test). The checkout page renders one card per method available for ITS context (the store's country and currency, unknown total); the API asks again with the real order and refuses with 422 `payment_method_unavailable`: it never trusts the page. Nothing a descriptor supplies is rendered as HTML; a logo is an `<img>` whose URL must be an http(s) URL or a path of the store. The per-method admin switch (`payment.methods.<code>.enabled`) and the REDIRECT / EMBEDDED contract (`next_action`) are designed (checkout-form-v2-design.md 8.2 and 8.4) and NOT built.
+
 ## 5. Two invariants, two different strengths of guarantee — stated honestly
 
 ### 5.1 "At most one CAPTURED Payment per order" — genuinely DB-enforced

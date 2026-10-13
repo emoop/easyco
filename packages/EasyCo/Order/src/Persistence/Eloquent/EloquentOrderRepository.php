@@ -55,6 +55,12 @@ final class EloquentOrderRepository implements OrderRepository
         $model->pickup_point_kind = $order->pickupPointKind();
         $model->region = $order->region();
         $model->customer_note = $order->customerNote();
+        $model->terms_accepted_at = $order->termsAcceptedAt();
+        $model->terms_version = $order->termsVersion();
+        $model->confirmation_requested = $order->confirmationRequested();
+        $model->call_before_shipping = $order->callBeforeShipping();
+        $model->marketing_consent = $order->marketingConsent();
+        $model->marketing_consent_text = $order->marketingConsentText();
         $model->edit_revision = $order->editRevision();
 
         $model->save();
@@ -133,6 +139,12 @@ final class EloquentOrderRepository implements OrderRepository
             pickupPointKind: $model->pickup_point_kind,
             region: $model->region,
             customerNote: $model->customer_note,
+            termsAcceptedAt: $model->terms_accepted_at,
+            termsVersion: $model->terms_version,
+            confirmationRequested: $model->confirmation_requested === null ? null : (bool) $model->confirmation_requested,
+            callBeforeShipping: $model->call_before_shipping === null ? null : (bool) $model->call_before_shipping,
+            marketingConsent: $model->marketing_consent === null ? null : (bool) $model->marketing_consent,
+            marketingConsentText: $model->marketing_consent_text,
         );
     }
 }

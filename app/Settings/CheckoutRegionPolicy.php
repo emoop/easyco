@@ -30,14 +30,15 @@ final class CheckoutRegionPolicy
     }
 
     /**
-     * BOTH stored values, read together (checkout RN-1b): ONE query for the two keys, and the second caller of the request is served by the
-     * repository's memo, so asking for the mode of a country costs exactly one query per request.
+     * BOTH stored values, read through CheckoutFormSettings (C1d-B): ONE query for ALL the checkout form's keys (the optional choices, the
+     * terms and privacy links and these two), and every later reader of any of them is served by the repository's memo, so asking for the
+     * mode of a country costs no query of its own.
      *
      * @return array<string, ?string>
      */
     private function raw(): array
     {
-        return $this->settings->getMany([self::DEFAULT_KEY, self::COUNTRIES_KEY]);
+        return (new CheckoutFormSettings($this->settings))->raw();
     }
 
     /** The mode for a delivery country (any case; a code the owner never configured gets the default). @throws CheckoutRegionPolicyMalformedException */

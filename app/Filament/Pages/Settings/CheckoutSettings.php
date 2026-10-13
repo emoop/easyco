@@ -4,6 +4,7 @@ namespace App\Filament\Pages\Settings;
 
 use App\Filament\Concerns\AuthorizesViaStaffPermission;
 use App\Filament\NavigationGroup;
+use App\Settings\CheckoutFormSettings;
 use App\Settings\CheckoutRegionPolicy;
 use App\Settings\Contracts\SiteSettingsRepository;
 use App\Settings\CountryNames;
@@ -15,6 +16,8 @@ use EasyCo\Staff\Enums\Permission;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
+use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Schemas\Components\Actions;
@@ -27,7 +30,9 @@ use Filament\Schemas\Schema;
 use InvalidArgumentException;
 
 /**
- * "Checkout" settings (checkout-region-and-note-design.md section 5): today one section, "Region (state) field" — for every country the
+ * "Checkout" settings: TWO sections. "Fields at checkout" (checkout-form-v2-design.md section 6.6): the optional "call me before shipping" and
+ * newsletter boxes, the terms acceptance (on by default; the version is set automatically when the URL changes, or by the "terms updated" button)
+ * and the privacy and terms links. And (checkout-region-and-note-design.md section 5) "Region (state) field" — for every country the
  * region of a street address is optional, required or hidden, with a default and a list of exceptions by country. Same shape as
  * BankTransferSettings: Permission::SETTINGS_MANAGE, SiteSettingsRepository, one Save.
  *
@@ -87,9 +92,17 @@ class CheckoutSettings extends Page
             $exceptions[] = ['country' => $country, 'mode' => $mode->value];
         }
 
+        $form = app(CheckoutFormSettings::class);
+
         $this->form->fill([
             'default' => $policy->defaultMode()->value,
             'exceptions' => $exceptions,
+            'call_before_shipping_enabled' => $form->callBeforeShippingEnabled(),
+            'newsletter_enabled' => $form->newsletterEnabled(),
+            'terms_enabled' => $form->termsEnabled(),
+            'terms_url' => $form->termsUrl() ?? '',
+            'terms_version' => $form->termsVersion() ?? '',
+            'privacy_url' => $form->privacyUrl() ?? '',
         ]);
     }
 
@@ -132,6 +145,50 @@ class CheckoutSettings extends Page
     {
         return $schema
             ->components([
+                Section::make(__('settings.checkout_page.fields_section'))
+                    ->description(__('settings.checkout_page.fields_help'))
+                    ->schema([
+                        Toggle::make('call_before_shipping_enabled')
+                            ->label(__('settings.checkout_page.call_before_label'))
+                            ->helperText(__('settings.checkout_page.call_before_help')),
+                        Toggle::make('newsletter_enabled')
+                            ->label(__('settings.checkout_page.newsletter_label'))
+                            ->helperText(__('settings.checkout_page.newsletter_help')),
+                        Toggle::make('terms_enabled')
+                            ->label(__('settings.checkout_page.terms_label'))
+                            ->helperText(__('settings.checkout_page.terms_help'))
+                            ->live(),
+                        TextInput::make('terms_url')
+                            ->label(__('settings.checkout_page.terms_url_label'))
+                            ->placeholder('https://… / /terms')
+                            ->maxLength(2048)
+                            ->rules([fn (): Closure => static::linkRule()])
+                            ->live(onBlur: true),
+                        // Read-only: nobody types a version. It follows the URL (set to today when the URL changes) and the button below.
+                        TextInput::make('terms_version')
+                            ->label(__('settings.checkout_page.terms_version_label'))
+                            ->disabled()
+                            ->dehydrated(false)
+                            ->helperText(__('settings.checkout_page.terms_version_help')),
+                        Actions::make([
+                            Action::make('bump_terms_version')
+                                ->label(__('settings.checkout_page.terms_updated_button'))
+                                ->color('gray')
+                                ->action(fn () => $this->bumpTermsVersion()),
+                        ])->key('terms-version-actions'),
+                        Text::make(__('settings.checkout_page.warning_terms_without_url'))
+                            ->color('danger')
+                            ->visible(fn ($get): bool => (bool) $get('terms_enabled') && trim((string) $get('terms_url')) === ''),
+                        TextInput::make('privacy_url')
+                            ->label(__('settings.checkout_page.privacy_url_label'))
+                            ->placeholder('https://… / /privacy')
+                            ->maxLength(2048)
+                            ->rules([fn (): Closure => static::linkRule()])
+                            ->live(onBlur: true),
+                        Text::make(__('settings.checkout_page.warning_no_privacy_url'))
+                            ->color('warning')
+                            ->visible(fn ($get): bool => trim((string) $get('privacy_url')) === ''),
+                    ]),
                 Section::make(__('settings.checkout_page.region_section'))
                     ->description(__('settings.checkout_page.region_help'))
                     ->schema([
@@ -168,6 +225,33 @@ class CheckoutSettings extends Page
                     ]),
             ])
             ->statePath('data');
+    }
+
+    /** The links: an http(s) URL or a same-site path (`/politika`), at most 2048 characters: the very test the page applies before it writes one. */
+    private static function linkRule(): Closure
+    {
+        return static function (string $attribute, mixed $value, Closure $fail): void {
+            if (is_string($value) && trim($value) !== '' && ! CheckoutFormSettings::isSafeLink(trim($value))) {
+                $fail(__('settings.checkout_page.link_invalid'));
+            }
+        };
+    }
+
+    /** "The terms were updated": today's date becomes the version at once, so a customer who loaded the page earlier is asked again. */
+    public function bumpTermsVersion(): void
+    {
+        $today = static::today();
+
+        app(SiteSettingsRepository::class)->set(CheckoutFormSettings::TERMS_VERSION_KEY, $today);
+        $this->data['terms_version'] = $today;
+
+        Notification::make()->title(__('settings.checkout_page.terms_version_bumped', ['version' => $today]))->success()->send();
+    }
+
+    /** The version string: today's date in the store's own calendar (Y-m-d), never typed by a person. */
+    private static function today(): string
+    {
+        return now(app(\App\Settings\StoreTimezone::class)->zone())->format('Y-m-d');
     }
 
     /** The reader's own validation of the exceptions list, as a form rule: the page cannot accept what CheckoutRegionPolicy would refuse. */
@@ -207,6 +291,27 @@ class CheckoutSettings extends Page
     {
         $data = $this->form->getState();
         $settings = app(SiteSettingsRepository::class);
+        $form = app(CheckoutFormSettings::class);
+
+        // The optional boxes: '1' = shown, absent = off. The terms: '0' = off, absent = ON (the EU default). A link is stored trimmed, or forgotten.
+        foreach ([CheckoutFormSettings::CALL_BEFORE_SHIPPING_KEY => 'call_before_shipping_enabled', CheckoutFormSettings::NEWSLETTER_KEY => 'newsletter_enabled'] as $key => $field) {
+            ! empty($data[$field]) ? $settings->set($key, '1') : $settings->forget($key);
+        }
+
+        ($data['terms_enabled'] ?? true) ? $settings->forget(CheckoutFormSettings::TERMS_ENABLED_KEY) : $settings->set(CheckoutFormSettings::TERMS_ENABLED_KEY, '0');
+
+        $newTermsUrl = trim((string) ($data['terms_url'] ?? ''));
+        $newPrivacyUrl = trim((string) ($data['privacy_url'] ?? ''));
+        $oldTermsUrl = $form->termsUrl() ?? '';
+
+        $newTermsUrl === '' ? $settings->forget(CheckoutFormSettings::TERMS_URL_KEY) : $settings->set(CheckoutFormSettings::TERMS_URL_KEY, $newTermsUrl);
+        $newPrivacyUrl === '' ? $settings->forget(CheckoutFormSettings::PRIVACY_URL_KEY) : $settings->set(CheckoutFormSettings::PRIVACY_URL_KEY, $newPrivacyUrl);
+
+        // A different terms page is a different text: the version becomes today's date by itself.
+        if ($newTermsUrl !== '' && $newTermsUrl !== $oldTermsUrl) {
+            $settings->set(CheckoutFormSettings::TERMS_VERSION_KEY, static::today());
+            $this->data['terms_version'] = static::today();
+        }
 
         $default = RegionMode::tryFrom((string) ($data['default'] ?? '')) ?? RegionMode::OPTIONAL;
         // The same validation the reader applies; the form rule above has already refused a bad list, this is the guard behind it.

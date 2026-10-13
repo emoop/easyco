@@ -76,3 +76,19 @@ This keeps the mechanism itself fully generic and keeps "what's the sensible def
 - The Admin UI screen(s) for editing these values — out of scope, same posture as every other domain design doc in this project (design the mechanism, not the UI).
 - Per-environment or per-channel settings (e.g. a different hero-toggle value per storefront channel) — not a confirmed need yet; the three known consumers are all genuinely global, single-value settings. Revisit if that changes.
 - Caching — a `site_settings` read on every request is a single indexed lookup by primary key; not a performance concern at this scale. Revisit only if evidence says otherwise (same "don't optimize speculatively" posture as `performance-and-channel-strategy.md`).
+
+## The checkout form's keys (checkout form v2, C1d-B)
+
+Owned by `App\Settings\CheckoutFormSettings`, which reads ALL of them (the two region keys of checkout RN-1 included) with ONE `getMany` call per page render and per checkout request:
+
+| Key | Values | Default |
+|---|---|---|
+| `checkout.call_before_shipping_enabled` | `'1'` | absent = off |
+| `checkout.newsletter_enabled` | `'1'` | absent = off |
+| `checkout.terms_enabled` | `'0'` | absent = ON |
+| `checkout.terms_url` | an http(s) URL or a path of the store (`/terms`), at most 2048 characters | none: the terms box is not shown |
+| `checkout.terms_version` | a string, set automatically (today's date when the URL changes, or by the settings page's button) | none (the page and the API then use the word `unversioned`) |
+| `checkout.privacy_url` | the same kind of link | none: the privacy notice is not shown |
+| `checkout.region_default`, `checkout.region_countries` | see checkout-region-and-note-design.md | optional / none |
+
+The settings page (Settings > Checkout, `SETTINGS_MANAGE`) forgets a key that holds its default, like the region keys.

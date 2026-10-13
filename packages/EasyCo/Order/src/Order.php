@@ -119,7 +119,18 @@ final class Order
         // the customer's own words, written ONCE at placement and never changed by any method (a plain, readonly value).
         private ?string $region = null,
         private readonly ?string $customerNote = null,
+        // WHAT THE CUSTOMER TICKED (checkout form v2, C1d-B; order-context-design.md 2.3 / 9): create-time facts, readonly, written on the row
+        // that is inserted (never a second UPDATE, 9.6). NULL = not asked / placed before the field existed. The terms proof is the placement
+        // instant and the version the page displayed (both or neither); the consent sentence is exactly what the customer ticked.
+        private readonly ?DateTimeImmutable $termsAcceptedAt = null,
+        private readonly ?string $termsVersion = null,
+        private readonly ?bool $confirmationRequested = null,
+        private readonly ?bool $callBeforeShipping = null,
+        private readonly ?bool $marketingConsent = null,
+        private readonly ?string $marketingConsentText = null,
     ) {
+        self::assertTermsProof($termsAcceptedAt, $termsVersion);
+        self::assertConsentText($marketingConsent, $marketingConsentText);
         self::assertPickupDisplay($deliveryType, $pickupPointName, $pickupPointAddress);
         self::assertPickupKind($deliveryType, $pickupPointKind);
         self::assertRegion($deliveryType, $region);
@@ -341,6 +352,30 @@ final class Order
         }
     }
 
+    /** The terms proof (C1d-B): the acceptance time and the version are BOTH present or BOTH absent; a version is 1 to 32 characters. */
+    private static function assertTermsProof(?DateTimeImmutable $acceptedAt, ?string $version): void
+    {
+        if (($acceptedAt === null) !== ($version === null)) {
+            throw new InvalidArgumentException('Order termsAcceptedAt and termsVersion must be given together or not at all.');
+        }
+
+        if ($version !== null && (trim($version) === '' || mb_strlen($version) > 32)) {
+            throw new InvalidArgumentException('Order termsVersion must be 1 to 32 characters when given; use null for none.');
+        }
+    }
+
+    /** The consent sentence (C1d-B): present exactly when the consent is TRUE, never blank, at most 500 characters. */
+    private static function assertConsentText(?bool $consent, ?string $text): void
+    {
+        if (($text !== null) !== ($consent === true)) {
+            throw new InvalidArgumentException('Order marketingConsentText must be given exactly when marketingConsent is true.');
+        }
+
+        if ($text !== null && (trim($text) === '' || mb_strlen($text) > 500)) {
+            throw new InvalidArgumentException('Order marketingConsentText must be 1 to 500 characters when given.');
+        }
+    }
+
     /** The customer's note (checkout RN-1): not blank, at most 1000 CHARACTERS (not bytes) when given; null = none. */
     private static function assertCustomerNote(?string $customerNote): void
     {
@@ -507,6 +542,12 @@ final class Order
         ?string $pickupPointKind = null,
         ?string $region = null,
         ?string $customerNote = null,
+        ?DateTimeImmutable $termsAcceptedAt = null,
+        ?string $termsVersion = null,
+        ?bool $confirmationRequested = null,
+        ?bool $callBeforeShipping = null,
+        ?bool $marketingConsent = null,
+        ?string $marketingConsentText = null,
     ): self {
         self::assertCountryShape($country);
         self::assertNotEmpty('recipientLastName', $recipientLastName);
@@ -567,6 +608,12 @@ final class Order
             region: self::trimmedOrNull($region),
             // Kept EXACTLY as typed (a multi-line note keeps its line breaks); a blank one is not a note and is refused here.
             customerNote: $customerNote,
+            termsAcceptedAt: $termsAcceptedAt,
+            termsVersion: self::trimmedOrNull($termsVersion),
+            confirmationRequested: $confirmationRequested,
+            callBeforeShipping: $callBeforeShipping,
+            marketingConsent: $marketingConsent,
+            marketingConsentText: self::trimmedOrNull($marketingConsentText),
         );
     }
 
@@ -621,6 +668,12 @@ final class Order
         ?string $pickupPointKind = null,
         ?string $region = null,
         ?string $customerNote = null,
+        ?DateTimeImmutable $termsAcceptedAt = null,
+        ?string $termsVersion = null,
+        ?bool $confirmationRequested = null,
+        ?bool $callBeforeShipping = null,
+        ?bool $marketingConsent = null,
+        ?string $marketingConsentText = null,
     ): self {
         return new self(
             id: $id,
@@ -660,6 +713,12 @@ final class Order
             pickupPointKind: $pickupPointKind,
             region: $region,
             customerNote: $customerNote,
+            termsAcceptedAt: $termsAcceptedAt,
+            termsVersion: $termsVersion,
+            confirmationRequested: $confirmationRequested,
+            callBeforeShipping: $callBeforeShipping,
+            marketingConsent: $marketingConsent,
+            marketingConsentText: $marketingConsentText,
         );
     }
 
@@ -1085,5 +1144,41 @@ final class Order
     public function customerNote(): ?string
     {
         return $this->customerNote;
+    }
+
+    /** When the customer accepted the terms (the placement instant), or null: not asked / placed before the field existed. */
+    public function termsAcceptedAt(): ?DateTimeImmutable
+    {
+        return $this->termsAcceptedAt;
+    }
+
+    /** The version of the terms the page displayed when they were accepted, or null (always with termsAcceptedAt). */
+    public function termsVersion(): ?string
+    {
+        return $this->termsVersion;
+    }
+
+    /** true / false = the customer's answer; null = not asked (the storefront never asks, D12). */
+    public function confirmationRequested(): ?bool
+    {
+        return $this->confirmationRequested;
+    }
+
+    /** true = "call me before shipping" ticked; false = offered, not ticked; null = not offered. */
+    public function callBeforeShipping(): ?bool
+    {
+        return $this->callBeforeShipping;
+    }
+
+    /** true = the newsletter box was ticked; false = offered, not ticked; null = not offered. */
+    public function marketingConsent(): ?bool
+    {
+        return $this->marketingConsent;
+    }
+
+    /** The exact sentence the customer ticked, in the language they saw: present exactly when marketingConsent is true. */
+    public function marketingConsentText(): ?string
+    {
+        return $this->marketingConsentText;
     }
 }

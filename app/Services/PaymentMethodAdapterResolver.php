@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Services\Exceptions\UnknownPaymentMethodException;
 use EasyCo\Payment\Contracts\PaymentMethodAdapter;
+use EasyCo\Payment\Registry\PaymentMethodRegistry;
 use Illuminate\Contracts\Container\Container;
 
 /**
@@ -22,6 +23,7 @@ final class PaymentMethodAdapterResolver
 {
     public function __construct(
         private readonly Container $container,
+        private readonly PaymentMethodRegistry $registry,
     ) {
     }
 
@@ -40,19 +42,21 @@ final class PaymentMethodAdapterResolver
     /**
      * Every payment method this application accepts, in display order.
      *
-     * THE ONE PLACE THOSE CODES ARE DECLARED. PaymentServiceProvider binds each one
-     * as 'payment.adapter.<method>' but publishes no list of them, and deriving the
-     * list by scanning the container's own bindings would make this answer depend on
-     * binding order and on keys this class does not own — so the list is written out
-     * here, where a human can read and change it, and
-     * tests/Feature/PaymentMethodAdapterResolverTest.php keeps it honest in both
-     * directions: every entry here must still resolve, and every adapter the
-     * provider binds must appear here.
+     * THE REGISTRY IS THE ONE PLACE THOSE CODES ARE DECLARED (checkout form v2, C1d-B): every payment
+     * method — the two built-in ones and any extension's — registers a PaymentMethodDescriptor from its own
+     * service provider, next to its 'payment.adapter.<method>' binding, and this answers from it (display
+     * order). Nothing here is hard-coded. Deriving the list by scanning the container's bindings would make
+     * the answer depend on keys this class does not own, so the registry is the list, and
+     * tests/Feature/PaymentMethodAdapterResolverTest.php keeps it honest in both directions: every
+     * descriptor has an adapter and every adapter has a descriptor.
+     *
+     * This is the list of ACCEPTED codes, availability for a given order NOT applied: the page and the
+     * checkout ask the registry with their own PaymentAvailabilityContext.
      *
      * @return list<string>
      */
     public function availableMethods(): array
     {
-        return ['cash_on_delivery', 'bank_transfer'];
+        return array_map(static fn ($descriptor): string => $descriptor->code, $this->registry->all());
     }
 }

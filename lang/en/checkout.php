@@ -31,4 +31,8 @@ return [
     'shipping_quote_expired' => 'The delivery price has expired. Choose the delivery method again to see the current price.',
     'shipping_price_changed' => 'The delivery price has changed. Check the new price and confirm the order again.',
     'shipping_pickup_mismatch' => 'That delivery method does not match the delivery address (office or locker versus home address). Choose another method or address.',
+    'terms_not_accepted' => 'Please accept the terms and conditions to place the order.',
+    'terms_version_changed' => 'The terms and conditions changed while you were filling in the order. Please read them again and confirm.',
+    'payment_method_unavailable' => 'That payment method is not available for this order. Choose another one.',
+    'marketing_consent_text' => "Subscribe me to the shop's newsletter with news and offers.",
 ];

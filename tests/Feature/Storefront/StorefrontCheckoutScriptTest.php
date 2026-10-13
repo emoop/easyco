@@ -58,7 +58,7 @@ class StorefrontCheckoutScriptTest extends TestCase
 
         $this->assertMatchesRegularExpression('/if \(submitting \|\| cart === null\) \{\s*return;/', $code);
         // C1b (A7): also locked until the price is FINAL (not a preview) and while a pick-up point's fields are empty.
-        $this->assertStringContainsString('placeOrder.disabled = submitting || promoBusy || cart === null || selection === null || quotePending || ! selection.final || (isPickupKind(selection.kind) && ! pointFieldsFilled());', $code);
+        $this->assertStringContainsString('placeOrder.disabled = submitting || promoBusy || termsStale || cart === null || selection === null || quotePending || ! selection.final || (isPickupKind(selection.kind) && ! pointFieldsFilled());', $code);
         $this->assertMatchesRegularExpression('/submitting = true;\s*refreshPlaceOrder\(\);/', $code);
         $this->assertStringContainsString('keepLocked = true;', $code, 'after a success the button stays locked while the page navigates');
     }

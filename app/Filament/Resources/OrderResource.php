@@ -429,6 +429,11 @@ class OrderResource extends Resource
             ->columns([
                 TextColumn::make('id')
                     ->label(__('orders.fields.id'))
+                    // A small phone next to the number when the customer asked to be called before shipping (checkout form v2, 6.1): read from
+                    // the row the list already loaded, no query.
+                    ->icon(fn (OrderModel $record): ?string => $record->call_before_shipping === true ? 'heroicon-o-phone' : null)
+                    ->iconPosition(\Filament\Support\Enums\IconPosition::After)
+                    ->tooltip(fn (OrderModel $record): ?string => $record->call_before_shipping === true ? __('orders.call_before_tooltip') : null)
                     ->searchable()
                     ->sortable(),
                 TextColumn::make('placed_at')
@@ -879,7 +884,12 @@ class OrderResource extends Resource
                                 ->label(__('orders.context.fields.terms_accepted'))
                                 ->inlineLabel()
                                 ->extraEntryWrapperAttributes(['style' => self::PAIR_STYLE])
-                                ->getStateUsing(fn (OrderModel $record): string => static::contextText(static::context($record)->termsAccepted)),
+                                ->getStateUsing(fn (OrderModel $record): string => static::termsText($record)),
+                            TextEntry::make('ctx_marketing_consent')
+                                ->label(__('orders.context.fields.marketing_consent'))
+                                ->inlineLabel()
+                                ->extraEntryWrapperAttributes(['style' => self::PAIR_STYLE])
+                                ->getStateUsing(fn (OrderModel $record): string => static::consentText($record)),
                             TextEntry::make('ctx_confirmation_requested')
                                 ->label(__('orders.context.fields.confirmation_requested'))
                                 ->inlineLabel()
@@ -1051,13 +1061,37 @@ class OrderResource extends Resource
 
     private static function context(OrderModel $record): OrderContextView
     {
-        return app(OrderContextReader::class)->forOrder((string) $record->id);
+        return app(OrderContextReader::class)->forRecord($record);
     }
 
     /** The first 8 characters of an id and an ellipsis (a UUID's first group); not recorded is "n/a". */
     private static function shortId(?string $id): string
     {
         return $id === null ? __('orders.context.not_recorded') : mb_substr($id, 0, 8).'…';
+    }
+
+    /** Terms accepted: "Yes · <time in the admin's zone> · <version>", or "n/a" when the order did not ask (customer text never reaches here as HTML: it is escaped by the entry). */
+    private static function termsText(OrderModel $record): string
+    {
+        $context = static::context($record);
+
+        if ($context->termsAccepted !== true || $context->termsAcceptedAt === null) {
+            return static::contextText($context->termsAccepted);
+        }
+
+        $at = Carbon::instance($context->termsAcceptedAt)->timezone(FilamentTimezone::get())->format('M j, Y H:i');
+
+        return implode(' · ', array_filter([__('orders.yes'), $at, $context->termsVersion]));
+    }
+
+    /** The newsletter answer; a "Yes" carries the EXACT sentence the customer ticked (the proof of consent). */
+    private static function consentText(OrderModel $record): string
+    {
+        $context = static::context($record);
+
+        return $context->marketingConsent === true && $context->marketingConsentText !== null
+            ? __('orders.yes').' — «'.$context->marketingConsentText.'»'
+            : static::contextText($context->marketingConsent);
     }
 
     /** A recorded value as text; null is "n/a" (not recorded) — never "No". */

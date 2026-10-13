@@ -94,6 +94,9 @@ function initCheckout(root) {
     var regionBox = root.querySelector('[data-sf-region-field]');
     var noteCounter = root.querySelector('[data-sf-note-counter]');
     var promoHost = root.querySelector('[data-sf-promo]');
+    var termsBox = form.elements.terms_accepted || null;          // the terms checkbox exists only when the merchant asks for it
+    var defaultOrderLabel = placeOrder.textContent;               // the button's own label; a payment method may replace it while chosen
+    var layout = root.querySelector('[data-sf-checkout-layout]');
     var promoError = root.querySelector('[data-sf-promo-error]');
 
     var cartUrl = localUrl(i18n ? i18n.getAttribute('data-cart-url') : null) || '/cart';
@@ -123,6 +126,7 @@ function initCheckout(root) {
     var quoteDirty = false;    // the destination changed while a quote was running: that answer is stale
     var quotePending = false;  // a new quote is scheduled or running: the chosen handle may be outdated
     var submitting = false;
+    var termsStale = false;    // the terms changed while the form was filled: the page must be reloaded to show the new version
     var promoBusy = false;     // a promo request (and the reload and re-quote it starts) is running
     var promoCompare = null;   // the chosen option and its price before a promo change: the first fresh quote is compared with it
     var announcedMinor = null; // the delivery price the status line last announced as changed (until the next press)
@@ -194,9 +198,16 @@ function initCheckout(root) {
         });
     }
 
+    function refreshOrderLabel() {
+        var chosen = form.querySelector('input[name="payment_method"]:checked');
+        var label = chosen ? chosen.getAttribute('data-place-order-label') : null;
+
+        placeOrder.textContent = label ? label : defaultOrderLabel;
+    }
+
     function refreshPlaceOrder() {
         // Never while a quote is unfinished, before a FINAL (non-preview) price is chosen, or while a pick-up point is half typed.
-        placeOrder.disabled = submitting || promoBusy || cart === null || selection === null || quotePending || ! selection.final || (isPickupKind(selection.kind) && ! pointFieldsFilled());
+        placeOrder.disabled = submitting || promoBusy || termsStale || cart === null || selection === null || quotePending || ! selection.final || (isPickupKind(selection.kind) && ! pointFieldsFilled());
     }
 
     function setStatus(text, state) {
@@ -327,6 +338,57 @@ function initCheckout(root) {
 
         renderPromo();
         renderTotals();
+        scheduleSummaryFit();
+    }
+
+    // ------------------------------------------------------------------------------------------ the sticky summary
+
+    var fitTimer = null;
+
+    /** Debounced: measure and place the summary again (a resize, or a change of its content). */
+    function scheduleSummaryFit() {
+        window.clearTimeout(fitTimer);
+        fitTimer = window.setTimeout(fitSummary, 120);
+    }
+
+    /**
+     * Desktop only (>= 1024px). The summary is `position: sticky`; its top is `--sf-summary-top`: the header's height + 8px, or, when the
+     * summary starts lower than that, its own natural top minus 24px, so it moves at most ~24px before it sticks and its top is never
+     * covered by the sticky header. A summary taller than the space below that top gets a scrolling ITEM LIST (max-height), while the
+     * promo box and the totals stay in view. The mobile panel is not touched.
+     */
+    function fitSummary() {
+        if (typeof summaryPanel.getBoundingClientRect !== 'function' || ! layout || typeof layout.getBoundingClientRect !== 'function') {
+            return;
+        }
+
+        if (window.innerWidth < 1024) {
+            summaryPanel.style.removeProperty('--sf-summary-top');
+            summaryLines.style.removeProperty('max-height');
+            summaryLines.style.removeProperty('overflow-y');
+
+            return;
+        }
+
+        var header = document.querySelector('header');
+        var headerHeight = header && typeof header.getBoundingClientRect === 'function' ? header.getBoundingClientRect().height : 0;
+        var naturalTop = layout.getBoundingClientRect().top + (window.pageYOffset || 0);
+        var top = Math.max(headerHeight + 8, naturalTop - 24);
+
+        summaryPanel.style.setProperty('--sf-summary-top', Math.round(top) + 'px');
+
+        // Is the summary taller than the viewport below its top? Then only the item list scrolls.
+        summaryLines.style.removeProperty('max-height');
+        summaryLines.style.removeProperty('overflow-y');
+
+        var available = window.innerHeight - top - 16;
+        var panelHeight = summaryPanel.getBoundingClientRect().height;
+        var linesHeight = summaryLines.getBoundingClientRect().height;
+
+        if (panelHeight > available && linesHeight > 0) {
+            summaryLines.style.setProperty('max-height', Math.max(120, Math.floor(linesHeight - (panelHeight - available))) + 'px');
+            summaryLines.style.setProperty('overflow-y', 'auto');
+        }
     }
 
     // ------------------------------------------------------------------------------------------- promo code
@@ -1019,6 +1081,20 @@ function initCheckout(root) {
             });
         }
 
+        // The optional choices and the consent (checkout form v2, section 6): ONLY when the box is on the page, i.e. when the merchant shows
+        // it. An unticked box is sent as false ("offered, not ticked"); nothing is ever pre-ticked. The terms carry the version the page
+        // displayed so the server can refuse a stale one.
+        ['call_before_shipping', 'marketing_consent'].forEach(function (name) {
+            if (form.elements[name]) {
+                body[name] = form.elements[name].checked === true;
+            }
+        });
+
+        if (termsBox) {
+            body.terms_accepted = true;
+            body.terms_version = termsBox.getAttribute('data-sf-terms-version');
+        }
+
         // The note is sent as typed (the server trims it); an empty one is omitted.
         var note = form.elements.customer_note.value;
 
@@ -1099,6 +1175,19 @@ function initCheckout(root) {
             return;
         }
 
+        if (termsBox && termsBox.checked !== true) {
+            var termsHolder = root.querySelector('[data-sf-error-for="terms_accepted"]');
+            var termsText = t('ck_terms_required');
+
+            termsHolder.textContent = termsText;
+            termsHolder.hidden = false;
+            termsBox.setAttribute('aria-invalid', 'true');
+            termsBox.setAttribute('aria-describedby', termsHolder.id);
+            showSummary([{ field: 'terms_accepted', text: termsText }]);
+
+            return;
+        }
+
         if (! form.checkValidity()) {
             form.reportValidity();
 
@@ -1141,6 +1230,12 @@ function initCheckout(root) {
                     adoptFreshPrice(price);
                     selection.handle = null;
                     scheduleQuote(true);
+                } else if (reason === 'terms_version_changed') {
+                    // The merchant edited the terms while this form was open: the checkbox is cleared and the order is locked until the page is
+                    // reloaded (the page shows the NEW version); nothing is ever resubmitted by itself.
+                    showSummary([{ field: null, text: apiMessage(result) + ' ' + t('ck_terms_reload') }]);
+                    termsBox.checked = false;
+                    termsStale = true;
                 } else if (STALE_QUOTE_REASONS.indexOf(reason) !== -1) {
                     // The handle is no longer good: it is dropped and a fresh quote re-captures the SAME (method, kind) when it is
                     // still offered. The customer presses "Place order" again; nothing is resubmitted by itself.
@@ -1177,13 +1272,25 @@ function initCheckout(root) {
     // the new answer still offers it) so the fields the customer is typing in never disappear under the cursor; the button
     // stays locked until the new answer is in. Choosing among the options already quoted sends nothing.
     ['country', 'city', 'postal_code'].forEach(function (name) {
-        form.elements[name].addEventListener('input', function () {
+        var onMove = function () {
             if (name === 'country') {
                 applyRegionMode();
             }
 
             scheduleQuote(false);
-        });
+        };
+
+        form.elements[name].addEventListener('input', onMove);
+
+        // The country is a native <select>: it announces a choice with `change`.
+        if (name === 'country') {
+            form.elements[name].addEventListener('change', onMove);
+        }
+    });
+
+    // The order button's label follows the chosen payment method when its descriptor has its own (it must keep the obligation wording).
+    form.querySelectorAll('input[name="payment_method"]').forEach(function (radio) {
+        radio.addEventListener('change', refreshOrderLabel);
     });
 
     PICKUP_FIELDS.forEach(function (name) {
@@ -1208,6 +1315,13 @@ function initCheckout(root) {
     form.addEventListener('submit', submit);
     toggleDestination();
     updateNoteCounter();
+    refreshOrderLabel();
+
+    if (typeof window.addEventListener === 'function') {
+        window.addEventListener('resize', scheduleSummaryFit);
+    }
+
+    scheduleSummaryFit();
 
     loadCart().then(function (ready) {
         if (loading) {

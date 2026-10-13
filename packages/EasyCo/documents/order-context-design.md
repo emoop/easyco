@@ -982,6 +982,8 @@ causes apart instead of guessing — which is the whole point of recording conse
 
 ### 9.1 The terms proof — implementing `checkout-domain-design.md` §12.1, with the proof it lacks
 
+**[Amended in C1d-B (checkout-form-v2-design.md D8, D9): rule 1 below, "mandatory, never settings-controlled", is superseded. The terms are ON by default and can be switched off (`checkout.terms_enabled`); the box is shown only when a safe terms URL is set; it is never pre-ticked. With them off the two fields are PROHIBITED and the columns stay NULL. Rules 2 and 3, the version check and `terms_version_changed` are unchanged. §9.2's `confirmation_requested` box is NOT rendered by the storefront (D12): the column exists, API callers may send it, storefront orders store NULL = "send it".]**
+
 §12.1 already decided the substance: `termsAccepted` is mandatory, checkout fails
 without it, and it lives on `Order`. What that decision does **not** carry is the
 *proof* O4(a) asks for — **when** the customer accepted and **which text** she
@@ -1862,7 +1864,7 @@ every added value needs a role that holds it (`staff-access-domain-design.md` §
 add `PRIVACY_VIEW` the first time a merchant actually wants such a role.
 **Answer lands in:** stage 6 (the panel line), later if the owner wants the split.
 
-**Q7 — Who bumps `checkout.terms_version`, and is a dated changelog wanted?**
+**Q7 — Who bumps `checkout.terms_version`, and is a dated changelog wanted?** *(ANSWERED by checkout-form-v2-design.md section 6.3, built in C1d-B: the settings page writes today's date by itself when the terms URL changes and has a button "The terms were updated"; nobody types a version. A changelog of texts stays a separate, explicit request.)*
 **Default:** the merchant, by hand, in Settings, whenever the terms text changes; the
 version is an opaque string, and checkout refuses a page that displayed a stale one
 (§9.1). **The fork:** an automatic version (a content hash, or a timestamp the

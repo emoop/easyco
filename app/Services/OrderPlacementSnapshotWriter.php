@@ -56,6 +56,12 @@ final class OrderPlacementSnapshotWriter
             'pickup_point_kind' => $order->pickupPointKind(),
             'region' => $order->region(),
             'customer_note' => $order->customerNote(),
+            'terms_accepted_at' => $order->termsAcceptedAt(),
+            'terms_version' => $order->termsVersion(),
+            'confirmation_requested' => $order->confirmationRequested(),
+            'call_before_shipping' => $order->callBeforeShipping(),
+            'marketing_consent' => $order->marketingConsent(),
+            'marketing_consent_text' => $order->marketingConsentText(),
             'created_at' => $placedAt,
         ];
     }

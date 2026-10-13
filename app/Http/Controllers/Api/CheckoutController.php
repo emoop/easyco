@@ -59,6 +59,7 @@ class CheckoutController extends Controller
         private readonly PaymentMethodAdapterResolver $adapterResolver,
         private readonly TransactionRepository $transactions,
         private readonly StoreLocale $storeLocale,
+        private readonly \App\Settings\CheckoutFormSettings $formSettings,
     ) {
     }
 
@@ -100,9 +101,32 @@ class CheckoutController extends Controller
             $request->merge(['shipping_method_id' => (string) $request->input('shipping_method_id')]);
         }
 
-        $validated = $request->validate($this->validationRules(), [
+        $terms = $this->formSettings->termsRequired();
+
+        $validated = $request->validate($this->validationRules() + $this->choiceRules($terms), [
             'country.required_without' => __('delivery.country.required'),
         ]);
+
+        // THE TERMS (checkout form v2, section 6.3; order-context-design.md 9.1 and 9.7). Asked only when the merchant has them ON and a URL
+        // to read them at; then an acceptance and the version the page displayed are REQUIRED, with their own machine reasons (a translated
+        // sentence for the person, the English `message` for the sandbox). When they are off the two fields are PROHIBITED by the rules above
+        // (a client cannot record an acceptance of terms the shop does not show). The version must be the CURRENT one: terms edited while the
+        // customer filled in the form are refused, never silently recorded as accepted.
+        $termsVersion = null;
+
+        if ($terms) {
+            if (filter_var($request->input('terms_accepted'), FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) !== true) {
+                return $this->refusal('terms_not_accepted', 422);
+            }
+
+            $shown = $request->input('terms_version');
+
+            if (! is_string($shown) || $shown !== $this->formSettings->currentTermsVersion()) {
+                return $this->refusal('terms_version_changed', 422);
+            }
+
+            $termsVersion = $shown;
+        }
 
         // THE CART TO CHECK OUT IS THE ONE THE PAGE DISPLAYED, AND IT IS REQUIRED
         // (cart-domain-design.md §14.2). The server deliberately no longer resolves
@@ -125,6 +149,8 @@ class CheckoutController extends Controller
         } catch (UnknownPaymentMethodException) {
             return $this->refusal('unknown_payment_method', 422);
         }
+
+        $consent = $this->formSettings->newsletterEnabled() && isset($validated['marketing_consent']) ? (bool) $validated['marketing_consent'] : null;
 
         $accountId = Auth::guard('customer')->check() ? (string) Auth::guard('customer')->id() : null;
 
@@ -155,6 +181,14 @@ class CheckoutController extends Controller
             pickupPointKind: $validated['pickup_point_kind'] ?? null,
             region: $validated['region'] ?? null,
             customerNote: $validated['customer_note'] ?? null,
+            termsVersion: $termsVersion,
+            confirmationRequested: isset($validated['confirmation_requested']) ? (bool) $validated['confirmation_requested'] : null,
+            // The two optional choices are recorded only when the merchant shows them (a client cannot answer a question the shop did not ask);
+            // when shown and not sent they stay NULL: "not answered".
+            callBeforeShipping: $this->formSettings->callBeforeShippingEnabled() && isset($validated['call_before_shipping']) ? (bool) $validated['call_before_shipping'] : null,
+            marketingConsent: $consent,
+            // THE SENTENCE IS THE SERVER'S, in the store's language (the locale set for this request): the client never supplies it.
+            marketingConsentText: $consent === true ? (string) __('checkout.marketing_consent_text') : null,
         );
 
         // Each refusal is caught by type and answered with a stable `reason` and a FIXED,
@@ -197,6 +231,8 @@ class CheckoutController extends Controller
                 'message' => $e->getMessage(),
                 'reason' => 'address_incomplete',
             ], 422);
+        } catch (\App\Services\Exceptions\PaymentMethodUnavailableException) {
+            return $this->refusal('payment_method_unavailable', 422);
         } catch (UnknownPaymentMethodException) {
             // Unreachable via this controller now that the pre-check above rejects an unknown
             // method before place() is ever called; kept as belt-and-braces.
@@ -220,6 +256,24 @@ class CheckoutController extends Controller
 
             return $this->refusal('checkout_failed', 500);
         }
+    }
+
+    /**
+     * The rules of the form's optional choices and of the terms (checkout form v2, C1d-B), which depend on the merchant's settings.
+     *
+     * @return array<string, mixed>
+     */
+    private function choiceRules(bool $terms): array
+    {
+        return [
+            // The terms: when asked, checked by hand above (a refusal with its own `reason`); when not asked, PROHIBITED.
+            ...($terms ? [] : ['terms_accepted' => 'prohibited', 'terms_version' => 'prohibited']),
+            // Ignored (not an error) while the merchant does not show them; read only when shown.
+            'call_before_shipping' => 'sometimes|boolean',
+            'marketing_consent' => 'sometimes|boolean',
+            // API callers only (the storefront never sends it, D12): stored as sent, NULL when absent.
+            'confirmation_requested' => 'sometimes|boolean',
+        ];
     }
 
     /** The 201: the order, its payment as the database holds it, and the "needs attention" sentence when the payment step failed. */

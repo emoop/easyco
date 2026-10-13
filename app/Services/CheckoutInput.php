@@ -63,6 +63,14 @@ final class CheckoutInput
         // and the customer's order note (a blank one is no note).
         public readonly ?string $region = null,
         public readonly ?string $customerNote = null,
+        // WHAT THE CUSTOMER TICKED (checkout form v2, C1d-B), already decided by the HTTP layer from the merchant's settings: the terms
+        // version the page displayed (set only when the terms were asked and accepted; the placement instant is taken from the checkout's
+        // own clock), the three booleans (null = not offered / not sent) and the consent sentence the SERVER chose, never the client.
+        public readonly ?string $termsVersion = null,
+        public readonly ?bool $confirmationRequested = null,
+        public readonly ?bool $callBeforeShipping = null,
+        public readonly ?bool $marketingConsent = null,
+        public readonly ?string $marketingConsentText = null,
     ) {
     }
 }

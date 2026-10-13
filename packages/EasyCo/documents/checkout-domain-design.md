@@ -381,10 +381,6 @@ completes per §8.3) as the point to do so.
 Per `site-settings-design.md` — this is that document's fourth
 confirmed consumer, and the first from outside Media:
 
-- `checkout.phone_call_field_enabled` — `'true'`/`'false'` string,
-  default `'false'` if absent (a merchant opts in, not opts out — the
-  safer default for a feature most stores don't need). Read by the
-  storefront checkout controller before building the default
-  `checkout.form.fields` array (§12.2); not read anywhere else. No
-  equivalent setting exists for `terms_accepted` — see §12.1, it is
-  never optional.
+- **[Amended by checkout-form-v2-design.md, built in C1d-B, 2026-10-14.]** The key is `checkout.call_before_shipping_enabled` (`'1'` = shown, absent = off; the field is `call_before_shipping`, the order column `orders.call_before_shipping`, nullable: true asked, false offered and not ticked, NULL not offered), read by `App\Settings\CheckoutFormSettings` together with the other checkout form keys in ONE `getMany` call. Original text: `checkout.phone_call_field_enabled` — `'true'`/`'false'`, default off (a merchant opts in, not opts out).
+
+  **The terms (D8, D9):** `checkout.terms_enabled` (`'0'` = off, **absent = ON**), `checkout.terms_url`, `checkout.terms_version` (set automatically). The checkbox is shown only when the terms are on AND a safe link is set; it is never pre-ticked; with the terms off (or no link) `terms_accepted` / `terms_version` are PROHIBITED in the request. This supersedes "it is never optional" of §12.1.

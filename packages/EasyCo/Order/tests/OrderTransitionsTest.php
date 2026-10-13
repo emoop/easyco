@@ -86,6 +86,8 @@ final class OrderTransitionsTest extends TestCase
         // Read-only accessors added by later stages (4a shipping facts, 4f / 5g-2a pick-up display, RN-1 region and note): none touches $status.
         'shippingCourier', 'shippingDeliveryType', 'shippingServiceCode',
         'pickupPointName', 'pickupPointAddress', 'pickupPointKind', 'region', 'customerNote',
+        // C1d-B: what the customer ticked (create-time facts, read-only): none touches $status.
+        'termsAcceptedAt', 'termsVersion', 'confirmationRequested', 'callBeforeShipping', 'marketingConsent', 'marketingConsentText',
         'create', 'reconstituteFromStorage',
         // order-editing-design.md §2, stage 2 — the two edit mutators.
         // Neither changes $status (§2's own "status itself is untouched by

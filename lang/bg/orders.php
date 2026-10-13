@@ -7,6 +7,7 @@ return [
     'navigation_label' => 'Поръчки',
     'navigation_badge_tooltip' => 'Приети поръчки, които още не са потвърдени',
 
+    'call_before_tooltip' => 'Позвънете преди изпращане',
     'fields' => [
         'id' => '№',
         'placed_at' => 'Дата',
@@ -202,6 +203,7 @@ return [
             'terms_accepted' => 'Приети условия',
             'confirmation_requested' => 'Поискано потвърждение на поръчката',
             'call_before_shipping' => 'Обаждане преди изпращане',
+            'marketing_consent' => 'Съгласие за бюлетин',
             'company_name' => 'Име на фирмата',
             'vat_number' => 'ДДС / ЕИК номер',
             'billing_address' => 'Адрес за фактуриране',

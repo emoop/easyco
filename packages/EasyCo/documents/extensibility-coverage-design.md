@@ -374,6 +374,7 @@ does not redesign, only cross-references.
 | Hook | Type | Signature | Fired from | Timing | Status |
 |---|---|---|---|---|---|
 | `checkout.form.fields` | Filter | `(array $fields): array` | The storefront checkout page controller | Inline, at render | Designed, not built |
+| `storefront.checkout.express` | Filter | `(array $partials): array` | `CheckoutPageController` | Inline, at render | **Built in C1d-B**: a list of view names an extension contributes to the EXPRESS-CHECKOUT slot above "Contact" (one-click wallets); a name that is not a string or not an existing view is skipped; an empty list renders nothing |
 | `checkout.request.data` | Filter | `(array $data): array` | `CheckoutController`, before the payload reaches `CheckoutOrchestrator` | Inline | Designed, not built |
 
 Already fully designed by `checkout-domain-design.md` §12.2 — this pass adds

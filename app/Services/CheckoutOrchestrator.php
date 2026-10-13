@@ -2,7 +2,10 @@
 
 namespace App\Services;
 
+use App\Services\Exceptions\PaymentMethodUnavailableException;
 use App\Settings\CheckoutRegionPolicy;
+use EasyCo\Payment\Registry\PaymentAvailabilityContext;
+use EasyCo\Payment\Registry\PaymentMethodRegistry;
 use App\Settings\RegionMode;
 use Illuminate\Validation\ValidationException;
 
@@ -98,6 +101,7 @@ final class CheckoutOrchestrator
         private readonly OrderPlacementSnapshotWriter $snapshotWriter,
         private readonly PickupKindSource $pickupKinds,
         private readonly CheckoutRegionPolicy $regionPolicy,
+        private readonly PaymentMethodRegistry $paymentMethods,
     ) {
     }
 
@@ -573,6 +577,14 @@ final class CheckoutOrchestrator
             pickupPointKind: $address->pickupPointKind(),
             region: $address->region(),
             customerNote: $customerNote,
+            // Create-time facts, written on the row that is INSERTED (order-context-design.md 9.6): a replay returns the order that already
+            // exists and never reaches this call, so nothing is written twice. The acceptance time is the placement instant, never the client's.
+            termsAcceptedAt: $input->termsVersion === null ? null : $placedAt,
+            termsVersion: $input->termsVersion,
+            confirmationRequested: $input->confirmationRequested,
+            callBeforeShipping: $input->callBeforeShipping,
+            marketingConsent: $input->marketingConsent,
+            marketingConsentText: $input->marketingConsentText,
             shipping: $shipping,
             shippingMethodName: $selection->methodName,
             shippingMethodCode: $selection->methodId,
@@ -580,6 +592,10 @@ final class CheckoutOrchestrator
             shippingDeliveryType: $selection->deliveryType,
             shippingServiceCode: $selection->serviceCode,
         );
+
+        // The method must be available for THIS order (checkout form v2, section 8.2): the API never trusts the page. Nothing is saved
+        // yet, and the whole attempt rolls back.
+        $this->assertPaymentMethodAvailable($input->paymentMethod, $order, $address);
 
         $this->orders->save($order);
 
@@ -703,6 +719,25 @@ final class CheckoutOrchestrator
      *
      * @throws ValidationException
      */
+    /** @throws PaymentMethodUnavailableException */
+    private function assertPaymentMethodAvailable(string $method, Order $order, \EasyCo\Address\Address $address): void
+    {
+        $descriptor = $this->paymentMethods->find($method);
+
+        // A code with no descriptor is not this check's business: the controller refuses an unknown method before place() (no adapter),
+        // and the descriptor <-> adapter parity test keeps the two lists the same set.
+        if ($descriptor === null) {
+            return;
+        }
+
+        $kind = $address->deliveryType() === \EasyCo\Address\Enums\AddressDeliveryType::PICKUP_POINT ? ($address->pickupPointKind() ?? 'office') : 'address';
+        $context = new PaymentAvailabilityContext($order->country(), $order->total()->currency()->code(), $order->total()->minorValue(), $kind);
+
+        if (! $descriptor->isAvailable($context)) {
+            throw new PaymentMethodUnavailableException($method);
+        }
+    }
+
     private function regionFor(CheckoutInput $input): ?string
     {
         if ($input->addressId !== null || $input->deliveryType !== \EasyCo\Address\Enums\AddressDeliveryType::STREET_ADDRESS) {

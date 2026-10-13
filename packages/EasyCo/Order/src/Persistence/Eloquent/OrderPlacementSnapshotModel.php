@@ -57,10 +57,20 @@ class OrderPlacementSnapshotModel extends Model
         'pickup_point_kind',
         'region',
         'customer_note',
+        'terms_accepted_at',
+        'terms_version',
+        'confirmation_requested',
+        'call_before_shipping',
+        'marketing_consent',
+        'marketing_consent_text',
         'created_at',
     ];
 
     protected $casts = [
         'created_at' => 'datetime',
+        'terms_accepted_at' => 'datetime',
+        'confirmation_requested' => 'boolean',
+        'call_before_shipping' => 'boolean',
+        'marketing_consent' => 'boolean',
     ];
 }

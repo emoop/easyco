@@ -25,12 +25,22 @@ class FakeNode {
         this.disabled = false;
         this.required = false;
         this._value = undefined;
+        this.rect = null;
+        this.style = { props: {}, setProperty(k, v) { this.props[k] = String(v); }, removeProperty(k) { delete this.props[k]; }, getPropertyValue(k) { return this.props[k] ?? ''; } };
     }
 
     get id() { return this.attrs.id ?? ''; }
     get name() { return this.attrs.name ?? ''; }
     get firstChild() { return this.children[0] ?? null; }
-    get value() { return this._value ?? this.attrs.value ?? ''; }
+    get value() {
+        if (this._value === undefined && this.tag === 'select') {
+            const option = this.children.find((c) => 'selected' in c.attrs) ?? this.children[0];
+
+            return option ? (option.attrs.value ?? option.textContent) : '';
+        }
+
+        return this._value ?? this.attrs.value ?? '';
+    }
     set value(v) { this._value = String(v); }
     set className(v) { this.attrs.class = String(v); }
     get className() { return this.attrs.class ?? ''; }
@@ -56,6 +66,7 @@ class FakeNode {
     removeAttribute(k) { delete this.attrs[k]; }
     addEventListener(type, fn) { (this.listeners[type] ||= []).push(fn); }
     focus() { globalThis.__focused = this; }
+    getBoundingClientRect() { return this.rect ?? { top: 0, height: 0 }; }
     checkValidity() { return true; }
     reportValidity() { return true; }
 
@@ -175,7 +186,12 @@ globalThis.document = {
     querySelectorAll: (s) => dom.querySelectorAll(s),
     createElement: (tag) => new FakeNode(tag),
 };
+const windowListeners = {};
 globalThis.window = {
+    innerWidth: 1280,
+    innerHeight: 800,
+    pageYOffset: 0,
+    addEventListener: (type, fn) => { (windowListeners[type] ||= []).push(fn); },
     location: { href: 'http://shop.test/checkout', origin: 'http://shop.test', replace: (u) => replaced.push(u) },
     setTimeout: (fn) => setTimeout(fn, 0),
     clearTimeout,
@@ -1057,6 +1073,133 @@ const scenarios = {
 
         const invalid = cartModule.promotionBox({ promotion: { code: 'X', valid: false } }, () => {});
         assert.equal(shape(invalid), `div.sf-cart-promo(p.sf-cart-promo-invalid(${T('promo_invalid').replace(':code', 'X')}),button.sf-cart-promo-remove[type=button](${T('promo_remove')}))`);
+    },
+
+    // ---- checkout form v2, stage B: the country select, the optional choices and the consent, the payment label, the sticky summary ----
+
+    // The country is a native <select>: its `change` event re-asks the quote and re-evaluates the region rule, exactly as typing did.
+    async country_select_change_requotes() {
+        const select = form.elements.country;
+        assert.equal(select.tag, 'select');
+        assert.equal(select.value, 'BG', 'the store country is preselected');
+        assert.deepEqual(quotePosts()[0].body, { delivery_type: 'all', country: 'BG' }, 'the preview used the preselected country');
+        const before = quotePosts().length;
+
+        select.value = 'DE';
+        select.dispatch('change');
+        await flush();
+
+        assert.equal(quotePosts().length - before, 1, 'one new request for the new country');
+        assert.equal(quotePosts().at(-1).body.country, 'DE');
+        assert.equal(markerOf('region'), false, 'the region marker needs a street address first');
+        await typeInto('city', 'Berlin');
+        choose(courierRows()[2].radio);
+        assert.equal(markerOf('region'), true, 'DE: the region is required, decided by the selected value');
+    },
+
+    // The boxes the merchant turned on are sent as what they are (false when not ticked); the terms carry the version the page showed.
+    async choices_in_payload() {
+        assert.equal(form.elements.marketing_consent.checked, false, 'never ticked in advance');
+        assert.equal(form.elements.call_before_shipping.checked, false);
+        assert.equal(form.elements.terms_accepted.checked, false);
+
+        await typeInto('city', 'Sofia');
+        choose(courierRows()[2].radio);
+        fillContact();
+        set('address_line_1', '5 Long St');
+        form.elements.terms_accepted.checked = true;
+        form.elements.call_before_shipping.checked = true;
+        await submit();
+
+        const body = lastCheckout().body;
+        assert.equal(body.terms_accepted, true);
+        assert.equal(body.terms_version, '2026-10-14');
+        assert.equal(body.call_before_shipping, true);
+        assert.equal(body.marketing_consent, false, 'offered and not ticked is false, not absent');
+        assert.equal('marketing_consent_text' in body, false, 'the sentence is the server\'s');
+        assert.equal('confirmation_requested' in body, false, 'the storefront never asks it');
+    },
+
+    async terms_unticked_blocks_the_submit() {
+        await typeInto('city', 'Sofia');
+        choose(courierRows()[2].radio);
+        fillContact();
+        set('address_line_1', '5 Long St');
+
+        await submit();
+
+        assert.equal(checkoutPosts().length, 0, 'blocked before any request');
+        assert.equal(q('[data-sf-error-for="terms_accepted"]').textContent, T('ck_terms_required'));
+        assert.equal(q('[data-sf-error-for="terms_accepted"]').hidden, false);
+        assert.equal(form.elements.terms_accepted.getAttribute('aria-invalid'), 'true');
+        assert.match(q('[data-sf-error-summary]').textContent, new RegExp(T('ck_terms_required')));
+    },
+
+    // The terms changed under the open page: said, the box cleared, the order locked until the page is reloaded; nothing is resent.
+    async terms_version_changed_locks_the_order() {
+        await typeInto('city', 'Sofia');
+        choose(courierRows()[2].radio);
+        fillContact();
+        set('address_line_1', '5 Long St');
+        form.elements.terms_accepted.checked = true;
+        checkoutResponse = { status: 422, data: { message: 'The terms changed while you were filling in the order.', reason: 'terms_version_changed' } };
+
+        await submit();
+
+        assert.equal(checkoutPosts().length, 1);
+        assert.match(q('[data-sf-error-summary]').textContent, /The terms changed/);
+        assert.match(q('[data-sf-error-summary]').textContent, new RegExp(T('ck_terms_reload')));
+        assert.equal(form.elements.terms_accepted.checked, false, 'the acceptance is not kept');
+        assert.equal(placeOrder.disabled, true, 'locked until the page is reloaded');
+        await flush();
+        await submit();
+        assert.equal(checkoutPosts().length, 1, 'never resubmitted, by itself or by a second press');
+    },
+
+    // The button's label is the page's own until a payment method with its own is chosen; back again when another is.
+    async payment_label_follows_the_chosen_method() {
+        const radios = form.all().filter((n) => n.tag === 'input' && n.name === 'payment_method');
+        const own = radios.find((r) => r.attrs['data-place-order-label']);
+        const plain = radios.find((r) => ! r.attrs['data-place-order-label']);
+
+        assert.ok(own && plain, 'one method with its own label, one without');
+        assert.equal(own.checked, true, 'the first card is preselected');
+        assert.equal(placeOrder.textContent, own.attrs['data-place-order-label']);
+
+        choose(plain);
+        assert.equal(placeOrder.textContent, 'Place order', 'the own label of the page (the server-rendered one)');
+
+        choose(own);
+        assert.equal(placeOrder.textContent, own.attrs['data-place-order-label']);
+    },
+
+    // The sticky summary: its top is measured, never smaller than the header + 8px and at most 24px above its natural place.
+    async summary_top_is_measured() {
+        const header = dom.querySelector('header');
+        const layoutNode = q('[data-sf-checkout-layout]');
+        const panel = q('#sf-summary-panel');
+        const lines = q('[data-sf-summary-lines]');
+        const resize = async () => { windowListeners.resize.forEach((fn) => fn()); await flush(); };
+
+        header.rect = { top: 0, height: 64 };
+        layoutNode.rect = { top: 220, height: 900 };
+        panel.rect = { top: 0, height: 1200 };
+        lines.rect = { top: 0, height: 900 };
+        await resize();
+        assert.equal(panel.style.getPropertyValue('--sf-summary-top'), '196px', 'natural top 220 - 24');
+        assert.equal(lines.style.getPropertyValue('max-height'), '288px', 'taller than 800 - 196 - 16: only the item list scrolls');
+        assert.equal(lines.style.getPropertyValue('overflow-y'), 'auto');
+
+        layoutNode.rect = { top: 60, height: 900 };
+        panel.rect = { top: 0, height: 400 };
+        await resize();
+        assert.equal(panel.style.getPropertyValue('--sf-summary-top'), '72px', 'never under the header: 64 + 8');
+        assert.equal(lines.style.getPropertyValue('max-height'), '', 'fits: nothing scrolls');
+
+        globalThis.window.innerWidth = 800;
+        await resize();
+        assert.equal(panel.style.getPropertyValue('--sf-summary-top'), '', 'the mobile panel is left alone');
+        globalThis.window.innerWidth = 1280;
     },
 
     // The mobile bar: a real button that opens the same summary in place.

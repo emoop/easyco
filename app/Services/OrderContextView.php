@@ -23,6 +23,12 @@ final class OrderContextView
         public readonly ?string $originCampaign = null,
         public readonly ?string $originLandingPage = null,
         public readonly ?string $originReferrer = null,
+        // What the customer ticked (checkout form v2, C1d-B): when and which terms, whether they asked to be newsletter-subscribed and the
+        // exact sentence they ticked. Null = not asked / placed before the field existed.
+        public readonly ?\DateTimeInterface $termsAcceptedAt = null,
+        public readonly ?string $termsVersion = null,
+        public readonly ?bool $marketingConsent = null,
+        public readonly ?string $marketingConsentText = null,
     ) {
     }
 

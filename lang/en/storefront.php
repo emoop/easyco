@@ -101,11 +101,21 @@ return [
     'checkout_pickup_help' => "The office's address, name or code",
     'checkout_methods' => 'Delivery method',
     'checkout_place_order' => 'Place order',
+    'checkout_express' => 'Express checkout',
+    'checkout_call_before' => 'Call me before shipping',
+    'checkout_privacy_notice' => 'Your personal data will be used to process your order, to improve your experience on this site and for other purposes described in our :link.',
+    'checkout_privacy_link' => 'privacy policy',
+    'checkout_terms_sentence' => 'I have read and agree to the website\'s :link',
+    'checkout_terms_link' => 'terms and conditions',
     'checkout_back_to_cart' => 'Back to the cart',
     'checkout_errors_title' => 'Please correct the following',
     'payment_methods' => [
         'cash_on_delivery' => 'Cash on delivery',
         'bank_transfer' => 'Bank transfer',
+    ],
+    'payment_descriptions' => [
+        'cash_on_delivery' => 'Pay in cash when the parcel arrives.',
+        'bank_transfer' => 'Pay by bank transfer; the details are shown after the order and emailed to you.',
     ],
 
     'received_title' => 'Order received',
@@ -158,6 +168,8 @@ return [
         'ck_choose_type' => 'Choose how you want to receive it.',
         'ck_choice_gone' => 'Your earlier delivery choice is no longer available for this destination. Please choose again.',
         'ck_summary_show' => 'Show order',
+        'ck_terms_required' => 'Please accept the terms and conditions to place the order.',
+        'ck_terms_reload' => 'Reload the page to see the current terms.',
         'ck_summary_hide' => 'Hide order',
     ],
 ];

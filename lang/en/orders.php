@@ -7,6 +7,7 @@ return [
     'navigation_label' => 'Orders',
     'navigation_badge_tooltip' => 'Accepted orders not yet confirmed',
 
+    'call_before_tooltip' => 'Call before shipping',
     'fields' => [
         'id' => '№',
         'placed_at' => 'Placed at',
@@ -206,6 +207,7 @@ return [
             'terms_accepted' => 'Terms accepted',
             'confirmation_requested' => 'Order confirmation requested',
             'call_before_shipping' => 'Call before shipping',
+            'marketing_consent' => 'Newsletter consent',
             'company_name' => 'Company name',
             'vat_number' => 'VAT / company number',
             'billing_address' => 'Billing address',

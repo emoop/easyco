@@ -123,7 +123,7 @@ class StorefrontCheckoutPageTest extends TestCase
     {
         $html = $this->get('/checkout')->getContent();
 
-        $this->assertMatchesRegularExpression('/id="sf-country" name="country" type="text" value="BG"/', $html);
+        $this->assertMatchesRegularExpression('/<select id="sf-country" name="country" autocomplete="country" required aria-required="true">.*?<option value="BG" selected>/s', $html);
 
         // The courier fills carrier_code; the customer types none, and there is no up-front address/office/locker choice.
         $this->assertStringNotContainsString('name="carrier_code"', $html);

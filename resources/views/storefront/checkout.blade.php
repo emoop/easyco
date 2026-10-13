@@ -11,7 +11,7 @@
 
         <div class="sf-error-summary" role="alert" tabindex="-1" data-sf-error-summary hidden></div>
 
-        <div class="sf-checkout-layout">
+        <div class="sf-checkout-layout" data-sf-checkout-layout>
             {{-- Below 1024px: a collapsed bar above the form that opens the SAME summary in place (the aside below). --}}
             <button class="sf-summary-toggle" type="button" aria-expanded="false" aria-controls="sf-summary-panel" data-sf-summary-toggle>
                 <span class="sf-summary-toggle-label" data-sf-summary-toggle-label>{{ __('storefront.js_checkout.ck_summary_show') }}</span>
@@ -30,6 +30,15 @@
 
             <form class="sf-checkout-form" id="sf-checkout-form" data-sf-checkout-form>
                 {{-- Every required field's label ends with the asterisk (rendered here for the always-required ones; the script toggles it, from the same state as `required`, for the fields whose requirement changes). --}}
+                {{-- The express-checkout slot (one-click wallets), filled by extensions through the `storefront.checkout.express` filter: nothing is rendered while it is empty. --}}
+                @if ($expressPartials !== [])
+                    <section class="sf-express" aria-label="{{ __('storefront.checkout_express') }}">
+                        @foreach ($expressPartials as $partial)
+                            @include($partial)
+                        @endforeach
+                    </section>
+                @endif
+
                 <p class="sf-required-note">{{ __('storefront.checkout_required_note') }}</p>
 
                 <fieldset class="sf-fieldset">
@@ -52,18 +61,35 @@
                             <p class="sf-field-error" id="sf-err-recipient_last_name" data-sf-error-for="recipient_last_name" hidden></p>
                         </div>
                     </div>
+                    {{-- Optional and never ticked (checkout form v2, D6, D8): shown only when the merchant turned it on. The label IS the sentence the server records as the proof. --}}
+                    @if ($form['newsletter'])
+                        <div class="sf-field sf-check">
+                            <input id="sf-newsletter" name="marketing_consent" type="checkbox" value="1">
+                            <label for="sf-newsletter">{{ __('checkout.marketing_consent_text') }}</label>
+                        </div>
+                    @endif
                     <div class="sf-field">
                         <label for="sf-phone">{{ __('storefront.checkout_phone') }} <span class="sf-required" aria-hidden="true">*</span></label>
                         <input id="sf-phone" name="phone" type="tel" autocomplete="tel" inputmode="tel" required aria-required="true" maxlength="32">
                         <p class="sf-field-error" id="sf-err-phone" data-sf-error-for="phone" hidden></p>
                     </div>
+                    @if ($form['callBeforeShipping'])
+                        <div class="sf-field sf-check">
+                            <input id="sf-call-before" name="call_before_shipping" type="checkbox" value="1">
+                            <label for="sf-call-before">{{ __('storefront.checkout_call_before') }}</label>
+                        </div>
+                    @endif
                 </fieldset>
 
                 <fieldset class="sf-fieldset">
                     <legend class="sf-legend">{{ __('storefront.checkout_delivery') }}</legend>
                     <div class="sf-field">
                         <label for="sf-country">{{ __('storefront.checkout_country') }} <span class="sf-required" aria-hidden="true">*</span></label>
-                        <input id="sf-country" name="country" type="text" value="{{ $defaultCountry }}" autocomplete="country" maxlength="2" required aria-required="true">
+                        <select id="sf-country" name="country" autocomplete="country" required aria-required="true">
+                            @foreach ($countries as $code => $countryName)
+                                <option value="{{ $code }}"{{ $code === $defaultCountry ? ' selected' : '' }}>{{ $countryName }}</option>
+                            @endforeach
+                        </select>
                         <p class="sf-field-error" id="sf-err-country" data-sf-error-for="country" hidden></p>
                     </div>
                     {{-- ONE place field: the street address's city, and the settlement a pick-up point is quoted and stored for. --}}
@@ -132,13 +158,35 @@
 
                 <fieldset class="sf-fieldset">
                     <legend class="sf-legend">{{ __('storefront.checkout_payment') }}</legend>
-                    <div class="sf-field sf-choice-row" role="radiogroup" aria-label="{{ __('storefront.checkout_payment') }}">
-                        @foreach ($paymentMethods as $method)
-                            <label class="sf-choice"><input type="radio" name="payment_method" value="{{ $method['code'] }}" @checked($loop->first)> <span>{{ $method['label'] }}</span></label>
+                    {{-- One card per payment method the registry offers (checkout form v2, section 8.3). Everything a descriptor supplies is escaped text; the logo is an <img> whose alt is the label. The first is preselected: a choice of method, not a consent. --}}
+                    <div class="sf-pay-cards" role="radiogroup" aria-label="{{ __('storefront.checkout_payment') }}">
+                        @foreach ($paymentCards as $card)
+                            <label class="sf-pay-card">
+                                <input type="radio" name="payment_method" value="{{ $card['code'] }}"{{ $loop->first ? ' checked' : '' }} data-place-order-label="{{ $card['placeOrderLabel'] }}">
+                                @if ($card['icon'] !== null)
+                                    <img class="sf-pay-card-logo" src="{{ $card['icon'] }}" alt="{{ $card['label'] }}" loading="lazy" decoding="async">
+                                @endif
+                                <span>{{ $card['label'] }}</span>
+                                @if ($card['description'] !== null)
+                                    <small class="sf-pay-card-description">{{ $card['description'] }}</small>
+                                @endif
+                            </label>
                         @endforeach
                     </div>
                     <p class="sf-field-error" id="sf-err-payment_method" data-sf-error-for="payment_method" hidden></p>
                 </fieldset>
+
+                {{-- The privacy notice (information, not a checkbox) and the terms checkbox (never ticked, required, BEFORE its sentence). Each is shown only when its link is set; the anchors are built escaped by the controller, never from merchant markup. --}}
+                @if ($form['privacyHtml'] !== null)
+                    <p class="sf-privacy-notice">{!! $form['privacyHtml'] !!}</p>
+                @endif
+                @if ($form['termsShown'])
+                    <div class="sf-field sf-check sf-terms">
+                        <input id="sf-terms" name="terms_accepted" type="checkbox" value="1" required aria-required="true" data-sf-describedby="sf-err-terms_accepted" data-sf-terms-version="{{ $form['termsVersion'] }}">
+                        <label for="sf-terms">{!! $form['termsHtml'] !!} <span class="sf-required" aria-hidden="true">*</span></label>
+                        <p class="sf-field-error" id="sf-err-terms_accepted" data-sf-error-for="terms_accepted" hidden></p>
+                    </div>
+                @endif
 
                 <div class="sf-checkout-actions">
                     <button class="sf-place-order" type="submit" disabled data-sf-place-order>{{ __('storefront.checkout_place_order') }}</button>

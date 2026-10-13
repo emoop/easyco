@@ -81,6 +81,23 @@ return [
 
     // Checkout settings page (checkout RN-1, checkout-region-and-note-design.md section 5).
     'checkout_page' => [
+        'fields_section' => 'Fields at checkout',
+        'fields_help' => 'Optional boxes and the consent the customer sees on the checkout page. No box is ever ticked in advance.',
+        'call_before_label' => 'Show "Call me before shipping"',
+        'call_before_help' => 'An optional box under the phone field. The answer is stored on the order and a phone icon marks the order in the list.',
+        'newsletter_label' => 'Show "Subscribe me to the newsletter"',
+        'newsletter_help' => 'An optional box under the names. The order records the ticked sentence as the proof of consent; nothing is sent by it yet.',
+        'terms_label' => 'Require acceptance of the terms and conditions',
+        'terms_help' => 'On by default. The box is shown only when this is on AND a terms page is set below.',
+        'terms_url_label' => 'Terms and conditions page (URL)',
+        'terms_version_label' => 'Terms version',
+        'terms_version_help' => 'Set automatically: today\'s date when the terms URL changes, or with the button below.',
+        'terms_updated_button' => 'The terms were updated',
+        'terms_version_bumped' => 'Terms version set to :version.',
+        'privacy_url_label' => 'Privacy policy page (URL)',
+        'link_invalid' => 'Enter an http(s) address or a path of this store starting with a single "/".',
+        'warning_terms_without_url' => 'Terms are required but no terms page is set: the checkbox is NOT shown and nothing is required until you set one.',
+        'warning_no_privacy_url' => 'No privacy policy page is set: the privacy notice is not shown on the checkout page.',
         'title' => 'Checkout',
         'navigation_label' => 'Checkout',
         'region_section' => 'Region (state) field',
