@@ -293,7 +293,7 @@ class ShippingMethodGroupingResourceTest extends TestCase
         $this->actingAsStaff('Administrator');
 
         $component = Livewire::test(ShippingOverview::class)
-            ->set('country', 'BG')->set('settlement', '')->set('postcode', '')->set('pickupPoint', false)->set('goods', '10.00')
+            ->set('country', 'BG')->set('settlement', '')->set('postcode', '')->set('destination', 'address')->set('goods', '10.00')
             ->set('lines', [['class' => null, 'quantity' => 1]])
             ->call('run');
 

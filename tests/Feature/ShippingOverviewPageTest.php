@@ -9,6 +9,9 @@ use App\Settings\Contracts\SiteSettingsRepository;
 use EasyCo\Shipping\Contracts\ShippingClassRepository;
 use EasyCo\Shipping\Contracts\ShippingMethodRepository;
 use EasyCo\Shipping\Contracts\ShippingZoneRepository;
+use EasyCo\Shipping\Enums\ShippingClassMode;
+use EasyCo\Shipping\Enums\ShippingDeliveryType;
+use EasyCo\Shipping\Enums\ShippingDestinationScope;
 use EasyCo\Shipping\Enums\ShippingMethodKind;
 use EasyCo\Shipping\ShippingClass;
 use EasyCo\Shipping\ShippingMethod;
@@ -254,7 +257,7 @@ class ShippingOverviewPageTest extends TestCase
             ->set('country', $state['country'] ?? 'BG')
             ->set('settlement', $state['settlement'] ?? '')
             ->set('postcode', $state['postcode'] ?? '')
-            ->set('pickupPoint', $state['pickup'] ?? false)
+            ->set('destination', $state['destination'] ?? 'address')
             ->set('goods', $state['goods'] ?? '10.00')
             ->set('lines', $state['lines'] ?? [['class' => null, 'quantity' => 1]])
             ->call('run');
@@ -290,15 +293,18 @@ class ShippingOverviewPageTest extends TestCase
         $this->assertStringContainsString('Econt office', $hint);
     }
 
-    public function test_the_owner_fixture_at_100_00_is_free_for_the_threshold_methods_and_hint_is_unlocked(): void
+    public function test_the_owner_fixture_at_100_00_is_free_for_the_kinds_it_states_and_hint_is_unlocked(): void
     {
         $this->ownerFixture();
         App::setLocale('en');
 
+        // "Try it" now states a destination (stage 5g-3): the default one is a street address. The locker method is
+        // pickup-only, so the threshold is NOT free for an address — 3.50 € is what such a method really costs there
+        // (before stage 5g-3 no destination was stated, which priced every kind conservatively and made it 0.00 €).
         $component = $this->tryIt(['settlement' => 'Sofia', 'goods' => '100.00']);
 
         $methods = $component->get('result')['methods'];
-        $this->assertSame(['0.00 €', '5.00 €', '0.00 €'], array_column($methods, 'price'));
+        $this->assertSame(['0.00 €', '5.00 €', '3.50 €'], array_column($methods, 'price'));
 
         $hint = $component->get('result')['hint'];
         $this->assertStringContainsString('Econt office', $hint);
@@ -387,8 +393,101 @@ class ShippingOverviewPageTest extends TestCase
         $street = $this->tryIt(['settlement' => 'Sofia', 'postcode' => ' 1000 ', 'goods' => '10.00']);
         $this->assertSame('1000', $street->get('result')['postcode']);
 
-        $pickup = $this->tryIt(['settlement' => 'Sofia', 'postcode' => ' 1000 ', 'pickup' => true, 'goods' => '10.00']);
+        $pickup = $this->tryIt(['settlement' => 'Sofia', 'postcode' => ' 1000 ', 'destination' => 'pickup', 'goods' => '10.00']);
         $this->assertSame('', $pickup->get('result')['postcode'], 'a pickup point has no postcode');
+    }
+
+    // =====================================================================================================
+    // Try it: the destination (stage 5g-3, shipping-domain-design.md 9.3.8)
+    // =====================================================================================================
+
+    public function test_the_destination_select_replaces_the_pickup_checkbox_in_both_languages(): void
+    {
+        $this->zone('Bulgaria', 0);
+        $this->actingAsStaff('Administrator');
+
+        App::setLocale('en');
+        $en = Livewire::test(ShippingOverview::class)->html();
+
+        $this->assertStringContainsString('wire:model="destination"', $en);
+        $this->assertStringNotContainsString('wire:model="pickupPoint"', $en, 'the old pickup checkbox is gone');
+        $this->assertStringContainsString(e(__('shipping.try_it.destination')), $en);
+
+        foreach (['address', 'office', 'locker', 'pickup'] as $key) {
+            $this->assertStringContainsString(e(__('shipping.try_it.destinations.'.$key)), $en, 'en '.$key);
+        }
+
+        App::setLocale('bg');
+        $bg = Livewire::test(ShippingOverview::class)->html();
+
+        $this->assertStringContainsString('Място за доставка', $bg);
+        $this->assertStringContainsString('Пункт за вземане (видът не е указан)', $bg);
+
+        foreach (['address', 'office', 'locker', 'pickup'] as $key) {
+            $this->assertStringContainsString(e(__('shipping.try_it.destinations.'.$key)), $bg, 'bg '.$key);
+        }
+    }
+
+    public function test_the_same_method_is_priced_for_each_destination_kind(): void
+    {
+        // Office + locker free above 60.00; the address keeps paying. A second method serves both pickup kinds but
+        // is free for the LOCKER only, so "a pickup point, kind not given" can never be priced cheaper than what
+        // is stated (stage 5g-3).
+        $zone = $this->zone('Bulgaria', 0);
+        $this->scopedMethod($zone->id(), 'Econt both pickup kinds', 0, 400, 6000, ShippingDestinationScope::ANY, null, [ShippingDeliveryType::OFFICE, ShippingDeliveryType::LOCKER]);
+        $this->scopedMethod($zone->id(), 'Econt locker only', 1, 350, 6000, ShippingDestinationScope::PICKUP, null, [ShippingDeliveryType::LOCKER]);
+
+        App::setLocale('en');
+
+        $expected = [
+            // destination => [both, locker only]
+            'address' => ['4.00 €', '3.50 €'],
+            'office' => ['0.00 €', '3.50 €'],
+            'locker' => ['0.00 €', '0.00 €'],
+            // kind not given: the first method is free for BOTH pickup kinds, the second is free for one only
+            'pickup' => ['0.00 €', '3.50 €'],
+        ];
+
+        foreach ($expected as $destination => $prices) {
+            $component = $this->tryIt(['settlement' => 'Sofia', 'goods' => '70.00', 'destination' => $destination]);
+
+            $this->assertSame($prices, array_column($component->get('result')['methods'], 'price'), $destination);
+            $this->assertTrue($component->get('result')['matched'], $destination);
+        }
+    }
+
+    public function test_try_it_checks_the_destination_kind_against_the_methods_own_kinds(): void
+    {
+        $zone = $this->zone('Bulgaria', 0);
+        $this->scopedMethod($zone->id(), 'Address only', 0, 400, null, ShippingDestinationScope::ADDRESS, ShippingDeliveryType::ADDRESS);
+        $this->scopedMethod($zone->id(), 'Office only', 1, 400, null, ShippingDestinationScope::PICKUP, ShippingDeliveryType::OFFICE);
+        $this->scopedMethod($zone->id(), 'Any', 2, 400, null, ShippingDestinationScope::ANY);
+
+        App::setLocale('en');
+
+        // A STATED kind is the method's own list (an office-labelled method does not serve a locker); a pickup point
+        // whose kind is NOT given keeps the scope's pickup rule; an address the scope's address rule.
+        $expected = [
+            'address' => [true, false, true],
+            'office' => [false, true, true],
+            'locker' => [false, false, true],
+            'pickup' => [false, true, true],
+        ];
+
+        foreach ($expected as $destination => $serves) {
+            $component = $this->tryIt(['settlement' => 'Sofia', 'goods' => '10.00', 'destination' => $destination]);
+
+            $this->assertSame($serves, array_column($component->get('result')['methods'], 'serves'), $destination);
+        }
+    }
+
+    /** A FLAT method with an explicit scope, label and free set — what the free-destination work is about. */
+    private function scopedMethod(string $zoneId, string $name, int $sortOrder, int $amount, ?int $freeAbove, ShippingDestinationScope $scope, ?ShippingDeliveryType $label = null, ?array $free = null): ShippingMethod
+    {
+        $method = ShippingMethod::create($zoneId, $name, ShippingMethodKind::FLAT, $sortOrder, true, $amount, [], $freeAbove, null, false, ShippingClassMode::REPLACE, null, $label, $scope, $free);
+        app(ShippingMethodRepository::class)->save($method);
+
+        return $method;
     }
 
     public function test_input_limits_are_field_errors_never_a_500(): void

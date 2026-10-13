@@ -8,9 +8,13 @@ use App\Filament\Resources\ShippingMethodResource\Pages\CreateShippingMethod;
 use App\Filament\Resources\ShippingMethodResource\Pages\EditShippingMethod;
 use App\Filament\Resources\ShippingMethodResource\Pages\ListShippingMethods;
 use App\Filament\Support\HelpLink;
+use App\Services\PriceDisplayFormatter;
 use App\Services\ShippingMethodSummaryReader;
+use EasyCo\Pricing\DefaultCurrency;
 use EasyCo\Shipping\Contracts\ShippingMethodRepository;
 use EasyCo\Shipping\Enums\ShippingClassMode;
+use EasyCo\Shipping\Enums\ShippingDeliveryType;
+use EasyCo\Shipping\Enums\ShippingDestinationScope;
 use EasyCo\Shipping\Enums\ShippingMethodKind;
 use EasyCo\Shipping\Persistence\Eloquent\ShippingMethodModel;
 use EasyCo\Shipping\ShippingMethod;
@@ -602,6 +606,211 @@ class ShippingMethodResourceTest extends TestCase
 
             $page->fillForm(['class_mode' => 'adjust'])->assertSee(__('shipping.methods.facts.mode_adjust'));
         }
+    }
+
+    // =====================================================================================================
+    // "Free shipping applies to" (stage 5g-3, shipping-domain-design.md 9.3.8)
+    // =====================================================================================================
+
+    /** @return list<string> the box's option keys as the FORM itself has them right now */
+    private function freeDestinationOptionsOf(\Livewire\Features\SupportTesting\Testable $page): array
+    {
+        return (function (): array {
+            return array_keys((array) $this->form->getComponent('free_destinations')->getOptions());
+        })->call($page->instance());
+    }
+
+    /** A create form with a threshold and the box in its ordinary state. */
+    private function freeDestinationsForm(array $state = []): \Livewire\Features\SupportTesting\Testable
+    {
+        $this->zone('Z', 0);
+        $this->actingAsStaff('Administrator');
+
+        return Livewire::test(CreateShippingMethod::class)
+            ->fillForm(array_merge(['kind' => 'flat', 'free_above' => '100'], $state));
+    }
+
+    public function test_the_free_destination_options_are_exactly_the_kinds_the_chosen_delivers_to_serves(): void
+    {
+        // The mapping itself, through the domain's own matrix: address only -> one box, office or locker -> two,
+        // office only -> one, locker only -> one, any -> three (design 9.3.8).
+        $this->assertSame(['address'], array_keys(ShippingMethodResource::freeDestinationOptions('address')));
+        $this->assertSame(['office', 'locker'], array_keys(ShippingMethodResource::freeDestinationOptions('pickup')));
+        $this->assertSame(['office'], array_keys(ShippingMethodResource::freeDestinationOptions('office')));
+        $this->assertSame(['locker'], array_keys(ShippingMethodResource::freeDestinationOptions('locker')));
+        $this->assertSame(['address', 'office', 'locker'], array_keys(ShippingMethodResource::freeDestinationOptions('any')));
+
+        App::setLocale('en');
+        $page = $this->freeDestinationsForm();
+
+        // LIVE: the boxes follow "Delivers to" there and then.
+        $this->assertSame(['address', 'office', 'locker'], $this->freeDestinationOptionsOf($page));
+
+        $page->set('data.delivers_to', 'address');
+        $this->assertSame(['address'], $this->freeDestinationOptionsOf($page));
+
+        $page->set('data.delivers_to', 'office');
+        $this->assertSame(['office'], $this->freeDestinationOptionsOf($page));
+
+        $page->set('data.delivers_to', 'pickup');
+        $this->assertSame(['office', 'locker'], $this->freeDestinationOptionsOf($page));
+
+        // The three option labels in both languages.
+        $this->assertSame(['Address', 'Office', 'Locker'], array_values(ShippingMethodResource::freeDestinationOptions('any')));
+
+        App::setLocale('bg');
+        $this->assertSame(['Адрес', 'Офис', 'Автомат'], array_values(ShippingMethodResource::freeDestinationOptions('any')));
+    }
+
+    public function test_the_box_shows_only_for_a_flat_or_per_class_method_with_a_positive_threshold(): void
+    {
+        $this->zone('Z', 0);
+        $this->actingAsStaff('Administrator');
+
+        $page = Livewire::test(CreateShippingMethod::class);
+
+        $page->assertFormFieldIsHidden('free_destinations');
+        $page->fillForm(['kind' => 'flat'])->assertFormFieldIsHidden('free_destinations');
+        // 0 is not a threshold...
+        $page->fillForm(['free_above' => '0'])->assertFormFieldIsHidden('free_destinations');
+        $page->fillForm(['free_above' => '100'])->assertFormFieldIsVisible('free_destinations');
+        $page->fillForm(['kind' => 'per_class'])->assertFormFieldIsVisible('free_destinations');
+        // ...and neither FREE nor CARRIER ever shows the box.
+        $page->fillForm(['kind' => 'free'])->assertFormFieldIsHidden('free_destinations');
+        $page->fillForm(['kind' => 'carrier'])->assertFormFieldIsHidden('free_destinations');
+        $page->fillForm(['kind' => 'flat', 'free_above' => ''])->assertFormFieldIsHidden('free_destinations');
+    }
+
+    public function test_a_new_method_starts_with_the_owners_free_set_for_what_it_serves(): void
+    {
+        App::setLocale('en');
+        $page = $this->freeDestinationsForm();
+
+        // office + locker within what is served (the owner's default), else the served kinds themselves.
+        $page->assertFormSet(['free_destinations' => ['office', 'locker']]);
+
+        foreach (['address' => ['address'], 'pickup' => ['office', 'locker'], 'office' => ['office'], 'locker' => ['locker']] as $deliversTo => $expected) {
+            $page->set('data.delivers_to', $deliversTo);
+            $page->assertFormSet(['free_destinations' => $expected]);
+        }
+    }
+
+    public function test_changing_delivers_to_keeps_the_ticks_that_are_still_served(): void
+    {
+        App::setLocale('en');
+        $page = $this->freeDestinationsForm();
+
+        $page->set('data.free_destinations', ['address', 'locker']);
+        $page->set('data.delivers_to', 'pickup');
+        $page->assertFormSet(['free_destinations' => ['locker']]);
+
+        // Nothing survives -> the owner's default for the kinds the new pair serves.
+        $page->set('data.delivers_to', 'address');
+        $page->assertFormSet(['free_destinations' => ['address']]);
+
+        $page->set('data.free_destinations', ['office']);
+        $page->set('data.delivers_to', 'office');
+        $page->assertFormSet(['free_destinations' => ['office']]);
+    }
+
+    public function test_a_threshold_with_nothing_ticked_is_the_fields_error_in_both_languages_and_writes_nothing(): void
+    {
+        $zone = (string) $this->zone('Z', 0)->id();
+        $this->actingAsStaff('Administrator');
+
+        foreach (['en', 'bg'] as $locale) {
+            App::setLocale($locale);
+
+            // The form's OWN sentence, not the writer's generic net: the same field would also carry
+            // "This value is not accepted." if inputFrom() let an empty set through to the entity.
+            Livewire::test(CreateShippingMethod::class)
+                ->fillForm(['zone_id' => $zone, 'name' => 'Nothing free', 'kind' => 'flat', 'price' => '5', 'free_above' => '100', 'free_destinations' => []])
+                ->call('create')
+                ->assertHasFormErrors(['free_destinations' => __('shipping.methods.errors.free_destinations_required')]);
+        }
+
+        $this->assertSame(0, DB::table('shipping_methods')->count(), 'nothing was written');
+
+        App::setLocale('en');
+        $this->assertSame('Choose at least one kind of delivery the free shipping applies to.', __('shipping.methods.errors.free_destinations_required'));
+
+        App::setLocale('bg');
+        $this->assertSame('Изберете поне един вид доставка, за който е безплатна над прага.', __('shipping.methods.errors.free_destinations_required'));
+    }
+
+    public function test_the_form_stores_exactly_the_ticked_kinds_and_an_update_that_cannot_show_the_box_keeps_them(): void
+    {
+        $zone = (string) $this->zone('Z', 0)->id();
+        $this->actingAsStaff('Administrator');
+        App::setLocale('en');
+
+        Livewire::test(CreateShippingMethod::class)
+            ->fillForm([
+                'zone_id' => $zone, 'name' => 'Locker only', 'kind' => 'flat', 'price' => '5',
+                'free_above' => '60', 'delivers_to' => 'any', 'free_destinations' => ['locker'],
+            ])
+            ->call('create')
+            ->assertHasNoFormErrors();
+
+        $stored = app(ShippingMethodRepository::class)->forZone($zone)[0];
+        $this->assertSame([ShippingDeliveryType::LOCKER], $stored->freeDestinations(), 'exactly the ticked kind, read back through the repository');
+
+        // An update that leaves the box HIDDEN (the threshold cleared) sends no set at all: the stored one stays.
+        Livewire::test(EditShippingMethod::class, ['record' => $stored->id()])
+            ->fillForm(['free_above' => ''])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $reloaded = app(ShippingMethodRepository::class)->findById((string) $stored->id());
+        $this->assertNull($reloaded->freeAboveMinor());
+        $this->assertSame([ShippingDeliveryType::LOCKER], $reloaded->freeDestinations(), 'the box was hidden, so the stored set stays');
+
+        // And the form shows exactly the stored set once the box is shown again.
+        Livewire::test(EditShippingMethod::class, ['record' => $stored->id()])
+            ->fillForm(['free_above' => '60'])
+            ->assertFormSet(['free_destinations' => ['locker']]);
+    }
+
+    public function test_the_free_destination_fact_line_names_the_kinds_and_who_keeps_paying(): void
+    {
+        $amount = app(PriceDisplayFormatter::class)->format('100.00', DefaultCurrency::get());
+
+        App::setLocale('en');
+        $page = $this->freeDestinationsForm();
+
+        // Every SERVED kind is free: one sentence, no "others".
+        $page->set('data.free_destinations', ['address', 'office', 'locker']);
+        $page->assertSeeText(__('shipping.methods.facts.free_destinations', ['amount' => $amount, 'kinds' => 'address, office, locker']));
+        $page->assertDontSeeText(__('shipping.methods.facts.free_destinations_others', ['others' => 'address']));
+
+        // The default set (office + locker) leaves the address out: the second sentence names it, live.
+        $page->set('data.free_destinations', ['office', 'locker']);
+        $page->assertSeeText(
+            __('shipping.methods.facts.free_destinations', ['amount' => $amount, 'kinds' => 'office, locker']).' '
+            .__('shipping.methods.facts.free_destinations_others', ['others' => 'address']),
+        );
+
+        // ...and the same sentences in Bulgarian (the drafts the owner approves live in the lang file only).
+        App::setLocale('bg');
+        $bgPage = $this->freeDestinationsForm(['free_destinations' => ['office']]);
+        $bgPage->assertSeeText('Безплатна доставка над '.$amount.' важи за: офис. За адрес, автомат се плаща обичайната цена.');
+    }
+
+    public function test_the_copy_action_carries_the_free_set_to_the_target_zone(): void
+    {
+        $source = (string) $this->zone('Source', 0)->id();
+        $target = (string) $this->zone('Target', 1)->id();
+        $method = ShippingMethod::create($source, 'Econt', ShippingMethodKind::FLAT, 0, true, 500, [], 6000, null, false, ShippingClassMode::REPLACE, null, null, ShippingDestinationScope::ANY, [ShippingDeliveryType::OFFICE, ShippingDeliveryType::LOCKER]);
+        app(ShippingMethodRepository::class)->save($method);
+        $this->actingAsStaff('Administrator');
+
+        Livewire::test(ListShippingMethods::class)
+            ->callTableAction('copy_method', $this->model((string) $method->id()), data: ['zones' => [$target]])
+            ->assertNotified();
+
+        $copy = app(ShippingMethodRepository::class)->forZone($target)[0];
+        $this->assertSame([ShippingDeliveryType::OFFICE, ShippingDeliveryType::LOCKER], $copy->freeDestinations());
+        $this->assertSame([ShippingDeliveryType::OFFICE, ShippingDeliveryType::LOCKER], $copy->effectiveFreeDestinations());
     }
 
     public function test_with_no_classes_the_form_says_so(): void

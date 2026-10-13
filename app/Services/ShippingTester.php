@@ -5,11 +5,14 @@ namespace App\Services;
 use EasyCo\Pricing\DefaultCurrency;
 use EasyCo\Shipping\Contracts\ShippingMethodRepository;
 use EasyCo\Shipping\Contracts\ShippingZoneRepository;
+use EasyCo\Shipping\Enums\ShippingDeliveryType;
 use EasyCo\Shipping\Matching\PostcodeNormalizer;
 use EasyCo\Shipping\Matching\ZoneDestination;
 use EasyCo\Shipping\Matching\ZoneMatcher;
+use EasyCo\Shipping\Rating\RateDestination;
 use EasyCo\Shipping\Rating\RateRequest;
 use EasyCo\Shipping\Rating\ShippingRateCalculator;
+use EasyCo\Shipping\ShippingMethod;
 
 /**
  * "Try it" (shipping-domain-design.md §12.3.5): for an entered destination and a
@@ -36,6 +39,11 @@ final class ShippingTester
 
     /**
      * @param  list<\EasyCo\Shipping\Rating\RateLine>  $lines
+     * @param  ?RateDestination  $destination  where the order goes (stage 5g-3): an address, a stated office or
+     *         locker, or a pickup point whose kind is not given. It is handed to the SAME calculator the quote uses,
+     *         so each method shows the price for THAT kind. null = the caller states none (an older caller, or a
+     *         pickup flag only), priced as cautiously as today — no destination is stated, so a threshold counts
+     *         only when it is free for every kind the method could go to.
      *
      * @throws \InvalidArgumentException when $lines is empty (a rate request needs at least one line)
      */
@@ -46,6 +54,7 @@ final class ShippingTester
         bool $isPickupPoint,
         int $goodsAfterDiscountMinor,
         array $lines,
+        ?RateDestination $destination = null,
     ): ShippingTestResult {
         $currency = DefaultCurrency::get()->code();
         $normalizer = $this->normalizers->forCurrentLocale();
@@ -73,7 +82,7 @@ final class ShippingTester
 
         $zone = $match->zone();
         $zoneMethods = $this->methods->forZone((string) $zone->id(), activeOnly: true);
-        $rates = $this->calculator->ratesFor($zoneMethods, new RateRequest($currency, $goodsAfterDiscountMinor, $lines));
+        $rates = $this->calculator->ratesFor($zoneMethods, new RateRequest($currency, $goodsAfterDiscountMinor, $lines, $destination));
         $hint = $this->hints->read($zoneMethods, $rates, $currency);
 
         $byId = [];
@@ -90,7 +99,7 @@ final class ShippingTester
                 $rate->methodId,
                 $method->name(),
                 $method->destinationScope()->value,
-                $method->servesPickupPoint($isPickupPoint),
+                $this->servesDestination($method, $destination, $isPickupPoint),
                 $this->summaries->summary($method),
                 $rate->needsQuote(),
                 $rate->needsQuote() ? null : $rate->amountMinor(),
@@ -105,5 +114,27 @@ final class ShippingTester
             $countryCode, $shownSettlement, $shownPostcode, $isPickupPoint, $goodsAfterDiscountMinor,
             $currency, (string) $zone->id(), $zone->name(), null, $testMethods, $hint,
         );
+    }
+
+    /**
+     * Does this method serve the destination "Try it" is asking about? (stage 6d, 5g-3)
+     *
+     *  - a STATED kind (an office or a locker) — the method's own kind list, `servedKinds()`: an office-labelled
+     *    method does not serve a locker;
+     *  - a pickup point whose kind is NOT given — the scope's pickup rule (`servesPickupPoint(true)`, never
+     *    cheaper/more generous than what is stated);
+     *  - an address — the scope's address rule (`servesPickupPoint(false)`);
+     *  - no destination stated at all — the old flag, exactly as before stage 5g-3.
+     *
+     * The rule itself is the domain's; this only chooses which of its four forms applies.
+     */
+    private function servesDestination(ShippingMethod $method, ?RateDestination $destination, bool $isPickupPoint): bool
+    {
+        return match (true) {
+            $destination === null => $method->servesPickupPoint($isPickupPoint),
+            $destination->kind === null => $method->servesPickupPoint(true),
+            $destination->kind === ShippingDeliveryType::ADDRESS => $method->servesPickupPoint(false),
+            default => in_array($destination->kind, $method->servedKinds(), true),
+        };
     }
 }

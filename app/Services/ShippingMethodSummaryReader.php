@@ -7,6 +7,7 @@ use EasyCo\Pricing\DefaultCurrency;
 use EasyCo\Pricing\Money;
 use EasyCo\Shipping\Contracts\ShippingClassRepository;
 use EasyCo\Shipping\Enums\ShippingClassMode;
+use EasyCo\Shipping\Enums\ShippingDeliveryType;
 use EasyCo\Shipping\Enums\ShippingMethodKind;
 use EasyCo\Shipping\ShippingMethod;
 
@@ -20,7 +21,9 @@ use EasyCo\Shipping\ShippingMethod;
  *
  * The shapes (money in the store currency; class names, not codes):
  *  - FLAT   `5.00 €`
- *  - FLAT+  `5.00 €; free from 100.00 €`
+ *  - FLAT+  `5.00 €; free from 100.00 €` — and, when the threshold is free for SOME of the kinds the
+ *    method serves but not all, the kinds it is free for (stage 5g-3): `5.00 €; free from 100.00 € (office, locker)`.
+ *    When every served kind is free the sentence is EXACTLY as it was before, so nothing else moves.
  *  - FREE   `Free`
  *  - PER_CLASS `5.00 €; Heavy 30.00 €; free from 100.00 €` (base, then the class
  *    rates by class name, then the threshold)
@@ -61,7 +64,7 @@ final class ShippingMethodSummaryReader
         }
 
         if ($method->freeAboveMinor() !== null) {
-            $parts[] = __('shipping.summary.free_from', ['amount' => $this->money($method->freeAboveMinor(), $currency)]);
+            $parts[] = $this->freeFrom($method, $currency);
         }
 
         // The destination SCOPE in words (stage 6d, design 9.2.8): "Address only" / "Pickup point only" / "Serves any
@@ -73,6 +76,38 @@ final class ShippingMethodSummaryReader
         }
 
         return implode('; ', $parts);
+    }
+
+    /**
+     * "free from 100.00 €" — with the kinds it really covers appended when the free set does NOT cover every
+     * kind the method serves (stage 5g-3, design 9.3.8): "free from 100.00 € (office, locker)". When the set
+     * does cover them all the clause is EXACTLY the one of before, so the existing sentences do not move.
+     */
+    private function freeFrom(ShippingMethod $method, Currency $currency): string
+    {
+        $amount = $this->money((int) $method->freeAboveMinor(), $currency);
+        $free = $method->effectiveFreeDestinations();
+
+        if ($free === $method->servedKinds()) {
+            return __('shipping.summary.free_from', ['amount' => $amount]);
+        }
+
+        return __('shipping.summary.free_from_kinds', ['amount' => $amount, 'kinds' => $this->freeKindWords($free)]);
+    }
+
+    /**
+     * THE ONE place the three destination kinds are named in words (lower case): "офис, автомат" / "office, locker".
+     * The summary's threshold clause and the method form's own free-shipping fact line both read it, so the two
+     * sentences can never disagree.
+     *
+     * @param  list<ShippingDeliveryType>  $kinds
+     */
+    public function freeKindWords(array $kinds): string
+    {
+        return implode(', ', array_map(
+            static fn (ShippingDeliveryType $kind): string => __('shipping.summary.kinds.'.$kind->value),
+            $kinds,
+        ));
     }
 
     /**

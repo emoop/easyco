@@ -38,6 +38,13 @@ return [
         'free' => 'Free',
         'carrier' => 'Carrier: :code · not configured',
         'free_from' => 'free from :amount',
+        // Stage 5g-3: the kinds the threshold really covers, when it does not cover every kind the method serves.
+        'free_from_kinds' => 'free from :amount (:kinds)',
+        'kinds' => [
+            'address' => 'address',
+            'office' => 'office',
+            'locker' => 'locker',
+        ],
         'inactive' => 'inactive',
         'scope' => [
             'address' => 'Address only',
@@ -53,7 +60,14 @@ return [
         'country' => 'Country',
         'settlement' => 'Settlement',
         'postcode' => 'Postcode',
-        'pickup' => 'Pickup point (office or locker)',
+        // Stage 5g-3: the old "pickup point" checkbox became one Select of four destinations.
+        'destination' => 'Destination',
+        'destinations' => [
+            'address' => 'Address',
+            'office' => 'Office',
+            'locker' => 'Locker',
+            'pickup' => 'Pickup point (kind not given)',
+        ],
         'goods' => 'Goods total after discount',
         'lines' => 'Cart lines',
         'class' => 'Shipping class',
@@ -170,6 +184,7 @@ return [
             'class_mode' => 'Class mode',
             'price' => 'Price',
             'free_above' => 'Free shipping above (optional)',
+            'free_destinations' => 'Free shipping applies to',
             'carrier_code' => 'Carrier code',
             'courier' => 'Courier (optional)',
             'class_rates' => 'Class amounts',
@@ -207,6 +222,12 @@ return [
             'per_class' => 'Price by shipping class',
             'carrier' => 'Carrier',
         ],
+        // Stage 5g-3: the CheckboxList's three option labels — the kinds free shipping can apply to.
+        'free_kinds' => [
+            'address' => 'Address',
+            'office' => 'Office',
+            'locker' => 'Locker',
+        ],
         'modes' => [
             'replace' => 'Replace the price',
             'adjust' => 'Adjust the price',
@@ -216,6 +237,10 @@ return [
             'zone_fixed' => 'A method stays in its zone. To use it in another zone, copy it there, then delete this one.',
             'kind_clears' => 'Fields that do not belong to the chosen kind are cleared when you save.',
             'free_above' => 'From :amount of goods after discount, shipping is free.',
+            // Stage 5g-3: the live fact line under "Free shipping applies to" (the second sentence only when a
+            // served kind is not free).
+            'free_destinations' => 'Free delivery above :amount applies to: :kinds.',
+            'free_destinations_others' => ':others keep the normal price.',
             'mode_replace' => 'Class amounts are read as replacement prices: the most expensive class in the cart sets the price. They cannot be negative.',
             'mode_adjust' => 'Class amounts are read as +/− adjustments: each class in the cart adds its amount once (a minus is a discount), and the price never goes below 0.',
             'no_classes' => 'There are no shipping classes yet.',
@@ -278,6 +303,7 @@ return [
             'carrier_required' => 'Enter the carrier code.',
             'delivery_type_unknown' => 'Choose a delivery type from the list, or leave it empty.',
             'destination_scope_unknown' => 'Choose where the method delivers, from the list.',
+            'free_destinations_required' => 'Choose at least one kind of delivery the free shipping applies to.',
             'carrier_invalid' => 'The carrier code can only hold lowercase letters, digits, "-" and "_" (1 to 64 characters).',
             'copy_none' => 'Choose at least one zone.',
             'copy_too_many' => 'At most :max zones at a time.',

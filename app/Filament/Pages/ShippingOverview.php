@@ -26,11 +26,14 @@ use EasyCo\Shipping\Contracts\ShippingClassRepository;
 use EasyCo\Shipping\ShippingCourier;
 use EasyCo\Shipping\Contracts\ShippingMethodRepository;
 use EasyCo\Shipping\Contracts\ShippingZoneRepository;
+use EasyCo\Shipping\Enums\ShippingDeliveryType;
+use EasyCo\Shipping\Rating\RateDestination;
 use EasyCo\Shipping\Rating\RateLine;
 use EasyCo\Shipping\ShippingZone;
 use EasyCo\Staff\Enums\Permission;
 use Filament\Pages\Page;
 use Filament\Panel;
+use Illuminate\Validation\Rule;
 
 /**
  * The read-only Shipping page (shipping-domain-design.md §12.3.5, stage 5a):
@@ -68,7 +71,12 @@ class ShippingOverview extends Page
 
     public string $postcode = '';
 
-    public bool $pickupPoint = false;
+    /**
+     * What "Try it" prices: address | office | locker | pickup (a pickup point whose kind is not given) — the ONE
+     * answer where the old "pickup point" checkbox used to be (stage 5g-3, design 9.3.8). RateDestination is built
+     * from it in run() and handed to the SAME calculator the quote service uses.
+     */
+    public string $destination = 'address';
 
     public string $goods = '';
 
@@ -139,6 +147,35 @@ class ShippingOverview extends Page
         $this->lines = array_values($this->lines);
     }
 
+    /** @return array<string, string> the Select's four options (stage 5g-3, design 9.3.8). */
+    public static function destinationOptions(): array
+    {
+        return [
+            'address' => __('shipping.try_it.destinations.address'),
+            'office' => __('shipping.try_it.destinations.office'),
+            'locker' => __('shipping.try_it.destinations.locker'),
+            'pickup' => __('shipping.try_it.destinations.pickup'),
+        ];
+    }
+
+    /** Is the priced destination a pickup point? The Select is the ONE answer; only "address" is a street address. */
+    private function isPickupPointDestination(): bool
+    {
+        return $this->destination !== 'address';
+    }
+
+    /** The RateDestination run() prices with: an address, a stated office or locker, or a pickup point with no kind. */
+    private function rateDestination(): RateDestination
+    {
+        $kind = match ($this->destination) {
+            'office' => ShippingDeliveryType::OFFICE,
+            'locker' => ShippingDeliveryType::LOCKER,
+            default => null,
+        };
+
+        return $this->isPickupPointDestination() ? RateDestination::pickup($kind) : RateDestination::address();
+    }
+
     public function run(): void
     {
         $currency = DefaultCurrency::get();
@@ -148,7 +185,7 @@ class ShippingOverview extends Page
             'country' => ['required', 'string', new KnownCountryCode],
             'settlement' => ['nullable', 'string', 'max:255', new PlainText],
             'postcode' => ['nullable', 'string', 'max:20', new PlainText],
-            'pickupPoint' => ['boolean'],
+            'destination' => ['required', 'string', Rule::in(array_keys(static::destinationOptions()))],
             'goods' => ['required', 'string', 'max:20', function (string $attribute, mixed $value, Closure $fail) use ($currency): void {
                 if (MoneyInput::parse(is_string($value) ? $value : null, $currency) === null) {
                     $fail(__('shipping.try_it.invalid_amount'));
@@ -180,9 +217,10 @@ class ShippingOverview extends Page
             (string) $this->country,
             $this->settlement !== '' ? $this->settlement : null,
             $this->postcode !== '' ? $this->postcode : null,
-            $this->pickupPoint,
+            $this->isPickupPointDestination(),
             $goods->minorValue(),
             $rateLines,
+            $this->rateDestination(),
         );
 
         $this->result = $this->toViewResult($result);
@@ -250,6 +288,7 @@ class ShippingOverview extends Page
             'classlessCount' => app(\App\Services\ShippingClassMissingReader::class)->total(),
             'countryOptions' => $countryNames,
             'classOptions' => $classNames,
+            'destinationOptions' => static::destinationOptions(),
             'overviewHelpUrl' => HelpLink::url('shipping_overview', 'shipping'),
             'tryItHelpUrl' => HelpLink::url('try_it', 'shipping'),
             'zonesUrl' => \App\Filament\Resources\ShippingZoneResource::getUrl('index'),

@@ -37,6 +37,7 @@ use EasyCo\Shipping\ShippingMethod;
 use EasyCo\Staff\Enums\Permission;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
+use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\Radio;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
@@ -45,6 +46,7 @@ use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Text;
 use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Filament\Support\Enums\IconPosition;
 use Filament\Tables\Columns\TextColumn;
@@ -168,6 +170,10 @@ class ShippingMethodResource extends Resource
         $classes = app(ShippingClassRepository::class)->all();
         $isMoney = static fn (string $kind): Closure => static fn (Get $get): bool => in_array($get('kind'), [ShippingMethodKind::FLAT->value, ShippingMethodKind::PER_CLASS->value], true);
         $isPerClass = static fn (Get $get): bool => $get('kind') === ShippingMethodKind::PER_CLASS->value;
+        // The free-destination box follows the threshold exactly: FLAT / PER_CLASS with a POSITIVE "Free above"
+        // (stage 5g-3, design 9.3.8). A FREE or CARRIER method, a blank threshold and a 0 never show it.
+        $showsFreeDestinations = static fn (Get $get): bool => in_array($get('kind'), [ShippingMethodKind::FLAT->value, ShippingMethodKind::PER_CLASS->value], true)
+            && static::thresholdIsSet($get('free_above'), $currency);
 
         $rateFields = [];
 
@@ -211,7 +217,13 @@ class ShippingMethodResource extends Resource
                 ->options(static::deliversToOptions())
                 ->default('any')
                 ->required()
-                ->live(),
+                ->live()
+                // The kinds the method serves decide which free-destination boxes exist, so a change of "Delivers
+                // to" keeps every tick that is STILL served and falls back to the owner's default when none is
+                // (stage 5g-3, design 9.3.8).
+                ->afterStateUpdated(function (Get $get, Set $set): void {
+                    $set('free_destinations', static::keptFreeDestinations($get('free_destinations'), static::deliversTo($get)));
+                }),
             Text::make(fn (Get $get): string => static::deliversToHelp(is_string($get('delivers_to')) ? $get('delivers_to') : null))
                 ->color('gray')->size('sm'),
             Select::make('kind')
@@ -244,6 +256,18 @@ class ShippingMethodResource extends Resource
 
                 return $amount === null || $amount->isZero() ? '' : __('shipping.methods.facts.free_above', ['amount' => static::format($amount)]);
             })->color('gray')->size('sm'),
+            // ONE box per kind the method serves — the domain's own matrix, live (stage 5g-3, design 9.3.8).
+            // It is shown exactly where the threshold is, defaults to the owner's set for a new method, and
+            // inputFrom() refuses "a threshold with nothing ticked". The writer's own refusal stays the net.
+            CheckboxList::make('free_destinations')
+                ->label(__('shipping.methods.fields.free_destinations'))
+                ->options(fn (Get $get): array => static::freeDestinationOptions(static::deliversTo($get)))
+                ->default(fn (Get $get): array => static::defaultFreeDestinations(static::deliversTo($get)))
+                ->live()
+                ->visible($showsFreeDestinations),
+            Text::make(fn (Get $get): string => static::freeDestinationsFact($get('free_above'), $get('free_destinations'), static::deliversTo($get), $currency))
+                ->color('gray')->size('sm')
+                ->visible($showsFreeDestinations),
             TextInput::make('carrier_code')
                 ->label(__('shipping.methods.fields.carrier_code'))
                 ->maxLength(64)
@@ -309,6 +333,107 @@ class ShippingMethodResource extends Resource
         $key = array_key_exists((string) $deliversTo, static::deliversToOptions()) ? (string) $deliversTo : 'any';
 
         return __('shipping.methods.delivers_to_help.'.$key);
+    }
+
+    // ---- the free-destination set (stage 5g-3, shipping-domain-design.md 9.3.8) ------------------------------
+
+    /** The form's "Delivers to" value, as an option key (`any` when missing or unknown) — ONE reader of that state. */
+    public static function deliversTo(Get $get): string
+    {
+        $value = $get('delivers_to');
+
+        return is_string($value) && array_key_exists($value, static::deliversToOptions()) ? $value : 'any';
+    }
+
+    /**
+     * The kinds a "Delivers to" option serves — the DOMAIN's own matrix, never a second copy of it here.
+     *
+     * @return list<ShippingDeliveryType> in canonical order (address, office, locker)
+     */
+    public static function servedKindsOf(string $deliversTo): array
+    {
+        [$label, $scope] = static::labelAndScopeFrom($deliversTo);
+
+        return ShippingMethod::servedKindsFor(
+            $label === null ? null : ShippingDeliveryType::tryFrom($label),
+            ShippingDestinationScope::from($scope),
+        );
+    }
+
+    /** @return list<string> the same kinds as their stored values, in canonical order */
+    public static function servedKindValues(string $deliversTo): array
+    {
+        return array_values(array_map(static fn (ShippingDeliveryType $kind): string => $kind->value, static::servedKindsOf($deliversTo)));
+    }
+
+    /** @return array<string, string> the box's options: ONE per kind the chosen "Delivers to" serves (design 9.3.8). */
+    public static function freeDestinationOptions(string $deliversTo): array
+    {
+        $options = [];
+
+        foreach (static::servedKindsOf($deliversTo) as $kind) {
+            $options[$kind->value] = __('shipping.methods.free_kinds.'.$kind->value);
+        }
+
+        return $options;
+    }
+
+    /**
+     * @return list<string> the OWNER'S default free set for a NEW method as form values (design 9.3.8): office +
+     *         locker within what the method serves, else the served kinds themselves.
+     */
+    public static function defaultFreeDestinations(string $deliversTo): array
+    {
+        return array_values(array_map(
+            static fn (ShippingDeliveryType $kind): string => $kind->value,
+            ShippingMethodInput::ownerDefaultFreeDestinations(static::servedKindsOf($deliversTo)),
+        ));
+    }
+
+    /**
+     * @param  mixed  $ticked  the box's state as submitted
+     * @return list<string> every tick that is STILL served, in canonical order; the owner's default for the new served
+     *         kinds when none survives — narrowing "Delivers to" never leaves a threshold with nothing to apply to.
+     */
+    public static function keptFreeDestinations(mixed $ticked, string $deliversTo): array
+    {
+        $kept = array_values(array_intersect(static::servedKindValues($deliversTo), array_map('strval', (array) $ticked)));
+
+        return $kept === [] ? static::defaultFreeDestinations($deliversTo) : $kept;
+    }
+
+    /** Whether "Free above" holds a POSITIVE amount: blank and 0 both mean "no threshold" (design 9.3.8). */
+    public static function thresholdIsSet(mixed $raw, Currency|string $currency): bool
+    {
+        $amount = MoneyInput::parse(is_scalar($raw) ? (string) $raw : null, $currency);
+
+        return $amount !== null && ! $amount->isZero();
+    }
+
+    /**
+     * The live fact line under the box (design 9.3.8): what the threshold applies to and — only when a served kind is
+     * NOT free — that those keep paying the normal price. Empty while there is no positive threshold.
+     */
+    public static function freeDestinationsFact(mixed $rawFreeAbove, mixed $ticked, string $deliversTo, Currency|string $currency): string
+    {
+        $amount = MoneyInput::parse(is_scalar($rawFreeAbove) ? (string) $rawFreeAbove : null, $currency);
+
+        if ($amount === null || $amount->isZero()) {
+            return '';
+        }
+
+        $served = static::servedKindsOf($deliversTo);
+        $tickedValues = array_map('strval', (array) $ticked);
+        $free = array_values(array_filter($served, static fn (ShippingDeliveryType $kind): bool => in_array($kind->value, $tickedValues, true)));
+        $others = array_values(array_filter($served, static fn (ShippingDeliveryType $kind): bool => ! in_array($kind, $free, true)));
+        $reader = app(ShippingMethodSummaryReader::class);
+
+        $fact = __('shipping.methods.facts.free_destinations', [
+            'amount' => static::format($amount),
+            'kinds' => $reader->freeKindWords($free),
+        ]);
+
+        return $others === [] ? $fact : $fact.' '.__('shipping.methods.facts.free_destinations_others', ['others' => $reader->freeKindWords($others)]);
     }
 
     /**
@@ -448,6 +573,24 @@ class ShippingMethodResource extends Resource
             }
         }
 
+        // THE FREE-DESTINATION SET (stage 5g-3, design 9.3.8). While the box is shown — a FLAT / PER_CLASS method
+        // with a POSITIVE threshold — its ticks are what the threshold applies to, and an empty box is refused here
+        // with the field's own sentence. While the box is hidden NOTHING is sent: a NEW method then gets the
+        // writer's owner default and an existing one keeps its stored set. The writer (and through it the entity)
+        // stays the net: a kind the method does not serve is refused there, never silently dropped.
+        $freeDestinations = null;
+
+        if (in_array((string) ($data['kind'] ?? ''), [ShippingMethodKind::FLAT->value, ShippingMethodKind::PER_CLASS->value], true)
+            && static::thresholdIsSet($data['free_above'] ?? null, $currency)) {
+            $ticked = array_values(array_unique(array_map('strval', array_filter((array) ($data['free_destinations'] ?? []), 'is_scalar'))));
+
+            if ($ticked === []) {
+                $errors['free_destinations'][] = __('shipping.methods.errors.free_destinations_required');
+            } else {
+                $freeDestinations = $ticked;
+            }
+        }
+
         if ($errors !== []) {
             throw new ShippingMethodInvalidException($errors);
         }
@@ -467,6 +610,7 @@ class ShippingMethodResource extends Resource
             carrierCode: isset($data['carrier_code']) ? (string) $data['carrier_code'] : null,
             courier: isset($data['courier']) ? (string) $data['courier'] : null,
             deliveryType: $deliveryType,
+            freeDestinations: $freeDestinations,
         );
     }
 
@@ -493,6 +637,11 @@ class ShippingMethodResource extends Resource
             'class_mode' => $method->classMode()->value,
             'rates' => $rates,
             'delivers_to' => static::deliversToFrom($method->deliveryType()?->value, $method->destinationScope()->value),
+            // The stored set WITHIN what the method serves (stage 5g-3): the boxes show exactly what applies today.
+            'free_destinations' => array_values(array_map(
+                static fn (ShippingDeliveryType $kind): string => $kind->value,
+                $method->effectiveFreeDestinations(),
+            )),
             'carrier_code' => $method->carrierCode(),
             'courier' => $method->courier(),
         ];

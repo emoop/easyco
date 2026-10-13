@@ -49,7 +49,8 @@ final class ShippingDestinationScopeAdminTest extends TestCase
             ->set('country', 'BG')
             ->set('settlement', 'Sofia')
             ->set('postcode', '')
-            ->set('pickupPoint', $pickup)
+            // A ticked box is "a pickup point, kind not given" — the old flag's meaning on the Select (stage 5g-3).
+            ->set('destination', $pickup ? 'pickup' : 'address')
             ->set('goods', '10.00')
             ->set('lines', [['class' => null, 'quantity' => 1]])
             ->call('run');

@@ -47,7 +47,7 @@ A method is one concrete way of delivering in one zone. Press "New method" and s
 - **Kind**: how the price is worked out (see the next topic).
 - **Active**: an inactive method is not offered but stays saved.
 - **Price**: for the kinds that have a price.
-- **Free shipping above (optional)**: see "Free shipping above an amount".
+- **Free shipping above (optional)**: see "Free shipping above an amount"; when you set it, the field under it says which kinds of delivery the free shipping applies to.
 - **Courier (optional)** and **Delivers to**: for grouping at checkout. **Delivers to** is required: "All (address, office, locker)", "Address only", "Office or locker only", "Office only" or "Locker only".
 
 A zone can have several methods; the customer chooses among the active ones.
@@ -112,6 +112,8 @@ The "Free shipping above (optional)" field makes the method free once the goods 
 - An empty field means the method has no such threshold.
 
 In the cart the customer sees a hint of how much more they need for free shipping, and once reached, that shipping is free.
+
+**Free shipping applies to** (it appears as soon as the amount is set) says which kinds of delivery the threshold covers; the boxes offered are the ones the method's "Delivers to" allows, and at least one must stay ticked. The gray line under them says it in words — what is free and what keeps paying the normal price — and "Try it" prices each kind the same way.
 
 ## Shipping classes {#action-class-editor}
 

@@ -113,7 +113,13 @@
                 </div>
 
                 <div class="shop-field">
-                    <label><input type="checkbox" wire:model="pickupPoint"> {{ __('shipping.try_it.pickup') }}</label>
+                    <label for="shop-destination">{{ __('shipping.try_it.destination') }}</label>
+                    <select id="shop-destination" wire:model="destination">
+                        @foreach ($destinationOptions as $value => $label)
+                            <option value="{{ $value }}">{{ $label }}</option>
+                        @endforeach
+                    </select>
+                    @error('destination') <span class="shop-error">{{ $message }}</span> @enderror
                 </div>
 
                 <div class="shop-field">

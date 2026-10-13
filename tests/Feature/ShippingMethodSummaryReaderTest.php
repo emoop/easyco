@@ -5,6 +5,9 @@ namespace Tests\Feature;
 use App\Services\ShippingMethodSummaryReader;
 use EasyCo\Shipping\Contracts\ShippingClassRepository;
 use EasyCo\Shipping\Contracts\ShippingZoneRepository;
+use EasyCo\Shipping\Enums\ShippingClassMode;
+use EasyCo\Shipping\Enums\ShippingDeliveryType;
+use EasyCo\Shipping\Enums\ShippingDestinationScope;
 use EasyCo\Shipping\Enums\ShippingMethodKind;
 use EasyCo\Shipping\ShippingClass;
 use EasyCo\Shipping\ShippingMethod;
@@ -132,5 +135,58 @@ class ShippingMethodSummaryReaderTest extends TestCase
         $changed = $this->method($zone, ShippingMethodKind::FLAT, amount: 1200);
 
         $this->assertSame('12.00 €; Address only', $this->reader()->summary($changed));
+    }
+
+    // ---- the free set of the threshold (stage 5g-3, design 9.3.8) -------------------------------------------
+
+    /** A FLAT method with an explicit scope, label and free set. */
+    private function freeSetMethod(string $zoneId, ?int $freeAbove, array $free, ?ShippingDeliveryType $label = null, ShippingDestinationScope $scope = ShippingDestinationScope::ANY): ShippingMethod
+    {
+        return ShippingMethod::create($zoneId, 'M', ShippingMethodKind::FLAT, 0, true, 500, [], $freeAbove, null, false, ShippingClassMode::REPLACE, null, $label, $scope, $free);
+    }
+
+    public function test_the_threshold_names_the_kinds_it_covers_when_it_does_not_cover_every_served_kind(): void
+    {
+        $zone = $this->zoneId();
+        $partial = $this->freeSetMethod($zone, 10000, [ShippingDeliveryType::OFFICE, ShippingDeliveryType::LOCKER]);
+
+        App::setLocale('en');
+        $this->assertSame('5.00 €; free from 100.00 € (office, locker); Serves any destination', $this->reader()->summary($partial));
+
+        App::setLocale('bg');
+        $this->assertSame('5.00 €; безплатна над 100.00 € (офис, автомат); Обслужва и адрес, и офис/автомат', $this->reader()->summary($partial));
+    }
+
+    public function test_the_threshold_sentence_is_exactly_as_before_when_every_served_kind_is_free(): void
+    {
+        $zone = $this->zoneId();
+
+        // `any` with all three kinds free...
+        $all = $this->freeSetMethod($zone, 10000, ShippingDeliveryType::destinationKinds());
+
+        App::setLocale('en');
+        $this->assertSame('5.00 €; free from 100.00 €; Serves any destination', $this->reader()->summary($all));
+
+        App::setLocale('bg');
+        $this->assertSame('5.00 €; безплатна над 100.00 €; Обслужва и адрес, и офис/автомат', $this->reader()->summary($all));
+
+        // ...and a one-kind method whose only kind is free: "every served kind" again, so no kinds are named.
+        $officeOnly = $this->freeSetMethod($zone, 10000, [ShippingDeliveryType::OFFICE], ShippingDeliveryType::OFFICE, ShippingDestinationScope::PICKUP);
+
+        App::setLocale('en');
+        $this->assertSame('to office; 5.00 €; free from 100.00 €; Pickup point only', $this->reader()->summary($officeOnly));
+    }
+
+    public function test_the_kind_words_are_the_three_lowercase_words_in_both_languages(): void
+    {
+        $reader = $this->reader();
+
+        App::setLocale('en');
+        $this->assertSame('address, office, locker', $reader->freeKindWords(ShippingDeliveryType::destinationKinds()));
+        $this->assertSame('locker', $reader->freeKindWords([ShippingDeliveryType::LOCKER]));
+
+        App::setLocale('bg');
+        $this->assertSame('адрес, офис, автомат', $reader->freeKindWords(ShippingDeliveryType::destinationKinds()));
+        $this->assertSame('офис, автомат', $reader->freeKindWords([ShippingDeliveryType::OFFICE, ShippingDeliveryType::LOCKER]));
     }
 }
