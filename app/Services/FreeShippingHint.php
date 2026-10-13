@@ -30,6 +30,9 @@ final class FreeShippingHint
         public readonly int $remainingMinor,
         public readonly string $currency,
         public readonly string $text,
+        // The kinds of delivery the chosen method's free shipping applies to, IN SCOPE of the request (address | office | locker, in that
+        // order; stage 5g-2b). Always present, also when the sentence omits the kinds phrase.
+        public readonly array $destinations = [],
     ) {
     }
 
@@ -44,6 +47,7 @@ final class FreeShippingHint
             'remaining_minor' => $this->remainingMinor,
             'currency' => $this->currency,
             'text' => $this->text,
+            'destinations' => $this->destinations,
         ];
     }
 }

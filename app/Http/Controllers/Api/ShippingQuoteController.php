@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Rules\KnownCountryCode;
 use App\Services\Exceptions\ShippingQuoteFilterException;
 use App\Services\Exceptions\ShippingQuoteRefusedException;
+use App\Services\AllKindsQuoteResult;
 use App\Services\MethodQuote;
 use App\Services\QuoteDestination;
 use App\Services\QuoteGroups;
@@ -45,6 +46,26 @@ use Illuminate\Validation\ValidationException;
  * pickup quote with `pickup_kind` is priced for THAT kind; without it the pickup point is "kind unspecified" and is free only
  * when BOTH office and locker are free (never cheaper than a stated kind). The kind is part of the pricing hash, so a handle
  * quoted for one kind never verifies for another at checkout. The response shape is unchanged.
+ *
+ * THE `all` QUOTE (stage 5g-2b, design 9.3.4): `delivery_type=all` prices EVERY kind of destination from one request. `country` is
+ * required, `settlement` is OPTIONAL (trimmed, max 255), `postal_code` optional (the address kind only), `pickup_kind` and
+ * `address_id` are refused with it (a saved address is always a single-kind quote). WITH a settlement the answer is FINAL: a
+ * handle per (method, kind), each from that kind's own pricing hash, so it verifies at checkout for that kind and no other.
+ * WITHOUT one it is a PREVIEW (`preview: true`): both buckets are matched as the cart hint matches them (no settlement, no
+ * postcode), the prices are indicative and NO handle is issued; a carrier method is unavailable `no_settlement`.
+ * Response: the single-kind shape plus `mode` ('single'|'all'), `preview` and `zones` {address, pickup} (each {id, name} or null;
+ * `zone` stays the first matched bucket's: the address one, else the pickup one; neither matching is the usual 422
+ * `no_zone_for_destination`). In `all` mode each method has NO method-level price, handle, threshold facts or
+ * `serves_destination` (null); `available` is "available for at least one kind"; and `destinations` is an object keyed
+ * address | office | locker holding only the kinds the method serves in a bucket whose zone offers it: {available, price, handle,
+ * free_applies, free_above_minor, remaining_to_free_minor, unavailable_reason}. Methods are in order of first appearance (the
+ * address bucket first). In a single-kind quote `destinations` is absent. Each `groups[]` entry has `destinations` (address,
+ * office, locker: the union over its methods) and, in an `all` quote, a `from_minor` over its methods' kinds. The merchant filter
+ * runs once per kind (its context carries `destination_kind`). The limiter counts an `all` request as ONE hit.
+ *
+ * THE HINT is kind-aware: `free_shipping_hint.destinations` lists the kinds of the chosen method's free shipping IN SCOPE of the
+ * request (the asked kind; the matched buckets' kinds for `all`), and the sentence names them ("to an office or a locker") unless
+ * they are every kind the method serves in that scope, when it is the sentence it always was.
  *
  * A PICKUP-POINT DELIVERY IS QUOTED FROM THE SETTLEMENT THE CLIENT SENDS. The client
  * MUST QUOTE AGAIN AFTER THE CUSTOMER CHOOSES A POINT: the chosen point's settlement
@@ -132,13 +153,14 @@ class ShippingQuoteController extends Controller
 
         $validated = $request->validate([
             'address_id' => 'nullable|string|prohibits:delivery_type,country,settlement,postal_code,pickup_kind',
-            'delivery_type' => 'required_without:address_id|in:street_address,pickup_point',
+            'delivery_type' => 'required_without:address_id|in:street_address,pickup_point,all',
             'country' => ['required_without:address_id', 'string', new KnownCountryCode('delivery.country.invalid')],
-            'settlement' => 'required_without:address_id|string|min:1|max:255',
+            // Required for a street address and a pickup point; OPTIONAL for `all` (none = a PREVIEW, stage 5g-2b).
+            'settlement' => ['required_if:delivery_type,street_address,pickup_point', 'nullable', 'string', 'min:1', 'max:255'],
             'postal_code' => 'nullable|string|max:20',
             // The pickup point's KIND (stage 5g-2a): the customer's dropdown choice, so the free-shipping set of each kind prices it. Optional:
             // none = a pickup point of unspecified kind, priced as cautiously as the dearest kind. A street address has none.
-            'pickup_kind' => ['nullable', 'prohibited_if:delivery_type,street_address', 'string', 'in:office,locker'],
+            'pickup_kind' => ['nullable', 'prohibited_if:delivery_type,street_address,all', 'string', 'in:office,locker'],
         ], [
             'country.required_without' => __('delivery.country.required'),
         ]);
@@ -155,6 +177,10 @@ class ShippingQuoteController extends Controller
 
             if ($cart === null) {
                 throw new ShippingQuoteRefusedException(ShippingQuoteRefusedException::EMPTY_CART);
+            }
+
+            if (($validated['delivery_type'] ?? null) === 'all') {
+                return response()->json($this->toArrayAll($this->quotes->quoteAllKinds($cart, $accountId, $validated['country'], $validated['settlement'] ?? null, $validated['postal_code'] ?? null)));
             }
 
             $result = $addressId !== null
@@ -204,6 +230,13 @@ class ShippingQuoteController extends Controller
             'currency' => $result->currency,
             'goods_after_discount' => ['minor' => $result->goodsAfterDiscountMinor, 'currency' => $result->currency],
             'zone' => ['id' => $result->zoneId, 'name' => $result->zoneName],
+            'mode' => 'single',
+            'preview' => false,
+            // Which bucket this single-kind quote matched; the other one was not asked.
+            'zones' => [
+                'address' => $result->bucket === 'address' ? ['id' => $result->zoneId, 'name' => $result->zoneName] : null,
+                'pickup' => $result->bucket === 'pickup' ? ['id' => $result->zoneId, 'name' => $result->zoneName] : null,
+            ],
             'methods' => array_map(static fn (MethodQuote $m): array => [
                 'id' => $m->methodId,
                 'name' => $m->name,
@@ -222,6 +255,84 @@ class ShippingQuoteController extends Controller
                 'delivery_type' => $m->deliveryType,
             ], $result->methods),
             'groups' => QuoteGroups::build($result->methods, $result->currency),
+            'free_shipping_hint' => $result->freeShippingHint?->toArray(),
+        ];
+    }
+
+    /**
+     * The `all` quote as JSON (stage 5g-2b, design 9.3.4). Same top-level shape as a single-kind quote, plus `mode`, `preview` and
+     * `zones`; each method carries `destinations` (keyed address | office | locker, ONLY the kinds the method serves in a bucket whose
+     * zone offers it) and has no method-level price, handle, threshold facts or `serves_destination` (they belong to a kind).
+     *
+     * @return array<string, mixed>
+     */
+    private function toArrayAll(AllKindsQuoteResult $result): array
+    {
+        $methods = [];
+        $representatives = [];
+        $kindQuotes = [];
+
+        foreach ($result->methods() as $method) {
+            $first = $method['first'];
+            $destinations = [];
+            $availableAny = false;
+            $reason = null;
+
+            foreach (AllKindsQuoteResult::KINDS as $kind) {
+                $quote = $method['kinds'][$kind] ?? null;
+
+                if ($quote === null) {
+                    continue;
+                }
+
+                $availableAny = $availableAny || $quote->isAvailable();
+                $reason ??= $quote->unavailableReason;
+                $destinations[$kind] = [
+                    'available' => $quote->isAvailable(),
+                    'price' => $quote->isAvailable() ? ['minor' => $quote->amountMinor, 'currency' => $quote->currency] : null,
+                    'handle' => $quote->handle,
+                    // The threshold applies to this kind (it serves the kind and the free set covers it): the facts below are then set.
+                    'free_applies' => $quote->freeAboveMinor !== null,
+                    'free_above_minor' => $quote->freeAboveMinor,
+                    'remaining_to_free_minor' => $quote->remainingToFreeMinor,
+                    'unavailable_reason' => $quote->unavailableReason,
+                ];
+            }
+
+            $representatives[] = $first;
+            $kindQuotes[$first->methodId] = $method['kinds'];
+            $methods[] = [
+                'id' => $first->methodId,
+                'name' => $first->name,
+                'kind' => $first->kind,
+                'requires_pickup_point' => $first->requiresPickupPoint,
+                'destination_scope' => $first->scope(),
+                'serves_destination' => null,
+                'available' => $availableAny,
+                'price' => null,
+                'free_above_minor' => null,
+                'remaining_to_free_minor' => null,
+                'service_code' => null,
+                'handle' => null,
+                'unavailable_reason' => $availableAny ? null : $reason,
+                'courier' => $first->courier,
+                'delivery_type' => $first->deliveryType,
+                'destinations' => $destinations,
+            ];
+        }
+
+        $zone = $result->firstZone();
+
+        return [
+            'cart_id' => $result->cartId,
+            'currency' => $result->currency,
+            'goods_after_discount' => ['minor' => $result->goodsAfterDiscountMinor, 'currency' => $result->currency],
+            'zone' => $zone,
+            'mode' => 'all',
+            'preview' => $result->preview,
+            'zones' => $result->zones,
+            'methods' => $methods,
+            'groups' => QuoteGroups::build($representatives, $result->currency, $kindQuotes),
             'free_shipping_hint' => $result->freeShippingHint?->toArray(),
         ];
     }

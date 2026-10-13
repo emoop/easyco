@@ -217,8 +217,9 @@ class DestinationScopeQuoteAndResolverTest extends TestCase
         $pickup = $this->postJson('/api/shipping/quote', ['delivery_type' => 'pickup_point', 'country' => 'BG', 'settlement' => 'Sofia'])->assertOk();
 
         $expectedGroups = [
-            ['courier' => 'Econt', 'methods' => [$street->json('methods.0.id'), $office], 'from_minor' => 400, 'currency' => 'EUR'],
-            ['courier' => 'Speedy', 'methods' => [$any], 'from_minor' => 450, 'currency' => 'EUR'],
+            // 5g-2b: each group gains `destinations`, the kinds its methods serve (the same for either kind asked)
+            ['courier' => 'Econt', 'methods' => [$street->json('methods.0.id'), $office], 'from_minor' => 400, 'currency' => 'EUR', 'destinations' => ['address', 'office']],
+            ['courier' => 'Speedy', 'methods' => [$any], 'from_minor' => 450, 'currency' => 'EUR', 'destinations' => ['address', 'office', 'locker']],
         ];
         $this->assertSame($expectedGroups, $street->json('groups'), 'from_minor counts the pickup-only method although the request is a street address');
         $this->assertSame($expectedGroups, $pickup->json('groups'));

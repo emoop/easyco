@@ -499,7 +499,8 @@ class PickupPointContractTest extends TestCase
         $with = $this->postJson('/api/shipping/quote', ['delivery_type' => 'pickup_point', 'country' => 'BG', 'settlement' => 'Sofia', 'pickup_point_name' => 'ignored', 'pickup_point_address' => 'ignored'])->assertOk();
         $without = $this->postJson('/api/shipping/quote', ['delivery_type' => 'pickup_point', 'country' => 'BG', 'settlement' => 'Sofia'])->assertOk();
 
-        $this->assertSame(['cart_id', 'currency', 'goods_after_discount', 'zone', 'methods', 'groups', 'free_shipping_hint'], array_keys($without->json()));
+        // 5g-2b: the additive mode, preview and zones (before: cart_id, currency, goods_after_discount, zone, methods, groups, free_shipping_hint)
+        $this->assertSame(['cart_id', 'currency', 'goods_after_discount', 'zone', 'mode', 'preview', 'zones', 'methods', 'groups', 'free_shipping_hint'], array_keys($without->json()));
         $this->assertSame(array_keys($without->json('methods.0')), array_keys($with->json('methods.0')));
         $this->assertSame($without->json('methods.0.price'), $with->json('methods.0.price'), 'the new fields are not part of a quote');
         $this->assertStringNotContainsString('ignored', (string) $with->getContent());

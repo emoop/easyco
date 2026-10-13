@@ -30,18 +30,20 @@ final class QuoteOffers
         public readonly string $pricingHash,
         public readonly array $methods,
         public readonly ?FreeShippingHint $freeShippingHint = null,
+        // Which bucket of the destination this answers: 'address' | 'pickup' (stage 5g-2b; the response's `zones` names it).
+        public readonly ?string $bucket = null,
     ) {
     }
 
     /** @param list<MethodQuote> $methods */
     public function withMethods(array $methods): self
     {
-        return new self($this->cartId, $this->currency, $this->goodsAfterDiscountMinor, $this->zoneId, $this->zoneName, $this->pricingHash, $methods, $this->freeShippingHint);
+        return new self($this->cartId, $this->currency, $this->goodsAfterDiscountMinor, $this->zoneId, $this->zoneName, $this->pricingHash, $methods, $this->freeShippingHint, $this->bucket);
     }
 
     /** The same offers with another hint (stage 4b: recomputed from the list the filter left). */
     public function withFreeShippingHint(?FreeShippingHint $hint): self
     {
-        return new self($this->cartId, $this->currency, $this->goodsAfterDiscountMinor, $this->zoneId, $this->zoneName, $this->pricingHash, $this->methods, $hint);
+        return new self($this->cartId, $this->currency, $this->goodsAfterDiscountMinor, $this->zoneId, $this->zoneName, $this->pricingHash, $this->methods, $hint, $this->bucket);
     }
 }

@@ -19,6 +19,8 @@ final class ShippingQuoteResult
         public readonly string $pricingHash,
         public readonly array $methods,
         public readonly ?FreeShippingHint $freeShippingHint = null,
+        // Which bucket of the destination this answers: 'address' | 'pickup' (stage 5g-2b; the response's `zones` names it).
+        public readonly ?string $bucket = null,
     ) {
     }
 

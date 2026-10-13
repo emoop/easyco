@@ -234,9 +234,10 @@ class ShippingQuoteGroupingTest extends TestCase
         $json = $this->quote()->json();
 
         $this->assertSame(
-            ['cart_id', 'currency', 'free_shipping_hint', 'goods_after_discount', 'groups', 'methods', 'zone'],
+            ['cart_id', 'currency', 'free_shipping_hint', 'goods_after_discount', 'groups', 'methods', 'mode', 'preview', 'zone', 'zones'],
             $this->sorted(array_keys($json)),
-            'the only new top-level key is groups',
+            // 5g-2b: the additive mode, preview and zones (was: the only new top-level key is groups)
+            'the new top-level keys are groups, mode, preview and zones',
         );
 
         $old = ['available', 'free_above_minor', 'handle', 'id', 'kind', 'name', 'price', 'remaining_to_free_minor', 'requires_pickup_point', 'service_code', 'unavailable_reason'];
@@ -269,8 +270,9 @@ class ShippingQuoteGroupingTest extends TestCase
         $groups = QuoteGroups::build([$priced('1', 'Econt', 900), $down, $priced('2', null, 100), $priced('3', 'Econt', 500)], 'EUR');
 
         $this->assertSame([
-            ['courier' => 'Econt', 'methods' => ['1', '9', '3'], 'from_minor' => 500, 'currency' => 'EUR'],
-            ['courier' => null, 'methods' => ['2'], 'from_minor' => 100, 'currency' => 'EUR'],
+            // 5g-2b: each group gains `destinations` (none here: these hand-built quotes state no served kinds)
+            ['courier' => 'Econt', 'methods' => ['1', '9', '3'], 'from_minor' => 500, 'currency' => 'EUR', 'destinations' => []],
+            ['courier' => null, 'methods' => ['2'], 'from_minor' => 100, 'currency' => 'EUR', 'destinations' => []],
         ], $groups);
         $this->assertSame([], QuoteGroups::build([], 'EUR'));
     }

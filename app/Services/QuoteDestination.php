@@ -77,6 +77,21 @@ final class QuoteDestination
         return $this->isPickupPoint() ? $this->pickupKind : ShippingDeliveryType::ADDRESS;
     }
 
+    /**
+     * The kinds this destination stands for, in canonical order (stage 5g-2b): an address is [address]; an office or a locker is
+     * itself; a pickup point of unstated kind is [office, locker]. The kind-aware free-shipping hint reads it as its SCOPE.
+     *
+     * @return list<ShippingDeliveryType>
+     */
+    public function scopeKinds(): array
+    {
+        if (! $this->isPickupPoint()) {
+            return [ShippingDeliveryType::ADDRESS];
+        }
+
+        return $this->pickupKind === null ? ShippingDeliveryType::pickupKinds() : [$this->pickupKind];
+    }
+
     /** The same destination as the rate calculator reads it (the free-shipping set is per kind). */
     public function rateDestination(): RateDestination
     {

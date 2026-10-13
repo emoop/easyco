@@ -191,6 +191,7 @@ class ShippingQuoteHintAfterFilterTest extends TestCase
             'remaining_minor' => 3000,
             'currency' => 'EUR',
             'text' => $response->json('free_shipping_hint.text'),
+            'destinations' => ['address'], // 5g-2b: the additive in-scope free kinds
         ]);
     }
 

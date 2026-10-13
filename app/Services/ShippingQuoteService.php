@@ -15,6 +15,8 @@ use EasyCo\Shipping\Carrier\ShippingContext;
 use EasyCo\Shipping\Carrier\ShippingQuote;
 use EasyCo\Shipping\Contracts\ShippingMethodRepository;
 use EasyCo\Shipping\Contracts\ShippingZoneRepository;
+use EasyCo\Address\Enums\AddressDeliveryType;
+use EasyCo\Shipping\Enums\ShippingDeliveryType;
 use EasyCo\Shipping\Enums\ShippingMethodKind;
 use EasyCo\Shipping\Matching\PostcodeNormalizer;
 use EasyCo\Shipping\Matching\ZoneDestination;
@@ -92,6 +94,27 @@ final class ShippingQuoteService
      */
     public function applyQuotesFilter(QuoteOffers $offers, QuoteDestination $destination): QuoteOffers
     {
+        $final = $this->filteredMethods($offers, $destination);
+
+        // The hint was computed before the filter: recompute it from what is finally offered (stage 4b, §9.1.7),
+        // so it never names a method the customer cannot choose. No query: the facts are on the quotes. The facts
+        // are read from the method's own PRE-filter quote, in its original order: a filter that rebuilds a quote
+        // (to change its amount) carries no threshold facts, and the hint is goods against the threshold, not price.
+        // The scope is the kind of this destination (stage 5g-2b): it never names a method that is not free for it.
+        return $offers->withMethods($final)->withFreeShippingHint($this->freeShippingHint->readFromQuotes($this->survivors($offers, $final), $offers->currency, $destination->scopeKinds()));
+    }
+
+    /**
+     * Runs the `shipping.quotes` filter over ONE destination's list and validates what comes back. The context carries
+     * `destination_kind` (stage 5g-2b, Q12): 'address' | 'office' | 'locker' | 'pickup' (a pickup point of unstated kind), so EVERY
+     * call states which kind it prices. An `all` quote calls it once per kind; the contract is the same each time.
+     *
+     * @return list<MethodQuote> the accepted methods, in the original order
+     *
+     * @throws ShippingQuoteFilterException
+     */
+    private function filteredMethods(QuoteOffers $offers, QuoteDestination $destination): array
+    {
         $filtered = Hook::apply('shipping.quotes', $offers->methods, [
             'cart_id' => $offers->cartId,
             'currency' => $offers->currency,
@@ -100,18 +123,23 @@ final class ShippingQuoteService
             'country' => $destination->countryCode,
             'settlement' => $destination->settlement,
             'is_pickup_point' => $destination->isPickupPoint(),
+            'destination_kind' => $destination->hashKind(),
         ]);
 
-        $final = $this->validatedFilterOutput($offers->methods, $filtered);
+        return $this->validatedFilterOutput($offers->methods, $filtered);
+    }
 
-        // The hint was computed before the filter: recompute it from what is finally offered (stage 4b, §9.1.7),
-        // so it never names a method the customer cannot choose. No query: the facts are on the quotes. The facts
-        // are read from the method's own PRE-filter quote, in its original order: a filter that rebuilds a quote
-        // (to change its amount) carries no threshold facts, and the hint is goods against the threshold, not price.
+    /**
+     * The PRE-filter quotes that survived the filter, in their original order (the facts the hint reads are theirs).
+     *
+     * @param  list<MethodQuote>  $final
+     * @return list<MethodQuote>
+     */
+    private function survivors(QuoteOffers $offers, array $final): array
+    {
         $surviving = array_flip(array_map(static fn (MethodQuote $quote): string => $quote->methodId, $final));
-        $remaining = array_values(array_filter($offers->methods, static fn (MethodQuote $quote): bool => isset($surviving[$quote->methodId])));
 
-        return $offers->withMethods($final)->withFreeShippingHint($this->freeShippingHint->readFromQuotes($remaining, $offers->currency));
+        return array_values(array_filter($offers->methods, static fn (MethodQuote $quote): bool => isset($surviving[$quote->methodId])));
     }
 
     /**
@@ -159,13 +187,15 @@ final class ShippingQuoteService
             // below), but one that STATES another scope is refused like any other changed field.
             if ($item->name !== $before->name || $item->kind !== $before->kind || $item->requiresPickupPoint !== $before->requiresPickupPoint
                 || ($item->destinationScope !== null && $item->destinationScope !== $before->destinationScope)
+                || ($item->servedKinds !== null && $item->servedKinds !== $before->servedKinds)
+                || ($item->freeKinds !== null && $item->freeKinds !== $before->freeKinds)
                 || $item->currency !== $before->currency || $item->serviceCode !== $before->serviceCode
                 || $item->unavailableReason !== $before->unavailableReason || $item->handle !== null) {
                 throw ShippingQuoteFilterException::because(ShippingQuoteFilterException::CHANGED_FIELD, $item->methodId);
             }
 
-            // The courier group facts are the method row's, whatever a filter rebuilt (stage 5f).
-            $accepted[$item->methodId] = $item->withGrouping($before->courier, $before->deliveryType)->withDestination($before->destinationScope, $before->servesDestination);
+            // The courier group facts and the served / free kinds (5g-2b) are the method row's, whatever a filter rebuilt (stage 5f).
+            $accepted[$item->methodId] = $item->withGrouping($before->courier, $before->deliveryType)->withDestination($before->destinationScope, $before->servesDestination)->withKinds($before->servedKinds, $before->freeKinds);
         }
 
         uasort($accepted, static fn (MethodQuote $a, MethodQuote $b): int => $order[$a->methodId] <=> $order[$b->methodId]);
@@ -192,11 +222,22 @@ final class ShippingQuoteService
     /** @throws ShippingQuoteRefusedException */
     public function offers(Cart $cart, ?string $accountId, QuoteDestination $destination): QuoteOffers
     {
+        return $this->offersFor($this->context($cart, $accountId), $destination);
+    }
+
+    /**
+     * The part of a quote that does not depend on where the parcel goes (stage 5g-2b, design 9.3.4): the empty-cart and
+     * no-priced-lines refusals, the ONE cart pricing (goods after discount, unpriced lines skipped), the lines' classes and weights
+     * (one query), the store's normalizer and the ordered zone list. Built once per request and shared by every bucket and kind.
+     *
+     * @throws ShippingQuoteRefusedException
+     */
+    public function context(Cart $cart, ?string $accountId): QuoteContext
+    {
         if ($cart->isEmpty()) {
             throw new ShippingQuoteRefusedException(ShippingQuoteRefusedException::EMPTY_CART);
         }
 
-        $cartId = (string) $cart->id();
         $currency = DefaultCurrency::get()->code();
 
         // 1. Goods after discount, from the ONE shared calculation (unpriced lines skipped).
@@ -224,53 +265,171 @@ final class ShippingQuoteService
             }
         }
 
-        // 3. The zone.
-        $normalizer = $this->normalizers->forCurrentLocale();
-        $match = $this->zoneMatcher->match(
+        return new QuoteContext(
+            $cart,
+            (string) $cart->id(),
+            $currency,
+            $pricing->goodsAfterDiscount()->minorValue(),
+            $rateLines,
+            $weightKnown ? $weight : null,
+            $this->normalizers->forCurrentLocale(),
             $this->zones->allOrdered(),
+        );
+    }
+
+    /**
+     * Every active method of the zone the destination matched, priced, for ONE destination (the single-kind quote, and what
+     * offers() has always returned).
+     *
+     * @throws ShippingQuoteRefusedException no_zone_for_destination
+     */
+    public function offersFor(QuoteContext $context, QuoteDestination $destination): QuoteOffers
+    {
+        $bucket = $this->bucketFor($context, $destination)
+            ?? throw new ShippingQuoteRefusedException(ShippingQuoteRefusedException::NO_ZONE_FOR_DESTINATION);
+
+        return $this->offersForKind($context, $bucket, $destination);
+    }
+
+    /**
+     * Step 3-4a: the zone of this destination and that zone's ACTIVE methods, or null when no zone covers it. $zoneMethods is a
+     * per-request memo (zone id => methods) so a zone two buckets share is read ONCE.
+     *
+     * @param array<string, list<ShippingMethod>> $zoneMethods
+     */
+    public function bucketFor(QuoteContext $context, QuoteDestination $destination, array &$zoneMethods = []): ?QuoteBucket
+    {
+        $match = $this->zoneMatcher->match(
+            $context->zones,
             new ZoneDestination($destination->countryCode, $destination->settlement, $destination->postcode, $destination->isPickupPoint()),
-            $normalizer,
+            $context->normalizer,
         );
 
         if (! $match->isMatched()) {
-            throw new ShippingQuoteRefusedException(ShippingQuoteRefusedException::NO_ZONE_FOR_DESTINATION);
+            return null;
         }
 
         $zone = $match->zone();
-        $goodsMinor = $pricing->goodsAfterDiscount()->minorValue();
+        $zoneMethods[(string) $zone->id()] ??= $this->methods->forZone((string) $zone->id(), activeOnly: true);
 
-        // 4. The zone's active methods: local ones priced here, CARRIER ones asked.
-        $zoneMethods = $this->methods->forZone((string) $zone->id(), activeOnly: true);
-        $byId = [];
+        return new QuoteBucket($zone, $zoneMethods[(string) $zone->id()]);
+    }
 
-        foreach ($zoneMethods as $method) {
-            $byId[(string) $method->id()] = $method;
-        }
-
+    /**
+     * Step 4b: rate the bucket's methods for this destination KIND (the calculator is pure: three kinds are three cheap passes) and
+     * ask the CARRIER methods (once per bucket, answers remembered). Prices, the pricing hash (this kind's own) and the hint of the
+     * request's kind.
+     */
+    public function offersForKind(QuoteContext $context, QuoteBucket $bucket, QuoteDestination $destination): QuoteOffers
+    {
         // The destination goes into the rating (stage 5g-2a): the free-shipping set is per kind, never cheaper than what is stated.
-        $rates = $this->calculator->ratesFor($zoneMethods, new RateRequest($currency, $goodsMinor, $rateLines, $destination->rateDestination()));
-        $context = $this->contextFor($destination, $currency, $goodsMinor, $weightKnown ? $weight : null);
+        $rates = $this->calculator->ratesFor($bucket->methods, new RateRequest($context->currency, $context->goodsMinor, $context->rateLines, $destination->rateDestination()));
+        $shipping = $this->contextFor($destination, $context->currency, $context->goodsMinor, $context->weightGrams);
         $offered = [];
 
         foreach ($rates as $rate) {
-            $method = $byId[$rate->methodId];
-            $offered[] = $rate->needsQuote() ? $this->carrierMethod($method, $rate, $context, $destination) : MethodQuote::priced(
-                $rate->methodId, $method->name(), $method->kind()->value, $method->requiresPickupPoint(), $currency, $rate->amountMinor(), null,
+            $method = $bucket->byId[$rate->methodId];
+            $offered[] = $rate->needsQuote() ? $this->carrierMethod($method, $rate, $shipping, $destination, $bucket) : MethodQuote::priced(
+                $rate->methodId, $method->name(), $method->kind()->value, $method->requiresPickupPoint(), $context->currency, $rate->amountMinor(), null,
                 $rate->freeAboveMinor, $rate->remainingToFreeMinor, $method->courier(), $method->deliveryType()?->value,
                 $method->destinationScope()->value, $method->servesKind($destination->kind(), $destination->isPickupPoint()),
+                self::servedKindsOf($method), self::freeKindsOf($method),
             );
         }
 
         return new QuoteOffers(
-            $cartId,
-            $currency,
-            $goodsMinor,
-            (string) $zone->id(),
-            $zone->name(),
-            self::pricingHashFor($destination, $normalizer->normalize((string) $destination->settlement), (string) $zone->id(), $goodsMinor, $currency, $cart),
+            $context->cartId,
+            $context->currency,
+            $context->goodsMinor,
+            (string) $bucket->zone->id(),
+            $bucket->zone->name(),
+            self::pricingHashFor($destination, $context->normalizer->normalize((string) $destination->settlement), (string) $bucket->zone->id(), $context->goodsMinor, $context->currency, $context->cart),
             $offered,
-            $this->freeShippingHint->read($zoneMethods, $rates, $currency),
+            $this->freeShippingHint->read($bucket->methods, $rates, $context->currency, $destination->scopeKinds()),
+            $destination->isPickupPoint() ? 'pickup' : 'address',
         );
+    }
+
+    /**
+     * The `all` quote (stage 5g-2b, design 9.3.4): every method with its price for EACH kind of destination — address, office,
+     * locker — from ONE request: one context (one cart pricing), at most two buckets (the address and the pickup point are matched
+     * separately: a postcode-narrowed zone may match the one and not the other), each zone's methods read once, three pure rating
+     * passes. The merchant filter runs once per kind. With a settlement the answer is FINAL: a handle per (method, kind), each from
+     * THAT kind's own pricing hash, so it verifies only for the kind it was quoted for. Without one it is a PREVIEW (both buckets
+     * matched as the cart hint does, no postcode): prices are indicative and NO handle is issued.
+     *
+     * @throws ShippingQuoteRefusedException no_zone_for_destination when neither bucket matched; the empty-cart / no-priced-lines refusals
+     * @throws ShippingQuoteFilterException
+     */
+    public function quoteAllKinds(Cart $cart, ?string $accountId, string $countryCode, ?string $settlement, ?string $postalCode): AllKindsQuoteResult
+    {
+        $context = $this->context($cart, $accountId);
+        $settlement = $settlement === null || trim($settlement) === '' ? null : trim($settlement);
+        $preview = $settlement === null;
+
+        $address = QuoteDestination::forAddress(AddressDeliveryType::STREET_ADDRESS, $countryCode, $settlement, $preview ? null : $postalCode);
+        $pickup = static fn (?ShippingDeliveryType $kind): QuoteDestination => QuoteDestination::forAddress(AddressDeliveryType::PICKUP_POINT, $countryCode, $settlement, null, $kind);
+
+        $zoneMethods = [];
+        $buckets = ['address' => $this->bucketFor($context, $address, $zoneMethods), 'pickup' => $this->bucketFor($context, $pickup(null), $zoneMethods)];
+
+        if ($buckets['address'] === null && $buckets['pickup'] === null) {
+            throw new ShippingQuoteRefusedException(ShippingQuoteRefusedException::NO_ZONE_FOR_DESTINATION);
+        }
+
+        $kinds = [
+            'address' => [$buckets['address'], $address],
+            'office' => [$buckets['pickup'], $pickup(ShippingDeliveryType::OFFICE)],
+            'locker' => [$buckets['pickup'], $pickup(ShippingDeliveryType::LOCKER)],
+        ];
+
+        $results = [];
+        $survivingByKind = [];
+
+        foreach ($kinds as $kind => [$bucket, $destination]) {
+            if ($bucket === null) {
+                continue;
+            }
+
+            $offers = $this->offersForKind($context, $bucket, $destination);
+            $final = $this->filteredMethods($offers, $destination);
+            $survivingByKind[$kind] = $this->survivors($offers, $final);
+            $offers = $offers->withMethods($final);
+
+            $results[$kind] = $preview ? $this->withoutHandles($offers) : $this->issueHandles($offers);
+        }
+
+        return new AllKindsQuoteResult(
+            $context->cartId,
+            $context->currency,
+            $context->goodsMinor,
+            $preview,
+            [
+                'address' => $buckets['address'] === null ? null : ['id' => (string) $buckets['address']->zone->id(), 'name' => $buckets['address']->zone->name()],
+                'pickup' => $buckets['pickup'] === null ? null : ['id' => (string) $buckets['pickup']->zone->id(), 'name' => $buckets['pickup']->zone->name()],
+            ],
+            $results,
+            // Read from what each kind's filter left (its surviving pre-filter quotes carry the facts), so a kind the filter removed for a method is not in scope for it.
+            $this->freeShippingHint->readFromKindLists($survivingByKind, $context->currency),
+        );
+    }
+
+    /** The offers as a result with NO handle (a preview: nothing is issued, nothing is cached). */
+    private function withoutHandles(QuoteOffers $offers): ShippingQuoteResult
+    {
+        return new ShippingQuoteResult($offers->cartId, $offers->currency, $offers->goodsAfterDiscountMinor, $offers->zoneId, $offers->zoneName, $offers->pricingHash, $offers->methods, $offers->freeShippingHint, $offers->bucket);
+    }
+
+    /** @return list<string> the kinds the method serves, as values (address | office | locker) */
+    private static function servedKindsOf(ShippingMethod $method): array
+    {
+        return array_map(static fn (ShippingDeliveryType $k): string => $k->value, $method->servedKinds());
+    }
+
+    /** @return list<string> the kinds its free-shipping set really covers (stored set within the served kinds) */
+    private static function freeKindsOf(ShippingMethod $method): array
+    {
+        return array_map(static fn (ShippingDeliveryType $k): string => $k->value, $method->effectiveFreeDestinations());
     }
 
     /** Step two: a handle for every offered method that has a price. Nothing is issued for an unavailable one. */
@@ -284,7 +443,7 @@ final class ShippingQuoteService
                 : $method;
         }
 
-        return new ShippingQuoteResult($offers->cartId, $offers->currency, $offers->goodsAfterDiscountMinor, $offers->zoneId, $offers->zoneName, $offers->pricingHash, $methods, $offers->freeShippingHint);
+        return new ShippingQuoteResult($offers->cartId, $offers->currency, $offers->goodsAfterDiscountMinor, $offers->zoneId, $offers->zoneName, $offers->pricingHash, $methods, $offers->freeShippingHint, $offers->bucket);
     }
 
     /**
@@ -346,11 +505,13 @@ final class ShippingQuoteService
         return new ShippingContext($destination->countryCode, $destination->settlement, $destination->isPickupPoint(), $currency, $goodsMinor, null, $weightGrams);
     }
 
-    private function carrierMethod(ShippingMethod $method, MethodRate $rate, ?ShippingContext $context, QuoteDestination $destination): MethodQuote
+    private function carrierMethod(ShippingMethod $method, MethodRate $rate, ?ShippingContext $context, QuoteDestination $destination, QuoteBucket $bucket): MethodQuote
     {
         $id = $rate->methodId;
         $serves = $method->servesKind($destination->kind(), $destination->isPickupPoint());
-        $make = static fn (string $reason): MethodQuote => MethodQuote::unavailable($id, $method->name(), ShippingMethodKind::CARRIER->value, $method->requiresPickupPoint(), $rate->currency, $reason, $method->courier(), $method->deliveryType()?->value, $method->destinationScope()->value, $serves);
+        $servedKinds = self::servedKindsOf($method);
+        $freeKinds = self::freeKindsOf($method);
+        $make = static fn (string $reason): MethodQuote => MethodQuote::unavailable($id, $method->name(), ShippingMethodKind::CARRIER->value, $method->requiresPickupPoint(), $rate->currency, $reason, $method->courier(), $method->deliveryType()?->value, $method->destinationScope()->value, $serves, $servedKinds, $freeKinds);
 
         // The merchant restricted this method to the other kind of destination: the carrier is NOT asked (no wasted call, no cost).
         if (! $serves) {
@@ -361,10 +522,25 @@ final class ShippingQuoteService
             return $make(MethodQuote::NO_SETTLEMENT);
         }
 
-        $result = $this->carrierQuotes->quotes((string) $rate->carrierCode, $context, CallBudget::milliseconds(QuoteCachePolicy::CARRIER_BUDGET_MS));
+        // Asked ONCE per bucket: the office and the locker of an `all` quote read the same answer (the carrier is not told the kind).
+        $answer = $bucket->carrierAnswers[$id] ??= $this->askCarrier((string) $rate->carrierCode, $context);
+
+        if ($answer['reason'] !== null) {
+            return $make($answer['reason']);
+        }
+
+        $cheapest = $answer['quote'];
+
+        return MethodQuote::priced($id, $method->name(), ShippingMethodKind::CARRIER->value, $method->requiresPickupPoint(), $rate->currency, $cheapest->amountMinor, $cheapest->serviceCode, null, null, $method->courier(), $method->deliveryType()?->value, $method->destinationScope()->value, true, $servedKinds, $freeKinds);
+    }
+
+    /** @return array{quote: ?ShippingQuote, reason: ?string} the carrier's cheapest quote, or why there is none */
+    private function askCarrier(string $carrierCode, ShippingContext $context): array
+    {
+        $result = $this->carrierQuotes->quotes($carrierCode, $context, CallBudget::milliseconds(QuoteCachePolicy::CARRIER_BUDGET_MS));
 
         if (! $result->isAvailable()) {
-            return $make($result->reason()->value);
+            return ['quote' => null, 'reason' => $result->reason()->value];
         }
 
         $cheapest = null;
@@ -376,10 +552,6 @@ final class ShippingQuoteService
             }
         }
 
-        if ($cheapest === null) {
-            return $make(MethodQuote::NO_QUOTE);
-        }
-
-        return MethodQuote::priced($id, $method->name(), ShippingMethodKind::CARRIER->value, $method->requiresPickupPoint(), $rate->currency, $cheapest->amountMinor, $cheapest->serviceCode, null, null, $method->courier(), $method->deliveryType()?->value, $method->destinationScope()->value, true);
+        return $cheapest === null ? ['quote' => null, 'reason' => MethodQuote::NO_QUOTE] : ['quote' => $cheapest, 'reason' => null];
     }
 }
