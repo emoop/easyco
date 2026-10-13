@@ -7,6 +7,7 @@ use App\Filament\NavigationGroup;
 use App\Filament\Resources\OrderResource\Pages\ListOrders;
 use App\Filament\Resources\OrderResource\Pages\ViewOrder;
 use App\Rules\KnownCountryCode;
+use App\Rules\PlainText;
 use App\Filament\Resources\OrderResource\PaymentReceiptDialog;
 use App\Filament\Resources\OrderResource\RefundDialog;
 use App\Filament\Support\HelpLink;
@@ -805,6 +806,14 @@ class OrderResource extends Resource
                                 ->hiddenLabel()
                                 ->html()
                                 ->getStateUsing(fn (OrderModel $record): string => static::deliveryAddressHtml($record)),
+                            // The customer's own note to the order (checkout RN-1), its own block under the address: customer input, so escaped
+                            // (e() then nl2br: the line breaks they typed are kept); only when there is one.
+                            static::divider()->visible(fn (OrderModel $record): bool => filled($record->customer_note)),
+                            TextEntry::make('customer_note')
+                                ->label(__('orders.fields.customer_note'))
+                                ->html()
+                                ->visible(fn (OrderModel $record): bool => filled($record->customer_note))
+                                ->getStateUsing(fn (OrderModel $record): string => nl2br(e((string) $record->customer_note))),
                         ])
                         ->columns(1),
                     Section::make(__('orders.sections.payment_shipping'))
@@ -1054,6 +1063,8 @@ class OrderResource extends Resource
                 $record->address_line_1 ?? $na,
                 $record->address_line_2,
                 trim(($record->postal_code ?? '').' '.($record->city ?? $na)),
+                // The region (checkout RN-1), between the city and the country, only when the order stored one.
+                filled($record->region) ? $record->region : null,
                 $record->country ?? $na,
             ]
             : [
@@ -2071,6 +2082,9 @@ class OrderResource extends Resource
                         ->required(fn (Get $get): bool => $record->country !== null || $isStreet($get)),
                     TextInput::make('delivery.city')->label(__('orders.fields.city'))->default($record->city)->visible($isStreet)->required(),
                     TextInput::make('delivery.postal_code')->label(__('orders.fields.postal_code'))->default($record->postal_code)->visible($isStreet),
+                    // The region (checkout RN-1): editable for a street address like the city. Staff are NOT bound by the per-country rule of Settings >
+                    // Checkout (that governs what a customer types): only the length and plain text. The customer's note has no field here: it is write-once.
+                    TextInput::make('delivery.region')->label(__('orders.fields.region'))->default($record->region)->visible($isStreet)->maxLength(100)->rule(new PlainText()),
                     TextInput::make('delivery.address_line_1')->label(__('orders.fields.address_line_1'))->default($record->address_line_1)->visible($isStreet)->required(),
                     TextInput::make('delivery.address_line_2')->label(__('orders.fields.address_line_2'))->default($record->address_line_2)->visible($isStreet),
                     TextInput::make('delivery.carrier_code')->label(__('orders.fields.carrier_code'))->default($record->carrier_code)

@@ -262,6 +262,7 @@ final class OrderEditor
                 carrierCode: $delivery->carrierCode,
                 pickupPointReference: $delivery->pickupPointReference,
                 settlement: $delivery->settlement,
+                region: $delivery->region,
             );
         }
 

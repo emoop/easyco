@@ -30,6 +30,11 @@ final class ProductPriceDisplayTest extends TestCase
                 return null;
             }
 
+            public function getMany(array $keys): array
+            {
+                return array_combine($keys, array_map($this->get(...), $keys));
+            }
+
             public function set(string $key, string $value): void {}
 
             public function forget(string $key): void {}

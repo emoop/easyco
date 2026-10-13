@@ -16,5 +16,8 @@
  */
 return [
     'plain_text' => 'The :attribute may not contain control characters or bidirectional formatting characters.',
+    'plain_multiline_text' => 'The :attribute may not contain control characters (other than line breaks) or bidirectional formatting characters.',
+    // Checkout RN-1: the merchant made the region required for the delivery country (Settings > Checkout).
+    'region_required' => 'The region is required for this country.',
     'money_format' => 'The :attribute must be a plain amount like 10.00 — digits with an optional decimal point, no sign, no spaces, and no more decimals than the currency uses.',
 ];

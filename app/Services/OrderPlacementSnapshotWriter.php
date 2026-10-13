@@ -53,6 +53,8 @@ final class OrderPlacementSnapshotWriter
             'pickup_point_name' => $order->pickupPointName(),
             'pickup_point_address' => $order->pickupPointAddress(),
             'pickup_point_kind' => $order->pickupPointKind(),
+            'region' => $order->region(),
+            'customer_note' => $order->customerNote(),
             'created_at' => $placedAt,
         ];
     }

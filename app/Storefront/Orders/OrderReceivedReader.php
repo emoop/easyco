@@ -88,7 +88,7 @@ final class OrderReceivedReader
             'subtotal' => $this->money($order->subtotal()),
             'discount' => $order->discount()->isPositive() ? ['code' => $order->appliedPromotionCode(), 'amount' => $this->money($order->discount())] : null,
             'total' => $this->money($order->total()),
-            'destination' => $this->destination($order, $locale),
+            'destination' => $this->withCustomerNote($this->destination($order, $locale), $order, $locale),
             'payment' => [
                 'method' => $method,
                 'bank' => $method === 'bank_transfer' && ! $needsAttention ? $this->bank($order) : null,
@@ -100,6 +100,32 @@ final class OrderReceivedReader
     private function money(Money $money): string
     {
         return $this->prices->format($money->decimalValue(), $money->currency());
+    }
+
+    /**
+     * The customer's own note (checkout RN-1) as the last lines of the destination block, "Your note: ...", one line per line they typed
+     * (the page escapes every part; nothing here is HTML). With no note the destination is returned untouched, so the page is what it was.
+     *
+     * @param  array{kind: string, lines: list<string>}  $destination
+     * @return array{kind: string, lines: list<string>}
+     */
+    private function withCustomerNote(array $destination, Order $order, string $locale): array
+    {
+        if ($order->customerNote() === null) {
+            return $destination;
+        }
+
+        $parts = array_values(array_filter(array_map('trim', preg_split('/
+||
+/', $order->customerNote()) ?: []), static fn (string $line): bool => $line !== ''));
+
+        if ($parts === []) {
+            return $destination;
+        }
+
+        $parts[0] = (string) __('storefront.received_note', [], $locale).': '.$parts[0];
+
+        return ['kind' => $destination['kind'], 'lines' => [...$destination['lines'], ...$parts]];
     }
 
     /** @return list<array{name: string, label: string, quantity: int, total: string}> */
@@ -155,6 +181,8 @@ final class OrderReceivedReader
             $order->addressLine1(),
             $order->addressLine2(),
             trim(($order->postalCode() ?? '').' '.($order->city() ?? '')),
+            // The region (checkout RN-1), after the postal code and city; nothing at all when the order has none.
+            $order->region(),
             $countryName,
         ], static fn (?string $part): bool => $part !== null && trim($part) !== ''))];
     }

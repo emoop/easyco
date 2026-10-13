@@ -62,6 +62,35 @@ final class EloquentSiteSettingsRepository implements SiteSettingsRepository
     }
 
     /**
+     * Several keys with ONE query (checkout RN-1b), through the SAME memo as get(): a key already known is served from it, the rest
+     * are read together with a single `whereIn`, and EVERY one of them is memoized afterwards — its stored value, or null when the
+     * row does not exist (exactly what get() memoizes). With everything memoized it costs no query, and an empty list costs none.
+     *
+     * @param  list<string>  $keys
+     * @return array<string, ?string>
+     */
+    public function getMany(array $keys): array
+    {
+        $missing = array_values(array_unique(array_filter($keys, fn (string $key): bool => ! array_key_exists($key, $this->memo))));
+
+        if ($missing !== []) {
+            $found = SiteSettingModel::whereIn('key', $missing)->pluck('value', 'key')->all();
+
+            foreach ($missing as $key) {
+                $this->memo[$key] = isset($found[$key]) ? (string) $found[$key] : null;
+            }
+        }
+
+        $result = [];
+
+        foreach ($keys as $key) {
+            $result[$key] = $this->memo[$key];
+        }
+
+        return $result;
+    }
+
+    /**
      * "key is a non-empty string" is the only invariant this concept
      * has (§6) — enforced trivially here rather than in a dedicated
      * domain entity, per the design doc's own reasoning.

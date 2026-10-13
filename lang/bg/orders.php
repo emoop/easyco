@@ -31,6 +31,8 @@ return [
         'delivery_type' => 'Начин на доставка',
         'country' => 'Държава',
         'city' => 'Град',
+        'region' => 'Област',
+        'customer_note' => 'Бележка от клиента',
         'postal_code' => 'Пощенски код',
         'address_line_1' => 'Адрес',
         'address_line_2' => 'Адрес (продължение)',

@@ -120,6 +120,7 @@ return [
     'received_destination' => 'Delivery to',
     'received_pickup_point' => 'Pick-up point',
     'received_payment' => 'Payment',
+    'received_note' => 'Your note',
     'received_email_sent' => 'We sent a confirmation to :email.',
 
     // Texts the checkout script prints (handed to it through data attributes; see partials/messages.blade.php).

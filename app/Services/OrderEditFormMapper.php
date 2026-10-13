@@ -31,10 +31,10 @@ use InvalidArgumentException;
  */
 final class OrderEditFormMapper
 {
-    /** The eleven delivery fields, in Order::reviseDelivery()'s own order. */
+    /** The delivery fields (the eleven of Order::reviseDelivery()'s own order, then the region of a street address — checkout RN-1). */
     public const DELIVERY_FIELDS = [
         'delivery_type', 'recipient_name', 'phone', 'country', 'city', 'postal_code',
-        'address_line_1', 'address_line_2', 'carrier_code', 'pickup_point_reference', 'settlement',
+        'address_line_1', 'address_line_2', 'carrier_code', 'pickup_point_reference', 'settlement', 'region',
     ];
 
     /**
@@ -101,6 +101,7 @@ final class OrderEditFormMapper
             carrierCode: $next['carrier_code'],
             pickupPointReference: $next['pickup_point_reference'],
             settlement: $next['settlement'],
+            region: $next['region'],
         );
     }
 

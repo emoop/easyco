@@ -32,6 +32,7 @@ return [
             'pickup_point' => 'Pick-up point',
             'courier' => 'Courier',
             'reference' => 'Point code',
+            'note' => 'Your note',
         ],
     ],
 

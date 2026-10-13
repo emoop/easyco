@@ -29,6 +29,17 @@ class MailConfiguratorResolutionTest extends TestCase
                 return $this->values[$key] ?? null;
             }
 
+            public function getMany(array $keys): array
+            {
+                $result = [];
+
+                foreach ($keys as $key) {
+                    $result[$key] = $this->get($key);
+                }
+
+                return $result;
+            }
+
             public function set(string $key, string $value): void
             {
                 $this->values[$key] = $value;

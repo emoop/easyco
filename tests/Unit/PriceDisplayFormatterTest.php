@@ -26,6 +26,11 @@ final class PriceDisplayFormatterTest extends TestCase
                 return $key === 'site.currency_symbol_position' ? $this->currencySymbolPosition : null;
             }
 
+            public function getMany(array $keys): array
+            {
+                return array_combine($keys, array_map($this->get(...), $keys));
+            }
+
             public function set(string $key, string $value): void {}
 
             public function forget(string $key): void {}
@@ -105,6 +110,11 @@ final class PriceDisplayFormatterTest extends TestCase
             public function get(string $key): ?string
             {
                 return null;
+            }
+
+            public function getMany(array $keys): array
+            {
+                return array_combine($keys, array_map($this->get(...), $keys));
             }
 
             public function set(string $key, string $value): void {}

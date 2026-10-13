@@ -120,6 +120,7 @@ return [
     'received_destination' => 'Доставка до',
     'received_pickup_point' => 'Офис или автомат',
     'received_payment' => 'Плащане',
+    'received_note' => 'Вашата бележка',
     'received_email_sent' => 'Изпратихме потвърждение на :email.',
 
     // Текстове, които скриптът за поръчка показва (подават му се през data атрибути; вж. partials/messages.blade.php).

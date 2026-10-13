@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Rules\KnownCountryCode;
+use App\Rules\PlainMultilineText;
 use App\Rules\PlainText;
 use App\Services\CheckoutInput;
 use App\Services\CheckoutOrchestrator;
@@ -35,6 +36,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\App;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
 use LogicException;
 use Throwable;
@@ -150,6 +152,8 @@ class CheckoutController extends Controller
             pickupPointName: $validated['pickup_point_name'] ?? null,
             pickupPointAddress: $validated['pickup_point_address'] ?? null,
             pickupPointKind: $validated['pickup_point_kind'] ?? null,
+            region: $validated['region'] ?? null,
+            customerNote: $validated['customer_note'] ?? null,
         );
 
         // Each refusal is caught by type and answered with a stable `reason` and a FIXED,
@@ -205,6 +209,9 @@ class CheckoutController extends Controller
             $this->logFailure('checkout.invalid', $input, $e, withMessage: true);
 
             return $this->refusal('checkout_invalid', 422);
+        } catch (ValidationException $e) {
+            // The merchant's region rule (checkout RN-1) refused the typed address before anything was written: the usual 422 field error.
+            throw $e;
         } catch (Throwable $e) {
             // Anything unforeseen: a JSON body in the store language, never a stack trace (APP_DEBUG or not).
             // The cart is kept; a retry is safe (a placed order replays).
@@ -355,7 +362,7 @@ class CheckoutController extends Controller
             // resolved against a payment adapter above: max:255 keeps an
             // overlong value a 422 field error rather than a 500 from MySQL.
             'payment_method' => 'required|string|max:255',
-            'address_id' => 'nullable|string|prohibits:delivery_type,country,city,postal_code,address_line_1,address_line_2,carrier_code,pickup_point_reference,pickup_point_kind,settlement',
+            'address_id' => 'nullable|string|prohibits:delivery_type,country,city,postal_code,address_line_1,address_line_2,carrier_code,pickup_point_reference,pickup_point_kind,settlement,region',
             'delivery_type' => 'required_without:address_id|in:street_address,pickup_point',
             // Required whenever the address is typed fresh, for BOTH delivery types (owner
             // decision D1). With address_id the saved address's own country is used and the
@@ -381,6 +388,11 @@ class CheckoutController extends Controller
             // The KIND of the pickup point (stage 5g-2a, design 9.3.6): office | locker, OPTIONAL in this stage (a pickup order with none is
             // priced as "kind unspecified", never cheaper than a stated kind). Today a CLAIM, read once through PickupKindSource.
             'pickup_point_kind' => ['nullable', 'prohibited_if:delivery_type,street_address', 'string', 'in:office,locker'],
+            // The REGION (state / province) of a STREET address (checkout RN-1, checkout-region-and-note-design.md 2.4): free text. Whether it is
+            // required, optional or ignored for the typed country is the merchant's rule (CheckoutRegionPolicy), applied by the orchestrator.
+            'region' => ['nullable', 'prohibited_if:delivery_type,pickup_point', 'string', 'max:100', new PlainText()],
+            // The customer's NOTE to the order (RN-1, design 3): up to 1000 characters, line breaks allowed, nothing else of a control kind.
+            'customer_note' => ['nullable', 'string', 'max:1000', new PlainMultilineText()],
             // The shipping choice (stage 4e). Only the TYPE and size are checked here, so an array, an object or a huge
             // string never reaches the resolver; the shape rules (digits, `qh_` + 40) are the resolver's alone, and a
             // missing value is its `shipping_required`, not a validation error. Validation messages never echo input.
@@ -414,6 +426,8 @@ class CheckoutController extends Controller
             'pickup_point_name' => $order->pickupPointName(),
             'pickup_point_address' => $order->pickupPointAddress(),
             'pickup_point_kind' => $order->pickupPointKind(),
+            'region' => $order->region(),
+            'customer_note' => $order->customerNote(),
             'lines' => $this->saleLinesToArray($order->transactionId()),
         ];
     }

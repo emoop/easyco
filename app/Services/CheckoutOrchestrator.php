@@ -2,6 +2,10 @@
 
 namespace App\Services;
 
+use App\Settings\CheckoutRegionPolicy;
+use App\Settings\RegionMode;
+use Illuminate\Validation\ValidationException;
+
 use App\Services\Exceptions\CartClaimLostException;
 use App\Services\Exceptions\CartNotFoundForCheckoutException;
 use App\Services\Exceptions\CheckoutCurrencyMismatchException;
@@ -93,6 +97,7 @@ final class CheckoutOrchestrator
         private readonly SettlementNormalizerResolver $normalizers,
         private readonly OrderPlacementSnapshotWriter $snapshotWriter,
         private readonly PickupKindSource $pickupKinds,
+        private readonly CheckoutRegionPolicy $regionPolicy,
     ) {
     }
 
@@ -130,6 +135,11 @@ final class CheckoutOrchestrator
         if ($this->claimFor($input) !== null) {
             return $this->replayFor($input);
         }
+
+        // The merchant's region rule and the customer's note, applied ONCE here (checkout RN-1): everything below uses these two values.
+        // A refusal (the region is required for this country) leaves nothing written.
+        $region = $this->regionFor($input);
+        $customerNote = $this->noteFor($input);
 
         // BEFORE Phase 1: a saved address that cannot make an order (no country,
         // a pre-D1 pickup point) is refused while nothing has been written. The
@@ -193,7 +203,7 @@ final class CheckoutOrchestrator
         }
 
         try {
-            $result = DB::transaction(fn () => $this->placeWithinTransaction($input, $placedAt, $selection, $destination));
+            $result = DB::transaction(fn () => $this->placeWithinTransaction($input, $placedAt, $selection, $destination, $region, $customerNote));
         } catch (CartClaimLostException) {
             // A concurrent request claimed this cart between the fast
             // path above and this attempt's own claim (step 10) —
@@ -399,7 +409,7 @@ final class CheckoutOrchestrator
         return $input->guestCartToken !== null && $cart->sessionToken() === $input->guestCartToken;
     }
 
-    private function placeWithinTransaction(CheckoutInput $input, DateTimeImmutable $placedAt, ShippingSelection $selection, QuoteDestination $destination): CheckoutResult
+    private function placeWithinTransaction(CheckoutInput $input, DateTimeImmutable $placedAt, ShippingSelection $selection, QuoteDestination $destination, ?string $region, ?string $customerNote): CheckoutResult
     {
         // Step 1: load the cart, reject empty.
         $cart = $this->carts->findById($input->cartId);
@@ -467,7 +477,7 @@ final class CheckoutOrchestrator
         $perLineShares = $pricing->perLineShares();
 
         // Step 5: resolve the Address.
-        $address = $this->resolveAddress($input, $destination);
+        $address = $this->resolveAddress($input, $destination, $region);
 
         // Step 6: resolve the Client.
         $client = $this->clientResolver->resolve($input->accountId, $input->recipientName);
@@ -560,6 +570,8 @@ final class CheckoutOrchestrator
             pickupPointName: $address->pickupPointName(),
             pickupPointAddress: $address->pickupPointAddress(),
             pickupPointKind: $address->pickupPointKind(),
+            region: $address->region(),
+            customerNote: $customerNote,
             shipping: $shipping,
             shippingMethodName: $selection->methodName,
             shippingMethodCode: $selection->methodId,
@@ -641,7 +653,7 @@ final class CheckoutOrchestrator
         }
     }
 
-    private function resolveAddress(CheckoutInput $input, QuoteDestination $destination): Address
+    private function resolveAddress(CheckoutInput $input, QuoteDestination $destination, ?string $region): Address
     {
         if ($input->addressId !== null) {
             if ($input->accountId === null) {
@@ -678,6 +690,35 @@ final class CheckoutOrchestrator
             pickupPointName: $input->pickupPointName,
             pickupPointAddress: $input->pickupPointAddress,
             pickupPointKind: $destination->pickupKind?->value,
+            region: $region,
         );
+    }
+
+    /**
+     * The region to store, by the merchant's rule for the TYPED street address's country (design 2.4) — the request is the truth:
+     * optional: the trimmed value or NULL; required: a blank one is a 422 on `region`; hidden: a value is IGNORED and NULL is stored (Q2).
+     * A saved address brings its own region (one saved without it under a now-required country still checks out, Q5) and a pickup point has none.
+     *
+     * @throws ValidationException
+     */
+    private function regionFor(CheckoutInput $input): ?string
+    {
+        if ($input->addressId !== null || $input->deliveryType !== \EasyCo\Address\Enums\AddressDeliveryType::STREET_ADDRESS) {
+            return null;
+        }
+
+        $value = $input->region === null ? '' : trim($input->region);
+
+        return match ($this->regionPolicy->modeFor((string) $input->country)) {
+            RegionMode::HIDDEN => null,
+            RegionMode::REQUIRED => $value !== '' ? $value : throw ValidationException::withMessages(['region' => __('validation.region_required')]),
+            RegionMode::OPTIONAL => $value === '' ? null : $value,
+        };
+    }
+
+    /** The customer's note exactly as typed; a blank (whitespace-only) one is no note. */
+    private function noteFor(CheckoutInput $input): ?string
+    {
+        return $input->customerNote === null || trim($input->customerNote) === '' ? null : $input->customerNote;
     }
 }

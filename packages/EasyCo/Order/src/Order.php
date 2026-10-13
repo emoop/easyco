@@ -114,9 +114,15 @@ final class Order
         private ?string $pickupPointAddress = null,
         // The KIND of the pickup point that priced this order (stage 5g-2a): 'office' | 'locker' | null = not stated. A plain validated string, no import from Shipping.
         private ?string $pickupPointKind = null,
+        // The REGION of a street address (checkout RN-1), changed with the delivery like the city; and the customer's ORDER NOTE:
+        // the customer's own words, written ONCE at placement and never changed by any method (a plain, readonly value).
+        private ?string $region = null,
+        private readonly ?string $customerNote = null,
     ) {
         self::assertPickupDisplay($deliveryType, $pickupPointName, $pickupPointAddress);
         self::assertPickupKind($deliveryType, $pickupPointKind);
+        self::assertRegion($deliveryType, $region);
+        self::assertCustomerNote($customerNote);
 
         if ($editRevision < 0) {
             throw new InvalidArgumentException('Order editRevision must not be negative.');
@@ -315,6 +321,34 @@ final class Order
         }
     }
 
+    /** The region (checkout RN-1): only for a STREET_ADDRESS, 1 to 100 characters when given; null = none. */
+    private static function assertRegion(OrderDeliveryType $deliveryType, ?string $region): void
+    {
+        if ($region === null) {
+            return;
+        }
+
+        if ($deliveryType === OrderDeliveryType::PICKUP_POINT) {
+            throw new InvalidArgumentException('Order region must be null when deliveryType is PICKUP_POINT, got a non-null value.');
+        }
+
+        if (trim($region) === '' || mb_strlen($region) > 100) {
+            throw new InvalidArgumentException('Order region must be 1 to 100 characters when given; use null for none.');
+        }
+    }
+
+    /** The customer's note (checkout RN-1): not blank, at most 1000 CHARACTERS (not bytes) when given; null = none. */
+    private static function assertCustomerNote(?string $customerNote): void
+    {
+        if ($customerNote === null) {
+            return;
+        }
+
+        if (trim($customerNote) === '' || mb_strlen($customerNote) > 1000) {
+            throw new InvalidArgumentException('Order customerNote must be 1 to 1000 characters when given; use null for none.');
+        }
+    }
+
     private static function trimmedOrNull(?string $value): ?string
     {
         return $value === null ? null : trim($value);
@@ -453,6 +487,8 @@ final class Order
         ?string $pickupPointName = null,
         ?string $pickupPointAddress = null,
         ?string $pickupPointKind = null,
+        ?string $region = null,
+        ?string $customerNote = null,
     ): self {
         self::assertCountryShape($country);
 
@@ -508,6 +544,9 @@ final class Order
             pickupPointName: self::trimmedOrNull($pickupPointName),
             pickupPointAddress: self::trimmedOrNull($pickupPointAddress),
             pickupPointKind: self::trimmedOrNull($pickupPointKind),
+            region: self::trimmedOrNull($region),
+            // Kept EXACTLY as typed (a multi-line note keeps its line breaks); a blank one is not a note and is refused here.
+            customerNote: $customerNote,
         );
     }
 
@@ -559,6 +598,8 @@ final class Order
         ?string $pickupPointName = null,
         ?string $pickupPointAddress = null,
         ?string $pickupPointKind = null,
+        ?string $region = null,
+        ?string $customerNote = null,
     ): self {
         return new self(
             id: $id,
@@ -595,6 +636,8 @@ final class Order
             pickupPointName: $pickupPointName,
             pickupPointAddress: $pickupPointAddress,
             pickupPointKind: $pickupPointKind,
+            region: $region,
+            customerNote: $customerNote,
         );
     }
 
@@ -830,6 +873,7 @@ final class Order
         ?string $pickupPointName = null,
         ?string $pickupPointAddress = null,
         ?string $pickupPointKind = null,
+        ?string $region = null,
     ): void {
         $this->assertEditable();
 
@@ -845,6 +889,8 @@ final class Order
         $pickupPointAddress = self::trimmedOrNull($pickupPointAddress) ?? ($sameOffice ? $this->pickupPointAddress : null);
         // The kind (stage 5g-2a) follows the same rule: kept for the same office, cleared for another office or a street address. An edit never re-prices shipping (section 7), so the kind is display.
         $pickupPointKind = self::trimmedOrNull($pickupPointKind) ?? ($sameOffice ? $this->pickupPointKind : null);
+        $region = self::trimmedOrNull($region);
+        self::assertRegion($deliveryType, $region);
         self::assertPickupDisplay($deliveryType, $pickupPointName, $pickupPointAddress);
         self::assertPickupKind($deliveryType, $pickupPointKind);
         self::assertNotEmpty('recipientName', $recipientName);
@@ -876,6 +922,9 @@ final class Order
         $this->pickupPointName = $pickupPointName;
         $this->pickupPointAddress = $pickupPointAddress;
         $this->pickupPointKind = $pickupPointKind;
+        // The region is part of the street address and is replaced with it (a pickup point has none). The customer's note is NOT part of
+        // the delivery and is never touched here: it is the customer's words, written once.
+        $this->region = $region;
     }
 
     /**
@@ -986,5 +1035,17 @@ final class Order
     public function pickupPointKind(): ?string
     {
         return $this->pickupPointKind;
+    }
+
+    /** The region (state / province) of a street address, or null: none. */
+    public function region(): ?string
+    {
+        return $this->region;
+    }
+
+    /** The customer's note to the order, or null: none. WRITE-ONCE: set at placement, never edited (not by the customer, not by staff). */
+    public function customerNote(): ?string
+    {
+        return $this->customerNote;
     }
 }

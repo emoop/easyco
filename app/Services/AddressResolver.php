@@ -83,6 +83,7 @@ class AddressResolver
         ?string $pickupPointName = null,
         ?string $pickupPointAddress = null,
         ?string $pickupPointKind = null,
+        ?string $region = null,
     ): Address {
         $address = Address::create(
             deliveryType: $deliveryType,
@@ -100,6 +101,7 @@ class AddressResolver
             pickupPointName: $pickupPointName,
             pickupPointAddress: $pickupPointAddress,
             pickupPointKind: $pickupPointKind,
+            region: $region,
         );
 
         $this->addresses->save($address);

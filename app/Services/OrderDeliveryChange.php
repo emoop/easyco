@@ -33,5 +33,8 @@ final class OrderDeliveryChange
         public readonly ?string $carrierCode = null,
         public readonly ?string $pickupPointReference = null,
         public readonly ?string $settlement = null,
+        // The region of a street address (checkout RN-1), replaced with the rest of the delivery; null for a pickup point. Staff are NOT bound
+        // by the merchant's per-country region rule: it governs what a CUSTOMER types (the edit form checks only the length and plain text).
+        public readonly ?string $region = null,
     ) {}
 }

@@ -79,4 +79,35 @@ return [
         ],
     ],
 
+    // Checkout settings page (checkout RN-1, checkout-region-and-note-design.md section 5).
+    'checkout_page' => [
+        'title' => 'Checkout',
+        'navigation_label' => 'Checkout',
+        'region_section' => 'Region (state) field',
+        'region_help' => 'The region (state, province) of a street address. It is shown and optional by default; choose a different default, or make exceptions for some countries. A pickup point has no region.',
+        'default_label' => 'Default for all countries',
+        'exceptions_label' => 'Exceptions by country',
+        'add_exception' => 'Add a country',
+        'country_label' => 'Country',
+        'mode_label' => 'Region field',
+        'mode' => [
+            'optional' => 'Shown, optional',
+            'required' => 'Shown, required',
+            'hidden' => 'Hidden',
+        ],
+        'fact_default' => [
+            'optional' => 'Shown and optional for every country',
+            'required' => 'Shown and required for every country',
+            'hidden' => 'Hidden for every country',
+        ],
+        'fact_except' => 'except:',
+        'fact' => [
+            'optional' => 'shown, optional',
+            'required' => 'required',
+            'hidden' => 'hidden',
+        ],
+        'exceptions_invalid' => 'Each country may be listed once, with a mode.',
+        'save_label' => 'Save',
+        'saved_notification' => 'Settings saved',
+    ],
 ];

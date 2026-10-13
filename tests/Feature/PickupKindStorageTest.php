@@ -236,7 +236,13 @@ class PickupKindStorageTest extends TestCase
         $out = [];
 
         foreach (['addresses', 'orders', 'order_placement_snapshots'] as $table) {
-            $out[$table] = (string) DB::select("SHOW CREATE TABLE {$table}")[0]->{'Create Table'};
+            // Compared as a SET of lines: dropping and re-adding a column puts it last, and since checkout RN-1 other columns follow
+            // `pickup_point_kind`. The columns and CHECKs must be identical; their order is not the point.
+            $lines = explode("
+", (string) DB::select("SHOW CREATE TABLE {$table}")[0]->{'Create Table'});
+            sort($lines);
+            $out[$table] = implode("
+", array_map(static fn (string $line): string => rtrim($line, ','), $lines));
         }
 
         return $out;

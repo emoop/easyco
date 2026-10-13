@@ -191,9 +191,18 @@ final class OrderConfirmationContent
                 $order->addressLine1(),
                 $order->addressLine2(),
                 trim(($order->postalCode() ?? '').' '.($order->city() ?? '')),
+                // The region (checkout RN-1), after the postal code and city; nothing at all when the order has none.
+                $order->region(),
                 $countryName,
             ], static fn (?string $part): bool => $part !== null && trim($part) !== '');
             $rows[] = [$t('address'), implode("\n", array_map(static fn (string $part): string => MailHeader::clean($part, 200), $address))];
+        }
+
+        // The customer's own note (RN-1): customer input, so every line is cleaned like the other customer strings here (control and bidi
+        // characters out, header-safe) and the block escapes it; the line breaks the customer typed are kept.
+        if ($order->customerNote() !== null) {
+            $lines = array_map(static fn (string $line): string => MailHeader::clean($line, 1000), preg_split('/\r\n|\r|\n/', $order->customerNote()) ?: []);
+            $rows[] = [$t('note'), implode("\n", $lines)];
         }
 
         return MailBlocks::pairs($rows, $t('heading'));

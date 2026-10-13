@@ -54,6 +54,8 @@ class OrderPlacementSnapshotModel extends Model
         'pickup_point_name',
         'pickup_point_address',
         'pickup_point_kind',
+        'region',
+        'customer_note',
         'created_at',
     ];
 

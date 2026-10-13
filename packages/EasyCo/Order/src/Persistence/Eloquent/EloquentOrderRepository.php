@@ -52,6 +52,8 @@ final class EloquentOrderRepository implements OrderRepository
         $model->pickup_point_name = $order->pickupPointName();
         $model->pickup_point_address = $order->pickupPointAddress();
         $model->pickup_point_kind = $order->pickupPointKind();
+        $model->region = $order->region();
+        $model->customer_note = $order->customerNote();
         $model->edit_revision = $order->editRevision();
 
         $model->save();
@@ -127,6 +129,8 @@ final class EloquentOrderRepository implements OrderRepository
             pickupPointName: $model->pickup_point_name,
             pickupPointAddress: $model->pickup_point_address,
             pickupPointKind: $model->pickup_point_kind,
+            region: $model->region,
+            customerNote: $model->customer_note,
         );
     }
 }

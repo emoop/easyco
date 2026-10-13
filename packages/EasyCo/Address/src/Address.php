@@ -57,6 +57,8 @@ final class Address
         private ?string $pickupPointAddress = null,
         // The KIND of the pickup point (stage 5g-2a): 'office' | 'locker' | null = not stated. A plain validated string: this package imports nothing from Shipping.
         private ?string $pickupPointKind = null,
+        // The REGION (state / province) of a STREET address (checkout RN-1): free text, 1 to 100 characters when given, null for a pickup point.
+        private ?string $region = null,
     ) {
         self::assertNotEmpty('recipientName', $recipientName);
         self::assertNotEmpty('phone', $phone);
@@ -74,6 +76,7 @@ final class Address
         );
         self::assertPickupDisplay($deliveryType, $pickupPointName, $pickupPointAddress);
         self::assertPickupKind($deliveryType, $pickupPointKind);
+        self::assertRegion($deliveryType, $region);
     }
 
     private static function assertNotEmpty(string $fieldName, string $value): void
@@ -200,6 +203,25 @@ final class Address
         }
     }
 
+    /**
+     * The region (checkout RN-1, checkout-region-and-note-design.md 2.1): only for a STREET_ADDRESS (a pickup point has its settlement
+     * and the office's own address), 1 to 100 characters when given; null = none (legal: it is optional, and a saved address predates it).
+     */
+    private static function assertRegion(AddressDeliveryType $deliveryType, ?string $region): void
+    {
+        if ($region === null) {
+            return;
+        }
+
+        if ($deliveryType === AddressDeliveryType::PICKUP_POINT) {
+            throw new InvalidArgumentException('Address region must be null when deliveryType is PICKUP_POINT, got a non-null value.');
+        }
+
+        if (trim($region) === '' || mb_strlen($region) > 100) {
+            throw new InvalidArgumentException('Address region must be 1 to 100 characters when given; use null for none.');
+        }
+    }
+
     private static function trimmedOrNull(?string $value): ?string
     {
         return $value === null ? null : trim($value);
@@ -238,6 +260,7 @@ final class Address
         ?string $pickupPointName = null,
         ?string $pickupPointAddress = null,
         ?string $pickupPointKind = null,
+        ?string $region = null,
     ): self {
         self::assertCountryShape($country);
 
@@ -258,6 +281,7 @@ final class Address
             pickupPointName: self::trimmedOrNull($pickupPointName),
             pickupPointAddress: self::trimmedOrNull($pickupPointAddress),
             pickupPointKind: self::trimmedOrNull($pickupPointKind),
+            region: self::trimmedOrNull($region),
         );
     }
 
@@ -287,6 +311,7 @@ final class Address
         ?string $pickupPointName = null,
         ?string $pickupPointAddress = null,
         ?string $pickupPointKind = null,
+        ?string $region = null,
     ): self {
         return new self(
             id: $id,
@@ -305,6 +330,7 @@ final class Address
             pickupPointName: $pickupPointName,
             pickupPointAddress: $pickupPointAddress,
             pickupPointKind: $pickupPointKind,
+            region: $region,
         );
     }
 
@@ -346,7 +372,10 @@ final class Address
         ?string $pickupPointName = null,
         ?string $pickupPointAddress = null,
         ?string $pickupPointKind = null,
+        ?string $region = null,
     ): void {
+        $region = self::trimmedOrNull($region);
+        self::assertRegion($deliveryType, $region);
         $pickupPointName = self::trimmedOrNull($pickupPointName);
         $pickupPointAddress = self::trimmedOrNull($pickupPointAddress);
         $pickupPointKind = self::trimmedOrNull($pickupPointKind);
@@ -381,6 +410,7 @@ final class Address
         $this->pickupPointName = $pickupPointName;
         $this->pickupPointAddress = $pickupPointAddress;
         $this->pickupPointKind = $pickupPointKind;
+        $this->region = $region;
     }
 
     public function accountId(): ?string
@@ -459,5 +489,11 @@ final class Address
     public function pickupPointKind(): ?string
     {
         return $this->pickupPointKind;
+    }
+
+    /** The region (state / province) of a street address, or null: none. Never set on a pickup point. */
+    public function region(): ?string
+    {
+        return $this->region;
     }
 }

@@ -36,6 +36,7 @@ final class EloquentAddressRepository implements AddressRepository
         $model->pickup_point_name = $address->pickupPointName();
         $model->pickup_point_address = $address->pickupPointAddress();
         $model->pickup_point_kind = $address->pickupPointKind();
+        $model->region = $address->region();
 
         $model->save();
 
@@ -79,6 +80,7 @@ final class EloquentAddressRepository implements AddressRepository
             pickupPointName: $model->pickup_point_name,
             pickupPointAddress: $model->pickup_point_address,
             pickupPointKind: $model->pickup_point_kind,
+            region: $model->region,
         );
     }
 }

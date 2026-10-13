@@ -4,6 +4,9 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Services\PickupKindSource;
+use App\Settings\CheckoutRegionPolicy;
+use App\Settings\RegionMode;
+use Illuminate\Validation\ValidationException;
 use App\Rules\KnownCountryCode;
 use App\Rules\PlainText;
 use EasyCo\Address\Address;
@@ -38,6 +41,7 @@ class AddressController extends Controller
     public function __construct(
         private readonly AddressRepository $addresses,
         private readonly PickupKindSource $pickupKinds,
+        private readonly CheckoutRegionPolicy $regionPolicy,
     ) {
     }
 
@@ -61,6 +65,7 @@ class AddressController extends Controller
             pickupPointName: $validated['pickup_point_name'] ?? null,
             pickupPointAddress: $validated['pickup_point_address'] ?? null,
             pickupPointKind: $this->kindOf($validated),
+            region: $this->regionOf($validated),
         );
 
         $this->addresses->save($address);
@@ -107,6 +112,7 @@ class AddressController extends Controller
             pickupPointName: $validated['pickup_point_name'] ?? null,
             pickupPointAddress: $validated['pickup_point_address'] ?? null,
             pickupPointKind: $this->kindOf($validated),
+            region: $this->regionOf($validated),
         );
 
         $this->addresses->save($address);
@@ -172,6 +178,8 @@ class AddressController extends Controller
             'settlement' => ['required_if:delivery_type,pickup_point', 'prohibited_if:delivery_type,street_address', 'string', 'max:255', new PlainText()],
             // The KIND of the pickup point (stage 5g-2a): office | locker, optional; a street address has none.
             'pickup_point_kind' => ['nullable', 'prohibited_if:delivery_type,street_address', 'string', 'in:office,locker'],
+            // The REGION of a street address (checkout RN-1); the merchant's per-country rule is applied by regionOf().
+            'region' => ['nullable', 'prohibited_if:delivery_type,pickup_point', 'string', 'max:100', new PlainText()],
         ];
     }
 
@@ -187,6 +195,29 @@ class AddressController extends Controller
         }
 
         return $this->pickupKinds->kindFor((string) $validated['carrier_code'], (string) $validated['pickup_point_reference'], $validated['pickup_point_kind'] ?? null)?->value;
+    }
+
+    /**
+     * The region to store, by the merchant's rule for the address's country (RN-1, design 2.4): optional: trimmed or NULL; required: a blank
+     * one is a 422 on `region`; hidden: ignored (NULL). A pickup point has none.
+     *
+     * @param  array<string, mixed>  $validated
+     *
+     * @throws ValidationException
+     */
+    private function regionOf(array $validated): ?string
+    {
+        if (($validated['delivery_type'] ?? null) !== AddressDeliveryType::STREET_ADDRESS->value) {
+            return null;
+        }
+
+        $value = isset($validated['region']) ? trim((string) $validated['region']) : '';
+
+        return match ($this->regionPolicy->modeFor((string) $validated['country'])) {
+            RegionMode::HIDDEN => null,
+            RegionMode::REQUIRED => $value !== '' ? $value : throw ValidationException::withMessages(['region' => __('validation.region_required')]),
+            RegionMode::OPTIONAL => $value === '' ? null : $value,
+        };
     }
 
     private function currentAccountId(): ?string
@@ -213,6 +244,7 @@ class AddressController extends Controller
             'pickup_point_name' => $address->pickupPointName(),
             'pickup_point_address' => $address->pickupPointAddress(),
             'pickup_point_kind' => $address->pickupPointKind(),
+            'region' => $address->region(),
         ];
     }
 }

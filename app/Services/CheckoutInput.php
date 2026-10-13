@@ -58,6 +58,10 @@ final class CheckoutInput
         public readonly ?string $pickupPointAddress = null,
         // The kind the CLIENT claims for a typed pickup point: 'office' | 'locker' (stage 5g-2a). Read ONCE, through PickupKindSource.
         public readonly ?string $pickupPointKind = null,
+        // RN-1: the region of a typed STREET address as the client sent it (the per-country policy is applied ONCE, in the orchestrator),
+        // and the customer's order note (a blank one is no note).
+        public readonly ?string $region = null,
+        public readonly ?string $customerNote = null,
     ) {
     }
 }

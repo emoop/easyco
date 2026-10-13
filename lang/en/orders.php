@@ -31,6 +31,8 @@ return [
         'delivery_type' => 'Delivery type',
         'country' => 'Country',
         'city' => 'City',
+        'region' => 'Region',
+        'customer_note' => 'Customer note',
         'postal_code' => 'Postal code',
         'address_line_1' => 'Address',
         'address_line_2' => 'Address (line 2)',
