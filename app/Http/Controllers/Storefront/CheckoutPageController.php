@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Storefront;
 
 use App\Http\Controllers\Controller;
 use App\Services\PaymentMethodAdapterResolver;
+use App\Settings\CheckoutRegionPolicy;
 use App\Settings\StoreCountry;
 use App\Storefront\Reader\CatalogReader;
 use App\Storefront\Support\PriceFormatter;
@@ -26,10 +27,12 @@ use Illuminate\Http\Response;
  *   paymentMethods  list<array{code: string, label: string}>  from PaymentMethodAdapterResolver::availableMethods(), the same
  *                   list the sandbox uses; the label is `storefront.payment_methods.{code}` (the code itself when unknown)
  *   defaultCountry  string  the store's own country code (BG when none is set)
+ *   regionPolicy    array{default: string, countries: array<string, string>}  CheckoutRegionPolicy::all(), written into the page as a
+ *                   JSON data attribute (an empty list of exceptions is `{}`); the script resolves the region mode of the current country
  */
 final class CheckoutPageController extends Controller
 {
-    public function show(CatalogReader $reader, PriceFormatter $prices, PaymentMethodAdapterResolver $payments, StoreCountry $country): Response
+    public function show(CatalogReader $reader, PriceFormatter $prices, PaymentMethodAdapterResolver $payments, StoreCountry $country, CheckoutRegionPolicy $regions): Response
     {
         $currency = DefaultCurrency::get();
         $zero = $currency->decimalPlaces() > 0 ? '0.'.str_repeat('0', $currency->decimalPlaces()) : '0';
@@ -52,6 +55,7 @@ final class CheckoutPageController extends Controller
                 'priceTemplate' => ['template' => $prices->format(0, $currency->code()), 'zero' => $zero, 'currency' => $currency->code()],
                 'paymentMethods' => $methods,
                 'defaultCountry' => $country->currentOrNull() ?? 'BG',
+                'regionPolicy' => $regions->all(),
             ])
             ->header('Cache-Control', 'private, no-store')
             ->header('X-Robots-Tag', 'noindex');

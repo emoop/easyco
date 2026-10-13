@@ -808,6 +808,39 @@
         @apply mt-3 rounded-md bg-sky-50 p-3 text-sm text-sky-900;
     }
 
+    /* C1b: the kind of the chosen courier (a native select, or one line of text), the region marker, the note counter, the price notice. */
+    .sf-kind-select {
+        @apply w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-base;
+    }
+
+    .sf-kind-text {
+        @apply rounded-md border border-neutral-200 p-3 text-sm text-neutral-900;
+    }
+
+    .sf-field[data-required='true'] label::after {
+        content: ' *';
+    }
+
+    .sf-note-field textarea {
+        @apply w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-base;
+    }
+
+    .sf-note-field textarea[aria-invalid='true'] {
+        @apply border-red-700 bg-red-50;
+    }
+
+    .sf-note-counter {
+        @apply mt-1 text-right text-xs text-neutral-600;
+    }
+
+    .sf-note-counter[data-state='warning'] {
+        @apply font-semibold text-amber-800;
+    }
+
+    .sf-cart-status[data-state='price-changed'] {
+        @apply rounded-md bg-amber-50 p-3 text-sm font-medium text-amber-900;
+    }
+
     .sf-checkout-actions {
         @apply space-y-2;
     }
@@ -934,6 +967,15 @@
 
     .sf-received-destination-line {
         @apply block;
+    }
+
+    .sf-received-destination-kind {
+        @apply font-medium;
+    }
+
+    .sf-received-note {
+        @apply mt-3 text-neutral-800;
+        white-space: pre-line;
     }
 
     .sf-bank-details {

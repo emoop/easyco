@@ -57,7 +57,8 @@ class StorefrontCheckoutScriptTest extends TestCase
         $code = $this->code();
 
         $this->assertMatchesRegularExpression('/if \(submitting \|\| cart === null\) \{\s*return;/', $code);
-        $this->assertStringContainsString('placeOrder.disabled = submitting || cart === null || selection === null || quotePending;', $code);
+        // C1b (A7): also locked until the price is FINAL (not a preview) and while a pick-up point's fields are empty.
+        $this->assertStringContainsString('placeOrder.disabled = submitting || cart === null || selection === null || quotePending || ! selection.final || (isPickupKind(selection.kind) && ! pointFieldsFilled());', $code);
         $this->assertMatchesRegularExpression('/submitting = true;\s*refreshPlaceOrder\(\);/', $code);
         $this->assertStringContainsString('keepLocked = true;', $code, 'after a success the button stays locked while the page navigates');
     }
@@ -112,14 +113,63 @@ class StorefrontCheckoutScriptTest extends TestCase
         $this->assertStringContainsString("body.settlement = fieldValue('city');", $code, "the one place field is the pick-up point's settlement");
     }
 
-    public function test_the_destination_is_quoted_both_ways_because_the_type_is_chosen_after_the_courier(): void
+    public function test_the_destination_is_quoted_once_for_every_kind_with_one_all_kinds_request(): void
     {
         $code = $this->code();
 
-        $this->assertStringContainsString("delivery_type: 'street_address'", $code);
-        $this->assertStringContainsString("delivery_type: 'pickup_point'", $code);
-        $this->assertStringContainsString('buildCouriers(streetData, pickupData)', $code);
+        // ONE quote body, the all-kinds one; the two legacy single-kind quotes (street, pick-up) are gone.
+        $this->assertSame(1, substr_count($code, "'/api/shipping/quote'"), 'one quote call');
+        $this->assertStringContainsString("var body = { delivery_type: 'all', country: country };", $code);
+        $this->assertStringContainsString('body.settlement = place;', $code, 'no place = a preview; a place = the final answer');
+        $this->assertStringNotContainsString("delivery_type: 'street_address'", $code);
+        $this->assertStringNotContainsString("delivery_type: 'pickup_point'", $code);
+        $this->assertStringNotContainsString('quoteBodies', $code);
+        $this->assertStringNotContainsString('buildCouriers(streetData, pickupData)', $code);
+        $this->assertStringNotContainsString('pickup_kind', $code, 'the API prohibits a pick-up kind together with `all`');
+        $this->assertStringContainsString('buildCouriers(data)', $code);
         $this->assertStringContainsString('data.groups', $code, 'the courier groups of the quote are what the choice is built from');
+        $this->assertStringContainsString('method.destinations', $code, 'the kinds of a method come from its `destinations`');
+    }
+
+    public function test_the_payload_carries_the_kind_the_region_and_the_note_under_the_names_the_api_reads(): void
+    {
+        $code = $this->code();
+
+        foreach ([
+            "return isPickupKind(kind) ? 'pickup_point' : 'street_address';",
+            'body.pickup_point_kind = selection.kind;',
+            'body.region = fieldValue(\'region\');',
+            'body.customer_note = note;',
+            'body.carrier_code = selection.carrier;',
+        ] as $needle) {
+            $this->assertStringContainsString($needle, $code, $needle);
+        }
+
+        // The rule: a hidden region is never sent; an empty note is omitted.
+        $this->assertStringContainsString("regionMode() !== 'hidden' && fieldValue('region') !== ''", $code);
+        $this->assertStringContainsString("if (note.trim() !== '') {", $code);
+    }
+
+    public function test_rule_a_a_changed_price_is_never_resubmitted_by_the_script(): void
+    {
+        $code = $this->code();
+
+        // `submit` is called by the browser's submit event only: never from the refusal handling.
+        $this->assertSame(1, substr_count($code, "form.addEventListener('submit', submit);"));
+        $this->assertSame(1, substr_count($code, "api('POST', '/api/checkout'"), 'one call site for the order');
+        $this->assertStringContainsString('adoptFreshPrice(price);', $code);
+        // ...and exactly ONE automatic quote follows (the handle is bound to the old amount), once per refusal site.
+        $this->assertMatchesRegularExpression('/adoptFreshPrice\(price\);\s*selection\.handle = null;\s*scheduleQuote\(true\);/', $code);
+        $this->assertMatchesRegularExpression('/function adoptFreshPrice\(price\) \{\s*selection\.priceMinor = price\.minor;/', $code);
+    }
+
+    public function test_the_note_counts_code_points_and_the_region_rule_is_exported_for_the_agreement_test(): void
+    {
+        $code = $this->code();
+
+        $this->assertStringContainsString('return Array.from(String(text));', $code, 'code points, not UTF-16 units');
+        $this->assertStringContainsString('export { regionModeFor };', $code);
+        $this->assertStringContainsString('Object.prototype.hasOwnProperty.call(countries, code)', $code, 'a country code is never a property lookup on a plain object');
     }
 
     public function test_the_summary_toggle_is_wired_to_aria_expanded_and_the_panel(): void

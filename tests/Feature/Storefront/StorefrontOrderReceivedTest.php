@@ -326,6 +326,89 @@ class StorefrontOrderReceivedTest extends TestCase
         $this->assertDoesNotMatchRegularExpression('/<script|onerror=|javascript:/i', $html);
     }
 
+    // ---- C1b: the delivery kind, the region and the customer's note ---------------------------------------------------------
+
+    /** A pick-up order (the free pick-up method), optionally with the kind and a note. */
+    private function placePickupOrder(?string $kind, array $extra = []): TestResponse
+    {
+        $cartId = $this->postJson('/api/cart/lines', ['variation_id' => $this->variation(), 'quantity' => 1])->assertStatus(201)->json('cart_id');
+
+        return $this->postJson('/api/checkout', [
+            'cart_id' => $cartId,
+            'email' => 'guest@example.com',
+            'recipient_name' => 'Ivan Petrov',
+            'phone' => '+359888000000',
+            'payment_method' => 'cash_on_delivery',
+            'delivery_type' => 'pickup_point',
+            'country' => 'BG',
+            'settlement' => 'Sofia',
+            'carrier_code' => 'Econt',
+            'pickup_point_reference' => 'EC-1',
+            'pickup_point_name' => 'Econt Center',
+            'pickup_point_address' => '1 Main St',
+            ...($kind === null ? [] : ['pickup_point_kind' => $kind]),
+            ...$this->shippingPayload(true),
+            ...$extra,
+        ])->assertStatus(201);
+    }
+
+    public function test_a_pickup_order_shows_the_kind_the_customer_chose_next_to_the_point(): void
+    {
+        $office = $this->get($this->placePickupOrder('office')->json('confirmation_url'))->assertOk()->getContent();
+        $this->assertMatchesRegularExpression('/<span class="sf-received-destination-line sf-received-destination-kind">Office<\/span>\s*<span class="sf-received-destination-line">Econt Center<\/span>/', $office);
+
+        $this->flushSession();
+        $locker = $this->get($this->placePickupOrder('locker')->json('confirmation_url'))->assertOk()->getContent();
+        $this->assertStringContainsString('sf-received-destination-kind">Locker</span>', $locker);
+        $this->assertStringNotContainsString('>Office</span>', $locker);
+    }
+
+    public function test_a_pickup_order_placed_without_a_kind_and_an_address_order_show_no_kind_line(): void
+    {
+        $this->flushSession();
+        $this->assertStringNotContainsString('sf-received-destination-kind', $this->get($this->placePickupOrder(null)->json('confirmation_url'))->getContent());
+
+        $this->flushSession();
+        $this->assertStringNotContainsString('sf-received-destination-kind', $this->get($this->placeOrder()->json('confirmation_url'))->getContent());
+    }
+
+    public function test_the_kind_label_is_translated(): void
+    {
+        app(SiteSettingsRepository::class)->set('site.locale', 'bg');
+
+        $this->assertStringContainsString('sf-received-destination-kind">Автомат</span>', $this->get($this->placePickupOrder('locker')->json('confirmation_url'))->getContent());
+    }
+
+    public function test_the_region_of_a_street_order_is_shown_after_the_city(): void
+    {
+        $cartId = $this->postJson('/api/cart/lines', ['variation_id' => $this->variation(), 'quantity' => 1])->assertStatus(201)->json('cart_id');
+        $url = $this->postJson('/api/checkout', $this->payload((string) $cartId, 'cash_on_delivery', ['region' => 'Sofia-city']))->assertStatus(201)->json('confirmation_url');
+
+        $html = $this->get($url)->assertOk()->getContent();
+
+        $this->assertMatchesRegularExpression('/1000 Sofia<\/span>\s*<span class="sf-received-destination-line">Sofia-city<\/span>\s*<span class="sf-received-destination-line">Bulgaria<\/span>/', $html);
+    }
+
+    public function test_the_note_is_its_own_escaped_block_with_its_line_breaks_kept_by_css(): void
+    {
+        $note = "First <b>line</b>\n\n  Second <script>alert(1)</script> line  \nThird";
+        $html = $this->get($this->placePickupOrder('office', ['customer_note' => $note])->json('confirmation_url'))->assertOk()->getContent();
+
+        $this->assertSame(1, preg_match('/<p class="sf-received-note">(.*?)<\/p>/s', $html, $block), 'one note block');
+        $this->assertSame("Your note: First &lt;b&gt;line&lt;/b&gt;\nSecond &lt;script&gt;alert(1)&lt;/script&gt; line\nThird", $block[1], 'escaped, blank lines dropped, every line break a real newline');
+        $this->assertStringNotContainsString('<br', $block[0], 'no markup is injected for the breaks');
+        $this->assertDoesNotMatchRegularExpression('/<script|<b>/i', $html);
+        $this->assertLessThan(strpos($html, 'sf-received-note'), strpos($html, '</address>'), 'the block comes after the destination, not inside it');
+
+        $css = (string) file_get_contents(dirname(__DIR__, 3).'/resources/css/storefront.css');
+        $this->assertMatchesRegularExpression('/\.sf-received-note \{[^}]*white-space: pre-line;/s', $css, 'the breaks are shown by CSS');
+    }
+
+    public function test_without_a_note_there_is_no_note_block(): void
+    {
+        $this->assertStringNotContainsString('sf-received-note', $this->get($this->placePickupOrder('office')->json('confirmation_url'))->getContent());
+    }
+
     // ---- the cost ---------------------------------------------------------------------------------------------
 
     public function test_the_query_count_of_the_page_is_the_same_for_one_and_for_five_lines(): void

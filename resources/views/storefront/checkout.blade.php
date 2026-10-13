@@ -1,7 +1,8 @@
 @extends('storefront.layout')
 
 @section('content')
-    <section class="sf-checkout" data-sf-checkout>
+    {{-- The region rule per country (CheckoutRegionPolicy::all()): the script resolves the mode of the CURRENT country from it. --}}
+    <section class="sf-checkout" data-sf-checkout data-region-policy="{{ json_encode($regionPolicy, JSON_THROW_ON_ERROR | JSON_FORCE_OBJECT) }}">
         <h1 class="sf-title">{{ __('storefront.checkout_heading') }}</h1>
         <p class="sf-cart-loading" data-sf-checkout-loading>{{ __('storefront.checkout_loading') }}</p>
         <noscript>
@@ -65,9 +66,11 @@
                         <p class="sf-delivery-step-title" id="sf-courier-title">{{ __('storefront.checkout_courier') }}</p>
                         <div class="sf-choice-stack" role="radiogroup" aria-labelledby="sf-courier-title" data-sf-couriers></div>
                     </div>
+                    {{-- After a courier: its kinds. A native <select> for two or more, plain text for exactly one (the script fills both). --}}
                     <div class="sf-delivery-step" data-sf-type-box hidden>
-                        <p class="sf-delivery-step-title" id="sf-type-title">{{ __('storefront.checkout_type') }}</p>
-                        <div class="sf-choice-stack" role="radiogroup" aria-labelledby="sf-type-title" data-sf-types></div>
+                        <label class="sf-delivery-step-title" for="sf-delivery-destination">{{ __('storefront.checkout_type') }}</label>
+                        <select class="sf-kind-select" id="sf-delivery-destination" name="delivery_destination" data-sf-kind-select hidden></select>
+                        <p class="sf-kind-text" data-sf-kind-text hidden></p>
                     </div>
                     <p class="sf-field-error" id="sf-err-shipping_method_id" data-sf-error-for="shipping_method_id" hidden></p>
 
@@ -86,6 +89,12 @@
                             <label for="sf-address-2">{{ __('storefront.checkout_address_2') }}</label>
                             <input id="sf-address-2" name="address_line_2" type="text" autocomplete="address-line2" maxlength="255">
                             <p class="sf-field-error" id="sf-err-address_line_2" data-sf-error-for="address_line_2" hidden></p>
+                        </div>
+                        {{-- The region (state / province): optional, required or hidden per country; the street address only. --}}
+                        <div class="sf-field" data-sf-region-field>
+                            <label for="sf-region">{{ __('storefront.checkout_region') }}</label>
+                            <input id="sf-region" name="region" type="text" autocomplete="address-level1" maxlength="100">
+                            <p class="sf-field-error" id="sf-err-region" data-sf-error-for="region" hidden></p>
                         </div>
                     </div>
 
@@ -108,6 +117,13 @@
                         </div>
                     </div>
                 </fieldset>
+
+                <div class="sf-field sf-note-field">
+                    <label for="sf-note">{{ __('storefront.checkout_note') }}</label>
+                    <textarea id="sf-note" name="customer_note" rows="3" maxlength="1000" placeholder="{{ __('storefront.checkout_note_placeholder') }}" aria-describedby="sf-note-counter"></textarea>
+                    <p class="sf-note-counter" id="sf-note-counter" data-sf-note-counter>{{ __('storefront.js_checkout.ck_note_counter', ['count' => 0, 'max' => 1000]) }}</p>
+                    <p class="sf-field-error" id="sf-err-customer_note" data-sf-error-for="customer_note" hidden></p>
+                </div>
 
                 <fieldset class="sf-fieldset">
                     <legend class="sf-legend">{{ __('storefront.checkout_payment') }}</legend>

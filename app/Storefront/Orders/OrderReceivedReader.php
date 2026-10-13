@@ -53,7 +53,8 @@ final class OrderReceivedReader
      *   lines: list<array{name: string, label: string, quantity: int, total: string}>,
      *   shipping: ?array{name: string, courier: ?string, price: string, free: bool},
      *   subtotal: string, discount: ?array{code: ?string, amount: string}, total: string,
-     *   destination: array{kind: string, lines: list<string>},
+     *   destination: array{kind: string, pickup_kind: ?string, lines: list<string>},
+     *   note: ?string,
      *   payment: array{method: string, bank: ?array{rows: list<array{0: string, 1: string}>, deadline_days: ?int, instructions: ?string}, cash_on_delivery_due: ?string}
      * }|null
      */
@@ -88,7 +89,8 @@ final class OrderReceivedReader
             'subtotal' => $this->money($order->subtotal()),
             'discount' => $order->discount()->isPositive() ? ['code' => $order->appliedPromotionCode(), 'amount' => $this->money($order->discount())] : null,
             'total' => $this->money($order->total()),
-            'destination' => $this->withCustomerNote($this->destination($order, $locale), $order, $locale),
+            'destination' => $this->destination($order, $locale),
+            'note' => $this->customerNote($order),
             'payment' => [
                 'method' => $method,
                 'bank' => $method === 'bank_transfer' && ! $needsAttention ? $this->bank($order) : null,
@@ -103,29 +105,18 @@ final class OrderReceivedReader
     }
 
     /**
-     * The customer's own note (checkout RN-1) as the last lines of the destination block, "Your note: ...", one line per line they typed
-     * (the page escapes every part; nothing here is HTML). With no note the destination is returned untouched, so the page is what it was.
-     *
-     * @param  array{kind: string, lines: list<string>}  $destination
-     * @return array{kind: string, lines: list<string>}
+     * The customer's own note (checkout RN-1) as one text, one line per line they typed (each line trimmed, blank ones dropped), for the
+     * page's own note block; null when there is none. RAW text: the page escapes it and keeps the line breaks with CSS, never markup.
      */
-    private function withCustomerNote(array $destination, Order $order, string $locale): array
+    private function customerNote(Order $order): ?string
     {
         if ($order->customerNote() === null) {
-            return $destination;
+            return null;
         }
 
-        $parts = array_values(array_filter(array_map('trim', preg_split('/
-||
-/', $order->customerNote()) ?: []), static fn (string $line): bool => $line !== ''));
+        $lines = array_values(array_filter(array_map('trim', preg_split('/\R/u', $order->customerNote()) ?: []), static fn (string $line): bool => $line !== ''));
 
-        if ($parts === []) {
-            return $destination;
-        }
-
-        $parts[0] = (string) __('storefront.received_note', [], $locale).': '.$parts[0];
-
-        return ['kind' => $destination['kind'], 'lines' => [...$destination['lines'], ...$parts]];
+        return $lines === [] ? null : implode("\n", $lines);
     }
 
     /** @return list<array{name: string, label: string, quantity: int, total: string}> */
@@ -163,11 +154,12 @@ final class OrderReceivedReader
         return implode(' / ', $values);
     }
 
-    /** @return array{kind: string, lines: list<string>} */
+    /** @return array{kind: string, pickup_kind: ?string, lines: list<string>} */
     private function destination(Order $order, string $locale): array
     {
         if ($order->deliveryType() === OrderDeliveryType::PICKUP_POINT) {
-            return ['kind' => 'pickup_point', 'lines' => array_values(array_filter([
+            // The kind the customer chose (office | locker; null for an order placed before it was asked, and for any address).
+            return ['kind' => 'pickup_point', 'pickup_kind' => $order->pickupPointKind(), 'lines' => array_values(array_filter([
                 $order->pickupPointName(),
                 $order->pickupPointAddress(),
                 $order->settlement(),
@@ -177,7 +169,7 @@ final class OrderReceivedReader
         $country = $order->country();
         $countryName = $country === null ? null : (CountryNames::forLocale($locale)[$country] ?? $country);
 
-        return ['kind' => 'address', 'lines' => array_values(array_filter([
+        return ['kind' => 'address', 'pickup_kind' => null, 'lines' => array_values(array_filter([
             $order->addressLine1(),
             $order->addressLine2(),
             trim(($order->postalCode() ?? '').' '.($order->city() ?? '')),

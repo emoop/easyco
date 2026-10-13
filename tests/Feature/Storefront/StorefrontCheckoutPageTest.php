@@ -3,10 +3,12 @@
 namespace Tests\Feature\Storefront;
 
 use App\Services\PaymentMethodAdapterResolver;
+use App\Settings\CheckoutRegionPolicy;
 use App\Settings\Contracts\SiteSettingsRepository;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\View;
 use Livewire\Features\SupportAutoInjectedAssets\SupportAutoInjectedAssets;
 use Tests\TestCase;
 
@@ -129,9 +131,10 @@ class StorefrontCheckoutPageTest extends TestCase
         $this->assertStringNotContainsString('sf-carrier-code', $html);
         $this->assertStringNotContainsString('Courier (for example', $html);
 
-        // Courier, then type: two empty, hidden steps the script fills from the quote groups.
+        // Courier, then kind: two empty, hidden steps the script fills from the one `all` quote. The kind is a NATIVE select (with its
+        // label) and a text line for a courier that serves exactly one kind.
         $this->assertMatchesRegularExpression('/<div class="sf-delivery-step" data-sf-courier-box hidden>.*?role="radiogroup" aria-labelledby="sf-courier-title" data-sf-couriers>/s', $html);
-        $this->assertMatchesRegularExpression('/<div class="sf-delivery-step" data-sf-type-box hidden>.*?role="radiogroup" aria-labelledby="sf-type-title" data-sf-types>/s', $html);
+        $this->assertMatchesRegularExpression('/<div class="sf-delivery-step" data-sf-type-box hidden>\s*<label class="sf-delivery-step-title" for="sf-delivery-destination">[^<]+<\/label>\s*<select class="sf-kind-select" id="sf-delivery-destination" name="delivery_destination" data-sf-kind-select hidden><\/select>\s*<p class="sf-kind-text" data-sf-kind-text hidden><\/p>/s', $html);
         $this->assertLessThan(strpos($html, 'data-sf-type-box'), strpos($html, 'data-sf-courier-box'));
 
         // The street fields and the pick-up point's fields start hidden: they appear for the type the customer picks.
@@ -140,6 +143,78 @@ class StorefrontCheckoutPageTest extends TestCase
 
         // ONE place field serves the address and the pick-up point.
         $this->assertSame(1, preg_match_all('/name="city"/', $html));
+    }
+
+    // ---- C1b: the region field, the note, the policy handed to the script -------------------------------------------------------------------
+
+    /** @return array{default: string, countries: array<string, string>} the policy the page hands to the script */
+    private function policyOf(string $html): array
+    {
+        $this->assertSame(1, preg_match('/<section class="sf-checkout" data-sf-checkout data-region-policy="([^"]*)">/', $html, $match), 'the policy is ONE attribute of the checkout section, its value free of a raw quote');
+
+        return json_decode(html_entity_decode($match[1], ENT_QUOTES | ENT_HTML5), true, 512, JSON_THROW_ON_ERROR);
+    }
+
+    public function test_with_no_policy_stored_the_page_says_optional_and_no_exceptions(): void
+    {
+        $html = $this->get('/checkout')->getContent();
+
+        $this->assertStringContainsString('data-region-policy="{&quot;default&quot;:&quot;optional&quot;,&quot;countries&quot;:{}}"', $html, 'an empty list of exceptions is an object, {}');
+        $this->assertSame(['default' => 'optional', 'countries' => []], $this->policyOf($html));
+    }
+
+    public function test_the_stored_policy_is_the_one_in_the_attribute(): void
+    {
+        $settings = app(SiteSettingsRepository::class);
+        $settings->set(CheckoutRegionPolicy::DEFAULT_KEY, 'hidden');
+        $settings->set(CheckoutRegionPolicy::COUNTRIES_KEY, '{"DE":"required","US":"optional"}');
+
+        $this->assertSame(['default' => 'hidden', 'countries' => ['DE' => 'required', 'US' => 'optional']], $this->policyOf($this->get('/checkout')->getContent()));
+    }
+
+    public function test_the_policy_attribute_cannot_be_broken_out_of(): void
+    {
+        // The real policy only ever holds known ISO codes and three words (anything else fails loud), so hostile text is injected where the
+        // view receives it: the attribute must still be ONE attribute and the text must come back unchanged, never as markup.
+        $hostile = ['default' => 'optional', 'countries' => ['"><script>alert(1)</script>' => 'required\'"</section><img src=x onerror=alert(2)>']];
+        View::composer('storefront.checkout', fn ($view) => $view->with('regionPolicy', $hostile));
+
+        $html = $this->get('/checkout')->assertOk()->getContent();
+
+        $this->assertSame($hostile, $this->policyOf($html));
+        $this->assertDoesNotMatchRegularExpression('/<script/i', $html);
+        $this->assertStringNotContainsString('<img src=x', $html);
+        $this->assertStringNotContainsString('onerror=alert(2)>', $html);
+    }
+
+    public function test_a_malformed_stored_policy_fails_loud_instead_of_showing_a_page_that_guesses(): void
+    {
+        app(SiteSettingsRepository::class)->set(CheckoutRegionPolicy::DEFAULT_KEY, 'sometimes');
+
+        $this->get('/checkout')->assertStatus(500);
+    }
+
+    public function test_the_region_input_lives_in_the_street_block_and_the_note_textarea_is_always_there(): void
+    {
+        $html = $this->get('/checkout')->getContent();
+
+        $this->assertMatchesRegularExpression('/<div data-sf-address-fields hidden>.*?<div class="sf-field" data-sf-region-field>\s*<label for="sf-region">Region<\/label>\s*<input id="sf-region" name="region" type="text" autocomplete="address-level1" maxlength="100">\s*<p class="sf-field-error" id="sf-err-region" data-sf-error-for="region" hidden><\/p>.*?<div data-sf-pickup-fields hidden>/s', $html, 'the region is part of the street-address block, before the pick-up block');
+        $this->assertStringNotContainsString('name="region"', substr($html, (int) strpos($html, 'data-sf-pickup-fields')), 'never for a pick-up point');
+
+        $this->assertMatchesRegularExpression('/<label for="sf-note">Order note<\/label>\s*<textarea id="sf-note" name="customer_note" rows="3" maxlength="1000" placeholder="[^"]+" aria-describedby="sf-note-counter"><\/textarea>/', $html);
+        $this->assertStringContainsString('<p class="sf-note-counter" id="sf-note-counter" data-sf-note-counter>0 / 1000</p>', $html);
+        $this->assertStringContainsString('id="sf-err-customer_note" data-sf-error-for="customer_note" hidden', $html);
+        $this->assertStringNotContainsString('data-sf-note-field hidden', $html, 'the note is always visible');
+    }
+
+    public function test_the_labels_of_the_new_fields_are_translated(): void
+    {
+        app(SiteSettingsRepository::class)->set('site.locale', 'bg');
+
+        $html = $this->get('/checkout')->getContent();
+
+        $this->assertStringContainsString('<label for="sf-region">Област</label>', $html);
+        $this->assertStringContainsString('<label for="sf-note">Бележка към поръчката</label>', $html);
     }
 
     public function test_the_summary_is_a_sticky_right_column_with_a_mobile_toggle_bar(): void
@@ -200,8 +275,10 @@ class StorefrontCheckoutPageTest extends TestCase
 
         $this->get('/checkout')->assertOk();
 
-        fwrite(STDERR, "\n[query-count] storefront /checkout: ".count($sql)." queries (pinned ceiling 6)\n");
+        fwrite(STDERR, "\n[query-count] storefront /checkout: ".count($sql)." queries (pinned ceiling 7)\n");
 
-        $this->assertLessThanOrEqual(6, count($sql), 'locale, time zone, currency position, store country and the menu (2): the shell reads no cart');
+        // 7 = locale, time zone, currency position, store country, the menu (2) and ONE read of the two region-policy settings
+        // (CheckoutRegionPolicy::all() through getMany, RN-1b: the page hands the rule to the script). It stays a ceiling: 8 fails.
+        $this->assertLessThanOrEqual(7, count($sql), 'the shell reads no cart; the region policy is ONE query');
     }
 }

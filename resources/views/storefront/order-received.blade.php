@@ -52,10 +52,17 @@
 
         <h2 class="sf-section-title">{{ $order['destination']['kind'] === 'pickup_point' ? __('storefront.received_pickup_point') : __('storefront.received_destination') }}</h2>
         <address class="sf-received-destination">
+            @if ($order['destination']['pickup_kind'] !== null)
+                <span class="sf-received-destination-line sf-received-destination-kind">{{ $order['destination']['pickup_kind'] === 'locker' ? __('storefront.received_kind_locker') : __('storefront.received_kind_office') }}</span>
+            @endif
             @foreach ($order['destination']['lines'] as $part)
                 <span class="sf-received-destination-line">{{ $part }}</span>
             @endforeach
         </address>
+        @if ($order['note'] !== null)
+            {{-- The customer's note: escaped text, its line breaks kept by CSS (white-space: pre-line), never <br> or markup. --}}
+            <p class="sf-received-note">{{ __('storefront.received_note') }}: {{ $order['note'] }}</p>
+        @endif
 
         <h2 class="sf-section-title">{{ __('storefront.received_payment') }}</h2>
         @php($methodKey = 'storefront.payment_methods.'.$order['payment']['method'])
