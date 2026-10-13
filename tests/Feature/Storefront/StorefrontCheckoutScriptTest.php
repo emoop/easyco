@@ -97,7 +97,7 @@ class StorefrontCheckoutScriptTest extends TestCase
 
         $this->assertStringContainsString('errorSummary.focus();', $code);
         $this->assertStringContainsString("input.setAttribute('aria-invalid', 'true');", $code);
-        $this->assertStringContainsString("input.setAttribute('aria-describedby', holder.id);", $code);
+        $this->assertStringContainsString("input.setAttribute('aria-describedby', holder.id + (input.getAttribute('data-sf-describedby') ? ' ' + input.getAttribute('data-sf-describedby') : ''));", $code, 'the error id joins the own hint of the field instead of replacing it');
         $this->assertStringContainsString('result.data.errors', $code);
     }
 
@@ -169,7 +169,7 @@ class StorefrontCheckoutScriptTest extends TestCase
         $cart = (string) file_get_contents(dirname(__DIR__, 3).'/resources/js/storefront-cart.js');
 
         $this->assertStringContainsString("message, promotionBox, setCount, t } from './storefront-cart.js';", $code);
-        $this->assertStringContainsString('promotionBox(cart, runPromo)', $code);
+        $this->assertStringContainsString('promotionBox(cart, runPromo, { compact: true })', $code);
         $this->assertStringContainsString('export { api, apiMessage, el, formatMoney, hasCartCookie, lineImage, localUrl, message, promotionBox, setCount, t };', $cart);
         $this->assertStringContainsString('content.appendChild(promotionBox(cart, act));', $cart, 'the cart page uses the same function');
         $this->assertSame(1, substr_count($cart, 'function promotionBox('), 'ONE implementation');
@@ -177,6 +177,32 @@ class StorefrontCheckoutScriptTest extends TestCase
         foreach (['sf-cart-promo', 'promo_label', "'/api/cart/promotion'", 'promo_apply'] as $needle) {
             $this->assertStringNotContainsString($needle, $code, "the checkout does not rebuild the box ({$needle})");
         }
+    }
+
+    public function test_the_payload_has_the_two_names_and_only_the_one_pickup_field(): void
+    {
+        $code = $this->code();
+
+        $this->assertStringContainsString("recipient_first_name: fieldValue('recipient_first_name'),", $code);
+        $this->assertStringContainsString("recipient_last_name: fieldValue('recipient_last_name'),", $code);
+        $this->assertStringContainsString("var PICKUP_FIELDS = ['pickup_point_address'];", $code);
+
+        foreach (['recipient_name', 'pickup_point_reference', 'pickup_point_name'] as $gone) {
+            $this->assertStringNotContainsString($gone, $code, "{$gone} is not sent or read any more");
+        }
+    }
+
+    public function test_one_function_toggles_required_aria_required_and_the_asterisk(): void
+    {
+        $code = $this->code();
+
+        $this->assertStringContainsString('function setRequired(name, on) {', $code);
+        $this->assertStringContainsString("input.setAttribute('aria-required', 'true');", $code);
+        $this->assertStringContainsString("setRequired('address_line_1', street);", $code);
+        $this->assertStringContainsString("setRequired('region', street && mode === 'required');", $code);
+        $this->assertStringContainsString('setRequired(name, pickup);', $code);
+        $this->assertSame(1, substr_count($code, '.required = '), '`required` is assigned in ONE place, inside setRequired: it never changes on its own');
+        $this->assertStringNotContainsString('data-required', $code, 'the CSS trick of C1b is replaced by the real marker');
     }
 
     public function test_the_note_counts_code_points_and_the_region_rule_is_exported_for_the_agreement_test(): void

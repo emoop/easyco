@@ -1026,6 +1026,7 @@ any order-editing UI exists. Confirmed decisions:
   warning and render blank, never round silently. No regular/struck-
   through price and no variation attributes — neither is stored
   anywhere on a `SaleLine` snapshot (see "Snapshot gaps" below).
+- **D-search (checkout form v2, C1d-A; an owner decision that REPLACES the earlier "search: order id and email, never the name").** The list's box also finds an order by the recipient's NAME. Filament splits the term on whitespace; for EVERY word, a row must match the order number, the email, or the recipient's FIRST or LAST name (`LIKE %word%`, case-insensitive through the column collation, which is `utf8mb4_unicode_ci`: Cyrillic included; `%`, `_` and `\` of the word are escaped in the name match). So "Сия Иванова", "иванова сия" and "Иванова" all find Сия Иванова, and "Сия Петрова" does not. It is one more WHERE group on the list's own query (`OrderResource::searchByRecipientName()`), no extra query (a test compares the counts). The order-number column is Filament's own unescaped LIKE and is unchanged. The list's recipient column shows the full name (first + last) with the email under it.
 - **D4 — `profit_minor` is shown nowhere**, list or View — margin
   visibility needs its own future permission decision.
 - **D5 — `App\Services\OrderAdminReader`** is the one place every

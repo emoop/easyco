@@ -17,7 +17,8 @@ class AddressModel extends Model
     protected $fillable = [
         'account_id',
         'delivery_type',
-        'recipient_name',
+        'recipient_first_name',
+        'recipient_last_name',
         'phone',
         'country',
         'city',

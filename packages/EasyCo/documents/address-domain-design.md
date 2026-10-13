@@ -31,8 +31,14 @@ Address
 │                          set only when saved into a logged-in customer's
 │                          reusable address book
 ├── deliveryType           STREET_ADDRESS | PICKUP_POINT
-├── recipientName          string, required regardless of type — who
-│                          physically receives the delivery
+├── recipientFirstName     string, required regardless of type, 1-100 characters (checkout
+│                          form v2, C1d-A) — who physically receives the delivery
+├── recipientLastName      string, 1-100 characters; REQUIRED for a new or updated
+│                          address, EMPTY only on a row that existed before the
+│                          name was split in two (reconstituteFromStorage()
+│                          accepts it, create() and update() refuse it).
+│                          recipientFullName() = first + ' ' + last, trimmed:
+│                          derived, never stored
 ├── phone                  string, required regardless of type — every
 │                          courier needs a contact number
 ├── country                string, required regardless of type — an uppercase
@@ -58,13 +64,21 @@ Address
 │                          "dhl", anything — NOT an enum, NOT
 │                          validated against a known-carriers
 │                          list. See §3.
-├── pickupPointReference   string — an opaque id/label meaning
+├── pickupPointReference   string, nullable — an opaque id/label meaning
 │                          entirely whatever the carrier's own
-│                          system says it means. See §3.
+│                          system says it means. See §3. A point is
+│                          IDENTIFIED (a reference) or DESCRIBED (below):
+│                          at least one of the two (C1d-A)
+├── pickupPointName        string, nullable — display text (stage 4f)
+├── pickupPointAddress     string, nullable — display text (stage 4f); for a
+│                          DESCRIBED point (no courier integration) THE
+│                          customer's own text: address, name or code
 └── settlement             string — the town/city the pickup
                            point is in, for display/snapshot
                            purposes only
 ```
+
+**The pick-up point is identified or described (checkout form v2, section 3, C1d-A).** `carrierCode` and `settlement` stay required for a `PICKUP_POINT`, and the point itself needs a `pickupPointReference` (the courier's id, given by a future integration) OR a non-empty `pickupPointAddress` (the customer's own text, today's only source), at least one; a reference, when given, is never blank. Existing rows hold all three values, which stays legal. The same rule is a CHECK on MySQL/MariaDB (`addr_pickup_ident_check`, `ord_pickup_ident_check`, `ops_pickup_ident_check`), next to `*_first_name_check` (the first name is not blank).
 
 **Country is the one field shared by both types (owner decision D1, final).** The delivery country is a validated ISO alpha-2 code on EVERY address, a `PICKUP_POINT` included: a pickup point is in a country, and shipping rules (zones, rates) are decided by country. The domain checks the SHAPE only — exactly two uppercase ASCII letters, never normalized (a lowercase `bg` is refused, not fixed) — because this package must not import app code. Whether the code is a real country is the HTTP layer's job (`App\Rules\KnownCountryCode`, which trims and uppercases the submitted value first). The store country (`site.country`) is only the default a form may preselect; it is never substituted for a missing country. Rows read back from storage are not re-validated, so a historical pickup-point address with a NULL country still loads; an operator fills those deliberately with `addresses:backfill-pickup-country`.
 

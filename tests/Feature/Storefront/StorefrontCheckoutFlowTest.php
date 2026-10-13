@@ -38,6 +38,7 @@ class StorefrontCheckoutFlowTest extends TestCase
             'unavailable_kinds_are_not_offered', 'courierless_method', 'region_modes', 'note_counter', 'summary_toggle',
             'promo_box_in_summary', 'promo_apply_requotes_and_keeps_choice', 'promo_changes_delivery_price_rule_a', 'promo_remove_requotes',
             'promo_invalid_and_error', 'promo_does_not_submit_the_form', 'promo_busy_locks_place_order',
+            'required_markers', 'promo_compact_box', 'promo_cart_box_unchanged',
         ];
 
         return array_combine($names, array_map(fn (string $name): array => [$name], $names));

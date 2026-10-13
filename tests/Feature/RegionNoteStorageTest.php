@@ -63,7 +63,7 @@ class RegionNoteStorageTest extends TestCase
 
     private function street(?string $region): Address
     {
-        return Address::create(AddressDeliveryType::STREET_ADDRESS, 'Ana', '+359888111222', null, 'BG', 'Sofia', '1000', 'V 1', null, null, null, null, null, null, null, $region);
+        return Address::create(AddressDeliveryType::STREET_ADDRESS, 'Ana', 'Testov', '+359888111222', null, 'BG', 'Sofia', '1000', 'V 1', null, null, null, null, null, null, null, $region);
     }
 
     private function order(OrderDeliveryType $type = OrderDeliveryType::STREET_ADDRESS, ?string $region = null, ?string $note = null): Order
@@ -72,7 +72,7 @@ class RegionNoteStorageTest extends TestCase
 
         return Order::create(
             clientId: '1', transactionId: '1', email: 'b@example.com', currency: 'EUR', subtotal: Money::fromMinorUnits(1000, 'EUR'), discount: Money::zero('EUR'),
-            deliveryType: $type, recipientName: 'I I', phone: '+359888123456', placedAt: new DateTimeImmutable(), country: 'BG',
+            deliveryType: $type, recipientFirstName: 'I', recipientLastName: 'I', phone: '+359888123456', placedAt: new DateTimeImmutable(), country: 'BG',
             city: $pickup ? null : 'Sofia', addressLine1: $pickup ? null : 'V 1',
             carrierCode: $pickup ? 'econt' : null, pickupPointReference: $pickup ? 'office-1' : null, settlement: $pickup ? 'Sofia' : null,
             region: $region, customerNote: $note,
@@ -86,7 +86,7 @@ class RegionNoteStorageTest extends TestCase
         $this->assertSame('Sofia-city', $this->street('  Sofia-city ')->region());
         $this->assertNull($this->street(null)->region(), 'none is legal: it is optional and an old address predates it');
 
-        $pickup = fn (?string $region) => Address::create(AddressDeliveryType::PICKUP_POINT, 'Ana', '+359888111222', null, 'BG', null, null, null, null, 'econt', 'o-1', 'Sofia', 'N', 'A', null, $region);
+        $pickup = fn (?string $region) => Address::create(AddressDeliveryType::PICKUP_POINT, 'Ana', 'Testov', '+359888111222', null, 'BG', null, null, null, null, 'econt', 'o-1', 'Sofia', 'N', 'A', null, $region);
         $this->assertNull($pickup(null)->region());
 
         foreach ([fn () => $pickup('Sofia-city'), fn () => $this->street('   '), fn () => $this->street(str_repeat('я', 101))] as $i => $case) {
@@ -104,17 +104,17 @@ class RegionNoteStorageTest extends TestCase
     public function test_an_address_update_replaces_the_region_and_a_refused_update_changes_nothing(): void
     {
         $address = $this->street('Sofia-city');
-        $address->update(AddressDeliveryType::STREET_ADDRESS, 'Ana', '+359888111222', 'BG', 'Sofia', '1000', 'V 1', null, null, null, null, null, null, null, 'Plovdiv');
+        $address->update(AddressDeliveryType::STREET_ADDRESS, 'Ana', 'Testov', '+359888111222', 'BG', 'Sofia', '1000', 'V 1', null, null, null, null, null, null, null, 'Plovdiv');
         $this->assertSame('Plovdiv', $address->region());
 
         try {
-            $address->update(AddressDeliveryType::PICKUP_POINT, 'Ana', '+359888111222', 'BG', null, null, null, null, 'econt', 'o-1', 'Sofia', 'N', 'A', null, 'Sofia-city');
+            $address->update(AddressDeliveryType::PICKUP_POINT, 'Ana', 'Testov', '+359888111222', 'BG', null, null, null, null, 'econt', 'o-1', 'Sofia', 'N', 'A', null, 'Sofia-city');
             $this->fail('expected a refusal');
         } catch (InvalidArgumentException) {
             $this->assertSame('Plovdiv', $address->region());
         }
 
-        $address->update(AddressDeliveryType::STREET_ADDRESS, 'Ana', '+359888111222', 'BG', 'Sofia', '1000', 'V 1');
+        $address->update(AddressDeliveryType::STREET_ADDRESS, 'Ana', 'Testov', '+359888111222', 'BG', 'Sofia', '1000', 'V 1');
         $this->assertNull($address->region(), 'an update without one clears it');
     }
 
@@ -155,7 +155,7 @@ class RegionNoteStorageTest extends TestCase
     {
         $order = $this->order(OrderDeliveryType::STREET_ADDRESS, 'Sofia-city', 'Please call first');
         $revise = fn (?string $region, OrderDeliveryType $type = OrderDeliveryType::STREET_ADDRESS) => $order->reviseDelivery(
-            $type, 'New Recipient', '+359888123456', 'BG',
+            $type, 'New', 'Recipient', '+359888123456', 'BG',
             $type === OrderDeliveryType::STREET_ADDRESS ? 'Varna' : null, null, $type === OrderDeliveryType::STREET_ADDRESS ? 'Sea 1' : null, null,
             $type === OrderDeliveryType::STREET_ADDRESS ? null : 'econt', $type === OrderDeliveryType::STREET_ADDRESS ? null : 'o-1', $type === OrderDeliveryType::STREET_ADDRESS ? null : 'Varna',
             region: $region,

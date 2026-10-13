@@ -168,7 +168,7 @@ class CartControllerTest extends TestCase
             subtotal: Money::fromMinorUnits(1000, 'EUR'),
             discount: Money::fromMinorUnits(0, 'EUR'),
             deliveryType: OrderDeliveryType::STREET_ADDRESS,
-            recipientName: 'Ivan Ivanov',
+            recipientFirstName: 'Ivan', recipientLastName: 'Ivanov',
             phone: '+359888123456',
             placedAt: new DateTimeImmutable('2026-01-01'),
             country: 'BG',

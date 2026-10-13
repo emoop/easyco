@@ -11,6 +11,8 @@ return [
         'id' => '№',
         'placed_at' => 'Placed at',
         'recipient_name' => 'Recipient',
+        'recipient_first_name' => 'First name',
+        'recipient_last_name' => 'Last name',
         'email' => 'Email',
         'client_name' => 'Client',
         'client_id' => 'Client ID',

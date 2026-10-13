@@ -131,7 +131,8 @@ class CheckoutController extends Controller
         $input = new CheckoutInput(
             cartId: (string) $validated['cart_id'],
             email: $validated['email'],
-            recipientName: $validated['recipient_name'],
+            recipientFirstName: $validated['recipient_first_name'],
+            recipientLastName: $validated['recipient_last_name'],
             phone: $validated['phone'],
             paymentMethod: $validated['payment_method'],
             accountId: $accountId,
@@ -353,7 +354,10 @@ class CheckoutController extends Controller
             // instead of a lookup of it.
             'cart_id' => 'required|string|max:255',
             'email' => 'required|email|max:255',
-            'recipient_name' => ['required', 'string', 'max:255', new PlainText()],
+            // The recipient's name is TWO fields (checkout form v2, section 2.4). A client that still sends `recipient_name` alone gets
+            // the two `required` errors: the old field is not in the rules.
+            'recipient_first_name' => ['required', 'string', 'max:100', new PlainText()],
+            'recipient_last_name' => ['required', 'string', 'max:100', new PlainText()],
             // INTERIM LIMIT: 32 characters is a stop-gap, NOT a design — the
             // column is varchar(255). The forthcoming phone-validation design
             // replaces both this bound and the plain `string` shape.
@@ -379,10 +383,12 @@ class CheckoutController extends Controller
             // rather than a 500 from MySQL, and PlainText refuses a control
             // character or a bidirectional override.
             'carrier_code' => ['required_if:delivery_type,pickup_point', 'prohibited_if:delivery_type,street_address', 'string', 'max:255', new PlainText()],
-            'pickup_point_reference' => ['required_if:delivery_type,pickup_point', 'prohibited_if:delivery_type,street_address', 'string', 'max:255', new PlainText()],
+            // A pick-up point is IDENTIFIED (a courier's reference, later) or DESCRIBED (the customer's own text in pickup_point_address,
+            // below): the reference and the name are optional, the description is required (checkout form v2, section 3).
+            'pickup_point_reference' => ['nullable', 'prohibited_if:delivery_type,street_address', 'string', 'max:255', new PlainText()],
             // The display snapshot of the chosen office (stage 4f): what the customer saw, required for a NEW pickup address and
             // refused for a street address. Text for people; the reference above is the identifier, and nothing verifies these.
-            'pickup_point_name' => ['required_if:delivery_type,pickup_point', 'prohibited_if:delivery_type,street_address', 'string', 'max:255', new PlainText()],
+            'pickup_point_name' => ['nullable', 'prohibited_if:delivery_type,street_address', 'string', 'max:255', new PlainText()],
             'pickup_point_address' => ['required_if:delivery_type,pickup_point', 'prohibited_if:delivery_type,street_address', 'string', 'max:255', new PlainText()],
             'settlement' => ['required_if:delivery_type,pickup_point', 'prohibited_if:delivery_type,street_address', 'string', 'max:255', new PlainText()],
             // The KIND of the pickup point (stage 5g-2a, design 9.3.6): office | locker, OPTIONAL in this stage (a pickup order with none is
@@ -413,7 +419,8 @@ class CheckoutController extends Controller
             'status' => $order->status()->value,
             'applied_promotion_code' => $order->appliedPromotionCode(),
             'delivery_type' => $order->deliveryType()->value,
-            'recipient_name' => $order->recipientName(),
+            'recipient_first_name' => $order->recipientFirstName(),
+            'recipient_last_name' => $order->recipientLastName(),
             'phone' => $order->phone(),
             'country' => $order->country(),
             'city' => $order->city(),

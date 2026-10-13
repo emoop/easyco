@@ -120,7 +120,7 @@ class OrderConfirmationMailTest extends TestCase
         $this->postJson('/api/checkout', [
             'cart_id' => $this->mailCartId,
             'email' => 'buyer@example.com',
-            'recipient_name' => 'Guest Buyer',
+            'recipient_first_name' => 'Guest', 'recipient_last_name' => 'Buyer',
             'phone' => '+359888000000',
             'payment_method' => 'cash_on_delivery',
             'delivery_type' => 'street_address',
@@ -278,7 +278,7 @@ class OrderConfirmationMailTest extends TestCase
         $this->setting(BankTransferDetails::IBAN, 'BG80BNBG96611020345678');
         $this->setting(BankTransferDetails::INSTRUCTIONS, 'Pay to {{ customer_name }} {{ order_lines }}');
 
-        $this->placeMailOrder(['payment_method' => 'bank_transfer', 'recipient_name' => 'Guest Buyer'], '{{ customer_name }} and {{ unknown }}');
+        $this->placeMailOrder(['payment_method' => 'bank_transfer', 'recipient_first_name' => 'Guest', 'recipient_last_name' => 'Buyer'], '{{ customer_name }} and {{ unknown }}');
 
         $email = $this->email($this->sent()[0]);
         $html = $email->getHtmlBody();
@@ -353,6 +353,55 @@ class OrderConfirmationMailTest extends TestCase
         $this->assertStringNotContainsString('BG80', $html);
         $this->assertStringNotContainsString('Pay by bank transfer', $html);
         $this->assertStringContainsString('Bank transfer', $html);
+    }
+
+    public function test_the_default_mail_greets_by_the_first_name_only(): void
+    {
+        $this->placeMailOrder(['recipient_first_name' => 'Емил', 'recipient_last_name' => 'Петров']);
+
+        $text = (string) $this->email($this->sent()[0])->getTextBody();
+
+        $this->assertStringContainsString('Hello Емил,', $text);
+        $this->assertStringNotContainsString('Hello Емил Петров', $text);
+    }
+
+    /** `customer_name` keeps its meaning (the FULL name), so a merchant's own template or text that uses it is unchanged. */
+    public function test_a_template_using_customer_name_renders_the_full_name_and_customer_first_name_the_first(): void
+    {
+        $this->app->instance(TemplateOverrides::class, new class extends TemplateOverrides
+        {
+            public function find(string $key, string $locale): ?array
+            {
+                return ['subject' => 'Order {{ order_number }}', 'body' => "Full: {{ customer_name }}
+
+First: {{ customer_first_name }}
+
+{{ order_lines }}
+
+{{ order_totals }}
+
+{{ delivery_summary }}
+
+{{ payment_instructions }}"];
+            }
+        });
+
+        $this->placeMailOrder(['recipient_first_name' => 'Емил', 'recipient_last_name' => 'Петров']);
+
+        $text = (string) $this->email($this->sent()[0])->getTextBody();
+
+        $this->assertStringContainsString('Full: Емил Петров', $text);
+        $this->assertStringContainsString('First: Емил', $text);
+        $this->assertStringNotContainsString('First: Емил Петров', $text);
+        $this->assertSame('sent', $this->logRows()[0]->status);
+    }
+
+    public function test_the_order_confirmation_definition_lists_both_name_scalars(): void
+    {
+        $scalars = app(\App\Mail\MailTemplates::class)->get(\App\Mail\MailTemplates::ORDER_CONFIRMATION)->scalars;
+
+        $this->assertContains('customer_name', $scalars);
+        $this->assertContains('customer_first_name', $scalars);
     }
 
     public function test_a_template_that_fails_to_render_falls_back_to_the_shipped_default(): void

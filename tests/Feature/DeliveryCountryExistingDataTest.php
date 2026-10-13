@@ -37,7 +37,7 @@ class DeliveryCountryExistingDataTest extends TestCase
     {
         return DB::table('addresses')->insertGetId([
             'delivery_type' => $deliveryType,
-            'recipient_name' => 'Ivan Ivanov',
+            'recipient_first_name' => 'Ivan', 'recipient_last_name' => 'Ivanov',
             'phone' => '+359888123456',
             'country' => $country,
             'city' => $deliveryType === 'street_address' ? 'Sofia' : null,
@@ -87,7 +87,7 @@ class DeliveryCountryExistingDataTest extends TestCase
             subtotal: Money::fromMinorUnits(1000, 'EUR'),
             discount: Money::zero('EUR'),
             deliveryType: $type,
-            recipientName: 'Ivan Ivanov',
+            recipientFirstName: 'Ivan', recipientLastName: 'Ivanov',
             phone: '+359888123456',
             placedAt: new DateTimeImmutable('2026-01-01 12:00:00'),
             country: 'BG',

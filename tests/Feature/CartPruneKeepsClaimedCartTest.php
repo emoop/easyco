@@ -61,7 +61,7 @@ class CartPruneKeepsClaimedCartTest extends TestCase
         $variationId = $this->pricedVariation();
         $cartId = (string) $this->postJson('/api/cart/lines', ['variation_id' => $variationId, 'quantity' => 2])->assertStatus(201)->json('cart_id');
         $payload = [
-            'cart_id' => $cartId, 'email' => 'guest@example.com', 'recipient_name' => 'Guest Buyer', 'phone' => '+359888000000',
+            'cart_id' => $cartId, 'email' => 'guest@example.com', 'recipient_first_name' => 'Guest', 'recipient_last_name' => 'Buyer', 'phone' => '+359888000000',
             'payment_method' => 'cash_on_delivery', 'delivery_type' => 'street_address', 'country' => 'BG', 'city' => 'Sofia', 'address_line_1' => 'Vitosha Blvd 1',
             ...$this->shippingPayload(),
         ];

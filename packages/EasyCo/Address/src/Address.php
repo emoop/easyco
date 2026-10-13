@@ -42,7 +42,8 @@ final class Address
         private ?string $id,
         private readonly ?string $accountId,
         private AddressDeliveryType $deliveryType,
-        private string $recipientName,
+        private string $recipientFirstName,
+        private string $recipientLastName,
         private string $phone,
         private ?string $country,
         private ?string $city,
@@ -60,7 +61,9 @@ final class Address
         // The REGION (state / province) of a STREET address (checkout RN-1): free text, 1 to 100 characters when given, null for a pickup point.
         private ?string $region = null,
     ) {
-        self::assertNotEmpty('recipientName', $recipientName);
+        // The FIRST name is never empty, not even in a historical row (the split puts a single word there); an EMPTY LAST name is legal
+        // only here, in the constructor that reconstituteFromStorage() uses: create() and update() refuse it (checkout form v2, section 2.2).
+        self::assertNotEmpty('recipientFirstName', $recipientFirstName);
         self::assertNotEmpty('phone', $phone);
         self::assertAccountIdNotEmptyString($accountId);
         self::assertFieldsMatchDeliveryType(
@@ -73,6 +76,7 @@ final class Address
             carrierCode: $carrierCode,
             pickupPointReference: $pickupPointReference,
             settlement: $settlement,
+            pickupPointAddress: $pickupPointAddress,
         );
         self::assertPickupDisplay($deliveryType, $pickupPointName, $pickupPointAddress);
         self::assertPickupKind($deliveryType, $pickupPointKind);
@@ -124,6 +128,7 @@ final class Address
         ?string $carrierCode,
         ?string $pickupPointReference,
         ?string $settlement,
+        ?string $pickupPointAddress = null,
     ): void {
         if ($deliveryType === AddressDeliveryType::STREET_ADDRESS) {
             foreach (['country' => $country, 'city' => $city, 'addressLine1' => $addressLine1] as $name => $value) {
@@ -141,10 +146,22 @@ final class Address
             return;
         }
 
-        foreach (['carrierCode' => $carrierCode, 'pickupPointReference' => $pickupPointReference, 'settlement' => $settlement] as $name => $value) {
+        foreach (['carrierCode' => $carrierCode, 'settlement' => $settlement] as $name => $value) {
             if ($value === null || trim($value) === '') {
                 throw new InvalidArgumentException("Address {$name} must not be empty when deliveryType is PICKUP_POINT.");
             }
+        }
+
+        // A pick-up point is IDENTIFIED (a reference: the courier's id) or DESCRIBED (pickupPointAddress: what the customer typed), at
+        // least one (checkout form v2, section 3.2). A reference, when given, is never blank.
+        $hasReference = $pickupPointReference !== null && trim($pickupPointReference) !== '';
+
+        if ($pickupPointReference !== null && ! $hasReference) {
+            throw new InvalidArgumentException('Address pickupPointReference must not be blank when given; use null for none.');
+        }
+
+        if (! $hasReference && ($pickupPointAddress === null || trim($pickupPointAddress) === '')) {
+            throw new InvalidArgumentException('Address needs a pickupPointReference or a pickupPointAddress when deliveryType is PICKUP_POINT.');
         }
 
         foreach ([
@@ -167,8 +184,8 @@ final class Address
      *
      * Allowed only for a PICKUP_POINT; a STREET_ADDRESS must have both null; when given, each is 1 to 255 characters.
      * Both being null on a pickup point is LEGAL here — a historical saved pickup address (saved before 4f) has neither and
-     * must still load and still check out. That both are REQUIRED for a NEW pickup address is the request layer's rule
-     * (checkout and the address API), not the entity's.
+     * must still load and still check out. A NEW pickup address needs a reference OR the description (pickupPointAddress); the request layer requires the
+     * description (checkout form v2, section 3).
      */
     private static function assertPickupDisplay(AddressDeliveryType $deliveryType, ?string $pickupPointName, ?string $pickupPointAddress): void
     {
@@ -246,7 +263,8 @@ final class Address
 
     public static function create(
         AddressDeliveryType $deliveryType,
-        string $recipientName,
+        string $recipientFirstName,
+        string $recipientLastName,
         string $phone,
         ?string $accountId = null,
         ?string $country = null,
@@ -263,12 +281,14 @@ final class Address
         ?string $region = null,
     ): self {
         self::assertCountryShape($country);
+        self::assertNotEmpty('recipientLastName', $recipientLastName);
 
         return new self(
             id: null,
             accountId: $accountId,
             deliveryType: $deliveryType,
-            recipientName: $recipientName,
+            recipientFirstName: trim($recipientFirstName),
+            recipientLastName: trim($recipientLastName),
             phone: $phone,
             country: $country,
             city: $city,
@@ -298,7 +318,8 @@ final class Address
         string $id,
         ?string $accountId,
         AddressDeliveryType $deliveryType,
-        string $recipientName,
+        string $recipientFirstName,
+        string $recipientLastName,
         string $phone,
         ?string $country,
         ?string $city,
@@ -317,7 +338,8 @@ final class Address
             id: $id,
             accountId: $accountId,
             deliveryType: $deliveryType,
-            recipientName: $recipientName,
+            recipientFirstName: $recipientFirstName,
+            recipientLastName: $recipientLastName,
             phone: $phone,
             country: $country,
             city: $city,
@@ -359,7 +381,8 @@ final class Address
      */
     public function update(
         AddressDeliveryType $deliveryType,
-        string $recipientName,
+        string $recipientFirstName,
+        string $recipientLastName,
         string $phone,
         ?string $country = null,
         ?string $city = null,
@@ -381,7 +404,8 @@ final class Address
         $pickupPointKind = self::trimmedOrNull($pickupPointKind);
         self::assertPickupDisplay($deliveryType, $pickupPointName, $pickupPointAddress);
         self::assertPickupKind($deliveryType, $pickupPointKind);
-        self::assertNotEmpty('recipientName', $recipientName);
+        self::assertNotEmpty('recipientFirstName', $recipientFirstName);
+        self::assertNotEmpty('recipientLastName', $recipientLastName);
         self::assertNotEmpty('phone', $phone);
         self::assertCountryShape($country);
         self::assertFieldsMatchDeliveryType(
@@ -394,10 +418,12 @@ final class Address
             carrierCode: $carrierCode,
             pickupPointReference: $pickupPointReference,
             settlement: $settlement,
+            pickupPointAddress: $pickupPointAddress,
         );
 
         $this->deliveryType = $deliveryType;
-        $this->recipientName = $recipientName;
+        $this->recipientFirstName = trim($recipientFirstName);
+        $this->recipientLastName = trim($recipientLastName);
         $this->phone = $phone;
         $this->country = $country;
         $this->city = $city;
@@ -423,9 +449,21 @@ final class Address
         return $this->deliveryType;
     }
 
-    public function recipientName(): string
+    public function recipientFirstName(): string
     {
-        return $this->recipientName;
+        return $this->recipientFirstName;
+    }
+
+    /** Empty only for a row that existed before the name was split in two. */
+    public function recipientLastName(): string
+    {
+        return $this->recipientLastName;
+    }
+
+    /** First + ' ' + last, trimmed: what a label, the admin list and a greeting-less surface show. Derived, never stored. */
+    public function recipientFullName(): string
+    {
+        return trim($this->recipientFirstName.' '.$this->recipientLastName);
     }
 
     public function phone(): string

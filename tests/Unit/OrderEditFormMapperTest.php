@@ -62,7 +62,7 @@ class OrderEditFormMapperTest extends TestCase
     private function street(): array
     {
         return [
-            'delivery_type' => 'street_address', 'recipient_name' => 'Ivan', 'phone' => '+359888', 'country' => 'BG', 'city' => 'Sofia',
+            'delivery_type' => 'street_address', 'recipient_first_name' => 'Ivan', 'recipient_last_name' => 'Testov', 'phone' => '+359888', 'country' => 'BG', 'city' => 'Sofia',
             'postal_code' => null, 'address_line_1' => 'Vitosha 1', 'address_line_2' => null,
             'carrier_code' => null, 'pickup_point_reference' => null, 'settlement' => null,
         ];
@@ -101,7 +101,7 @@ class OrderEditFormMapperTest extends TestCase
     public function test_switching_to_a_pickup_point_drops_the_street_fields_the_form_no_longer_sends(): void
     {
         $change = OrderEditFormMapper::deliveryChange($this->street(), [
-            'delivery_type' => 'pickup_point', 'recipient_name' => 'Ivan', 'phone' => '+359888', 'country' => 'BG',
+            'delivery_type' => 'pickup_point', 'recipient_first_name' => 'Ivan', 'recipient_last_name' => 'Testov', 'phone' => '+359888', 'country' => 'BG',
             'carrier_code' => 'speedy', 'pickup_point_reference' => 'office-7', 'settlement' => 'Sofia',
         ]);
 

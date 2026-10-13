@@ -19,8 +19,11 @@ use EasyCo\Shipping\Enums\ShippingDeliveryType;
 interface PickupKindSource
 {
     /**
+     * @param  string|null  $pickupPointReference  the courier's id of the point, or null: a DESCRIBED point (what the customer typed, no
+     *                                           integration) has none; a future courier source derives the kind from a reference and
+     *                                           falls back to the claim for a described point (checkout form v2, section 3.3)
      * @param  string|null  $claimedKind  what the client sent: 'office' | 'locker' | null (not stated)
      * @return ShippingDeliveryType|null OFFICE, LOCKER, or null = not stated
      */
-    public function kindFor(string $carrierCode, string $pickupPointReference, ?string $claimedKind): ?ShippingDeliveryType;
+    public function kindFor(string $carrierCode, ?string $pickupPointReference, ?string $claimedKind): ?ShippingDeliveryType;
 }

@@ -10,7 +10,7 @@ use EasyCo\Shipping\Enums\ShippingDeliveryType;
  */
 final class ClientClaimedPickupKindSource implements PickupKindSource
 {
-    public function kindFor(string $carrierCode, string $pickupPointReference, ?string $claimedKind): ?ShippingDeliveryType
+    public function kindFor(string $carrierCode, ?string $pickupPointReference, ?string $claimedKind): ?ShippingDeliveryType
     {
         $kind = $claimedKind === null ? null : ShippingDeliveryType::tryFrom($claimedKind);
 

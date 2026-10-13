@@ -817,8 +817,48 @@
         @apply rounded-md border border-neutral-200 p-3 text-sm text-neutral-900;
     }
 
-    .sf-field[data-required='true'] label::after {
-        content: ' *';
+    /* C1d-A: the required marker, the first/last name row, the one pick-up field's help line, the checkout's compact promo box. */
+    .sf-required {
+        @apply ml-0.5 font-semibold text-red-700;
+    }
+
+    .sf-required-note {
+        @apply mb-3 text-sm text-neutral-600;
+    }
+
+    .sf-field-row {
+        @apply grid grid-cols-1 gap-x-4;
+    }
+
+    @media (min-width: 40rem) {
+        .sf-field-row {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+    }
+
+    .sf-field-help {
+        @apply mt-1 text-sm text-neutral-600;
+    }
+
+    /* The promo box in the checkout summary: ONE control (the field and its Apply button share a border), scoped to the compact class only. */
+    .sf-promo-compact {
+        @apply border-0 bg-transparent p-0;
+    }
+
+    .sf-promo-compact-label {
+        @apply sr-only;
+    }
+
+    .sf-promo-compact-field {
+        @apply flex w-full items-stretch;
+    }
+
+    .sf-promo-compact-input {
+        @apply h-11 min-w-0 flex-1 rounded-l-md rounded-r-none border border-r-0 border-neutral-300 bg-white px-3 text-base;
+    }
+
+    .sf-promo-compact-apply {
+        @apply h-11 shrink-0 rounded-l-none rounded-r-md border border-neutral-900 bg-neutral-900 px-4 text-sm font-semibold text-white;
     }
 
     .sf-note-field textarea {

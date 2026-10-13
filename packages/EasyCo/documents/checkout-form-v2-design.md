@@ -86,7 +86,7 @@ $table->dropColumn('recipient_name');
 - **The empty last name is legal only for a row that existed before the split** (the same "a historical row must still load"
   rule as the pick-up display fields in stage 4f): `Address::reconstituteFromStorage()` / `Order::reconstituteFromStorage()`
   accept it; `create()` refuses an empty value for either field.
-- No index (nothing filters by them yet; the admin search in §2.5 is a `LIKE` on the order list, as the name search is today).
+- No index (nothing filters by them yet; the admin search in §2.5 is a `LIKE` on the order list; until C1d-A the list did NOT search by name, and C1d-A adds it).
 
 ### 2.3 Domain
 
@@ -116,7 +116,7 @@ the two fields instead. The `address_id` path is unchanged: a saved address brin
 |---|---|
 | Storefront checkout | Two inputs side by side on desktop, stacked on a phone: «Име» (`autocomplete="given-name"`), «Фамилия» (`autocomplete="family-name"`) |
 | Order-received page, confirmation email | Greeting **"Здравейте, {first name}"** (D2); the destination block shows the full name |
-| Admin order view / list / editor | Full name in the list and the header; the view and the editor show the two fields; the list's search matches either |
+| Admin order view / list / editor | Full name in the list; the view and the editor show the two fields; the list's search finds an order by the name (every word of the term must match the first OR the last name; an owner decision of C1d-A that replaces the earlier "id and email only" rule, see admin-panel-design.md §14) |
 | Sandbox views | Updated to the two fields (they are the API's manual test surface) |
 | Courier label / shipment request (later) | `recipientFullName()` |
 

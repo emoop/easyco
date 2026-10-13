@@ -89,7 +89,8 @@ final class Order
         // NOT readonly (stage 2) — reviseDelivery() replaces the whole
         // delivery snapshot below atomically, one-shot.
         private OrderDeliveryType $deliveryType,
-        private string $recipientName,
+        private string $recipientFirstName,
+        private string $recipientLastName,
         private string $phone,
         private ?string $country,
         private ?string $city,
@@ -129,7 +130,9 @@ final class Order
         }
 
         self::assertNotEmpty('email', $email);
-        self::assertNotEmpty('recipientName', $recipientName);
+        // An EMPTY LAST name is legal only here (the constructor reconstituteFromStorage() uses: an order that existed before the name was
+        // split); create() and reviseDelivery() refuse it (checkout form v2, section 2.2).
+        self::assertNotEmpty('recipientFirstName', $recipientFirstName);
         self::assertNotEmpty('phone', $phone);
         self::assertNotEmpty('clientId', $clientId);
         self::assertNotEmpty('transactionId', $transactionId);
@@ -146,6 +149,7 @@ final class Order
             carrierCode: $carrierCode,
             pickupPointReference: $pickupPointReference,
             settlement: $settlement,
+            pickupPointAddress: $pickupPointAddress,
         );
     }
 
@@ -393,6 +397,7 @@ final class Order
         ?string $carrierCode,
         ?string $pickupPointReference,
         ?string $settlement,
+        ?string $pickupPointAddress = null,
     ): void {
         if ($deliveryType === OrderDeliveryType::STREET_ADDRESS) {
             foreach (['country' => $country, 'city' => $city, 'addressLine1' => $addressLine1] as $name => $value) {
@@ -410,10 +415,22 @@ final class Order
             return;
         }
 
-        foreach (['carrierCode' => $carrierCode, 'pickupPointReference' => $pickupPointReference, 'settlement' => $settlement] as $name => $value) {
+        foreach (['carrierCode' => $carrierCode, 'settlement' => $settlement] as $name => $value) {
             if ($value === null || trim($value) === '') {
                 throw new InvalidArgumentException("Order {$name} must not be empty when deliveryType is PICKUP_POINT.");
             }
+        }
+
+        // A pick-up point is IDENTIFIED (a reference: the courier's id) or DESCRIBED (pickupPointAddress: what the customer typed), at
+        // least one (checkout form v2, section 3.2). A reference, when given, is never blank.
+        $hasReference = $pickupPointReference !== null && trim($pickupPointReference) !== '';
+
+        if ($pickupPointReference !== null && ! $hasReference) {
+            throw new InvalidArgumentException('Order pickupPointReference must not be blank when given; use null for none.');
+        }
+
+        if (! $hasReference && ($pickupPointAddress === null || trim($pickupPointAddress) === '')) {
+            throw new InvalidArgumentException('Order needs a pickupPointReference or a pickupPointAddress when deliveryType is PICKUP_POINT.');
         }
 
         foreach ([
@@ -462,7 +479,8 @@ final class Order
         Money $subtotal,
         Money $discount,
         OrderDeliveryType $deliveryType,
-        string $recipientName,
+        string $recipientFirstName,
+        string $recipientLastName,
         string $phone,
         DateTimeImmutable $placedAt,
         ?string $accountId = null,
@@ -491,6 +509,7 @@ final class Order
         ?string $customerNote = null,
     ): self {
         self::assertCountryShape($country);
+        self::assertNotEmpty('recipientLastName', $recipientLastName);
 
         $normalizedCurrency = Currency::from($currency);
 
@@ -527,7 +546,8 @@ final class Order
             placedAt: $placedAt,
             addressId: $addressId,
             deliveryType: $deliveryType,
-            recipientName: $recipientName,
+            recipientFirstName: trim($recipientFirstName),
+            recipientLastName: trim($recipientLastName),
             phone: $phone,
             country: $country,
             city: $city,
@@ -581,7 +601,8 @@ final class Order
         DateTimeImmutable $placedAt,
         ?string $addressId,
         OrderDeliveryType $deliveryType,
-        string $recipientName,
+        string $recipientFirstName,
+        string $recipientLastName,
         string $phone,
         ?string $country,
         ?string $city,
@@ -619,7 +640,8 @@ final class Order
             placedAt: $placedAt,
             addressId: $addressId,
             deliveryType: $deliveryType,
-            recipientName: $recipientName,
+            recipientFirstName: $recipientFirstName,
+            recipientLastName: $recipientLastName,
             phone: $phone,
             country: $country,
             city: $city,
@@ -860,7 +882,8 @@ final class Order
      */
     public function reviseDelivery(
         OrderDeliveryType $deliveryType,
-        string $recipientName,
+        string $recipientFirstName,
+        string $recipientLastName,
         string $phone,
         ?string $country,
         ?string $city,
@@ -893,7 +916,8 @@ final class Order
         self::assertRegion($deliveryType, $region);
         self::assertPickupDisplay($deliveryType, $pickupPointName, $pickupPointAddress);
         self::assertPickupKind($deliveryType, $pickupPointKind);
-        self::assertNotEmpty('recipientName', $recipientName);
+        self::assertNotEmpty('recipientFirstName', $recipientFirstName);
+        self::assertNotEmpty('recipientLastName', $recipientLastName);
         self::assertNotEmpty('phone', $phone);
         self::assertCountryShape($country);
         self::assertFieldsMatchDeliveryType(
@@ -906,10 +930,12 @@ final class Order
             carrierCode: $carrierCode,
             pickupPointReference: $pickupPointReference,
             settlement: $settlement,
+            pickupPointAddress: $pickupPointAddress,
         );
 
         $this->deliveryType = $deliveryType;
-        $this->recipientName = $recipientName;
+        $this->recipientFirstName = trim($recipientFirstName);
+        $this->recipientLastName = trim($recipientLastName);
         $this->phone = $phone;
         $this->country = $country;
         $this->city = $city;
@@ -969,9 +995,21 @@ final class Order
         return $this->deliveryType;
     }
 
-    public function recipientName(): string
+    public function recipientFirstName(): string
     {
-        return $this->recipientName;
+        return $this->recipientFirstName;
+    }
+
+    /** Empty only for an order that existed before the name was split in two. */
+    public function recipientLastName(): string
+    {
+        return $this->recipientLastName;
+    }
+
+    /** First + ' ' + last, trimmed: courier labels, the admin list and header, the payer name. Derived, never stored. */
+    public function recipientFullName(): string
+    {
+        return trim($this->recipientFirstName.' '.$this->recipientLastName);
     }
 
     public function phone(): string

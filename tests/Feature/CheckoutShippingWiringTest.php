@@ -184,7 +184,7 @@ class CheckoutShippingWiringTest extends TestCase
         return array_merge([
             'cart_id' => $cartId,
             'email' => 'guest@example.com',
-            'recipient_name' => 'Guest Buyer',
+            'recipient_first_name' => 'Guest', 'recipient_last_name' => 'Buyer',
             'phone' => '+359888000000',
             'payment_method' => 'cash_on_delivery',
         ], $address, $shipping, $override);
@@ -494,7 +494,7 @@ class CheckoutShippingWiringTest extends TestCase
             if (! $raced) {
                 $raced = true;
                 app(CheckoutOrchestrator::class)->place(new CheckoutInput(
-                    cartId: $cartId, email: 'rival@example.com', recipientName: 'Rival', phone: '+359888000001', paymentMethod: 'cash_on_delivery',
+                    cartId: $cartId, email: 'rival@example.com', recipientFirstName: 'Rival', recipientLastName: 'Testov', phone: '+359888000001', paymentMethod: 'cash_on_delivery',
                     guestCartToken: $token, deliveryType: AddressDeliveryType::STREET_ADDRESS, country: 'BG', city: 'Sofia', addressLine1: 'Rival 1',
                     shippingMethodId: $flat, quoteHandle: 'qh_'.str_repeat('r', 40), expectedShippingMinor: 500,
                 ), new \DateTimeImmutable());

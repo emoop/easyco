@@ -332,7 +332,7 @@ final class CartGuestCookiePersistenceTest extends TestCase
         return [
             'cart_id' => $cartId,
             'email' => 'guest@example.com',
-            'recipient_name' => 'Guest Buyer',
+            'recipient_first_name' => 'Guest', 'recipient_last_name' => 'Buyer',
             'phone' => '+359888000000',
             'payment_method' => 'cash_on_delivery',
             'delivery_type' => 'street_address',

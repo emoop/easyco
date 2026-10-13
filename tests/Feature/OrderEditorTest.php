@@ -160,7 +160,7 @@ class OrderEditorTest extends TestCase
         $result = app(CheckoutOrchestrator::class)->place(new CheckoutInput(
             cartId: $cart->id(),
             email: 'guest@example.com',
-            recipientName: 'Guest Buyer',
+            recipientFirstName: 'Guest', recipientLastName: 'Buyer',
             phone: '+359888000000',
             paymentMethod: $method,
             accountId: null,
@@ -774,7 +774,7 @@ class OrderEditorTest extends TestCase
     {
         return new OrderDeliveryChange(
             deliveryType: OrderDeliveryType::STREET_ADDRESS,
-            recipientName: 'New Recipient',
+            recipientFirstName: 'New', recipientLastName: 'Recipient',
             phone: '+359888999999',
             country: 'BG',
             city: $city,
@@ -793,7 +793,7 @@ class OrderEditorTest extends TestCase
         $row = OrderModel::findOrFail($order->id());
         $this->assertSame(1, (int) $row->edit_revision);
         $this->assertSame('Plovdiv', $row->city);
-        $this->assertSame('New Recipient', $row->recipient_name);
+        $this->assertSame('New Recipient', trim($row->recipient_first_name.' '.$row->recipient_last_name));
         $this->assertSame('econt', $row->carrier_code, 'a street order may now carry a courier');
         $this->assertSame((string) $order->addressId(), (string) $row->address_id, 'addressId is provenance and is never re-pointed');
 
@@ -813,7 +813,7 @@ class OrderEditorTest extends TestCase
         try {
             $this->edit($order, [$this->addChange('C', 1)], delivery: new OrderDeliveryChange(
                 deliveryType: OrderDeliveryType::STREET_ADDRESS,
-                recipientName: 'X',
+                recipientFirstName: 'X', recipientLastName: 'Testov',
                 phone: '1',
                 country: null,
                 city: null,

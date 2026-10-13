@@ -27,7 +27,8 @@ final class AddressTest extends TestCase
     {
         return Address::create(
             deliveryType: AddressDeliveryType::STREET_ADDRESS,
-            recipientName: $this->value($overrides, 'recipientName', 'Ivan Ivanov'),
+            recipientFirstName: $this->value($overrides, 'recipientFirstName', 'Ivan'),
+            recipientLastName: $this->value($overrides, 'recipientLastName', 'Ivanov'),
             phone: $this->value($overrides, 'phone', '+359888123456'),
             accountId: $this->value($overrides, 'accountId', null),
             country: $this->value($overrides, 'country', 'BG'),
@@ -45,7 +46,8 @@ final class AddressTest extends TestCase
     {
         return Address::create(
             deliveryType: AddressDeliveryType::PICKUP_POINT,
-            recipientName: $this->value($overrides, 'recipientName', 'Ivan Ivanov'),
+            recipientFirstName: $this->value($overrides, 'recipientFirstName', 'Ivan'),
+            recipientLastName: $this->value($overrides, 'recipientLastName', 'Ivanov'),
             phone: $this->value($overrides, 'phone', '+359888123456'),
             accountId: $this->value($overrides, 'accountId', null),
             country: $this->value($overrides, 'country', 'BG'),
@@ -257,7 +259,7 @@ final class AddressTest extends TestCase
 
         $address->update(
             deliveryType: AddressDeliveryType::PICKUP_POINT,
-            recipientName: 'Ivan Ivanov',
+            recipientFirstName: 'Ivan', recipientLastName: 'Ivanov',
             phone: '+359888123456',
             country: 'bg',
             carrierCode: 'econt',
@@ -298,27 +300,27 @@ final class AddressTest extends TestCase
         $this->pickupPoint(['addressLine2' => 'Floor 2']);
     }
 
-    // --- recipientName / phone required regardless of type -----------------
+    // --- the recipient's two name parts / phone required regardless of type -----------------
 
-    public function test_empty_recipient_name_throws_for_street_address(): void
+    public function test_empty_first_name_throws_for_street_address(): void
     {
         $this->expectException(InvalidArgumentException::class);
 
-        $this->streetAddress(['recipientName' => '']);
+        $this->streetAddress(['recipientFirstName' => '']);
     }
 
-    public function test_empty_recipient_name_throws_for_pickup_point(): void
+    public function test_empty_first_name_throws_for_pickup_point(): void
     {
         $this->expectException(InvalidArgumentException::class);
 
-        $this->pickupPoint(['recipientName' => '']);
+        $this->pickupPoint(['recipientFirstName' => '']);
     }
 
-    public function test_whitespace_only_recipient_name_throws(): void
+    public function test_whitespace_only_first_name_throws(): void
     {
         $this->expectException(InvalidArgumentException::class);
 
-        $this->streetAddress(['recipientName' => '   ']);
+        $this->streetAddress(['recipientFirstName' => '   ']);
     }
 
     public function test_empty_phone_throws_for_street_address(): void
@@ -366,7 +368,7 @@ final class AddressTest extends TestCase
 
         $address->update(
             deliveryType: AddressDeliveryType::STREET_ADDRESS,
-            recipientName: 'New Name',
+            recipientFirstName: 'New', recipientLastName: 'Name',
             phone: '+359888000000',
             country: 'BG',
             city: 'Plovdiv',
@@ -375,7 +377,7 @@ final class AddressTest extends TestCase
             addressLine2: 'Floor 3',
         );
 
-        $this->assertSame('New Name', $address->recipientName());
+        $this->assertSame('New Name', $address->recipientFullName());
         $this->assertSame('+359888000000', $address->phone());
         $this->assertSame('Plovdiv', $address->city());
         $this->assertSame('4000', $address->postalCode());
@@ -391,7 +393,7 @@ final class AddressTest extends TestCase
 
         $address->update(
             deliveryType: AddressDeliveryType::PICKUP_POINT,
-            recipientName: 'Ivan Ivanov',
+            recipientFirstName: 'Ivan', recipientLastName: 'Ivanov',
             phone: '+359888123456',
             country: 'BG',
             carrierCode: 'speedy',
@@ -412,7 +414,7 @@ final class AddressTest extends TestCase
         try {
             $address->update(
                 deliveryType: AddressDeliveryType::STREET_ADDRESS,
-                recipientName: 'Ivan Ivanov',
+                recipientFirstName: 'Ivan', recipientLastName: 'Ivanov',
                 phone: '+359888123456',
                 country: 'BG',
                 city: 'Sofia',
@@ -428,14 +430,14 @@ final class AddressTest extends TestCase
         $this->assertNull($address->carrierCode());
     }
 
-    public function test_update_with_empty_recipient_name_throws_and_leaves_the_address_unchanged(): void
+    public function test_update_with_empty_first_name_throws_and_leaves_the_address_unchanged(): void
     {
         $address = $this->streetAddress();
 
         try {
             $address->update(
                 deliveryType: AddressDeliveryType::STREET_ADDRESS,
-                recipientName: '',
+                recipientFirstName: '', recipientLastName: 'Ivanov',
                 phone: '+359888123456',
                 country: 'BG',
                 city: 'Sofia',
@@ -446,7 +448,7 @@ final class AddressTest extends TestCase
             // expected
         }
 
-        $this->assertSame('Ivan Ivanov', $address->recipientName());
+        $this->assertSame('Ivan Ivanov', $address->recipientFullName());
     }
 
     // --- assignId() ------------------------------------------------------------
@@ -470,7 +472,7 @@ final class AddressTest extends TestCase
             id: '5',
             accountId: '42',
             deliveryType: AddressDeliveryType::STREET_ADDRESS,
-            recipientName: 'Ivan Ivanov',
+            recipientFirstName: 'Ivan', recipientLastName: 'Ivanov',
             phone: '+359888123456',
             country: 'BG',
             city: 'Sofia',
@@ -485,7 +487,7 @@ final class AddressTest extends TestCase
         $this->assertSame('5', $address->id());
         $this->assertSame('42', $address->accountId());
         $this->assertSame(AddressDeliveryType::STREET_ADDRESS, $address->deliveryType());
-        $this->assertSame('Ivan Ivanov', $address->recipientName());
+        $this->assertSame('Ivan Ivanov', $address->recipientFullName());
         $this->assertSame('+359888123456', $address->phone());
         $this->assertSame('BG', $address->country());
         $this->assertSame('Sofia', $address->city());
@@ -500,7 +502,7 @@ final class AddressTest extends TestCase
             id: '7',
             accountId: null,
             deliveryType: AddressDeliveryType::PICKUP_POINT,
-            recipientName: 'Ivan Ivanov',
+            recipientFirstName: 'Ivan', recipientLastName: 'Ivanov',
             phone: '+359888123456',
             country: 'GR',
             city: null,
@@ -523,7 +525,7 @@ final class AddressTest extends TestCase
             id: '6',
             accountId: null,
             deliveryType: AddressDeliveryType::PICKUP_POINT,
-            recipientName: 'Ivan Ivanov',
+            recipientFirstName: 'Ivan', recipientLastName: 'Ivanov',
             phone: '+359888123456',
             country: null,
             city: null,

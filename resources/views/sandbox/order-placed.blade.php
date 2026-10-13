@@ -66,7 +66,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     document.getElementById('order-heading').textContent = 'Order ' + (order.id === null ? '(id pending)' : order.id);
     document.getElementById('order-meta').textContent =
-        order.status + ' · ' + order.email + ' · ' + order.recipient_name + ' · ' + order.delivery_type +
+        order.status + ' · ' + order.email + ' · ' + order.recipient_first_name + ' ' + order.recipient_last_name + ' · ' + order.delivery_type +
         (order.applied_promotion_code ? ' · promotion ' + order.applied_promotion_code : '');
     document.getElementById('order-already').hidden = stored.already_placed !== true;
 

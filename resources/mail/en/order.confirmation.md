@@ -1,6 +1,6 @@
 subject: Your order {{ order_number }} at {{ shop_name }}
 
-Hello {{ customer_name }},
+Hello {{ customer_first_name }},
 
 Thank you for your order. We received it on {{ order_date }}.
 

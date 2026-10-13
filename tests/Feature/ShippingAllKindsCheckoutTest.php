@@ -56,7 +56,7 @@ class ShippingAllKindsCheckoutTest extends TestCase
     /** @return array<string, mixed> */
     private function body(string $cartId, array $address, array $shipping): array
     {
-        return array_merge(['cart_id' => $cartId, 'email' => 'guest@example.com', 'recipient_name' => 'Guest Buyer', 'phone' => '+359888000000', 'payment_method' => 'cash_on_delivery'], $address, $shipping);
+        return array_merge(['cart_id' => $cartId, 'email' => 'guest@example.com', 'recipient_first_name' => 'Guest', 'recipient_last_name' => 'Buyer', 'phone' => '+359888000000', 'payment_method' => 'cash_on_delivery'], $address, $shipping);
     }
 
     /** @return array{id: string, handle: string, price: int} the method's quote for one kind, from an `all` quote of the session's cart */

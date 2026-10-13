@@ -252,7 +252,8 @@ final class OrderEditor
         if ($delivery !== null) {
             $order->reviseDelivery(
                 deliveryType: $delivery->deliveryType,
-                recipientName: $delivery->recipientName,
+                recipientFirstName: $delivery->recipientFirstName,
+                recipientLastName: $delivery->recipientLastName,
                 phone: $delivery->phone,
                 country: $delivery->country,
                 city: $delivery->city,
@@ -262,6 +263,7 @@ final class OrderEditor
                 carrierCode: $delivery->carrierCode,
                 pickupPointReference: $delivery->pickupPointReference,
                 settlement: $delivery->settlement,
+                pickupPointAddress: $delivery->pickupPointAddress,
                 region: $delivery->region,
             );
         }

@@ -346,7 +346,7 @@ final class CheckoutOrchestrator
 
         // The pickup kind is read through the ONE seam, ONCE (stage 5g-2a): this result prices the order AND is what the Address
         // and the Order record (resolveAddress() takes it from this destination), so there is no second reading of the request.
-        $kind = $pickup ? $this->pickupKinds->kindFor((string) $input->carrierCode, (string) $input->pickupPointReference, $input->pickupPointKind) : null;
+        $kind = $pickup ? $this->pickupKinds->kindFor((string) $input->carrierCode, $input->pickupPointReference, $input->pickupPointKind) : null;
 
         return QuoteDestination::forAddress($input->deliveryType, (string) $input->country, $pickup ? $input->settlement : $input->city, $input->postalCode, $kind);
     }
@@ -480,7 +480,7 @@ final class CheckoutOrchestrator
         $address = $this->resolveAddress($input, $destination, $region);
 
         // Step 6: resolve the Client.
-        $client = $this->clientResolver->resolve($input->accountId, $input->recipientName);
+        $client = $this->clientResolver->resolve($input->accountId, trim($input->recipientFirstName.' '.$input->recipientLastName));
 
         // Step 7: decrease stock per line; InsufficientStockException
         // propagates uncaught, aborting the transaction.
@@ -553,7 +553,8 @@ final class CheckoutOrchestrator
             subtotal: $subtotal,
             discount: $discount,
             deliveryType: OrderDeliveryType::from($address->deliveryType()->value),
-            recipientName: $address->recipientName(),
+            recipientFirstName: $address->recipientFirstName(),
+            recipientLastName: $address->recipientLastName(),
             phone: $address->phone(),
             placedAt: $placedAt,
             accountId: $input->accountId,
@@ -676,7 +677,8 @@ final class CheckoutOrchestrator
 
         return $this->addressResolver->resolveNew(
             deliveryType: $input->deliveryType,
-            recipientName: $input->recipientName,
+            recipientFirstName: $input->recipientFirstName,
+            recipientLastName: $input->recipientLastName,
             phone: $input->phone,
             accountId: $input->accountId,
             country: $input->country,

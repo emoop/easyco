@@ -32,6 +32,8 @@ final class ShipmentRequest
         public readonly int $attempt,
         public readonly string $carrierCode,
         public readonly string $serviceCode,
+        // The recipient's FULL name (first + last): the caller passes Order::recipientFullName(); a courier label has one name line
+        // (checkout form v2, section 2.3). The Shipping package imports nothing from Order, so it takes the string.
         public readonly string $recipientName,
         public readonly string $recipientPhone,
         public readonly string $countryCode,

@@ -90,7 +90,8 @@ class StorefrontCheckoutPageTest extends TestCase
         $html = $this->get('/checkout')->getContent();
 
         $this->assertMatchesRegularExpression('/<input id="sf-email" name="email" type="email" autocomplete="email" inputmode="email" required/', $html);
-        $this->assertMatchesRegularExpression('/<input id="sf-recipient-name" name="recipient_name" type="text" autocomplete="name" required/', $html);
+        $this->assertMatchesRegularExpression('/<input id="sf-first-name" name="recipient_first_name" type="text" autocomplete="given-name" required/', $html);
+        $this->assertMatchesRegularExpression('/<input id="sf-last-name" name="recipient_last_name" type="text" autocomplete="family-name" required/', $html);
         $this->assertMatchesRegularExpression('/<input id="sf-phone" name="phone" type="tel" autocomplete="tel" inputmode="tel" required/', $html);
         $this->assertStringContainsString('autocomplete="address-level2"', $html);
         $this->assertStringContainsString('autocomplete="postal-code"', $html);
@@ -98,7 +99,7 @@ class StorefrontCheckoutPageTest extends TestCase
         $this->assertStringContainsString('autocomplete="address-line2"', $html);
         $this->assertStringContainsString('autocomplete="country"', $html);
 
-        foreach (['sf-email', 'sf-recipient-name', 'sf-phone', 'sf-country', 'sf-city', 'sf-postal-code', 'sf-address-1', 'sf-address-2', 'sf-pickup-reference', 'sf-pickup-name', 'sf-pickup-address'] as $id) {
+        foreach (['sf-email', 'sf-first-name', 'sf-last-name', 'sf-phone', 'sf-country', 'sf-city', 'sf-postal-code', 'sf-address-1', 'sf-address-2', 'sf-pickup-address'] as $id) {
             $this->assertStringContainsString('<label for="'.$id.'">', $html, "a label for #{$id}");
         }
     }
@@ -109,7 +110,7 @@ class StorefrontCheckoutPageTest extends TestCase
 
         $this->assertMatchesRegularExpression('/<div class="sf-error-summary" role="alert" tabindex="-1" data-sf-error-summary hidden>/', $html);
 
-        foreach (['email', 'recipient_name', 'phone', 'country', 'city', 'postal_code', 'address_line_1', 'address_line_2', 'pickup_point_reference', 'pickup_point_name', 'pickup_point_address', 'shipping_method_id', 'payment_method'] as $field) {
+        foreach (['email', 'recipient_first_name', 'recipient_last_name', 'phone', 'country', 'city', 'postal_code', 'address_line_1', 'address_line_2', 'pickup_point_address', 'shipping_method_id', 'payment_method'] as $field) {
             $this->assertStringContainsString('id="sf-err-'.$field.'" data-sf-error-for="'.$field.'" hidden', $html, $field);
         }
 
@@ -201,7 +202,7 @@ class StorefrontCheckoutPageTest extends TestCase
         $this->assertMatchesRegularExpression('/<div data-sf-address-fields hidden>.*?<div class="sf-field" data-sf-region-field>\s*<label for="sf-region">Region<\/label>\s*<input id="sf-region" name="region" type="text" autocomplete="address-level1" maxlength="100">\s*<p class="sf-field-error" id="sf-err-region" data-sf-error-for="region" hidden><\/p>.*?<div data-sf-pickup-fields hidden>/s', $html, 'the region is part of the street-address block, before the pick-up block');
         $this->assertStringNotContainsString('name="region"', substr($html, (int) strpos($html, 'data-sf-pickup-fields')), 'never for a pick-up point');
 
-        $this->assertMatchesRegularExpression('/<label for="sf-note">Order note<\/label>\s*<textarea id="sf-note" name="customer_note" rows="3" maxlength="1000" placeholder="[^"]+" aria-describedby="sf-note-counter"><\/textarea>/', $html);
+        $this->assertMatchesRegularExpression('/<label for="sf-note">Order note<\/label>\s*<textarea id="sf-note" name="customer_note" rows="3" maxlength="1000" placeholder="[^"]+" aria-describedby="sf-note-counter" data-sf-describedby="sf-note-counter"><\/textarea>/', $html);
         $this->assertStringContainsString('<p class="sf-note-counter" id="sf-note-counter" data-sf-note-counter>0 / 1000</p>', $html);
         $this->assertStringContainsString('id="sf-err-customer_note" data-sf-error-for="customer_note" hidden', $html);
         $this->assertStringNotContainsString('data-sf-note-field hidden', $html, 'the note is always visible');
@@ -227,6 +228,67 @@ class StorefrontCheckoutPageTest extends TestCase
         $this->assertLessThan(strpos($html, '<form class="sf-checkout-form"'), strpos($html, 'data-sf-promo hidden'));
         $this->assertSame(1, substr_count($html, '<form '), 'the promo form is built by the script; the page holds only the checkout form');
         $this->assertStringNotContainsString('<fieldset class="sf-fieldset"><div class="sf-summary-promo"', $html);
+    }
+
+    /** Checkout form v2, section 4: the asterisk of a label and the `required` of its input are ONE fact, in both directions. */
+    public function test_a_required_input_has_the_marker_and_the_marker_sits_on_no_optional_input(): void
+    {
+        $document = new \DOMDocument();
+        @$document->loadHTML('<?xml encoding="utf-8"?>'.$this->get('/checkout')->getContent());
+        $xpath = new \DOMXPath($document);
+        $form = $xpath->query('//form[@id="sf-checkout-form"]')->item(0);
+        $this->assertNotNull($form);
+
+        $required = [];
+        $marked = [];
+
+        foreach ($xpath->query('.//input[@id] | .//textarea[@id] | .//select[@id]', $form) as $input) {
+            $id = $input->getAttribute('id');
+            $label = $xpath->query('.//label[@for="'.$id.'"]', $form)->item(0);
+            $hasMarker = $label !== null && $xpath->query('.//span[@class="sf-required" and @aria-hidden="true" and normalize-space(.)="*"]', $label)->length === 1;
+
+            if ($input->hasAttribute('required')) {
+                $required[] = $id;
+                $this->assertSame('true', $input->getAttribute('aria-required'), "#{$id} is required, so aria-required");
+                $this->assertTrue($hasMarker, "#{$id} is required but its label has no asterisk");
+            }
+
+            if ($hasMarker) {
+                $marked[] = $id;
+                $this->assertTrue($input->hasAttribute('required'), "#{$id} has an asterisk but is not required");
+            }
+        }
+
+        $this->assertSame($required, $marked);
+        $this->assertSame(['sf-email', 'sf-first-name', 'sf-last-name', 'sf-phone', 'sf-country', 'sf-city'], $required, 'the always-required fields; the others are toggled by the script from the same state as `required`');
+        $this->assertStringContainsString('<p class="sf-required-note">Fields marked with * are required.</p>', $this->get('/checkout')->getContent());
+    }
+
+    public function test_the_required_line_and_the_two_names_are_translated(): void
+    {
+        app(SiteSettingsRepository::class)->set('site.locale', 'bg');
+
+        $html = $this->get('/checkout')->getContent();
+
+        $this->assertStringContainsString('Полетата, отбелязани с *, са задължителни.', $html);
+        $this->assertStringContainsString('<label for="sf-first-name">Име <span class="sf-required" aria-hidden="true">*</span></label>', $html);
+        $this->assertStringContainsString('<label for="sf-last-name">Фамилия <span class="sf-required" aria-hidden="true">*</span></label>', $html);
+        $this->assertStringContainsString('<label for="sf-pickup-address">Офис или автомат</label>', $html);
+        $this->assertStringContainsString('Адрес, име или код на офиса', $html);
+    }
+
+    public function test_the_pickup_block_is_one_field_with_a_linked_help_line_and_no_map_note(): void
+    {
+        $html = $this->get('/checkout')->getContent();
+        $block = substr($html, (int) strpos($html, '<div data-sf-pickup-fields hidden>'), 1400);
+
+        $this->assertSame(1, substr_count($block, '<input '), 'ONE input in the pick-up block');
+        $this->assertStringContainsString('<input id="sf-pickup-address" name="pickup_point_address" type="text" maxlength="255" aria-describedby="sf-pickup-help" data-sf-describedby="sf-pickup-help">', $block);
+        $this->assertStringContainsString('<p class="sf-field-help" id="sf-pickup-help">The office&#039;s address, name or code</p>', $block);
+        $this->assertStringContainsString('<label for="sf-pickup-address">Office or locker</label>', $block);
+        $this->assertStringNotContainsString('name="pickup_point_reference"', $html);
+        $this->assertStringNotContainsString('name="pickup_point_name"', $html);
+        $this->assertStringNotContainsString('map', strtolower($block), 'the "not selected from a map yet" note is gone');
     }
 
     public function test_the_summary_is_a_sticky_right_column_with_a_mobile_toggle_bar(): void

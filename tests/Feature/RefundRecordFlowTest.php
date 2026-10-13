@@ -133,7 +133,7 @@ class RefundRecordFlowTest extends TestCase
             subtotal: $this->money($total),
             discount: Money::zero('EUR'),
             deliveryType: OrderDeliveryType::STREET_ADDRESS,
-            recipientName: 'Ivan Ivanov',
+            recipientFirstName: 'Ivan', recipientLastName: 'Ivanov',
             phone: '+359888123456',
             placedAt: new DateTimeImmutable('2026-09-28 09:00:00'),
             status: OrderStatus::SHIPPED,

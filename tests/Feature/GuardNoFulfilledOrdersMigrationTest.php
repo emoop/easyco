@@ -193,7 +193,7 @@ class GuardNoFulfilledOrdersMigrationTest extends TestCase
             'status' => $status,
             'placed_at' => '2026-01-01 12:00:00',
             'delivery_type' => 'street_address',
-            'recipient_name' => 'Ivan Ivanov',
+            'recipient_first_name' => 'Ivan', 'recipient_last_name' => 'Ivanov',
             'phone' => '+359888123456',
             'created_at' => now(),
             'updated_at' => now(),

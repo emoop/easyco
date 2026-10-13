@@ -122,7 +122,7 @@ class PickupPointContractTest extends TestCase
     private function checkoutPayload(string $cartId, array $address, array $override = []): array
     {
         return array_merge([
-            'cart_id' => $cartId, 'email' => 'guest@example.com', 'recipient_name' => 'Guest Buyer', 'phone' => '+359888000000',
+            'cart_id' => $cartId, 'email' => 'guest@example.com', 'recipient_first_name' => 'Guest', 'recipient_last_name' => 'Buyer', 'phone' => '+359888000000',
             'payment_method' => 'cash_on_delivery',
         ], $address, $this->lockerChoice(), $override);
     }
@@ -196,7 +196,7 @@ class PickupPointContractTest extends TestCase
         $quoted = collect($this->postJson('/api/shipping/quote', ['delivery_type' => 'street_address', 'country' => 'BG', 'settlement' => 'Sofia'])->assertOk()->json('methods'))->firstWhere('id', (string) $method->id());
 
         $response = $this->postJson('/api/checkout', [
-            'cart_id' => $cartId, 'email' => 'g@example.com', 'recipient_name' => 'G B', 'phone' => '+359888000000', 'payment_method' => 'cash_on_delivery',
+            'cart_id' => $cartId, 'email' => 'g@example.com', 'recipient_first_name' => 'G', 'recipient_last_name' => 'B', 'phone' => '+359888000000', 'payment_method' => 'cash_on_delivery',
             'delivery_type' => 'street_address', 'country' => 'BG', 'city' => 'Sofia', 'address_line_1' => 'Vitosha 1',
             'shipping_method_id' => $quoted['id'], 'quote_handle' => $quoted['handle'], 'expected_shipping_minor' => 500,
         ])->assertStatus(201);
@@ -208,7 +208,7 @@ class PickupPointContractTest extends TestCase
     {
         $this->lockerMethod();
         $this->customer();
-        $addressId = $this->postJson('/api/addresses', array_merge($this->pickupFields(), ['recipient_name' => 'Ivan Ivanov', 'phone' => '+359888111222']))
+        $addressId = $this->postJson('/api/addresses', array_merge($this->pickupFields(), ['recipient_first_name' => 'Ivan', 'recipient_last_name' => 'Ivanov', 'phone' => '+359888111222']))
             ->assertStatus(201)->assertJsonPath('pickup_point_name', self::NAME)->assertJsonPath('pickup_point_address', self::ADDRESS)->json('id');
         $cartId = $this->fillCart();
 
@@ -249,9 +249,7 @@ class PickupPointContractTest extends TestCase
     public static function badRequests(): array
     {
         return [
-            'missing name' => [['pickup_point_name' => null], 'pickup_point_name'],
             'missing address' => [['pickup_point_address' => null], 'pickup_point_address'],
-            'blank name' => [['pickup_point_name' => '   '], 'pickup_point_name'],
             'name too long' => [['pickup_point_name' => str_repeat('я', 256)], 'pickup_point_name'],
             'address too long' => [['pickup_point_address' => str_repeat('я', 256)], 'pickup_point_address'],
             '10,000 characters' => [['pickup_point_address' => str_repeat('Z', 10000)], 'pickup_point_address'],
@@ -280,6 +278,24 @@ class PickupPointContractTest extends TestCase
         $this->assertNull(DB::table('carts')->where('id', $cartId)->value('order_id'));
     }
 
+    /** Checkout form v2, section 3: the point's NAME (and the code) are optional now; only the description (pickup_point_address) is required. */
+    #[\PHPUnit\Framework\Attributes\DataProvider('optionalNames')]
+    public function test_a_missing_or_blank_name_is_accepted_and_stored_as_none(?string $name): void
+    {
+        $this->lockerMethod();
+        $cartId = $this->fillCart();
+
+        $this->postJson('/api/checkout', $this->checkoutPayload($cartId, $this->pickupFields(['pickup_point_name' => $name])))->assertStatus(201);
+
+        $this->assertNull(DB::table('orders')->value('pickup_point_name'));
+    }
+
+    /** @return array<string, array{?string}> */
+    public static function optionalNames(): array
+    {
+        return ['missing' => [null], 'blank' => ['   ']];
+    }
+
     public function test_the_display_fields_are_refused_for_a_street_address_at_checkout_and_in_the_address_api(): void
     {
         $this->lockerMethod();
@@ -293,17 +309,17 @@ class PickupPointContractTest extends TestCase
 
         $this->customer();
         foreach (['pickup_point_name', 'pickup_point_address'] as $field) {
-            $this->postJson('/api/addresses', array_merge($street, ['recipient_name' => 'I I', 'phone' => '+359888111222', $field => 'Something']))->assertStatus(422)->assertJsonValidationErrors([$field]);
+            $this->postJson('/api/addresses', array_merge($street, ['recipient_first_name' => 'I', 'recipient_last_name' => 'I', 'phone' => '+359888111222', $field => 'Something']))->assertStatus(422)->assertJsonValidationErrors([$field]);
         }
         $this->assertSame(0, DB::table('addresses')->count());
     }
 
-    public function test_the_address_api_needs_both_for_a_pickup_point_on_create_and_on_update(): void
+    public function test_the_address_api_needs_the_description_for_a_pickup_point_on_create_and_on_update_and_the_name_is_optional(): void
     {
         $this->customer();
-        $base = array_merge($this->pickupFields(), ['recipient_name' => 'Ivan Ivanov', 'phone' => '+359888111222']);
+        $base = array_merge($this->pickupFields(), ['recipient_first_name' => 'Ivan', 'recipient_last_name' => 'Ivanov', 'phone' => '+359888111222']);
 
-        foreach (['pickup_point_name', 'pickup_point_address'] as $field) {
+        foreach (['pickup_point_address'] as $field) {
             $without = $base;
             unset($without[$field]);
             $this->postJson('/api/addresses', $without)->assertStatus(422)->assertJsonValidationErrors([$field]);
@@ -312,9 +328,14 @@ class PickupPointContractTest extends TestCase
 
         $id = $this->postJson('/api/addresses', $base)->assertStatus(201)->json('id');
         $without = $base;
-        unset($without['pickup_point_name']);
-        $this->putJson("/api/addresses/{$id}", $without)->assertStatus(422)->assertJsonValidationErrors(['pickup_point_name']);
-        $this->assertSame(self::NAME, DB::table('addresses')->where('id', $id)->value('pickup_point_name'), 'the stored address is untouched');
+        unset($without['pickup_point_address']);
+        $this->putJson("/api/addresses/{$id}", $without)->assertStatus(422)->assertJsonValidationErrors(['pickup_point_address']);
+        $this->assertSame(self::ADDRESS, DB::table('addresses')->where('id', $id)->value('pickup_point_address'), 'the stored address is untouched');
+
+        // The name is optional: an update without it clears it.
+        $noName = $base;
+        unset($noName['pickup_point_name']);
+        $this->putJson("/api/addresses/{$id}", $noName)->assertOk()->assertJsonPath('pickup_point_name', null);
 
         $this->putJson("/api/addresses/{$id}", array_merge($base, ['pickup_point_name' => 'New name']))->assertOk()->assertJsonPath('pickup_point_name', 'New name');
     }
@@ -325,7 +346,7 @@ class PickupPointContractTest extends TestCase
     {
         $this->lockerMethod();
         $account = $this->customer();
-        $historical = Address::create(AddressDeliveryType::PICKUP_POINT, 'Ivan Ivanov', '+359888111222', (string) $account->id, 'BG', carrierCode: 'econt', pickupPointReference: 'office-77', settlement: 'Sofia');
+        $historical = Address::create(AddressDeliveryType::PICKUP_POINT, 'Ivan', 'Ivanov', '+359888111222', (string) $account->id, 'BG', carrierCode: 'econt', pickupPointReference: 'office-77', settlement: 'Sofia');
         app(AddressRepository::class)->save($historical);
         $this->assertNull(app(AddressRepository::class)->findById($historical->id())->pickupPointName());
         $cartId = $this->fillCart();
@@ -377,7 +398,7 @@ class PickupPointContractTest extends TestCase
         $order = Order::create(
             clientId: $this->clientId(), transactionId: $this->transactionId(), email: 'b@example.com', currency: 'EUR',
             subtotal: Money::fromMinorUnits(1000, 'EUR'), discount: Money::zero('EUR'), deliveryType: OrderDeliveryType::STREET_ADDRESS,
-            recipientName: 'I I', phone: '+359888123456', placedAt: new DateTimeImmutable('2026-10-09 10:00:00'), country: 'BG', city: 'Sofia', addressLine1: 'V 1',
+            recipientFirstName: 'I', recipientLastName: 'I', phone: '+359888123456', placedAt: new DateTimeImmutable('2026-10-09 10:00:00'), country: 'BG', city: 'Sofia', addressLine1: 'V 1',
         );
         app(OrderRepository::class)->save($order);
 
@@ -411,24 +432,24 @@ class PickupPointContractTest extends TestCase
 
     public function test_the_address_and_order_entities_apply_the_same_rules(): void
     {
-        $pickup = Address::create(AddressDeliveryType::PICKUP_POINT, 'I I', '+359888123456', null, 'BG', carrierCode: 'econt', pickupPointReference: 'o-1', settlement: 'Sofia', pickupPointName: '  Name  ', pickupPointAddress: ' Addr ');
+        $pickup = Address::create(AddressDeliveryType::PICKUP_POINT, 'I', 'I', '+359888123456', null, 'BG', carrierCode: 'econt', pickupPointReference: 'o-1', settlement: 'Sofia', pickupPointName: '  Name  ', pickupPointAddress: ' Addr ');
         $this->assertSame(['Name', 'Addr'], [$pickup->pickupPointName(), $pickup->pickupPointAddress()], 'trimmed');
-        $none = Address::create(AddressDeliveryType::PICKUP_POINT, 'I I', '+359888123456', null, 'BG', carrierCode: 'econt', pickupPointReference: 'o-1', settlement: 'Sofia');
+        $none = Address::create(AddressDeliveryType::PICKUP_POINT, 'I', 'I', '+359888123456', null, 'BG', carrierCode: 'econt', pickupPointReference: 'o-1', settlement: 'Sofia');
         $this->assertNull($none->pickupPointName(), 'a pickup address without them is legal (historical)');
 
         foreach ([
-            fn () => Address::create(AddressDeliveryType::STREET_ADDRESS, 'I I', '+359888123456', null, 'BG', 'Sofia', addressLine1: 'V 1', pickupPointName: 'x'),
-            fn () => Address::create(AddressDeliveryType::STREET_ADDRESS, 'I I', '+359888123456', null, 'BG', 'Sofia', addressLine1: 'V 1', pickupPointAddress: 'x'),
-            fn () => Address::create(AddressDeliveryType::PICKUP_POINT, 'I I', '+359888123456', null, 'BG', carrierCode: 'e', pickupPointReference: 'o', settlement: 'S', pickupPointName: '   '),
-            fn () => Address::create(AddressDeliveryType::PICKUP_POINT, 'I I', '+359888123456', null, 'BG', carrierCode: 'e', pickupPointReference: 'o', settlement: 'S', pickupPointAddress: str_repeat('x', 256)),
-            fn () => $none->update(AddressDeliveryType::STREET_ADDRESS, 'I I', '+359888123456', 'BG', 'Sofia', addressLine1: 'V 1', pickupPointName: 'x'),
+            fn () => Address::create(AddressDeliveryType::STREET_ADDRESS, 'I', 'I', '+359888123456', null, 'BG', 'Sofia', addressLine1: 'V 1', pickupPointName: 'x'),
+            fn () => Address::create(AddressDeliveryType::STREET_ADDRESS, 'I', 'I', '+359888123456', null, 'BG', 'Sofia', addressLine1: 'V 1', pickupPointAddress: 'x'),
+            fn () => Address::create(AddressDeliveryType::PICKUP_POINT, 'I', 'I', '+359888123456', null, 'BG', carrierCode: 'e', pickupPointReference: 'o', settlement: 'S', pickupPointName: '   '),
+            fn () => Address::create(AddressDeliveryType::PICKUP_POINT, 'I', 'I', '+359888123456', null, 'BG', carrierCode: 'e', pickupPointReference: 'o', settlement: 'S', pickupPointAddress: str_repeat('x', 256)),
+            fn () => $none->update(AddressDeliveryType::STREET_ADDRESS, 'I', 'I', '+359888123456', 'BG', 'Sofia', addressLine1: 'V 1', pickupPointName: 'x'),
             fn () => Order::create(
                 clientId: '1', transactionId: '1', email: 'b@example.com', currency: 'EUR', subtotal: Money::fromMinorUnits(1000, 'EUR'), discount: Money::zero('EUR'),
-                deliveryType: OrderDeliveryType::STREET_ADDRESS, recipientName: 'I I', phone: '+359888123456', placedAt: new DateTimeImmutable(), country: 'BG', city: 'S', addressLine1: 'V', pickupPointName: 'x',
+                deliveryType: OrderDeliveryType::STREET_ADDRESS, recipientFirstName: 'I', recipientLastName: 'I', phone: '+359888123456', placedAt: new DateTimeImmutable(), country: 'BG', city: 'S', addressLine1: 'V', pickupPointName: 'x',
             ),
             fn () => Order::create(
                 clientId: '1', transactionId: '1', email: 'b@example.com', currency: 'EUR', subtotal: Money::fromMinorUnits(1000, 'EUR'), discount: Money::zero('EUR'),
-                deliveryType: OrderDeliveryType::PICKUP_POINT, recipientName: 'I I', phone: '+359888123456', placedAt: new DateTimeImmutable(), country: 'BG', carrierCode: 'e', pickupPointReference: 'o', settlement: 'S', pickupPointAddress: '  ',
+                deliveryType: OrderDeliveryType::PICKUP_POINT, recipientFirstName: 'I', recipientLastName: 'I', phone: '+359888123456', placedAt: new DateTimeImmutable(), country: 'BG', carrierCode: 'e', pickupPointReference: 'o', settlement: 'S', pickupPointAddress: '  ',
             ),
         ] as $case) {
             try {
@@ -444,11 +465,11 @@ class PickupPointContractTest extends TestCase
     {
         $make = fn (): Order => Order::create(
             clientId: '1', transactionId: '1', email: 'b@example.com', currency: 'EUR', subtotal: Money::fromMinorUnits(1000, 'EUR'), discount: Money::zero('EUR'),
-            deliveryType: OrderDeliveryType::PICKUP_POINT, recipientName: 'I I', phone: '+359888123456', placedAt: new DateTimeImmutable(), country: 'BG',
+            deliveryType: OrderDeliveryType::PICKUP_POINT, recipientFirstName: 'I', recipientLastName: 'I', phone: '+359888123456', placedAt: new DateTimeImmutable(), country: 'BG',
             carrierCode: 'econt', pickupPointReference: 'office-1', settlement: 'Sofia', pickupPointName: self::NAME, pickupPointAddress: self::ADDRESS,
         );
         $revise = fn (Order $o, string $reference = 'office-1', OrderDeliveryType $type = OrderDeliveryType::PICKUP_POINT, ?string $name = null) => $o->reviseDelivery(
-            $type, 'New Recipient', '+359888123456', 'BG',
+            $type, 'New', 'Recipient', '+359888123456', 'BG',
             $type === OrderDeliveryType::STREET_ADDRESS ? 'Sofia' : null, null, $type === OrderDeliveryType::STREET_ADDRESS ? 'V 1' : null, null,
             $type === OrderDeliveryType::STREET_ADDRESS ? null : 'econt', $type === OrderDeliveryType::STREET_ADDRESS ? null : $reference, $type === OrderDeliveryType::STREET_ADDRESS ? null : 'Sofia', $name,
         );

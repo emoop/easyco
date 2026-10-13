@@ -80,7 +80,7 @@ A code registry, `MailTemplates`, lists each **template key** with its allowed v
 
 ### 5.2 Variables
 
-Per key a closed list, e.g. `order.confirmation`: `shop_name`, `customer_name`, `order_number`, `order_date`, `order_total`, `payment_method_label`, `payment_instructions` (block), `delivery_summary` (block), `order_lines` (block), `order_url` (none in V1 — there is no customer order page; Unknown), `support_email`. Rules:
+Per key a closed list, e.g. `order.confirmation`: `shop_name`, `customer_name` (the recipient's FULL name, unchanged by form v2), `customer_first_name` (the first name: the default templates greet with it), `order_number`, `order_date`, `order_total`, `payment_method_label`, `payment_instructions` (block), `delivery_summary` (block), `order_lines` (block), `order_url` (none in V1 — there is no customer order page; Unknown), `support_email`. Rules:
 - **Escaped by default.** Every scalar variable is HTML-escaped when inserted, and header-safe when used in a subject (CR/LF/tab and all control characters are stripped, length ≤ 180).
 - **Blocks** (`order_lines`, `delivery_summary`, `payment_instructions`, `cart_lines`) are rendered by code from shipped Blade partials with escaped values — the merchant places the block token but cannot alter its markup.
 - A token not in the key's list is **left as visible text** in preview and refused at save ("unknown variable {{ foo }}"), so a typo is found when saving, not by a customer.

@@ -356,10 +356,11 @@ class OrderResource extends Resource
      *  - id: order number (there is no separate human-readable one —
      *    §0's own note), searchable, still part of the sort tie-break.
      *  - placed_at: default sort, descending.
-     *  - recipient_name (+ email as a description line): searchable
-     *    against email specifically, per the task's own "Search: order
-     *    id and email" — recipient_name itself is never matched, only
-     *    displayed.
+     *  - the recipient's FULL NAME (first + last, with the email as a description line): searchable by NAME too (checkout form v2,
+     *    section 1.5 / 2.5, an owner decision that replaces the earlier "id and email only"). The box splits the term on whitespace
+     *    (Filament's own word split) and EVERY word must match the recipient's first OR last name (LIKE %word%, `%` `_` `\` escaped,
+     *    case-insensitive by the column collation) OR the email OR the order number: "Сия Иванова", "иванова сия" and "Иванова" all
+     *    find Сия Иванова; "Сия Петрова" does not. One WHERE clause on the list's own query, no extra query.
      *  - status: a real `orders` column, so unlike the removed computed
      *    cells it is genuinely, safely sortable.
      *  - total: formatted through the same PriceDisplayFormatter every
@@ -380,6 +381,21 @@ class OrderResource extends Resource
      * list offers only methods that really are some order's latest
      * payment.
      */
+    /**
+     * ONE word of the list's search against the recipient's name: `first_name LIKE %word% OR last_name LIKE %word%` (the word's own
+     * `%`, `_` and `\` are escaped so they match literally), PLUS the email (so the column's whole job stays in one place). The
+     * name columns are NOT NULL, so the group never meets a NULL. A WHERE group on the list's own query: no second query.
+     */
+    public static function searchByRecipientName(Builder $query, string $word): Builder
+    {
+        $like = '%'.addcslashes($word, '%_\\').'%';
+
+        return $query
+            ->where('orders.recipient_first_name', 'like', $like)
+            ->orWhere('orders.recipient_last_name', 'like', $like)
+            ->orWhere('orders.email', 'like', $like);
+    }
+
     public static function table(Table $table): Table
     {
         return $table
@@ -419,13 +435,18 @@ class OrderResource extends Resource
                     ->label(__('orders.fields.placed_at'))
                     ->dateTime()
                     ->sortable(),
+                // The column's key stays `recipient_name`: a computed (full-name) column, no longer a real database column.
                 TextColumn::make('recipient_name')
                     ->label(__('orders.fields.recipient_name'))
+                    ->getStateUsing(fn (OrderModel $record): string => trim($record->recipient_first_name.' '.$record->recipient_last_name))
                     ->description(fn (OrderModel $record): string => $record->email)
-                    // Searches the real 'email' column, not
-                    // recipient_name itself — the task's own explicit
-                    // "search: order id and email", nothing else.
-                    ->searchable(['orders.email']),
+                    // The email column keeps matching exactly as before (the word-per-word LIKE of Filament's own search); the NAME
+                    // is matched by the closure below, one OR-group per word, so a word may be a first-name part, a last-name part
+                    // or an email part and EVERY word of the term must find a home.
+                    ->searchable(
+                        ['orders.email'],
+                        query: fn (Builder $query, string $search): Builder => static::searchByRecipientName($query, $search),
+                    ),
                 TextColumn::make('status')
                     ->label(__('orders.fields.status'))
                     ->formatStateUsing(fn (?string $state): string => static::optionLabel('status', $state))
@@ -800,6 +821,15 @@ class OrderResource extends Resource
                                 ->inlineLabel()
                                 ->extraEntryWrapperAttributes(['style' => self::PAIR_STYLE])
                                 ->formatStateUsing(fn (string $state): string => __("orders.delivery_type_options.{$state}")),
+                            TextEntry::make('recipient_first_name')
+                                ->label(__('orders.fields.recipient_first_name'))
+                                ->inlineLabel()
+                                ->extraEntryWrapperAttributes(['style' => self::PAIR_STYLE]),
+                            TextEntry::make('recipient_last_name')
+                                ->label(__('orders.fields.recipient_last_name'))
+                                ->inlineLabel()
+                                ->extraEntryWrapperAttributes(['style' => self::PAIR_STYLE])
+                                ->placeholder(__('orders.not_available')),
                             static::divider(),
                             // The address (a street address) or the pickup point: every part the order stores, in one block.
                             TextEntry::make('delivery_address')
@@ -1069,7 +1099,8 @@ class OrderResource extends Resource
             ]
             : [
                 __('orders.fields.carrier_code').': '.($record->carrier_code ?? $na),
-                __('orders.fields.pickup_point_reference').': '.($record->pickup_point_reference ?? $na),
+                // The courier's id of the point: only when the order has one (a DESCRIBED point, typed by the customer, has none).
+                filled($record->pickup_point_reference) ? __('orders.fields.pickup_point_reference').': '.$record->pickup_point_reference : null,
                 // The office as the customer saw it (stage 4f display snapshot), only when the order stored it.
                 filled($record->pickup_point_name) ? __('orders.fields.pickup_point_name').': '.$record->pickup_point_name : null,
                 filled($record->pickup_point_address) ? __('orders.fields.pickup_point_address').': '.$record->pickup_point_address : null,
@@ -2065,7 +2096,8 @@ class OrderResource extends Resource
                         ->default($record->delivery_type)
                         ->required()
                         ->live(),
-                    TextInput::make('delivery.recipient_name')->label(__('orders.fields.recipient_name'))->default($record->recipient_name)->required(),
+                    TextInput::make('delivery.recipient_first_name')->label(__('orders.fields.recipient_first_name'))->default($record->recipient_first_name)->required()->maxLength(100)->rule(new PlainText()),
+                    TextInput::make('delivery.recipient_last_name')->label(__('orders.fields.recipient_last_name'))->default($record->recipient_last_name)->required()->maxLength(100)->rule(new PlainText()),
                     TextInput::make('delivery.phone')->label(__('orders.fields.phone'))->default($record->phone)->required(),
                     // The country belongs to BOTH delivery types (owner decision D1), so it
                     // is always shown, and picked from the same list the domain's HTTP layer
@@ -2089,7 +2121,12 @@ class OrderResource extends Resource
                     TextInput::make('delivery.address_line_2')->label(__('orders.fields.address_line_2'))->default($record->address_line_2)->visible($isStreet),
                     TextInput::make('delivery.carrier_code')->label(__('orders.fields.carrier_code'))->default($record->carrier_code)
                         ->required($isPickup),
-                    TextInput::make('delivery.pickup_point_reference')->label(__('orders.fields.pickup_point_reference'))->default($record->pickup_point_reference)->visible($isPickup)->required(),
+                    // The point is IDENTIFIED (a courier's id, read-only here: shown only when the row has one) or DESCRIBED (the one text field
+                    // the customer typed, editable). Checkout form v2, section 3.
+                    TextInput::make('delivery.pickup_point_reference')->label(__('orders.fields.pickup_point_reference'))->default($record->pickup_point_reference)
+                        ->visible(fn (Get $get): bool => $isPickup($get) && filled($record->pickup_point_reference))->readOnly(),
+                    TextInput::make('delivery.pickup_point_address')->label(__('orders.fields.pickup_point_address'))->default($record->pickup_point_address)
+                        ->visible($isPickup)->required(blank($record->pickup_point_reference))->maxLength(255)->rule(new PlainText()),
                     TextInput::make('delivery.settlement')->label(__('orders.fields.settlement'))->default($record->settlement)->visible($isPickup)->required(),
                 ])
                 ->columns(2),

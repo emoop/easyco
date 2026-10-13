@@ -11,6 +11,8 @@ return [
         'id' => '№',
         'placed_at' => 'Дата',
         'recipient_name' => 'Получател',
+        'recipient_first_name' => 'Име',
+        'recipient_last_name' => 'Фамилия',
         'email' => 'Имейл',
         'client_name' => 'Клиент',
         'client_id' => 'ID на клиента',

@@ -91,7 +91,7 @@ class CheckoutHardeningTest extends TestCase
         return array_merge([
             'cart_id' => $this->cartId,
             'email' => 'guest@example.com',
-            'recipient_name' => 'Guest Buyer',
+            'recipient_first_name' => 'Guest', 'recipient_last_name' => 'Buyer',
             'phone' => '+359888000000',
             'payment_method' => 'cash_on_delivery',
             'delivery_type' => 'street_address',
@@ -331,7 +331,7 @@ class CheckoutHardeningTest extends TestCase
 
         // A guest naming a saved address: validation lets it through, the orchestrator's contract refuses it.
         $response = $this->postJson('/api/checkout', [
-            'cart_id' => $this->cartId, 'email' => 'guest@example.com', 'recipient_name' => 'Guest Buyer',
+            'cart_id' => $this->cartId, 'email' => 'guest@example.com', 'recipient_first_name' => 'Guest', 'recipient_last_name' => 'Buyer',
             'phone' => '+359888000000', 'payment_method' => 'cash_on_delivery', 'address_id' => self::SCRIPT,
         ])->assertStatus(422)->assertJsonPath('reason', 'checkout_invalid');
 
@@ -429,7 +429,7 @@ class CheckoutHardeningTest extends TestCase
     /** @return array<string, array{string}> */
     public static function textFields(): array
     {
-        return [['cart_id'], ['email'], ['recipient_name'], ['phone'], ['payment_method'], ['city'], ['address_line_1']];
+        return [['cart_id'], ['email'], ['recipient_first_name'], ['recipient_last_name'], ['phone'], ['payment_method'], ['city'], ['address_line_1']];
     }
 
     #[\PHPUnit\Framework\Attributes\DataProvider('textFields')]

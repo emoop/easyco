@@ -167,7 +167,7 @@ class ShippingQuoteEndpointTest extends TestCase
         $customer = $this->account();
         $this->actingAs($customer, 'customer');
         $this->guestCartWith($a, 3);
-        $address = Address::create(AddressDeliveryType::STREET_ADDRESS, 'Ivan I', '+359888123456', (string) $customer->id, 'BG', 'Sofia', addressLine1: 'Vitosha 1');
+        $address = Address::create(AddressDeliveryType::STREET_ADDRESS, 'Ivan', 'I', '+359888123456', (string) $customer->id, 'BG', 'Sofia', addressLine1: 'Vitosha 1');
         app(AddressRepository::class)->save($address);
 
         $typed = $this->postJson('/api/shipping/quote', $this->body())->assertOk();
@@ -222,7 +222,7 @@ class ShippingQuoteEndpointTest extends TestCase
         $customer = $this->account();
         $this->actingAs($customer, 'customer');
         $this->guestCartWith($a);
-        $address = Address::create(AddressDeliveryType::PICKUP_POINT, 'Maria P', '+359888654321', (string) $customer->id, 'BG', carrierCode: 'econt', pickupPointReference: 'o-1', settlement: 'Varna');
+        $address = Address::create(AddressDeliveryType::PICKUP_POINT, 'Maria', 'P', '+359888654321', (string) $customer->id, 'BG', carrierCode: 'econt', pickupPointReference: 'o-1', settlement: 'Varna');
         app(AddressRepository::class)->save($address);
         DB::table('addresses')->where('id', $address->id())->update(['country' => null]);
 
@@ -238,7 +238,7 @@ class ShippingQuoteEndpointTest extends TestCase
         $other = $this->account('other@example.com');
         $this->actingAs($customer, 'customer');
         $this->guestCartWith($a);
-        $theirs = Address::create(AddressDeliveryType::STREET_ADDRESS, 'Ivan I', '+359888123456', (string) $other->id, 'BG', 'Sofia', addressLine1: 'Vitosha 1');
+        $theirs = Address::create(AddressDeliveryType::STREET_ADDRESS, 'Ivan', 'I', '+359888123456', (string) $other->id, 'BG', 'Sofia', addressLine1: 'Vitosha 1');
         app(AddressRepository::class)->save($theirs);
 
         $foreign = $this->postJson('/api/shipping/quote', ['address_id' => (string) $theirs->id()]);

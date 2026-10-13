@@ -34,7 +34,7 @@ class AddressResolverTest extends TestCase
     {
         $address = app(AddressResolver::class)->resolveNew(
             deliveryType: AddressDeliveryType::STREET_ADDRESS,
-            recipientName: 'Ivan Ivanov',
+            recipientFirstName: 'Ivan', recipientLastName: 'Ivanov',
             phone: '+359888123456',
             accountId: null,
             country: 'BG',
@@ -55,7 +55,7 @@ class AddressResolverTest extends TestCase
 
         $address = app(AddressResolver::class)->resolveNew(
             deliveryType: AddressDeliveryType::STREET_ADDRESS,
-            recipientName: 'Ivan Ivanov',
+            recipientFirstName: 'Ivan', recipientLastName: 'Ivanov',
             phone: '+359888123456',
             accountId: $accountId,
             country: 'BG',
@@ -73,7 +73,7 @@ class AddressResolverTest extends TestCase
     {
         $address = app(AddressResolver::class)->resolveNew(
             deliveryType: AddressDeliveryType::PICKUP_POINT,
-            recipientName: 'Maria Petrova',
+            recipientFirstName: 'Maria', recipientLastName: 'Petrova',
             phone: '+359888654321',
             accountId: null,
             country: 'BG',
@@ -95,7 +95,7 @@ class AddressResolverTest extends TestCase
         $accountId = $this->accountId('buyer@example.com');
         $address = Address::create(
             deliveryType: AddressDeliveryType::STREET_ADDRESS,
-            recipientName: 'Ivan Ivanov',
+            recipientFirstName: 'Ivan', recipientLastName: 'Ivanov',
             phone: '+359888123456',
             accountId: $accountId,
             country: 'BG',
@@ -130,7 +130,7 @@ class AddressResolverTest extends TestCase
 
         $address = Address::create(
             deliveryType: AddressDeliveryType::STREET_ADDRESS,
-            recipientName: 'Ivan Ivanov',
+            recipientFirstName: 'Ivan', recipientLastName: 'Ivanov',
             phone: '+359888123456',
             accountId: $ownerAccountId,
             country: 'BG',

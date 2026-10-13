@@ -175,7 +175,7 @@ class OrderEditActionTest extends TestCase
         return app(CheckoutOrchestrator::class)->place(new CheckoutInput(
             cartId: $cart->id(),
             email: 'guest@example.com',
-            recipientName: 'Guest Buyer',
+            recipientFirstName: 'Guest', recipientLastName: 'Buyer',
             phone: '+359888000000',
             paymentMethod: 'cash_on_delivery',
             accountId: null,
@@ -630,11 +630,13 @@ class OrderEditActionTest extends TestCase
 
         $component->fillForm(['delivery' => [
             'delivery_type' => 'pickup_point',
-            'recipient_name' => 'Guest Buyer',
+            'recipient_first_name' => 'Guest', 'recipient_last_name' => 'Buyer',
             'phone' => '+359888000000',
             'country' => 'GR',
             'carrier_code' => 'speedy',
-            'pickup_point_reference' => 'office-7',
+            // A DESCRIBED point (checkout form v2, section 3): the editor offers the one text field; a reference is shown read-only only
+            // when the row has one.
+            'pickup_point_address' => 'Speedy office, Athens centre',
             'settlement' => 'Athens',
         ]])->callMountedAction();
 
@@ -642,7 +644,8 @@ class OrderEditActionTest extends TestCase
         $this->assertSame('pickup_point', $row->delivery_type);
         $this->assertNull($row->city);
         $this->assertSame('GR', $row->country, 'a pickup point keeps a country of its own (owner decision D1)');
-        $this->assertSame('office-7', $row->pickup_point_reference);
+        $this->assertNull($row->pickup_point_reference);
+        $this->assertSame('Speedy office, Athens centre', $row->pickup_point_address);
     }
 
     public function test_the_edit_form_refuses_a_country_that_is_not_in_the_list(): void
@@ -720,7 +723,7 @@ class OrderEditActionTest extends TestCase
 
         // Another operator edits the order after this dialog opened.
         app(OrderEditor::class)->apply($order->id(), 0, [], new OrderDeliveryChange(
-            OrderDeliveryType::STREET_ADDRESS, 'Guest Buyer', '+359888000000', 'BG', 'Varna', null, 'Sea Garden 1',
+            OrderDeliveryType::STREET_ADDRESS, 'Guest', 'Buyer', '+359888000000', 'BG', 'Varna', null, 'Sea Garden 1',
         ), OrderPromotionCodeChange::unchanged(), null, null, null, new DateTimeImmutable('2026-09-30 11:00:00'));
 
         $this->submitLines($component, ['Alpha' => ['quantity' => 1]]);

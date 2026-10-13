@@ -125,7 +125,8 @@ class OrderResourceTest extends TestCase
             cartId: $cart->id(),
             guestCartToken: app(CartRepository::class)->findById($cart->id())?->sessionToken(),
             email: $overrides['email'] ?? 'guest@example.com',
-            recipientName: $overrides['recipientName'] ?? 'Guest Buyer',
+            recipientFirstName: $overrides['recipientFirstName'] ?? 'Guest',
+            recipientLastName: $overrides['recipientLastName'] ?? 'Buyer',
             phone: '+359888000000',
             paymentMethod: 'cash_on_delivery',
             deliveryType: AddressDeliveryType::STREET_ADDRESS,
@@ -214,7 +215,7 @@ class OrderResourceTest extends TestCase
         $this->assertSame($first->id(), (string) $records->get(1)->id);
     }
 
-    public function test_search_matches_order_id_and_email_but_not_recipient_name(): void
+    public function test_search_matches_order_id_and_email(): void
     {
         $this->actingAsStaffRole('Administrator');
 
@@ -230,6 +231,88 @@ class OrderResourceTest extends TestCase
             ->searchTable('findme@example.com')
             ->assertCanSeeTableRecords([OrderModel::find($order->id())])
             ->assertCanNotSeeTableRecords([OrderModel::find($other->id())]);
+    }
+
+    /**
+     * Checkout form v2, section 1.5 (an owner decision that REPLACES the earlier "the list does not search by name"): the box also finds
+     * an order by the recipient's name. Every word of the term must match the first OR the last name (case-insensitive, in Cyrillic too).
+     */
+    public function test_search_finds_an_order_by_the_recipients_name_every_word_of_the_term_must_match(): void
+    {
+        $this->actingAsStaffRole('Administrator');
+
+        $siya = $this->placeGuestOrder(['recipientFirstName' => 'Сия', 'recipientLastName' => 'Иванова', 'email' => 'a1@example.com']);
+        $ivan = $this->placeGuestOrder(['recipientFirstName' => 'Иван', 'recipientLastName' => 'Петров', 'email' => 'a2@example.com']);
+
+        $find = function (string $term, bool $siyaFound, bool $ivanFound) use ($siya, $ivan): void {
+            $table = Livewire::test(ListOrders::class)->searchTable($term);
+
+            $siyaFound ? $table->assertCanSeeTableRecords([OrderModel::find($siya->id())]) : $table->assertCanNotSeeTableRecords([OrderModel::find($siya->id())]);
+            $ivanFound ? $table->assertCanSeeTableRecords([OrderModel::find($ivan->id())]) : $table->assertCanNotSeeTableRecords([OrderModel::find($ivan->id())]);
+        };
+
+        $find('Сия Иванова', true, false);
+        $find('иванова сия', true, false);       // any order of the words, any case (Cyrillic)
+        $find('ИВАНОВА', true, false);
+        $find('Иванова', true, false);
+        $find('сия', true, false);
+        $find('  Сия   Иванова ', true, false);   // the term is trimmed and split on any whitespace
+        $find('Иван', true, true);               // 'Иван' is the first name of one order and a part of 'Иванова' in the other
+        $find('Сия Петрова', false, false);      // every word must match: nobody is Сия Петрова
+        $find('Сия Петров', false, false);
+        $find('Петров', false, true);
+    }
+
+    public function test_the_name_search_escapes_percent_and_underscore_and_email_and_number_still_work(): void
+    {
+        $this->actingAsStaffRole('Administrator');
+
+        $plain = $this->placeGuestOrder(['recipientFirstName' => 'Ана', 'recipientLastName' => 'Плоска', 'email' => 'plain@example.com']);
+        $percent = $this->placeGuestOrder(['recipientFirstName' => 'Ана%', 'recipientLastName' => 'Лукова', 'email' => 'percent@example.com']);
+        $underscore = $this->placeGuestOrder(['recipientFirstName' => 'Ана', 'recipientLastName' => 'Дълга_Фамилия', 'email' => 'under@example.com']);
+
+        // The name match itself, on the list's own query: `%` and `_` of the typed word are matched LITERALLY. (The order-number column of
+        // Filament's own search is a plain LIKE and is not part of this rule: typing a lone `%` there still lists everything, as before.)
+        $names = fn (string $word): array => OrderResource::searchByRecipientName(OrderModel::query(), $word)->orderBy('id')->pluck('id')->map(fn ($id) => (string) $id)->all();
+        $ids = fn (...$orders): array => array_map(fn ($order) => (string) $order->id(), $orders);
+
+        $this->assertSame($ids($percent), $names('%'), 'a literal percent, not "everything"');
+        $this->assertSame($ids($underscore), $names('_'), 'a literal underscore, not "any one character"');
+        $this->assertSame($ids($percent), $names('Ана%'));
+        $this->assertSame($ids($plain, $percent, $underscore), $names('ана'));
+        $this->assertSame([], $names('\\'), 'a backslash is literal too');
+
+        // Through the box: the email and the order number still find their order, and nothing else.
+        foreach ([['under@example.com', $underscore], [(string) $plain->id(), $plain]] as [$term, $order]) {
+            $table = Livewire::test(ListOrders::class)->searchTable($term)->assertCanSeeTableRecords([OrderModel::find($order->id())]);
+
+            foreach ([$plain, $percent, $underscore] as $other) {
+                if ($other->id() !== $order->id()) {
+                    $table->assertCanNotSeeTableRecords([OrderModel::find($other->id())]);
+                }
+            }
+        }
+    }
+
+    public function test_the_name_search_adds_no_query_to_the_list(): void
+    {
+        $this->actingAsStaffRole('Administrator');
+        $this->placeGuestOrder(['recipientFirstName' => 'Сия', 'recipientLastName' => 'Иванова', 'email' => 'siya@example.com']);
+        $this->placeGuestOrder(['recipientFirstName' => 'Иван', 'recipientLastName' => 'Петров', 'email' => 'ivan@example.com']);
+
+        $count = function (string $term): int {
+            $queries = 0;
+            DB::listen(function () use (&$queries): void {
+                $queries++;
+            });
+            Livewire::test(ListOrders::class)->searchTable($term);
+
+            return $queries;
+        };
+
+        // Two searches that find the SAME single order: by its email (the old way) and by its name (the new one).
+        $count('siya@example.com');
+        $this->assertSame($count('siya@example.com'), $count('Иванова'), 'the name is one more WHERE group in the list\'s own query, never a query of its own');
     }
 
     /**

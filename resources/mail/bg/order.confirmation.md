@@ -1,6 +1,6 @@
 subject: Вашата поръчка {{ order_number }} в {{ shop_name }}
 
-Здравейте, {{ customer_name }},
+Здравейте, {{ customer_first_name }},
 
 Благодарим за поръчката. Получихме я на {{ order_date }}.
 

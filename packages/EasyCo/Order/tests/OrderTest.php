@@ -40,7 +40,8 @@ final class OrderTest extends TestCase
             subtotal: $this->value($overrides, 'subtotal', Money::fromMinorUnits(1000, 'EUR')),
             discount: $this->value($overrides, 'discount', Money::fromMinorUnits(300, 'EUR')),
             deliveryType: OrderDeliveryType::STREET_ADDRESS,
-            recipientName: $this->value($overrides, 'recipientName', 'Ivan Ivanov'),
+            recipientFirstName: $this->value($overrides, 'recipientFirstName', 'Ivan'),
+            recipientLastName: $this->value($overrides, 'recipientLastName', 'Ivanov'),
             phone: $this->value($overrides, 'phone', '+359888123456'),
             placedAt: $this->value($overrides, 'placedAt', $this->placedAt()),
             accountId: $this->value($overrides, 'accountId', null),
@@ -68,7 +69,8 @@ final class OrderTest extends TestCase
             subtotal: $this->value($overrides, 'subtotal', Money::fromMinorUnits(1000, 'EUR')),
             discount: $this->value($overrides, 'discount', Money::fromMinorUnits(300, 'EUR')),
             deliveryType: OrderDeliveryType::PICKUP_POINT,
-            recipientName: $this->value($overrides, 'recipientName', 'Ivan Ivanov'),
+            recipientFirstName: $this->value($overrides, 'recipientFirstName', 'Ivan'),
+            recipientLastName: $this->value($overrides, 'recipientLastName', 'Ivanov'),
             phone: $this->value($overrides, 'phone', '+359888123456'),
             placedAt: $this->value($overrides, 'placedAt', $this->placedAt()),
             accountId: $this->value($overrides, 'accountId', null),
@@ -126,12 +128,12 @@ final class OrderTest extends TestCase
         $this->streetAddressOrder(['email' => '']);
     }
 
-    public function test_empty_recipient_name_throws(): void
+    public function test_empty_first_name_throws(): void
     {
         $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('recipientName');
+        $this->expectExceptionMessage('recipientFirstName');
 
-        $this->streetAddressOrder(['recipientName' => '']);
+        $this->streetAddressOrder(['recipientFirstName' => '']);
     }
 
     public function test_empty_phone_throws(): void
@@ -360,7 +362,7 @@ final class OrderTest extends TestCase
             placedAt: $this->placedAt(),
             addressId: null,
             deliveryType: OrderDeliveryType::PICKUP_POINT,
-            recipientName: 'Maria Petrova',
+            recipientFirstName: 'Maria', recipientLastName: 'Petrova',
             phone: '+359888654321',
             country: 'RO',
             city: null,
@@ -461,7 +463,7 @@ final class OrderTest extends TestCase
             placedAt: $placedAt,
             addressId: '7',
             deliveryType: OrderDeliveryType::STREET_ADDRESS,
-            recipientName: 'Ivan Ivanov',
+            recipientFirstName: 'Ivan', recipientLastName: 'Ivanov',
             phone: '+359888123456',
             country: 'BG',
             city: 'Sofia',
@@ -509,7 +511,7 @@ final class OrderTest extends TestCase
             placedAt: $this->placedAt(),
             addressId: null,
             deliveryType: OrderDeliveryType::PICKUP_POINT,
-            recipientName: 'Maria Petrova',
+            recipientFirstName: 'Maria', recipientLastName: 'Petrova',
             phone: '+359888654321',
             country: null,
             city: null,
@@ -555,7 +557,7 @@ final class OrderTest extends TestCase
             placedAt: $this->placedAt(),
             addressId: null,
             deliveryType: OrderDeliveryType::STREET_ADDRESS,
-            recipientName: 'Ivan Ivanov',
+            recipientFirstName: 'Ivan', recipientLastName: 'Ivanov',
             phone: '+359888123456',
             country: 'BG',
             city: 'Sofia',
@@ -592,7 +594,7 @@ final class OrderTest extends TestCase
             placedAt: $this->placedAt(),
             addressId: null,
             deliveryType: OrderDeliveryType::STREET_ADDRESS,
-            recipientName: 'Ivan Ivanov',
+            recipientFirstName: 'Ivan', recipientLastName: 'Ivanov',
             phone: '+359888123456',
             country: 'BG',
             city: 'Sofia',

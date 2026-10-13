@@ -23,7 +23,8 @@ final class OrderDeliveryChange
 {
     public function __construct(
         public readonly OrderDeliveryType $deliveryType,
-        public readonly string $recipientName,
+        public readonly string $recipientFirstName,
+        public readonly string $recipientLastName,
         public readonly string $phone,
         public readonly ?string $country = null,
         public readonly ?string $city = null,
@@ -36,5 +37,7 @@ final class OrderDeliveryChange
         // The region of a street address (checkout RN-1), replaced with the rest of the delivery; null for a pickup point. Staff are NOT bound
         // by the merchant's per-country region rule: it governs what a CUSTOMER types (the edit form checks only the length and plain text).
         public readonly ?string $region = null,
+        // The DESCRIBED pick-up point's text (checkout form v2, section 3): what the customer typed; null = keep the order's own text.
+        public readonly ?string $pickupPointAddress = null,
     ) {}
 }

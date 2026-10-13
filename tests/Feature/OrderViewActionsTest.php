@@ -143,7 +143,7 @@ class OrderViewActionsTest extends TestCase
             cartId: $cart->id(),
             guestCartToken: app(CartRepository::class)->findById($cart->id())?->sessionToken(),
             email: 'guest@example.com',
-            recipientName: 'Guest Buyer',
+            recipientFirstName: 'Guest', recipientLastName: 'Buyer',
             phone: '+359888000000',
             paymentMethod: $overrides['paymentMethod'] ?? 'cash_on_delivery',
             deliveryType: AddressDeliveryType::STREET_ADDRESS,

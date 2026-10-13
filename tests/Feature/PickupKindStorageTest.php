@@ -61,7 +61,7 @@ class PickupKindStorageTest extends TestCase
 
     private function pickupAddress(?string $kind): Address
     {
-        return Address::create(AddressDeliveryType::PICKUP_POINT, 'Ana', '+359888111222', null, 'BG', null, null, null, null, 'econt', 'office-1', 'Sofia', 'Name', 'Addr', $kind);
+        return Address::create(AddressDeliveryType::PICKUP_POINT, 'Ana', 'Testov', '+359888111222', null, 'BG', null, null, null, null, 'econt', 'office-1', 'Sofia', 'Name', 'Addr', $kind);
     }
 
     private function order(OrderDeliveryType $type, ?string $kind): Order
@@ -70,7 +70,7 @@ class PickupKindStorageTest extends TestCase
 
         return Order::create(
             clientId: '1', transactionId: '1', email: 'b@example.com', currency: 'EUR', subtotal: Money::fromMinorUnits(1000, 'EUR'), discount: Money::zero('EUR'),
-            deliveryType: $type, recipientName: 'I I', phone: '+359888123456', placedAt: new DateTimeImmutable(), country: 'BG',
+            deliveryType: $type, recipientFirstName: 'I', recipientLastName: 'I', phone: '+359888123456', placedAt: new DateTimeImmutable(), country: 'BG',
             city: $pickup ? null : 'Sofia', addressLine1: $pickup ? null : 'V 1',
             carrierCode: $pickup ? 'econt' : null, pickupPointReference: $pickup ? 'office-1' : null, settlement: $pickup ? 'Sofia' : null,
             pickupPointKind: $kind,
@@ -89,14 +89,14 @@ class PickupKindStorageTest extends TestCase
     public function test_an_address_refuses_a_kind_on_a_street_address_and_any_other_value(): void
     {
         foreach ([
-            fn () => Address::create(AddressDeliveryType::STREET_ADDRESS, 'Ana', '+359888111222', null, 'BG', 'Sofia', addressLine1: 'V 1', pickupPointKind: 'office'),
+            fn () => Address::create(AddressDeliveryType::STREET_ADDRESS, 'Ana', 'Testov', '+359888111222', null, 'BG', 'Sofia', addressLine1: 'V 1', pickupPointKind: 'office'),
             fn () => $this->pickupAddress('other'),
             fn () => $this->pickupAddress('address'),
             fn () => $this->pickupAddress('OFFICE'),
             fn () => $this->pickupAddress('nowhere'),
             fn () => $this->pickupAddress('   '),
-            fn () => $this->pickupAddress(null)->update(AddressDeliveryType::STREET_ADDRESS, 'Ana', '+359888111222', 'BG', 'Sofia', addressLine1: 'V 1', pickupPointKind: 'office'),
-            fn () => $this->pickupAddress(null)->update(AddressDeliveryType::PICKUP_POINT, 'Ana', '+359888111222', 'BG', null, null, null, null, 'econt', 'o-1', 'Sofia', 'N', 'A', 'depot'),
+            fn () => $this->pickupAddress(null)->update(AddressDeliveryType::STREET_ADDRESS, 'Ana', 'Testov', '+359888111222', 'BG', 'Sofia', addressLine1: 'V 1', pickupPointKind: 'office'),
+            fn () => $this->pickupAddress(null)->update(AddressDeliveryType::PICKUP_POINT, 'Ana', 'Testov', '+359888111222', 'BG', null, null, null, null, 'econt', 'o-1', 'Sofia', 'N', 'A', 'depot'),
         ] as $i => $case) {
             try {
                 $case();
@@ -110,11 +110,11 @@ class PickupKindStorageTest extends TestCase
     public function test_an_update_replaces_the_kind_and_a_refused_update_changes_nothing(): void
     {
         $address = $this->pickupAddress('office');
-        $address->update(AddressDeliveryType::PICKUP_POINT, 'Ana', '+359888111222', 'BG', null, null, null, null, 'econt', 'office-1', 'Sofia', 'Name', 'Addr', 'locker');
+        $address->update(AddressDeliveryType::PICKUP_POINT, 'Ana', 'Testov', '+359888111222', 'BG', null, null, null, null, 'econt', 'office-1', 'Sofia', 'Name', 'Addr', 'locker');
         $this->assertSame('locker', $address->pickupPointKind());
 
         try {
-            $address->update(AddressDeliveryType::PICKUP_POINT, 'Ana', '+359888111222', 'BG', null, null, null, null, 'econt', 'office-1', 'Sofia', 'Name', 'Addr', 'depot');
+            $address->update(AddressDeliveryType::PICKUP_POINT, 'Ana', 'Testov', '+359888111222', 'BG', null, null, null, null, 'econt', 'office-1', 'Sofia', 'Name', 'Addr', 'depot');
             $this->fail('expected a refusal');
         } catch (InvalidArgumentException) {
             $this->assertSame('locker', $address->pickupPointKind());
@@ -139,7 +139,7 @@ class PickupKindStorageTest extends TestCase
     public function test_an_edit_of_the_delivery_keeps_the_kind_for_the_same_office_and_clears_it_otherwise(): void
     {
         $revise = fn (Order $o, string $reference = 'office-1', OrderDeliveryType $type = OrderDeliveryType::PICKUP_POINT, ?string $kind = null) => $o->reviseDelivery(
-            $type, 'New Recipient', '+359888123456', 'BG',
+            $type, 'New', 'Recipient', '+359888123456', 'BG',
             $type === OrderDeliveryType::STREET_ADDRESS ? 'Sofia' : null, null, $type === OrderDeliveryType::STREET_ADDRESS ? 'V 1' : null, null,
             $type === OrderDeliveryType::STREET_ADDRESS ? null : 'econt', $type === OrderDeliveryType::STREET_ADDRESS ? null : $reference, $type === OrderDeliveryType::STREET_ADDRESS ? null : 'Sofia',
             pickupPointKind: $kind,

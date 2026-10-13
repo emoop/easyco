@@ -153,7 +153,7 @@ final class SandboxCheckoutFlowTest extends TestCase
             // replay once the cart stops being the current one.
             'cart_id' => $this->cartId,
             'email' => 'guest@example.com',
-            'recipient_name' => 'Guest Buyer',
+            'recipient_first_name' => 'Guest', 'recipient_last_name' => 'Buyer',
             'phone' => '+359888000000',
             // The method the checkout page itself offers — never a hardcoded code.
             'payment_method' => app(PaymentMethodAdapterResolver::class)->availableMethods()[0],

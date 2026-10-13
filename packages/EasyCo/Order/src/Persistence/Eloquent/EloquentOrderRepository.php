@@ -39,7 +39,8 @@ final class EloquentOrderRepository implements OrderRepository
         $model->placed_at = $order->placedAt();
         $model->address_id = $order->addressId();
         $model->delivery_type = $order->deliveryType()->value;
-        $model->recipient_name = $order->recipientName();
+        $model->recipient_first_name = $order->recipientFirstName();
+        $model->recipient_last_name = $order->recipientLastName();
         $model->phone = $order->phone();
         $model->country = $order->country();
         $model->city = $order->city();
@@ -112,7 +113,8 @@ final class EloquentOrderRepository implements OrderRepository
             placedAt: $model->placed_at,
             addressId: $model->address_id !== null ? (string) $model->address_id : null,
             deliveryType: OrderDeliveryType::from($model->delivery_type),
-            recipientName: $model->recipient_name,
+            recipientFirstName: $model->recipient_first_name,
+            recipientLastName: $model->recipient_last_name,
             phone: $model->phone,
             country: $model->country,
             city: $model->city,

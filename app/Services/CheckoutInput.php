@@ -33,7 +33,8 @@ final class CheckoutInput
     public function __construct(
         public readonly string $cartId,
         public readonly string $email,
-        public readonly string $recipientName,
+        public readonly string $recipientFirstName,
+        public readonly string $recipientLastName,
         public readonly string $phone,
         public readonly string $paymentMethod,
         public readonly ?string $accountId = null,

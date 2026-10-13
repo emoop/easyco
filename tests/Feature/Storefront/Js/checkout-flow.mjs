@@ -275,6 +275,8 @@ const lastCheckout = () => checkoutPosts().at(-1);
 const from = (minor) => T('ck_from').replace(':price', minor === 0 ? T('ck_free') : fmt(minor));
 const status = () => q('[data-sf-quote-status]').textContent;
 const promoHost = () => q('[data-sf-promo]');
+// Does the field's label carry the asterisk?
+const markerOf = (name) => q(`label[for="${form.elements[name].id}"]`).querySelector('[aria-hidden="true"]') !== null;
 const promoForm = () => promoHost().querySelector('form');
 const promoInput = () => promoHost().querySelector('input');
 const cartGets = () => calls.filter((c) => c.method === 'GET' && c.path === '/api/cart').length;
@@ -325,18 +327,18 @@ function set(name, value) {
 
 function fillContact() {
     set('email', 'a@example.com');
-    set('recipient_name', 'Ana Petrova');
+    set('recipient_first_name', 'Ana');
+    set('recipient_last_name', 'Petrova');
     set('phone', '0888123456');
 }
 
+// ONE field: what the customer types is the office's address, name or code (checkout form v2, D3).
 function fillPoint(code) {
-    set('pickup_point_reference', code);
-    set('pickup_point_name', `Point ${code}`);
     set('pickup_point_address', `${code} Main St`);
     PICKUP.forEach((n) => form.elements[n].dispatch('input'));
 }
 
-const PICKUP = ['pickup_point_reference', 'pickup_point_name', 'pickup_point_address'];
+const PICKUP = ['pickup_point_address'];
 
 async function submit() {
     const event = form.dispatch('submit');
@@ -356,6 +358,16 @@ const scenarios = {
         assert.equal(form.elements.carrier_code, undefined, 'no typed courier field');
         assert.equal(form.elements.settlement, undefined, 'no separate settlement field');
         assert.equal(form.elements.destination_kind, undefined);
+        assert.equal(form.elements.recipient_name, undefined, 'the single name field is gone');
+        assert.equal(form.elements.recipient_first_name.attrs.autocomplete, 'given-name');
+        assert.equal(form.elements.recipient_last_name.attrs.autocomplete, 'family-name');
+        assert.equal(form.elements.recipient_first_name.attrs.maxlength, '100');
+        assert.equal(form.elements.recipient_last_name.attrs.maxlength, '100');
+        assert.ok(q('[data-sf-error-for="recipient_first_name"]') && q('[data-sf-error-for="recipient_last_name"]'), 'own error holders');
+        assert.equal(form.elements.pickup_point_reference, undefined, 'no typed code');
+        assert.equal(form.elements.pickup_point_name, undefined, 'no typed name');
+        assert.equal(q('[data-sf-pickup-fields]').all().filter((n) => n.tag === 'input').length, 1, 'ONE pick-up input');
+        assert.equal(form.elements.pickup_point_address.attrs['aria-describedby'], 'sf-pickup-help', 'the help line is linked');
         assert.equal(q('[data-sf-checkout-loading]').hidden, true);
         assert.equal(placeOrder.disabled, true);
         assert.equal(q('[data-sf-address-fields]').hidden, true);
@@ -470,10 +482,10 @@ const scenarios = {
         await submit();
 
         assert.deepEqual(lastCheckout().body, {
-            cart_id: 11, email: 'a@example.com', recipient_name: 'Ana Petrova', phone: '0888123456', payment_method: lastCheckout().body.payment_method,
+            cart_id: 11, email: 'a@example.com', recipient_first_name: 'Ana', recipient_last_name: 'Petrova', phone: '0888123456', payment_method: lastCheckout().body.payment_method,
             delivery_type: 'pickup_point', country: 'BG', shipping_method_id: '6', quote_handle: 'h6-office-1', expected_shipping_minor: 350,
             settlement: 'Sofia', carrier_code: 'Спиди', pickup_point_kind: 'office',
-            pickup_point_reference: 'S-1', pickup_point_name: 'Point S-1', pickup_point_address: 'S-1 Main St',
+            pickup_point_address: 'S-1 Main St',
         });
         assert.deepEqual(replaced, ['http://shop.test/order/received/5?expires=1&signature=abc']);
     },
@@ -504,19 +516,20 @@ const scenarios = {
         // Back to courier A: its office is kept (the kind the customer had), but the point belonged to the other courier: dropped.
         choose(courierRows()[0].radio);
         assert.equal(kindSelect.value, '4:office', 'the kind is kept when the new courier serves it');
-        assert.deepEqual(PICKUP.map((n) => form.elements[n].value), ['', '', ''], 'the point belonged to the other courier');
+        assert.deepEqual(PICKUP.map((n) => form.elements[n].value), [''], 'the point belonged to the other courier');
         fillPoint('E-9');
 
         // Another kind of the same courier: the point belonged to the office: dropped again.
         chooseKind('5:locker');
-        assert.deepEqual(PICKUP.map((n) => form.elements[n].value), ['', '', '']);
+        assert.deepEqual(PICKUP.map((n) => form.elements[n].value), ['']);
         assert.equal(placeOrder.disabled, true);
         fillPoint('L-3');
         assert.equal(placeOrder.disabled, false);
 
         // Everything else is untouched, the street fields included (an address would come back to them).
         assert.equal(form.elements.email.value, 'a@example.com');
-        assert.equal(form.elements.recipient_name.value, 'Ana Petrova');
+        assert.equal(form.elements.recipient_first_name.value, 'Ana');
+        assert.equal(form.elements.recipient_last_name.value, 'Petrova');
         assert.equal(form.elements.phone.value, '0888123456');
         assert.equal(form.elements.region.value, 'Sofia-city');
         assert.equal(form.elements.address_line_1.value, '5 Long St');
@@ -529,10 +542,10 @@ const scenarios = {
 
         const body = lastCheckout().body;
         assert.deepEqual(body, {
-            cart_id: 11, email: 'a@example.com', recipient_name: 'Ana Petrova', phone: '0888123456', payment_method: body.payment_method,
+            cart_id: 11, email: 'a@example.com', recipient_first_name: 'Ana', recipient_last_name: 'Petrova', phone: '0888123456', payment_method: body.payment_method,
             delivery_type: 'pickup_point', country: 'BG', shipping_method_id: '5', quote_handle: 'h5-locker-1', expected_shipping_minor: 0,
             settlement: 'Sofia', carrier_code: 'Еконт', pickup_point_kind: 'locker',
-            pickup_point_reference: 'L-3', pickup_point_name: 'Point L-3', pickup_point_address: 'L-3 Main St', customer_note: 'Please call 😀',
+            pickup_point_address: 'L-3 Main St', customer_note: 'Please call 😀',
         });
         assert.equal('region' in body, false, 'the region belongs to a street address only');
         assert.equal(quotePosts().length, requests);
@@ -567,7 +580,7 @@ const scenarios = {
         assert.equal(courierRows()[1].text, `Спиди — ${T('ck_kind_office')} — ${fmt(420)}`);
         assert.equal(courierRows()[1].radio.checked, true, 'the preference is kept');
         assert.equal(q('[data-sf-pickup-fields]').hidden, false);
-        assert.equal(form.elements.pickup_point_reference.value, 'S-1', 'what the customer typed stays');
+        assert.equal(form.elements.pickup_point_address.value, 'S-1 Main St', 'what the customer typed stays');
         assert.equal(checkoutPosts().length, 1, 'NOTHING is resent until the customer presses again');
         await flush();
         assert.equal(checkoutPosts().length, 1);
@@ -628,7 +641,7 @@ const scenarios = {
         assert.match(q('[data-sf-error-summary]').textContent, /The delivery quote has expired\./);
         assert.equal(courierRows()[0].radio.checked, true, 'the preference is kept');
         assert.equal(kindSelect.value, '4:office');
-        assert.equal(form.elements.pickup_point_reference.value, 'E-1');
+        assert.equal(form.elements.pickup_point_address.value, 'E-1 Main St');
         assert.equal(placeOrder.disabled, false);
         await flush();
         assert.equal(checkoutPosts().length, 1, 'no automatic resubmit');
@@ -658,7 +671,7 @@ const scenarios = {
         assert.equal(courierRows()[0].radio.checked, true);
         assert.equal(kindSelect.value, '4:office');
         assert.equal(q('[data-sf-pickup-fields]').hidden, false);
-        assert.equal(form.elements.pickup_point_reference.value, 'R-12', 'a re-quote does not drop the typed point');
+        assert.equal(form.elements.pickup_point_address.value, 'R-12 Main St', 'a re-quote does not drop the typed point');
 
         await submit();
 
@@ -740,7 +753,7 @@ const scenarios = {
         // optional (BG, the default): shown, not required, no marker.
         assert.equal(box.hidden, false);
         assert.equal(region.required, false);
-        assert.equal(box.getAttribute('data-required'), null);
+        assert.equal(markerOf('region'), false, 'optional: no asterisk');
         set('region', 'Sofia-city');
 
         // hidden (FR): gone, cleared, and not sent; a 422 on the note shows under the note.
@@ -759,7 +772,7 @@ const scenarios = {
         await typeInto('country', 'DE');
         assert.equal(box.hidden, false);
         assert.equal(region.required, true);
-        assert.equal(box.getAttribute('data-required'), 'true');
+        assert.equal(markerOf('region'), true, 'required: the asterisk follows the rule');
         await submit();
         assert.equal(checkoutPosts().length, 1, 'blocked before any request');
         assert.equal(q('[data-sf-error-for="region"]').textContent, T('ck_region_required'));
@@ -858,7 +871,7 @@ const scenarios = {
         assert.equal(q('[data-sf-summary-toggle-total]').textContent, fmt(2150), 'goods after the discount + delivery');
         assert.equal(courierRows()[1].radio.checked, true, 'the (courier, method, kind) is kept');
         assert.equal(q('[data-sf-pickup-fields]').hidden, false);
-        assert.deepEqual(PICKUP.map((n) => form.elements[n].value), ['S-1', 'Point S-1', 'S-1 Main St'], 'the point stays');
+        assert.deepEqual(PICKUP.map((n) => form.elements[n].value), ['S-1 Main St'], 'the point stays');
         assert.equal(form.elements.customer_note.value, 'Please call');
         assert.equal(form.elements.email.value, 'a@example.com');
         assert.equal(placeOrder.disabled, false);
@@ -898,7 +911,7 @@ const scenarios = {
         assert.equal(q('[data-sf-summary-toggle-total]').textContent, fmt(2350));
         assert.equal(promoForm().tag, 'form', 'the apply form is back');
         assert.equal(courierRows()[1].radio.checked, true);
-        assert.equal(form.elements.pickup_point_reference.value, 'S-1');
+        assert.equal(form.elements.pickup_point_address.value, 'S-1 Main St');
         assert.equal(checkoutPosts().length, 0);
     },
 
@@ -961,6 +974,89 @@ const scenarios = {
         await new Promise((resolve) => setTimeout(resolve, 300));
         assert.equal(placeOrder.disabled, false, 'free again');
         assert.equal(promoHost().querySelectorAll('button')[0].disabled, false);
+    },
+
+    // The asterisk follows `required`: always-required fields carry it from the server, the others get it from the SAME state that
+    // toggles `required` (street fields by kind, the pick-up field by kind, the region by the country's policy).
+    async required_markers() {
+        const named = ['email', 'recipient_first_name', 'recipient_last_name', 'phone', 'country', 'city', 'postal_code', 'address_line_1', 'address_line_2', 'region', 'pickup_point_address', 'customer_note'];
+        const parity = (why) => {
+            for (const name of named) {
+                assert.equal(markerOf(name), form.elements[name].required === true, `${why}: ${name} marker <-> required`);
+                assert.equal(form.elements[name].getAttribute('aria-required'), form.elements[name].required ? 'true' : null, `${why}: ${name} aria-required`);
+            }
+        };
+
+        assert.match(form.all().find((n) => n.className === 'sf-required-note').textContent, /\*/, 'the explanatory line');
+        for (const name of ['email', 'recipient_first_name', 'recipient_last_name', 'phone', 'country', 'city']) {
+            assert.equal(markerOf(name), true, `${name} is always required`);
+        }
+        parity('before any choice');
+
+        await typeInto('city', 'Sofia');
+        choose(courierRows()[2].radio);            // the courier-less ADDRESS method
+        assert.equal(markerOf('address_line_1'), true, 'a street address needs the street line');
+        assert.equal(markerOf('pickup_point_address'), false);
+        assert.equal(markerOf('region'), false, 'BG: optional');
+        parity('address, BG');
+
+        await typeInto('country', 'DE');           // required by the policy the page was rendered with
+        assert.equal(markerOf('region'), true);
+        parity('address, DE');
+        await typeInto('country', 'FR');           // hidden
+        assert.equal(markerOf('region'), false);
+        parity('address, FR');
+        await typeInto('country', 'BG');
+
+        choose(courierRows()[1].radio);            // Speedy: one kind, an office
+        assert.equal(markerOf('pickup_point_address'), true, 'a pick-up point needs its field');
+        assert.equal(markerOf('address_line_1'), false, 'and no longer the street line');
+        parity('pick-up');
+    },
+
+    // The checkout's compact promo box: ONE control (the field with the Apply button attached), the label kept for screen readers.
+    async promo_compact_box() {
+        const box = promoHost().querySelector('div');
+        const input = promoInput();
+        const form_ = promoForm();
+        const label = form_.querySelector('label');
+
+        assert.equal(input.attrs.placeholder, T('promo_label'), 'the promo text is the placeholder');
+        assert.equal(label.attrs.for, input.id, 'a real label stays, for screen readers');
+        assert.equal(label.textContent, T('promo_label'));
+        assert.match(label.className, /sf-promo-compact-label/, 'visually hidden by its class');
+        const wrapper = input.parent;
+        assert.match(wrapper.className, /sf-promo-compact-field/);
+        assert.ok(wrapper.children.includes(promoHost().querySelectorAll('button')[0]), 'the button is in the SAME wrapper as the input');
+        assert.equal(wrapper.children.indexOf(input) < wrapper.children.indexOf(promoHost().querySelectorAll('button')[0]), true, 'the button sits at the right end of the field');
+        assert.match(box.className, /sf-promo-compact/);
+
+        // The applied state works in the compact mode too.
+        await applyCode('SAVE10');
+        assert.ok(promoHost().textContent.includes(T('promo_applied').replace(':code', 'SAVE10')));
+        assert.equal(promoHost().querySelectorAll('button')[0].textContent, T('promo_remove'));
+    },
+
+    // The CART page's box is exactly what it always was: the shared function called WITHOUT options builds this structure.
+    async promo_cart_box_unchanged() {
+        const cartModule = await import(new URL('../../../../resources/js/storefront-cart.js', import.meta.url));
+        const shape = (node) => (node.tag === '#text' ? node.data : `${node.tag}${node.className ? '.' + node.className.split(' ').join('.') : ''}`
+            + Object.keys(node.attrs).filter((k) => k !== 'class').sort().map((k) => `[${k}=${node.attrs[k]}]`).join('')
+            + (node.children.length ? `(${node.children.map(shape).join(',')})` : ''));
+
+        const empty = cartModule.promotionBox({ promotion: null }, () => {});
+        assert.equal(shape(empty), [
+            'div.sf-cart-promo(form.sf-cart-promo-form(',
+            `label.sf-cart-line-caption[for=sf-promo-code](${T('promo_label')}),`,
+            'input.sf-cart-promo-input[autocapitalize=characters][autocomplete=off][id=sf-promo-code][maxlength=64][type=text],',
+            `button.sf-cart-promo-apply[type=submit](${T('promo_apply')})))`,
+        ].join(''));
+
+        const applied = cartModule.promotionBox({ promotion: { code: 'X', valid: true } }, () => {});
+        assert.equal(shape(applied), `div.sf-cart-promo(p.sf-cart-promo-applied(${T('promo_applied').replace(':code', 'X')}),button.sf-cart-promo-remove[type=button](${T('promo_remove')}))`);
+
+        const invalid = cartModule.promotionBox({ promotion: { code: 'X', valid: false } }, () => {});
+        assert.equal(shape(invalid), `div.sf-cart-promo(p.sf-cart-promo-invalid(${T('promo_invalid').replace(':code', 'X')}),button.sf-cart-promo-remove[type=button](${T('promo_remove')}))`);
     },
 
     // The mobile bar: a real button that opens the same summary in place.

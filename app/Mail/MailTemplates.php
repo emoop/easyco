@@ -24,7 +24,7 @@ final class MailTemplates
             'category' => 'transactional',
             'sender' => 'transactional',
             'queue' => 'mail-transactional',
-            'scalars' => ['shop_name', 'customer_name', 'order_number', 'order_date', 'order_total', 'payment_method_label', 'support_email'],
+            'scalars' => ['shop_name', 'customer_name', 'customer_first_name', 'order_number', 'order_date', 'order_total', 'payment_method_label', 'support_email'],
             'blocks' => ['order_lines', 'order_totals', 'delivery_summary', 'payment_instructions'],
         ],
     ];

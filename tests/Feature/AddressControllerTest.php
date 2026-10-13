@@ -32,7 +32,7 @@ class AddressControllerTest extends TestCase
     {
         return array_merge([
             'delivery_type' => 'street_address',
-            'recipient_name' => 'Ivan Ivanov',
+            'recipient_first_name' => 'Ivan', 'recipient_last_name' => 'Ivanov',
             'phone' => '+359888123456',
             'country' => 'BG',
             'city' => 'Sofia',
@@ -45,7 +45,7 @@ class AddressControllerTest extends TestCase
     {
         return array_merge([
             'delivery_type' => 'pickup_point',
-            'recipient_name' => 'Ivan Ivanov',
+            'recipient_first_name' => 'Ivan', 'recipient_last_name' => 'Ivanov',
             'phone' => '+359888123456',
             'country' => 'BG',
             'carrier_code' => 'econt',
@@ -81,15 +81,15 @@ class AddressControllerTest extends TestCase
         $this->assertSame($account->id, $model->account_id);
     }
 
-    public function test_missing_recipient_name_returns_422(): void
+    public function test_missing_first_name_returns_422(): void
     {
         $payload = $this->streetAddressPayload();
-        unset($payload['recipient_name']);
+        unset($payload['recipient_first_name']);
 
         $response = $this->postJson('/api/addresses', $payload);
 
         $response->assertStatus(422);
-        $response->assertJsonValidationErrors(['recipient_name']);
+        $response->assertJsonValidationErrors(['recipient_first_name']);
     }
 
     public function test_missing_phone_returns_422(): void
@@ -224,7 +224,7 @@ class AddressControllerTest extends TestCase
         app(AccountRepository::class)->save($otherAccount);
         $otherAddress = Address::create(
             deliveryType: AddressDeliveryType::STREET_ADDRESS,
-            recipientName: 'Someone Else',
+            recipientFirstName: 'Someone', recipientLastName: 'Else',
             phone: '+359888000000',
             accountId: $otherAccount->id(),
             country: 'BG',
@@ -250,18 +250,20 @@ class AddressControllerTest extends TestCase
         $created = $this->postJson('/api/addresses', $this->streetAddressPayload())->json();
 
         $response = $this->putJson("/api/addresses/{$created['id']}", $this->streetAddressPayload([
-            'recipient_name' => 'Petar Petrov',
+            'recipient_first_name' => 'Petar', 'recipient_last_name' => 'Petrov',
             'city' => 'Plovdiv',
         ]));
 
         $response->assertStatus(200);
         $response->assertJsonPath('id', $created['id']);
-        $response->assertJsonPath('recipient_name', 'Petar Petrov');
+        $response->assertJsonPath('recipient_first_name', 'Petar');
+        $response->assertJsonPath('recipient_last_name', 'Petrov');
         $response->assertJsonPath('city', 'Plovdiv');
 
         $index = $this->getJson('/api/addresses');
         $index->assertJsonPath('data.0.id', $created['id']);
-        $index->assertJsonPath('data.0.recipient_name', 'Petar Petrov');
+        $index->assertJsonPath('data.0.recipient_first_name', 'Petar');
+        $index->assertJsonPath('data.0.recipient_last_name', 'Petrov');
         $index->assertJsonPath('data.0.city', 'Plovdiv');
     }
 
@@ -271,7 +273,7 @@ class AddressControllerTest extends TestCase
         app(AccountRepository::class)->save($owner);
         $address = Address::create(
             deliveryType: AddressDeliveryType::STREET_ADDRESS,
-            recipientName: 'Original Name',
+            recipientFirstName: 'Original', recipientLastName: 'Name',
             phone: '+359888111111',
             accountId: $owner->id(),
             country: 'BG',
@@ -283,13 +285,13 @@ class AddressControllerTest extends TestCase
         $this->loggedInAccount('attacker@example.com');
 
         $response = $this->putJson("/api/addresses/{$address->id()}", $this->streetAddressPayload([
-            'recipient_name' => 'Hijacked Name',
+            'recipient_first_name' => 'Hijacked', 'recipient_last_name' => 'Name',
         ]));
 
         $response->assertStatus(404);
 
         $reloaded = app(AddressRepository::class)->findById($address->id());
-        $this->assertSame('Original Name', $reloaded->recipientName());
+        $this->assertSame('Original Name', $reloaded->recipientFullName());
     }
 
     public function test_updating_a_nonexistent_address_returns_404(): void
@@ -313,7 +315,7 @@ class AddressControllerTest extends TestCase
         $response->assertStatus(422);
 
         $reloaded = app(AddressRepository::class)->findById((string) $created['id']);
-        $this->assertSame('Ivan Ivanov', $reloaded->recipientName());
+        $this->assertSame('Ivan Ivanov', $reloaded->recipientFullName());
         $this->assertSame('Sofia', $reloaded->city());
         $this->assertNull($reloaded->carrierCode());
     }
@@ -330,7 +332,8 @@ class AddressControllerTest extends TestCase
     public static function hardenedTextFields(): array
     {
         return [
-            'recipient_name' => ['recipient_name', 255],
+            'recipient_first_name' => ['recipient_first_name', 100],
+            'recipient_last_name' => ['recipient_last_name', 100],
             'phone' => ['phone', 32],
             'city' => ['city', 255],
             'postal_code' => ['postal_code', 255],
@@ -419,7 +422,7 @@ class AddressControllerTest extends TestCase
     public function test_special_characters_are_accepted_and_stored_unchanged(string $value): void
     {
         $response = $this->postJson('/api/addresses', $this->streetAddressPayload([
-            'recipient_name' => $value,
+            'recipient_first_name' => $value,
             'address_line_1' => $value,
         ]));
 
@@ -427,7 +430,7 @@ class AddressControllerTest extends TestCase
 
         $model = AddressModel::findOrFail($response->json('id'));
 
-        $this->assertSame($value, $model->recipient_name);
+        $this->assertSame($value, $model->recipient_first_name);
         $this->assertSame($value, $model->address_line_1);
     }
 
@@ -455,15 +458,15 @@ class AddressControllerTest extends TestCase
         $created = $this->postJson('/api/addresses', $this->streetAddressPayload())->json();
 
         $response = $this->putJson("/api/addresses/{$created['id']}", $this->streetAddressPayload([
-            'recipient_name' => "Ivan\nIvanov",
+            'recipient_first_name' => "Ivan\nIvanov",
         ]));
 
         $response->assertStatus(422);
-        $response->assertJsonValidationErrors(['recipient_name']);
+        $response->assertJsonValidationErrors(['recipient_first_name']);
 
         $reloaded = app(AddressRepository::class)->findById((string) $created['id']);
 
-        $this->assertSame('Ivan Ivanov', $reloaded->recipientName());
+        $this->assertSame('Ivan Ivanov', $reloaded->recipientFullName());
     }
 
     // --- Input hardening pass 2: the three pickup-point fields --------------------------

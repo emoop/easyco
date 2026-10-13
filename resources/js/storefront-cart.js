@@ -328,9 +328,14 @@ function formatMoney(money) {
  * The promo code box (apply / applied + remove / invalid + remove), ONE implementation for the cart page and the checkout summary. It builds
  * the markup from `cart.promotion` and hands every API call to `act(call, successText)`: the page decides what a call means (lock, reload,
  * re-quote, show an error). The apply form submits on Enter and never reaches any other form.
+ *
+ * `options.compact` (the checkout summary only; the cart page passes none and gets EXACTLY the markup it always had): the code field takes the
+ * whole width with the promo text as its PLACEHOLDER (its label is kept for screen readers, visually hidden) and the Apply button is attached
+ * to the field's right end inside one wrapper, so the two read as one control. The applied / invalid / Remove states are the same in both modes.
  */
-function promotionBox(cart, act) {
-    var box = el('div', 'sf-cart-promo');
+function promotionBox(cart, act, options) {
+    var compact = !! (options && options.compact);
+    var box = el('div', compact ? 'sf-cart-promo sf-promo-compact' : 'sf-cart-promo');
     var promotion = cart.promotion;
 
     if (promotion && promotion.code) {
@@ -350,21 +355,31 @@ function promotionBox(cart, act) {
         return box;
     }
 
-    var form = el('form', 'sf-cart-promo-form');
+    var form = el('form', compact ? 'sf-promo-compact-form' : 'sf-cart-promo-form');
     var inputId = 'sf-promo-code';
-    var label = el('label', 'sf-cart-line-caption', t('promo_label'));
+    var label = el('label', compact ? 'sf-promo-compact-label' : 'sf-cart-line-caption', t('promo_label'));
     label.setAttribute('for', inputId);
-    var code = el('input', 'sf-cart-promo-input');
+    var code = el('input', compact ? 'sf-promo-compact-input' : 'sf-cart-promo-input');
     code.setAttribute('id', inputId);
     code.setAttribute('type', 'text');
     code.setAttribute('maxlength', '64');
     code.setAttribute('autocomplete', 'off');
     code.setAttribute('autocapitalize', 'characters');
-    var apply = el('button', 'sf-cart-promo-apply', t('promo_apply'));
+    var apply = el('button', compact ? 'sf-promo-compact-apply' : 'sf-cart-promo-apply', t('promo_apply'));
     apply.setAttribute('type', 'submit');
     form.appendChild(label);
-    form.appendChild(code);
-    form.appendChild(apply);
+
+    if (compact) {
+        var field = el('div', 'sf-promo-compact-field');
+        code.setAttribute('placeholder', t('promo_label'));
+        field.appendChild(code);
+        field.appendChild(apply);
+        form.appendChild(field);
+    } else {
+        form.appendChild(code);
+        form.appendChild(apply);
+    }
+
     form.addEventListener('submit', function (event) {
         event.preventDefault();
         var value = code.value.trim();

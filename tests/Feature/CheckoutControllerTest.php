@@ -152,7 +152,7 @@ class CheckoutControllerTest extends TestCase
         return array_merge([
             'cart_id' => $this->cartId,
             'email' => 'guest@example.com',
-            'recipient_name' => 'Guest Buyer',
+            'recipient_first_name' => 'Guest', 'recipient_last_name' => 'Buyer',
             'phone' => '+359888000000',
             'payment_method' => 'cash_on_delivery',
             'delivery_type' => 'street_address',
@@ -190,7 +190,7 @@ class CheckoutControllerTest extends TestCase
 
         $addressResponse = $this->postJson('/api/addresses', [
             'delivery_type' => 'street_address',
-            'recipient_name' => 'Ivan Ivanov',
+            'recipient_first_name' => 'Ivan', 'recipient_last_name' => 'Ivanov',
             'phone' => '+359888111222',
             'country' => 'BG',
             'city' => 'Sofia',
@@ -207,7 +207,7 @@ class CheckoutControllerTest extends TestCase
         // helper and drops them, exactly like a real client choosing a saved address.
         $payload = $this->checkoutPayload([
             'email' => $account->email,
-            'recipient_name' => 'Ivan Ivanov',
+            'recipient_first_name' => 'Ivan', 'recipient_last_name' => 'Ivanov',
             'phone' => '+359888111222',
             'payment_method' => 'bank_transfer',
             'address_id' => $addressId,
@@ -261,7 +261,7 @@ class CheckoutControllerTest extends TestCase
         $this->loggedInAccount();
         $addressId = $this->postJson('/api/addresses', [
             'delivery_type' => 'pickup_point',
-            'recipient_name' => 'Ivan Ivanov',
+            'recipient_first_name' => 'Ivan', 'recipient_last_name' => 'Ivanov',
             'phone' => '+359888111222',
             'country' => 'GR',
             'carrier_code' => 'speedy',
@@ -309,7 +309,7 @@ class CheckoutControllerTest extends TestCase
     {
         $this->loggedInAccount();
         $addressId = $this->postJson('/api/addresses', [
-            'delivery_type' => 'street_address', 'recipient_name' => 'Ivan Ivanov', 'phone' => '+359888111222',
+            'delivery_type' => 'street_address', 'recipient_first_name' => 'Ivan', 'recipient_last_name' => 'Ivanov', 'phone' => '+359888111222',
             'country' => 'BG', 'city' => 'Sofia', 'address_line_1' => 'Graf Ignatiev 5',
         ])->assertStatus(201)->json('id');
         $this->addLineViaHttp($this->pricedPurchasableVariation('10.00', 10), 1);
@@ -324,7 +324,7 @@ class CheckoutControllerTest extends TestCase
     {
         $account = $this->loggedInAccount();
         $addressId = $this->postJson('/api/addresses', [
-            'delivery_type' => 'pickup_point', 'recipient_name' => 'Ivan Ivanov', 'phone' => '+359888111222',
+            'delivery_type' => 'pickup_point', 'recipient_first_name' => 'Ivan', 'recipient_last_name' => 'Ivanov', 'phone' => '+359888111222',
             'country' => 'BG', 'carrier_code' => 'econt', 'pickup_point_reference' => 'office-1', 'settlement' => 'Varna', 'pickup_point_name' => 'Econt office Center', 'pickup_point_address' => 'Vitosha Blvd 100, Sofia',
         ])->assertStatus(201)->json('id');
         // A historical pickup point, saved before the country became mandatory.
@@ -358,7 +358,7 @@ class CheckoutControllerTest extends TestCase
 
         // The customer updates the address; the same cart now checks out.
         $this->putJson("/api/addresses/{$addressId}", [
-            'delivery_type' => 'pickup_point', 'recipient_name' => 'Ivan Ivanov', 'phone' => '+359888111222',
+            'delivery_type' => 'pickup_point', 'recipient_first_name' => 'Ivan', 'recipient_last_name' => 'Ivanov', 'phone' => '+359888111222',
             'country' => 'bg', 'carrier_code' => 'econt', 'pickup_point_reference' => 'office-1', 'settlement' => 'Varna', 'pickup_point_name' => 'Econt office Center', 'pickup_point_address' => 'Vitosha Blvd 100, Sofia',
         ])->assertStatus(200);
 
@@ -503,7 +503,7 @@ class CheckoutControllerTest extends TestCase
 
         $addressResponse = $this->postJson('/api/addresses', [
             'delivery_type' => 'street_address',
-            'recipient_name' => 'Ivan Ivanov',
+            'recipient_first_name' => 'Ivan', 'recipient_last_name' => 'Ivanov',
             'phone' => '+359888111222',
             'country' => 'BG',
             'city' => 'Sofia',
@@ -516,7 +516,7 @@ class CheckoutControllerTest extends TestCase
 
         $response = $this->postJson('/api/checkout', [
             'email' => $account->email,
-            'recipient_name' => 'Ivan Ivanov',
+            'recipient_first_name' => 'Ivan', 'recipient_last_name' => 'Ivanov',
             'phone' => '+359888111222',
             'payment_method' => 'cash_on_delivery',
             'address_id' => $addressId,
@@ -543,7 +543,8 @@ class CheckoutControllerTest extends TestCase
     {
         return [
             'email' => ['email', 255],
-            'recipient_name' => ['recipient_name', 255],
+            'recipient_first_name' => ['recipient_first_name', 100],
+            'recipient_last_name' => ['recipient_last_name', 100],
             'phone' => ['phone', 32],
             'city' => ['city', 255],
             'postal_code' => ['postal_code', 255],
@@ -736,16 +737,16 @@ class CheckoutControllerTest extends TestCase
         $this->addLineViaHttp($variationId, 1);
 
         $response = $this->postJson('/api/checkout', $this->checkoutPayload([
-            'recipient_name' => $value,
+            'recipient_first_name' => $value,
             'address_line_1' => $value,
         ]));
 
         $response->assertStatus(201);
-        $response->assertJsonPath('order.recipient_name', $value);
+        $response->assertJsonPath('order.recipient_first_name', $value);
 
         $order = OrderModel::findOrFail($response->json('order.id'));
 
-        $this->assertSame($value, $order->recipient_name);
+        $this->assertSame($value, $order->recipient_first_name);
         $this->assertSame($value, $order->address_line_1);
     }
 
@@ -768,7 +769,7 @@ class CheckoutControllerTest extends TestCase
         $this->addLineViaHttp($variationId, 1);
 
         $response = $this->postJson('/api/checkout', $this->checkoutPayload([
-            'recipient_name' => $script,
+            'recipient_first_name' => $script,
             'address_line_1' => $script,
         ]));
 
@@ -777,7 +778,7 @@ class CheckoutControllerTest extends TestCase
         $orderId = (string) $response->json('order.id');
         $order = OrderModel::findOrFail($orderId);
 
-        $this->assertSame($script, $order->recipient_name);
+        $this->assertSame($script, $order->recipient_first_name);
         $this->assertSame($script, $order->address_line_1);
 
         $this->actingAsAdministrator();

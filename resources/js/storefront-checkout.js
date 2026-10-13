@@ -18,7 +18,8 @@ import { api, apiMessage, el, formatMoney, hasCartCookie, lineImage, localUrl, m
 
 var DEBOUNCE_MS = 500;
 var STREET_FIELDS = ['postal_code', 'address_line_1', 'address_line_2'];
-var PICKUP_FIELDS = ['pickup_point_reference', 'pickup_point_name', 'pickup_point_address'];
+// ONE field: the customer types the office's address, name or code, whatever they know (checkout form v2, D3).
+var PICKUP_FIELDS = ['pickup_point_address'];
 var STALE_QUOTE_REASONS = ['shipping_price_changed', 'shipping_quote_expired', 'shipping_method_unavailable'];
 var KIND_ORDER = ['address', 'office', 'locker'];
 var REGION_MODES = ['optional', 'required', 'hidden'];
@@ -53,6 +54,15 @@ function regionModeFor(policy, country) {
 /** The length of a text in Unicode CODE POINTS (an emoji is one), the way the server counts the note. */
 function codePoints(text) {
     return Array.from(String(text));
+}
+
+/** The visible asterisk of a label: the same markup the server renders for an always-required field. */
+function markerNode() {
+    var marker = el('span', 'sf-required', '*');
+
+    marker.setAttribute('aria-hidden', 'true');
+
+    return marker;
 }
 
 function isPickupKind(kind) {
@@ -151,6 +161,33 @@ function initCheckout(root) {
         return known[kind] ? t(known[kind]) : '';
     }
 
+    /**
+     * The requirement of a field that CHANGES on this page (the street line by kind, the pick-up field by kind, the region by country):
+     * `required`, `aria-required` and the label's asterisk all follow ONE state, so the marker can never disagree with the rule
+     * (checkout form v2, section 4). The always-required fields carry their marker in the server-rendered markup.
+     */
+    function setRequired(name, on) {
+        var input = form.elements[name];
+        var label = input && input.id ? root.querySelector('label[for="' + input.id + '"]') : null;
+        var marker = label ? label.querySelector('[data-sf-marker]') : null;
+
+        input.required = on;
+
+        if (on) {
+            input.setAttribute('aria-required', 'true');
+        } else {
+            input.removeAttribute('aria-required');
+        }
+
+        if (on && label && ! marker) {
+            marker = markerNode();
+            marker.setAttribute('data-sf-marker', 'true');
+            label.appendChild(marker);
+        } else if (! on && marker) {
+            label.removeChild(marker);
+        }
+    }
+
     function pointFieldsFilled() {
         return PICKUP_FIELDS.every(function (name) {
             return fieldValue(name) !== '';
@@ -185,7 +222,13 @@ function initCheckout(root) {
 
         form.querySelectorAll('[aria-invalid]').forEach(function (input) {
             input.removeAttribute('aria-invalid');
-            input.removeAttribute('aria-describedby');
+
+            // The field's own hint (the pick-up help line, the note counter) stays linked; only the error id goes.
+            if (input.getAttribute('data-sf-describedby')) {
+                input.setAttribute('aria-describedby', input.getAttribute('data-sf-describedby'));
+            } else {
+                input.removeAttribute('aria-describedby');
+            }
         });
     }
 
@@ -232,7 +275,7 @@ function initCheckout(root) {
 
             if (input && holder && typeof input.setAttribute === 'function') {
                 input.setAttribute('aria-invalid', 'true');
-                input.setAttribute('aria-describedby', holder.id);
+                input.setAttribute('aria-describedby', holder.id + (input.getAttribute('data-sf-describedby') ? ' ' + input.getAttribute('data-sf-describedby') : ''));
             }
 
             items.push({ field: field, text: text });
@@ -294,7 +337,7 @@ function initCheckout(root) {
         promoHost.hidden = cart === null;
 
         if (cart !== null) {
-            promoHost.appendChild(promotionBox(cart, runPromo));
+            promoHost.appendChild(promotionBox(cart, runPromo, { compact: true }));
         }
     }
 
@@ -433,13 +476,7 @@ function initCheckout(root) {
         var input = form.elements.region;
 
         regionBox.hidden = mode === 'hidden';
-        input.required = street && mode === 'required';
-
-        if (mode === 'required') {
-            regionBox.setAttribute('data-required', 'true');
-        } else {
-            regionBox.removeAttribute('data-required');
-        }
+        setRequired('region', street && mode === 'required');
 
         if (mode === 'hidden') {
             input.value = '';
@@ -477,9 +514,9 @@ function initCheckout(root) {
         addressBox.hidden = ! street;
         pickupBox.hidden = ! pickup;
 
-        form.elements.address_line_1.required = street;
+        setRequired('address_line_1', street);
         PICKUP_FIELDS.forEach(function (name) {
-            form.elements[name].required = pickup;
+            setRequired(name, pickup);
         });
 
         applyRegionMode();
@@ -943,7 +980,8 @@ function initCheckout(root) {
         var body = {
             cart_id: cartId,
             email: fieldValue('email'),
-            recipient_name: fieldValue('recipient_name'),
+            recipient_first_name: fieldValue('recipient_first_name'),
+            recipient_last_name: fieldValue('recipient_last_name'),
             phone: fieldValue('phone'),
             payment_method: form.querySelector('input[name="payment_method"]:checked').value,
             delivery_type: deliveryType(),

@@ -23,7 +23,8 @@ final class EloquentAddressRepository implements AddressRepository
 
         $model->account_id = $address->accountId();
         $model->delivery_type = $address->deliveryType()->value;
-        $model->recipient_name = $address->recipientName();
+        $model->recipient_first_name = $address->recipientFirstName();
+        $model->recipient_last_name = $address->recipientLastName();
         $model->phone = $address->phone();
         $model->country = $address->country();
         $model->city = $address->city();
@@ -67,7 +68,8 @@ final class EloquentAddressRepository implements AddressRepository
             id: (string) $model->id,
             accountId: $model->account_id !== null ? (string) $model->account_id : null,
             deliveryType: AddressDeliveryType::from($model->delivery_type),
-            recipientName: $model->recipient_name,
+            recipientFirstName: $model->recipient_first_name,
+            recipientLastName: $model->recipient_last_name,
             phone: $model->phone,
             country: $model->country,
             city: $model->city,

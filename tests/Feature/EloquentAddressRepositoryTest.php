@@ -31,7 +31,7 @@ class EloquentAddressRepositoryTest extends TestCase
     {
         $address = Address::create(
             deliveryType: AddressDeliveryType::STREET_ADDRESS,
-            recipientName: 'Ivan Ivanov',
+            recipientFirstName: 'Ivan', recipientLastName: 'Ivanov',
             phone: '+359888123456',
             accountId: null,
             country: 'BG',
@@ -49,7 +49,7 @@ class EloquentAddressRepositoryTest extends TestCase
         $this->assertNotNull($reloaded);
         $this->assertSame(AddressDeliveryType::STREET_ADDRESS, $reloaded->deliveryType());
         $this->assertNull($reloaded->accountId());
-        $this->assertSame('Ivan Ivanov', $reloaded->recipientName());
+        $this->assertSame('Ivan Ivanov', $reloaded->recipientFullName());
         $this->assertSame('+359888123456', $reloaded->phone());
         $this->assertSame('BG', $reloaded->country());
         $this->assertSame('Sofia', $reloaded->city());
@@ -62,7 +62,7 @@ class EloquentAddressRepositoryTest extends TestCase
     {
         $address = Address::create(
             deliveryType: AddressDeliveryType::PICKUP_POINT,
-            recipientName: 'Maria Petrova',
+            recipientFirstName: 'Maria', recipientLastName: 'Petrova',
             phone: '+359888654321',
             country: 'GR',
             carrierCode: 'econt',
@@ -87,7 +87,7 @@ class EloquentAddressRepositoryTest extends TestCase
     {
         $id = \Illuminate\Support\Facades\DB::table('addresses')->insertGetId([
             'delivery_type' => 'pickup_point',
-            'recipient_name' => 'Old Customer',
+            'recipient_first_name' => 'Old', 'recipient_last_name' => 'Customer',
             'phone' => '+359888000000',
             'country' => null,
             'carrier_code' => 'econt',
@@ -111,7 +111,7 @@ class EloquentAddressRepositoryTest extends TestCase
 
         $streetAddress = Address::create(
             deliveryType: AddressDeliveryType::STREET_ADDRESS,
-            recipientName: 'Ivan Ivanov',
+            recipientFirstName: 'Ivan', recipientLastName: 'Ivanov',
             phone: '+359888123456',
             accountId: $accountId,
             country: 'BG',
@@ -120,7 +120,7 @@ class EloquentAddressRepositoryTest extends TestCase
         );
         $pickupPoint = Address::create(
             deliveryType: AddressDeliveryType::PICKUP_POINT,
-            recipientName: 'Ivan Ivanov',
+            recipientFirstName: 'Ivan', recipientLastName: 'Ivanov',
             phone: '+359888123456',
             accountId: $accountId,
             country: 'BG',
@@ -130,7 +130,7 @@ class EloquentAddressRepositoryTest extends TestCase
         );
         $othersAddress = Address::create(
             deliveryType: AddressDeliveryType::STREET_ADDRESS,
-            recipientName: 'Someone Else',
+            recipientFirstName: 'Someone', recipientLastName: 'Else',
             phone: '+359888000000',
             accountId: $otherAccountId,
             country: 'BG',
@@ -157,7 +157,7 @@ class EloquentAddressRepositoryTest extends TestCase
 
         $guestAddress = Address::create(
             deliveryType: AddressDeliveryType::STREET_ADDRESS,
-            recipientName: 'Guest Buyer',
+            recipientFirstName: 'Guest', recipientLastName: 'Buyer',
             phone: '+359888999999',
             accountId: null,
             country: 'BG',

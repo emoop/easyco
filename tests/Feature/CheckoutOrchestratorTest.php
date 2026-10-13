@@ -179,7 +179,7 @@ class CheckoutOrchestratorTest extends TestCase
             subtotal: Money::fromMinorUnits(1000, 'EUR'),
             discount: Money::fromMinorUnits(0, 'EUR'),
             deliveryType: OrderDeliveryType::STREET_ADDRESS,
-            recipientName: 'Ivan Ivanov',
+            recipientFirstName: 'Ivan', recipientLastName: 'Ivanov',
             phone: '+359888123456',
             placedAt: new DateTimeImmutable('2026-01-01'),
             country: 'BG',
@@ -242,7 +242,8 @@ class CheckoutOrchestratorTest extends TestCase
         return new CheckoutInput(
             cartId: $cartId,
             email: $overrides['email'] ?? 'guest@example.com',
-            recipientName: $overrides['recipientName'] ?? 'Guest Buyer',
+            recipientFirstName: $overrides['recipientFirstName'] ?? 'Guest',
+            recipientLastName: $overrides['recipientLastName'] ?? 'Buyer',
             phone: $overrides['phone'] ?? '+359888000000',
             paymentMethod: $overrides['paymentMethod'] ?? 'cash_on_delivery',
             accountId: null,
@@ -306,7 +307,7 @@ class CheckoutOrchestratorTest extends TestCase
 
         $savedAddress = Address::create(
             deliveryType: AddressDeliveryType::STREET_ADDRESS,
-            recipientName: 'Ivan Ivanov',
+            recipientFirstName: 'Ivan', recipientLastName: 'Ivanov',
             phone: '+359888111222',
             accountId: $accountId,
             country: 'BG',
@@ -322,7 +323,7 @@ class CheckoutOrchestratorTest extends TestCase
         $input = new CheckoutInput(
             cartId: $cart->id(),
             email: $accountModel->email,
-            recipientName: 'Ivan Ivanov',
+            recipientFirstName: 'Ivan', recipientLastName: 'Ivanov',
             phone: '+359888111222',
             paymentMethod: 'cash_on_delivery',
             accountId: $accountId,
@@ -672,7 +673,8 @@ class CheckoutOrchestratorTest extends TestCase
         $this->assertSame($order->total()->currency()->code(), $row->total_currency);
         $this->assertSame($order->appliedPromotionCode(), $row->applied_promotion_code);
         $this->assertSame($order->deliveryType()->value, $row->delivery_type);
-        $this->assertSame($order->recipientName(), $row->recipient_name);
+        $this->assertSame($order->recipientFirstName(), $row->recipient_first_name);
+        $this->assertSame($order->recipientLastName(), $row->recipient_last_name);
         $this->assertSame($order->phone(), $row->phone);
         $this->assertSame($order->country(), $row->country);
         $this->assertSame($order->city(), $row->city);
@@ -776,7 +778,7 @@ class CheckoutOrchestratorTest extends TestCase
             'total_currency' => 'EUR',
             'applied_promotion_code' => null,
             'delivery_type' => 'street_address',
-            'recipient_name' => 'Ivan Ivanov',
+            'recipient_first_name' => 'Ivan', 'recipient_last_name' => 'Ivanov',
             'phone' => '+359888123456',
             'country' => 'BG',
             'city' => 'Sofia',

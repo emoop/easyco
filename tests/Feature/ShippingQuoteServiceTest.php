@@ -278,7 +278,7 @@ class ShippingQuoteServiceTest extends TestCase
         $a = $this->variation('10.00');
         $this->method(ShippingMethodKind::FLAT, 'Flat', 0, 500);
         $accountId = $this->account();
-        $address = Address::create(AddressDeliveryType::PICKUP_POINT, 'Maria P', '+359888654321', $accountId, 'BG', carrierCode: 'econt', pickupPointReference: 'o-1', settlement: 'Varna');
+        $address = Address::create(AddressDeliveryType::PICKUP_POINT, 'Maria', 'P', '+359888654321', $accountId, 'BG', carrierCode: 'econt', pickupPointReference: 'o-1', settlement: 'Varna');
         app(AddressRepository::class)->save($address);
         DB::table('addresses')->where('id', $address->id())->update(['country' => null]);
 
@@ -293,7 +293,7 @@ class ShippingQuoteServiceTest extends TestCase
         $this->method(ShippingMethodKind::FLAT, 'Flat', 0, 500);
         $mine = $this->account('mine@example.com');
         $other = $this->account('other@example.com');
-        $theirs = Address::create(AddressDeliveryType::STREET_ADDRESS, 'Ivan I', '+359888123456', $other, 'BG', 'Sofia', addressLine1: 'Vitosha 1');
+        $theirs = Address::create(AddressDeliveryType::STREET_ADDRESS, 'Ivan', 'I', '+359888123456', $other, 'BG', 'Sofia', addressLine1: 'Vitosha 1');
         app(AddressRepository::class)->save($theirs);
 
         $cart = $this->cart([[$a, 1]], $mine);
@@ -310,9 +310,9 @@ class ShippingQuoteServiceTest extends TestCase
         $this->zone(['BG'], ['Sofia']);
         $this->method(ShippingMethodKind::FLAT, 'Sofia only', 0, 300);
         $accountId = $this->account();
-        $street = Address::create(AddressDeliveryType::STREET_ADDRESS, 'Ivan I', '+359888123456', $accountId, 'BG', 'Sofia', addressLine1: 'Vitosha 1');
-        $point = Address::create(AddressDeliveryType::PICKUP_POINT, 'Ivan I', '+359888123456', $accountId, 'BG', carrierCode: 'econt', pickupPointReference: 'o-1', settlement: 'Sofia');
-        $varna = Address::create(AddressDeliveryType::PICKUP_POINT, 'Ivan I', '+359888123456', $accountId, 'BG', carrierCode: 'econt', pickupPointReference: 'o-2', settlement: 'Varna');
+        $street = Address::create(AddressDeliveryType::STREET_ADDRESS, 'Ivan', 'I', '+359888123456', $accountId, 'BG', 'Sofia', addressLine1: 'Vitosha 1');
+        $point = Address::create(AddressDeliveryType::PICKUP_POINT, 'Ivan', 'I', '+359888123456', $accountId, 'BG', carrierCode: 'econt', pickupPointReference: 'o-1', settlement: 'Sofia');
+        $varna = Address::create(AddressDeliveryType::PICKUP_POINT, 'Ivan', 'I', '+359888123456', $accountId, 'BG', carrierCode: 'econt', pickupPointReference: 'o-2', settlement: 'Varna');
         foreach ([$street, $point, $varna] as $address) {
             app(AddressRepository::class)->save($address);
         }

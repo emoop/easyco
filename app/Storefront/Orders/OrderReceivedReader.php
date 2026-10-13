@@ -49,7 +49,7 @@ final class OrderReceivedReader
 
     /**
      * @return array{
-     *   number: string, email: string, placed_at: string,
+     *   number: string, email: string, first_name: string, placed_at: string,
      *   lines: list<array{name: string, label: string, quantity: int, total: string}>,
      *   shipping: ?array{name: string, courier: ?string, price: string, free: bool},
      *   subtotal: string, discount: ?array{code: ?string, amount: string}, total: string,
@@ -78,6 +78,7 @@ final class OrderReceivedReader
         return [
             'number' => (string) $order->id(),
             'email' => $order->email(),
+            'first_name' => $order->recipientFirstName(),
             'placed_at' => $order->placedAt()->setTimezone($this->timezone->zone())->format($locale === 'bg' ? 'd.m.Y H:i' : 'Y-m-d H:i'),
             'lines' => $this->lines($order),
             'shipping' => $order->shippingMethodName() === null ? null : [
@@ -160,6 +161,8 @@ final class OrderReceivedReader
         if ($order->deliveryType() === OrderDeliveryType::PICKUP_POINT) {
             // The kind the customer chose (office | locker; null for an order placed before it was asked, and for any address).
             return ['kind' => 'pickup_point', 'pickup_kind' => $order->pickupPointKind(), 'lines' => array_values(array_filter([
+                // WHO receives it: the full name (the greeting above the page uses the first name only).
+                $order->recipientFullName(),
                 $order->pickupPointName(),
                 $order->pickupPointAddress(),
                 $order->settlement(),
@@ -170,6 +173,7 @@ final class OrderReceivedReader
         $countryName = $country === null ? null : (CountryNames::forLocale($locale)[$country] ?? $country);
 
         return ['kind' => 'address', 'pickup_kind' => null, 'lines' => array_values(array_filter([
+            $order->recipientFullName(),
             $order->addressLine1(),
             $order->addressLine2(),
             trim(($order->postalCode() ?? '').' '.($order->city() ?? '')),

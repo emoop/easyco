@@ -136,7 +136,7 @@ class PickupKindCheckoutTest extends TestCase
     private function payload(string $cartId, array $address, array $shipping, array $override = []): array
     {
         return array_merge([
-            'cart_id' => $cartId, 'email' => 'guest@example.com', 'recipient_name' => 'Guest Buyer', 'phone' => '+359888000000', 'payment_method' => 'cash_on_delivery',
+            'cart_id' => $cartId, 'email' => 'guest@example.com', 'recipient_first_name' => 'Guest', 'recipient_last_name' => 'Buyer', 'phone' => '+359888000000', 'payment_method' => 'cash_on_delivery',
         ], $address, $shipping, $override);
     }
 
@@ -388,7 +388,7 @@ class PickupKindCheckoutTest extends TestCase
             }
         }
 
-        $address = Address::create(AddressDeliveryType::STREET_ADDRESS, 'Ana', '+359888111222', null, 'BG', 'Sofia', null, 'V 1');
+        $address = Address::create(AddressDeliveryType::STREET_ADDRESS, 'Ana', 'Testov', '+359888111222', null, 'BG', 'Sofia', null, 'V 1');
         app(AddressRepository::class)->save($address);
 
         foreach (['office', 'nowhere'] as $kind) {
@@ -401,7 +401,7 @@ class PickupKindCheckoutTest extends TestCase
         }
 
         // and a pickup row accepts exactly office and locker
-        $pickup = Address::create(AddressDeliveryType::PICKUP_POINT, 'Ana', '+359888111222', null, 'BG', null, null, null, null, 'econt', 'o-1', 'Sofia', 'N', 'A', 'office');
+        $pickup = Address::create(AddressDeliveryType::PICKUP_POINT, 'Ana', 'Testov', '+359888111222', null, 'BG', null, null, null, null, 'econt', 'o-1', 'Sofia', 'N', 'A', 'office');
         app(AddressRepository::class)->save($pickup);
         DB::table('addresses')->where('id', $pickup->id())->update(['pickup_point_kind' => 'locker']);
         $this->assertSame('locker', DB::table('addresses')->where('id', $pickup->id())->value('pickup_point_kind'));
@@ -414,7 +414,7 @@ class PickupKindCheckoutTest extends TestCase
     public function test_a_historical_pickup_address_without_a_kind_still_checks_out_priced_as_unspecified(): void
     {
         $account = $this->loggedInAccount();
-        $address = Address::create(AddressDeliveryType::PICKUP_POINT, 'Ana Historic', '+359888111222', (string) $account->id, 'BG', null, null, null, null, 'econt', 'office-1', 'Sofia');
+        $address = Address::create(AddressDeliveryType::PICKUP_POINT, 'Ana', 'Historic', '+359888111222', (string) $account->id, 'BG', null, null, null, null, 'econt', 'office-1', 'Sofia');
         app(AddressRepository::class)->save($address);
         $this->assertNull(DB::table('addresses')->where('id', $address->id())->value('pickup_point_kind'));
 
@@ -424,14 +424,14 @@ class PickupKindCheckoutTest extends TestCase
 
         $this->assertSame(self::PRICE, $quoted[$id]['price']['minor'], 'a saved address with no kind is an unstated pickup: {locker} pays');
 
-        $this->postJson('/api/checkout', ['cart_id' => $cartId, 'email' => 'kind@example.com', 'recipient_name' => 'Ana', 'phone' => '+359888111222', 'payment_method' => 'cash_on_delivery', 'address_id' => (string) $address->id()] + $this->choose($quoted, $id))
+        $this->postJson('/api/checkout', ['cart_id' => $cartId, 'email' => 'kind@example.com', 'recipient_first_name' => 'Ana', 'recipient_last_name' => 'Testov', 'phone' => '+359888111222', 'payment_method' => 'cash_on_delivery', 'address_id' => (string) $address->id()] + $this->choose($quoted, $id))
             ->assertStatus(201)->assertJsonPath('shipping.amount_minor', self::PRICE)->assertJsonPath('order.pickup_point_kind', null);
     }
 
     public function test_a_saved_address_uses_its_own_stored_kind(): void
     {
         $account = $this->loggedInAccount();
-        $address = Address::create(AddressDeliveryType::PICKUP_POINT, 'Ana Locker', '+359888111222', (string) $account->id, 'BG', null, null, null, null, 'econt', 'locker-1', 'Sofia', 'Locker 1', 'Mall', 'locker');
+        $address = Address::create(AddressDeliveryType::PICKUP_POINT, 'Ana', 'Locker', '+359888111222', (string) $account->id, 'BG', null, null, null, null, 'econt', 'locker-1', 'Sofia', 'Locker 1', 'Mall', 'locker');
         app(AddressRepository::class)->save($address);
 
         $id = $this->method('Speedy', Scope::ANY, [Type::LOCKER]);
@@ -440,7 +440,7 @@ class PickupKindCheckoutTest extends TestCase
 
         $this->assertSame(0, $quoted[$id]['price']['minor'], 'the saved address is a locker: free');
 
-        $this->postJson('/api/checkout', ['cart_id' => $cartId, 'email' => 'kind@example.com', 'recipient_name' => 'Ana', 'phone' => '+359888111222', 'payment_method' => 'cash_on_delivery', 'address_id' => (string) $address->id()] + $this->choose($quoted, $id))
+        $this->postJson('/api/checkout', ['cart_id' => $cartId, 'email' => 'kind@example.com', 'recipient_first_name' => 'Ana', 'recipient_last_name' => 'Testov', 'phone' => '+359888111222', 'payment_method' => 'cash_on_delivery', 'address_id' => (string) $address->id()] + $this->choose($quoted, $id))
             ->assertStatus(201)->assertJsonPath('order.pickup_point_kind', 'locker');
         $this->assertSame('locker', DB::table('order_placement_snapshots')->sole()->pickup_point_kind);
     }

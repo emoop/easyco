@@ -177,7 +177,7 @@ class RegionNoteDisplayTest extends TestCase
 
     public function test_the_form_mapper_carries_the_region_and_a_change_of_only_the_region_is_a_change(): void
     {
-        $current = ['delivery_type' => 'street_address', 'recipient_name' => 'Ana', 'phone' => '1', 'country' => 'BG', 'city' => 'Sofia', 'postal_code' => '1000', 'address_line_1' => 'V 1', 'region' => 'Sofia-city'];
+        $current = ['delivery_type' => 'street_address', 'recipient_first_name' => 'Ana', 'recipient_last_name' => 'Testov', 'phone' => '1', 'country' => 'BG', 'city' => 'Sofia', 'postal_code' => '1000', 'address_line_1' => 'V 1', 'region' => 'Sofia-city'];
 
         $this->assertNull(OrderEditFormMapper::deliveryChange($current, $current));
         $this->assertNull(OrderEditFormMapper::deliveryChange($current, ['region' => ' Sofia-city '] + $current), 'trimmed: not a change');
@@ -195,8 +195,8 @@ class RegionNoteDisplayTest extends TestCase
 
         $edit = fn (?string $region, OrderDeliveryType $type = OrderDeliveryType::STREET_ADDRESS, int $revision = 0) => app(OrderEditor::class)->apply(
             $orderId, $revision, [], $type === OrderDeliveryType::STREET_ADDRESS
-                ? new OrderDeliveryChange($type, 'Guest Buyer', '+359888000000', 'BG', 'Varna', null, 'Sea 1', null, null, null, null, $region)
-                : new OrderDeliveryChange($type, 'Guest Buyer', '+359888000000', 'BG', null, null, null, null, 'econt', 'o-1', 'Varna'),
+                ? new OrderDeliveryChange($type, 'Guest', 'Buyer', '+359888000000', 'BG', 'Varna', null, 'Sea 1', null, null, null, null, $region)
+                : new OrderDeliveryChange($type, 'Guest', 'Buyer', '+359888000000', 'BG', null, null, null, null, 'econt', 'o-1', 'Varna'),
             OrderPromotionCodeChange::unchanged(), null, null, null, new DateTimeImmutable('2026-10-14 10:00:00'),
         );
 

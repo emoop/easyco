@@ -63,7 +63,7 @@ class PaymentReceiptUnreconciledGuardsTest extends TestCase
     {
         return new OrderDeliveryChange(
             deliveryType: OrderDeliveryType::STREET_ADDRESS,
-            recipientName: 'New Recipient',
+            recipientFirstName: 'New', recipientLastName: 'Recipient',
             phone: '+359888999999',
             country: 'BG',
             city: 'Plovdiv',

@@ -51,7 +51,8 @@ class AddressController extends Controller
 
         $address = Address::create(
             deliveryType: AddressDeliveryType::from($validated['delivery_type']),
-            recipientName: $validated['recipient_name'],
+            recipientFirstName: $validated['recipient_first_name'],
+            recipientLastName: $validated['recipient_last_name'],
             phone: $validated['phone'],
             accountId: $this->currentAccountId(),
             country: $validated['country'] ?? null,
@@ -99,7 +100,8 @@ class AddressController extends Controller
 
         $address->update(
             deliveryType: AddressDeliveryType::from($validated['delivery_type']),
-            recipientName: $validated['recipient_name'],
+            recipientFirstName: $validated['recipient_first_name'],
+            recipientLastName: $validated['recipient_last_name'],
             phone: $validated['phone'],
             country: $validated['country'] ?? null,
             city: $validated['city'] ?? null,
@@ -155,7 +157,8 @@ class AddressController extends Controller
     {
         return [
             'delivery_type' => 'required|in:street_address,pickup_point',
-            'recipient_name' => ['required', 'string', 'max:255', new PlainText()],
+            'recipient_first_name' => ['required', 'string', 'max:100', new PlainText()],
+            'recipient_last_name' => ['required', 'string', 'max:100', new PlainText()],
             'phone' => ['required', 'string', 'max:32', new PlainText()],
             // Required for BOTH delivery types (owner decision D1): a pickup point is in a country too.
             'country' => ['required', 'string', new KnownCountryCode('delivery.country.invalid')],
@@ -170,10 +173,11 @@ class AddressController extends Controller
             // rather than a 500 from MySQL, and PlainText refuses a control
             // character or a bidirectional override.
             'carrier_code' => ['required_if:delivery_type,pickup_point', 'prohibited_if:delivery_type,street_address', 'string', 'max:255', new PlainText()],
-            'pickup_point_reference' => ['required_if:delivery_type,pickup_point', 'prohibited_if:delivery_type,street_address', 'string', 'max:255', new PlainText()],
+            // IDENTIFIED (reference) or DESCRIBED (pickup_point_address): the reference and the name are optional (checkout form v2, section 3).
+            'pickup_point_reference' => ['nullable', 'prohibited_if:delivery_type,street_address', 'string', 'max:255', new PlainText()],
             // The display snapshot of the chosen office (stage 4f): what the customer saw, required for a NEW pickup address and
             // refused for a street address. Text for people; the reference above is the identifier, and nothing verifies these.
-            'pickup_point_name' => ['required_if:delivery_type,pickup_point', 'prohibited_if:delivery_type,street_address', 'string', 'max:255', new PlainText()],
+            'pickup_point_name' => ['nullable', 'prohibited_if:delivery_type,street_address', 'string', 'max:255', new PlainText()],
             'pickup_point_address' => ['required_if:delivery_type,pickup_point', 'prohibited_if:delivery_type,street_address', 'string', 'max:255', new PlainText()],
             'settlement' => ['required_if:delivery_type,pickup_point', 'prohibited_if:delivery_type,street_address', 'string', 'max:255', new PlainText()],
             // The KIND of the pickup point (stage 5g-2a): office | locker, optional; a street address has none.
@@ -194,7 +198,7 @@ class AddressController extends Controller
             return null;
         }
 
-        return $this->pickupKinds->kindFor((string) $validated['carrier_code'], (string) $validated['pickup_point_reference'], $validated['pickup_point_kind'] ?? null)?->value;
+        return $this->pickupKinds->kindFor((string) $validated['carrier_code'], $validated['pickup_point_reference'] ?? null, $validated['pickup_point_kind'] ?? null)?->value;
     }
 
     /**
@@ -231,7 +235,8 @@ class AddressController extends Controller
             'id' => $address->id(),
             'account_id' => $address->accountId(),
             'delivery_type' => $address->deliveryType()->value,
-            'recipient_name' => $address->recipientName(),
+            'recipient_first_name' => $address->recipientFirstName(),
+            'recipient_last_name' => $address->recipientLastName(),
             'phone' => $address->phone(),
             'country' => $address->country(),
             'city' => $address->city(),

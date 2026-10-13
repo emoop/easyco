@@ -31,10 +31,13 @@ use InvalidArgumentException;
  */
 final class OrderEditFormMapper
 {
-    /** The delivery fields (the eleven of Order::reviseDelivery()'s own order, then the region of a street address — checkout RN-1). */
+    /**
+     * The delivery fields (Order::reviseDelivery()'s own order: the two name parts, then the region of a street address — checkout RN-1 — and
+     * the described pick-up point's text — checkout form v2, section 3).
+     */
     public const DELIVERY_FIELDS = [
-        'delivery_type', 'recipient_name', 'phone', 'country', 'city', 'postal_code',
-        'address_line_1', 'address_line_2', 'carrier_code', 'pickup_point_reference', 'settlement', 'region',
+        'delivery_type', 'recipient_first_name', 'recipient_last_name', 'phone', 'country', 'city', 'postal_code',
+        'address_line_1', 'address_line_2', 'carrier_code', 'pickup_point_reference', 'settlement', 'region', 'pickup_point_address',
     ];
 
     /**
@@ -91,7 +94,8 @@ final class OrderEditFormMapper
 
         return new OrderDeliveryChange(
             deliveryType: OrderDeliveryType::from((string) $next['delivery_type']),
-            recipientName: (string) $next['recipient_name'],
+            recipientFirstName: (string) $next['recipient_first_name'],
+            recipientLastName: (string) $next['recipient_last_name'],
             phone: (string) $next['phone'],
             country: $next['country'],
             city: $next['city'],
@@ -102,6 +106,7 @@ final class OrderEditFormMapper
             pickupPointReference: $next['pickup_point_reference'],
             settlement: $next['settlement'],
             region: $next['region'],
+            pickupPointAddress: $next['pickup_point_address'],
         );
     }
 

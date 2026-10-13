@@ -72,7 +72,7 @@ class StorefrontOrderReceivedTest extends TestCase
         return [
             'cart_id' => $cartId,
             'email' => 'guest@example.com',
-            'recipient_name' => 'Ivan <b>Petrov</b>',
+            'recipient_first_name' => 'Ivan', 'recipient_last_name' => '<b>Petrov</b>',
             'phone' => '+359888000000',
             'payment_method' => $method,
             'delivery_type' => 'street_address',
@@ -336,7 +336,7 @@ class StorefrontOrderReceivedTest extends TestCase
         return $this->postJson('/api/checkout', [
             'cart_id' => $cartId,
             'email' => 'guest@example.com',
-            'recipient_name' => 'Ivan Petrov',
+            'recipient_first_name' => 'Ivan', 'recipient_last_name' => 'Petrov',
             'phone' => '+359888000000',
             'payment_method' => 'cash_on_delivery',
             'delivery_type' => 'pickup_point',
@@ -355,7 +355,7 @@ class StorefrontOrderReceivedTest extends TestCase
     public function test_a_pickup_order_shows_the_kind_the_customer_chose_next_to_the_point(): void
     {
         $office = $this->get($this->placePickupOrder('office')->json('confirmation_url'))->assertOk()->getContent();
-        $this->assertMatchesRegularExpression('/<span class="sf-received-destination-line sf-received-destination-kind">Office<\/span>\s*<span class="sf-received-destination-line">Econt Center<\/span>/', $office);
+        $this->assertMatchesRegularExpression('/<span class="sf-received-destination-line sf-received-destination-kind">Office<\/span>\s*<span class="sf-received-destination-line">Ivan Petrov<\/span>/', $office);
 
         $this->flushSession();
         $locker = $this->get($this->placePickupOrder('locker')->json('confirmation_url'))->assertOk()->getContent();

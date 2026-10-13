@@ -114,7 +114,7 @@ class RegionNoteCheckoutTest extends TestCase
         $account = Account::register('region@example.com', 'hashed-password');
         app(AccountRepository::class)->save($account);
         $this->actingAs(AccountModel::findOrFail($account->id()), 'customer');
-        $address = Address::create(AddressDeliveryType::STREET_ADDRESS, 'Ana', '+359888111222', (string) $account->id(), 'BG', 'Sofia', '1000', 'V 1');
+        $address = Address::create(AddressDeliveryType::STREET_ADDRESS, 'Ana', 'Testov', '+359888111222', (string) $account->id(), 'BG', 'Sofia', '1000', 'V 1');
         app(AddressRepository::class)->save($address);
 
         $this->postJson('/api/checkout', $this->regionPayload($this->regionCart(), [], ['address_id' => (string) $address->id()]))
@@ -126,7 +126,7 @@ class RegionNoteCheckoutTest extends TestCase
         $account = Account::register('region2@example.com', 'hashed-password');
         app(AccountRepository::class)->save($account);
         $this->actingAs(AccountModel::findOrFail($account->id()), 'customer');
-        $address = Address::create(AddressDeliveryType::STREET_ADDRESS, 'Ana', '+359888111222', (string) $account->id(), 'BG', 'Sofia', '1000', 'V 1', null, null, null, null, null, null, null, 'Sofia-city');
+        $address = Address::create(AddressDeliveryType::STREET_ADDRESS, 'Ana', 'Testov', '+359888111222', (string) $account->id(), 'BG', 'Sofia', '1000', 'V 1', null, null, null, null, null, null, null, 'Sofia-city');
         app(AddressRepository::class)->save($address);
 
         $this->postJson('/api/checkout', $this->regionPayload($this->regionCart(), [], ['address_id' => (string) $address->id()]))
@@ -200,7 +200,7 @@ class RegionNoteCheckoutTest extends TestCase
     /** @return array<string, mixed> */
     private function addressBody(string $country = 'BG', array $extra = []): array
     {
-        return array_merge(['delivery_type' => 'street_address', 'recipient_name' => 'Ivan', 'phone' => '+359888123456', 'country' => $country, 'city' => 'Sofia', 'address_line_1' => 'V 1'], $extra);
+        return array_merge(['delivery_type' => 'street_address', 'recipient_first_name' => 'Ivan', 'recipient_last_name' => 'Testov', 'phone' => '+359888123456', 'country' => $country, 'city' => 'Sofia', 'address_line_1' => 'V 1'], $extra);
     }
 
     public function test_the_address_api_applies_the_same_rule_and_returns_the_region(): void
@@ -216,7 +216,7 @@ class RegionNoteCheckoutTest extends TestCase
 
     public function test_the_address_api_refuses_a_region_on_a_pickup_point_and_a_note_does_not_exist_there(): void
     {
-        $pickup = ['delivery_type' => 'pickup_point', 'recipient_name' => 'Ivan', 'phone' => '+359888123456', 'country' => 'BG', 'carrier_code' => 'econt', 'pickup_point_reference' => 'o-1', 'pickup_point_name' => 'N', 'pickup_point_address' => 'A', 'settlement' => 'Sofia'];
+        $pickup = ['delivery_type' => 'pickup_point', 'recipient_first_name' => 'Ivan', 'recipient_last_name' => 'Testov', 'phone' => '+359888123456', 'country' => 'BG', 'carrier_code' => 'econt', 'pickup_point_reference' => 'o-1', 'pickup_point_name' => 'N', 'pickup_point_address' => 'A', 'settlement' => 'Sofia'];
 
         $this->postJson('/api/addresses', $pickup + ['region' => 'Sofia-city'])->assertStatus(422)->assertJsonValidationErrors('region');
         $this->postJson('/api/addresses', $pickup + ['customer_note' => 'x'])->assertStatus(201)->assertJsonMissingPath('customer_note');

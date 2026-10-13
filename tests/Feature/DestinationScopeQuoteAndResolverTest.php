@@ -346,7 +346,7 @@ class DestinationScopeQuoteAndResolverTest extends TestCase
         $quoted = collect($this->postJson('/api/shipping/quote', ['delivery_type' => $kind, 'country' => 'BG', 'settlement' => 'Sofia'])->assertOk()->json('methods'))->firstWhere('id', $unlabelled);
 
         $this->postJson('/api/checkout', array_merge([
-            'cart_id' => $cartId, 'email' => 'g@example.com', 'recipient_name' => 'G B', 'phone' => '+359888000000', 'payment_method' => 'cash_on_delivery',
+            'cart_id' => $cartId, 'email' => 'g@example.com', 'recipient_first_name' => 'G', 'recipient_last_name' => 'B', 'phone' => '+359888000000', 'payment_method' => 'cash_on_delivery',
             'shipping_method_id' => $quoted['id'], 'quote_handle' => $quoted['handle'], 'expected_shipping_minor' => 450,
         ], $address))->assertStatus(201)
             ->assertJsonPath('order.total.minor', 2000 + 450)
@@ -366,7 +366,7 @@ class DestinationScopeQuoteAndResolverTest extends TestCase
         $quoted = collect($this->postJson('/api/shipping/quote', ['delivery_type' => 'street_address', 'country' => 'BG', 'settlement' => 'Sofia'])->assertOk()->json('methods'))->firstWhere('id', $any);
 
         $this->postJson('/api/checkout', [
-            'cart_id' => $cartId, 'email' => 'g@example.com', 'recipient_name' => 'G B', 'phone' => '+359888000000', 'payment_method' => 'cash_on_delivery',
+            'cart_id' => $cartId, 'email' => 'g@example.com', 'recipient_first_name' => 'G', 'recipient_last_name' => 'B', 'phone' => '+359888000000', 'payment_method' => 'cash_on_delivery',
             'delivery_type' => 'street_address', 'country' => 'BG', 'city' => 'Sofia', 'address_line_1' => 'Vitosha 1',
             'shipping_method_id' => $quoted['id'], 'quote_handle' => $quoted['handle'],
         ])->assertStatus(201)->assertJsonPath('shipping.delivery_type', 'other')->assertJsonPath('shipping.courier', 'Econt');

@@ -31,7 +31,7 @@ final class OrderEditingTest extends TestCase
             subtotal: Money::fromMinorUnits(1000, 'EUR'),
             discount: Money::fromMinorUnits(300, 'EUR'),
             deliveryType: OrderDeliveryType::STREET_ADDRESS,
-            recipientName: 'Ivan Ivanov',
+            recipientFirstName: 'Ivan', recipientLastName: 'Ivanov',
             phone: '+359888123456',
             placedAt: new DateTimeImmutable('2026-01-01 12:00:00'),
             status: $status,
@@ -53,7 +53,7 @@ final class OrderEditingTest extends TestCase
             subtotal: Money::fromMinorUnits(1000, 'EUR'),
             discount: Money::fromMinorUnits(300, 'EUR'),
             deliveryType: OrderDeliveryType::PICKUP_POINT,
-            recipientName: 'Ivan Ivanov',
+            recipientFirstName: 'Ivan', recipientLastName: 'Ivanov',
             phone: '+359888123456',
             placedAt: new DateTimeImmutable('2026-01-01 12:00:00'),
             status: $status,
@@ -92,7 +92,7 @@ final class OrderEditingTest extends TestCase
             placedAt: new DateTimeImmutable('2026-01-01 12:00:00'),
             addressId: null,
             deliveryType: OrderDeliveryType::STREET_ADDRESS,
-            recipientName: 'Ivan Ivanov',
+            recipientFirstName: 'Ivan', recipientLastName: 'Ivanov',
             phone: '+359888123456',
             country: 'BG',
             city: 'Sofia',
@@ -128,7 +128,7 @@ final class OrderEditingTest extends TestCase
             placedAt: new DateTimeImmutable('2026-01-01 12:00:00'),
             addressId: null,
             deliveryType: OrderDeliveryType::STREET_ADDRESS,
-            recipientName: 'Ivan Ivanov',
+            recipientFirstName: 'Ivan', recipientLastName: 'Ivanov',
             phone: '+359888123456',
             country: 'BG',
             city: 'Sofia',
@@ -178,7 +178,7 @@ final class OrderEditingTest extends TestCase
             subtotal: Money::fromMinorUnits(1000, 'EUR'),
             discount: Money::fromMinorUnits(0, 'EUR'),
             deliveryType: OrderDeliveryType::STREET_ADDRESS,
-            recipientName: 'Ivan Ivanov',
+            recipientFirstName: 'Ivan', recipientLastName: 'Ivanov',
             phone: '+359888123456',
             placedAt: new DateTimeImmutable('2026-01-01 12:00:00'),
             country: 'BG',
@@ -285,7 +285,7 @@ final class OrderEditingTest extends TestCase
 
         $order->reviseDelivery(
             deliveryType: OrderDeliveryType::STREET_ADDRESS,
-            recipientName: 'Petar Petrov',
+            recipientFirstName: 'Petar', recipientLastName: 'Petrov',
             phone: '+359888999999',
             country: 'BG',
             city: 'Plovdiv',
@@ -298,7 +298,7 @@ final class OrderEditingTest extends TestCase
         );
 
         $this->assertSame(OrderDeliveryType::STREET_ADDRESS, $order->deliveryType());
-        $this->assertSame('Petar Petrov', $order->recipientName());
+        $this->assertSame('Petar Petrov', $order->recipientFullName());
         $this->assertSame('+359888999999', $order->phone());
         $this->assertSame('BG', $order->country());
         $this->assertSame('Plovdiv', $order->city());
@@ -319,7 +319,7 @@ final class OrderEditingTest extends TestCase
         try {
             $order->reviseDelivery(
                 deliveryType: OrderDeliveryType::STREET_ADDRESS,
-                recipientName: 'Petar Petrov',
+                recipientFirstName: 'Petar', recipientLastName: 'Petrov',
                 phone: '+359888999999',
                 country: 'BG',
                 city: 'Plovdiv',
@@ -335,7 +335,7 @@ final class OrderEditingTest extends TestCase
             $this->assertSame($status, $e->status());
         }
 
-        $this->assertSame('Ivan Ivanov', $order->recipientName());
+        $this->assertSame('Ivan Ivanov', $order->recipientFullName());
         $this->assertSame('Sofia', $order->city());
     }
 
@@ -343,14 +343,14 @@ final class OrderEditingTest extends TestCase
     {
         $order = $this->order();
         $before = $this->everythingExcept($order, [
-            'deliveryType', 'recipientName', 'phone', 'country', 'city',
+            'deliveryType', 'recipientFirstName', 'recipientLastName', 'phone', 'country', 'city',
             'postalCode', 'addressLine1', 'addressLine2', 'carrierCode',
             'pickupPointReference', 'settlement',
         ]);
 
         $order->reviseDelivery(
             deliveryType: OrderDeliveryType::PICKUP_POINT,
-            recipientName: 'Petar Petrov',
+            recipientFirstName: 'Petar', recipientLastName: 'Petrov',
             phone: '+359888999999',
             country: 'BG',
             city: null,
@@ -363,7 +363,7 @@ final class OrderEditingTest extends TestCase
         );
 
         $after = $this->everythingExcept($order, [
-            'deliveryType', 'recipientName', 'phone', 'country', 'city',
+            'deliveryType', 'recipientFirstName', 'recipientLastName', 'phone', 'country', 'city',
             'postalCode', 'addressLine1', 'addressLine2', 'carrierCode',
             'pickupPointReference', 'settlement',
         ]);
@@ -384,7 +384,7 @@ final class OrderEditingTest extends TestCase
 
         $order->reviseDelivery(
             deliveryType: OrderDeliveryType::PICKUP_POINT,
-            recipientName: 'Petar Petrov',
+            recipientFirstName: 'Petar', recipientLastName: 'Petrov',
             phone: '+359888999999',
             country: 'BG',
             city: null,
@@ -423,7 +423,7 @@ final class OrderEditingTest extends TestCase
         try {
             $order->reviseDelivery(
                 deliveryType: OrderDeliveryType::STREET_ADDRESS,
-                recipientName: 'X',
+                recipientFirstName: 'X', recipientLastName: 'Testov',
                 phone: '+359888000000',
                 country: 'BG',
                 city: 'Sofia',
@@ -452,7 +452,7 @@ final class OrderEditingTest extends TestCase
             subtotal: Money::fromMinorUnits(1000, 'EUR'),
             discount: Money::zero('EUR'),
             deliveryType: OrderDeliveryType::STREET_ADDRESS,
-            recipientName: 'Ivan Ivanov',
+            recipientFirstName: 'Ivan', recipientLastName: 'Ivanov',
             phone: '+359888123456',
             placedAt: new DateTimeImmutable('2026-01-01'),
             country: 'BG',
@@ -470,7 +470,7 @@ final class OrderEditingTest extends TestCase
 
         $order->reviseDelivery(
             deliveryType: OrderDeliveryType::STREET_ADDRESS,
-            recipientName: 'Ivan Ivanov',
+            recipientFirstName: 'Ivan', recipientLastName: 'Ivanov',
             phone: '+359888123456',
             country: 'BG',
             city: 'Sofia',
@@ -494,7 +494,7 @@ final class OrderEditingTest extends TestCase
 
         $order->reviseDelivery(
             deliveryType: OrderDeliveryType::STREET_ADDRESS,
-            recipientName: 'Ivan Ivanov',
+            recipientFirstName: 'Ivan', recipientLastName: 'Ivanov',
             phone: '+359888123456',
             country: 'BG',
             city: 'Sofia',
@@ -516,7 +516,7 @@ final class OrderEditingTest extends TestCase
 
         $order->reviseDelivery(
             deliveryType: OrderDeliveryType::STREET_ADDRESS,
-            recipientName: 'Ivan Ivanov',
+            recipientFirstName: 'Ivan', recipientLastName: 'Ivanov',
             phone: '+359888123456',
             country: 'BG',
             city: 'Sofia',
@@ -539,7 +539,7 @@ final class OrderEditingTest extends TestCase
 
         $order->reviseDelivery(
             deliveryType: OrderDeliveryType::PICKUP_POINT,
-            recipientName: 'Ivan Ivanov',
+            recipientFirstName: 'Ivan', recipientLastName: 'Ivanov',
             phone: '+359888123456',
             country: 'BG',
             city: null,
@@ -561,7 +561,7 @@ final class OrderEditingTest extends TestCase
             try {
                 $order->reviseDelivery(
                     deliveryType: OrderDeliveryType::PICKUP_POINT,
-                    recipientName: 'Ivan Ivanov',
+                    recipientFirstName: 'Ivan', recipientLastName: 'Ivanov',
                     phone: '+359888123456',
                     country: $country,
                     city: null,
@@ -588,7 +588,7 @@ final class OrderEditingTest extends TestCase
 
         $order->reviseDelivery(
             deliveryType: OrderDeliveryType::PICKUP_POINT,
-            recipientName: 'Ivan Ivanov',
+            recipientFirstName: 'Ivan', recipientLastName: 'Ivanov',
             phone: '+359888123456',
             country: 'BG',
             city: 'Sofia',
@@ -622,7 +622,8 @@ final class OrderEditingTest extends TestCase
             'placedAt' => $order->placedAt()->format('Y-m-d H:i:s'),
             'addressId' => $order->addressId(),
             'deliveryType' => $order->deliveryType()->value,
-            'recipientName' => $order->recipientName(),
+            'recipientFirstName' => $order->recipientFirstName(),
+            'recipientLastName' => $order->recipientLastName(),
             'phone' => $order->phone(),
             'country' => $order->country(),
             'city' => $order->city(),

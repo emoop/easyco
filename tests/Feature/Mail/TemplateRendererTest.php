@@ -43,7 +43,7 @@ class TemplateRendererTest extends TestCase
     private function scalars(array $overrides = []): array
     {
         return $overrides + [
-            'shop_name' => 'Raf', 'customer_name' => 'Ivan', 'order_number' => '42', 'order_date' => '2026-10-09 10:00',
+            'shop_name' => 'Raf', 'customer_name' => 'Ivan', 'customer_first_name' => 'Ivan', 'order_number' => '42', 'order_date' => '2026-10-09 10:00',
             'order_total' => '20.00 €', 'payment_method_label' => 'Cash on delivery', 'support_email' => 'info@example.com',
         ];
     }

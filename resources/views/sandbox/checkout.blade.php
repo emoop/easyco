@@ -15,7 +15,8 @@
     <form id="checkout-form">
         <h2>Contact</h2>
         <div class="field"><label for="email">Email</label><input id="email" name="email" type="email" required></div>
-        <div class="field"><label for="recipient_name">Recipient name</label><input id="recipient_name" name="recipient_name" type="text" required></div>
+        <div class="field"><label for="recipient_first_name">First name</label><input id="recipient_first_name" name="recipient_first_name" type="text" required></div>
+        <div class="field"><label for="recipient_last_name">Last name</label><input id="recipient_last_name" name="recipient_last_name" type="text" required></div>
         <div class="field"><label for="phone">Phone</label><input id="phone" name="phone" type="text" required></div>
 
         <h2>Payment</h2>
@@ -48,8 +49,8 @@
         <div id="pickup-point" hidden>
             <p class="muted">This sandbox has no courier map, so type the pickup point's name and address yourself.</p>
             <div class="field"><label for="carrier_code">Carrier</label><input id="carrier_code" name="carrier_code" type="text"></div>
-            <div class="field"><label for="pickup_point_reference">Pickup point</label><input id="pickup_point_reference" name="pickup_point_reference" type="text"></div>
-            <div class="field"><label for="pickup_point_name">Pickup point name</label><input id="pickup_point_name" name="pickup_point_name" type="text"></div>
+            <div class="field"><label for="pickup_point_reference">Pickup point code (optional)</label><input id="pickup_point_reference" name="pickup_point_reference" type="text"></div>
+            <div class="field"><label for="pickup_point_name">Pickup point name (optional)</label><input id="pickup_point_name" name="pickup_point_name" type="text"></div>
             <div class="field"><label for="pickup_point_address">Pickup point address</label><input id="pickup_point_address" name="pickup_point_address" type="text"></div>
             <div class="field"><label for="settlement">Settlement</label><input id="settlement" name="settlement" type="text"></div>
         </div>
@@ -422,7 +423,8 @@ document.addEventListener('DOMContentLoaded', function () {
         var payload = {
             cart_id: displayedCartId,
             email: document.getElementById('email').value,
-            recipient_name: document.getElementById('recipient_name').value,
+            recipient_first_name: document.getElementById('recipient_first_name').value,
+            recipient_last_name: document.getElementById('recipient_last_name').value,
             phone: document.getElementById('phone').value,
             payment_method: form.querySelector('input[name="payment_method"]:checked').value,
             delivery_type: deliveryType(),

@@ -80,9 +80,12 @@ final class OrderTransitionsTest extends TestCase
         'shipping', 'shippingMethodName', 'shippingMethodCode',
         'appliedPromotionCode', 'status',
         'confirm', 'ship', 'deliver', 'cancel', 'refund',
-        'placedAt', 'addressId', 'deliveryType', 'recipientName', 'phone',
+        'placedAt', 'addressId', 'deliveryType', 'recipientFirstName', 'recipientLastName', 'recipientFullName', 'phone',
         'country', 'city', 'postalCode', 'addressLine1', 'addressLine2',
         'carrierCode', 'pickupPointReference', 'settlement',
+        // Read-only accessors added by later stages (4a shipping facts, 4f / 5g-2a pick-up display, RN-1 region and note): none touches $status.
+        'shippingCourier', 'shippingDeliveryType', 'shippingServiceCode',
+        'pickupPointName', 'pickupPointAddress', 'pickupPointKind', 'region', 'customerNote',
         'create', 'reconstituteFromStorage',
         // order-editing-design.md §2, stage 2 — the two edit mutators.
         // Neither changes $status (§2's own "status itself is untouched by
@@ -106,7 +109,7 @@ final class OrderTransitionsTest extends TestCase
             subtotal: Money::fromMinorUnits(1000, 'EUR'),
             discount: Money::fromMinorUnits(300, 'EUR'),
             deliveryType: OrderDeliveryType::STREET_ADDRESS,
-            recipientName: 'Ivan Ivanov',
+            recipientFirstName: 'Ivan', recipientLastName: 'Ivanov',
             phone: '+359888123456',
             placedAt: new DateTimeImmutable('2026-01-01 12:00:00'),
             status: $status,
@@ -139,7 +142,8 @@ final class OrderTransitionsTest extends TestCase
             'placedAt' => $order->placedAt()->format('Y-m-d H:i:s'),
             'addressId' => $order->addressId(),
             'deliveryType' => $order->deliveryType()->value,
-            'recipientName' => $order->recipientName(),
+            'recipientFirstName' => $order->recipientFirstName(),
+            'recipientLastName' => $order->recipientLastName(),
             'phone' => $order->phone(),
             'country' => $order->country(),
             'city' => $order->city(),

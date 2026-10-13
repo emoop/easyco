@@ -92,7 +92,7 @@ class OrderStatusChangerEditedOrderTest extends TestCase
         return app(CheckoutOrchestrator::class)->place(new CheckoutInput(
             cartId: $cart->id(),
             email: 'guest@example.com',
-            recipientName: 'Guest Buyer',
+            recipientFirstName: 'Guest', recipientLastName: 'Buyer',
             phone: '+359888000000',
             paymentMethod: 'cash_on_delivery',
             accountId: null,

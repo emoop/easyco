@@ -55,7 +55,10 @@ final class OrderConfirmationContent
 
         $scalars = [
             'shop_name' => $this->shopName(),
-            'customer_name' => MailHeader::clean($order->recipientName(), 120),
+            // `customer_name` keeps its meaning: the recipient's FULL name (merchants use it in their own texts, e.g. as the payer's name).
+            // The default greeting is by FIRST name (checkout form v2, D2: "Здравейте, Емил") through its own scalar.
+            'customer_name' => MailHeader::clean($order->recipientFullName(), 120),
+            'customer_first_name' => MailHeader::clean($order->recipientFirstName(), 120),
             'order_number' => (string) $order->id(),
             'order_date' => $order->placedAt()->setTimezone($this->timezone->zone())->format($locale === 'bg' ? 'd.m.Y H:i' : 'Y-m-d H:i'),
             'order_total' => $this->money($order->total()),
@@ -167,7 +170,7 @@ final class OrderConfirmationContent
             $rows[] = [$t('method'), $courier === null || $courier === '' ? $method : $method.' / '.MailHeader::clean($courier, 40)];
         }
 
-        $rows[] = [$t('recipient'), MailHeader::clean($order->recipientName(), 120)];
+        $rows[] = [$t('recipient'), MailHeader::clean($order->recipientFullName(), 120)];
 
         if ($order->deliveryType() === OrderDeliveryType::PICKUP_POINT) {
             $point = array_filter([

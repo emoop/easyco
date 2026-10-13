@@ -29,21 +29,32 @@
             </aside>
 
             <form class="sf-checkout-form" id="sf-checkout-form" data-sf-checkout-form>
+                {{-- Every required field's label ends with the asterisk (rendered here for the always-required ones; the script toggles it, from the same state as `required`, for the fields whose requirement changes). --}}
+                <p class="sf-required-note">{{ __('storefront.checkout_required_note') }}</p>
+
                 <fieldset class="sf-fieldset">
                     <legend class="sf-legend">{{ __('storefront.checkout_contact') }}</legend>
                     <div class="sf-field">
-                        <label for="sf-email">{{ __('storefront.checkout_email') }}</label>
-                        <input id="sf-email" name="email" type="email" autocomplete="email" inputmode="email" required maxlength="255">
+                        <label for="sf-email">{{ __('storefront.checkout_email') }} <span class="sf-required" aria-hidden="true">*</span></label>
+                        <input id="sf-email" name="email" type="email" autocomplete="email" inputmode="email" required aria-required="true" maxlength="255">
                         <p class="sf-field-error" id="sf-err-email" data-sf-error-for="email" hidden></p>
                     </div>
-                    <div class="sf-field">
-                        <label for="sf-recipient-name">{{ __('storefront.checkout_name') }}</label>
-                        <input id="sf-recipient-name" name="recipient_name" type="text" autocomplete="name" required maxlength="255">
-                        <p class="sf-field-error" id="sf-err-recipient_name" data-sf-error-for="recipient_name" hidden></p>
+                    {{-- First and last name, side by side from a tablet up, stacked on a phone (checkout form v2, D1). --}}
+                    <div class="sf-field-row">
+                        <div class="sf-field">
+                            <label for="sf-first-name">{{ __('storefront.checkout_first_name') }} <span class="sf-required" aria-hidden="true">*</span></label>
+                            <input id="sf-first-name" name="recipient_first_name" type="text" autocomplete="given-name" required aria-required="true" maxlength="100">
+                            <p class="sf-field-error" id="sf-err-recipient_first_name" data-sf-error-for="recipient_first_name" hidden></p>
+                        </div>
+                        <div class="sf-field">
+                            <label for="sf-last-name">{{ __('storefront.checkout_last_name') }} <span class="sf-required" aria-hidden="true">*</span></label>
+                            <input id="sf-last-name" name="recipient_last_name" type="text" autocomplete="family-name" required aria-required="true" maxlength="100">
+                            <p class="sf-field-error" id="sf-err-recipient_last_name" data-sf-error-for="recipient_last_name" hidden></p>
+                        </div>
                     </div>
                     <div class="sf-field">
-                        <label for="sf-phone">{{ __('storefront.checkout_phone') }}</label>
-                        <input id="sf-phone" name="phone" type="tel" autocomplete="tel" inputmode="tel" required maxlength="32">
+                        <label for="sf-phone">{{ __('storefront.checkout_phone') }} <span class="sf-required" aria-hidden="true">*</span></label>
+                        <input id="sf-phone" name="phone" type="tel" autocomplete="tel" inputmode="tel" required aria-required="true" maxlength="32">
                         <p class="sf-field-error" id="sf-err-phone" data-sf-error-for="phone" hidden></p>
                     </div>
                 </fieldset>
@@ -51,14 +62,14 @@
                 <fieldset class="sf-fieldset">
                     <legend class="sf-legend">{{ __('storefront.checkout_delivery') }}</legend>
                     <div class="sf-field">
-                        <label for="sf-country">{{ __('storefront.checkout_country') }}</label>
-                        <input id="sf-country" name="country" type="text" value="{{ $defaultCountry }}" autocomplete="country" maxlength="2" required>
+                        <label for="sf-country">{{ __('storefront.checkout_country') }} <span class="sf-required" aria-hidden="true">*</span></label>
+                        <input id="sf-country" name="country" type="text" value="{{ $defaultCountry }}" autocomplete="country" maxlength="2" required aria-required="true">
                         <p class="sf-field-error" id="sf-err-country" data-sf-error-for="country" hidden></p>
                     </div>
                     {{-- ONE place field: the street address's city, and the settlement a pick-up point is quoted and stored for. --}}
                     <div class="sf-field">
-                        <label for="sf-city">{{ __('storefront.checkout_city') }}</label>
-                        <input id="sf-city" name="city" type="text" autocomplete="address-level2" required maxlength="255">
+                        <label for="sf-city">{{ __('storefront.checkout_city') }} <span class="sf-required" aria-hidden="true">*</span></label>
+                        <input id="sf-city" name="city" type="text" autocomplete="address-level2" required aria-required="true" maxlength="255">
                         <p class="sf-field-error" id="sf-err-city" data-sf-error-for="city" hidden></p>
                     </div>
 
@@ -102,20 +113,11 @@
                     </div>
 
                     <div data-sf-pickup-fields hidden>
-                        <p class="sf-field-note">{{ __('storefront.checkout_pickup_note') }}</p>
-                        <div class="sf-field">
-                            <label for="sf-pickup-reference">{{ __('storefront.checkout_pickup_reference') }}</label>
-                            <input id="sf-pickup-reference" name="pickup_point_reference" type="text" maxlength="255">
-                            <p class="sf-field-error" id="sf-err-pickup_point_reference" data-sf-error-for="pickup_point_reference" hidden></p>
-                        </div>
-                        <div class="sf-field">
-                            <label for="sf-pickup-name">{{ __('storefront.checkout_pickup_name') }}</label>
-                            <input id="sf-pickup-name" name="pickup_point_name" type="text" maxlength="255">
-                            <p class="sf-field-error" id="sf-err-pickup_point_name" data-sf-error-for="pickup_point_name" hidden></p>
-                        </div>
+                        {{-- ONE field for the office or locker: the customer types the address, the name or the code, whatever they know (checkout form v2, D3, D14). --}}
                         <div class="sf-field">
                             <label for="sf-pickup-address">{{ __('storefront.checkout_pickup_address') }}</label>
-                            <input id="sf-pickup-address" name="pickup_point_address" type="text" maxlength="255">
+                            <input id="sf-pickup-address" name="pickup_point_address" type="text" maxlength="255" aria-describedby="sf-pickup-help" data-sf-describedby="sf-pickup-help">
+                            <p class="sf-field-help" id="sf-pickup-help">{{ __('storefront.checkout_pickup_help') }}</p>
                             <p class="sf-field-error" id="sf-err-pickup_point_address" data-sf-error-for="pickup_point_address" hidden></p>
                         </div>
                     </div>
@@ -123,7 +125,7 @@
 
                 <div class="sf-field sf-note-field">
                     <label for="sf-note">{{ __('storefront.checkout_note') }}</label>
-                    <textarea id="sf-note" name="customer_note" rows="3" maxlength="1000" placeholder="{{ __('storefront.checkout_note_placeholder') }}" aria-describedby="sf-note-counter"></textarea>
+                    <textarea id="sf-note" name="customer_note" rows="3" maxlength="1000" placeholder="{{ __('storefront.checkout_note_placeholder') }}" aria-describedby="sf-note-counter" data-sf-describedby="sf-note-counter"></textarea>
                     <p class="sf-note-counter" id="sf-note-counter" data-sf-note-counter>{{ __('storefront.js_checkout.ck_note_counter', ['count' => 0, 'max' => 1000]) }}</p>
                     <p class="sf-field-error" id="sf-err-customer_note" data-sf-error-for="customer_note" hidden></p>
                 </div>

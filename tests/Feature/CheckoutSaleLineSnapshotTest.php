@@ -127,7 +127,7 @@ class CheckoutSaleLineSnapshotTest extends TestCase
         return new CheckoutInput(
             cartId: $cartId,
             email: 'guest@example.com',
-            recipientName: 'Guest Buyer',
+            recipientFirstName: 'Guest', recipientLastName: 'Buyer',
             phone: '+359888000000',
             paymentMethod: 'cash_on_delivery',
             accountId: null,

@@ -69,7 +69,8 @@ class AddressResolver
 
     public function resolveNew(
         AddressDeliveryType $deliveryType,
-        string $recipientName,
+        string $recipientFirstName,
+        string $recipientLastName,
         string $phone,
         ?string $accountId,
         ?string $country = null,
@@ -87,7 +88,8 @@ class AddressResolver
     ): Address {
         $address = Address::create(
             deliveryType: $deliveryType,
-            recipientName: $recipientName,
+            recipientFirstName: $recipientFirstName,
+            recipientLastName: $recipientLastName,
             phone: $phone,
             accountId: $accountId,
             country: $country,

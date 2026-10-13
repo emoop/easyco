@@ -20,7 +20,7 @@ class PickupKindAddressApiTest extends TestCase
     private function pickup(array $overrides = []): array
     {
         return array_merge([
-            'delivery_type' => 'pickup_point', 'recipient_name' => 'Ivan', 'phone' => '+359888123456', 'country' => 'BG', 'carrier_code' => 'econt',
+            'delivery_type' => 'pickup_point', 'recipient_first_name' => 'Ivan', 'recipient_last_name' => 'Testov', 'phone' => '+359888123456', 'country' => 'BG', 'carrier_code' => 'econt',
             'pickup_point_reference' => 'office-1', 'pickup_point_name' => 'Center', 'pickup_point_address' => 'Vitosha 100', 'settlement' => 'Sofia',
         ], $overrides);
     }
@@ -41,7 +41,7 @@ class PickupKindAddressApiTest extends TestCase
 
     public function test_a_kind_is_refused_for_a_street_address_and_for_other_values(): void
     {
-        $street = ['delivery_type' => 'street_address', 'recipient_name' => 'Ivan', 'phone' => '+359888123456', 'country' => 'BG', 'city' => 'Sofia', 'address_line_1' => 'V 1'];
+        $street = ['delivery_type' => 'street_address', 'recipient_first_name' => 'Ivan', 'recipient_last_name' => 'Testov', 'phone' => '+359888123456', 'country' => 'BG', 'city' => 'Sofia', 'address_line_1' => 'V 1'];
 
         $this->postJson('/api/addresses', $street + ['pickup_point_kind' => 'office'])->assertStatus(422)->assertJsonValidationErrors('pickup_point_kind');
 
