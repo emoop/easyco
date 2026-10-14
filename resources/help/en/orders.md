@@ -243,6 +243,53 @@ With cash on delivery the customer pays at the door, to the courier or in cash.
 
 The money the courier transfers to you later is **not tracked in the system yet**.
 
+## Protection against fake cash-on-delivery orders {#cod-protection}
+
+Sometimes someone orders with cash on delivery and never collects the parcel — often under different names but with the same
+phone or email. The shop pays the courier both ways. The system gives you two tools: see the repetition in time, and stop cash on
+delivery for that person. **Nothing happens automatically**: you decide.
+
+### Matches {#action-order-matches}
+
+The **"Matches"** card on an order lists other orders with the **same phone**, the **same email** or the **same delivery
+address/office**, with their status, so a cancelled or returned order by the same person shows at once.
+
+- Phones are compared by their **last 9 digits**, so `0888 123 456` and `+359 888 123 456` count as one number.
+- A match **by name only** is shown in grey as a **"possible match"**: different people often share a name.
+- Up to 10 orders are shown for each kind of match — the most recent.
+- A **red line** appears when the order's phone or email is **currently blocked**.
+- The IP address is **not** used for matches: one IP is often shared by a whole family or office.
+
+Everyone allowed to view orders sees the card.
+
+### Blocking and unblocking {#action-block-identifier}
+
+Next to the order's **phone**, **email** and **IP address** there is a **"Block"** button. Choose how long — **180 days**
+(default), **forever** or a number of days — and optionally write a reason.
+
+**What a block stops:** only **cash on delivery** for that phone, email or IP. The customer can still order with **bank
+transfer** or any other method that is not cash on delivery. If no method is left for them, "Place order" is locked and they see:
+*"Please contact us through our contact details about ordering from the site"*.
+
+**What the customer sees:** only that this payment method is not available. The site **never says** they are blocked, nor which
+of phone, email or IP matched.
+
+- A blocked identifier shows **"Blocked until …"** or **"Blocked forever"** and an **"Unblock"** button. Unblocking works at once.
+- Blocking something already blocked **extends** the block — no second record is created.
+- The IP address is shown and blocked only by staff with the **"manage orders"** permission. The same goes for blocking and
+  unblocking in general.
+
+### The "Blocks" page {#cod-protection-list}
+
+**Orders → Blocks** lists every block: type, value (partly hidden, e.g. `*** *** 456`), reason, the order it came from, who made
+it and until when it applies. From here you can **unblock**, **extend** and **add a block by hand** without an order — for a
+number you already know, for example.
+
+Expired and revoked blocks are deleted automatically **30 days** after they end. Permanent ones stay until you unblock them.
+
+**Personal data:** the phone, email and IP in blocks are kept only to prevent abuse and only while the block applies. Confirm the
+periods with your lawyer.
+
 ## How to cancel an order {#cancel-order}
 
 Cancelling is "Actions → Cancel". What is possible depends on the status:

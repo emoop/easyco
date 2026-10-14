@@ -49,7 +49,8 @@ class HelpPageTest extends TestCase
         'action-correct-receipt', 'action-record-return', 'action-refund-money-only', 'action-cancel', 'action-add-note',
         'action-edit-order', 'action-remove-line', 'action-restore-line', 'action-mark-refund-paid-out', 'action-cancel-refund',
         'bank-transfer', 'bank-exact', 'bank-partial', 'bank-over', 'bank-accept', 'bank-correct',
-        'cash-on-delivery', 'cancel-order',
+        // HELP-1: the cash-on-delivery protection section (matches, blocking, the Blocks page) sits right after the cash-on-delivery one.
+        'cash-on-delivery', 'cod-protection', 'action-order-matches', 'action-block-identifier', 'cod-protection-list', 'cancel-order',
         'returns-and-refunds', 'returns-goods', 'returns-money-only', 'refund-owed-paid-out',
         'scenarios', 'glossary',
     ];

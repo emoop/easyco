@@ -26,8 +26,11 @@ final class OrderMatchesCard
     {
         $matches = app(OrderMatchReader::class)->forOrder($record);
 
+        // «Помощ: как работи →» closes the card, with or without matches.
+        $help = '<p style="font-size: 0.75rem">'.HelpLink::html('order_matches').'</p>';
+
         if ($matches['orders'] === []) {
-            return '<p>'.e(__('blocks.matches.none')).'</p>';
+            return '<p>'.e(__('blocks.matches.none')).'</p>'.$help;
         }
 
         $html = '';
@@ -66,6 +69,6 @@ final class OrderMatchesCard
                 .'</li>';
         }
 
-        return $html.'</ul><p style="font-size: 0.75rem; opacity: 0.65">'.e(__('blocks.matches.more_than', ['limit' => OrderMatchReader::LIMIT])).'</p>';
+        return $html.'</ul><p style="font-size: 0.75rem; opacity: 0.65">'.e(__('blocks.matches.more_than', ['limit' => OrderMatchReader::LIMIT])).'</p>'.$help;
     }
 }

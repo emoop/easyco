@@ -48,7 +48,8 @@ final class OrderBlockActions
             ->modalHeading(__('blocks.actions.block_heading', ['type' => mb_strtolower(__('blocks.type_options.'.$type->value))]))
             ->modalDescription(__('blocks.form.note'))
             ->modalSubmitActionLabel(__('blocks.actions.block'))
-            ->schema(self::durationFields())
+            // «Помощ: как работи →» (new tab): the section that explains what a block stops and what the customer sees.
+            ->schema([...self::durationFields(), HelpLink::component('block_identifier')])
             ->visible(fn (OrderModel $record): bool => self::mayManage() && self::hasValue($record, $type) && app(OrderBlockLookup::class)->blockFor($record, $type) === null)
             ->action(function (OrderModel $record, array $data) use ($type): void {
                 $value = self::valueOf($record, $type);
@@ -82,6 +83,7 @@ final class OrderBlockActions
             ->requiresConfirmation()
             ->modalHeading(__('blocks.actions.unblock_heading', ['type' => mb_strtolower(__('blocks.type_options.'.$type->value))]))
             ->modalDescription(__('blocks.actions.unblock_description', ['type' => mb_strtolower(__('blocks.type_options.'.$type->value))]))
+            ->modalContent(HelpLink::html('block_identifier'))
             ->visible(fn (OrderModel $record): bool => self::mayManage() && app(OrderBlockLookup::class)->blockFor($record, $type) !== null)
             ->action(function (OrderModel $record) use ($type): void {
                 $block = app(OrderBlockLookup::class)->blockFor($record, $type);

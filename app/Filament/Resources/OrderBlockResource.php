@@ -6,6 +6,7 @@ use App\Enums\OrderBlockType;
 use App\Filament\Concerns\AuthorizesViaStaffPermission;
 use App\Filament\NavigationGroup;
 use App\Filament\Resources\OrderBlockResource\Pages\ListOrderBlocks;
+use App\Filament\Support\HelpLink;
 use App\Filament\Support\OrderBlockActions;
 use App\Models\OrderBlockModel;
 use App\Services\OrderBlockMasker;
@@ -140,7 +141,7 @@ class OrderBlockResource extends Resource
                     ->icon('heroicon-m-clock')
                     ->color('gray')
                     ->modalHeading(__('blocks.actions.extend_heading'))
-                    ->schema(array_slice(OrderBlockActions::durationFields(), 0, 2))
+                    ->schema([...array_slice(OrderBlockActions::durationFields(), 0, 2), HelpLink::component('block_identifier')])
                     ->visible(fn (OrderBlockModel $record): bool => OrderBlockActions::mayManage() && $record->isActive(Date::now()))
                     ->action(function (OrderBlockModel $record, array $data): void {
                         app(OrderBlockService::class)->extend($record, OrderBlockActions::daysFrom($data));
@@ -153,6 +154,7 @@ class OrderBlockResource extends Resource
                     ->requiresConfirmation()
                     ->modalHeading(fn (OrderBlockModel $record): string => __('blocks.actions.unblock_heading', ['type' => mb_strtolower(__('blocks.type_options.'.$record->type))]))
                     ->modalDescription(fn (OrderBlockModel $record): string => __('blocks.actions.unblock_description', ['type' => mb_strtolower(__('blocks.type_options.'.$record->type))]))
+                    ->modalContent(HelpLink::html('block_identifier'))
                     ->visible(fn (OrderBlockModel $record): bool => OrderBlockActions::mayManage() && $record->isActive(Date::now()))
                     ->action(function (OrderBlockModel $record): void {
                         app(OrderBlockService::class)->revoke($record);
@@ -181,6 +183,7 @@ class OrderBlockResource extends Resource
                     ->maxLength(255)
                     ->rules([new \App\Rules\PlainText()]),
                 ...OrderBlockActions::durationFields(),
+                HelpLink::component('block_identifier'),
             ])
             ->visible(fn (): bool => OrderBlockActions::mayManage())
             ->action(function (array $data): void {
