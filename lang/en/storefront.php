@@ -2,6 +2,7 @@
 
 // The storefront's own texts (stage S2a). Every string a storefront view prints comes from here; bg and en move together.
 return [
+    'footer_pages' => 'Information',
     'home' => 'Home',
     'menu' => 'Categories',
     'cart' => 'Cart',

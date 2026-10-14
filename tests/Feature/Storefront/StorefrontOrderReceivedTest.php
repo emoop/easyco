@@ -430,9 +430,9 @@ class StorefrontOrderReceivedTest extends TestCase
         $this->flushSession();
         $five = $count($this->placeOrder(5)->json('confirmation_url'));
 
-        fwrite(STDERR, "\n[query-count] storefront order-received page: 1 line = {$one} queries, 5 lines = {$five} queries (pinned ceiling 7)\n");
+        fwrite(STDERR, "\n[query-count] storefront order-received page: 1 line = {$one} queries, 5 lines = {$five} queries (pinned ceiling 8)\n");
 
         $this->assertSame($one, $five, 'the page query count must not grow with the number of lines');
-        $this->assertLessThanOrEqual(7, $five);
+        $this->assertLessThanOrEqual(8, $five, 'the old 7 plus the ONE content-pages query of the footer (P1)');
     }
 }

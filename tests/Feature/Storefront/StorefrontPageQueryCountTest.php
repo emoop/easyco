@@ -18,12 +18,12 @@ class StorefrontPageQueryCountTest extends TestCase
     use BuildsStorefrontCatalog;
     use RefreshDatabase;
 
-    /** Pinned CEILINGS: the measured counts (see the printed lines); they must never grow. */
-    public const HOME = 24;
+    /** Pinned CEILINGS: the measured counts (see the printed lines); they must never grow. Each includes the ONE query of the footer's content pages (P1, memoised per request). */
+    public const HOME = 25;
 
-    public const CATEGORY = 24;
+    public const CATEGORY = 25;
 
-    public const PRODUCT = 25;
+    public const PRODUCT = 26;
 
     protected function setUp(): void
     {

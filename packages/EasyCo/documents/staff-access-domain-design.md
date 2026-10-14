@@ -89,6 +89,7 @@ Grouped by what they gate:
 
 **System**
 - `SETTINGS_MANAGE` — site settings, including payment configuration
+- `CONTENT_MANAGE` (`content_manage`) — the content pages (`/info/{slug}`: create, edit, publish, archive, read revisions; pages-design.md). Granted to **Administrator and Manager** (seeder, and an idempotent data migration on existing installs); not to Product Entry or any custom role unless the merchant ticks it. A published page is shown to every visitor and is the text a customer accepts at checkout, so it is deliberately not a product-entry permission.
 - `STAFF_MANAGE` — create, edit, deactivate staff and assign their roles
 - `AI_MANAGE` — configuration of the AI-facing functionality
 

@@ -54,6 +54,10 @@ enum Permission: string
     /** shipping zones, methods and classes (shipping-domain-design.md §12) */
     case SHIPPING_MANAGE = 'shipping_manage';
 
+    // Content
+    /** static content pages: terms, privacy, delivery, returns, contacts (pages-design.md P-D4) */
+    case CONTENT_MANAGE = 'content_manage';
+
     // Marketing
     /** promotion codes and their scopes */
     case PROMOTION_MANAGE = 'promotion_manage';

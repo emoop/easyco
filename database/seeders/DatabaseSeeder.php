@@ -24,5 +24,6 @@ class DatabaseSeeder extends Seeder
 
         $this->call(\EasyCo\Pricing\Seeders\PricingSystemListsSeeder::class);
         $this->call(\EasyCo\Staff\Seeders\StaffSystemRolesSeeder::class);
+        $this->call(ContentDraftsSeeder::class);
     }
 }

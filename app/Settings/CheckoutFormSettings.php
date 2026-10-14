@@ -3,6 +3,7 @@
 namespace App\Settings;
 
 use App\Settings\Contracts\SiteSettingsRepository;
+use App\Storefront\Pages\PageReader;
 
 /**
  * THE ONE READER of the checkout form's settings (checkout form v2, section 6.6): the three optional choices, the terms and privacy
@@ -30,6 +31,11 @@ final class CheckoutFormSettings
 
     public const PRIVACY_URL_KEY = 'checkout.privacy_url';
 
+    /** A content page chosen for the terms / the privacy policy (pages-design.md section 5): it WINS over the URL above. */
+    public const TERMS_PAGE_ID_KEY = 'checkout.terms_page_id';
+
+    public const PRIVACY_PAGE_ID_KEY = 'checkout.privacy_page_id';
+
     /** Every key this reader (and the region policy through it) needs, read together. */
     public const KEYS = [
         self::CALL_BEFORE_SHIPPING_KEY,
@@ -38,13 +44,55 @@ final class CheckoutFormSettings
         self::TERMS_URL_KEY,
         self::TERMS_VERSION_KEY,
         self::PRIVACY_URL_KEY,
+        self::TERMS_PAGE_ID_KEY,
+        self::PRIVACY_PAGE_ID_KEY,
         CheckoutRegionPolicy::DEFAULT_KEY,
         CheckoutRegionPolicy::COUNTRIES_KEY,
     ];
 
     public function __construct(
         private readonly SiteSettingsRepository $settings,
+        private readonly ?PageReader $pages = null,
     ) {
+    }
+
+    /** The content pages: the request's own reader (ONE query for the footer, this and the settings selects), unless one was handed in. */
+    private function pages(): PageReader
+    {
+        return $this->pages ?? app(PageReader::class);
+    }
+
+    private function pageId(string $key): ?int
+    {
+        $value = $this->raw()[$key];
+
+        return $value !== null && ctype_digit(trim($value)) && (int) $value > 0 ? (int) $value : null;
+    }
+
+    /** The content page chosen for the terms, or null: then the URL below is what counts. A page WINS over a URL. */
+    public function termsPageId(): ?int
+    {
+        return $this->pageId(self::TERMS_PAGE_ID_KEY);
+    }
+
+    public function privacyPageId(): ?int
+    {
+        return $this->pageId(self::PRIVACY_PAGE_ID_KEY);
+    }
+
+    /** The chosen terms page when it is PUBLISHED (light columns: id, slug, title, revision); null for a draft, an archived or a missing one. */
+    public function termsPage(): ?object
+    {
+        $id = $this->termsPageId();
+
+        return $id === null ? null : $this->pages()->publishedById($id);
+    }
+
+    public function privacyPage(): ?object
+    {
+        $id = $this->privacyPageId();
+
+        return $id === null ? null : $this->pages()->publishedById($id);
     }
 
     /**
@@ -86,6 +134,14 @@ final class CheckoutFormSettings
     /** The version the page displays and the API compares with: the stored one, or a fixed word when the merchant never set one. */
     public function currentTermsVersion(): string
     {
+        // A terms PAGE: the version IS the revision of its text, `p{page_id}r{revision}` (<= 32 characters), so it changes exactly when the
+        // text does and an order's terms_version names the revision row that holds what the customer accepted (pages-design.md 5.2).
+        if ($this->termsPageId() !== null) {
+            $page = $this->termsPage();
+
+            return $page === null ? 'unversioned' : 'p'.$page->id.'r'.$page->revision;
+        }
+
         return $this->termsVersion() ?? 'unversioned';
     }
 
@@ -132,6 +188,13 @@ final class CheckoutFormSettings
     /** The terms link for the page, or null when there is none or the stored value is not a safe link. */
     public function safeTermsUrl(): ?string
     {
+        // A page wins over a URL; an UNPUBLISHED chosen page is no link at all (it does not fall back to the URL).
+        if ($this->termsPageId() !== null) {
+            $page = $this->termsPage();
+
+            return $page === null ? null : PageReader::urlFor((string) $page->slug);
+        }
+
         $url = $this->termsUrl();
 
         return $url !== null && self::isSafeLink($url) ? $url : null;
@@ -139,6 +202,12 @@ final class CheckoutFormSettings
 
     public function safePrivacyUrl(): ?string
     {
+        if ($this->privacyPageId() !== null) {
+            $page = $this->privacyPage();
+
+            return $page === null ? null : PageReader::urlFor((string) $page->slug);
+        }
+
         $url = $this->privacyUrl();
 
         return $url !== null && self::isSafeLink($url) ? $url : null;

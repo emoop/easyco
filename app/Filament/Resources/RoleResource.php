@@ -255,6 +255,7 @@ class RoleResource extends Resource
             'Orders' => [Permission::ORDER_VIEW, Permission::ORDER_MANAGE, Permission::REFUND_CASH, Permission::REFUND_BANK, Permission::ORDER_DISCOUNT, Permission::PAYMENT_RECONCILE],
             'Point of sale' => [Permission::POS_OPERATE, Permission::POS_DISCOUNT],
             'Shipping' => [Permission::SHIPPING_MANAGE],
+            'Content' => [Permission::CONTENT_MANAGE],
             'Marketing' => [Permission::PROMOTION_MANAGE],
             'Reporting' => [Permission::REPORT_VIEW],
             'System' => [Permission::SETTINGS_MANAGE, Permission::STAFF_MANAGE, Permission::AI_MANAGE],

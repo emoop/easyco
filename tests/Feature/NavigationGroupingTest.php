@@ -127,7 +127,8 @@ class NavigationGroupingTest extends TestCase
         $this->assertSame(NavigationGroup::SALES, $cases[0]);
         $this->assertSame(NavigationGroup::CATALOG, $cases[1]);
         $this->assertSame(NavigationGroup::SHIPPING, $cases[2]);
-        $this->assertSame(NavigationGroup::ADMIN, $cases[3]);
+        $this->assertSame(NavigationGroup::CONTENT, $cases[3]);
+        $this->assertSame(NavigationGroup::ADMIN, $cases[4]);
     }
 
     public function test_the_six_catalog_group_items_sort_in_the_exact_stated_order(): void

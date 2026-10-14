@@ -76,6 +76,10 @@ class AppServiceProvider extends ServiceProvider
         // listed in the page: the tag's own array order IS the order of the page's sections, and
         // R4b adds its two cash-on-delivery sources here, by this same one line, without touching
         // App\Filament\Pages\NeedsAttention. The page reads them with app()->tagged(TAG).
+        // The content pages the storefront reads (pages-design.md section 4): ONE query per request (the footer, the checkout's page lookup
+        // and the settings selects all share it), so scoped(): a fresh list for every request and every queue job.
+        $this->app->scoped(\App\Storefront\Pages\PageReader::class);
+
         $this->app->tag([
             OwedRefundSource::class,
             ReceiptMismatchSource::class,
@@ -90,6 +94,11 @@ class AppServiceProvider extends ServiceProvider
     {
         // The named API rate limiters, in their one central place.
         ApiRateLimits::register();
+
+        // The footer of every storefront page: the published pages flagged for it (one memoised query, see PageReader).
+        \Illuminate\Support\Facades\View::composer('storefront.layout', static function ($view): void {
+            $view->with('footerPages', app(\App\Storefront\Pages\PageReader::class)->footerLinks());
+        });
 
         // mail-design.md section 6.1: the order confirmation. The listener only DISPATCHES (after the order
         // transaction committed); domain packages never call Hook:: themselves, so the registration lives here.

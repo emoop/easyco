@@ -250,6 +250,14 @@ The promo code box (C1c) stays in the summary column.
 - **Who bumps the version** (`order-context-design.md` §15 Q7): the settings page writes `checkout.terms_version` = today's
   date automatically when the URL changes, and has a button **«Правилата са обновени»** that sets it to today. The merchant
   never types a version string.
+- **A page instead of an address (pages, stage P1; pages-design.md §5).** The settings page lets the merchant choose, for the terms and for the
+  privacy link separately, a **content page** (a select of the published pages) or an **external address**. Keys `checkout.terms_page_id` and
+  `checkout.privacy_page_id`; a chosen page WINS over the address. With a terms page the **version is `p{page_id}r{revision}`** (at most 32
+  characters): editing the page's text writes a new revision, so the version changes by itself, a checkout page that still shows the old
+  one is refused `terms_version_changed`, and the button «Правилата са обновени» is hidden (nothing to bump). A change that is not the text
+  (SEO, footer, status) keeps the revision. A chosen page that is **not published** is no link at all: no checkbox, no privacy notice,
+  nothing required, a warning on the settings page, and no fallback to the address. The order view's terms line links `p{id}r{n}` to that
+  revision's read-only page for staff who may open pages. The address mode is unchanged.
 - **Off (or no URL):** the checkbox is not rendered, `terms_accepted` / `terms_version` are **prohibited** in the request
   (a client cannot record an acceptance of terms the shop does not show), and both columns are NULL — "not asked", the same
   meaning NULL has for orders placed before the field existed.

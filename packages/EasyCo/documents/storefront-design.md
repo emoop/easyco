@@ -573,6 +573,17 @@ Each stage ends in a review gate and a full-suite run in a private test database
 
 ---
 
+## 13a. Content pages — `/info/{slug}` (stage P1, pages-design.md)
+
+- **Route:** `GET /info/{slug}` (`storefront.page`) — published pages only; a draft or unknown slug is the storefront's normal 404 body (never "this page exists but is hidden"). A slug typed in another case is a 301 to the lower-case one. Cookie-free like every storefront page; the body is printed inside `.sf-description` and is sanitized by `DescriptionSanitizer::clean()` **twice** — before it is saved (`PageWriter`) and again at render, so a row edited by hand cannot carry a script.
+- **SEO:** `SeoMeta::forPage()` — title (`meta_title` or the page title) + shop name, description (`meta_description` or the first plain text), canonical = the page's own address; the `noindex` toggle becomes the robots meta. The signed **preview** (`/info-preview/{id}`, a temporary signed URL, 30 minutes, drafts too) is `noindex` and has no canonical.
+- **Footer:** published pages with `in_footer`, ordered by `footer_order` then title, rendered as a `nav.sf-footer-pages` by a view composer on `storefront.layout`. **One** query (`PageReader::published()`, memoised per request, shared with the checkout's terms lookup): every storefront page pin rose by exactly one query (shell ceiling 7 → 8).
+- **Revisions:** a revision row is written only when the *sanitized* title or body changed (n+1); SEO, footer and status edits write none; revision rows are never updated or deleted. A page used as the checkout terms/privacy page, or named by an order's `terms_version` (`p{id}r{n}`), cannot be deleted (and the admin has no delete at all: archive = draft + out of the footer).
+- **Admin:** «Страници» in the Content navigation group, gated by `content_manage` (staff-access-domain-design.md); slug auto-suggested from the title and editable (Cyrillic allowed; a warning when the slug of a published page changes — there are no redirects from old slugs yet); the editor toolbar is limited to the sanitizer's allow-list.
+- **Not built (P1):** menu builder, slug redirects on rename, scheduled publishing, per-page templates.
+
+---
+
 ## 14. Decisions needed from the owner (with my recommendation)
 
 - **O1 — Where the read layer lives:** `App\Storefront` (recommended) vs a new domain package. A package would have to import Catalog, Pricing and Media, which the cross-domain rule (CLAUDE.md rule 9) forbids for domain packages; `app/` is allowed to compose them.

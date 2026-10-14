@@ -11,7 +11,8 @@
     @endif
     @if (($seo['canonical'] ?? null) !== null)
         <link rel="canonical" href="{{ $seo['canonical'] }}">
-    @else
+    @endif
+    @if (($seo['canonical'] ?? null) === null || ($seo['noindex'] ?? false))
         <meta name="robots" content="noindex">
     @endif
     @if ((file_exists(public_path('hot')) || file_exists(public_path('build/manifest.json'))) && ! app()->runningUnitTests())
@@ -52,6 +53,14 @@
         <div class="sf-footer-inner">
             <span>{{ config('app.name') }}</span>
             <a href="{{ route('storefront.home', [], false) }}">{{ __('storefront.home') }}</a>
+            {{-- The content pages flagged for the footer (pages-design.md section 4): published only, titles escaped, links built by route(). --}}
+            @if (! empty($footerPages))
+                <nav class="sf-footer-pages" aria-label="{{ __('storefront.footer_pages') }}">
+                    @foreach ($footerPages as $footerPage)
+                        <a href="{{ $footerPage['url'] }}">{{ $footerPage['title'] }}</a>
+                    @endforeach
+                </nav>
+            @endif
         </div>
     </footer>
 </body>

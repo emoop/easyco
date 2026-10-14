@@ -89,6 +89,9 @@ Owned by `App\Settings\CheckoutFormSettings`, which reads ALL of them (the two r
 | `checkout.terms_url` | an http(s) URL or a path of the store (`/terms`), at most 2048 characters | none: the terms box is not shown |
 | `checkout.terms_version` | a string, set automatically (today's date when the URL changes, or by the settings page's button) | none (the page and the API then use the word `unversioned`) |
 | `checkout.privacy_url` | the same kind of link | none: the privacy notice is not shown |
+| `checkout.terms_page_id` | the id of a content page (pages-design.md §5); when set it WINS over `checkout.terms_url`; the version is then `p{page_id}r{revision}` | absent = the address mode above |
+| `checkout.privacy_page_id` | the same, for the privacy notice | absent = the address mode above |
+| `content.drafts_seeded` | `'1'` once `ContentDraftsSeeder` ran (the two empty drafts are created once) | absent = not yet seeded |
 | `checkout.region_default`, `checkout.region_countries` | see checkout-region-and-note-design.md | optional / none |
 
-The settings page (Settings > Checkout, `SETTINGS_MANAGE`) forgets a key that holds its default, like the region keys.
+The settings page (Settings > Checkout, `SETTINGS_MANAGE`) forgets a key that holds its default, like the region keys. A page id that points at a draft or at a page that no longer exists is no link and no error (no checkbox, no notice) — it does NOT fall back to the address.

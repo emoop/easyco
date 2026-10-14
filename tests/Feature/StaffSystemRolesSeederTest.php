@@ -51,6 +51,7 @@ class StaffSystemRolesSeederTest extends TestCase
             Permission::REFUND_CASH,
             Permission::ORDER_DISCOUNT,
             Permission::SHIPPING_MANAGE,
+            Permission::CONTENT_MANAGE,
             Permission::POS_OPERATE,
             Permission::POS_DISCOUNT,
             Permission::REPORT_VIEW,

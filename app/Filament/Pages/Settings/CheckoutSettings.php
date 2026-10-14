@@ -4,7 +4,9 @@ namespace App\Filament\Pages\Settings;
 
 use App\Filament\Concerns\AuthorizesViaStaffPermission;
 use App\Filament\NavigationGroup;
+use App\Content\Models\PageModel;
 use App\Settings\CheckoutFormSettings;
+use App\Storefront\Pages\PageReader;
 use App\Settings\CheckoutRegionPolicy;
 use App\Settings\Contracts\SiteSettingsRepository;
 use App\Settings\CountryNames;
@@ -15,6 +17,7 @@ use Closure;
 use EasyCo\Staff\Enums\Permission;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Repeater;
+use Filament\Forms\Components\Radio;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
@@ -103,6 +106,11 @@ class CheckoutSettings extends Page
             'terms_url' => $form->termsUrl() ?? '',
             'terms_version' => $form->termsVersion() ?? '',
             'privacy_url' => $form->privacyUrl() ?? '',
+            // A content page, or an external address (pages-design.md section 5): the page wins when one is chosen.
+            'terms_source' => $form->termsPageId() !== null ? 'page' : 'url',
+            'terms_page_id' => $form->termsPageId(),
+            'privacy_source' => $form->privacyPageId() !== null ? 'page' : 'url',
+            'privacy_page_id' => $form->privacyPageId(),
         ]);
     }
 
@@ -158,36 +166,74 @@ class CheckoutSettings extends Page
                             ->label(__('settings.checkout_page.terms_label'))
                             ->helperText(__('settings.checkout_page.terms_help'))
                             ->live(),
+                        // THE TERMS: a content page or an external address (a page wins over an address).
+                        Radio::make('terms_source')
+                            ->label(__('settings.checkout_page.terms_source_label'))
+                            ->options(static::sourceOptions())
+                            ->inline()
+                            ->live(),
+                        Select::make('terms_page_id')
+                            ->label(__('settings.checkout_page.terms_page_label'))
+                            ->options(fn ($get): array => static::pageOptions($get('terms_page_id')))
+                            ->placeholder(__('settings.checkout_page.page_placeholder'))
+                            ->helperText(__('settings.checkout_page.terms_page_help'))
+                            ->visible(fn ($get): bool => $get('terms_source') === 'page')
+                            ->live(),
                         TextInput::make('terms_url')
                             ->label(__('settings.checkout_page.terms_url_label'))
                             ->placeholder('https://… / /terms')
                             ->maxLength(2048)
                             ->rules([fn (): Closure => static::linkRule()])
+                            ->visible(fn ($get): bool => $get('terms_source') !== 'page')
                             ->live(onBlur: true),
-                        // Read-only: nobody types a version. It follows the URL (set to today when the URL changes) and the button below.
+                        // Read-only: nobody types a version. With an address it follows the URL (set to today when the URL changes) and the
+                        // button below; with a page it IS the page's revision (p{id}r{revision}) and needs no button.
                         TextInput::make('terms_version')
                             ->label(__('settings.checkout_page.terms_version_label'))
                             ->disabled()
                             ->dehydrated(false)
-                            ->helperText(__('settings.checkout_page.terms_version_help')),
+                            ->helperText(__('settings.checkout_page.terms_version_help'))
+                            ->visible(fn ($get): bool => $get('terms_source') !== 'page'),
+                        Text::make(fn ($get): string => __('settings.checkout_page.terms_version_page', ['version' => static::pageVersion($get('terms_page_id'))]))
+                            ->color('gray')
+                            ->size('sm')
+                            ->visible(fn ($get): bool => $get('terms_source') === 'page' && filled($get('terms_page_id'))),
                         Actions::make([
                             Action::make('bump_terms_version')
                                 ->label(__('settings.checkout_page.terms_updated_button'))
                                 ->color('gray')
                                 ->action(fn () => $this->bumpTermsVersion()),
-                        ])->key('terms-version-actions'),
+                        ])->key('terms-version-actions')->visible(fn ($get): bool => $get('terms_source') !== 'page'),
                         Text::make(__('settings.checkout_page.warning_terms_without_url'))
                             ->color('danger')
-                            ->visible(fn ($get): bool => (bool) $get('terms_enabled') && trim((string) $get('terms_url')) === ''),
+                            ->visible(fn ($get): bool => (bool) $get('terms_enabled') && $get('terms_source') !== 'page' && trim((string) $get('terms_url')) === ''),
+                        Text::make(__('settings.checkout_page.warning_terms_page_unpublished'))
+                            ->color('danger')
+                            ->visible(fn ($get): bool => (bool) $get('terms_enabled') && $get('terms_source') === 'page' && ! static::isPublishedPage($get('terms_page_id'))),
+                        // THE PRIVACY POLICY: the same choice.
+                        Radio::make('privacy_source')
+                            ->label(__('settings.checkout_page.privacy_source_label'))
+                            ->options(static::sourceOptions())
+                            ->inline()
+                            ->live(),
+                        Select::make('privacy_page_id')
+                            ->label(__('settings.checkout_page.privacy_page_label'))
+                            ->options(fn ($get): array => static::pageOptions($get('privacy_page_id')))
+                            ->placeholder(__('settings.checkout_page.page_placeholder'))
+                            ->visible(fn ($get): bool => $get('privacy_source') === 'page')
+                            ->live(),
                         TextInput::make('privacy_url')
                             ->label(__('settings.checkout_page.privacy_url_label'))
                             ->placeholder('https://… / /privacy')
                             ->maxLength(2048)
                             ->rules([fn (): Closure => static::linkRule()])
+                            ->visible(fn ($get): bool => $get('privacy_source') !== 'page')
                             ->live(onBlur: true),
                         Text::make(__('settings.checkout_page.warning_no_privacy_url'))
                             ->color('warning')
-                            ->visible(fn ($get): bool => trim((string) $get('privacy_url')) === ''),
+                            ->visible(fn ($get): bool => $get('privacy_source') === 'page'
+                                ? ! static::isPublishedPage($get('privacy_page_id'))
+                                : trim((string) $get('privacy_url')) === ''),
                     ]),
                 Section::make(__('settings.checkout_page.region_section'))
                     ->description(__('settings.checkout_page.region_help'))
@@ -225,6 +271,43 @@ class CheckoutSettings extends Page
                     ]),
             ])
             ->statePath('data');
+    }
+
+    /** @return array<string, string> */
+    public static function sourceOptions(): array
+    {
+        return ['page' => __('settings.checkout_page.source_page'), 'url' => __('settings.checkout_page.source_url')];
+    }
+
+    /**
+     * The published pages (id => title) for a select; a page that was chosen and is not published any more stays in the list, marked, so
+     * the choice is visible (and the warning explains it) instead of silently vanishing.
+     *
+     * @return array<int|string, string>
+     */
+    public static function pageOptions(mixed $selected): array
+    {
+        $options = app(PageReader::class)->publishedOptions();
+
+        if (filled($selected) && ! isset($options[(int) $selected])) {
+            $page = PageModel::query()->find((int) $selected);
+            $options[(int) $selected] = $page === null ? '#'.(int) $selected : $page->title.' ('.__('settings.checkout_page.unpublished_marker').')';
+        }
+
+        return $options;
+    }
+
+    private static function isPublishedPage(mixed $id): bool
+    {
+        return filled($id) && app(PageReader::class)->publishedById((int) $id) !== null;
+    }
+
+    /** The version a terms page will have: its CURRENT revision, as the checkout will record it. */
+    private static function pageVersion(mixed $id): string
+    {
+        $page = filled($id) ? app(PageReader::class)->publishedById((int) $id) : null;
+
+        return $page === null ? '—' : 'p'.$page->id.'r'.$page->revision;
     }
 
     /** The links: an http(s) URL or a same-site path (`/politika`), at most 2048 characters: the very test the page applies before it writes one. */
@@ -300,15 +383,25 @@ class CheckoutSettings extends Page
 
         ($data['terms_enabled'] ?? true) ? $settings->forget(CheckoutFormSettings::TERMS_ENABLED_KEY) : $settings->set(CheckoutFormSettings::TERMS_ENABLED_KEY, '0');
 
-        $newTermsUrl = trim((string) ($data['terms_url'] ?? ''));
-        $newPrivacyUrl = trim((string) ($data['privacy_url'] ?? ''));
+        $termsIsPage = ($data['terms_source'] ?? 'url') === 'page';
+        $privacyIsPage = ($data['privacy_source'] ?? 'url') === 'page';
         $oldTermsUrl = $form->termsUrl() ?? '';
+
+        // A page chosen = its id is stored (and wins); an address chosen = the page id is forgotten. The address of the OTHER mode is left as it
+        // is, so switching back finds it. A page mode with no page picked is "no link" (the page warns).
+        $termsPageId = $termsIsPage && filled($data['terms_page_id'] ?? null) ? (string) (int) $data['terms_page_id'] : null;
+        $privacyPageId = $privacyIsPage && filled($data['privacy_page_id'] ?? null) ? (string) (int) $data['privacy_page_id'] : null;
+        $termsPageId === null ? $settings->forget(CheckoutFormSettings::TERMS_PAGE_ID_KEY) : $settings->set(CheckoutFormSettings::TERMS_PAGE_ID_KEY, $termsPageId);
+        $privacyPageId === null ? $settings->forget(CheckoutFormSettings::PRIVACY_PAGE_ID_KEY) : $settings->set(CheckoutFormSettings::PRIVACY_PAGE_ID_KEY, $privacyPageId);
+
+        $newTermsUrl = $termsIsPage ? $oldTermsUrl : trim((string) ($data['terms_url'] ?? ''));
+        $newPrivacyUrl = $privacyIsPage ? ($form->privacyUrl() ?? '') : trim((string) ($data['privacy_url'] ?? ''));
 
         $newTermsUrl === '' ? $settings->forget(CheckoutFormSettings::TERMS_URL_KEY) : $settings->set(CheckoutFormSettings::TERMS_URL_KEY, $newTermsUrl);
         $newPrivacyUrl === '' ? $settings->forget(CheckoutFormSettings::PRIVACY_URL_KEY) : $settings->set(CheckoutFormSettings::PRIVACY_URL_KEY, $newPrivacyUrl);
 
-        // A different terms page is a different text: the version becomes today's date by itself.
-        if ($newTermsUrl !== '' && $newTermsUrl !== $oldTermsUrl) {
+        // A different terms address is a different text: the version becomes today's date by itself (not for a page: its revision is the version).
+        if (! $termsIsPage && $newTermsUrl !== '' && $newTermsUrl !== $oldTermsUrl) {
             $settings->set(CheckoutFormSettings::TERMS_VERSION_KEY, static::today());
             $this->data['terms_version'] = static::today();
         }

@@ -81,6 +81,17 @@ return [
 
     // Checkout settings page (checkout RN-1, checkout-region-and-note-design.md section 5).
     'checkout_page' => [
+        'terms_source_label' => 'Terms and conditions: source',
+        'privacy_source_label' => 'Privacy policy: source',
+        'source_page' => 'Page',
+        'source_url' => 'External address',
+        'terms_page_label' => 'Terms and conditions page',
+        'privacy_page_label' => 'Privacy policy page',
+        'page_placeholder' => 'Choose a published page',
+        'terms_page_help' => 'Only published pages are offered. The terms version follows the page: it changes by itself whenever the page text changes.',
+        'terms_version_page' => 'Terms version recorded on an order: :version (the page and its current revision).',
+        'unpublished_marker' => 'not published',
+        'warning_terms_page_unpublished' => 'The chosen terms page is not published (or none is chosen): the checkbox is NOT shown and nothing is required until you choose a published page.',
         'fields_section' => 'Fields at checkout',
         'fields_help' => 'Optional boxes and the consent the customer sees on the checkout page. No box is ever ticked in advance.',
         'call_before_label' => 'Show "Call me before shipping"',

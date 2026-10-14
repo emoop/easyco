@@ -53,6 +53,23 @@ final class SeoMeta
         return ['title' => $title.' — '.$this->shopName(), 'description' => '', 'canonical' => null];
     }
 
+    /**
+     * A content page (pages-design.md section 4): title = the meta title or the title; description = the meta description or the first ~160
+     * characters of the text; canonical = the page url (null for a PREVIEW: it is never indexed); `noindex` asks the layout for the robots
+     * meta even where there is a canonical.
+     *
+     * @return array{title: string, description: string, canonical: ?string, noindex: bool}
+     */
+    public function forPage(\App\Content\Models\PageModel $page, bool $preview = false): array
+    {
+        return [
+            'title' => $this->title($page->meta_title !== null && trim($page->meta_title) !== '' ? $page->meta_title : $page->title),
+            'description' => $page->meta_description !== null && trim($page->meta_description) !== '' ? $page->meta_description : $this->plain($page->body),
+            'canonical' => $preview ? null : $this->absolute(\App\Storefront\Pages\PageReader::urlFor($page->slug)),
+            'noindex' => $page->noindex || $preview,
+        ];
+    }
+
     public function plain(string $html): string
     {
         $text = html_entity_decode(strip_tags($html), ENT_QUOTES | ENT_HTML5, 'UTF-8');

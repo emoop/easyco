@@ -5,6 +5,7 @@ use App\Http\Controllers\Storefront\CategoryController;
 use App\Http\Controllers\Storefront\CheckoutPageController;
 use App\Http\Controllers\Storefront\HomeController;
 use App\Http\Controllers\Storefront\OrderReceivedController;
+use App\Http\Controllers\Storefront\PageController;
 use App\Http\Controllers\Storefront\ProductController;
 use App\Storefront\Orders\OrderReceivedHeaders;
 use App\Storefront\Support\SecurityHeaders;
@@ -50,6 +51,17 @@ Route::middleware([SecurityHeaders::class])
 
         // The one-page checkout (C1): a server shell driven by the browser on the existing API. `private, no-store`, noindex.
         Route::get('/checkout', [CheckoutPageController::class, 'show'])->name('storefront.checkout');
+
+        // A content page (pages-design.md): the prefix belongs to pages alone. The controller decides, so a draft and an unknown slug are the
+        // same storefront 404.
+        Route::get('/info/{slug}', [PageController::class, 'show'])
+            ->where('slug', '[^/]+')
+            ->name('storefront.page');
+
+        // The admin's Preview: a temporary SIGNED url, checked in the controller (a bad signature is the storefront's own 404). noindex.
+        Route::get('/info-preview/{id}', [PageController::class, 'preview'])
+            ->where('id', '[0-9]+')
+            ->name('storefront.page.preview');
 
         Route::get('/product-category/{path}', [CategoryController::class, 'show'])
             ->where('path', '[\s\S]*')

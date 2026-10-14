@@ -349,10 +349,11 @@ class StorefrontCheckoutPageTest extends TestCase
 
         $this->get('/checkout')->assertOk();
 
-        fwrite(STDERR, "\n[query-count] storefront /checkout: ".count($sql)." queries (pinned ceiling 7)\n");
+        fwrite(STDERR, "\n[query-count] storefront /checkout: ".count($sql)." queries (pinned ceiling 8)\n");
 
-        // 7 = locale, time zone, currency position, store country, the menu (2) and ONE read of the two region-policy settings
-        // (CheckoutRegionPolicy::all() through getMany, RN-1b: the page hands the rule to the script). It stays a ceiling: 8 fails.
-        $this->assertLessThanOrEqual(7, count($sql), 'the shell reads no cart; the region policy is ONE query');
+        // 8 = locale, time zone, currency position, store country, the menu (2), ONE read of the checkout form's settings (all keys, the
+        // region rule included: getMany) and ONE read of the published content pages (P1: the footer's list, which the terms / privacy
+        // page lookup shares). It stays a ceiling: 9 fails.
+        $this->assertLessThanOrEqual(8, count($sql), 'the shell reads no cart; the settings are ONE query and the content pages ONE');
     }
 }

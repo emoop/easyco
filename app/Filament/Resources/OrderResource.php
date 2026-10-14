@@ -884,7 +884,8 @@ class OrderResource extends Resource
                                 ->label(__('orders.context.fields.terms_accepted'))
                                 ->inlineLabel()
                                 ->extraEntryWrapperAttributes(['style' => self::PAIR_STYLE])
-                                ->getStateUsing(fn (OrderModel $record): string => static::termsText($record)),
+                                ->html()
+                                ->getStateUsing(fn (OrderModel $record): string => static::termsHtml($record)),
                             TextEntry::make('ctx_marketing_consent')
                                 ->label(__('orders.context.fields.marketing_consent'))
                                 ->inlineLabel()
@@ -1070,18 +1071,28 @@ class OrderResource extends Resource
         return $id === null ? __('orders.context.not_recorded') : mb_substr($id, 0, 8).'…';
     }
 
-    /** Terms accepted: "Yes · <time in the admin's zone> · <version>", or "n/a" when the order did not ask (customer text never reaches here as HTML: it is escaped by the entry). */
-    private static function termsText(OrderModel $record): string
+    /**
+     * Terms accepted: "Yes · <time in the admin's zone> · <version>", or "n/a" when the order did not ask. Every part is ESCAPED here (the
+     * entry prints HTML so the version can be a link): a version of the shape `p{page}r{revision}` (the terms came from a content page,
+     * pages-design.md 5.3) links to that revision's text, for a staff member who may read the pages.
+     */
+    private static function termsHtml(OrderModel $record): string
     {
         $context = static::context($record);
 
         if ($context->termsAccepted !== true || $context->termsAcceptedAt === null) {
-            return static::contextText($context->termsAccepted);
+            return e(static::contextText($context->termsAccepted));
         }
 
         $at = Carbon::instance($context->termsAcceptedAt)->timezone(FilamentTimezone::get())->format('M j, Y H:i');
+        $version = (string) $context->termsVersion;
+        $versionHtml = e($version);
 
-        return implode(' · ', array_filter([__('orders.yes'), $at, $context->termsVersion]));
+        if (preg_match('/^p(\d+)r(\d+)$/D', $version, $parts) === 1 && PageResource::canViewAny()) {
+            $versionHtml = '<a class="fi-link" href="'.e(PageResource::getUrl('revision', ['record' => (int) $parts[1], 'revision' => (int) $parts[2]])).'">'.e($version).'</a>';
+        }
+
+        return implode(' · ', array_filter([e(__('orders.yes')), e($at), $version === '' ? '' : $versionHtml]));
     }
 
     /** The newsletter answer; a "Yes" carries the EXACT sentence the customer ticked (the proof of consent). */
