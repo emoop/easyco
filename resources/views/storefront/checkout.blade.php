@@ -243,7 +243,7 @@
                     <div class="sf-pay-cards" role="radiogroup" aria-label="{{ __('storefront.checkout_payment') }}">
                         @foreach ($paymentCards as $card)
                             <label class="sf-pay-card">
-                                <input type="radio" name="payment_method" value="{{ $card['code'] }}"{{ $loop->first ? ' checked' : '' }} data-place-order-label="{{ $card['placeOrderLabel'] }}">
+                                <input type="radio" name="payment_method" value="{{ $card['code'] }}"{{ $loop->first ? ' checked' : '' }} data-place-order-label="{{ $card['placeOrderLabel'] }}"{!! $card['blockable'] ? ' data-blockable="1"' : '' !!}>
                                 @if ($card['icon'] !== null)
                                     <img class="sf-pay-card-logo" src="{{ $card['icon'] }}" alt="{{ $card['label'] }}" loading="lazy" decoding="async">
                                 @endif

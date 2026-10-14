@@ -346,6 +346,7 @@ $registry->register(new PaymentMethodDescriptor(
     placeOrderLabel: null,                                    // optional, must keep the obligation wording (§7)
     sortOrder: 10,
     availability: fn (PaymentAvailabilityContext $c): bool => true,  // country, currency, total, delivery kind
+    blockable: true,                                          // C2-B: a block on the customer's IP / phone / email can stop this method (default false)
 ));
 ```
 
@@ -354,6 +355,10 @@ $registry->register(new PaymentMethodDescriptor(
 - **`availability`** is how a method says "not for this order" (a card method only in EUR, cash on delivery not for a locker
   if a courier forbids it, a limit on the total). The checkout page and the API ask the same function; the API refuses a
   method that is not available for the order (`payment_method_unavailable`, 422) — never trusting the page.
+- **`blockable`** (cod-protection-design.md, stage C2-B): whether a block on the customer's IP, phone or email can stop this method. **True for cash on
+  delivery, false for bank transfer; the default is false and an extension decides for its own method** (a card captured up front does not need it). The API
+  asks the active blocks only for a blockable method, after the availability check and before anything is saved, and refuses with `payment_method_blocked`
+  (422, a neutral sentence that never names the identifier); the page carries the flag as `data-blockable` on the method's radio.
 - **The merchant's switch:** an extension being installed does not make its method appear by force — a future admin row per
   method ("enabled", order) sits on top of the descriptor's `sortOrder`. Not built in C1d (two built-in methods only); named
   so the registry has the hook (`isEnabled` read from a setting `payment.methods.<code>.enabled`, absent = on).

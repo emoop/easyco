@@ -10,7 +10,10 @@ use App\Rules\KnownCountryCode;
 use App\Rules\PlainText;
 use App\Filament\Resources\OrderResource\PaymentReceiptDialog;
 use App\Filament\Resources\OrderResource\RefundDialog;
+use App\Enums\OrderBlockType;
 use App\Filament\Support\HelpLink;
+use App\Filament\Support\OrderBlockActions;
+use App\Filament\Support\OrderMatchesCard;
 use App\Services\Exceptions\MoneyOnlyRefundRefusedException;
 use App\Services\Exceptions\OperationKeyReusedException;
 use App\Services\Exceptions\PaymentReceiptRefusedException;
@@ -794,16 +797,33 @@ class OrderResource extends Resource
                                 ->extraEntryWrapperAttributes(['style' => self::PAIR_STYLE])
                                 ->weight('medium')
                                 ->getStateUsing(fn (OrderModel $record): string => static::forOrder($record)->clientName),
+                            // THE BLOCK BUTTONS (cod-protection-design.md 3.2, stage C2-B): «Блокирай» / «Отблокирай» next to the email and the phone, with the
+                            // state of the block under the value. ORDER_MANAGE only (the buttons are hidden for everyone else); the state line is for ORDER_VIEW.
                             TextEntry::make('email')
                                 ->label(__('orders.fields.email'))
                                 ->inlineLabel()
                                 ->extraEntryWrapperAttributes(['style' => self::PAIR_STYLE])
-                                ->copyable(),
+                                ->copyable()
+                                ->hint(fn (OrderModel $record): ?string => static::blockHint($record, OrderBlockType::EMAIL))
+                                ->hintColor('danger')
+                                ->suffixActions([OrderBlockActions::block(OrderBlockType::EMAIL), OrderBlockActions::unblock(OrderBlockType::EMAIL)]),
                             TextEntry::make('phone')
                                 ->label(__('orders.fields.phone'))
                                 ->inlineLabel()
                                 ->extraEntryWrapperAttributes(['style' => self::PAIR_STYLE])
-                                ->copyable(),
+                                ->copyable()
+                                ->hint(fn (OrderModel $record): ?string => static::blockHint($record, OrderBlockType::PHONE))
+                                ->hintColor('danger')
+                                ->suffixActions([OrderBlockActions::block(OrderBlockType::PHONE), OrderBlockActions::unblock(OrderBlockType::PHONE)]),
+                            // The IP: only for ORDER_MANAGE (the address itself is in the header, once; this row carries the block and its state).
+                            TextEntry::make('block_ip')
+                                ->label(__('blocks.ip_row_label'))
+                                ->inlineLabel()
+                                ->extraEntryWrapperAttributes(['style' => self::PAIR_STYLE])
+                                ->visible(fn (OrderModel $record): bool => OrderBlockActions::mayManage() && app(OrderContextReader::class)->fullClientAddress((string) $record->id) !== null)
+                                ->getStateUsing(fn (OrderModel $record): string => OrderBlockActions::stateText($record, OrderBlockType::IP))
+                                ->color(fn (OrderModel $record): string => app(\App\Services\OrderBlockLookup::class)->blockFor($record, OrderBlockType::IP) !== null ? 'danger' : 'gray')
+                                ->suffixActions([OrderBlockActions::block(OrderBlockType::IP), OrderBlockActions::unblock(OrderBlockType::IP)]),
                             // Guest or account: the account id when there is one, "Guest" when there is not.
                             TextEntry::make('account_id')
                                 ->label(__('orders.fields.account_id'))
@@ -818,6 +838,16 @@ class OrderResource extends Resource
                                 ->getStateUsing(fn (OrderModel $record): string => static::forOrder($record)->order->clientId()),
                         ])
                         ->columns(1),
+                    // «Съвпадения» (cod-protection-design.md 5): earlier and later orders that share the phone, the email or the delivery address/office,
+                    // and the possible (name-only) matches, greyed. ORDER_VIEW; computed when the page opens; the IP is not a matching key.
+                    Section::make(__('blocks.matches.section'))
+                        ->compact()
+                        ->schema([
+                            TextEntry::make('matches_card')
+                                ->hiddenLabel()
+                                ->html()
+                                ->getStateUsing(fn (OrderModel $record): string => OrderMatchesCard::html($record)),
+                        ]),
                     Section::make(__('orders.sections.delivery'))
                         ->compact()
                         ->schema([
@@ -1123,6 +1153,12 @@ class OrderResource extends Resource
     private static function divider(): Html
     {
         return Html::make('<hr style="border: 0; border-top: 1px solid rgba(128, 128, 128, 0.3); margin: 0.25rem 0">');
+    }
+
+    /** The red hint under a blocked phone or email ("Blocked until ..."), nothing when it is not blocked. */
+    private static function blockHint(OrderModel $record, OrderBlockType $type): ?string
+    {
+        return app(\App\Services\OrderBlockLookup::class)->blockFor($record, $type) === null ? null : OrderBlockActions::stateText($record, $type);
     }
 
     private static function context(OrderModel $record): OrderContextView

@@ -73,6 +73,16 @@ VPS you administer yourself.
     for `privacy.ip_full_retention_days` (30 by default) and is then
     anonymised by the daily `privacy:anonymise-order-ips` command, so
     the **scheduler must run** (`php artisan schedule:run` every minute).
+  - **Two daily commands keep personal data from outliving its purpose
+    (both run by the scheduler, both log counts only, never a value):**
+    `privacy:anonymise-order-ips` (the full client address of an order
+    older than `privacy.ip_full_retention_days`, 30 by default, becomes
+    its anonymised form) and `order-blocks:prune` (a cash-on-delivery
+    block that ended more than 30 days ago is deleted; a permanent block
+    stays until it is revoked). A new install, or an upgrade past the
+    stage that added the identity keys, runs `php artisan migrate` (which
+    back-fills the keys of existing orders); `php artisan
+    orders:rebuild-identity-keys` repairs them if a rule ever changes.
   - **Not yet built into EasyCo's own application code as of this
     writing.** See `performance-and-channel-strategy.md` §1 for the
     caching architecture decision (caching belongs only in the

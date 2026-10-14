@@ -49,6 +49,8 @@ class PaymentServiceProvider extends ServiceProvider
                 description: static fn (string $locale): ?string => (string) __('storefront.payment_descriptions.cash_on_delivery', [], $locale),
                 flow: PaymentFlow::OFFLINE,
                 sortOrder: 10,
+                // Cash on delivery is the method a fake order abuses (the shop pays the courier both ways): a block stops THIS one (cod-protection-design.md 4).
+                blockable: true,
             ));
             $registry->register(new PaymentMethodDescriptor(
                 code: 'bank_transfer',

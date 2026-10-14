@@ -1466,6 +1466,84 @@ const scenarios = {
         assert.equal('invoice' in lastCheckout().body, false, 'but it is not sent');
     },
 
+    // ------------------------------------------------------------------------------------------------------------------ blocked payment
+    // (cod-protection-design.md 4, stage C2-B) The API answers `payment_method_blocked` to a real attempt; there is no pre-check endpoint.
+
+    // Another method is left: cash on delivery is marked unavailable and unchosen, the customer is told to choose another, and nothing is resent.
+    async blocked_with_another_method() {
+        const radios = form.all().filter((n) => n.tag === 'input' && n.name === 'payment_method');
+        const cod = radios.find((r) => r.attrs.value === 'cash_on_delivery');
+        const bank = radios.find((r) => r.attrs.value === 'bank_transfer');
+
+        assert.equal(cod.attrs['data-blockable'], '1', 'cash on delivery is the blockable method');
+        assert.equal('data-blockable' in bank.attrs, false, 'bank transfer is not');
+        assert.equal(cod.checked, true, 'preselected, as before');
+
+        await typeInto('city', 'Sofia');
+        choose(courierRows()[2].radio);
+        fillContact();
+        set('address_line_1', '5 Long St');
+        checkoutResponse = { status: 422, data: { message: 'x', reason: 'payment_method_blocked' } };
+        await submit();
+
+        assert.equal(checkoutPosts().length, 1);
+        assert.equal(cod.disabled, true, 'cash on delivery is unavailable');
+        assert.equal(cod.checked, false, 'and not chosen');
+        assert.equal(cod.attrs['data-state'], 'unavailable');
+        assert.equal(bank.disabled, false, 'bank transfer is still there');
+        assert.equal(bank.checked, false, 'selects nothing: the customer chooses');
+        assert.equal(q('[data-sf-error-for="payment_method"]').textContent, T('ck_payment_unavailable'));
+        assert.equal(q('[data-sf-error-for="payment_method"]').hidden, false);
+        assert.match(q('[data-sf-error-summary]').textContent, new RegExp(T('ck_payment_unavailable')));
+        assert.equal(placeOrder.disabled, true, 'nothing can be ordered until a method is chosen');
+        assert.equal(T('ck_payment_unavailable').includes('block'), false, 'the page never says "blocked"');
+
+        await submit();
+        assert.equal(checkoutPosts().length, 1, 'never resubmitted by itself or by a second press');
+
+        choose(bank);
+        assert.equal(placeOrder.disabled, false, 'choosing the other method unlocks the order');
+        assert.equal(q('[data-sf-error-for="payment_method"]').hidden, true, 'and clears the message');
+
+        checkoutResponse = { status: 201, data: { confirmation_url: 'http://shop.test/order/received/5?expires=1&signature=abc' } };
+        await submit();
+
+        assert.equal(checkoutPosts().length, 2);
+        assert.equal(lastCheckout().body.payment_method, 'bank_transfer');
+    },
+
+    // No other method: the order button is locked for good and the owner's own sentence is shown; there is nothing to choose.
+    async blocked_without_another_method() {
+        const radios = form.all().filter((n) => n.tag === 'input' && n.name === 'payment_method');
+        assert.equal(radios.length, 1, 'the page was rendered with only cash on delivery');
+
+        await typeInto('city', 'Sofia');
+        choose(courierRows()[2].radio);
+        fillContact();
+        set('address_line_1', '5 Long St');
+        checkoutResponse = { status: 422, data: { message: 'x', reason: 'payment_method_blocked' } };
+        await submit();
+
+        assert.equal(radios[0].disabled, true);
+        assert.equal(radios[0].checked, false);
+        assert.equal(q('[data-sf-error-for="payment_method"]').textContent, T('ck_contact_shop'));
+        assert.equal(T('ck_contact_shop'), 'Свържете се посредством методите на контакт за възможността да поръчате от сайта', 'the owner\'s sentence, word for word');
+        assert.match(q('[data-sf-error-summary]').textContent, /Свържете се посредством/);
+        assert.equal(placeOrder.disabled, true, 'Поръчване is locked');
+
+        await typeInto('city', 'Plovdiv');
+        await flush();
+        assert.equal(placeOrder.disabled, true, 'a new quote does not unlock it');
+
+        // Even if the refused method is somehow ticked again (a script, an extension), the lock holds: it is a flag, not only "nothing is chosen".
+        radios[0].checked = true;
+        radios[0].dispatch('change');
+        assert.equal(placeOrder.disabled, true, 'the lock does not depend on what is ticked');
+
+        await submit();
+        assert.equal(checkoutPosts().length, 1, 'nothing more is ever sent');
+    },
+
 };
 
 assert.ok(scenarios[scenario], `unknown scenario ${scenario}`);

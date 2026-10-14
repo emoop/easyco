@@ -5,6 +5,7 @@ namespace EasyCo\Order\Persistence\Eloquent;
 use EasyCo\Order\Contracts\OrderRepository;
 use EasyCo\Order\Enums\OrderDeliveryType;
 use EasyCo\Order\Enums\OrderStatus;
+use EasyCo\Order\IdentityKeys;
 use EasyCo\Order\Order;
 use EasyCo\Pricing\Money;
 
@@ -62,6 +63,21 @@ final class EloquentOrderRepository implements OrderRepository
         $model->marketing_consent = $order->marketingConsent();
         $model->marketing_consent_text = $order->marketingConsentText();
         $model->edit_revision = $order->editRevision();
+
+        // THE IDENTITY KEYS (cod-protection-design.md section 2): derived from the order's own contact and delivery facts by the ONE
+        // normaliser, written in the SAME insert as the order (no query of their own) and recomputed by every save, so an edit of the phone,
+        // the name or the delivery place (OrderEditor) refreshes them by itself.
+        $model->phone_key = IdentityKeys::phone($order->phone());
+        $model->email_key = IdentityKeys::email($order->email());
+        $model->name_key = IdentityKeys::name($order->recipientFirstName(), $order->recipientLastName());
+        $model->place_key = IdentityKeys::place(
+            $order->deliveryType() === OrderDeliveryType::PICKUP_POINT,
+            $order->country(),
+            $order->city(),
+            $order->addressLine1(),
+            $order->carrierCode(),
+            $order->pickupPointAddress(),
+        );
 
         $model->save();
 

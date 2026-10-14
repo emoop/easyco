@@ -460,6 +460,9 @@ class OrderViewActionsTest extends TestCase
         // Refunds R2b: 25 -> 26 (+1): the refunds section asks whether the order has any
         // refund (one read, shared by the section's visibility and its content; an order
         // with none stops there). Met exactly again.
-        $this->assertLessThanOrEqual(26, $count);
+        // Cash-on-delivery protection C2-B: 26 -> 31 (+5): the «Съвпадения» card reads the order's matches by key (phone, email, place, name: ONE query
+        // each, newest 10) and the block buttons, their hints and the card's red line share ONE lookup of the active blocks. Met exactly; pinned in
+        // OrderMatchesCardTest as four key reads and one block read, whatever the number of matching orders.
+        $this->assertLessThanOrEqual(31, $count);
     }
 }

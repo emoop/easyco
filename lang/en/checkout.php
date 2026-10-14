@@ -34,6 +34,8 @@ return [
     'terms_not_accepted' => 'Please accept the terms and conditions to place the order.',
     'terms_version_changed' => 'The terms and conditions changed while you were filling in the order. Please read them again and confirm.',
     'payment_method_unavailable' => 'That payment method is not available for this order. Choose another one.',
+    // Deliberately neutral (cod-protection-design.md 4): it never says "blocked" and never which identifier matched.
+    'payment_method_blocked' => 'This payment method is not available for this order. Please choose another one.',
     'marketing_consent_text' => "Subscribe me to the shop's newsletter with news and offers.",
 
     // The invoice request (order-context-design.md 9.3, 9.7, stage C2-A). `reason` is the contract; these are the words for a person.

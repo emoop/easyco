@@ -158,6 +158,7 @@ function initCheckout(root) {
     var quotePending = false;  // a new quote is scheduled or running: the chosen handle may be outdated
     var submitting = false;
     var termsStale = false;    // the terms changed while the form was filled: the page must be reloaded to show the new version
+    var paymentLocked = false; // every payment method was refused for this customer (a block, cod-protection-design.md 4): nothing can be ordered here
     var promoBusy = false;     // a promo request (and the reload and re-quote it starts) is running
     var promoCompare = null;   // the chosen option and its price before a promo change: the first fresh quote is compared with it
     var announcedMinor = null; // the delivery price the status line last announced as changed (until the next press)
@@ -229,6 +230,41 @@ function initCheckout(root) {
         });
     }
 
+    /** The payment method that is chosen, or null (none is, until the customer picks one after a refusal). */
+    function chosenPayment() {
+        return form.querySelector('input[name="payment_method"]:checked');
+    }
+
+    /**
+     * The API refused the chosen method for this customer: `payment_method_blocked` (cod-protection-design.md 4). The answer is deliberately
+     * neutral and so is the page: every BLOCKABLE method (cash on delivery) is marked unavailable and unchosen, and the customer is told to choose
+     * another; when no other method remains the order button is locked and she is told to contact the shop. Never "blocked", never which identifier.
+     * There is no pre-check: this happens only as the answer to a real attempt.
+     */
+    function applyBlockedPayment() {
+        var remaining = 0;
+
+        form.querySelectorAll('input[name="payment_method"]').forEach(function (radio) {
+            if (radio.getAttribute('data-blockable') === '1') {
+                radio.checked = false;
+                radio.disabled = true;
+                radio.setAttribute('aria-disabled', 'true');
+                radio.setAttribute('data-state', 'unavailable');
+            } else if (! radio.disabled) {
+                remaining += 1;
+            }
+        });
+
+        var text = remaining === 0 ? t('ck_contact_shop') : t('ck_payment_unavailable');
+        var holder = root.querySelector('[data-sf-error-for="payment_method"]');
+
+        paymentLocked = remaining === 0;
+        holder.textContent = text;
+        holder.hidden = false;
+        refreshOrderLabel();
+        showSummary([{ field: null, text: text }]);
+    }
+
     function refreshOrderLabel() {
         var chosen = form.querySelector('input[name="payment_method"]:checked');
         var label = chosen ? chosen.getAttribute('data-place-order-label') : null;
@@ -238,7 +274,7 @@ function initCheckout(root) {
 
     function refreshPlaceOrder() {
         // Never while a quote is unfinished, before a FINAL (non-preview) price is chosen, or while a pick-up point is half typed.
-        placeOrder.disabled = submitting || promoBusy || termsStale || cart === null || selection === null || quotePending || ! selection.final || (isPickupKind(selection.kind) && ! pointFieldsFilled());
+        placeOrder.disabled = submitting || promoBusy || termsStale || paymentLocked || chosenPayment() === null || cart === null || selection === null || quotePending || ! selection.final || (isPickupKind(selection.kind) && ! pointFieldsFilled());
     }
 
     function setStatus(text, state) {
@@ -1328,7 +1364,7 @@ function initCheckout(root) {
     async function submit(event) {
         event.preventDefault();
 
-        if (submitting || cart === null) {
+        if (submitting || cart === null || paymentLocked || chosenPayment() === null) {
             return;
         }
 
@@ -1414,6 +1450,9 @@ function initCheckout(root) {
                     adoptFreshPrice(price);
                     selection.handle = null;
                     scheduleQuote(true);
+                } else if (reason === 'payment_method_blocked') {
+                    // A block on the IP, the phone or the email: the method is marked unavailable and nothing is resubmitted (see applyBlockedPayment).
+                    applyBlockedPayment();
                 } else if (reason === 'terms_version_changed') {
                     // The merchant edited the terms while this form was open: the checkbox is cleared and the order is locked until the page is
                     // reloaded (the page shows the NEW version); nothing is ever resubmitted by itself.
@@ -1478,7 +1517,11 @@ function initCheckout(root) {
 
     // The order button's label follows the chosen payment method when its descriptor has its own (it must keep the obligation wording).
     form.querySelectorAll('input[name="payment_method"]').forEach(function (radio) {
-        radio.addEventListener('change', refreshOrderLabel);
+        radio.addEventListener('change', function () {
+            refreshOrderLabel();
+            clearFieldError('payment_method');
+            refreshPlaceOrder();
+        });
     });
 
     PICKUP_FIELDS.forEach(function (name) {

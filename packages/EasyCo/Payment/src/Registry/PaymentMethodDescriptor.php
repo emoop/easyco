@@ -24,6 +24,7 @@ final class PaymentMethodDescriptor
      * @param  (Closure(string): ?string)|null  $description  one line under the label
      * @param  (Closure(string): ?string)|null  $placeOrderLabel  replaces the order button's label while the method is chosen; it must keep the obligation wording (section 7)
      * @param  (Closure(PaymentAvailabilityContext): bool)|null  $availability
+     * @param  bool  $blockable  an order paid this way can be STOPPED by a block on the customer's IP, phone or email (cod-protection-design.md section 4): true for cash on delivery, false for a method captured up front (bank transfer, a card). An extension decides for its own method; the default is NOT blockable.
      */
     public function __construct(
         public readonly string $code,
@@ -34,6 +35,7 @@ final class PaymentMethodDescriptor
         private readonly ?Closure $placeOrderLabel = null,
         public readonly int $sortOrder = 100,
         private readonly ?Closure $availability = null,
+        public readonly bool $blockable = false,
     ) {
         if (preg_match('/^[a-z][a-z0-9_]{0,63}$/D', $code) !== 1) {
             throw new InvalidArgumentException('A payment method code is lower-case letters, digits and underscores, starting with a letter, at most 64 characters.');

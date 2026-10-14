@@ -179,6 +179,8 @@ return [
         'ck_choose_type' => 'Choose how you want to receive it.',
         'ck_choice_gone' => 'Your earlier delivery choice is no longer available for this destination. Please choose again.',
         'ck_summary_show' => 'Show order',
+        'ck_payment_unavailable' => 'This payment method is not available for this order. Please choose another one.',
+        'ck_contact_shop' => 'Please use the contact methods to ask about ordering from the site.',
         'ck_terms_required' => 'Please accept the terms and conditions to place the order.',
         'ck_terms_reload' => 'Reload the page to see the current terms.',
         'ck_summary_hide' => 'Hide order',

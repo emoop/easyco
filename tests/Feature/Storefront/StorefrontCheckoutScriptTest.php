@@ -56,9 +56,10 @@ class StorefrontCheckoutScriptTest extends TestCase
     {
         $code = $this->code();
 
-        $this->assertMatchesRegularExpression('/if \(submitting \|\| cart === null\) \{\s*return;/', $code);
+        $this->assertMatchesRegularExpression('/if \(submitting \|\| cart === null \|\| paymentLocked \|\| chosenPayment\(\) === null\) \{\s*return;/', $code);
+        // C2-B (cod-protection-design.md 4): and locked while every payment method was refused (a block) or none is chosen.
         // C1b (A7): also locked until the price is FINAL (not a preview) and while a pick-up point's fields are empty.
-        $this->assertStringContainsString('placeOrder.disabled = submitting || promoBusy || termsStale || cart === null || selection === null || quotePending || ! selection.final || (isPickupKind(selection.kind) && ! pointFieldsFilled());', $code);
+        $this->assertStringContainsString('placeOrder.disabled = submitting || promoBusy || termsStale || paymentLocked || chosenPayment() === null || cart === null || selection === null || quotePending || ! selection.final || (isPickupKind(selection.kind) && ! pointFieldsFilled());', $code);
         $this->assertMatchesRegularExpression('/submitting = true;\s*refreshPlaceOrder\(\);/', $code);
         $this->assertStringContainsString('keepLocked = true;', $code, 'after a success the button stays locked while the page navigates');
     }

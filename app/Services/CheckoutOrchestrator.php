@@ -2,7 +2,9 @@
 
 namespace App\Services;
 
+use App\Services\Exceptions\PaymentMethodBlockedException;
 use App\Services\Exceptions\PaymentMethodUnavailableException;
+use EasyCo\Order\IdentityKeys;
 use App\Settings\CheckoutRegionPolicy;
 use EasyCo\Payment\Registry\PaymentAvailabilityContext;
 use EasyCo\Payment\Registry\PaymentMethodRegistry;
@@ -103,6 +105,7 @@ final class CheckoutOrchestrator
         private readonly CheckoutRegionPolicy $regionPolicy,
         private readonly PaymentMethodRegistry $paymentMethods,
         private readonly OrderContextWriter $contextWriter,
+        private readonly OrderBlockService $blocks,
     ) {
     }
 
@@ -597,6 +600,7 @@ final class CheckoutOrchestrator
         // The method must be available for THIS order (checkout form v2, section 8.2): the API never trusts the page. Nothing is saved
         // yet, and the whole attempt rolls back.
         $this->assertPaymentMethodAvailable($input->paymentMethod, $order, $address);
+        $this->assertPaymentMethodNotBlocked($input, $order, $placedAt);
 
         $this->orders->save($order);
 
@@ -741,6 +745,33 @@ final class CheckoutOrchestrator
 
         if (! $descriptor->isAvailable($context)) {
             throw new PaymentMethodUnavailableException($method);
+        }
+    }
+
+    /**
+     * A BLOCKABLE method (cash on delivery) is refused when an ACTIVE block matches the request's IP, the order's phone or its email
+     * (cod-protection-design.md section 4): after the method's own availability check and before anything is saved (the whole attempt rolls back),
+     * with ONE lookup of all three keys. A method that is not blockable asks nothing. The refusal carries nothing: never which key matched.
+     *
+     * @throws PaymentMethodBlockedException
+     */
+    private function assertPaymentMethodNotBlocked(CheckoutInput $input, Order $order, DateTimeImmutable $placedAt): void
+    {
+        $descriptor = $this->paymentMethods->find($input->paymentMethod);
+
+        if ($descriptor === null || ! $descriptor->blockable) {
+            return;
+        }
+
+        $matches = $this->blocks->activeFor(
+            IdentityKeys::ip($input->requestFacts?->ip),
+            IdentityKeys::phone($order->phone()),
+            IdentityKeys::email($order->email()),
+            \Illuminate\Support\Carbon::instance($placedAt),
+        );
+
+        if ($matches->isNotEmpty()) {
+            throw new PaymentMethodBlockedException();
         }
     }
 

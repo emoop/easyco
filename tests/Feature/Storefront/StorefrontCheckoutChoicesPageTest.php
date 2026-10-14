@@ -205,7 +205,7 @@ class StorefrontCheckoutChoicesPageTest extends TestCase
     {
         $html = $this->html();
 
-        $this->assertMatchesRegularExpression('/<label class="sf-pay-card">\s*<input type="radio" name="payment_method" value="cash_on_delivery" checked data-place-order-label="">\s*<span>Cash on delivery<\/span>\s*<small class="sf-pay-card-description">Pay in cash when the parcel arrives\.<\/small>/', $html);
+        $this->assertMatchesRegularExpression('/<label class="sf-pay-card">\s*<input type="radio" name="payment_method" value="cash_on_delivery" checked data-place-order-label="" data-blockable="1">\s*<span>Cash on delivery<\/span>\s*<small class="sf-pay-card-description">Pay in cash when the parcel arrives\.<\/small>/', $html);
         $this->assertMatchesRegularExpression('/<input type="radio" name="payment_method" value="bank_transfer" data-place-order-label="">\s*<span>Bank transfer<\/span>/', $html);
         $this->assertSame(1, preg_match_all('/name="payment_method" value="[a-z_]+" checked/', $html), 'exactly the first method, a choice and not a consent');
     }

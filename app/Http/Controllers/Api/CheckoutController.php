@@ -267,6 +267,10 @@ class CheckoutController extends Controller
             ], 422);
         } catch (\App\Services\Exceptions\PaymentMethodUnavailableException) {
             return $this->refusal('payment_method_unavailable', 422);
+        } catch (\App\Services\Exceptions\PaymentMethodBlockedException) {
+            // A block on the IP, the phone or the email (cod-protection-design.md 4): ONE neutral answer that names neither the identifier nor which
+            // of the three matched, so the list of blocks cannot be probed. Nothing was written.
+            return $this->refusal('payment_method_blocked', 422);
         } catch (UnknownPaymentMethodException) {
             // Unreachable via this controller now that the pre-check above rejects an unknown
             // method before place() is ever called; kept as belt-and-braces.

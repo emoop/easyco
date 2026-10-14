@@ -921,6 +921,10 @@
         @apply row-span-2 h-4 w-4;
     }
 
+    .sf-pay-card:has(input[data-state='unavailable']) {
+        @apply cursor-not-allowed opacity-50;
+    }
+
     .sf-pay-card-logo {
         @apply col-start-3 row-span-2 row-start-1 h-6 w-auto max-w-24 object-contain;
     }

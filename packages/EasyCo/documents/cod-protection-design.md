@@ -170,3 +170,41 @@ prune deletes only rows past the 30 days; activity log never contains a full IP;
 4. «Съвпадения» visible to everyone with ORDER_VIEW; block/unblock for ORDER_MANAGE?
 5. Expired/revoked blocks deleted **30 days** after they end?
 6. Manual blocks from the «Блокирания» page (without an order), for offenders you already know?
+
+---
+
+## 10. Stage C2-B — as built (2026-10-19)
+
+**Built as designed** (sections 2-5, 8), with the owner's answers of §9 taken as YES (last 9 digits; IPv6 as a /64; the IP for blocking only;
+«Съвпадения» for ORDER_VIEW and block / unblock for ORDER_MANAGE; 30-day prune; manual blocks from the list).
+
+- **`EasyCo\Order\IdentityKeys`** — the ONE normaliser, pure PHP, in the Order package (so the repository that writes the keys and the app-layer matcher
+  and block check use the same class): `phone` (digits, the last nine, else NULL), `email` (trim + lower-case), `ip` (IPv4 exact, IPv6 → its /64 prefix,
+  an IPv4-mapped IPv6 address is the IPv4 one), `name`, `place` (street: country | city | address line 1; pick-up: carrier | the point's text; lower-case,
+  spaces and punctuation collapsed, sha1; NULL without the identifying text) and `forRow()` for the back-fill and the rebuild command. Table-tested.
+- **Orders:** `phone_key`, `email_key`, `name_key`, `place_key` + `ord_*_index` (migration `2026_10_19_000001`, with CHECKs `ord_phone_key_check` /
+  `ord_place_key_check`). Written by `EloquentOrderRepository::save()` **in the same INSERT** (no query of its own) and recomputed by every save, so the
+  order editor refreshes them by itself. The migration back-fills existing rows in chunks and is idempotent; `orders:rebuild-identity-keys` repairs all of
+  them (counts only in its output and its log). The placement snapshot table does not get the keys (derived, current data; the snapshot is what was agreed).
+- **`order_blocks`** (`2026_10_19_000002`, `oblk_type_check`, `oblk_type_key_index`) and **`OrderBlockService`** — block, extend by re-blocking (one active
+  block per type + key, never a duplicate), revoke, `activeFor()` (ONE query for the three keys), `prune()` (rows that ended more than 30 days ago);
+  `order-blocks:prune` scheduled daily. Every write logs type, MASKED value, who and the duration (never a full IP) — through `ActivityLogger`, which is
+  the merchant's opt-in `admin.activity_log_enabled` setting; the row also keeps `created_by` / `revoked_by`.
+- **Checkout:** `PaymentMethodDescriptor::$blockable` (cash on delivery true, bank transfer false, an extension's default false). `CheckoutOrchestrator`
+  asks ONE lookup of the active blocks for the request IP key, the order's phone key and email key, **after the availability check and before the order is
+  saved** (inside the placement transaction, so nothing is written), only for a blockable method. The refusal is `422 payment_method_blocked` with the
+  neutral sentence of `lang/*/checkout.php` and nothing else in the body (never the identifier, never which kind). A replay of an earlier order returns that
+  order before any of this runs. **Cost:** a cash-on-delivery placement gains exactly one query (the lookup); a bank-transfer placement gains none.
+- **Storefront:** the cards carry `data-blockable`; on `payment_method_blocked` the page marks every blockable method unavailable and unchosen and says
+  «Този начин на плащане не е наличен за тази поръчка. Моля, изберете друг.»; when none is left it locks «Поръчване» and shows «Свържете се посредством
+  методите на контакт за възможността да поръчате от сайта». No pre-check endpoint. Fake-DOM tested both ways.
+- **Admin:** «Блокирай» / «Отблокирай» as suffix actions of the email and phone entries and of an IP row (visible only to ORDER_MANAGE and only when the
+  address can be read through `OrderContextReader::fullClientAddress()`); the modal (180 days / forever / another number of days, a reason, the note);
+  «Блокиран до …» / «Блокиран завинаги» under the value. The list «Блокирания» (`OrderBlockResource`, Orders group): masked values, the full IP for
+  ORDER_MANAGE only, type and state filters, «Отблокирай», «Удължи» and the manual add.
+- **«Съвпадения»** (`OrderMatchReader`, `OrderMatchesCard`): at most four key reads (phone, email, place, name), each by its index, newest first, limited to 10,
+  plus the single block lookup shared with the buttons; the summary counts the strong matches and those cancelled or refunded; weak (name-only) matches are
+  greyed and never counted; the red line appears only for a phone or email the order SHARES with another and that is actively blocked.
+
+**Not built:** the «risky» badge in the orders list (the owner's later step; it will reuse the keys), a contact-page link in the locked-checkout sentence,
+and the keys' erasure with the order context (the future privacy routine, §6).

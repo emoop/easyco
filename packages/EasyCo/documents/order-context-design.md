@@ -1984,3 +1984,14 @@ this design deliberately does not own.
 **Not built (deferred, in this order of likelihood):** the consent-aware capture (§3, §4.2, §5, §6: middleware, visitor cookie, resolver, touch rules) with the cookie banner; the customer-history block (§6.1) and the Orders-list `source` column and filter (§11.2, stage 6's other half); the erasure command and `OrderContextAnonymiser` (§10, stage 7's other half); the sandbox checklist's three checks (§12.2); the documents of §14 not listed in the C2-A brief.
 
 **Reported, not decided:** an individual's registration number and representative are refused (`invoice_details_invalid`), like a tax id, rather than silently dropped; a hand-edited, unreadable `invoice.country_rules` fails loudly (CLAUDE.md rule 8) for an invoice request and for the checkout page, exactly as `checkout.region_countries` does.
+
+---
+
+## 17. The identity keys on `orders` (stage C2-B, 2026-10-19)
+
+C2-B adds four DERIVED, nullable, indexed columns to `orders` — `phone_key`, `email_key`, `name_key`, `place_key` — computed by `EasyCo\Order\IdentityKeys`
+from the contact and delivery facts the row already holds (cod-protection-design.md §2). They are **not part of the order context of §2.3** (they are not
+facts a customer gave, they are a normalisation of facts already on the row), they are written in the placement INSERT and recomputed by every save, and a
+change of a normalisation rule means `orders:rebuild-identity-keys`, never a hand edit. They are personal data processed to prevent fraud; the future erasure
+routine (§10) nulls them with the order's contact fields. **The IP is NOT one of them**: it stays in `order_attributions.ip` (§7), anonymised after
+`privacy.ip_full_retention_days`, and an active cash-on-delivery block keeps its own copy for the block's duration (`order_blocks`).

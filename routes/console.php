@@ -28,3 +28,7 @@ Schedule::command('mail:reconcile-order-confirmations')->everyTenMinutes()->with
 // order-context-design.md 7.3: the full client IP of an order lives `privacy.ip_full_retention_days` (default 30) and is then replaced by its
 // anonymised form. Daily, like activity-log:prune: the command is a cheap no-op when nothing has aged out, and counts (never values) are logged.
 Schedule::command('privacy:anonymise-order-ips')->daily();
+
+// cod-protection-design.md 3.1: a cash-on-delivery block is personal data with its own clock; the ones that ended more than 30 days ago are deleted.
+// Daily, like the other prune commands: a cheap no-op when nothing has aged out; only counts are logged.
+Schedule::command('order-blocks:prune')->daily();

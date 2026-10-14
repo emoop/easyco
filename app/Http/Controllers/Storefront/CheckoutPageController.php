@@ -66,6 +66,8 @@ final class CheckoutPageController extends Controller
             'icon' => $descriptor->icon !== null && CheckoutFormSettings::isSafeLink($descriptor->icon) ? $descriptor->icon : null,
             'placeOrderLabel' => $descriptor->placeOrderLabel($locale),
             'flow' => $descriptor->flow->value,
+            // Whether a block (cod-protection-design.md 4) can stop this method: the page marks it unavailable when the API refuses with `payment_method_blocked`.
+            'blockable' => $descriptor->blockable,
         ], $payments->available(new PaymentAvailabilityContext($storeCountry, $currency->code(), 0, null)));
 
         $termsUrl = $settings->termsRequired() ? $settings->safeTermsUrl() : null;

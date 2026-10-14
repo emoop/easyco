@@ -167,7 +167,7 @@ class OrderViewLayoutTest extends TestCase
         $headings = fn (Group $group): array => array_map(static fn ($c): string => (string) $c->getHeading(), array_filter($group->getDefaultChildComponents(), static fn ($c) => $c instanceof Section));
         $this->assertSame([__('orders.sections.lines'), __('orders.sections.payment')], array_slice(array_values($headings($main)), 0, 2));
         $this->assertSame(
-            [__('orders.sections.client'), __('orders.sections.delivery'), __('orders.sections.payment_shipping'), __('orders.sections.order_details'), __('orders.sections.invoice'), __('orders.sections.origin')],
+            [__('orders.sections.client'), __('blocks.matches.section'), __('orders.sections.delivery'), __('orders.sections.payment_shipping'), __('orders.sections.order_details'), __('orders.sections.invoice'), __('orders.sections.origin')],
             array_values($headings($sidebar)),
         );
     }

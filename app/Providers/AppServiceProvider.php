@@ -84,6 +84,11 @@ class AppServiceProvider extends ServiceProvider
         // (order-context-design.md 7.1) is held only for a permitted reader: one instance per request, never shared across requests.
         $this->app->scoped(\App\Services\OrderContextReader::class);
 
+        // Cash-on-delivery protection (cod-protection-design.md, stage C2-B): the active blocks of the order on the page and its matches, read ONCE
+        // per request and shared by the block buttons, the hints and the red line of the matches card.
+        $this->app->scoped(\App\Services\OrderBlockLookup::class);
+        $this->app->scoped(\App\Services\OrderMatchReader::class);
+
         $this->app->tag([
             OwedRefundSource::class,
             ReceiptMismatchSource::class,

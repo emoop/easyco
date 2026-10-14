@@ -1174,3 +1174,13 @@ See CLAUDE.md's own "Build / test" section for the one-line usage note,
 and the seeder's own docblock for why each code's specific parameters
 were chosen.
 - Any merchant-API exposure of promote/unpromote (JSON API surface).
+
+---
+
+## Addendum — cash-on-delivery protection on the order view (stage C2-B, 2026-10-19)
+
+The order view gains, all under the existing `ORDER_VIEW` / `ORDER_MANAGE` split and with no new permission: **«Блокирай» / «Отблокирай»** next to the phone, the
+email and (for ORDER_MANAGE only) the IP, each with the state «Блокиран до …» / «Блокиран завинаги»; and the card **«Съвпадения»** (earlier and later orders
+sharing the phone, the email or the delivery address/office, and the greyed possible matches by name). The Orders group gains the list **«Блокирания»**
+(`OrderBlockResource`: masked values, the full IP for ORDER_MANAGE, filters, unblock, extend, manual add). Design and behaviour: `cod-protection-design.md`
+(§3, §5, §10). The order view's query count grows by the four key reads of the card and ONE shared block lookup; both are pinned by `OrderMatchesCardTest`.
