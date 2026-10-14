@@ -13,7 +13,11 @@ use App\Services\Exceptions\AddressIncompleteForCheckoutException;
 use App\Services\Exceptions\AddressNotFoundForCheckoutException;
 use App\Services\Exceptions\CartNotFoundForCheckoutException;
 use App\Services\Exceptions\CheckoutCurrencyMismatchException;
+use App\Services\CheckoutRequestFacts;
 use App\Services\Exceptions\EmptyCartException;
+use App\Services\Exceptions\InvoiceDetailsInvalidException;
+use App\Services\InvoiceRequestChecker;
+use App\Settings\InvoiceSettings;
 use App\Services\Exceptions\PromotionNoLongerValidException;
 use App\Services\Exceptions\SaleLineOrderReconciliationException;
 use App\Services\Exceptions\UnknownPaymentMethodException;
@@ -60,6 +64,8 @@ class CheckoutController extends Controller
         private readonly TransactionRepository $transactions,
         private readonly StoreLocale $storeLocale,
         private readonly \App\Settings\CheckoutFormSettings $formSettings,
+        private readonly InvoiceSettings $invoiceSettings,
+        private readonly InvoiceRequestChecker $invoiceChecker,
     ) {
     }
 
@@ -101,9 +107,21 @@ class CheckoutController extends Controller
             $request->merge(['shipping_method_id' => (string) $request->input('shipping_method_id')]);
         }
 
+        // THE INVOICE (order-context-design.md 9.3, 9.5, 9.7): a request for one while the shop offers none is refused FIRST, with its own
+        // reason, whatever else the block holds. The invoice country is normalised like the delivery country.
+        $invoiceSent = is_array($request->input('invoice')) ? $request->input('invoice') !== [] : $request->input('invoice') !== null;
+
+        if ($invoiceSent && ! $this->invoiceSettings->enabled()) {
+            return $this->refusal('invoice_not_supported', 422);
+        }
+
+        if (is_array($request->input('invoice')) && array_key_exists('country', $request->input('invoice'))) {
+            $request->merge(['invoice' => array_merge($request->input('invoice'), ['country' => KnownCountryCode::normalize($request->input('invoice')['country'])])]);
+        }
+
         $terms = $this->formSettings->termsRequired();
 
-        $validated = $request->validate($this->validationRules() + $this->choiceRules($terms), [
+        $validated = $request->validate($this->validationRules() + $this->choiceRules($terms) + $this->invoiceRules(), [
             'country.required_without' => __('delivery.country.required'),
         ]);
 
@@ -126,6 +144,18 @@ class CheckoutController extends Controller
             }
 
             $termsVersion = $shown;
+        }
+
+        // The invoice block, judged against the merchant's per-country rules BEFORE anything is written: a refusal names the field and quotes
+        // the label the merchant configured for that country.
+        $invoice = null;
+
+        if (isset($validated['invoice']) && is_array($validated['invoice']) && $validated['invoice'] !== []) {
+            try {
+                $invoice = $this->invoiceChecker->check($validated['invoice']);
+            } catch (InvoiceDetailsInvalidException $e) {
+                return $this->invoiceRefusal($e);
+            }
         }
 
         // THE CART TO CHECK OUT IS THE ONE THE PAGE DISPLAYED, AND IT IS REQUIRED
@@ -189,6 +219,10 @@ class CheckoutController extends Controller
             marketingConsent: $consent,
             // THE SENTENCE IS THE SERVER'S, in the store's language (the locale set for this request): the client never supplies it.
             marketingConsentText: $consent === true ? (string) __('checkout.marketing_consent_text') : null,
+            // The request's own facts, read HERE from the request and never from the body (the client address is the client's only when the
+            // deployment names its proxies, config/trustedproxy.php), and the validated invoice.
+            requestFacts: new CheckoutRequestFacts($request->ip(), $request->userAgent()),
+            invoice: $invoice,
         );
 
         // Each refusal is caught by type and answered with a stable `reason` and a FIXED,
@@ -274,6 +308,42 @@ class CheckoutController extends Controller
             // API callers only (the storefront never sends it, D12): stored as sent, NULL when absent.
             'confirmation_requested' => 'sometimes|boolean',
         ];
+    }
+
+    /**
+     * The rules of the invoice block (order-context-design.md 9.5): the SHAPE only. What depends on the merchant's per-country rules
+     * (a company's tax id, its format, the registration number) is judged afterwards by InvoiceRequestChecker, with its own refusal.
+     * Every text field also carries PlainText (no control or bidirectional character).
+     *
+     * @return array<string, mixed>
+     */
+    private function invoiceRules(): array
+    {
+        return [
+            'invoice' => ['sometimes', 'nullable', 'array'],
+            'invoice.recipient_type' => ['required_with:invoice', 'string', 'in:company,individual'],
+            'invoice.legal_name' => ['required_with:invoice', 'string', 'max:255', new PlainText()],
+            'invoice.tax_id' => ['nullable', 'string', 'max:64', new PlainText()],
+            'invoice.company_registration_number' => ['nullable', 'string', 'max:64', new PlainText()],
+            'invoice.representative' => ['nullable', 'string', 'max:255', new PlainText()],
+            'invoice.country' => ['required_with:invoice', 'string', new KnownCountryCode('delivery.country.invalid')],
+            'invoice.city' => ['required_with:invoice', 'string', 'max:128', new PlainText()],
+            'invoice.postal_code' => ['required_with:invoice', 'string', 'max:32', new PlainText()],
+            'invoice.address_line_1' => ['required_with:invoice', 'string', 'max:255', new PlainText()],
+            'invoice.address_line_2' => ['nullable', 'string', 'max:255', new PlainText()],
+            'invoice.email' => ['nullable', 'email', 'max:255'],
+        ];
+    }
+
+    /** `invoice_details_invalid` (422): the stable reason, the sentence that names the field by its configured label, and the field as a Laravel-style error. */
+    private function invoiceRefusal(InvoiceDetailsInvalidException $e): JsonResponse
+    {
+        return response()->json([
+            'message' => $e->sentence,
+            'reason' => 'invoice_details_invalid',
+            'field' => $e->field,
+            'errors' => [$e->field => [$e->sentence]],
+        ], 422);
     }
 
     /** The 201: the order, its payment as the database holds it, and the "needs attention" sentence when the payment step failed. */

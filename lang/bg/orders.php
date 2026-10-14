@@ -126,6 +126,7 @@ return [
     // (OrderResource::optionLabel(), :448-457), which is why
     // OrderEventTypeLabelsTest pins every case against both languages.
     'event_type_options' => [
+        'placed' => 'Поръчката е направена',
         'status_changed' => 'Смяна на статус',
         'payment_confirmed' => 'Плащането е отбелязано като получено',
         'returned' => 'Върната стока',
@@ -141,6 +142,51 @@ return [
         'payment_receipt_recorded' => 'Получен е банков превод',
         'payment_receipt_corrected' => 'Коригиран е запис на банков превод',
         'payment_mismatch_accepted' => 'Приета е различна сума на превода',
+    ],
+
+    // Order context (order-context-design.md 2.1.1, stage C2-A): one label per case of the seven enums, pinned by OrderContextEnumLabelsTest.
+    'attribution_source_options' => [
+        'utm' => 'Кампания (UTM)',
+        'organic' => 'Органично търсене',
+        'referral' => 'Препратка',
+        'direct' => 'Директно',
+        'ai_assistant' => 'AI асистент',
+        'social' => 'Социална мрежа',
+        'email' => 'Имейл',
+        'admin' => 'Създадена от админ панела',
+        'agent' => 'Агент',
+        'unknown' => 'Неизвестен',
+    ],
+    'attribution_capture_options' => [
+        'captured' => 'Записан',
+        'skipped_no_consent' => 'Не е записан: няма съгласие',
+        'skipped_no_data' => 'Не е записан: посещението не носи данни',
+    ],
+    'consent_mode_options' => [
+        'strict' => 'Строг (първо съгласие)',
+        'notice' => 'Известие (с отказ)',
+        'off' => 'Без режим',
+    ],
+    'analytics_consent_options' => [
+        'granted' => 'Аналитиката е разрешена',
+        'denied' => 'Аналитиката е отказана',
+        'unknown' => 'Не е питано за аналитика',
+    ],
+    'consent_source_options' => [
+        'banner' => 'Банер',
+        'api' => 'API',
+        'not_asked' => 'Не е питано',
+    ],
+    'device_type_options' => [
+        'desktop' => 'Компютър',
+        'mobile' => 'Телефон',
+        'tablet' => 'Таблет',
+        'bot' => 'Бот',
+        'unknown' => 'Неизвестно',
+    ],
+    'invoice_recipient_options' => [
+        'company' => 'Фирма',
+        'individual' => 'Физическо лице',
     ],
 
     // The kind of the pickup point that priced the order (shipping stage 5g-2a); "not stated" for an order placed with none.
@@ -211,6 +257,31 @@ return [
             'campaign' => 'Кампания / реклама',
             'landing_page' => 'Входна страница',
             'referrer' => 'Препращащ сайт',
+            'invoice_requested' => 'Поискана фактура',
+            'recipient_type' => 'Фактура за',
+            'registration_number' => 'Регистрационен номер',
+            'representative' => 'Представител',
+            'invoice_email' => 'Имейл за фактурата',
+            'rule_version' => 'Версия на правилата за държавата',
+            'device_type' => 'Устройство',
+            'consent' => 'Съгласие за бисквитки',
+            'origin_reason' => 'Състояние на произхода',
+            'account_id' => 'Акаунт',
+            'client_address' => 'Адрес на клиента',
+        ],
+        'reason_predates' => 'Не е записано: поръчката е направена преди записването на контекста.',
+        'reason_not_recorded_yet' => 'Произходът на посещението още не се записва.',
+        'reason_no_data' => 'Не е записано: посещението не носи нито препратка, нито кампания.',
+        'reason_no_consent' => 'Не е съхранено: режим :mode, :analytics.',
+        'ip_kept' => 'Пази се изцяло до края на срока (показва се в заглавието)',
+        'ip_restricted' => 'Ограничено: пълният адрес се вижда само от служители, които управляват поръчките',
+        'ip_anonymised' => 'Анонимизиран на :date (мрежа :network)',
+        'invoice_not_requested' => 'Не е поискана',
+        'ip_anonymised_short' => 'анонимизиран',
+        'consent_storage' => [
+            'strict' => 'нищо не се съхранява на устройството на посетителя',
+            'notice' => 'съхранява се на устройството на посетителя, освен при отказ',
+            'off' => 'съхранява се на устройството на посетителя без питане',
         ],
     ],
 

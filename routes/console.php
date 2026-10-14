@@ -24,3 +24,7 @@ Schedule::command('activity-log:prune')->daily();
 // confirmation mail is ever queued. Every 10 minutes the orders of the last 24 hours (older than 5 minutes) that have
 // no mail_log row are queued. withoutOverlapping: a slow run must not start a second one on top of it.
 Schedule::command('mail:reconcile-order-confirmations')->everyTenMinutes()->withoutOverlapping();
+
+// order-context-design.md 7.3: the full client IP of an order lives `privacy.ip_full_retention_days` (default 30) and is then replaced by its
+// anonymised form. Daily, like activity-log:prune: the command is a cheap no-op when nothing has aged out, and counts (never values) are logged.
+Schedule::command('privacy:anonymise-order-ips')->daily();

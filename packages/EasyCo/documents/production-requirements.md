@@ -56,6 +56,23 @@ VPS you administer yourself.
   optional, additive layer on top of this for geographic distribution
   only — never a requirement. EasyCo does not assume or depend on any
   specific CDN.
+  - **Tell the application about its proxies (`TRUSTED_PROXIES`).**
+    Behind Varnish, a load balancer or a CDN, `$request->ip()` is the
+    PROXY's own address, identically, on every order, unless the app
+    is told which proxies to believe. Set `TRUSTED_PROXIES` in `.env` to
+    the comma-separated IP addresses and CIDR ranges of the proxies
+    that sit directly in front of PHP (for example
+    `10.0.0.5,10.0.1.0/24`); the app then believes the forwarded
+    headers (`X-Forwarded-For`, `-Host`, `-Port`, `-Proto`) **only from
+    those peers** and records the real client address on each order
+    (`order-context-design.md` §7.4). Empty (the default) trusts no
+    proxy: safe, but behind a proxy it records the proxy's address.
+    **Never a wildcard** (`*` is dropped): the header is
+    client-spoofable, and trusting it from anyone records whatever
+    address an attacker likes. The client address is kept in full only
+    for `privacy.ip_full_retention_days` (30 by default) and is then
+    anonymised by the daily `privacy:anonymise-order-ips` command, so
+    the **scheduler must run** (`php artisan schedule:run` every minute).
   - **Not yet built into EasyCo's own application code as of this
     writing.** See `performance-and-channel-strategy.md` §1 for the
     caching architecture decision (caching belongs only in the

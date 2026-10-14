@@ -28,6 +28,19 @@ var NOTE_WARN_AT = 0.9;
 // A field the API names that has no input of its own is shown where the customer can act on it.
 var FIELD_ALIAS = { settlement: 'city', carrier_code: 'shipping_method_id', pickup_point_kind: 'shipping_method_id' };
 
+// The invoice block (order-context-design.md 9.3, stage C2-A): its inputs are named `invoice_*`; the API names the same fields `invoice.*`.
+var INVOICE_REQUIRED_ALWAYS = ['invoice_legal_name', 'invoice_country', 'invoice_city', 'invoice_postal_code', 'invoice_address_line_1'];
+var INVOICE_API_ALIAS = { 'invoice.company_registration_number': 'invoice_registration_number' };
+
+/** The input that carries an API field: `invoice.tax_id` is `invoice_tax_id`; every other field is its own name. */
+function inputNameFor(apiName) {
+    if (Object.prototype.hasOwnProperty.call(INVOICE_API_ALIAS, apiName)) {
+        return INVOICE_API_ALIAS[apiName];
+    }
+
+    return apiName.indexOf('invoice.') === 0 ? 'invoice_' + apiName.slice('invoice.'.length) : apiName;
+}
+
 /** A country code the way PHP's strtoupper(trim()) reads it: ASCII letters only are upper-cased. */
 function normalizeCountry(country) {
     return String(country).trim().replace(/[a-z]/g, function (letter) {
@@ -95,6 +108,11 @@ function initCheckout(root) {
     var noteCounter = root.querySelector('[data-sf-note-counter]');
     var promoHost = root.querySelector('[data-sf-promo]');
     var termsBox = form.elements.terms_accepted || null;          // the terms checkbox exists only when the merchant asks for it
+    var invoiceToggle = form.elements.invoice_requested || null;  // the invoice box exists only when the merchant offers invoices
+    var invoiceRoot = root.querySelector('[data-sf-invoice]');
+    var invoiceBox = root.querySelector('[data-sf-invoice-block]');
+    var invoiceCompanyBox = root.querySelector('[data-sf-invoice-company]');
+    var invoiceCopy = root.querySelector('[data-sf-invoice-copy]');
     var defaultOrderLabel = placeOrder.textContent;               // the button's own label; a payment method may replace it while chosen
     var layout = root.querySelector('[data-sf-checkout-layout]');
     var promoError = root.querySelector('[data-sf-promo-error]');
@@ -110,6 +128,19 @@ function initCheckout(root) {
         }
     } catch (e) {
         // an unreadable policy is "optional": the server stays the authority and answers a 422 on `region` when it is required
+    }
+
+    var invoiceRules = {};     // ISO code => the merchant's rule for it (labels and requirements; never a format)
+    var invoiceCountryTouched = false; // the customer chose the invoice country (or copied the delivery address): it stops following the delivery country
+
+    try {
+        var rawInvoiceRules = invoiceRoot ? invoiceRoot.getAttribute('data-invoice-rules') : null;
+
+        if (rawInvoiceRules) {
+            invoiceRules = JSON.parse(rawInvoiceRules);
+        }
+    } catch (e) {
+        // an unreadable rule set is "no rules": the generic rule applies and the server stays the judge
     }
 
     var cart = null;
@@ -273,7 +304,7 @@ function initCheckout(root) {
         var items = [];
 
         Object.keys(errors).forEach(function (name) {
-            var field = FIELD_ALIAS[name] || name;
+            var field = FIELD_ALIAS[name] || inputNameFor(name);
             var messages = Array.isArray(errors[name]) ? errors[name] : [errors[name]];
             var text = String(messages[0] === undefined ? '' : messages[0]);
             var holder = root.querySelector('[data-sf-error-for="' + field.replace(/[^a-z_0-9]/gi, '') + '"]');
@@ -546,6 +577,153 @@ function initCheckout(root) {
         }
     }
 
+    // --------------------------------------------------------------------------------------------------------------- invoice
+
+    function invoiceOn() {
+        return invoiceToggle !== null && invoiceToggle.checked === true;
+    }
+
+    function invoiceType() {
+        var chosen = form.querySelector('input[name="invoice_recipient_type"]:checked');
+
+        return chosen ? chosen.value : 'company';
+    }
+
+    /** The merchant's rule for the INVOICE country, or null (the generic rule: a company's tax id is required, nothing else). */
+    function invoiceRule() {
+        var code = normalizeCountry(fieldValue('invoice_country'));
+        var rule = Object.prototype.hasOwnProperty.call(invoiceRules, code) ? invoiceRules[code] : null;
+
+        return rule && typeof rule === 'object' ? rule : null;
+    }
+
+    function labelHolder(name) {
+        var input = form.elements[name];
+        var label = input && input.id ? root.querySelector('label[for="' + input.id + '"]') : null;
+
+        return label ? label.querySelector('[data-sf-label-text]') : null;
+    }
+
+    /** The visible words of a label (its asterisk is the marker, kept apart): textContent only, never markup. */
+    function setLabelText(name, text) {
+        var holder = labelHolder(name);
+
+        if (holder) {
+            holder.textContent = text;
+        }
+    }
+
+    /**
+     * The WHOLE invoice block follows ONE state: the box. Unticked: the block is hidden and NOTHING in it is required (so the browser's own
+     * check passes with every invoice field empty) and nothing in it is sent. Ticked: it is shown, the always-required fields are marked,
+     * and what a company must give follows the rule of the invoice country. Typed values stay in the inputs while it is hidden.
+     */
+    function applyInvoice() {
+        if (invoiceToggle === null) {
+            return;
+        }
+
+        var on = invoiceOn();
+        var company = invoiceType() === 'company';
+        var rule = invoiceRule();
+        var nameHolder = labelHolder('invoice_legal_name');
+
+        invoiceBox.hidden = ! on;
+        invoiceCompanyBox.hidden = ! on || ! company;
+        invoiceCopy.hidden = ! on || deliveryKind() !== 'address';
+
+        INVOICE_REQUIRED_ALWAYS.forEach(function (name) {
+            setRequired(name, on);
+        });
+
+        setRequired('invoice_tax_id', on && company && (rule === null || rule.tax_id_required_for_company !== false));
+        setRequired('invoice_registration_number', on && company && rule !== null && rule.registration_number_required === true);
+
+        if (nameHolder) {
+            nameHolder.textContent = nameHolder.getAttribute(company ? 'data-label-company' : 'data-label-individual') || nameHolder.textContent;
+        }
+
+        [['invoice_tax_id', 'tax_id_label'], ['invoice_registration_number', 'registration_number_label'], ['invoice_representative', 'representative_label']].forEach(function (pair) {
+            var holder = labelHolder(pair[0]);
+            var configured = rule !== null && typeof rule[pair[1]] === 'string' && rule[pair[1]] !== '' ? rule[pair[1]] : null;
+
+            if (holder) {
+                setLabelText(pair[0], configured !== null ? configured : holder.getAttribute('data-label-default'));
+            }
+        });
+
+        // The invoice email is optional: its placeholder says what is used when it is left empty.
+        form.elements.invoice_email.setAttribute('placeholder', fieldValue('email'));
+    }
+
+    /** What the customer typed, as the API's `invoice` object. An individual never sends a tax id, a registration number or a representative. */
+    function invoicePayload() {
+        var company = invoiceType() === 'company';
+        var invoice = {
+            recipient_type: invoiceType(),
+            legal_name: fieldValue('invoice_legal_name'),
+            country: fieldValue('invoice_country'),
+            city: fieldValue('invoice_city'),
+            postal_code: fieldValue('invoice_postal_code'),
+            address_line_1: fieldValue('invoice_address_line_1'),
+        };
+
+        if (fieldValue('invoice_address_line_2') !== '') {
+            invoice.address_line_2 = fieldValue('invoice_address_line_2');
+        }
+
+        if (fieldValue('invoice_email') !== '') {
+            invoice.email = fieldValue('invoice_email');
+        }
+
+        if (company) {
+            [['tax_id', 'invoice_tax_id'], ['company_registration_number', 'invoice_registration_number'], ['representative', 'invoice_representative']].forEach(function (pair) {
+                if (fieldValue(pair[1]) !== '') {
+                    invoice[pair[0]] = fieldValue(pair[1]);
+                }
+            });
+        }
+
+        return invoice;
+    }
+
+    /** The invoice country follows the delivery country until the customer chooses one herself. */
+    function followDeliveryCountry() {
+        if (invoiceToggle === null || invoiceCountryTouched) {
+            return;
+        }
+
+        var country = fieldValue('country');
+        var known = Array.prototype.some.call(form.elements.invoice_country.options || [], function (option) {
+            return option.value === country;
+        });
+
+        if (known) {
+            form.elements.invoice_country.value = country;
+        }
+
+        applyInvoice();
+    }
+
+    /** "Same as the delivery address": copies the STREET delivery fields into the invoice address (the button exists only for a street delivery). */
+    function copyDeliveryToInvoice() {
+        var country = fieldValue('country');
+        var known = Array.prototype.some.call(form.elements.invoice_country.options || [], function (option) {
+            return option.value === country;
+        });
+
+        if (known) {
+            form.elements.invoice_country.value = country;
+        }
+
+        form.elements.invoice_city.value = fieldValue('city');
+        form.elements.invoice_postal_code.value = fieldValue('postal_code');
+        form.elements.invoice_address_line_1.value = fieldValue('address_line_1');
+        form.elements.invoice_address_line_2.value = fieldValue('address_line_2');
+        invoiceCountryTouched = true;
+        applyInvoice();
+    }
+
     function updateNoteCounter() {
         var note = form.elements.customer_note;
         var chars = codePoints(note.value);
@@ -582,6 +760,7 @@ function initCheckout(root) {
         });
 
         applyRegionMode();
+        applyInvoice();
     }
 
     /** A pick-up point belongs to ONE courier and kind: when either changes, what was typed for it is dropped. */
@@ -1095,6 +1274,11 @@ function initCheckout(root) {
             body.terms_version = termsBox.getAttribute('data-sf-terms-version');
         }
 
+        // The invoice: ONLY while the box is ticked. Unticked, there is no `invoice` key at all, whatever is typed in the hidden block.
+        if (invoiceOn()) {
+            body.invoice = invoicePayload();
+        }
+
         // The note is sent as typed (the server trims it); an empty one is omitted.
         var note = form.elements.customer_note.value;
 
@@ -1282,6 +1466,10 @@ function initCheckout(root) {
 
         form.elements[name].addEventListener('input', onMove);
 
+        if (name === 'country') {
+            form.elements[name].addEventListener('change', followDeliveryCountry);
+        }
+
         // The country is a native <select>: it announces a choice with `change`.
         if (name === 'country') {
             form.elements[name].addEventListener('change', onMove);
@@ -1302,6 +1490,21 @@ function initCheckout(root) {
     });
 
     form.elements.customer_note.addEventListener('input', updateNoteCounter);
+
+    // The invoice: the box shows and hides the block; the type, the invoice country and the order email re-apply what depends on them.
+    if (invoiceToggle !== null) {
+        invoiceToggle.addEventListener('change', applyInvoice);
+        form.querySelectorAll('input[name="invoice_recipient_type"]').forEach(function (radio) {
+            radio.addEventListener('change', applyInvoice);
+        });
+        form.elements.invoice_country.addEventListener('change', function () {
+            invoiceCountryTouched = true;
+            applyInvoice();
+        });
+        form.elements.email.addEventListener('input', applyInvoice);
+        invoiceCopy.addEventListener('click', copyDeliveryToInvoice);
+        applyInvoice();
+    }
 
     // The mobile bar: the same summary, opened in place.
     summaryToggle.addEventListener('click', function () {

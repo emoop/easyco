@@ -32,6 +32,7 @@ class FakeNode {
     get id() { return this.attrs.id ?? ''; }
     get name() { return this.attrs.name ?? ''; }
     get firstChild() { return this.children[0] ?? null; }
+    get options() { return this.tag === 'select' ? this.children.filter((c) => c.tag === 'option') : undefined; }
     get value() {
         if (this._value === undefined && this.tag === 'select') {
             const option = this.children.find((c) => 'selected' in c.attrs) ?? this.children[0];
@@ -1228,6 +1229,243 @@ const scenarios = {
         assert.match(panel.textContent, /Red \/ M/);
         assert.ok(panel.textContent.includes(fmt(2000)));
     },
+    // ------------------------------------------------------------------------------------------------------------------ the invoice
+    // (order-context-design.md 9.3, stage C2-A) The page is rendered with the rules BG ("ЕИК / Булстат", required, МОЛ) and DE (the registration
+    // number required, labelled "USt-IdNr"). The whole block is HIDDEN until its box is ticked.
+
+    // Hidden by default: nothing in it is required, none of it is sent, and an order can be placed with every invoice field empty.
+    async invoice_hidden_by_default() {
+        const toggle = form.elements.invoice_requested;
+        const block = q('[data-sf-invoice-block]');
+
+        assert.ok(toggle, 'the box is there (the merchant offers invoices)');
+        assert.equal(toggle.checked, false, 'never ticked in advance');
+        assert.equal(block.hidden, true, 'the whole block is hidden');
+        assert.equal(form.elements.invoice_recipient_type.checked, true, 'a company is the chosen type (a choice, not a consent)');
+
+        const names = ['invoice_legal_name', 'invoice_tax_id', 'invoice_registration_number', 'invoice_representative', 'invoice_country', 'invoice_city', 'invoice_postal_code', 'invoice_address_line_1', 'invoice_address_line_2', 'invoice_email'];
+
+        names.forEach((name) => {
+            assert.ok(form.elements[name], `${name} exists`);
+            assert.equal(form.elements[name].required, false, `${name} is not required while hidden`);
+            assert.equal('required' in form.elements[name].attrs, false, `${name} has no required attribute while hidden`);
+            assert.equal(markerOf(name), false, `${name} shows no asterisk while hidden`);
+        });
+
+        await typeInto('city', 'Sofia');
+        choose(courierRows()[2].radio);
+        fillContact();
+        set('address_line_1', '5 Long St');
+        await submit();
+
+        assert.equal(checkoutPosts().length, 1, 'the form submits with every invoice field empty');
+        assert.equal('invoice' in lastCheckout().body, false, 'and no invoice key is sent');
+    },
+
+    // Ticked: the block shows, the marked fields are the required ones, a company's tax id follows the rule of the INVOICE country, and an
+    // `invoice` object is sent.
+    async invoice_shown_when_ticked() {
+        await typeInto('city', 'Sofia');
+        choose(courierRows()[2].radio);
+        fillContact();
+        set('address_line_1', '5 Long St');
+
+        const toggle = form.elements.invoice_requested;
+        toggle.checked = true;
+        toggle.dispatch('change');
+
+        assert.equal(q('[data-sf-invoice-block]').hidden, false, 'the block is visible');
+        assert.equal(q('[data-sf-invoice-company]').hidden, false, 'a company is asked for its tax id, registration number and representative');
+
+        ['invoice_legal_name', 'invoice_country', 'invoice_city', 'invoice_postal_code', 'invoice_address_line_1', 'invoice_tax_id'].forEach((name) => {
+            assert.equal(form.elements[name].required, true, `${name} is required`);
+            assert.equal(form.elements[name].getAttribute('aria-required'), 'true');
+            assert.equal(markerOf(name), true, `${name} carries the asterisk`);
+        });
+
+        ['invoice_registration_number', 'invoice_representative', 'invoice_address_line_2', 'invoice_email'].forEach((name) => {
+            assert.equal(form.elements[name].required, false, `${name} stays optional`);
+            assert.equal(markerOf(name), false);
+        });
+
+        assert.equal(form.elements.invoice_country.value, 'BG', 'the invoice country starts as the delivery country');
+        assert.equal(form.elements.invoice_email.getAttribute('placeholder'), 'a@example.com', 'the placeholder is the order email');
+        assert.equal(q('label[for="sf-invoice-tax-id"]').textContent.replace('*', '').trim(), 'ЕИК / Булстат', 'the label of the BG rule');
+        assert.equal(q('label[for="sf-invoice-representative"]').textContent.trim(), 'МОЛ');
+
+        set('invoice_legal_name', 'Acme OOD');
+        set('invoice_tax_id', '123456789');
+        set('invoice_representative', 'Ivan Ivanov');
+        set('invoice_city', 'Sofia');
+        set('invoice_postal_code', '1000');
+        set('invoice_address_line_1', '1 Main St');
+        await submit();
+
+        assert.equal(checkoutPosts().length, 1);
+        assert.deepEqual(lastCheckout().body.invoice, {
+            recipient_type: 'company', legal_name: 'Acme OOD', country: 'BG', city: 'Sofia', postal_code: '1000', address_line_1: '1 Main St',
+            tax_id: '123456789', representative: 'Ivan Ivanov',
+        });
+    },
+
+    // An individual: no tax id, registration number or representative is asked, and none is ever sent, even when typed before switching.
+    async invoice_individual_sends_no_company_fields() {
+        await typeInto('city', 'Sofia');
+        choose(courierRows()[2].radio);
+        fillContact();
+        set('address_line_1', '5 Long St');
+
+        form.elements.invoice_requested.checked = true;
+        form.elements.invoice_requested.dispatch('change');
+        set('invoice_tax_id', '123456789');
+        set('invoice_registration_number', 'R-1');
+
+        choose(form.all().find((n) => n.name === 'invoice_recipient_type' && n.attrs.value === 'individual'));
+
+        assert.equal(q('[data-sf-invoice-company]').hidden, true, 'the company fields are hidden');
+        assert.equal(form.elements.invoice_tax_id.required, false, 'and not required');
+        assert.equal(markerOf('invoice_tax_id'), false);
+        assert.equal(q('label[for="sf-invoice-legal-name"]').textContent.replace('*', '').trim(), 'Full name', 'the name label is the person one');
+        assert.equal(form.elements.invoice_legal_name.required, true, 'the name is still required');
+
+        set('invoice_legal_name', 'Ivan Ivanov');
+        set('invoice_city', 'Sofia');
+        set('invoice_postal_code', '1000');
+        set('invoice_address_line_1', '1 Main St');
+        await submit();
+
+        const invoice = lastCheckout().body.invoice;
+        assert.equal(invoice.recipient_type, 'individual');
+        ['tax_id', 'company_registration_number', 'representative'].forEach((key) => assert.equal(key in invoice, false, `${key} is never sent for an individual`));
+    },
+
+    // The rule is the INVOICE country's: DE labels the registration number "USt-IdNr" and requires it; back to BG, it is optional again.
+    async invoice_rules_follow_the_invoice_country() {
+        form.elements.invoice_requested.checked = true;
+        form.elements.invoice_requested.dispatch('change');
+
+        assert.equal(form.elements.invoice_registration_number.required, false);
+
+        form.elements.invoice_country.value = 'DE';
+        form.elements.invoice_country.dispatch('change');
+
+        assert.equal(form.elements.invoice_registration_number.required, true, 'DE requires it');
+        assert.equal(markerOf('invoice_registration_number'), true);
+        assert.equal(q('label[for="sf-invoice-registration"]').textContent.replace('*', '').trim(), 'USt-IdNr');
+        assert.equal(form.elements.invoice_tax_id.required, false, 'DE says a company need not give a tax number');
+        assert.equal(q('label[for="sf-invoice-tax-id"]').textContent.trim(), q('label[for="sf-invoice-tax-id"]').querySelector('[data-sf-label-text]').getAttribute('data-label-default'), 'the generic label returns for a rule with no label');
+
+        form.elements.invoice_country.value = 'FR';
+        form.elements.invoice_country.dispatch('change');
+
+        assert.equal(form.elements.invoice_tax_id.required, true, 'a country with no rule: the generic rule requires a company tax id');
+        assert.equal(form.elements.invoice_registration_number.required, false);
+    },
+
+    // The invoice country follows the delivery country until the customer chooses one herself.
+    async invoice_country_defaults_to_the_delivery_country() {
+        form.elements.invoice_requested.checked = true;
+        form.elements.invoice_requested.dispatch('change');
+        assert.equal(form.elements.invoice_country.value, 'BG');
+
+        form.elements.country.value = 'DE';
+        form.elements.country.dispatch('change');
+        assert.equal(form.elements.invoice_country.value, 'DE', 'followed the delivery country');
+
+        form.elements.invoice_country.value = 'FR';
+        form.elements.invoice_country.dispatch('change');
+        form.elements.country.value = 'BG';
+        form.elements.country.dispatch('change');
+        assert.equal(form.elements.invoice_country.value, 'FR', 'her own choice is kept');
+    },
+
+    // "Same as the delivery address": only for a street delivery, and it copies the street fields.
+    async invoice_copy_button_copies_the_street_fields() {
+        const copy = q('[data-sf-invoice-copy]');
+
+        form.elements.invoice_requested.checked = true;
+        form.elements.invoice_requested.dispatch('change');
+        assert.equal(copy.hidden, true, 'no delivery chosen yet: no button');
+
+        await typeInto('city', 'Plovdiv');
+        choose(courierRows()[1].radio);   // Speedy: a pick-up point
+        assert.equal(copy.hidden, true, 'a pick-up delivery has no street address to copy');
+
+        choose(courierRows()[2].radio);   // the courier-less address method
+        assert.equal(copy.hidden, false, 'a street delivery shows it');
+
+        set('postal_code', '4000');
+        set('address_line_1', '7 River St');
+        set('address_line_2', 'Floor 2');
+        form.elements.country.value = 'DE';
+        copy.dispatch('click');
+
+        assert.equal(form.elements.invoice_country.value, 'DE');
+        assert.equal(form.elements.invoice_city.value, 'Plovdiv');
+        assert.equal(form.elements.invoice_postal_code.value, '4000');
+        assert.equal(form.elements.invoice_address_line_1.value, '7 River St');
+        assert.equal(form.elements.invoice_address_line_2.value, 'Floor 2');
+    },
+
+    // The API's 422 on invoice.* lands under the right fields (the registration number's API name is `company_registration_number`).
+    async invoice_errors_are_shown_under_the_right_fields() {
+        await typeInto('city', 'Sofia');
+        choose(courierRows()[2].radio);
+        fillContact();
+        set('address_line_1', '5 Long St');
+        form.elements.invoice_requested.checked = true;
+        form.elements.invoice_requested.dispatch('change');
+        set('invoice_legal_name', 'Acme');
+        set('invoice_tax_id', 'x');
+        set('invoice_city', 'Sofia');
+        set('invoice_postal_code', '1000');
+        set('invoice_address_line_1', '1 Main St');
+
+        checkoutResponse = {
+            status: 422,
+            data: { message: 'bad', reason: 'invoice_details_invalid', errors: { 'invoice.tax_id': ['"ЕИК / Булстат" is not in the expected format.'], 'invoice.company_registration_number': ['needed'], 'invoice.email': ['not an email'] } },
+        };
+        await submit();
+
+        assert.equal(q('[data-sf-error-for="invoice_tax_id"]').textContent, '"ЕИК / Булстат" is not in the expected format.');
+        assert.equal(q('[data-sf-error-for="invoice_tax_id"]').hidden, false);
+        assert.equal(form.elements.invoice_tax_id.getAttribute('aria-invalid'), 'true');
+        assert.equal(q('[data-sf-error-for="invoice_registration_number"]').textContent, 'needed');
+        assert.equal(q('[data-sf-error-for="invoice_email"]').textContent, 'not an email');
+        assert.match(q('[data-sf-error-summary]').textContent, /ЕИК/);
+        assert.equal(q('[data-sf-error-for="invoice_legal_name"]').hidden, true, 'a field with no error stays quiet');
+    },
+
+    // Ticked, typed, then UNticked: the block hides, every requirement goes, and the typed values stay in the inputs but are not sent.
+    async invoice_untick_removes_the_requirements_and_the_payload() {
+        await typeInto('city', 'Sofia');
+        choose(courierRows()[2].radio);
+        fillContact();
+        set('address_line_1', '5 Long St');
+
+        const toggle = form.elements.invoice_requested;
+        toggle.checked = true;
+        toggle.dispatch('change');
+        set('invoice_legal_name', 'Acme');
+        set('invoice_tax_id', '123456789');
+        assert.equal(form.elements.invoice_legal_name.required, true);
+
+        toggle.checked = false;
+        toggle.dispatch('change');
+
+        assert.equal(q('[data-sf-invoice-block]').hidden, true);
+        ['invoice_legal_name', 'invoice_tax_id', 'invoice_country', 'invoice_city', 'invoice_postal_code', 'invoice_address_line_1'].forEach((name) => {
+            assert.equal(form.elements[name].required, false, `${name} is no longer required`);
+            assert.equal(markerOf(name), false, `${name} lost its asterisk`);
+        });
+        assert.equal(form.elements.invoice_legal_name.value, 'Acme', 'what was typed stays in the input');
+
+        await submit();
+
+        assert.equal(checkoutPosts().length, 1);
+        assert.equal('invoice' in lastCheckout().body, false, 'but it is not sent');
+    },
+
 };
 
 assert.ok(scenarios[scenario], `unknown scenario ${scenario}`);

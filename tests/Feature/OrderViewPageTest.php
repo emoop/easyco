@@ -757,6 +757,11 @@ class OrderViewPageTest extends TestCase
     {
         $order = $this->placeOrder();
 
+        // Changed on purpose (order-context stage C2-A): checkout now writes the order's own `placed` event, which has empty status and reason
+        // cells of its own. This test counts the dashes of the RETURN-RECORD column across events that carry both statuses and a reason, so
+        // the placed row is taken out of the fixture here; it has its own tests (OrderPlacedEventTest).
+        DB::table('order_events')->where('order_id', $order->id())->where('type', 'placed')->delete();
+
         $changer = app(OrderStatusChanger::class);
         $changer->confirm($order->id(), new DateTimeImmutable('2026-09-21 10:00:00'), 'accepted by phone');
         $changer->ship($order->id(), new DateTimeImmutable('2026-09-22 10:00:00'), 'handed to courier');

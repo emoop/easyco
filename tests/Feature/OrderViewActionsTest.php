@@ -331,7 +331,8 @@ class OrderViewActionsTest extends TestCase
 
         $this->assertSame('confirmed', DB::table('orders')->where('id', $order->id())->value('status'));
 
-        $event = DB::table('order_events')->where('order_id', $order->id())->orderBy('id')->first();
+        // Since order-context stage C2-A every order carries its own `placed` event first; this test is about the one the ACTION writes.
+        $event = DB::table('order_events')->where('order_id', $order->id())->where('type', '!=', 'placed')->orderBy('id')->first();
         $this->assertSame('status_changed', $event->type);
         $this->assertSame('placed', $event->from_status);
         $this->assertSame('confirmed', $event->to_status);
@@ -377,7 +378,7 @@ class OrderViewActionsTest extends TestCase
         $this->assertNotNull(DB::table('payments')->where('id', $payment->id())->value('confirmed_at'));
         $this->assertSame('placed', DB::table('orders')->where('id', $order->id())->value('status'), 'confirming money never moves the order status (§3 item 1)');
 
-        $event = DB::table('order_events')->where('order_id', $order->id())->first();
+        $event = DB::table('order_events')->where('order_id', $order->id())->where('type', '!=', 'placed')->first();
         $this->assertSame('payment_confirmed', $event->type);
     }
 
@@ -432,7 +433,7 @@ class OrderViewActionsTest extends TestCase
         $component->assertNotNotified();
 
         $this->assertSame('confirmed', DB::table('orders')->where('id', $order->id())->value('status'), 'the race\'s own confirmation stands; the refused click changed nothing further');
-        $this->assertSame(1, DB::table('order_events')->where('order_id', $order->id())->count(), 'only the race\'s own event exists — the refused click wrote nothing');
+        $this->assertSame(1, DB::table('order_events')->where('order_id', $order->id())->where('type', '!=', 'placed')->count(), 'only the race\'s own event exists — the refused click wrote nothing');
     }
 
     // --- T5: query count ----------------------------------------------------

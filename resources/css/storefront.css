@@ -879,6 +879,32 @@
         @apply mt-3 text-sm text-neutral-600;
     }
 
+    /* C2-A: the invoice request. The block is `hidden` until its box is ticked (the script toggles it). */
+    .sf-invoice {
+        @apply mt-4;
+    }
+
+    .sf-invoice-block[hidden],
+    .sf-invoice [hidden] {
+        display: none;
+    }
+
+    .sf-invoice-type-title {
+        @apply mb-1 text-sm font-medium text-neutral-800;
+    }
+
+    .sf-invoice-type {
+        @apply flex flex-wrap gap-x-6 gap-y-1;
+    }
+
+    .sf-invoice-type-option {
+        @apply inline-flex items-center gap-2 text-sm font-normal text-neutral-800;
+    }
+
+    .sf-invoice-copy {
+        @apply mb-3 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-900;
+    }
+
     .sf-express {
         @apply mb-4 rounded-lg border border-neutral-200 bg-white p-4;
     }

@@ -11,10 +11,14 @@ use InvalidArgumentException;
 /**
  * The one writer of order_events — order-lifecycle-design.md §6.2, §10 stage 3.
  * It writes a fact; it decides nothing. Which event a transition records, when
- * it is recorded and what the reason says belong to the callers §10 stages 4-6
- * build (OrderStatusChanger, OrderPaymentConfirmer, OrderRefunder), so nothing
- * in production calls this class yet — it is infrastructure, complete and
- * tested on its own.
+ * it is recorded and what the reason says belong to its callers: the lifecycle's
+ * services (OrderStatusChanger, OrderPaymentConfirmer, the refund and receipt
+ * services, OrderEditor, OrderNoteRecorder) and — since the order-context stage
+ * C2-A (order-context-design.md §11.3) — CHECKOUT ITSELF, through
+ * OrderContextWriter, which writes every order's first row, `placed`, inside the
+ * placement transaction. (This docblock used to say that nothing in production
+ * called the class yet; that stopped being true with the lifecycle's stages 4-6
+ * and is corrected here, in the stage that adds the last first-time caller.)
  *
  * ALWAYS ON. There is no Site Setting gate and no early return anywhere in this
  * class: §0 item 8 is the entire reason the table exists (ActivityLogger writes

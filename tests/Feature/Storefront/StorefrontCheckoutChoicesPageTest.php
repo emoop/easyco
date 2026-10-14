@@ -60,7 +60,7 @@ class StorefrontCheckoutChoicesPageTest extends TestCase
 
         preg_match_all('/<input\b[^>]*\btype="checkbox"[^>]*>/', $html, $boxes);
 
-        $this->assertCount(3, $boxes[0], 'the newsletter, the call and the terms boxes');
+        $this->assertCount(4, $boxes[0], 'the newsletter, the call, the terms and (C2-A, on by default) the invoice boxes');
 
         foreach ($boxes[0] as $box) {
             $this->assertDoesNotMatchRegularExpression('/\bchecked\b/', $box, 'a ticked box is not consent: '.$box);
@@ -73,7 +73,9 @@ class StorefrontCheckoutChoicesPageTest extends TestCase
     {
         $html = $this->html();
 
-        $this->assertStringNotContainsString('type="checkbox"', $html);
+        // Changed on purpose (order-context stage C2-A): the invoice box is on by default (`invoice.enabled` absent = ON), so it is the ONE checkbox left.
+        $this->assertSame(1, preg_match_all('/type="checkbox"/', $html));
+        $this->assertStringContainsString('name="invoice_requested"', $html);
         $this->assertStringNotContainsString('name="marketing_consent"', $html);
         $this->assertStringNotContainsString('name="call_before_shipping"', $html);
         $this->assertStringNotContainsString('name="terms_accepted"', $html, 'on by default, but there is no page to read the terms at: nothing is asked');

@@ -495,7 +495,7 @@ class CheckoutHardeningTest extends TestCase
 
         // Measured on HEAD before stage 4c (same scenario): fresh 32 total / 0 settings reads, replay 5 total / 0 payment selects.
         $this->assertSame(2, $fresh['settings'], 'the store locale + ONE read of the two region-rule keys (RN-1b)');
-        $this->assertSame(58, $fresh['total'], 'fresh: 33 before 4e (32 before 4c + the locale read) + the shipping step, i.e. the quote pipeline once (23 on this 1-line cart) = 56, + 1 for the mail_log reservation of the order confirmation (mail stage M1); the job itself is queued, not run; RN-1 added the region rule: two keys read with ONE query (+1 = 58)');
+        $this->assertSame(60, $fresh['total'], 'fresh: 33 before 4e (32 before 4c + the locale read) + the shipping step, i.e. the quote pipeline once (23 on this 1-line cart) = 56, + 1 for the mail_log reservation of the order confirmation (mail stage M1); the job itself is queued, not run; RN-1 added the region rule: two keys read with ONE query (+1 = 58); order-context stage C2-A added the context of the order inside the placement transaction: the attribution insert and the placed-event insert (+2 = 60; an invoice request would add one more); its settings ride the same ONE read, so the settings count is unchanged');
         \Illuminate\Support\Facades\Bus::assertDispatchedTimes(\App\Mail\SendMailJob::class, 1);
         \Illuminate\Support\Facades\Bus::assertDispatched(\App\Mail\SendMailJob::class, fn (\App\Mail\SendMailJob $job): bool => $job->queue === 'mail-transactional');
         $this->assertSame(1, $replay['payments'], 'a replay reads the stored payment once (stage 4c)');

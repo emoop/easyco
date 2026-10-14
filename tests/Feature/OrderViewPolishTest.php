@@ -240,7 +240,7 @@ class OrderViewPolishTest extends TestCase
 
             public function forOrder(string $orderId): OrderContextView
             {
-                return new OrderContextView(customerIp: '203.0.113.9', visitorId: $this->id);
+                return new OrderContextView(visitorId: $this->id);
             }
         });
 
@@ -282,7 +282,13 @@ class OrderViewPolishTest extends TestCase
         $this->app->instance(OrderContextReader::class, new class extends OrderContextReader {
             public function forOrder(string $orderId): OrderContextView
             {
-                return new OrderContextView(customerIp: '203.0.113.9', visitorId: '3f2b8c1e-9d4a-4e7b-a1c0-5b6d7e8f9a01');
+                return new OrderContextView(visitorId: '3f2b8c1e-9d4a-4e7b-a1c0-5b6d7e8f9a01');
+            }
+
+            // The full address has its OWN gated reader method (order-context-design.md 7.1): the view object no longer carries it.
+            public function fullClientAddress(string $orderId): ?string
+            {
+                return '203.0.113.9';
             }
         });
         $html = $this->html($order['orderId']);
@@ -362,11 +368,16 @@ class OrderViewPolishTest extends TestCase
             public function forOrder(string $orderId): OrderContextView
             {
                 return new OrderContextView(
-                    customerIp: '203.0.113.9', visitorId: 'vis-777',
+                    visitorId: 'vis-777',
                     termsAccepted: true, confirmationRequested: false, callBeforeShipping: null,
                     invoiceCompanyName: 'Acme Ltd', invoiceVatNumber: 'BG123456789', invoiceBillingAddress: '1 Main St, Sofia',
                     originSourceType: 'organic', originCampaign: 'autumn-sale', originLandingPage: '/shoes', originReferrer: 'google.com',
                 );
+            }
+
+            public function fullClientAddress(string $orderId): ?string
+            {
+                return '203.0.113.9';
             }
         });
 
@@ -383,20 +394,26 @@ class OrderViewPolishTest extends TestCase
         $this->assertMatchesRegularExpression('/'.preg_quote(e(__('orders.context.fields.call_before_shipping')), '/').'.{0,600}?n\/a/s', $html);
     }
 
-    public function test_the_reader_makes_no_query_and_returns_nothing_recorded_today(): void
+    // Changed on purpose (order-context stage C2-A): the reader now reads the origin and the invoice request, so it makes TWO small reads
+    // (each on its unique order_id), once per order per request, and still returns "nothing recorded" for an order that has neither row.
+    public function test_the_reader_reads_each_order_once_and_returns_nothing_recorded_when_there_are_no_context_rows(): void
     {
         $queries = 0;
         DB::listen(function () use (&$queries): void {
             $queries++;
         });
 
-        $view = app(OrderContextReader::class)->forOrder('1');
+        $reader = app(OrderContextReader::class);
+        $view = $reader->forOrder('1');
 
-        $this->assertSame(0, $queries);
+        $this->assertSame(2, $queries, 'the origin row and the invoice row');
         $this->assertEquals(OrderContextView::notRecorded(), $view);
         foreach ((array) $view as $value) {
             $this->assertNull($value);
         }
+
+        $reader->forOrder('1');
+        $this->assertSame(2, $queries, 'the second ask for the same order is served from memory');
     }
 
     public function test_n_a_is_translated_and_there_is_no_tax_line_anywhere(): void

@@ -11,7 +11,6 @@ namespace App\Services;
 final class OrderContextView
 {
     public function __construct(
-        public readonly ?string $customerIp = null,
         public readonly ?string $visitorId = null,
         public readonly ?bool $termsAccepted = null,
         public readonly ?bool $confirmationRequested = null,
@@ -29,6 +28,29 @@ final class OrderContextView
         public readonly ?string $termsVersion = null,
         public readonly ?bool $marketingConsent = null,
         public readonly ?string $marketingConsentText = null,
+        // THE ORIGIN, read from `order_attributions` (order-context-design.md 11.1, stage C2-A). Every value is a DISPLAY-READY string: the
+        // reader has already put the enums through their labels. NULL = no such fact. THE FULL CLIENT ADDRESS IS DELIBERATELY NOT HERE:
+        // it is read by OrderContextReader::fullClientAddress(), a separate method that answers only for ORDER_MANAGE (section 7.1). What
+        // this object may carry of the address is the date it was anonymised and the anonymised network, which are not personal data.
+        public readonly ?string $originDeviceType = null,
+        public readonly ?string $originConsent = null,
+        public readonly ?string $originReason = null,
+        public readonly ?string $accountId = null,
+        public readonly ?bool $attributionRecorded = null,
+        public readonly ?\DateTimeInterface $ipAnonymisedAt = null,
+        public readonly ?string $ipNetwork = null,
+        // THE INVOICE REQUEST, read from `order_invoice_details` (section 11.4). `invoiceCompanyName` / `invoiceVatNumber` /
+        // `invoiceBillingAddress` above are its legal name, tax id and billing address; these are the rest, with the labels the merchant configured.
+        public readonly ?bool $invoiceRequested = null,
+        public readonly ?string $invoiceRecipientType = null,
+        public readonly ?string $invoiceTaxIdLabel = null,
+        public readonly ?string $invoiceRegistrationNumber = null,
+        public readonly ?string $invoiceRegistrationLabel = null,
+        public readonly ?string $invoiceRepresentative = null,
+        public readonly ?string $invoiceRepresentativeLabel = null,
+        public readonly ?string $invoiceEmail = null,
+        public readonly ?string $invoiceRuleVersion = null,
+        public readonly ?\DateTimeInterface $invoiceRequestedAt = null,
     ) {
     }
 

@@ -128,6 +128,7 @@ return [
     // (OrderResource::optionLabel(), :448-457), which is why
     // OrderEventTypeLabelsTest pins every case against both languages.
     'event_type_options' => [
+        'placed' => 'Order placed',
         'status_changed' => 'Status changed',
         'payment_confirmed' => 'Payment recorded as received',
         'returned' => 'Goods returned',
@@ -142,6 +143,51 @@ return [
         'payment_receipt_recorded' => 'Bank transfer received',
         'payment_receipt_corrected' => 'Bank transfer record corrected',
         'payment_mismatch_accepted' => 'Different transfer amount accepted',
+    ],
+
+    // Order context (order-context-design.md 2.1.1, stage C2-A): one label per case of the seven enums, pinned by OrderContextEnumLabelsTest.
+    'attribution_source_options' => [
+        'utm' => 'Campaign (UTM)',
+        'organic' => 'Organic search',
+        'referral' => 'Referral',
+        'direct' => 'Direct',
+        'ai_assistant' => 'AI assistant',
+        'social' => 'Social network',
+        'email' => 'Email',
+        'admin' => 'Created in the admin',
+        'agent' => 'Agent',
+        'unknown' => 'Unknown',
+    ],
+    'attribution_capture_options' => [
+        'captured' => 'Captured',
+        'skipped_no_consent' => 'Not stored: no consent',
+        'skipped_no_data' => 'Not captured: the visit carried no data',
+    ],
+    'consent_mode_options' => [
+        'strict' => 'Strict (consent first)',
+        'notice' => 'Notice (opt-out)',
+        'off' => 'No regime',
+    ],
+    'analytics_consent_options' => [
+        'granted' => 'Analytics allowed',
+        'denied' => 'Analytics declined',
+        'unknown' => 'Analytics not asked',
+    ],
+    'consent_source_options' => [
+        'banner' => 'Banner',
+        'api' => 'API',
+        'not_asked' => 'Not asked',
+    ],
+    'device_type_options' => [
+        'desktop' => 'Desktop',
+        'mobile' => 'Mobile',
+        'tablet' => 'Tablet',
+        'bot' => 'Bot',
+        'unknown' => 'Unknown',
+    ],
+    'invoice_recipient_options' => [
+        'company' => 'Company',
+        'individual' => 'Individual',
     ],
 
     // The kind of the pickup point that priced the order (shipping stage 5g-2a); "not stated" for an order placed with none.
@@ -215,6 +261,31 @@ return [
             'campaign' => 'Campaign / ad',
             'landing_page' => 'Landing page',
             'referrer' => 'Referrer',
+            'invoice_requested' => 'Invoice requested',
+            'recipient_type' => 'Invoice for',
+            'registration_number' => 'Registration number',
+            'representative' => 'Representative',
+            'invoice_email' => 'Invoice email',
+            'rule_version' => 'Country rules version',
+            'device_type' => 'Device',
+            'consent' => 'Cookie consent',
+            'origin_reason' => 'Origin status',
+            'account_id' => 'Account',
+            'client_address' => 'Client address',
+        ],
+        'reason_predates' => 'Not recorded: this order was placed before context capture.',
+        'reason_not_recorded_yet' => 'The origin of the visit is not recorded yet.',
+        'reason_no_data' => 'Not captured: the visit carried no referrer and no campaign.',
+        'reason_no_consent' => 'Not stored: :mode mode, :analytics.',
+        'ip_kept' => 'Kept in full until the retention window ends (shown in the header)',
+        'ip_restricted' => 'Restricted: the full address is shown only to staff who manage orders',
+        'ip_anonymised' => 'Anonymised on :date (network :network)',
+        'invoice_not_requested' => 'Not requested',
+        'ip_anonymised_short' => 'anonymised',
+        'consent_storage' => [
+            'strict' => 'nothing stored on the visitor\'s device',
+            'notice' => 'stored on the visitor\'s device unless refused',
+            'off' => 'stored on the visitor\'s device without asking',
         ],
     ],
 

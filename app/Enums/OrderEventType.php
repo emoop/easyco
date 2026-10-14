@@ -3,13 +3,16 @@
 namespace App\Enums;
 
 /**
- * The six facts an order's own history records — order-lifecycle-design.md
+ * The facts an order's own history records — order-lifecycle-design.md
  * §6.1's `order_events.type`, and the single vocabulary
  * App\Services\OrderEventRecorder writes and OrderAdminReader::forOrder()
  * reads back, so "which kind of fact is this" is never a stringly-typed guess
  * at either end (the same reason App\Enums\CatalogLookupKind exists).
  *
  * WHAT EACH VALUE MEANS, and what it carries in from_status/to_status:
+ * - PLACED            — the order was placed (order-context-design.md §11.3, stage C2-A): the timeline's first row, written by checkout
+ *                       inside the placement transaction with `occurred_at` = the order's `placed_at`. Both statuses NULL (the next
+ *                       transition's `status_changed` row carries from_status = placed, so the chain is unbroken).
  * - STATUS_CHANGED    — a §5.1 transition ran. from_status and to_status are
  *                       both set; that pair is the whole point of the row.
  * - PAYMENT_CONFIRMED — the money was recorded as received (§4.3). No status
@@ -53,6 +56,7 @@ namespace App\Enums;
  */
 enum OrderEventType: string
 {
+    case PLACED = 'placed';
     case STATUS_CHANGED = 'status_changed';
     case PAYMENT_CONFIRMED = 'payment_confirmed';
     case RETURNED = 'returned';

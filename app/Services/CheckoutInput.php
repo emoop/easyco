@@ -71,6 +71,11 @@ final class CheckoutInput
         public readonly ?bool $callBeforeShipping = null,
         public readonly ?bool $marketingConsent = null,
         public readonly ?string $marketingConsentText = null,
+        // THE ORDER'S CONTEXT (order-context-design.md, stage C2-A): the request's own facts (client address, user agent: read by the HTTP
+        // layer from the request, never from the body) and the invoice the customer asked for, already validated against the merchant's rules.
+        // Both NULL for a caller with no request / no invoice; the attribution row is written either way.
+        public readonly ?CheckoutRequestFacts $requestFacts = null,
+        public readonly ?CheckoutInvoiceRequest $invoice = null,
     ) {
     }
 }

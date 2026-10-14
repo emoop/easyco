@@ -48,6 +48,10 @@ final class CheckoutFormSettings
         self::PRIVACY_PAGE_ID_KEY,
         CheckoutRegionPolicy::DEFAULT_KEY,
         CheckoutRegionPolicy::COUNTRIES_KEY,
+        // The invoice request (InvoiceSettings) and the privacy settings the order context needs (OrderContextSettings): in the SAME single
+        // getMany, so neither the page shell nor the checkout request pays a query for them (order-context-design.md, stage C2-A).
+        ...InvoiceSettings::KEYS,
+        ...OrderContextSettings::KEYS,
     ];
 
     public function __construct(

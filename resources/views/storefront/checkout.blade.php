@@ -156,6 +156,87 @@
                     <p class="sf-field-error" id="sf-err-customer_note" data-sf-error-for="customer_note" hidden></p>
                 </div>
 
+                {{-- THE INVOICE (order-context-design.md 9.3, stage C2-A): a box that is NOT ticked, and a block that is HIDDEN until it is. While hidden none of
+                     its fields is required, validated by the browser or sent; the script (storefront-checkout.js) shows it, sets the requirements from
+                     the rule of the INVOICE country and sends an `invoice` object. Only when the merchant offers invoices (invoice.enabled). --}}
+                @if ($invoice['enabled'])
+                    <div class="sf-invoice" data-sf-invoice data-invoice-rules="{{ json_encode($invoice['rules'], JSON_THROW_ON_ERROR | JSON_FORCE_OBJECT) }}">
+                        <div class="sf-field sf-check">
+                            <input id="sf-invoice-requested" name="invoice_requested" type="checkbox" value="1" aria-controls="sf-invoice-block" data-sf-invoice-toggle>
+                            <label for="sf-invoice-requested">{{ __('storefront.checkout_invoice_toggle') }}</label>
+                        </div>
+                        <fieldset class="sf-fieldset sf-invoice-block" id="sf-invoice-block" data-sf-invoice-block hidden>
+                            <legend class="sf-legend">{{ __('storefront.checkout_invoice_legend') }}</legend>
+                            {{-- A choice of who the invoice is for (a company is selected), not a consent. --}}
+                            <div class="sf-field">
+                                <p class="sf-invoice-type-title" id="sf-invoice-type-title">{{ __('storefront.checkout_invoice_type') }}</p>
+                                <div class="sf-invoice-type" role="radiogroup" aria-labelledby="sf-invoice-type-title">
+                                    <label class="sf-invoice-type-option"><input type="radio" name="invoice_recipient_type" value="company" checked> <span>{{ __('storefront.checkout_invoice_company') }}</span></label>
+                                    <label class="sf-invoice-type-option"><input type="radio" name="invoice_recipient_type" value="individual"> <span>{{ __('storefront.checkout_invoice_person') }}</span></label>
+                                </div>
+                            </div>
+                            <div class="sf-field">
+                                <label for="sf-invoice-legal-name"><span data-sf-label-text data-label-company="{{ __('storefront.checkout_invoice_company_name') }}" data-label-individual="{{ __('storefront.checkout_invoice_person_name') }}">{{ __('storefront.checkout_invoice_company_name') }}</span></label>
+                                <input id="sf-invoice-legal-name" name="invoice_legal_name" type="text" autocomplete="organization" maxlength="255">
+                                <p class="sf-field-error" id="sf-err-invoice_legal_name" data-sf-error-for="invoice_legal_name" hidden></p>
+                            </div>
+                            <div data-sf-invoice-company>
+                                <div class="sf-field">
+                                    <label for="sf-invoice-tax-id"><span data-sf-label-text data-label-default="{{ __('checkout.invoice_labels.tax_id') }}">{{ __('checkout.invoice_labels.tax_id') }}</span></label>
+                                    <input id="sf-invoice-tax-id" name="invoice_tax_id" type="text" autocomplete="off" maxlength="64">
+                                    <p class="sf-field-error" id="sf-err-invoice_tax_id" data-sf-error-for="invoice_tax_id" hidden></p>
+                                </div>
+                                <div class="sf-field">
+                                    <label for="sf-invoice-registration"><span data-sf-label-text data-label-default="{{ __('checkout.invoice_labels.registration_number') }}">{{ __('checkout.invoice_labels.registration_number') }}</span></label>
+                                    <input id="sf-invoice-registration" name="invoice_registration_number" type="text" autocomplete="off" maxlength="64">
+                                    <p class="sf-field-error" id="sf-err-invoice_registration_number" data-sf-error-for="invoice_registration_number" hidden></p>
+                                </div>
+                                <div class="sf-field">
+                                    <label for="sf-invoice-representative"><span data-sf-label-text data-label-default="{{ __('checkout.invoice_labels.representative') }}">{{ __('checkout.invoice_labels.representative') }}</span></label>
+                                    <input id="sf-invoice-representative" name="invoice_representative" type="text" autocomplete="off" maxlength="255">
+                                    <p class="sf-field-error" id="sf-err-invoice_representative" data-sf-error-for="invoice_representative" hidden></p>
+                                </div>
+                            </div>
+                            {{-- Copies the street delivery fields; shown only while the delivery is a street address. --}}
+                            <button class="sf-invoice-copy" type="button" data-sf-invoice-copy hidden>{{ __('storefront.checkout_invoice_copy') }}</button>
+                            <div class="sf-field">
+                                <label for="sf-invoice-country"><span data-sf-label-text>{{ __('storefront.checkout_invoice_country') }}</span></label>
+                                <select id="sf-invoice-country" name="invoice_country" autocomplete="off">
+                                    @foreach ($countries as $code => $countryName)
+                                        <option value="{{ $code }}"{{ $code === $defaultCountry ? ' selected' : '' }}>{{ $countryName }}</option>
+                                    @endforeach
+                                </select>
+                                <p class="sf-field-error" id="sf-err-invoice_country" data-sf-error-for="invoice_country" hidden></p>
+                            </div>
+                            <div class="sf-field">
+                                <label for="sf-invoice-city"><span data-sf-label-text>{{ __('storefront.checkout_city') }}</span></label>
+                                <input id="sf-invoice-city" name="invoice_city" type="text" autocomplete="off" maxlength="128">
+                                <p class="sf-field-error" id="sf-err-invoice_city" data-sf-error-for="invoice_city" hidden></p>
+                            </div>
+                            <div class="sf-field">
+                                <label for="sf-invoice-postal-code"><span data-sf-label-text>{{ __('storefront.checkout_postal_code') }}</span></label>
+                                <input id="sf-invoice-postal-code" name="invoice_postal_code" type="text" autocomplete="off" maxlength="32">
+                                <p class="sf-field-error" id="sf-err-invoice_postal_code" data-sf-error-for="invoice_postal_code" hidden></p>
+                            </div>
+                            <div class="sf-field">
+                                <label for="sf-invoice-address-1"><span data-sf-label-text>{{ __('storefront.checkout_address_1') }}</span></label>
+                                <input id="sf-invoice-address-1" name="invoice_address_line_1" type="text" autocomplete="off" maxlength="255">
+                                <p class="sf-field-error" id="sf-err-invoice_address_line_1" data-sf-error-for="invoice_address_line_1" hidden></p>
+                            </div>
+                            <div class="sf-field">
+                                <label for="sf-invoice-address-2"><span data-sf-label-text>{{ __('storefront.checkout_address_2') }}</span></label>
+                                <input id="sf-invoice-address-2" name="invoice_address_line_2" type="text" autocomplete="off" maxlength="255">
+                                <p class="sf-field-error" id="sf-err-invoice_address_line_2" data-sf-error-for="invoice_address_line_2" hidden></p>
+                            </div>
+                            <div class="sf-field">
+                                <label for="sf-invoice-email"><span data-sf-label-text>{{ __('storefront.checkout_invoice_email') }}</span></label>
+                                <input id="sf-invoice-email" name="invoice_email" type="email" autocomplete="off" maxlength="255">
+                                <p class="sf-field-error" id="sf-err-invoice_email" data-sf-error-for="invoice_email" hidden></p>
+                            </div>
+                        </fieldset>
+                    </div>
+                @endif
+
                 <fieldset class="sf-fieldset">
                     <legend class="sf-legend">{{ __('storefront.checkout_payment') }}</legend>
                     {{-- One card per payment method the registry offers (checkout form v2, section 8.3). Everything a descriptor supplies is escaped text; the logo is an <img> whose alt is the label. The first is preselected: a choice of method, not a consent. --}}

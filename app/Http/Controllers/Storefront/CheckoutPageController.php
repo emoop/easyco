@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Settings\CheckoutFormSettings;
 use App\Settings\CheckoutRegionPolicy;
 use App\Settings\CountryNames;
+use App\Settings\InvoiceSettings;
 use App\Settings\StoreCountry;
 use App\Settings\StoreLocale;
 use App\Storefront\Reader\CatalogReader;
@@ -38,13 +39,16 @@ use Illuminate\Support\HtmlString;
  *   form            array{callBeforeShipping: bool, newsletter: bool, termsShown: bool, termsVersion: string, privacyHtml: ?HtmlString,
  *                   termsHtml: ?HtmlString}  the optional choices and consent (checkout form v2, section 6): the two sentences with their link
  *                   are built here as ESCAPED anchors (the merchant's URL is checked and escaped, never rendered as markup)
+ *   invoice         array{enabled: bool, rules: array<string, array<string, mixed>>}  whether the shop offers an invoice (invoice.enabled, ON unless
+ *                   '0') and the per-country rules as the page needs them (labels and requirements, NEVER a format: the server is its only judge),
+ *                   written into a JSON data attribute; both come from the page's ONE settings read (order-context-design.md 9.3)
  *   expressPartials list<string>  what extensions contribute to the express-checkout slot (filter `storefront.checkout.express`); empty = not rendered
  *   regionPolicy    array{default: string, countries: array<string, string>}  CheckoutRegionPolicy::all(), written into the page as a
  *                   JSON data attribute (an empty list of exceptions is `{}`); the script resolves the region mode of the current country
  */
 final class CheckoutPageController extends Controller
 {
-    public function show(CatalogReader $reader, PriceFormatter $prices, PaymentMethodRegistry $payments, StoreCountry $country, CheckoutRegionPolicy $regions, CheckoutFormSettings $settings, StoreLocale $storeLocale): Response
+    public function show(CatalogReader $reader, PriceFormatter $prices, PaymentMethodRegistry $payments, StoreCountry $country, CheckoutRegionPolicy $regions, CheckoutFormSettings $settings, StoreLocale $storeLocale, InvoiceSettings $invoice): Response
     {
         $currency = DefaultCurrency::get();
         $zero = $currency->decimalPlaces() > 0 ? '0.'.str_repeat('0', $currency->decimalPlaces()) : '0';
@@ -90,6 +94,7 @@ final class CheckoutPageController extends Controller
                 // An extension fills the express-checkout slot (one-click wallets) with partial names; nothing is rendered when it is empty.
                 'expressPartials' => array_values(array_filter((array) Hook::apply('storefront.checkout.express', []), static fn ($name): bool => is_string($name) && $name !== '' && view()->exists($name))),
                 'regionPolicy' => $regions->all(),
+                'invoice' => ['enabled' => $invoice->enabled(), 'rules' => $invoice->enabled() ? $invoice->forPage() : []],
             ])
             ->header('Cache-Control', 'private, no-store')
             ->header('X-Robots-Tag', 'noindex');

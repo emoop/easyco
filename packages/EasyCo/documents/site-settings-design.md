@@ -93,5 +93,11 @@ Owned by `App\Settings\CheckoutFormSettings`, which reads ALL of them (the two r
 | `checkout.privacy_page_id` | the same, for the privacy notice | absent = the address mode above |
 | `content.drafts_seeded` | `'1'` once `ContentDraftsSeeder` ran (the two empty drafts are created once) | absent = not yet seeded |
 | `checkout.region_default`, `checkout.region_countries` | see checkout-region-and-note-design.md | optional / none |
+| `invoice.enabled` | `'0'` | absent = ON (the invoice box is offered) |
+| `invoice.country_rules` | a JSON object `{ISO2: {tax_id_label, tax_id_required_for_company, tax_id_pattern, registration_number_label, registration_number_required, representative_label}}` (order-context-design.md 9.3); owner of validation: `App\Settings\InvoiceSettings` | absent = `{}`: no country has a rule, the generic rule applies (a company's tax id required, no format check) |
+| `invoice.country_rules_version` | a counter, bumped by the settings page by itself whenever the rules change; recorded on an invoice row whose country has a rule | none |
+| `privacy.consent_mode` | `strict` \| `notice` \| `off` (`App\Settings\OrderContextSettings`) | absent or unreadable = `strict` |
+| `privacy.user_agent_max_length` | 1-255 | 255 |
+| `privacy.ip_full_retention_days` | 0-3650; 0 = never keep the full client address | 30 |
 
-The settings page (Settings > Checkout, `SETTINGS_MANAGE`) forgets a key that holds its default, like the region keys. A page id that points at a draft or at a page that no longer exists is no link and no error (no checkbox, no notice) — it does NOT fall back to the address.
+The settings page (Settings > Checkout, `SETTINGS_MANAGE`) forgets a key that holds its default, like the region keys. The `invoice.*` and `privacy.*` keys above are in the same `CheckoutFormSettings::KEYS` list as the rest, so they cost no query of their own. A page id that points at a draft or at a page that no longer exists is no link and no error (no checkbox, no notice) — it does NOT fall back to the address.

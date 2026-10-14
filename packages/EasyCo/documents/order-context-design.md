@@ -388,6 +388,12 @@ capture", rendered as such and never backfilled (§11).
 lets a caller assert it (§9's field-ownership table); if a client sends one, it is
 ignored, not validated.
 
+> **Amendment (2026-10-18, architect decision for stage C2-A).** The definition of `unknown` above is **narrowed in time, not in meaning**: until
+> a consent-aware client-side capture exists, EVERY order placed through the storefront (and every sandbox or API order) is written with
+> `source_type = unknown` and `capture_status = skipped_no_data` — see the amendment at the top of §4. `direct` is what the resolver will say
+> once there is a visit to look at; until then nobody looked, and the honest answer is `unknown`. Nothing here changes the rule that an order with
+> **no** row at all is "placed before context capture".
+
 ### 2.2 `order_invoice_details` — the row's existence *is* the request
 
 ```php
@@ -557,6 +563,28 @@ inside the orchestrator's transaction, where no filter runs.
 job is to report raw facts.** The rules of §3.2 therefore live in one testable
 class, and the storefront — which does not exist yet — inherits a contract instead
 of a policy.
+
+> **Amendment (2026-10-18, architect decision — stage C2-A).** **The storefront is cookie-free and sessionless by design** (storefront-design.md
+> S2a/S4: no session, no cookie, `Cache-Control: private, no-store` on the checkout), so §4.2's session-based visit
+> capture **cannot run there**. Until a consent-aware client-side capture exists (a later stage, with the cookie banner) every order gets its
+> `order_attributions` row with:
+>
+> | Column | Value |
+> |---|---|
+> | `source_type` / `capture_status` | `unknown` / `skipped_no_data` |
+> | every touch and visit column (`last_*`, `first_*`, `referrer_*`, `click_id_*`, `ai_platform`, `landing_page_url`, `session_*`, `last_touch_at`) | NULL |
+> | `visitor_id` | NULL |
+> | `consent_mode` | `privacy.consent_mode` (default `strict`; an unreadable value is `strict`) |
+> | `analytics_consent` / `consent_source` | `unknown` / `not_asked` |
+> | `ip` | the request's client address (§7.4 rules: only the CLIENT's, and only when the deployment names its proxies) |
+> | `user_agent` | the header, truncated to `privacy.user_agent_max_length` (default 255) |
+> | `device_type` | derived from the user agent by the server |
+> | `account_id` | the account the customer was logged in as (the snapshot of §2.1; NULL for a guest) |
+> | `captured_at` | the placement instant |
+>
+> **Not built in C2-A, and not to be built "a little":** the capture middleware (§4.2), the visitor cookie (§6), the resolver and its touch rules
+> (§3, §5, §6). A sandbox or API order follows the same rule. The row is written inside the placement transaction before the cart claim (§9.6), so
+> the resolver, when it comes, only changes the VALUES of the same row.
 
 ### 4.1 The three inputs, and why each is trustworthy
 
@@ -1936,3 +1964,23 @@ and no new index is needed at a single merchant's scale).
 **Recommendation:** the default — the filter is one line, but it advertises a workflow
 this design deliberately does not own.
 **Answer lands in:** stage 6 if wanted; it changes nothing else.
+
+---
+
+## 16. Stage C2-A — as built (2026-10-18)
+
+**Built** (the owner's brief C2-A; stages 1, 2, 4, 5 of §13 and the invoice / IP parts of 6 and 7, under the amendment at the top of §4):
+
+- **Stage 1 — the vocabulary.** The six enums of §2.1.1 and `InvoiceRecipientType` (`company` | `individual`), each with a label group in `lang/{en,bg}/orders.php` (`attribution_source_options`, `attribution_capture_options`, `consent_mode_options`, `analytics_consent_options`, `consent_source_options`, `device_type_options`, `invoice_recipient_options`), pinned by `OrderContextEnumLabelsTest`.
+- **Stage 2 — the schema.** `2026_10_18_000001_create_order_attributions_table` and `2026_10_18_000002_create_order_invoice_details_table`, exactly §2.1 / §2.2 (the three `orders` columns of §2.3 had been built by C1d-B), plus CHECKs (CLAUDE.md rule 2): one per enum column (`attr_*_check`), `oid_recipient_type_check`, and `oid_individual_no_tax_id_check` (an individual never carries a tax id). Idempotent. Models `OrderAttributionModel` / `OrderInvoiceDetailsModel` in `App\Models`.
+- **§7.4 — the client address behind a proxy.** `config/trustedproxy.php` reads `TRUSTED_PROXIES` (comma-separated IPs and CIDR ranges) through `App\Http\TrustedProxyList`; Laravel's own global `TrustProxies` middleware believes forwarded headers only from those peers. Empty = none; `*`, `/0`, hostnames and typos are dropped; the believed headers are listed explicitly in `bootstrap/app.php`. The pair of tests of §7.4 exists (`OrderContextCheckoutTest`).
+- **Stage 4 — checkout writes.** `OrderContextWriter`, called by `CheckoutOrchestrator` inside the placement transaction right after the order row and its snapshot, **before the cart claim** (§9.6): the attribution row (always), the invoice row (only when asked), and the `placed` event. `CheckoutInput` carries `requestFacts` (client address, user agent, read by the controller from the request) and the validated `invoice`. The invoice block's rules are §9.5's, with `PlainText` on every text field; `InvoiceRequestChecker` judges it against the merchant's per-country rules (§9.3). Refusals `invoice_not_supported` and `invoice_details_invalid` (names the field, quotes the configured label, carries a Laravel-style `errors` map the storefront maps to the field) are in `lang/{en,bg}/checkout.php`.
+- **Invoice settings.** `invoice.enabled`, `invoice.country_rules`, `invoice.country_rules_version` (`InvoiceSettings`), edited in a new «Фактура» section of Settings > Checkout: a repeater of per-country rules (`tax_id_label`, `tax_id_required_for_company`, `tax_id_pattern`, `registration_number_label` — new in C2-A, e.g. «ДДС номер» —, `registration_number_required`, `representative_label`), no country pre-filled, every pattern validated as a regex, the hint «Потвърдете формата със счетоводител». The version is a counter the page bumps by itself **every time the stored rules change** (a save that changes nothing does not move it; emptying the list keeps the counter going). It is recorded on a row only when the invoice country has a rule.
+- **The storefront block.** After the note and before the payment: an UNticked «Искам фактура»; the whole block is `hidden`, with no `required`, no marker and nothing sent, until it is ticked (fake-DOM tested); a company / individual choice (company selected); the labels and requirements of the INVOICE country's rule; a «Като адреса за доставка» button for a street delivery. The rules reach the page as labels and requirements only — **never a pattern**; the server is the only judge of a format.
+- **Stage 5 — the timeline's first row.** `OrderEventType::PLACED` (first case), written by checkout in the same transaction with `occurred_at` = `placed_at`, both statuses NULL, no actor.
+- **Stage 6 (the part C2-A needs) — the admin.** The Origin section shows the source (label), the reason line («Произходът на посещението още не се записва» for `unknown` + `skipped_no_data`; «placed before context capture» for an order with no row), device, account, the consent snapshot as one sentence and the state of the client address; the Invoice section shows the row with the label the merchant configured for the country. **The full client address** is read only by `OrderContextReader::fullClientAddress()`, which checks `ORDER_MANAGE` itself and makes no query for anyone else; `forOrder()` selects every column but `ip`. It is printed once, in the order header (the owner's earlier decision that it appears there only); the Origin line says what state it is in. After anonymisation everyone with `ORDER_VIEW` sees the date and the anonymised network.
+- **Stage 7 (the IP half).** `privacy.ip_full_retention_days` (default 30; 0 = never keep the full address: it is stored already anonymised) in a «Поверителност» section of Settings > Checkout, and `privacy:anonymise-order-ips` (`IpUtils::anonymize`, `ip_anonymised_at`, `--dry-run`, counts logged and never values), scheduled daily in `routes/console.php`.
+
+**Not built (deferred, in this order of likelihood):** the consent-aware capture (§3, §4.2, §5, §6: middleware, visitor cookie, resolver, touch rules) with the cookie banner; the customer-history block (§6.1) and the Orders-list `source` column and filter (§11.2, stage 6's other half); the erasure command and `OrderContextAnonymiser` (§10, stage 7's other half); the sandbox checklist's three checks (§12.2); the documents of §14 not listed in the C2-A brief.
+
+**Reported, not decided:** an individual's registration number and representative are refused (`invoice_details_invalid`), like a tax id, rather than silently dropped; a hand-edited, unreadable `invoice.country_rules` fails loudly (CLAUDE.md rule 8) for an invoice request and for the checkout page, exactly as `checkout.region_countries` does.

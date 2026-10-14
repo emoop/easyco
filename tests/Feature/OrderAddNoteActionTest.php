@@ -187,7 +187,8 @@ class OrderAddNoteActionTest extends TestCase
 
         $this->assertSame('placed', DB::table('orders')->where('id', $order->id())->value('status'), 'a note moves no status (§8.1)');
 
-        $events = DB::table('order_events')->where('order_id', $order->id())->get();
+        // Since order-context stage C2-A every order carries its own `placed` event first; this test is about the one the ACTION writes.
+        $events = DB::table('order_events')->where('order_id', $order->id())->where('type', '!=', 'placed')->get();
         $this->assertCount(1, $events);
         $this->assertSame('note_added', $events[0]->type);
         $this->assertNull($events[0]->from_status);
@@ -246,7 +247,7 @@ class OrderAddNoteActionTest extends TestCase
         // refused the submission before fillForm()/callMountedAction() could
         // reach this Resource's own ->action() closure at all.
         $this->assertNotEmpty($component->instance()->mountedActions, 'still mounted — the required() validation error left it open, exactly like every other field-level rule on this page');
-        $this->assertSame(0, DB::table('order_events')->where('order_id', $order->id())->count());
+        $this->assertSame(0, DB::table('order_events')->where('order_id', $order->id())->where('type', '!=', 'placed')->count(), 'nothing but the order own placed row (C2-A)');
     }
 
     /**

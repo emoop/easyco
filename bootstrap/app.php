@@ -57,6 +57,15 @@ return Application::configure(basePath: dirname(__DIR__))
         // this same EncryptCookies class, so the exception applies to the API routes that set it.
         $middleware->encryptCookies(except: [PersistGuestCartToken::MARKER]);
 
+        // THE CLIENT IP BEHIND A REVERSE PROXY (order-context-design.md section 7.4). Laravel's global TrustProxies middleware believes the
+        // forwarded headers ONLY from the proxies named in `config('trustedproxy.proxies')` (env TRUSTED_PROXIES, config/trustedproxy.php):
+        // none by default (the direct peer is the client, a forged X-Forwarded-For is never recorded) and never a wildcard. The headers
+        // honoured from a trusted proxy are listed here, explicitly, instead of inheriting the framework's wider default.
+        $middleware->trustProxies(headers: Request::HEADER_X_FORWARDED_FOR
+            | Request::HEADER_X_FORWARDED_HOST
+            | Request::HEADER_X_FORWARDED_PORT
+            | Request::HEADER_X_FORWARDED_PROTO);
+
         // The merchant-surface permission-enforcement point —
         // staff-access-domain-design.md §1/§5. Used as
         // `staff.can:product_manage` alongside `auth:staff` on a route.

@@ -903,27 +903,67 @@ class OrderResource extends Resource
                                 ->getStateUsing(fn (OrderModel $record): string => static::contextText(static::context($record)->callBeforeShipping)),
                         ])
                         ->columns(1),
-                    // Later it appears only when an invoice was requested; for now there is nothing recorded, so it shows n/a.
+                    // THE INVOICE REQUEST (order-context-design.md 11.4, stage C2-A): a snapshot of what the customer typed, read-only. Every line says n/a
+                    // when nothing is recorded; the lines below the legal name appear only when a request exists. The tax id carries the label the
+                    // merchant configured for the row's country ("ЕИК / Булстат"), not the column name.
                     Section::make(__('orders.sections.invoice'))
                         ->compact()
                         ->schema([
+                            TextEntry::make('ctx_invoice_requested')
+                                ->label(__('orders.context.fields.invoice_requested'))
+                                ->inlineLabel()
+                                ->extraEntryWrapperAttributes(['style' => self::PAIR_STYLE])
+                                ->getStateUsing(fn (OrderModel $record): string => static::invoiceRequestedText($record)),
+                            TextEntry::make('ctx_invoice_recipient_type')
+                                ->label(__('orders.context.fields.recipient_type'))
+                                ->inlineLabel()
+                                ->extraEntryWrapperAttributes(['style' => self::PAIR_STYLE])
+                                ->visible(fn (OrderModel $record): bool => static::context($record)->invoiceRequested === true)
+                                ->getStateUsing(fn (OrderModel $record): string => static::contextText(static::context($record)->invoiceRecipientType)),
                             TextEntry::make('ctx_company_name')
                                 ->label(__('orders.context.fields.company_name'))
                                 ->inlineLabel()
                                 ->extraEntryWrapperAttributes(['style' => self::PAIR_STYLE])
                                 ->getStateUsing(fn (OrderModel $record): string => static::contextText(static::context($record)->invoiceCompanyName)),
                             TextEntry::make('ctx_vat_number')
-                                ->label(__('orders.context.fields.vat_number'))
+                                ->label(fn (OrderModel $record): string => static::context($record)->invoiceTaxIdLabel ?? __('orders.context.fields.vat_number'))
                                 ->inlineLabel()
                                 ->extraEntryWrapperAttributes(['style' => self::PAIR_STYLE])
                                 ->getStateUsing(fn (OrderModel $record): string => static::contextText(static::context($record)->invoiceVatNumber)),
+                            TextEntry::make('ctx_invoice_registration')
+                                ->label(fn (OrderModel $record): string => static::context($record)->invoiceRegistrationLabel ?? __('orders.context.fields.registration_number'))
+                                ->inlineLabel()
+                                ->extraEntryWrapperAttributes(['style' => self::PAIR_STYLE])
+                                ->visible(fn (OrderModel $record): bool => static::context($record)->invoiceRequested === true)
+                                ->getStateUsing(fn (OrderModel $record): string => static::contextText(static::context($record)->invoiceRegistrationNumber)),
+                            TextEntry::make('ctx_invoice_representative')
+                                ->label(fn (OrderModel $record): string => static::context($record)->invoiceRepresentativeLabel ?? __('orders.context.fields.representative'))
+                                ->inlineLabel()
+                                ->extraEntryWrapperAttributes(['style' => self::PAIR_STYLE])
+                                ->visible(fn (OrderModel $record): bool => static::context($record)->invoiceRequested === true)
+                                ->getStateUsing(fn (OrderModel $record): string => static::contextText(static::context($record)->invoiceRepresentative)),
                             TextEntry::make('ctx_billing_address')
                                 ->label(__('orders.context.fields.billing_address'))
                                 ->inlineLabel()
                                 ->extraEntryWrapperAttributes(['style' => self::PAIR_STYLE])
                                 ->getStateUsing(fn (OrderModel $record): string => static::contextText(static::context($record)->invoiceBillingAddress)),
+                            TextEntry::make('ctx_invoice_email')
+                                ->label(__('orders.context.fields.invoice_email'))
+                                ->inlineLabel()
+                                ->extraEntryWrapperAttributes(['style' => self::PAIR_STYLE])
+                                ->visible(fn (OrderModel $record): bool => static::context($record)->invoiceRequested === true)
+                                ->getStateUsing(fn (OrderModel $record): string => static::contextText(static::context($record)->invoiceEmail)),
+                            TextEntry::make('ctx_invoice_rule_version')
+                                ->label(__('orders.context.fields.rule_version'))
+                                ->inlineLabel()
+                                ->extraEntryWrapperAttributes(['style' => self::PAIR_STYLE])
+                                ->visible(fn (OrderModel $record): bool => static::context($record)->invoiceRequested === true)
+                                ->getStateUsing(fn (OrderModel $record): string => static::contextText(static::context($record)->invoiceRuleVersion)),
                         ])
                         ->columns(1),
+                    // THE ORIGIN (order-context-design.md 11.1, stage C2-A): read-only, and it explains its own gaps. Until the consent-aware
+                    // client-side capture exists every storefront order says so in the reason line. The full client address is NOT here: it is in the
+                    // header (ORDER_MANAGE only); this section says what STATE the address is in.
                     Section::make(__('orders.sections.origin'))
                         ->compact()
                         ->collapsible()
@@ -945,6 +985,11 @@ class OrderResource extends Resource
                                 ->inlineLabel()
                                 ->extraEntryWrapperAttributes(['style' => self::PAIR_STYLE])
                                 ->getStateUsing(fn (OrderModel $record): string => static::contextText(static::context($record)->originSourceType)),
+                            TextEntry::make('ctx_origin_reason')
+                                ->label(__('orders.context.fields.origin_reason'))
+                                ->inlineLabel()
+                                ->extraEntryWrapperAttributes(['style' => self::PAIR_STYLE])
+                                ->getStateUsing(fn (OrderModel $record): string => static::originReasonText($record)),
                             TextEntry::make('ctx_campaign')
                                 ->label(__('orders.context.fields.campaign'))
                                 ->inlineLabel()
@@ -960,6 +1005,26 @@ class OrderResource extends Resource
                                 ->inlineLabel()
                                 ->extraEntryWrapperAttributes(['style' => self::PAIR_STYLE])
                                 ->getStateUsing(fn (OrderModel $record): string => static::contextText(static::context($record)->originReferrer)),
+                            TextEntry::make('ctx_device_type')
+                                ->label(__('orders.context.fields.device_type'))
+                                ->inlineLabel()
+                                ->extraEntryWrapperAttributes(['style' => self::PAIR_STYLE])
+                                ->getStateUsing(fn (OrderModel $record): string => static::contextText(static::context($record)->originDeviceType)),
+                            TextEntry::make('ctx_account_id')
+                                ->label(__('orders.context.fields.account_id'))
+                                ->inlineLabel()
+                                ->extraEntryWrapperAttributes(['style' => self::PAIR_STYLE])
+                                ->getStateUsing(fn (OrderModel $record): string => static::contextText(static::context($record)->accountId)),
+                            TextEntry::make('ctx_consent')
+                                ->label(__('orders.context.fields.consent'))
+                                ->inlineLabel()
+                                ->extraEntryWrapperAttributes(['style' => self::PAIR_STYLE])
+                                ->getStateUsing(fn (OrderModel $record): string => static::contextText(static::context($record)->originConsent)),
+                            TextEntry::make('ctx_client_address')
+                                ->label(__('orders.context.fields.client_address'))
+                                ->inlineLabel()
+                                ->extraEntryWrapperAttributes(['style' => self::PAIR_STYLE])
+                                ->getStateUsing(fn (OrderModel $record): string => static::clientAddressStateText($record)),
                         ])
                         ->columns(1),
                     ])->columnSpan(['lg' => 1]),
@@ -1115,6 +1180,79 @@ class OrderResource extends Resource
         };
     }
 
+    /**
+     * The client address for the header's muted line (the ONLY place the full value is printed), or null to leave it out. A MANAGER
+     * (ORDER_MANAGE) reads the full address through the reader's gated method ("IP n/a" when none was recorded); once it was
+     * anonymised EVERYONE sees the anonymised network, which is not personal data; anyone else sees nothing here and the reader makes
+     * NO query for them (order-context-design.md 7.1).
+     */
+    private static function clientAddressShort(OrderModel $record): ?string
+    {
+        $view = static::context($record);
+
+        if ($view->ipAnonymisedAt !== null) {
+            return __('orders.context.fields.ip_short').' '.$view->ipNetwork.' ('.__('orders.context.ip_anonymised_short').')';
+        }
+
+        $reader = app(OrderContextReader::class);
+
+        if (! $reader->mayReadFullClientAddress()) {
+            return null;
+        }
+
+        return __('orders.context.fields.ip_short').' '.static::contextText($reader->fullClientAddress((string) $record->id));
+    }
+
+    /**
+     * The Origin section's client-address line: what STATE the address is in, never the value (the value is the header's, for managers
+     * only). Anonymised: the date and the network, for everyone. Otherwise: kept for the retention window (a manager reads it in the
+     * header), restricted for anyone without ORDER_MANAGE, or n/a when the order has no origin record at all.
+     */
+    private static function clientAddressStateText(OrderModel $record): string
+    {
+        $view = static::context($record);
+
+        if ($view->ipAnonymisedAt !== null) {
+            return __('orders.context.ip_anonymised', [
+                'date' => Carbon::instance($view->ipAnonymisedAt)->timezone(FilamentTimezone::get())->format('M j, Y'),
+                'network' => (string) $view->ipNetwork,
+            ]);
+        }
+
+        if ($view->attributionRecorded !== true) {
+            return static::contextText(null);
+        }
+
+        return app(OrderContextReader::class)->mayReadFullClientAddress() ? __('orders.context.ip_kept') : __('orders.context.ip_restricted');
+    }
+
+    /** The reason line (11.1): why the origin fields are what they are; for an order with no origin record at all, that it predates the capture. */
+    private static function originReasonText(OrderModel $record): string
+    {
+        $view = static::context($record);
+
+        if ($view->originReason !== null) {
+            return $view->originReason;
+        }
+
+        return $view->attributionRecorded === true || $view->originSourceType !== null ? '—' : __('orders.context.reason_predates');
+    }
+
+    /** "Yes · <date>" when an invoice was requested, "Not requested" when the order has an origin record but no request, n/a when nothing is known. */
+    private static function invoiceRequestedText(OrderModel $record): string
+    {
+        $view = static::context($record);
+
+        if ($view->invoiceRequested === true) {
+            $at = $view->invoiceRequestedAt === null ? null : Carbon::instance($view->invoiceRequestedAt)->timezone(FilamentTimezone::get())->format('M j, Y H:i');
+
+            return implode(' · ', array_filter([__('orders.yes'), $at]));
+        }
+
+        // An order placed since the context is recorded and without a request really did not ask; an older one is simply not recorded.
+        return $view->attributionRecorded === true ? __('orders.context.invoice_not_requested') : static::contextText(null);
+    }
+
     /** payment method · channel · placement date · customer IP — the muted line under the order number. */
     private static function headerSubtitle(OrderModel $record): string
     {
@@ -1125,7 +1263,7 @@ class OrderResource extends Resource
             $view->latestPayment !== null ? static::optionLabel('payment_method', $view->latestPayment->method()) : null,
             static::optionLabel('channel', $view->channel),
             $placed->timezone(FilamentTimezone::get())->format('M j, Y H:i'),
-            __('orders.context.fields.ip_short').' '.static::contextText(static::context($record)->customerIp),
+            static::clientAddressShort($record),
         ]));
     }
 

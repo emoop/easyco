@@ -102,6 +102,7 @@ final class CheckoutOrchestrator
         private readonly PickupKindSource $pickupKinds,
         private readonly CheckoutRegionPolicy $regionPolicy,
         private readonly PaymentMethodRegistry $paymentMethods,
+        private readonly OrderContextWriter $contextWriter,
     ) {
     }
 
@@ -604,6 +605,11 @@ final class CheckoutOrchestrator
         // this same placement transaction, so a rollback anywhere else in
         // Phase 1 takes this row with it, exactly like the Order itself.
         $this->snapshotWriter->write($order, $placedAt);
+
+        // The order's CONTEXT (order-context-design.md 9.6, stage C2-A): the attribution row (always), the invoice row (only when asked) and
+        // the `placed` event, INSIDE this transaction and BEFORE the cart claim below. A double submit that loses the claim rolls all of it
+        // back and returns the order that already exists, so the replay never inserts a second row and never meets a unique key.
+        $this->contextWriter->write($order->id(), $input, $placedAt);
 
         // Write the Payment row NOW, as PENDING with no attempt outcome
         // yet — see class docblock for why this moved into Phase 1. A

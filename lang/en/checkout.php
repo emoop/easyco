@@ -35,4 +35,17 @@ return [
     'terms_version_changed' => 'The terms and conditions changed while you were filling in the order. Please read them again and confirm.',
     'payment_method_unavailable' => 'That payment method is not available for this order. Choose another one.',
     'marketing_consent_text' => "Subscribe me to the shop's newsletter with news and offers.",
+
+    // The invoice request (order-context-design.md 9.3, 9.7, stage C2-A). `reason` is the contract; these are the words for a person.
+    'invoice_not_supported' => 'This shop does not issue invoices through the checkout.',
+    'invoice_details_invalid' => 'The invoice details are not valid. Check them and try again.',
+    // :label is the name the merchant configured for the field in that country (or the generic one): the sentence quotes it.
+    'invoice_field_required' => '“:label” is required for the invoice.',
+    'invoice_field_format' => '“:label” is not in the expected format.',
+    'invoice_individual_field' => 'A private person does not give “:label” on an invoice.',
+    'invoice_labels' => [
+        'tax_id' => 'Company ID / tax number',
+        'registration_number' => 'Registration / VAT number',
+        'representative' => 'Representative',
+    ],
 ];
