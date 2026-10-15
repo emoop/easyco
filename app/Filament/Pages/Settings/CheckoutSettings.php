@@ -105,6 +105,7 @@ class CheckoutSettings extends Page
             'exceptions' => $exceptions,
             'call_before_shipping_enabled' => $form->callBeforeShippingEnabled(),
             'newsletter_enabled' => $form->newsletterEnabled(),
+            'phone_mobile_only' => $form->phoneMobileOnly(),
             'terms_enabled' => $form->termsEnabled(),
             'terms_url' => $form->termsUrl() ?? '',
             'terms_version' => $form->termsVersion() ?? '',
@@ -184,6 +185,10 @@ class CheckoutSettings extends Page
                     ->description(__('settings.checkout_page.fields_help'))
                     ->schema([
                         HelpLink::component('checkout-fields', 'checkout'),
+                        // PH-2: the storefront refuses a landline; the admin's order editor never does.
+                        Toggle::make('phone_mobile_only')
+                            ->label(__('settings.checkout_page.phone_mobile_only_label'))
+                            ->helperText(__('settings.checkout_page.phone_mobile_only_help')),
                         Toggle::make('call_before_shipping_enabled')
                             ->label(__('settings.checkout_page.call_before_label'))
                             ->helperText(__('settings.checkout_page.call_before_help')),
@@ -493,7 +498,7 @@ class CheckoutSettings extends Page
         $form = app(CheckoutFormSettings::class);
 
         // The optional boxes: '1' = shown, absent = off. The terms: '0' = off, absent = ON (the EU default). A link is stored trimmed, or forgotten.
-        foreach ([CheckoutFormSettings::CALL_BEFORE_SHIPPING_KEY => 'call_before_shipping_enabled', CheckoutFormSettings::NEWSLETTER_KEY => 'newsletter_enabled'] as $key => $field) {
+        foreach ([CheckoutFormSettings::CALL_BEFORE_SHIPPING_KEY => 'call_before_shipping_enabled', CheckoutFormSettings::NEWSLETTER_KEY => 'newsletter_enabled', CheckoutFormSettings::PHONE_MOBILE_ONLY_KEY => 'phone_mobile_only'] as $key => $field) {
             ! empty($data[$field]) ? $settings->set($key, '1') : $settings->forget($key);
         }
 

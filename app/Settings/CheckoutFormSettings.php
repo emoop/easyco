@@ -31,6 +31,9 @@ final class CheckoutFormSettings
 
     public const PRIVACY_URL_KEY = 'checkout.privacy_url';
 
+    /** PH-2: '1' = the storefront refuses a landline (a mobile number only); absent = any valid number (the default). Never applies to staff. */
+    public const PHONE_MOBILE_ONLY_KEY = 'checkout.phone_mobile_only';
+
     /** A content page chosen for the terms / the privacy policy (pages-design.md section 5): it WINS over the URL above. */
     public const TERMS_PAGE_ID_KEY = 'checkout.terms_page_id';
 
@@ -40,6 +43,7 @@ final class CheckoutFormSettings
     public const KEYS = [
         self::CALL_BEFORE_SHIPPING_KEY,
         self::NEWSLETTER_KEY,
+        self::PHONE_MOBILE_ONLY_KEY,
         self::TERMS_ENABLED_KEY,
         self::TERMS_URL_KEY,
         self::TERMS_VERSION_KEY,
@@ -117,6 +121,11 @@ final class CheckoutFormSettings
     public function newsletterEnabled(): bool
     {
         return $this->raw()[self::NEWSLETTER_KEY] === '1';
+    }
+
+    public function phoneMobileOnly(): bool
+    {
+        return $this->raw()[self::PHONE_MOBILE_ONLY_KEY] === '1';
     }
 
     /** The merchant's switch: ON unless '0' is stored. */

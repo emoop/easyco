@@ -94,6 +94,8 @@ return [
         'warning_terms_page_unpublished' => 'The chosen terms page is not published (or none is chosen): the checkbox is NOT shown and nothing is required until you choose a published page.',
         'fields_section' => 'Fields at checkout',
         'fields_help' => 'Optional boxes and the consent the customer sees on the checkout page. No box is ever ticked in advance.',
+        'phone_mobile_only_label' => 'Mobile phone numbers only',
+        'phone_mobile_only_help' => 'Landline numbers are refused at checkout. Staff can enter any number in the admin.',
         'call_before_label' => 'Show "Call me before shipping"',
         'call_before_help' => 'An optional box under the phone field. The answer is stored on the order and a phone icon marks the order in the list.',
         'newsletter_label' => 'Show "Subscribe me to the newsletter"',

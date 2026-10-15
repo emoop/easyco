@@ -24,6 +24,7 @@ final class ValidPhone implements DataAwareRule, ValidationRule
         private readonly string $countryField = 'country',
         private readonly ?string $addressField = null,
         private readonly ?string $fixedCountry = null,
+        private readonly bool $mobileOnly = false,
     ) {
     }
 
@@ -50,8 +51,17 @@ final class ValidPhone implements DataAwareRule, ValidationRule
             return;
         }
 
-        if (PhoneNumbers::parse($value, $country) === null) {
+        $parsed = PhoneNumbers::parse($value, $country);
+
+        if ($parsed === null) {
             $fail('checkout.phone_invalid')->translate();
+
+            return;
+        }
+
+        // PH-2 (the merchant's option, storefront only): the courier's message goes to a mobile. FIXED_LINE_OR_MOBILE (a US number) passes.
+        if ($this->mobileOnly && ! in_array($parsed->type, ['MOBILE', 'FIXED_LINE_OR_MOBILE'], true)) {
+            $fail('checkout.phone_mobile_required')->translate();
         }
     }
 

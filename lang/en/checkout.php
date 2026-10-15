@@ -13,6 +13,7 @@
  */
 return [
     'phone_invalid' => 'The phone number is not valid. Check that no digit is missing.',
+    'phone_mobile_required' => 'Please enter a mobile number: the courier sends the delivery message to it.',
     'empty_cart' => 'Your cart is empty.',
     'cart_not_found' => 'We could not find that cart.',
     'address_not_found' => 'We could not find that address.',

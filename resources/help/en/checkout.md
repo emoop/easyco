@@ -20,6 +20,7 @@ Here you switch the extra choices at checkout on or off. None of them is pre-tic
 
 - **"Call me before shipping"**: when on, the customer can ask for a call before the parcel leaves. The choice shows on the order. When off, the question is not asked at all.
 - **"Subscribe me to the newsletter"**: when on, the customer can agree to receive a newsletter. **Proof of consent** is stored: the exact sentence the customer saw and when it was ticked. If the customer was never asked, the order says "not asked", not "no". The two cases are different on purpose.
+- **"Mobile phone numbers only"**: when on, the shop refuses a landline at checkout and the customer is asked for a mobile number (the courier sends the delivery message to a mobile). Staff can enter any valid number in the admin. Off by default.
 - **Terms and conditions**: see the next section.
 
 ## Terms and privacy {#action-checkout-terms}

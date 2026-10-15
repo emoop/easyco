@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Services\PickupKindSource;
+use App\Settings\CheckoutFormSettings;
 use App\Settings\CheckoutRegionPolicy;
 use App\Settings\RegionMode;
 use Illuminate\Validation\ValidationException;
@@ -44,6 +45,7 @@ class AddressController extends Controller
         private readonly AddressRepository $addresses,
         private readonly PickupKindSource $pickupKinds,
         private readonly CheckoutRegionPolicy $regionPolicy,
+        private readonly CheckoutFormSettings $formSettings,
     ) {
     }
 
@@ -164,7 +166,7 @@ class AddressController extends Controller
             'delivery_type' => 'required|in:street_address,pickup_point',
             'recipient_first_name' => ['required', 'string', 'max:100', new PlainText()],
             'recipient_last_name' => ['required', 'string', 'max:100', new PlainText()],
-            'phone' => ['required', 'string', 'max:32', new PlainText(), new ValidPhone('country')],
+            'phone' => ['required', 'string', 'max:32', new PlainText(), new ValidPhone('country', mobileOnly: $this->formSettings->phoneMobileOnly())],
             // Required for BOTH delivery types (owner decision D1): a pickup point is in a country too.
             'country' => ['required', 'string', new KnownCountryCode('delivery.country.invalid')],
             'city' => ['required_if:delivery_type,street_address', 'prohibited_if:delivery_type,pickup_point', 'string', 'max:255', new PlainText()],

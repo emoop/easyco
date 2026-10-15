@@ -494,7 +494,7 @@ class CheckoutController extends Controller
             'recipient_last_name' => ['required', 'string', 'max:100', new PlainText()],
             // Judged by the rules of the DELIVERY country (ValidPhone, stage PH-1; with `address_id` the saved address's country) and stored as
             // E.164; max:32 only guards the raw input.
-            'phone' => ['required', 'string', 'max:32', new PlainText(), new ValidPhone('country', 'address_id')],
+            'phone' => ['required', 'string', 'max:32', new PlainText(), new ValidPhone('country', 'address_id', mobileOnly: $this->formSettings->phoneMobileOnly())],
             // Stored in payments.method (varchar(255)) by the orchestrator, and
             // resolved against a payment adapter above: max:255 keeps an
             // overlong value a 422 field error rather than a 500 from MySQL.
