@@ -2,6 +2,7 @@
 
 namespace Tests\Unit;
 
+use App\Services\PhoneNumbers;
 use EasyCo\Order\IdentityKeys;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -17,7 +18,7 @@ class IdentityKeysTest extends TestCase
     {
         return [
             'national, with spaces' => ['0888 123 456', '888123456'],
-            'international +' => ['+359888123456', '888123456'],
+            'international + (PH-1: E.164 is its own key, exact)' => ['+359888123456', '+359888123456'],
             'international 00' => ['00359888123456', '888123456'],
             'with dashes and brackets' => ['(0888) 123-456', '888123456'],
             'international with spaces' => ['+359 888 123456', '888123456'],
@@ -39,9 +40,10 @@ class IdentityKeysTest extends TestCase
 
     public function test_the_three_ways_to_write_the_same_number_are_one_key(): void
     {
-        $this->assertSame(IdentityKeys::phone('0888 123 456'), IdentityKeys::phone('+359888123456'));
-        $this->assertSame(IdentityKeys::phone('0888 123 456'), IdentityKeys::phone('00359888123456'));
-        $this->assertNotSame(IdentityKeys::phone('0888 123 456'), IdentityKeys::phone('0888 123 457'));
+        // PH-1: the pure normaliser keeps an E.164 string as it is; turning the typed forms INTO E.164 is the app layer's PhoneNumbers.
+        $this->assertSame(PhoneNumbers::identityKey('0888 123 456', 'BG'), PhoneNumbers::identityKey('+359888123456', 'BG'));
+        $this->assertSame(PhoneNumbers::identityKey('0888 123 456', 'BG'), PhoneNumbers::identityKey('00359888123456', 'BG'));
+        $this->assertNotSame(PhoneNumbers::identityKey('0888 123 456', 'BG'), PhoneNumbers::identityKey('0888 123 457', 'BG'));
     }
 
     /** @return array<string, array{0: ?string, 1: ?string}> */

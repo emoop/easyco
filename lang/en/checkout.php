@@ -12,6 +12,7 @@
  * words for a person.
  */
 return [
+    'phone_invalid' => 'The phone number is not valid. Check that no digit is missing.',
     'empty_cart' => 'Your cart is empty.',
     'cart_not_found' => 'We could not find that cart.',
     'address_not_found' => 'We could not find that address.',

@@ -391,3 +391,15 @@ confirmed consumer, and the first from outside Media:
 ## Addendum — the order's context and the invoice request (stage C2-A, 2026-10-18)
 
 `POST /api/checkout` gains an optional `invoice` block (`recipient_type`, `legal_name`, `tax_id`, `company_registration_number`, `representative`, `country`, `city`, `postal_code`, `address_line_1`, `address_line_2`, `email`), judged against the merchant's per-country rules (`invoice.*` settings, `order-context-design.md` §9.3, §9.5) and two refusals with machine reasons: `invoice_not_supported` (the shop offers none: `invoice.enabled` is `'0'`) and `invoice_details_invalid` (a rule failed, or a tax id arrived for an individual; the answer names the field and quotes the label the merchant configured, and carries an `errors` map keyed `invoice.<field>`). Request facts the body never owns (`source_type`, `visitor_id`, `ip`, the consent snapshot, every timestamp) are ignored if sent. The client address is the CLIENT's only when production names its proxies (`TRUSTED_PROXIES`, `production-requirements.md`). Phase 1's query count grows by the inserts this adds (see `storefront-design.md` §2.11).
+
+---
+
+## Addendum — the phone rule (stage PH-1, 2026-10-20)
+
+The interim `max:32` on `phone` is replaced by `App\Rules\ValidPhone` (with `max:32` kept as a guard on the RAW input and `PlainText`). The number is parsed
+against the DELIVERY country of the request (with `address_id`, the saved address's country), a number written with `+` or `00` may belong to any country,
+and it must be VALID (`isValidNumber`, never `isPossibleNumber`) — letters, extensions and numbers with a digit missing or extra are refused with a 422 on
+`phone` («Телефонният номер не е валиден. Проверете дали не липсва цифра.»). Landlines are accepted. The number is stored as **E.164** on `orders.phone`,
+`addresses.phone` and the placement snapshot, by every writer (checkout, the address API, the order editor); `App\Services\PhoneNumbers` is the one place a
+number is read, and it also formats for display (national for the order's own country, `0888 123 456` for a Bulgarian mobile; international otherwise).
+The admin order view marks a fixed line with a small badge. The migration `normalise_phones_to_e164` converts old rows that parse with their own country.

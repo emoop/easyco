@@ -35,6 +35,9 @@ class CodProtectionCheckoutTest extends TestCase
     {
         parent::setUp();
 
+        // PH-1: a phone typed by hand is read with the STORE's country (a configured shop always has one).
+        app(\App\Settings\Contracts\SiteSettingsRepository::class)->set(\App\Settings\StoreCountry::KEY, 'BG');
+
         SupportAutoInjectedAssets::$hasRenderedAComponentThisRequest = false;
         $this->setUpRegionOrders();
     }

@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Rules\KnownCountryCode;
 use App\Rules\PlainMultilineText;
 use App\Rules\PlainText;
+use App\Rules\ValidPhone;
+use App\Services\PhoneNumbers;
 use App\Services\CheckoutInput;
 use App\Services\CheckoutOrchestrator;
 use App\Services\CheckoutResult;
@@ -124,6 +126,10 @@ class CheckoutController extends Controller
         $validated = $request->validate($this->validationRules() + $this->choiceRules($terms) + $this->invoiceRules(), [
             'country.required_without' => __('delivery.country.required'),
         ]);
+
+        // Stored as E.164 (stage PH-1): ValidPhone has just judged the number against the delivery country (the saved address's own with `address_id`,
+        // whose phone is the one the order takes).
+        $validated['phone'] = PhoneNumbers::e164($validated['phone'], $validated['country'] ?? null) ?? $validated['phone'];
 
         // THE TERMS (checkout form v2, section 6.3; order-context-design.md 9.1 and 9.7). Asked only when the merchant has them ON and a URL
         // to read them at; then an acceptance and the version the page displayed are REQUIRED, with their own machine reasons (a translated
@@ -486,10 +492,9 @@ class CheckoutController extends Controller
             // the two `required` errors: the old field is not in the rules.
             'recipient_first_name' => ['required', 'string', 'max:100', new PlainText()],
             'recipient_last_name' => ['required', 'string', 'max:100', new PlainText()],
-            // INTERIM LIMIT: 32 characters is a stop-gap, NOT a design — the
-            // column is varchar(255). The forthcoming phone-validation design
-            // replaces both this bound and the plain `string` shape.
-            'phone' => ['required', 'string', 'max:32', new PlainText()],
+            // Judged by the rules of the DELIVERY country (ValidPhone, stage PH-1; with `address_id` the saved address's country) and stored as
+            // E.164; max:32 only guards the raw input.
+            'phone' => ['required', 'string', 'max:32', new PlainText(), new ValidPhone('country', 'address_id')],
             // Stored in payments.method (varchar(255)) by the orchestrator, and
             // resolved against a payment adapter above: max:255 keeps an
             // overlong value a 422 field error rather than a 500 from MySQL.

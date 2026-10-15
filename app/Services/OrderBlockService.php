@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Enums\OrderBlockType;
 use App\Models\OrderBlockModel;
+use App\Settings\StoreCountry;
 use Carbon\CarbonInterface;
 use EasyCo\Order\IdentityKeys;
 use Illuminate\Database\Eloquent\Collection;
@@ -47,7 +48,8 @@ final class OrderBlockService
     public static function keyFor(OrderBlockType $type, ?string $value): ?string
     {
         return match ($type) {
-            OrderBlockType::PHONE => IdentityKeys::phone($value),
+            // A phone typed by hand is read with the STORE's country (an order's own phone is already E.164): stage PH-1.
+            OrderBlockType::PHONE => $value === null ? null : PhoneNumbers::identityKey($value, app(StoreCountry::class)->currentOrNull()),
             OrderBlockType::EMAIL => IdentityKeys::email($value),
             OrderBlockType::IP => IdentityKeys::ip($value),
         };

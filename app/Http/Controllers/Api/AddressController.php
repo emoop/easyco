@@ -9,6 +9,8 @@ use App\Settings\RegionMode;
 use Illuminate\Validation\ValidationException;
 use App\Rules\KnownCountryCode;
 use App\Rules\PlainText;
+use App\Rules\ValidPhone;
+use App\Services\PhoneNumbers;
 use EasyCo\Address\Address;
 use EasyCo\Address\Contracts\AddressRepository;
 use EasyCo\Address\Enums\AddressDeliveryType;
@@ -135,9 +137,14 @@ class AddressController extends Controller
             $request->merge(['country' => KnownCountryCode::normalize($request->input('country'))]);
         }
 
-        return $request->validate($this->validationRules(), [
+        $validated = $request->validate($this->validationRules(), [
             'country.required' => __('delivery.country.required'),
         ]);
+
+        // Stored as E.164 (stage PH-1): the rule has just judged the number against this address's country.
+        $validated['phone'] = PhoneNumbers::e164($validated['phone'], $validated['country'] ?? null) ?? $validated['phone'];
+
+        return $validated;
     }
 
     /**
@@ -147,9 +154,7 @@ class AddressController extends Controller
      * character (special characters such as `<` and `&` are allowed and are
      * escaped where they are displayed, never stripped here).
      *
-     * INTERIM LIMIT: the phone's max:32 is a stop-gap, NOT a design — its
-     * column is varchar(255). The forthcoming phone-validation design replaces
-     * both that bound and the plain `string` shape.
+     * The phone is judged by the rules of the address's country (ValidPhone, stage PH-1) and stored as E.164; max:32 only guards the raw input.
      *
      * @return array<string, mixed>
      */
@@ -159,7 +164,7 @@ class AddressController extends Controller
             'delivery_type' => 'required|in:street_address,pickup_point',
             'recipient_first_name' => ['required', 'string', 'max:100', new PlainText()],
             'recipient_last_name' => ['required', 'string', 'max:100', new PlainText()],
-            'phone' => ['required', 'string', 'max:32', new PlainText()],
+            'phone' => ['required', 'string', 'max:32', new PlainText(), new ValidPhone('country')],
             // Required for BOTH delivery types (owner decision D1): a pickup point is in a country too.
             'country' => ['required', 'string', new KnownCountryCode('delivery.country.invalid')],
             'city' => ['required_if:delivery_type,street_address', 'prohibited_if:delivery_type,pickup_point', 'string', 'max:255', new PlainText()],

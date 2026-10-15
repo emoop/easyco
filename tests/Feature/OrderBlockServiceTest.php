@@ -35,6 +35,9 @@ class OrderBlockServiceTest extends TestCase
     {
         parent::setUp();
 
+        // PH-1: a phone typed by hand is read with the STORE's country (a configured shop always has one).
+        app(\App\Settings\Contracts\SiteSettingsRepository::class)->set(\App\Settings\StoreCountry::KEY, 'BG');
+
         $this->now = Carbon::parse('2026-10-19 12:00:00');
         Carbon::setTestNow($this->now);
         $this->captureDatabaseFingerprint();
@@ -60,7 +63,7 @@ class OrderBlockServiceTest extends TestCase
         $block = $this->service()->block(OrderBlockType::PHONE, '0888 123 456', 180, 'never collected', '77');
 
         $this->assertSame('phone', $block->type);
-        $this->assertSame('888123456', $block->value_key);
+        $this->assertSame('+359888123456', $block->value_key); // PH-1: the exact E.164 form (was the last nine digits)
         $this->assertSame('0888 123 456', $block->value_display);
         $this->assertSame('never collected', $block->reason);
         $this->assertSame(77, (int) $block->source_order_id);
@@ -183,11 +186,11 @@ class OrderBlockServiceTest extends TestCase
         $active = $this->service()->activeFor(null, null, null);
         $this->assertCount(0, $active, 'no key to ask about: no result and no query');
 
-        $found = $this->service()->activeFor(null, '888111111', null)->count()
-            + $this->service()->activeFor(null, '888222222', null)->count();
+        $found = $this->service()->activeFor(null, '+359888111111', null)->count()
+            + $this->service()->activeFor(null, '+359888222222', null)->count();
         $this->assertSame(0, $found, 'expired and revoked refuse nothing');
-        $this->assertSame(1, $this->service()->activeFor(null, '888333333', null)->count(), 'permanent');
-        $this->assertSame(1, $this->service()->activeFor(null, '888444444', null)->count());
+        $this->assertSame(1, $this->service()->activeFor(null, '+359888333333', null)->count(), 'permanent');
+        $this->assertSame(1, $this->service()->activeFor(null, '+359888444444', null)->count());
         $this->assertFalse($expired->fresh()->isActive(Carbon::now()));
         $this->assertTrue($live->fresh()->isActive(Carbon::now()));
     }
@@ -202,8 +205,8 @@ class OrderBlockServiceTest extends TestCase
             $queries[] = $query->sql;
         });
 
-        $this->assertSame(['phone'], $this->service()->activeFor('198.51.100.1', '888123456', 'other@x.bg')->pluck('type')->all());
-        $this->assertEqualsCanonicalizing(['ip', 'phone', 'email'], $this->service()->activeFor('203.0.113.5', '888123456', 'a@b.bg')->pluck('type')->all());
+        $this->assertSame(['phone'], $this->service()->activeFor('198.51.100.1', '+359888123456', 'other@x.bg')->pluck('type')->all());
+        $this->assertEqualsCanonicalizing(['ip', 'phone', 'email'], $this->service()->activeFor('203.0.113.5', '+359888123456', 'a@b.bg')->pluck('type')->all());
         $this->assertCount(2, $queries, 'one query per call');
 
         $queries = [];

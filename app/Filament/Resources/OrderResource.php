@@ -8,6 +8,7 @@ use App\Filament\Resources\OrderResource\Pages\ListOrders;
 use App\Filament\Resources\OrderResource\Pages\ViewOrder;
 use App\Rules\KnownCountryCode;
 use App\Rules\PlainText;
+use App\Rules\ValidPhone;
 use App\Filament\Resources\OrderResource\PaymentReceiptDialog;
 use App\Filament\Resources\OrderResource\RefundDialog;
 use App\Enums\OrderBlockType;
@@ -49,6 +50,7 @@ use App\Services\OrderPaymentConfirmer;
 use App\Services\OrderRefundsReader;
 use App\Services\OrderStatusChanger;
 use App\Services\PanelStaffActor;
+use App\Services\PhoneNumbers;
 use App\Services\PriceDisplayFormatter;
 use App\Services\ProductPriceDisplay;
 use App\Services\RefundFormContext;
@@ -807,11 +809,16 @@ class OrderResource extends Resource
                                 ->hint(fn (OrderModel $record): ?string => static::blockHint($record, OrderBlockType::EMAIL))
                                 ->hintColor('danger')
                                 ->suffixActions([OrderBlockActions::block(OrderBlockType::EMAIL), OrderBlockActions::unblock(OrderBlockType::EMAIL)]),
+                            // The number as the store writes it (0888 123 456); copying gives the stored E.164 (what a courier or a dialler wants). A fixed line gets
+                            // a small «стационарен» badge: the courier's SMS will not reach it (stage PH-1).
                             TextEntry::make('phone')
                                 ->label(__('orders.fields.phone'))
                                 ->inlineLabel()
                                 ->extraEntryWrapperAttributes(['style' => self::PAIR_STYLE])
+                                ->html()
+                                ->formatStateUsing(fn (?string $state, OrderModel $record): HtmlString => static::phoneState($state, $record->country))
                                 ->copyable()
+                                ->copyableState(fn (OrderModel $record): string => (string) $record->phone)
                                 ->hint(fn (OrderModel $record): ?string => static::blockHint($record, OrderBlockType::PHONE))
                                 ->hintColor('danger')
                                 ->suffixActions([OrderBlockActions::block(OrderBlockType::PHONE), OrderBlockActions::unblock(OrderBlockType::PHONE)]),
@@ -1153,6 +1160,23 @@ class OrderResource extends Resource
     private static function divider(): Html
     {
         return Html::make('<hr style="border: 0; border-top: 1px solid rgba(128, 128, 128, 0.3); margin: 0.25rem 0">');
+    }
+
+    /**
+     * The phone for the order view: escaped, with the «стационарен» badge for a fixed line. The national form is used for a number of the order's OWN
+     * delivery country (the store's country is not read here: the page's query count is pinned and a settings read would move it), the international
+     * form otherwise.
+     */
+    public static function phoneState(?string $stored, ?string $homeCountry): HtmlString
+    {
+        $stored = (string) $stored;
+        $text = e(PhoneNumbers::formatForDisplay($stored, $homeCountry));
+
+        if (PhoneNumbers::parse($stored, null)?->isFixedLine === true) {
+            $text .= ' <span style="display: inline-block; padding: 0 0.4rem; border-radius: 0.375rem; font-size: 0.7rem; background: rgba(120, 120, 120, 0.18);" data-phone-fixed-line>'.e(__('orders.fields.phone_fixed_line')).'</span>';
+        }
+
+        return new HtmlString($text);
     }
 
     /** The red hint under a blocked phone or email ("Blocked until ..."), nothing when it is not blocked. */
@@ -2317,7 +2341,9 @@ class OrderResource extends Resource
                         ->live(),
                     TextInput::make('delivery.recipient_first_name')->label(__('orders.fields.recipient_first_name'))->default($record->recipient_first_name)->required()->maxLength(100)->rule(new PlainText()),
                     TextInput::make('delivery.recipient_last_name')->label(__('orders.fields.recipient_last_name'))->default($record->recipient_last_name)->required()->maxLength(100)->rule(new PlainText()),
-                    TextInput::make('delivery.phone')->label(__('orders.fields.phone'))->default($record->phone)->required(),
+                    // Shown the way the store writes it (0888 123 456); the same rule as checkout judges it against the country of the form, and it is stored as E.164 (stage PH-1).
+                    TextInput::make('delivery.phone')->label(__('orders.fields.phone'))->default(PhoneNumbers::formatForDisplay($record->phone, $record->country))->required()->maxLength(PhoneNumbers::MAX_RAW_LENGTH)->rule(new PlainText())
+                        ->rule(static fn (Get $get): ValidPhone => ValidPhone::forCountry($get('delivery.country'))),
                     // The country belongs to BOTH delivery types (owner decision D1), so it
                     // is always shown, and picked from the same list the domain's HTTP layer
                     // validates against. It is required, EXCEPT on a historical pickup-point

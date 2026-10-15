@@ -30,6 +30,7 @@ return [
         'tracking_number' => 'Номер за проследяване',
         'status' => 'Статус',
         'phone' => 'Телефон',
+        'phone_fixed_line' => 'стационарен',
         'account_id' => 'Профил',
         'delivery_type' => 'Начин на доставка',
         'country' => 'Държава',

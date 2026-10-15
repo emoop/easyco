@@ -621,7 +621,18 @@ class CheckoutControllerTest extends TestCase
         $this->assertSame(10, app(StockLevelRepository::class)->findByVariationId($variationId)->quantity());
     }
 
-    #[DataProvider('hardenedTextFields')]
+    /**
+     * PH-1: the phone is no longer free text (ValidPhone), so a run of letters at its old 32-character bound is refused by design; the at-limit case
+     * is the other fields only, and the phone's own rules are in PhoneValidationTest.
+     *
+     * @return array<string, array{string, int}>
+     */
+    public static function hardenedFreeTextFields(): array
+    {
+        return array_diff_key(self::hardenedTextFields(), ['phone' => true]);
+    }
+
+    #[DataProvider('hardenedFreeTextFields')]
     public function test_a_value_within_the_limit_is_accepted_and_stored_unchanged(string $field, int $limit): void
     {
         $variationId = $this->pricedPurchasableVariation('10.00', 10);

@@ -10,9 +10,10 @@ namespace EasyCo\Order;
  * PURE PHP (CLAUDE.md rule 1): no framework, no database, no clock. The keys are DERIVED data stored on `orders` (phone_key, email_key,
  * name_key, place_key); changing a rule here means re-computing them with `orders:rebuild-identity-keys`, never a hand edit.
  *
- *  - PHONE: the digits only; then the LAST 9 digits when there are at least 9 (`0888 123 456`, `+359 888 123456`, `00359888123456` are all
- *    `888123456`). A heuristic chosen for the shop's market, documented as such: real phone validation can replace it later without changing the
- *    table. Fewer than 9 digits is NO key (an odd or short number never matches and is never blocked).
+ *  - PHONE (stage PH-1): a phone that is ALREADY E.164 (`+359888123456`: what checkout, the address book and the order editor store once the number
+ *    is validated with libphonenumber) is its own key, exact; any other text (an old row that could not be parsed) falls back to the digits only,
+ *    then the LAST 9 digits when there are at least 9 (`0888 123 456` is `888123456`). Fewer than 9 digits is NO key (an odd or short number never
+ *    matches and is never blocked). The pure-PHP domain does not parse numbers: the app layer's PhoneNumbers turns a raw number into E.164 first.
  *  - EMAIL: trimmed and lower-cased. NO provider-specific tricks (dots and plus-tags are NOT stripped: too clever, false positives).
  *  - IP: the canonical text form; an IPv4 address is compared exactly; an IPv6 address is compared as its /64 prefix (one household or device
  *    rotates inside it); an IPv4-mapped IPv6 address is the IPv4 address. Not a matching key for orders, only for blocks.
@@ -24,8 +25,15 @@ final class IdentityKeys
 {
     public const PHONE_DIGITS = 9;
 
+    /** The shape of a stored phone: E.164, a plus and 7 to 15 digits. */
+    public const E164_PATTERN = '/^\+[1-9][0-9]{6,14}$/';
+
     public static function phone(?string $phone): ?string
     {
+        if ($phone !== null && preg_match(self::E164_PATTERN, $phone) === 1) {
+            return $phone;
+        }
+
         $digits = preg_replace('/\D+/', '', (string) $phone);
 
         if ($digits === null || strlen($digits) < self::PHONE_DIGITS) {

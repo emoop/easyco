@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Services\PhoneNumbers;
 use EasyCo\Order\IdentityKeys;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
@@ -9,7 +10,7 @@ use Illuminate\Support\Facades\Log;
 
 /**
  * `php artisan orders:rebuild-identity-keys` — recomputes the four identity keys (phone_key, email_key, name_key, place_key) of EVERY order from
- * the contact and delivery facts the row holds, with the one normaliser (EasyCo\Order\IdentityKeys). The keys are derived data
+ * the contact and delivery facts the row holds, with the one normaliser (EasyCo\Order\IdentityKeys; the phone through PhoneNumbers: E.164 when the number parses with the order's country). The keys are derived data
  * (cod-protection-design.md section 2): when a rule of the normaliser changes, they are rebuilt with this command, never edited by hand.
  *
  * IDEMPOTENT: a row whose keys already equal what the rules give is not written, so a second run changes nothing and says "0 changed".
@@ -33,6 +34,8 @@ class RebuildOrderIdentityKeys extends Command
                 foreach ($rows as $row) {
                     $seen++;
                     $keys = IdentityKeys::forRow($row);
+                    // A phone that parses with the order's own country is keyed by its E.164 form, whatever way it was stored (stage PH-1).
+                    $keys['phone_key'] = PhoneNumbers::identityKey($row->phone, $row->country);
 
                     if ($keys !== ['phone_key' => $row->phone_key, 'email_key' => $row->email_key, 'name_key' => $row->name_key, 'place_key' => $row->place_key]) {
                         DB::table('orders')->where('id', $row->id)->update($keys);

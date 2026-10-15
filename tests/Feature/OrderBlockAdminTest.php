@@ -37,6 +37,9 @@ class OrderBlockAdminTest extends TestCase
     {
         parent::setUp();
 
+        // PH-1: a phone typed by hand is read with the STORE's country (a configured shop always has one).
+        app(\App\Settings\Contracts\SiteSettingsRepository::class)->set(\App\Settings\StoreCountry::KEY, 'BG');
+
         SupportAutoInjectedAssets::$hasRenderedAComponentThisRequest = false;
         $this->setUpRegionOrders();
         app()->setLocale('en');
@@ -135,7 +138,7 @@ class OrderBlockAdminTest extends TestCase
         $this->orderPage($order)->callAction($this->entry('block_phone'), data: ['duration' => '180', 'reason' => 'did not collect twice'])->assertNotified(__('blocks.notice.blocked'));
 
         $block = OrderBlockModel::query()->sole();
-        $this->assertSame(['phone', '888123456', '0888 123 456', 'did not collect twice'], [$block->type, $block->value_key, $block->value_display, $block->reason]);
+        $this->assertSame(['phone', '+359888123456', '+359888123456', 'did not collect twice'], [$block->type, $block->value_key, $block->value_display, $block->reason]);
         $this->assertSame((int) $order, (int) $block->source_order_id);
         $this->assertNotNull($block->created_by);
         $this->assertEqualsWithDelta(now()->addDays(180)->timestamp, $block->expires_at->timestamp, 60);
@@ -216,7 +219,9 @@ class OrderBlockAdminTest extends TestCase
 
     public function test_a_phone_with_no_key_cannot_be_blocked_from_the_order(): void
     {
-        $order = $this->place(['phone' => '1234567']);
+        // PH-1: an order can no longer be placed with a number that short; an old row that holds one has no key.
+        $order = $this->place();
+        DB::table('orders')->where('id', $order)->update(['phone' => '1234567', 'phone_key' => null]);
         $this->actingAsStaff('Administrator');
 
         $this->orderPage($order)->assertActionHidden($this->entry('block_phone'))->assertActionVisible($this->entry('block_email'));
@@ -309,7 +314,7 @@ class OrderBlockAdminTest extends TestCase
     public function test_unblock_and_extend_from_the_list_need_manage_and_an_active_block(): void
     {
         $this->seedBlocks();
-        $active = OrderBlockModel::query()->where('type', 'phone')->where('value_key', '888123456')->sole();
+        $active = OrderBlockModel::query()->where('type', 'phone')->where('value_key', '+359888123456')->sole();
         $ended = OrderBlockModel::query()->where('value_key', 'old@x.bg')->sole();
 
         $this->actingAsCustomRole([Permission::ORDER_VIEW]);
@@ -338,7 +343,7 @@ class OrderBlockAdminTest extends TestCase
 
         $list->callAction('add_block', data: ['type' => 'phone', 'value' => '+359 877 000 111', 'duration' => '180', 'reason' => 'known offender'])->assertNotified(__('blocks.notice.blocked'));
         $block = OrderBlockModel::query()->sole();
-        $this->assertSame(['phone', '877000111', null], [$block->type, $block->value_key, $block->source_order_id]);
+        $this->assertSame(['phone', '+359877000111', null], [$block->type, $block->value_key, $block->source_order_id]);
 
         $list->callAction('add_block', data: ['type' => 'phone', 'value' => '12345', 'duration' => '180'])->assertNotified(__('blocks.notice.cannot_block'));
         $this->assertSame(1, OrderBlockModel::query()->count());

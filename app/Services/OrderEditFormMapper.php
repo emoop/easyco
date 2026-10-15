@@ -88,6 +88,11 @@ final class OrderEditFormMapper
 
         $next['delivery_type'] ??= $now['delivery_type'];
 
+        // The phone is stored as E.164 (stage PH-1): the form validated it against the country it shows; a number that cannot be read stays as typed.
+        if (is_string($next['phone'] ?? null) && $next['phone'] !== '') {
+            $next['phone'] = PhoneNumbers::e164($next['phone'], is_string($next['country'] ?? null) ? $next['country'] : null) ?? $next['phone'];
+        }
+
         if ($now === $next) {
             return null;
         }

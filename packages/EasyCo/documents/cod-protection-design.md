@@ -33,7 +33,7 @@ normalised **key**, computed by ONE class (`IdentityKeys`) used by both the matc
 
 | Identifier | Key | Notes |
 |---|---|---|
-| Phone | digits only; then the **last 9 digits** when there are at least 9 | `0888 123 456`, `+359 888 123456`, `00359888123456` → `888123456`. A heuristic chosen for the shop's market; documented as such. Real phone validation (the planned design) can replace it later without changing the table. |
+| Phone | **PH-1: the E.164 string, exact** (`+359888123456`) when the number is stored as E.164 (every phone validated at checkout, in the address book and in the order editor is); otherwise (an old, unparsable row) digits only, then the **last 9 digits** when there are at least 9 | `0888 123 456`, `+359 888 123456`, `00359888123456` → `888123456`. A heuristic chosen for the shop's market; documented as such. Real phone validation (the planned design) can replace it later without changing the table. |
 | Email | trimmed, lower-cased | No provider-specific tricks (dots/plus in Gmail are NOT stripped: too clever, false positives). |
 | IP | the canonical text form (`inet_pton`/`inet_ntop`) | Exact address. IPv6 compared as a /64 prefix (one household/device rotates inside it). |
 | Name (weak) | first + last, lower-cased, inner spaces collapsed | Only for "possible match", never for a block. |
@@ -208,3 +208,14 @@ prune deletes only rows past the 30 days; activity log never contains a full IP;
 
 **Not built:** the «risky» badge in the orders list (the owner's later step; it will reuse the keys), a contact-page link in the locked-checkout sentence,
 and the keys' erasure with the order context (the future privacy routine, §6).
+
+---
+
+## 11. Stage PH-1 — the phone key is E.164 (2026-10-20)
+
+Phones are now validated by the rules of the delivery country (libphonenumber, `PhoneNumbers`, `isValidNumber`) and STORED as E.164, so the phone key
+(§2) is simply that string, exact: `0888123456`, `0888 123 456`, `+359 888 123 456` and `00359 888 123 456` are one key, and two different numbers that
+happen to end in the same nine digits no longer match. A phone that cannot be read (an old row the migration left untouched) keeps the old fallback
+(last nine digits; fewer than nine = no key). `orders.ord_phone_key_check` allows both shapes; `orders:rebuild-identity-keys` recomputes through
+`PhoneNumbers::identityKey()` (the order's own country); a phone BLOCK typed by hand is read with the store's country (`site.country`), and the migration
+`normalise_phones_to_e164` re-keys existing phone blocks from the number staff saw (`value_display`).

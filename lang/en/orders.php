@@ -30,6 +30,7 @@ return [
         'tracking_number' => 'Tracking number',
         'status' => 'Status',
         'phone' => 'Phone',
+        'phone_fixed_line' => 'landline',
         'account_id' => 'Account',
         'delivery_type' => 'Delivery type',
         'country' => 'Country',

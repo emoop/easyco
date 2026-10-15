@@ -10,6 +10,9 @@ VPS you administer yourself.
 ## Required
 
 - **PHP 8.3+** and **Composer** (per this project's own `composer.json`).
+- **`giggsey/libphonenumber-for-php-lite` (^9.0, installed: 9.0.41)** — Google's phone-number data, pure PHP, no extension and no service. It validates every phone
+  (checkout, address book, order editor) and its data is updated by `composer update giggsey/libphonenumber-for-php-lite`. After the upgrade that
+  introduced it, `php artisan migrate` converts the phones already stored to E.164 where they parse (counts are printed; the rest are left untouched).
 - **MySQL or MariaDB — not SQLite.** Even in WAL mode, SQLite allows
   only one write transaction at a time; real concurrent activity (a POS
   sale and a web checkout happening at the same moment, for instance)

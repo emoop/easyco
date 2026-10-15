@@ -24,6 +24,7 @@
         "easyco/shipping": "@dev",
         "easyco/staff": "@dev",
         "filament/filament": "^5.0",
+        "giggsey/libphonenumber-for-php-lite": "^9.0",
         "intervention/image": "^4.0",
         "laravel/framework": "^13.17",
         "laravel/sanctum": "^4.3",

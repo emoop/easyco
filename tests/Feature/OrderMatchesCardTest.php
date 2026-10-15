@@ -34,6 +34,9 @@ class OrderMatchesCardTest extends TestCase
     {
         parent::setUp();
 
+        // PH-1: a phone typed by hand is read with the STORE's country (a configured shop always has one).
+        app(\App\Settings\Contracts\SiteSettingsRepository::class)->set(\App\Settings\StoreCountry::KEY, 'BG');
+
         SupportAutoInjectedAssets::$hasRenderedAComponentThisRequest = false;
         $this->setUpRegionOrders();
         // Dozens of orders in one test would meet the checkout rate limit (429): the limit is not what is under test here.
@@ -295,7 +298,7 @@ class OrderMatchesCardTest extends TestCase
 
     public function test_an_order_without_keys_matches_nothing(): void
     {
-        $mine = $this->order(['phone' => '1234567']);
+        $mine = $this->order();
         DB::table('orders')->where('id', $mine)->update(['phone_key' => null, 'email_key' => null, 'name_key' => null, 'place_key' => null]);
         $this->actingAsStaff('Administrator');
 

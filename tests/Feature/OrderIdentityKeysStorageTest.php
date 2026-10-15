@@ -33,6 +33,9 @@ class OrderIdentityKeysStorageTest extends TestCase
     {
         parent::setUp();
 
+        // PH-1: a phone typed by hand is read with the STORE's country (a configured shop always has one).
+        app(\App\Settings\Contracts\SiteSettingsRepository::class)->set(\App\Settings\StoreCountry::KEY, 'BG');
+
         SupportAutoInjectedAssets::$hasRenderedAComponentThisRequest = false;
         $this->setUpRegionOrders();
         $this->captureDatabaseFingerprint();
@@ -68,7 +71,7 @@ class OrderIdentityKeysStorageTest extends TestCase
         $order = $this->place(['phone' => '0888 123 456', 'email' => 'Maria@Example.COM', 'recipient_first_name' => 'Maria', 'recipient_last_name' => 'Petrova']);
 
         $keys = $this->keys($order);
-        $this->assertSame('888123456', $keys->phone_key);
+        $this->assertSame('+359888123456', $keys->phone_key);
         $this->assertSame('maria@example.com', $keys->email_key);
         $this->assertSame('maria petrova', $keys->name_key);
         $this->assertSame(IdentityKeys::place(false, 'BG', 'Sofia', 'Vitosha Blvd 1', null, null), $keys->place_key);
@@ -88,9 +91,12 @@ class OrderIdentityKeysStorageTest extends TestCase
         $this->assertSame(IdentityKeys::place(true, 'BG', null, null, 'econt', 'Mladost 1, Sofia'), $this->keys($order)->place_key);
     }
 
-    public function test_a_short_phone_has_no_phone_key_and_the_order_still_places(): void
+    public function test_an_old_row_with_a_short_phone_has_no_phone_key(): void
     {
-        $order = $this->place(['phone' => '1234567']);
+        // PH-1: a number that short can no longer be ORDERED with (it is refused, PhoneValidationTest); an old row that holds one has no phone key.
+        $order = $this->place();
+        DB::table('orders')->where('id', $order)->update(['phone' => '1234567']);
+        $this->artisan('orders:rebuild-identity-keys')->assertSuccessful();
 
         $this->assertNull($this->keys($order)->phone_key);
         $this->assertNotNull($this->keys($order)->email_key);
@@ -102,7 +108,7 @@ class OrderIdentityKeysStorageTest extends TestCase
     {
         $order = $this->place(['phone' => '0888 123 456']);
         $before = $this->keys($order);
-        $this->assertSame('888123456', $before->phone_key);
+        $this->assertSame('+359888123456', $before->phone_key);
 
         app(OrderEditor::class)->apply(
             orderId: $order,
@@ -137,8 +143,8 @@ class OrderIdentityKeysStorageTest extends TestCase
 
         $this->artisan('orders:rebuild-identity-keys')->assertSuccessful()->expectsOutputToContain('Checked 2 order(s); rebuilt the identity keys of 2.');
 
-        $this->assertSame('888123456', $this->keys($first)->phone_key);
-        $this->assertSame('877000111', $this->keys($second)->phone_key);
+        $this->assertSame('+359888123456', $this->keys($first)->phone_key);
+        $this->assertSame('+359877000111', $this->keys($second)->phone_key);
         $this->assertSame('other@example.com', $this->keys($second)->email_key);
         $this->assertSame(['orders.identity_keys_rebuilt{"orders":2,"changed":2}'], $logged, 'counts only');
 
@@ -173,7 +179,7 @@ class OrderIdentityKeysStorageTest extends TestCase
 
         $migration->up();
 
-        $this->assertSame('888123456', $this->keys($order)->phone_key, 'back-filled');
+        $this->assertSame('+359888123456', $this->keys($order)->phone_key, 'back-filled');
         $this->assertNotNull($this->keys($order)->email_key);
         $this->assertNotNull($this->keys($order)->place_key);
 

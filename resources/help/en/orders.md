@@ -254,7 +254,7 @@ delivery for that person. **Nothing happens automatically**: you decide.
 The **"Matches"** card on an order lists other orders with the **same phone**, the **same email** or the **same delivery
 address/office**, with their status, so a cancelled or returned order by the same person shows at once.
 
-- Phones are compared by their **last 9 digits**, so `0888 123 456` and `+359 888 123 456` count as one number.
+- Phones are compared in **international format**, so `0888 123 456` and `+359 888 123 456` are one number.
 - A match **by name only** is shown in grey as a **"possible match"**: different people often share a name.
 - Up to 10 orders are shown for each kind of match — the most recent.
 - A **red line** appears when the order's phone or email is **currently blocked**.
