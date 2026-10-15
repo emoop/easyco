@@ -7,13 +7,33 @@
  */
 @source '../views/storefront/**/*.blade.php';
 
+/*
+ * Stage D1 (storefront-customization-design.md 3): the merchant's appearance tokens. Every storefront colour / radius / font below is Tailwind's own
+ * value as the FALLBACK of a `--sf-*` variable; the variable exists only when the merchant changed it (the compiled tokens stylesheet, linked after
+ * this file), so an untouched shop looks exactly as it always did. Tailwind's neutral scale is mapped by ROLE: 50 = page background, 200 = borders,
+ * 600 = muted text, 900 = text. Buttons use --sf-primary / --sf-on-primary explicitly; the header and the footer have their own tokens.
+ */
 @theme {
-    --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    --font-sans: var(--sf-font-body, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif);
+    --color-neutral-50: var(--sf-bg, oklch(98.5% 0 none));
+    --color-neutral-200: var(--sf-border, oklch(92.2% 0 none));
+    --color-neutral-600: var(--sf-muted, oklch(43.9% 0 none));
+    --color-neutral-900: var(--sf-text, oklch(20.5% 0 none));
+    --radius-md: var(--sf-r-sm, 0.375rem);
+    --radius-lg: var(--sf-r-md, 0.5rem);
+    --radius-xl: var(--sf-r-lg, 0.75rem);
 }
 
 @layer base {
     html {
         -webkit-text-size-adjust: 100%;
+    }
+
+    h1,
+    h2,
+    h3,
+    h4 {
+        font-family: var(--sf-font-heading, inherit);
     }
 
     body {
@@ -46,7 +66,9 @@
     }
 
     .sf-header {
-        @apply sticky top-0 z-30 border-b border-neutral-200 bg-white shadow-sm;
+        @apply sticky top-0 z-30 border-b border-neutral-200 shadow-sm;
+        background-color: var(--sf-header-bg, #fff);
+        color: var(--sf-header-text, currentcolor);
     }
 
     /* Three columns — the menu toggle left, the mark in the MIDDLE, the cart right — so the mark stays centred
@@ -63,7 +85,8 @@
     }
 
     .sf-header-bar > .sf-logo {
-        @apply block text-neutral-900 no-underline;
+        @apply block no-underline;
+        color: var(--sf-header-text, var(--color-neutral-900));
         grid-column: 2;
         justify-self: center;
     }
@@ -85,11 +108,13 @@
     }
 
     .sf-cart {
-        @apply inline-flex items-center rounded-md px-3 py-2 text-sm font-medium text-neutral-700 no-underline hover:text-neutral-900;
+        @apply inline-flex items-center rounded-md px-3 py-2 text-sm font-medium no-underline;
+        color: var(--sf-header-text, var(--color-neutral-700));
     }
 
     .sf-nav {
-        @apply border-t border-neutral-200 bg-white;
+        @apply border-t border-neutral-200;
+        background-color: var(--sf-header-bg, #fff);
     }
 
     /* (The look of the mobile menu button, a bare hamburger, is the S3-V2 block at the end of this file.) */
@@ -119,7 +144,13 @@
     }
 
     .sf-menu-link {
-        @apply block rounded px-1 py-1.5 text-sm text-neutral-700 no-underline hover:text-neutral-900;
+        @apply block rounded px-1 py-1.5 text-sm no-underline;
+        color: var(--sf-header-text, var(--color-neutral-700));
+    }
+
+    .sf-cart:hover,
+    .sf-menu-link:hover {
+        color: var(--sf-header-text, var(--color-neutral-900));
     }
 
     .sf-main {
@@ -252,6 +283,11 @@
         @apply text-base font-semibold text-neutral-900;
     }
 
+    /* A price with a struck-through regular price before it is a SALE price: the accent colour (default: the text colour, as today). */
+    .sf-price-regular ~ .sf-price-current {
+        color: var(--sf-accent, var(--color-neutral-900));
+    }
+
     /* ---- stock ---------------------------------------------------------------------------------- */
     .sf-stock {
         @apply m-0 text-xs font-medium uppercase tracking-wide;
@@ -288,7 +324,11 @@
     }
 
     .sf-pagination-page > span {
-        @apply border-neutral-900 bg-neutral-900 font-semibold text-white;
+        @apply font-semibold;
+        border-color: var(--sf-primary, oklch(20.5% 0 none));
+        background-color: var(--sf-btn-bg, var(--sf-primary, oklch(20.5% 0 none)));
+        color: var(--sf-btn-text, var(--sf-on-primary, #fff));
+        box-shadow: inset 0 0 0 var(--sf-btn-bw, 0) var(--sf-primary, oklch(20.5% 0 none));
     }
 
     .sf-pagination-prev,
@@ -366,7 +406,11 @@
     }
 
     .sf-add-to-cart {
-        @apply mt-3 inline-flex w-full items-center justify-center rounded-md bg-neutral-900 px-5 py-3 text-base font-semibold text-white;
+        @apply mt-3 inline-flex w-full items-center justify-center px-5 py-3 text-base font-semibold;
+        background-color: var(--sf-btn-bg, var(--sf-primary, oklch(20.5% 0 none)));
+        color: var(--sf-btn-text, var(--sf-on-primary, #fff));
+        box-shadow: inset 0 0 0 var(--sf-btn-bw, 0) var(--sf-primary, oklch(20.5% 0 none));
+        border-radius: var(--sf-r-btn, var(--radius-md));
     }
 
     .sf-add-to-cart:disabled {
@@ -436,20 +480,30 @@
     }
 
     .sf-404 a {
-        @apply mt-2 inline-flex items-center rounded-md bg-neutral-900 px-5 py-3 font-semibold text-white no-underline;
+        @apply mt-2 inline-flex items-center px-5 py-3 font-semibold no-underline;
+        background-color: var(--sf-btn-bg, var(--sf-primary, oklch(20.5% 0 none)));
+        color: var(--sf-btn-text, var(--sf-on-primary, #fff));
+        box-shadow: inset 0 0 0 var(--sf-btn-bw, 0) var(--sf-primary, oklch(20.5% 0 none));
+        border-radius: var(--sf-r-btn, var(--radius-md));
     }
 
     /* ---- footer --------------------------------------------------------------------------------- */
     .sf-footer {
-        @apply mt-12 border-t border-neutral-200 bg-white;
+        @apply mt-12 border-t border-neutral-200;
+        background-color: var(--sf-footer-bg, #fff);
     }
 
     .sf-footer-inner {
-        @apply mx-auto flex w-full max-w-6xl flex-wrap items-center gap-3 px-4 py-6 text-sm text-neutral-500;
+        @apply mx-auto flex w-full max-w-6xl flex-wrap items-center gap-3 px-4 py-6 text-sm;
+        color: var(--sf-footer-text, var(--color-neutral-500));
     }
 
     .sf-footer a {
-        @apply no-underline hover:text-neutral-900;
+        @apply no-underline;
+    }
+
+    .sf-footer a:hover {
+        color: var(--sf-footer-text, var(--color-neutral-900));
     }
 
     /* The content pages in the footer (pages-design.md section 4). */
@@ -504,7 +558,9 @@
     }
 
     .sf-cart-count {
-        @apply inline-flex min-w-5 items-center justify-center rounded-full bg-neutral-900 px-1.5 text-xs font-semibold leading-5 text-white;
+        @apply inline-flex min-w-5 items-center justify-center rounded-full px-1.5 text-xs font-semibold leading-5;
+        background-color: var(--sf-primary, oklch(20.5% 0 none));
+        color: var(--sf-on-primary, #fff);
     }
 
     .sf-add-to-cart-box {
@@ -600,7 +656,11 @@
     }
 
     .sf-cart-promo-apply {
-        @apply rounded-md bg-neutral-900 px-4 py-1.5 text-sm font-semibold text-white;
+        @apply px-4 py-1.5 text-sm font-semibold;
+        background-color: var(--sf-btn-bg, var(--sf-primary, oklch(20.5% 0 none)));
+        color: var(--sf-btn-text, var(--sf-on-primary, #fff));
+        box-shadow: inset 0 0 0 var(--sf-btn-bw, 0) var(--sf-primary, oklch(20.5% 0 none));
+        border-radius: var(--sf-r-btn, var(--radius-md));
     }
 
     .sf-cart-promo-applied {
@@ -628,7 +688,11 @@
     }
 
     .sf-cart-checkout {
-        @apply mt-4 inline-flex w-full items-center justify-center no-underline rounded-md bg-neutral-900 px-5 py-3 text-base font-semibold text-white;
+        @apply mt-4 inline-flex w-full items-center justify-center no-underline px-5 py-3 text-base font-semibold;
+        background-color: var(--sf-btn-bg, var(--sf-primary, oklch(20.5% 0 none)));
+        color: var(--sf-btn-text, var(--sf-on-primary, #fff));
+        box-shadow: inset 0 0 0 var(--sf-btn-bw, 0) var(--sf-primary, oklch(20.5% 0 none));
+        border-radius: var(--sf-r-btn, var(--radius-md));
     }
 
     .sf-cart-checkout:disabled {
@@ -907,7 +971,7 @@
             font-size: 1rem;
             font-weight: 400;
             line-height: 1.5rem;
-            color: #525252;
+            color: var(--sf-muted, #525252);
             text-overflow: ellipsis;
             white-space: nowrap;
             pointer-events: none;
@@ -1090,7 +1154,11 @@
     }
 
     .sf-promo-compact-apply {
-        @apply h-[3.25rem] shrink-0 rounded-l-none rounded-r-lg border border-neutral-900 bg-neutral-900 px-4 text-sm font-semibold text-white;
+        @apply h-[3.25rem] shrink-0 rounded-l-none rounded-r-lg border px-4 text-sm font-semibold;
+        border-color: var(--sf-primary, oklch(20.5% 0 none));
+        background-color: var(--sf-btn-bg, var(--sf-primary, oklch(20.5% 0 none)));
+        color: var(--sf-btn-text, var(--sf-on-primary, #fff));
+        box-shadow: inset 0 0 0 var(--sf-btn-bw, 0) var(--sf-primary, oklch(20.5% 0 none));
     }
 
     .sf-note-field textarea {
@@ -1118,7 +1186,11 @@
     }
 
     .sf-place-order {
-        @apply inline-flex min-h-[3.25rem] w-full items-center justify-center rounded-lg bg-neutral-900 px-5 text-base font-semibold text-white;
+        @apply inline-flex min-h-[3.25rem] w-full items-center justify-center px-5 text-base font-semibold;
+        background-color: var(--sf-btn-bg, var(--sf-primary, oklch(20.5% 0 none)));
+        color: var(--sf-btn-text, var(--sf-on-primary, #fff));
+        box-shadow: inset 0 0 0 var(--sf-btn-bw, 0) var(--sf-primary, oklch(20.5% 0 none));
+        border-radius: var(--sf-r-btn, var(--radius-lg));
     }
 
     .sf-place-order:disabled {
@@ -1354,7 +1426,7 @@
 
 .sf-footer-name {
     font-weight: 600;
-    color: #171717;
+    color: var(--sf-footer-text, #171717);
 }
 
 .sf-footer-list {
@@ -1393,14 +1465,16 @@
     margin-top: 1rem;
     padding: 0 1.25rem;
     border-radius: 0.5rem;
-    background: #171717;
-    color: #fff;
+    background: var(--sf-btn-bg, var(--sf-primary, #171717));
+    color: var(--sf-btn-text, var(--sf-on-primary, #fff));
+    box-shadow: inset 0 0 0 var(--sf-btn-bw, 0) var(--sf-primary, #171717);
+    border-radius: var(--sf-r-btn, var(--radius-lg));
     font-weight: 600;
     text-decoration: none;
 }
 
 .sf-intro-button:hover {
-    background: #404040;
+    background: var(--sf-btn-bg, var(--sf-primary-hover, #404040));
 }
 
 @media (min-width: 40rem) {
@@ -1422,7 +1496,7 @@
 
 .sf-category-tile-link:hover,
 .sf-category-tile-link:focus-visible {
-    border-color: #171717;
+    border-color: var(--sf-text, #171717);
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
 }
 
@@ -1557,7 +1631,7 @@
     background: #fff;
     font-size: 1.25rem;
     line-height: 1;
-    color: #171717;
+    color: var(--sf-text, #171717);
 }
 
 .sf-cart-step:hover:not(:disabled) {
@@ -1583,7 +1657,7 @@
 /* The summary card: the checkout card look. A sticky column from 900px. */
 .sf-cart-summary {
     padding: 1.25rem;
-    border: 1px solid #e5e5e5;
+    border: 1px solid var(--sf-border, #e5e5e5);
     border-radius: 0.75rem;
     background: #fff;
 }
@@ -1612,13 +1686,13 @@
 .sf-cart-shipping-note {
     margin-top: 0.75rem;
     font-size: 0.875rem;
-    color: #525252;
+    color: var(--sf-muted, #525252);
 }
 
 .sf-cart-summary .sf-cart-totals-grand {
     margin-top: 0.75rem;
     padding-top: 0.75rem;
-    border-top: 1px solid #e5e5e5;
+    border-top: 1px solid var(--sf-border, #e5e5e5);
 }
 
 .sf-cart-summary .sf-cart-total-grand {
@@ -1649,7 +1723,7 @@
     gap: 1rem;
     margin: 0.5rem -1rem 0;
     padding: 0.75rem 1rem;
-    border-top: 1px solid #e5e5e5;
+    border-top: 1px solid var(--sf-border, #e5e5e5);
     background: #fff;
 }
 
@@ -1662,7 +1736,7 @@
 
 .sf-cart-bar-caption {
     font-size: 0.75rem;
-    color: #525252;
+    color: var(--sf-muted, #525252);
 }
 
 .sf-cart-bar-amount {
@@ -1706,12 +1780,12 @@
     margin: 0;
     font-size: 1.25rem;
     font-weight: 600;
-    color: #171717;
+    color: var(--sf-text, #171717);
 }
 
 .sf-cart-empty-hint {
     margin: 0.5rem 0 0;
-    color: #525252;
+    color: var(--sf-muted, #525252);
 }
 
 .sf-cart-empty-button,
@@ -1722,9 +1796,10 @@
     min-height: 3rem;
     margin-top: 1rem;
     padding: 0 1.25rem;
-    border-radius: 0.5rem;
-    background: #171717;
-    color: #fff;
+    border-radius: var(--sf-r-btn, var(--radius-lg));
+    background: var(--sf-btn-bg, var(--sf-primary, #171717));
+    color: var(--sf-btn-text, var(--sf-on-primary, #fff));
+    box-shadow: inset 0 0 0 var(--sf-btn-bw, 0) var(--sf-primary, #171717);
     font-weight: 600;
     text-decoration: none;
 }
@@ -1752,7 +1827,7 @@
     align-items: center;
     min-height: 2.5rem;
     padding: 0 0.875rem;
-    border: 1px solid #e5e5e5;
+    border: 1px solid var(--sf-border, #e5e5e5);
     border-radius: 9999px;
     background: #fff;
     font-size: 0.875rem;
@@ -1823,8 +1898,11 @@
 }
 
 /* Cart page */
-.sf-cart-layout {
-    grid-template-columns: minmax(0, 1fr);
+/* (Below the two-column breakpoint only: an unconditional rule here, later in the file than the 900px media rule, would flatten the desktop columns.) */
+@media (max-width: 56.249rem) {
+    .sf-cart-layout {
+        grid-template-columns: minmax(0, 1fr);
+    }
 }
 
 .sf-cart-page .sf-cart-line > *,
@@ -1841,8 +1919,10 @@
 }
 
 /* Checkout */
-.sf-checkout-layout {
-    grid-template-columns: minmax(0, 1fr);
+@media (max-width: 63.999rem) {
+    .sf-checkout-layout {
+        grid-template-columns: minmax(0, 1fr);
+    }
 }
 
 .sf-checkout-layout > *,
@@ -1886,8 +1966,8 @@
         width: 0.5rem;
         height: 0.5rem;
         margin: 0 0.25rem 0.25rem 0.25rem;
-        border-right: 2px solid #525252;
-        border-bottom: 2px solid #525252;
+        border-right: 2px solid var(--sf-muted, #525252);
+        border-bottom: 2px solid var(--sf-muted, #525252);
         transform: rotate(45deg);
         transition: transform 150ms ease;
     }
@@ -1988,11 +2068,11 @@
         border: 0;
         border-radius: 0;
         background: transparent;
-        color: #404040;
+        color: var(--sf-header-text, #404040);
     }
 
     html.js .sf-menu-toggle:hover {
-        color: #171717;
+        color: var(--sf-header-text, #171717);
     }
 }
 
@@ -2019,4 +2099,46 @@
     .sf-menu-icon path {
         transition: none;
     }
+}
+
+/* ===== Stage D1: the top banner (storefront-customization-design.md 3.3) ================================================= */
+/* Colours come ONLY from the compiled token stylesheet (--sf-banner-*), the fallbacks are the defaults. One line; a phone cuts it with an ellipsis
+   (the whole text stays in the page: it is the accessible name). */
+.sf-banner {
+    background: var(--sf-banner-bg, #171717);
+    color: var(--sf-banner-text, #fff);
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+}
+
+.sf-banner-inner {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    min-width: 0;
+    max-width: 72rem;
+    margin: 0 auto;
+    padding: 0.5rem 1rem;
+    color: inherit;
+    text-decoration: none;
+}
+
+.sf-banner-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.sf-banner-link {
+    flex: none;
+    color: inherit;
+    font-weight: 600;
+    text-decoration: underline;
+    white-space: nowrap;
+}
+
+.sf-banner-bar-link:hover .sf-banner-text {
+    text-decoration: underline;
 }

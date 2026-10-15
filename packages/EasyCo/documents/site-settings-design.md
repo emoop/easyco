@@ -110,3 +110,25 @@ The settings page (Settings > Checkout, `SETTINGS_MANAGE`) forgets a key that ho
 | `storefront.home.text` | plain multi-line text, at most 400 characters (`PlainMultilineText`) | the language default text |
 
 Edited in Admin > Storefront (`content_manage`). Saving an empty field FORGETS its key. Both keys are read in one `getMany` together with `site.currency_symbol_position` (a key the home page reads anyway), so they cost the page no query.
+
+### Appearance, banner and theme (stage D1)
+
+Owned by `App\Settings\AppearanceSettings` (the keys, the defaults and the validation). A key that holds its default is FORGOTTEN, never stored.
+
+| Key | Values | Absent means |
+|---|---|---|
+| `appearance.color.{background,text,muted,primary,on_primary,accent,border,header_bg,header_text,footer_bg,footer_text}` | `#RRGGBB` only | the default of storefront-customization-design.md 3.1 (footer text `#737373`) |
+| `appearance.font.body` | `system` \| `inter` \| `manrope` \| `lora` | `system` |
+| `appearance.font.heading` | the same list or `same` | `same` |
+| `appearance.radius` | `none` \| `sm` \| `md` \| `lg` \| `pill` | `md` |
+| `appearance.button` | `solid` \| `outline` | `solid` |
+| `appearance.compiled` | JSON `{"hash": 12 hex, "fonts": [...], "body": key or null}` written by the compiler | nothing compiled: no link, the fallbacks of storefront.css |
+| `banner.enabled` | `'1'` | off |
+| `banner.text` | plain text, 1-160 characters | no banner |
+| `banner.url` | a root-relative path or an `https://` address | no link |
+| `banner.link_label` | plain text, at most 40 | the whole bar is the link |
+| `banner.color.text` / `banner.color.bg` | `#RRGGBB` | `#ffffff` / `#171717` |
+| `banner.starts_at` / `banner.ends_at` | `Y-m-d H:i` in the store time zone | no limit |
+| `storefront.theme` | a theme folder under `resources/themes` (no UI in V1) | `easyco` |
+
+All of them are read by `StorefrontAppearance` in ONE `getMany` and cached in the application cache (`storefront.appearance`); saving on the Appearance page replaces that entry.

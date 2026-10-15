@@ -329,3 +329,9 @@ pages are in it after the migration; query count of a storefront page unchanged 
 - Top banner close button: **not in V1**.
 - Fonts offered: **System, Inter, Manrope, Lora** (Lora as a serif for headings). The owner may name others.
 - Account and wishlist icons appear when those features exist (the customer account stage).
+
+---
+
+## 12. D1 as built (2026-10)
+
+Built as specified in §2, §3 and §10 "D1", with these decisions: (1) **only values that differ from their default are stored and compiled**, so the stylesheet link exists only after the merchant changed something and the untouched shop renders exactly as before; (2) the footer text default is **`#737373`** (today's colour) instead of `#404040`; (3) `storefront.theme` is read in the SAME `getMany` as the appearance (no query of its own); (4) the sale price takes the accent only when the merchant set one; (5) white card surfaces, link blues, error colours and the focus ring stay fixed (no token for them in §3.1); (6) the banner colours are tokens in the compiled stylesheet (`--sf-banner-*`), never a style attribute; (7) the link rule is `CheckoutFormSettings::isSafeLink` plus https only. Details: `storefront-design.md` §2.13. Idea for later, not built: «Витрина» (the home heading and text) could become a section of the «Облик» page.

@@ -13,5 +13,6 @@ return [
         'mail' => 'Email sending',
         'checkout' => 'Checkout settings',
         'pages' => 'Pages',
+        'appearance' => 'Appearance and header',
     ],
 ];

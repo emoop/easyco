@@ -338,6 +338,7 @@ class StorefrontCheckoutPageTest extends TestCase
     public function test_the_query_count_of_the_shell(): void
     {
         $this->app->forgetScopedInstances();
+        \Illuminate\Support\Facades\Cache::forget(\App\Storefront\Appearance\StorefrontAppearance::CACHE_KEY); // D1: every measurement is a COLD page (+1 for the appearance read)
 
         foreach (Route::getRoutes() as $route) {
             $route->flushController();
@@ -350,11 +351,11 @@ class StorefrontCheckoutPageTest extends TestCase
 
         $this->get('/checkout')->assertOk();
 
-        fwrite(STDERR, "\n[query-count] storefront /checkout: ".count($sql)." queries (pinned ceiling 8)\n");
+        fwrite(STDERR, "\n[query-count] storefront /checkout: ".count($sql)." queries (pinned ceiling 9)\n");
 
         // 8 = locale, time zone, currency position, store country, the menu (2), ONE read of the checkout form's settings (all keys, the
         // region rule included: getMany) and ONE read of the published content pages (P1: the footer's list, which the terms / privacy
         // page lookup shares). It stays a ceiling: 9 fails.
-        $this->assertLessThanOrEqual(8, count($sql), 'the shell reads no cart; the settings are ONE query and the content pages ONE');
+        $this->assertLessThanOrEqual(9, count($sql), 'D1: 8 + ONE appearance read (cold cache); the shell reads no cart; the settings are ONE query and the content pages ONE');
     }
 }

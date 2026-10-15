@@ -415,6 +415,7 @@ class StorefrontOrderReceivedTest extends TestCase
     {
         $count = function (string $url): int {
             $this->app->forgetScopedInstances();
+            \Illuminate\Support\Facades\Cache::forget(\App\Storefront\Appearance\StorefrontAppearance::CACHE_KEY); // D1: every measurement is a COLD page (+1 for the appearance read)
 
             $sql = [];
             DB::listen(function ($query) use (&$sql): void {
@@ -430,9 +431,9 @@ class StorefrontOrderReceivedTest extends TestCase
         $this->flushSession();
         $five = $count($this->placeOrder(5)->json('confirmation_url'));
 
-        fwrite(STDERR, "\n[query-count] storefront order-received page: 1 line = {$one} queries, 5 lines = {$five} queries (pinned ceiling 8)\n");
+        fwrite(STDERR, "\n[query-count] storefront order-received page: 1 line = {$one} queries, 5 lines = {$five} queries (pinned ceiling 9)\n");
 
         $this->assertSame($one, $five, 'the page query count must not grow with the number of lines');
-        $this->assertLessThanOrEqual(8, $five, 'the old 7 plus the ONE content-pages query of the footer (P1)');
+        $this->assertLessThanOrEqual(9, $five, 'the old 7 plus the ONE content-pages query of the footer (P1) plus ONE appearance read (D1, cold cache)');
     }
 }

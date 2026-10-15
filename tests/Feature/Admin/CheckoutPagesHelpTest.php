@@ -65,7 +65,7 @@ class CheckoutPagesHelpTest extends TestCase
 
     public function test_the_two_topics_are_registered_and_labelled_in_both_languages(): void
     {
-        $this->assertSame(['orders', 'shipping', 'mail', 'checkout', 'pages'], HelpTopics::all());
+        $this->assertSame(['orders', 'shipping', 'mail', 'checkout', 'pages', 'appearance'], HelpTopics::all());
         $this->assertTrue(HelpTopics::has('checkout'));
         $this->assertTrue(HelpTopics::has('pages'));
         $this->assertSame('Настройки на чекаута', trans('help.topics.checkout', [], 'bg'));

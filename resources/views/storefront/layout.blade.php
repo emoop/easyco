@@ -18,9 +18,17 @@
     @if ((file_exists(public_path('hot')) || file_exists(public_path('build/manifest.json'))) && ! app()->runningUnitTests())
         @vite(['resources/css/storefront.css', 'resources/js/storefront.js'])
     @endif
+    {{-- The merchant's appearance (D1): ONE small token stylesheet AFTER the main one (only when something differs from the defaults), and the body font's latin file preloaded. --}}
+    @if ($appearance['preloadFont'] !== null)
+        <link rel="preload" as="font" type="font/woff2" href="{{ $appearance['preloadFont'] }}" crossorigin>
+    @endif
+    @if ($appearance['tokensUrl'] !== null)
+        <link rel="stylesheet" href="{{ $appearance['tokensUrl'] }}">
+    @endif
 </head>
 <body class="sf-layout">
     @include('storefront.partials.messages')
+    @include('storefront.partials.top-banner', ['banner' => $appearance['banner']])
     <header class="sf-header">
         <div class="sf-header-bar">
             @if (! empty($categories))

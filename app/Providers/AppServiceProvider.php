@@ -107,6 +107,8 @@ class AppServiceProvider extends ServiceProvider
         // The footer of every storefront page: the published pages flagged for it (one memoised query, see PageReader).
         \Illuminate\Support\Facades\View::composer('storefront.layout', static function ($view): void {
             $view->with('footerPages', app(\App\Storefront\Pages\PageReader::class)->footerLinks());
+            // The merchant's appearance (storefront-customization-design.md 3.4): ONE read, cached; the token stylesheet, the font to preload and the banner.
+            $view->with('appearance', app(\App\Storefront\Appearance\StorefrontAppearance::class)->forLayout());
         });
 
         // mail-design.md section 6.1: the order confirmation. The listener only DISPATCHES (after the order

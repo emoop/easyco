@@ -20,10 +20,10 @@ class StorefrontHomeAndCartS3vTest extends TestCase
     use BuildsStorefrontCatalog;
     use RefreshDatabase;
 
-    /** The numbers before S3-V (StorefrontCartPageTest's own ceilings): neither page may cost more now. */
-    private const HOME_QUERIES = 23;
+    /** The numbers before S3-V plus D1's ONE appearance read on a cold cache (StorefrontCartPageTest's ceilings): neither page may cost more now. */
+    private const HOME_QUERIES = 24;
 
-    private const CART_QUERIES = 6;
+    private const CART_QUERIES = 7;
 
     protected function setUp(): void
     {
@@ -39,6 +39,7 @@ class StorefrontHomeAndCartS3vTest extends TestCase
     private function countQueries(string $url): int
     {
         $this->app->forgetScopedInstances();
+        \Illuminate\Support\Facades\Cache::forget(\App\Storefront\Appearance\StorefrontAppearance::CACHE_KEY); // D1: every measurement is a COLD page (+1 for the appearance read)
 
         foreach (Route::getRoutes() as $route) {
             $route->flushController();

@@ -1,0 +1,30 @@
+{
+  "key": "easyco",
+  "name": "EasyCo",
+  "version": "1.0.0",
+  "extends": null,
+  "views": null,
+  "assets": { "css": "resources/css/storefront.css", "js": "resources/js/storefront.js" },
+  "tokens": {
+    "appearance.color.background": "#fafafa",
+    "appearance.color.text": "#171717",
+    "appearance.color.muted": "#525252",
+    "appearance.color.primary": "#171717",
+    "appearance.color.on_primary": "#ffffff",
+    "appearance.color.accent": "#b91c1c",
+    "appearance.color.border": "#e5e5e5",
+    "appearance.color.header_bg": "#ffffff",
+    "appearance.color.header_text": "#171717",
+    "appearance.color.footer_bg": "#ffffff",
+    "appearance.color.footer_text": "#737373",
+    "appearance.font.body": "system",
+    "appearance.font.heading": "same",
+    "appearance.radius": "md",
+    "appearance.button": "solid"
+  },
+  "header": {
+    "rows": ["top", "main", "bottom"],
+    "elements": ["logo", "menu", "menu_toggle", "search", "account", "wishlist", "cart", "text", "html", "button", "social", "spacer"]
+  },
+  "slots": []
+}

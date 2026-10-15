@@ -8,6 +8,7 @@ use App\Http\Controllers\Storefront\OrderReceivedController;
 use App\Http\Controllers\Storefront\PageController;
 use App\Http\Controllers\Storefront\ProductController;
 use App\Storefront\Orders\OrderReceivedHeaders;
+use App\Storefront\Theme\ApplyStorefrontTheme;
 use App\Storefront\Support\SecurityHeaders;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
@@ -37,7 +38,7 @@ $withoutSession = [
     PreventRequestForgery::class,
 ];
 
-Route::middleware([SecurityHeaders::class])
+Route::middleware([SecurityHeaders::class, ApplyStorefrontTheme::class])
     ->withoutMiddleware($withoutSession)
     ->group(function (): void {
         Route::get('/', [HomeController::class, 'index'])->name('storefront.home');
@@ -74,7 +75,7 @@ Route::middleware([SecurityHeaders::class])
 | overwrite; OrderReceivedHeaders sets the rest of the storefront's headers too. Same cookie-free pipeline. The signature is
 | checked in the controller (a failure is the storefront's own 404, not the framework's 403).
 */
-Route::middleware([OrderReceivedHeaders::class])
+Route::middleware([OrderReceivedHeaders::class, ApplyStorefrontTheme::class])
     ->withoutMiddleware($withoutSession)
     ->group(function (): void {
         Route::get('/order/received/{orderNumber}', [OrderReceivedController::class, 'show'])

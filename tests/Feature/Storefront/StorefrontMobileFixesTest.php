@@ -61,6 +61,12 @@ class StorefrontMobileFixesTest extends TestCase
             $this->assertMatchesRegularExpression('/'.preg_quote($grid, '/').' \{\s*grid-template-columns: minmax\(0, 1fr\);/', $css, "{$grid}: the track may shrink below its widest word");
         }
 
+        // ...but ONLY below the two-column breakpoint: an unconditional rule later in the file would flatten the desktop columns (it once did, S3-V2).
+        $this->assertMatchesRegularExpression('/@media \(max-width: 56\.249rem\) \{\s*\.sf-cart-layout \{\s*grid-template-columns: minmax\(0, 1fr\);/', $css);
+        $this->assertMatchesRegularExpression('/@media \(max-width: 63\.999rem\) \{\s*\.sf-checkout-layout \{\s*grid-template-columns: minmax\(0, 1fr\);/', $css);
+        $this->assertMatchesRegularExpression('/@media \(min-width: 56\.25rem\) \{\s*\.sf-cart-layout \{\s*grid-template-columns: minmax\(0, 1fr\) 22rem;/', $css, 'the cart keeps its second column from 900px');
+        $this->assertMatchesRegularExpression('/@media \(min-width: 64rem\) \{\s*\.sf-checkout-layout \{\s*grid-template-columns: minmax\(0, 1fr\) 24rem;/', $css, 'and the checkout its summary column from 1024px');
+
         $this->assertMatchesRegularExpression('/\.sf-header-bar \{\s*grid-template-columns: minmax\(0, 1fr\) auto minmax\(0, 1fr\);/', $css);
         $this->assertMatchesRegularExpression('/\.sf-title,[^{]*\.sf-description[^{]*\{\s*overflow-wrap: anywhere;/', $css);
         $this->assertMatchesRegularExpression('/\.sf-summary-line-info,[^{]*\{\s*overflow-wrap: anywhere;/', $css);

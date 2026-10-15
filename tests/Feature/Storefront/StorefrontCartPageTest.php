@@ -218,6 +218,7 @@ class StorefrontCartPageTest extends TestCase
     {
         $count = function (string $url): int {
             $this->app->forgetScopedInstances();
+            \Illuminate\Support\Facades\Cache::forget(\App\Storefront\Appearance\StorefrontAppearance::CACHE_KEY); // D1: every measurement is a COLD page (+1 for the appearance read)
 
             foreach (Route::getRoutes() as $route) {
                 $route->flushController();
@@ -236,9 +237,9 @@ class StorefrontCartPageTest extends TestCase
         $home = $count('/');
         $cart = $count('/cart');
 
-        fwrite(STDERR, "\n[query-count] storefront S3: / = {$home} queries, /cart = {$cart} queries (home ceiling 24, cart ceiling 6)\n");
+        fwrite(STDERR, "\n[query-count] storefront S3: / = {$home} queries, /cart = {$cart} queries (home ceiling 25, cart ceiling 7)\n");
 
-        $this->assertLessThanOrEqual(24, $home, 'the home page is not dearer than before S3 (the category row reuses the menu data)');
-        $this->assertLessThanOrEqual(6, $cart, 'locale, time zone, currency position and the menu (2): the shell reads no cart');
+        $this->assertLessThanOrEqual(25, $home, 'D1: +1 appearance read (cold cache); the home page is not dearer than before S3 (the category row reuses the menu data)');
+        $this->assertLessThanOrEqual(7, $cart, 'D1: +1 appearance read (cold cache); locale, time zone, currency position and the menu (2): the shell reads no cart');
     }
 }
