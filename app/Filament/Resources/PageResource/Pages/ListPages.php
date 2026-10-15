@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\PageResource\Pages;
 
 use App\Filament\Resources\PageResource;
+use App\Filament\Support\HelpLink;
 use Filament\Actions\CreateAction;
 use Filament\Resources\Pages\ListRecords;
 use Illuminate\Contracts\Support\Htmlable;
@@ -15,6 +16,12 @@ class ListPages extends ListRecords
     public function getTitle(): string|Htmlable
     {
         return __('pages.title');
+    }
+
+    /** «Помощ: как работи →» (new tab): what pages are and how they are published. */
+    public function getSubheading(): string|Htmlable|null
+    {
+        return HelpLink::html('pages-overview', 'pages');
     }
 
     protected function getHeaderActions(): array

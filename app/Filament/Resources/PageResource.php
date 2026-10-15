@@ -7,6 +7,7 @@ use App\Content\Models\PageModel;
 use App\Content\PageSlug;
 use App\Filament\Concerns\AuthorizesViaStaffPermission;
 use App\Filament\NavigationGroup;
+use App\Filament\Support\HelpLink;
 use App\Filament\Resources\PageResource\Pages\CreatePage;
 use App\Filament\Resources\PageResource\Pages\EditPage;
 use App\Filament\Resources\PageResource\Pages\ListPages;
@@ -119,6 +120,7 @@ class PageResource extends Resource
                 ->required()
                 ->maxLength(PageSlug::MAX_LENGTH)
                 ->live(onBlur: true),
+            HelpLink::component('pages-slug', 'pages'),
             Text::make(__('pages.help.slug_changed'))
                 ->color('danger')
                 ->size('sm')
@@ -138,6 +140,7 @@ class PageResource extends Resource
                 ->options(static::statusOptions())
                 ->default(PageModel::DRAFT)
                 ->required(),
+            HelpLink::component('pages-publish', 'pages'),
             Section::make(__('pages.sections.seo'))
                 ->collapsed()
                 ->schema([
@@ -148,6 +151,7 @@ class PageResource extends Resource
             Section::make(__('pages.sections.footer'))
                 ->collapsed()
                 ->schema([
+                    HelpLink::component('pages-footer', 'pages'),
                     Toggle::make('in_footer')->label(__('pages.fields.in_footer')),
                     TextInput::make('footer_order')->label(__('pages.fields.footer_order'))->numeric()->minValue(0)->maxValue(65535)->default(0),
                 ]),

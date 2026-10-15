@@ -5,6 +5,7 @@ namespace App\Filament\Resources\PageResource\Pages;
 use App\Content\Models\PageModel;
 use App\Content\Models\PageRevisionModel;
 use App\Filament\Resources\PageResource;
+use App\Filament\Support\HelpLink;
 use App\Storefront\Support\DescriptionSanitizer;
 use Filament\Actions\Action;
 use Filament\Resources\Pages\Page;
@@ -42,6 +43,12 @@ class ViewPageRevision extends Page
     public function getTitle(): string|Htmlable
     {
         return __('pages.revisions.heading', ['title' => $this->revisionRow->title, 'number' => $this->revisionRow->revision]);
+    }
+
+    /** «Помощ: как работи →» (new tab): revisions are read only evidence. */
+    public function getSubheading(): string|Htmlable|null
+    {
+        return HelpLink::html('pages-revisions', 'pages');
     }
 
     public function getBreadcrumbs(): array

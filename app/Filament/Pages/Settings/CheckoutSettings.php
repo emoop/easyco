@@ -4,6 +4,7 @@ namespace App\Filament\Pages\Settings;
 
 use App\Filament\Concerns\AuthorizesViaStaffPermission;
 use App\Filament\NavigationGroup;
+use App\Filament\Support\HelpLink;
 use App\Content\Models\PageModel;
 use App\Settings\CheckoutFormSettings;
 use App\Storefront\Pages\PageReader;
@@ -182,6 +183,7 @@ class CheckoutSettings extends Page
                 Section::make(__('settings.checkout_page.fields_section'))
                     ->description(__('settings.checkout_page.fields_help'))
                     ->schema([
+                        HelpLink::component('checkout-fields', 'checkout'),
                         Toggle::make('call_before_shipping_enabled')
                             ->label(__('settings.checkout_page.call_before_label'))
                             ->helperText(__('settings.checkout_page.call_before_help')),
@@ -193,6 +195,7 @@ class CheckoutSettings extends Page
                             ->helperText(__('settings.checkout_page.terms_help'))
                             ->live(),
                         // THE TERMS: a content page or an external address (a page wins over an address).
+                        HelpLink::component('checkout-terms', 'checkout'),
                         Radio::make('terms_source')
                             ->label(__('settings.checkout_page.terms_source_label'))
                             ->options(static::sourceOptions())
@@ -264,6 +267,7 @@ class CheckoutSettings extends Page
                 Section::make(__('settings.checkout_page.region_section'))
                     ->description(__('settings.checkout_page.region_help'))
                     ->schema([
+                        HelpLink::component('checkout-region', 'checkout'),
                         Select::make('default')
                             ->label(__('settings.checkout_page.default_label'))
                             ->options(static::modeOptions())
@@ -300,6 +304,7 @@ class CheckoutSettings extends Page
                 Section::make(__('settings.checkout_page.invoice_section'))
                     ->description(__('settings.checkout_page.invoice_help'))
                     ->schema([
+                        HelpLink::component('checkout-invoice', 'checkout'),
                         Toggle::make('invoice_enabled')
                             ->label(__('settings.checkout_page.invoice_enabled_label'))
                             ->helperText(__('settings.checkout_page.invoice_enabled_help'))
@@ -347,6 +352,7 @@ class CheckoutSettings extends Page
                 Section::make(__('settings.checkout_page.privacy_section'))
                     ->description(__('settings.checkout_page.privacy_help'))
                     ->schema([
+                        HelpLink::component('checkout-privacy', 'checkout'),
                         TextInput::make('ip_full_retention_days')
                             ->label(__('settings.checkout_page.ip_retention_label'))
                             ->helperText(__('settings.checkout_page.ip_retention_help'))

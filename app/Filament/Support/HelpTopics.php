@@ -15,7 +15,7 @@ final class HelpTopics
     public const DEFAULT = 'orders';
 
     /** @var list<string> */
-    private const TOPICS = ['orders', 'shipping', 'mail'];
+    private const TOPICS = ['orders', 'shipping', 'mail', 'checkout', 'pages'];
 
     /** @return list<string> */
     public static function all(): array

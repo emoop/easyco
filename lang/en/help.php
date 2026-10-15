@@ -11,5 +11,7 @@ return [
         'orders' => 'Orders and payments',
         'shipping' => 'Shipping',
         'mail' => 'Email sending',
+        'checkout' => 'Checkout settings',
+        'pages' => 'Pages',
     ],
 ];
