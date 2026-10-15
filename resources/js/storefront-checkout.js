@@ -404,6 +404,9 @@ function initCheckout(root) {
             summaryLines.appendChild(li);
         });
 
+        // No lines (nothing loaded yet, or an empty cart): there is no peek to show, so no empty strip.
+        summaryPanel.hidden = ! (cart && Array.isArray(cart.lines) && cart.lines.length > 0);
+
         renderPromo();
         renderTotals();
         scheduleSummaryFit();
@@ -1558,14 +1561,45 @@ function initCheckout(root) {
         applyInvoice();
     }
 
-    // The mobile bar: the same summary, opened in place.
-    summaryToggle.addEventListener('click', function () {
+    // The mobile bar: the same summary, opened in place. Collapsed, the panel is only a PEEK (the faded top of the first row, drawn by the
+    // stylesheet): below 1024px it is hidden from assistive technology (`aria-hidden`) and everything IN it is inert (no focus can land in it);
+    // from 1024px it is the sticky right column and is always interactive. The panel ITSELF is not made inert: a browser does not deliver a tap to
+    // an inert element, and tapping the peek must open the summary (measured in Chromium).
+    function syncSummaryAccess() {
+        var peek = summaryPanel.getAttribute('data-open') === 'false' && window.innerWidth < 1024;
+
+        if (peek) {
+            summaryPanel.setAttribute('aria-hidden', 'true');
+        } else {
+            summaryPanel.removeAttribute('aria-hidden');
+        }
+
+        Array.prototype.forEach.call(summaryPanel.children, function (child) {
+            if (peek) {
+                child.setAttribute('inert', '');
+            } else {
+                child.removeAttribute('inert');
+            }
+        });
+    }
+
+    function toggleSummary() {
         var open = summaryToggle.getAttribute('aria-expanded') !== 'true';
 
         summaryToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
         summaryPanel.setAttribute('data-open', open ? 'true' : 'false');
         summaryToggleLabel.textContent = open ? t('ck_summary_hide') : t('ck_summary_show');
+        syncSummaryAccess();
+    }
+
+    summaryToggle.addEventListener('click', toggleSummary);
+    // Tapping the peek is the same as tapping the bar: the SAME function, and only while collapsed (an open summary has nothing extra to do).
+    summaryPanel.addEventListener('click', function () {
+        if (summaryPanel.getAttribute('data-open') === 'false') {
+            toggleSummary();
+        }
     });
+    syncSummaryAccess();
 
     form.addEventListener('submit', submit);
     toggleDestination();
@@ -1574,6 +1608,7 @@ function initCheckout(root) {
 
     if (typeof window.addEventListener === 'function') {
         window.addEventListener('resize', scheduleSummaryFit);
+        window.addEventListener('resize', syncSummaryAccess);
     }
 
     scheduleSummaryFit();

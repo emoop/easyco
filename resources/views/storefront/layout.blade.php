@@ -24,8 +24,10 @@
     <header class="sf-header">
         <div class="sf-header-bar">
             @if (! empty($categories))
+                {{-- A bare hamburger: three thin lines (inline SVG, decorative); the word stays as the accessible name, visually hidden. --}}
                 <button class="sf-menu-toggle" type="button" aria-controls="sf-menu" aria-expanded="false" data-sf-menu-toggle>
-                    <span>{{ __('storefront.menu') }}</span>
+                    <svg class="sf-menu-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true" focusable="false"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/></svg>
+                    <span class="sf-sr-only">{{ __('storefront.menu') }}</span>
                 </button>
             @endif
             {{-- The mark, centred by the header's own grid; the site has no dark mode, so this is the dark

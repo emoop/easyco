@@ -1229,6 +1229,57 @@ const scenarios = {
         assert.match(panel.textContent, /Red \/ M/);
         assert.ok(panel.textContent.includes(fmt(2000)));
     },
+    // S3-V2 (fix 2): collapsed below 1024px the summary is a PEEK: hidden from assistive technology and everything IN it inert (the panel itself
+    // stays tappable); open, or from 1024px, both are removed. Tapping the peek runs the SAME function as the bar, only while collapsed.
+    async summary_peek_access() {
+        const toggle = q('[data-sf-summary-toggle]');
+        const panel = q('#sf-summary-panel');
+        const inertOf = () => panel.children.map((c) => 'inert' in c.attrs);
+        const resize = (width) => { globalThis.window.innerWidth = width; (windowListeners.resize || []).forEach((fn) => fn()); };
+
+        assert.ok(panel.children.length >= 4, 'the panel has its title, lines, promo, error and totals');
+        assert.equal(panel.hidden, false, 'a cart with lines: the peek is there');
+
+        // A desktop width: the summary is the right column, always interactive.
+        assert.equal('aria-hidden' in panel.attrs, false);
+        assert.ok(inertOf().every((x) => x === false));
+
+        resize(375);
+        assert.equal(panel.getAttribute('aria-hidden'), 'true', 'collapsed on a phone: hidden from assistive technology');
+        assert.ok(inertOf().every((x) => x === true), 'and nothing in it can take focus');
+        assert.equal('inert' in panel.attrs, false, 'the panel itself is NOT inert: a browser would not deliver the tap on the peek');
+
+        // The bar opens it: both come off.
+        toggle.dispatch('click');
+        assert.equal(panel.getAttribute('data-open'), 'true');
+        assert.equal('aria-hidden' in panel.attrs, false, 'open: visible to assistive technology');
+        assert.ok(inertOf().every((x) => x === false), 'open: everything is interactive again');
+
+        // A tap on the OPEN panel does nothing extra (its buttons and fields have their own handlers).
+        panel.dispatch('click');
+        assert.equal(toggle.getAttribute('aria-expanded'), 'true');
+        assert.equal(q('[data-sf-summary-toggle-label]').textContent, T('ck_summary_hide'));
+
+        toggle.dispatch('click');
+        assert.equal(panel.getAttribute('data-open'), 'false');
+        assert.equal(panel.getAttribute('aria-hidden'), 'true');
+        assert.ok(inertOf().every((x) => x === true));
+
+        // A tap on the PEEK is the same as the bar: the summary opens, the label and the aria state follow.
+        panel.dispatch('click');
+        assert.equal(toggle.getAttribute('aria-expanded'), 'true');
+        assert.equal(panel.getAttribute('data-open'), 'true');
+        assert.equal(q('[data-sf-summary-toggle-label]').textContent, T('ck_summary_hide'));
+        assert.ok(inertOf().every((x) => x === false));
+
+        // Back to a desktop width while collapsed: nothing stays hidden.
+        toggle.dispatch('click');
+        assert.equal(panel.getAttribute('aria-hidden'), 'true');
+        resize(1280);
+        assert.equal('aria-hidden' in panel.attrs, false);
+        assert.ok(inertOf().every((x) => x === false));
+    },
+
     // ------------------------------------------------------------------------------------------------------------------ the invoice
     // (order-context-design.md 9.3, stage C2-A) The page is rendered with the rules BG ("ЕИК / Булстат", required, МОЛ) and DE (the registration
     // number required, labelled "USt-IdNr"). The whole block is HIDDEN until its box is ticked.

@@ -84,11 +84,6 @@
         display: none;
     }
 
-    .sf-menu-toggle::before {
-        content: '\2261';
-        @apply text-base leading-none;
-    }
-
     .sf-cart {
         @apply inline-flex items-center rounded-md px-3 py-2 text-sm font-medium text-neutral-700 no-underline hover:text-neutral-900;
     }
@@ -97,9 +92,7 @@
         @apply border-t border-neutral-200 bg-white;
     }
 
-    html.js .sf-menu-toggle {
-        @apply inline-flex items-center gap-2 rounded-md border border-neutral-300 px-3 py-2 text-sm font-medium text-neutral-800;
-    }
+    /* (The look of the mobile menu button, a bare hamburger, is the S3-V2 block at the end of this file.) */
 
     html.js .sf-nav {
         display: none;
@@ -1162,11 +1155,7 @@
         @apply font-semibold;
     }
 
-    @media (max-width: 63.999rem) {
-        .sf-checkout-summary[data-open='false'] {
-            display: none;
-        }
-    }
+    /* (Below 1024px the collapsed summary is a PEEK: see the S3-V2 block at the end of this file.) */
 
     .sf-summary-lines {
         @apply divide-y divide-neutral-200;
@@ -1784,5 +1773,250 @@
 
     html {
         scroll-behavior: auto;
+    }
+}
+
+/* ===== Stage S3-V2, fix 1: no sideways scroll at 320px ====================================================== */
+/* MEASURED in a real browser (tests/Feature/Storefront/Js/overflow-check.mjs): a grid track of `1fr` is `minmax(auto, 1fr)`, so the widest
+   unbreakable thing inside (a long product name, a long word of the text, the header's icon + badge) stretched the WHOLE column past the viewport.
+   The cure is at the cause, never `overflow-x: hidden` on html/body (that would only mask a fixed-width child; a static test forbids it):
+   tracks are `minmax(0, 1fr)`, grid/flex children may shrink (`min-width: 0`), and long words wrap (`overflow-wrap: anywhere`). */
+
+.sf-header-bar {
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    gap: 0.5rem;
+}
+
+.sf-main {
+    min-width: 0;
+}
+
+.sf-title,
+.sf-intro-text,
+.sf-section-title,
+.sf-page,
+.sf-description,
+.sf-card-name,
+.sf-footer-inner,
+.sf-category-tile-name {
+    overflow-wrap: anywhere;
+}
+
+/* The cart link: a 44px target; on a phone the badge sits ON the bag (no width of its own), so the header's two side columns stay narrow. */
+.sf-header-bar > .sf-cart {
+    position: relative;
+    justify-content: center;
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+}
+
+@media (max-width: 29.999rem) {
+    .sf-header-bar > .sf-cart {
+        padding: 0;
+    }
+
+    .sf-header-bar .sf-cart-count {
+        position: absolute;
+        top: 0.125rem;
+        right: 0;
+    }
+}
+
+/* Cart page */
+.sf-cart-layout {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+.sf-cart-page .sf-cart-line > *,
+.sf-cart-summary > * {
+    min-width: 0;
+}
+
+.sf-cart-page .sf-cart-line-name,
+.sf-cart-page .sf-cart-line-label,
+.sf-cart-page .sf-cart-line-link,
+.sf-cart-shipping-hint,
+.sf-cart-total-caption {
+    overflow-wrap: anywhere;
+}
+
+/* Checkout */
+.sf-checkout-layout {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+.sf-checkout-layout > *,
+.sf-summary-line > *,
+.sf-summary-toggle > * {
+    min-width: 0;
+}
+
+.sf-summary-line-info,
+.sf-summary-line-name,
+.sf-summary-line-label,
+.sf-summary-line-meta {
+    overflow-wrap: anywhere;
+}
+
+/* ===== Stage S3-V2, fix 2: the collapsed order summary is a PEEK (below 1024px) ============================= */
+/* Collapsed, the summary card shows only the top of its FIRST product row, fading out (an overlay, not a mask or a blur), directly under the bar, so
+   the two read as one control and it is obvious there is a list to open. Everything else in the card is hidden; open = today's full summary.
+   Needs :has() (to hide the card when the list is empty); a browser without it keeps the old collapsed `display: none` (the @supports not rule). */
+@media (max-width: 63.999rem) {
+    .sf-checkout-layout {
+        row-gap: 0;
+    }
+
+    .sf-summary-toggle {
+        margin-bottom: 1.5rem;
+    }
+
+    .sf-checkout-summary[data-open='true'] {
+        margin-bottom: 1.5rem;
+    }
+
+    .sf-checkout-summary[hidden] {
+        display: none;
+    }
+
+    /* The chevron of the bar: a CSS-drawn arrow that turns over when the summary is open. */
+    .sf-summary-toggle::after {
+        content: '';
+        flex: none;
+        width: 0.5rem;
+        height: 0.5rem;
+        margin: 0 0.25rem 0.25rem 0.25rem;
+        border-right: 2px solid #525252;
+        border-bottom: 2px solid #525252;
+        transform: rotate(45deg);
+        transition: transform 150ms ease;
+    }
+
+    .sf-summary-toggle[aria-expanded='true']::after {
+        margin-bottom: 0;
+        margin-top: 0.25rem;
+        transform: rotate(-135deg);
+    }
+
+    @supports selector(:has(*)) {
+        .sf-checkout-summary[data-open='false'] {
+            display: block;
+            margin-bottom: 1.5rem;
+            padding: 0 1rem;
+            border-top-left-radius: 0;
+            border-top-right-radius: 0;
+            cursor: pointer;
+        }
+
+        .sf-checkout-summary[data-open='false']:has(.sf-summary-lines:empty) {
+            display: none;
+        }
+
+        .sf-checkout-summary[data-open='false'] > :not(.sf-summary-lines) {
+            display: none;
+        }
+
+        .sf-checkout-summary[data-open='false'] .sf-summary-lines {
+            position: relative;
+            max-height: 4.5rem;
+            overflow: hidden;
+        }
+
+        .sf-checkout-summary[data-open='false'] .sf-summary-lines::after {
+            content: '';
+            position: absolute;
+            right: 0;
+            bottom: 0;
+            left: 0;
+            height: 3rem;
+            background: linear-gradient(to bottom, transparent, #fff);
+            pointer-events: none;
+        }
+
+        /* The bar and a visible peek are one control: no gap, the bar's lower corners square, the card's own top border is the divider. (:has() cannot
+           be nested, so the case of an EMPTY list, where there is no peek, is the exception that gives the bar its margin and corners back.) */
+        .sf-summary-toggle[aria-expanded='false'] {
+            margin-bottom: 0;
+            border-bottom-right-radius: 0;
+            border-bottom-left-radius: 0;
+            border-bottom-width: 0;
+        }
+
+        .sf-checkout-layout:has(.sf-summary-lines:empty) .sf-summary-toggle[aria-expanded='false'] {
+            margin-bottom: 1.5rem;
+            border-bottom-right-radius: 0.5rem;
+            border-bottom-left-radius: 0.5rem;
+            border-bottom-width: 1px;
+        }
+    }
+
+    @supports not selector(:has(*)) {
+        .sf-checkout-summary[data-open='false'] {
+            display: none;
+        }
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .sf-summary-toggle::after {
+        transition: none;
+    }
+}
+
+/* ===== Stage S3-V2, fix 3: the mobile menu button is a bare hamburger ======================================== */
+.sf-sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+@media (max-width: 63.999rem) {
+    /* No border, no background, no radius at rest; a 44px touch target; colour-only hover; the focus ring is the base :focus-visible one. */
+    html.js .sf-menu-toggle {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 2.75rem;
+        height: 2.75rem;
+        padding: 0;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        color: #404040;
+    }
+
+    html.js .sf-menu-toggle:hover {
+        color: #171717;
+    }
+}
+
+.sf-menu-icon path {
+    transform-box: fill-box;
+    transform-origin: center;
+    transition: transform 150ms ease, opacity 150ms ease;
+}
+
+/* Open: the outer lines cross into an X and the middle one goes (CSS only; the lines are the svg's three <path>s). */
+.sf-menu-toggle[aria-expanded='true'] .sf-menu-icon path:nth-child(1) {
+    transform: translateY(5px) rotate(45deg);
+}
+
+.sf-menu-toggle[aria-expanded='true'] .sf-menu-icon path:nth-child(2) {
+    opacity: 0;
+}
+
+.sf-menu-toggle[aria-expanded='true'] .sf-menu-icon path:nth-child(3) {
+    transform: translateY(-5px) rotate(-45deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .sf-menu-icon path {
+        transition: none;
     }
 }

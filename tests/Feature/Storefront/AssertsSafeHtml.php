@@ -22,9 +22,9 @@ trait AssertsSafeHtml
             /** @var DOMElement $element */
             $name = strtolower($element->nodeName);
 
-            // S3-V: the ONE inline svg the layout prints is the header's decorative bag icon: it is accepted only as exactly that (class
-            // `sf-cart-icon`, aria-hidden, children are plain <path d=...> and nothing else, no event/href/style attribute anywhere in it).
-            if ($name === 'svg' && $this->isTheCartIcon($element)) {
+            // S3-V / S3-V2: the ONLY inline svgs the layout prints are two decorative icons, the bag (`sf-cart-icon`) and the hamburger (`sf-menu-icon`): each
+            // is accepted only as exactly that (aria-hidden, children are plain <path d=...> or <line> and nothing else, no event/href/style attribute).
+            if ($name === 'svg' && $this->isAKnownIcon($element)) {
                 continue;
             }
 
@@ -53,9 +53,11 @@ trait AssertsSafeHtml
         $this->assertSame([], $problems, "active content in the page {$context}");
     }
 
-    private function isTheCartIcon(DOMElement $svg): bool
+    private function isAKnownIcon(DOMElement $svg): bool
     {
-        if (! str_contains(' '.$svg->getAttribute('class').' ', ' sf-cart-icon ') || $svg->getAttribute('aria-hidden') !== 'true') {
+        $class = ' '.$svg->getAttribute('class').' ';
+
+        if (! (str_contains($class, ' sf-cart-icon ') || str_contains($class, ' sf-menu-icon ')) || $svg->getAttribute('aria-hidden') !== 'true') {
             return false;
         }
 
@@ -66,8 +68,17 @@ trait AssertsSafeHtml
         }
 
         foreach ($svg->getElementsByTagName('*') as $child) {
-            if (strtolower($child->nodeName) !== 'path' || $child->attributes->length !== 1 || ! $child->hasAttribute('d')) {
+            $tag = strtolower($child->nodeName);
+            $allowed = $tag === 'path' ? ['d'] : ($tag === 'line' ? ['x1', 'y1', 'x2', 'y2'] : null);
+
+            if ($allowed === null) {
                 return false;
+            }
+
+            foreach ($child->attributes as $attribute) {
+                if (! in_array(strtolower($attribute->nodeName), $allowed, true)) {
+                    return false;
+                }
             }
         }
 

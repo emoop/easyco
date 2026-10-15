@@ -309,7 +309,8 @@ class StorefrontCheckoutPageTest extends TestCase
         $css = (string) file_get_contents(dirname(__DIR__, 3).'/resources/css/storefront.css');
 
         $this->assertMatchesRegularExpression('/@media \(min-width: 64rem\) \{.*?grid-template-columns: minmax\(0, 1fr\) 24rem;.*?\.sf-checkout-summary \{\s*grid-area: summary;\s*position: sticky;.*?\.sf-summary-toggle \{\s*display: none;/s', $css, 'desktop: two columns, the summary sticky on the right, no toggle bar');
-        $this->assertMatchesRegularExpression('/@media \(max-width: 63\.999rem\) \{\s*\.sf-checkout-summary\[data-open=\'false\'\] \{\s*display: none;/', $css, 'mobile: collapsed until opened');
+        // S3-V2: below 1024px the collapsed summary is a PEEK (no longer `display: none`); only a browser without :has() keeps the old rule (StorefrontMobileFixesTest).
+        $this->assertMatchesRegularExpression('/@media \(max-width: 63\.999rem\) \{.*?@supports not selector\(:has\(\*\)\) \{\s*\.sf-checkout-summary\[data-open=\'false\'\] \{\s*display: none;/s', $css, 'mobile: collapsed until opened (the fallback)');
     }
 
     public function test_the_toggle_label_is_translated(): void

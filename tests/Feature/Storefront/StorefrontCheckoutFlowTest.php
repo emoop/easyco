@@ -35,7 +35,7 @@ class StorefrontCheckoutFlowTest extends TestCase
         $names = [
             'structure', 'preview_before_place', 'one_request_after_place', 'courier_then_kind_dropdown', 'switch_courier_and_kind_keeps_data',
             'rule_a_price_changed', 'rule_a_requote_shows_yet_another_price', 'quote_expired_requote', 'requote_keeps_choice', 'requote_clears_vanished_choice',
-            'unavailable_kinds_are_not_offered', 'courierless_method', 'region_modes', 'note_counter', 'summary_toggle',
+            'unavailable_kinds_are_not_offered', 'courierless_method', 'region_modes', 'note_counter', 'summary_toggle', 'summary_peek_access',
             'promo_box_in_summary', 'promo_apply_requotes_and_keeps_choice', 'promo_changes_delivery_price_rule_a', 'promo_remove_requotes',
             'promo_invalid_and_error', 'promo_does_not_submit_the_form', 'promo_busy_locks_place_order',
             'required_markers', 'promo_compact_box', 'promo_cart_box_unchanged',
