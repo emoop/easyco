@@ -1038,10 +1038,10 @@ const scenarios = {
         const form_ = promoForm();
         const label = form_.querySelector('label');
 
-        assert.equal(input.attrs.placeholder, T('promo_label'), 'the promo text is the placeholder');
+        assert.equal(input.attrs.placeholder, ' ', 'C1e: a one-space placeholder; the floating label carries the promo text');
         assert.equal(label.attrs.for, input.id, 'a real label stays, for screen readers');
         assert.equal(label.textContent, T('promo_label'));
-        assert.match(label.className, /sf-promo-compact-label/, 'visually hidden by its class');
+        assert.match(label.className, /sf-promo-compact-label/, 'the label keeps its class (C1e: it is the visible floating label now)');
         const wrapper = input.parent;
         assert.match(wrapper.className, /sf-promo-compact-field/);
         assert.ok(wrapper.children.includes(promoHost().querySelectorAll('button')[0]), 'the button is in the SAME wrapper as the input');
@@ -1542,6 +1542,69 @@ const scenarios = {
 
         await submit();
         assert.equal(checkoutPosts().length, 1, 'nothing more is ever sent');
+    },
+
+
+    // C1e (G4): the postal code sits next to the place. Shown while no kind is chosen and for an address; hidden for an office or a locker;
+    // the quote keeps sending it with the place, whatever the kind; a pick-up order never carries it.
+    async postal_code_follows_the_kind() {
+        const postal = q('[data-sf-postal-field]');
+        assert.equal(postal.hidden, false, 'shown before any choice is made');
+        assert.equal(q('[data-sf-address-fields]').hidden, true, 'while the street block still waits for its kind');
+        assert.equal(postal.querySelector('input').name, 'postal_code', 'the same field, the same name');
+        assert.equal(postal.querySelector('[data-sf-error-for="postal_code"]') !== null, true, 'and its own error holder');
+
+        await typeInto('city', 'Sofia');
+        choose(courierRows()[0].radio);
+        assert.equal(postal.hidden, false, 'a courier with several kinds, none chosen yet');
+        chooseKind('1:address');
+        assert.equal(postal.hidden, false, 'an address');
+        await typeInto('postal_code', '1000');
+
+        chooseKind('4:office');
+        assert.equal(postal.hidden, true, 'hidden for an office');
+        chooseKind('5:locker');
+        assert.equal(postal.hidden, true, 'hidden for a locker');
+        chooseKind('1:address');
+        assert.equal(postal.hidden, false, 'and back again for an address');
+        chooseKind('4:office');
+        assert.equal(postal.hidden, true);
+
+        // The quote is unchanged: the place and, when typed, the postal code, whatever the kind.
+        await typeInto('city', 'Plovdiv');
+        assert.deepEqual(quotePosts().at(-1).body, { delivery_type: 'all', country: 'BG', settlement: 'Plovdiv', postal_code: '1000' });
+
+        // A pick-up order: the field is hidden, so its value is NOT part of the payload.
+        assert.equal(postal.hidden, true);
+        fillContact();
+        fillPoint('E-9');
+        await submit();
+        const body = lastCheckout().body;
+        assert.equal(body.delivery_type, 'pickup_point');
+        assert.equal('postal_code' in body, false, 'a pick-up order never sends the postal code');
+        assert.equal(body.settlement, 'Plovdiv');
+    },
+
+    // C1e (G4): for a street address the postal code is sent as before.
+    async postal_code_is_sent_for_an_address() {
+        await typeInto('city', 'Sofia');
+        choose(courierRows()[2].radio);
+        assert.equal(q('[data-sf-postal-field]').hidden, false);
+        fillContact();
+        set('address_line_1', '5 Long St');
+        await typeInto('postal_code', '1000');
+        await submit();
+
+        const body = lastCheckout().body;
+        assert.equal(body.delivery_type, 'street_address');
+        assert.equal(body.postal_code, '1000');
+        assert.equal(body.city, 'Sofia');
+    },
+
+    // C1e (G1): the checkout's promo input carries the one-space placeholder the floating label needs; the cart page's box is untouched.
+    async promo_input_has_the_floating_placeholder() {
+        assert.equal(promoInput().attrs.placeholder, ' ');
+        assert.equal(promoForm().querySelector('label').textContent, T('promo_label'), 'the visible floating label is the promo text');
     },
 
 };

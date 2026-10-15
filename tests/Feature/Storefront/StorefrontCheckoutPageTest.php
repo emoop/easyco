@@ -135,7 +135,7 @@ class StorefrontCheckoutPageTest extends TestCase
         // Courier, then kind: two empty, hidden steps the script fills from the one `all` quote. The kind is a NATIVE select (with its
         // label) and a text line for a courier that serves exactly one kind.
         $this->assertMatchesRegularExpression('/<div class="sf-delivery-step" data-sf-courier-box hidden>.*?role="radiogroup" aria-labelledby="sf-courier-title" data-sf-couriers>/s', $html);
-        $this->assertMatchesRegularExpression('/<div class="sf-delivery-step" data-sf-type-box hidden>\s*<label class="sf-delivery-step-title" for="sf-delivery-destination">[^<]+<\/label>\s*<select class="sf-kind-select" id="sf-delivery-destination" name="delivery_destination" data-sf-kind-select hidden><\/select>\s*<p class="sf-kind-text" data-sf-kind-text hidden><\/p>/s', $html);
+        $this->assertMatchesRegularExpression('/<div class="sf-delivery-step sf-float sf-float-up" data-sf-type-box hidden>\s*<label class="sf-delivery-step-title" for="sf-delivery-destination">[^<]+<\/label>\s*<select class="sf-kind-select" id="sf-delivery-destination" name="delivery_destination" data-sf-kind-select hidden><\/select>\s*<p class="sf-kind-text" data-sf-kind-text hidden><\/p>/s', $html);
         $this->assertLessThan(strpos($html, 'data-sf-type-box'), strpos($html, 'data-sf-courier-box'));
 
         // The street fields and the pick-up point's fields start hidden: they appear for the type the customer picks.
@@ -199,7 +199,7 @@ class StorefrontCheckoutPageTest extends TestCase
     {
         $html = $this->get('/checkout')->getContent();
 
-        $this->assertMatchesRegularExpression('/<div data-sf-address-fields hidden>.*?<div class="sf-field" data-sf-region-field>\s*<label for="sf-region">Region<\/label>\s*<input id="sf-region" name="region" type="text" autocomplete="address-level1" maxlength="100">\s*<p class="sf-field-error" id="sf-err-region" data-sf-error-for="region" hidden><\/p>.*?<div data-sf-pickup-fields hidden>/s', $html, 'the region is part of the street-address block, before the pick-up block');
+        $this->assertMatchesRegularExpression('/<div data-sf-address-fields hidden>.*?<div class="sf-field sf-float" data-sf-region-field>\s*<label for="sf-region">Region<\/label>\s*<input id="sf-region" name="region" type="text" autocomplete="address-level1" maxlength="100" placeholder=" ">\s*<p class="sf-field-error" id="sf-err-region" data-sf-error-for="region" hidden><\/p>.*?<div data-sf-pickup-fields hidden>/s', $html, 'the region is part of the street-address block, before the pick-up block');
         $this->assertStringNotContainsString('name="region"', substr($html, (int) strpos($html, 'data-sf-pickup-fields')), 'never for a pick-up point');
 
         $this->assertMatchesRegularExpression('/<label for="sf-note">Order note<\/label>\s*<textarea id="sf-note" name="customer_note" rows="3" maxlength="1000" placeholder="[^"]+" aria-describedby="sf-note-counter" data-sf-describedby="sf-note-counter"><\/textarea>/', $html);
@@ -283,7 +283,7 @@ class StorefrontCheckoutPageTest extends TestCase
         $block = substr($html, (int) strpos($html, '<div data-sf-pickup-fields hidden>'), 1400);
 
         $this->assertSame(1, substr_count($block, '<input '), 'ONE input in the pick-up block');
-        $this->assertStringContainsString('<input id="sf-pickup-address" name="pickup_point_address" type="text" maxlength="255" aria-describedby="sf-pickup-help" data-sf-describedby="sf-pickup-help">', $block);
+        $this->assertStringContainsString('<input id="sf-pickup-address" name="pickup_point_address" type="text" maxlength="255" aria-describedby="sf-pickup-help" data-sf-describedby="sf-pickup-help" placeholder=" ">', $block);
         $this->assertStringContainsString('<p class="sf-field-help" id="sf-pickup-help">The office&#039;s address, name or code</p>', $block);
         $this->assertStringContainsString('<label for="sf-pickup-address">Office or locker</label>', $block);
         $this->assertStringNotContainsString('name="pickup_point_reference"', $html);

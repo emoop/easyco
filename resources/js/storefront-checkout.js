@@ -103,6 +103,7 @@ function initCheckout(root) {
     var statusLine = root.querySelector('[data-sf-checkout-status]');
     var placeOrder = root.querySelector('[data-sf-place-order]');
     var addressBox = root.querySelector('[data-sf-address-fields]');
+    var postalBox = root.querySelector('[data-sf-postal-field]');     // the postal code next to the place: shown for a street address and before a kind is chosen
     var pickupBox = root.querySelector('[data-sf-pickup-fields]');
     var regionBox = root.querySelector('[data-sf-region-field]');
     var noteCounter = root.querySelector('[data-sf-note-counter]');
@@ -467,6 +468,13 @@ function initCheckout(root) {
 
         if (cart !== null) {
             promoHost.appendChild(promotionBox(cart, runPromo, { compact: true }));
+
+            // The floating label (CSS only) needs a one-space placeholder; the label itself is the promo text, shown inside the field.
+            var promoInput = promoHost.querySelector('input');
+
+            if (promoInput) {
+                promoInput.setAttribute('placeholder', ' ');
+            }
         }
     }
 
@@ -788,6 +796,7 @@ function initCheckout(root) {
         var pickup = isPickupKind(kind);
 
         addressBox.hidden = ! street;
+        postalBox.hidden = pickup;
         pickupBox.hidden = ! pickup;
 
         setRequired('address_line_1', street);

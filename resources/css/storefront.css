@@ -739,12 +739,18 @@
         @apply space-y-4;
     }
 
+    /* C1e: a section is a white card; its legend is the card's heading INSIDE it (a floated legend does not sit on the border). */
     .sf-fieldset {
-        @apply rounded-lg border border-neutral-200 bg-white p-4;
+        @apply min-w-0 rounded-xl border border-neutral-200 bg-white p-5 sm:p-6;
     }
 
     .sf-legend {
-        @apply px-1 text-base font-semibold text-neutral-900;
+        @apply float-left mb-3 w-full p-0 text-lg font-semibold text-neutral-900;
+    }
+
+    .sf-legend + * {
+        clear: both;
+        margin-top: 0;
     }
 
     .sf-field {
@@ -755,14 +761,43 @@
         @apply mb-1 block text-sm font-medium text-neutral-800;
     }
 
+    /* C1e: ONE look for every control: 52px, 8px radius, a 1px neutral border (selects drop the native arrow for a chevron). */
     .sf-field input[type='text'],
     .sf-field input[type='email'],
-    .sf-field input[type='tel'] {
-        @apply w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-base;
+    .sf-field input[type='tel'],
+    .sf-field select,
+    .sf-kind-select {
+        @apply h-[3.25rem] w-full rounded-lg border border-neutral-300 bg-white px-3 text-base text-neutral-900;
     }
 
-    .sf-field input[aria-invalid='true'] {
+    .sf-field select,
+    .sf-kind-select {
+        @apply appearance-none pr-10;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%23525252' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 8l5 5 5-5'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: right 0.75rem center;
+        background-size: 1.25rem;
+    }
+
+    /* C1e: the ONE focus style: a 2px ring in the accent, no offset, the border takes the accent too (no browser outline on top of it). */
+    .sf-checkout-form input[type='text']:focus-visible,
+    .sf-checkout-form input[type='email']:focus-visible,
+    .sf-checkout-form input[type='tel']:focus-visible,
+    .sf-checkout-form select:focus-visible,
+    .sf-checkout-form textarea:focus-visible {
+        outline: 2px solid #0369a1;
+        outline-offset: 0;
+        border-color: #0369a1;
+    }
+
+    .sf-field input[aria-invalid='true'],
+    .sf-field select[aria-invalid='true'] {
         @apply border-red-700 bg-red-50;
+    }
+
+    .sf-checkout-form [aria-invalid='true']:focus-visible {
+        outline-color: #b91c1c;
+        border-color: #b91c1c;
     }
 
     .sf-field-note {
@@ -827,10 +862,7 @@
     }
 
     /* C1b: the kind of the chosen courier (a native select, or one line of text), the region marker, the note counter, the price notice. */
-    .sf-kind-select {
-        @apply w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-base;
-    }
-
+    /* (the kind select shares the controls' rule above) */
     .sf-kind-text {
         @apply rounded-md border border-neutral-200 p-3 text-sm text-neutral-900;
     }
@@ -856,6 +888,97 @@
 
     .sf-field-help {
         @apply mt-1 text-sm text-neutral-600;
+    }
+
+    /* C1e: the place and the postal code share a row; without the postal field (a pick-up kind) the place takes the whole row. */
+    .sf-place-row:has(> [hidden]) {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    /* C1e: FLOATING LABELS, CSS only. Without :has() (or before this file loads) the label stays ABOVE its field, exactly as before. */
+    @supports selector(:has(*)) {
+        .sf-float,
+        .sf-promo-compact-form {
+            position: relative;
+        }
+
+        .sf-float > label,
+        .sf-promo-compact-form > .sf-promo-compact-label {
+            position: absolute;
+            top: 0;
+            left: 0.75rem;
+            z-index: 1;
+            margin: 0;
+            max-width: calc(100% - 3.5rem);
+            overflow: hidden;
+            font-size: 1rem;
+            font-weight: 400;
+            line-height: 1.5rem;
+            color: #525252;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            pointer-events: none;
+            transform: translateY(0.875rem);
+            transform-origin: left top;
+            transition: transform 120ms ease, color 120ms ease;
+        }
+
+        .sf-promo-compact-form > .sf-promo-compact-label {
+            max-width: calc(100% - 8rem);
+        }
+
+        .sf-float > input,
+        .sf-float > select,
+        .sf-promo-compact-form .sf-promo-compact-input {
+            padding-top: 1.35rem;
+            padding-bottom: 0.25rem;
+        }
+
+        /* Up: focus, a value, the browser's autofill, and ALWAYS for a select (it always shows a value). */
+        .sf-float:has(> :focus) > label,
+        .sf-float:has(> input:not(:placeholder-shown)) > label,
+        .sf-float-up > label,
+        .sf-promo-compact-form:has(input:focus) > .sf-promo-compact-label,
+        .sf-promo-compact-form:has(input:not(:placeholder-shown)) > .sf-promo-compact-label {
+            color: #737373;
+            transform: translateY(0.45rem) scale(0.75);
+        }
+
+        .sf-float:has(> :autofill) > label {
+            color: #737373;
+            transform: translateY(0.45rem) scale(0.75);
+        }
+
+        .sf-float:has(> :-webkit-autofill) > label {
+            color: #737373;
+            transform: translateY(0.45rem) scale(0.75);
+        }
+
+        /* The delivery kind shows a native select for two or more kinds and plain text for one: with no select on screen its label is a plain caption. */
+        .sf-float-up:not(:has(> select:not([hidden]))) > label {
+            position: static;
+            max-width: none;
+            overflow: visible;
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: #262626;
+            white-space: normal;
+            pointer-events: auto;
+            transform: none;
+            margin-bottom: 0.5rem;
+        }
+
+        /* An invalid control: its label takes the error colour with the border. */
+        .sf-float:has(> [aria-invalid='true']) > label {
+            color: #b91c1c;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .sf-float > label,
+            .sf-promo-compact-form > .sf-promo-compact-label {
+                transition: none;
+            }
+        }
     }
 
     /* C1d-B: checkboxes (never pre-ticked), the payment cards, the privacy notice, the express slot. */
@@ -906,7 +1029,18 @@
     }
 
     .sf-express {
-        @apply mb-4 rounded-lg border border-neutral-200 bg-white p-4;
+        @apply mb-4 rounded-xl border border-neutral-200 bg-white p-5;
+    }
+
+    /* C1e: «ИЛИ» between the express slot and the Contact card: a line on each side of the word. */
+    .sf-express-divider {
+        @apply m-0 flex items-center gap-3 text-xs font-semibold uppercase tracking-wide text-neutral-500;
+    }
+
+    .sf-express-divider::before,
+    .sf-express-divider::after {
+        content: '';
+        @apply flex-1 border-t border-neutral-300;
     }
 
     .sf-pay-cards {
@@ -938,16 +1072,17 @@
         @apply border-0 bg-transparent p-0;
     }
 
+    /* C1e: the label is the visible one (above the field until the floating enhancement below puts it inside). */
     .sf-promo-compact-label {
-        @apply sr-only;
+        @apply mb-1 block text-sm font-medium text-neutral-800;
     }
 
     .sf-promo-compact-field {
-        @apply flex w-full items-stretch;
+        @apply flex w-full items-stretch rounded-lg;
     }
 
     .sf-promo-compact-input {
-        @apply h-11 min-w-0 flex-1 rounded-l-md rounded-r-none border border-r-0 border-neutral-300 bg-white px-3 text-base;
+        @apply h-[3.25rem] min-w-0 flex-1 rounded-l-lg rounded-r-none border border-r-0 border-neutral-300 bg-white px-3 text-base;
     }
 
     /* ONE control: the focus ring surrounds the field and its button together, and the field has no ring of its own. */
@@ -957,16 +1092,16 @@
 
     .sf-promo-compact-field:focus-within {
         outline: 2px solid #0369a1;
-        outline-offset: 2px;
-        border-radius: 0.375rem;
+        outline-offset: 0;
+        border-radius: 0.5rem;
     }
 
     .sf-promo-compact-apply {
-        @apply h-11 shrink-0 rounded-l-none rounded-r-md border border-neutral-900 bg-neutral-900 px-4 text-sm font-semibold text-white;
+        @apply h-[3.25rem] shrink-0 rounded-l-none rounded-r-lg border border-neutral-900 bg-neutral-900 px-4 text-sm font-semibold text-white;
     }
 
     .sf-note-field textarea {
-        @apply w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-base;
+        @apply w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-base;
     }
 
     .sf-note-field textarea[aria-invalid='true'] {
@@ -990,7 +1125,7 @@
     }
 
     .sf-place-order {
-        @apply inline-flex w-full items-center justify-center rounded-md bg-neutral-900 px-5 py-3 text-base font-semibold text-white;
+        @apply inline-flex min-h-[3.25rem] w-full items-center justify-center rounded-lg bg-neutral-900 px-5 text-base font-semibold text-white;
     }
 
     .sf-place-order:disabled {
@@ -1001,8 +1136,13 @@
         @apply block text-center text-sm;
     }
 
+    /* C1e: the summary shares the cards' radius, padding and heading size (no layout change). */
     .sf-checkout-summary {
-        @apply rounded-lg border border-neutral-200 bg-white p-4;
+        @apply rounded-xl border border-neutral-200 bg-white p-5 sm:p-6;
+    }
+
+    .sf-checkout-summary .sf-section-title {
+        @apply text-lg;
     }
 
     /* Below 1024px the summary is collapsed behind the bar until the customer opens it. */
