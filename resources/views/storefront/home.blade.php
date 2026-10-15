@@ -1,9 +1,11 @@
 @extends('storefront.layout')
 
 @section('content')
+    {{-- The merchant's heading and text (Admin > Storefront) when set, else the language default; both are PLAIN text, printed escaped. --}}
     <section class="sf-intro">
-        <h1 class="sf-title">{{ __('storefront.home_intro_title', ['shop' => config('app.name')]) }}</h1>
-        <p class="sf-intro-text">{{ __('storefront.home_intro_text') }}</p>
+        <h1 class="sf-title">{{ $introTitle ?? __('storefront.home_intro_title', ['shop' => config('app.name')]) }}</h1>
+        <p class="sf-intro-text">{{ $introText ?? __('storefront.home_intro_text') }}</p>
+        <a class="sf-intro-button" href="#newest">{{ __('storefront.home_browse_new') }}</a>
     </section>
 
     @if (! empty($categories))
@@ -22,8 +24,8 @@
         </section>
     @endif
 
-    <section class="sf-listing sf-home">
-        <h2 class="sf-section-title">{{ __('storefront.newest_products') }}</h2>
+    <section class="sf-listing sf-home" id="newest" aria-labelledby="sf-newest-title">
+        <h2 class="sf-section-title" id="sf-newest-title">{{ __('storefront.newest_products') }}</h2>
         @if ($listing->items === [])
             <p class="sf-empty">{{ __('storefront.no_products') }}</p>
         @else

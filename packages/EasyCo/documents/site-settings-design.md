@@ -101,3 +101,12 @@ Owned by `App\Settings\CheckoutFormSettings`, which reads ALL of them (the two r
 | `privacy.ip_full_retention_days` | 0-3650; 0 = never keep the full client address | 30 |
 
 The settings page (Settings > Checkout, `SETTINGS_MANAGE`) forgets a key that holds its default, like the region keys. The `invoice.*` and `privacy.*` keys above are in the same `CheckoutFormSettings::KEYS` list as the rest, so they cost no query of their own. A page id that points at a draft or at a page that no longer exists is no link and no error (no checkbox, no notice) — it does NOT fall back to the address.
+
+### Storefront home page (stage S3-V)
+
+| Key | Values | Absent means |
+|---|---|---|
+| `storefront.home.title` | plain text, at most 120 characters (`App\Settings\StorefrontHomeSettings`; the admin form enforces `PlainText` and the limit, the reader cuts at it) | the language default «Добре дошли в :shop» |
+| `storefront.home.text` | plain multi-line text, at most 400 characters (`PlainMultilineText`) | the language default text |
+
+Edited in Admin > Storefront (`content_manage`). Saving an empty field FORGETS its key. Both keys are read in one `getMany` together with `site.currency_symbol_position` (a key the home page reads anyway), so they cost the page no query.

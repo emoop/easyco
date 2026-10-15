@@ -43,6 +43,8 @@ return [
     'home_intro_text' => 'Browse the newest products below, or pick a category to find what you are looking for.',
     'home_categories' => 'Shop by category',
     'home_category_count' => ':count product|:count products',
+    // Stage S3-V: the home page's button.
+    'home_browse_new' => 'Browse the newest',
 
     // Texts the cart script prints (handed to it through data attributes; see partials/messages.blade.php).
     'js' => [
@@ -72,6 +74,15 @@ return [
         'discount' => 'Discount (:code)',
         'total' => 'Total',
         'cart_lines' => 'Cart items',
+        'cart_empty_title' => 'Your cart is empty',
+        'cart_empty_hint' => 'Add some products and they will appear here.',
+        'cart_to_shop' => 'Go to the shop',
+        'cart_categories' => 'Shop by category',
+        'cart_summary' => 'Summary',
+        'cart_shipping_note' => 'Shipping is calculated at checkout',
+        'qty_decrease' => 'Decrease quantity',
+        'qty_increase' => 'Increase quantity',
+        'retry' => 'Try again',
     ],
 
     // Stage C1: the checkout page and the order-received page.

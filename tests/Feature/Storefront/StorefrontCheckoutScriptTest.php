@@ -172,7 +172,7 @@ class StorefrontCheckoutScriptTest extends TestCase
         $this->assertStringContainsString("message, promotionBox, setCount, t } from './storefront-cart.js';", $code);
         $this->assertStringContainsString('promotionBox(cart, runPromo, { compact: true })', $code);
         $this->assertStringContainsString('export { api, apiMessage, el, formatMoney, hasCartCookie, lineImage, localUrl, message, promotionBox, setCount, t };', $cart);
-        $this->assertStringContainsString('content.appendChild(promotionBox(cart, act));', $cart, 'the cart page uses the same function');
+        $this->assertStringContainsString('summary.appendChild(promotionBox(cart, act, { compact: true }));', $cart, 'the cart page uses the same function');
         $this->assertSame(1, substr_count($cart, 'function promotionBox('), 'ONE implementation');
 
         foreach (['sf-cart-promo', 'promo_label', "'/api/cart/promotion'", 'promo_apply'] as $needle) {

@@ -329,8 +329,8 @@ function formatMoney(money) {
  * the markup from `cart.promotion` and hands every API call to `act(call, successText)`: the page decides what a call means (lock, reload,
  * re-quote, show an error). The apply form submits on Enter and never reaches any other form.
  *
- * `options.compact` (the checkout summary only; the cart page passes none and gets EXACTLY the markup it always had): the code field takes the
- * whole width with the promo text as its PLACEHOLDER (its label is kept for screen readers, visually hidden) and the Apply button is attached
+ * `options.compact` (the checkout summary and, since S3-V, the cart page's summary; the plain call keeps the markup it always had): the code field
+ * takes the whole width with the promo text as a FLOATING LABEL (a one-space placeholder, the label drawn inside the field by CSS) and the Apply button is attached
  * to the field's right end inside one wrapper, so the two read as one control. The applied / invalid / Remove states are the same in both modes.
  */
 function promotionBox(cart, act, options) {
@@ -371,7 +371,8 @@ function promotionBox(cart, act, options) {
 
     if (compact) {
         var field = el('div', 'sf-promo-compact-field');
-        code.setAttribute('placeholder', t('promo_label'));
+        // The label FLOATS inside the field (CSS only, the checkout's own look): the one-space placeholder is what its :placeholder-shown test needs.
+        code.setAttribute('placeholder', ' ');
         field.appendChild(code);
         field.appendChild(apply);
         form.appendChild(field);
@@ -407,6 +408,7 @@ function initCartPage() {
     var content = root.querySelector('[data-sf-cart-content]');
     var status = root.querySelector('[data-sf-cart-status]');
     var loading = root.querySelector('[data-sf-cart-loading]');
+    var categoryLinks = root.querySelector('[data-sf-cart-empty-extras]');
     var working = false;
 
     function clear(node) {
@@ -486,6 +488,11 @@ function initCartPage() {
         }
     }
 
+    /**
+     * One line of the cart: the picture, the name (a link when the API gives a root-relative url), the variation, the unit price, the quantity
+     * STEPPER ([-] [number] [+], 44px targets in the stylesheet), the line total and a TEXT «Премахни» button. The stepper's two buttons set the input
+     * and run the SAME handler the input's own `change` runs (`onQuantityChange`): one code path, one request.
+     */
     function lineItem(line) {
         var item = el('li', 'sf-cart-line');
         var picture = lineImage(line.image);
@@ -523,30 +530,55 @@ function initCartPage() {
             info.appendChild(el('p', 'sf-cart-line-note', t('price_changed')));
         }
 
-        item.appendChild(info);
-
         if (line.price_available !== false) {
             var unit = el('p', 'sf-cart-line-unit');
             unit.appendChild(el('span', 'sf-cart-line-caption', t('unit_price') + ': '));
             unit.appendChild(el('span', 'sf-cart-line-amount', formatMoney(line.unit_price)));
-            item.appendChild(unit);
+            info.appendChild(unit);
         }
 
+        item.appendChild(info);
+
         var quantityId = 'sf-qty-' + String(line.variation_id);
+        var maxQuantity = Number.isInteger(line.max_quantity) && line.max_quantity > 0 ? line.max_quantity : null;
         var quantity = el('div', 'sf-cart-line-quantity');
         var quantityLabel = el('label', 'sf-cart-line-caption', t('quantity'));
         quantityLabel.setAttribute('for', quantityId);
+        var stepper = el('div', 'sf-cart-stepper');
+        var minus = el('button', 'sf-cart-step sf-cart-step-minus', '−');
+        minus.setAttribute('type', 'button');
+        minus.setAttribute('aria-label', t('qty_decrease'));
         var input = el('input', 'sf-cart-qty');
         input.setAttribute('id', quantityId);
         input.setAttribute('type', 'number');
         input.setAttribute('min', '1');
         input.setAttribute('step', '1');
         input.setAttribute('inputmode', 'numeric');
+
+        if (maxQuantity !== null) {
+            input.setAttribute('max', String(maxQuantity));
+        }
+
         input.value = String(line.quantity);
-        input.addEventListener('change', function () {
+        var plus = el('button', 'sf-cart-step sf-cart-step-plus', '+');
+        plus.setAttribute('type', 'button');
+        plus.setAttribute('aria-label', t('qty_increase'));
+
+        if (line.quantity <= 1) {
+            minus.setAttribute('aria-disabled', 'true');
+        }
+
+        // THE ONE quantity handler: the input's own `change`, and (after setting the input) the two buttons.
+        var onQuantityChange = function () {
             var next = parseInt(input.value, 10);
 
             if (isNaN(next) || next < 1) {
+                input.value = String(line.quantity);
+
+                return;
+            }
+
+            if (maxQuantity !== null && next > maxQuantity) {
                 input.value = String(line.quantity);
 
                 return;
@@ -557,9 +589,37 @@ function initCartPage() {
                     return api('PATCH', '/api/cart/lines/' + encodeURIComponent(String(line.variation_id)), { quantity: next });
                 }, t('updated'));
             }
+        };
+        input.addEventListener('change', onQuantityChange);
+        minus.addEventListener('click', function () {
+            var current = parseInt(input.value, 10);
+
+            if (isNaN(current) || current <= 1) {
+                return;
+            }
+
+            input.value = String(current - 1);
+            onQuantityChange();
         });
+        plus.addEventListener('click', function () {
+            var current = parseInt(input.value, 10);
+
+            if (isNaN(current) || current < 1) {
+                current = line.quantity;
+            }
+
+            if (maxQuantity !== null && current >= maxQuantity) {
+                return;
+            }
+
+            input.value = String(current + 1);
+            onQuantityChange();
+        });
+        stepper.appendChild(minus);
+        stepper.appendChild(input);
+        stepper.appendChild(plus);
         quantity.appendChild(quantityLabel);
-        quantity.appendChild(input);
+        quantity.appendChild(stepper);
         item.appendChild(quantity);
 
         if (line.price_available !== false) {
@@ -581,6 +641,7 @@ function initCartPage() {
         return item;
     }
 
+    /** The money rows of the summary: the subtotal and, only when there is one, the discount. Every figure is the API's. */
     function totals(cart) {
         var list = el('dl', 'sf-cart-totals');
 
@@ -598,9 +659,33 @@ function initCartPage() {
             row(t('discount', { code: cart.promotion.code }), { minor: -Math.abs(discount.minor), currency: discount.currency }, 'sf-cart-total-discount');
         }
 
-        row(t('total'), cart.total, 'sf-cart-total-grand');
+        return list;
+    }
+
+    function grandTotal(cart) {
+        var list = el('dl', 'sf-cart-totals sf-cart-totals-grand');
+        var wrap = el('div', 'sf-cart-total-row sf-cart-total-grand');
+        wrap.appendChild(el('dt', 'sf-cart-total-caption', t('total')));
+        wrap.appendChild(el('dd', 'sf-cart-total-amount', formatMoney(cart.total)));
+        list.appendChild(wrap);
 
         return list;
+    }
+
+    /** The empty cart: a friendly title and sentence, a primary button to the shop and the top-level category links (server-rendered, no query). */
+    function renderEmpty() {
+        var box = el('div', 'sf-cart-empty');
+        box.appendChild(el('h2', 'sf-cart-empty-title', t('cart_empty_title')));
+        box.appendChild(el('p', 'sf-cart-empty-hint', t('cart_empty_hint')));
+        var shop = el('a', 'sf-cart-empty-button', t('cart_to_shop'));
+        shop.setAttribute('href', i18n ? (i18n.getAttribute('data-home-url') || '/') : '/');
+        box.appendChild(shop);
+        content.appendChild(box);
+
+        if (categoryLinks) {
+            categoryLinks.hidden = false;
+            content.appendChild(categoryLinks);
+        }
     }
 
     function render(cart) {
@@ -613,29 +698,66 @@ function initCartPage() {
         var lines = cart && Array.isArray(cart.lines) ? cart.lines : [];
 
         if (lines.length === 0) {
-            content.appendChild(el('p', 'sf-cart-empty', t('cart_empty_text')));
+            renderEmpty();
 
             return;
         }
 
+        // ONE column on a phone, two from 900px: the lines on the left and the summary card on the right (a sticky card).
+        var layout = el('div', 'sf-cart-layout');
         var list = el('ul', 'sf-cart-lines');
         list.setAttribute('aria-label', t('cart_lines'));
 
         lines.forEach(function (line) {
             list.appendChild(lineItem(line));
         });
-        content.appendChild(list);
-        content.appendChild(promotionBox(cart, act));
-        content.appendChild(totals(cart));
+        layout.appendChild(list);
+
+        var summary = el('aside', 'sf-cart-summary');
+        summary.appendChild(el('h2', 'sf-cart-summary-title', t('cart_summary')));
+        // The checkout's own compact promo box (a floating label inside the field, Apply attached): the same function, the same markup.
+        summary.appendChild(promotionBox(cart, act, { compact: true }));
+        summary.appendChild(totals(cart));
 
         if (cart.free_shipping_hint && typeof cart.free_shipping_hint.text === 'string' && cart.free_shipping_hint.text !== '') {
-            content.appendChild(el('p', 'sf-cart-shipping-hint', cart.free_shipping_hint.text));
+            // The API's own sentence, shown as it is (no arithmetic here).
+            summary.appendChild(el('p', 'sf-cart-shipping-hint', cart.free_shipping_hint.text));
         }
 
+        summary.appendChild(el('p', 'sf-cart-shipping-note', t('cart_shipping_note')));
+        summary.appendChild(grandTotal(cart));
+
         // C1: the checkout is a page now (the same cookie-free storefront group); the cart page just links to it.
+        var checkoutUrl = localUrl(i18n ? i18n.getAttribute('data-checkout-url') : null) || '/checkout';
         var checkout = el('a', 'sf-cart-checkout', t('checkout_label'));
-        checkout.setAttribute('href', localUrl(i18n ? i18n.getAttribute('data-checkout-url') : null) || '/checkout');
-        content.appendChild(checkout);
+        checkout.setAttribute('href', checkoutUrl);
+        summary.appendChild(checkout);
+        layout.appendChild(summary);
+        content.appendChild(layout);
+
+        // On a phone the same link is also a bar that sticks to the bottom of the screen with the total (CSS `position: sticky`, hidden from 900px).
+        var bar = el('div', 'sf-cart-bar');
+        var barTotal = el('p', 'sf-cart-bar-total');
+        barTotal.appendChild(el('span', 'sf-cart-bar-caption', t('total')));
+        barTotal.appendChild(el('span', 'sf-cart-bar-amount', formatMoney(cart.total)));
+        var barLink = el('a', 'sf-cart-checkout sf-cart-bar-button', t('checkout_label'));
+        barLink.setAttribute('href', checkoutUrl);
+        bar.appendChild(barTotal);
+        bar.appendChild(barLink);
+        content.appendChild(bar);
+    }
+
+    /** The API could not be read: the generic message and a button that asks again (no page reload). */
+    function renderFailure() {
+        clear(content);
+
+        var retry = el('button', 'sf-cart-retry', t('retry'));
+        retry.setAttribute('type', 'button');
+        retry.addEventListener('click', function () {
+            message(status, '');
+            start();
+        });
+        content.appendChild(retry);
     }
 
     async function start() {
@@ -665,6 +787,7 @@ function initCartPage() {
         }
 
         message(status, t('generic_error'));
+        renderFailure();
     }
 
     start();

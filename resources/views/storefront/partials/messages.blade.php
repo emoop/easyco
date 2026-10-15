@@ -10,4 +10,5 @@
          data-price-currency="{{ $priceTemplate['currency'] }}"
      @endisset
      data-cart-url="{{ route('storefront.cart', [], false) }}"
+     data-home-url="{{ route('storefront.home', [], false) }}"
      data-checkout-url="{{ route('storefront.checkout', [], false) }}"></div>

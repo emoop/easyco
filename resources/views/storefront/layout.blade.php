@@ -33,8 +33,10 @@
             <a class="sf-logo" href="{{ route('storefront.home', [], false) }}">
                 <img src="{{ asset('images/logo.svg') }}" alt="{{ config('app.name') }}" width="596" height="150">
             </a>
+            {{-- The bag icon is inline SVG (no icon library) and decorative: the link's accessible name is its text («Количка»), plus the count when there is one (set by the script). --}}
             <a class="sf-cart" href="{{ route('storefront.cart', [], false) }}" data-sf-cart-link>
-                <span>{{ __('storefront.cart') }}</span>
+                <svg class="sf-cart-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6 8h12l1 12H5L6 8z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/></svg>
+                <span class="sf-cart-label">{{ __('storefront.cart') }}</span>
                 <span class="sf-cart-count" data-sf-cart-count hidden></span>
             </a>
         </div>
@@ -51,14 +53,18 @@
     </main>
     <footer class="sf-footer">
         <div class="sf-footer-inner">
-            <span>{{ config('app.name') }}</span>
-            <a href="{{ route('storefront.home', [], false) }}">{{ __('storefront.home') }}</a>
+            <div class="sf-footer-brand">
+                <span class="sf-footer-name">{{ config('app.name') }}</span>
+                <a class="sf-footer-home" href="{{ route('storefront.home', [], false) }}">{{ __('storefront.home') }}</a>
+            </div>
             {{-- The content pages flagged for the footer (pages-design.md section 4): published only, titles escaped, links built by route(). --}}
             @if (! empty($footerPages))
                 <nav class="sf-footer-pages" aria-label="{{ __('storefront.footer_pages') }}">
-                    @foreach ($footerPages as $footerPage)
-                        <a href="{{ $footerPage['url'] }}">{{ $footerPage['title'] }}</a>
-                    @endforeach
+                    <ul class="sf-footer-list">
+                        @foreach ($footerPages as $footerPage)
+                            <li><a href="{{ $footerPage['url'] }}">{{ $footerPage['title'] }}</a></li>
+                        @endforeach
+                    </ul>
                 </nav>
             @endif
         </div>

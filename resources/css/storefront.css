@@ -1319,3 +1319,470 @@
         display: none;
     }
 }
+
+/* ===== Stage S3-V: the cart page and the home page, finished for the customer funnel ======================== */
+/* The cart / home / header / footer rules of S3 sit above in the components layer; these are scoped (.sf-cart-page, .sf-intro, ...) and unlayered so
+   they win over S3's own unlayered mobile-first media rules. The checkout summary shares some class names (.sf-cart-totals ...): nothing here
+   reaches it, every cart rule starts with .sf-cart-page or .sf-cart-summary. Same tokens as C1e: white cards, 1px neutral border, 12px radius,
+   20-24px padding, 52px controls. */
+
+/* ---- header and footer (shared layout) ---- */
+.sf-cart-icon {
+    flex: none;
+}
+
+.sf-cart-count {
+    min-width: 1.25rem;
+    height: 1.25rem;
+    font-size: 0.75rem;
+    line-height: 1.25rem;
+}
+
+@media (max-width: 29.999rem) {
+    /* A phone: the bag and the badge stay, the word is kept for screen readers (the link's accessible name). */
+    .sf-cart-label {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        white-space: nowrap;
+    }
+}
+
+.sf-footer-inner {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.75rem;
+}
+
+.sf-footer-brand {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.25rem 1rem;
+}
+
+.sf-footer-name {
+    font-weight: 600;
+    color: #171717;
+}
+
+.sf-footer-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem 1rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+@media (min-width: 40rem) {
+    .sf-footer-inner {
+        flex-direction: row;
+        align-items: baseline;
+        justify-content: space-between;
+    }
+}
+
+/* ---- home ---- */
+.sf-intro {
+    margin-bottom: 1.5rem;
+    text-align: center;
+}
+
+.sf-intro-text {
+    margin-right: auto;
+    margin-left: auto;
+}
+
+.sf-intro-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 3rem;
+    margin-top: 1rem;
+    padding: 0 1.25rem;
+    border-radius: 0.5rem;
+    background: #171717;
+    color: #fff;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.sf-intro-button:hover {
+    background: #404040;
+}
+
+@media (min-width: 40rem) {
+    .sf-intro {
+        text-align: left;
+    }
+
+    .sf-intro-text {
+        margin-right: 0;
+        margin-left: 0;
+    }
+}
+
+.sf-category-tile-link {
+    min-height: 4.5rem;
+    border-radius: 0.75rem;
+    transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.sf-category-tile-link:hover,
+.sf-category-tile-link:focus-visible {
+    border-color: #171717;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
+#newest {
+    scroll-margin-top: 5rem;
+}
+
+/* ---- cart page ---- */
+.sf-cart-page {
+    max-width: 64rem;
+}
+
+.sf-cart-layout {
+    display: grid;
+    gap: 1rem;
+    padding-bottom: 1rem;
+}
+
+.sf-cart-page .sf-cart-lines {
+    border-radius: 0.75rem;
+}
+
+.sf-cart-page .sf-cart-line {
+    display: grid;
+    grid-template-columns: 6rem minmax(0, 1fr);
+    grid-template-areas:
+        'image info'
+        'image qty'
+        'image total'
+        'image remove';
+    gap: 0.5rem 1rem;
+    align-items: start;
+    padding: 1rem;
+}
+
+.sf-cart-page .sf-cart-line:not(:has(.sf-cart-line-image)) {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+        'info'
+        'qty'
+        'total'
+        'remove';
+}
+
+.sf-cart-page .sf-cart-line-image {
+    grid-area: image;
+    grid-column: auto;
+}
+
+.sf-cart-page .sf-cart-line-img {
+    width: 6rem;
+    height: 6rem;
+}
+
+.sf-cart-page .sf-cart-line-info {
+    grid-area: info;
+    grid-column: auto;
+}
+
+.sf-cart-page .sf-cart-line-quantity {
+    grid-area: qty;
+    flex-wrap: wrap;
+}
+
+.sf-cart-page .sf-cart-line-total {
+    grid-area: total;
+    text-align: left;
+}
+
+.sf-cart-page .sf-cart-remove {
+    grid-area: remove;
+    min-height: 2.75rem;
+    padding: 0 1rem;
+}
+
+@media (min-width: 40rem) {
+    .sf-cart-page .sf-cart-line {
+        grid-template-columns: 6rem minmax(0, 1fr) auto;
+        grid-template-areas:
+            'image info total'
+            'image qty remove';
+        align-items: center;
+    }
+
+    .sf-cart-page .sf-cart-line:not(:has(.sf-cart-line-image)) {
+        grid-template-columns: minmax(0, 1fr) auto;
+        grid-template-areas:
+            'info total'
+            'qty remove';
+    }
+
+    .sf-cart-page .sf-cart-line-total {
+        text-align: right;
+    }
+
+    .sf-cart-page .sf-cart-remove {
+        justify-self: end;
+    }
+}
+
+/* The stepper: [-] [number] [+], 44px touch targets; the field has no browser spinner of its own. */
+.sf-cart-stepper {
+    display: inline-flex;
+    align-items: stretch;
+    overflow: hidden;
+    border: 1px solid #d4d4d4;
+    border-radius: 0.5rem;
+    background: #fff;
+}
+
+.sf-cart-page .sf-cart-qty {
+    width: 3.5rem;
+    height: 2.75rem;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    text-align: center;
+    font-size: 1rem;
+    -moz-appearance: textfield;
+    appearance: textfield;
+}
+
+.sf-cart-page .sf-cart-qty::-webkit-inner-spin-button,
+.sf-cart-page .sf-cart-qty::-webkit-outer-spin-button {
+    margin: 0;
+    -webkit-appearance: none;
+}
+
+.sf-cart-step {
+    min-width: 2.75rem;
+    height: 2.75rem;
+    background: #fff;
+    font-size: 1.25rem;
+    line-height: 1;
+    color: #171717;
+}
+
+.sf-cart-step:hover:not(:disabled) {
+    background: #f5f5f5;
+}
+
+.sf-cart-step[aria-disabled='true'] {
+    opacity: 0.4;
+}
+
+.sf-cart-step:disabled,
+.sf-cart-qty:disabled {
+    opacity: 0.5;
+}
+
+/* In flight: the lines and the summary are dimmed and every control is disabled (the script does the disabling). */
+.sf-cart-page[aria-busy='true'] .sf-cart-lines,
+.sf-cart-page[aria-busy='true'] .sf-cart-summary {
+    opacity: 0.6;
+    transition: opacity 120ms ease;
+}
+
+/* The summary card: the checkout card look. A sticky column from 900px. */
+.sf-cart-summary {
+    padding: 1.25rem;
+    border: 1px solid #e5e5e5;
+    border-radius: 0.75rem;
+    background: #fff;
+}
+
+.sf-cart-summary-title {
+    margin: 0 0 0.75rem;
+    font-size: 1.125rem;
+    font-weight: 600;
+}
+
+.sf-cart-summary .sf-cart-promo {
+    margin-top: 0;
+}
+
+.sf-cart-summary .sf-cart-totals {
+    margin-top: 1rem;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+}
+
+.sf-cart-summary .sf-cart-shipping-hint {
+    margin-top: 0.75rem;
+}
+
+.sf-cart-shipping-note {
+    margin-top: 0.75rem;
+    font-size: 0.875rem;
+    color: #525252;
+}
+
+.sf-cart-summary .sf-cart-totals-grand {
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid #e5e5e5;
+}
+
+.sf-cart-summary .sf-cart-total-grand {
+    border-top: 0;
+    padding-top: 0;
+    font-size: 1.375rem;
+    font-weight: 700;
+}
+
+.sf-cart-page .sf-cart-checkout {
+    min-height: 3.25rem;
+    margin-top: 1rem;
+    border-radius: 0.5rem;
+}
+
+/* On a phone the summary's own button is replaced by the bar below; from 900px the bar goes away and the card's button is the one. */
+.sf-cart-summary .sf-cart-checkout {
+    display: none;
+}
+
+.sf-cart-bar {
+    position: sticky;
+    bottom: 0;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin: 0.5rem -1rem 0;
+    padding: 0.75rem 1rem;
+    border-top: 1px solid #e5e5e5;
+    background: #fff;
+}
+
+.sf-cart-bar-total {
+    display: flex;
+    flex-direction: column;
+    margin: 0;
+    line-height: 1.2;
+}
+
+.sf-cart-bar-caption {
+    font-size: 0.75rem;
+    color: #525252;
+}
+
+.sf-cart-bar-amount {
+    font-size: 1.125rem;
+    font-weight: 700;
+}
+
+.sf-cart-page .sf-cart-bar-button {
+    flex: 1;
+    max-width: 16rem;
+    margin-top: 0;
+}
+
+@media (min-width: 56.25rem) {
+    .sf-cart-layout {
+        grid-template-columns: minmax(0, 1fr) 22rem;
+        align-items: start;
+    }
+
+    .sf-cart-summary {
+        position: sticky;
+        top: 5.5rem;
+    }
+
+    .sf-cart-summary .sf-cart-checkout {
+        display: inline-flex;
+    }
+
+    .sf-cart-bar {
+        display: none;
+    }
+}
+
+/* The empty cart and the failure state. */
+.sf-cart-page .sf-cart-empty {
+    padding: 2rem 1.25rem;
+    border-radius: 0.75rem;
+}
+
+.sf-cart-empty-title {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: #171717;
+}
+
+.sf-cart-empty-hint {
+    margin: 0.5rem 0 0;
+    color: #525252;
+}
+
+.sf-cart-empty-button,
+.sf-cart-retry {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 3rem;
+    margin-top: 1rem;
+    padding: 0 1.25rem;
+    border-radius: 0.5rem;
+    background: #171717;
+    color: #fff;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.sf-cart-empty-categories-title {
+    margin: 1.5rem 0 0.5rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #404040;
+    text-align: center;
+}
+
+.sf-cart-empty-categories {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.5rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.sf-cart-empty-categories a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.5rem;
+    padding: 0 0.875rem;
+    border: 1px solid #e5e5e5;
+    border-radius: 9999px;
+    background: #fff;
+    font-size: 0.875rem;
+    color: #262626;
+    text-decoration: none;
+}
+
+.sf-cart-empty-categories a:hover {
+    border-color: #a3a3a3;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .sf-category-tile-link,
+    .sf-cart-page[aria-busy='true'] .sf-cart-lines,
+    .sf-cart-page[aria-busy='true'] .sf-cart-summary {
+        transition: none;
+    }
+
+    html {
+        scroll-behavior: auto;
+    }
+}

@@ -24,7 +24,7 @@ class CheckoutPagesHelpTest extends TestCase
     /** The contract with the two Markdown files of each topic (pinned like HelpPageTest::ANCHORS): later edits must never rename them. */
     private const ANCHORS = [
         'checkout' => ['action-checkout-overview', 'action-checkout-region', 'action-checkout-fields', 'action-checkout-terms', 'action-checkout-terms-version', 'action-checkout-invoice', 'action-checkout-privacy', 'action-checkout-cron'],
-        'pages' => ['action-pages-overview', 'action-pages-slug', 'action-pages-editor', 'action-pages-publish', 'action-pages-preview', 'action-pages-revisions', 'action-pages-footer', 'action-pages-archive', 'action-pages-legal'],
+        'pages' => ['action-pages-overview', 'action-pages-slug', 'action-pages-editor', 'action-pages-publish', 'action-pages-preview', 'action-pages-revisions', 'action-pages-footer', 'action-pages-archive', 'action-pages-legal', 'action-storefront-home'],
     ];
 
     /** @return array<string, array{0: string, 1: string}> */

@@ -60,3 +60,9 @@ A page selected as the **terms** or **privacy policy** in the checkout settings,
 The platform creates two empty drafts, "Terms and conditions" and "Privacy policy", so you can see where they go. They are **empty and unpublished**. Fill them with text prepared by a lawyer, publish them, then choose them in the "Admin" → "Checkout" settings. Until the terms are published and chosen, the terms checkbox does not appear at checkout.
 
 This help and the platform give no legal advice.
+
+## Home page {#action-storefront-home}
+
+The heading and the text at the top of the shop home page are written in "Admin" → "Storefront" (the "Manage content pages" permission). The heading is up to 120 characters, the text up to 400, plain text only: no formatting and no links inside the text. The counter under each field shows how many characters you have used.
+
+If you leave a field empty and save, the standard text comes back ("Welcome to …" and a short description). The "Browse the newest" button under the text leads to the list of the newest products further down the same page.
