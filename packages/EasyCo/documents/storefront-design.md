@@ -651,3 +651,7 @@ Each stage ends in a review gate and a full-suite run in a private test database
 - How the admin currently stores the store's product image aspect ratio setting (the design doc names it; I did not verify the final key).
 - The legal reading of §10.1 and of the abandoned-cart mail (soft opt-in rules differ by country).
 - Whether the existing Livewire/Filament stack is acceptable for the "Storefront" admin tabs without extra permission keys (the enum has `settings_manage`, `report_view`; a dedicated `storefront_manage` may be wanted).
+
+### Header (stage D2)
+
+The storefront header is no longer a fixed bar plus a category row: it is built from the layout stored by the admin page «Хедър» (storefront-customization-design.md §13): a desktop and a mobile layout of up to three rows each, a mobile drawer, an optional search row, and one `<header>` landmark with unique ids. The cart link keeps `data-sf-cart-link` / `data-sf-cart-count`. The header is not HTML-cached (the category menu changes).

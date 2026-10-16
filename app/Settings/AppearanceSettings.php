@@ -18,6 +18,13 @@ final class AppearanceSettings
 
     public const THEME_KEY = 'storefront.theme';
 
+    /** D2: the PUBLISHED header layout, validated and compiled (JSON {hash, layout}); read with the rest of the appearance. */
+    public const HEADER_COMPILED_KEY = 'header.compiled';
+
+    public const HEADER_DRAFT_KEY = 'header.layout.draft';
+
+    public const HEADER_PUBLISHED_KEY = 'header.layout.published';
+
     public const BANNER_ENABLED = 'banner.enabled';
 
     public const BANNER_TEXT = 'banner.text';
@@ -90,6 +97,7 @@ final class AppearanceSettings
     public const READ_KEYS = [
         self::COMPILED_KEY,
         self::THEME_KEY,
+        self::HEADER_COMPILED_KEY,
         self::BANNER_ENABLED,
         self::BANNER_TEXT,
         self::BANNER_URL,

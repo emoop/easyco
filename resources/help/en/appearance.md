@@ -21,3 +21,15 @@ The banner shows only while it is on and between the "From" and "Until" dates (i
 ## Themes {#action-appearance-themes}
 
 The shop uses the theme "easyco". A theme is a folder of files on the server (it is not uploaded from the admin): so nobody who gets into the admin can run code on the server. A new theme is installed by a developer, the way an extension is installed. Switching themes from the admin is not available yet.
+
+## Header {#action-appearance-header}
+
+The "Header" page (the "Admin" menu) arranges the top of the shop. There are two arrangements: **Desktop** and **Phone**. Each has rows: top, main and bottom. Each row has three places: left, centre and right, and in each place you order elements: logo, category menu, menu button (hamburger), search, account, wishlist, cart, text, HTML block, button, social networks and spacer. A place holds up to 6 elements; the logo and the menu button are one each.
+
+**Height.** Every row has its own height in pixels (for example the main row: 44 to 140 px on desktop, 44 to 96 on phone). The content is centred in that height. The logo must be at least 8 px lower than the row, otherwise the page tells you it is taller than the row.
+
+**Phone.** The menu button opens a drawer from the side you choose. In it you can put the category menu (expandable), account, text, a button and social networks (up to 8 elements). It closes with "Esc", by tapping beside it or with the close button.
+
+**Preview and publishing.** "Save draft" keeps your changes without showing them to customers. "Preview" opens the home page with the draft: the link is temporary (30 minutes), is not indexed and nobody else can see it. "Publish" checks everything and shows it to everyone. "Restore the published one" throws the draft away.
+
+**Elements that appear later.** Search, account and wishlist are kept in the arrangement but are not shown until that feature is released in the shop. So you can arrange the final header now. Nothing is shown empty.

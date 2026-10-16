@@ -233,7 +233,7 @@ class StorefrontThemeTest extends TestCase
             $html = $this->get($url)->assertOk()->getContent();
 
             $this->assertStringContainsString('<div class="theme-marker">THEME-OVERRIDE no-banner</div>', $html, "{$url}: the theme's view is used");
-            $this->assertStringContainsString('<header class="sf-header">', $html, "{$url}: the layout comes from the default views");
+            $this->assertStringContainsString('<header class="sf-header sf-hdr', $html, "{$url}: the layout comes from the default views");
             $this->assertStringContainsString('<footer class="sf-footer">', $html, $url);
         }
     }

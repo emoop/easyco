@@ -57,7 +57,14 @@ trait AssertsSafeHtml
     {
         $class = ' '.$svg->getAttribute('class').' ';
 
-        if (! (str_contains($class, ' sf-cart-icon ') || str_contains($class, ' sf-menu-icon ')) || $svg->getAttribute('aria-hidden') !== 'true') {
+        $known = false;
+
+        // The CLOSED set of decorative icons the storefront prints (bag, hamburger, close, search/account/wishlist, the eight social glyphs).
+        foreach (['sf-cart-icon', 'sf-menu-icon', 'sf-close-icon', 'sf-hdr-icon', 'sf-social-icon'] as $icon) {
+            $known = $known || str_contains($class, ' '.$icon.' ');
+        }
+
+        if (! $known || $svg->getAttribute('aria-hidden') !== 'true') {
             return false;
         }
 

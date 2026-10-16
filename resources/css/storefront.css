@@ -66,7 +66,7 @@
     }
 
     .sf-header {
-        @apply sticky top-0 z-30 border-b border-neutral-200 shadow-sm;
+        @apply z-30 border-b border-neutral-200 shadow-sm;
         background-color: var(--sf-header-bg, #fff);
         color: var(--sf-header-text, currentcolor);
     }
@@ -2141,4 +2141,532 @@
 
 .sf-banner-bar-link:hover .sf-banner-text {
     text-decoration: underline;
+}
+
+/* ===== Stage D2: the header builder (storefront-customization-design.md 4) ============================================== */
+/* One <header> holds the desktop layout and the mobile layout; CSS shows one per breakpoint (1024px). Every size is a CSS variable of the token stylesheet with the
+   default as its fallback (--sf-hdr-{d|m}-{top|main|bottom}-h, --sf-logo-{d|m}-h): never an inline style. The rules below are unlayered and later than the S3 header
+   rules, so they win. */
+
+/* The header is no longer sticky by itself: each layout says so (a class), per breakpoint. */
+.sf-header {
+    position: relative;
+}
+
+@media (min-width: 64rem) {
+    .sf-hdr-d-sticky {
+        position: sticky;
+        top: 0;
+    }
+
+    .sf-hdr-mobile {
+        display: none;
+    }
+}
+
+@media (max-width: 63.999rem) {
+    .sf-hdr-m-sticky {
+        position: sticky;
+        top: 0;
+    }
+
+    .sf-hdr-desktop {
+        display: none;
+    }
+}
+
+.sf-hdr-row {
+    height: var(--sf-hdr-m-main-h, 56px);
+}
+
+.sf-hdr-desktop .sf-hdr-row-top {
+    height: var(--sf-hdr-d-top-h, 36px);
+    font-size: 0.875rem;
+}
+
+.sf-hdr-desktop .sf-hdr-row-main {
+    height: var(--sf-hdr-d-main-h, 64px);
+}
+
+.sf-hdr-desktop .sf-hdr-row-bottom {
+    height: var(--sf-hdr-d-bottom-h, 44px);
+}
+
+.sf-hdr-mobile .sf-hdr-row-top {
+    height: var(--sf-hdr-m-top-h, 32px);
+    font-size: 0.875rem;
+}
+
+.sf-hdr-mobile .sf-hdr-row-main {
+    height: var(--sf-hdr-m-main-h, 56px);
+}
+
+.sf-hdr-row + .sf-hdr-row {
+    border-top: 1px solid var(--sf-border, #e5e5e5);
+}
+
+/* Three columns (the S3-V2 rule): the sides shrink, the centre keeps its width, the content is centred vertically in the row height. */
+.sf-hdr-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: center;
+    gap: 0.5rem;
+    height: 100%;
+    max-width: 72rem;
+    margin: 0 auto;
+    padding: 0 1rem;
+}
+
+.sf-hdr-slot {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    min-width: 0;
+}
+
+.sf-hdr-center {
+    justify-content: center;
+}
+
+.sf-hdr-right {
+    justify-content: flex-end;
+}
+
+.sf-hdr-desktop .sf-logo img {
+    height: var(--sf-logo-d-h, 28px);
+    width: auto;
+}
+
+.sf-hdr-mobile .sf-logo img {
+    height: var(--sf-logo-m-h, 26px);
+    width: auto;
+}
+
+/* Icons are 24px, touch targets 44px. */
+.sf-hdr-icon-btn,
+.sf-hdr-link,
+.sf-hdr .sf-menu-toggle,
+.sf-hdr .sf-cart {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.375rem;
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+    border: 0;
+    background: transparent;
+    color: var(--sf-header-text, #404040);
+    text-decoration: none;
+}
+
+.sf-hdr .sf-cart {
+    position: relative;
+    padding: 0 0.5rem;
+}
+
+.sf-hdr-icon-btn:hover,
+.sf-hdr-link:hover,
+.sf-hdr .sf-cart:hover {
+    color: var(--sf-header-text, #171717);
+}
+
+@media (max-width: 29.999rem) {
+    .sf-hdr .sf-cart {
+        padding: 0;
+    }
+
+    .sf-hdr .sf-cart-count {
+        position: absolute;
+        top: 0.125rem;
+        right: 0;
+    }
+}
+
+.sf-hdr-text {
+    color: inherit;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.sf-hdr-text-link {
+    text-decoration: underline;
+}
+
+.sf-hdr-html {
+    min-width: 0;
+    overflow: hidden;
+}
+
+.sf-hdr-button {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.25rem;
+    padding: 0 0.875rem;
+    border-radius: var(--sf-r-btn, var(--radius-lg));
+    font-weight: 600;
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+.sf-hdr-button-primary {
+    background: var(--sf-btn-bg, var(--sf-primary, #171717));
+    color: var(--sf-btn-text, var(--sf-on-primary, #fff));
+    box-shadow: inset 0 0 0 var(--sf-btn-bw, 0) var(--sf-primary, #171717);
+}
+
+.sf-hdr-button-outline {
+    background: transparent;
+    color: var(--sf-primary, #171717);
+    box-shadow: inset 0 0 0 2px var(--sf-primary, #171717);
+}
+
+.sf-hdr-social {
+    display: flex;
+    gap: 0.25rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.sf-hdr-social-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.75rem;
+    height: 2.75rem;
+    color: inherit;
+}
+
+.sf-hdr-spacer-sm {
+    width: 0.5rem;
+}
+
+.sf-hdr-spacer-md {
+    width: 1rem;
+}
+
+.sf-hdr-spacer-lg {
+    width: 2rem;
+}
+
+/* The category menu in a row: horizontal links with a hover / focus panel for the children, or one "Categories" trigger with a panel. */
+.sf-hdr-menu {
+    min-width: 0;
+}
+
+.sf-hdr-menu a {
+    white-space: nowrap;
+}
+
+.sf-hdr-menu-drawer a,
+.sf-hdr-menu-drawer .sf-menu-link {
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+.sf-hdr-menu-links > .sf-menu {
+    display: flex;
+    align-items: center;
+    flex-wrap: nowrap;
+    gap: 0 1.25rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.sf-hdr-menu-links .sf-menu-item {
+    position: relative;
+}
+
+.sf-hdr-menu-links .sf-menu-item > .sf-menu,
+.sf-hdr-menu-panel {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    z-index: 40;
+    min-width: 12rem;
+    margin: 0;
+    padding: 0.5rem;
+    list-style: none;
+    border: 1px solid var(--sf-border, #e5e5e5);
+    border-radius: var(--radius-md);
+    background: #fff;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+.sf-hdr-menu-links .sf-menu-item:hover > .sf-menu,
+.sf-hdr-menu-links .sf-menu-item:focus-within > .sf-menu,
+.sf-hdr-menu-dropdown:hover .sf-hdr-menu-panel,
+.sf-hdr-menu-dropdown:focus-within .sf-hdr-menu-panel {
+    display: block;
+}
+
+.sf-hdr-menu-links .sf-menu-item > .sf-menu .sf-menu {
+    margin-left: 0.75rem;
+}
+
+.sf-hdr-menu-dropdown {
+    position: relative;
+}
+
+.sf-hdr-menu-trigger {
+    min-height: 2.75rem;
+    padding: 0 0.5rem;
+    border: 0;
+    background: transparent;
+    color: var(--sf-header-text, #404040);
+    font-weight: 500;
+}
+
+.sf-hdr-menu-panel .sf-menu {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.sf-hdr-menu-panel .sf-menu .sf-menu {
+    margin-left: 0.75rem;
+}
+
+/* The menu toggle shows wherever the layout puts it (after the script has run); without the script it is hidden and the drawer is a plain block. */
+html.js .sf-hdr .sf-menu-toggle {
+    display: inline-flex;
+}
+
+.sf-menu-toggle-label {
+    font-size: 0.875rem;
+    font-weight: 500;
+}
+
+/* The search row and the inline search field. */
+.sf-search-row {
+    border-top: 1px solid var(--sf-border, #e5e5e5);
+    background: var(--sf-header-bg, #fff);
+}
+
+.sf-search-row-inner,
+.sf-search-field {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+.sf-search-row-inner {
+    max-width: 72rem;
+    margin: 0 auto;
+    padding: 0.5rem 1rem;
+}
+
+.sf-search-input {
+    flex: 1;
+    min-width: 0;
+    height: 2.75rem;
+    padding: 0 0.75rem;
+    border: 1px solid var(--sf-border, #d4d4d4);
+    border-radius: var(--radius-lg);
+    background: #fff;
+    font-size: 1rem;
+}
+
+.sf-search-submit {
+    min-height: 2.75rem;
+    padding: 0 1rem;
+    border-radius: var(--sf-r-btn, var(--radius-lg));
+    background: var(--sf-btn-bg, var(--sf-primary, #171717));
+    color: var(--sf-btn-text, var(--sf-on-primary, #fff));
+    font-weight: 600;
+}
+
+/* The drawer: closed it is invisible and out of the tab order; open it slides in over an overlay. */
+html.sf-locked {
+    overflow: hidden;
+}
+
+.sf-drawer {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    visibility: hidden;
+    pointer-events: none;
+}
+
+.sf-drawer-open {
+    visibility: visible;
+    pointer-events: auto;
+}
+
+.sf-drawer-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    opacity: 0;
+    transition: opacity 200ms ease;
+}
+
+.sf-drawer-open .sf-drawer-overlay {
+    opacity: 1;
+}
+
+.sf-drawer-panel {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    display: flex;
+    flex-direction: column;
+    width: min(22rem, 88vw);
+    overflow-y: auto;
+    background: #fff;
+    color: var(--sf-text, #171717);
+    transition: transform 200ms ease;
+}
+
+.sf-drawer-left .sf-drawer-panel {
+    left: 0;
+    transform: translateX(-100%);
+}
+
+.sf-drawer-right .sf-drawer-panel {
+    right: 0;
+    transform: translateX(100%);
+}
+
+.sf-drawer-open .sf-drawer-panel {
+    transform: none;
+}
+
+.sf-drawer-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 3.5rem;
+    padding: 0 0.5rem 0 1rem;
+    border-bottom: 1px solid var(--sf-border, #e5e5e5);
+}
+
+.sf-drawer-title {
+    margin: 0;
+    font-weight: 600;
+}
+
+.sf-drawer-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.75rem;
+    height: 2.75rem;
+    border: 0;
+    background: transparent;
+    color: inherit;
+}
+
+.sf-drawer-body {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    padding: 0.5rem 1rem 1.5rem;
+}
+
+.sf-acc,
+.sf-acc-sub .sf-menu {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.sf-acc-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.sf-acc-link,
+.sf-acc-sub .sf-menu-link {
+    display: flex;
+    align-items: center;
+    flex: 1;
+    min-height: 2.75rem;
+    color: inherit;
+    text-decoration: none;
+}
+
+.sf-acc-toggle {
+    position: relative;
+    flex: none;
+    width: 2.75rem;
+    height: 2.75rem;
+    border: 0;
+    background: transparent;
+    color: inherit;
+}
+
+.sf-acc-toggle::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 0.5rem;
+    height: 0.5rem;
+    margin: -0.375rem 0 0 -0.25rem;
+    border-right: 2px solid currentcolor;
+    border-bottom: 2px solid currentcolor;
+    transform: rotate(45deg);
+    transition: transform 150ms ease;
+}
+
+.sf-acc-toggle[aria-expanded='true']::after {
+    margin-top: -0.125rem;
+    transform: rotate(-135deg);
+}
+
+.sf-acc-sub {
+    margin-left: 0.75rem;
+    padding-left: 0.75rem;
+    border-left: 1px solid var(--sf-border, #e5e5e5);
+}
+
+html.js .sf-acc-sub:not(.sf-acc-open) {
+    display: none;
+}
+
+.sf-drawer-body .sf-hdr-link,
+.sf-drawer-body .sf-hdr-button {
+    align-self: flex-start;
+}
+
+/* Without the script (and for browsers that report it): the drawer is a plain block under the header and the toggle, the close button and the search toggle are not shown;
+   the search row is a plain form. */
+@media (scripting: none) {
+    .sf-drawer {
+        position: static;
+        visibility: visible;
+        pointer-events: auto;
+    }
+
+    .sf-drawer-overlay,
+    .sf-drawer-close,
+    .sf-hdr .sf-menu-toggle,
+    [data-sf-search-toggle] {
+        display: none;
+    }
+
+    .sf-drawer-panel {
+        position: static;
+        width: auto;
+        transform: none;
+        border-top: 1px solid var(--sf-border, #e5e5e5);
+    }
+
+    .sf-search-row[hidden] {
+        display: block;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .sf-drawer-overlay,
+    .sf-drawer-panel,
+    .sf-acc-toggle::after {
+        transition: none;
+    }
 }

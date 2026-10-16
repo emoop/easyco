@@ -231,8 +231,8 @@ class StorefrontHomeAndCartS3vTest extends TestCase
     {
         $html = $this->get('/')->getContent();
 
-        $this->assertMatchesRegularExpression('/<a class="sf-cart" href="\/cart" data-sf-cart-link>\s*<svg class="sf-cart-icon"[^>]*aria-hidden="true"[^>]*focusable="false">.*?<\/svg>\s*<span class="sf-cart-label">Cart<\/span>\s*<span class="sf-cart-count" data-sf-cart-count hidden><\/span>\s*<\/a>/s', $html, 'an inline svg, decorative; the word is the accessible name');
-        $this->assertSame(2, substr_count($html, '<svg'), 'the bag and (S3-V2) the hamburger: no icon library');
+        $this->assertMatchesRegularExpression('/<a class="sf-cart" href="\/cart" data-sf-cart-link>\s*<svg class="sf-cart-icon"[^>]*aria-hidden="true"[^>]*focusable="false">.*?<\/svg>\s*<span class="sf-cart-label( sf-sr-only)?">Cart<\/span>\s*<span class="sf-cart-count" data-sf-cart-count hidden><\/span>\s*<\/a>/s', $html, 'an inline svg, decorative; the word is the accessible name');
+        $this->assertSame(4, substr_count($html, '<svg'), 'D2: the desktop bag, the phone hamburger and bag, the drawer close icon: a closed set, no icon library');
         $this->assertNoActiveContent($html, 'layout');
     }
 

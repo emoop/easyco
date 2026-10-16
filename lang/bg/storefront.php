@@ -43,6 +43,13 @@ return [
     'home_intro_text' => 'Разгледайте най-новите продукти по-долу или изберете категория, за да намерите това, което търсите.',
     'home_categories' => 'Пазарувайте по категория',
     'home_category_count' => ':count продукт|:count продукта',
+    // Stage D2: the header (drawer, search row, account and wishlist links).
+    'drawer_close' => 'Затвори менюто',
+    'search' => 'Търсене',
+    'search_placeholder' => 'Какво търсите?',
+    'search_submit' => 'Търси',
+    'account' => 'Профил',
+    'wishlist' => 'Любими',
     // Stage S3-V: the home page's button.
     'home_browse_new' => 'Разгледайте новите',
 

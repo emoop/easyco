@@ -43,6 +43,13 @@ return [
     'home_intro_text' => 'Browse the newest products below, or pick a category to find what you are looking for.',
     'home_categories' => 'Shop by category',
     'home_category_count' => ':count product|:count products',
+    // Stage D2: the header (drawer, search row, account and wishlist links).
+    'drawer_close' => 'Close the menu',
+    'search' => 'Search',
+    'search_placeholder' => 'What are you looking for?',
+    'search_submit' => 'Search',
+    'account' => 'Account',
+    'wishlist' => 'Wishlist',
     // Stage S3-V: the home page's button.
     'home_browse_new' => 'Browse the newest',
 

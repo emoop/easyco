@@ -25,39 +25,15 @@
     @if ($appearance['tokensUrl'] !== null)
         <link rel="stylesheet" href="{{ $appearance['tokensUrl'] }}">
     @endif
+    @if ($appearance['previewCss'] !== null)
+        <link rel="stylesheet" href="{{ $appearance['previewCss'] }}">
+    @endif
 </head>
 <body class="sf-layout">
     @include('storefront.partials.messages')
     @include('storefront.partials.top-banner', ['banner' => $appearance['banner']])
-    <header class="sf-header">
-        <div class="sf-header-bar">
-            @if (! empty($categories))
-                {{-- A bare hamburger: three thin lines (inline SVG, decorative); the word stays as the accessible name, visually hidden. --}}
-                <button class="sf-menu-toggle" type="button" aria-controls="sf-menu" aria-expanded="false" data-sf-menu-toggle>
-                    <svg class="sf-menu-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true" focusable="false"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/></svg>
-                    <span class="sf-sr-only">{{ __('storefront.menu') }}</span>
-                </button>
-            @endif
-            {{-- The mark, centred by the header's own grid; the site has no dark mode, so this is the dark
-                 (currentColor) variant of the logo — the same file the admin uses in its light mode. --}}
-            <a class="sf-logo" href="{{ route('storefront.home', [], false) }}">
-                <img src="{{ asset('images/logo.svg') }}" alt="{{ config('app.name') }}" width="596" height="150">
-            </a>
-            {{-- The bag icon is inline SVG (no icon library) and decorative: the link's accessible name is its text («Количка»), plus the count when there is one (set by the script). --}}
-            <a class="sf-cart" href="{{ route('storefront.cart', [], false) }}" data-sf-cart-link>
-                <svg class="sf-cart-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6 8h12l1 12H5L6 8z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/></svg>
-                <span class="sf-cart-label">{{ __('storefront.cart') }}</span>
-                <span class="sf-cart-count" data-sf-cart-count hidden></span>
-            </a>
-        </div>
-        @if (! empty($categories))
-            <nav class="sf-nav" id="sf-menu" aria-label="{{ __('storefront.menu') }}">
-                <div class="sf-nav-inner">
-                    @include('storefront.partials.menu', ['nodes' => $categories])
-                </div>
-            </nav>
-        @endif
-    </header>
+    {{-- The header (D2): the published layout of the header builder, or the seeded default. --}}
+    @include('storefront.header', ['header' => $appearance['header']])
     <main class="sf-main">
         @yield('content')
     </main>

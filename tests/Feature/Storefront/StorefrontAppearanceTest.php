@@ -282,7 +282,7 @@ class StorefrontAppearanceTest extends TestCase
 
         $this->assertStringContainsString('<span class="sf-banner-text">&lt;script&gt;alert(1)&lt;/script&gt; Sale &amp; more</span>', $html);
         $this->assertStringNotContainsString('<script>alert(1)', $html);
-        $this->assertLessThan(strpos($html, '<header class="sf-header">'), strpos($html, 'sf-banner'), 'above the header');
+        $this->assertLessThan(strpos($html, '<header class="sf-header sf-hdr'), strpos($html, 'sf-banner'), 'above the header');
         $this->assertNoActiveContent($html, 'banner');
     }
 

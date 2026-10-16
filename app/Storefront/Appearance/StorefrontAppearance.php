@@ -6,6 +6,9 @@ use App\Rules\PlainText;
 use App\Settings\AppearanceSettings;
 use App\Settings\Contracts\SiteSettingsRepository;
 use App\Settings\StoreTimezone;
+use App\Storefront\Header\HeaderLayout;
+use App\Storefront\Header\HeaderValidator;
+use App\Storefront\Header\HeaderView;
 use DateTimeImmutable;
 use Illuminate\Container\Attributes\Scoped;
 use Illuminate\Support\Facades\Cache;
@@ -26,8 +29,16 @@ final class StorefrontAppearance
 {
     public const CACHE_KEY = 'storefront.appearance';
 
-    /** @var array{theme: ?string, compiled: ?array{hash: string, fonts: list<string>, body: ?string}, banner: array<string, mixed>}|null */
+    /** @var array{theme: ?string, compiled: ?array{hash: string, fonts: list<string>, body: ?string}, banner: array<string, mixed>, header: ?array<string, mixed>}|null */
     private ?array $data = null;
+
+    /** The layout the header preview shows (the admin's DRAFT), set for ONE request by the preview controller; null on every public request. */
+    private ?array $headerOverride = null;
+
+    private ?string $previewCss = null;
+
+    /** The validated published layout (or the seeded default), memoised for the request. */
+    private ?array $headerLayout = null;
 
     public function __construct(
         private readonly SiteSettingsRepository $settings,
@@ -46,7 +57,7 @@ final class StorefrontAppearance
 
         $cached = Cache::get(self::CACHE_KEY);
 
-        if (is_array($cached) && array_key_exists('theme', $cached) && array_key_exists('compiled', $cached) && is_array($cached['banner'] ?? null)) {
+        if (is_array($cached) && array_key_exists('theme', $cached) && array_key_exists('compiled', $cached) && array_key_exists('header', $cached) && is_array($cached['banner'] ?? null)) {
             return $this->data = $cached;
         }
 
@@ -56,6 +67,7 @@ final class StorefrontAppearance
     /** Reads the settings (ONE query) and REPLACES the cache entry: what the admin save calls after a successful save. */
     public function refresh(): void
     {
+        $this->headerLayout = null;
         $this->data = $this->rebuild();
     }
 
@@ -82,7 +94,20 @@ final class StorefrontAppearance
             'theme' => $theme === '' ? null : mb_substr($theme, 0, 40),
             'compiled' => self::parseCompiled($raw[AppearanceSettings::COMPILED_KEY] ?? null),
             'banner' => self::parseBanner($raw),
+            'header' => self::parseHeader($raw[AppearanceSettings::HEADER_COMPILED_KEY] ?? null),
         ];
+    }
+
+    /** The stored published layout as an array (NOT yet trusted: header() validates it on every read), or null. */
+    private static function parseHeader(?string $json): ?array
+    {
+        if ($json === null || $json === '') {
+            return null;
+        }
+
+        $data = json_decode($json, true);
+
+        return is_array($data) && is_array($data['layout'] ?? null) ? $data['layout'] : null;
     }
 
     /** @return array{hash: string, fonts: list<string>, body: ?string}|null */
@@ -152,6 +177,42 @@ final class StorefrontAppearance
         return is_string($value) && preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/', $value) === 1 ? $value : null;
     }
 
+    /**
+     * The layout to print: the PUBLISHED one, re-validated against the catalog on every read (a hand-edited row or cache entry that does not validate
+     * shows the seeded default instead), or the seeded default when nothing is published. During a header preview, the draft the controller set.
+     *
+     * @return array<string, mixed>
+     */
+    public function header(): array
+    {
+        if ($this->headerOverride !== null) {
+            return $this->headerOverride;
+        }
+
+        if ($this->headerLayout !== null) {
+            return $this->headerLayout;
+        }
+
+        $stored = $this->data()['header'];
+
+        if ($stored !== null) {
+            $validation = HeaderValidator::validate($stored);
+
+            if ($validation->passes()) {
+                return $this->headerLayout = $validation->layout;
+            }
+        }
+
+        return $this->headerLayout = HeaderLayout::default();
+    }
+
+    /** For ONE request: show this (already validated) layout instead of the published one, and link the stylesheet with its sizes. Never called on a public request. */
+    public function previewHeader(array $layout, ?string $cssUrl): void
+    {
+        $this->headerOverride = $layout;
+        $this->previewCss = $cssUrl;
+    }
+
     public function themeKey(): ?string
     {
         return $this->data()['theme'];
@@ -201,7 +262,7 @@ final class StorefrontAppearance
     /**
      * What the layout needs: the token stylesheet's URL, the font to preload (the body font's latin file only) and the banner.
      *
-     * @return array{tokensUrl: ?string, preloadFont: ?string, banner: array{text: string, url: ?string, label: ?string}|null}
+     * @return array{tokensUrl: ?string, preloadFont: ?string, banner: array{text: string, url: ?string, label: ?string}|null, header: array<string, mixed>, previewCss: ?string}
      */
     public function forLayout(): array
     {
@@ -211,6 +272,8 @@ final class StorefrontAppearance
             'tokensUrl' => $compiled === null ? null : '/storage/'.\App\Storefront\Appearance\AppearanceCompiler::DIRECTORY.'/tokens-'.$compiled['hash'].'.css',
             'preloadFont' => $compiled === null || $compiled['body'] === null ? null : '/fonts/storefront/'.$compiled['body'].'/'.$compiled['body'].'-latin-wght-normal.woff2',
             'banner' => $this->banner(),
+            'header' => HeaderView::prepare($this->header()),
+            'previewCss' => $this->previewCss,
         ];
     }
 }

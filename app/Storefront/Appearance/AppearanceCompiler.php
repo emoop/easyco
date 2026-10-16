@@ -3,6 +3,9 @@
 namespace App\Storefront\Appearance;
 
 use App\Settings\AppearanceSettings;
+use App\Settings\Contracts\SiteSettingsRepository;
+use App\Storefront\Header\HeaderLayout;
+use App\Storefront\Header\HeaderValidator;
 use Illuminate\Support\Facades\Storage;
 use InvalidArgumentException;
 
@@ -37,7 +40,7 @@ final class AppearanceCompiler
      * @param  array<string, string>  $overrides
      * @throws InvalidArgumentException a value that is not valid for its key
      */
-    public function css(array $overrides): ?string
+    public function css(array $overrides, array $metrics = []): ?string
     {
         $effective = $this->effective($overrides);
         $defaults = AppearanceSettings::defaults();
@@ -82,6 +85,19 @@ final class AppearanceCompiler
             $vars[] = '--sf-btn-bw: 2px;';
         }
 
+        // D2: the header's row and logo heights (px). A value equal to its default is NOT written (the fallbacks in storefront.css are the defaults).
+        $metricDefaults = HeaderLayout::metricDefaults();
+
+        foreach ($metrics as $variable => $value) {
+            if (! array_key_exists($variable, $metricDefaults) || ! is_int($value) || $value < 0 || $value > 400) {
+                throw new InvalidArgumentException('A header metric is not valid.');
+            }
+
+            if ($value !== $metricDefaults[$variable]) {
+                $vars[] = "{$variable}: {$value}px;";
+            }
+        }
+
         $faces = $this->fontFaces($this->fontKeys($effective));
 
         if ($vars === [] && $faces === '') {
@@ -119,9 +135,9 @@ final class AppearanceCompiler
      * @param  array<string, string>  $overrides
      * @return array{hash: string, fonts: list<string>, body: ?string}|null
      */
-    public function compile(array $overrides, ?string $previousHash = null): ?array
+    public function compile(array $overrides, ?string $previousHash = null, ?array $metrics = null): ?array
     {
-        $css = $this->css($overrides);
+        $css = $this->css($overrides, $metrics ?? $this->publishedMetrics());
 
         if ($css === null) {
             $this->prune(null, $previousHash);
@@ -143,6 +159,26 @@ final class AppearanceCompiler
         $body = $effective[AppearanceSettings::FONT_BODY];
 
         return ['hash' => $hash, 'fonts' => $this->fontKeys($overrides), 'body' => $body === 'system' ? null : $body];
+    }
+
+    /**
+     * The sizes of the PUBLISHED header (header.compiled), so that an appearance save never drops them from the stylesheet. Re-validated: a layout that
+     * does not validate contributes nothing.
+     *
+     * @return array<string, int>
+     */
+    private function publishedMetrics(): array
+    {
+        $json = app(SiteSettingsRepository::class)->get(AppearanceSettings::HEADER_COMPILED_KEY);
+        $data = is_string($json) ? json_decode($json, true) : null;
+
+        if (! is_array($data) || ! is_array($data['layout'] ?? null)) {
+            return [];
+        }
+
+        $validation = HeaderValidator::validate($data['layout']);
+
+        return $validation->passes() ? HeaderLayout::metrics($validation->layout) : [];
     }
 
     /** Keeps the new file and the previous one; removes every other tokens file. */

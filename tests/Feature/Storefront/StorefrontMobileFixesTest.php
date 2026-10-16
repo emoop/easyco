@@ -49,6 +49,11 @@ class StorefrontMobileFixesTest extends TestCase
                 continue;
             }
 
+            // D2: the one allowed exception is the scroll lock while the drawer is OPEN (a class the script adds, and only then).
+            if (preg_match('/^\s*html\.sf-locked\s*$/', (string) preg_replace('#/\*.*?\*/#s', '', $selector)) === 1) {
+                continue;
+            }
+
             $this->assertDoesNotMatchRegularExpression('/(^|[\s,>+~])(html|body)\b|\.sf-layout\b/', trim($selector), "`overflow-x: hidden` would only MASK an overflow (found on: {$selector})");
         }
     }
@@ -145,11 +150,11 @@ class StorefrontMobileFixesTest extends TestCase
     {
         $html = $this->get('/')->assertOk()->getContent();
 
-        $this->assertMatchesRegularExpression('/<button class="sf-menu-toggle" type="button" aria-controls="sf-menu" aria-expanded="false" data-sf-menu-toggle>\s*<svg class="sf-menu-icon"[^>]*aria-hidden="true"[^>]*focusable="false">(<path d="[^"]+"\/>){3}<\/svg>\s*<span class="sf-sr-only">Categories<\/span>\s*<\/button>/', $html);
+        $this->assertMatchesRegularExpression('/<button class="sf-menu-toggle" type="button" aria-controls="sf-drawer" aria-expanded="false" data-sf-menu-toggle>\s*<svg class="sf-menu-icon"[^>]*aria-hidden="true"[^>]*focusable="false">(<path d="[^"]+"\/>){3}<\/svg>\s*<span class="sf-sr-only">Categories<\/span>\s*<\/button>/', $html);
         preg_match('/<button class="sf-menu-toggle".*?<\/button>/s', $html, $button);
         $this->assertSame('Categories', trim(strip_tags($button[0])), 'the only text is the hidden accessible name');
         $this->assertStringNotContainsString('aria-label', $button[0], 'no label duplicating the name');
-        $this->assertSame(2, substr_count($html, '<svg'), 'the hamburger and the bag, nothing else');
+        $this->assertSame(4, substr_count($html, '<svg'), 'D2: the hamburger, the two bags (desktop and phone) and the drawer close icon, nothing else');
         $this->assertNoActiveContent($html, 'layout');
     }
 

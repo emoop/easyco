@@ -117,7 +117,7 @@ class StorefrontCartPageTest extends TestCase
         foreach (['/', '/product/summer-dress', '/product-category/clothing', '/cart', '/product/missing'] as $url) {
             $html = $this->get($url)->getContent();
 
-            $this->assertMatchesRegularExpression('/<a class="sf-cart" href="\/cart" data-sf-cart-link>\s*<svg class="sf-cart-icon"[^>]*aria-hidden="true"[^>]*>.*?<\/svg>\s*<span class="sf-cart-label">Cart<\/span>\s*<span class="sf-cart-count" data-sf-cart-count hidden><\/span>\s*<\/a>/s', $html, $url);
+            $this->assertMatchesRegularExpression('/<a class="sf-cart" href="\/cart" data-sf-cart-link>\s*<svg class="sf-cart-icon"[^>]*aria-hidden="true"[^>]*>.*?<\/svg>\s*<span class="sf-cart-label( sf-sr-only)?">Cart<\/span>\s*<span class="sf-cart-count" data-sf-cart-count hidden><\/span>\s*<\/a>/s', $html, $url);
         }
     }
 

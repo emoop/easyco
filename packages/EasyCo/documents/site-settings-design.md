@@ -132,3 +132,15 @@ Owned by `App\Settings\AppearanceSettings` (the keys, the defaults and the valid
 | `storefront.theme` | a theme folder under `resources/themes` (no UI in V1) | `easyco` |
 
 All of them are read by `StorefrontAppearance` in ONE `getMany` and cached in the application cache (`storefront.appearance`); saving on the Appearance page replaces that entry.
+
+### Header (stage D2)
+
+Owned by `App\Settings\AppearanceSettings` (the keys) and `App\Storefront\Header\*` (the validation).
+
+| Key | Values | Absent means |
+|---|---|---|
+| `header.layout.draft` | JSON layout, validated on save | no draft: the page starts from the published layout |
+| `header.layout.published` | JSON layout, validated on publish | the seeded default layout |
+| `header.compiled` | JSON `{"hash", "layout"}` written by `HeaderCompiler`, re-validated on every read | the seeded default layout |
+
+`header.compiled` is part of `AppearanceSettings::READ_KEYS`: it is read in the same single `getMany` as the appearance, never with a query of its own.

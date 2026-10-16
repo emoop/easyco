@@ -335,3 +335,21 @@ pages are in it after the migration; query count of a storefront page unchanged 
 ## 12. D1 as built (2026-10)
 
 Built as specified in §2, §3 and §10 "D1", with these decisions: (1) **only values that differ from their default are stored and compiled**, so the stylesheet link exists only after the merchant changed something and the untouched shop renders exactly as before; (2) the footer text default is **`#737373`** (today's colour) instead of `#404040`; (3) `storefront.theme` is read in the SAME `getMany` as the appearance (no query of its own); (4) the sale price takes the accent only when the merchant set one; (5) white card surfaces, link blues, error colours and the focus ring stay fixed (no token for them in §3.1); (6) the banner colours are tokens in the compiled stylesheet (`--sf-banner-*`), never a style attribute; (7) the link rule is `CheckoutFormSettings::isSafeLink` plus https only. Details: `storefront-design.md` §2.13. Idea for later, not built: «Витрина» (the home heading and text) could become a section of the «Облик» page.
+
+---
+
+## 13. D2 as built (2026-10)
+
+The header builder, built as specified in §4 and §10 "D2". Decisions and facts:
+
+- **Model.** `App\Storefront\Header\HeaderLayout`: `desktop` and `mobile`, each with `sticky`, three rows (`top`, `main`, `bottom`; each `enabled`, `height`, and three slots `left` / `center` / `right` of at most 6 elements) and, on mobile, a `drawer` (at most 8 elements, only menu / account / wishlist / search / text / html / button / social / spacer) and `drawer_side`. Elements are `{type, settings}`; exactly one `logo` and at most one `menu_toggle` per layout.
+- **Catalog.** `HeaderCatalog` holds the twelve built-in types (logo, menu, menu_toggle, search, account, wishlist, cart, text, html, button, social, spacer), each with a closed settings schema (int / enum / text / url / bool / html / social). The filter `storefront.header.elements` (see the Hook Reference) lets an extension ADD a type; a filter that replaces or removes a built-in is ignored and logged once.
+- **Validation in three places.** `HeaderValidator` runs on save (admin), when compiling (`HeaderCompiler::publish`) and on every read of the cached payload (`StorefrontAppearance::header()`); anything unknown (type, setting, key) is refused, and a payload that fails on read renders the seeded default. Links: root-relative or `https://`; social: `https://` only, closed network list; `html` goes through `DescriptionSanitizer`; text through `PlainText`.
+- **Heights are CSS variables** (`--sf-hdr-{d|m}-{top|main|bottom}-h`, `--sf-logo-{d|m}-h`) written into the D1 token stylesheet only when they differ from the default (every `var()` carries the default as its fallback). No `style=` anywhere. An appearance (colour) save keeps the published sizes (`AppearanceCompiler::compile` reads them from `header.compiled`).
+- **Settings keys:** `header.layout.draft`, `header.layout.published`, `header.compiled` (`{hash, layout}`, read in the SAME `getMany` as the rest of the appearance: no new query on any page).
+- **Draft / preview / publish.** Admin «Хедър» (Admin group, `content_manage`): Save draft, Preview, Discard, Publish. Preview is `GET /header-preview`, a temporary signed URL (30 minutes), `noindex`, `Cache-Control: private, no-store`, with its own small preview stylesheet; the public pages never show a draft.
+- **Features that do not exist yet** (search, account, wishlist): their elements can be placed and are stored, but print nothing (no empty row, no dead link) until the route exists.
+- **No script:** the drawer is a plain block under the header (`@media (scripting: none)`), the menus stay reachable as links.
+- **Drawer / search / accordion script** in `storefront.js` (focus trap, Esc, overlay, scroll lock via `html.sf-locked`, focus returns to the opener), tested in a fake DOM (`tests/Feature/Storefront/Js/header-flow.mjs`).
+- **Not done (D3):** the `mega` menu style renders as `dropdown` until D3.
+- **Known limit:** with very many or very long category names the `links` menu can crowd the logo in a desktop row; use `dropdown`.

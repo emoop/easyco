@@ -3,6 +3,7 @@
 use App\Http\Controllers\Storefront\CartPageController;
 use App\Http\Controllers\Storefront\CategoryController;
 use App\Http\Controllers\Storefront\CheckoutPageController;
+use App\Http\Controllers\Storefront\HeaderPreviewController;
 use App\Http\Controllers\Storefront\HomeController;
 use App\Http\Controllers\Storefront\OrderReceivedController;
 use App\Http\Controllers\Storefront\PageController;
@@ -63,6 +64,9 @@ Route::middleware([SecurityHeaders::class, ApplyStorefrontTheme::class])
         Route::get('/info-preview/{id}', [PageController::class, 'preview'])
             ->where('id', '[0-9]+')
             ->name('storefront.page.preview');
+
+        // The header builder's preview (D2): the home page with the DRAFT header, a temporary SIGNED url (checked in the controller), noindex, no-store.
+        Route::get('/header-preview', [HeaderPreviewController::class, 'show'])->name('storefront.header.preview');
 
         Route::get('/product-category/{path}', [CategoryController::class, 'show'])
             ->where('path', '[\s\S]*')
