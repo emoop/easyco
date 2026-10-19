@@ -32,7 +32,6 @@ use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Tabs;
 use Filament\Schemas\Components\Tabs\Tab;
 use Filament\Schemas\Schema;
-use Illuminate\Validation\ValidationException;
 
 /**
  * «Хедър» / "Header" (stage D2, storefront-customization-design.md 4.3): the header builder. Per layout (desktop, phone) and per row (top, main, bottom) an
@@ -43,6 +42,7 @@ use Illuminate\Validation\ValidationException;
  */
 class HeaderSettings extends Page
 {
+    use ServerSideValidation;
     use AuthorizesViaStaffPermission;
 
     /** @var array<string, mixed> */
@@ -193,7 +193,7 @@ class HeaderSettings extends Page
             $messages[$field ?? 'data.'.preg_replace('/\.settings\..*$/', '', $path)] = $message;
         }
 
-        throw ValidationException::withMessages($messages);
+        $this->failFields($messages);
     }
 
     // ---- the form --------------------------------------------------------------------------------------------------------------------
@@ -205,9 +205,13 @@ class HeaderSettings extends Page
 
         return match ($field['kind']) {
             'int' => TextInput::make($name)->label($label)->numeric()->integer()->minValue((int) ($field['min'] ?? 0))->maxValue((int) ($field['max'] ?? 9999))->default($field['default'] ?? null),
+            // A header made before the menus existed shows the plain category tree: say so, the merchant's own menus are one choice away.
             'menu_source' => Select::make($name)->label($label)->native(false)
                 ->options(['categories' => __('header.options.categories')] + \App\Content\Menus\MenuModel::query()->orderBy('id')->pluck('name', 'key')->all())
-                ->default($field['default'] ?? 'categories'),
+                ->default($field['default'] ?? 'categories')
+                ->live()
+                ->hint(fn ($get): ?string => $get($name) === 'categories' ? __('header.warnings.categories_source') : null)
+                ->hintColor('warning'),
             'bool' => Toggle::make($name)->label($label)->default((bool) ($field['default'] ?? false)),
             'enum' => Select::make($name)->label($label)->native(false)->options(array_combine($field['options'], array_map(static fn (string $o): string => __('header.options.'.$o), $field['options'])))->default($field['default'] ?? $field['options'][0]),
             'html' => Textarea::make($name)->label($label)->rows(4)->helperText(__('header.html_help'))->default(''),
@@ -301,7 +305,7 @@ class HeaderSettings extends Page
     public function content(Schema $schema): Schema
     {
         return $schema->components([
-            Form::make([EmbeddedSchema::make('form')])->id('form')->livewireSubmitHandler('saveDraft'),
+            static::withoutNativeValidation(Form::make([EmbeddedSchema::make('form')]))->id('form')->livewireSubmitHandler('saveDraft'),
         ]);
     }
 

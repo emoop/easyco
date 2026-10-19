@@ -162,7 +162,7 @@ class MenuResource extends Resource
                 ->collapsible()
                 ->collapsed()
                 ->cloneable()
-                ->reorderable(false)
+                
                 ->reorderableWithButtons()
                 ->itemLabel(fn (array $state): string => static::describe($state))
                 ->addActionLabel(__('menus.actions.add_item'))
@@ -221,12 +221,12 @@ class MenuResource extends Resource
                     Repeater::make('sub_items')
                         ->label(__('menus.fields.sub_items'))
                         ->schema(static::itemFields(['link', 'category', 'page'], 'category', withChildrenToggle: true))
-                        ->collapsible()->collapsed()->cloneable()->reorderable(false)->reorderableWithButtons()
+                        ->collapsible()->collapsed()->cloneable()->reorderableWithButtons()
                         ->itemLabel(fn (array $state): string => static::describe($state))
                         ->addActionLabel(__('menus.actions.add_item'))
                         ->default([]),
                 ])
-                ->collapsible()->collapsed()->cloneable()->reorderable(false)->reorderableWithButtons()
+                ->collapsible()->collapsed()->cloneable()->reorderableWithButtons()
                 ->itemLabel(fn (array $state): string => static::describe($state))
                 ->addActionLabel(__('menus.actions.add_item'))
                 ->default([]),
@@ -240,12 +240,12 @@ class MenuResource extends Resource
                         ->label(__('menus.fields.column_items'))
                         ->schema(static::itemFields(['link', 'category', 'page', 'image'], 'link', withChildrenToggle: true))
                         ->maxItems(MenuValidator::MAX_COLUMN)
-                        ->collapsible()->collapsed()->cloneable()->reorderable(false)->reorderableWithButtons()
+                        ->collapsible()->collapsed()->cloneable()->reorderableWithButtons()
                         ->itemLabel(fn (array $state): string => static::describe($state))
                         ->addActionLabel(__('menus.actions.add_item'))
                         ->default([]),
                 ])
-                ->collapsible()->collapsed()->cloneable()->reorderable(false)->reorderableWithButtons()
+                ->collapsible()->collapsed()->cloneable()->reorderableWithButtons()
                 ->itemLabel(fn (array $state): string => ($state['label'] ?? '') !== '' ? (string) $state['label'] : __('menus.types.column'))
                 ->addActionLabel(__('menus.actions.add_column'))
                 ->default([]),

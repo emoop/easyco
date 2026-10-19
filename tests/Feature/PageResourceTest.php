@@ -227,4 +227,31 @@ class PageResourceTest extends TestCase
         $this->assertStringContainsString('signature=', $url);
         $this->assertStringContainsString('expires=', $url);
     }
+
+    // UX-0: a value the person typed is the value they get back: created, reopened, edited, reopened, and the public page follows.
+    public function test_every_field_survives_a_save_and_a_reload(): void
+    {
+        $this->actingAsStaff('Administrator');
+        $values = [
+            'title' => 'Одит страница', 'slug' => 'odit-stranitsa', 'body' => '<p>Текст на одит страницата.</p>', 'status' => 'published',
+            'meta_title' => 'Одит SEO заглавие', 'meta_description' => 'Одит SEO описание', 'noindex' => true,
+        ];
+
+        Livewire::test(CreatePage::class)->fillForm($values)->call('create')->assertHasNoFormErrors();
+        $page = PageModel::query()->where('slug', 'odit-stranitsa')->firstOrFail();
+
+        Livewire::test(EditPage::class, ['record' => $page->id])->assertFormSet($values);
+        $html = $this->get('/info/odit-stranitsa')->assertOk()->getContent();
+        $this->assertStringContainsString('Одит SEO заглавие', $html);
+        $this->assertStringContainsString('noindex', $html);
+
+        $changed = ['title' => 'Одит страница 2', 'body' => '<p>Нов текст.</p>', 'meta_title' => 'Одит SEO 2', 'meta_description' => 'Описание 2', 'noindex' => false];
+        Livewire::test(EditPage::class, ['record' => $page->id])->fillForm($changed)->call('save')->assertHasNoFormErrors();
+
+        Livewire::test(EditPage::class, ['record' => $page->id])->assertFormSet($changed + ['slug' => 'odit-stranitsa', 'status' => 'published']);
+        $this->assertSame(2, $page->refresh()->revision);
+        $html = $this->get('/info/odit-stranitsa')->assertOk()->getContent();
+        $this->assertStringContainsString('Нов текст.', $html);
+        $this->assertDoesNotMatchRegularExpression('/name="robots" content="noindex"/', $html);
+    }
 }

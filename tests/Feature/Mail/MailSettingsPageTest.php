@@ -333,4 +333,20 @@ class MailSettingsPageTest extends TestCase
         $this->assertSame('smtps', config('mail.mailers.easyco.scheme'));
         $this->assertSame(465, config('mail.mailers.easyco.port'));
     }
+
+    // UX-0: a value the person typed is the value they get back (the password is the one exception: it is encrypted and never shown again).
+    public function test_every_field_survives_a_save_and_a_reload(): void
+    {
+        $this->actAsPanelAdministrator();
+        $values = $this->smtpForm([
+            'smtp_port' => '2525', 'smtp_encryption' => 'tls', 'from_transactional_address' => 'orders-ux@example.test', 'from_transactional_name' => 'Поръчки Одит',
+            'from_marketing_address' => 'news-ux@example.test', 'from_marketing_name' => 'Новини Одит', 'reply_to' => 'help-ux@example.test', 'domain_confirmed' => true,
+            'dns_include' => 'spf.example.test', 'dns_selector' => 'uxsel',
+        ]);
+
+        $component = Livewire::test(MailSettings::class)->fillForm($values);
+        $this->saveWithPassword($component, self::SECRET)->assertHasNoFormErrors();
+
+        Livewire::test(MailSettings::class)->assertFormSet($values + ['smtp_password' => null]);
+    }
 }

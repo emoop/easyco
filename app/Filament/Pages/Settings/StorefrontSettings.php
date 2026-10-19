@@ -30,6 +30,7 @@ use Filament\Schemas\Schema;
  */
 class StorefrontSettings extends Page
 {
+    use ServerSideValidation;
     use AuthorizesViaStaffPermission;
 
     /** @var array<string, mixed> */
@@ -114,7 +115,7 @@ class StorefrontSettings extends Page
 
     protected function getFormContentComponent(): Component
     {
-        return Form::make([EmbeddedSchema::make('form')])
+        return static::withoutNativeValidation(Form::make([EmbeddedSchema::make('form')]))
             ->id('form')
             ->livewireSubmitHandler('save')
             ->footer([

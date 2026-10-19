@@ -144,4 +144,19 @@ class CatalogSettingsPageTest extends TestCase
         session()->forget('password_hash_staff');
         $this->get(CatalogSettings::getUrl())->assertForbidden();
     }
+
+    // UX-0: a value the person typed is the value they get back. (The "required" box is only shown while the group field is on: switching the field off is
+    // saved as "not required" by design, see the page's own comment.)
+    public function test_every_field_survives_a_save_and_a_reload(): void
+    {
+        $this->actingAsPanelAdministrator();
+        $values = ['season_field_enabled' => false, 'brand_field_enabled' => false, 'tags_field_enabled' => false, 'product_group_field_enabled' => true, 'product_group_required' => true];
+
+        Livewire::test(CatalogSettings::class)->fillForm($values)->call('save')->assertHasNoFormErrors();
+        Livewire::test(CatalogSettings::class)->assertFormSet($values);
+
+        $flipped = ['season_field_enabled' => true, 'brand_field_enabled' => true, 'tags_field_enabled' => true, 'product_group_field_enabled' => false];
+        Livewire::test(CatalogSettings::class)->fillForm($flipped)->call('save')->assertHasNoFormErrors();
+        Livewire::test(CatalogSettings::class)->assertFormSet($flipped + ['product_group_required' => false]);
+    }
 }

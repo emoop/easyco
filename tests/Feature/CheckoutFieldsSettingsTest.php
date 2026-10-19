@@ -255,4 +255,34 @@ class CheckoutFieldsSettingsTest extends TestCase
         $count($called);
         $this->assertSame($count($called), $count($plain));
     }
+
+    // UX-0: a value the person typed is the value they get back, repeaters included, in the order they were given.
+    public function test_every_field_survives_a_save_and_a_reload(): void
+    {
+        $this->staff();
+        $rule = fn (string $country, array $more = []): array => $more + ['country' => $country, 'tax_id_label' => 'ЕИК', 'tax_id_required_for_company' => true, 'tax_id_pattern' => '^[0-9]{9}$',
+            'registration_number_label' => 'ДДС', 'registration_number_required' => true, 'representative_label' => 'МОЛ'];
+        $scalars = [
+            'phone_mobile_only' => true, 'call_before_shipping_enabled' => true, 'newsletter_enabled' => true, 'terms_enabled' => true,
+            'terms_source' => 'url', 'terms_url' => 'https://example.test/ux-terms', 'privacy_source' => 'url', 'privacy_url' => '/ux-privacy',
+            'default' => 'required', 'invoice_enabled' => true, 'ip_full_retention_days' => 45,
+        ];
+        $exceptions = [['country' => 'DE', 'mode' => 'hidden'], ['country' => 'FR', 'mode' => 'optional']];
+        $rules = [$rule('RO'), $rule('BG', ['tax_id_label' => 'Данъчен номер', 'registration_number_required' => false])];
+
+        $this->page()->fillForm($scalars + ['exceptions' => $exceptions, 'invoice_rules' => $rules])->call('save')->assertHasNoFormErrors();
+        $this->app->forgetScopedInstances();
+
+        $this->page()->assertFormSet(function (array $state) use ($scalars, $exceptions, $rules): void {
+            foreach ($scalars as $field => $value) {
+                $this->assertEquals($value, $state[$field], $field);
+            }
+
+            $this->assertEquals($exceptions, array_values($state['exceptions']), 'the exceptions, in their order');
+            $this->assertEquals($rules, array_map(fn (array $r): array => array_intersect_key($r, $rules[0]), array_values($state['invoice_rules'])), 'the invoice rules, in their order');
+        });
+
+        // ...and the checkout shows the terms link at once.
+        $this->assertStringContainsString('example.test/ux-terms', $this->get('/checkout')->getContent());
+    }
 }

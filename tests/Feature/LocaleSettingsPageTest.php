@@ -293,4 +293,19 @@ class LocaleSettingsPageTest extends TestCase
             __('settings.timezone.invalid', [], 'bg'),
         );
     }
+
+    // UX-0: a value the person typed is the value they get back (the retention only while the log is on).
+    public function test_every_field_survives_a_save_and_a_reload(): void
+    {
+        $this->actingAsPanelAdministrator();
+        $values = [
+            'locale' => 'en', 'country' => 'RO', 'timezone' => 'Europe/Berlin', 'activity_log_enabled' => true, 'activity_log_retention_months' => 18,
+            'currency_symbol_position' => 'prefix_space',
+        ];
+
+        Livewire::test(LocaleSettings::class)->fillForm($values)->call('save')->assertHasNoFormErrors();
+
+        Livewire::test(LocaleSettings::class)->assertFormSet($values);
+        $this->assertSame('en', app(SiteSettingsRepository::class)->get('site.locale'));
+    }
 }

@@ -21,6 +21,10 @@ return [
         'drawer_side' => 'Which side it opens from',
     ],
 
+    'warnings' => [
+        'categories_source' => 'This menu does not follow "Menus" — choose "Main menu"',
+    ],
+
     'actions' => [
         'save_draft' => 'Save draft',
         'preview' => 'Preview',

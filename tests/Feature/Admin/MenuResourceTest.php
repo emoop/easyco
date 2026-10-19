@@ -305,4 +305,65 @@ class MenuResourceTest extends TestCase
             $this->assertMatchesRegularExpression('#<a href="[^"]*/admin/help/appearance\#action-appearance-menus"#', $this->get($url)->assertOk()->getContent(), $url);
         }
     }
+
+    // UX-0: a value the person typed is the value they get back: every item type, a dropdown with a second level, a mega panel with two columns and a picture, in order.
+    public function test_every_field_survives_a_save_and_a_reload(): void
+    {
+        $page = app(PageWriter::class)->create(['title' => 'Terms', 'slug' => 'terms', 'body' => '<p>x</p>', 'status' => 'published']);
+        $image = $this->makeMenuImage(930);
+        $this->actingAsStaff('Administrator');
+        $item = fn (string $type, array $more = []): array => $more + ['type' => $type, 'label' => null, 'url' => null, 'category_id' => null, 'page_id' => null, 'submenu' => 'none', 'with_children' => false,
+            'children_limit' => 12, 'media_asset_id' => null, 'image_alt' => null, 'caption' => null, 'new_tab' => false, 'visible' => true];
+        $items = [
+            'i1' => $item('link', ['label' => 'Начало', 'url' => '/', 'new_tab' => true]),
+            'i2' => $item('category', ['category_id' => 1, 'label' => 'Дамски', 'submenu' => 'dropdown', 'with_children' => true, 'children_limit' => 5, 'dropdown_items' => [
+                'd1' => $item('link', ['label' => 'Промо', 'url' => '/promo']) + ['sub_items' => []],
+                'd2' => $item('page', ['page_id' => $page->id, 'label' => 'Правила']) + ['sub_items' => ['s1' => $item('link', ['label' => 'Дълбоко', 'url' => '/deep'])]],
+            ]]),
+            'i3' => $item('link', ['label' => 'Мега', 'url' => '/mega', 'submenu' => 'mega', 'columns' => [
+                'c1' => ['label' => 'Колона едно', 'visible' => true, 'column_items' => ['x1' => $item('link', ['label' => 'Рокли', 'url' => '/dresses']), 'x2' => $item('category', ['category_id' => 3]), 'x3' => $item('page', ['page_id' => $page->id])]],
+                'c2' => ['label' => 'Колона две', 'visible' => true, 'column_items' => ['y1' => $item('image', ['media_asset_id' => $image, 'image_alt' => 'Снимка', 'caption' => 'Надпис', 'url' => '/promo-image', 'new_tab' => true])]],
+            ]]),
+            'i4' => $item('page', ['page_id' => $page->id, 'visible' => false]),
+        ];
+
+        Livewire::test(EditMenu::class, ['record' => $this->menu()->id])->set('data.name', 'Одит меню')->set('data.items', $items)->call('save')->assertHasNoFormErrors();
+
+        $this->assertSame('Одит меню', $this->menu()->name);
+        $tree = MenuTree::forMenu($this->menu()->id);
+        $this->assertSame(['link', 'category', 'link', 'page'], array_column($tree, 'type'), 'the order of the top level');
+        $this->assertSame([true, false, false, false], array_map(fn (array $i): bool => $i['new_tab'], $tree), 'new_tab on the first');
+        $this->assertSame([5, true], [$tree[1]['children_limit'], $tree[1]['with_children']]);
+        $this->assertSame(['link', 'page'], array_column($tree[1]['children'], 'type'));
+        $this->assertSame('Дълбоко', $tree[1]['children'][1]['children'][0]['label'], 'the second level');
+        $this->assertSame(['column', 'column'], array_column($tree[2]['children'], 'type'));
+        $this->assertSame(['link', 'category', 'page'], array_column($tree[2]['children'][0]['children'], 'type'), 'the column, in order');
+        $this->assertSame([$image, 'Снимка', 'Надпис', '/promo-image'], [$tree[2]['children'][1]['children'][0]['media_asset_id'], $tree[2]['children'][1]['children'][0]['image_alt'], $tree[2]['children'][1]['children'][0]['caption'], $tree[2]['children'][1]['children'][0]['url']]);
+        $this->assertFalse($tree[3]['visible']);
+
+        // reopened: the form shows the same tree, in the same order
+        Livewire::test(EditMenu::class, ['record' => $this->menu()->id])->assertFormSet(function (array $state): void {
+            $top = array_values($state['items']);
+            $this->assertSame(['Одит меню'], [$state['name']]);
+            $this->assertSame(['link', 'category', 'link', 'page'], array_column($top, 'type'));
+            $this->assertSame(['Начало', 'Дамски', 'Мега'], [$top[0]['label'], $top[1]['label'], $top[2]['label']]);
+            $this->assertSame('dropdown', $top[1]['submenu']);
+            $this->assertSame(['Промо', 'Правила'], array_column(array_values($top[1]['dropdown_items']), 'label'));
+            $this->assertSame(['Колона едно', 'Колона две'], array_column(array_values($top[2]['columns']), 'label'));
+        });
+
+        // and the shop follows at once (the compiled menus were replaced by the save)
+        $this->assertStringContainsString('Дамски', (string) $this->settings()->get(AppearanceSettings::MENUS_COMPILED_KEY));
+    }
+
+    // UX-0: reordering was switched off by `->reorderable(false)`: the editor showed no up / down buttons at all (the audit's "reorder" step found it).
+    public function test_the_items_can_be_moved_up_and_down(): void
+    {
+        $this->saveMenu('main', [$this->menuItem('link', ['label' => 'A', 'url' => '/a']), $this->menuItem('link', ['label' => 'B', 'url' => '/b'])]);
+        $this->actingAsStaff('Administrator');
+
+        $html = $this->get(MenuResource::getUrl('edit', ['record' => $this->menu()]))->assertOk()->getContent();
+        $this->assertStringContainsString('Move up', $html);
+        $this->assertStringContainsString('Move down', $html);
+    }
 }

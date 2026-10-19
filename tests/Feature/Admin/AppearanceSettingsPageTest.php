@@ -233,6 +233,31 @@ class AppearanceSettingsPageTest extends TestCase
         $this->assertSame(2, DB::table('activity_log')->where('entity_type', 'storefront_appearance')->count());
     }
 
+    // ---- UX-0: a value the person typed is the value they get back --------------------------------------------------------------------
+
+    public function test_every_field_survives_a_save_and_a_reload(): void
+    {
+        $this->actingAsStaff('Administrator');
+        $values = [
+            'c_background' => '#f8fafc', 'c_text' => '#0f172a', 'c_muted' => '#475569', 'c_primary' => '#1d4ed8', 'c_on_primary' => '#f0f9ff', 'c_accent' => '#be123c',
+            'c_border' => '#cbd5e1', 'c_header_bg' => '#f1f5f9', 'c_header_text' => '#111827', 'c_footer_bg' => '#e2e8f0', 'c_footer_text' => '#334155',
+            'font_body' => 'inter', 'font_heading' => 'lora', 'radius' => 'lg', 'button' => 'outline',
+            'banner_enabled' => true, 'banner_text' => 'Одит банер ✓', 'banner_url' => '/cart', 'banner_link_label' => 'Виж', 'c_banner_text' => '#fefce8', 'c_banner_bg' => '#1e3a8a',
+            'banner_starts_at' => '2026-01-01 00:00', 'banner_ends_at' => '2030-01-01 00:00',
+        ];
+
+        $this->page()->fillForm($values)->call('save')->assertHasNoFormErrors();
+        $this->app->forgetScopedInstances();
+
+        $this->page()->assertFormSet($values);
+
+        // ...and the shop shows it at once (the cache entry was replaced).
+        $html = $this->get('/')->assertOk()->getContent();
+        $this->assertStringContainsString('Одит банер', $html);
+        preg_match('#appearance/(tokens-[0-9a-f]{12}\.css)#', $html, $m);
+        $this->assertStringContainsString('--sf-primary: #1d4ed8;', Storage::disk('public')->get('appearance/'.$m[1]));
+    }
+
     // ---- help -------------------------------------------------------------------------------------------------------------------------
 
     public function test_the_help_files_have_the_four_anchors_in_both_languages_and_the_page_links_to_three(): void

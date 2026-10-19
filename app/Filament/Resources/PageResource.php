@@ -223,17 +223,20 @@ class PageResource extends Resource
     // ---- shared by the pages ---------------------------------------------------------------------------------------
 
     /**
-     * A writer refusal as the form's own field errors (the form's state lives under `data`).
+     * A writer refusal as the form's own field errors (the form's state lives under `data`). With the page passed in, the event that opens a collapsed section
+     * (UX-0: the SEO section) is dispatched first, as Filament does for its own rules.
      *
      * @throws ValidationException
      */
-    public static function fieldErrors(PageInvalidException $exception): never
+    public static function fieldErrors(PageInvalidException $exception, ?\Livewire\Component $livewire = null): never
     {
         $messages = [];
 
         foreach ($exception->errors as $field => $list) {
             $messages['data.'.$field] = $list;
         }
+
+        $livewire?->dispatch('form-validation-error', livewireId: $livewire->getId());
 
         throw ValidationException::withMessages($messages);
     }

@@ -127,4 +127,18 @@ class BankTransferSettingsPageTest extends TestCase
         $this->assertTrue(BankTransferSettings::canAccess());
         $this->assertFalse($manager, 'the Manager role does not hold settings_manage');
     }
+
+    // UX-0: a value the person typed is the value they get back.
+    public function test_every_field_survives_a_save_and_a_reload(): void
+    {
+        $this->actAsPanelAdministrator();
+        $values = [
+            'account_holder' => 'Тест Титуляр ООД', 'bank_name' => 'Банка Одит', 'iban' => 'BG80BNBG96611020345678', 'bic' => 'BNBGBGSF', 'deadline_days' => '9',
+            'instructions' => 'Моля, посочете номера на поръчката.',
+        ];
+
+        Livewire::test(BankTransferSettings::class)->fillForm($values)->call('save')->assertHasNoFormErrors();
+
+        Livewire::test(BankTransferSettings::class)->assertFormSet($values);
+    }
 }

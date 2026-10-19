@@ -141,4 +141,57 @@ class HeaderSettingsPageTest extends TestCase
 
         $this->assertMatchesRegularExpression('#<a href="[^"]*/admin/help/appearance\#action-appearance-header"#', $html);
     }
+
+    // UX-0: a value the person typed is the value they get back: rows, heights, elements in every slot, in the order they were given, the drawer and its side.
+    public function test_every_field_survives_a_save_and_a_reload(): void
+    {
+        $this->actingAsStaff('Administrator');
+        $block = fn (string $type, array $data): array => ['type' => $type, 'data' => $data];
+        $row = fn (bool $enabled, int $height, array $left = [], array $center = [], array $right = []): array => ['enabled' => $enabled, 'height' => $height, 'left' => $left, 'center' => $center, 'right' => $right];
+        $state = [
+            'desktop' => ['sticky' => false, 'rows' => [
+                'top' => $row(true, 40, ['t1' => $block('button', ['label' => 'Виж', 'url' => '/sale', 'style' => 'outline'])], ['t2' => $block('spacer', ['width' => 'lg'])], ['t3' => $block('text', ['text' => '0888 123 456', 'url' => '/contacts'])]),
+                'main' => $row(true, 52, ['m1' => $block('menu', ['source' => 'main', 'style' => 'dropdown'])], ['m2' => $block('logo', ['height' => 24])], ['m3' => $block('cart', ['style' => 'icon_label']), 'm4' => $block('search', ['mode' => 'field'])]),
+                'bottom' => $row(true, 48, ['b1' => $block('social', ['items' => [['network' => 'facebook', 'url' => 'https://example.test/fb'], ['network' => 'instagram', 'url' => 'https://example.test/ig']]])], ['b2' => $block('html', ['html' => '<p>Одит <b>блок</b></p>'])], ['b3' => $block('text', ['text' => 'Долен текст', 'url' => ''])]),
+            ]],
+            'mobile' => ['sticky' => false, 'rows' => [
+                'top' => $row(true, 36, ['p1' => $block('text', ['text' => 'Горе', 'url' => ''])]),
+                'main' => $row(true, 50, ['p2' => $block('menu_toggle', ['label_visible' => true])], ['p3' => $block('logo', ['height' => 30])], ['p4' => $block('cart', ['style' => 'icon'])]),
+            ], 'drawer' => ['d1' => $block('text', ['text' => 'Чекмедже', 'url' => '']), 'd2' => $block('menu', ['source' => 'main', 'style' => 'links'])], 'drawer_side' => 'right'],
+        ];
+
+        Livewire::test(HeaderSettings::class)->set('data.desktop', $state['desktop'])->set('data.mobile', $state['mobile'])->callAction('save_draft')->assertHasNoFormErrors();
+
+        $normalise = function (array $slots): array {
+            $out = [];
+
+            foreach ($slots as $name => $blocks) {
+                $out[$name] = is_array($blocks) ? array_map(fn (array $b): array => [$b['type'], isset($b['data']['items']) ? ['items' => array_values($b['data']['items'])] : $b['data']], array_values($blocks)) : $blocks;
+            }
+
+            return $out;
+        };
+        $expected = fn (array $layout): array => [
+            'sticky' => $layout['sticky'],
+            'rows' => array_map(fn (array $r): array => ['enabled' => $r['enabled'], 'height' => $r['height']] + $normalise(array_intersect_key($r, array_flip(['left', 'center', 'right']))), $layout['rows']),
+        ];
+
+        Livewire::test(HeaderSettings::class)->assertFormSet(function (array $reloaded) use ($state, $normalise, $expected): void {
+            foreach (['desktop', 'mobile'] as $name) {
+                $got = ['sticky' => $reloaded[$name]['sticky'], 'rows' => array_map(fn (array $r): array => ['enabled' => $r['enabled'], 'height' => $r['height']] + $normalise(array_intersect_key($r, array_flip(['left', 'center', 'right']))), $reloaded[$name]['rows'])];
+                $this->assertEquals($expected($state[$name]), $got, $name.' (elements and heights, in order)');
+            }
+
+            $this->assertEquals($normalise(['d' => $state['mobile']['drawer']])['d'], $normalise(['d' => $reloaded['mobile']['drawer']])['d'], 'the drawer, in order');
+            $this->assertSame('right', $reloaded['mobile']['drawer_side']);
+        });
+
+        // PUBLISH: the shop shows it at once.
+        Livewire::test(HeaderSettings::class)->callAction('publish')->assertHasNoFormErrors();
+        $this->app->forgetScopedInstances();
+        $html = $this->get('/')->assertOk()->getContent();
+        $this->assertStringContainsString('0888 123 456', $html);
+        $this->assertStringContainsString('Одит <b>блок</b>', $html);
+        $this->assertStringContainsString('Чекмедже', $html);
+    }
 }

@@ -129,4 +129,21 @@ class StorefrontSettingsPageTest extends TestCase
 
         $this->assertStringContainsString('3 / '.StorefrontHomeSettings::MAX_TITLE, $html);
     }
+
+    // UX-0: a value the person typed is the value they get back.
+    public function test_every_field_survives_a_save_and_a_reload(): void
+    {
+        $this->actingAsStaff('Administrator');
+        $values = ['home_title' => 'Добре дошли — одит', 'home_text' => 'Текст с кирилица и числа 123.'];
+
+        Livewire::test(StorefrontSettings::class)->fillForm($values)->call('save')->assertHasNoFormErrors();
+        $this->app->forgetScopedInstances();
+
+        Livewire::test(StorefrontSettings::class)->assertFormSet($values);
+
+        // ...and the home page shows them at once.
+        $html = $this->get('/')->assertOk()->getContent();
+        $this->assertStringContainsString('Добре дошли — одит', $html);
+        $this->assertStringContainsString('Текст с кирилица и числа 123.', $html);
+    }
 }

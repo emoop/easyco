@@ -7,6 +7,7 @@ use App\Content\Menus\MenuFormState;
 use App\Content\Menus\MenuModel;
 use App\Content\Menus\MenuTree;
 use App\Content\Menus\MenuWriter;
+use App\Filament\Pages\Settings\ServerSideValidation;
 use App\Filament\Resources\BrandResource;
 use App\Filament\Resources\MenuResource;
 use App\Services\ActivityLogger;
@@ -14,10 +15,10 @@ use App\Storefront\Menu\MenuCompileException;
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\EditRecord;
+use Filament\Schemas\Components\Component;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
-use Illuminate\Validation\ValidationException;
 
 /**
  * Edit a menu: the form is the nested tree (MenuFormState converts it); saving is ONE call to MenuWriter::save(). A refusal comes back as the form's own field errors.
@@ -25,7 +26,15 @@ use Illuminate\Validation\ValidationException;
  */
 class EditMenu extends EditRecord
 {
+    use ServerSideValidation;
+
     protected static string $resource = MenuResource::class;
+
+    /** UX-0: the browser's own `required` checks never block (or silently swallow) the Save: the server answers under the field. */
+    public function getFormContentComponent(): Component
+    {
+        return static::withoutNativeValidation(parent::getFormContentComponent());
+    }
 
     /** @param  array<string, mixed>  $data */
     protected function mutateFormDataBeforeFill(array $data): array
@@ -54,9 +63,9 @@ class EditMenu extends EditRecord
                 $messages['data.'.$field] = $message;
             }
 
-            throw ValidationException::withMessages($messages === [] ? ['data.items' => $exception->getMessage()] : $messages);
+            $this->failFields($messages === [] ? ['data.items' => $exception->getMessage()] : $messages);
         } catch (MenuCompileException $exception) {
-            throw ValidationException::withMessages(['data.items' => $exception->getMessage()]);
+            $this->failFields(['data.items' => $exception->getMessage()]);
         }
 
         // Who saved which menu; never a label or a link.
