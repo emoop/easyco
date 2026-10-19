@@ -150,9 +150,9 @@ class StorefrontMobileFixesTest extends TestCase
     {
         $html = $this->get('/')->assertOk()->getContent();
 
-        $this->assertMatchesRegularExpression('/<button class="sf-menu-toggle" type="button" aria-controls="sf-drawer" aria-expanded="false" data-sf-menu-toggle>\s*<svg class="sf-menu-icon"[^>]*aria-hidden="true"[^>]*focusable="false">(<path d="[^"]+"\/>){3}<\/svg>\s*<span class="sf-sr-only">Categories<\/span>\s*<\/button>/', $html);
+        $this->assertMatchesRegularExpression('/<button class="sf-menu-toggle" type="button" aria-controls="sf-drawer" aria-expanded="false" data-sf-menu-toggle>\s*<svg class="sf-menu-icon"[^>]*aria-hidden="true"[^>]*focusable="false">(<path d="[^"]+"\/>){3}<\/svg>\s*<span class="sf-sr-only">Menu<\/span>\s*<\/button>/', $html);
         preg_match('/<button class="sf-menu-toggle".*?<\/button>/s', $html, $button);
-        $this->assertSame('Categories', trim(strip_tags($button[0])), 'the only text is the hidden accessible name');
+        $this->assertSame('Menu', trim(strip_tags($button[0])), 'the only text is the hidden accessible name (D3: the menu is no longer only categories)');
         $this->assertStringNotContainsString('aria-label', $button[0], 'no label duplicating the name');
         $this->assertSame(4, substr_count($html, '<svg'), 'D2: the hamburger, the two bags (desktop and phone) and the drawer close icon, nothing else');
         $this->assertNoActiveContent($html, 'layout');

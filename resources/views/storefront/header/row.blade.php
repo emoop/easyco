@@ -3,7 +3,7 @@
         @foreach (['left', 'center', 'right'] as $slot)
             <div class="sf-hdr-slot sf-hdr-{{ $slot }}">
                 @foreach ($row[$slot] as $index => $element)
-                    @include($element['view'], ['settings' => $element['settings'], 'context' => $context, 'uid' => $context.'-'.$rowName.'-'.$slot.'-'.$index])
+                    @include($element['view'], ['settings' => $element['settings'], 'menu' => $element['menu'] ?? null, 'context' => $context, 'uid' => $context.'-'.$rowName.'-'.$slot.'-'.$index])
                 @endforeach
             </div>
         @endforeach

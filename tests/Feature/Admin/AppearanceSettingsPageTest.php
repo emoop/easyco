@@ -25,7 +25,7 @@ class AppearanceSettingsPageTest extends TestCase
     use BuildsShippingZones;
     use RefreshDatabase;
 
-    private const HELP_ANCHORS = ['action-appearance-colors', 'action-appearance-fonts', 'action-appearance-banner', 'action-appearance-themes', 'action-appearance-header'];
+    private const HELP_ANCHORS = ['action-appearance-colors', 'action-appearance-fonts', 'action-appearance-banner', 'action-appearance-themes', 'action-appearance-header', 'action-appearance-menus'];
 
     protected function setUp(): void
     {

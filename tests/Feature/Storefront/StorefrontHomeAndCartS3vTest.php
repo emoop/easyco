@@ -17,6 +17,7 @@ use Tests\TestCase;
 class StorefrontHomeAndCartS3vTest extends TestCase
 {
     use AssertsSafeHtml;
+    use BuildsMenus;
     use BuildsStorefrontCatalog;
     use RefreshDatabase;
 
@@ -238,7 +239,8 @@ class StorefrontHomeAndCartS3vTest extends TestCase
 
     public function test_the_footer_names_the_shop_lists_the_footer_pages_and_links_home(): void
     {
-        app(\App\Content\PageWriter::class)->create(['title' => 'About us', 'slug' => 'about', 'body' => '<p>x</p>', 'status' => 'published', 'in_footer' => true, 'footer_order' => 1]);
+        $page = app(\App\Content\PageWriter::class)->create(['title' => 'About us', 'slug' => 'about', 'body' => '<p>x</p>', 'status' => 'published']);
+        $this->saveMenu('footer', [$this->menuItem('page', ['target_id' => $page->id])]); // D3: the footer is the footer menu
 
         $html = $this->get('/')->getContent();
 

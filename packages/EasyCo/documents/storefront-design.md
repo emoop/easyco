@@ -655,3 +655,7 @@ Each stage ends in a review gate and a full-suite run in a private test database
 ### Header (stage D2)
 
 The storefront header is no longer a fixed bar plus a category row: it is built from the layout stored by the admin page «Хедър» (storefront-customization-design.md §13): a desktop and a mobile layout of up to three rows each, a mobile drawer, an optional search row, and one `<header>` landmark with unique ids. The cart link keeps `data-sf-cart-link` / `data-sf-cart-count`. The header is not HTML-cached (the category menu changes).
+
+### Menus (stage D3)
+
+The category menu of the header and the footer links are the merchant's **menus** (storefront-customization-design.md section 14): a compiled tree read with the appearance (no query of its own), re-validated on every read, rebuilt when a page, a category, a product's visibility or a menu picture changes. The header `menu` element prints a dropdown or a mega panel per item (a link plus a separate disclosure button), moves what does not fit into "More", and the drawer shows the same tree as an accordion. The footer is the `footer` menu.

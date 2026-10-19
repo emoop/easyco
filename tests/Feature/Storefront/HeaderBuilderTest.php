@@ -33,6 +33,7 @@ use Tests\TestCase;
 class HeaderBuilderTest extends TestCase
 {
     use AssertsSafeHtml;
+    use BuildsMenus;
     use BuildsStorefrontCatalog;
     use RefreshDatabase;
 
@@ -583,6 +584,7 @@ class HeaderBuilderTest extends TestCase
 
     public function test_ids_are_unique_although_both_layouts_are_in_the_page_and_the_landmarks_are_there(): void
     {
+        $this->mainMenuOfTopCategories();
         Route::get('/search', fn () => 's')->name('storefront.search');
         app('router')->getRoutes()->refreshNameLookups();
         $this->publish($this->layout(function (array $l): array {
@@ -600,7 +602,7 @@ class HeaderBuilderTest extends TestCase
         $this->assertSame(1, substr_count($html, 'id="sf-drawer"'));
         $this->assertSame(1, substr_count($html, 'id="sf-search-row"'));
         $this->assertSame(1, substr_count($html, '<header '));
-        $this->assertMatchesRegularExpression('/<nav class="sf-hdr-menu sf-hdr-menu-links" id="sf-menu-desktop-main-left-0" aria-label="Categories">/', $html);
+        $this->assertMatchesRegularExpression('/<nav class="sf-hdr-menu sf-hdr-menu-links" id="sf-menu-desktop-main-left-0" aria-label="Menu" data-sf-menubar>/', $html);
         $this->assertMatchesRegularExpression('/<nav class="sf-hdr-menu sf-hdr-menu-drawer" aria-label="Categories">/', $html);
         $this->assertStringContainsString('role="dialog" aria-modal="true" aria-labelledby="sf-drawer-title"', $html);
         $this->assertMatchesRegularExpression('/<button class="sf-hdr-icon-btn" type="button" aria-controls="sf-search-row" aria-expanded="false" data-sf-search-toggle>/', $html);
@@ -629,6 +631,7 @@ class HeaderBuilderTest extends TestCase
 
     public function test_the_menus_are_reachable_without_the_script(): void
     {
+        $this->mainMenuOfTopCategories();
         $html = $this->get('/')->getContent();
         $css = (string) file_get_contents(resource_path('css/storefront.css'));
 

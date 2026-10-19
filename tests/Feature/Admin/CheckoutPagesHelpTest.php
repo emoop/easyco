@@ -149,7 +149,7 @@ class CheckoutPagesHelpTest extends TestCase
 
         $form = $this->linksIn($this->get(PageResource::getUrl('edit', ['record' => $page]))->assertOk()->getContent());
         $this->assertEveryLinkHasItsAnchor($form, 'the page form');
-        $this->assertEqualsCanonicalizing([['pages', 'action-pages-slug'], ['pages', 'action-pages-publish'], ['pages', 'action-pages-footer']], $form);
+        $this->assertEqualsCanonicalizing([['pages', 'action-pages-slug'], ['pages', 'action-pages-publish'], ['appearance', 'action-appearance-menus']], $form);
 
         $revision = $this->linksIn($this->get(PageResource::getUrl('revision', ['record' => $page, 'revision' => 1]))->assertOk()->getContent());
         $this->assertEveryLinkHasItsAnchor($revision, 'the revision view');
@@ -161,7 +161,7 @@ class CheckoutPagesHelpTest extends TestCase
         $this->actingAsStaff('Administrator');
 
         $this->assertEqualsCanonicalizing(
-            [['pages', 'action-pages-slug'], ['pages', 'action-pages-publish'], ['pages', 'action-pages-footer']],
+            [['pages', 'action-pages-slug'], ['pages', 'action-pages-publish'], ['appearance', 'action-appearance-menus']],
             $this->linksIn($this->get(PageResource::getUrl('create'))->assertOk()->getContent()),
         );
     }

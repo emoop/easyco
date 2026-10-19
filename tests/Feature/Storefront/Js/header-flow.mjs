@@ -59,7 +59,20 @@ class FakeNode {
         }
     }
 
-    appendChild(child) { child.parent = this; this.children.push(child); return child; }
+    get parentNode() { return this.parent; }
+    get scrollWidth() { return this._scrollWidth ?? 0; }
+    get clientWidth() { return this._clientWidth ?? 0; }
+    appendChild(child) { child.parent?.removeChild(child); child.parent = this; this.children.push(child); return child; }
+    insertBefore(child, ref) {
+        child.parent?.removeChild(child);
+        child.parent = this;
+
+        if (! ref) { this.children.push(child); return child; }
+
+        this.children.splice(this.children.indexOf(ref), 0, child);
+
+        return child;
+    }
     removeChild(child) { this.children = this.children.filter((c) => c !== child); child.parent = null; return child; }
     setAttribute(k, v) { this.attrs[k] = String(v); }
     getAttribute(k) { return k in this.attrs ? this.attrs[k] : null; }
@@ -272,6 +285,22 @@ globalThis.document = {
 globalThis.window = { location: { href: 'http://shop.test/', origin: 'http://shop.test' } };
 globalThis.fetch = async () => ({ status: 204, json: async () => null });
 
+// Fake timers (the hover intent delays) and a ResizeObserver whose callbacks the scenarios fire by hand.
+const timers = [];
+let clock = 0;
+globalThis.setTimeout = (fn, ms) => { const timer = { fn, at: clock + ms, id: timers.length + 1 }; timers.push(timer); return timer.id; };
+globalThis.clearTimeout = (id) => { const i = timers.findIndex((t) => t.id === id); if (i >= 0) timers.splice(i, 1); };
+const advance = (ms) => {
+    clock += ms;
+
+    for (const timer of timers.filter((t) => t.at <= clock).sort((a, b) => a.at - b.at)) {
+        timers.splice(timers.indexOf(timer), 1);
+        timer.fn();
+    }
+};
+const observers = [];
+globalThis.ResizeObserver = class { constructor(cb) { observers.push(cb); } observe() {} };
+
 // The REAL script (it imports the cart and checkout scripts, which stand down on a page without their roots).
 await import(new URL('../../../../resources/js/storefront.js', import.meta.url));
 
@@ -404,6 +433,133 @@ const scenarios = {
         assert.equal(row.hasAttribute('hidden'), true);
         assert.equal(icon.getAttribute('aria-expanded'), 'false');
         assert.equal(active(), icon, 'focus is back on the icon');
+    },
+
+    // D3 - the menu bar: the chevron is a disclosure button (the link beside it stays a link); one panel is open at a time.
+    async the_chevron_toggles_one_panel_at_a_time() {
+        const chevrons = dom.querySelectorAll('.sf-bar-chevron');
+        assert.ok(chevrons.length >= 2, 'the fixture has two items with a submenu');
+        const [first, second] = chevrons;
+        const panel = (button) => dom.querySelector(`#${button.getAttribute('aria-controls')}`);
+
+        assert.equal(first.getAttribute('aria-expanded'), 'false');
+        click(first);
+        assert.equal(first.getAttribute('aria-expanded'), 'true');
+        assert.ok(panel(first).classList.contains('sf-sub-open'));
+
+        click(second);
+        assert.equal(first.getAttribute('aria-expanded'), 'false', 'opening another closes the first');
+        assert.equal(panel(first).classList.contains('sf-sub-open'), false);
+        assert.equal(second.getAttribute('aria-expanded'), 'true');
+
+        click(second);
+        assert.equal(second.getAttribute('aria-expanded'), 'false', 'the same button closes it');
+
+        click(first);
+        click(q('.sf-logo'));
+        assert.equal(first.getAttribute('aria-expanded'), 'false', 'a click elsewhere closes it');
+    },
+
+    // Esc closes the open panel and puts focus back on the button that opened it.
+    async escape_closes_the_panel_and_returns_focus_to_the_chevron() {
+        const chevron = dom.querySelector('.sf-bar-chevron');
+        chevron.focus();
+        click(chevron);
+        assert.equal(chevron.getAttribute('aria-expanded'), 'true');
+
+        press('Escape');
+        assert.equal(chevron.getAttribute('aria-expanded'), 'false');
+        assert.equal(active(), chevron, 'focus is back on the button');
+
+        // With focus elsewhere Esc still closes it, and does not steal the focus.
+        click(chevron);
+        const link = q('.sf-bar-link');
+        link.focus();
+        press('Escape');
+        assert.equal(chevron.getAttribute('aria-expanded'), 'false');
+        assert.equal(active(), link);
+    },
+
+    // Hover: opens after 150ms of intent, closes 300ms after the pointer leaves, and moving on to another item opens that one instead.
+    async hover_opens_after_150ms_and_closes_300ms_after_leaving() {
+        const items = dom.querySelectorAll('[data-sf-bar-item]').filter((i) => i.querySelector('.sf-bar-chevron'));
+        const [a, b] = items;
+        const open = (item) => item.querySelector('.sf-bar-chevron').getAttribute('aria-expanded') === 'true';
+
+        fire('mouseover', a.querySelector('.sf-bar-link'));
+        advance(149);
+        assert.equal(open(a), false, 'not yet');
+        advance(2);
+        assert.equal(open(a), true, 'after the 150ms intent delay');
+
+        fire('mouseout', a.querySelector('.sf-bar-link'));
+        advance(299);
+        assert.equal(open(a), true, 'still open');
+        advance(2);
+        assert.equal(open(a), false, 'closed 300ms after leaving');
+
+        fire('mouseover', a.querySelector('.sf-bar-link'));
+        advance(200);
+        fire('mouseout', a.querySelector('.sf-bar-link'));
+        fire('mouseover', b.querySelector('.sf-bar-link'));
+        advance(200);
+        assert.equal(open(a), false, 'moving on closes the first');
+        assert.equal(open(b), true, 'and opens the second');
+    },
+
+    // The pictures of a mega panel get their src / srcset only when it first opens.
+    async the_pictures_of_a_mega_panel_load_on_the_first_open() {
+        const picture = dom.querySelector('img[data-sf-src]');
+        assert.ok(picture, 'the fixture has a mega panel with a picture');
+        assert.equal('src' in picture.attrs, false, 'no src before the panel opens');
+
+        const toggle = dom.querySelector(`[aria-controls="${picture.closest('[data-sf-sub]').attrs.id}"]`);
+        click(toggle);
+
+        assert.ok(picture.attrs.src.endsWith('-medium.webp'));
+        assert.ok(picture.attrs.srcset.includes('400w'));
+        assert.equal('data-sf-src' in picture.attrs, false);
+    },
+
+    // What does not fit moves into "More" (a ResizeObserver refits it); widening brings every item back in its place.
+    async items_that_do_not_fit_move_into_more_and_come_back() {
+        const menu = dom.querySelector('[data-sf-menubar]');
+        const more = menu.querySelector('[data-sf-more]');
+        const list = menu.querySelector('[data-sf-more-list]');
+        const row = more.parentNode;
+        const items = () => row.children.filter((c) => c !== more && 'data-sf-bar-item' in c.attrs);
+        const names = () => items().map((i) => i.querySelector('.sf-bar-link').textContent);
+        const original = names();
+        assert.ok(original.length >= 3, 'the fixture has three or more top-level items');
+
+        Object.defineProperty(row, 'scrollWidth', { get: () => row.children.filter((c) => ! c.hidden).reduce((sum, c) => sum + (c === more ? 60 : 100), 0), configurable: true });
+        Object.defineProperty(row, 'clientWidth', { get: () => row.cw, configurable: true });
+
+        row.cw = original.length * 100;
+        observers.forEach((cb) => cb());
+        assert.equal(more.hidden, true, 'everything fits: no More');
+        assert.equal(list.children.length, 0);
+
+        row.cw = 250;
+        observers.forEach((cb) => cb());
+        assert.equal(more.hidden, false, 'More appears');
+        assert.ok(list.children.length >= 1);
+        assert.deepEqual(names(), original.slice(0, names().length), 'the first items stay, in order');
+        const moved = list.children.map((i) => i.querySelector('.sf-bar-link').textContent);
+        assert.deepEqual([...names(), ...moved], original, 'the moved items keep their order inside More');
+
+        // A moved item is part of the panel of More: pointing at it does not close More.
+        click(more.querySelector('.sf-bar-more-btn'));
+        assert.equal(more.querySelector('.sf-bar-more-btn').getAttribute('aria-expanded'), 'true');
+        fire('mouseover', list.children[0].querySelector('.sf-bar-link'));
+        advance(400);
+        assert.equal(more.querySelector('.sf-bar-more-btn').getAttribute('aria-expanded'), 'true', 'still open');
+
+        row.cw = 5000;
+        observers.forEach((cb) => cb());
+        assert.equal(more.hidden, true, 'wide again: More is hidden');
+        assert.equal(list.children.length, 0);
+        assert.deepEqual(names(), original, 'every item is back, in its place');
     },
 
     // Esc with nothing open does nothing (and does not throw).

@@ -179,3 +179,7 @@ checkbox; deleting a page in use refused; permission gate; the 404 body for an u
 3. `content_manage` → Administrator **and Manager** (P-D4).
 4. Footer flag now → yes; later a menu builder for managers/admins (P-D5).
 5. Two empty drafts at install → yes (§8).
+
+## 11. D3 note: the footer is a menu now (2026-10)
+
+The footer of the storefront is the `footer` menu of the Menus tool (storefront-customization-design.md section 14), not the `in_footer` flag: the layout and `PageReader` no longer read it (the footer's ONE query of section 4 is gone; it rides the appearance read). The page form's "Footer" section is a hint to Menus -> Footer. The columns `pages.in_footer` and `footer_order` are kept and still accepted by `PageWriter` until a later cleanup migration drops them. The migration seeded the `footer` menu from the pages that carried the flag, in their order. A page that is archived or unpublished disappears from the footer by itself (the compiler skips it). The help page `pages.md` section "Footer" (`{#action-pages-footer}`) still describes the old flag; it is outside the D3 paths and needs a rewrite.

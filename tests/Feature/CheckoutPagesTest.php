@@ -19,6 +19,7 @@ use Tests\TestCase;
  */
 class CheckoutPagesTest extends TestCase
 {
+    use \Tests\Feature\Storefront\BuildsMenus;
     use PlacesRegionOrders;
     use RefreshDatabase;
 
@@ -223,10 +224,11 @@ class CheckoutPagesTest extends TestCase
         $this->assertSame(1, $with['pages'], 'a page chosen: ONE indexed read of the published pages');
     }
 
-    public function test_the_checkout_shell_shares_the_footers_one_page_query(): void
+    public function test_the_checkout_reads_the_pages_once_for_the_terms_and_the_footer_is_the_compiled_menu(): void
     {
         $this->termsPage();
-        $this->page(['title' => 'Returns', 'slug' => 'returns', 'in_footer' => true]);
+        $returns = $this->page(['title' => 'Returns', 'slug' => 'returns']);
+        $this->saveMenu('footer', [$this->menuItem('page', ['target_id' => $returns->id])]); // D3: the footer is the footer menu
         $pages = 0;
         $this->fresh();
         DB::listen(function ($query) use (&$pages): void {
@@ -237,7 +239,7 @@ class CheckoutPagesTest extends TestCase
 
         $html = $this->get('/checkout')->assertOk()->getContent();
 
-        $this->assertSame(1, $pages, 'the terms lookup and the footer read the SAME list');
+        $this->assertSame(1, $pages, 'D3: the terms lookup is the only read of the pages; the footer comes with the appearance (it was the same ONE query before)');
         $this->assertStringContainsString('<a href="/info/returns">Returns</a>', $html);
         $this->assertStringContainsString('name="terms_accepted"', $html);
     }

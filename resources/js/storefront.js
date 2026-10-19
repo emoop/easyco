@@ -82,7 +82,11 @@ function toggleSearch(from) {
 
 document.addEventListener('keydown', function (event) {
     if (event.key === 'Escape') {
-        if (drawer && drawer.classList.contains('sf-drawer-open')) {
+        if (openSub) {
+            var back = openSub.contains(document.activeElement) ? openSub.querySelector('[data-sf-sub-toggle]') : null;
+            setSub(openSub, false);
+            back && back.focus();
+        } else if (drawer && drawer.classList.contains('sf-drawer-open')) {
             closeDrawer();
         } else if (searchRow && ! searchRow.hasAttribute('hidden')) {
             toggleSearch(openedBy);
@@ -142,10 +146,135 @@ if (counts.length > 1 && typeof MutationObserver === 'function') {
     }
 }
 
+// ---- the menu bar (D3) ------------------------------------------------------------------------------------------------------------------------------------------------
+// An item with a submenu has its own link AND a chevron button (aria-expanded / aria-controls) that opens its dropdown or mega panel: hover opens after 150ms and closes 300ms
+// after leaving, a click / Enter / Space on the button toggles, Esc closes and returns focus to the button, one panel is open at a time. A mega panel's pictures get their
+// src / srcset the first time it opens. What does not fit the menu's column moves into "More" (a ResizeObserver refits it); without this script the list simply wraps.
+var openSub = null;
+var hoverTimer = null;
+
+function setSub(item, open) {
+    var button = item.querySelector('[data-sf-sub-toggle]');
+    var panel = item.querySelector('[data-sf-sub]');
+
+    if (! button || ! panel) {
+        return;
+    }
+
+    if (open) {
+        if (openSub && openSub !== item) {
+            setSub(openSub, false);
+        }
+
+        openSub = item;
+        var pictures = panel.querySelectorAll('img[data-sf-src]');
+
+        for (var p = 0; p < pictures.length; p++) {
+            var set = pictures[p].getAttribute('data-sf-srcset');
+
+            if (set) {
+                pictures[p].setAttribute('srcset', set);
+            }
+
+            pictures[p].setAttribute('src', pictures[p].getAttribute('data-sf-src'));
+            pictures[p].removeAttribute('data-sf-src');
+            pictures[p].removeAttribute('data-sf-srcset');
+        }
+    } else if (openSub === item) {
+        openSub = null;
+    }
+
+    button.setAttribute('aria-expanded', open ? 'true' : 'false');
+    panel.classList.toggle('sf-sub-open', open);
+}
+
+function hover(target, over) {
+    var item = target && target.closest ? target.closest('[data-sf-bar-item]') : null;
+
+    // An item that was moved into "More" is part of More's own panel.
+    if (item && item.parentNode && item.parentNode.hasAttribute('data-sf-more-list')) {
+        item = item.closest('[data-sf-more]');
+    }
+
+    var has = item && item.querySelector('[data-sf-sub]');
+
+    clearTimeout(hoverTimer);
+
+    if (over && has) {
+        hoverTimer = setTimeout(function () { setSub(item, true); }, 150);
+    } else if (openSub) {
+        hoverTimer = setTimeout(function () { openSub && setSub(openSub, false); }, 300);
+    }
+}
+
+document.addEventListener('mouseover', function (event) { hover(event.target, true); });
+document.addEventListener('mouseout', function (event) { hover(event.target, false); });
+
+function fitBar(menu) {
+    var more = menu.querySelector('[data-sf-more]');
+    var list = menu.querySelector('[data-sf-more-list]');
+    var row = more ? more.parentNode : null;
+
+    if (! row || ! list) {
+        return;
+    }
+
+    openSub && setSub(openSub, false);
+
+    while (list.children.length) {
+        row.insertBefore(list.children[0], more);
+    }
+
+    more.setAttribute('hidden', '');
+
+    if (row.scrollWidth <= row.clientWidth) {
+        return;
+    }
+
+    var items = [].filter.call(row.children, function (li) { return li !== more && li.hasAttribute('data-sf-bar-item'); });
+    var last = items.length;
+
+    more.removeAttribute('hidden');
+
+    while (last > 0 && row.scrollWidth > row.clientWidth) {
+        last--;
+        list.insertBefore(items[last], list.children[0] || null);
+    }
+}
+
+var bars = document.querySelectorAll('[data-sf-menubar]');
+
+for (var b = 0; b < bars.length; b++) {
+    (function (menu) {
+        fitBar(menu);
+
+        if (typeof ResizeObserver === 'function') {
+            new ResizeObserver(function () { fitBar(menu); }).observe(menu);
+        }
+
+        if (window.addEventListener) {
+            window.addEventListener('load', function () { fitBar(menu); });
+        }
+    })(bars[b]);
+}
+
 document.addEventListener('click', function (event) {
     var target = event.target;
 
     if (! target || ! target.closest) {
+        return;
+    }
+
+    var subToggle = target.closest('[data-sf-sub-toggle]');
+
+    if (openSub && ! openSub.contains(target)) {
+        setSub(openSub, false);
+    }
+
+    if (subToggle) {
+        var owner = subToggle.closest('[data-sf-bar-item]');
+        owner && setSub(owner, openSub !== owner);
+
         return;
     }
 

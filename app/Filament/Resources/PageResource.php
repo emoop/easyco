@@ -148,12 +148,12 @@ class PageResource extends Resource
                     TextInput::make('meta_description')->label(__('pages.fields.meta_description'))->maxLength(320),
                     Toggle::make('noindex')->label(__('pages.fields.noindex'))->helperText(__('pages.help.noindex')),
                 ]),
+            // D3: the footer is the `footer` menu now (Менюта -> Футър); the page no longer carries a flag or an order of its own.
             Section::make(__('pages.sections.footer'))
                 ->collapsed()
                 ->schema([
-                    HelpLink::component('pages-footer', 'pages'),
-                    Toggle::make('in_footer')->label(__('pages.fields.in_footer')),
-                    TextInput::make('footer_order')->label(__('pages.fields.footer_order'))->numeric()->minValue(0)->maxValue(65535)->default(0),
+                    HelpLink::component('appearance-menus', 'appearance'),
+                    Text::make(fn (): \Illuminate\Support\HtmlString => new \Illuminate\Support\HtmlString(e(__('pages.footer_hint')).' <a class="underline" href="'.e(MenuResource::getUrl('index')).'">'.e(__('pages.footer_hint_link')).'</a>')),
                 ]),
         ]);
     }

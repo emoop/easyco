@@ -226,6 +226,15 @@ final class HeaderValidator
                 }
 
                 return $value;
+            case 'menu_source':
+                // `categories` (the shown category tree, D2) or the key of a menu (D3); whether the menu exists is checked when it is printed.
+                if (! is_string($value) || ($value !== 'categories' && preg_match('/^[a-z0-9-]{1,40}$/', $value) !== 1)) {
+                    $this->fail($path, 'bad_choice');
+
+                    return $field['default'] ?? 'categories';
+                }
+
+                return $value;
             case 'bool':
                 return $this->bool($value, $path);
             case 'text':

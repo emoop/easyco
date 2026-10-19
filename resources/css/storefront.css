@@ -2264,6 +2264,17 @@
     padding: 0 0.5rem;
 }
 
+/* Icon-only cart (any width): the count sits on the bag's top-right corner instead of a separate item beside it. */
+.sf-hdr .sf-cart:has(> .sf-cart-label.sf-sr-only) {
+    padding: 0 0.5rem;
+}
+
+.sf-hdr .sf-cart:has(> .sf-cart-label.sf-sr-only) .sf-cart-count {
+    position: absolute;
+    top: 0.25rem;
+    right: 0;
+}
+
 .sf-hdr-icon-btn:hover,
 .sf-hdr-link:hover,
 .sf-hdr .sf-cart:hover {
@@ -2365,21 +2376,6 @@
     overflow-wrap: anywhere;
 }
 
-.sf-hdr-menu-links > .sf-menu {
-    display: flex;
-    align-items: center;
-    flex-wrap: nowrap;
-    gap: 0 1.25rem;
-    margin: 0;
-    padding: 0;
-    list-style: none;
-}
-
-.sf-hdr-menu-links .sf-menu-item {
-    position: relative;
-}
-
-.sf-hdr-menu-links .sf-menu-item > .sf-menu,
 .sf-hdr-menu-panel {
     display: none;
     position: absolute;
@@ -2396,15 +2392,9 @@
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
 }
 
-.sf-hdr-menu-links .sf-menu-item:hover > .sf-menu,
-.sf-hdr-menu-links .sf-menu-item:focus-within > .sf-menu,
 .sf-hdr-menu-dropdown:hover .sf-hdr-menu-panel,
 .sf-hdr-menu-dropdown:focus-within .sf-hdr-menu-panel {
     display: block;
-}
-
-.sf-hdr-menu-links .sf-menu-item > .sf-menu .sf-menu {
-    margin-left: 0.75rem;
 }
 
 .sf-hdr-menu-dropdown {
@@ -2666,7 +2656,275 @@ html.js .sf-acc-sub:not(.sf-acc-open) {
 @media (prefers-reduced-motion: reduce) {
     .sf-drawer-overlay,
     .sf-drawer-panel,
+    .sf-bar-chevron::after,
     .sf-acc-toggle::after {
         transition: none;
     }
+}
+
+/* ===== Stage D3: menus as a tool - the bar, the dropdown and mega panels, "More", the footer menu (storefront-customization-design.md 14) ============= */
+/* The bar lives in its own column: it never pushes the logo. With the script, what does not fit moves into "More"; without it the list wraps inside its column. */
+.sf-hdr-menu-links {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding-right: 0.75rem;
+}
+
+.sf-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0 0.25rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+html.js .sf-bar {
+    flex-wrap: nowrap;
+}
+
+.sf-bar-item {
+    position: relative;
+    display: flex;
+    flex: none;
+    align-items: center;
+}
+
+.sf-bar-item[hidden] {
+    display: none;
+}
+
+/* A mega panel is as wide as the header: its item is not the positioning box. */
+.sf-bar-item.sf-bar-mega {
+    position: static;
+}
+
+.sf-bar-link,
+.sf-bar-more-btn {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.75rem;
+    padding: 0 0.5rem;
+    border: 0;
+    background: transparent;
+    color: var(--sf-header-text, #404040);
+    font-weight: 500;
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+.sf-bar-link:hover,
+.sf-bar-more-btn:hover {
+    color: var(--sf-header-text, #171717);
+    text-decoration: underline;
+}
+
+.sf-bar-chevron {
+    position: relative;
+    flex: none;
+    width: 1.75rem;
+    height: 2.75rem;
+    margin-left: -0.5rem;
+    border: 0;
+    background: transparent;
+    color: var(--sf-header-text, #404040);
+}
+
+.sf-bar-chevron::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 0.4rem;
+    height: 0.4rem;
+    margin: -0.35rem 0 0 -0.2rem;
+    border-right: 2px solid currentcolor;
+    border-bottom: 2px solid currentcolor;
+    transform: rotate(45deg);
+    transition: transform 150ms ease;
+}
+
+.sf-bar-chevron[aria-expanded='true']::after {
+    margin-top: -0.1rem;
+    transform: rotate(-135deg);
+}
+
+.sf-sub {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    z-index: 40;
+    min-width: 12rem;
+    max-width: 22rem;
+    padding: 0.5rem;
+    border: 1px solid var(--sf-border, #e5e5e5);
+    border-radius: var(--radius-md);
+    background: #fff;
+    color: var(--sf-text, #171717);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+.sf-sub-open {
+    display: block;
+}
+
+/* Without the script there is no chevron: a panel opens on hover and on focus inside it. */
+html:not(.js) .sf-bar-chevron,
+html:not(.js) .sf-bar-more {
+    display: none;
+}
+
+html:not(.js) .sf-bar-item:hover > .sf-sub,
+html:not(.js) .sf-bar-item:focus-within > .sf-sub {
+    display: block;
+}
+
+.sf-sub .sf-menu {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.sf-sub .sf-menu .sf-menu {
+    margin-left: 0.75rem;
+}
+
+.sf-sub .sf-menu-link {
+    display: block;
+    padding: 0.5rem 0.5rem;
+    color: inherit;
+    text-decoration: none;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+.sf-sub .sf-menu-link:hover {
+    text-decoration: underline;
+}
+
+/* The mega panel: full width under the header, its columns of links and up to two pictures. */
+.sf-sub-mega {
+    left: 0;
+    right: 0;
+    max-width: none;
+    max-height: calc(100vh - 7rem);
+    overflow-y: auto;
+    border-width: 1px 0 0;
+    border-radius: 0;
+    padding: 1.5rem 0;
+}
+
+.sf-mega {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 2rem;
+    max-width: 72rem;
+    margin: 0 auto;
+    padding: 0 1rem;
+}
+
+.sf-mega:not(:has(.sf-mega-media)) {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+.sf-mega-cols {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+    gap: 1.5rem;
+}
+
+.sf-mega-heading {
+    margin: 0 0 0.25rem;
+    padding: 0 0.5rem;
+    font-size: 0.8125rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: var(--sf-muted, #525252);
+}
+
+.sf-mega-media {
+    display: flex;
+    gap: 1rem;
+}
+
+.sf-mega-figure {
+    width: 14rem;
+    margin: 0;
+}
+
+.sf-mega-figure-link {
+    color: inherit;
+    text-decoration: none;
+}
+
+.sf-mega-img {
+    display: block;
+    width: 100%;
+    height: auto;
+    border-radius: var(--radius-md);
+    background: var(--sf-border, #f5f5f5);
+}
+
+.sf-mega-caption {
+    margin-top: 0.375rem;
+    font-size: 0.875rem;
+}
+
+html:not(.js) .sf-mega-img[data-sf-src] {
+    display: none;
+}
+
+/* "More": the moved items become a plain list inside its panel (their own panels open as nested lists, pictures are left out). */
+.sf-more-panel {
+    right: 0;
+    left: auto;
+}
+
+.sf-more-panel .sf-bar-item {
+    display: block;
+}
+
+.sf-more-panel .sf-bar-link {
+    display: flex;
+    padding: 0.5rem;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+.sf-more-panel .sf-bar-chevron,
+.sf-more-panel .sf-mega-media {
+    display: none;
+}
+
+.sf-more-panel .sf-sub {
+    display: block;
+    position: static;
+    min-width: 0;
+    max-width: none;
+    max-height: none;
+    padding: 0 0 0 0.75rem;
+    border: 0;
+    box-shadow: none;
+    overflow: visible;
+}
+
+.sf-more-panel .sf-mega {
+    display: block;
+}
+
+.sf-more-panel .sf-mega-cols {
+    display: block;
+}
+
+/* The drawer's accordion shows mega columns as headed groups. */
+.sf-acc-sub .sf-menu-column > .sf-menu {
+    margin-left: 0;
+}
+
+.sf-acc-sub .sf-mega-heading {
+    padding: 0.5rem 0 0;
 }

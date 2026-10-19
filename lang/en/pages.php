@@ -32,6 +32,9 @@ return [
         'noindex' => 'The page stays reachable, but search engines are asked not to index it.',
     ],
 
+    'footer_hint' => 'The footer is arranged in Menus, under Footer:',
+    'footer_hint_link' => 'Open the menus',
+
     'sections' => [
         'seo' => 'SEO',
         'footer' => 'Footer',

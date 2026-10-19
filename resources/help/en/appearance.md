@@ -33,3 +33,17 @@ The "Header" page (the "Admin" menu) arranges the top of the shop. There are two
 **Preview and publishing.** "Save draft" keeps your changes without showing them to customers. "Preview" opens the home page with the draft: the link is temporary (30 minutes), is not indexed and nobody else can see it. "Publish" checks everything and shows it to everyone. "Restore the published one" throws the draft away.
 
 **Elements that appear later.** Search, account and wishlist are kept in the arrangement but are not shown until that feature is released in the shop. So you can arrange the final header now. Nothing is shown empty.
+
+## Menus {#action-appearance-menus}
+
+"Menus" (the "Content" menu, next to "Pages") is where you build the shop's navigation. The menu is a tool of its own: **you** choose which categories appear and in which order. A category is never added just because it exists, and a category you leave out never shows.
+
+**Which categories.** Open the "Main menu" and add items: a category, a page or your own link. "Add the main categories" adds the top-level categories that are not in the menu yet. Use the up and down buttons to order them. A category with no products to show is skipped automatically.
+
+**Dropdown or mega menu.** For each top-level item choose what opens under it: nothing, a **dropdown** or a **mega menu**. The item itself stays a link; a small arrow beside it opens the panel. A dropdown lists items (you can tick "List its sub-categories automatically", up to the number you set, then a "See all" link, or use "Add the sub-categories" and remove the ones you do not want). A mega menu is a wide panel built from **columns**: each column has an optional heading and a list of links; you can also put up to **two pictures** in it, each with an optional link and text. Choose a picture that is wide enough; it appears once it has been processed.
+
+**"More".** If the main menu has more items than fit on one row, the ones that do not fit move into "More" automatically. The logo is never pushed aside. The page warns you when the main menu has more than 7 top-level items or a long name.
+
+**The footer.** The "Footer" menu is the list of links at the bottom of every page. Add the pages you want (for example terms, privacy) in the order you want. A page that is not published is not shown.
+
+**In the header.** The "Header" page, element "Category menu", has a "Source" field: choose "Main menu" (or another menu you made). A menu that the header uses cannot be deleted. When you rename a category or publish a page, the menus follow by themselves.

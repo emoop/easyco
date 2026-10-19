@@ -21,6 +21,9 @@ final class AppearanceSettings
     /** D2: the PUBLISHED header layout, validated and compiled (JSON {hash, layout}); read with the rest of the appearance. */
     public const HEADER_COMPILED_KEY = 'header.compiled';
 
+    /** D3: ALL compiled menus (JSON, at most 256 KB), written by App\Storefront\Menu\MenuCompiler and read with the appearance. */
+    public const MENUS_COMPILED_KEY = 'menus.compiled';
+
     public const HEADER_DRAFT_KEY = 'header.layout.draft';
 
     public const HEADER_PUBLISHED_KEY = 'header.layout.published';
@@ -98,6 +101,7 @@ final class AppearanceSettings
         self::COMPILED_KEY,
         self::THEME_KEY,
         self::HEADER_COMPILED_KEY,
+        self::MENUS_COMPILED_KEY,
         self::BANNER_ENABLED,
         self::BANNER_TEXT,
         self::BANNER_URL,

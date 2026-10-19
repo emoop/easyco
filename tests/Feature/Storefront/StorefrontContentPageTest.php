@@ -18,6 +18,7 @@ use Tests\TestCase;
  */
 class StorefrontContentPageTest extends TestCase
 {
+    use BuildsMenus;
     use BuildsStorefrontCatalog;
     use RefreshDatabase;
 
@@ -191,14 +192,15 @@ class StorefrontContentPageTest extends TestCase
 
     // ---- the footer --------------------------------------------------------------------------------------------------------
 
-    public function test_the_footer_lists_published_footer_pages_in_order_and_nothing_else(): void
+    public function test_the_footer_lists_the_footer_menu_in_its_order_published_pages_only_and_escaped(): void
     {
-        $this->page(['slug' => 'returns', 'title' => 'Returns', 'in_footer' => true, 'footer_order' => 20]);
-        $this->page(['slug' => 'contacts', 'title' => 'Contacts', 'in_footer' => true, 'footer_order' => 10]);
-        $this->page(['slug' => 'about', 'title' => 'About', 'in_footer' => true, 'footer_order' => 10]);
-        $this->page(['slug' => 'доставка', 'title' => 'Доставка <b>', 'in_footer' => true, 'footer_order' => 30]);
-        $this->page(['slug' => 'not-in-footer', 'title' => 'Hidden', 'in_footer' => false]);
-        $this->page(['slug' => 'a-draft', 'title' => 'Draft', 'in_footer' => true, 'status' => 'draft']);
+        $returns = $this->page(['slug' => 'returns', 'title' => 'Returns']);
+        $contacts = $this->page(['slug' => 'contacts', 'title' => 'Contacts']);
+        $about = $this->page(['slug' => 'about', 'title' => 'About']);
+        $delivery = $this->page(['slug' => 'доставка', 'title' => 'Доставка <b>']);
+        $this->page(['slug' => 'not-in-menu', 'title' => 'Hidden', 'in_footer' => true]); // the old flag changes nothing now
+        $draft = $this->page(['slug' => 'a-draft', 'title' => 'Draft', 'status' => 'draft']);
+        $this->saveMenu('footer', array_map(fn ($page) => $this->menuItem('page', ['target_id' => $page->id]), [$about, $contacts, $returns, $delivery, $draft]));
 
         $html = $this->get('/')->assertOk()->getContent();
         preg_match('/<nav class="sf-footer-pages"[^>]*>(.*?)<\/nav>/s', $html, $nav);
@@ -207,7 +209,7 @@ class StorefrontContentPageTest extends TestCase
         $this->assertSame([
             ['/info/about', 'About'], ['/info/contacts', 'Contacts'], ['/info/returns', 'Returns'],
             ['/info/'.rawurlencode('доставка'), 'Доставка &lt;b&gt;'],
-        ], array_map(fn ($link) => [$link[1], $link[2]], $links), 'footer_order, then title; escaped; published only');
+        ], array_map(fn ($link) => [$link[1], $link[2]], $links), 'the menu order; escaped; the draft is skipped');
         $this->assertStringNotContainsString('Hidden', $nav[1]);
         $this->assertStringNotContainsString('Draft', $nav[1]);
     }
@@ -216,7 +218,8 @@ class StorefrontContentPageTest extends TestCase
     {
         $this->assertStringNotContainsString('sf-footer-pages', $this->get('/')->getContent());
 
-        $this->page(['in_footer' => true]);
+        $page = $this->page();
+        $this->saveMenu('footer', [$this->menuItem('page', ['target_id' => $page->id])]);
 
         foreach (['/', '/cart', '/checkout', '/info/delivery', '/info/missing'] as $url) {
             $this->app->forgetScopedInstances(); // one request, one memo: a real request never sees the previous one's list
@@ -224,10 +227,11 @@ class StorefrontContentPageTest extends TestCase
         }
     }
 
-    public function test_the_footer_costs_one_query_whatever_the_number_of_pages_and_the_page_view_adds_none(): void
+    public function test_the_footer_reads_no_page_and_a_page_view_reads_only_its_own(): void
     {
         $count = function (string $url): int {
             $this->app->forgetScopedInstances();
+            \Illuminate\Support\Facades\Cache::forget(\App\Storefront\Appearance\StorefrontAppearance::CACHE_KEY);
             $queries = 0;
             DB::listen(function ($query) use (&$queries): void {
                 if (str_contains($query->sql, 'from `pages`')) {
@@ -239,14 +243,17 @@ class StorefrontContentPageTest extends TestCase
             return $queries;
         };
 
-        $this->assertSame(1, $count('/'), 'none flagged: still ONE read of the published pages');
+        $pages = [];
 
         for ($n = 1; $n <= 8; $n++) {
-            $this->page(['slug' => 'p-'.$n, 'title' => 'Page '.$n, 'in_footer' => $n % 2 === 0]);
+            $pages[] = $this->page(['slug' => 'p-'.$n, 'title' => 'Page '.$n]);
         }
 
-        $this->assertSame(1, $count('/'), 'eight pages, four in the footer: the same ONE query');
-        $this->assertSame(2, $count('/info/p-3'), 'a page view: the footer\'s list plus the page itself (its body)');
-        $this->assertSame(2, $count('/info/missing'), 'a 404: the lookup that found nothing, plus the footer');
+        $this->saveMenu('footer', array_map(fn ($page) => $this->menuItem('page', ['target_id' => $page->id]), $pages));
+
+        // D3 (reported): the footer used to cost the ONE read of the published pages on every storefront page; it is now the compiled footer menu, read with the appearance.
+        $this->assertSame(0, $count('/'), 'eight pages in the footer menu: no read of the pages table at all');
+        $this->assertSame(1, $count('/info/p-3'), 'a page view: the page itself (its body)');
+        $this->assertSame(1, $count('/info/missing'), 'a 404: the lookup that found nothing');
     }
 }

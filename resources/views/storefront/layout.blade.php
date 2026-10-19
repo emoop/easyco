@@ -43,12 +43,14 @@
                 <span class="sf-footer-name">{{ config('app.name') }}</span>
                 <a class="sf-footer-home" href="{{ route('storefront.home', [], false) }}">{{ __('storefront.home') }}</a>
             </div>
-            {{-- The content pages flagged for the footer (pages-design.md section 4): published only, titles escaped, links built by route(). --}}
-            @if (! empty($footerPages))
+            {{-- The `footer` menu (D3): flat links, compiled (published pages and shown categories only), labels escaped. --}}
+            @if (! empty($appearance['footerMenu']))
                 <nav class="sf-footer-pages" aria-label="{{ __('storefront.footer_pages') }}">
                     <ul class="sf-footer-list">
-                        @foreach ($footerPages as $footerPage)
-                            <li><a href="{{ $footerPage['url'] }}">{{ $footerPage['title'] }}</a></li>
+                        @foreach ($appearance['footerMenu'] as $footerLink)
+                            @if ($footerLink['type'] === 'link')
+                                <li><a href="{{ $footerLink['url'] }}"@if ($footerLink['new_tab']) target="_blank" rel="noopener"@endif>{{ $footerLink['label'] }}</a></li>
+                            @endif
                         @endforeach
                     </ul>
                 </nav>

@@ -205,6 +205,9 @@ class HeaderSettings extends Page
 
         return match ($field['kind']) {
             'int' => TextInput::make($name)->label($label)->numeric()->integer()->minValue((int) ($field['min'] ?? 0))->maxValue((int) ($field['max'] ?? 9999))->default($field['default'] ?? null),
+            'menu_source' => Select::make($name)->label($label)->native(false)
+                ->options(['categories' => __('header.options.categories')] + \App\Content\Menus\MenuModel::query()->orderBy('id')->pluck('name', 'key')->all())
+                ->default($field['default'] ?? 'categories'),
             'bool' => Toggle::make($name)->label($label)->default((bool) ($field['default'] ?? false)),
             'enum' => Select::make($name)->label($label)->native(false)->options(array_combine($field['options'], array_map(static fn (string $o): string => __('header.options.'.$o), $field['options'])))->default($field['default'] ?? $field['options'][0]),
             'html' => Textarea::make($name)->label($label)->rows(4)->helperText(__('header.html_help'))->default(''),

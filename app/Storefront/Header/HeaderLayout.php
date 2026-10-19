@@ -45,7 +45,7 @@ final class HeaderLayout
                     'top' => $off(self::ROW_HEIGHTS['desktop']['top'][2]),
                     'main' => [
                         'enabled' => true, 'height' => self::ROW_HEIGHTS['desktop']['main'][2],
-                        'left' => [$el('menu', ['style' => 'links'])],
+                        'left' => [$el('menu', ['source' => 'main', 'style' => 'links'])],
                         'center' => [$el('logo', ['height' => self::LOGO_HEIGHTS['desktop'][2]])],
                         'right' => [$el('search', ['mode' => 'icon_row']), $el('account'), $el('cart', ['style' => 'icon'])],
                     ],
@@ -63,7 +63,7 @@ final class HeaderLayout
                         'right' => [$el('search', ['mode' => 'icon_row']), $el('cart', ['style' => 'icon'])],
                     ],
                 ],
-                'drawer' => [$el('menu', ['style' => 'links']), $el('account')],
+                'drawer' => [$el('menu', ['source' => 'main', 'style' => 'links']), $el('account')],
                 'drawer_side' => 'left',
             ],
         ];

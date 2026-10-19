@@ -144,3 +144,11 @@ Owned by `App\Settings\AppearanceSettings` (the keys) and `App\Storefront\Header
 | `header.compiled` | JSON `{"hash", "layout"}` written by `HeaderCompiler`, re-validated on every read | the seeded default layout |
 
 `header.compiled` is part of `AppearanceSettings::READ_KEYS`: it is read in the same single `getMany` as the appearance, never with a query of its own.
+
+### Menus (stage D3)
+
+| Key | Values | Absent means |
+|---|---|---|
+| `menus.compiled` | JSON `{"menus": {key: [items]}}` written by `App\Storefront\Menu\MenuCompiler` (<= 256 KB), re-validated on every read | every menu is empty |
+
+`menus.compiled` is part of `AppearanceSettings::READ_KEYS`: it is read in the same single `getMany` as the rest of the appearance, never with a query of its own. A rebuild that would write the same value (or an empty value over an absent key) writes nothing.

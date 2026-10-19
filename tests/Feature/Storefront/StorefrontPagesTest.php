@@ -9,6 +9,7 @@ use Tests\TestCase;
 /** The three pages' content: key facts present, compact. */
 class StorefrontPagesTest extends TestCase
 {
+    use BuildsMenus;
     use BuildsStorefrontCatalog;
     use RefreshDatabase;
 
@@ -48,6 +49,7 @@ class StorefrontPagesTest extends TestCase
 
     public function test_the_home_page_lists_the_newest_products_and_the_menu(): void
     {
+        $this->mainMenuOfTopCategories(); // D3: the menu holds what the merchant put in it (here: the seed's choice)
         $html = $this->get('/')->assertOk()->getContent();
 
         $this->assertStringContainsString('<html lang="'.str_replace('_', '-', app()->getLocale()).'">', $html);

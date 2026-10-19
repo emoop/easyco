@@ -80,6 +80,9 @@ class AppServiceProvider extends ServiceProvider
         // and the settings selects all share it), so scoped(): a fresh list for every request and every queue job.
         $this->app->scoped(\App\Storefront\Pages\PageReader::class);
 
+        // D3: the debounced rebuild of the compiled menus keeps its asked-for flag for the whole process.
+        $this->app->singleton(\App\Storefront\Menu\MenuRecompiler::class);
+
         // The order's context (origin, invoice request) is read ONCE per order per request and remembered, and the full client address
         // (order-context-design.md 7.1) is held only for a permitted reader: one instance per request, never shared across requests.
         $this->app->scoped(\App\Services\OrderContextReader::class);
@@ -104,15 +107,17 @@ class AppServiceProvider extends ServiceProvider
         // The named API rate limiters, in their one central place.
         ApiRateLimits::register();
 
-        // The footer of every storefront page: the published pages flagged for it (one memoised query, see PageReader).
+        // The footer of every storefront page is the `footer` menu (D3): compiled, and read with the appearance (no query of its own).
         \Illuminate\Support\Facades\View::composer('storefront.layout', static function ($view): void {
-            $view->with('footerPages', app(\App\Storefront\Pages\PageReader::class)->footerLinks());
             // The merchant's appearance (storefront-customization-design.md 3.4): ONE read, cached; the token stylesheet, the font to preload and the banner.
             $view->with('appearance', app(\App\Storefront\Appearance\StorefrontAppearance::class)->forLayout());
         });
 
         // mail-design.md section 6.1: the order confirmation. The listener only DISPATCHES (after the order
         // transaction committed); domain packages never call Hook:: themselves, so the registration lives here.
+        // D3: the compiled menus are rebuilt (debounced) when a page, a category, a product's visibility or a menu picture changes.
+        \App\Storefront\Menu\MenuRecompileListeners::register();
+
         Hook::action('order.placed', static fn (Order $order) => app(SendOrderConfirmation::class)->handle($order));
     }
 }

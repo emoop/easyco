@@ -8,9 +8,9 @@ use App\Content\Models\PageModel;
  * What the storefront reads of the content pages (pages-design.md section 4), in ONE query per request.
  *
  * `published()` loads the light columns (no body) of EVERY published page once and keeps them for the request (the class is bound
- * `scoped`): the footer is a filter of that list, the checkout's "is the selected terms page published, and at which revision" is a
- * lookup in it, and the page selects of the settings are a map of it. A shop has a handful of pages, so the list is small by nature;
- * the footer is on every storefront page, so its cost is pinned by a test (one query, and none on a second read).
+ * `scoped`): the checkout's "is the selected terms page published, and at which revision" is a lookup in it, and the page selects of
+ * the settings are a map of it. A shop has a handful of pages, so the list is small by nature. (D3: the footer is no longer read here: it is
+ * the compiled `footer` menu, App\Storefront\Menu.)
  *
  * The BODY is read only by `findPublishedBySlug()`, for the one page being shown.
  */
@@ -33,24 +33,6 @@ final class PageReader
             ->get(['id', 'slug', 'title', 'revision', 'in_footer', 'footer_order'])
             ->map(fn (PageModel $page): object => (object) $page->only(['id', 'slug', 'title', 'revision', 'in_footer', 'footer_order']))
             ->all();
-    }
-
-    /**
-     * The footer links: published pages flagged for the footer, by footer_order then title.
-     *
-     * @return list<array{title: string, url: string}>
-     */
-    public function footerLinks(): array
-    {
-        $links = [];
-
-        foreach ($this->published() as $page) {
-            if ((bool) $page->in_footer) {
-                $links[] = ['title' => (string) $page->title, 'url' => self::urlFor((string) $page->slug)];
-            }
-        }
-
-        return $links;
     }
 
     /** One published page (light columns) by id, from the request's list: null when it is a draft, archived or unknown. */

@@ -9,6 +9,8 @@ use App\Settings\StoreTimezone;
 use App\Storefront\Header\HeaderLayout;
 use App\Storefront\Header\HeaderValidator;
 use App\Storefront\Header\HeaderView;
+use App\Storefront\Menu\CompiledMenus;
+use App\Storefront\Menu\MenuRecompiler;
 use DateTimeImmutable;
 use Illuminate\Container\Attributes\Scoped;
 use Illuminate\Support\Facades\Cache;
@@ -40,6 +42,9 @@ final class StorefrontAppearance
     /** The validated published layout (or the seeded default), memoised for the request. */
     private ?array $headerLayout = null;
 
+    /** The validated compiled menus (menu key => items), memoised for the request. @var array<string, list<array<string, mixed>>>|null */
+    private ?array $menus = null;
+
     public function __construct(
         private readonly SiteSettingsRepository $settings,
         private readonly StoreTimezone $timezone,
@@ -55,9 +60,20 @@ final class StorefrontAppearance
             return $this->data;
         }
 
+        // A menu rebuild asked for earlier in this process (a page or category changed) runs before the first read, so nothing is read stale.
+        $recompiler = app(MenuRecompiler::class);
+
+        if ($recompiler->hasPending()) {
+            $recompiler->flush();
+        }
+
+        if ($this->data !== null) {
+            return $this->data;
+        }
+
         $cached = Cache::get(self::CACHE_KEY);
 
-        if (is_array($cached) && array_key_exists('theme', $cached) && array_key_exists('compiled', $cached) && array_key_exists('header', $cached) && is_array($cached['banner'] ?? null)) {
+        if (is_array($cached) && array_key_exists('theme', $cached) && array_key_exists('compiled', $cached) && array_key_exists('header', $cached) && array_key_exists('menus', $cached) && is_array($cached['banner'] ?? null)) {
             return $this->data = $cached;
         }
 
@@ -68,6 +84,7 @@ final class StorefrontAppearance
     public function refresh(): void
     {
         $this->headerLayout = null;
+        $this->menus = null;
         $this->data = $this->rebuild();
     }
 
@@ -95,7 +112,20 @@ final class StorefrontAppearance
             'compiled' => self::parseCompiled($raw[AppearanceSettings::COMPILED_KEY] ?? null),
             'banner' => self::parseBanner($raw),
             'header' => self::parseHeader($raw[AppearanceSettings::HEADER_COMPILED_KEY] ?? null),
+            'menus' => self::parseMenus($raw[AppearanceSettings::MENUS_COMPILED_KEY] ?? null),
         ];
+    }
+
+    /** The stored compiled menus as an array (NOT yet trusted: menus() validates them on every read), or null. */
+    private static function parseMenus(?string $json): ?array
+    {
+        if ($json === null || $json === '') {
+            return null;
+        }
+
+        $data = json_decode($json, true);
+
+        return is_array($data) && is_array($data['menus'] ?? null) ? $data['menus'] : null;
     }
 
     /** The stored published layout as an array (NOT yet trusted: header() validates it on every read), or null. */
@@ -206,6 +236,22 @@ final class StorefrontAppearance
         return $this->headerLayout = HeaderLayout::default();
     }
 
+    /**
+     * The compiled menus, validated again on every read (an invalid menu is empty and logged once).
+     *
+     * @return array<string, list<array<string, mixed>>>
+     */
+    public function menus(): array
+    {
+        return $this->menus ??= CompiledMenus::read($this->data()['menus']);
+    }
+
+    /** One compiled menu by key ([] when there is none). @return list<array<string, mixed>> */
+    public function menu(string $key): array
+    {
+        return $this->menus()[$key] ?? [];
+    }
+
     /** For ONE request: show this (already validated) layout instead of the published one, and link the stylesheet with its sizes. Never called on a public request. */
     public function previewHeader(array $layout, ?string $cssUrl): void
     {
@@ -262,7 +308,7 @@ final class StorefrontAppearance
     /**
      * What the layout needs: the token stylesheet's URL, the font to preload (the body font's latin file only) and the banner.
      *
-     * @return array{tokensUrl: ?string, preloadFont: ?string, banner: array{text: string, url: ?string, label: ?string}|null, header: array<string, mixed>, previewCss: ?string}
+     * @return array{tokensUrl: ?string, preloadFont: ?string, banner: array{text: string, url: ?string, label: ?string}|null, header: array<string, mixed>, footerMenu: list<array<string, mixed>>, previewCss: ?string}
      */
     public function forLayout(): array
     {
@@ -272,7 +318,8 @@ final class StorefrontAppearance
             'tokensUrl' => $compiled === null ? null : '/storage/'.\App\Storefront\Appearance\AppearanceCompiler::DIRECTORY.'/tokens-'.$compiled['hash'].'.css',
             'preloadFont' => $compiled === null || $compiled['body'] === null ? null : '/fonts/storefront/'.$compiled['body'].'/'.$compiled['body'].'-latin-wght-normal.woff2',
             'banner' => $this->banner(),
-            'header' => HeaderView::prepare($this->header()),
+            'header' => HeaderView::prepare($this->header(), $this->menus()),
+            'footerMenu' => $this->menu('footer'),
             'previewCss' => $this->previewCss,
         ];
     }

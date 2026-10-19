@@ -14,17 +14,23 @@ final class HeaderView
 {
     /**
      * @param  array<string, mixed>  $layout
+     * @param  array<string, list<array<string, mixed>>>  $menus  the validated compiled menus by key (D3): a `menu` element gets its own as `menu`
      * @return array<string, mixed>
      */
-    public static function prepare(array $layout): array
+    public static function prepare(array $layout, array $menus = []): array
     {
         $catalog = HeaderCatalog::all();
-        $keep = static function (array $element) use ($catalog): ?array {
+        $keep = static function (array $element) use ($catalog, $menus): ?array {
             $type = $element['type'];
             $route = HeaderCatalog::FEATURE_ROUTES[$type] ?? null;
 
             if (($route !== null && ! Route::has($route)) || ! isset($catalog[$type]) || ! View::exists($catalog[$type]['view'])) {
                 return null;
+            }
+
+            if ($type === 'menu') {
+                $source = (string) ($element['settings']['source'] ?? 'categories');
+                $element['menu'] = $source === 'categories' ? null : ($menus[$source] ?? []);
             }
 
             return $element + ['view' => $catalog[$type]['view']];
