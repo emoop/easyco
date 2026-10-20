@@ -382,3 +382,11 @@ A real-browser save audit (`tests/Browser/admin-save-audit.mjs`, run by hand aga
 - **Pre-D3 header.** A header made before the menus existed shows the category tree (`menu.source = categories`), so a menu built in "Menus" never appeared. A migration (`point_header_menus_at_main`) points every `menu` element of the stored draft and published layout whose source is missing or `categories` at `main` (when it exists), recompiles, and is idempotent; the Header page shows "Това меню не следва „Менюта“ — изберете „Главно меню“" while `categories` is still chosen.
 - **Not bugs (reported by the audit, by design):** a field that is only shown while another is on (`product_group_required`, `activity_log_retention_months`) is saved as its default when the other is off; the SMTP password and the test-mail recipient are never shown again; the terms version follows the terms address; switching a menu item's submenu to "Нищо" drops its sub-items on save.
 - **Guards:** every page has `test_every_field_survives_a_save_and_a_reload` (fill every field, save, a new component, `assertFormSet`, repeaters and builders in a non-default order, the public site shows it); `SettingsFormsUx0Test` guards each fix above.
+
+---
+
+## 16. MENU-2 note (2026-10)
+
+The D3 menu model and editor are replaced by the WordPress-style editor of `menu-editor-v2-design.md` (sections 6 and 7 say what was built): `column` / `image` items and the automatic
+sub-category list are gone (a heading under a mega item is the column, the picture is an HTML block, sub-categories are explicit items), the header's `menu` element has no `source` (it shows
+the menu of its LOCATION: header, drawer, footer), badges are classes, and the compiled value carries the locations. §5 and "D3 as built" above describe the earlier shape.

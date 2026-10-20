@@ -52,12 +52,12 @@ class HtmlBlockResource extends Resource
 
     public static function getNavigationGroup(): NavigationGroup
     {
-        return NavigationGroup::CONTENT;
+        return NavigationGroup::DESIGN;
     }
 
     public static function getNavigationSort(): ?int
     {
-        return 25;
+        return 40;
     }
 
     protected static function viewAnyPermission(): ?Permission

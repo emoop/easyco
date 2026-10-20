@@ -50,12 +50,12 @@ class StorefrontSettings extends Page
 
     public static function getNavigationGroup(): NavigationGroup
     {
-        return NavigationGroup::ADMIN;
+        return NavigationGroup::DESIGN;
     }
 
     public static function getNavigationSort(): ?int
     {
-        return 34;
+        return 50;
     }
 
     protected static function accessPermission(): ?Permission

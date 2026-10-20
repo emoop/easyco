@@ -126,7 +126,7 @@ final class CompiledMenus
     {
         return match ($item['type'] ?? null) {
             'link' => $this->link($item, $depth),
-            'heading' => $this->heading($item, $depth),
+            'column' => $this->column($item, $depth),
             default => null,
         };
     }
@@ -161,16 +161,18 @@ final class CompiledMenus
         return ['type' => 'link', 'label' => $item['label'], 'url' => $item['url'], 'new_tab' => $item['new_tab'], 'submenu' => $item['submenu'], 'badge' => $badge, 'html' => $html === '' ? null : $html, 'children' => $children];
     }
 
-    /** @return array<string, mixed>|null */
-    private function heading(array $item, int $depth): ?array
+    /** @return array<string, mixed>|null a column of a mega item: an optional heading and its links */
+    private function column(array $item, int $depth): ?array
     {
-        if (! $this->text($item['label'] ?? null, 1, 120)) {
+        $label = $item['label'] ?? null;
+
+        if ($label !== null && ! $this->text($label, 1, 60)) {
             return null;
         }
 
         $children = $this->list(is_array($item['children'] ?? null) ? $item['children'] : [], $depth + 1);
 
-        return $children === null ? null : ['type' => 'heading', 'label' => $item['label'], 'children' => $children];
+        return $children === null ? null : ['type' => 'column', 'label' => $label, 'children' => $children];
     }
 
     /** @return array{text: string, color: ?string}|null|false false = not valid */

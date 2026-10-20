@@ -58,9 +58,9 @@ class HtmlBlockResourceTest extends TestCase
         }
     }
 
-    public function test_it_sits_in_the_content_group_beside_the_menus_and_is_named_in_both_languages(): void
+    public function test_it_sits_in_the_design_group_after_the_menus_and_is_named_in_both_languages(): void
     {
-        $this->assertSame(NavigationGroup::CONTENT, HtmlBlockResource::getNavigationGroup());
+        $this->assertSame(NavigationGroup::DESIGN, HtmlBlockResource::getNavigationGroup());
         $this->assertSame('HTML blocks', HtmlBlockResource::getNavigationLabel());
         app()->setLocale('bg');
         $this->assertSame('HTML блокове', HtmlBlockResource::getNavigationLabel());
@@ -101,8 +101,8 @@ class HtmlBlockResourceTest extends TestCase
     {
         $this->actingAsStaff('Administrator');
         $block = HtmlBlockModel::create(['title' => 'Boys picture', 'body' => '<p>x</p>']);
-        $this->saveMenu('main', [$this->menuItem('link', ['label' => 'Boys', 'url' => '/boys', 'submenu' => 'mega', 'html_block_id' => $block->id, 'children' => [
-            $this->menuItem('heading', ['label' => 'Clothes', 'children' => [$this->menuItem('link', ['label' => 'Jackets', 'url' => '/j'])]]),
+        $this->saveMenu('main', [$this->menuItem('link', ['label' => 'Boys', 'url' => '/boys', 'submenu' => 'mega', 'html_block_id' => $block->id, 'mega_columns' => 1, 'children' => [
+            $this->columnItem([$this->menuItem('link', ['label' => 'Jackets', 'url' => '/j'])], 'Clothes'),
         ]])]);
 
         $this->assertSame([MenuModel::query()->where('key', 'main')->value('name')], HtmlBlockUsage::menus($block->id));

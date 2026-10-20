@@ -33,8 +33,8 @@ class StorefrontHeaderFlowTest extends TestCase
         $this->saveMenu('main', [
             $this->menuItem('link', ['label' => 'Home', 'url' => '/']),
             $this->menuItem('category', ['target_id' => $parent, 'submenu' => 'dropdown', 'children' => [$this->menuItem('category', ['target_id' => $child])]]),
-            $this->menuItem('link', ['label' => 'Footwear', 'url' => '/footwear', 'submenu' => 'mega', 'html_block_id' => $block->id, 'children' => [
-                $this->menuItem('heading', ['label' => 'Boots', 'children' => [$this->menuItem('link', ['label' => 'Winter', 'url' => '/winter'])]]),
+            $this->menuItem('link', ['label' => 'Footwear', 'url' => '/footwear', 'submenu' => 'mega', 'html_block_id' => $block->id, 'mega_columns' => 1, 'children' => [
+                $this->columnItem([$this->menuItem('link', ['label' => 'Winter', 'url' => '/winter'])], 'Boots'),
             ]]),
             $this->menuItem('link', ['label' => 'Contacts', 'url' => '/contacts']),
         ]);

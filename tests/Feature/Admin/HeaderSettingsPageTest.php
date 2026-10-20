@@ -55,9 +55,9 @@ class HeaderSettingsPageTest extends TestCase
         $this->get(HeaderSettings::getUrl())->assertForbidden();
     }
 
-    public function test_it_sits_in_the_admin_group_with_its_own_label(): void
+    public function test_it_sits_in_the_design_group_with_its_own_label(): void
     {
-        $this->assertSame(NavigationGroup::ADMIN, HeaderSettings::getNavigationGroup());
+        $this->assertSame(NavigationGroup::DESIGN, HeaderSettings::getNavigationGroup());
         $this->assertSame('Header', HeaderSettings::getNavigationLabel());
         app()->setLocale('bg');
         $this->assertSame('Хедър', HeaderSettings::getNavigationLabel());
@@ -127,7 +127,9 @@ class HeaderSettingsPageTest extends TestCase
 
         $this->assertSame(['draft', 'published'], $rows->pluck('field')->all());
         $this->assertSame([$staff->name, $staff->name], $rows->pluck('staff_name')->all());
-        $this->assertStringNotContainsString('53', (string) json_encode($rows->all()));
+        // The value must not be journalled. Only the value columns are looked at: the row also holds a timestamp, and a clock that reads ...:53 must not fail the test.
+        $this->assertSame([null, null], [$rows->pluck('old_value')->filter(fn ($v) => $v !== null && str_contains((string) $v, '53'))->first(), $rows->pluck('new_value')->filter(fn ($v) => str_contains((string) $v, '53'))->first()]);
+        $this->assertSame(['saved', 'saved'], $rows->pluck('new_value')->all());
     }
 
     public function test_the_help_anchor_exists_in_both_languages_and_the_page_links_to_it(): void

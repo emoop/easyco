@@ -15,6 +15,22 @@ trait BuildsMenus
         return ['type' => $type] + $extra;
     }
 
+    /** One column of a mega item (MENU-3): an optional heading and its links. @param  list<array<string, mixed>>  $links */
+    protected function columnItem(array $links = [], ?string $heading = null): array
+    {
+        return ['type' => 'column', 'label' => $heading, 'children' => $links];
+    }
+
+    /** A top-level item with a mega menu of exactly `$columns` columns (the columns given are padded with empty ones). @param  list<array<string, mixed>>  $columnItems */
+    protected function megaItem(string $label, string $url, int $columns, array $columnItems, array $extra = []): array
+    {
+        while (count($columnItems) < $columns) {
+            $columnItems[] = $this->columnItem();
+        }
+
+        return $this->menuItem('link', ['label' => $label, 'url' => $url, 'submenu' => 'mega', 'mega_columns' => $columns, 'children' => $columnItems] + $extra);
+    }
+
     /** @param  list<array<string, mixed>>  $items */
     protected function saveMenu(string $key, array $items): void
     {

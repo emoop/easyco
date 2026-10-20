@@ -95,28 +95,39 @@ class MenusTest extends TestCase
         $link = static fn (string $label = 'A', array $extra = []): array => ['type' => 'link', 'label' => $label, 'url' => '/a'] + $extra;
         $cat = static fn (array $extra = []): array => ['type' => 'category', 'target_id' => 1] + $extra;
         $dropdown = static fn (array $children): array => $link('D', ['submenu' => 'dropdown', 'children' => $children]);
-        $mega = static fn (array $children): array => $link('M', ['submenu' => 'mega', 'children' => $children]);
-        $column = static fn (array $children): array => ['type' => 'column', 'children' => $children];
-        $heading = static fn (array $children = [], string $label = 'H'): array => ['type' => 'heading', 'label' => $label, 'children' => $children];
+        $mega = static fn (int $n, array $children): array => $link('M', ['submenu' => 'mega', 'mega_columns' => $n, 'children' => $children]);
+        $column = static fn (array $children = [], ?string $label = null): array => ['type' => 'column', 'label' => $label, 'children' => $children];
         $image = static fn (): array => ['type' => 'image', 'media_asset_id' => 1];
+        $columns = static fn (int $n): array => array_map(fn (): array => ['type' => 'column', 'children' => []], range(1, $n));
 
         return [
             'depth four' => [[$dropdown([$link('B', ['children' => [$link('C', ['children' => [$link('E')]])]])])], 'items.0.children.0.children.0.children'],
             'a submenu on a child' => [[$dropdown([$link('B', ['submenu' => 'dropdown'])])], 'items.0.children.0.submenu'],
             'an image under a dropdown' => [[$dropdown([$image()])], 'items.0.children.0.type'],
-            'a column under a dropdown' => [[$dropdown([$column([])])], 'items.0.children.0.type'],
-            'a column at the top' => [[$column([])], 'items.0.type'],
-            'a heading at the top' => [[$heading()], 'items.0.type'],
-            'a heading under a dropdown' => [[$dropdown([$heading()])], 'items.0.children.0.type'],
-            'a heading at the third level' => [[$mega([$heading([$heading()])])], 'items.0.children.0.children.0.type'],
-            'a heading under a nested dropdown item' => [[$dropdown([$link('B', ['children' => [$heading()]])])], 'items.0.children.0.children.0.type'],
-            'a heading without a text' => [[$mega([['type' => 'heading']])], 'items.0.children.0.label'],
-            'a heading with a link' => [[$mega([$heading([], 'H') + ['url' => '/x']])], 'items.0.children.0.url'],
-            'seven columns in a mega item' => [[$mega(array_map(fn (int $i): array => $heading([], "H{$i}"), range(1, 7)))], 'items.0.children'],
+            'a column under a dropdown' => [[$dropdown([$column()])], 'items.0.children.0.type'],
+            'a column at the top' => [[$column()], 'items.0.type'],
+            'a column under a nested dropdown item' => [[$dropdown([$link('B', ['children' => [$column()]])])], 'items.0.children.0.children.0.type'],
+            'a column inside a column' => [[$mega(1, [$column([$column()])])], 'items.0.children.0.children.0.type'],
+            'a heading item of the old model' => [[$mega(1, [['type' => 'heading', 'label' => 'H', 'children' => []]])], 'items.0.children.0.type'],
+            'a link directly under a mega item' => [[$mega(1, [$link('B')])], 'items.0.children.0.type'],
+            'five columns in a mega item' => [[$mega(4, $columns(5))], 'items.0.children'],
+            'fewer columns than the mega item says' => [[$mega(3, $columns(2))], 'items.0.children'],
+            'more columns than the mega item says' => [[$mega(2, $columns(3))], 'items.0.children'],
+            'a mega item without columns' => [[$mega(2, [])], 'items.0.children'],
+            'a mega item without a number of columns' => [[$link('M', ['submenu' => 'mega', 'children' => $columns(1)])], 'items.0.mega_columns'],
+            'a number of columns of five' => [[$link('M', ['submenu' => 'mega', 'mega_columns' => 5, 'children' => $columns(4)])], 'items.0.mega_columns'],
+            'a number of columns of zero' => [[$link('M', ['submenu' => 'mega', 'mega_columns' => 0, 'children' => []])], 'items.0.mega_columns'],
+            'a number of columns on a dropdown' => [[$dropdown([]) + ['mega_columns' => 2]], 'items.0.mega_columns'],
+            'a number of columns on a plain link' => [[$link('A', ['mega_columns' => 2])], 'items.0.mega_columns'],
+            'a column with a link address' => [[$mega(1, [$column() + ['url' => '/x']])], 'items.0.children.0.url'],
+            'a column with a target' => [[$mega(1, [$column() + ['target_id' => 1]])], 'items.0.children.0.target_id'],
+            'a column with a badge' => [[$mega(1, [$column() + ['badge_text' => 'New']])], 'items.0.children.0.badge_text'],
+            'a column heading that is too long' => [[$mega(1, [$column([], str_repeat('h', 61))])], 'items.0.children.0.label'],
+            'a column heading with a control character' => [[$mega(1, [$column([], "Hi\nthere")])], 'items.0.children.0.label'],
             'thirteen top-level items' => [array_map(fn (int $i): array => $link("L{$i}"), range(1, 13)), 'items'],
-            'sixteen items in a column' => [[$mega([$heading(array_map(fn (int $i): array => $link("L{$i}"), range(1, 16)))])], 'items.0.children.0.children'],
+            'sixteen items in a column' => [[$mega(1, [$column(array_map(fn (int $i): array => $link("L{$i}"), range(1, 16)))])], 'items.0.children.0.children'],
             'children without a submenu' => [[$link('A', ['children' => [$link('B')]])], 'items.0.children'],
-            'items inside a column item' => [[$mega([$heading([$link('B', ['children' => [$link('C')]])])])], 'items.0.children.0.children.0.children'],
+            'items inside a column item' => [[$mega(1, [$column([$link('B', ['children' => [$link('C')]])])])], 'items.0.children.0.children.0.children'],
             'with_children on a link' => [[$link('A', ['with_children' => true])], 'items.0.with_children'],
             'with_children on a mega item' => [[$cat(['submenu' => 'mega', 'with_children' => true])], 'items.0.with_children'],
             'an unknown type' => [[['type' => 'script']], 'items.0.type'],
@@ -139,7 +150,7 @@ class MenusTest extends TestCase
             'a badge colour that is not a colour' => [[$link('A', ['badge_text' => 'New', 'badge_color' => 'red; background:url(x)'])], 'items.0.badge_color'],
             'a badge colour in three digits' => [[$link('A', ['badge_text' => 'New', 'badge_color' => '#f00'])], 'items.0.badge_color'],
             'an HTML block on a dropdown item' => [[$dropdown([])  + ['html_block_id' => 1]], 'items.0.html_block_id'],
-            'an HTML block on a nested item' => [[$mega([$heading([], 'H') + ['html_block_id' => 1]])], 'items.0.children.0.html_block_id'],
+            'an HTML block on a nested item' => [[$mega(1, [$column() + ['html_block_id' => 1]])], 'items.0.children.0.html_block_id'],
             'a product without a target' => [[['type' => 'product']], 'items.0.target_id'],
             'thirteen custom badge colours' => [array_map(fn (int $i): array => $link("L{$i}", ['badge_text' => 'x', 'badge_color' => sprintf('#%06x', $i * 1000)]), range(1, 12)) + [12 => $link('L13', ['badge_text' => 'x', 'badge_color' => '#aabbcc'])], 'items'],
         ];
@@ -187,7 +198,7 @@ class MenusTest extends TestCase
         }
 
         try {
-            app(MenuWriter::class)->save($menu, 'Main', [$this->menuItem('link', ['label' => 'M', 'url' => '/m', 'submenu' => 'mega', 'html_block_id' => 99, 'children' => [$this->menuItem('heading', ['label' => 'Col'])]])]);
+            app(MenuWriter::class)->save($menu, 'Main', [$this->menuItem('link', ['label' => 'M', 'url' => '/m', 'submenu' => 'mega', 'html_block_id' => 99, 'mega_columns' => 1, 'children' => [$this->columnItem()]])]);
             $this->fail('refused');
         } catch (MenuException $exception) {
             $this->assertArrayHasKey('items.0.html_block_id', $exception->errors);
@@ -199,20 +210,22 @@ class MenusTest extends TestCase
         $block = HtmlBlockModel::create(['title' => 'Picture', 'body' => '<p>x</p>']);
         $this->saveMenu('main', [
             $this->link('First', '/first'),
-            $this->menuItem('category', ['target_id' => 1, 'submenu' => 'mega', 'html_block_id' => $block->id, 'children' => [
-                $this->menuItem('heading', ['label' => 'Women', 'children' => [$this->link('Sale', '/sale', ['badge_text' => 'Sale', 'badge_color' => '#AABBCC']), $this->menuItem('product', ['target_id' => 1])]]),
-                $this->menuItem('page', ['target_id' => $this->page('terms', 'Terms')->id, 'children' => [$this->link('Inside', '/inside')]]),
-            ]]),
+            $this->megaItem('Women', '/women', 2, [
+                $this->columnItem([$this->link('Sale', '/sale', ['badge_text' => 'Sale', 'badge_color' => '#AABBCC']), $this->menuItem('product', ['target_id' => 1])], 'Clothes'),
+                $this->columnItem([$this->menuItem('page', ['target_id' => $this->page('terms', 'Terms')->id]), $this->link('Inside', '/inside')]),
+            ], ['html_block_id' => $block->id]),
             $this->link('Last', '/last', ['new_tab' => true]),
         ]);
 
         $tree = MenuTree::forMenu((int) MenuModel::query()->where('key', 'main')->value('id'));
 
-        $this->assertSame(['link', 'category', 'link'], array_column($tree, 'type'));
-        $this->assertSame(['First', null, 'Last'], array_column($tree, 'label'));
-        $this->assertSame($block->id, $tree[1]['html_block_id']);
-        $this->assertSame(['heading', 'page'], array_column($tree[1]['children'], 'type'));
+        $this->assertSame(['link', 'link', 'link'], array_column($tree, 'type'));
+        $this->assertSame(['First', 'Women', 'Last'], array_column($tree, 'label'));
+        $this->assertSame([$block->id, 2], [$tree[1]['html_block_id'], $tree[1]['mega_columns']]);
+        $this->assertSame(['column', 'column'], array_column($tree[1]['children'], 'type'));
+        $this->assertSame(['Clothes', null], array_column($tree[1]['children'], 'label'));
         $this->assertSame(['link', 'product'], array_column($tree[1]['children'][0]['children'], 'type'));
+        $this->assertSame(['page', 'link'], array_column($tree[1]['children'][1]['children'], 'type'));
         $this->assertSame(['Sale', '#aabbcc'], [$tree[1]['children'][0]['children'][0]['badge_text'], $tree[1]['children'][0]['children'][0]['badge_color']], 'the colour is stored lower-case');
         $this->assertTrue($tree[2]['new_tab']);
     }
@@ -308,30 +321,41 @@ class MenusTest extends TestCase
         $this->assertSame(['Summer dress', 'The boot'], array_column($this->compiledMenu('main'), 'label'));
     }
 
-    public function test_a_heading_is_a_column_and_the_html_block_rides_the_mega_item(): void
+    public function test_a_mega_item_compiles_to_its_columns_and_the_html_block_rides_it(): void
     {
         $block = HtmlBlockModel::create(['title' => 'Boys', 'body' => '<figure><img src="/storage/html-blocks/a.jpg" alt="A boot" width="300" height="200"></figure><script>alert(1)</script>']);
-        $this->saveMenu('main', [$this->menuItem('link', ['label' => 'Boys', 'url' => '/boys', 'submenu' => 'mega', 'html_block_id' => $block->id, 'children' => [
-            $this->menuItem('heading', ['label' => 'Clothes', 'children' => [$this->link('Jackets', '/jackets')]]),
-            $this->menuItem('heading', ['label' => 'Empty heading']),
-            $this->link('Shoes', '/shoes', ['children' => [$this->link('Boots', '/boots')]]),
-        ]])]);
+        $this->saveMenu('main', [$this->megaItem('Boys', '/boys', 3, [
+            $this->columnItem([$this->link('Jackets', '/jackets')], 'Clothes'),
+            $this->columnItem(),
+            $this->columnItem([$this->link('Boots', '/boots'), $this->menuItem('category', ['target_id' => 4])]),
+        ], ['html_block_id' => $block->id])]);
 
         $mega = $this->compiledMenu('main')[0];
 
         $this->assertSame('mega', $mega['submenu']);
-        $this->assertSame(['heading', 'link'], array_column($mega['children'], 'type'), 'a heading with nothing under it is gone; a link can be a column heading too');
+        $this->assertSame(['column', 'column', 'column'], array_column($mega['children'], 'type'), 'an EMPTY column keeps its place');
+        $this->assertSame(['Clothes', null, null], array_column($mega['children'], 'label'), 'the heading is optional');
         $this->assertSame(['Jackets'], array_column($mega['children'][0]['children'], 'label'));
+        $this->assertSame([], $mega['children'][1]['children']);
+        $this->assertSame(['Boots'], array_column($mega['children'][2]['children'], 'label'), 'a hidden category inside a column is skipped, the column stays');
         $this->assertStringContainsString('<img loading="lazy" decoding="async" src="/storage/html-blocks/a.jpg" alt="A boot" width="300" height="200">', $mega['html']);
         $this->assertStringNotContainsString('script', $mega['html']);
+    }
+
+    public function test_a_mega_item_whose_columns_are_all_empty_is_a_plain_link(): void
+    {
+        $this->saveMenu('main', [$this->megaItem('Boys', '/boys', 3, [$this->columnItem([$this->menuItem('category', ['target_id' => 4])], 'Hidden')])]);
+
+        $item = $this->compiledMenu('main')[0];
+
+        $this->assertSame(['none', []], [$item['submenu'], $item['children']]);
+        $this->assertNull($item['html']);
     }
 
     public function test_the_html_block_is_part_of_the_compiled_menu_and_an_edit_follows(): void
     {
         $block = HtmlBlockModel::create(['title' => 'B', 'body' => '<p>One</p>']);
-        $this->saveMenu('main', [$this->menuItem('link', ['label' => 'Boys', 'url' => '/boys', 'submenu' => 'mega', 'html_block_id' => $block->id, 'children' => [
-            $this->menuItem('heading', ['label' => 'Clothes', 'children' => [$this->link('Jackets', '/jackets')]]),
-        ]])]);
+        $this->saveMenu('main', [$this->megaItem('Boys', '/boys', 1, [$this->columnItem([$this->link('Jackets', '/jackets')], 'Clothes')], ['html_block_id' => $block->id])]);
         $this->assertStringContainsString('One', $this->get('/')->assertOk()->getContent());
 
         $block->update(['body' => '<p>Two</p>']);
@@ -442,8 +466,9 @@ class MenusTest extends TestCase
             'a label with a control character' => [['label' => "A\u{0007}B"] + $link],
             'an unknown submenu mode' => [['submenu' => 'huge'] + $link],
             'new_tab that is not a boolean' => [['new_tab' => 'yes'] + $link],
-            'a column or an image of the old model' => [['type' => 'column', 'label' => null, 'children' => []]],
-            'a heading without a label' => [['type' => 'heading', 'label' => '', 'children' => []]],
+            'an item of the old model (a heading)' => [['type' => 'heading', 'label' => 'H', 'children' => []]],
+            'a column heading that is too long' => [['type' => 'column', 'label' => str_repeat('h', 61), 'children' => []]],
+            'a column with a link that is not valid' => [['type' => 'column', 'label' => null, 'children' => [['url' => 'javascript:alert(1)'] + $link]]],
             'a badge with a style in its colour' => [['badge' => ['text' => 'New', 'color' => 'red;x:y']] + $link],
             'a badge text that is too long' => [['badge' => ['text' => str_repeat('x', 17), 'color' => null]] + $link],
             'a block that is not a string' => [['submenu' => 'mega', 'html' => ['x']] + $link],
@@ -462,7 +487,7 @@ class MenusTest extends TestCase
 
     public function test_the_html_block_is_cleaned_again_when_the_compiled_menu_is_read(): void
     {
-        $evil = ['submenu' => 'mega', 'html' => '<p style="x" onclick="y">Hi</p><script>alert(1)</script><img src="javascript:alert(1)"><img src="/storage/a.png" onerror="x">', 'children' => [['type' => 'heading', 'label' => 'H', 'children' => [$this->goodLink('L', '/l')]]]] + $this->goodLink('M', '/m');
+        $evil = ['submenu' => 'mega', 'html' => '<p style="x" onclick="y">Hi</p><script>alert(1)</script><img src="javascript:alert(1)"><img src="/storage/a.png" onerror="x">', 'children' => [['type' => 'column', 'label' => 'H', 'children' => [$this->goodLink('L', '/l')]]]] + $this->goodLink('M', '/m');
         $read = CompiledMenus::read(['main' => [$evil]]);
 
         $this->assertSame('<p>Hi</p><img loading="lazy" decoding="async" src="/storage/a.png" alt="">', $read['main'][0]['html']);
@@ -648,10 +673,10 @@ class MenusTest extends TestCase
             $this->menuItem('category', ['target_id' => 1, 'submenu' => 'dropdown', 'children' => [
                 $this->menuItem('category', ['target_id' => 2, 'children' => [$this->link('Party dresses', '/party', ['badge_text' => 'Hot', 'badge_color' => 'red'])]]),
             ]]),
-            $this->menuItem('category', ['target_id' => 3, 'submenu' => 'mega', 'html_block_id' => $block->id, 'children' => [
-                $this->menuItem('heading', ['label' => 'Boots', 'children' => [$this->link('Winter', '/winter'), $this->link('Summer', '/summer', ['new_tab' => true])]]),
-                $this->menuItem('heading', ['label' => 'Sandals', 'children' => [$this->link('Flat', '/flat')]]),
-            ]]),
+            $this->megaItem('Footwear', '/footwear', 2, [
+                $this->columnItem([$this->link('Winter', '/winter'), $this->link('Summer', '/summer', ['new_tab' => true])], 'Boots'),
+                $this->columnItem([$this->link('Flat', '/flat')], 'Sandals'),
+            ], ['html_block_id' => $block->id]),
         ]);
     }
 

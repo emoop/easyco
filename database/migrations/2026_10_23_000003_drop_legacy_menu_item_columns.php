@@ -16,8 +16,11 @@ return new class extends Migration
      */
     public function up(): void
     {
+        // (once MENU-3 has run, `column` is the NEW kind of item and says nothing about the D3 model: only `image` and `with_children` do)
+        $d3Types = Schema::hasColumn('menu_items', 'mega_columns') ? ['image'] : ['column', 'image'];
+
         if (Schema::hasColumn('menu_items', 'with_children')
-            && DB::table('menu_items')->where(fn ($q) => $q->whereIn('type', ['column', 'image'])->orWhere('with_children', 1))->exists()) {
+            && DB::table('menu_items')->where(fn ($q) => $q->whereIn('type', $d3Types)->orWhere('with_children', 1))->exists()) {
             throw new RuntimeException('menu_items still holds D3 rows (column / image / with_children): run the previous migration first.');
         }
 

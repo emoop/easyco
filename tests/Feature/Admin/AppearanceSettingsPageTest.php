@@ -25,7 +25,7 @@ class AppearanceSettingsPageTest extends TestCase
     use BuildsShippingZones;
     use RefreshDatabase;
 
-    private const HELP_ANCHORS = ['action-appearance-colors', 'action-appearance-fonts', 'action-appearance-banner', 'action-appearance-themes', 'action-appearance-header', 'action-appearance-menus'];
+    private const HELP_ANCHORS = ['action-appearance-colors', 'action-appearance-fonts', 'action-appearance-banner', 'action-appearance-themes', 'action-appearance-header', 'action-appearance-menus', 'action-appearance-html-blocks'];
 
     protected function setUp(): void
     {
@@ -59,9 +59,9 @@ class AppearanceSettingsPageTest extends TestCase
         $this->get(AppearancePage::getUrl())->assertForbidden();
     }
 
-    public function test_it_sits_in_the_admin_group_with_its_own_label(): void
+    public function test_it_sits_in_the_design_group_with_its_own_label(): void
     {
-        $this->assertSame(NavigationGroup::ADMIN, AppearancePage::getNavigationGroup());
+        $this->assertSame(NavigationGroup::DESIGN, AppearancePage::getNavigationGroup());
         $this->assertSame('Appearance', AppearancePage::getNavigationLabel());
         app()->setLocale('bg');
         $this->assertSame('Облик', AppearancePage::getNavigationLabel());

@@ -9,6 +9,7 @@ return [
         'catalog' => 'Catalog',
         'shipping' => 'Shipping',
         'content' => 'Content',
+        'design' => 'Design',
         'sales' => 'Sales',
         'admin' => 'Admin',
     ],

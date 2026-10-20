@@ -47,12 +47,17 @@ final class Menu2Migrator
                 self::images($counts);
             }
 
-            $counts['columns'] = DB::table('menu_items')->where('type', 'column')->count();
+            $d3Columns = fn () => DB::table('menu_items')->where('type', 'column')->when(
+                Schema::hasColumn('menu_items', 'mega_columns'),
+                // since MENU-3 a `column` may be the NEW kind; a D3 column hangs under a mega item that has no `mega_columns` yet
+                fn ($query) => $query->whereIn('parent_id', DB::table('menu_items')->whereNull('mega_columns')->select('id')),
+            );
+            $counts['columns'] = $d3Columns()->count();
 
-            foreach (DB::table('menu_items')->where('type', 'column')->get(['id', 'label']) as $column) {
+            foreach ($d3Columns()->get(['id', 'label']) as $column) {
                 DB::table('menu_items')->where('id', $column->id)->update([
                     'type' => 'heading',
-                    'label' => trim((string) $column->label) !== '' ? $column->label : __('menus.migration.column', [], 'bg'),
+                    'label' => trim((string) $column->label) !== '' ? $column->label : null, // since MENU-3 a column needs no heading
                     'url' => null,
                     'target_id' => null,
                 ]);
@@ -196,7 +201,8 @@ final class Menu2Migrator
 
     private static function narrowTypeCheck(): void
     {
-        if (! in_array(DB::getDriverName(), ['mysql', 'mariadb'], true)) {
+        // MENU-3: once `mega_columns` exists the final set of types is the one of Menu3Migrator (`column` instead of `heading`), which narrows it itself.
+        if (! in_array(DB::getDriverName(), ['mysql', 'mariadb'], true) || Schema::hasColumn('menu_items', 'mega_columns')) {
             return;
         }
 

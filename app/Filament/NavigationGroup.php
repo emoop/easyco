@@ -37,6 +37,7 @@ enum NavigationGroup implements Collapsible, HasLabel
     case CATALOG;
     case SHIPPING;
     case CONTENT;
+    case DESIGN;
     case ADMIN;
 
     public function getLabel(): string
@@ -45,6 +46,7 @@ enum NavigationGroup implements Collapsible, HasLabel
             self::CATALOG => __('navigation.groups.catalog'),
             self::SHIPPING => __('navigation.groups.shipping'),
             self::CONTENT => __('navigation.groups.content'),
+            self::DESIGN => __('navigation.groups.design'),
             self::SALES => __('navigation.groups.sales'),
             self::ADMIN => __('navigation.groups.admin'),
         };

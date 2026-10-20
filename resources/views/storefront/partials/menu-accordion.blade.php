@@ -1,5 +1,5 @@
 {{-- A compiled menu as an ACCORDION (the drawer, D3, MENU-2): a parent has its own link and a button that opens its children in place (aria-expanded). A dropdown item lists its
-     links (a second level is an indented list); a MEGA item shows its columns as SECTIONS one under another (the heading as a small title, its links under it), with no second
+     links (a second level is an indented list); a MEGA item shows its columns as SECTIONS one under another (the heading, when there is one, as a small title, its links under it; an empty column is not printed), with no second
      accordion and no HTML block. Without the script every list is open. --}}
 <ul class="sf-acc">
     @foreach ($nodes as $index => $node)
@@ -14,16 +14,14 @@
                 <div class="sf-acc-sub" id="sf-acc-{{ $uid }}-{{ $index }}">
                     @if ($node['submenu'] === 'mega')
                         @foreach ($node['children'] as $column)
-                            <div class="sf-acc-section">
-                                @if ($column['type'] === 'link')
-                                    <p class="sf-mega-heading"><a class="sf-mega-heading-link" href="{{ $column['url'] }}"@if ($column['new_tab']) target="_blank" rel="noopener"@endif>{{ $column['label'] }}</a></p>
-                                @else
-                                    <p class="sf-mega-heading">{{ $column['label'] }}</p>
-                                @endif
-                                @if ($column['children'] !== [])
+                            @if ($column['children'] !== [])
+                                <div class="sf-acc-section">
+                                    @if ($column['label'] !== null)
+                                        <p class="sf-mega-heading">{{ $column['label'] }}</p>
+                                    @endif
                                     @include('storefront.partials.menu', ['nodes' => $column['children']])
-                                @endif
-                            </div>
+                                </div>
+                            @endif
                         @endforeach
                     @else
                         @include('storefront.partials.menu', ['nodes' => $node['children']])

@@ -9,9 +9,11 @@
                     @include('storefront.partials.menu', ['nodes' => $node['children']])
                 @endif
             </li>
-        @else
+        @elseif ($node['children'] !== [])
             <li class="sf-menu-item sf-menu-column">
-                <p class="sf-mega-heading">{{ $node['label'] }}</p>
+                @if ($node['label'] !== null)
+                    <p class="sf-mega-heading">{{ $node['label'] }}</p>
+                @endif
                 @include('storefront.partials.menu', ['nodes' => $node['children']])
             </li>
         @endif

@@ -153,7 +153,7 @@ class PageResource extends Resource
                 ->collapsed()
                 ->schema([
                     HelpLink::component('appearance-menus', 'appearance'),
-                    Text::make(fn (): \Illuminate\Support\HtmlString => new \Illuminate\Support\HtmlString(e(__('pages.footer_hint')).' <a class="underline" href="'.e(MenuResource::getUrl('index')).'">'.e(__('pages.footer_hint_link')).'</a>')),
+                    Text::make(fn (): \Illuminate\Support\HtmlString => new \Illuminate\Support\HtmlString(e(__('pages.footer_hint')).' <a class="underline" href="'.e(\App\Filament\Pages\Design\Menus::getUrl()).'">'.e(__('pages.footer_hint_link')).'</a>')),
                 ]),
         ]);
     }

@@ -13,8 +13,7 @@ use App\Filament\Pages\Settings\HeaderSettings;
 use App\Filament\Pages\Settings\LocaleSettings;
 use App\Filament\Pages\Settings\MailSettings;
 use App\Filament\Pages\Settings\StorefrontSettings;
-use App\Filament\Resources\MenuResource;
-use App\Filament\Resources\MenuResource\Pages\EditMenu;
+use App\Filament\Resources\HtmlBlockResource;
 use App\Filament\Resources\PageResource;
 use App\Filament\Resources\PageResource\Pages\CreatePage;
 use App\Filament\Resources\PageResource\Pages\EditPage;
@@ -66,7 +65,7 @@ class SettingsFormsUx0Test extends TestCase
         $page = app(PageWriter::class)->create(['title' => 'Terms', 'slug' => 'terms', 'body' => '<p>x</p>', 'status' => 'published']);
         $urls = [
             AppearancePage::getUrl(), BankTransferSettings::getUrl(), CatalogSettings::getUrl(), CheckoutSettings::getUrl(), HeaderSettings::getUrl(), LocaleSettings::getUrl(),
-            MailSettings::getUrl(), StorefrontSettings::getUrl(), MenuResource::getUrl('edit', ['record' => MenuModel::query()->where('key', 'main')->firstOrFail()]),
+            MailSettings::getUrl(), StorefrontSettings::getUrl(), HtmlBlockResource::getUrl('create'),
             PageResource::getUrl('create'), PageResource::getUrl('edit', ['record' => $page]),
         ];
 
@@ -90,17 +89,7 @@ class SettingsFormsUx0Test extends TestCase
         $component->assertHasErrors()->assertDispatched('form-validation-error');
     }
 
-    public function test_a_menu_refusal_dispatches_the_event_that_opens_the_block(): void
-    {
-        $this->actingAsStaff('Administrator');
-        $this->saveMenu('main', [$this->menuItem('link', ['label' => 'Home', 'url' => '/'])]);
-        $component = Livewire::test(EditMenu::class, ['record' => MenuModel::query()->where('key', 'main')->value('id')]);
-        $key = array_key_first($component->get('data.items'));
-
-        $component->set("data.items.{$key}.url", 'javascript:alert(1)')->call('save');
-
-        $component->assertHasErrors(["data.items.{$key}.url"])->assertDispatched('form-validation-error');
-    }
+    // (The menu editor is no Filament form any more: it is a page of its own that shows the errors on the cards and opens and scrolls to the first one itself; see MenusPageTest.)
 
     public function test_a_page_refusal_dispatches_the_event_that_opens_the_block(): void
     {

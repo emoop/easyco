@@ -2831,7 +2831,7 @@ html:not(.js) .sf-bar-item:focus-within > .sf-sub {
     grid-template-columns: minmax(0, 7fr) minmax(0, 3fr);
 }
 
-/* The columns are equal (up to six); data-cols is the number printed by the view (a class of its own per count, never a style attribute). */
+/* The columns are equal (1 to 4); data-cols is the number printed by the view (a class of its own per count, never a style attribute). */
 .sf-mega-cols {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -2848,14 +2848,6 @@ html:not(.js) .sf-bar-item:focus-within > .sf-sub {
 
 .sf-mega-cols[data-cols='4'] {
     grid-template-columns: repeat(4, minmax(0, 1fr));
-}
-
-.sf-mega-cols[data-cols='5'] {
-    grid-template-columns: repeat(5, minmax(0, 1fr));
-}
-
-.sf-mega-cols[data-cols='6'] {
-    grid-template-columns: repeat(6, minmax(0, 1fr));
 }
 
 .sf-mega-heading {

@@ -184,3 +184,59 @@ Part 2 (the WordPress-style editor page, SortableJS, the «Дизайн» naviga
 - **Storefront markup:** mega = columns from the structure + the block on the right (`.sf-mega:has(.sf-mega-html)`, 7fr / 3fr; 1-6 equal columns through `data-cols`), dropdown
   second level = a flyout (`.sf-sub-dropdown .sf-menu .sf-menu`; an indented list inside "More"), drawer = stacked sections for a mega item (`.sf-acc-section`, no second accordion,
   no block). `storefront.js` is unchanged.
+
+---
+
+## 7. As built - part 2 (the editor page, drag, navigation group, help)
+
+- **Page** `App\Filament\Pages\Design\Menus` (route `/admin/menus`, `content_manage`, group «Дизайн» sort 30; every public method checks the permission again, a Livewire call does not pass the
+  route's check). `MenuResource`, `EditMenu`, `ListMenus` and `MenuFormState` (the D3 repeater editor) are gone. The view is `resources/views/filament/pages/design/menus.blade.php`
+  (one `wire:ignore` root with the Alpine component `menuEditor`); the page loads `resources/js/admin-menu-editor.js` through its own `@vite` and nothing else does (an admin entry in
+  `vite.config.js`; no other admin page, never the storefront).
+- **State:** the structure is a FLAT list with `depth` (0-2) in Alpine; no round trip per drag or field. Calls: `saveMenu(id, name, items, locations)` (the whole list in one call),
+  `loadMenu`, `createMenu(name)` (the key is made from the name, a number is added when taken), `deleteMenu`, `searchProducts(query)` (20 at most, id / name / SKU / address). The categories
+  (as a tree), the published pages and the HTML blocks come once with the page.
+- **Save:** `MenuFlat::toTree()` derives the parents from the depths (a first item that is not at depth 0, a jump of more than one level and a depth above 2 are refused with the index of the
+  item before anything else), `MenuWriter::save()` validates the tree, writes name + items + locations in ONE transaction and compiles before the commit. The answer is the saved menu, or the
+  errors BY ITEM INDEX (`MenuFlat::errorsByItem` maps the validator's tree paths back); the page then opens the faulty cards, scrolls to the first and shows the message there. Nothing is
+  written on an error. A green notification says it was saved; a location that moved is named in it.
+- **Drag** (SortableJS, forced fallback so the pointer's x is known): vertical = order; the horizontal offset at the drop sets the depth (30px a level), clamped to `previous.depth + 1` and
+  to 2; a block moves with its sub-items. The rules are plain functions in `resources/js/menu-editor-core.js` (`moveBlock`, `moveUp`, `moveDown`, `indent`, `outdent`, `normalize`, ...), run
+  under node by `MenuEditorCoreJsTest`. The same moves are buttons in the opened card with an `aria-live` announcement. The fallback clone SortableJS puts on the body gets `x-ignore`
+  (it carries the row's Alpine bindings without its `x-for` scope).
+- **Cards / panels / locations / guard:** as the brief (collapsed line with badge, type, Падащо / Мега, под-елемент, red «(скрита)» / «(изтрита)»; opened fields; add-panels for categories
+  with «заедно с подкатегориите», pages with three tabs, products by server search, custom link, heading; location checkboxes with the «премества се от „…“» note; a dot next to «Запази
+  менюто» and a `beforeunload` + `livewire:navigate` guard). Not built: WordPress's «Избор на много» (bulk select), which the brief did not list.
+- **Navigation:** `NavigationGroup::DESIGN` between Съдържание and Админ holds Облик (10), Хедър (20), Менюта (30), HTML блокове (40), Витрина (50).
+- **Help:** `{#action-appearance-menus}` rewritten, `{#action-appearance-html-blocks}` added (bg / en); the pages link to them.
+- **Browser script:** `tests/Browser/menu-editor.mjs` builds the children's shop by clicking and dragging, refuses a bad link, saves, reloads and compares, builds a boutique of plain dropdowns,
+  and looks at the shop at 1280px and 375px (35 checks, run by hand on dev with a backup and restore).
+
+---
+
+## 8. MENU-3 as built - columns as boxes (2-level and 3-level mega menus in one model)
+
+Owner decisions (2026-10-20): a mega item has **«Колони» 1-4** (default 3, at most 4); the editor shows that many **column boxes** under it; every column has an **optional heading** (empty =
+the 2-level case: just links; a heading = the 3-level case); **«Раздели равномерно»**; lowering the number moves the links to the last column with a warning; the HTML block stays a column of its
+own on the right, exactly as wide as before. It replaces section 3's "heading" and section 4's "columns = the first level"; the `heading` item type is gone.
+
+- **Data** (`2026_10_24_000001/2`): `menu_items.mega_columns` (tinyint, 1-4, `menu_items_mega_cols_check`; only on a top-level mega item), type `column` (label = the optional heading, <= 60, no target /
+  link / badge / submenu), `heading` removed. A `column` lives only at depth 1 under a mega item. `Menu3Migrator` (the step the tests call): a `heading` becomes a `column` (same label, same children); a
+  link / category / page / product at level 1 becomes a `column` whose heading is that item's label (or its target's name) and whose FIRST link is that item, then its former children, so every link that
+  showed before still shows, in the same order; columns 5 and up are merged into the 4th (their links are appended in order, their headings go); a mega item with nothing under it gets 3 empty columns; a
+  stray heading outside a mega item is dissolved; then the type CHECK is narrowed to link | category | page | product | column and the menus are compiled again. Idempotent; the counts go to the log
+  (`menu3.migrated`). `Menu2Migrator` no longer narrows the CHECK once `mega_columns` exists, and converts only D3 columns (under a mega item without `mega_columns`).
+- **Dev run (2026-10-20):** one mega item («Дрехи», 5 first-level categories, two of them with a sub-category, HTML block 2): 5 items promoted to columns, columns 5+ merged into the 4th (1 column, 1 link), 4
+  columns; the 7 links stay in the same order and the shop shows the same 4 links (the hidden categories are skipped as before); the block is identical. Backup `storage/app/menu3-backup-20261020-091805.json`.
+  The migrated columns carry their first link's name as heading: clear the headings for a boutique-style panel.
+- **Validator:** a mega item holds EXACTLY `mega_columns` `column`s (1-4; anything else is refused with the message on `children`), each with <= 15 links of link | category | page | product; a link directly
+  under a mega item and a column anywhere else are refused (`column_here`); `mega_columns` only on a top-level mega item.
+- **Compiler / storefront:** the compiled mega node holds its columns `{type: column, label|null, children}`; an EMPTY column is kept (it keeps its place), a mega item whose columns are all empty is a plain
+  link. `menu-mega.blade.php`: `data-cols` equal columns (1-4), a heading `<p>` only when there is one, the block column unchanged. Drawer: sections one under another, a heading only when present, an empty
+  column left out, no picture.
+- **Editor:** the flat list keeps exactly `mega_columns` column entries (depth 1) after a mega item, links at depth 2. The rules live in `menu-editor-core.js` (`reconcile`, `setMegaColumns`, `setSubmenu`,
+  `splitEvenly`, `toColumn`, `moveBlock`, `columnTargets`): after every change the list is brought to the valid shape (a link dropped under the mega item joins a column, a column outside a mega item is
+  dissolved, a column only moves among the columns of its own mega item and the drop is refused otherwise, a top-level block is never dropped into the middle of another block). The mega card has «Колони»,
+  «Раздели равномерно» (the first columns take the remainder: 10 over 4 = 3, 3, 2, 2) and a warning after lowering; Мега -> Падащо asks first and dissolves the columns in order. «Новите елементи отиват в»
+  puts what the panels add into a chosen column. Column boxes: dashed, indented, a heading input inline, «←» / «→» and the handle. The move buttons also move a link to the previous / next column.
+- **Tests:** `MegaColumnsTest`, `Menu3MigrationTest`, the node rules (36), `MenusPageTest`, `MenusTest`; mutation-checked; `tests/Browser/menu-editor.mjs` (46 checks, run by hand on dev with a backup and restore).

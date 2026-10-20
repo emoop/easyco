@@ -3,6 +3,7 @@
 namespace Tests\Feature\Admin;
 
 use App\Content\Menus\Menu2Migrator;
+use App\Content\Menus\Menu3Migrator;
 use App\Content\Menus\MenuLocations;
 use App\Content\Menus\MenuModel;
 use App\Settings\AppearanceSettings;
@@ -84,17 +85,17 @@ class Menu2MigrationTest extends TestCase
     private function restoreFinalShape(): void
     {
         if (Schema::hasColumn('menu_items', 'with_children')) {
-            DB::table('menu_items')->whereIn('type', ['column', 'image'])->delete();
+            DB::table('menu_items')->whereIn('type', ['heading', 'column', 'image'])->delete();
             DB::table('menu_items')->update(['with_children' => 0]);
             $this->migration('2026_10_23_000003_drop_legacy_menu_item_columns')->up();
         }
 
         $check = DB::selectOne("SELECT check_clause c FROM information_schema.check_constraints WHERE constraint_schema = DATABASE() AND constraint_name = 'menu_items_type_check'");
 
-        if ($check !== null && str_contains((string) $check->c, 'column')) {
-            DB::table('menu_items')->whereIn('type', ['column', 'image'])->delete();
+        if ($check !== null && (str_contains((string) $check->c, 'image') || str_contains((string) $check->c, 'heading'))) {
+            DB::table('menu_items')->whereIn('type', ['heading', 'image'])->delete();
             DB::statement('ALTER TABLE menu_items DROP CHECK menu_items_type_check');
-            DB::statement("ALTER TABLE menu_items ADD CONSTRAINT menu_items_type_check CHECK (type IN ('link','category','page','product','heading'))");
+            DB::statement("ALTER TABLE menu_items ADD CONSTRAINT menu_items_type_check CHECK (type IN ('link','category','page','product','column'))");
         }
     }
 
@@ -162,6 +163,8 @@ class Menu2MigrationTest extends TestCase
         }
 
         $counts = Menu2Migrator::run();
+        Menu3Migrator::run(); // the D3 columns became headings (MENU-2); MENU-3 turns every mega item's first level into columns
+        DB::unprepared('START TRANSACTION'); // the type CHECK of MENU-3 is DDL: it committed; the next run needs a real transaction to put its savepoint in
 
         $this->assertSame(['columns' => 2, 'images' => 2, 'blocks' => 1, 'expanded' => 1, 'items' => 2, 'skipped' => 1], array_intersect_key($counts, array_flip(['columns', 'images', 'blocks', 'expanded', 'items', 'skipped'])));
 
@@ -169,11 +172,11 @@ class Menu2MigrationTest extends TestCase
 
         $this->assertSame(['Girls', 'Clothing', 'About'], array_column($compiled, 'label'));
         $this->assertSame('mega', $compiled[0]['submenu']);
-        $this->assertSame(['heading', 'heading'], array_column($compiled[0]['children'], 'type'), 'the columns are headings now');
+        $this->assertSame(['column', 'column'], array_column($compiled[0]['children'], 'type'), 'the D3 columns are columns (MENU-3)');
         $this->assertSame('Clothes', $compiled[0]['children'][0]['label']);
         $this->assertSame(['Dresses sale', 'Dresses', 'Terms'], array_column($compiled[0]['children'][0]['children'], 'label'));
         $this->assertSame(['/dresses-sale', '/product-category/clothing/dresses', '/info/terms'], array_column($compiled[0]['children'][0]['children'], 'url'));
-        $this->assertSame('Колона', $compiled[0]['children'][1]['label'], 'a column with no heading got the placeholder (a heading needs a text)');
+        $this->assertNull($compiled[0]['children'][1]['label'], 'a column with no heading has none (since MENU-3 a heading is optional)');
         $this->assertSame(['Shoes'], array_column($compiled[0]['children'][1]['children'], 'label'));
         $this->assertStringContainsString('/storage/m/940-medium.webp', $compiled[0]['html']);
         $this->assertStringContainsString('<a href="/promo" rel="noopener nofollow">', $compiled[0]['html']);
@@ -186,13 +189,15 @@ class Menu2MigrationTest extends TestCase
         $block = DB::table('html_blocks')->first();
         $this->assertSame('Снимка: Girls', $block->title);
         $this->assertSame((int) $block->id, (int) DB::table('menu_items')->where('label', 'Girls')->value('html_block_id'));
-        $this->assertSame(0, DB::table('menu_items')->whereIn('type', ['column', 'image'])->count());
+        $this->assertSame(0, DB::table('menu_items')->whereIn('type', ['heading', 'image'])->count());
+        $this->assertSame(2, (int) DB::table('menu_items')->where('label', 'Girls')->value('mega_columns'));
         $this->assertSame(0, DB::table('menu_items')->where('with_children', 1)->count());
 
         // idempotent: a second run changes nothing at all
         $before = $this->snapshot();
         $again = Menu2Migrator::run();
         $this->assertSame(['columns' => 0, 'images' => 0, 'blocks' => 0, 'expanded' => 0, 'items' => 0, 'skipped' => 0, 'locations' => 0, 'layouts' => 0], $again);
+        $this->assertSame(0, array_sum(Menu3Migrator::run()), 'and neither does the MENU-3 step');
         $this->assertSame($before, $this->snapshot());
 
         // and the last migration may now drop the D3 columns, once, and again without harm
@@ -202,9 +207,9 @@ class Menu2MigrationTest extends TestCase
             $this->assertFalse(Schema::hasColumn('menu_items', $column), $column);
         }
 
-        // the type CHECK is the final one: a `column` cannot be written any more
+        // the type CHECK is the final one: a `heading` cannot be written any more
         $this->expectException(\Illuminate\Database\QueryException::class);
-        DB::table('menu_items')->insert(['menu_id' => $main, 'sort' => 9, 'type' => 'column', 'submenu' => 'none', 'new_tab' => 0, 'visible' => 1, 'created_at' => now(), 'updated_at' => now()]);
+        DB::table('menu_items')->insert(['menu_id' => $main, 'sort' => 9, 'type' => 'heading', 'submenu' => 'none', 'new_tab' => 0, 'visible' => 1, 'created_at' => now(), 'updated_at' => now()]);
     }
 
     // ---- locations and layouts ------------------------------------------------------------------------------------------------------------------

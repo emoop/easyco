@@ -23,9 +23,9 @@ use Illuminate\Support\Facades\DB;
  *
  *  - Labels are resolved (a category / page / product item with no label shows its target's own name); links come from StorefrontUrls and PageReader::urlFor.
  *  - A hidden item, a category that is not shown (StorefrontVisibility: no visible product in it or below), a product that is not visible, a page that is not published
- *    and a deleted target are SKIPPED WITH THEIR SUBTREE. A heading with nothing left under it disappears; a top-level item whose submenu has nothing left becomes a
- *    plain link.
- *  - A `heading` is a text without a link (the column heading of a mega item); under a mega item every first-level item is a column (its label is the heading).
+ *    and a deleted target are SKIPPED WITH THEIR SUBTREE. A top-level item whose submenu has nothing left becomes a plain link.
+ *  - A mega item holds `column`s (MENU-3): each has an optional heading (its label) and its links. An EMPTY column is kept (it keeps its place, so four boxes with one empty look
+ *    like the editor); a mega item whose columns are ALL empty becomes a plain link.
  *  - A mega item carries its HTML block, sanitized again here (HtmlBlockSanitizer::render), as `html`.
  *  - A badge is `{text, color}`; a custom colour is a class of the token stylesheet (see AppearanceCompiler), never a `style=`.
  *
@@ -184,7 +184,7 @@ class MenuCompiler
             return null;
         }
 
-        return $item['type'] === 'heading' ? $this->heading($item, $context) : $this->link($item, $context, $kind);
+        return $item['type'] === 'column' ? $this->column($item, $context) : $this->link($item, $context, $kind);
     }
 
     /** @return array<string, mixed>|null */
@@ -230,6 +230,12 @@ class MenuCompiler
             default => null,
         };
         $children = $childKind === null || ($kind === 'root' && $item['submenu'] === 'none') ? [] : $this->items($item['children'], $context, $childKind);
+
+        // A mega panel with nothing in any of its columns has nothing to show: the item is a plain link.
+        if ($kind === 'root' && $item['submenu'] === 'mega' && array_filter($children, fn (array $column): bool => $column['children'] !== []) === []) {
+            $children = [];
+        }
+
         $submenu = $kind === 'root' && $children !== [] ? $item['submenu'] : 'none';
         $html = null;
 
@@ -250,11 +256,11 @@ class MenuCompiler
         ];
     }
 
-    /** @return array<string, mixed>|null */
-    private function heading(array $item, object $context): ?array
+    /** @return array<string, mixed> a column of a mega item: kept even when nothing is left in it */
+    private function column(array $item, object $context): array
     {
-        $children = $this->items($item['children'], $context, 'column');
+        $label = trim((string) $item['label']);
 
-        return $children === [] ? null : ['type' => 'heading', 'label' => (string) $item['label'], 'children' => $children];
+        return ['type' => 'column', 'label' => $label === '' ? null : mb_substr($label, 0, 60), 'children' => $this->items($item['children'], $context, 'column')];
     }
 }

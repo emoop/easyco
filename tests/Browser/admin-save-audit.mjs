@@ -9,7 +9,7 @@
 // the console errors and the failed network requests, and checks that storefront-facing values took effect on the public site.
 //
 // ONLY run it on a database you may change (the task that introduced it exports the settings first and restores them afterwards). Needs a staff account with the
-// Administrator role. Pages: appearance, storefront, catalog, bank, mail, checkout, header, menus, pages, locale (locale last: it changes the admin language).
+// Administrator role. NOTE (MENU-2): the `menus` spec below drives the retired repeater editor; the menu editor is now tested by tests/Browser/menu-editor.mjs. Pages: appearance, storefront, catalog, bank, mail, checkout, header, menus, pages, locale (locale last: it changes the admin language).
 import { createRequire } from 'node:module';
 import { writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';

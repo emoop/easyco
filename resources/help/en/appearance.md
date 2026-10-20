@@ -36,14 +36,30 @@ The "Header" page (the "Admin" menu) arranges the top of the shop. There are two
 
 ## Menus {#action-appearance-menus}
 
-"Menus" (the "Content" menu, next to "Pages") is where you build the shop's navigation. The menu is a tool of its own: **you** choose which categories appear and in which order. A category is never added just because it exists, and a category you leave out never shows.
+"Menus" (the "Design" group) is one screen laid out like the WordPress menu screen. At the top you choose a menu or create a new one. On the left you add items, on the right you see the structure and arrange it. "Save menu" is one button for everything: the order, the names, the labels and the locations. If something is wrong nothing is saved, and the first faulty item opens with an explanation.
 
-**Which categories.** Open the "Main menu" and add items: a category, a page or your own link. "Add the main categories" adds the top-level categories that are not in the menu yet. Use the up and down buttons to order them. A category with no products to show is skipped automatically.
+**Adding.** The left side has four panels: **Categories** (with search; "with their sub-categories" adds the sub-categories under the category too), **Pages** ("Most recent", "View all", "Search"; published ones only), **Products** (search by name or SKU, up to 20 results) and **Custom link** (address and text). Column headings are typed in the columns themselves. Tick and press "Add to menu": the new items go to the end and light up for a moment.
 
-**Dropdown or mega menu.** For each top-level item choose what opens under it: nothing, a **dropdown** or a **mega menu**. The item itself stays a link; a small arrow beside it opens the panel. A dropdown lists items (you can tick "List its sub-categories automatically", up to the number you set, then a "See all" link, or use "Add the sub-categories" and remove the ones you do not want). A mega menu is a wide panel built from **columns**: each column has an optional heading and a list of links; you can also put up to **two pictures** in it, each with an optional link and text. Choose a picture that is wide enough; it appears once it has been processed.
+**Arranging.** Drag an item by its handle. Up and down move it; **to the right** (every 30 pixels is one level) makes it a sub-item of the one above, to the left brings it out. Menus have at most three levels. An item moves together with its sub-items. The same moves are buttons in the opened item ("Up", "Down", "Under the previous", "Take out of the submenu"), handy from the keyboard.
 
-**"More".** If the main menu has more items than fit on one row, the ones that do not fit move into "More" automatically. The logo is never pushed aside. The page warns you when the main menu has more than 7 top-level items or a long name.
+**Dropdown or mega menu.** For a top-level item choose **Submenu**: "None", "Dropdown" or "Mega". A dropdown lists the sub-items (the third level opens to the side). **Mega** is a wide panel of **columns**: next to the item choose **Columns: 1, 2, 3 or 4** (at most 4) and that many **boxes** ("Column 1 ... Column N") appear under it, indented like sub-items. Drag items into the boxes (or choose in "New items go to" which column gets them). The boxes can be reordered among themselves (drag by their header, or the buttons ← and →) but never leave their mega menu.
 
-**The footer.** The "Footer" menu is the list of links at the bottom of every page. Add the pages you want (for example terms, privacy) in the order you want. A page that is not published is not shown.
+Every column has an **optional heading**. Without one the column is just links; with one the heading sits on top and the links under it. So one model serves a **2-level** and a **3-level** menu. The **"Split evenly"** button takes all the links of the mega menu in their order and spreads them over the columns as evenly as possible (12 over 4 columns = 3 each; 10 over 4 = 3, 3, 2, 2); then you can still drag. If you lower the number of columns (for example from 4 to 2), the links of the removed columns go to the end of the last column, with a visible warning: nothing is lost. Raising the number adds empty boxes. If you change "Mega" to "Dropdown" the columns are dissolved and their links become items of the dropdown in order (you are asked first). At most 15 links per column. To the right of the columns an **HTML block** can be shown (for example a picture): choose it in "HTML block on the right"; the block is a column of its own and does not depend on the number of columns. Blocks are made under "HTML blocks".
 
-**In the header.** The "Header" page, element "Category menu", has a "Source" field: choose "Main menu" (or another menu you made). A menu that the header uses cannot be deleted. When you rename a category or publish a page, the menus follow by themselves.
+Two examples. **Boutique:** "Dresses" is Mega with 4 columns without headings; add 12 categories to the first column and press "Split evenly". **Children's shop:** "Boys" is Mega with 3 columns with the headings "Clothes", "Clothes" and "Shoes", each with its list of categories underneath; on the right an HTML block with a picture.
+
+**Label.** A small text after the item (for example "Sale", up to 16 characters) with a colour: one of six ready ones or your own.
+
+**Hidden or deleted target.** When the category, page or product is no longer shown in the shop, the item says "(hidden)" or "(deleted)" in red. That is why it is missing in the shop.
+
+**On a phone** there is no mega menu: an item with a submenu opens in place, and the columns of a mega item are shown as sections one under another (the heading, when there is one, as a small title, the links under it; an empty column is left out). The HTML block is not shown.
+
+**Location.** Tick where the menu is shown: **Header** (the bar at the top), **Phone** (the menu in the drawer; when none is ticked the drawer shows the header's menu) and **Footer**. A place has exactly one menu: ticking it here moves it from the menu that had it (a note under the tick says from which). A place with no menu shows nothing. A menu that has a place cannot be deleted.
+
+**"More".** When the top-level items do not all fit in the bar, the extra ones go under "More". The screen warns you when there are more than 7 or one has a long name.
+
+**Unsaved changes.** The dot next to "Save menu" shows there are unsaved changes; if you leave you will be asked first.
+
+## HTML blocks {#action-appearance-html-blocks}
+
+"HTML blocks" (the "Design" group) are small pieces of content you can reuse. For now they are shown to the right of the columns of a mega menu (for example a picture of boys' clothes next to "Clothes" and "Shoes"). Give it a title (for you only) and write the content: headings, bold and italic, lists, a link and a **picture** ("attach file"; JPG, PNG, WebP or GIF up to 5 MB). Scripts, styles, embedded frames and video are not kept: they are removed when you save and again when the block is shown. A block that a menu shows cannot be deleted; the message says which menu uses it.

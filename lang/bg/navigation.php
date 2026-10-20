@@ -8,6 +8,7 @@ return [
     'groups' => [
         'catalog' => 'Каталог',
         'content' => 'Съдържание',
+        'design' => 'Дизайн',
         'shipping' => 'Доставка',
         'sales' => 'Продажби',
         'admin' => 'Админ',

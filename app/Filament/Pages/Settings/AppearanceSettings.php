@@ -61,12 +61,12 @@ class AppearanceSettings extends Page
 
     public static function getNavigationGroup(): NavigationGroup
     {
-        return NavigationGroup::ADMIN;
+        return NavigationGroup::DESIGN;
     }
 
     public static function getNavigationSort(): ?int
     {
-        return 35;
+        return 10;
     }
 
     protected static function accessPermission(): ?Permission

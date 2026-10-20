@@ -45,9 +45,9 @@ class StorefrontSettingsPageTest extends TestCase
         $this->get(StorefrontSettings::getUrl())->assertForbidden();
     }
 
-    public function test_it_is_in_the_admin_group_with_its_own_label(): void
+    public function test_it_is_in_the_design_group_with_its_own_label(): void
     {
-        $this->assertSame(NavigationGroup::ADMIN, StorefrontSettings::getNavigationGroup());
+        $this->assertSame(NavigationGroup::DESIGN, StorefrontSettings::getNavigationGroup());
         $this->assertSame('Storefront', StorefrontSettings::getNavigationLabel());
         app()->setLocale('bg');
         $this->assertSame('Витрина', StorefrontSettings::getNavigationLabel());

@@ -13,10 +13,10 @@ use App\Settings\AppearanceSettings;
  * Structure (depth <= 3, the type allowed at each place):
  *   top level           link | category | page | product    (submenu none | dropdown | mega: top level only)
  *   under a dropdown    link | category | page | product     (and these may hold one more level of the same four)
- *   under a mega        heading | link | category | page | product   (each is a COLUMN: its text is the column heading, a link when it has a target; at most 6)
+ *   under a mega        column x EXACTLY `mega_columns` (1-4)   (a column has an optional heading as its label, no target, no link, no badge; MENU-3)
  *   under a column      link | category | page | product     (the links of the column; at most 15)
- *   `heading` is allowed ONLY at the first level under a mega item (anywhere else it would be a dead text).
- *   Limits: 12 top-level items, 6 columns per mega item, 15 links per column, 300 items per menu, 12 distinct custom badge colours per menu.
+ *   `column` is allowed ONLY directly under a mega item, and a mega item holds nothing else.
+ *   Limits: 12 top-level items, 4 columns per mega item, 15 links per column, 300 items per menu, 12 distinct custom badge colours per menu.
  *
  * Paths look like `items.2.children.0.url`; the admin page maps them back onto its form fields.
  */
@@ -24,7 +24,9 @@ final class MenuValidator
 {
     public const MAX_TOP = 12;
 
-    public const MAX_COLUMNS = 6;
+    public const MAX_COLUMNS = 4;
+
+    public const MAX_HEADING = 60;
 
     public const MAX_COLUMN = 15;
 
@@ -32,7 +34,7 @@ final class MenuValidator
 
     public const MAX_CUSTOM_COLORS = 12;
 
-    public const FIELDS = ['type', 'label', 'url', 'target_id', 'submenu', 'html_block_id', 'badge_text', 'badge_color', 'new_tab', 'visible'];
+    public const FIELDS = ['type', 'label', 'url', 'target_id', 'submenu', 'html_block_id', 'mega_columns', 'badge_text', 'badge_color', 'new_tab', 'visible'];
 
     public const SUBMENUS = ['none', 'dropdown', 'mega'];
 
@@ -44,7 +46,7 @@ final class MenuValidator
         'root' => ['link', 'category', 'page', 'product'],
         'dropdown' => ['link', 'category', 'page', 'product'],
         'nested' => ['link', 'category', 'page', 'product'],
-        'mega' => ['heading', 'link', 'category', 'page', 'product'],
+        'mega' => ['column'],
         'column' => ['link', 'category', 'page', 'product'],
     ];
 
@@ -131,7 +133,7 @@ final class MenuValidator
         $type = is_string($raw['type'] ?? null) ? $raw['type'] : '';
 
         if (! in_array($type, self::ALLOWED[$kind], true)) {
-            $this->fail("{$path}.type", $type === 'heading' ? 'heading_here' : 'type_here');
+            $this->fail("{$path}.type", $type === 'column' ? 'column_here' : 'type_here');
 
             return null;
         }
@@ -139,11 +141,12 @@ final class MenuValidator
         $submenu = $this->submenu($raw['submenu'] ?? 'none', $kind, $path);
         $item = [
             'type' => $type,
-            'label' => $this->label($raw['label'] ?? null, in_array($type, ['link', 'heading'], true), $path),
+            'label' => $this->label($raw['label'] ?? null, $type === 'link', $path, $type === 'column' ? self::MAX_HEADING : 120),
             'url' => $this->url($raw['url'] ?? null, $type === 'link', $type === 'link', $path),
             'target_id' => $this->target($raw['target_id'] ?? null, $type, $path),
             'submenu' => $submenu,
             'html_block_id' => $this->block($raw['html_block_id'] ?? null, $kind, $submenu, $path),
+            'mega_columns' => $this->megaColumns($raw['mega_columns'] ?? null, $kind, $submenu, $path),
             'badge_text' => $this->plain($raw['badge_text'] ?? null, 16, "{$path}.badge_text", 'badge_long'),
             'badge_color' => $this->color($raw['badge_color'] ?? null, $path),
             'new_tab' => $this->bool($raw['new_tab'] ?? false, "{$path}.new_tab"),
@@ -154,12 +157,27 @@ final class MenuValidator
             $item['badge_color'] = null; // a colour with no text is nothing
         }
 
-        if ($type === 'heading') {
+        if ($type === 'column') {
+            if ($item['badge_text'] !== null) {
+                $this->fail("{$path}.badge_text", 'badge_here');
+            }
+
             $item['badge_text'] = null;
             $item['badge_color'] = null;
         }
 
         $item['children'] = $this->children($raw['children'] ?? [], $item, $path, $kind);
+
+        // A mega item holds EXACTLY as many columns as it says (an empty column is a column): the editor and the storefront both rely on it.
+        if ($kind === 'root' && $submenu === 'mega' && $item['mega_columns'] !== null) {
+            $found = count($item['children']);
+
+            if ($found > self::MAX_COLUMNS) {
+                $this->fail("{$path}.children", 'columns_max', ['max' => self::MAX_COLUMNS]);
+            } elseif ($found !== $item['mega_columns']) {
+                $this->fail("{$path}.children", 'columns_count', ['count' => $item['mega_columns']]);
+            }
+        }
 
         return $item;
     }
@@ -190,10 +208,6 @@ final class MenuValidator
 
         $clean = $this->level($children, "{$path}.children", $childKind);
 
-        if ($childKind === 'mega' && count($clean) > self::MAX_COLUMNS) {
-            $this->fail("{$path}.children", 'columns_max', ['max' => self::MAX_COLUMNS]);
-        }
-
         if ($childKind === 'column' && count($clean) > self::MAX_COLUMN) {
             $this->fail("{$path}.children", 'column_max', ['max' => self::MAX_COLUMN]);
         }
@@ -209,9 +223,9 @@ final class MenuValidator
         return $clean;
     }
 
-    private function label(mixed $value, bool $required, string $path): ?string
+    private function label(mixed $value, bool $required, string $path, int $max = 120): ?string
     {
-        $text = $this->plain($value, 120, "{$path}.label", 'label_long');
+        $text = $this->plain($value, $max, "{$path}.label", 'label_long');
 
         if ($required && $text === null) {
             $this->fail("{$path}.label", 'label_required');
@@ -344,6 +358,34 @@ final class MenuValidator
 
         if (! is_numeric($value) || (int) $value < 1) {
             $this->fail("{$path}.html_block_id", 'block_value');
+
+            return null;
+        }
+
+        return (int) $value;
+    }
+
+    /** The number of columns of a mega item: 1-4, on a top-level item whose submenu is `mega` and nowhere else. */
+    private function megaColumns(mixed $value, string $kind, string $submenu, string $path): ?int
+    {
+        $isMega = $kind === 'root' && $submenu === 'mega';
+
+        if ($value === null || $value === '') {
+            if ($isMega) {
+                $this->fail("{$path}.mega_columns", 'mega_columns_required');
+            }
+
+            return null;
+        }
+
+        if (! $isMega) {
+            $this->fail("{$path}.mega_columns", 'mega_columns_here');
+
+            return null;
+        }
+
+        if (! is_numeric($value) || (int) $value < 1 || (int) $value > self::MAX_COLUMNS) {
+            $this->fail("{$path}.mega_columns", 'mega_columns_range', ['max' => self::MAX_COLUMNS]);
 
             return null;
         }
