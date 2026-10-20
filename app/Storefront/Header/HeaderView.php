@@ -59,8 +59,16 @@ final class HeaderView
             }
         }
 
-        $layout['mobile']['drawer'] = array_values(array_filter(array_map(fn (array $element): ?array => $keep($element, true), $layout['mobile']['drawer'])));
-        $layout['needs_drawer'] = $toggle && $layout['mobile']['drawer'] !== [];
+        // MENU-4, a fixed order whatever the builder's list says: search (top bar), the menu, the account rows (their routes decide), then text / button / social in the builder's order.
+        // An `account` element of an old layout is accepted but prints in the rows, never twice.
+        $drawerElements = array_values(array_filter(array_map(fn (array $element): ?array => $element['type'] === 'account' ? null : $keep($element, true), $layout['mobile']['drawer'])));
+        $layout['mobile']['drawer'] = [
+            ...array_values(array_filter($drawerElements, static fn (array $element): bool => $element['type'] === 'menu')),
+            ...array_values(array_filter($drawerElements, static fn (array $element): bool => $element['type'] !== 'menu')),
+        ];
+        $layout['mobile']['drawer_search'] = Route::has('storefront.search');
+        $layout['mobile']['drawer_rows'] = array_values(array_filter(['wishlist', 'account'], static fn (string $type): bool => Route::has(HeaderCatalog::FEATURE_ROUTES[$type])));
+        $layout['needs_drawer'] = $toggle && ($layout['mobile']['drawer'] !== [] || $layout['mobile']['drawer_rows'] !== []);
         $layout['needs_search_row'] = $searchRow;
 
         return $layout;

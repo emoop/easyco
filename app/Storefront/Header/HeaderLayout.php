@@ -6,7 +6,7 @@ namespace App\Storefront\Header;
  * The shape, the limits and the SEEDED DEFAULT of the header layout (storefront-customization-design.md 4.1, 4.5; D2 adds the row heights).
  *
  *   layout = { desktop: { sticky, rows: { top, main, bottom } },
- *              mobile:  { sticky, rows: { top, main }, drawer: [Element], drawer_side: left|right } }
+ *              mobile:  { sticky, rows: { top, main }, drawer: [Element], drawer_side: left|right, drawer_upper: bool } }
  *   Row    = { enabled, height, left: [Element], center: [Element], right: [Element] }
  *   Element = { type, settings }
  *
@@ -65,6 +65,7 @@ final class HeaderLayout
                 ],
                 'drawer' => [$el('menu', ['style' => 'links']), $el('account')],
                 'drawer_side' => 'left',
+                'drawer_upper' => true,
             ],
         ];
     }

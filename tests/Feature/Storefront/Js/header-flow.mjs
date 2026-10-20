@@ -415,6 +415,26 @@ const scenarios = {
         assert.equal(panel.classList.contains('sf-acc-open'), false);
     },
 
+    // MENU-4: the drawer row is a link plus a SEPARATE chevron; the chevron toggles only its own list, the link is left alone (the browser follows it).
+    async the_drawer_chevron_toggles_only_its_own_list_and_the_link_is_not_intercepted() {
+        const buttons = [...dom.querySelectorAll('[data-sf-acc-toggle]')];
+        assert.ok(buttons.length >= 2, 'the fixture has two parents in the drawer');
+        const panels = buttons.map((b) => q(`#${b.getAttribute('aria-controls')}`));
+
+        click(buttons[1]);
+        assert.deepEqual(buttons.map((b) => b.getAttribute('aria-expanded')), ['false', 'true']);
+        assert.deepEqual(panels.map((p) => p.classList.contains('sf-acc-open')), [false, true], 'only the second list opened');
+
+        click(buttons[0]);
+        assert.deepEqual(buttons.map((b) => b.getAttribute('aria-expanded')), ['true', 'true'], 'several may be open at once');
+
+        const link = buttons[0].parentNode.children.find((c) => c.tag === 'a');
+        assert.ok(link && link.getAttribute('href'), 'the name is a real link');
+        const event = click(link);
+        assert.equal(event.defaultPrevented, false, 'tapping the name is not intercepted');
+        assert.equal(buttons[0].getAttribute('aria-expanded'), 'true', 'and does not toggle the list');
+    },
+
     // The search row (appears because the page was rendered with a search route): opens under the header, focus goes to its field, Esc closes it and returns focus.
     async the_search_row_opens_focuses_its_field_and_escape_returns_focus() {
         const icon = q('[data-sf-search-toggle]');

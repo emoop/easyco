@@ -19,6 +19,7 @@ return [
         'sticky' => 'The header stays on top when scrolling',
         'drawer' => 'Phone menu (drawer)',
         'drawer_side' => 'Which side it opens from',
+        'drawer_upper' => 'Main items in capitals',
     ],
 
     'actions' => [

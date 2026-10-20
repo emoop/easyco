@@ -47,6 +47,9 @@ return [
     'home_categories' => 'Пазарувайте по категория',
     'home_category_count' => ':count продукт|:count продукта',
     // Stage D2: the header (drawer, search row, account and wishlist links).
+    'drawer_search_placeholder' => 'Търси продукт…',
+    'drawer_profile' => 'Моят профил',
+    'drawer_signin' => 'Вход',
     'drawer_close' => 'Затвори менюто',
     'search' => 'Търсене',
     'search_placeholder' => 'Какво търсите?',

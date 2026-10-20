@@ -64,7 +64,7 @@ final class HeaderValidator
     /** @param  array<string, mixed>  $m */
     private function mobile(array $m): array
     {
-        $this->unknownKeys($m, ['sticky', 'rows', 'drawer', 'drawer_side'], 'mobile');
+        $this->unknownKeys($m, ['sticky', 'rows', 'drawer', 'drawer_side', 'drawer_upper'], 'mobile');
         $rows = $this->rows($m['rows'] ?? [], 'mobile');
         $side = $m['drawer_side'] ?? 'left';
 
@@ -97,7 +97,7 @@ final class HeaderValidator
 
         $this->limitOnce(['rows' => $rows], 'mobile', ['logo', 'menu_toggle']);
 
-        return ['sticky' => $this->bool($m['sticky'] ?? true, 'mobile.sticky'), 'rows' => $rows, 'drawer' => $drawer, 'drawer_side' => $side];
+        return ['sticky' => $this->bool($m['sticky'] ?? true, 'mobile.sticky'), 'rows' => $rows, 'drawer' => $drawer, 'drawer_side' => $side, 'drawer_upper' => $this->bool($m['drawer_upper'] ?? true, 'mobile.drawer_upper')];
     }
 
     /**

@@ -36,7 +36,8 @@ function openDrawer(from) {
     document.documentElement.classList.add('sf-locked');
     setExpanded('[data-sf-menu-toggle]', true);
     var panel = drawer.querySelector('.sf-drawer-panel');
-    var first = panel ? panel.querySelector(FOCUSABLE) : null;
+    // the close button takes the focus, not the search field above it: a field in focus would raise the phone's keyboard over the menu
+    var first = panel ? (panel.querySelector('.sf-drawer-close') || panel.querySelector(FOCUSABLE)) : null;
     (first || panel).focus();
 }
 

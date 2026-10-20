@@ -47,7 +47,7 @@ class StorefrontHeaderFlowTest extends TestCase
     {
         $names = [
             'the_drawer_starts_closed', 'opening_moves_focus_in_locks_scroll_and_sets_aria', 'the_focus_is_trapped_while_open', 'escape_closes_and_returns_focus_to_the_toggle',
-            'the_overlay_the_close_button_and_the_toggle_close_it', 'the_category_accordion_expands_and_collapses', 'the_search_row_opens_focuses_its_field_and_escape_returns_focus',
+            'the_overlay_the_close_button_and_the_toggle_close_it', 'the_category_accordion_expands_and_collapses', 'the_drawer_chevron_toggles_only_its_own_list_and_the_link_is_not_intercepted', 'the_search_row_opens_focuses_its_field_and_escape_returns_focus',
             'escape_with_nothing_open_is_harmless', 'the_chevron_toggles_one_panel_at_a_time', 'escape_closes_the_panel_and_returns_focus_to_the_chevron',
             'hover_opens_after_150ms_and_closes_300ms_after_leaving', 'the_picture_of_a_mega_panel_is_a_native_lazy_image', 'items_that_do_not_fit_move_into_more_and_come_back',
         ];
