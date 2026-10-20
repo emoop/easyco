@@ -28,6 +28,11 @@ trait AssertsSafeHtml
                 continue;
             }
 
+            // FT-1: the footer's payment marks (`sf-pay-icon`) are drawn with plain shapes and a word, so they may also hold rect / circle / text; the same attribute rules apply.
+            if ($name === 'svg' && $this->isAPaymentMark($element)) {
+                continue;
+            }
+
             if (in_array($name, ['script', 'iframe', 'frame', 'object', 'embed', 'svg', 'math', 'form', 'style', 'base', 'applet'], true)) {
                 $problems[] = "<{$name}> element";
             }
@@ -51,6 +56,39 @@ trait AssertsSafeHtml
         }
 
         $this->assertSame([], $problems, "active content in the page {$context}");
+    }
+
+    /** A payment mark of the footer: class `sf-pay-icon`, aria-hidden, only shape / text children with presentation attributes (no style, href, event handler). */
+    private function isAPaymentMark(DOMElement $svg): bool
+    {
+        if (trim($svg->getAttribute('class')) !== 'sf-pay-icon' || $svg->getAttribute('aria-hidden') !== 'true') {
+            return false;
+        }
+
+        foreach ($svg->attributes as $attribute) {
+            if (! in_array(strtolower($attribute->nodeName), ['class', 'xmlns', 'viewbox', 'width', 'height', 'aria-hidden', 'focusable'], true)) {
+                return false;
+            }
+        }
+
+        $shapes = ['rect' => ['x', 'y', 'width', 'height', 'rx', 'fill', 'stroke'], 'circle' => ['cx', 'cy', 'r', 'fill', 'fill-opacity'], 'path' => ['d', 'fill'],
+            'text' => ['x', 'y', 'text-anchor', 'font-size', 'font-weight', 'font-style', 'fill']];
+
+        foreach ($svg->getElementsByTagName('*') as $child) {
+            $allowed = $shapes[strtolower($child->nodeName)] ?? null;
+
+            if ($allowed === null) {
+                return false;
+            }
+
+            foreach ($child->attributes as $attribute) {
+                if (! in_array(strtolower($attribute->nodeName), $allowed, true)) {
+                    return false;
+                }
+            }
+        }
+
+        return true;
     }
 
     private function isAKnownIcon(DOMElement $svg): bool

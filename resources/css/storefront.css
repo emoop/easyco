@@ -3112,3 +3112,219 @@ html:not(.js) .sf-bar-item:focus-within > .sf-sub {
 .sf-acc-sub .sf-menu .sf-menu {
     margin-left: 0.75rem;
 }
+
+/* ===== FT-1: the footer builder (storefront-customization-design.md 18) =============================================================================== */
+/* A published footer has two levels: the upper one (rows of equal columns of blocks) and the lower one (one line). Colours, the border and the padding are variables and classes:
+   the footer colours of Appearance are the fallbacks, the footer's own colours (--sf-ftu-*, --sf-ftl-*) come from the token stylesheet. Nothing here is ever an inline style. */
+.sf-footer.sf-ft {
+    margin-top: 3rem;
+    border-top-width: 0;
+    background-color: transparent;
+}
+
+.sf-ft a {
+    color: inherit;
+}
+
+.sf-ft a:hover {
+    color: inherit;
+    text-decoration: underline;
+}
+
+.sf-ft-upper {
+    border-top: var(--sf-ftu-bw, 1px) solid var(--sf-ftu-bc, var(--sf-border, #e5e5e5));
+    background-color: var(--sf-ftu-bg, var(--sf-footer-bg, #fff));
+    color: var(--sf-ftu-text, var(--sf-footer-text, #737373));
+}
+
+.sf-ft-lower {
+    background-color: var(--sf-ftl-bg, var(--sf-footer-bg, #fff));
+    color: var(--sf-ftl-text, var(--sf-footer-text, #737373));
+}
+
+.sf-ft-pad-compact {
+    padding-block: 0.75rem;
+}
+
+.sf-ft-pad-normal {
+    padding-block: 1.5rem;
+}
+
+.sf-ft-pad-spacious {
+    padding-block: 3rem;
+}
+
+.sf-ft-inner {
+    width: 100%;
+    max-width: 72rem;
+    margin-inline: auto;
+    padding-inline: 1rem;
+    font-size: 0.875rem;
+    overflow-wrap: anywhere;
+}
+
+.sf-ft-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1.5rem 2rem;
+}
+
+.sf-ft-row + .sf-ft-row {
+    margin-top: 1.5rem;
+}
+
+.sf-ft-col {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    min-width: 0;
+}
+
+/* The lower line: one line of text, aligned as chosen; it keeps the width of the page. */
+.sf-ft-line {
+    max-width: 72rem;
+    margin: 0 auto;
+    padding-inline: 1rem;
+    font-size: 0.875rem;
+    overflow-wrap: anywhere;
+}
+
+.sf-ft-line.sf-ft-align-start {
+    text-align: start;
+}
+
+.sf-ft-line.sf-ft-align-center {
+    text-align: center;
+}
+
+.sf-ft-line.sf-ft-align-end {
+    text-align: end;
+}
+
+.sf-ft-heading {
+    margin: 0 0 0.5rem;
+    color: inherit;
+    font-weight: 600;
+}
+
+.sf-ft-list,
+.sf-ft-pay {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.sf-ft-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+}
+
+.sf-ft-pay {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.sf-ft-body,
+.sf-ft-line-item,
+.sf-ft-consent {
+    margin: 0;
+}
+
+.sf-ft-line-item + .sf-ft-line-item {
+    margin-top: 0.375rem;
+}
+
+.sf-ft-consent {
+    margin-top: 0.5rem;
+    font-size: 0.75rem;
+}
+
+.sf-ft-social {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.sf-ft-html img {
+    max-width: 100%;
+    height: auto;
+}
+
+.sf-ft-form {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.sf-ft-input {
+    flex: 1;
+    min-width: 0;
+    height: 2.5rem;
+    padding: 0 0.75rem;
+    border: 1px solid var(--sf-border, #d4d4d4);
+    border-radius: var(--radius-lg);
+    background: #fff;
+    color: #171717;
+    font-size: 1rem;
+}
+
+.sf-ft-button {
+    flex: none;
+    min-height: 2.5rem;
+    padding: 0 1rem;
+    border-radius: var(--sf-r-btn, var(--radius-lg));
+    background: var(--sf-btn-bg, var(--sf-primary, #171717));
+    color: var(--sf-btn-text, var(--sf-on-primary, #fff));
+    font-weight: 600;
+}
+
+.sf-ft-space-s {
+    height: 0.5rem;
+}
+
+.sf-ft-space-m {
+    height: 1rem;
+}
+
+.sf-ft-space-l {
+    height: 2rem;
+}
+
+.sf-pay-icon {
+    display: block;
+    width: 3rem;
+    height: auto;
+}
+
+/* From 768px a row is a grid of as many equal shares as its columns count (a wide column counts two); a phone stacks the columns in order, full width. */
+@media (min-width: 48rem) {
+    .sf-ft-units-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .sf-ft-units-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .sf-ft-units-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .sf-ft-units-5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+    .sf-ft-units-6 { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+    .sf-ft-units-7 { grid-template-columns: repeat(7, minmax(0, 1fr)); }
+    .sf-ft-units-8 { grid-template-columns: repeat(8, minmax(0, 1fr)); }
+    .sf-ft-units-9 { grid-template-columns: repeat(9, minmax(0, 1fr)); }
+    .sf-ft-units-10 { grid-template-columns: repeat(10, minmax(0, 1fr)); }
+
+    .sf-ft-span-2 {
+        grid-column: span 2;
+    }
+
+    .sf-ft-col.sf-ft-align-start {
+        align-items: flex-start;
+        text-align: start;
+    }
+
+    .sf-ft-col.sf-ft-align-center {
+        align-items: center;
+        text-align: center;
+    }
+
+    .sf-ft-col.sf-ft-align-end {
+        align-items: flex-end;
+        text-align: end;
+    }
+}

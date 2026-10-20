@@ -9,6 +9,7 @@ use App\Content\Models\PageModel;
 use App\Settings\AppearanceSettings;
 use App\Settings\Contracts\SiteSettingsRepository;
 use App\Storefront\Appearance\StorefrontAppearance;
+use App\Storefront\Footer\FooterCompiler;
 use App\Storefront\Header\AppearanceRecompiler;
 use App\Storefront\Pages\PageReader;
 use App\Storefront\Reader\CategoryIndex;
@@ -112,6 +113,9 @@ class MenuCompiler
         $empty = array_filter($menus, fn (array $items): bool => $items !== []) === [] && array_filter($locations) === [];
 
         if ($current === $json || ($current === null && $empty)) {
+            // The menus are as they were, but the footer may show something that changed (an HTML block): it follows the same rebuild.
+            app(FooterCompiler::class)->refresh($menus, $locations);
+
             return false;
         }
 
@@ -123,6 +127,7 @@ class MenuCompiler
         }
 
         app(StorefrontAppearance::class)->refresh();
+        app(FooterCompiler::class)->refresh($menus, $locations);
 
         return true;
     }

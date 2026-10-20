@@ -6,6 +6,8 @@ use App\Rules\PlainText;
 use App\Settings\AppearanceSettings;
 use App\Settings\Contracts\SiteSettingsRepository;
 use App\Settings\StoreTimezone;
+use App\Storefront\Footer\FooterValidator;
+use App\Storefront\Footer\FooterView;
 use App\Storefront\Header\HeaderLayout;
 use App\Storefront\Header\HeaderValidator;
 use App\Storefront\Header\HeaderView;
@@ -38,6 +40,12 @@ final class StorefrontAppearance
     private ?array $headerOverride = null;
 
     private ?string $previewCss = null;
+
+    /** The compiled footer the footer preview shows (the admin's DRAFT: {layout, menus, blocks}), set for ONE request by the preview controller; null on every public request. */
+    private ?array $footerOverride = null;
+
+    /** The prepared footer (what the views print) for this request; false = not computed yet. */
+    private array|false|null $footerPrepared = false;
 
     /** The validated published layout (or the seeded default), memoised for the request. */
     private ?array $headerLayout = null;
@@ -73,7 +81,7 @@ final class StorefrontAppearance
 
         $cached = Cache::get(self::CACHE_KEY);
 
-        if (is_array($cached) && array_key_exists('theme', $cached) && array_key_exists('compiled', $cached) && array_key_exists('header', $cached) && array_key_exists('menus', $cached) && array_key_exists('locations', $cached) && is_array($cached['banner'] ?? null)) {
+        if (is_array($cached) && array_key_exists('theme', $cached) && array_key_exists('compiled', $cached) && array_key_exists('header', $cached) && array_key_exists('menus', $cached) && array_key_exists('locations', $cached) && array_key_exists('footer', $cached) && is_array($cached['banner'] ?? null)) {
             return $this->data = $cached;
         }
 
@@ -85,6 +93,7 @@ final class StorefrontAppearance
     {
         $this->headerLayout = null;
         $this->menus = null;
+        $this->footerPrepared = false;
         $this->data = $this->rebuild();
     }
 
@@ -114,6 +123,7 @@ final class StorefrontAppearance
             'header' => self::parseHeader($raw[AppearanceSettings::HEADER_COMPILED_KEY] ?? null),
             'menus' => self::parseMenus($raw[AppearanceSettings::MENUS_COMPILED_KEY] ?? null),
             'locations' => self::parseLocations($raw[AppearanceSettings::MENUS_COMPILED_KEY] ?? null),
+            'footer' => self::parseFooter($raw[AppearanceSettings::FOOTER_COMPILED_KEY] ?? null),
         ];
     }
 
@@ -127,6 +137,18 @@ final class StorefrontAppearance
         $data = json_decode($json, true);
 
         return is_array($data) && is_array($data['menus'] ?? null) ? $data['menus'] : null;
+    }
+
+    /** The stored compiled footer ({layout, menus, blocks}; NOT yet trusted: footer() validates it on every read), or null. */
+    private static function parseFooter(?string $json): ?array
+    {
+        if ($json === null || $json === '') {
+            return null;
+        }
+
+        $data = json_decode($json, true);
+
+        return is_array($data) && is_array($data['layout'] ?? null) ? ['layout' => $data['layout'], 'menus' => is_array($data['menus'] ?? null) ? $data['menus'] : [], 'blocks' => is_array($data['blocks'] ?? null) ? $data['blocks'] : []] : null;
     }
 
     /** The stored `locations` object of the compiled menus (NOT yet trusted: locations() validates it), or null. */
@@ -283,6 +305,49 @@ final class StorefrontAppearance
         return $key === null ? [] : $this->menu($key);
     }
 
+    /**
+     * The footer to print: the PUBLISHED layout with its menus and HTML blocks, validated again on every read (a layout that does not validate = null), prepared for the views
+     * (FooterView; the year is put in later, by the view, at render time), or null when nothing is published: the shop then prints its OLD footer. During a footer preview, the draft.
+     *
+     * @return array{upper: ?array<string, mixed>, lower: ?array<string, mixed>}|null
+     */
+    public function footer(): ?array
+    {
+        if ($this->footerPrepared !== false) {
+            return $this->footerPrepared;
+        }
+
+        $stored = $this->footerOverride ?? $this->data()['footer'];
+
+        if ($stored === null) {
+            return $this->footerPrepared = null;
+        }
+
+        $validation = FooterValidator::validate($stored['layout']);
+
+        if (! $validation->passes()) {
+            return $this->footerPrepared = null;
+        }
+
+        $blocks = [];
+
+        foreach ($stored['blocks'] as $id => $html) {
+            if (is_string($html) && strlen($html) <= 65_536) {
+                $blocks[(string) $id] = $html;
+            }
+        }
+
+        return $this->footerPrepared = FooterView::prepare($validation->layout, CompiledMenus::read($stored['menus']), $blocks);
+    }
+
+    /** For ONE request: show this compiled footer ({layout, menus, blocks}) instead of the published one, and link the stylesheet with its colours. Never called on a public request. */
+    public function previewFooter(array $compiled, ?string $cssUrl): void
+    {
+        $this->footerOverride = $compiled;
+        $this->footerPrepared = false;
+        $this->previewCss = $cssUrl;
+    }
+
     /** For ONE request: show this (already validated) layout instead of the published one, and link the stylesheet with its sizes. Never called on a public request. */
     public function previewHeader(array $layout, ?string $cssUrl): void
     {
@@ -339,7 +404,7 @@ final class StorefrontAppearance
     /**
      * What the layout needs: the token stylesheet's URL, the font to preload (the body font's latin file only) and the banner.
      *
-     * @return array{tokensUrl: ?string, preloadFont: ?string, banner: array{text: string, url: ?string, label: ?string}|null, header: array<string, mixed>, footerMenu: list<array<string, mixed>>, previewCss: ?string}
+     * @return array{tokensUrl: ?string, preloadFont: ?string, banner: array{text: string, url: ?string, label: ?string}|null, header: array<string, mixed>, footerMenu: list<array<string, mixed>>, footer: ?array<string, mixed>, previewCss: ?string}
      */
     public function forLayout(): array
     {
@@ -351,6 +416,7 @@ final class StorefrontAppearance
             'banner' => $this->banner(),
             'header' => HeaderView::prepare($this->header(), $this->menuAt('header'), $this->menuAt('drawer') ?: $this->menuAt('header')),
             'footerMenu' => $this->menuAt('footer'),
+            'footer' => $this->footer(),
             'previewCss' => $this->previewCss,
         ];
     }

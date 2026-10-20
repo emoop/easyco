@@ -34,6 +34,18 @@ The "Header" page (the "Admin" menu) arranges the top of the shop. There are two
 
 **Elements that appear later.** Search, account and wishlist are kept in the arrangement but are not shown until that feature is released in the shop. So you can arrange the final header now. Nothing is shown empty.
 
+## Footer {#action-appearance-footer}
+
+The "Footer" page (menu "Design", after "Header") arranges the bottom of the shop in **two levels**. The buttons at the top are as on "Header": **Save draft**, **Preview** (a temporary 30-minute link, only for you), **Publish**, **Restore the published one** and **Reset to default**. Until you publish a footer the shop shows its old footer (the shop name and the menu of the "Footer" place).
+
+**Upper level.** Switched on with "Enabled". It has padding, a background colour, a text colour, and a colour and thickness (0 to 4 px) of the border on top. An empty colour = the colour from "Appearance". The level has 1 or 2 **rows**, each row has 1 to 5 **columns**. Every column has a width (1 or 2 shares), an alignment (start, centre, end) and an ordered list of **blocks** (up to 6 per column, 40 in all): menu (the links of its first level, with an optional heading; with no menu chosen it shows the menu of the "Footer" place), HTML block (for example a banner with a picture), text, newsletter, social networks, payment methods, contacts (phone, email, address, opening hours) and space. A column in which nothing is shown, and an empty row, are not printed. On a phone the columns stack one under another.
+
+**Newsletter.** The "Newsletter" block is saved, but it is shown on the site only once newsletter subscription exists (a note under the block says so).
+
+**Lower level.** One line of text, aligned as you choose, with its own colours. In the text **[year]** is replaced by the current year every time the page is shown (so on 1 January you do nothing). Anything else in square brackets stays as written.
+
+**Example.** Upper level, row 1: 4 columns with one menu each (each with a heading) and a "Newsletter" column; row 2: a column with "Social networks" at the start and a column (2 shares) with "Payment methods" at the end. Lower level: "Fetish Harmanli © [year] – run by Mari Ned Ltd".
+
 ## Menus {#action-appearance-menus}
 
 "Menus" (the "Design" group) is one screen laid out like the WordPress menu screen. At the top you choose a menu or create a new one. On the left you add items, on the right you see the structure and arrange it. "Save menu" is one button for everything: the order, the names, the labels and the locations. If something is wrong nothing is saved, and the first faulty item opens with an explanation.

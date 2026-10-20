@@ -27,6 +27,13 @@ final class AppearanceSettings
     /** MENU-2: which menu sits in which place of the shop: {"header": id|null, "drawer": id|null, "footer": id|null}. The storefront reads the compiled copy inside `menus.compiled`. */
     public const MENUS_LOCATIONS_KEY = 'menus.locations';
 
+    /** FT-1: the PUBLISHED footer layout with the menus and HTML blocks it shows, validated and compiled (JSON {hash, layout, menus, blocks}, at most 256 KB); read with the rest of the appearance. */
+    public const FOOTER_COMPILED_KEY = 'footer.compiled';
+
+    public const FOOTER_DRAFT_KEY = 'footer.layout.draft';
+
+    public const FOOTER_PUBLISHED_KEY = 'footer.layout.published';
+
     public const HEADER_DRAFT_KEY = 'header.layout.draft';
 
     public const HEADER_PUBLISHED_KEY = 'header.layout.published';
@@ -105,6 +112,7 @@ final class AppearanceSettings
         self::THEME_KEY,
         self::HEADER_COMPILED_KEY,
         self::MENUS_COMPILED_KEY,
+        self::FOOTER_COMPILED_KEY,
         self::BANNER_ENABLED,
         self::BANNER_TEXT,
         self::BANNER_URL,

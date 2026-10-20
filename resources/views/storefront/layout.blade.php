@@ -37,25 +37,7 @@
     <main class="sf-main">
         @yield('content')
     </main>
-    <footer class="sf-footer">
-        <div class="sf-footer-inner">
-            <div class="sf-footer-brand">
-                <span class="sf-footer-name">{{ config('app.name') }}</span>
-                <a class="sf-footer-home" href="{{ route('storefront.home', [], false) }}">{{ __('storefront.home') }}</a>
-            </div>
-            {{-- The `footer` menu (D3): flat links, compiled (published pages and shown categories only), labels escaped. --}}
-            @if (! empty($appearance['footerMenu']))
-                <nav class="sf-footer-pages" aria-label="{{ __('storefront.footer_pages') }}">
-                    <ul class="sf-footer-list">
-                        @foreach ($appearance['footerMenu'] as $footerLink)
-                            @if ($footerLink['type'] === 'link')
-                                <li><a href="{{ $footerLink['url'] }}"@if ($footerLink['new_tab']) target="_blank" rel="noopener"@endif>{{ $footerLink['label'] }}</a></li>
-                            @endif
-                        @endforeach
-                    </ul>
-                </nav>
-            @endif
-        </div>
-    </footer>
+    {{-- The footer (FT-1): the published footer layout, or the old footer while none is published. --}}
+    @include('storefront.layout.footer')
 </body>
 </html>

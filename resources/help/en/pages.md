@@ -45,13 +45,11 @@ Every change to the **title or text** is stored as a **revision** (1, 2, 3 …).
 
 ## Footer {#action-pages-footer}
 
-If you tick **"Show in the footer"**, the published page appears as a link at the bottom of every shop page. The "Footer order" number sets the sequence (lower first; ties by title). A draft is not shown in the footer even if ticked.
-
-A freer menu (main menu, several footer menus) is planned.
+A page is no longer "ticked" for the footer. The links in the footer come from **"Menus"**: add the published page as an item of a menu (for example "Help"), then in **"Design" → "Footer"** put that menu as a block in a column of the upper level (or give it the "Footer" place in "Menus": it is shown in the footer until you publish a footer of your own). A draft or archived page is not shown in the footer even if it is in the menu.
 
 ## Archive instead of delete {#action-pages-archive}
 
-A page is **not deleted**: its revisions are evidence. You **archive** it instead ("Archive"): it goes back to draft and leaves the footer.
+A page is **not deleted**: its revisions are evidence. You **archive** it instead ("Archive"): it goes back to draft and leaves the menus and the footer.
 
 A page selected as the **terms** or **privacy policy** in the checkout settings, or one that already-placed orders point to, cannot be removed: first pick another page or address in the settings.
 

@@ -4,6 +4,8 @@ namespace App\Storefront\Appearance;
 
 use App\Settings\AppearanceSettings;
 use App\Settings\Contracts\SiteSettingsRepository;
+use App\Storefront\Footer\FooterLayout;
+use App\Storefront\Footer\FooterValidator;
 use App\Storefront\Header\HeaderLayout;
 use App\Storefront\Header\HeaderValidator;
 use Illuminate\Support\Facades\Storage;
@@ -40,7 +42,7 @@ final class AppearanceCompiler
      * @param  array<string, string>  $overrides
      * @throws InvalidArgumentException a value that is not valid for its key
      */
-    public function css(array $overrides, array $metrics = [], array $badgeColors = []): ?string
+    public function css(array $overrides, array $metrics = [], array $badgeColors = [], array $footerVars = []): ?string
     {
         $effective = $this->effective($overrides);
         $defaults = AppearanceSettings::defaults();
@@ -98,6 +100,18 @@ final class AppearanceCompiler
             }
         }
 
+        // FT-1: the footer's colours and border (the published footer's variables): a colour `#rrggbb` or a width `Npx`, checked again here.
+        foreach ($footerVars as $variable => $value) {
+            $isColor = in_array($variable, ['--sf-ftu-bg', '--sf-ftu-text', '--sf-ftu-bc', '--sf-ftl-bg', '--sf-ftl-text'], true) && AppearanceSettings::isHex($value);
+            $isWidth = $variable === '--sf-ftu-bw' && is_string($value) && preg_match('/^[0-4]px$/', $value) === 1;
+
+            if (! $isColor && ! $isWidth) {
+                throw new InvalidArgumentException('A footer variable is not valid.');
+            }
+
+            $vars[] = "{$variable}: ".strtolower($value).';';
+        }
+
         $faces = $this->fontFaces($this->fontKeys($effective));
         $badges = $this->badgeClasses($badgeColors);
 
@@ -138,7 +152,7 @@ final class AppearanceCompiler
      */
     public function compile(array $overrides, ?string $previousHash = null, ?array $metrics = null): ?array
     {
-        $css = $this->css($overrides, $metrics ?? $this->publishedMetrics(), $this->storedBadgeColors());
+        $css = $this->css($overrides, $metrics ?? $this->publishedMetrics(), $this->storedBadgeColors(), $this->publishedFooterVars());
 
         if ($css === null) {
             $this->prune(null, $previousHash);
@@ -223,6 +237,25 @@ final class AppearanceCompiler
         $validation = HeaderValidator::validate($data['layout']);
 
         return $validation->passes() ? HeaderLayout::metrics($validation->layout) : [];
+    }
+
+    /**
+     * The colours and border of the PUBLISHED footer (footer.compiled), so that an appearance or header save never drops them from the stylesheet. Re-validated.
+     *
+     * @return array<string, string>
+     */
+    private function publishedFooterVars(): array
+    {
+        $json = app(SiteSettingsRepository::class)->get(AppearanceSettings::FOOTER_COMPILED_KEY);
+        $data = is_string($json) ? json_decode($json, true) : null;
+
+        if (! is_array($data) || ! is_array($data['layout'] ?? null)) {
+            return [];
+        }
+
+        $validation = FooterValidator::validate($data['layout']);
+
+        return $validation->passes() ? FooterLayout::vars($validation->layout) : [];
     }
 
     /** Keeps the new file and the previous one; removes every other tokens file. */

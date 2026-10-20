@@ -44,7 +44,19 @@ final class MenuRecompiler
     {
         $items = \Illuminate\Support\Facades\DB::table('menu_items');
 
-        return ($type === 'html' ? $items->whereNotNull('html_block_id') : $items->where('type', $type))->exists();
+        if ($type === 'html') {
+            // an HTML block is shown by a mega item OR by a block of the published footer
+            return $items->whereNotNull('html_block_id')->exists()
+                || str_contains((string) app(\App\Settings\Contracts\SiteSettingsRepository::class)->get(\App\Settings\AppearanceSettings::FOOTER_PUBLISHED_KEY), '"html_block"');
+        }
+
+        return $items->where('type', $type)->exists();
+    }
+
+    /** Forgets what was looked up about the types the shop holds (the footer's publish changes the answer for `html`). */
+    public function forgetHolds(): void
+    {
+        $this->holds = [];
     }
 
     public function hasPending(): bool
