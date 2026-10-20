@@ -2,7 +2,7 @@
 
 namespace App\Storefront\Menu;
 
-use App\Content\HtmlBlocks\HtmlBlockSanitizer;
+use App\Content\HtmlBlocks\HtmlBlockModel;
 use App\Content\Menus\MenuLocations;
 use App\Content\Menus\MenuTree;
 use App\Content\Models\PageModel;
@@ -75,7 +75,8 @@ class MenuCompiler
         $blockIds = DB::table('menu_items')->whereNotNull('html_block_id')->distinct()->pluck('html_block_id')->all();
 
         if ($blockIds !== []) {
-            $context->blocks = DB::table('html_blocks')->whereIn('id', $blockIds)->pluck('body', 'id')->all();
+            // MENU-5: the block's pictures (each with its own address) and its body, through the ONE method (HtmlBlockModel::renderMany: one query for all the blocks).
+            $context->blocks = HtmlBlockModel::renderMany(array_map('intval', $blockIds));
         }
 
         $out = [];
@@ -245,7 +246,7 @@ class MenuCompiler
         $html = null;
 
         if ($submenu === 'mega' && $item['html_block_id'] !== null) {
-            $rendered = HtmlBlockSanitizer::render($context->blocks[(int) $item['html_block_id']] ?? '');
+            $rendered = $context->blocks[(int) $item['html_block_id']] ?? '';
             $html = $rendered === '' ? null : $rendered;
         }
 

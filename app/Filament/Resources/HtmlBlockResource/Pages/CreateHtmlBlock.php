@@ -23,4 +23,12 @@ class CreateHtmlBlock extends CreateRecord
     {
         return __('html_blocks.notice.saved');
     }
+
+    /** MENU-5: the pictures of the form become the stored list (new files become Media assets); a refusal is a field error. */
+    protected function mutateFormDataBeforeCreate(array $data): array
+    {
+        $data['pictures'] = HtmlBlockResource::picturesFromForm(is_array($data['pictures'] ?? null) ? $data['pictures'] : [], array_keys(is_array($this->data['pictures'] ?? null) ? $this->data['pictures'] : [])) ?: null;
+
+        return $data;
+    }
 }

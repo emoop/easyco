@@ -6,6 +6,7 @@ use App\Content\Models\PageModel;
 use EasyCo\Catalog\Persistence\Eloquent\CategoryModel;
 use EasyCo\Catalog\Persistence\Eloquent\ProductCategoryModel;
 use EasyCo\Catalog\Persistence\Eloquent\ProductModel;
+use EasyCo\Media\Persistence\Eloquent\MediaAssetModel;
 use App\Content\HtmlBlocks\HtmlBlockModel;
 use Illuminate\Queue\Events\JobFailed;
 use Illuminate\Queue\Events\JobProcessed;
@@ -20,7 +21,8 @@ use Illuminate\Support\Facades\Event;
  *  - ProductModel saved when its status or catalog visibility changed, deleted, restored; ProductCategoryModel saved / deleted: these change which
  *    categories StorefrontVisibility shows. A save that touches none of those fields (a price, a stock figure, a name) does NOT ask for a rebuild;
  *    A product that is itself a menu item (`product`) asks too: hidden, unpublished, renamed (slug / name) or deleted, its item must follow;
- *  - HtmlBlockModel saved / deleted when a mega item shows it (the block is part of the compiled menu).
+ *  - HtmlBlockModel saved / deleted when a mega item shows it (the block is part of the compiled menu);
+ *  - MediaAssetModel saved with a new processing status / variants, or deleted (MENU-5: a picture of an HTML block becomes READY: the compiled menu and footer then print its variant).
  *
  * Writes that bypass Eloquent (raw DB::table inserts in tests or a console script) fire no event: `MenuRecompiler::now()` or saving the menu
  * repairs that. After a queue job the pending request is flushed (the worker never terminates the app between jobs).
@@ -63,6 +65,14 @@ final class MenuRecompileListeners
         });
         ProductCategoryModel::saved($catalog);
         ProductCategoryModel::deleted($catalog);
+
+        // MENU-5: a picture of an HTML block becomes READY (its variants exist) or is deleted: the compiled menus and footer must print the variant, or nothing.
+        MediaAssetModel::saved(static function (MediaAssetModel $asset) use ($blocks): void {
+            if ($asset->wasChanged(['processing_status', 'variants'])) {
+                $blocks();
+            }
+        });
+        MediaAssetModel::deleted($blocks);
 
         HtmlBlockModel::saved($blocks);
         HtmlBlockModel::deleted($blocks);

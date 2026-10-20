@@ -2,7 +2,7 @@
 
 namespace App\Storefront\Footer;
 
-use App\Content\HtmlBlocks\HtmlBlockSanitizer;
+use App\Content\HtmlBlocks\HtmlBlockModel;
 use App\Content\Menus\MenuModel;
 use App\Settings\AppearanceSettings;
 use App\Settings\Contracts\SiteSettingsRepository;
@@ -10,7 +10,6 @@ use App\Storefront\Appearance\StorefrontAppearance;
 use App\Storefront\Header\AppearanceRecompiler;
 use App\Storefront\Menu\CompiledMenus;
 use App\Storefront\Menu\MenuRecompiler;
-use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
 /**
@@ -75,9 +74,8 @@ final class FooterCompiler
         $blocks = [];
 
         if ($blockIds !== []) {
-            foreach (DB::table('html_blocks')->whereIn('id', array_unique($blockIds))->pluck('body', 'id') as $id => $body) {
-                $html = HtmlBlockSanitizer::render((string) $body);
-
+            // MENU-5: pictures first, then the body, through the ONE method (one query for all the blocks).
+            foreach (HtmlBlockModel::renderMany(array_unique($blockIds)) as $id => $html) {
                 if ($html !== '') {
                     $blocks[(string) $id] = $html;
                 }

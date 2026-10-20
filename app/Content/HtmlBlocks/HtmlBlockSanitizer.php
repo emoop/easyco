@@ -80,6 +80,12 @@ class HtmlBlockSanitizer extends DescriptionSanitizer
         }
     }
 
+    /** The address of a link (the DescriptionSanitizer rule: https:, mailto: or a relative path; never javascript:, data:, http:, `//host`); public for the picture links of a block. */
+    public static function safeLink(string $value): ?string
+    {
+        return static::safeHref($value);
+    }
+
     /** Our own storage path or an https: address; nothing else (no protocol-relative, no data:, no backslash, no control characters, no `..`). */
     public static function safeSource(string $value): ?string
     {
