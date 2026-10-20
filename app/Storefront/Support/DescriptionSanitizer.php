@@ -23,16 +23,19 @@ use DOMText;
  *   other unknown elements are unwrapped (their text is kept); comments, processing instructions and CDATA are removed.
  *
  * Text nodes are re-serialised by the DOM, so a `<` or `&` that is text stays escaped text.
+ *
+ * MENU-2: the allow-lists and the attribute filter are `protected` and resolved with `static::`, so HtmlBlockSanitizer (App\Content\HtmlBlocks) can extend the SAME
+ * walker with its own lists instead of keeping a second copy. This class's behaviour is unchanged.
  */
-final class DescriptionSanitizer
+class DescriptionSanitizer
 {
-    private const DROP = [
+    protected const DROP = [
         'script', 'style', 'iframe', 'frame', 'frameset', 'object', 'embed', 'applet', 'form', 'input', 'button', 'textarea',
         'select', 'option', 'svg', 'math', 'template', 'noscript', 'title', 'head', 'meta', 'link', 'base', 'audio', 'video',
         'source', 'canvas', 'img', 'picture', 'map', 'area', 'xml', 'plaintext', 'listing', 'xmp', 'image', 'bgsound',
     ];
 
-    private const ALLOWED = [
+    protected const ALLOWED = [
         'p' => [], 'br' => [], 'strong' => [], 'em' => [], 'b' => [], 'i' => [],
         'ul' => [], 'ol' => [], 'li' => [], 'blockquote' => [],
         'h2' => [], 'h3' => [], 'h4' => [],
@@ -59,7 +62,7 @@ final class DescriptionSanitizer
                 return '';
             }
 
-            self::walk($body);
+            static::walk($body);
 
             $out = '';
 
@@ -74,7 +77,7 @@ final class DescriptionSanitizer
         }
     }
 
-    private static function walk(DOMNode $parent): void
+    protected static function walk(DOMNode $parent): void
     {
         foreach (iterator_to_array($parent->childNodes) as $node) {
             if ($node instanceof DOMText && $node->nodeType === XML_TEXT_NODE) {
@@ -89,15 +92,15 @@ final class DescriptionSanitizer
 
             $name = strtolower($node->nodeName);
 
-            if (in_array($name, self::DROP, true)) {
+            if (in_array($name, static::DROP, true)) {
                 $parent->removeChild($node);
 
                 continue;
             }
 
-            self::walk($node);
+            static::walk($node);
 
-            if (! array_key_exists($name, self::ALLOWED)) {
+            if (! array_key_exists($name, static::ALLOWED)) {
                 while ($node->firstChild !== null) {
                     $parent->insertBefore($node->firstChild, $node);
                 }
@@ -106,17 +109,17 @@ final class DescriptionSanitizer
                 continue;
             }
 
-            self::filterAttributes($node, $name);
+            static::filterAttributes($node, $name);
         }
     }
 
-    private static function filterAttributes(DOMElement $element, string $name): void
+    protected static function filterAttributes(DOMElement $element, string $name): void
     {
         foreach (iterator_to_array($element->attributes) as $attribute) {
             $attributeName = strtolower($attribute->nodeName);
 
             if ($name === 'a' && $attributeName === 'href') {
-                $safe = self::safeHref((string) $attribute->nodeValue);
+                $safe = static::safeHref((string) $attribute->nodeValue);
 
                 if ($safe === null) {
                     $element->removeAttribute($attribute->nodeName);
@@ -135,7 +138,7 @@ final class DescriptionSanitizer
         }
     }
 
-    private static function safeHref(string $value): ?string
+    protected static function safeHref(string $value): ?string
     {
         // Whitespace, control and invisible characters first: the scheme is read from what a browser would read.
         $url = (string) preg_replace('/[\x00-\x20\x7F-\x9F\x{200B}-\x{200F}\x{2028}-\x{202E}\x{2066}-\x{2069}\x{FEFF}]+/u', '', $value);

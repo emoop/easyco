@@ -2,30 +2,32 @@
 
 namespace App\Storefront\Menu;
 
+use App\Content\HtmlBlocks\HtmlBlockSanitizer;
+use App\Content\Menus\MenuLocations;
 use App\Content\Menus\MenuTree;
 use App\Content\Models\PageModel;
 use App\Settings\AppearanceSettings;
 use App\Settings\Contracts\SiteSettingsRepository;
 use App\Storefront\Appearance\StorefrontAppearance;
+use App\Storefront\Header\AppearanceRecompiler;
 use App\Storefront\Pages\PageReader;
 use App\Storefront\Reader\CategoryIndex;
-use App\Storefront\Reader\ImageSetBuilder;
 use App\Storefront\Url\StorefrontUrls;
 use App\Storefront\Visibility\StorefrontVisibility;
-use EasyCo\Media\Persistence\Eloquent\MediaAssetModel;
+use EasyCo\Catalog\Persistence\Eloquent\ProductModel;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Builds every menu's tree for the storefront (D3, storefront-customization-design.md 5.3 and 14) and stores ALL of them in ONE settings key
- * (`menus.compiled`), which rides the appearance read: no page pays a query for its menus.
+ * Builds every menu's tree for the storefront (D3, MENU-2, storefront-customization-design.md 5.3 and 14) and stores ALL of them, with the menu of each location, in ONE
+ * settings key (`menus.compiled`), which rides the appearance read: no page pays a query for its menus.
  *
- *  - Labels are resolved (a category / page item with no label shows its target's own name); links come from StorefrontUrls and PageReader::urlFor.
- *  - A hidden item, a category that is not shown (StorefrontVisibility: no visible product in it or below), a page that is not published and a
- *    deleted target are SKIPPED WITH THEIR SUBTREE. A column with nothing left disappears; a top-level item whose submenu has nothing left becomes a
+ *  - Labels are resolved (a category / page / product item with no label shows its target's own name); links come from StorefrontUrls and PageReader::urlFor.
+ *  - A hidden item, a category that is not shown (StorefrontVisibility: no visible product in it or below), a product that is not visible, a page that is not published
+ *    and a deleted target are SKIPPED WITH THEIR SUBTREE. A heading with nothing left under it disappears; a top-level item whose submenu has nothing left becomes a
  *    plain link.
- *  - `with_children` lists the shown sub-categories of a category (one level, in the order the catalog sorts them), cut at the item's limit and
- *    followed by a "see all" link to the category.
- *  - An image is resolved to its renditions (ImageSetBuilder) and only when the asset is READY; anything else drops the image.
+ *  - A `heading` is a text without a link (the column heading of a mega item); under a mega item every first-level item is a column (its label is the heading).
+ *  - A mega item carries its HTML block, sanitized again here (HtmlBlockSanitizer::render), as `html`.
+ *  - A badge is `{text, color}`; a custom colour is a class of the token stylesheet (see AppearanceCompiler), never a `style=`.
  *
  * The result is refused above MAX_BYTES (the save of a menu fails with a message, nothing is half-saved).
  */
@@ -33,14 +35,11 @@ class MenuCompiler
 {
     public const MAX_BYTES = 262_144;
 
-    /** The alt text and sizes of a menu picture. */
-    public const IMAGE_SIZES = '(min-width: 1024px) 25vw, 50vw';
-
     public function __construct(
         private readonly SiteSettingsRepository $settings,
         private readonly StorefrontUrls $urls,
         private readonly StorefrontVisibility $visibility,
-        private readonly ImageSetBuilder $images,
+        private readonly MenuLocations $locations,
     ) {
     }
 
@@ -55,10 +54,28 @@ class MenuCompiler
 
             /** @var array<int, object> */
             public array $pages = [];
+
+            /** @var array<int, object> */
+            public array $products = [];
+
+            /** @var array<int, string> */
+            public array $blocks = [];
         };
         // Fresh readers: the compile may run at the END of a request that has already loaded (and changed) the catalog.
         $context->categories = new CategoryIndex($this->visibility, $this->urls);
         $context->pages = PageModel::query()->where('status', PageModel::PUBLISHED)->get(['id', 'slug', 'title'])->keyBy('id')->all();
+
+        $productIds = DB::table('menu_items')->where('type', 'product')->distinct()->pluck('target_id')->all();
+
+        if ($productIds !== []) {
+            $context->products = $this->visibility->products(ProductModel::query())->whereIn('catalog_products.id', $productIds)->get(['catalog_products.id', 'catalog_products.name', 'catalog_products.slug'])->keyBy('id')->all();
+        }
+
+        $blockIds = DB::table('menu_items')->whereNotNull('html_block_id')->distinct()->pluck('html_block_id')->all();
+
+        if ($blockIds !== []) {
+            $context->blocks = DB::table('html_blocks')->whereIn('id', $blockIds)->pluck('body', 'id')->all();
+        }
 
         $out = [];
 
@@ -70,30 +87,75 @@ class MenuCompiler
     }
 
     /**
-     * Compiles and stores; returns whether the stored value changed.
+     * Compiles and stores; returns whether the stored value changed. When the custom badge colours changed, the token stylesheet is built again (it holds a class per colour).
      *
      * @throws MenuCompileException when the result is over MAX_BYTES
      */
     public function compileAndStore(): bool
     {
         $menus = $this->compile();
-        $json = (string) json_encode(['menus' => $menus], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+        $locations = $this->locations->keys();
+
+        foreach ($locations as $location => $key) {
+            if ($key !== null && ! isset($menus[$key])) {
+                $locations[$location] = null;
+            }
+        }
+
+        $json = (string) json_encode(['menus' => $menus, 'locations' => $locations], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
 
         if (strlen($json) > static::MAX_BYTES) {
             throw new MenuCompileException(__('menus.errors.too_large', ['max' => number_format(static::MAX_BYTES / 1024, 0)]));
         }
 
         $current = $this->settings->get(AppearanceSettings::MENUS_COMPILED_KEY);
-        $empty = array_filter($menus, fn (array $items): bool => $items !== []) === [];
+        $empty = array_filter($menus, fn (array $items): bool => $items !== []) === [] && array_filter($locations) === [];
 
         if ($current === $json || ($current === null && $empty)) {
             return false;
         }
 
+        $before = self::customColors(is_string($current) ? (json_decode($current, true)['menus'] ?? []) : []);
         $this->settings->set(AppearanceSettings::MENUS_COMPILED_KEY, $json);
+
+        if ($before !== self::customColors($menus)) {
+            app(AppearanceRecompiler::class)->run($this->settings);
+        }
+
         app(StorefrontAppearance::class)->refresh();
 
         return true;
+    }
+
+    /**
+     * The distinct custom (`#rrggbb`) badge colours of compiled menus, sorted: what the token stylesheet needs a class for.
+     *
+     * @param  mixed  $menus  menu key => items
+     * @return list<string>
+     */
+    public static function customColors(mixed $menus): array
+    {
+        $found = [];
+        $walk = function (mixed $items) use (&$walk, &$found): void {
+            foreach (is_array($items) ? $items : [] as $item) {
+                $color = is_array($item) ? ($item['badge']['color'] ?? null) : null;
+
+                if (is_string($color) && AppearanceSettings::isHex($color)) {
+                    $found[strtolower($color)] = true;
+                }
+
+                $walk(is_array($item) ? ($item['children'] ?? []) : []);
+            }
+        };
+
+        foreach (is_array($menus) ? $menus : [] as $items) {
+            $walk($items);
+        }
+
+        $colors = array_keys($found);
+        sort($colors);
+
+        return $colors;
     }
 
     /**
@@ -122,18 +184,12 @@ class MenuCompiler
             return null;
         }
 
-        return match ($item['type']) {
-            'column' => $this->column($item, $context),
-            'image' => $this->image($item),
-            default => $this->link($item, $context, $kind),
-        };
+        return $item['type'] === 'heading' ? $this->heading($item, $context) : $this->link($item, $context, $kind);
     }
 
     /** @return array<string, mixed>|null */
     private function link(array $item, object $context, string $kind): ?array
     {
-        $category = null;
-
         if ($item['type'] === 'link') {
             $label = (string) $item['label'];
             $url = (string) $item['url'];
@@ -146,6 +202,15 @@ class MenuCompiler
 
             $label = $item['label'] ?: (string) $page->title;
             $url = PageReader::urlFor((string) $page->slug);
+        } elseif ($item['type'] === 'product') {
+            $product = $context->products[(int) $item['target_id']] ?? null;
+
+            if ($product === null) {
+                return null;
+            }
+
+            $label = $item['label'] ?: (string) $product->name;
+            $url = $this->urls->product((string) $product->slug);
         } else {
             $id = (int) $item['target_id'];
             $row = $context->categories->row($id);
@@ -154,19 +219,24 @@ class MenuCompiler
                 return null;
             }
 
-            $category = $id;
             $label = $item['label'] ?: $row['name'];
             $url = $this->urls->category($context->categories->path($id));
         }
 
-        $childKind = $kind === 'root' ? ($item['submenu'] === 'mega' ? 'mega' : 'dropdown') : 'nested';
-        $children = $this->items($item['children'], $context, $childKind);
-
-        if ($category !== null && $item['with_children'] && ! ($kind === 'root' && $item['submenu'] === 'mega')) {
-            array_push($children, ...$this->subCategories($category, (int) $item['children_limit'], $url, $context));
-        }
-
+        $childKind = match ($kind) {
+            'root' => $item['submenu'] === 'mega' ? 'mega' : 'dropdown',
+            'dropdown' => 'nested',
+            'mega' => 'column',
+            default => null,
+        };
+        $children = $childKind === null || ($kind === 'root' && $item['submenu'] === 'none') ? [] : $this->items($item['children'], $context, $childKind);
         $submenu = $kind === 'root' && $children !== [] ? $item['submenu'] : 'none';
+        $html = null;
+
+        if ($submenu === 'mega' && $item['html_block_id'] !== null) {
+            $rendered = HtmlBlockSanitizer::render($context->blocks[(int) $item['html_block_id']] ?? '');
+            $html = $rendered === '' ? null : $rendered;
+        }
 
         return [
             'type' => 'link',
@@ -174,71 +244,17 @@ class MenuCompiler
             'url' => $url,
             'new_tab' => (bool) $item['new_tab'],
             'submenu' => $submenu,
-            'children' => $submenu === 'none' && $kind === 'root' ? [] : $children,
+            'badge' => $item['badge_text'] === null ? null : ['text' => $item['badge_text'], 'color' => $item['badge_color']],
+            'html' => $html,
+            'children' => $children,
         ];
     }
 
-    /**
-     * The shown sub-categories of a category, cut at the limit, then a "see all" link.
-     *
-     * @return list<array<string, mixed>>
-     */
-    private function subCategories(int $id, int $limit, string $url, object $context): array
-    {
-        $nodes = $context->categories->shownChildren($id);
-        $out = [];
-
-        foreach (array_slice($nodes, 0, $limit) as $node) {
-            $out[] = ['type' => 'link', 'label' => mb_substr($node->name, 0, 120), 'url' => $node->url, 'new_tab' => false, 'submenu' => 'none', 'children' => []];
-        }
-
-        if (count($nodes) > $limit) {
-            $out[] = ['type' => 'link', 'label' => null, 'url' => $url, 'new_tab' => false, 'submenu' => 'none', 'children' => [], 'see_all' => true];
-        }
-
-        return $out;
-    }
-
     /** @return array<string, mixed>|null */
-    private function column(array $item, object $context): ?array
+    private function heading(array $item, object $context): ?array
     {
         $children = $this->items($item['children'], $context, 'column');
 
-        return $children === [] ? null : ['type' => 'column', 'label' => $item['label'], 'children' => $children];
-    }
-
-    /** @return array<string, mixed>|null */
-    private function image(array $item): ?array
-    {
-        $asset = MediaAssetModel::query()->find((int) $item['media_asset_id']);
-
-        if ($asset === null) {
-            return null;
-        }
-
-        $alt = $item['image_alt'] ?: ($item['caption'] ?: (string) config('app.name'));
-        $set = $this->images->build($asset, $alt, self::IMAGE_SIZES);
-
-        if ($set === null) {
-            return null;
-        }
-
-        return [
-            'type' => 'image',
-            'label' => $item['caption'],
-            'url' => $item['url'],
-            'new_tab' => (bool) $item['new_tab'],
-            'alt' => mb_substr($alt, 0, 200),
-            'src' => $set->src,
-            'srcset' => $set->srcset,
-            'width' => $set->width,
-            'height' => $set->height,
-        ];
-    }
-
-    /** True when any item of the stored menus points at this media asset (a cheap check for the media listener). */
-    public static function usesAsset(int $assetId): bool
-    {
-        return DB::table('menu_items')->where('media_asset_id', $assetId)->exists();
+        return $children === [] ? null : ['type' => 'heading', 'label' => (string) $item['label'], 'children' => $children];
     }
 }

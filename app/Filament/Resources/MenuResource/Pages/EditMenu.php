@@ -4,11 +4,11 @@ namespace App\Filament\Resources\MenuResource\Pages;
 
 use App\Content\Menus\MenuException;
 use App\Content\Menus\MenuFormState;
+use App\Content\Menus\MenuLocations;
 use App\Content\Menus\MenuModel;
 use App\Content\Menus\MenuTree;
 use App\Content\Menus\MenuWriter;
 use App\Filament\Pages\Settings\ServerSideValidation;
-use App\Filament\Resources\BrandResource;
 use App\Filament\Resources\MenuResource;
 use App\Services\ActivityLogger;
 use App\Storefront\Menu\MenuCompileException;
@@ -21,8 +21,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 /**
- * Edit a menu: the form is the nested tree (MenuFormState converts it); saving is ONE call to MenuWriter::save(). A refusal comes back as the form's own field errors.
- * «Добави главните категории» appends the top-level categories that are not in this menu yet (each a dropdown that lists its sub-categories automatically).
+ * Edit a menu: the form is the nested tree (MenuFormState converts it) and the menu's locations; saving is ONE call to MenuWriter::save(). A refusal comes back as the form's own field errors.
+ * «Добави главните категории» appends the top-level categories that are not in this menu yet (each a dropdown holding its sub-categories as items).
  */
 class EditMenu extends EditRecord
 {
@@ -40,6 +40,7 @@ class EditMenu extends EditRecord
     protected function mutateFormDataBeforeFill(array $data): array
     {
         $data['items'] = MenuFormState::toForm(MenuTree::forMenu((int) $data['id']));
+        $data['locations'] = app(MenuLocations::class)->of((int) $data['id']);
 
         return $data;
     }
@@ -47,14 +48,12 @@ class EditMenu extends EditRecord
     protected function handleRecordUpdate(Model $record, array $data): Model
     {
         /** @var MenuModel $record */
-        $state = (array) ($data['items'] ?? []);
-        $this->resolveUploads($state);
-        [$tree] = MenuFormState::fromForm($state);
+        [$tree] = MenuFormState::fromForm((array) ($data['items'] ?? []));
         // The saved state is a plain list; the form's fields are addressed by the repeaters' own keys, so the map of paths comes from the live state (same order, same shape).
         [, $map, $types] = MenuFormState::fromForm((array) ($this->data['items'] ?? []));
 
         try {
-            app(MenuWriter::class)->save($record, (string) ($data['name'] ?? ''), $tree);
+            $moved = app(MenuWriter::class)->save($record, (string) ($data['name'] ?? ''), $tree, array_values((array) ($data['locations'] ?? [])));
         } catch (MenuException $exception) {
             $messages = [];
 
@@ -68,26 +67,14 @@ class EditMenu extends EditRecord
             $this->failFields(['data.items' => $exception->getMessage()]);
         }
 
+        foreach ($moved as $location => $from) {
+            Notification::make()->title(__('menus.notice.moved', ['location' => __('menus.locations.'.$location), 'menu' => $from]))->warning()->send();
+        }
+
         // Who saved which menu; never a label or a link.
         app(ActivityLogger::class)->logFieldChanged('storefront_menu', $record->key, 'items', null, 'saved');
 
         return $record->refresh();
-    }
-
-    /** A new picture file becomes a media asset (the same steps as every other upload); the item then holds the asset id. @param  array<string, mixed>  $state */
-    private function resolveUploads(array &$state): void
-    {
-        foreach ($state as $topKey => $top) {
-            foreach ((array) ($top['columns'] ?? []) as $columnKey => $column) {
-                foreach ((array) ($column['column_items'] ?? []) as $itemKey => $item) {
-                    $file = $item['image_file'] ?? null;
-
-                    if (($item['type'] ?? null) === 'image' && is_string($file) && $file !== '') {
-                        $state[$topKey]['columns'][$columnKey]['column_items'][$itemKey]['media_asset_id'] = BrandResource::createLogoMediaAsset($file)->id();
-                    }
-                }
-            }
-        }
     }
 
     protected function getHeaderActions(): array
@@ -111,7 +98,13 @@ class EditMenu extends EditRecord
 
                     foreach (DB::table('catalog_categories')->whereNull('parent_id')->orderBy('name')->orderBy('id')->pluck('id') as $id) {
                         if (! isset($present[(int) $id])) {
-                            $items[(string) Str::uuid()] = ['type' => 'category', 'category_id' => (int) $id, 'submenu' => 'dropdown', 'with_children' => true, 'children_limit' => 12, 'new_tab' => false, 'visible' => true];
+                            $sub = [];
+
+                            foreach (DB::table('catalog_categories')->where('parent_id', $id)->orderBy('name')->orderBy('id')->pluck('id') as $subId) {
+                                $sub[(string) Str::uuid()] = ['type' => 'category', 'category_id' => (int) $subId, 'submenu' => 'none', 'new_tab' => false, 'visible' => true, 'sub_items' => []];
+                            }
+
+                            $items[(string) Str::uuid()] = ['type' => 'category', 'category_id' => (int) $id, 'submenu' => $sub === [] ? 'none' : 'dropdown', 'dropdown_items' => $sub, 'new_tab' => false, 'visible' => true];
                             $added++;
                         }
                     }

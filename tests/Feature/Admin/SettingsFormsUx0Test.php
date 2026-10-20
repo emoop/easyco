@@ -18,10 +18,7 @@ use App\Filament\Resources\MenuResource\Pages\EditMenu;
 use App\Filament\Resources\PageResource;
 use App\Filament\Resources\PageResource\Pages\CreatePage;
 use App\Filament\Resources\PageResource\Pages\EditPage;
-use App\Settings\AppearanceSettings;
 use App\Settings\Contracts\SiteSettingsRepository;
-use App\Storefront\Header\HeaderCompiler;
-use App\Storefront\Header\HeaderLayout;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
 use Livewire\Features\SupportAutoInjectedAssets\SupportAutoInjectedAssets;
@@ -38,8 +35,7 @@ use Tests\TestCase;
  *     even show its tooltip.
  *  2. A refusal that comes from our own code (the header validator, the menu writer, the page writer) dispatches Filament's `form-validation-error`, the event that
  *     opens the collapsed section / tab / repeater item holding the first error, so "nothing happened" never looks like "saved".
- *  3. A header made before the menus existed shows a warning and is pointed at `main` by a migration.
- *  4. The standard validation messages exist in Bulgarian (the audit saw "The категория field is required.").
+ *  3. The standard validation messages exist in Bulgarian (the audit saw "The категория field is required.").
  */
 class SettingsFormsUx0Test extends TestCase
 {
@@ -120,95 +116,12 @@ class SettingsFormsUx0Test extends TestCase
         $this->assertSame(1, PageModel::query()->count());
     }
 
-    // ---- 3. a header made before the menus existed ----------------------------------------------------------------------------------------------
+    // ---- 3. (retired by MENU-2) --------------------------------------------------------------------------------------------------------------------
+    // UX-0 warned about a header menu element still on `categories` and pointed it at `main` with a migration. MENU-2 removed the `source` setting altogether (a menu
+    // element shows the menu of its location) and its own migration (2026_10_23_000002, tested in Menu2MigrationTest) strips `source` from every stored layout, so the
+    // warning and the three tests of the old migration were removed with the feature they guarded.
 
-    public function test_the_header_page_warns_while_a_menu_element_still_shows_the_category_tree(): void
-    {
-        $this->actingAsStaff('Administrator');
-        $layout = HeaderLayout::default();
-        $layout['desktop']['rows']['main']['left'][0]['settings']['source'] = 'categories';
-        $this->settings()->set(AppearanceSettings::HEADER_DRAFT_KEY, json_encode($layout));
-
-        Livewire::test(HeaderSettings::class)->assertSee(__('header.warnings.categories_source'));
-
-        $layout['desktop']['rows']['main']['left'][0]['settings']['source'] = 'main';
-        $this->settings()->set(AppearanceSettings::HEADER_DRAFT_KEY, json_encode($layout));
-
-        Livewire::test(HeaderSettings::class)->assertDontSee(__('header.warnings.categories_source'));
-        app()->setLocale('bg');
-        $this->assertSame('Това меню не следва „Менюта“ — изберете „Главно меню“', __('header.warnings.categories_source'));
-    }
-
-    /** @return array<string, mixed> a layout as D2 stored it: its menu elements show the category tree */
-    private function preD3Layout(): array
-    {
-        $layout = HeaderLayout::default();
-        $layout['desktop']['rows']['main']['left'][0]['settings'] = ['style' => 'links']; // no source at all (the D2 default stored without one)
-        $layout['mobile']['drawer'][0]['settings'] = ['source' => 'categories', 'style' => 'links'];
-
-        return $layout;
-    }
-
-    private function runHeaderMigration(): void
-    {
-        (require database_path('migrations/2026_10_22_000001_point_header_menus_at_main.php'))->up();
-        $this->app->forgetScopedInstances();
-    }
-
-    public function test_the_migration_points_a_pre_d3_header_at_main_and_is_idempotent(): void
-    {
-        $layout = $this->preD3Layout();
-        app(HeaderCompiler::class)->publish($layout, $this->settings());
-        $this->settings()->set(AppearanceSettings::HEADER_DRAFT_KEY, json_encode($layout));
-
-        $this->runHeaderMigration();
-
-        foreach ([AppearanceSettings::HEADER_PUBLISHED_KEY, AppearanceSettings::HEADER_DRAFT_KEY] as $key) {
-            $stored = json_decode((string) $this->settings()->get($key), true);
-            $this->assertSame('main', $stored['desktop']['rows']['main']['left'][0]['settings']['source'], $key.': desktop');
-            $this->assertSame('main', $stored['mobile']['drawer'][0]['settings']['source'], $key.': drawer');
-        }
-
-        $compiled = json_decode((string) $this->settings()->get(AppearanceSettings::HEADER_COMPILED_KEY), true);
-        $this->assertSame('main', $compiled['layout']['desktop']['rows']['main']['left'][0]['settings']['source'], 'the compiled copy the shop reads');
-        $this->assertSame('main', app(\App\Storefront\Appearance\StorefrontAppearance::class)->header()['desktop']['rows']['main']['left'][0]['settings']['source']);
-
-        $before = [
-            $this->settings()->get(AppearanceSettings::HEADER_COMPILED_KEY), $this->settings()->get(AppearanceSettings::HEADER_PUBLISHED_KEY), $this->settings()->get(AppearanceSettings::HEADER_DRAFT_KEY),
-        ];
-        $this->runHeaderMigration();
-        $this->assertSame($before, [
-            $this->settings()->get(AppearanceSettings::HEADER_COMPILED_KEY), $this->settings()->get(AppearanceSettings::HEADER_PUBLISHED_KEY), $this->settings()->get(AppearanceSettings::HEADER_DRAFT_KEY),
-        ], 'a second run changes nothing');
-    }
-
-    public function test_the_migration_leaves_a_header_that_already_points_at_a_menu_alone(): void
-    {
-        $layout = HeaderLayout::default();
-        $layout['desktop']['rows']['main']['left'][0]['settings']['source'] = 'footer';
-        app(HeaderCompiler::class)->publish($layout, $this->settings());
-        $before = $this->settings()->get(AppearanceSettings::HEADER_COMPILED_KEY);
-
-        $this->runHeaderMigration();
-
-        $this->assertSame($before, $this->settings()->get(AppearanceSettings::HEADER_COMPILED_KEY));
-        $this->assertSame('footer', json_decode((string) $this->settings()->get(AppearanceSettings::HEADER_PUBLISHED_KEY), true)['desktop']['rows']['main']['left'][0]['settings']['source']);
-    }
-
-    public function test_the_migration_changes_nothing_without_a_main_menu(): void
-    {
-        $layout = $this->preD3Layout();
-        app(HeaderCompiler::class)->publish($layout, $this->settings());
-        $this->settings()->set(AppearanceSettings::HEADER_DRAFT_KEY, json_encode($layout));
-        MenuModel::query()->where('key', 'main')->delete();
-        $before = [$this->settings()->get(AppearanceSettings::HEADER_PUBLISHED_KEY), $this->settings()->get(AppearanceSettings::HEADER_DRAFT_KEY)];
-
-        $this->runHeaderMigration();
-
-        $this->assertSame($before, [$this->settings()->get(AppearanceSettings::HEADER_PUBLISHED_KEY), $this->settings()->get(AppearanceSettings::HEADER_DRAFT_KEY)]);
-    }
-
-    // ---- 4. the messages in Bulgarian --------------------------------------------------------------------------------------------------------------
+    // ---- 3. the messages in Bulgarian --------------------------------------------------------------------------------------------------------------
 
     public function test_the_standard_validation_messages_exist_in_bulgarian(): void
     {

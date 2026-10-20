@@ -2,7 +2,9 @@
 
 namespace App\Filament\Resources;
 
+use App\Content\HtmlBlocks\HtmlBlockModel;
 use App\Content\Menus\MenuException;
+use App\Content\Menus\MenuLocations;
 use App\Content\Menus\MenuModel;
 use App\Content\Menus\MenuValidator;
 use App\Content\Menus\MenuWriter;
@@ -13,11 +15,10 @@ use App\Filament\Resources\MenuResource\Pages\EditMenu;
 use App\Filament\Resources\MenuResource\Pages\ListMenus;
 use App\Filament\Support\HelpLink;
 use BackedEnum;
-use EasyCo\Media\Contracts\MediaStorageAdapter;
+use EasyCo\Catalog\Persistence\Eloquent\ProductModel;
 use EasyCo\Staff\Enums\Permission;
 use Filament\Actions\Action;
-use Filament\Forms\Components\FileUpload;
-use Filament\Forms\Components\Hidden;
+use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
@@ -30,13 +31,13 @@ use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Support\Facades\DB;
-use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 
 /**
  * «Менюта» / Menus (D3, storefront-customization-design.md 14): the merchant's navigation as a tool of its own. A menu is an ordered tree the merchant builds (which
  * categories, in which order; a dropdown or a mega panel per top-level item); nothing is added because a category exists. Every write is ONE call to
  * App\Content\Menus\MenuWriter (validation, one transaction, the compile before the commit). Gated by `content_manage`, in the Content group next to the pages.
- * No canvas and no dragging (C-D4): up / down buttons, collapse, clone.
+ * No canvas and no dragging (C-D4): up / down buttons, collapse, clone. MENU-2 (part 1) keeps this editor for the new item kinds (heading, product, badge, HTML block) and the
+ * menu's locations; the WordPress-style editor replaces it in part 2.
  */
 class MenuResource extends Resource
 {
@@ -168,7 +169,28 @@ class MenuResource extends Resource
                 ->addActionLabel(__('menus.actions.add_item'))
                 ->extraItemActions([static::addChildrenAction()])
                 ->default([]),
+            CheckboxList::make('locations')
+                ->label(__('menus.fields.locations'))
+                ->options(array_combine(MenuLocations::KEYS, array_map(static fn (string $location): string => __('menus.locations.'.$location), MenuLocations::KEYS)))
+                ->helperText(fn (?MenuModel $record): ?string => static::movesNote($record))
+                ->default([])
+                ->columns(3),
         ]);
+    }
+
+    /** «Хедър е при „Футър меню“ — ще се премести»: what saving this menu with these locations takes from another menu. */
+    public static function movesNote(?MenuModel $record): ?string
+    {
+        $notes = [];
+        $names = MenuModel::query()->pluck('name', 'id')->all();
+
+        foreach (app(MenuLocations::class)->all() as $location => $id) {
+            if ($id !== null && $id !== $record?->id) {
+                $notes[] = __('menus.locations_note', ['location' => __('menus.locations.'.$location), 'menu' => $names[$id] ?? '']);
+            }
+        }
+
+        return $notes === [] ? null : implode(' ', $notes);
     }
 
     /** The warning, not a refusal, for the main menu: more than 7 top-level items or a label over 20 characters. @param  array<mixed>  $items */
@@ -198,14 +220,20 @@ class MenuResource extends Resource
             $name = static::pageOptions()[(int) $state['page_id']] ?? '';
         }
 
-        return trim(($type !== '' ? __('menus.types.'.$type) : '').($name !== '' ? ': '.$name : '').(($state['submenu'] ?? 'none') !== 'none' ? ' ('.__('menus.submenu.'.$state['submenu']).')' : ''));
+        if ($name === '' && $type === 'product' && ! empty($state['product_id'])) {
+            $name = static::productLabel($state['product_id']) ?? '';
+        }
+
+        return trim(($type !== '' ? __('menus.types.'.$type) : '').($name !== '' ? ': '.$name : '').(($state['submenu'] ?? 'none') !== 'none' ? ' ('.__('menus.submenu.'.$state['submenu']).')' : '').(filled($state['badge_text'] ?? null) ? ' ['.$state['badge_text'].']' : ''));
     }
 
     /** @return list<\Filament\Schemas\Components\Component> */
     private static function topFields(): array
     {
+        $leaf = ['link', 'category', 'page', 'product'];
+
         return [
-            ...static::itemFields(['link', 'category', 'page'], 'category'),
+            ...static::itemFields($leaf, 'category'),
             Select::make('submenu')
                 ->label(__('menus.fields.submenu'))
                 ->options(array_combine(MenuValidator::SUBMENUS, array_map(static fn (string $mode): string => __('menus.submenu.'.$mode), MenuValidator::SUBMENUS)))
@@ -213,14 +241,21 @@ class MenuResource extends Resource
                 ->native(false)
                 ->live()
                 ->helperText(__('menus.help.submenu')),
+            Select::make('html_block_id')
+                ->label(__('menus.fields.html_block'))
+                ->options(fn (): array => HtmlBlockModel::query()->orderBy('title')->pluck('title', 'id')->all())
+                ->placeholder(__('menus.help.no_block'))
+                ->native(false)
+                ->helperText(__('menus.help.html_block'))
+                ->visible(fn (Get $get): bool => $get('submenu') === 'mega'),
             Repeater::make('dropdown_items')
                 ->label(__('menus.fields.dropdown_items'))
                 ->visible(fn (Get $get): bool => $get('submenu') === 'dropdown')
                 ->schema([
-                    ...static::itemFields(['link', 'category', 'page'], 'category', withChildrenToggle: true),
+                    ...static::itemFields($leaf, 'category'),
                     Repeater::make('sub_items')
                         ->label(__('menus.fields.sub_items'))
-                        ->schema(static::itemFields(['link', 'category', 'page'], 'category', withChildrenToggle: true))
+                        ->schema(static::itemFields($leaf, 'category'))
                         ->collapsible()->collapsed()->cloneable()->reorderableWithButtons()
                         ->itemLabel(fn (array $state): string => static::describe($state))
                         ->addActionLabel(__('menus.actions.add_item'))
@@ -234,19 +269,19 @@ class MenuResource extends Resource
                 ->label(__('menus.fields.columns'))
                 ->visible(fn (Get $get): bool => $get('submenu') === 'mega')
                 ->schema([
-                    TextInput::make('label')->label(__('menus.fields.column_heading'))->maxLength(120),
-                    Toggle::make('visible')->label(__('menus.fields.visible'))->default(true),
+                    ...static::itemFields(['heading', ...$leaf], 'heading'),
                     Repeater::make('column_items')
                         ->label(__('menus.fields.column_items'))
-                        ->schema(static::itemFields(['link', 'category', 'page', 'image'], 'link', withChildrenToggle: true))
+                        ->schema(static::itemFields($leaf, 'link'))
                         ->maxItems(MenuValidator::MAX_COLUMN)
                         ->collapsible()->collapsed()->cloneable()->reorderableWithButtons()
                         ->itemLabel(fn (array $state): string => static::describe($state))
                         ->addActionLabel(__('menus.actions.add_item'))
                         ->default([]),
                 ])
+                ->maxItems(MenuValidator::MAX_COLUMNS)
                 ->collapsible()->collapsed()->cloneable()->reorderableWithButtons()
-                ->itemLabel(fn (array $state): string => ($state['label'] ?? '') !== '' ? (string) $state['label'] : __('menus.types.column'))
+                ->itemLabel(fn (array $state): string => static::describe($state))
                 ->addActionLabel(__('menus.actions.add_column'))
                 ->default([]),
         ];
@@ -258,7 +293,7 @@ class MenuResource extends Resource
      * @param  list<string>  $types
      * @return list<\Filament\Schemas\Components\Component>
      */
-    private static function itemFields(array $types, string $defaultType, bool $withChildrenToggle = false): array
+    private static function itemFields(array $types, string $defaultType): array
     {
         $is = static fn (string ...$of): \Closure => static fn (Get $get): bool => in_array($get('type'), $of, true);
 
@@ -272,16 +307,15 @@ class MenuResource extends Resource
                 ->live(),
             TextInput::make('label')
                 ->label(__('menus.fields.label'))
-                ->helperText(fn (Get $get): ?string => in_array($get('type'), ['category', 'page'], true) ? __('menus.help.label_empty') : null)
-                ->required(fn (Get $get): bool => $get('type') === 'link')
-                ->maxLength(120)
-                ->visible(fn (Get $get): bool => $get('type') !== 'image'),
+                ->helperText(fn (Get $get): ?string => in_array($get('type'), ['category', 'page', 'product'], true) ? __('menus.help.label_empty') : null)
+                ->required(fn (Get $get): bool => in_array($get('type'), ['link', 'heading'], true))
+                ->maxLength(120),
             TextInput::make('url')
-                ->label(fn (Get $get): string => $get('type') === 'image' ? __('menus.fields.image_link') : __('menus.fields.url'))
+                ->label(__('menus.fields.url'))
                 ->placeholder('/ или https://')
                 ->required(fn (Get $get): bool => $get('type') === 'link')
                 ->maxLength(500)
-                ->visible($is('link', 'image')),
+                ->visible($is('link')),
             Select::make('category_id')
                 ->label(__('menus.fields.category'))
                 ->searchable()
@@ -296,28 +330,26 @@ class MenuResource extends Resource
                 ->options(fn (): array => static::pageOptions())
                 ->required()
                 ->visible($is('page')),
-            Toggle::make('with_children')
-                ->label(__('menus.fields.with_children'))
-                ->helperText(__('menus.help.with_children'))
-                ->live()
-                ->visible($is('category')),
-            TextInput::make('children_limit')
-                ->label(__('menus.fields.children_limit'))
-                ->numeric()->integer()->minValue(1)->maxValue(50)->default(12)
-                ->visible(fn (Get $get): bool => $get('type') === 'category' && (bool) $get('with_children')),
-            Hidden::make('media_asset_id'),
-            FileUpload::make('image_file')
-                ->label(__('menus.fields.image'))
-                ->image()
-                ->disk(config('services.media.default_disk', 'public'))
-                ->helperText(__('menus.help.image'))
-                // The same route every other upload takes (EasyCo\Media\Contracts\MediaStorageAdapter): the asset is made when the menu is saved.
-                ->saveUploadedFileUsing(fn (TemporaryUploadedFile $file): string => app(MediaStorageAdapter::class)->store($file->get(), $file->getClientOriginalName())->path)
-                ->required(fn (Get $get): bool => $get('type') === 'image' && blank($get('media_asset_id')))
-                ->visible($is('image')),
-            TextInput::make('image_alt')->label(__('menus.fields.image_alt'))->maxLength(200)->visible($is('image')),
-            TextInput::make('caption')->label(__('menus.fields.caption'))->maxLength(80)->visible($is('image')),
-            Toggle::make('new_tab')->label(__('menus.fields.new_tab')),
+            Select::make('product_id')
+                ->label(__('menus.fields.product'))
+                ->searchable()
+                ->native(false)
+                ->getSearchResultsUsing(fn (string $search): array => static::productOptions($search))
+                ->getOptionLabelUsing(fn ($value): ?string => static::productLabel($value))
+                ->required()
+                ->visible($is('product')),
+            TextInput::make('badge_text')
+                ->label(__('menus.fields.badge_text'))
+                ->maxLength(16)
+                ->visible($is('link', 'category', 'page', 'product')),
+            TextInput::make('badge_color')
+                ->label(__('menus.fields.badge_color'))
+                ->datalist(MenuValidator::BADGE_PRESETS)
+                ->placeholder('red / #1a2b3c')
+                ->helperText(__('menus.help.badge_color'))
+                ->maxLength(7)
+                ->visible($is('link', 'category', 'page', 'product')),
+            Toggle::make('new_tab')->label(__('menus.fields.new_tab'))->visible($is('link', 'category', 'page', 'product')),
             Toggle::make('visible')->label(__('menus.fields.visible'))->default(true),
         ];
     }
@@ -348,12 +380,11 @@ class MenuResource extends Resource
 
                 foreach ($rows as $id) {
                     if (! isset($present[(int) $id])) {
-                        $item['dropdown_items'][(string) \Illuminate\Support\Str::uuid()] = ['type' => 'category', 'category_id' => (int) $id, 'submenu' => 'none', 'with_children' => false, 'children_limit' => 12, 'new_tab' => false, 'visible' => true, 'sub_items' => []];
+                        $item['dropdown_items'][(string) \Illuminate\Support\Str::uuid()] = ['type' => 'category', 'category_id' => (int) $id, 'submenu' => 'none', 'new_tab' => false, 'visible' => true, 'sub_items' => []];
                     }
                 }
 
                 $item['submenu'] = 'dropdown';
-                $item['with_children'] = false;
                 $state[$key] = $item;
                 $component->rawState($state);
             });
@@ -413,6 +444,37 @@ class MenuResource extends Resource
         }
 
         return $options;
+    }
+
+    /**
+     * Products to put in a menu: matched by name or SKU (the base SKU of the product or the SKU of one of its variations), at most 20.
+     *
+     * @return array<int, string> id => name
+     */
+    public static function productOptions(string $search = ''): array
+    {
+        $search = trim($search);
+
+        if ($search === '') {
+            return [];
+        }
+
+        $like = '%'.str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $search).'%';
+
+        return ProductModel::query()
+            ->where(fn ($q) => $q->where('name', 'like', $like)->orWhere('base_sku', 'like', $like)->orWhereIn('id', DB::table('catalog_variations')->where('sku', 'like', $like)->select('product_id')))
+            ->orderBy('name')
+            ->limit(20)
+            ->pluck('name', 'id')
+            ->map(fn ($name): string => (string) $name)
+            ->all();
+    }
+
+    public static function productLabel(mixed $id): ?string
+    {
+        $name = ProductModel::query()->whereKey((int) $id)->value('name');
+
+        return $name === null ? null : (string) $name;
     }
 
     /** @return array<int, string> the published pages: id => title */

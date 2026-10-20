@@ -2818,7 +2818,7 @@ html:not(.js) .sf-bar-item:focus-within > .sf-sub {
 
 .sf-mega {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr);
     align-items: start;
     gap: 2rem;
     max-width: 72rem;
@@ -2826,14 +2826,36 @@ html:not(.js) .sf-bar-item:focus-within > .sf-sub {
     padding: 0 1rem;
 }
 
-.sf-mega:not(:has(.sf-mega-media)) {
+/* An HTML block next to the columns takes about 30%. */
+.sf-mega:has(.sf-mega-html) {
+    grid-template-columns: minmax(0, 7fr) minmax(0, 3fr);
+}
+
+/* The columns are equal (up to six); data-cols is the number printed by the view (a class of its own per count, never a style attribute). */
+.sf-mega-cols {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1.5rem;
+}
+
+.sf-mega-cols[data-cols='1'] {
     grid-template-columns: minmax(0, 1fr);
 }
 
-.sf-mega-cols {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
-    gap: 1.5rem;
+.sf-mega-cols[data-cols='2'] {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.sf-mega-cols[data-cols='4'] {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.sf-mega-cols[data-cols='5'] {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.sf-mega-cols[data-cols='6'] {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
 }
 
 .sf-mega-heading {
@@ -2846,36 +2868,110 @@ html:not(.js) .sf-bar-item:focus-within > .sf-sub {
     color: var(--sf-muted, #525252);
 }
 
-.sf-mega-media {
-    display: flex;
-    gap: 1rem;
-}
-
-.sf-mega-figure {
-    width: 14rem;
-    margin: 0;
-}
-
-.sf-mega-figure-link {
+.sf-mega-heading-link {
     color: inherit;
     text-decoration: none;
 }
 
-.sf-mega-img {
-    display: block;
-    width: 100%;
-    height: auto;
-    border-radius: var(--radius-md);
-    background: var(--sf-border, #f5f5f5);
+.sf-mega-heading-link:hover {
+    text-decoration: underline;
 }
 
-.sf-mega-caption {
+.sf-mega-media {
+    min-width: 0;
+}
+
+/* The merchant's HTML block: pictures never overflow their column. */
+.sf-mega-html img {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    border-radius: var(--radius-md);
+}
+
+.sf-mega-html figure {
+    margin: 0;
+}
+
+.sf-mega-html figcaption {
     margin-top: 0.375rem;
     font-size: 0.875rem;
 }
 
-html:not(.js) .sf-mega-img[data-sf-src] {
+.sf-mega-html a {
+    color: inherit;
+}
+
+/* A dropdown's second level is a flyout beside its parent (More and the hamburger panel keep it as an indented list). */
+.sf-sub-dropdown .sf-menu-item {
+    position: relative;
+}
+
+.sf-sub-dropdown .sf-menu .sf-menu {
     display: none;
+    position: absolute;
+    top: 0;
+    left: 100%;
+    z-index: 41;
+    min-width: 12rem;
+    margin: 0;
+    padding: 0.5rem;
+    border: 1px solid var(--sf-border, #e5e5e5);
+    border-radius: var(--radius-md);
+    background: #fff;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+.sf-sub-dropdown .sf-menu-item:hover > .sf-menu,
+.sf-sub-dropdown .sf-menu-item:focus-within > .sf-menu {
+    display: block;
+}
+
+/* A small label after a menu item's text. The colours are classes: six presets here, a custom colour is `.sf-badge-c-<hex>` in the token stylesheet. */
+.sf-badge {
+    display: inline-block;
+    margin-left: 0.375rem;
+    padding: 0.0625rem 0.4375rem;
+    border-radius: 9999px;
+    background: var(--sf-badge-bg, #dc2626);
+    color: var(--sf-badge-fg, #fff);
+    font-size: 0.6875rem;
+    font-weight: 700;
+    line-height: 1.4;
+    letter-spacing: 0.02em;
+    text-transform: none;
+    vertical-align: middle;
+    white-space: nowrap;
+}
+
+.sf-badge-red {
+    --sf-badge-bg: #dc2626;
+    --sf-badge-fg: #fff;
+}
+
+.sf-badge-green {
+    --sf-badge-bg: #15803d;
+    --sf-badge-fg: #fff;
+}
+
+.sf-badge-orange {
+    --sf-badge-bg: #f59e0b;
+    --sf-badge-fg: #111;
+}
+
+.sf-badge-blue {
+    --sf-badge-bg: #1d4ed8;
+    --sf-badge-fg: #fff;
+}
+
+.sf-badge-dark {
+    --sf-badge-bg: #171717;
+    --sf-badge-fg: #fff;
+}
+
+.sf-badge-grey {
+    --sf-badge-bg: #737373;
+    --sf-badge-fg: #fff;
 }
 
 /* "More": the moved items become a plain list inside its panel (their own panels open as nested lists, pictures are left out). */
@@ -2900,6 +2996,16 @@ html:not(.js) .sf-mega-img[data-sf-src] {
     display: none;
 }
 
+.sf-more-panel .sf-menu .sf-menu {
+    position: static;
+    display: block;
+    min-width: 0;
+    margin-left: 0.75rem;
+    padding: 0;
+    border: 0;
+    box-shadow: none;
+}
+
 .sf-more-panel .sf-sub {
     display: block;
     position: static;
@@ -2920,11 +3026,19 @@ html:not(.js) .sf-mega-img[data-sf-src] {
     display: block;
 }
 
-/* The drawer's accordion shows mega columns as headed groups. */
+/* The drawer shows a mega item's columns as sections one under another: the heading as a small title, its links under it. */
 .sf-acc-sub .sf-menu-column > .sf-menu {
     margin-left: 0;
 }
 
 .sf-acc-sub .sf-mega-heading {
-    padding: 0.5rem 0 0;
+    padding: 0.75rem 0 0.125rem;
+}
+
+.sf-acc-section + .sf-acc-section {
+    margin-top: 0.25rem;
+}
+
+.sf-acc-sub .sf-menu .sf-menu {
+    margin-left: 0.75rem;
 }

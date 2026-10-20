@@ -507,18 +507,14 @@ const scenarios = {
         assert.equal(open(b), true, 'and opens the second');
     },
 
-    // The pictures of a mega panel get their src / srcset only when it first opens.
-    async the_pictures_of_a_mega_panel_load_on_the_first_open() {
-        const picture = dom.querySelector('img[data-sf-src]');
-        assert.ok(picture, 'the fixture has a mega panel with a picture');
-        assert.equal('src' in picture.attrs, false, 'no src before the panel opens');
-
-        const toggle = dom.querySelector(`[aria-controls="${picture.closest('[data-sf-sub]').attrs.id}"]`);
-        click(toggle);
-
-        assert.ok(picture.attrs.src.endsWith('-medium.webp'));
-        assert.ok(picture.attrs.srcset.includes('400w'));
-        assert.equal('data-sf-src' in picture.attrs, false);
+    // MENU-2: the picture of a mega panel comes from its HTML block as a plain lazy image (the browser loads it when the panel is shown); the script has nothing to do for it.
+    async the_picture_of_a_mega_panel_is_a_native_lazy_image() {
+        const picture = dom.querySelector('.sf-mega-html img');
+        assert.ok(picture, 'the fixture has a mega panel with a block picture');
+        assert.equal(picture.attrs.loading, 'lazy');
+        assert.equal(picture.attrs.decoding, 'async');
+        assert.equal('data-sf-src' in picture.attrs, false, 'no script-set source any more');
+        assert.ok(picture.attrs.src.startsWith('/storage/'));
     },
 
     // What does not fit moves into "More" (a ResizeObserver refits it); widening brings every item back in its place.

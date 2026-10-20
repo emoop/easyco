@@ -14,13 +14,14 @@ final class HeaderView
 {
     /**
      * @param  array<string, mixed>  $layout
-     * @param  array<string, list<array<string, mixed>>>  $menus  the validated compiled menus by key (D3): a `menu` element gets its own as `menu`
+     * @param  list<array<string, mixed>>  $header  the validated compiled menu of the `header` location (MENU-2): a `menu` element in the rows gets it as `menu`
+     * @param  list<array<string, mixed>>  $drawer  the menu of the `drawer` location (the header's when none): a `menu` element in the drawer gets it
      * @return array<string, mixed>
      */
-    public static function prepare(array $layout, array $menus = []): array
+    public static function prepare(array $layout, array $header = [], array $drawer = []): array
     {
         $catalog = HeaderCatalog::all();
-        $keep = static function (array $element) use ($catalog, $menus): ?array {
+        $keep = static function (array $element, bool $inDrawer = false) use ($catalog, $header, $drawer): ?array {
             $type = $element['type'];
             $route = HeaderCatalog::FEATURE_ROUTES[$type] ?? null;
 
@@ -29,8 +30,7 @@ final class HeaderView
             }
 
             if ($type === 'menu') {
-                $source = (string) ($element['settings']['source'] ?? 'categories');
-                $element['menu'] = $source === 'categories' ? null : ($menus[$source] ?? []);
+                $element['menu'] = $inDrawer ? $drawer : $header;
             }
 
             return $element + ['view' => $catalog[$type]['view']];
@@ -59,7 +59,7 @@ final class HeaderView
             }
         }
 
-        $layout['mobile']['drawer'] = array_values(array_filter(array_map($keep, $layout['mobile']['drawer'])));
+        $layout['mobile']['drawer'] = array_values(array_filter(array_map(fn (array $element): ?array => $keep($element, true), $layout['mobile']['drawer'])));
         $layout['needs_drawer'] = $toggle && $layout['mobile']['drawer'] !== [];
         $layout['needs_search_row'] = $searchRow;
 

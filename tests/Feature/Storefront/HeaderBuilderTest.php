@@ -589,7 +589,7 @@ class HeaderBuilderTest extends TestCase
         app('router')->getRoutes()->refreshNameLookups();
         $this->publish($this->layout(function (array $l): array {
             // Search, a field search in the drawer and a second menu make the ids interesting.
-            $l['mobile']['drawer'] = [['type' => 'menu', 'settings' => ['source' => 'categories', 'style' => 'links']], ['type' => 'account', 'settings' => ['style' => 'icon']]];
+            $l['mobile']['drawer'] = [['type' => 'menu', 'settings' => ['style' => 'links']], ['type' => 'account', 'settings' => ['style' => 'icon']]];
 
             return $l;
         }));
@@ -603,7 +603,7 @@ class HeaderBuilderTest extends TestCase
         $this->assertSame(1, substr_count($html, 'id="sf-search-row"'));
         $this->assertSame(1, substr_count($html, '<header '));
         $this->assertMatchesRegularExpression('/<nav class="sf-hdr-menu sf-hdr-menu-links" id="sf-menu-desktop-main-left-0" aria-label="Menu" data-sf-menubar>/', $html);
-        $this->assertMatchesRegularExpression('/<nav class="sf-hdr-menu sf-hdr-menu-drawer" aria-label="Categories">/', $html);
+        $this->assertMatchesRegularExpression('/<nav class="sf-hdr-menu sf-hdr-menu-drawer" aria-label="Menu">/', $html);
         $this->assertStringContainsString('role="dialog" aria-modal="true" aria-labelledby="sf-drawer-title"', $html);
         $this->assertMatchesRegularExpression('/<button class="sf-hdr-icon-btn" type="button" aria-controls="sf-search-row" aria-expanded="false" data-sf-search-toggle>/', $html);
         $this->assertNoActiveContent(preg_replace('#<form[ >].*?</form>#s', '', $html), 'header');

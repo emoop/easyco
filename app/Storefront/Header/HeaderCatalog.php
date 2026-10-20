@@ -41,7 +41,7 @@ final class HeaderCatalog
 
         $types = [
             'logo' => ['height' => ['kind' => 'int', 'min' => 16, 'max' => 120, 'default' => 28]],
-            'menu' => ['source' => ['kind' => 'menu_source', 'default' => 'categories'], 'style' => ['kind' => 'enum', 'options' => ['links', 'dropdown', 'mega'], 'default' => 'links']],
+            'menu' => ['style' => ['kind' => 'enum', 'options' => ['links', 'dropdown', 'mega'], 'default' => 'links']],
             'menu_toggle' => ['label_visible' => ['kind' => 'bool', 'default' => false]],
             'search' => ['mode' => ['kind' => 'enum', 'options' => ['icon_row', 'field'], 'default' => 'icon_row']],
             'account' => ['style' => $styles],

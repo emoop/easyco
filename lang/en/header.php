@@ -21,10 +21,6 @@ return [
         'drawer_side' => 'Which side it opens from',
     ],
 
-    'warnings' => [
-        'categories_source' => 'This menu does not follow "Menus" — choose "Main menu"',
-    ],
-
     'actions' => [
         'save_draft' => 'Save draft',
         'preview' => 'Preview',
@@ -55,7 +51,6 @@ return [
 
     'settings' => [
         'height' => 'Height (px)',
-        'source' => 'Source',
         'style' => 'Style',
         'label_visible' => 'Show a label next to the icon',
         'mode' => 'Kind',
@@ -70,7 +65,6 @@ return [
     ],
 
     'options' => [
-        'categories' => 'Categories',
         'links' => 'Links (with a panel for subcategories)',
         'dropdown' => 'Dropdown',
         'mega' => 'Mega menu (a dropdown for now)',

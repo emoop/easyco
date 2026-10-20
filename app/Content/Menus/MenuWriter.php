@@ -2,24 +2,25 @@
 
 namespace App\Content\Menus;
 
+use App\Content\HtmlBlocks\HtmlBlockModel;
 use App\Content\Models\PageModel;
 use App\Rules\PlainText;
 use App\Storefront\Menu\MenuRecompiler;
 use EasyCo\Catalog\Persistence\Eloquent\CategoryModel;
-use EasyCo\Media\Persistence\Eloquent\MediaAssetModel;
+use EasyCo\Catalog\Persistence\Eloquent\ProductModel;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 
 /**
- * THE ONLY WRITER of a menu (D3): the admin page and the seeder call it, nothing else saves menu rows. A tree is validated by MenuValidator, its
- * targets (categories, pages, image assets) must exist, the rows are replaced inside ONE transaction and the menus are compiled before it
- * commits: a menu that would compile to more than the size limit is refused and nothing is saved.
+ * THE ONLY WRITER of a menu (D3, MENU-2): the admin page and the seeder call it, nothing else saves menu rows. A tree is validated by MenuValidator, its
+ * targets (categories, pages, products, HTML blocks) must exist, the rows (and the menu's locations) are replaced inside ONE transaction and the menus are compiled
+ * before it commits: a menu that would compile to more than the size limit is refused and nothing is saved (ALL OR NOTHING).
  *
- * `main` and `footer` are never deleted; a menu the header uses is not deleted either (the message names the place).
+ * `main` and `footer` are never deleted; a menu that holds a location is not deleted either (the message names the place).
  */
 final class MenuWriter
 {
-    public function __construct(private readonly MenuRecompiler $recompiler, private readonly MenuUsage $usage)
+    public function __construct(private readonly MenuRecompiler $recompiler, private readonly MenuUsage $usage, private readonly MenuLocations $locations)
     {
     }
 
@@ -40,13 +41,16 @@ final class MenuWriter
     }
 
     /**
-     * Replaces the menu's items with this tree and renames it.
+     * Replaces the menu's items with this tree and renames it; when `$locations` is a list the menu holds exactly those locations afterwards (a location moves from the
+     * menu that had it), null leaves them as they are. Returns the locations that moved (location => the name of the menu that had it).
      *
      * @param  array<mixed>  $items
+     * @param  list<string>|null  $locations
+     * @return array<string, string>
      *
      * @throws MenuException
      */
-    public function save(MenuModel $menu, string $name, array $items): void
+    public function save(MenuModel $menu, string $name, array $items, ?array $locations = null): array
     {
         $name = trim($name);
         $errors = [];
@@ -59,16 +63,29 @@ final class MenuWriter
         $errors += $validation->errors;
         $errors += $this->missingTargets($validation->items, 'items');
 
+        if ($locations !== null && array_diff($locations, MenuLocations::KEYS) !== []) {
+            $errors['locations'] = __('menus.errors.location');
+        }
+
         if ($errors !== []) {
             throw MenuException::invalid($errors);
         }
 
-        DB::transaction(function () use ($menu, $name, $validation): void {
+        $moved = [];
+
+        DB::transaction(function () use ($menu, $name, $validation, $locations, &$moved): void {
             $menu->forceFill(['name' => $name])->save();
             MenuItemModel::query()->where('menu_id', $menu->id)->delete();
             $this->insert($menu->id, null, $validation->items);
+
+            if ($locations !== null) {
+                $moved = $this->locations->assign($menu->id, $locations);
+            }
+
             $this->recompiler->now();
         });
+
+        return $moved;
     }
 
     /** @throws MenuException */
@@ -85,6 +102,7 @@ final class MenuWriter
         }
 
         DB::transaction(function () use ($menu): void {
+            $this->locations->release($menu->id);
             $menu->delete();
             $this->recompiler->now();
         });
@@ -104,14 +122,14 @@ final class MenuWriter
     }
 
     /**
-     * The category / page / image targets that do not exist, as errors by path.
+     * The category / page / product targets and HTML blocks that do not exist, as errors by path.
      *
      * @param  list<array<string, mixed>>  $items
      * @return array<string, string>
      */
     private function missingTargets(array $items, string $path): array
     {
-        $found = ['category' => [], 'page' => [], 'asset' => []];
+        $found = ['category' => [], 'page' => [], 'product' => [], 'block' => []];
         $walk = function (array $items, string $path) use (&$walk, &$found): void {
             foreach ($items as $index => $item) {
                 $here = "{$path}.{$index}";
@@ -119,9 +137,14 @@ final class MenuWriter
                 match ($item['type']) {
                     'category' => $found['category'][$here.'.target_id'] = $item['target_id'],
                     'page' => $found['page'][$here.'.target_id'] = $item['target_id'],
-                    'image' => $found['asset'][$here.'.media_asset_id'] = $item['media_asset_id'],
+                    'product' => $found['product'][$here.'.target_id'] = $item['target_id'],
                     default => null,
                 };
+
+                if ($item['html_block_id'] !== null) {
+                    $found['block'][$here.'.html_block_id'] = $item['html_block_id'];
+                }
+
                 $walk($item['children'], "{$here}.children");
             }
         };
@@ -131,7 +154,8 @@ final class MenuWriter
         $existing = [
             'category' => $found['category'] === [] ? [] : CategoryModel::query()->whereIn('id', array_unique($found['category']))->pluck('id')->all(),
             'page' => $found['page'] === [] ? [] : PageModel::query()->whereIn('id', array_unique($found['page']))->pluck('id')->all(),
-            'asset' => $found['asset'] === [] ? [] : MediaAssetModel::query()->where('type', 'image')->whereIn('id', array_unique($found['asset']))->pluck('id')->all(),
+            'product' => $found['product'] === [] ? [] : ProductModel::query()->whereIn('id', array_unique($found['product']))->pluck('id')->all(),
+            'block' => $found['block'] === [] ? [] : HtmlBlockModel::query()->whereIn('id', array_unique($found['block']))->pluck('id')->all(),
         ];
 
         foreach ($found as $kind => $paths) {

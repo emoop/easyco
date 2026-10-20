@@ -40,7 +40,7 @@ final class AppearanceCompiler
      * @param  array<string, string>  $overrides
      * @throws InvalidArgumentException a value that is not valid for its key
      */
-    public function css(array $overrides, array $metrics = []): ?string
+    public function css(array $overrides, array $metrics = [], array $badgeColors = []): ?string
     {
         $effective = $this->effective($overrides);
         $defaults = AppearanceSettings::defaults();
@@ -99,14 +99,15 @@ final class AppearanceCompiler
         }
 
         $faces = $this->fontFaces($this->fontKeys($effective));
+        $badges = $this->badgeClasses($badgeColors);
 
-        if ($vars === [] && $faces === '') {
+        if ($vars === [] && $faces === '' && $badges === '') {
             return null;
         }
 
         $css = $vars === [] ? '' : ":root {\n    ".implode("\n    ", $vars)."\n}\n";
 
-        return $css.$faces;
+        return $css.$badges.$faces;
     }
 
     /**
@@ -137,7 +138,7 @@ final class AppearanceCompiler
      */
     public function compile(array $overrides, ?string $previousHash = null, ?array $metrics = null): ?array
     {
-        $css = $this->css($overrides, $metrics ?? $this->publishedMetrics());
+        $css = $this->css($overrides, $metrics ?? $this->publishedMetrics(), $this->storedBadgeColors());
 
         if ($css === null) {
             $this->prune(null, $previousHash);
@@ -159,6 +160,49 @@ final class AppearanceCompiler
         $body = $effective[AppearanceSettings::FONT_BODY];
 
         return ['hash' => $hash, 'fonts' => $this->fontKeys($overrides), 'body' => $body === 'system' ? null : $body];
+    }
+
+    /**
+     * MENU-2: one class per custom badge colour (`.sf-badge-c-1a2b3c`), so that a menu item's colour is never a `style=` attribute. The text colour is the one (white or
+     * black) with the better contrast on that background.
+     *
+     * @param  list<string>  $colors  `#rrggbb`, already validated by the menu validator (checked again here)
+     */
+    private function badgeClasses(array $colors): string
+    {
+        $css = '';
+
+        foreach (array_slice(array_values(array_unique(array_map('strtolower', array_filter($colors, fn ($c): bool => AppearanceSettings::isHex($c))))), 0, 48) as $color) {
+            $light = $this->luminance($color) > 0.179;
+            $css .= '.sf-badge-c-'.substr($color, 1).' { --sf-badge-bg: '.$color.'; --sf-badge-fg: '.($light ? '#111111' : '#ffffff').'; }'."\n";
+        }
+
+        return $css;
+    }
+
+    /** WCAG relative luminance of `#rrggbb`. */
+    private function luminance(string $hex): float
+    {
+        $channel = static function (int $value): float {
+            $v = $value / 255;
+
+            return $v <= 0.03928 ? $v / 12.92 : (($v + 0.055) / 1.055) ** 2.4;
+        };
+
+        return 0.2126 * $channel((int) hexdec(substr($hex, 1, 2))) + 0.7152 * $channel((int) hexdec(substr($hex, 3, 2))) + 0.0722 * $channel((int) hexdec(substr($hex, 5, 2)));
+    }
+
+    /**
+     * The custom badge colours of the STORED compiled menus (`menus.compiled`), so that an appearance save never drops their classes from the stylesheet.
+     *
+     * @return list<string>
+     */
+    private function storedBadgeColors(): array
+    {
+        $json = app(SiteSettingsRepository::class)->get(AppearanceSettings::MENUS_COMPILED_KEY);
+        $data = is_string($json) ? json_decode($json, true) : null;
+
+        return is_array($data) ? \App\Storefront\Menu\MenuCompiler::customColors($data['menus'] ?? []) : [];
     }
 
     /**

@@ -6,15 +6,17 @@ use App\Rules\PlainText;
 use App\Settings\AppearanceSettings;
 
 /**
- * THE gate of a menu's tree (D3, storefront-customization-design.md 14): the admin form, the seeder and the tests all pass through here before
- * a row is written. Nothing unknown gets in: an unknown key, type or submenu mode is refused, labels are plain text with a length, links are
- * root-relative or https only (AppearanceSettings::isSafeBannerUrl: the one rule), an image is an asset id.
+ * THE gate of a menu's tree (D3, MENU-2): the admin form, the seeder, the migration and the tests all pass through here before a row is written. Nothing unknown gets
+ * in: an unknown key, type or submenu mode is refused, labels are plain text with a length, links are root-relative or https only (AppearanceSettings::isSafeBannerUrl:
+ * the one rule), a badge colour is a preset name or `#RRGGBB`.
  *
  * Structure (depth <= 3, the type allowed at each place):
- *   top level           link | category | page        (submenu none | dropdown | mega: top level only)
- *   under a dropdown    link | category | page         (and these may hold one more level of link | category | page)
- *   under a mega        column                        (the column's label is its heading; it holds link | category | page | image)
- *   Limits: 12 top-level items, 15 items per column, 300 items per menu, 2 images per mega panel.
+ *   top level           link | category | page | product    (submenu none | dropdown | mega: top level only)
+ *   under a dropdown    link | category | page | product     (and these may hold one more level of the same four)
+ *   under a mega        heading | link | category | page | product   (each is a COLUMN: its text is the column heading, a link when it has a target; at most 6)
+ *   under a column      link | category | page | product     (the links of the column; at most 15)
+ *   `heading` is allowed ONLY at the first level under a mega item (anywhere else it would be a dead text).
+ *   Limits: 12 top-level items, 6 columns per mega item, 15 links per column, 300 items per menu, 12 distinct custom badge colours per menu.
  *
  * Paths look like `items.2.children.0.url`; the admin page maps them back onto its form fields.
  */
@@ -22,29 +24,37 @@ final class MenuValidator
 {
     public const MAX_TOP = 12;
 
+    public const MAX_COLUMNS = 6;
+
     public const MAX_COLUMN = 15;
 
     public const MAX_TOTAL = 300;
 
-    public const MAX_IMAGES = 2;
+    public const MAX_CUSTOM_COLORS = 12;
 
-    public const FIELDS = ['type', 'label', 'url', 'target_id', 'submenu', 'with_children', 'children_limit', 'media_asset_id', 'image_alt', 'caption', 'new_tab', 'visible'];
+    public const FIELDS = ['type', 'label', 'url', 'target_id', 'submenu', 'html_block_id', 'badge_text', 'badge_color', 'new_tab', 'visible'];
 
     public const SUBMENUS = ['none', 'dropdown', 'mega'];
 
+    /** The six badge colours that need no stylesheet of their own (storefront.css has a class for each). */
+    public const BADGE_PRESETS = ['red', 'green', 'orange', 'blue', 'dark', 'grey'];
+
     /** The types allowed under each kind of parent. */
     private const ALLOWED = [
-        'root' => ['link', 'category', 'page'],
-        'dropdown' => ['link', 'category', 'page'],
-        'nested' => ['link', 'category', 'page'],
-        'mega' => ['column'],
-        'column' => ['link', 'category', 'page', 'image'],
+        'root' => ['link', 'category', 'page', 'product'],
+        'dropdown' => ['link', 'category', 'page', 'product'],
+        'nested' => ['link', 'category', 'page', 'product'],
+        'mega' => ['heading', 'link', 'category', 'page', 'product'],
+        'column' => ['link', 'category', 'page', 'product'],
     ];
 
     /** @var array<string, string> */
     private array $errors = [];
 
     private int $total = 0;
+
+    /** @var array<string, true> */
+    private array $customColors = [];
 
     /** @param  array<mixed>  $items */
     public static function validate(array $items): MenuValidation
@@ -60,7 +70,17 @@ final class MenuValidator
             $validator->fail('items', 'total_max', ['max' => self::MAX_TOTAL]);
         }
 
+        if (count($validator->customColors) > self::MAX_CUSTOM_COLORS) {
+            $validator->fail('items', 'colors_max', ['max' => self::MAX_CUSTOM_COLORS]);
+        }
+
         return new MenuValidation($clean, $validator->errors);
+    }
+
+    /** True for a preset name or `#RRGGBB`. */
+    public static function isBadgeColor(mixed $value): bool
+    {
+        return is_string($value) && (in_array($value, self::BADGE_PRESETS, true) || AppearanceSettings::isHex($value));
     }
 
     /** @param  array<string, mixed>  $params */
@@ -111,35 +131,32 @@ final class MenuValidator
         $type = is_string($raw['type'] ?? null) ? $raw['type'] : '';
 
         if (! in_array($type, self::ALLOWED[$kind], true)) {
-            $this->fail("{$path}.type", 'type_here');
+            $this->fail("{$path}.type", $type === 'heading' ? 'heading_here' : 'type_here');
 
             return null;
         }
 
+        $submenu = $this->submenu($raw['submenu'] ?? 'none', $kind, $path);
         $item = [
             'type' => $type,
-            'label' => $this->label($raw['label'] ?? null, $type === 'link', $path),
-            'url' => $this->url($raw['url'] ?? null, $type === 'link', in_array($type, ['link', 'image'], true), $path),
+            'label' => $this->label($raw['label'] ?? null, in_array($type, ['link', 'heading'], true), $path),
+            'url' => $this->url($raw['url'] ?? null, $type === 'link', $type === 'link', $path),
             'target_id' => $this->target($raw['target_id'] ?? null, $type, $path),
-            'submenu' => $this->submenu($raw['submenu'] ?? 'none', $kind, $path),
-            'with_children' => $this->withChildren($raw['with_children'] ?? false, $type, $path),
-            'children_limit' => $this->limit($raw['children_limit'] ?? 12, $path),
-            'media_asset_id' => $this->asset($raw['media_asset_id'] ?? null, $type, $path),
-            'image_alt' => $this->plain($raw['image_alt'] ?? null, 200, "{$path}.image_alt", 'alt_long'),
-            'caption' => $this->plain($raw['caption'] ?? null, 80, "{$path}.caption", 'caption_long'),
+            'submenu' => $submenu,
+            'html_block_id' => $this->block($raw['html_block_id'] ?? null, $kind, $submenu, $path),
+            'badge_text' => $this->plain($raw['badge_text'] ?? null, 16, "{$path}.badge_text", 'badge_long'),
+            'badge_color' => $this->color($raw['badge_color'] ?? null, $path),
             'new_tab' => $this->bool($raw['new_tab'] ?? false, "{$path}.new_tab"),
             'visible' => $this->bool($raw['visible'] ?? true, "{$path}.visible"),
         ];
 
-        if ($type === 'image') {
-            $item['label'] = null;
-        } else {
-            $item['image_alt'] = null;
-            $item['caption'] = null;
+        if ($item['badge_text'] === null) {
+            $item['badge_color'] = null; // a colour with no text is nothing
         }
 
-        if ($item['with_children'] && $kind === 'root' && $item['submenu'] === 'mega') {
-            $this->fail("{$path}.with_children", 'with_children_mega');
+        if ($type === 'heading') {
+            $item['badge_text'] = null;
+            $item['badge_color'] = null;
         }
 
         $item['children'] = $this->children($raw['children'] ?? [], $item, $path, $kind);
@@ -158,10 +175,10 @@ final class MenuValidator
         }
 
         $childKind = match (true) {
-            $item['type'] === 'column' => 'column',
             $kind === 'root' && $item['submenu'] === 'dropdown' => 'dropdown',
             $kind === 'root' && $item['submenu'] === 'mega' => 'mega',
             $kind === 'dropdown' => 'nested',
+            $kind === 'mega' => 'column',
             default => null,
         };
 
@@ -173,25 +190,15 @@ final class MenuValidator
 
         $clean = $this->level($children, "{$path}.children", $childKind);
 
+        if ($childKind === 'mega' && count($clean) > self::MAX_COLUMNS) {
+            $this->fail("{$path}.children", 'columns_max', ['max' => self::MAX_COLUMNS]);
+        }
+
         if ($childKind === 'column' && count($clean) > self::MAX_COLUMN) {
             $this->fail("{$path}.children", 'column_max', ['max' => self::MAX_COLUMN]);
         }
 
-        if ($childKind === 'mega') {
-            $images = 0;
-
-            foreach ($clean as $column) {
-                foreach ($column['children'] as $child) {
-                    $images += $child['type'] === 'image' ? 1 : 0;
-                }
-            }
-
-            if ($images > self::MAX_IMAGES) {
-                $this->fail("{$path}.children", 'images_max', ['max' => self::MAX_IMAGES]);
-            }
-        }
-
-        // A column's items and the second level below a dropdown item cannot hold more: depth 3 is the last.
+        // The last level holds nothing more: depth 3 is the end.
         foreach ($clean as $index => $child) {
             if ($child['children'] !== [] && in_array($childKind, ['column', 'nested'], true)) {
                 $this->fail("{$path}.children.{$index}.children", 'too_deep');
@@ -280,7 +287,7 @@ final class MenuValidator
 
     private function target(mixed $value, string $type, string $path): ?int
     {
-        $isTarget = in_array($type, ['category', 'page'], true);
+        $isTarget = in_array($type, ['category', 'page', 'product'], true);
 
         if ($value === null || $value === '') {
             if ($isTarget) {
@@ -322,53 +329,46 @@ final class MenuValidator
         return $value;
     }
 
-    private function withChildren(mixed $value, string $type, string $path): bool
-    {
-        $on = $this->bool($value, "{$path}.with_children");
-
-        if ($on && $type !== 'category') {
-            $this->fail("{$path}.with_children", 'with_children_type');
-
-            return false;
-        }
-
-        return $on;
-    }
-
-    private function limit(mixed $value, string $path): int
-    {
-        if (! is_numeric($value) || (int) $value < 1 || (int) $value > 50) {
-            $this->fail("{$path}.children_limit", 'limit_range');
-
-            return 12;
-        }
-
-        return (int) $value;
-    }
-
-    private function asset(mixed $value, string $type, string $path): ?int
+    /** The HTML block of a mega item: a block id, on a top-level item whose submenu is `mega` only. */
+    private function block(mixed $value, string $kind, string $submenu, string $path): ?int
     {
         if ($value === null || $value === '') {
-            if ($type === 'image') {
-                $this->fail("{$path}.media_asset_id", 'asset_required');
-            }
-
             return null;
         }
 
-        if ($type !== 'image') {
-            $this->fail("{$path}.media_asset_id", 'asset_not_allowed');
+        if ($kind !== 'root' || $submenu !== 'mega') {
+            $this->fail("{$path}.html_block_id", 'block_here');
 
             return null;
         }
 
         if (! is_numeric($value) || (int) $value < 1) {
-            $this->fail("{$path}.media_asset_id", 'asset_required');
+            $this->fail("{$path}.html_block_id", 'block_value');
 
             return null;
         }
 
         return (int) $value;
+    }
+
+    private function color(mixed $value, string $path): ?string
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        if (! self::isBadgeColor($value)) {
+            $this->fail("{$path}.badge_color", 'badge_color');
+
+            return null;
+        }
+
+        if (AppearanceSettings::isHex($value)) {
+            $value = strtolower($value);
+            $this->customColors[$value] = true;
+        }
+
+        return $value;
     }
 
     private function bool(mixed $value, string $path): bool

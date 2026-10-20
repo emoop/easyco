@@ -148,3 +148,39 @@ dragging, saves, reloads and compares.
 **Owner check:** build «Момчета» as Mega with columns «Дрехи» (Якета, Панталони, Бермуди…), «Дрехи» (Връхни дрехи, Блузи и ризи…),
 «Обувки» (Затворени, Отворени, Пантофи) and an HTML block with the picture; a top-level «Отстъпки» link with a «Sale» badge; tick
 «Хедър»; save; reload; look at the shop at 1280px and on the phone.
+
+---
+
+## 6. As built - part 1 (data, HTML blocks, storefront, header locations)
+
+Part 2 (the WordPress-style editor page, SortableJS, the «Дизайн» navigation group, the help sections and the browser script) is not built yet; until then the D3 repeater editor
+(`MenuResource` / `EditMenu`) edits the new model: it knows the types heading / product, the badge, the HTML block of a mega item and the menu's locations.
+
+- **Migrations** (`2026_10_23_000001..3`): 1 = `html_blocks` + `menu_items.html_block_id / badge_text / badge_color` (+ `menu_items_badge_check`), the type CHECK widened to old and new
+  types together; 2 = the data step (`App\Content\Menus\Menu2Migrator`, also what the tests call): columns -> headings, the pictures of a mega item -> ONE HTML block
+  («Снимка: <label>», a `<figure>` per picture, links and captions kept, pictures still processing dropped as D3 did), `with_children` -> explicit child items (the shown
+  sub-categories of that moment, cut at the old limit, a "see all" item when the old menu had one; only where the new depth allows it - a top-level dropdown item or an item
+  of its first sub-level, anything deeper is counted as `skipped`), `menus.locations` seeded (the header's menu element decides `header`, a different drawer element `drawer`, the
+  `footer` menu `footer`), `source` stripped from the draft / published / compiled header layouts, the type CHECK narrowed to the final five, the menus compiled again; 3 = the
+  five D3 columns and `menu_items_limit_check` dropped, and it REFUSES to run while a column / image / with_children row exists. All three are idempotent; the counts go to the log
+  (`menu2.migrated`). The D3 seed migration (`2026_10_21_000002`) is now empty: on a fresh database `main` and `footer` are seeded by step 2, in the final shape.
+- **Dev run (2026-10-20):** 0 columns, 0 images (0 blocks), 2 categories expanded into 4 explicit items, 0 skipped, 2 locations (header = Main menu, footer = Footer), 2 layouts
+  stripped (draft, published). The shop's link list is identical before and after. Backup: `storage/app/menu2-backup-20261020-060528.json`.
+- **Validator** (`MenuValidator`): top = link | category | page | product; under a dropdown the same four, one more level of them; under a mega item = COLUMNS (<= 6): `heading` or any of
+  the four (a link used as the heading), each with <= 15 links of the four; `heading` anywhere else is refused with its own message; `html_block_id` only on a top-level mega item;
+  badge text <= 16, colour = preset (`red green orange blue dark grey`) or `#rrggbb` (stored lower-case), at most 12 distinct custom colours per menu.
+- **Writer:** one transaction for name + items + locations + compile; an error writes nothing; `save()` returns the locations that moved (location => the menu that had it).
+  A menu that holds a location cannot be deleted (the message names the place). Targets checked: category, page, product, HTML block.
+- **Compiled value** (`menus.compiled`): `{"menus": {key: [...]}, "locations": {header, drawer, footer => key|null}}`. A link node = `{type: link, label, url, new_tab, submenu,
+  badge: {text, color}|null, html: string|null, children}`, a heading node = `{type: heading, label, children}`. `CompiledMenus::read()` validates every key again, and cleans the
+  block again (`HtmlBlockSanitizer::render`). A product item is skipped when the product is not visible; the rebuild is asked for by a product's status / visibility / name / slug
+  change (only when a menu holds a product item) and by an HTML block's save / delete (only when a menu uses one).
+- **Badges:** a class on a `<span class="sf-badge ...">` (six presets in `storefront.css`); a custom colour is `.sf-badge-c-<hex>` in the token stylesheet (`AppearanceCompiler`
+  reads the colours from the stored compiled menus; saving a menu rebuilds the stylesheet when the set of colours changed). Never a `style` attribute.
+- **HTML blocks:** `HtmlBlockSanitizer extends DescriptionSanitizer` (the same walker; the description sanitizer only got `protected` lists and `static::`), model `HtmlBlockModel`
+  sanitizes on every save, `HtmlBlockResource` («HTML блокове», `content_manage`, in the Content group beside Menus until part 2 moves it), delete refused with the menu named.
+- **Header:** the `menu` element has only `style`; the desktop bar prints the `header` location, the drawer the `drawer` location or else the header's; no location, no menu (the
+  category tree is never a fallback). A stored layout that still has `source` validates and loses it. `MenuView` (the category-tree helper) is removed.
+- **Storefront markup:** mega = columns from the structure + the block on the right (`.sf-mega:has(.sf-mega-html)`, 7fr / 3fr; 1-6 equal columns through `data-cols`), dropdown
+  second level = a flyout (`.sf-sub-dropdown .sf-menu .sf-menu`; an indented list inside "More"), drawer = stacked sections for a mega item (`.sf-acc-section`, no second accordion,
+  no block). `storefront.js` is unchanged.

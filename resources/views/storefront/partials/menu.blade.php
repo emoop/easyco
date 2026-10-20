@@ -1,20 +1,18 @@
-{{-- A compiled menu as nested lists (D3): links, and a column as a headed group (the pictures of a mega panel are printed by menu-mega, never here). Labels are escaped; a "see all" link
-     has no label of its own. --}}
+{{-- A compiled menu as nested lists (D3, MENU-2): links with their badge, and a heading as a titled group (the HTML block of a mega item is printed by menu-mega, never here).
+     Labels are escaped. --}}
 <ul class="sf-menu">
     @foreach ($nodes as $node)
         @if ($node['type'] === 'link')
             <li class="sf-menu-item">
-                <a class="sf-menu-link" href="{{ $node['url'] }}"@if ($node['new_tab']) target="_blank" rel="noopener"@endif>{{ ($node['see_all'] ?? false) ? __('storefront.see_all') : $node['label'] }}</a>
+                <a class="sf-menu-link" href="{{ $node['url'] }}"@if ($node['new_tab']) target="_blank" rel="noopener"@endif>{{ $node['label'] }}@include('storefront.partials.menu-badge', ['badge' => $node['badge']])</a>
                 @if ($node['children'] !== [])
                     @include('storefront.partials.menu', ['nodes' => $node['children']])
                 @endif
             </li>
-        @elseif ($node['type'] === 'column')
+        @else
             <li class="sf-menu-item sf-menu-column">
-                @if ($node['label'] !== null)
-                    <p class="sf-mega-heading">{{ $node['label'] }}</p>
-                @endif
-                @include('storefront.partials.menu', ['nodes' => array_values(array_filter($node['children'], fn (array $child): bool => $child['type'] === 'link'))])
+                <p class="sf-mega-heading">{{ $node['label'] }}</p>
+                @include('storefront.partials.menu', ['nodes' => $node['children']])
             </li>
         @endif
     @endforeach

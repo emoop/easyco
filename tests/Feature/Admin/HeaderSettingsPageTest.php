@@ -151,13 +151,13 @@ class HeaderSettingsPageTest extends TestCase
         $state = [
             'desktop' => ['sticky' => false, 'rows' => [
                 'top' => $row(true, 40, ['t1' => $block('button', ['label' => 'Виж', 'url' => '/sale', 'style' => 'outline'])], ['t2' => $block('spacer', ['width' => 'lg'])], ['t3' => $block('text', ['text' => '0888 123 456', 'url' => '/contacts'])]),
-                'main' => $row(true, 52, ['m1' => $block('menu', ['source' => 'main', 'style' => 'dropdown'])], ['m2' => $block('logo', ['height' => 24])], ['m3' => $block('cart', ['style' => 'icon_label']), 'm4' => $block('search', ['mode' => 'field'])]),
+                'main' => $row(true, 52, ['m1' => $block('menu', ['style' => 'dropdown'])], ['m2' => $block('logo', ['height' => 24])], ['m3' => $block('cart', ['style' => 'icon_label']), 'm4' => $block('search', ['mode' => 'field'])]),
                 'bottom' => $row(true, 48, ['b1' => $block('social', ['items' => [['network' => 'facebook', 'url' => 'https://example.test/fb'], ['network' => 'instagram', 'url' => 'https://example.test/ig']]])], ['b2' => $block('html', ['html' => '<p>Одит <b>блок</b></p>'])], ['b3' => $block('text', ['text' => 'Долен текст', 'url' => ''])]),
             ]],
             'mobile' => ['sticky' => false, 'rows' => [
                 'top' => $row(true, 36, ['p1' => $block('text', ['text' => 'Горе', 'url' => ''])]),
                 'main' => $row(true, 50, ['p2' => $block('menu_toggle', ['label_visible' => true])], ['p3' => $block('logo', ['height' => 30])], ['p4' => $block('cart', ['style' => 'icon'])]),
-            ], 'drawer' => ['d1' => $block('text', ['text' => 'Чекмедже', 'url' => '']), 'd2' => $block('menu', ['source' => 'main', 'style' => 'links'])], 'drawer_side' => 'right'],
+            ], 'drawer' => ['d1' => $block('text', ['text' => 'Чекмедже', 'url' => '']), 'd2' => $block('menu', ['style' => 'links'])], 'drawer_side' => 'right'],
         ];
 
         Livewire::test(HeaderSettings::class)->set('data.desktop', $state['desktop'])->set('data.mobile', $state['mobile'])->callAction('save_draft')->assertHasNoFormErrors();

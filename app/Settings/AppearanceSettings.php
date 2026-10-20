@@ -24,6 +24,9 @@ final class AppearanceSettings
     /** D3: ALL compiled menus (JSON, at most 256 KB), written by App\Storefront\Menu\MenuCompiler and read with the appearance. */
     public const MENUS_COMPILED_KEY = 'menus.compiled';
 
+    /** MENU-2: which menu sits in which place of the shop: {"header": id|null, "drawer": id|null, "footer": id|null}. The storefront reads the compiled copy inside `menus.compiled`. */
+    public const MENUS_LOCATIONS_KEY = 'menus.locations';
+
     public const HEADER_DRAFT_KEY = 'header.layout.draft';
 
     public const HEADER_PUBLISHED_KEY = 'header.layout.published';

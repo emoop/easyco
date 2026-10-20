@@ -2,7 +2,9 @@
 
 namespace Tests\Feature\Admin;
 
+use App\Content\HtmlBlocks\HtmlBlockModel;
 use App\Content\Menus\MenuFormState;
+use App\Content\Menus\MenuLocations;
 use App\Content\Menus\MenuModel;
 use App\Content\Menus\MenuTree;
 use App\Content\PageWriter;
@@ -103,7 +105,7 @@ class MenuResourceTest extends TestCase
         app(\App\Content\Menus\MenuWriter::class)->delete($this->menu('main'));
     }
 
-    public function test_another_menu_can_be_created_and_deleted_and_the_name_of_the_place_is_in_the_message_while_the_header_uses_it(): void
+    public function test_another_menu_can_be_created_and_deleted_and_the_name_of_the_place_is_in_the_message_while_it_holds_a_location(): void
     {
         $this->actingAsStaff('Administrator');
 
@@ -111,22 +113,20 @@ class MenuResourceTest extends TestCase
         $menu = $this->menu('sale');
         $this->assertSame('Sale menu', $menu->name);
 
-        // The header draft uses it: refused, and the message names the place.
-        $layout = \App\Storefront\Header\HeaderLayout::default();
-        $layout['desktop']['rows']['main']['left'] = [['type' => 'menu', 'settings' => ['source' => 'sale', 'style' => 'links']]];
-        $this->settings()->set(AppearanceSettings::HEADER_DRAFT_KEY, json_encode($layout));
+        // It holds the phone location: refused, and the message names the place.
+        app(MenuLocations::class)->assign($menu->id, ['drawer']);
 
         try {
             app(\App\Content\Menus\MenuWriter::class)->delete($menu);
             $this->fail('the menu is in use');
         } catch (\App\Content\Menus\MenuException $exception) {
-            $this->assertStringContainsString('the header draft', $exception->getMessage());
+            $this->assertStringContainsString('Phone', $exception->getMessage());
             $this->assertStringContainsString('Sale menu', $exception->getMessage());
         }
 
         $this->assertTrue($menu->fresh() !== null);
 
-        $this->settings()->forget(AppearanceSettings::HEADER_DRAFT_KEY);
+        app(MenuLocations::class)->release($menu->id);
         Livewire::test(ListMenus::class)->callTableAction('delete_menu', $menu);
         $this->assertNull(MenuModel::query()->where('key', 'sale')->first());
     }
@@ -176,28 +176,29 @@ class MenuResourceTest extends TestCase
 
     public function test_the_form_state_round_trips_dropdowns_columns_and_the_path_of_an_error_finds_its_field(): void
     {
+        $item = fn (string $type, array $more = [], array $children = []): array => $more + ['type' => $type, 'label' => null, 'url' => null, 'target_id' => null, 'submenu' => 'none', 'html_block_id' => null,
+            'badge_text' => null, 'badge_color' => null, 'new_tab' => false, 'visible' => true, 'children' => $children];
         $tree = [
-            ['type' => 'category', 'label' => null, 'url' => null, 'target_id' => 1, 'submenu' => 'dropdown', 'with_children' => false, 'children_limit' => 12, 'media_asset_id' => null, 'image_alt' => null, 'caption' => null, 'new_tab' => false, 'visible' => true, 'children' => [
-                ['type' => 'link', 'label' => 'A', 'url' => '/a', 'target_id' => null, 'submenu' => 'none', 'with_children' => false, 'children_limit' => 12, 'media_asset_id' => null, 'image_alt' => null, 'caption' => null, 'new_tab' => true, 'visible' => true, 'children' => [
-                    ['type' => 'page', 'label' => null, 'url' => null, 'target_id' => 7, 'submenu' => 'none', 'with_children' => false, 'children_limit' => 12, 'media_asset_id' => null, 'image_alt' => null, 'caption' => null, 'new_tab' => false, 'visible' => true, 'children' => []],
-                ]],
-            ]],
-            ['type' => 'link', 'label' => 'Mega', 'url' => '/m', 'target_id' => null, 'submenu' => 'mega', 'with_children' => false, 'children_limit' => 12, 'media_asset_id' => null, 'image_alt' => null, 'caption' => null, 'new_tab' => false, 'visible' => true, 'children' => [
-                ['type' => 'column', 'label' => 'Col', 'visible' => true, 'children' => [
-                    ['type' => 'image', 'label' => null, 'url' => '/p', 'target_id' => null, 'submenu' => 'none', 'with_children' => false, 'children_limit' => 12, 'media_asset_id' => 5, 'image_alt' => 'Alt', 'caption' => 'Cap', 'new_tab' => false, 'visible' => true, 'children' => []],
-                ]],
-            ]],
+            $item('category', ['target_id' => 1, 'submenu' => 'dropdown'], [
+                $item('link', ['label' => 'A', 'url' => '/a', 'new_tab' => true, 'badge_text' => 'New', 'badge_color' => 'green'], [$item('page', ['target_id' => 7])]),
+            ]),
+            $item('link', ['label' => 'Mega', 'url' => '/m', 'submenu' => 'mega', 'html_block_id' => 4], [
+                $item('heading', ['label' => 'Col'], [$item('product', ['target_id' => 5]), $item('link', ['label' => 'L', 'url' => '/l'])]),
+                $item('category', ['target_id' => 2, 'label' => 'Linked heading'], [$item('link', ['label' => 'M', 'url' => '/mm'])]),
+            ]),
         ];
 
         $state = MenuFormState::toForm($tree);
         [$back, $map, $types] = MenuFormState::fromForm(array_combine(array_map(fn (int $i): string => "k{$i}", array_keys($state)), $state));
 
-        $this->assertSame(1, $back[0]['target_id']);
-        $this->assertSame('/a', $back[0]['children'][0]['url']);
-        $this->assertSame(7, $back[0]['children'][0]['children'][0]['target_id']);
-        $this->assertSame(5, $back[1]['children'][0]['children'][0]['media_asset_id']);
+        $this->assertEquals($tree, $back, 'nothing is lost on the way through the form');
+        $this->assertSame(['heading', 'category'], array_column($state[1]['columns'], 'type'));
         $this->assertSame('items.k0.dropdown_items.0.sub_items.0.page_id', MenuFormState::fieldFor('items.0.children.0.children.0.target_id', $map, $types));
-        $this->assertSame('items.k1.columns.0.column_items.0.image_file', MenuFormState::fieldFor('items.1.children.0.children.0.media_asset_id', $map, $types));
+        $this->assertSame('items.k1.columns.0.column_items.0.product_id', MenuFormState::fieldFor('items.1.children.0.children.0.target_id', $map, $types));
+        $this->assertSame('items.k1.columns.1.category_id', MenuFormState::fieldFor('items.1.children.1.target_id', $map, $types), 'a category used as the column heading');
+        $this->assertSame('items.k1.columns.0.label', MenuFormState::fieldFor('items.1.children.0.label', $map, $types));
+        $this->assertSame('items.k1.html_block_id', MenuFormState::fieldFor('items.1.html_block_id', $map, $types));
+        $this->assertSame('items.k0.dropdown_items.0.badge_color', MenuFormState::fieldFor('items.0.children.0.badge_color', $map, $types));
         $this->assertSame('items.k0.dropdown_items.0.url', MenuFormState::fieldFor('items.0.children.0.url', $map, $types));
         $this->assertSame('items', MenuFormState::fieldFor('items', $map, $types));
     }
@@ -211,17 +212,17 @@ class MenuResourceTest extends TestCase
         $items = array_values($editor->get('data.items'));
 
         $this->assertSame([3, 1], array_map(fn (array $item): int => (int) $item['category_id'], $items), 'Shoes was there; only Clothing was added');
-        $this->assertSame(['dropdown', 'dropdown'][1], $items[1]['submenu']);
-        $this->assertTrue((bool) $items[1]['with_children']);
+        $this->assertSame('dropdown', $items[1]['submenu']);
+        $this->assertSame([2], array_map(fn (array $child): int => (int) $child['category_id'], array_values($items[1]['dropdown_items'])), 'its sub-categories are explicit items');
 
         // A second press adds nothing.
         $editor->callAction('add_main_categories');
         $this->assertCount(2, $editor->get('data.items'));
     }
 
-    public function test_the_subcategories_helper_adds_them_as_explicit_items_and_turns_the_automatic_list_off(): void
+    public function test_the_subcategories_helper_adds_them_as_explicit_items(): void
     {
-        $this->saveMenu('main', [$this->menuItem('category', ['target_id' => 1, 'submenu' => 'dropdown', 'with_children' => true])]);
+        $this->saveMenu('main', [$this->menuItem('category', ['target_id' => 1, 'submenu' => 'dropdown', 'children' => [$this->menuItem('link', ['label' => 'Own', 'url' => '/own'])]])]);
         $this->actingAsStaff('Administrator');
 
         $editor = Livewire::test(EditMenu::class, ['record' => $this->menu()->id]);
@@ -231,11 +232,11 @@ class MenuResourceTest extends TestCase
         $item = $editor->get("data.items.{$key}");
         $children = array_values($item['dropdown_items']);
 
-        $this->assertSame([2], array_map(fn (array $child): int => (int) $child['category_id'], $children));
-        $this->assertFalse((bool) $item['with_children'], 'explicit items replace the automatic list');
+        $this->assertSame(['link', 'category'], array_column($children, 'type'), 'the own link stays, the sub-category is added after it');
+        $this->assertSame(2, (int) $children[1]['category_id']);
 
         $editor->call('save')->assertHasNoFormErrors();
-        $this->assertSame(['category'], array_column(MenuTree::forMenu($this->menu()->id)[0]['children'], 'type'));
+        $this->assertSame(['link', 'category'], array_column(MenuTree::forMenu($this->menu()->id)[0]['children'], 'type'));
     }
 
     public function test_a_crowded_main_menu_gets_a_warning_and_is_still_saved(): void
@@ -310,39 +311,41 @@ class MenuResourceTest extends TestCase
     public function test_every_field_survives_a_save_and_a_reload(): void
     {
         $page = app(PageWriter::class)->create(['title' => 'Terms', 'slug' => 'terms', 'body' => '<p>x</p>', 'status' => 'published']);
-        $image = $this->makeMenuImage(930);
+        $block = HtmlBlockModel::create(['title' => 'Boys picture', 'body' => '<p>Hello</p>']);
         $this->actingAsStaff('Administrator');
-        $item = fn (string $type, array $more = []): array => $more + ['type' => $type, 'label' => null, 'url' => null, 'category_id' => null, 'page_id' => null, 'submenu' => 'none', 'with_children' => false,
-            'children_limit' => 12, 'media_asset_id' => null, 'image_alt' => null, 'caption' => null, 'new_tab' => false, 'visible' => true];
+        $item = fn (string $type, array $more = []): array => $more + ['type' => $type, 'label' => null, 'url' => null, 'category_id' => null, 'page_id' => null, 'product_id' => null, 'submenu' => 'none',
+            'html_block_id' => null, 'badge_text' => null, 'badge_color' => null, 'new_tab' => false, 'visible' => true];
         $items = [
-            'i1' => $item('link', ['label' => 'Начало', 'url' => '/', 'new_tab' => true]),
-            'i2' => $item('category', ['category_id' => 1, 'label' => 'Дамски', 'submenu' => 'dropdown', 'with_children' => true, 'children_limit' => 5, 'dropdown_items' => [
+            'i1' => $item('link', ['label' => 'Начало', 'url' => '/', 'new_tab' => true, 'badge_text' => 'Ново', 'badge_color' => 'green']),
+            'i2' => $item('category', ['category_id' => 1, 'label' => 'Дамски', 'submenu' => 'dropdown', 'dropdown_items' => [
                 'd1' => $item('link', ['label' => 'Промо', 'url' => '/promo']) + ['sub_items' => []],
                 'd2' => $item('page', ['page_id' => $page->id, 'label' => 'Правила']) + ['sub_items' => ['s1' => $item('link', ['label' => 'Дълбоко', 'url' => '/deep'])]],
             ]]),
-            'i3' => $item('link', ['label' => 'Мега', 'url' => '/mega', 'submenu' => 'mega', 'columns' => [
-                'c1' => ['label' => 'Колона едно', 'visible' => true, 'column_items' => ['x1' => $item('link', ['label' => 'Рокли', 'url' => '/dresses']), 'x2' => $item('category', ['category_id' => 3]), 'x3' => $item('page', ['page_id' => $page->id])]],
-                'c2' => ['label' => 'Колона две', 'visible' => true, 'column_items' => ['y1' => $item('image', ['media_asset_id' => $image, 'image_alt' => 'Снимка', 'caption' => 'Надпис', 'url' => '/promo-image', 'new_tab' => true])]],
+            'i3' => $item('link', ['label' => 'Мега', 'url' => '/mega', 'submenu' => 'mega', 'html_block_id' => $block->id, 'columns' => [
+                'c1' => $item('heading', ['label' => 'Колона едно']) + ['column_items' => ['x1' => $item('link', ['label' => 'Рокли', 'url' => '/dresses', 'badge_text' => 'Sale', 'badge_color' => '#1a2b3c']), 'x2' => $item('category', ['category_id' => 3]), 'x3' => $item('page', ['page_id' => $page->id]), 'x4' => $item('product', ['product_id' => 1])]],
+                'c2' => $item('category', ['category_id' => 3, 'label' => 'Колона две']) + ['column_items' => ['y1' => $item('link', ['label' => 'Обувки', 'url' => '/shoes'])]],
             ]]),
             'i4' => $item('page', ['page_id' => $page->id, 'visible' => false]),
         ];
 
-        Livewire::test(EditMenu::class, ['record' => $this->menu()->id])->set('data.name', 'Одит меню')->set('data.items', $items)->call('save')->assertHasNoFormErrors();
+        Livewire::test(EditMenu::class, ['record' => $this->menu()->id])->set('data.name', 'Одит меню')->set('data.items', $items)->set('data.locations', ['header', 'footer'])->call('save')->assertHasNoFormErrors();
 
         $this->assertSame('Одит меню', $this->menu()->name);
         $tree = MenuTree::forMenu($this->menu()->id);
         $this->assertSame(['link', 'category', 'link', 'page'], array_column($tree, 'type'), 'the order of the top level');
         $this->assertSame([true, false, false, false], array_map(fn (array $i): bool => $i['new_tab'], $tree), 'new_tab on the first');
-        $this->assertSame([5, true], [$tree[1]['children_limit'], $tree[1]['with_children']]);
+        $this->assertSame(['Ново', 'green'], [$tree[0]['badge_text'], $tree[0]['badge_color']]);
         $this->assertSame(['link', 'page'], array_column($tree[1]['children'], 'type'));
         $this->assertSame('Дълбоко', $tree[1]['children'][1]['children'][0]['label'], 'the second level');
-        $this->assertSame(['column', 'column'], array_column($tree[2]['children'], 'type'));
-        $this->assertSame(['link', 'category', 'page'], array_column($tree[2]['children'][0]['children'], 'type'), 'the column, in order');
-        $this->assertSame([$image, 'Снимка', 'Надпис', '/promo-image'], [$tree[2]['children'][1]['children'][0]['media_asset_id'], $tree[2]['children'][1]['children'][0]['image_alt'], $tree[2]['children'][1]['children'][0]['caption'], $tree[2]['children'][1]['children'][0]['url']]);
+        $this->assertSame($block->id, $tree[2]['html_block_id']);
+        $this->assertSame(['heading', 'category'], array_column($tree[2]['children'], 'type'), 'the columns, in order: a heading and a category used as the heading');
+        $this->assertSame(['link', 'category', 'page', 'product'], array_column($tree[2]['children'][0]['children'], 'type'), 'the column, in order');
+        $this->assertSame(['Sale', '#1a2b3c'], [$tree[2]['children'][0]['children'][0]['badge_text'], $tree[2]['children'][0]['children'][0]['badge_color']]);
         $this->assertFalse($tree[3]['visible']);
+        $this->assertEqualsCanonicalizing(['header', 'footer'], app(MenuLocations::class)->of($this->menu()->id));
 
         // reopened: the form shows the same tree, in the same order
-        Livewire::test(EditMenu::class, ['record' => $this->menu()->id])->assertFormSet(function (array $state): void {
+        Livewire::test(EditMenu::class, ['record' => $this->menu()->id])->assertFormSet(function (array $state) use ($block): void {
             $top = array_values($state['items']);
             $this->assertSame(['Одит меню'], [$state['name']]);
             $this->assertSame(['link', 'category', 'link', 'page'], array_column($top, 'type'));
@@ -350,10 +353,28 @@ class MenuResourceTest extends TestCase
             $this->assertSame('dropdown', $top[1]['submenu']);
             $this->assertSame(['Промо', 'Правила'], array_column(array_values($top[1]['dropdown_items']), 'label'));
             $this->assertSame(['Колона едно', 'Колона две'], array_column(array_values($top[2]['columns']), 'label'));
+            $this->assertSame(['heading', 'category'], array_column(array_values($top[2]['columns']), 'type'));
+            $this->assertSame($block->id, (int) $top[2]['html_block_id']);
+            $this->assertEqualsCanonicalizing(['header', 'footer'], $state['locations']);
         });
 
         // and the shop follows at once (the compiled menus were replaced by the save)
         $this->assertStringContainsString('Дамски', (string) $this->settings()->get(AppearanceSettings::MENUS_COMPILED_KEY));
+    }
+
+    public function test_a_location_ticked_here_moves_from_the_menu_that_had_it(): void
+    {
+        $this->actingAsStaff('Administrator');
+        $footer = $this->menu('footer');
+        $this->assertContains('footer', app(MenuLocations::class)->of($footer->id));
+
+        $this->assertStringContainsString('Footer', (string) MenuResource::movesNote($this->menu('main')), 'the note names what would move');
+
+        Livewire::test(EditMenu::class, ['record' => $this->menu()->id])->set('data.locations', ['header', 'footer'])->call('save')->assertHasNoFormErrors();
+
+        $this->assertEqualsCanonicalizing(['header', 'footer'], app(MenuLocations::class)->of($this->menu()->id));
+        $this->assertSame([], app(MenuLocations::class)->of($footer->id), 'one menu per location: the footer menu let go of it');
+        $this->assertSame($this->menu()->key, app(MenuLocations::class)->keys()['footer']);
     }
 
     // UX-0: reordering was switched off by `->reorderable(false)`: the editor showed no up / down buttons at all (the audit's "reorder" step found it).

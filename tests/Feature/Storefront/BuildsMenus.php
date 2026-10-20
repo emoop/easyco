@@ -23,13 +23,14 @@ trait BuildsMenus
         $this->app->forgetScopedInstances();
     }
 
-    /** The main menu as the seed builds it: every top-level category, each a dropdown that lists its shown sub-categories. */
+    /** The main menu as the seed builds it: every top-level category, each a dropdown holding its direct sub-categories as explicit items. */
     protected function mainMenuOfTopCategories(): void
     {
         $items = [];
 
         foreach (DB::table('catalog_categories')->whereNull('parent_id')->orderBy('name')->orderBy('id')->pluck('id') as $id) {
-            $items[] = $this->menuItem('category', ['target_id' => (int) $id, 'submenu' => 'dropdown', 'with_children' => true]);
+            $sub = DB::table('catalog_categories')->where('parent_id', $id)->orderBy('name')->orderBy('id')->pluck('id')->map(fn ($subId): array => $this->menuItem('category', ['target_id' => (int) $subId]))->all();
+            $items[] = $this->menuItem('category', ['target_id' => (int) $id, 'submenu' => $sub === [] ? 'none' : 'dropdown', 'children' => $sub]);
         }
 
         $this->saveMenu('main', $items);

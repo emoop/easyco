@@ -2,12 +2,14 @@
 
 namespace App\Storefront\Menu;
 
+use App\Content\HtmlBlocks\HtmlBlockSanitizer;
+use App\Content\Menus\MenuValidator;
 use App\Rules\PlainText;
 use App\Settings\AppearanceSettings;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Re-validates the compiled menus every time the cached payload is read (D3): shape, types, lengths, the link rule. A menu that does not pass renders
+ * Re-validates the compiled menus every time the cached payload is read (D3, MENU-2): shape, types, lengths, the link rule, the badge, the HTML block (cleaned again). A menu that does not pass renders
  * as an EMPTY menu and is logged once per process, so a hand-edited database row cannot print a `javascript:` link, an unknown element or a huge tree.
  * The result is rebuilt from known keys only: nothing unvalidated is passed on to a view.
  */
@@ -16,6 +18,8 @@ final class CompiledMenus
     private const MAX_DEPTH = 5;
 
     private const MAX_NODES = 600;
+
+    private const MAX_HTML = 200_000;
 
     /** @var array<string, true> */
     private static array $logged = [];
@@ -48,6 +52,25 @@ final class CompiledMenus
             }
 
             $out[$key] = $clean;
+        }
+
+        return $out;
+    }
+
+    /**
+     * The menu key of each location, from the stored value: a location whose menu is not in the compiled menus renders nothing.
+     *
+     * @param  mixed  $locations  the decoded `locations` object of the stored value
+     * @param  array<string, mixed>  $menus  the validated menus by key
+     * @return array<string, ?string>
+     */
+    public static function locations(mixed $locations, array $menus): array
+    {
+        $out = [];
+
+        foreach (['header', 'drawer', 'footer'] as $location) {
+            $key = is_array($locations) ? ($locations[$location] ?? null) : null;
+            $out[$location] = is_string($key) && isset($menus[$key]) ? $key : null;
         }
 
         return $out;
@@ -103,8 +126,7 @@ final class CompiledMenus
     {
         return match ($item['type'] ?? null) {
             'link' => $this->link($item, $depth),
-            'column' => $this->column($item, $depth),
-            'image' => $this->image($item),
+            'heading' => $this->heading($item, $depth),
             default => null,
         };
     }
@@ -112,14 +134,18 @@ final class CompiledMenus
     /** @return array<string, mixed>|null */
     private function link(array $item, int $depth): ?array
     {
-        $seeAll = ($item['see_all'] ?? false) === true;
-        $label = $item['label'] ?? null;
-
-        if (! ($seeAll && $label === null) && ! $this->text($label, 1, 120)) {
+        if (! $this->text($item['label'] ?? null, 1, 120)) {
             return null;
         }
 
         if (! $this->url($item['url'] ?? null) || ! is_bool($item['new_tab'] ?? null) || ! in_array($item['submenu'] ?? null, ['none', 'dropdown', 'mega'], true)) {
+            return null;
+        }
+
+        $badge = $this->badge($item['badge'] ?? null);
+        $html = $item['html'] ?? null;
+
+        if ($badge === false || ($html !== null && (! is_string($html) || strlen($html) > self::MAX_HTML))) {
             return null;
         }
 
@@ -129,49 +155,42 @@ final class CompiledMenus
             return null;
         }
 
-        $node = ['type' => 'link', 'label' => $label, 'url' => $item['url'], 'new_tab' => $item['new_tab'], 'submenu' => $item['submenu'], 'children' => $children];
+        // The block is cleaned AGAIN on every read: a hand-edited row or cache entry cannot print a script, a style or an event handler.
+        $html = $html === null || $item['submenu'] !== 'mega' ? null : HtmlBlockSanitizer::render($html);
 
-        return $seeAll ? $node + ['see_all' => true] : $node;
+        return ['type' => 'link', 'label' => $item['label'], 'url' => $item['url'], 'new_tab' => $item['new_tab'], 'submenu' => $item['submenu'], 'badge' => $badge, 'html' => $html === '' ? null : $html, 'children' => $children];
     }
 
     /** @return array<string, mixed>|null */
-    private function column(array $item, int $depth): ?array
+    private function heading(array $item, int $depth): ?array
     {
-        $label = $item['label'] ?? null;
-
-        if ($label !== null && ! $this->text($label, 1, 120)) {
+        if (! $this->text($item['label'] ?? null, 1, 120)) {
             return null;
         }
 
         $children = $this->list(is_array($item['children'] ?? null) ? $item['children'] : [], $depth + 1);
 
-        return $children === null ? null : ['type' => 'column', 'label' => $label, 'children' => $children];
+        return $children === null ? null : ['type' => 'heading', 'label' => $item['label'], 'children' => $children];
     }
 
-    /** @return array<string, mixed>|null */
-    private function image(array $item): ?array
+    /** @return array{text: string, color: ?string}|null|false false = not valid */
+    private function badge(mixed $badge): array|null|false
     {
-        $label = $item['label'] ?? null;
-        $link = $item['url'] ?? null;
-        $srcset = [];
-
-        foreach (is_array($item['srcset'] ?? null) ? $item['srcset'] : [] as $row) {
-            if (! is_array($row) || ! $this->imageUrl($row['url'] ?? null) || ! is_int($row['width'] ?? null) || $row['width'] < 1 || count($srcset) >= 8) {
-                return null;
-            }
-
-            $srcset[] = ['url' => $row['url'], 'width' => $row['width']];
-        }
-
-        if (($label !== null && ! $this->text($label, 1, 80)) || ($link !== null && ! $this->url($link))
-            || ! $this->text($item['alt'] ?? null, 1, 200) || ! $this->imageUrl($item['src'] ?? null)
-            || ! is_int($item['width'] ?? null) || $item['width'] < 1 || ! is_int($item['height'] ?? null) || $item['height'] < 1
-            || ! is_bool($item['new_tab'] ?? null)
-        ) {
+        if ($badge === null) {
             return null;
         }
 
-        return ['type' => 'image', 'label' => $label, 'url' => $link, 'new_tab' => $item['new_tab'], 'alt' => $item['alt'], 'src' => $item['src'], 'srcset' => $srcset, 'width' => $item['width'], 'height' => $item['height']];
+        if (! is_array($badge) || ! $this->text($badge['text'] ?? null, 1, 16)) {
+            return false;
+        }
+
+        $color = $badge['color'] ?? null;
+
+        if ($color !== null && ! MenuValidator::isBadgeColor($color)) {
+            return false;
+        }
+
+        return ['text' => $badge['text'], 'color' => is_string($color) ? strtolower($color) : null];
     }
 
     private function text(mixed $value, int $min, int $max): bool
@@ -191,19 +210,5 @@ final class CompiledMenus
     private function url(mixed $value): bool
     {
         return is_string($value) && $value !== '' && mb_strlen($value) <= 500 && AppearanceSettings::isSafeBannerUrl($value);
-    }
-
-    /** A picture address: root-relative or http(s); never a scheme that runs code. */
-    private function imageUrl(mixed $value): bool
-    {
-        if (! is_string($value) || $value === '' || mb_strlen($value) > 1000 || preg_match('/[\x00-\x20"<>\\\\]/', $value) === 1) {
-            return false;
-        }
-
-        if (str_starts_with($value, '/')) {
-            return ! str_starts_with($value, '//');
-        }
-
-        return in_array(strtolower((string) parse_url($value, PHP_URL_SCHEME)), ['http', 'https'], true);
     }
 }

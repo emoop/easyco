@@ -2,7 +2,9 @@
 
 namespace Tests\Feature\Storefront;
 
+use App\Content\HtmlBlocks\HtmlBlockModel;
 use App\Content\Menus\MenuException;
+use App\Content\Menus\MenuLocations;
 use App\Content\Menus\MenuModel;
 use App\Content\Menus\MenuSeeder;
 use App\Content\Menus\MenuTree;
@@ -19,7 +21,6 @@ use App\Storefront\Menu\MenuCompiler;
 use App\Storefront\Menu\MenuRecompiler;
 use EasyCo\Catalog\Persistence\Eloquent\CategoryModel;
 use EasyCo\Catalog\Persistence\Eloquent\ProductModel;
-use EasyCo\Media\Persistence\Eloquent\MediaAssetModel;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Queue\Events\JobProcessed;
 use Illuminate\Support\Facades\Cache;
@@ -31,7 +32,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 /**
- * Stage D3: menus as a tool. The structure rules and the link / label rules of the validator, the compiler (what is skipped, what is resolved), the compiled value
+ * Stage D3 (as reshaped by MENU-2): menus as a tool. The structure rules and the link / label rules of the validator, the compiler (what is skipped, what is resolved), the compiled value
  * read back with validation, the rebuild triggers (and their debounce), the markup of the bar / dropdown / mega panel / drawer / footer and the query numbers.
  */
 class MenusTest extends TestCase
@@ -96,20 +97,26 @@ class MenusTest extends TestCase
         $dropdown = static fn (array $children): array => $link('D', ['submenu' => 'dropdown', 'children' => $children]);
         $mega = static fn (array $children): array => $link('M', ['submenu' => 'mega', 'children' => $children]);
         $column = static fn (array $children): array => ['type' => 'column', 'children' => $children];
+        $heading = static fn (array $children = [], string $label = 'H'): array => ['type' => 'heading', 'label' => $label, 'children' => $children];
         $image = static fn (): array => ['type' => 'image', 'media_asset_id' => 1];
 
         return [
             'depth four' => [[$dropdown([$link('B', ['children' => [$link('C', ['children' => [$link('E')]])]])])], 'items.0.children.0.children.0.children'],
             'a submenu on a child' => [[$dropdown([$link('B', ['submenu' => 'dropdown'])])], 'items.0.children.0.submenu'],
-            'a link directly under a mega item' => [[$mega([$link('B')])], 'items.0.children.0.type'],
             'an image under a dropdown' => [[$dropdown([$image()])], 'items.0.children.0.type'],
             'a column under a dropdown' => [[$dropdown([$column([])])], 'items.0.children.0.type'],
             'a column at the top' => [[$column([])], 'items.0.type'],
-            'three images in a panel' => [[$mega([$column([$image(), $image()]), $column([$image()])])], 'items.0.children'],
+            'a heading at the top' => [[$heading()], 'items.0.type'],
+            'a heading under a dropdown' => [[$dropdown([$heading()])], 'items.0.children.0.type'],
+            'a heading at the third level' => [[$mega([$heading([$heading()])])], 'items.0.children.0.children.0.type'],
+            'a heading under a nested dropdown item' => [[$dropdown([$link('B', ['children' => [$heading()]])])], 'items.0.children.0.children.0.type'],
+            'a heading without a text' => [[$mega([['type' => 'heading']])], 'items.0.children.0.label'],
+            'a heading with a link' => [[$mega([$heading([], 'H') + ['url' => '/x']])], 'items.0.children.0.url'],
+            'seven columns in a mega item' => [[$mega(array_map(fn (int $i): array => $heading([], "H{$i}"), range(1, 7)))], 'items.0.children'],
             'thirteen top-level items' => [array_map(fn (int $i): array => $link("L{$i}"), range(1, 13)), 'items'],
-            'sixteen items in a column' => [[$mega([$column(array_map(fn (int $i): array => $link("L{$i}"), range(1, 16)))])], 'items.0.children.0.children'],
+            'sixteen items in a column' => [[$mega([$heading(array_map(fn (int $i): array => $link("L{$i}"), range(1, 16)))])], 'items.0.children.0.children'],
             'children without a submenu' => [[$link('A', ['children' => [$link('B')]])], 'items.0.children'],
-            'items inside a column item' => [[$mega([$column([$link('B', ['children' => [$link('C')]])])])], 'items.0.children.0.children.0.children'],
+            'items inside a column item' => [[$mega([$heading([$link('B', ['children' => [$link('C')]])])])], 'items.0.children.0.children.0.children'],
             'with_children on a link' => [[$link('A', ['with_children' => true])], 'items.0.with_children'],
             'with_children on a mega item' => [[$cat(['submenu' => 'mega', 'with_children' => true])], 'items.0.with_children'],
             'an unknown type' => [[['type' => 'script']], 'items.0.type'],
@@ -128,8 +135,13 @@ class MenusTest extends TestCase
             'a label with a bidirectional override' => [[$link("Hi\u{202E}x")], 'items.0.label'],
             'a limit over 50' => [[$cat(['children_limit' => 51])], 'items.0.children_limit'],
             'a limit of 0' => [[$cat(['children_limit' => 0])], 'items.0.children_limit'],
-            'a caption that is too long' => [[$mega([$column([['type' => 'image', 'media_asset_id' => 1, 'caption' => str_repeat('c', 81)]])])], 'items.0.children.0.children.0.caption'],
-            'an image without an asset' => [[$mega([$column([['type' => 'image']])])], 'items.0.children.0.children.0.media_asset_id'],
+            'a badge that is too long' => [[$link('A', ['badge_text' => str_repeat('b', 17)])], 'items.0.badge_text'],
+            'a badge colour that is not a colour' => [[$link('A', ['badge_text' => 'New', 'badge_color' => 'red; background:url(x)'])], 'items.0.badge_color'],
+            'a badge colour in three digits' => [[$link('A', ['badge_text' => 'New', 'badge_color' => '#f00'])], 'items.0.badge_color'],
+            'an HTML block on a dropdown item' => [[$dropdown([])  + ['html_block_id' => 1]], 'items.0.html_block_id'],
+            'an HTML block on a nested item' => [[$mega([$heading([], 'H') + ['html_block_id' => 1]])], 'items.0.children.0.html_block_id'],
+            'a product without a target' => [[['type' => 'product']], 'items.0.target_id'],
+            'thirteen custom badge colours' => [array_map(fn (int $i): array => $link("L{$i}", ['badge_text' => 'x', 'badge_color' => sprintf('#%06x', $i * 1000)]), range(1, 12)) + [12 => $link('L13', ['badge_text' => 'x', 'badge_color' => '#aabbcc'])], 'items'],
         ];
     }
 
@@ -165,7 +177,7 @@ class MenusTest extends TestCase
     {
         $menu = MenuModel::query()->where('key', 'main')->firstOrFail();
 
-        foreach ([['category', 99], ['page', 99]] as [$type, $id]) {
+        foreach ([['category', 99], ['page', 99], ['product', 99]] as [$type, $id]) {
             try {
                 app(MenuWriter::class)->save($menu, 'Main', [$this->menuItem($type, ['target_id' => $id])]);
                 $this->fail('refused');
@@ -175,20 +187,21 @@ class MenusTest extends TestCase
         }
 
         try {
-            app(MenuWriter::class)->save($menu, 'Main', [$this->menuItem('link', ['label' => 'M', 'url' => '/m', 'submenu' => 'mega', 'children' => [$this->menuItem('column', ['children' => [$this->menuItem('image', ['media_asset_id' => 99])]])]])]);
+            app(MenuWriter::class)->save($menu, 'Main', [$this->menuItem('link', ['label' => 'M', 'url' => '/m', 'submenu' => 'mega', 'html_block_id' => 99, 'children' => [$this->menuItem('heading', ['label' => 'Col'])]])]);
             $this->fail('refused');
         } catch (MenuException $exception) {
-            $this->assertArrayHasKey('items.0.children.0.children.0.media_asset_id', $exception->errors);
+            $this->assertArrayHasKey('items.0.html_block_id', $exception->errors);
         }
     }
 
     public function test_a_tree_that_follows_the_rules_is_saved_and_read_back_in_its_order(): void
     {
-        $this->makeMenuImage(900);
+        $block = HtmlBlockModel::create(['title' => 'Picture', 'body' => '<p>x</p>']);
         $this->saveMenu('main', [
             $this->link('First', '/first'),
-            $this->menuItem('category', ['target_id' => 1, 'submenu' => 'mega', 'children' => [
-                $this->menuItem('column', ['label' => 'Women', 'children' => [$this->link('Sale', '/sale'), $this->menuItem('image', ['media_asset_id' => 900, 'caption' => 'New'])]]),
+            $this->menuItem('category', ['target_id' => 1, 'submenu' => 'mega', 'html_block_id' => $block->id, 'children' => [
+                $this->menuItem('heading', ['label' => 'Women', 'children' => [$this->link('Sale', '/sale', ['badge_text' => 'Sale', 'badge_color' => '#AABBCC']), $this->menuItem('product', ['target_id' => 1])]]),
+                $this->menuItem('page', ['target_id' => $this->page('terms', 'Terms')->id, 'children' => [$this->link('Inside', '/inside')]]),
             ]]),
             $this->link('Last', '/last', ['new_tab' => true]),
         ]);
@@ -197,9 +210,30 @@ class MenusTest extends TestCase
 
         $this->assertSame(['link', 'category', 'link'], array_column($tree, 'type'));
         $this->assertSame(['First', null, 'Last'], array_column($tree, 'label'));
-        $this->assertSame('column', $tree[1]['children'][0]['type']);
-        $this->assertSame(['link', 'image'], array_column($tree[1]['children'][0]['children'], 'type'));
+        $this->assertSame($block->id, $tree[1]['html_block_id']);
+        $this->assertSame(['heading', 'page'], array_column($tree[1]['children'], 'type'));
+        $this->assertSame(['link', 'product'], array_column($tree[1]['children'][0]['children'], 'type'));
+        $this->assertSame(['Sale', '#aabbcc'], [$tree[1]['children'][0]['children'][0]['badge_text'], $tree[1]['children'][0]['children'][0]['badge_color']], 'the colour is stored lower-case');
         $this->assertTrue($tree[2]['new_tab']);
+    }
+
+    public function test_an_invalid_item_writes_nothing_all_or_nothing(): void
+    {
+        $this->saveMenu('main', [$this->link('Keep', '/keep')]);
+        $menu = MenuModel::query()->where('key', 'main')->firstOrFail();
+        $rows = DB::table('menu_items')->count();
+
+        try {
+            // the first two items are fine, the third is not: not even the first two are written
+            app(MenuWriter::class)->save($menu, 'Renamed', [$this->link('New 1', '/n1'), $this->link('New 2', '/n2'), $this->link('Bad', 'javascript:alert(1)')]);
+            $this->fail('refused');
+        } catch (MenuException $exception) {
+            $this->assertSame(['items.2.url'], array_keys($exception->errors), 'the error is keyed by the index of the faulty item');
+        }
+
+        $this->assertSame($rows, DB::table('menu_items')->count());
+        $this->assertSame(['Keep'], array_column(MenuTree::forMenu($menu->id), 'label'));
+        $this->assertNotSame('Renamed', $menu->fresh()->name);
     }
 
     // ---- the compiler ------------------------------------------------------------------------------------------------------------------------
@@ -247,76 +281,99 @@ class MenusTest extends TestCase
         $this->assertSame(['Clothing', 'Footwear'], array_column($this->compiledMenu('main'), 'label'));
     }
 
-    public function test_with_children_lists_only_shown_subcategories_cut_at_the_limit_with_see_all(): void
-    {
-        foreach ([5, 6, 7] as $id) {
-            $this->makeCategory($id, "Sub {$id}", "sub-{$id}", 1);
-            $this->makeProduct(10 + $id, ['slug' => "p-{$id}", 'categories' => [$id], 'price' => '5.00', 'stock' => 1]);
-        }
-
-        $this->makeCategory(8, 'Hidden sub', 'hidden-sub', 1);
-        $this->saveMenu('main', [$this->menuItem('category', ['target_id' => 1, 'submenu' => 'dropdown', 'with_children' => true, 'children_limit' => 3])]);
-
-        $children = $this->compiledMenu('main')[0]['children'];
-
-        $this->assertSame(['Dresses', 'Sub 5', 'Sub 6', null], array_column($children, 'label'), 'Hidden sub (no product) is not listed; 4 are shown, 3 are kept, then See all');
-        $this->assertTrue($children[3]['see_all']);
-        $this->assertSame('/product-category/clothing', $children[3]['url']);
-        $this->assertSame('dropdown', $this->compiledMenu('main')[0]['submenu']);
-    }
-
     public function test_a_dropdown_with_nothing_left_becomes_a_plain_link(): void
     {
-        $this->saveMenu('main', [$this->menuItem('category', ['target_id' => 3, 'submenu' => 'dropdown', 'with_children' => true])]);
+        $this->saveMenu('main', [$this->menuItem('category', ['target_id' => 3, 'submenu' => 'dropdown', 'children' => [$this->menuItem('category', ['target_id' => 4])]])]);
 
         $item = $this->compiledMenu('main')[0];
 
-        $this->assertSame('none', $item['submenu']);
+        $this->assertSame('none', $item['submenu'], 'Empty has no visible product, so the dropdown has nothing to show');
         $this->assertSame([], $item['children']);
     }
 
-    public function test_an_image_is_resolved_only_from_a_ready_asset(): void
+    public function test_a_product_item_links_to_the_product_and_is_skipped_when_it_is_not_visible(): void
     {
-        $this->makeMenuImage(901);
-        $this->makeMenuImage(902, 'processing');
-        $this->saveMenu('main', [$this->menuItem('link', ['label' => 'M', 'url' => '/m', 'submenu' => 'mega', 'children' => [
-            $this->menuItem('column', ['label' => 'Col', 'children' => [
-                $this->link('L', '/l'),
-                $this->menuItem('image', ['media_asset_id' => 901, 'url' => '/promo', 'caption' => 'Promo']),
-                $this->menuItem('image', ['media_asset_id' => 902]),
-            ]]),
-        ]])]);
+        $this->saveMenu('main', [$this->menuItem('product', ['target_id' => 1]), $this->menuItem('product', ['target_id' => 2, 'label' => 'The boot'])]);
 
-        $column = $this->compiledMenu('main')[0]['children'][0];
-        $images = array_values(array_filter($column['children'], fn (array $c): bool => $c['type'] === 'image'));
+        $this->assertSame(['Summer dress', 'The boot'], array_column($this->compiledMenu('main'), 'label'));
+        $this->assertSame('/product/dress', $this->compiledMenu('main')[0]['url']);
 
-        $this->assertCount(1, $images, 'the processing asset is dropped');
-        $this->assertSame([900, 675], [$images[0]['width'], $images[0]['height']]);
-        $this->assertCount(2, $images[0]['srcset']);
-        $this->assertSame('Promo', $images[0]['alt'], 'no alt: the caption');
-        $this->assertSame('/promo', $images[0]['url']);
+        ProductModel::query()->findOrFail(1)->update(['status' => 'draft']);
+        app(MenuRecompiler::class)->flush();
 
-        // The asset is deleted: the next rebuild drops the image too.
-        MediaAssetModel::query()->whereKey(901)->delete();
-        app(MenuRecompiler::class)->now();
-        $this->assertSame(['link'], array_column($this->compiledMenu('main')[0]['children'][0]['children'], 'type'));
+        $this->assertSame(['The boot'], array_column($this->compiledMenu('main'), 'label'), 'a hidden product is skipped by the rebuild that its change asked for');
+
+        ProductModel::query()->findOrFail(1)->update(['status' => 'active']);
+        app(MenuRecompiler::class)->flush();
+        $this->assertSame(['Summer dress', 'The boot'], array_column($this->compiledMenu('main'), 'label'));
     }
 
-    public function test_the_alt_text_falls_back_to_the_shop_name(): void
+    public function test_a_heading_is_a_column_and_the_html_block_rides_the_mega_item(): void
     {
-        $this->makeMenuImage(903);
-        $this->saveMenu('main', [$this->menuItem('link', ['label' => 'M', 'url' => '/m', 'submenu' => 'mega', 'children' => [
-            $this->menuItem('column', ['children' => [$this->menuItem('image', ['media_asset_id' => 903])]]),
+        $block = HtmlBlockModel::create(['title' => 'Boys', 'body' => '<figure><img src="/storage/html-blocks/a.jpg" alt="A boot" width="300" height="200"></figure><script>alert(1)</script>']);
+        $this->saveMenu('main', [$this->menuItem('link', ['label' => 'Boys', 'url' => '/boys', 'submenu' => 'mega', 'html_block_id' => $block->id, 'children' => [
+            $this->menuItem('heading', ['label' => 'Clothes', 'children' => [$this->link('Jackets', '/jackets')]]),
+            $this->menuItem('heading', ['label' => 'Empty heading']),
+            $this->link('Shoes', '/shoes', ['children' => [$this->link('Boots', '/boots')]]),
         ]])]);
 
-        $this->assertSame('Raf Shop', $this->compiledMenu('main')[0]['children'][0]['children'][0]['alt']);
+        $mega = $this->compiledMenu('main')[0];
+
+        $this->assertSame('mega', $mega['submenu']);
+        $this->assertSame(['heading', 'link'], array_column($mega['children'], 'type'), 'a heading with nothing under it is gone; a link can be a column heading too');
+        $this->assertSame(['Jackets'], array_column($mega['children'][0]['children'], 'label'));
+        $this->assertStringContainsString('<img loading="lazy" decoding="async" src="/storage/html-blocks/a.jpg" alt="A boot" width="300" height="200">', $mega['html']);
+        $this->assertStringNotContainsString('script', $mega['html']);
+    }
+
+    public function test_the_html_block_is_part_of_the_compiled_menu_and_an_edit_follows(): void
+    {
+        $block = HtmlBlockModel::create(['title' => 'B', 'body' => '<p>One</p>']);
+        $this->saveMenu('main', [$this->menuItem('link', ['label' => 'Boys', 'url' => '/boys', 'submenu' => 'mega', 'html_block_id' => $block->id, 'children' => [
+            $this->menuItem('heading', ['label' => 'Clothes', 'children' => [$this->link('Jackets', '/jackets')]]),
+        ]])]);
+        $this->assertStringContainsString('One', $this->get('/')->assertOk()->getContent());
+
+        $block->update(['body' => '<p>Two</p>']);
+        $this->fresh();
+
+        $html = $this->get('/')->assertOk()->getContent();
+        $this->assertStringContainsString('<div class="sf-mega-media sf-mega-html"><p>Two</p></div>', $html);
+        $this->assertStringNotContainsString('One', $html);
+    }
+
+    public function test_a_badge_is_a_class_never_a_style_attribute(): void
+    {
+        $this->saveMenu('main', [
+            $this->link('Sale', '/sale', ['badge_text' => 'Sale', 'badge_color' => 'orange']),
+            $this->link('New', '/new', ['badge_text' => 'New', 'badge_color' => '#1A2B3C']),
+            $this->link('Plain badge', '/p', ['badge_text' => 'Hot']),
+        ]);
+        $this->fresh();
+
+        $html = $this->get('/')->assertOk()->getContent();
+
+        $this->assertStringContainsString('<span class="sf-badge sf-badge-orange">Sale</span>', $html);
+        $this->assertStringContainsString('<span class="sf-badge sf-badge-c-1a2b3c">New</span>', $html);
+        $this->assertStringContainsString('<span class="sf-badge">Hot</span>', $html);
+        $this->assertDoesNotMatchRegularExpression('/<[^>]*\sstyle=/i', $html, 'no inline style on the page');
+
+        // the custom colour lives in the token stylesheet as a class
+        $hash = json_decode((string) $this->settings()->get(AppearanceSettings::COMPILED_KEY), true)['hash'];
+        $css = Storage::disk('public')->get('appearance/tokens-'.$hash.'.css');
+        $this->assertStringContainsString('.sf-badge-c-1a2b3c { --sf-badge-bg: #1a2b3c; --sf-badge-fg: #ffffff; }', (string) $css);
+
+        // and goes again when no item uses it
+        $this->saveMenu('main', [$this->link('Sale', '/sale')]);
+        $compiled = $this->settings()->get(AppearanceSettings::COMPILED_KEY);
+        $this->assertTrue($compiled === null || ! str_contains((string) Storage::disk('public')->get('appearance/tokens-'.json_decode($compiled, true)['hash'].'.css'), 'sf-badge-c-1a2b3c'));
     }
 
     public function test_a_compiled_value_over_the_size_limit_refuses_the_save_and_keeps_the_old_one(): void
     {
         $this->saveMenu('main', [$this->link('Old', '/old')]);
         $before = $this->settings()->get(AppearanceSettings::MENUS_COMPILED_KEY);
-        $this->app->bind(MenuCompiler::class, fn () => new class($this->settings(), app(\App\Storefront\Url\StorefrontUrls::class), app(\App\Storefront\Visibility\StorefrontVisibility::class), app(\App\Storefront\Reader\ImageSetBuilder::class)) extends MenuCompiler {
+        $this->app->bind(MenuCompiler::class, fn () => new class($this->settings(), app(\App\Storefront\Url\StorefrontUrls::class), app(\App\Storefront\Visibility\StorefrontVisibility::class), app(MenuLocations::class)) extends MenuCompiler {
             public const MAX_BYTES = 40;
         });
         $this->app->forgetInstance(MenuRecompiler::class);
@@ -337,13 +394,13 @@ class MenusTest extends TestCase
 
     private function putCompiled(array $menus): void
     {
-        $this->settings()->set(AppearanceSettings::MENUS_COMPILED_KEY, json_encode(['menus' => $menus]));
+        $this->settings()->set(AppearanceSettings::MENUS_COMPILED_KEY, json_encode(['menus' => $menus, 'locations' => ['header' => 'main', 'drawer' => null, 'footer' => 'footer']]));
         $this->fresh();
     }
 
     private function goodLink(string $label = 'Good', string $url = '/good'): array
     {
-        return ['type' => 'link', 'label' => $label, 'url' => $url, 'new_tab' => false, 'submenu' => 'none', 'children' => []];
+        return ['type' => 'link', 'label' => $label, 'url' => $url, 'new_tab' => false, 'submenu' => 'none', 'badge' => null, 'html' => null, 'children' => []];
     }
 
     public function test_a_hand_edited_menu_with_a_javascript_link_renders_nothing_and_logs_once(): void
@@ -376,7 +433,7 @@ class MenusTest extends TestCase
     /** @return array<string, array{0: array<string, mixed>}> */
     public static function invalidCompiledNodes(): array
     {
-        $link = ['type' => 'link', 'label' => 'X', 'url' => '/x', 'new_tab' => false, 'submenu' => 'none', 'children' => []];
+        $link = ['type' => 'link', 'label' => 'X', 'url' => '/x', 'new_tab' => false, 'submenu' => 'none', 'badge' => null, 'html' => null, 'children' => []];
 
         return [
             'an unknown type' => [['type' => 'iframe', 'src' => 'x']],
@@ -385,7 +442,11 @@ class MenusTest extends TestCase
             'a label with a control character' => [['label' => "A\u{0007}B"] + $link],
             'an unknown submenu mode' => [['submenu' => 'huge'] + $link],
             'new_tab that is not a boolean' => [['new_tab' => 'yes'] + $link],
-            'an image with a data: source' => [['type' => 'column', 'label' => null, 'children' => [['type' => 'image', 'label' => null, 'url' => null, 'new_tab' => false, 'alt' => 'a', 'src' => 'data:image/svg+xml,x', 'srcset' => [], 'width' => 1, 'height' => 1]]]],
+            'a column or an image of the old model' => [['type' => 'column', 'label' => null, 'children' => []]],
+            'a heading without a label' => [['type' => 'heading', 'label' => '', 'children' => []]],
+            'a badge with a style in its colour' => [['badge' => ['text' => 'New', 'color' => 'red;x:y']] + $link],
+            'a badge text that is too long' => [['badge' => ['text' => str_repeat('x', 17), 'color' => null]] + $link],
+            'a block that is not a string' => [['submenu' => 'mega', 'html' => ['x']] + $link],
             'a tree that is far too deep' => [['children' => [['children' => [['children' => [['children' => [['children' => [['children' => [$link]] + $link]] + $link]] + $link]] + $link]] + $link]] + $link],
         ];
     }
@@ -396,7 +457,15 @@ class MenusTest extends TestCase
         $good['onclick'] = 'x';
         $read = CompiledMenus::read(['main' => [$good]]);
 
-        $this->assertSame(['type', 'label', 'url', 'new_tab', 'submenu', 'children'], array_keys($read['main'][0]), 'nothing unvalidated is passed on');
+        $this->assertSame(['type', 'label', 'url', 'new_tab', 'submenu', 'badge', 'html', 'children'], array_keys($read['main'][0]), 'nothing unvalidated is passed on');
+    }
+
+    public function test_the_html_block_is_cleaned_again_when_the_compiled_menu_is_read(): void
+    {
+        $evil = ['submenu' => 'mega', 'html' => '<p style="x" onclick="y">Hi</p><script>alert(1)</script><img src="javascript:alert(1)"><img src="/storage/a.png" onerror="x">', 'children' => [['type' => 'heading', 'label' => 'H', 'children' => [$this->goodLink('L', '/l')]]]] + $this->goodLink('M', '/m');
+        $read = CompiledMenus::read(['main' => [$evil]]);
+
+        $this->assertSame('<p>Hi</p><img loading="lazy" decoding="async" src="/storage/a.png" alt="">', $read['main'][0]['html']);
     }
 
     // ---- the rebuild triggers ----------------------------------------------------------------------------------------------------------------------
@@ -456,23 +525,6 @@ class MenusTest extends TestCase
         $this->assertStringNotContainsString('>Boots</a>', $this->get('/')->assertOk()->getContent());
     }
 
-    public function test_a_picture_that_becomes_ready_is_picked_up(): void
-    {
-        $this->makeMenuImage(910, 'processing');
-        $this->saveMenu('main', [$this->menuItem('link', ['label' => 'M', 'url' => '/m', 'submenu' => 'mega', 'children' => [
-            $this->menuItem('column', ['label' => 'Col', 'children' => [$this->link('L', '/l'), $this->menuItem('image', ['media_asset_id' => 910])]]),
-        ]])]);
-        $this->assertStringNotContainsString('sf-mega-img', $this->get('/')->assertOk()->getContent());
-
-        MediaAssetModel::query()->findOrFail(910)->update([
-            'processing_status' => 'ready',
-            'variants' => [['tier' => 'medium', 'width' => 900, 'height' => 675, 'quality' => 82, 'path' => 'm/910-medium.webp']],
-        ]);
-        $this->fresh();
-
-        $this->assertStringContainsString('class="sf-mega-img"', $this->get('/')->assertOk()->getContent());
-    }
-
     public function test_several_changes_in_one_request_rebuild_once(): void
     {
         $recompiler = app(MenuRecompiler::class);
@@ -512,7 +564,20 @@ class MenusTest extends TestCase
 
         ProductModel::query()->findOrFail(1)->update(['name' => 'Renamed dress']);
 
-        $this->assertFalse($recompiler->hasPending());
+        $this->assertFalse($recompiler->hasPending(), 'a name is not shown by a category item, and product 1 is in no menu');
+    }
+
+    public function test_a_product_that_is_a_menu_item_follows_its_name_and_slug(): void
+    {
+        $recompiler = app(MenuRecompiler::class);
+        $this->saveMenu('main', [$this->menuItem('product', ['target_id' => 2])]);
+
+        ProductModel::query()->findOrFail(2)->update(['name' => 'Winter boot', 'slug' => 'winter-boot']);
+
+        $this->assertTrue($recompiler->hasPending());
+        $recompiler->flush();
+        $this->assertSame(['Winter boot'], array_column($this->compiledMenu('main'), 'label'));
+        $this->assertSame('/product/winter-boot', $this->compiledMenu('main')[0]['url']);
     }
 
     public function test_the_pending_rebuild_runs_after_a_queue_job(): void
@@ -577,13 +642,15 @@ class MenusTest extends TestCase
 
     private function megaMenu(): void
     {
-        $this->makeMenuImage(920);
+        $block = HtmlBlockModel::create(['title' => 'Boots picture', 'body' => '<figure><a href="/promo"><img src="/storage/html-blocks/boot.jpg" alt="A boot" width="900" height="675"></a><figcaption>Promo</figcaption></figure>']);
         $this->saveMenu('main', [
             $this->link('Plain', '/plain'),
-            $this->menuItem('category', ['target_id' => 1, 'submenu' => 'dropdown', 'with_children' => true]),
-            $this->menuItem('category', ['target_id' => 3, 'submenu' => 'mega', 'children' => [
-                $this->menuItem('column', ['label' => 'Boots', 'children' => [$this->link('Winter', '/winter'), $this->link('Summer', '/summer', ['new_tab' => true])]]),
-                $this->menuItem('column', ['label' => 'Pictures', 'children' => [$this->menuItem('image', ['media_asset_id' => 920, 'url' => '/promo', 'caption' => 'Promo', 'image_alt' => 'A boot'])]]),
+            $this->menuItem('category', ['target_id' => 1, 'submenu' => 'dropdown', 'children' => [
+                $this->menuItem('category', ['target_id' => 2, 'children' => [$this->link('Party dresses', '/party', ['badge_text' => 'Hot', 'badge_color' => 'red'])]]),
+            ]]),
+            $this->menuItem('category', ['target_id' => 3, 'submenu' => 'mega', 'html_block_id' => $block->id, 'children' => [
+                $this->menuItem('heading', ['label' => 'Boots', 'children' => [$this->link('Winter', '/winter'), $this->link('Summer', '/summer', ['new_tab' => true])]]),
+                $this->menuItem('heading', ['label' => 'Sandals', 'children' => [$this->link('Flat', '/flat')]]),
             ]]),
         ]);
     }
@@ -601,26 +668,35 @@ class MenusTest extends TestCase
         $this->assertSame(1, substr_count($html, 'id="'.$m[1].'"'), 'aria-controls points at an existing panel');
         $this->assertSame(0, preg_match('#<button[^>]*>\s*Clothing#', $html), 'the label is never the button');
         $this->assertStringContainsString('class="sf-sub sf-sub-dropdown"', $html);
-        $this->assertStringContainsString('<a class="sf-menu-link" href="/product-category/clothing/dresses">Dresses</a>', $html);
+        $this->assertStringContainsString('<a class="sf-menu-link" href="/product-category/clothing/dresses">Dresses', $html);
     }
 
-    public function test_the_mega_panel_is_in_the_page_from_the_start_with_lazy_dimensioned_images(): void
+    public function test_a_dropdowns_second_level_is_a_nested_list_with_its_badge(): void
+    {
+        $this->megaMenu();
+        $html = $this->get('/')->assertOk()->getContent();
+
+        $this->assertMatchesRegularExpression('#<a class="sf-menu-link" href="/product-category/clothing/dresses">Dresses</a>\s*<ul class="sf-menu">\s*<li class="sf-menu-item">\s*<a class="sf-menu-link" href="/party">Party dresses<span class="sf-badge sf-badge-red">Hot</span></a>#', $html);
+        $this->assertStringContainsString('.sf-sub-dropdown .sf-menu .sf-menu', (string) file_get_contents(resource_path('css/storefront.css')), 'the second level is a flyout');
+    }
+
+    public function test_the_mega_panel_has_its_columns_from_the_structure_and_the_block_on_the_right(): void
     {
         $this->megaMenu();
         $html = $this->get('/')->assertOk()->getContent();
 
         $this->assertStringContainsString('class="sf-sub sf-sub-mega"', $html);
+        $this->assertStringContainsString('<div class="sf-mega-cols" data-cols="2">', $html);
         $this->assertSame(2, substr_count($html, 'class="sf-mega-col"'));
         $this->assertStringContainsString('<p class="sf-mega-heading">Boots</p>', $html);
+        $this->assertStringContainsString('<p class="sf-mega-heading">Sandals</p>', $html);
         $this->assertStringContainsString('<a class="sf-menu-link" href="/summer" target="_blank" rel="noopener">Summer</a>', $html);
-        $this->assertMatchesRegularExpression('#<img class="sf-mega-img" alt="A boot" width="900" height="675" sizes="[^"]+" loading="lazy" decoding="async" data-sf-src="[^"]*m/920-medium\.webp" data-sf-srcset="[^"]*400w, [^"]*900w">#', $html);
-        $this->assertStringNotContainsString(' src="/storage/m/920-medium.webp" data-sf-src', $html, 'the live image has no src until the panel first opens');
-        $this->assertMatchesRegularExpression('#<noscript><img class="sf-mega-img"[^>]* src="[^"]*m/920-medium\.webp"[^>]*loading="lazy"></noscript>#', $html, 'without the script a plain lazy image');
-        $this->assertStringContainsString('<figcaption class="sf-mega-caption">Promo</figcaption>', $html);
+        $this->assertMatchesRegularExpression('#<div class="sf-mega-media sf-mega-html"><figure><a href="/promo" rel="noopener nofollow"><img loading="lazy" decoding="async" src="/storage/html-blocks/boot.jpg" alt="A boot" width="900" height="675"></a><figcaption>Promo</figcaption></figure></div>#', $html);
+        $this->assertGreaterThan(strpos($html, 'class="sf-mega-cols"'), strpos($html, 'class="sf-mega-media'), 'the block comes after the columns: it sits on the right');
         $this->assertNoActiveContent(preg_replace('#<form[ >].*?</form>#s', '', $html), 'mega menu');
     }
 
-    public function test_the_drawer_shows_the_same_tree_as_an_accordion_without_pictures(): void
+    public function test_the_drawer_shows_a_mega_item_as_stacked_sections_without_a_second_accordion_or_the_block(): void
     {
         $this->megaMenu();
         $html = $this->get('/')->assertOk()->getContent();
@@ -628,9 +704,11 @@ class MenusTest extends TestCase
 
         $this->assertStringContainsString('class="sf-acc"', $drawer);
         $this->assertStringContainsString('<a class="sf-acc-link" href="/product-category/clothing">Clothing</a>', $drawer);
+        $this->assertSame(2, substr_count($drawer, 'class="sf-acc-section"'), 'one section per column, one under another');
         $this->assertStringContainsString('<p class="sf-mega-heading">Boots</p>', $drawer);
         $this->assertStringContainsString('>Winter</a>', $drawer);
-        $this->assertStringNotContainsString('sf-mega-img', $drawer);
+        $this->assertSame(2, substr_count($drawer, 'data-sf-acc-toggle'), 'only the two top-level items with a submenu have a toggle: a section has none');
+        $this->assertStringNotContainsString('sf-mega-html', $drawer);
         $this->assertStringNotContainsString('Promo', $drawer);
     }
 
@@ -702,7 +780,7 @@ class MenusTest extends TestCase
         $this->assertSame(['Clothing', 'Shoes'], array_column($main, 'label'), 'Empty has no product: not shown, but still in the menu for the merchant to see');
         $this->assertSame(['dropdown', 'none'], array_column($main, 'submenu'));
         $this->assertSame(['Dresses'], array_column($main[0]['children'], 'label'));
-        $this->assertSame(3, DB::table('menu_items')->where('menu_id', MenuModel::query()->where('key', 'main')->value('id'))->count());
+        $this->assertSame(4, DB::table('menu_items')->where('menu_id', MenuModel::query()->where('key', 'main')->value('id'))->count(), 'Clothing, its sub-category Dresses as an explicit item, Shoes, Empty');
     }
 
     public function test_the_hamburger_is_named_menu_not_categories(): void
@@ -713,28 +791,64 @@ class MenusTest extends TestCase
         $this->assertStringNotContainsString('sf-sr-only">Categories<', $html);
     }
 
-    public function test_the_header_can_still_use_the_category_tree_as_its_source(): void
+    public function test_the_header_shows_the_menu_of_its_location_and_nothing_without_one(): void
     {
-        $layout = \App\Storefront\Header\HeaderLayout::default();
-        $layout['desktop']['rows']['main']['left'] = [['type' => 'menu', 'settings' => ['source' => 'categories', 'style' => 'links']]];
-        app(\App\Storefront\Header\HeaderCompiler::class)->publish($layout, $this->settings());
+        $this->saveMenu('main', [$this->link('From main', '/m')]);
+        $footerMenu = MenuModel::query()->where('key', 'footer')->firstOrFail();
+        app(MenuWriter::class)->save($footerMenu, 'Footer', [$this->link('From footer', '/f')], ['footer']);
         $this->fresh();
 
         $html = $this->get('/')->assertOk()->getContent();
+        $this->assertStringContainsString('>From main</a>', $html, 'the header location is the main menu');
+        $this->assertStringNotContainsString('sf-bar-link" href="/f"', $html);
 
-        $this->assertStringContainsString('aria-label="Categories"', $html);
-        $this->assertStringContainsString('<a class="sf-bar-link" href="/product-category/clothing">Clothing</a>', $html);
-        $this->assertStringContainsString('<a class="sf-bar-link" href="/product-category/shoes">Shoes</a>', $html);
-        $this->assertStringNotContainsString('>Empty</a>', $html, 'only the shown categories');
+        // the header location is moved to the other menu
+        $moved = app(MenuWriter::class)->save($footerMenu, 'Footer', [$this->link('From footer', '/f')], ['header', 'footer']);
+        $this->assertSame(['header' => 'Main menu'], $moved, 'the note names the menu it came from');
+        $this->fresh();
+        $this->assertStringContainsString('sf-bar-link" href="/f">From footer</a>', $this->get('/')->assertOk()->getContent());
+
+        // no menu in the header location: nothing is printed, and the category tree does not take its place
+        app(MenuLocations::class)->store(['header' => null, 'drawer' => null, 'footer' => $footerMenu->id]);
+        app(MenuRecompiler::class)->now();
+        $this->fresh();
+        $html = $this->get('/')->assertOk()->getContent();
+        $this->assertStringNotContainsString('data-sf-menubar', $html);
+        $this->assertStringNotContainsString('sf-bar-link', $html, 'the category tree does not take the place of a menu');
     }
 
-    public function test_an_unknown_menu_key_in_the_header_prints_nothing(): void
+    public function test_the_drawer_shows_its_own_menu_or_else_the_headers(): void
     {
-        $layout = \App\Storefront\Header\HeaderLayout::default();
-        $layout['desktop']['rows']['main']['left'] = [['type' => 'menu', 'settings' => ['source' => 'no-such-menu', 'style' => 'links']]];
-        app(\App\Storefront\Header\HeaderCompiler::class)->publish($layout, $this->settings());
-        $this->fresh();
+        $this->saveMenu('main', [$this->link('Header link', '/h')]);
+        $footerMenu = MenuModel::query()->where('key', 'footer')->firstOrFail();
+        $drawer = fn (): string => substr($html = $this->get('/')->assertOk()->getContent(), (int) strpos($html, 'id="sf-drawer"'));
 
-        $this->assertStringNotContainsString('data-sf-menubar', $this->get('/')->assertOk()->getContent());
+        $this->assertStringContainsString('Header link', $drawer(), 'no drawer location: the header menu');
+
+        app(MenuWriter::class)->save($footerMenu, 'Footer', [$this->link('Drawer link', '/d')], ['drawer', 'footer']);
+        $this->fresh();
+        $html = $this->get('/')->assertOk()->getContent();
+        $drawerHtml = substr($html, (int) strpos($html, 'id="sf-drawer"'));
+
+        $this->assertStringContainsString('Drawer link', $drawerHtml);
+        $this->assertStringNotContainsString('Header link', $drawerHtml);
+        $this->assertStringContainsString('Header link', substr($html, 0, (int) strpos($html, 'id="sf-drawer"')), 'the bar still shows the header menu');
+    }
+
+    public function test_a_menu_that_holds_a_location_is_not_deleted(): void
+    {
+        $menu = app(MenuWriter::class)->create('extra', 'Extra');
+        app(MenuLocations::class)->assign($menu->id, ['drawer']);
+
+        try {
+            app(MenuWriter::class)->delete($menu);
+            $this->fail('refused');
+        } catch (MenuException $exception) {
+            $this->assertStringContainsString('Phone', $exception->getMessage());
+        }
+
+        app(MenuLocations::class)->release($menu->id);
+        app(MenuWriter::class)->delete($menu);
+        $this->assertNull(MenuModel::query()->where('key', 'extra')->first());
     }
 }

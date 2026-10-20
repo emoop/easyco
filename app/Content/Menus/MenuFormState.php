@@ -8,8 +8,8 @@ namespace App\Content\Menus;
  *
  * The form keeps three repeaters where the tree has one `children` list, because what a top-level item can hold depends on its submenu:
  *   dropdown -> `dropdown_items` (each item may have `sub_items`, one more level)
- *   mega     -> `columns` (each column has a `label` and its `column_items`)
- * The category and the page are two select fields (`category_id`, `page_id`) that become the tree's `target_id`.
+ *   mega     -> `columns` (each column is an item of its own - a heading, or a link used as the heading - with its `column_items`)
+ * The category, the page and the product are three select fields (`category_id`, `page_id`, `product_id`) that become the tree's `target_id`.
  */
 final class MenuFormState
 {
@@ -32,11 +32,12 @@ final class MenuFormState
             }
 
             if ($item['submenu'] === 'mega') {
-                $state['columns'] = array_map(fn (array $column): array => [
-                    'label' => $column['label'],
-                    'visible' => $column['visible'],
-                    'column_items' => array_map(fn (array $leaf): array => self::itemState($leaf), $column['children']),
-                ], $item['children']);
+                $state['columns'] = array_map(function (array $column): array {
+                    $columnState = self::itemState($column);
+                    $columnState['column_items'] = array_map(fn (array $leaf): array => self::itemState($leaf), $column['children']);
+
+                    return $columnState;
+                }, $item['children']);
             }
 
             return $state;
@@ -52,12 +53,11 @@ final class MenuFormState
             'url' => $item['url'],
             'category_id' => $item['type'] === 'category' ? $item['target_id'] : null,
             'page_id' => $item['type'] === 'page' ? $item['target_id'] : null,
+            'product_id' => $item['type'] === 'product' ? $item['target_id'] : null,
             'submenu' => $item['submenu'],
-            'with_children' => $item['with_children'],
-            'children_limit' => $item['children_limit'],
-            'media_asset_id' => $item['media_asset_id'],
-            'image_alt' => $item['image_alt'],
-            'caption' => $item['caption'],
+            'html_block_id' => $item['html_block_id'],
+            'badge_text' => $item['badge_text'],
+            'badge_color' => $item['badge_color'],
             'new_tab' => $item['new_tab'],
             'visible' => $item['visible'],
         ];
@@ -95,9 +95,7 @@ final class MenuFormState
                     $raw = $state[$formKey]['columns'][$columnKey];
                     $path = "items.{$position}.children.{$c}";
                     $formPath = "items.{$formKey}.columns.{$columnKey}";
-                    $map[$path] = $formPath;
-                    $types[$path] = 'column';
-                    $column = ['type' => 'column', 'label' => $raw['label'] ?? null, 'visible' => $raw['visible'] ?? true, 'children' => []];
+                    $column = self::itemTree($raw, $path, $formPath, $map, $types);
 
                     foreach (array_keys((array) ($raw['column_items'] ?? [])) as $k => $leafKey) {
                         $column['children'][] = self::itemTree($raw['column_items'][$leafKey], "{$path}.children.{$k}", "{$formPath}.column_items.{$leafKey}", $map, $types);
@@ -131,13 +129,16 @@ final class MenuFormState
             'type' => $type,
             'label' => $raw['label'] ?? null,
             'url' => $raw['url'] ?? null,
-            'target_id' => $type === 'category' ? ($raw['category_id'] ?? null) : ($type === 'page' ? ($raw['page_id'] ?? null) : null),
+            'target_id' => match ($type) {
+                'category' => $raw['category_id'] ?? null,
+                'page' => $raw['page_id'] ?? null,
+                'product' => $raw['product_id'] ?? null,
+                default => null,
+            },
             'submenu' => $raw['submenu'] ?? 'none',
-            'with_children' => (bool) ($raw['with_children'] ?? false),
-            'children_limit' => $raw['children_limit'] ?? 12,
-            'media_asset_id' => $raw['media_asset_id'] ?? null,
-            'image_alt' => $raw['image_alt'] ?? null,
-            'caption' => $raw['caption'] ?? null,
+            'html_block_id' => $raw['html_block_id'] ?? null,
+            'badge_text' => $raw['badge_text'] ?? null,
+            'badge_color' => $raw['badge_color'] ?? null,
             'new_tab' => (bool) ($raw['new_tab'] ?? false),
             'visible' => (bool) ($raw['visible'] ?? true),
             'children' => [],
@@ -172,8 +173,11 @@ final class MenuFormState
         }
 
         $field = match ($field) {
-            'target_id' => ($types[$best] ?? '') === 'page' ? 'page_id' : 'category_id',
-            'media_asset_id' => 'image_file',
+            'target_id' => match ($types[$best] ?? '') {
+                'page' => 'page_id',
+                'product' => 'product_id',
+                default => 'category_id',
+            },
             default => $field,
         };
 
