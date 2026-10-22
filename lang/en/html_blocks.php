@@ -37,5 +37,7 @@ return [
         'alt' => 'The description is at most :max characters, plain text.',
         'url' => 'The link must be an https:// address or a path in the shop (starts with "/", for example /product-category/boys). javascript:, data:, http: and //address are not allowed.',
         'in_use' => 'The block ":title" is shown by the menu :menus and cannot be deleted.',
+        'in_use_footer' => 'The block ":title" is shown by the footer and cannot be deleted.',
+        'in_use_both' => 'The block ":title" is shown by the menu :menus and by the footer and cannot be deleted.',
     ],
 ];

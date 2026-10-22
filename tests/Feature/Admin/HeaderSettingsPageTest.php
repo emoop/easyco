@@ -196,4 +196,94 @@ class HeaderSettingsPageTest extends TestCase
         $this->assertStringContainsString('Одит <b>блок</b>', $html);
         $this->assertStringContainsString('Чекмедже', $html);
     }
+
+    // ---- HDR-3 ------------------------------------------------------------------------------------------------------------------------
+
+    public function test_the_capitals_switch_is_saved_published_reloaded_and_reaches_the_drawer(): void
+    {
+        $this->actingAsStaff('Administrator');
+        $component = $this->page();
+        $component->assertFormSet(['mobile.drawer_upper' => true]);
+
+        $component->fillForm(['mobile.drawer_upper' => false])->callAction('save_draft')->assertHasNoFormErrors();
+        $this->assertFalse(json_decode((string) $this->settings()->get(AppearanceSettings::HEADER_DRAFT_KEY), true)['mobile']['drawer_upper']);
+
+        $component->callAction('publish')->assertHasNoFormErrors();
+        $this->assertFalse(json_decode((string) $this->settings()->get(AppearanceSettings::HEADER_PUBLISHED_KEY), true)['mobile']['drawer_upper']);
+
+        $this->page()->assertFormSet(['mobile.drawer_upper' => false]);
+        $this->app->forgetScopedInstances();
+        $html = $this->get('/')->assertOk()->getContent();
+        $this->assertStringContainsString('class="sf-drawer sf-drawer-left"', $html);
+        $this->assertStringNotContainsString('sf-drawer-upper', $html);
+    }
+
+    public function test_a_save_that_does_not_touch_the_switch_keeps_the_stored_value(): void
+    {
+        $this->actingAsStaff('Administrator');
+        $layout = HeaderLayout::default();
+        $layout['mobile']['drawer_upper'] = false;
+        $this->settings()->set(AppearanceSettings::HEADER_PUBLISHED_KEY, (string) json_encode($layout));
+
+        $this->page()->fillForm(['desktop.rows.main.height' => 60])->callAction('save_draft')->assertHasNoFormErrors();
+
+        $this->assertFalse(json_decode((string) $this->settings()->get(AppearanceSettings::HEADER_DRAFT_KEY), true)['mobile']['drawer_upper']);
+    }
+
+    public function test_the_drawer_does_not_offer_account_but_an_old_layout_with_it_still_validates_and_publishes(): void
+    {
+        $this->actingAsStaff('Administrator');
+        $page = $this->page();
+        $offered = [];
+
+        foreach ($page->instance()->form->getFlatComponents() as $component) {
+            if ($component instanceof \Filament\Forms\Components\Builder && str_ends_with($component->getStatePath(), 'mobile.drawer')) {
+                $offered = array_values(array_map(fn ($block): string => $block->getName(), $component->getBlocks()));
+            }
+        }
+
+        $this->assertNotSame([], $offered, 'the drawer builder is found');
+        $this->assertNotContains('account', $offered);
+        $this->assertContains('menu', $offered, json_encode($offered));
+
+        $old = HeaderLayout::default();
+        $old['mobile']['drawer'] = [['type' => 'menu', 'settings' => ['style' => 'links']], ['type' => 'account', 'settings' => ['style' => 'icon']]];
+        $this->assertTrue(\App\Storefront\Header\HeaderValidator::validate($old)->passes(), 'an old stored drawer list is still valid');
+        $this->settings()->set(AppearanceSettings::HEADER_PUBLISHED_KEY, (string) json_encode($old));
+
+        $this->page()->callAction('publish')->assertHasNoFormErrors();
+        $this->assertNotNull($this->settings()->get(AppearanceSettings::HEADER_COMPILED_KEY));
+    }
+
+    /** HDR-3: a list inside an element (the social networks) is keyed by the repeater's own ids; the validator's index is mapped onto them, and the section opens. */
+    public function test_an_invalid_address_of_the_second_network_is_reported_on_that_items_field_and_the_section_opens(): void
+    {
+        $this->actingAsStaff('Administrator');
+        $social = ['type' => 'social', 'data' => ['items' => ['it-aaa' => ['network' => 'facebook', 'url' => 'https://example.test/fb'], 'it-bbb' => ['network' => 'instagram', 'url' => 'http://example.test/ig']]]];
+
+        $this->page()
+            ->set('data.desktop.rows.main.left', ['el-zzz' => $social])
+            ->call('publish')
+            ->assertHasErrors(['data.desktop.rows.main.left.el-zzz.data.items.it-bbb.url'])
+            ->assertHasNoErrors(['data.desktop.rows.main.left.el-zzz.data.items.it-aaa.url'])
+            ->assertDispatched('form-validation-error');
+
+        $this->assertNull($this->settings()->get(AppearanceSettings::HEADER_COMPILED_KEY));
+    }
+
+    public function test_an_invalid_setting_of_the_second_element_of_a_slot_is_reported_on_that_elements_field_and_the_section_opens(): void
+    {
+        $this->actingAsStaff('Administrator');
+        $ok = ['type' => 'text', 'data' => ['text' => 'fine', 'url' => '']];
+        $tooLong = ['type' => 'text', 'data' => ['text' => str_repeat('x', 200), 'url' => '']];
+
+        $this->page()
+            ->set('data.desktop.rows.main.left', ['aaaa-1111' => $ok, 'bbbb-2222' => $tooLong])
+            ->call('publish')
+            ->assertHasErrors(['data.desktop.rows.main.left.bbbb-2222.data.text'])
+            ->assertHasNoErrors(['data.desktop.rows.main.left.aaaa-1111.data.text'])
+            ->assertDispatched('form-validation-error');
+
+        $this->assertNull($this->settings()->get(AppearanceSettings::HEADER_COMPILED_KEY));
+    }
 }

@@ -3,6 +3,7 @@
 namespace App\Filament\Pages\Settings;
 
 use App\Filament\Concerns\AuthorizesViaStaffPermission;
+use App\Filament\Concerns\ReconcilesFormKeys;
 use App\Filament\NavigationGroup;
 use App\Filament\Support\HelpLink;
 use App\Http\Controllers\Storefront\HeaderPreviewController;
@@ -42,8 +43,9 @@ use Filament\Schemas\Schema;
  */
 class HeaderSettings extends Page
 {
-    use ServerSideValidation;
     use AuthorizesViaStaffPermission;
+    use ReconcilesFormKeys;
+    use ServerSideValidation;
 
     /** @var array<string, mixed> */
     public ?array $data = [];
@@ -125,6 +127,7 @@ class HeaderSettings extends Page
 
         $state['mobile']['drawer'] = $items($layout['mobile']['drawer']);
         $state['mobile']['drawer_side'] = $layout['mobile']['drawer_side'];
+        $state['mobile']['drawer_upper'] = $layout['mobile']['drawer_upper'];
 
         return $state;
     }
@@ -135,15 +138,22 @@ class HeaderSettings extends Page
      * @param  array<string, mixed>  $state
      * @return array{0: array<string, mixed>, 1: array<string, string>}
      */
-    private function fromForm(array $state): array
+    private function fromForm(array $state, array $raw = []): array
     {
         $map = [];
-        $list = static function (mixed $items, string $path, string $field) use (&$map): array {
+        // getState() numbers the lists; the fields are named by the keys of the page's own state: the i-th item is the item with the i-th raw key (ReconcilesFormKeys)
+        $list = function (mixed $items, string $path, string $field, string $rawPath) use (&$map, $raw): array {
             $out = [];
+            $keys = $this->rawKeys($raw, $rawPath);
 
-            foreach (is_array($items) ? $items : [] as $key => $item) {
-                $index = count($out);
+            foreach (is_array($items) ? array_values($items) : [] as $index => $item) {
+                $key = $this->keyAt($keys, $index);
                 $map["{$path}.{$index}"] = "{$field}.{$key}.data";
+
+                // A list inside an element (the social networks, a repeater) is keyed by the repeater's own ids in the form too: the validator's i-th item is the i-th raw key.
+                foreach ($this->rawKeys($raw, "{$rawPath}.{$key}.data.items") as $position => $itemKey) {
+                    $map["{$path}.{$index}.settings.items.{$position}"] = "{$field}.{$key}.data.items.{$itemKey}";
+                }
                 $out[] = ['type' => (string) ($item['type'] ?? ''), 'settings' => is_array($item['data'] ?? null) ? $item['data'] : []];
             }
 
@@ -161,15 +171,17 @@ class HeaderSettings extends Page
                 $entry = ['enabled' => (bool) ($data['enabled'] ?? false), 'height' => $data['height'] ?? null];
 
                 foreach (HeaderLayout::SLOTS as $slot) {
-                    $entry[$slot] = $list($data[$slot] ?? [], "{$path}.{$slot}", "data.{$path}.{$slot}");
+                    $entry[$slot] = $list($data[$slot] ?? [], "{$path}.{$slot}", "data.{$path}.{$slot}", "{$path}.{$slot}");
                 }
 
                 $layout[$name]['rows'][$row] = $entry;
             }
         }
 
-        $layout['mobile']['drawer'] = $list($state['mobile']['drawer'] ?? [], 'mobile.drawer', 'data.mobile.drawer');
+        $layout['mobile']['drawer'] = $list($state['mobile']['drawer'] ?? [], 'mobile.drawer', 'data.mobile.drawer', 'mobile.drawer');
         $layout['mobile']['drawer_side'] = (string) ($state['mobile']['drawer_side'] ?? 'left');
+        // HDR-3: the capitals switch is saved from the form (it was only validated and rendered, so every save wrote the default)
+        $layout['mobile']['drawer_upper'] = (bool) ($state['mobile']['drawer_upper'] ?? true);
 
         return [$layout, $map];
     }
@@ -177,17 +189,27 @@ class HeaderSettings extends Page
     /** Throws the validator's messages as the form's own field errors. @param  array<string, string>  $map */
     private function failWith(array $errors, array $map): never
     {
+        uksort($map, static fn (string $a, string $b): int => strlen($b) <=> strlen($a));
         $messages = [];
 
         foreach ($errors as $path => $message) {
             $field = null;
 
-            // The longest known element prefix wins: "desktop.rows.main.left.0.settings.height" -> "data.desktop.rows.main.left.{key}.data.height".
+            // The longest known prefix wins: an element ("desktop.rows.main.left.1.settings.height" -> "data.desktop.rows.main.left.{key}.data.height") or one item of a list inside an element.
             foreach ($map as $prefix => $target) {
-                if (str_starts_with($path, $prefix.'.settings.') || $path === $prefix.'.type') {
-                    $field = $target.'.'.(str_ends_with($path, '.type') ? '__type' : substr($path, strlen($prefix.'.settings.')));
-                    $field = str_replace('.__type', '', $field);
+                if ($path !== $prefix && ! str_starts_with($path, $prefix.'.')) {
+                    continue;
                 }
+
+                $rest = substr($path, strlen($prefix));
+
+                if (str_ends_with($target, '.data')) {
+                    $field = $rest === '.type' ? substr($target, 0, -strlen('.data')) : (str_starts_with($rest, '.settings.') ? $target.substr($rest, strlen('.settings')) : $target.$rest);
+                } else {
+                    $field = $target.$rest;
+                }
+
+                break;
             }
 
             $messages[$field ?? 'data.'.preg_replace('/\.settings\..*$/', '', $path)] = $message;
@@ -223,7 +245,8 @@ class HeaderSettings extends Page
         $blocks = [];
 
         foreach (HeaderCatalog::all() as $type => $descriptor) {
-            if ($drawer && ! in_array($type, HeaderCatalog::DRAWER_TYPES, true)) {
+            // HDR-3: since MENU-4 the account rows of the drawer come from the routes, so `account` is no longer offered here (an old stored drawer list that holds it still validates)
+            if ($drawer && (! in_array($type, HeaderCatalog::DRAWER_TYPES, true) || $type === 'account')) {
                 continue;
             }
 
@@ -287,6 +310,7 @@ class HeaderSettings extends Page
                         static::rowSection('mobile', 'main'),
                         Section::make(__('header.fields.drawer'))->collapsible()->schema([
                             Select::make('mobile.drawer_side')->label(__('header.fields.drawer_side'))->native(false)->options(['left' => __('header.options.left'), 'right' => __('header.options.right')]),
+                            Toggle::make('mobile.drawer_upper')->label(__('header.fields.drawer_upper')),
                             static::builder('drawer', __('header.fields.drawer'), 'mobile', drawer: true)->statePath('mobile.drawer'),
                         ]),
                     ]),
@@ -317,7 +341,7 @@ class HeaderSettings extends Page
     /** Validates the form's state; returns the NORMALISED layout or throws the field errors. */
     private function validated(): array
     {
-        [$layout, $map] = $this->fromForm($this->form->getState());
+        [$layout, $map] = $this->fromForm($this->form->getState(), $this->data ?? []);
         $validation = HeaderValidator::validate($layout);
 
         if (! $validation->passes()) {

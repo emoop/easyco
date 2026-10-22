@@ -5,6 +5,7 @@ namespace App\Filament\Pages\Design;
 use App\Content\HtmlBlocks\HtmlBlockModel;
 use App\Content\Menus\MenuModel;
 use App\Filament\Concerns\AuthorizesViaStaffPermission;
+use App\Filament\Concerns\ReconcilesFormKeys;
 use App\Filament\NavigationGroup;
 use App\Filament\Pages\Settings\ServerSideValidation;
 use App\Filament\Support\HelpLink;
@@ -52,6 +53,7 @@ use Illuminate\Support\Facades\Route;
 class Footer extends Page
 {
     use AuthorizesViaStaffPermission;
+    use ReconcilesFormKeys;
     use ServerSideValidation;
 
     protected static ?string $slug = 'footer';
@@ -158,28 +160,28 @@ class Footer extends Page
         $map = [];
         $upper = is_array($state['upper'] ?? null) ? $state['upper'] : [];
         $rows = [];
-        $rowKeys = array_keys(is_array($raw['upper']['rows'] ?? null) ? $raw['upper']['rows'] : []);
+        $rowKeys = $this->rawKeys($raw, 'upper.rows');
         $rowIndex = 0;
 
         foreach (is_array($upper['rows'] ?? null) ? array_values($upper['rows']) : [] as $row) {
-            $rowKey = $rowKeys[$rowIndex] ?? $rowIndex;
+            $rowKey = $this->keyAt($rowKeys, $rowIndex);
             $map["upper.rows.{$rowIndex}"] = "data.upper.rows.{$rowKey}";
             $columns = [];
-            $columnKeys = array_keys(is_array($raw['upper']['rows'][$rowKey]['columns'] ?? null) ? $raw['upper']['rows'][$rowKey]['columns'] : []);
+            $columnKeys = $this->rawKeys($raw, "upper.rows.{$rowKey}.columns");
             $columnIndex = 0;
 
             foreach (is_array($row['columns'] ?? null) ? array_values($row['columns']) : [] as $column) {
-                $columnKey = $columnKeys[$columnIndex] ?? $columnIndex;
+                $columnKey = $this->keyAt($columnKeys, $columnIndex);
                 $columnPath = "upper.rows.{$rowIndex}.columns.{$columnIndex}";
                 $columnField = "data.upper.rows.{$rowKey}.columns.{$columnKey}";
                 $map[$columnPath] = $columnField;
                 $blocks = [];
                 $rawColumn = $raw['upper']['rows'][$rowKey]['columns'][$columnKey] ?? [];
-                $blockKeys = array_keys(is_array($rawColumn['blocks'] ?? null) ? $rawColumn['blocks'] : []);
+                $blockKeys = $this->rawKeys($raw, "upper.rows.{$rowKey}.columns.{$columnKey}.blocks");
                 $blockIndex = 0;
 
                 foreach (is_array($column['blocks'] ?? null) ? array_values($column['blocks']) : [] as $block) {
-                    $blockKey = $blockKeys[$blockIndex] ?? $blockIndex;
+                    $blockKey = $this->keyAt($blockKeys, $blockIndex);
                     $blockField = "{$columnField}.blocks.{$blockKey}.data";
                     $map["{$columnPath}.blocks.{$blockIndex}"] = $blockField;
 

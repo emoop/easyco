@@ -233,10 +233,10 @@ class HtmlBlockResource extends Resource
         return DeleteAction::make()
             ->label(__('html_blocks.actions.delete'))
             ->before(function (DeleteAction $action, HtmlBlockModel $record): void {
-                $menus = HtmlBlockUsage::menus((int) $record->id);
+                $refusal = HtmlBlockUsage::refusal($record);
 
-                if ($menus !== []) {
-                    Notification::make()->title(__('html_blocks.errors.in_use', ['title' => $record->title, 'menus' => implode(', ', $menus)]))->danger()->send();
+                if ($refusal !== null) {
+                    Notification::make()->title($refusal)->danger()->send();
                     $action->halt();
                 }
             });

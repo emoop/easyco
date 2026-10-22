@@ -124,6 +124,86 @@ class HtmlBlockResourceTest extends TestCase
         $this->assertNull(HtmlBlockModel::query()->find($block->id));
     }
 
+    /** @return array<string, array{0: ?string, 1: ?string, 2: bool}> [the published footer holds it, the draft footer holds it, deleted] */
+    public static function footerUses(): array
+    {
+        return ['only in the published footer' => ['published', null, false], 'only in the draft footer' => [null, 'draft', false], 'in both' => ['published', 'draft', false], 'in neither' => [null, null, true]];
+    }
+
+    /** HDR-3: a block the PUBLISHED or the DRAFT footer layout shows is never deleted silently; the footer is one more name in the message. */
+    #[\PHPUnit\Framework\Attributes\DataProvider('footerUses')]
+    public function test_a_block_the_footer_shows_is_refused_and_a_free_one_is_deleted(?string $published, ?string $draft, bool $deleted): void
+    {
+        $this->actingAsStaff('Administrator');
+        $block = HtmlBlockModel::create(['title' => 'Banner', 'body' => '<p>x</p>']);
+        $other = HtmlBlockModel::create(['title' => 'Other', 'body' => '<p>y</p>']);
+        $layoutWith = fn (int $id): string => (string) json_encode(['upper' => ['rows' => [['columns' => [['blocks' => [['type' => 'text', 'settings' => []], ['type' => 'html_block', 'settings' => ['html_block' => $id]]]]]]]]]);
+        $settings = app(\App\Settings\Contracts\SiteSettingsRepository::class);
+        $published === null || $settings->set(\App\Settings\AppearanceSettings::FOOTER_PUBLISHED_KEY, $layoutWith($block->id));
+        $draft === null || $settings->set(\App\Settings\AppearanceSettings::FOOTER_DRAFT_KEY, $layoutWith($block->id));
+        // another block in the footer never protects this one
+        $settings->forget('x');
+
+        $this->assertSame(! $deleted, HtmlBlockUsage::footer($block->id));
+        Livewire::test(ListHtmlBlocks::class)->callTableAction('delete', $block);
+
+        $deleted ? $this->assertNull(HtmlBlockModel::query()->find($block->id)) : $this->assertNotNull(HtmlBlockModel::query()->find($block->id), 'refused');
+
+        if (! $deleted) {
+            $this->assertStringContainsString('footer', (string) HtmlBlockUsage::refusal($block));
+            $this->assertFalse($block->delete(), 'the model is the last line of defence');
+            $this->assertNotNull(HtmlBlockModel::query()->find($other->id));
+            $this->assertFalse(HtmlBlockUsage::footer($other->id));
+        }
+    }
+
+    public function test_the_message_keeps_the_menu_format_and_adds_the_footer_as_one_more_name(): void
+    {
+        $block = HtmlBlockModel::create(['title' => 'Boys picture', 'body' => '<p>x</p>']);
+        app(\App\Settings\Contracts\SiteSettingsRepository::class)->set(\App\Settings\AppearanceSettings::FOOTER_PUBLISHED_KEY, (string) json_encode(['upper' => ['rows' => [['columns' => [['blocks' => [['type' => 'html_block', 'settings' => ['html_block' => $block->id]]]]]]]]]));
+
+        $this->assertSame('The block "Boys picture" is shown by the footer and cannot be deleted.', HtmlBlockUsage::refusal($block));
+
+        $this->saveMenu('main', [$this->menuItem('link', ['label' => 'Boys', 'url' => '/boys', 'submenu' => 'mega', 'html_block_id' => $block->id, 'mega_columns' => 1, 'children' => [$this->columnItem([$this->menuItem('link', ['label' => 'Jackets', 'url' => '/j'])])]])]);
+        $this->assertSame('The block "Boys picture" is shown by the menu Main menu and by the footer and cannot be deleted.', HtmlBlockUsage::refusal($block));
+
+        app(\App\Settings\Contracts\SiteSettingsRepository::class)->forget(\App\Settings\AppearanceSettings::FOOTER_PUBLISHED_KEY);
+        $this->assertSame('The block "Boys picture" is shown by the menu Main menu and cannot be deleted.', HtmlBlockUsage::refusal($block), 'the old menu message, unchanged');
+    }
+
+    /** HDR-3: config/livewire.php payload.max_nesting_depth is bounded but deep enough for a link inside a list inside a list of a rich-text editor. */
+    public function test_livewires_nesting_limit_allows_a_link_inside_a_nested_list(): void
+    {
+        $depth = (int) config('livewire.payload.max_nesting_depth');
+
+        $this->assertGreaterThanOrEqual(24, $depth);
+        $this->assertLessThan(100, $depth, 'bounded, not disabled');
+
+        // the path of the error the owner saw, counted the way Livewire counts it
+        $path = 'data.body.content.0.content.2.content.0.content.0.marks.0.attrs.href';
+        $this->assertGreaterThan(10, count(explode('.', $path)), 'deeper than the old limit');
+        $this->assertLessThanOrEqual($depth, count(explode('.', $path)));
+    }
+
+    /** HDR-3: the SAME round trip as the browser's: a rich body with a bullet list inside a bullet list and a link on the inner item (the update path is deeper than 10 levels). */
+    public function test_a_link_on_the_inner_item_of_a_nested_list_survives_the_livewire_round_trip(): void
+    {
+        $this->actingAsStaff('Administrator');
+        $doc = ['type' => 'doc', 'content' => [['type' => 'bulletList', 'content' => [
+            ['type' => 'listItem', 'content' => [['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'Outer']]]]],
+            ['type' => 'listItem', 'content' => [['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'Outer two']]], ['type' => 'bulletList', 'content' => [
+                ['type' => 'listItem', 'content' => [['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'Inner', 'marks' => [['type' => 'link', 'attrs' => ['href' => 'https://example.com/old']]]]]]]],
+            ]]]],
+        ]]]];
+
+        $page = Livewire::test(CreateHtmlBlock::class)->fillForm(['title' => 'Nested', 'body' => $doc]);
+        // the browser sends the changed attribute with its whole dot path: bulletList > listItem > bulletList > listItem > paragraph > text > mark > attrs > href
+        $page->set('data.body.content.0.content.1.content.1.content.0.content.0.content.0.marks.0.attrs.href', 'https://example.com/new');
+        $page->call('create')->assertHasNoFormErrors();
+
+        $this->assertStringContainsString('href="https://example.com/new"', HtmlBlockModel::query()->firstOrFail()->body);
+    }
+
     public function test_the_editor_offers_exactly_what_the_filter_keeps(): void
     {
         $this->actingAsStaff('Administrator');

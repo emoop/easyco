@@ -108,7 +108,31 @@ class MobileDrawerTest extends TestCase
         $this->assertStringContainsString('placeholder="Search products…"', $html);
         $this->assertStringNotContainsString('<p class="sf-drawer-title"', $html);
         $this->assertStringContainsString('Wishlist', $html);
-        $this->assertStringContainsString('Sign in', $html, 'nobody is signed in');
+        $this->assertStringContainsString('My profile', $html);
+        $this->assertStringNotContainsString('Sign in', $html);
+    }
+
+    /** HDR-3: the storefront is sessionless and cached for everybody, so the profile row says the same to everybody ("My profile" / «Моят профил»). */
+    public function test_the_profile_row_always_says_my_profile(): void
+    {
+        $this->routes(['account']);
+
+        $this->assertStringContainsString('<span>My profile</span>', $this->drawer());
+        app()->setLocale('bg');
+        $this->assertStringContainsString('<span>Моят профил</span>', $this->drawer());
+    }
+
+    /** HDR-3: the hamburger is named «Меню» (bg) / "Menu" (en), not the old «Категории». */
+    public function test_the_hamburger_is_named_menu(): void
+    {
+        $html = $this->get('/')->assertOk()->getContent();
+        $this->assertMatchesRegularExpression('#data-sf-menu-toggle>.*?<span class="sf-sr-only">Menu</span>#s', $html);
+
+        app()->setLocale('bg');
+        $this->app->forgetScopedInstances();
+        $bg = $this->get('/')->assertOk()->getContent();
+        $this->assertMatchesRegularExpression('#data-sf-menu-toggle>.*?<span class="sf-sr-only">Меню</span>#s', $bg);
+        $this->assertStringNotContainsString('<span class="sf-sr-only">Категории</span>', $bg);
     }
 
     public function test_each_account_row_needs_its_own_route(): void

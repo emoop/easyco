@@ -49,7 +49,6 @@ return [
     // Stage D2: the header (drawer, search row, account and wishlist links).
     'drawer_search_placeholder' => 'Search products…',
     'drawer_profile' => 'My profile',
-    'drawer_signin' => 'Sign in',
     'drawer_close' => 'Close the menu',
     'search' => 'Search',
     'search_placeholder' => 'What are you looking for?',

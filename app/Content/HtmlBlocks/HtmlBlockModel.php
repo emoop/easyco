@@ -31,8 +31,8 @@ class HtmlBlockModel extends Model
             $block->pictures = HtmlBlockPictures::clean($block->pictures) ?: null;
         });
 
-        // The last line of defence behind the admin message: a block a menu shows is never deleted.
-        static::deleting(static fn (HtmlBlockModel $block): bool => HtmlBlockUsage::menus((int) $block->id) === []);
+        // The last line of defence behind the admin message: a block a menu or the footer shows is never deleted.
+        static::deleting(static fn (HtmlBlockModel $block): bool => ! HtmlBlockUsage::isUsed((int) $block->id));
     }
 
     /**

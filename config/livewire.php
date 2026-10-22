@@ -299,7 +299,7 @@ return [
 
     'payload' => [
         'max_size' => 1024 * 1024,   // 1MB - maximum request payload size in bytes
-        'max_nesting_depth' => 10,   // Maximum depth of dot-notation property paths
+        'max_nesting_depth' => 24,   // Maximum depth of dot-notation property paths (HDR-3: a link inside a list inside a list in a rich-text editor is deeper than the default 10; bounded, not disabled)
         'max_calls' => 50,           // Maximum method calls per request
         'max_components' => 200,     // Maximum components per batch request
     ],

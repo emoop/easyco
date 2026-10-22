@@ -364,7 +364,10 @@ class FooterBuilderTest extends TestCase
         $this->assertStringContainsString('href="/promo"', $html);
         $this->assertStringNotContainsString('<script', $html);
 
-        $block->delete();
+        // HDR-3: the model refuses to delete a block the published footer shows, so the row is removed behind its back (a script, an old row) and the rebuild is asked for
+        $this->assertFalse($block->delete(), 'a block the footer shows is not deleted silently');
+        DB::table('html_blocks')->where('id', $block->id)->delete();
+        app(\App\Storefront\Menu\MenuRecompiler::class)->now();
         $this->fresh();
         $html = $this->footerHtml($this->home());
 
