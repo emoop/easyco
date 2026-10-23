@@ -1,4 +1,4 @@
-<div class="sf-hdr-row sf-hdr-row-{{ $rowName }}">
+<div class="sf-hdr-row sf-hdr-row-{{ $rowName }}{{ ! empty($row['text_size']) ? ' sf-ts-'.$row['text_size'] : '' }}{{ ! empty($row['fg']) ? ' sf-hdr-has-fg' : '' }}">
     <div class="sf-hdr-grid">
         @foreach (['left', 'center', 'right'] as $slot)
             <div class="sf-hdr-slot sf-hdr-{{ $slot }}">

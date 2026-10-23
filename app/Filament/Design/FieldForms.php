@@ -1,0 +1,40 @@
+<?php
+
+namespace App\Filament\Design;
+
+use App\Storefront\Header\HeaderCatalog;
+use Filament\Forms\Components\ColorPicker;
+use Filament\Forms\Components\Repeater;
+use Filament\Forms\Components\Select;
+use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Toggle;
+use Filament\Schemas\Components\Component;
+
+/**
+ * THE KIND -> CONTROL MAPPING of the admin (DS-2a): one Filament component for one field of a component's schema (FieldKinds). The old «Хедър» page and the «Дизайн» screen both build
+ * their controls here, so the same setting is the same control on both. Labels and option texts come from the `header.*` language keys (the catalog the fields belong to).
+ */
+final class FieldForms
+{
+    /** @param  array<string, mixed>  $field  the schema field: `kind` and its own keys */
+    public static function make(string $name, array $field): Component
+    {
+        $label = __('header.settings.'.$name);
+
+        return match ($field['kind']) {
+            'int' => TextInput::make($name)->label($label)->numeric()->integer()->minValue((int) ($field['min'] ?? 0))->maxValue((int) ($field['max'] ?? 9999))->default($field['default'] ?? null),
+            'bool' => Toggle::make($name)->label($label)->default((bool) ($field['default'] ?? false)),
+            'enum' => Select::make($name)->label($label)->native(false)->options(array_combine($field['options'], array_map(static fn (string $o): string => __('header.options.'.$o), $field['options'])))->default($field['default'] ?? $field['options'][0]),
+            'html' => Textarea::make($name)->label($label)->rows(4)->helperText(__('header.html_help'))->default(''),
+            'textarea' => Textarea::make($name)->label($label)->rows(4)->default('')->maxLength((int) ($field['max'] ?? 2000)),
+            'color' => ColorPicker::make($name)->label($label)->default($field['default'] ?? null),
+            'social' => Repeater::make($name)->label($label)->maxItems((int) ($field['max'] ?? 8))->default([])
+                ->schema([
+                    Select::make('network')->label(__('header.settings.network'))->native(false)->options(array_combine(HeaderCatalog::SOCIAL_NETWORKS, array_map(static fn (string $n): string => __('header.social.'.$n), HeaderCatalog::SOCIAL_NETWORKS)))->required(),
+                    TextInput::make('url')->label(__('header.settings.url'))->placeholder('https://')->required(),
+                ])->columns(2),
+            default => TextInput::make($name)->label($label)->default($field['default'] ?? '')->maxLength((int) ($field['max'] ?? 500)),
+        };
+    }
+}

@@ -32,6 +32,9 @@ final class HeaderLayout
 
     public const SLOTS = ['left', 'center', 'right'];
 
+    /** DS-2a: the text sizes a row may choose (absent = the size the row has today). */
+    public const TEXT_SIZES = ['s', 'm', 'l'];
+
     /** The seeded default (the owner's vision): categories in the main row on desktop, the logo centred, the icons right. */
     public static function default(): array
     {
@@ -101,6 +104,29 @@ final class HeaderLayout
         }
 
         return $metrics;
+    }
+
+    /**
+     * DS-2a: the row colours the token stylesheet carries, `--sf-hdr-{d|m}-{row}-bg|fg` => `#rrggbb`, ONLY for the rows that set one (no variable = the row inherits).
+     *
+     * @param  array<string, mixed>  $layout  a VALIDATED layout
+     * @return array<string, string>
+     */
+    public static function colorVars(array $layout): array
+    {
+        $vars = [];
+
+        foreach (['desktop' => 'd', 'mobile' => 'm'] as $name => $short) {
+            foreach ($layout[$name]['rows'] as $row => $data) {
+                foreach (['bg', 'fg'] as $key) {
+                    if (isset($data[$key]) && is_string($data[$key])) {
+                        $vars["--sf-hdr-{$short}-{$row}-{$key}"] = $data[$key];
+                    }
+                }
+            }
+        }
+
+        return $vars;
     }
 
     /** @return array<string, int> variable => default, the fallbacks storefront.css carries */

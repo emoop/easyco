@@ -93,6 +93,8 @@ return [
         'unknown_setting' => 'Unknown setting: :key.',
         'bad_choice' => 'Not a valid choice.',
         'bad_list' => 'Not a valid list.',
+        'bad_color' => 'A colour like #1a2b3c.',
+        'bad_phone' => 'Not a valid phone number.',
         'bad_element' => 'Not a valid element.',
         'bad_url' => 'Enter a path in the shop (starts with "/") or an address with https://.',
         'bad_https_url' => 'The address must start with https://.',

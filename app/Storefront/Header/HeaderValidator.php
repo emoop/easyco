@@ -114,10 +114,10 @@ final class HeaderValidator
         foreach (HeaderLayout::ROW_HEIGHTS[$layout] as $name => [$min, $max, $default]) {
             $row = is_array($rows[$name] ?? null) ? $rows[$name] : ['enabled' => false, 'height' => $default, 'left' => [], 'center' => [], 'right' => []];
             $path = "{$layout}.rows.{$name}";
-            $this->unknownKeys($row, ['enabled', 'height', 'left', 'center', 'right'], $path);
+            $this->unknownKeys($row, ['enabled', 'height', 'bg', 'fg', 'text_size', 'left', 'center', 'right'], $path);
 
             $height = $this->int($row['height'] ?? $default, $min, $max, "{$path}.height", 'height_range', ['min' => $min, 'max' => $max]) ?? $default;
-            $clean = ['enabled' => $this->bool($row['enabled'] ?? false, "{$path}.enabled"), 'height' => $height];
+            $clean = ['enabled' => $this->bool($row['enabled'] ?? false, "{$path}.enabled"), 'height' => $height] + $this->look($row, $path);
 
             foreach (HeaderLayout::SLOTS as $slot) {
                 $clean[$slot] = $this->slot($row[$slot] ?? [], "{$path}.{$slot}", $layout);
@@ -136,6 +136,34 @@ final class HeaderValidator
         }
 
         $this->limitOnce(['rows' => $out], $layout, HeaderCatalog::ONCE_PER_LAYOUT);
+
+        return $out;
+    }
+
+    /**
+     * DS-2a: the OPTIONAL look of a row: `bg` / `fg` (a hex colour, `#rgb` is stored as `#rrggbb`) and `text_size` (s | m | l). A key that is absent, null or empty is NOT in the output
+     * (an untouched layout normalises exactly as before).
+     *
+     * @param  array<string, mixed>  $row
+     * @return array<string, string>
+     */
+    private function look(array $row, string $path): array
+    {
+        $out = [];
+
+        foreach (['bg', 'fg'] as $key) {
+            $color = FieldKinds::color($row[$key] ?? null, "{$path}.{$key}", $this->failer());
+
+            if ($color !== null) {
+                $out[$key] = strlen($color) === 4 ? '#'.$color[1].$color[1].$color[2].$color[2].$color[3].$color[3] : $color;
+            }
+        }
+
+        $size = $row['text_size'] ?? null;
+
+        if ($size !== null && $size !== '') {
+            in_array($size, HeaderLayout::TEXT_SIZES, true) ? $out['text_size'] = $size : $this->fail("{$path}.text_size", 'bad_choice');
+        }
 
         return $out;
     }

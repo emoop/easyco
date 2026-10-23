@@ -1,0 +1,386 @@
+/* «Дизайн» (DS-2a): the admin screen of the storefront layout. Plain CSS on Filament's own variables (--primary-*, --gray-*) and its `.dark` class; no custom theme.
+   Loaded by the page view only. Every control is a <button type="button"> with a 44px touch target where it is an arrow or a plus. */
+
+.ds {
+    display: grid;
+    grid-template-columns: 11.5rem minmax(0, 1fr) 21.5rem;
+    gap: 1rem;
+    align-items: start;
+}
+
+@media (max-width: 1099px) {
+    .ds {
+        grid-template-columns: 11.5rem minmax(0, 1fr);
+    }
+
+    .ds-props {
+        grid-column: 1 / -1;
+    }
+}
+
+@media (max-width: 700px) {
+    .ds {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+.ds-h {
+    margin: 0 0 0.5rem;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: var(--gray-500);
+}
+
+.ds-note {
+    margin: 0.25rem 0 0.5rem;
+    font-size: 0.8125rem;
+    color: var(--gray-500);
+}
+
+.ds-zones ul,
+.ds-chips {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.ds-zone {
+    display: block;
+    width: 100%;
+    min-height: 2.5rem;
+    padding: 0.4rem 0.75rem;
+    border: 1px solid transparent;
+    border-radius: 0.5rem;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+}
+
+.ds-zone[disabled] {
+    opacity: 0.5;
+    cursor: default;
+}
+
+.ds-zone small {
+    margin-inline-start: 0.25rem;
+    font-size: 0.6875rem;
+    color: var(--gray-500);
+}
+
+.ds-zone-on {
+    background: var(--primary-50);
+    border-color: var(--primary-600);
+    font-weight: 600;
+}
+
+.ds-main,
+.ds-props {
+    min-width: 0;
+}
+
+.ds-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    align-items: center;
+    margin-bottom: 0.75rem;
+}
+
+.ds-devices {
+    display: inline-flex;
+    gap: 0.25rem;
+}
+
+.ds-btn {
+    min-height: 2.5rem;
+    padding: 0.4rem 0.9rem;
+    border: 1px solid var(--gray-300);
+    border-radius: 0.5rem;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+}
+
+.ds-btn-on,
+.ds-btn-primary {
+    border-color: var(--primary-600);
+    background: var(--primary-600);
+    color: #fff;
+}
+
+.ds-btn-primary {
+    margin-top: 0.75rem;
+}
+
+.ds-tag {
+    display: inline-block;
+    margin-inline-start: 0.4rem;
+    padding: 0 0.4rem;
+    border-radius: 0.25rem;
+    background: var(--gray-200);
+    font-size: 0.6875rem;
+    font-weight: 500;
+    color: var(--gray-700);
+}
+
+.ds-tag-warn {
+    background: var(--warning-100, #fef3c7);
+    color: var(--warning-800, #92400e);
+}
+
+.ds-palette,
+.ds-schema,
+.ds-preview {
+    margin-bottom: 1rem;
+    padding: 0.75rem;
+    border: 1px solid var(--gray-200);
+    border-radius: 0.75rem;
+    background: #fff;
+}
+
+.ds-palette-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}
+
+.ds-chip-add {
+    min-height: 2.25rem;
+    padding: 0.25rem 0.75rem;
+    border: 1px dashed var(--gray-400);
+    border-radius: 999px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+}
+
+.ds-chip-add:hover:not([disabled]) {
+    border-color: var(--primary-600);
+    background: var(--primary-50);
+}
+
+.ds-chip-add[disabled] {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.ds-layout-head {
+    display: block;
+    width: 100%;
+    margin-bottom: 0.5rem;
+    padding: 0.4rem 0.6rem;
+    border: 1px dashed var(--gray-300);
+    border-radius: 0.5rem;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-weight: 600;
+    text-align: start;
+    cursor: pointer;
+}
+
+.ds-row {
+    margin-bottom: 0.5rem;
+    padding: 0.5rem;
+    border: 1px solid var(--gray-300);
+    border-radius: 0.5rem;
+    background: var(--gray-50);
+}
+
+.ds-off {
+    opacity: 0.6;
+}
+
+.ds-row-title {
+    display: inline-block;
+    min-height: 2rem;
+    padding: 0.1rem 0.4rem;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.ds-cells {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.5rem;
+}
+
+.ds-cells-one {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+@media (max-width: 700px) {
+    .ds-cells {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+.ds-cell {
+    padding: 0.4rem;
+    border: 1px solid var(--gray-200);
+    border-radius: 0.5rem;
+    background: #fff;
+}
+
+.ds-cell-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.25rem;
+}
+
+.ds-cell-title {
+    min-height: 2rem;
+    padding: 0 0.25rem;
+    border: 0;
+    background: transparent;
+    color: var(--gray-600);
+    font: inherit;
+    font-size: 0.8125rem;
+    cursor: pointer;
+}
+
+.ds-icon-btn {
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+    border: 1px solid var(--gray-300);
+    border-radius: 0.5rem;
+    background: #fff;
+    color: inherit;
+    font: inherit;
+    font-size: 1rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.ds-icon-btn[disabled] {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+
+.ds-danger {
+    color: var(--danger-600);
+}
+
+.ds-chip {
+    margin-top: 0.3rem;
+    border: 1px solid var(--gray-300);
+    border-radius: 0.5rem;
+    background: var(--gray-50);
+}
+
+.ds-chip-main {
+    display: block;
+    width: 100%;
+    min-height: 2.25rem;
+    padding: 0.25rem 0.6rem;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+}
+
+.ds-chip-main small {
+    display: block;
+    color: var(--gray-500);
+}
+
+.ds-moves {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    padding: 0 0.4rem 0.4rem;
+}
+
+.ds-empty {
+    padding: 0.25rem 0.4rem;
+    font-size: 0.8125rem;
+    color: var(--gray-400);
+}
+
+.ds-sel {
+    border-color: var(--primary-600);
+    box-shadow: 0 0 0 2px var(--primary-200, rgba(99, 102, 241, 0.3));
+}
+
+.ds-bad {
+    border-color: var(--danger-600);
+    box-shadow: 0 0 0 2px var(--danger-200, rgba(220, 38, 38, 0.25));
+}
+
+.ds-frame {
+    margin: 0 auto;
+    border: 1px solid var(--gray-300);
+    border-radius: 0.5rem;
+    overflow: hidden;
+    background: #fff;
+}
+
+.ds-frame-mobile {
+    width: 390px;
+    max-width: 100%;
+    padding: 0.75rem 0.4rem;
+    border: 8px solid var(--gray-800);
+    border-radius: 1.75rem;
+}
+
+.ds-frame iframe {
+    display: block;
+    width: 100%;
+    height: 34rem;
+    border: 0;
+}
+
+/* The desktop layout starts at a 1024px viewport: the frame is 1280px wide and is zoomed down to the column by the page's Alpine (x-bind:style). */
+.ds-frame-desktop iframe {
+    width: 1280px;
+    max-width: none;
+}
+
+.ds button:focus-visible,
+.ds a:focus-visible {
+    outline: 2px solid var(--primary-600);
+    outline-offset: 2px;
+}
+
+.dark .ds-palette,
+.dark .ds-schema,
+.dark .ds-preview,
+.dark .ds-cell,
+.dark .ds-icon-btn {
+    border-color: var(--gray-700);
+    background: var(--gray-900);
+}
+
+.dark .ds-row,
+.dark .ds-chip {
+    border-color: var(--gray-700);
+    background: var(--gray-800);
+}
+
+.dark .ds-zone-on {
+    background: var(--gray-800);
+}
+
+.dark .ds-tag {
+    background: var(--gray-700);
+    color: var(--gray-200);
+}
+
+.dark .ds-cell-title,
+.dark .ds-h,
+.dark .ds-note {
+    color: var(--gray-400);
+}

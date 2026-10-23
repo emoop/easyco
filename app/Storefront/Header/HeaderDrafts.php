@@ -1,0 +1,95 @@
+<?php
+
+namespace App\Storefront\Header;
+
+use App\Services\ActivityLogger;
+use App\Settings\AppearanceSettings;
+use App\Settings\Contracts\SiteSettingsRepository;
+
+/**
+ * The header's DRAFT / PUBLISHED life, in one place (DS-2a): the old «Хедър» page and the «Дизайн» screen both call it, so a draft saved by one is exactly what the other shows after a reload.
+ * It touches the settings, the compiler and the activity log only: no form, no notification. The layout it is given must already be VALIDATED (HeaderValidator::validate()->layout).
+ */
+final class HeaderDrafts
+{
+    /** The layout an editor starts from: the draft, else the published one, else the seeded default (each re-validated; a bad stored one is skipped). @return array<string, mixed> */
+    public static function startingLayout(): array
+    {
+        $settings = app(SiteSettingsRepository::class);
+
+        foreach ([AppearanceSettings::HEADER_DRAFT_KEY, AppearanceSettings::HEADER_PUBLISHED_KEY] as $key) {
+            $json = $settings->get($key);
+            $layout = is_string($json) ? json_decode($json, true) : null;
+
+            if (is_array($layout)) {
+                $validation = HeaderValidator::validate($layout);
+
+                if ($validation->passes()) {
+                    return $validation->layout;
+                }
+            }
+        }
+
+        return HeaderLayout::default();
+    }
+
+    /** The stored draft as a validated layout, or null when there is none (or it does not validate). @return array<string, mixed>|null */
+    public static function draft(): ?array
+    {
+        $json = app(SiteSettingsRepository::class)->get(AppearanceSettings::HEADER_DRAFT_KEY);
+        $layout = is_string($json) ? json_decode($json, true) : null;
+        $validation = is_array($layout) ? HeaderValidator::validate($layout) : null;
+
+        return $validation !== null && $validation->passes() ? $validation->layout : null;
+    }
+
+    /**
+     * A layout from a form that does not know the rows' look (the old «Хедър» page): the rows take their `bg` / `fg` / `text_size` from what is stored now (draft, else published), so a save
+     * from that page never throws away what the «Дизайн» screen set. A row the stored layout does not have gets nothing.
+     *
+     * @param  array<string, mixed>  $layout
+     * @return array<string, mixed>
+     */
+    public static function keepLook(array $layout): array
+    {
+        $stored = self::startingLayout();
+
+        foreach (['desktop', 'mobile'] as $name) {
+            foreach (array_keys($layout[$name]['rows'] ?? []) as $row) {
+                $look = array_intersect_key($stored[$name]['rows'][$row] ?? [], array_flip(['bg', 'fg', 'text_size']));
+                $layout[$name]['rows'][$row] = array_merge($layout[$name]['rows'][$row], $look);
+            }
+        }
+
+        return $layout;
+    }
+
+    /** @param  array<string, mixed>  $layout */
+    public static function saveDraft(array $layout): void
+    {
+        app(SiteSettingsRepository::class)->set(AppearanceSettings::HEADER_DRAFT_KEY, (string) json_encode($layout, JSON_THROW_ON_ERROR));
+        self::log('draft');
+    }
+
+    /** @param  array<string, mixed>  $layout */
+    public static function publish(array $layout): void
+    {
+        $settings = app(SiteSettingsRepository::class);
+        $settings->set(AppearanceSettings::HEADER_DRAFT_KEY, (string) json_encode($layout, JSON_THROW_ON_ERROR));
+        app(HeaderCompiler::class)->publish($layout, $settings);
+        self::log('published');
+    }
+
+    /** «Върни публикуваното»: the draft is forgotten. */
+    public static function discard(): void
+    {
+        app(SiteSettingsRepository::class)->forget(AppearanceSettings::HEADER_DRAFT_KEY);
+        self::log('discarded');
+    }
+
+    /** One activity-log line: who (the logger knows) and which action; never a setting value. */
+    private static function log(string $action): void
+    {
+        app(ActivityLogger::class)->logFieldChanged('storefront_header', 'header', $action, null, 'saved');
+    }
+}

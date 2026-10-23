@@ -4,14 +4,12 @@ namespace App\Filament\Pages\Settings;
 
 use App\Filament\Concerns\AuthorizesViaStaffPermission;
 use App\Filament\Concerns\ReconcilesFormKeys;
+use App\Filament\Design\FieldForms;
 use App\Filament\NavigationGroup;
 use App\Filament\Support\HelpLink;
 use App\Http\Controllers\Storefront\HeaderPreviewController;
-use App\Services\ActivityLogger;
-use App\Settings\AppearanceSettings;
-use App\Settings\Contracts\SiteSettingsRepository;
 use App\Storefront\Header\HeaderCatalog;
-use App\Storefront\Header\HeaderCompiler;
+use App\Storefront\Header\HeaderDrafts;
 use App\Storefront\Header\HeaderLayout;
 use App\Storefront\Header\HeaderValidator;
 use BackedEnum;
@@ -87,22 +85,7 @@ class HeaderSettings extends Page
     /** The layout the form starts from: the draft, else the published one, else the seeded default (each re-validated; a bad stored one is skipped). */
     private function startingLayout(): array
     {
-        $settings = app(SiteSettingsRepository::class);
-
-        foreach ([AppearanceSettings::HEADER_DRAFT_KEY, AppearanceSettings::HEADER_PUBLISHED_KEY] as $key) {
-            $json = $settings->get($key);
-            $layout = is_string($json) ? json_decode($json, true) : null;
-
-            if (is_array($layout)) {
-                $validation = HeaderValidator::validate($layout);
-
-                if ($validation->passes()) {
-                    return $validation->layout;
-                }
-            }
-        }
-
-        return HeaderLayout::default();
+        return HeaderDrafts::startingLayout();
     }
 
     public function mount(): void
@@ -220,23 +203,10 @@ class HeaderSettings extends Page
 
     // ---- the form --------------------------------------------------------------------------------------------------------------------
 
-    /** The Filament field for one setting of the catalog schema. @param  array<string, mixed>  $field */
+    /** The Filament field for one setting of the catalog schema (DS-2a: the mapping lives in FieldForms, shared with the Design screen). @param  array<string, mixed>  $field */
     private static function field(string $name, array $field): Component
     {
-        $label = __('header.settings.'.$name);
-
-        return match ($field['kind']) {
-            'int' => TextInput::make($name)->label($label)->numeric()->integer()->minValue((int) ($field['min'] ?? 0))->maxValue((int) ($field['max'] ?? 9999))->default($field['default'] ?? null),
-            'bool' => Toggle::make($name)->label($label)->default((bool) ($field['default'] ?? false)),
-            'enum' => Select::make($name)->label($label)->native(false)->options(array_combine($field['options'], array_map(static fn (string $o): string => __('header.options.'.$o), $field['options'])))->default($field['default'] ?? $field['options'][0]),
-            'html' => Textarea::make($name)->label($label)->rows(4)->helperText(__('header.html_help'))->default(''),
-            'social' => Repeater::make($name)->label($label)->maxItems((int) ($field['max'] ?? 8))->default([])
-                ->schema([
-                    Select::make('network')->label(__('header.settings.network'))->native(false)->options(array_combine(HeaderCatalog::SOCIAL_NETWORKS, array_map(static fn (string $n): string => __('header.social.'.$n), HeaderCatalog::SOCIAL_NETWORKS)))->required(),
-                    TextInput::make('url')->label(__('header.settings.url'))->placeholder('https://')->required(),
-                ])->columns(2),
-            default => TextInput::make($name)->label($label)->default($field['default'] ?? '')->maxLength((int) ($field['max'] ?? 500)),
-        };
+        return FieldForms::make($name, $field);
     }
 
     /** One Builder (a slot or the drawer): a block per element type of the catalog. */
@@ -342,6 +312,7 @@ class HeaderSettings extends Page
     private function validated(): array
     {
         [$layout, $map] = $this->fromForm($this->form->getState(), $this->data ?? []);
+        $layout = HeaderDrafts::keepLook($layout);
         $validation = HeaderValidator::validate($layout);
 
         if (! $validation->passes()) {
@@ -353,9 +324,7 @@ class HeaderSettings extends Page
 
     public function saveDraft(): void
     {
-        $layout = $this->validated();
-        app(SiteSettingsRepository::class)->set(AppearanceSettings::HEADER_DRAFT_KEY, (string) json_encode($layout, JSON_THROW_ON_ERROR));
-        $this->log('draft');
+        HeaderDrafts::saveDraft($this->validated());
 
         Notification::make()->title(__('header.notices.draft_saved'))->success()->send();
     }
@@ -368,11 +337,7 @@ class HeaderSettings extends Page
 
     public function publish(): void
     {
-        $layout = $this->validated();
-        $settings = app(SiteSettingsRepository::class);
-        $settings->set(AppearanceSettings::HEADER_DRAFT_KEY, (string) json_encode($layout, JSON_THROW_ON_ERROR));
-        app(HeaderCompiler::class)->publish($layout, $settings);
-        $this->log('published');
+        HeaderDrafts::publish($this->validated());
 
         Notification::make()->title(__('header.notices.published'))->success()->send();
     }
@@ -380,17 +345,9 @@ class HeaderSettings extends Page
     /** «Върни публикуваното»: the draft becomes the published layout again (or the default when nothing was ever published). */
     public function discard(): void
     {
-        $settings = app(SiteSettingsRepository::class);
-        $settings->forget(AppearanceSettings::HEADER_DRAFT_KEY);
-        $this->log('discarded');
+        HeaderDrafts::discard();
         $this->form->fill($this->toForm($this->startingLayout()));
 
         Notification::make()->title(__('header.notices.discarded'))->success()->send();
-    }
-
-    /** One activity-log line: who (the logger knows) and which action; never a setting value. */
-    private function log(string $action): void
-    {
-        app(ActivityLogger::class)->logFieldChanged('storefront_header', 'header', $action, null, 'saved');
     }
 }

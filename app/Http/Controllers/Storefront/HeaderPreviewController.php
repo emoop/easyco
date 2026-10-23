@@ -66,7 +66,7 @@ final class HeaderPreviewController extends Controller
             }
         }
 
-        $css = app(AppearanceCompiler::class)->css([], HeaderLayout::metrics($layout));
+        $css = app(AppearanceCompiler::class)->css([], HeaderLayout::metrics($layout), [], [], HeaderLayout::colorVars($layout));
 
         if ($css === null) {
             return null;

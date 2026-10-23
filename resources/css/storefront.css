@@ -2205,6 +2205,49 @@
     border-top: 1px solid var(--sf-border, #e5e5e5);
 }
 
+/* DS-2a: the row's own colours and text size. The variables exist ONLY for a row that sets them (the token stylesheet); without one the fallback is what the row has always had
+   (no background, the colour it inherits), so an untouched shop renders the same. A row with a text colour makes its links and icons follow it (`sf-hdr-has-fg`). */
+.sf-hdr-desktop .sf-hdr-row-top {
+    background-color: var(--sf-hdr-d-top-bg, transparent);
+    color: var(--sf-hdr-d-top-fg, inherit);
+}
+
+.sf-hdr-desktop .sf-hdr-row-main {
+    background-color: var(--sf-hdr-d-main-bg, transparent);
+    color: var(--sf-hdr-d-main-fg, inherit);
+}
+
+.sf-hdr-desktop .sf-hdr-row-bottom {
+    background-color: var(--sf-hdr-d-bottom-bg, transparent);
+    color: var(--sf-hdr-d-bottom-fg, inherit);
+}
+
+.sf-hdr-mobile .sf-hdr-row-top {
+    background-color: var(--sf-hdr-m-top-bg, transparent);
+    color: var(--sf-hdr-m-top-fg, inherit);
+}
+
+.sf-hdr-mobile .sf-hdr-row-main {
+    background-color: var(--sf-hdr-m-main-bg, transparent);
+    color: var(--sf-hdr-m-main-fg, inherit);
+}
+
+.sf-hdr-row.sf-hdr-has-fg :is(.sf-hdr-icon-btn, .sf-hdr-link, .sf-menu-toggle, .sf-cart, .sf-hdr-menu-trigger, .sf-hdr-menu a, .sf-logo, .sf-hdr-text-link) {
+    color: inherit;
+}
+
+.sf-hdr-row.sf-ts-s {
+    font-size: 0.8125rem;
+}
+
+.sf-hdr-row.sf-ts-m {
+    font-size: 0.9375rem;
+}
+
+.sf-hdr-row.sf-ts-l {
+    font-size: 1.0625rem;
+}
+
 /* Three columns (the S3-V2 rule): the sides shrink, the centre keeps its width, the content is centred vertically in the row height. */
 .sf-hdr-grid {
     display: grid;

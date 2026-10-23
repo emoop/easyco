@@ -42,7 +42,7 @@ final class AppearanceCompiler
      * @param  array<string, string>  $overrides
      * @throws InvalidArgumentException a value that is not valid for its key
      */
-    public function css(array $overrides, array $metrics = [], array $badgeColors = [], array $footerVars = []): ?string
+    public function css(array $overrides, array $metrics = [], array $badgeColors = [], array $footerVars = [], array $headerColors = []): ?string
     {
         $effective = $this->effective($overrides);
         $defaults = AppearanceSettings::defaults();
@@ -112,6 +112,15 @@ final class AppearanceCompiler
             $vars[] = "{$variable}: ".strtolower($value).';';
         }
 
+        // DS-2a: the header rows' colours (only the rows that set one): `--sf-hdr-{d|m}-{top|main|bottom}-{bg|fg}: #rrggbb`, checked again here.
+        foreach ($headerColors as $variable => $value) {
+            if (preg_match('/^--sf-hdr-[dm]-(?:top|main|bottom)-(?:bg|fg)$/', (string) $variable) !== 1 || ! AppearanceSettings::isHex($value)) {
+                throw new InvalidArgumentException('A header colour is not valid.');
+            }
+
+            $vars[] = "{$variable}: ".strtolower($value).';';
+        }
+
         $faces = $this->fontFaces($this->fontKeys($effective));
         $badges = $this->badgeClasses($badgeColors);
 
@@ -152,7 +161,7 @@ final class AppearanceCompiler
      */
     public function compile(array $overrides, ?string $previousHash = null, ?array $metrics = null): ?array
     {
-        $css = $this->css($overrides, $metrics ?? $this->publishedMetrics(), $this->storedBadgeColors(), $this->publishedFooterVars());
+        $css = $this->css($overrides, $metrics ?? $this->publishedMetrics(), $this->storedBadgeColors(), $this->publishedFooterVars(), $this->publishedHeaderColors());
 
         if ($css === null) {
             $this->prune(null, $previousHash);
@@ -237,6 +246,25 @@ final class AppearanceCompiler
         $validation = HeaderValidator::validate($data['layout']);
 
         return $validation->passes() ? HeaderLayout::metrics($validation->layout) : [];
+    }
+
+    /**
+     * The row colours of the PUBLISHED header (header.compiled), kept on every later appearance or footer save like the heights. Re-validated.
+     *
+     * @return array<string, string>
+     */
+    private function publishedHeaderColors(): array
+    {
+        $json = app(SiteSettingsRepository::class)->get(AppearanceSettings::HEADER_COMPILED_KEY);
+        $data = is_string($json) ? json_decode($json, true) : null;
+
+        if (! is_array($data) || ! is_array($data['layout'] ?? null)) {
+            return [];
+        }
+
+        $validation = HeaderValidator::validate($data['layout']);
+
+        return $validation->passes() ? HeaderLayout::colorVars($validation->layout) : [];
     }
 
     /**
