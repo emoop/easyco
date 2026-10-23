@@ -103,4 +103,54 @@ class FooterAdapterTest extends TestCase
 
         FooterAdapter::fromTree(['upper' => Tree::layout([], [])]);
     }
+
+    // ---- DS-2b: locate() ----------------------------------------------------------------------------------------------------------------------
+
+    public function test_locate_finds_a_block_a_column_a_row_and_a_level(): void
+    {
+        $tree = FooterAdapter::toTree($this->stored()['large']);
+        $node = $tree['upper']['rows'][0]['cells'][1]['items'][0]['id'];
+        $cell = $tree['upper']['rows'][0]['cells'][1]['id'];
+        $row = $tree['upper']['rows'][0]['id'];
+
+        $this->assertSame(['kind' => 'node', 'id' => $node, 'field' => 'heading'], FooterAdapter::locate($tree, 'upper.rows.0.columns.1.blocks.0.settings.heading'));
+        $this->assertSame(['kind' => 'node', 'id' => $node, 'field' => 'type'], FooterAdapter::locate($tree, 'upper.rows.0.columns.1.blocks.0.type'));
+        $this->assertSame(['kind' => 'node', 'id' => $node, 'field' => null], FooterAdapter::locate($tree, 'upper.rows.0.columns.1.blocks.0'));
+        $this->assertSame(['kind' => 'node', 'id' => $node, 'field' => 'items.1.url'], FooterAdapter::locate($tree, 'upper.rows.0.columns.1.blocks.0.settings.items.1.url'));
+        $this->assertSame(['kind' => 'cell', 'id' => $cell, 'field' => 'span'], FooterAdapter::locate($tree, 'upper.rows.0.columns.1.span'));
+        $this->assertSame(['kind' => 'cell', 'id' => $cell, 'field' => 'align'], FooterAdapter::locate($tree, 'upper.rows.0.columns.1.align'));
+        $this->assertSame(['kind' => 'cell', 'id' => $cell, 'field' => 'blocks'], FooterAdapter::locate($tree, 'upper.rows.0.columns.1.blocks'));
+        $this->assertSame(['kind' => 'cell', 'id' => $cell, 'field' => null], FooterAdapter::locate($tree, 'upper.rows.0.columns.1'));
+        $this->assertSame(['kind' => 'row', 'id' => $row, 'field' => null], FooterAdapter::locate($tree, 'upper.rows.0'));
+        $this->assertSame(['kind' => 'row', 'id' => $row, 'field' => null], FooterAdapter::locate($tree, 'upper.rows.0.columns'));
+    }
+
+    public function test_locate_maps_the_levels_own_fields_and_the_colours_to_the_colors_group(): void
+    {
+        $tree = FooterAdapter::toTree($this->stored()['large']);
+
+        foreach ([
+            'upper' => ['kind' => 'layout', 'id' => 'upper', 'field' => null], 'upper.rows' => ['kind' => 'layout', 'id' => 'upper', 'field' => null],
+            'upper.bg' => ['kind' => 'layout', 'id' => 'upper', 'field' => 'colors.bg'], 'upper.text' => ['kind' => 'layout', 'id' => 'upper', 'field' => 'colors.fg'],
+            'upper.border_color' => ['kind' => 'layout', 'id' => 'upper', 'field' => 'border_color'], 'upper.border_width' => ['kind' => 'layout', 'id' => 'upper', 'field' => 'border_width'],
+            'upper.padding' => ['kind' => 'layout', 'id' => 'upper', 'field' => 'padding'],
+            'lower.text_template' => ['kind' => 'layout', 'id' => 'lower', 'field' => 'text_template'], 'lower.align' => ['kind' => 'layout', 'id' => 'lower', 'field' => 'align'],
+            'lower.bg' => ['kind' => 'layout', 'id' => 'lower', 'field' => 'colors.bg'],
+        ] as $path => $expected) {
+            $this->assertSame($expected, FooterAdapter::locate($tree, $path), $path);
+        }
+    }
+
+    public function test_locate_returns_null_for_a_path_that_points_at_nothing_and_falls_back_for_a_missing_index(): void
+    {
+        $tree = FooterAdapter::toTree($this->stored()['default']);
+
+        foreach (['', 'layout', 'middle.rows', 'footer'] as $path) {
+            $this->assertNull(FooterAdapter::locate($tree, $path), $path);
+        }
+
+        $this->assertSame(['kind' => 'layout', 'id' => 'upper', 'field' => null], FooterAdapter::locate($tree, 'upper.rows.9.columns.0'));
+        $this->assertSame(['kind' => 'row', 'id' => 'f-u-r0', 'field' => null], FooterAdapter::locate($tree, 'upper.rows.0.columns.9.span'));
+        $this->assertSame(['kind' => 'cell', 'id' => 'f-u-r0-c0', 'field' => null], FooterAdapter::locate($tree, 'upper.rows.0.columns.0.blocks.9.settings.x'));
+    }
 }

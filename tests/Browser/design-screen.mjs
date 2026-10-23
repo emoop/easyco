@@ -8,6 +8,8 @@
 //   open «Дизайн» (the sidebar starts collapsed) -> select the top row's right cell -> add a «Текст» from the palette -> type its text -> enable the top row, give it a background and a text
 //   size -> «Приложи» -> the preview frame shows the text on that background -> switch to «Телефон» (the frame is 390px wide) -> move a node down and up in the phone's main row ->
 //   an unsafe link in a button is refused on its own field -> «Върни публикуваното» (after a «Публикувай» of a clean layout) restores the published layout.
+// DS-2b adds: «Футър» (add a column, add a menu block, move it, change the upper colour, «Приложи», see it in the frame scrolled to the footer, «Върни публикуваното»), «Топбанер» («Запази» shows at once)
+//   and «Количка и поръчка» (enable, phone, «Приложи», the frame shows the cart, «Публикувай», /cart and /checkout at 1280px and 390px, the home page keeps the full header).
 // Prints a JSON report; exit code 1 when a check failed.
 import { createRequire } from 'node:module';
 import { mkdirSync } from 'node:fs';
@@ -35,6 +37,9 @@ const consoleErrors = [];
 page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text().slice(0, 300)); });
 page.on('pageerror', (e) => consoleErrors.push('PAGEERROR ' + String(e.stack || e).replace(/\s+/g, ' ').slice(0, 600)));
 
+// a failed request names its url (the console only says "Failed to load resource")
+page.on('response', (r) => { if (r.status() >= 400) consoleErrors.push('HTTP ' + r.status() + ' ' + r.url().slice(0, 160) + ' (asked by ' + (r.request().frame()?.url() ?? '?').slice(0, 120) + ', after step ' + steps.length + ')'); });
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const check = (name, ok, detail = '') => { steps.push({ name, ok: !!ok, detail: String(detail).slice(0, 400) }); if (! ok) console.error('FAIL ' + name + ' ' + detail); };
 const shot = async (name) => { if (OUT) await page.screenshot({ path: join(OUT, name + '.png'), fullPage: true }); };
@@ -55,6 +60,7 @@ async function login() {
 const row = (name) => page.locator('.ds-row').filter({ has: page.locator('.ds-row-title', { hasText: name }) }).first();
 const cell = (rowName, cellName) => row(rowName).locator('.ds-cell').filter({ has: page.locator('.ds-cell-title', { hasText: cellName }) }).first();
 const frame = () => page.frameLocator('iframe[title="Преглед на хедъра"]');
+const frame2 = (title) => page.frameLocator(`iframe[title="${title}"]`);
 
 try {
     await login();
@@ -111,7 +117,7 @@ try {
     console.error('LOOK ' + JSON.stringify(look));
 
     // ---- the zone list: Хедър works, the others are disabled ---------------------------------------------------------------------------------------
-    check('the zone list has Хедър selected and the others disabled', (await page.locator('.ds-zone[disabled]').count()) === 5 && (await page.locator('.ds-zone-on').textContent()).includes('Хедър'));
+    check('the zone list has four working zones (Хедър selected) and two «следва»', (await page.locator('.ds-zone[disabled]').count()) === 2 && (await page.locator('.ds-zone:not([disabled])').count()) === 4 && (await page.locator('.ds-zone-on').textContent()).includes('Хедър'));
     check('the palette is disabled without a cell', (await page.locator('.ds-chip-add:not([disabled])').count()) === 0);
 
     // ---- DS-2a.1: the menu picker on the header's menu element ------------------------------------------------------------------------------------------
@@ -246,6 +252,111 @@ try {
     await settle();
     check('«Върни публикуваното» restores the published layout', (await cell('Горен ред', 'Център').locator('.ds-chip').count()) === centerBefore && (await cell('Горен ред', 'Дясно').locator('.ds-chip').count()) === chipsBefore + 1);
     await shot('05-discarded');
+
+    // ---- DS-2b: Футър ------------------------------------------------------------------------------------------------------------------------------------
+    const zone = async (name) => {
+        await page.locator('.ds-zone:not([disabled])', { hasText: name }).click();
+        await settle();
+    };
+    const fieldInput = (label) => page.locator('.ds-props .fi-fo-field', { has: page.locator('label', { hasText: label }) }).locator('input[type=text]').first();
+    const submit = async () => { await page.locator('.ds-props button[type=submit]').click(); await settle(); await sleep(2500); };
+
+    await zone('Футър');
+    const upper = page.locator('.ds-level').first();
+    const row1 = upper.locator('.ds-row').first();
+    const columns = () => row1.locator('.ds-cells-footer .ds-cell');
+    check('the footer zone is selected and shows both levels', (await page.locator('.ds-zone-on').textContent()).includes('Футър') && (await page.locator('.ds-level').count()) === 2);
+    const columnsBefore = await columns().count();
+    await row1.getByRole('button', { name: /Добави колона/ }).click();
+    await settle();
+    check('a column was added', (await columns().count()) === columnsBefore + 1);
+
+    await columns().last().locator('.ds-cell-title').click();
+    await settle();
+    await page.locator('.ds-chip-add', { hasText: /^\s*Меню\s*$/ }).click();
+    await settle();
+    check('a menu block is in the new column and selected', (await columns().last().locator('.ds-chip.ds-sel').count()) === 1);
+    const previousBefore = await columns().nth(columnsBefore - 1).locator('.ds-chip').count();
+    await columns().last().locator('.ds-chip.ds-sel').getByRole('button', { name: 'Премести наляво' }).click();
+    await settle();
+    check('the block moved to the column on its left', (await columns().nth(columnsBefore - 1).locator('.ds-chip').count()) === previousBefore + 1 && (await columns().last().locator('.ds-chip').count()) === 0);
+
+    await upper.locator('.ds-layout-head').click();
+    await settle();
+    const bgField = fieldInput('Фон');
+    await bgField.fill('#223344');
+    await bgField.blur();
+    await sleep(300);
+    await submit();
+    const footer = frame2('Преглед на футъра').locator('.sf-footer');
+    await footer.waitFor({ timeout: 20000 });
+    const footerLook = await footer.locator('.sf-ft-upper').evaluate((el) => ({ bg: getComputedStyle(el).backgroundColor, scrolled: el.ownerDocument.defaultView.scrollY }));
+    check('the frame shows the footer on the chosen colour', footerLook.bg === 'rgb(34, 51, 68)', JSON.stringify(footerLook));
+    check('the frame is scrolled to the footer', footerLook.scrolled > 100, JSON.stringify(footerLook));
+    await shot('06-footer');
+
+    await page.getByRole('button', { name: 'Върни публикуваното' }).first().click();
+    await sleep(500);
+    await page.locator('.fi-modal-window button:visible', { hasText: /Потвърди|Върни публикуваното|Confirm/ }).last().click();
+    await settle();
+    check('«Върни публикуваното» restores the footer', (await columns().count()) === columnsBefore);
+
+    // ---- DS-2b: Топбанер ---------------------------------------------------------------------------------------------------------------------------------
+    await zone('Топбанер');
+    check('the top banner zone has no palette and a «Запази» button', (await page.locator('.ds-palette').count()) === 0 && (await page.locator('.ds-props button[type=submit]').textContent()).includes('Запази'));
+    const enabledSwitch = page.locator('.ds-props').getByRole('switch').first();
+    (await enabledSwitch.getAttribute('aria-checked')) !== 'true' && await enabledSwitch.click();
+    await sleep(300);
+    const textField = fieldInput('Текст');
+    await textField.fill('Тест на банера от Дизайн');
+    await textField.blur();
+    await sleep(300);
+    await submit();
+    const banner = frame2('Преглед на началната страница').locator('.sf-banner');
+    await banner.waitFor({ timeout: 20000 });
+    check('the frame shows the new banner text at once', (await banner.textContent()).includes('Тест на банера от Дизайн'));
+    await shot('07-topbar');
+
+    // ---- DS-2b: Количка и поръчка -------------------------------------------------------------------------------------------------------------------------
+    await zone('Количка и поръчка');
+    const chSwitch = page.locator('.ds-props').getByRole('switch').first();
+    (await chSwitch.getAttribute('aria-checked')) !== 'true' && await chSwitch.click();
+    await sleep(300);
+    const phoneField = fieldInput('Телефон');
+    await phoneField.fill('+359 888 123 456');
+    await phoneField.blur();
+    await sleep(300);
+    await submit();
+    const chdr = frame2('Преглед на количката').locator('[data-sf-checkout-header]');
+    await chdr.waitFor({ timeout: 20000 });
+    check('the frame shows the cart with the simplified header and the phone', (await chdr.locator('a[href^="tel:"]').count()) === 1 && (await frame2('Преглед на количката').locator('[data-sf-header]').count()) === 0);
+    await shot('08-checkout-header');
+
+    await page.getByRole('button', { name: 'Публикувай' }).first().click();
+    await sleep(500);
+    await page.locator('.fi-modal-window button:visible', { hasText: /Потвърди|Публикувай|Confirm/ }).last().click();
+    await settle();
+
+    for (const [label, width] of [['desktop', 1280], ['phone', 390]]) {
+        const shop = await ctx.newPage();
+        await shop.setViewportSize({ width, height: 900 });
+
+        for (const path of ['/cart', '/checkout']) {
+            await shop.goto(BASE + path, { waitUntil: 'networkidle' });
+            const info = await shop.evaluate(() => ({
+                simple: document.querySelectorAll('[data-sf-checkout-header]').length, full: document.querySelectorAll('[data-sf-header]').length,
+                overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth, label: (document.querySelector('.sf-chdr-back-label') ?? {}).offsetWidth ?? -1,
+                tel: !!document.querySelector('.sf-chdr-tel[href^="tel:"]'), styleAttrs: document.querySelectorAll('[style]').length,
+            }));
+            check(`${path} on ${label}: the simplified header, no full header, no sideways scroll`, info.simple === 1 && info.full === 0 && info.overflow <= 0 && info.tel, JSON.stringify(info));
+            label === 'phone' && check(`${path} on the phone: the link keeps its arrow and aria-label while its words give way`, info.label <= 1, JSON.stringify(info));
+            await shop.screenshot({ path: OUT ? join(OUT, `09-${label}${path.replace('/', '-')}.png`) : undefined });
+        }
+
+        await shop.goto(BASE + '/', { waitUntil: 'networkidle' });
+        check(`the home page on ${label} keeps the full header`, (await shop.locator('[data-sf-header]').count()) === 1 && (await shop.locator('[data-sf-checkout-header]').count()) === 0);
+        await shop.close();
+    }
 
     // ---- the old Header page shows the same ----------------------------------------------------------------------------------------------------------------
     await page.goto(BASE + '/admin/header-settings', { waitUntil: 'networkidle' });

@@ -41,6 +41,12 @@ final class StorefrontAppearance
 
     private ?string $previewCss = null;
 
+    /** The simplified checkout header the Design screen's preview shows (the admin's DRAFT, or null = the full header), set for ONE request by the preview controller; false on every public request. */
+    private array|false|null $checkoutHeaderOverride = false;
+
+    /** The validated PUBLISHED simplified checkout header (null = off), memoised for the request; false = not read yet. */
+    private array|false|null $checkoutHeader = false;
+
     /** The compiled footer the footer preview shows (the admin's DRAFT: {layout, menus, blocks}), set for ONE request by the preview controller; null on every public request. */
     private ?array $footerOverride = null;
 
@@ -81,7 +87,7 @@ final class StorefrontAppearance
 
         $cached = Cache::get(self::CACHE_KEY);
 
-        if (is_array($cached) && array_key_exists('theme', $cached) && array_key_exists('compiled', $cached) && array_key_exists('header', $cached) && array_key_exists('menus', $cached) && array_key_exists('locations', $cached) && array_key_exists('footer', $cached) && is_array($cached['banner'] ?? null)) {
+        if (is_array($cached) && array_key_exists('theme', $cached) && array_key_exists('compiled', $cached) && array_key_exists('header', $cached) && array_key_exists('menus', $cached) && array_key_exists('locations', $cached) && array_key_exists('footer', $cached) && array_key_exists('design', $cached) && is_array($cached['banner'] ?? null)) {
             return $this->data = $cached;
         }
 
@@ -91,6 +97,7 @@ final class StorefrontAppearance
     /** Reads the settings (ONE query) and REPLACES the cache entry: what the admin save calls after a successful save. */
     public function refresh(): void
     {
+        $this->checkoutHeader = false;
         $this->headerLayout = null;
         $this->menus = null;
         $this->footerPrepared = false;
@@ -124,6 +131,8 @@ final class StorefrontAppearance
             'menus' => self::parseMenus($raw[AppearanceSettings::MENUS_COMPILED_KEY] ?? null),
             'locations' => self::parseLocations($raw[AppearanceSettings::MENUS_COMPILED_KEY] ?? null),
             'footer' => self::parseFooter($raw[AppearanceSettings::FOOTER_COMPILED_KEY] ?? null),
+            // DS-2b: the Design screen's compiled document (the simplified checkout header today); validated again when it is read
+            'design' => is_string($raw[AppearanceSettings::DESIGN_COMPILED_KEY] ?? null) ? $raw[AppearanceSettings::DESIGN_COMPILED_KEY] : null,
         ];
     }
 
@@ -348,6 +357,33 @@ final class StorefrontAppearance
         $this->previewCss = $cssUrl;
     }
 
+    /**
+     * The simplified header of the cart and the checkout (DS-2b): the published one, read from the one cached payload (no query) and validated again, or null when it is off, never
+     * published or invalid (the shop then keeps its full header).
+     *
+     * @return array<string, mixed>|null
+     */
+    public function checkoutHeader(): ?array
+    {
+        if ($this->checkoutHeaderOverride !== false) {
+            return $this->checkoutHeaderOverride;
+        }
+
+        if ($this->checkoutHeader === false) {
+            $values = \App\Storefront\CheckoutHeader\CheckoutHeaderCompiler::published($this->data()['design'] ?? null);
+            $this->checkoutHeader = $values !== null && $values['enabled'] === true ? $values : null;
+        }
+
+        return $this->checkoutHeader;
+    }
+
+    /** For ONE request: show this (validated) simplified header on the cart page instead of the full one (null = the full one), and link the stylesheet with its variables. Never called on a public request. */
+    public function previewCheckoutHeader(?array $values, ?string $cssUrl): void
+    {
+        $this->checkoutHeaderOverride = $values;
+        $this->previewCss = $cssUrl;
+    }
+
     /** For ONE request: show this (already validated) layout instead of the published one, and link the stylesheet with its sizes. Never called on a public request. */
     public function previewHeader(array $layout, ?string $cssUrl): void
     {
@@ -418,6 +454,9 @@ final class StorefrontAppearance
             'footerMenu' => $this->menuAt('footer'),
             'footer' => $this->footer(),
             'previewCss' => $this->previewCss,
+            // DS-2b: the simplified header of the cart, the checkout and the order-received page; `forced` = the Design screen's preview, which is not one of those routes
+            'checkoutHeader' => $this->checkoutHeader(),
+            'checkoutHeaderForced' => $this->checkoutHeaderOverride !== false,
         ];
     }
 }

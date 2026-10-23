@@ -3,30 +3,20 @@
 namespace App\Filament\Pages\Design;
 
 use App\Filament\Concerns\AuthorizesViaStaffPermission;
-use App\Filament\Design\FieldForms;
+use App\Filament\Design\Zones\CheckoutHeaderZone;
+use App\Filament\Design\Zones\DesignZone;
+use App\Filament\Design\Zones\FooterZone;
+use App\Filament\Design\Zones\HeaderZone;
+use App\Filament\Design\Zones\RestructuresTree;
+use App\Filament\Design\Zones\TopbarZone;
 use App\Filament\NavigationGroup;
-use App\Http\Controllers\Storefront\HeaderPreviewController;
-use App\Storefront\Design\ComponentRegistry;
 use App\Storefront\Design\Tree;
 use App\Storefront\Design\TreeEditor;
-use App\Storefront\Design\ZoneStore\HeaderAdapter;
-use App\Storefront\Header\HeaderCatalog;
-use App\Storefront\Header\HeaderDrafts;
-use App\Storefront\Header\HeaderLayout;
-use App\Storefront\Header\HeaderValidator;
 use BackedEnum;
 use EasyCo\Staff\Enums\Permission;
 use Filament\Actions\Action;
-use Filament\Forms\Components\ColorPicker;
-use Filament\Forms\Components\Select;
-use Filament\Forms\Components\TextInput;
-use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
-use Filament\Schemas\Components\Component;
-use Filament\Schemas\Components\Group;
-use Filament\Schemas\Components\Section;
-use Filament\Schemas\Components\Text;
 use Filament\Schemas\Schema;
 use Filament\Support\Enums\Width;
 use Illuminate\Support\Str;
@@ -34,21 +24,24 @@ use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Locked;
 
 /**
- * «Дизайн» / "Design" (DS-2a, design-screen-design.md): one full-width screen for the storefront's layout. A zone list on the left, the palette of components on top, the SCHEMA of the
- * layout (rows -> cells -> component chips) with the preview frame below it, and the PROPERTIES of whatever is selected on the right. Zone now: Хедър (desktop and phone, the phone drawer
- * included); the other zones are listed and disabled. There is no drag and drop: a click on a palette chip adds the component to the selected cell, the arrows move it.
+ * «Дизайн» / "Design" (DS-2a, design-screen-design.md; zones since DS-2b): one full-width screen for the storefront's layout. A zone list on the left, the palette of components on top, the
+ * SCHEMA of the zone (rows -> cells -> component chips) with the preview frame below it, and the PROPERTIES of whatever is selected on the right. There is no drag and drop: a click on a
+ * palette chip adds the component to the selected cell, the arrows move it.
  *
- * The editing state is the generic TREE (HeaderAdapter::toTree of the draft, else the published layout, else the default) in a LOCKED property: the browser can only ask for actions, and every
- * action re-checks the permission and every id and type it is given. The tree is written back to the draft through HeaderAdapter::fromTree + HeaderValidator (the single authority) and
- * HeaderDrafts (the same code the old «Хедър» page saves with). Admin group «Дизайн», `content_manage`.
+ * The page keeps the Livewire state and the generic actions; everything specific to a zone (its tree, palette, rules, properties, validator and storage) is a DesignZone (app/Filament/Design/Zones).
+ * Zones: Хедър, Футър (tree zones), Топбанер and «Количка и поръчка» (form zones: no tree, ONE properties form). The editing state is a LOCKED property: the browser can only ask for actions, and
+ * every action re-checks the permission and every id and type it is given. Admin group «Дизайн», `content_manage`.
  */
 class DesignScreen extends Page
 {
     use AuthorizesViaStaffPermission;
 
-    public const DRAWER_ROW = 'h-m-drawer-r';
+    public const DRAWER_ROW = HeaderZone::DRAWER_ROW;
 
-    public const DRAWER_CELL = 'h-m-drawer';
+    public const DRAWER_CELL = HeaderZone::DRAWER_CELL;
+
+    /** The zones that work, in the order of the list: key => class. */
+    public const ZONES = ['topbar' => TopbarZone::class, 'header' => HeaderZone::class, 'footer' => FooterZone::class, 'checkout' => CheckoutHeaderZone::class];
 
     protected static ?string $slug = 'design';
 
@@ -56,23 +49,23 @@ class DesignScreen extends Page
 
     protected static string|BackedEnum|null $navigationIcon = 'heroicon-o-swatch';
 
-    /** The zone being edited (DS-2a: only the header). */
+    /** The zone being edited: a key of ZONES. */
     #[Locked]
     public string $zone = 'header';
 
-    /** `desktop` | `mobile` */
+    /** The layout being edited: `desktop` | `mobile` (header), `upper` | `lower` (footer). */
     #[Locked]
     public string $device = 'desktop';
 
-    /** @var array{desktop?: array<string, mixed>, mobile?: array<string, mixed>} the two layout trees of the header */
+    /** @var array<string, mixed> the zone's state: the layout trees by layout key, or `{values}` of a form zone */
     #[Locked]
     public array $tree = [];
 
-    /** @var array{kind: string, id: string}|null `cell` | `node` | `row` | `layout` and its id (a layout's id is its device) */
+    /** @var array{kind: string, id: string}|null `cell` | `node` | `row` | `layout` | `form` and its id (a layout's id is its key) */
     #[Locked]
     public ?array $selected = null;
 
-    /** Has the tree changed since the draft was last saved from this screen? */
+    /** Has the tree changed since it was last saved from this screen? */
     #[Locked]
     public bool $dirty = false;
 
@@ -128,6 +121,14 @@ class DesignScreen extends Page
         abort_unless(static::canAccess(), 403);
     }
 
+    /** The zone being edited (zones are stateless: a new object is as good as a kept one). */
+    public function zoneObject(): DesignZone
+    {
+        $class = self::ZONES[$this->zone] ?? HeaderZone::class;
+
+        return new $class;
+    }
+
     // ---- the state -------------------------------------------------------------------------------------------------------------------
 
     public function mount(): void
@@ -144,14 +145,17 @@ class DesignScreen extends Page
         }
     }
 
-    /** The tree from storage (the same starting rule as the old Header page), nothing selected, nothing unsaved. */
+    /** The zone's state from storage (the same starting rule as the old pages), nothing unsaved. */
     private function loadTree(): void
     {
-        $this->tree = HeaderAdapter::toTree(HeaderDrafts::startingLayout());
-        $this->selected = null;
+        $zone = $this->zoneObject();
+        $this->tree = $zone->load();
+        $layouts = $zone->layouts();
+        $this->device = in_array($this->device, $layouts, true) ? $this->device : ($layouts[0] ?? 'desktop');
+        $this->selected = $zone->mode() === DesignZone::FORM ? ['kind' => 'form', 'id' => $zone->key()] : null;
         $this->dirty = false;
         $this->invalid = [];
-        $this->previewUrl = HeaderPreviewController::previewUrl();
+        $this->previewUrl = $zone->previewUrl();
         $this->refreshProps();
     }
 
@@ -161,28 +165,35 @@ class DesignScreen extends Page
         return $this->tree[$this->device] ?? [];
     }
 
+    public function isForm(): bool
+    {
+        return $this->zoneObject()->mode() === DesignZone::FORM;
+    }
+
     // ---- what the view needs ---------------------------------------------------------------------------------------------------------
 
-    /** @return list<array<string, mixed>> the rows of the current device, the phone's drawer row left out */
+    /** @return list<array<string, mixed>> the rows of the current layout (the phone's drawer row left out) */
     public function rows(): array
     {
-        return array_values(array_filter($this->layoutTree()['rows'] ?? [], static fn (array $row): bool => $row['id'] !== self::DRAWER_ROW));
+        return $this->zoneObject()->rows($this->tree, $this->device);
     }
 
     /** @return array<string, mixed>|null the phone's drawer cell */
     public function drawerCell(): ?array
     {
-        return $this->device === 'mobile' ? TreeEditor::cell($this->layoutTree(), self::DRAWER_CELL) : null;
+        $zone = $this->zoneObject();
+
+        return $zone instanceof HeaderZone ? $zone->drawerCell($this->tree, $this->device) : null;
     }
 
     public function rowName(array $row): string
     {
-        return (string) __('header.rows.'.substr($row['id'], strlen('h-'.($this->device === 'mobile' ? 'm' : 'd').'-')));
+        return $this->zoneObject()->rowName($row, $this->device);
     }
 
     public function cellName(array $cell): string
     {
-        return $cell['id'] === self::DRAWER_CELL ? (string) __('design.schema.drawer') : (string) __('header.slots.'.substr($cell['id'], strrpos($cell['id'], '-') + 1));
+        return $this->zoneObject()->cellName($cell, $this->device);
     }
 
     /** The cell new components go to: the selected cell, or the cell of the selected component. */
@@ -202,107 +213,36 @@ class DesignScreen extends Page
     }
 
     /**
-     * The palette: every component of the header's registry that the target cell may hold, with the REASON (a text) when it cannot be added now, or null.
+     * The palette: every component of the zone that the target cell may hold, with the REASON (a text) when it cannot be added now, or null.
      *
-     * @return list<array{type: string, label: string, reason: ?string}>
+     * @return list<array{type: string, label: string, reason: ?string, hint: ?string}>
      */
     public function palette(): array
     {
-        $cell = $this->targetCell();
-        $out = [];
-
-        foreach (ComponentRegistry::for('header') as $type => $descriptor) {
-            if ($cell === self::DRAWER_CELL && ! $this->drawerAllows($type)) {
-                continue;
-            }
-
-            $out[] = ['type' => $type, 'label' => (string) ($descriptor['builtin'] ? __($descriptor['label']) : $descriptor['label']), 'reason' => $this->reason($type, $cell)];
-        }
-
-        return $out;
-    }
-
-    private function drawerAllows(string $type): bool
-    {
-        return in_array($type, HeaderCatalog::DRAWER_TYPES, true) && $type !== 'account';
-    }
-
-    /** Why a component cannot be added to that cell right now (null = it can). */
-    private function reason(string $type, ?string $cellId): ?string
-    {
-        if ($cellId === null) {
-            return (string) __('design.palette.no_cell');
-        }
-
-        $layout = $this->layoutTree();
-        $cell = TreeEditor::cell($layout, $cellId);
-
-        if ($cell === null || ! isset(ComponentRegistry::for('header')[$type])) {
-            return (string) __('design.notices.unknown');
-        }
-
-        if ($cellId === self::DRAWER_CELL && ! $this->drawerAllows($type)) {
-            return (string) __('design.palette.not_offered');
-        }
-
-        $max = $cellId === self::DRAWER_CELL ? HeaderLayout::MAX_DRAWER : HeaderLayout::MAX_PER_SLOT;
-
-        if (count($cell['items']) >= $max) {
-            return (string) __('design.palette.full', ['max' => $max]);
-        }
-
-        if (in_array($type, HeaderCatalog::ONCE_PER_LAYOUT, true) && $this->count($layout, $type) > 0) {
-            return (string) __('design.palette.once');
-        }
-
-        return null;
-    }
-
-    /** @param  array<string, mixed>  $layout */
-    private function count(array $layout, string $type): int
-    {
-        $n = 0;
-
-        foreach ($layout['rows'] ?? [] as $row) {
-            foreach ($row['cells'] as $cell) {
-                foreach ($cell['items'] as $node) {
-                    $n += $node['type'] === $type ? 1 : 0;
-                }
-            }
-        }
-
-        return $n;
+        return $this->zoneObject()->palette($this->tree, $this->device, $this->targetCell());
     }
 
     /** The label of a node's type. */
     public function typeLabel(string $type): string
     {
-        $descriptor = ComponentRegistry::for('header')[$type] ?? null;
-
-        return $descriptor === null ? $type : (string) ($descriptor['builtin'] ? __($descriptor['label']) : $descriptor['label']);
+        return $this->zoneObject()->typeLabel($type);
     }
 
-    /** A short summary of a node for its chip: the text / label / the choice it made. @param  array<string, mixed>  $node */
+    /** @param  array<string, mixed>  $node */
     public function summary(array $node): string
     {
-        $settings = $node['settings'];
-
-        foreach (['text', 'label'] as $key) {
-            if (is_string($settings[$key] ?? null) && $settings[$key] !== '') {
-                return mb_substr($settings[$key], 0, 24);
-            }
-        }
-
-        return match ($node['type']) {
-            'logo' => ((int) ($settings['height'] ?? 0)).'px',
-            'social' => (string) count($settings['items'] ?? []),
-            default => is_string($settings['style'] ?? null) ? (string) __('header.options.'.$settings['style']) : (is_string($settings['mode'] ?? null) ? (string) __('header.options.'.$settings['mode']) : ''),
-        };
+        return $this->zoneObject()->summary($node);
     }
 
     public function canMove(string $nodeId, string $direction): bool
     {
         return TreeEditor::canMove($this->layoutTree(), $nodeId, $direction);
+    }
+
+    /** May a column (a cell of a row) move that way? */
+    public function canMoveColumn(string $cellId, string $direction): bool
+    {
+        return TreeEditor::canMoveCell($this->layoutTree(), $cellId, $direction);
     }
 
     public function isDirtyPreview(): bool
@@ -312,43 +252,116 @@ class DesignScreen extends Page
 
     // ---- selection --------------------------------------------------------------------------------------------------------------------
 
+    public function selectZone(string $zone): void
+    {
+        $this->guard();
+
+        if (! array_key_exists($zone, self::ZONES)) {
+            $this->refuse('unknown');
+
+            return;
+        }
+
+        if ($zone === $this->zone) {
+            return;
+        }
+
+        $this->commitProps();
+        $this->zone = $zone;
+        $this->device = 'desktop';
+        $this->tree = [];
+        $this->loadTree();
+    }
+
     public function setDevice(string $device): void
     {
         $this->guard();
 
-        if (! in_array($device, ['desktop', 'mobile'], true)) {
+        if (! $this->zoneObject()->hasDevices() || ! in_array($device, $this->zoneObject()->layouts(), true)) {
             $this->refuse('unknown');
 
             return;
         }
 
         $this->commitProps();
+        // the selection belongs to the layout it was made in: it is dropped BEFORE the layout changes, so the next commit cannot write its values into the other layout
+        $this->selected = null;
         $this->device = $device;
         $this->select(null, null);
+    }
+
+    /** A zone without a device switch (the footer) has several layouts on screen at once: the layout an id belongs to becomes the current one. */
+    private function focus(string $id): bool
+    {
+        $zone = $this->zoneObject();
+
+        if ($zone->hasDevices() || $zone->mode() === DesignZone::FORM) {
+            return true;
+        }
+
+        $layout = $this->layoutOf($id);
+
+        if ($layout === null) {
+            return false;
+        }
+
+        if ($layout !== $this->device) {
+            $this->commitProps();
+            $this->selected = null;
+            $this->device = $layout;
+        }
+
+        return true;
     }
 
     public function selectCell(string $id): void
     {
         $this->guard();
-        TreeEditor::cell($this->layoutTree(), $id) === null ? $this->refuse('unknown') : $this->select('cell', $id);
+        $this->focus($id) && TreeEditor::cell($this->layoutTree(), $id) !== null ? $this->select('cell', $id) : $this->refuse('unknown');
     }
 
     public function selectNode(string $id): void
     {
         $this->guard();
-        TreeEditor::node($this->layoutTree(), $id) === null ? $this->refuse('unknown') : $this->select('node', $id);
+        $this->focus($id) && TreeEditor::node($this->layoutTree(), $id) !== null ? $this->select('node', $id) : $this->refuse('unknown');
     }
 
     public function selectRow(string $id): void
     {
         $this->guard();
-        $row = TreeEditor::row($this->layoutTree(), $id);
-        $row === null || $id === self::DRAWER_ROW ? $this->refuse('unknown') : $this->select('row', $id);
+
+        if (! $this->focus($id) || TreeEditor::row($this->layoutTree(), $id) === null || $id === self::DRAWER_ROW) {
+            $this->refuse('unknown');
+
+            return;
+        }
+
+        $this->select('row', $id);
     }
 
-    public function selectLayout(): void
+    public function selectLayout(?string $layout = null): void
     {
         $this->guard();
+        $zone = $this->zoneObject();
+
+        if ($zone->mode() === DesignZone::FORM) {
+            return;
+        }
+
+        if ($layout !== null && ! $zone->hasDevices()) {
+            if (! in_array($layout, $zone->layouts(), true)) {
+                $this->refuse('unknown');
+
+                return;
+            }
+
+            if ($layout !== $this->device) {
+                $this->commitProps();
+                $this->selected = null;
+                $this->device = $layout;
+            }
+        }
+
         $this->select('layout', $this->device);
     }
 
@@ -356,7 +369,7 @@ class DesignScreen extends Page
     private function select(?string $kind, ?string $id): void
     {
         $this->commitProps();
-        $this->selected = $kind === null ? null : ['kind' => $kind, 'id' => (string) $id];
+        $this->selected = $kind === null ? ($this->isForm() ? ['kind' => 'form', 'id' => $this->zone] : null) : ['kind' => $kind, 'id' => (string) $id];
         $this->resetValidation();
         $this->refreshProps();
     }
@@ -369,21 +382,29 @@ class DesignScreen extends Page
         $this->commitProps();
         $cell = $this->targetCell();
 
-        if (! isset(ComponentRegistry::for('header')[$type]) || $cell === null || $this->reason($type, $cell) !== null) {
-            $this->refuse($cell === null ? 'unknown' : null, $cell === null ? null : $this->reason($type, $cell));
+        if ($cell === null) {
+            $this->refuse('unknown');
 
             return;
         }
 
-        $settings = HeaderCatalog::defaultsFor($type);
+        $entry = collect($this->palette())->firstWhere('type', $type);
 
-        if ($type === 'logo') {
-            $settings['height'] = HeaderLayout::LOGO_HEIGHTS[$this->device][2];
+        if ($entry === null) {
+            $this->refuse('unknown');
+
+            return;
+        }
+
+        if ($entry['reason'] !== null) {
+            $this->refuse(null, $entry['reason']);
+
+            return;
         }
 
         $id = 'n'.Str::lower(Str::random(8));
 
-        if ($this->commitStructure(TreeEditor::add($this->layoutTree(), $cell, Tree::node($id, $type, $settings)))) {
+        if ($this->commitStructure(TreeEditor::add($this->layoutTree(), $cell, $this->zoneObject()->newNode($type, $this->device, $id)))) {
             $this->select('node', $id);
         }
     }
@@ -392,6 +413,7 @@ class DesignScreen extends Page
     {
         $this->guard();
         $this->commitProps();
+        $this->focus($id);
 
         if (! TreeEditor::canMove($this->layoutTree(), $id, $direction)) {
             $this->refuse(TreeEditor::node($this->layoutTree(), $id) === null ? 'unknown' : 'cannot_move');
@@ -406,6 +428,7 @@ class DesignScreen extends Page
     {
         $this->guard();
         $this->commitProps();
+        $this->focus($id);
         $cell = TreeEditor::cellOf($this->layoutTree(), $id);
 
         if ($cell === null) {
@@ -432,12 +455,124 @@ class DesignScreen extends Page
             ->action(fn (array $arguments) => $this->removeNode((string) ($arguments['id'] ?? '')));
     }
 
-    /** Takes a changed layout of the current device when the whole header still keeps the STRUCTURE rules; refuses it with the rule's message when not. @param array<string, mixed> $layout */
+    /** «Премахни колоната» that still holds blocks: asks first and names them. */
+    public function removeColumnAction(): Action
+    {
+        return Action::make('removeColumn')
+            ->label(__('design.actions.remove_column'))
+            ->requiresConfirmation()
+            ->modalHeading(__('design.actions.remove_column_title'))
+            ->modalDescription(fn (array $arguments): string => __('design.actions.remove_column_body', ['blocks' => $this->blockNames((string) ($arguments['id'] ?? ''))]))
+            ->action(fn (array $arguments) => $this->removeColumn((string) ($arguments['id'] ?? ''), true));
+    }
+
+    /** «Премахни реда» that still holds blocks: asks first and names them. */
+    public function removeRowAction(): Action
+    {
+        return Action::make('removeRow')
+            ->label(__('design.actions.remove_row'))
+            ->requiresConfirmation()
+            ->modalHeading(__('design.actions.remove_row_title'))
+            ->modalDescription(fn (array $arguments): string => __('design.actions.remove_row_body', ['blocks' => $this->blockNames((string) ($arguments['id'] ?? ''))]))
+            ->action(fn (array $arguments) => $this->removeRow((string) ($arguments['id'] ?? ''), true));
+    }
+
+    /** The labels of the blocks inside a column or a row, for the confirmation. */
+    public function blockNames(string $id): string
+    {
+        $layout = $this->layoutTree();
+        $zone = $this->zoneObject();
+        $names = [];
+
+        foreach ($layout['rows'] ?? [] as $row) {
+            foreach ($row['cells'] as $cell) {
+                if ($cell['id'] === $id || $row['id'] === $id) {
+                    foreach ($cell['items'] as $node) {
+                        $names[] = $zone->typeLabel($node['type']);
+                    }
+                }
+            }
+        }
+
+        return implode(', ', $names);
+    }
+
+    // -- rows and columns (the footer) -----------------------------------------------------------------------------------------------------
+
+    public function addRow(): void
+    {
+        $this->restructure('add_row', '');
+    }
+
+    public function removeRow(string $id, bool $confirmed = false): void
+    {
+        $this->restructure('remove_row', $id, $confirmed);
+    }
+
+    public function addColumn(string $rowId): void
+    {
+        $this->restructure('add_column', $rowId);
+    }
+
+    public function removeColumn(string $id, bool $confirmed = false): void
+    {
+        $this->restructure('remove_column', $id, $confirmed);
+    }
+
+    public function moveColumn(string $id, string $direction): void
+    {
+        in_array($direction, ['left', 'right'], true) ? $this->restructure('move_column_'.$direction, $id) : $this->refuse('cannot_move');
+    }
+
+    /** One of RestructuresTree::ACTIONS on the footer's upper level; a limit or an unconfirmed removal is a notice and nothing changes. */
+    private function restructure(string $action, string $id, bool $confirmed = false): void
+    {
+        $this->guard();
+        $this->commitProps();
+        $zone = $this->zoneObject();
+
+        if (! $zone instanceof RestructuresTree || ! in_array($action, RestructuresTree::ACTIONS, true) || ! preg_match('/^[a-z0-9-]{0,40}$/', $id)) {
+            $this->refuse('unknown');
+
+            return;
+        }
+
+        $this->focus($id === '' ? 'f-u-r0' : $id);
+
+        try {
+            $tree = $zone->restructure($this->tree, $action, $id, $confirmed);
+        } catch (\DomainException $e) {
+            $this->refuse(null, $e->getMessage());
+
+            return;
+        }
+
+        $problem = $zone->structureProblem($tree);
+
+        if ($problem !== null) {
+            $this->refuse(null, $problem);
+
+            return;
+        }
+
+        $this->tree = $tree;
+        $this->dirty = true;
+        $removed = $action === 'remove_column' || $action === 'remove_row';
+        $this->invalid = [];
+
+        if ($removed || $this->selected !== null && TreeEditor::cell($this->layoutTree(), $this->selected['id']) === null && TreeEditor::node($this->layoutTree(), $this->selected['id']) === null && TreeEditor::row($this->layoutTree(), $this->selected['id']) === null && $this->selected['kind'] !== 'layout') {
+            $this->selected = null;
+        }
+
+        $this->refreshProps();
+    }
+
+    /** Takes a changed layout of the current key when the whole zone still keeps the STRUCTURE rules; refuses it with the rule's message when not. @param array<string, mixed> $layout */
     private function commitStructure(array $layout): bool
     {
         $tree = $this->tree;
         $tree[$this->device] = $layout;
-        $problem = $this->structureProblem($tree);
+        $problem = $this->zoneObject()->structureProblem($tree);
 
         if ($problem !== null) {
             $this->refuse(null, $problem);
@@ -451,18 +586,6 @@ class DesignScreen extends Page
         return true;
     }
 
-    /** The message of the first STRUCTURE rule the tree breaks (a limit, one logo, one menu button, a drawer type), or null. Setting errors wait for the save. @param array<string, mixed> $tree */
-    private function structureProblem(array $tree): ?string
-    {
-        foreach (HeaderValidator::validate(HeaderAdapter::fromTree($tree))->errors as $path => $message) {
-            if (preg_match('/^(?:desktop|mobile)\.(?:rows|drawer|rows\.[a-z]+\.(?:left|center|right))$/', $path) === 1 || preg_match('/^mobile\.drawer\.\d+$/', $path) === 1) {
-                return $message;
-            }
-        }
-
-        return null;
-    }
-
     private function refuse(?string $key, ?string $message = null): void
     {
         Notification::make()->warning()->title(__('design.notices.refused_title'))->body($message ?? __('design.notices.'.($key ?? 'unknown')))->send();
@@ -472,276 +595,177 @@ class DesignScreen extends Page
 
     public function propsForm(Schema $schema): Schema
     {
-        return $schema->components($this->propsComponents())->statePath('props');
-    }
-
-    /** @return list<Component> */
-    private function propsComponents(): array
-    {
-        $sel = $this->selected;
-        $layout = $this->layoutTree();
-
-        if ($sel === null || $layout === []) {
-            return [Text::make(__('design.props.nothing'))];
-        }
-
-        if ($sel['kind'] === 'node') {
-            $node = TreeEditor::node($layout, $sel['id']);
-            $fields = $node === null ? [] : $this->fieldsOf($node['type'], TreeEditor::cellOf($layout, $sel['id']) === self::DRAWER_CELL);
-
-            return [Section::make($node === null ? '' : $this->typeLabel($node['type']))->schema([
-                Group::make(array_map(static fn (string $name, array $field): Component => FieldForms::make($name, $field), array_keys($fields), array_values($fields)))->statePath('settings'),
-            ])];
-        }
-
-        if ($sel['kind'] === 'row') {
-            [$min, $max] = HeaderLayout::ROW_HEIGHTS[$this->device][substr($sel['id'], strlen('h-m-'))] ?? [0, 0];
-
-            return [
-                Section::make(__('design.props.general'))->schema([
-                    Toggle::make('enabled')->label(__('header.fields.enabled')),
-                    TextInput::make('height')->label(__('header.fields.height'))->helperText(__('header.fields.height_hint', ['min' => $min, 'max' => $max]))->numeric()->integer()->minValue($min)->maxValue($max)->suffix('px'),
-                ]),
-                Section::make(__('design.props.colors'))->schema([
-                    ColorPicker::make('colors.bg')->label(__('design.props.bg')),
-                    ColorPicker::make('colors.fg')->label(__('design.props.fg')),
-                    Select::make('text_size')->label(__('design.props.text_size'))->native(false)->placeholder(__('design.props.text_size_default'))
-                        ->options(array_combine(HeaderLayout::TEXT_SIZES, array_map(static fn (string $s): string => (string) __('design.props.sizes.'.$s), HeaderLayout::TEXT_SIZES))),
-                ])->columns(2),
-            ];
-        }
-
-        if ($sel['kind'] === 'layout') {
-            $components = [Toggle::make('sticky')->label(__('header.fields.sticky'))];
-
-            if ($this->device === 'mobile') {
-                $components[] = Select::make('drawer_side')->label(__('header.fields.drawer_side'))->native(false)->options(['left' => __('header.options.left'), 'right' => __('header.options.right')]);
-                $components[] = Toggle::make('drawer_upper')->label(__('header.fields.drawer_upper'));
-            }
-
-            return [Section::make(__('design.props.layout', ['device' => __('design.devices.'.$this->device)]))->schema($components)];
-        }
-
-        $cell = TreeEditor::cell($layout, $sel['id']);
-
-        return [Text::make(__('design.props.cell', ['name' => $cell === null ? '' : $this->cellName($cell)]))];
-    }
-
-    /** @return array<string, array<string, mixed>> the fields of a node type (the logo's height range follows the device) */
-    private function fieldsOf(string $type, bool $inDrawer = false): array
-    {
-        $fields = ComponentRegistry::for('header')[$type]['fields'] ?? [];
-
-        // DS-2a.1: in the drawer the menu is always an accordion, so «Вид» would change nothing there (the stored value is kept); the menu choice says "the drawer's menu"
-        if ($type === 'menu' && $inDrawer) {
-            unset($fields['style']);
-            $fields['menu']['place'] = 'drawer';
-        }
-
-        if ($type === 'logo') {
-            [$min, $max, $default] = HeaderLayout::LOGO_HEIGHTS[$this->device];
-            $fields['height'] = ['kind' => 'int', 'min' => $min, 'max' => $max, 'default' => $default];
-        }
-
-        return $fields;
+        return $schema->components($this->zoneObject()->propsComponents($this->tree, $this->device, $this->selected))->statePath('props');
     }
 
     /** The panel is rebuilt for the current selection and filled from the tree. */
     private function refreshProps(): void
     {
         $this->cacheSchema('propsForm');
-        $this->getSchema('propsForm')?->fill($this->propsState());
-    }
-
-    /** @return array<string, mixed> */
-    private function propsState(): array
-    {
-        $sel = $this->selected;
-        $layout = $this->layoutTree();
-
-        if ($sel === null) {
-            return [];
-        }
-
-        if ($sel['kind'] === 'node') {
-            $node = TreeEditor::node($layout, $sel['id']);
-
-            return $node === null ? [] : ['settings' => $node['settings']];
-        }
-
-        if ($sel['kind'] === 'row') {
-            $props = TreeEditor::row($layout, $sel['id'])['props'] ?? [];
-
-            return [
-                'enabled' => (bool) ($props['enabled'] ?? false), 'height' => $props['height'] ?? null,
-                'colors' => ['bg' => $props['colors']['bg'] ?? null, 'fg' => $props['colors']['fg'] ?? null], 'text_size' => $props['text_size'] ?? null,
-            ];
-        }
-
-        if ($sel['kind'] === 'layout') {
-            $props = $layout['props'] ?? [];
-
-            return ['sticky' => (bool) ($props['sticky'] ?? false)] + ($this->device === 'mobile' ? ['drawer_side' => $props['drawer_side'] ?? 'left', 'drawer_upper' => (bool) ($props['drawer_upper'] ?? true)] : []);
-        }
-
-        return [];
+        $this->getSchema('propsForm')?->fill($this->zoneObject()->propsState($this->tree, $this->device, $this->selected));
     }
 
     /** The panel's values are written into the tree (never validated here: the save does that). Nothing changes when they equal what the tree has. */
     private function commitProps(): void
     {
-        $sel = $this->selected;
-        $raw = is_array($this->props) ? $this->props : [];
-        $layout = $this->layoutTree();
-
-        if ($sel === null || $layout === []) {
+        if ($this->selected === null || $this->tree === []) {
             return;
         }
 
-        $before = $layout;
+        $tree = $this->zoneObject()->applyProps($this->tree, $this->device, $this->selected, is_array($this->props) ? $this->props : []);
 
-        if ($sel['kind'] === 'node' && ($node = TreeEditor::node($layout, $sel['id'])) !== null) {
-            $fields = $this->fieldsOf($node['type'], TreeEditor::cellOf($layout, $sel['id']) === self::DRAWER_CELL);
-            $settings = $this->settingsFrom($fields, is_array($raw['settings'] ?? null) ? $raw['settings'] : []);
-            // a setting the panel does not show (the drawer menu's «Вид») keeps what is stored
-            $layout = TreeEditor::setSettings($layout, $sel['id'], $settings + $node['settings']);
-        } elseif ($sel['kind'] === 'row' && TreeEditor::row($layout, $sel['id']) !== null && $sel['id'] !== self::DRAWER_ROW) {
-            $props = ['enabled' => (bool) ($raw['enabled'] ?? false), 'height' => $this->wholeNumber($raw['height'] ?? null)];
-            $colors = array_filter(['bg' => $raw['colors']['bg'] ?? null, 'fg' => $raw['colors']['fg'] ?? null], static fn (mixed $c): bool => is_string($c) && $c !== '');
-
-            if ($colors !== []) {
-                $props['colors'] = $colors;
-            }
-
-            if (is_string($raw['text_size'] ?? null) && $raw['text_size'] !== '') {
-                $props['text_size'] = $raw['text_size'];
-            }
-
-            $layout = TreeEditor::setRowProps($layout, $sel['id'], $props);
-        } elseif ($sel['kind'] === 'layout') {
-            $layout['props']['sticky'] = (bool) ($raw['sticky'] ?? false);
-
-            if ($this->device === 'mobile') {
-                $layout['props']['drawer_side'] = is_string($raw['drawer_side'] ?? null) ? $raw['drawer_side'] : 'left';
-                $layout['props']['drawer_upper'] = (bool) ($raw['drawer_upper'] ?? true);
-            }
-        }
-
-        if ($layout !== $before) {
-            $this->tree[$this->device] = $layout;
+        if ($tree !== $this->tree) {
+            $this->tree = $tree;
             $this->dirty = true;
         }
     }
 
-    /**
-     * The settings of a node from the panel: only the fields of its type, with the kinds the panel hands over in another shape put back (numbers, switches, the social list).
-     *
-     * @param  array<string, array<string, mixed>>  $fields
-     * @param  array<string, mixed>  $raw
-     * @return array<string, mixed>
-     */
-    private function settingsFrom(array $fields, array $raw): array
-    {
-        $out = [];
-
-        foreach ($fields as $name => $field) {
-            $value = $raw[$name] ?? null;
-            $out[$name] = match ($field['kind']) {
-                'bool' => (bool) $value,
-                'int' => $this->wholeNumber($value),
-                'social' => array_values(array_map(static fn (mixed $item): array => ['network' => (string) ($item['network'] ?? ''), 'url' => (string) ($item['url'] ?? '')], array_filter(is_array($value) ? $value : [], 'is_array'))),
-                default => $value === null ? '' : $value,
-            };
-        }
-
-        return $out;
-    }
-
-    private function wholeNumber(mixed $value): mixed
-    {
-        return is_string($value) && preg_match('/^\d{1,6}$/', $value) === 1 ? (int) $value : $value;
-    }
-
     // ---- save, publish, discard --------------------------------------------------------------------------------------------------------
 
-    /** «Приложи»: the panel goes into the tree, the tree is validated and saved as the draft, the preview is reloaded. */
+    /** «Приложи» / «Запази»: the panel goes into the tree, the tree is validated and saved (a draft where the zone has one), the preview is reloaded. */
     public function apply(): void
     {
         $this->guard();
-        $layout = $this->validatedLayout();
+        $stored = $this->validatedStored();
 
-        if ($layout === null) {
+        if ($stored === null) {
             return;
         }
 
-        HeaderDrafts::saveDraft($layout);
+        $zone = $this->zoneObject();
+        $zone->save($stored);
         $this->afterSave();
 
-        Notification::make()->title(__('design.notices.applied'))->success()->send();
+        Notification::make()->title($zone->hasDraft() ? __('design.notices.applied') : __('design.notices.saved'))->success()->send();
+        $this->warn($zone, $stored);
     }
 
     public function publish(): void
     {
         $this->guard();
-        $layout = $this->validatedLayout();
+        $zone = $this->zoneObject();
 
-        if ($layout === null) {
+        if (! $zone->hasDraft()) {
+            $this->refuse('unknown');
+
             return;
         }
 
-        HeaderDrafts::publish($layout);
+        $stored = $this->validatedStored();
+
+        if ($stored === null) {
+            return;
+        }
+
+        try {
+            $zone->publish($stored);
+        } catch (\InvalidArgumentException) {
+            $this->refuse(null, (string) __('design.notices.too_large'));
+
+            return;
+        }
+
         $this->afterSave();
 
-        Notification::make()->title(__('design.notices.published'))->success()->send();
+        Notification::make()->title(__('design.notices.published_'.$this->zone))->success()->send();
+        $this->warn($zone, $stored);
     }
 
     /** «Върни публикуваното»: the draft is forgotten and the tree is read again. */
     public function discard(): void
     {
         $this->guard();
-        HeaderDrafts::discard();
+        $zone = $this->zoneObject();
+
+        if (! $zone->hasDraft()) {
+            $this->refuse('unknown');
+
+            return;
+        }
+
+        $zone->discard();
         $this->loadTree();
 
         Notification::make()->title(__('design.notices.discarded'))->success()->send();
     }
 
+    /** «Върни по подразбиране» (the footer): the seeded layout goes into the TREE only; nothing is stored until «Приложи». */
+    public function resetToDefault(): void
+    {
+        $this->guard();
+        $zone = $this->zoneObject();
+
+        if (! method_exists($zone, 'defaultTree')) {
+            $this->refuse('unknown');
+
+            return;
+        }
+
+        $this->tree = $zone->defaultTree();
+        $this->selected = null;
+        $this->device = $zone->layouts()[0] ?? $this->device;
+        $this->invalid = [];
+        $this->dirty = true;
+        $this->refreshProps();
+
+        Notification::make()->title(__('design.notices.defaulted'))->success()->send();
+    }
+
+    public function hasDefault(): bool
+    {
+        return method_exists($this->zoneObject(), 'defaultTree');
+    }
+
     private function afterSave(): void
     {
+        $zone = $this->zoneObject();
         $this->dirty = false;
         $this->invalid = [];
-        $this->previewUrl = HeaderPreviewController::previewUrl();
+        $this->previewUrl = $zone->previewUrl();
+    }
+
+    /** @param  array<string, mixed>  $stored */
+    private function warn(DesignZone $zone, array $stored): void
+    {
+        foreach ($zone->warnings($stored) as $warning) {
+            Notification::make()->warning()->title($warning)->send();
+        }
     }
 
     /**
-     * The tree as a VALIDATED stored layout, or null when the validator refused it: then the first failing thing is selected, its messages stand under its fields, the others are marked in the
+     * The tree as a VALIDATED stored value, or null when the validator refused it: then the first failing thing is selected, its messages stand under its fields, the others are marked in the
      * schema and a notification counts the errors. Nothing is written.
      *
      * @return array<string, mixed>|null
      */
-    private function validatedLayout(): ?array
+    private function validatedStored(): ?array
     {
         $this->resetValidation();
         $this->commitProps();
-        $validation = HeaderValidator::validate(HeaderAdapter::fromTree($this->tree));
+        $zone = $this->zoneObject();
+        [$stored, $errors] = $zone->validate($this->tree);
 
-        if ($validation->passes()) {
-            return $validation->layout;
+        if ($errors === []) {
+            return $stored;
         }
 
         $located = [];
 
-        foreach ($validation->errors as $path => $message) {
-            $located[] = ['message' => $message, 'at' => HeaderAdapter::locate($this->tree, $path)];
+        foreach ($errors as $path => $message) {
+            $located[] = ['message' => $message, 'at' => $zone->locate($this->tree, $path)];
         }
 
-        $this->invalid = array_values(array_unique(array_map(static fn (array $e): string => $e['at']['id'], array_filter($located, static fn (array $e): bool => $e['at'] !== null))));
-        $first = array_values(array_filter($located, static fn (array $e): bool => $e['at'] !== null))[0]['at'] ?? null;
+        $known = array_values(array_filter($located, static fn (array $e): bool => $e['at'] !== null));
+        $this->invalid = array_values(array_unique(array_map(static fn (array $e): string => $e['at']['id'], $known)));
+        $first = $known[0]['at'] ?? null;
 
         if ($first !== null) {
-            $variant = $first['kind'] === 'layout' ? $first['id'] : $this->variantOf($first['id']);
-
-            if ($variant !== null && $variant !== $this->device) {
-                $this->device = $variant;
+            if (! $zone->hasDevices() && $zone->mode() === DesignZone::TREE) {
+                $layout = $first['kind'] === 'layout' ? $first['id'] : $this->layoutOf($first['id']);
+                $layout !== null && $this->device = $layout;
+            } elseif ($zone->hasDevices()) {
+                $layout = $first['kind'] === 'layout' ? $first['id'] : $this->layoutOf($first['id']);
+                $layout !== null && $layout !== $this->device && $this->device = $layout;
             }
 
             $this->select($first['kind'], $first['id']);
@@ -749,13 +773,15 @@ class DesignScreen extends Page
 
         $messages = [];
 
-        foreach ($located as $e) {
-            if ($first !== null && $e['at'] !== null && $e['at']['kind'] === $first['kind'] && $e['at']['id'] === $first['id'] && $e['at']['field'] !== null) {
-                $messages['props.'.($first['kind'] === 'node' ? 'settings.' : '').$e['at']['field']] = $e['message'];
+        foreach ($known as $e) {
+            $at = $e['at'];
+
+            if ($first !== null && $at['kind'] === $first['kind'] && $at['id'] === $first['id'] && ($field = $zone->fieldPath($at)) !== null) {
+                $messages['props.'.$field] = $e['message'];
             }
         }
 
-        Notification::make()->danger()->title(__('design.notices.errors', ['count' => count($validation->errors)]))->body(implode("\n", array_slice(array_values($validation->errors), 0, 3)))->send();
+        Notification::make()->danger()->title(__('design.notices.errors', ['count' => count($errors)]))->body(implode("\n", array_slice(array_values($errors), 0, 3)))->send();
 
         if ($messages !== []) {
             $this->dispatch('form-validation-error', livewireId: $this->getId());
@@ -766,12 +792,12 @@ class DesignScreen extends Page
         return null;
     }
 
-    /** Which device's layout holds this row / cell / node id? @return 'desktop'|'mobile'|null */
-    private function variantOf(string $id): ?string
+    /** Which layout key holds this row / cell / node id? */
+    private function layoutOf(string $id): ?string
     {
-        foreach (['desktop', 'mobile'] as $variant) {
-            if (in_array($id, Tree::ids($this->tree[$variant] ?? []), true)) {
-                return $variant;
+        foreach ($this->zoneObject()->layouts() as $layout) {
+            if (in_array($id, Tree::ids($this->tree[$layout] ?? []), true)) {
+                return $layout;
             }
         }
 
@@ -782,9 +808,10 @@ class DesignScreen extends Page
     {
         return [
             Action::make('to_admin')->label(__('design.back_to_admin'))->icon('heroicon-o-bars-3')->color('gray')->url('#')->extraAttributes(['x-on:click.prevent' => '$store.sidebar.open()']),
-            Action::make('discard')->label(__('design.actions.discard'))->color('gray')->requiresConfirmation()->action(fn () => $this->discard()),
-            Action::make('apply')->label(__('design.actions.apply'))->color('gray')->action(fn () => $this->apply()),
-            Action::make('publish')->label(__('design.actions.publish'))->requiresConfirmation()->action(fn () => $this->publish()),
+            Action::make('default')->label(__('design.actions.default'))->color('gray')->requiresConfirmation()->visible(fn (): bool => $this->hasDefault())->action(fn () => $this->resetToDefault()),
+            Action::make('discard')->label(__('design.actions.discard'))->color('gray')->requiresConfirmation()->visible(fn (): bool => $this->zoneObject()->hasDraft())->action(fn () => $this->discard()),
+            Action::make('apply')->label(fn (): string => (string) __($this->zoneObject()->hasDraft() ? 'design.actions.apply' : 'design.actions.save'))->color('gray')->action(fn () => $this->apply()),
+            Action::make('publish')->label(__('design.actions.publish'))->requiresConfirmation()->visible(fn (): bool => $this->zoneObject()->hasDraft())->action(fn () => $this->publish()),
         ];
     }
 }

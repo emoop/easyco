@@ -3,6 +3,7 @@
 use App\Http\Controllers\Storefront\CartPageController;
 use App\Http\Controllers\Storefront\CategoryController;
 use App\Http\Controllers\Storefront\CheckoutPageController;
+use App\Http\Controllers\Storefront\DesignPreviewController;
 use App\Http\Controllers\Storefront\FooterPreviewController;
 use App\Http\Controllers\Storefront\HeaderPreviewController;
 use App\Http\Controllers\Storefront\HomeController;
@@ -70,6 +71,8 @@ Route::middleware([SecurityHeaders::class, ApplyStorefrontTheme::class])
         Route::get('/header-preview', [HeaderPreviewController::class, 'show'])->name('storefront.header.preview');
         // The footer builder's preview (FT-1): the home page with the DRAFT footer, the same kind of signed url.
         Route::get('/footer-preview', [FooterPreviewController::class, 'show'])->name('storefront.footer.preview');
+        // The Design screen's preview of a zone that has no route of its own (DS-2b: the simplified checkout header on the cart page): the same kind of signed url.
+        Route::get('/design-preview', [DesignPreviewController::class, 'show'])->name('storefront.design.preview');
 
         Route::get('/product-category/{path}', [CategoryController::class, 'show'])
             ->where('path', '[\s\S]*')

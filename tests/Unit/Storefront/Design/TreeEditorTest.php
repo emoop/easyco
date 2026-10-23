@@ -147,4 +147,109 @@ class TreeEditorTest extends TestCase
             }
         }
     }
+
+    // ---- DS-2b: rows and cells ---------------------------------------------------------------------------------------------------------------
+
+    private function footerLike(int $cells = 2): array
+    {
+        $cell = static fn (int $i, array $nodes): array => Tree::cell("c{$i}", ['span' => 1], array_map(static fn (string $n): array => Tree::node($n, 'text', []), $nodes));
+
+        return Tree::layout([], [Tree::row('r0', [], array_map(static fn (int $i): array => $cell($i, $i === 0 ? ['n1', 'n2'] : []), range(0, $cells - 1)))]);
+    }
+
+    public function test_a_row_is_added_up_to_the_limit_and_a_used_id_is_refused(): void
+    {
+        $layout = TreeEditor::addRow($this->footerLike(), Tree::row('r1', [], [Tree::cell('d0', [], [])]), 2);
+
+        $this->assertSame(['r0', 'r1'], array_column($layout['rows'], 'id'));
+
+        try {
+            TreeEditor::addRow($layout, Tree::row('r2', [], [Tree::cell('d1', [], [])]), 2);
+            $this->fail('a third row');
+        } catch (\DomainException $e) {
+            $this->assertSame('limit', $e->getMessage());
+        }
+
+        $this->expectException(InvalidArgumentException::class);
+        TreeEditor::addRow($this->footerLike(), Tree::row('r9', [], [Tree::cell('c0', [], [])]), 2);
+    }
+
+    public function test_a_cell_is_added_up_to_the_limit_and_the_sixth_is_refused(): void
+    {
+        $layout = $this->footerLike(1);
+
+        for ($i = 1; $i < 5; $i++) {
+            $layout = TreeEditor::addCell($layout, 'r0', Tree::cell("x{$i}", [], []), 5);
+        }
+
+        $this->assertCount(5, $layout['rows'][0]['cells']);
+
+        try {
+            TreeEditor::addCell($layout, 'r0', Tree::cell('x9', [], []), 5);
+            $this->fail('a sixth cell');
+        } catch (\DomainException $e) {
+            $this->assertSame('limit', $e->getMessage());
+        }
+
+        foreach ([['nope', 'y1'], ['r0', 'c0']] as [$row, $id]) {
+            try {
+                TreeEditor::addCell($layout, $row, Tree::cell($id, [], []), 9);
+                $this->fail('refused');
+            } catch (InvalidArgumentException) {
+                $this->addToAssertionCount(1);
+            }
+        }
+    }
+
+    public function test_a_cell_or_row_that_holds_nodes_is_removed_only_when_forced(): void
+    {
+        $layout = $this->footerLike();
+
+        foreach ([fn () => TreeEditor::removeCell($layout, 'c0'), fn () => TreeEditor::removeRow($layout, 'r0')] as $call) {
+            try {
+                $call();
+                $this->fail('removed without the confirmation');
+            } catch (\DomainException $e) {
+                $this->assertSame('not_empty', $e->getMessage());
+            }
+        }
+
+        $this->assertSame(['c1'], array_column(TreeEditor::removeCell($layout, 'c0', true)['rows'][0]['cells'], 'id'));
+        $this->assertSame(['c0'], array_column(TreeEditor::removeCell($layout, 'c1')['rows'][0]['cells'], 'id'), 'an empty cell goes at once');
+        $this->assertSame([], TreeEditor::removeRow($layout, 'r0', true)['rows']);
+
+        $this->expectException(InvalidArgumentException::class);
+        TreeEditor::removeCell($layout, 'zz');
+    }
+
+    public function test_a_cell_moves_one_place_inside_its_row_and_nowhere_else(): void
+    {
+        $layout = $this->footerLike(3);
+
+        $this->assertSame(['c1', 'c0', 'c2'], array_column(TreeEditor::moveCell($layout, 'c0', 'right')['rows'][0]['cells'], 'id'));
+        $this->assertSame(['c0', 'c2', 'c1'], array_column(TreeEditor::moveCell($layout, 'c1', 'right')['rows'][0]['cells'], 'id'));
+        $this->assertSame(['c1', 'c0', 'c2'], array_column(TreeEditor::moveCell($layout, 'c1', 'left')['rows'][0]['cells'], 'id'));
+
+        foreach ([['c0', 'left'], ['c2', 'right'], ['c0', 'up'], ['zz', 'left']] as [$id, $direction]) {
+            $this->assertFalse(TreeEditor::canMoveCell($layout, $id, $direction), "{$id} {$direction}");
+
+            try {
+                TreeEditor::moveCell($layout, $id, $direction);
+                $this->fail('moved');
+            } catch (InvalidArgumentException) {
+                $this->addToAssertionCount(1);
+            }
+        }
+    }
+
+    public function test_cell_props_are_replaced(): void
+    {
+        $layout = TreeEditor::setCellProps($this->footerLike(), 'c1', ['span' => 2, 'align' => 'end']);
+
+        $this->assertSame(['span' => 2, 'align' => 'end'], TreeEditor::cell($layout, 'c1')['props']);
+        $this->assertSame(['span' => 1], TreeEditor::cell($layout, 'c0')['props']);
+
+        $this->expectException(InvalidArgumentException::class);
+        TreeEditor::setCellProps($layout, 'zz', []);
+    }
 }

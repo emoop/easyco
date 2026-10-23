@@ -31,9 +31,15 @@
 </head>
 <body class="sf-layout">
     @include('storefront.partials.messages')
-    @include('storefront.partials.top-banner', ['banner' => $appearance['banner']])
-    {{-- The header (D2): the published layout of the header builder, or the seeded default. --}}
-    @include('storefront.header', ['header' => $appearance['header']])
+    {{-- DS-2b: on the cart, the checkout and the order-received page a PUBLISHED, enabled simplified header (logo, back link, phone) takes the place of the top banner and the full header;
+         `checkoutHeaderForced` is the Design screen's preview, which is none of those routes. Off or invalid: the shop's full header, exactly as before. --}}
+    @if (($appearance['checkoutHeader'] ?? null) !== null && (($appearance['checkoutHeaderForced'] ?? false) || request()->routeIs('storefront.cart', 'storefront.checkout', 'storefront.order.received')))
+        @include('storefront.partials.checkout-header', ['values' => $appearance['checkoutHeader']])
+    @else
+        @include('storefront.partials.top-banner', ['banner' => $appearance['banner']])
+        {{-- The header (D2): the published layout of the header builder, or the seeded default. --}}
+        @include('storefront.header', ['header' => $appearance['header']])
+    @endif
     <main class="sf-main">
         @yield('content')
     </main>

@@ -58,6 +58,7 @@ One registry `App\Storefront\Design\FieldKinds`; each kind = `default()`, `valid
 | **`attribute`** | `filterable_only: true` | the **attribute picker** (owner, 2026-10-23): stores the attribute's **code/slug**, shows its current label; renaming the label never breaks the setting |
 | `social`, `payments` | max | the existing closed lists |
 | `list` | of: one kind, max | a small flat list (e.g. filter values order) — never nested deeper than one level |
+| **`items`** | fields (simple kinds + `media`), min, max | a list of small records with their own fields: slides, cards, gallery pictures (§7.1). One level only: an `items` field never holds another `items` or `list`. Edited in the properties panel as a compact repeater with ↑ ↓ ×; state path `props.settings.slides.2.heading` (depth 5) |
 
 Extensions keep adding component types through `storefront.header.elements` / `storefront.footer.blocks` and the new `storefront.design.components` (§5); an extension field may use only `int, enum, bool, text, textarea, url, color` (as today).
 
@@ -132,6 +133,21 @@ Rules: the zone list is dark graphite (`#2b2f33`, `#1f2326` in dark mode) with t
 
 - **Начална**: sections from D5 as components — HTML block (instead of a slider), banner grid, category tiles, product row (by category / tag / season, newest or featured, fixed N: no randomness), text, the editable intro (S3-V). An untouched home renders exactly as today.
 - **Продукт**: the core stays fixed in order (gallery, title, price, variation choice, add to cart, description); the merchant chooses the **gallery layout** with visual cards: thumbnails left · thumbnails below · 2-column grid · single column stacked · large first + tiles. Phone: always a CSS scroll-snap strip with dots (the dots and click-zoom reuse the small existing `storefront.js`, no library). Named slot cells around the core (`below_title`, `below_price`, `after_add_to_cart`, `after_description`) take HTML block / text / button components. The owner may still send 2–3 reference shops for the gallery before DS-5.
+### 7.1 Content components (owner, 2026-10-23)
+
+Available in the content zones (Начална first; the same components later in the product slots and at the top of a category). Every one supports the common groups `align`, `spacing`, `visibility`; every picture is a `media` field (an image `MediaAsset`, rendered from its WebP variants with `srcset`, `sizes`, `width`/`height` to avoid layout shift, `alt` required); every link is the safe-URL rule (root-relative or `https://`).
+
+| Component | Own fields | Notes |
+|---|---|---|
+| **Снимка** | picture, picture for phone (optional), alt, link (optional, = «снимка с линк»), new tab, caption (optional), ratio (оригинал / 1:1 / 4:5 / 3:4 / 16:9 / 21:9), width (цял екран / в контейнера) | «Снимка с линк» is this component with a link, not a separate one (one less thing to learn). |
+| **Снимка с текст** | picture, alt, side (снимка вляво / вдясно), split (50/50, 40/60, 60/40), heading, text (plain lines, ≤ 600), button (label + link), vertical align, on phone (снимката първа / текстът първи) | Pure CSS grid; stacks on phone. |
+| **Галерия** | `items` 1–24 × {picture, alt, link optional}; layout cards: решетка 2 / 3 / 4 колони · мозайка (първата голяма) · колони с различна височина (masonry, CSS columns) · лента с плъзгане; gap S/M/L; click: нищо / увеличение (lightbox) / връзката | Lightbox = a `<dialog>` + the small existing storefront script; without JS the picture link opens the full-size file. |
+| **Херо слайдър** | `items` 1–6 slides × {picture, picture for phone, alt, heading, text, button label, link, link on: бутона / целия слайд, text position (ляво / център / дясно × горе / среда / долу), text colour светъл / тъмен, overlay 0 / S / M / L}; height (S / M / L / цял екран), arrows on/off, dots on/off, autoplay (off by default; when on: 4–10 s, pauses on hover / focus / tab hidden, a visible pause button) | One slide = no script at all. Several: CSS scroll-snap track (works and can be swiped without JS), the script adds arrows, dots, autoplay. `prefers-reduced-motion` → no autoplay, no animated transition. **Speed:** the FIRST slide's picture is eager with `fetchpriority="high"` (it is the LCP), all others `loading="lazy"`; no slide is chosen at random (cache). |
+| **Карусел** | `items` 2–20 cards × {picture, alt, heading, text (≤ 160), link}; cards per view: desktop 2–6, phone 1 / 1.2 / 2 (1.2 = the next card peeks); arrows on/off; no autoplay | Same track and script as the hero. A **product carousel** (cards built from the catalog: featured / a category / a tag / a season, fixed N, price from the price resolver) is a separate later component (`product-brand-slider-widget-note.md`); it reuses this track. |
+| Text, HTML block, Бутон, Разстояние | as in the header/footer catalogs | already exist as kinds |
+
+Rules for all of them: the slider/carousel script is ONE small module of `storefront.js` shared by both (no library); keyboard: arrows are real `<button>`s with `aria-label`, the track is a labelled region (`aria-roledescription="carousel"`, each slide «2 от 5»); no layout shift (reserved height from the picture ratio); a component with an invalid or missing picture prints nothing rather than a broken frame.
+
 - **Каталог/Категория** (`listing`): layout cards sidebar left / right / none (filters on top); on phone the filters open in a drawer like the menu.
 - **Сайдбар**: filter components (brand, category, price range, season, collection, gender, size, colour) and ONE universal **«Филтър по атрибут»** (attribute picker + label, kind checklist/buttons/colour dots/range, value order alpha/count/manual, counts on/off, collapsed). Needs the S7 backend (cached facet counts, plain GET links, `noindex`/`canonical` on combinations). **Checked in the code (a33c798): attributes have no "filterable" flag yet** → a small catalog task F0 (flag + closed value lists confirmed) comes before the sidebar stage.
 
@@ -146,7 +162,9 @@ Escaped output everywhere; HTML only through the sanitizer on save and render; c
 | **DS-1 core** | `FieldKinds`, common groups (CSS classes + scale), `ComponentRegistry`, `ZoneSpec`, `ZoneStore` adapters for header + footer; Header/Footer catalogs and validators delegate to it. Golden tests: compiled header/footer and rendered HTML identical before/after; round-trip test of the adapters. | Nothing changes in the shop or admin (pure extraction; the safety net for everything after). Small-medium. |
 | **DS-2 screen** | The «Дизайн» page with zones Топбанер, Хедър, Футър, Количка и поръчка (simplified header); schema, palette, properties, preview, Десктоп/Телефон; common groups incl. **header row colours and text size**. | The new screen works for everything that exists today. Medium-large (may be split DS-2a shell + header, DS-2b footer + topbar + checkout header). |
 | **DS-3 cleanup** | Remove old «Хедър»/«Футър» pages (redirects), drop `ReconcilesFormKeys` where unused, drop `pages.in_footer`/`footer_order`, hook table entries. | One place for design. Small. |
-| **DS-4 home** | Content zone `home` with the D5 sections. | Home built from blocks. Medium. |
+| **ML media library** | «Медия»: grid of uploaded pictures, search, where-used, delete unused, and a picker in every `media` field («Избери от медията» / «Качи нова»). | Recommended BEFORE DS-4: every content component is built on pictures. Medium. |
+| **DS-4a home, static** | Content zone `home`; the `items` field kind; components Снимка, Снимка с текст, Галерия (without lightbox), Текст, HTML блок, Бутон, Разстояние; the S3-V intro as a component. | Home built from blocks. Medium. |
+| **DS-4b sliders** | Херо слайдър + Карусел (shared track + script), gallery lightbox. | Medium. |
 | **DS-5 product** | Gallery layouts + product slots. | Product page variants. Medium. |
 | **F0 → S7 → DS-6** | Filterable flag on attributes; search/filter backend; then the sidebar zone and `listing` layout cards. | Filters in the catalog. Large, after Phase 1 essentials. |
 
@@ -159,3 +177,12 @@ The media library picker plugs into the `media` field kind whenever it is built;
 3. The simplified checkout header is: logo + «Към магазина» link + optional phone.
 
 Status: approved by the owner on 2026-10-23; DS-1 prompt issued.
+
+## DS-2b as built (Футър, Топбанер, Количка и поръчка)
+
+The screen has four working zones; each is a `DesignZone` (`app/Filament/Design/Zones`): `HeaderZone` (DS-2a, moved without a change), `FooterZone`, `TopbarZone`, `CheckoutHeaderZone`. The page (`DesignScreen`) keeps the Livewire state (Locked `tree`, `selected`, `device` = the current layout key, `previewUrl`), the permission check of every action and the generic selecting / adding / moving / removing; a zone is stateless and supplies its tree, palette, rules, properties, validator and storage. Two kinds: `tree` (header, footer) and `form` (top banner, checkout header: no tree, ONE properties form; the page keeps its values in `tree['values']`).
+
+- **Футър.** The FT-1 footer as the generic tree (`FooterAdapter`, `locate()` added). Rows and columns are added, removed and moved through `TreeEditor` (`addRow`, `removeRow`, `addCell`, `removeCell`, `moveCell`; limits read from `ZoneSpec::for('footer.upper')`); a row or column that still holds blocks is removed only after the merchant confirmed. Draft / publish / discard are `FooterDrafts`, the code the old page calls. The preview frame is `FooterPreviewController::previewUrl()`, scrolled to `.sf-footer` by a script of the ADMIN page (same origin): the footer's HTML has no id and must not change.
+- **Топбанер.** No draft: the banner has always been saved live. «Запази» calls `AppearanceWriter::save()`, the code the «Облик» page saves with (colours, fonts and the banner, one recompile, one cache replacement). Preview: the live home page.
+- **Количка и поръчка.** A NEW storefront feature: the simplified header (logo, back link, optional international phone) on the cart, the checkout and the order-received page. Storage = the first use of the generic keys of section 4: `design.checkout_header.global.draft|published` and `design.compiled` (`{hash, zones: {checkout_header: {global: values}}}`, at most 256 KB, in `AppearanceSettings::READ_KEYS`, validated on save, on publish and on every read). Colours and logo heights are CSS variables (`--sf-chdr-*`) written only when set. Preview: `GET /design-preview?zone=checkout_header` (signed, 30 minutes, noindex, no-store).
+- The compact density of 6.1 applies to everything new.

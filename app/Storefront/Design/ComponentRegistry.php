@@ -18,7 +18,7 @@ use InvalidArgumentException;
  */
 final class ComponentRegistry
 {
-    public const ZONES = ['header', 'footer'];
+    public const ZONES = ['header', 'footer', 'checkout_header'];
 
     /**
      * The component set of a zone, by type.
@@ -30,6 +30,7 @@ final class ComponentRegistry
         return match ($zone) {
             'header' => self::header(),
             'footer' => self::footer(),
+            'checkout_header' => self::checkoutHeader(),
             default => throw new InvalidArgumentException('Unknown zone: '.mb_substr($zone, 0, 40)),
         };
     }
@@ -55,6 +56,15 @@ final class ComponentRegistry
         }
 
         return $out;
+    }
+
+    /** DS-2b: the simplified checkout header is ONE component with its own fields (no hook: nothing for an extension to add). @return array<string, array<string, mixed>> */
+    private static function checkoutHeader(): array
+    {
+        return ['checkout_header' => [
+            'label' => 'design.zones.checkout', 'icon' => 'checkout_header', 'zones' => ['checkout_header'], 'supports' => [], 'limits' => ['max_per_layout' => 1], 'requires_route' => null,
+            'fields' => \App\Storefront\CheckoutHeader\CheckoutHeaderCatalog::fields(), 'view' => 'storefront.partials.checkout-header', 'builtin' => true,
+        ]];
     }
 
     /** @return array<string, array<string, mixed>> */

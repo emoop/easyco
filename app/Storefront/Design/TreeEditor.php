@@ -138,6 +138,30 @@ final class TreeEditor
         throw new InvalidArgumentException('There is no such row.');
     }
 
+    /**
+     * The new props of a cell (the whole array replaces the old one).
+     *
+     * @param  array<string, mixed>  $layout
+     * @param  array<string, mixed>  $props
+     * @return array<string, mixed>
+     *
+     * @throws InvalidArgumentException no such cell
+     */
+    public static function setCellProps(array $layout, string $cellId, array $props): array
+    {
+        foreach ($layout['rows'] ?? [] as $r => $row) {
+            foreach ($row['cells'] as $c => $cell) {
+                if ($cell['id'] === $cellId) {
+                    $layout['rows'][$r]['cells'][$c]['props'] = $props;
+
+                    return $layout;
+                }
+            }
+        }
+
+        throw new InvalidArgumentException('There is no such cell.');
+    }
+
     /** May the node move that way? (the screen disables the button when not) @param  array<string, mixed>  $layout */
     public static function canMove(array $layout, string $nodeId, string $direction): bool
     {
@@ -179,5 +203,154 @@ final class TreeEditor
         $next = $row['cells'][$at['cell'] + ($direction === 'left' ? -1 : 1)] ?? null;
 
         return $next === null ? null : ['cell' => $next['id'], 'position' => count($next['items'])];
+    }
+
+    // ---- rows and cells (DS-2b: the footer's rows and columns) -------------------------------------------------------------------------------
+
+    /**
+     * Appends a row. `$max` is the most rows the zone allows (ZoneSpec): a DomainException `limit` when it is reached.
+     *
+     * @param  array<string, mixed>  $layout
+     * @param  array<string, mixed>  $row
+     * @return array<string, mixed>
+     *
+     * @throws InvalidArgumentException an id that is already used
+     * @throws \DomainException `limit`
+     */
+    public static function addRow(array $layout, array $row, ?int $max = null): array
+    {
+        if ($max !== null && count($layout['rows'] ?? []) >= $max) {
+            throw new \DomainException('limit');
+        }
+
+        $used = Tree::ids($layout);
+
+        foreach ([$row['id'], ...array_column($row['cells'] ?? [], 'id')] as $id) {
+            in_array($id, $used, true) && throw new InvalidArgumentException('The id is already used.');
+        }
+
+        $layout['rows'][] = $row;
+
+        return $layout;
+    }
+
+    /**
+     * Removes a row. A row that still holds nodes is refused (`not_empty`) unless `$force` says the merchant confirmed.
+     *
+     * @param  array<string, mixed>  $layout
+     * @return array<string, mixed>
+     *
+     * @throws InvalidArgumentException no such row
+     * @throws \DomainException `not_empty`
+     */
+    public static function removeRow(array $layout, string $rowId, bool $force = false): array
+    {
+        $row = self::row($layout, $rowId) ?? throw new InvalidArgumentException('There is no such row.');
+
+        if (! $force && array_sum(array_map(static fn (array $cell): int => count($cell['items']), $row['cells'])) > 0) {
+            throw new \DomainException('not_empty');
+        }
+
+        $layout['rows'] = array_values(array_filter($layout['rows'], static fn (array $r): bool => $r['id'] !== $rowId));
+
+        return $layout;
+    }
+
+    /**
+     * Appends a cell to a row. `$max` is the most cells a row may hold: a DomainException `limit` when it is reached.
+     *
+     * @param  array<string, mixed>  $layout
+     * @param  array<string, mixed>  $cell
+     * @return array<string, mixed>
+     *
+     * @throws InvalidArgumentException no such row, or an id already used
+     * @throws \DomainException `limit`
+     */
+    public static function addCell(array $layout, string $rowId, array $cell, ?int $max = null): array
+    {
+        foreach ($layout['rows'] ?? [] as $r => $row) {
+            if ($row['id'] !== $rowId) {
+                continue;
+            }
+
+            if ($max !== null && count($row['cells']) >= $max) {
+                throw new \DomainException('limit');
+            }
+
+            in_array($cell['id'], Tree::ids($layout), true) && throw new InvalidArgumentException('The id is already used.');
+            $layout['rows'][$r]['cells'][] = $cell;
+
+            return $layout;
+        }
+
+        throw new InvalidArgumentException('There is no such row.');
+    }
+
+    /**
+     * Removes a cell. A cell that still holds nodes is refused (`not_empty`) unless `$force` says the merchant confirmed.
+     *
+     * @param  array<string, mixed>  $layout
+     * @return array<string, mixed>
+     *
+     * @throws InvalidArgumentException no such cell
+     * @throws \DomainException `not_empty`
+     */
+    public static function removeCell(array $layout, string $cellId, bool $force = false): array
+    {
+        $cell = self::cell($layout, $cellId) ?? throw new InvalidArgumentException('There is no such cell.');
+
+        if (! $force && $cell['items'] !== []) {
+            throw new \DomainException('not_empty');
+        }
+
+        foreach ($layout['rows'] as $r => $row) {
+            $layout['rows'][$r]['cells'] = array_values(array_filter($row['cells'], static fn (array $c): bool => $c['id'] !== $cellId));
+        }
+
+        return $layout;
+    }
+
+    /** May a cell move one place `left` / `right` inside its row? @param  array<string, mixed>  $layout */
+    public static function canMoveCell(array $layout, string $cellId, string $direction): bool
+    {
+        return self::cellTarget($layout, $cellId, $direction) !== null;
+    }
+
+    /**
+     * Moves a cell one place inside its row (never to another row).
+     *
+     * @param  array<string, mixed>  $layout
+     * @return array<string, mixed>
+     *
+     * @throws InvalidArgumentException no such cell, an unknown direction or no place to go
+     */
+    public static function moveCell(array $layout, string $cellId, string $direction): array
+    {
+        [$r, $from, $to] = self::cellTarget($layout, $cellId, $direction) ?? throw new InvalidArgumentException('The cell cannot move '.mb_substr($direction, 0, 10).'.');
+        $cells = $layout['rows'][$r]['cells'];
+        [$cells[$from], $cells[$to]] = [$cells[$to], $cells[$from]];
+        $layout['rows'][$r]['cells'] = $cells;
+
+        return $layout;
+    }
+
+    /** @param  array<string, mixed>  $layout  @return array{0: int, 1: int, 2: int}|null row index, the cell's index, the index it swaps with */
+    private static function cellTarget(array $layout, string $cellId, string $direction): ?array
+    {
+        if (! in_array($direction, ['left', 'right'], true)) {
+            return null;
+        }
+
+        foreach ($layout['rows'] ?? [] as $r => $row) {
+            foreach ($row['cells'] as $c => $cell) {
+                if ($cell['id'] === $cellId) {
+                    $to = $c + ($direction === 'left' ? -1 : 1);
+
+                    return $to < 0 || $to >= count($row['cells']) ? null : [$r, $c, $to];
+                }
+            }
+        }
+
+        return null;
     }
 }

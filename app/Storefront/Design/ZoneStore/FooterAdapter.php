@@ -98,6 +98,82 @@ final class FooterAdapter
         ];
     }
 
+    /**
+     * Where a validator path (`upper.rows.1.columns.0.blocks.2.settings.heading`) lives in the tree: the node, the column (a cell), the row or the LEVEL (a layout) it belongs to, and the
+     * field of its props / settings (`heading`, `colors.bg`, `span`, `padding` ...; null = the thing as a whole, e.g. a column with too many blocks). The lower line's own fields
+     * (`text_template`, `align`) belong to the lower LEVEL, where the panel shows them. Null when the path points at nothing in this tree. Ids are looked up BY POSITION in the tree given.
+     *
+     * @param  array{upper: array<string, mixed>, lower: array<string, mixed>}  $tree
+     * @return array{kind: string, id: string, field: ?string}|null
+     */
+    public static function locate(array $tree, string $path): ?array
+    {
+        $parts = explode('.', $path);
+        $level = $parts[0];
+
+        if (! isset($tree[$level]) || ! in_array($level, ['upper', 'lower'], true)) {
+            return null;
+        }
+
+        $layout = ['kind' => 'layout', 'id' => $level];
+
+        if (count($parts) === 1) {
+            return $layout + ['field' => null];
+        }
+
+        if ($parts[1] !== 'rows') {
+            return $layout + ['field' => self::levelField($parts[1])];
+        }
+
+        if (count($parts) === 2) {
+            return $layout + ['field' => null];
+        }
+
+        $row = $tree[$level]['rows'][(int) $parts[2]] ?? null;
+
+        if (! ctype_digit($parts[2]) || $row === null) {
+            return $layout + ['field' => null];
+        }
+
+        if (count($parts) === 3 || $parts[3] !== 'columns') {
+            return ['kind' => 'row', 'id' => $row['id'], 'field' => null];
+        }
+
+        $cell = ctype_digit($parts[4] ?? '') ? ($row['cells'][(int) $parts[4]] ?? null) : null;
+
+        if ($cell === null) {
+            return ['kind' => 'row', 'id' => $row['id'], 'field' => null];
+        }
+
+        if (count($parts) === 5 || ($parts[5] ?? '') !== 'blocks') {
+            return ['kind' => 'cell', 'id' => $cell['id'], 'field' => $parts[5] ?? null];
+        }
+
+        if (count($parts) === 6) {
+            return ['kind' => 'cell', 'id' => $cell['id'], 'field' => 'blocks'];
+        }
+
+        $node = ctype_digit($parts[6] ?? '') ? ($cell['items'][(int) $parts[6]] ?? null) : null;
+
+        if ($node === null) {
+            return ['kind' => 'cell', 'id' => $cell['id'], 'field' => null];
+        }
+
+        $field = count($parts) > 7 ? ($parts[7] === 'settings' ? implode('.', array_slice($parts, 8)) : $parts[7]) : null;
+
+        return ['kind' => 'node', 'id' => $node['id'], 'field' => $field === '' ? null : $field];
+    }
+
+    /** The panel's field of a level's stored key: the colours are the `colors` group. */
+    private static function levelField(string $key): string
+    {
+        return match ($key) {
+            'bg' => 'colors.bg',
+            'text' => 'colors.fg',
+            default => $key,
+        };
+    }
+
     /** @param  array<string, mixed>  $level  @return array<string, array<string, string>> the `colors` group: only the colours that are set */
     private static function colors(array $level): array
     {

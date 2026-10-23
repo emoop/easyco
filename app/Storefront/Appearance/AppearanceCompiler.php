@@ -42,7 +42,7 @@ final class AppearanceCompiler
      * @param  array<string, string>  $overrides
      * @throws InvalidArgumentException a value that is not valid for its key
      */
-    public function css(array $overrides, array $metrics = [], array $badgeColors = [], array $footerVars = [], array $headerColors = []): ?string
+    public function css(array $overrides, array $metrics = [], array $badgeColors = [], array $footerVars = [], array $headerColors = [], array $checkoutVars = []): ?string
     {
         $effective = $this->effective($overrides);
         $defaults = AppearanceSettings::defaults();
@@ -121,6 +121,18 @@ final class AppearanceCompiler
             $vars[] = "{$variable}: ".strtolower($value).';';
         }
 
+        // DS-2b: the simplified checkout header's colours (`#rrggbb`) and logo heights (`NNpx`), only the ones that are set, checked again here.
+        foreach ($checkoutVars as $variable => $value) {
+            $isColor = in_array($variable, ['--sf-chdr-bg', '--sf-chdr-fg'], true) && AppearanceSettings::isHex($value);
+            $isHeight = in_array($variable, ['--sf-chdr-logo-d-h', '--sf-chdr-logo-m-h'], true) && is_string($value) && preg_match('/^[1-9][0-9]px$/', $value) === 1;
+
+            if (! $isColor && ! $isHeight) {
+                throw new InvalidArgumentException('A checkout header variable is not valid.');
+            }
+
+            $vars[] = "{$variable}: ".strtolower($value).';';
+        }
+
         $faces = $this->fontFaces($this->fontKeys($effective));
         $badges = $this->badgeClasses($badgeColors);
 
@@ -161,7 +173,7 @@ final class AppearanceCompiler
      */
     public function compile(array $overrides, ?string $previousHash = null, ?array $metrics = null): ?array
     {
-        $css = $this->css($overrides, $metrics ?? $this->publishedMetrics(), $this->storedBadgeColors(), $this->publishedFooterVars(), $this->publishedHeaderColors());
+        $css = $this->css($overrides, $metrics ?? $this->publishedMetrics(), $this->storedBadgeColors(), $this->publishedFooterVars(), $this->publishedHeaderColors(), $this->publishedCheckoutVars());
 
         if ($css === null) {
             $this->prune(null, $previousHash);
@@ -246,6 +258,18 @@ final class AppearanceCompiler
         $validation = HeaderValidator::validate($data['layout']);
 
         return $validation->passes() ? HeaderLayout::metrics($validation->layout) : [];
+    }
+
+    /**
+     * The variables of the PUBLISHED simplified checkout header (`design.compiled`), kept on every later appearance, header or footer save. Re-validated; off = none.
+     *
+     * @return array<string, string>
+     */
+    private function publishedCheckoutVars(): array
+    {
+        $values = \App\Storefront\CheckoutHeader\CheckoutHeaderCompiler::published(app(SiteSettingsRepository::class)->get(AppearanceSettings::DESIGN_COMPILED_KEY));
+
+        return $values !== null && $values['enabled'] === true ? \App\Storefront\CheckoutHeader\CheckoutHeaderCompiler::vars($values) : [];
     }
 
     /**

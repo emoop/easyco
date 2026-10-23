@@ -210,4 +210,8 @@ return [
         'ck_terms_reload' => 'Презаредете страницата, за да видите актуалните правила.',
         'ck_summary_hide' => 'Скрий поръчката',
     ],
+
+    // DS-2b: the simplified header of the cart and the checkout
+    'back_to_shop' => 'Към магазина',
+    'call_us' => 'Обади се',
 ];

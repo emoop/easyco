@@ -210,4 +210,8 @@ return [
         'ck_terms_reload' => 'Reload the page to see the current terms.',
         'ck_summary_hide' => 'Hide order',
     ],
+
+    // DS-2b: the simplified header of the cart and the checkout
+    'back_to_shop' => 'Back to the shop',
+    'call_us' => 'Call us',
 ];

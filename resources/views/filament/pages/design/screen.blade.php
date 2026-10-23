@@ -7,10 +7,10 @@
         <nav class="ds-zones" aria-label="{{ __('design.zones_title') }}">
             <h2 class="ds-h">{{ __('design.zones_title') }}</h2>
             <ul>
-                @foreach (['topbanner', 'header', 'footer', 'checkout', 'content', 'sidebar'] as $zone)
+                @foreach (['topbar', 'header', 'footer', 'checkout', 'content', 'sidebar'] as $zone)
                     <li>
-                        @if ($zone === 'header')
-                            <button type="button" class="ds-zone ds-zone-on" aria-current="true">{{ __('design.zones.'.$zone) }}</button>
+                        @if (array_key_exists($zone, \App\Filament\Pages\Design\DesignScreen::ZONES))
+                            <button type="button" class="ds-zone @if ($this->zone === $zone) ds-zone-on @endif" @if ($this->zone === $zone) aria-current="true" @endif wire:click="selectZone('{{ $zone }}')">{{ __('design.zones.'.$zone) }}</button>
                         @else
                             <button type="button" class="ds-zone" disabled title="{{ __('design.soon') }}">{{ __('design.zones.'.$zone) }} <small>{{ __('design.soon') }}</small></button>
                         @endif
@@ -20,19 +20,24 @@
         </nav>
 
         <div class="ds-main">
+            @php($zoneObject = $this->zoneObject())
             <div class="ds-bar">
-                <div class="ds-devices" role="group" aria-label="{{ __('design.device_label') }}">
-                    @foreach (['desktop', 'mobile'] as $device)
-                        <button type="button" class="ds-btn @if ($this->device === $device) ds-btn-on @endif" aria-pressed="{{ $this->device === $device ? 'true' : 'false' }}" wire:click="setDevice('{{ $device }}')">{{ __('design.devices.'.$device) }}</button>
-                    @endforeach
-                </div>
+                @if ($zoneObject->hasDevices())
+                    <div class="ds-devices" role="group" aria-label="{{ __('design.device_label') }}">
+                        @foreach ($zoneObject->layouts() as $device)
+                            <button type="button" class="ds-btn @if ($this->device === $device) ds-btn-on @endif" aria-pressed="{{ $this->device === $device ? 'true' : 'false' }}" wire:click="setDevice('{{ $device }}')">{{ __('design.devices.'.$device) }}</button>
+                        @endforeach
+                    </div>
+                @endif
                 @if ($this->dirty)
                     <span class="ds-tag ds-tag-warn">{{ __('design.preview.unsaved') }}</span>
                 @endif
             </div>
 
-            @include('filament.pages.design.partials.palette')
-            @include('filament.pages.design.partials.schema')
+            @unless ($this->isForm())
+                @include('filament.pages.design.partials.palette')
+            @endunless
+            @include($zoneObject->schemaView())
             @include('filament.pages.design.partials.preview')
         </div>
 
@@ -40,7 +45,10 @@
             <h2 class="ds-h" id="ds-props-title">{{ __('design.props.title') }}</h2>
             <form novalidate wire:submit="apply">
                 {{ $this->getSchema('propsForm') }}
-                <button type="submit" class="ds-btn ds-btn-primary">{{ __('design.actions.apply') }}</button>
+                <button type="submit" class="ds-btn ds-btn-primary">{{ __($zoneObject->hasDraft() ? 'design.actions.apply' : 'design.actions.save') }}</button>
+                @unless ($zoneObject->hasDraft())
+                    <p class="ds-note">{{ __('design.notices.live_hint') }}</p>
+                @endunless
             </form>
         </aside>
     </div>

@@ -2,9 +2,13 @@
 
 namespace App\Filament\Design;
 
+use App\Content\HtmlBlocks\HtmlBlockModel;
 use App\Content\Menus\MenuModel;
 use App\Filament\Pages\Design\Menus;
+use App\Filament\Resources\HtmlBlockResource;
+use App\Storefront\Footer\FooterCatalog;
 use App\Storefront\Header\HeaderCatalog;
+use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\ColorPicker;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
@@ -27,17 +31,26 @@ final class FieldForms
         $label = __($field['label'] ?? 'header.settings.'.$name);
         // DS-2a.1: an enum may OFFER fewer options than it still accepts (`offer`): a value stored earlier stays valid, it is just not listed any more
         $offer = $field['offer'] ?? ($field['options'] ?? []);
+        // the language file of an enum's option texts: the header's by default (DS-2b: the footer's blocks name `footer.options.`)
+        $prefix = $field['options_prefix'] ?? 'header.options.';
 
         return match ($field['kind']) {
             'int' => TextInput::make($name)->label($label)->numeric()->integer()->minValue((int) ($field['min'] ?? 0))->maxValue((int) ($field['max'] ?? 9999))->default($field['default'] ?? null),
             'bool' => Toggle::make($name)->label($label)->default((bool) ($field['default'] ?? false)),
-            'enum' => Select::make($name)->label($label)->native(false)->options(array_combine($offer, array_map(static fn (string $o): string => __('header.options.'.$o), $offer)))->default($field['default'] ?? $field['options'][0]),
+            'enum' => Select::make($name)->label($label)->native(false)->options(array_combine($offer, array_map(static fn (string $o): string => __($prefix.$o), $offer)))->default($field['default'] ?? $field['options'][0]),
             // DS-2a.1: the menus that exist (as the Menus editor lists them) and, as the empty choice, "the menu of this place" (`place` = header | drawer, set by the caller)
             'menu' => Select::make($name)->label($label)->native(false)
                 ->placeholder(__('design.menu.place_'.($field['place'] ?? 'header')))
                 ->options(static fn (): array => MenuModel::query()->orderBy('id')->pluck('name', 'id')->all())
                 ->default(null)
                 ->helperText(new HtmlString('<a href="'.e(Menus::getUrl()).'" target="_blank" rel="noopener">'.e(__('design.menu.edit_menus')).' →</a>')),
+            // DS-2b: the HTML blocks that exist and a link to where they are made; the footer's `payments` as checkboxes in the catalog's order
+            'html_block' => Select::make($name)->label($label)->native(false)
+                ->options(static fn (): array => HtmlBlockModel::query()->orderBy('title')->pluck('title', 'id')->all())
+                ->default(null)
+                ->helperText(new HtmlString('<a href="'.e(HtmlBlockResource::getUrl('index')).'" target="_blank" rel="noopener">'.e(__('design.menu.edit_blocks')).' →</a>')),
+            'payments' => CheckboxList::make($name)->label($label)->columns(2)->default([])
+                ->options(array_combine(FooterCatalog::PAYMENTS, array_map(static fn (string $m): string => __('footer.payments.'.$m), FooterCatalog::PAYMENTS))),
             'html' => Textarea::make($name)->label($label)->rows(4)->helperText(__('header.html_help'))->default(''),
             'textarea' => Textarea::make($name)->label($label)->rows(4)->default('')->maxLength((int) ($field['max'] ?? 2000)),
             'color' => ColorPicker::make($name)->label($label)->default($field['default'] ?? null),

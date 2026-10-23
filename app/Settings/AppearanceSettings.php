@@ -30,6 +30,13 @@ final class AppearanceSettings
     /** FT-1: the PUBLISHED footer layout with the menus and HTML blocks it shows, validated and compiled (JSON {hash, layout, menus, blocks}, at most 256 KB); read with the rest of the appearance. */
     public const FOOTER_COMPILED_KEY = 'footer.compiled';
 
+    /** DS-2b: the Design screen's generic zone storage (design-screen-design.md section 4): `design.{zone}.{scope}.draft|published` and ONE compiled document `{hash, zones: {zone: {scope: payload}}}`. */
+    public const DESIGN_COMPILED_KEY = 'design.compiled';
+
+    public const CHECKOUT_HEADER_DRAFT_KEY = 'design.checkout_header.global.draft';
+
+    public const CHECKOUT_HEADER_PUBLISHED_KEY = 'design.checkout_header.global.published';
+
     public const FOOTER_DRAFT_KEY = 'footer.layout.draft';
 
     public const FOOTER_PUBLISHED_KEY = 'footer.layout.published';
@@ -113,6 +120,7 @@ final class AppearanceSettings
         self::HEADER_COMPILED_KEY,
         self::MENUS_COMPILED_KEY,
         self::FOOTER_COMPILED_KEY,
+        self::DESIGN_COMPILED_KEY,
         self::BANNER_ENABLED,
         self::BANNER_TEXT,
         self::BANNER_URL,

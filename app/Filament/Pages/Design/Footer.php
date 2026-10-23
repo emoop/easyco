@@ -10,11 +10,10 @@ use App\Filament\NavigationGroup;
 use App\Filament\Pages\Settings\ServerSideValidation;
 use App\Filament\Support\HelpLink;
 use App\Http\Controllers\Storefront\FooterPreviewController;
-use App\Services\ActivityLogger;
 use App\Settings\AppearanceSettings;
 use App\Settings\Contracts\SiteSettingsRepository;
 use App\Storefront\Footer\FooterCatalog;
-use App\Storefront\Footer\FooterCompiler;
+use App\Storefront\Footer\FooterDrafts;
 use App\Storefront\Footer\FooterLayout;
 use App\Storefront\Footer\FooterValidator;
 use App\Storefront\Header\HeaderCatalog;
@@ -99,22 +98,7 @@ class Footer extends Page
     /** The layout the form starts from: the draft, else the published one, else the seeded default (each re-validated; a bad stored one is skipped). */
     private function startingLayout(): array
     {
-        $settings = app(SiteSettingsRepository::class);
-
-        foreach ([AppearanceSettings::FOOTER_DRAFT_KEY, AppearanceSettings::FOOTER_PUBLISHED_KEY] as $key) {
-            $json = $settings->get($key);
-            $layout = is_string($json) ? json_decode($json, true) : null;
-
-            if (is_array($layout)) {
-                $validation = FooterValidator::validate($layout);
-
-                if ($validation->passes()) {
-                    return $validation->layout;
-                }
-            }
-        }
-
-        return FooterLayout::default();
+        return FooterDrafts::startingLayout();
     }
 
     public function mount(): void
@@ -484,8 +468,7 @@ class Footer extends Page
     {
         $this->authorizeAction();
         $layout = $this->validated();
-        app(SiteSettingsRepository::class)->set(AppearanceSettings::FOOTER_DRAFT_KEY, (string) json_encode($layout, JSON_THROW_ON_ERROR));
-        $this->log('draft');
+        FooterDrafts::saveDraft($layout);
 
         Notification::make()->title(__('footer.notices.draft_saved'))->success()->send();
         $this->warnAboutContrast($layout);
@@ -501,16 +484,12 @@ class Footer extends Page
     {
         $this->authorizeAction();
         $layout = $this->validated();
-        $settings = app(SiteSettingsRepository::class);
-        $settings->set(AppearanceSettings::FOOTER_DRAFT_KEY, (string) json_encode($layout, JSON_THROW_ON_ERROR));
 
         try {
-            app(FooterCompiler::class)->publish($layout, $settings);
+            FooterDrafts::publish($layout);
         } catch (\InvalidArgumentException) {
             $this->failFields(['data.upper.rows' => __('footer.errors.too_large')]);
         }
-
-        $this->log('published');
 
         Notification::make()->title(__('footer.notices.published'))->success()->send();
         $this->warnAboutContrast($layout);
@@ -520,8 +499,7 @@ class Footer extends Page
     public function discard(): void
     {
         $this->authorizeAction();
-        app(SiteSettingsRepository::class)->forget(AppearanceSettings::FOOTER_DRAFT_KEY);
-        $this->log('discarded');
+        FooterDrafts::discard();
         $this->form->fill($this->toForm($this->startingLayout()));
 
         Notification::make()->title(__('footer.notices.discarded'))->success()->send();
@@ -601,11 +579,5 @@ class Footer extends Page
                 Notification::make()->title(__('footer.notices.low_contrast', ['level' => __('footer.notices.level_'.$level), 'ratio' => number_format($ratio, 2)]))->warning()->send();
             }
         }
-    }
-
-    /** One activity-log line: who (the logger knows) and which action; never a setting value. */
-    private function log(string $action): void
-    {
-        app(ActivityLogger::class)->logFieldChanged('storefront_footer', 'footer', $action, null, 'saved');
     }
 }
