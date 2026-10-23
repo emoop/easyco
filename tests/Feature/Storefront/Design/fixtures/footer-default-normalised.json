@@ -1,0 +1,37 @@
+{
+    "upper": {
+        "enabled": true,
+        "padding": "normal",
+        "bg": null,
+        "text": null,
+        "border_color": null,
+        "border_width": 1,
+        "rows": [
+            {
+                "columns": [
+                    {
+                        "span": 1,
+                        "align": "start",
+                        "blocks": [
+                            {
+                                "type": "menu",
+                                "settings": {
+                                    "menu": null,
+                                    "heading": ""
+                                }
+                            }
+                        ]
+                    }
+                ]
+            }
+        ]
+    },
+    "lower": {
+        "enabled": true,
+        "padding": "compact",
+        "bg": null,
+        "text": null,
+        "align": "center",
+        "text_template": "© [year] Raf Shop"
+    }
+}

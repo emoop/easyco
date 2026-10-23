@@ -1,0 +1,126 @@
+{
+    "hash": "f7eecab94d70",
+    "layout": {
+        "desktop": {
+            "sticky": true,
+            "rows": {
+                "top": {
+                    "enabled": false,
+                    "height": 36,
+                    "left": [],
+                    "center": [],
+                    "right": []
+                },
+                "main": {
+                    "enabled": true,
+                    "height": 64,
+                    "left": [
+                        {
+                            "type": "menu",
+                            "settings": {
+                                "style": "links"
+                            }
+                        }
+                    ],
+                    "center": [
+                        {
+                            "type": "logo",
+                            "settings": {
+                                "height": 28
+                            }
+                        }
+                    ],
+                    "right": [
+                        {
+                            "type": "search",
+                            "settings": {
+                                "mode": "icon_row"
+                            }
+                        },
+                        {
+                            "type": "account",
+                            "settings": {
+                                "style": "icon"
+                            }
+                        },
+                        {
+                            "type": "cart",
+                            "settings": {
+                                "style": "icon"
+                            }
+                        }
+                    ]
+                },
+                "bottom": {
+                    "enabled": false,
+                    "height": 44,
+                    "left": [],
+                    "center": [],
+                    "right": []
+                }
+            }
+        },
+        "mobile": {
+            "sticky": true,
+            "rows": {
+                "top": {
+                    "enabled": false,
+                    "height": 32,
+                    "left": [],
+                    "center": [],
+                    "right": []
+                },
+                "main": {
+                    "enabled": true,
+                    "height": 56,
+                    "left": [
+                        {
+                            "type": "menu_toggle",
+                            "settings": {
+                                "label_visible": false
+                            }
+                        }
+                    ],
+                    "center": [
+                        {
+                            "type": "logo",
+                            "settings": {
+                                "height": 26
+                            }
+                        }
+                    ],
+                    "right": [
+                        {
+                            "type": "search",
+                            "settings": {
+                                "mode": "icon_row"
+                            }
+                        },
+                        {
+                            "type": "cart",
+                            "settings": {
+                                "style": "icon"
+                            }
+                        }
+                    ]
+                }
+            },
+            "drawer": [
+                {
+                    "type": "menu",
+                    "settings": {
+                        "style": "links"
+                    }
+                },
+                {
+                    "type": "account",
+                    "settings": {
+                        "style": "icon"
+                    }
+                }
+            ],
+            "drawer_side": "left",
+            "drawer_upper": true
+        }
+    }
+}

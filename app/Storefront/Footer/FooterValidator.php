@@ -2,8 +2,8 @@
 
 namespace App\Storefront\Footer;
 
-use App\Rules\PlainText;
 use App\Settings\AppearanceSettings;
+use App\Storefront\Design\FieldKinds;
 
 /**
  * Validates a footer layout against FooterLayout's limits and the block catalog and returns it NORMALISED (FT-1). It runs on SAVE (the admin), on COMPILE (publish) and again
@@ -97,7 +97,7 @@ final class FooterValidator
             $template = mb_substr($template, 0, FooterLayout::MAX_TEMPLATE);
         }
 
-        if ($template !== '' && ! $this->isPlain($template)) {
+        if ($template !== '' && ! FieldKinds::isPlain($template)) {
             $this->fail('lower.text_template', 'not_plain');
             $template = '';
         }
@@ -225,62 +225,25 @@ final class FooterValidator
         return ['type' => $type, 'settings' => $clean];
     }
 
-    /** @param  array<string, mixed>  $field */
+    /**
+     * One setting of a block: DS-1, the shared FieldKinds validates it (the footer's own options: FooterCatalog::KIND_OPTIONS); this validator turns a failure into its message.
+     *
+     * @param  array<string, mixed>  $field
+     */
     private function setting(mixed $value, array $field, string $path): mixed
     {
-        switch ($field['kind']) {
-            case 'int':
-                $number = is_string($value) && preg_match('/^-?\d{1,6}$/', $value) === 1 ? (int) $value : $value;
+        return FieldKinds::validate($value, $field + FooterCatalog::KIND_OPTIONS, $path, $this->failer());
+    }
 
-                if (! is_int($number) || $number < (int) ($field['min'] ?? 0) || $number > (int) ($field['max'] ?? PHP_INT_MAX)) {
-                    $this->fail($path, 'bad_choice');
-
-                    return (int) ($field['default'] ?? $field['min'] ?? 0);
-                }
-
-                return $number;
-            case 'enum':
-                if (! in_array($value, $field['options'], true)) {
-                    $this->fail($path, 'bad_choice');
-
-                    return $field['default'] ?? $field['options'][0];
-                }
-
-                return $value;
-            case 'bool':
-                return $this->bool($value, $path);
-            case 'text':
-                return $this->text($value, (int) ($field['max'] ?? 120), ! empty($field['required']), $path);
-            case 'textarea':
-                return $this->textarea($value, (int) ($field['max'] ?? 400), $path);
-            case 'email':
-                return $this->email($value, (int) ($field['max'] ?? 120), $path);
-            case 'url':
-                return $this->url($value, ! empty($field['required']), $path);
-            case 'menu':
-                return $this->reference($value, false, $path);
-            case 'html_block':
-                return $this->reference($value, true, $path);
-            case 'social':
-                return $this->social($value, (int) ($field['max'] ?? 8), $path);
-            case 'payments':
-                return $this->payments($value, $path);
-        }
-
-        $this->fail($path, 'unknown_setting');
-
-        return null;
+    /** @return callable(string, string, array<string, mixed>=): void */
+    private function failer(): callable
+    {
+        return fn (string $path, string $code, array $params = []) => $this->fail($path, $code, $params);
     }
 
     private function bool(mixed $value, string $path): bool
     {
-        if (is_bool($value)) {
-            return $value;
-        }
-
-        $this->fail($path, 'bad_choice');
-
-        return false;
+        return FieldKinds::bool($value, $path, $this->failer());
     }
 
     /** @param  list<string|int>  $options */
@@ -324,171 +287,11 @@ final class FooterValidator
         return strtolower($value);
     }
 
-    private function text(mixed $value, int $max, bool $required, string $path): string
-    {
-        $value = is_string($value) ? trim($value) : '';
-
-        if ($required && $value === '') {
-            $this->fail($path, 'required');
-        }
-
-        if (mb_strlen($value) > $max) {
-            $this->fail($path, 'too_long', ['max' => $max]);
-
-            return mb_substr($value, 0, $max);
-        }
-
-        if ($value !== '' && ! $this->isPlain($value)) {
-            $this->fail($path, 'not_plain');
-
-            return '';
-        }
-
-        return $value;
-    }
-
-    /** Plain lines: line breaks are kept (as "\n"), every other control character is refused. */
-    private function textarea(mixed $value, int $max, string $path): string
-    {
-        $value = is_string($value) ? trim(str_replace(["\r\n", "\r"], "\n", $value)) : '';
-
-        if (mb_strlen($value) > $max) {
-            $this->fail($path, 'too_long', ['max' => $max]);
-
-            return mb_substr($value, 0, $max);
-        }
-
-        foreach (explode("\n", $value) as $line) {
-            if ($line !== '' && ! $this->isPlain($line)) {
-                $this->fail($path, 'not_plain');
-
-                return '';
-            }
-        }
-
-        return $value;
-    }
-
-    private function email(mixed $value, int $max, string $path): string
-    {
-        $value = is_string($value) ? trim($value) : '';
-
-        if ($value === '') {
-            return '';
-        }
-
-        if (mb_strlen($value) > $max || filter_var($value, FILTER_VALIDATE_EMAIL) === false || ! $this->isPlain($value)) {
-            $this->fail($path, 'bad_email');
-
-            return '';
-        }
-
-        return $value;
-    }
-
-    private function url(mixed $value, bool $required, string $path): string
-    {
-        $value = is_string($value) ? trim($value) : '';
-
-        if ($value === '') {
-            $required && $this->fail($path, 'required');
-
-            return '';
-        }
-
-        if (! AppearanceSettings::isSafeBannerUrl($value)) {
-            $this->fail($path, 'bad_url');
-
-            return '';
-        }
-
-        return $value;
-    }
-
-    /** The id of a menu / an HTML block (a positive whole number); a menu may be null = the menu of the footer location. */
-    private function reference(mixed $value, bool $required, string $path): ?int
-    {
-        if ($value === null || $value === '') {
-            $required && $this->fail($path, 'required');
-
-            return null;
-        }
-
-        $id = is_string($value) && ctype_digit($value) ? (int) $value : $value;
-
-        if (! is_int($id) || $id < 1) {
-            $this->fail($path, 'bad_choice');
-
-            return null;
-        }
-
-        return $id;
-    }
-
-    /** @return list<array{network: string, url: string}> */
-    private function social(mixed $value, int $max, string $path): array
-    {
-        if (! is_array($value) || ! array_is_list($value)) {
-            $this->fail($path, 'bad_list');
-
-            return [];
-        }
-
-        if (count($value) > $max) {
-            $this->fail($path, 'too_many_social', ['max' => $max]);
-        }
-
-        $out = [];
-
-        foreach (array_slice($value, 0, $max) as $i => $item) {
-            $network = is_array($item) ? ($item['network'] ?? null) : null;
-            $url = is_array($item) && is_string($item['url'] ?? null) ? trim($item['url']) : '';
-
-            if (! in_array($network, FooterCatalog::networks(), true)) {
-                $this->fail("{$path}.{$i}.network", 'bad_choice');
-
-                continue;
-            }
-
-            if (! AppearanceSettings::isSafeBannerUrl($url) || ! str_starts_with(strtolower($url), 'https://')) {
-                $this->fail("{$path}.{$i}.url", 'bad_https_url');
-
-                continue;
-            }
-
-            $out[] = ['network' => $network, 'url' => $url];
-        }
-
-        return $out;
-    }
-
-    /** A subset of the closed list, in the order given, each once; a method that is not in the list is dropped. @return list<string> */
-    private function payments(mixed $value, string $path): array
-    {
-        if (! is_array($value) || ! array_is_list($value)) {
-            $this->fail($path, 'bad_list');
-
-            return [];
-        }
-
-        return array_values(array_unique(array_filter($value, static fn ($method): bool => is_string($method) && in_array($method, FooterCatalog::PAYMENTS, true))));
-    }
-
     /** @param  array<string, mixed>  $data  @param  list<string>  $allowed */
     private function unknownKeys(array $data, array $allowed, string $path): void
     {
         foreach (array_diff(array_keys($data), $allowed) as $key) {
             $this->fail($path, 'unknown_key', ['key' => mb_substr((string) $key, 0, 30)]);
         }
-    }
-
-    private function isPlain(string $text): bool
-    {
-        $failed = false;
-        (new PlainText)->validate('text', $text, static function () use (&$failed): void {
-            $failed = true;
-        });
-
-        return ! $failed;
     }
 }

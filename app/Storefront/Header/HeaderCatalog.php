@@ -23,6 +23,12 @@ final class HeaderCatalog
     /** The types a mobile drawer may hold. */
     public const DRAWER_TYPES = ['menu', 'account', 'text', 'button', 'social'];
 
+    /** The types that may appear ONCE in a layout (desktop or phone): the validator and the Design core's zone spec both read this list. */
+    public const ONCE_PER_LAYOUT = ['logo', 'menu_toggle'];
+
+    /** DS-1: the options this catalog adds to a field's spec for FieldKinds (the header's behaviour IS the default: int_range with its params, too_many_slot). */
+    public const KIND_OPTIONS = [];
+
     public const SOCIAL_NETWORKS = ['facebook', 'instagram', 'tiktok', 'youtube', 'pinterest', 'viber', 'whatsapp', 'x'];
 
     /** Feature elements: the route that must exist for the element to be printed. */

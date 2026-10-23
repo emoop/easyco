@@ -1,0 +1,254 @@
+{
+    "hash": "38ac1e191bb4",
+    "layout": {
+        "desktop": {
+            "sticky": false,
+            "rows": {
+                "top": {
+                    "enabled": true,
+                    "height": 40,
+                    "left": [
+                        {
+                            "type": "text",
+                            "settings": {
+                                "text": "0888 123 456",
+                                "url": "/contacts"
+                            }
+                        },
+                        {
+                            "type": "spacer",
+                            "settings": {
+                                "width": "lg"
+                            }
+                        }
+                    ],
+                    "center": [
+                        {
+                            "type": "html",
+                            "settings": {
+                                "html": "<p>Free delivery <b>over 100</b></p>"
+                            }
+                        }
+                    ],
+                    "right": [
+                        {
+                            "type": "social",
+                            "settings": {
+                                "items": [
+                                    {
+                                        "network": "facebook",
+                                        "url": "https://example.test/fb"
+                                    },
+                                    {
+                                        "network": "instagram",
+                                        "url": "https://example.test/ig"
+                                    },
+                                    {
+                                        "network": "x",
+                                        "url": "https://example.test/x"
+                                    }
+                                ]
+                            }
+                        },
+                        {
+                            "type": "wishlist",
+                            "settings": {
+                                "style": "icon_label",
+                                "show_count": true
+                            }
+                        },
+                        {
+                            "type": "account",
+                            "settings": {
+                                "style": "icon_label"
+                            }
+                        }
+                    ]
+                },
+                "main": {
+                    "enabled": true,
+                    "height": 80,
+                    "left": [
+                        {
+                            "type": "menu",
+                            "settings": {
+                                "style": "dropdown"
+                            }
+                        }
+                    ],
+                    "center": [
+                        {
+                            "type": "logo",
+                            "settings": {
+                                "height": 40
+                            }
+                        }
+                    ],
+                    "right": [
+                        {
+                            "type": "search",
+                            "settings": {
+                                "mode": "field"
+                            }
+                        },
+                        {
+                            "type": "cart",
+                            "settings": {
+                                "style": "icon_label"
+                            }
+                        },
+                        {
+                            "type": "button",
+                            "settings": {
+                                "label": "Sale",
+                                "url": "/sale",
+                                "style": "outline"
+                            }
+                        }
+                    ]
+                },
+                "bottom": {
+                    "enabled": true,
+                    "height": 50,
+                    "left": [
+                        {
+                            "type": "menu",
+                            "settings": {
+                                "style": "links"
+                            }
+                        }
+                    ],
+                    "center": [
+                        {
+                            "type": "text",
+                            "settings": {
+                                "text": "Open every day",
+                                "url": ""
+                            }
+                        }
+                    ],
+                    "right": [
+                        {
+                            "type": "spacer",
+                            "settings": {
+                                "width": "sm"
+                            }
+                        }
+                    ]
+                }
+            }
+        },
+        "mobile": {
+            "sticky": true,
+            "rows": {
+                "top": {
+                    "enabled": true,
+                    "height": 30,
+                    "left": [
+                        {
+                            "type": "text",
+                            "settings": {
+                                "text": "Call us",
+                                "url": "/contacts"
+                            }
+                        }
+                    ],
+                    "center": [],
+                    "right": [
+                        {
+                            "type": "wishlist",
+                            "settings": {
+                                "style": "icon",
+                                "show_count": false
+                            }
+                        }
+                    ]
+                },
+                "main": {
+                    "enabled": true,
+                    "height": 60,
+                    "left": [
+                        {
+                            "type": "menu_toggle",
+                            "settings": {
+                                "label_visible": true
+                            }
+                        }
+                    ],
+                    "center": [
+                        {
+                            "type": "logo",
+                            "settings": {
+                                "height": 30
+                            }
+                        }
+                    ],
+                    "right": [
+                        {
+                            "type": "search",
+                            "settings": {
+                                "mode": "icon_row"
+                            }
+                        },
+                        {
+                            "type": "cart",
+                            "settings": {
+                                "style": "icon"
+                            }
+                        }
+                    ]
+                }
+            },
+            "drawer": [
+                {
+                    "type": "menu",
+                    "settings": {
+                        "style": "links"
+                    }
+                },
+                {
+                    "type": "account",
+                    "settings": {
+                        "style": "icon"
+                    }
+                },
+                {
+                    "type": "text",
+                    "settings": {
+                        "text": "Free delivery",
+                        "url": ""
+                    }
+                },
+                {
+                    "type": "button",
+                    "settings": {
+                        "label": "Shop now",
+                        "url": "/shop",
+                        "style": "primary"
+                    }
+                },
+                {
+                    "type": "social",
+                    "settings": {
+                        "items": [
+                            {
+                                "network": "facebook",
+                                "url": "https://example.test/fb"
+                            },
+                            {
+                                "network": "instagram",
+                                "url": "https://example.test/ig"
+                            },
+                            {
+                                "network": "x",
+                                "url": "https://example.test/x"
+                            }
+                        ]
+                    }
+                }
+            ],
+            "drawer_side": "right",
+            "drawer_upper": false
+        }
+    }
+}

@@ -1,0 +1,164 @@
+{
+    "upper": {
+        "enabled": true,
+        "padding": "spacious",
+        "bg": "#112233",
+        "text": "#eeeeee",
+        "border_color": "#c0392b",
+        "border_width": 3,
+        "rows": [
+            {
+                "columns": [
+                    {
+                        "span": 1,
+                        "align": "start",
+                        "blocks": [
+                            {
+                                "type": "menu",
+                                "settings": {
+                                    "menu": null,
+                                    "heading": "Shop"
+                                }
+                            },
+                            {
+                                "type": "spacer",
+                                "settings": {
+                                    "size": "s"
+                                }
+                            },
+                            {
+                                "type": "text",
+                                "settings": {
+                                    "heading": "About",
+                                    "body": "Line one\nLine two"
+                                }
+                            }
+                        ]
+                    },
+                    {
+                        "span": 1,
+                        "align": "start",
+                        "blocks": [
+                            {
+                                "type": "menu",
+                                "settings": {
+                                    "menu": null,
+                                    "heading": "Help"
+                                }
+                            }
+                        ]
+                    },
+                    {
+                        "span": 2,
+                        "align": "center",
+                        "blocks": [
+                            {
+                                "type": "html_block",
+                                "settings": {
+                                    "html_block": 9001
+                                }
+                            },
+                            {
+                                "type": "contacts",
+                                "settings": {
+                                    "phone": "+359 888 123 456",
+                                    "email": "shop@example.test",
+                                    "address": "Main st 1\nHarmanli",
+                                    "hours": "Mon-Fri 9-18"
+                                }
+                            }
+                        ]
+                    },
+                    {
+                        "span": 1,
+                        "align": "end",
+                        "blocks": [
+                            {
+                                "type": "menu",
+                                "settings": {
+                                    "menu": null,
+                                    "heading": "Legal"
+                                }
+                            }
+                        ]
+                    },
+                    {
+                        "span": 1,
+                        "align": "start",
+                        "blocks": [
+                            {
+                                "type": "newsletter",
+                                "settings": {
+                                    "heading": "News",
+                                    "placeholder": "Email",
+                                    "button": "Join",
+                                    "consent": "No spam"
+                                }
+                            }
+                        ]
+                    }
+                ]
+            },
+            {
+                "columns": [
+                    {
+                        "span": 1,
+                        "align": "start",
+                        "blocks": [
+                            {
+                                "type": "social",
+                                "settings": {
+                                    "items": [
+                                        {
+                                            "network": "facebook",
+                                            "url": "https://example.test/fb"
+                                        },
+                                        {
+                                            "network": "tiktok",
+                                            "url": "https://example.test/tt"
+                                        }
+                                    ]
+                                }
+                            }
+                        ]
+                    },
+                    {
+                        "span": 2,
+                        "align": "end",
+                        "blocks": [
+                            {
+                                "type": "payments",
+                                "settings": {
+                                    "methods": [
+                                        "mastercard",
+                                        "visa",
+                                        "maestro",
+                                        "apple_pay",
+                                        "google_pay",
+                                        "paypal",
+                                        "bank_transfer",
+                                        "cash_on_delivery"
+                                    ]
+                                }
+                            },
+                            {
+                                "type": "spacer",
+                                "settings": {
+                                    "size": "l"
+                                }
+                            }
+                        ]
+                    }
+                ]
+            }
+        ]
+    },
+    "lower": {
+        "enabled": true,
+        "padding": "normal",
+        "bg": "#000000",
+        "text": "#dddddd",
+        "align": "start",
+        "text_template": "Fetish Harmanli © [year] - run by Mari Ned [x]"
+    }
+}

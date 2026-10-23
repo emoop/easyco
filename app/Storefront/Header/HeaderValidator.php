@@ -2,9 +2,7 @@
 
 namespace App\Storefront\Header;
 
-use App\Rules\PlainText;
-use App\Settings\AppearanceSettings;
-use App\Storefront\Support\DescriptionSanitizer;
+use App\Storefront\Design\FieldKinds;
 
 /**
  * Validates a header layout against the element catalog (storefront-customization-design.md 4.1, 4.2, 8) and returns it NORMALISED (every setting present,
@@ -95,7 +93,7 @@ final class HeaderValidator
             $clean !== null && $drawer[] = $clean;
         }
 
-        $this->limitOnce(['rows' => $rows], 'mobile', ['logo', 'menu_toggle']);
+        $this->limitOnce(['rows' => $rows], 'mobile', HeaderCatalog::ONCE_PER_LAYOUT);
 
         return ['sticky' => $this->bool($m['sticky'] ?? true, 'mobile.sticky'), 'rows' => $rows, 'drawer' => $drawer, 'drawer_side' => $side, 'drawer_upper' => $this->bool($m['drawer_upper'] ?? true, 'mobile.drawer_upper')];
     }
@@ -137,7 +135,7 @@ final class HeaderValidator
             $out[$name] = $clean;
         }
 
-        $this->limitOnce(['rows' => $out], $layout, ['logo', 'menu_toggle']);
+        $this->limitOnce(['rows' => $out], $layout, HeaderCatalog::ONCE_PER_LAYOUT);
 
         return $out;
     }
@@ -216,163 +214,31 @@ final class HeaderValidator
         return ['type' => $type, 'settings' => $clean];
     }
 
-    /** @param  array<string, mixed>  $field */
+    /**
+     * One setting of an element: DS-1, the shared FieldKinds validates it (the header's own options: HeaderCatalog::KIND_OPTIONS); this validator turns a failure into its message.
+     *
+     * @param  array<string, mixed>  $field
+     */
     private function setting(mixed $value, array $field, string $path): mixed
     {
-        switch ($field['kind']) {
-            case 'int':
-                return $this->int($value, (int) ($field['min'] ?? 0), (int) ($field['max'] ?? PHP_INT_MAX), $path, 'int_range', ['min' => $field['min'] ?? 0, 'max' => $field['max'] ?? ''])
-                    ?? (int) ($field['default'] ?? $field['min'] ?? 0);
-            case 'enum':
-                if (! in_array($value, $field['options'], true)) {
-                    $this->fail($path, 'bad_choice');
+        return FieldKinds::validate($value, $field + HeaderCatalog::KIND_OPTIONS, $path, $this->failer());
+    }
 
-                    return $field['default'] ?? $field['options'][0];
-                }
-
-                return $value;
-            case 'bool':
-                return $this->bool($value, $path);
-            case 'text':
-                return $this->text($value, (int) ($field['max'] ?? 120), ! empty($field['required']), $path);
-            case 'url':
-                return $this->url($value, ! empty($field['required']), $path);
-            case 'html':
-                return $this->html($value, (int) ($field['max'] ?? 4000), $path);
-            case 'social':
-                return $this->social($value, (int) ($field['max'] ?? 8), $path);
-        }
-
-        $this->fail($path, 'unknown_setting');
-
-        return null;
+    /** @return callable(string, string, array<string, mixed>=): void */
+    private function failer(): callable
+    {
+        return fn (string $path, string $code, array $params = []) => $this->fail($path, $code, $params);
     }
 
     /** @param  array<string, mixed>  $params */
     private function int(mixed $value, int $min, int $max, string $path, string $code, array $params): ?int
     {
-        if (is_string($value) && preg_match('/^-?\d{1,6}$/', $value) === 1) {
-            $value = (int) $value;
-        }
-
-        if (! is_int($value) || $value < $min || $value > $max) {
-            $this->fail($path, $code, $params);
-
-            return null;
-        }
-
-        return $value;
+        return FieldKinds::int($value, $min, $max, $path, $code, $params, $this->failer());
     }
 
     private function bool(mixed $value, string $path): bool
     {
-        if (is_bool($value)) {
-            return $value;
-        }
-
-        $this->fail($path, 'bad_choice');
-
-        return false;
-    }
-
-    private function text(mixed $value, int $max, bool $required, string $path): string
-    {
-        $value = is_string($value) ? trim($value) : '';
-
-        if ($required && $value === '') {
-            $this->fail($path, 'required');
-        }
-
-        if (mb_strlen($value) > $max) {
-            $this->fail($path, 'too_long', ['max' => $max]);
-
-            return mb_substr($value, 0, $max);
-        }
-
-        if ($value !== '' && ! $this->isPlain($value)) {
-            $this->fail($path, 'not_plain');
-
-            return '';
-        }
-
-        return $value;
-    }
-
-    private function url(mixed $value, bool $required, string $path): string
-    {
-        $value = is_string($value) ? trim($value) : '';
-
-        if ($value === '') {
-            $required && $this->fail($path, 'required');
-
-            return '';
-        }
-
-        if (! AppearanceSettings::isSafeBannerUrl($value)) {
-            $this->fail($path, 'bad_url');
-
-            return '';
-        }
-
-        return $value;
-    }
-
-    private function html(mixed $value, int $max, string $path): string
-    {
-        $value = is_string($value) ? $value : '';
-
-        if (strlen($value) > $max * 8) {
-            $this->fail($path, 'html_too_long', ['max' => $max]);
-
-            return '';
-        }
-
-        $clean = DescriptionSanitizer::clean($value);
-
-        if (strlen($clean) > $max) {
-            $this->fail($path, 'html_too_long', ['max' => $max]);
-
-            return '';
-        }
-
-        return $clean;
-    }
-
-    /** @return list<array{network: string, url: string}> */
-    private function social(mixed $value, int $max, string $path): array
-    {
-        if (! is_array($value) || ! array_is_list($value)) {
-            $this->fail($path, 'bad_list');
-
-            return [];
-        }
-
-        if (count($value) > $max) {
-            $this->fail($path, 'too_many_slot', ['max' => $max]);
-        }
-
-        $out = [];
-
-        foreach (array_slice($value, 0, $max) as $i => $item) {
-            $network = is_array($item) ? ($item['network'] ?? null) : null;
-            $url = is_array($item) && is_string($item['url'] ?? null) ? trim($item['url']) : '';
-
-            if (! in_array($network, HeaderCatalog::SOCIAL_NETWORKS, true)) {
-                $this->fail("{$path}.{$i}.network", 'bad_choice');
-
-                continue;
-            }
-
-            if (! AppearanceSettings::isSafeBannerUrl($url) || ! str_starts_with(strtolower($url), 'https://')) {
-                $this->fail("{$path}.{$i}.url", 'bad_https_url');
-
-                continue;
-            }
-
-            $out[] = ['network' => $network, 'url' => $url];
-        }
-
-        return $out;
+        return FieldKinds::bool($value, $path, $this->failer());
     }
 
     /** @param  array<string, mixed>  $data  @param  list<string>  $allowed */
@@ -408,15 +274,5 @@ final class HeaderValidator
                 $this->fail("{$layout}.rows", $type === 'logo' ? 'one_logo' : 'one_toggle');
             }
         }
-    }
-
-    private function isPlain(string $text): bool
-    {
-        $failed = false;
-        (new PlainText)->validate('text', $text, static function () use (&$failed): void {
-            $failed = true;
-        });
-
-        return ! $failed;
     }
 }

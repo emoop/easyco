@@ -21,6 +21,9 @@ final class FooterCatalog
     /** The payment marks, a closed list (also the order the editor offers). */
     public const PAYMENTS = ['visa', 'mastercard', 'maestro', 'apple_pay', 'google_pay', 'paypal', 'bank_transfer', 'cash_on_delivery'];
 
+    /** DS-1: the options this catalog adds to a field's spec for FieldKinds: an int fails with `bad_choice` (no params), a list that is too long with `too_many_social`. */
+    public const KIND_OPTIONS = ['int_code' => 'bad_choice', 'too_many_code' => 'too_many_social'];
+
     /** The route that must exist for the newsletter block to print anything. */
     public const NEWSLETTER_ROUTE = 'storefront.newsletter.subscribe';
 
