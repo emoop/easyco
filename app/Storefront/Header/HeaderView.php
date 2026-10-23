@@ -2,6 +2,7 @@
 
 namespace App\Storefront\Header;
 
+use App\Storefront\Appearance\StorefrontAppearance;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\View;
 
@@ -18,10 +19,13 @@ final class HeaderView
      * @param  list<array<string, mixed>>  $drawer  the menu of the `drawer` location (the header's when none): a `menu` element in the drawer gets it
      * @return array<string, mixed>
      */
-    public static function prepare(array $layout, array $header = [], array $drawer = []): array
+    public static function prepare(array $layout, array $header = [], array $drawer = [], ?callable $menuByKey = null): array
     {
         $catalog = HeaderCatalog::all();
-        $keep = static function (array $element, bool $inDrawer = false) use ($catalog, $header, $drawer): ?array {
+        $menuKeys = is_array($layout['menu_keys'] ?? null) ? $layout['menu_keys'] : [];
+        // DS-2a.1: a menu chosen by id is found among the compiled menus by its key (header.compiled's `menu_keys`): the one appearance read, no query. null / unknown / empty = the place's menu.
+        $menuByKey ??= static fn (string $key): array => app(StorefrontAppearance::class)->menu($key);
+        $keep = static function (array $element, bool $inDrawer = false) use ($catalog, $header, $drawer, $menuKeys, $menuByKey): ?array {
             $type = $element['type'];
             $route = HeaderCatalog::FEATURE_ROUTES[$type] ?? null;
 
@@ -30,7 +34,10 @@ final class HeaderView
             }
 
             if ($type === 'menu') {
-                $element['menu'] = $inDrawer ? $drawer : $header;
+                $chosen = $element['settings']['menu'] ?? null;
+                $key = is_int($chosen) ? ($menuKeys[(string) $chosen] ?? null) : null;
+                $items = $key === null ? [] : $menuByKey($key);
+                $element['menu'] = $items !== [] ? $items : ($inDrawer ? $drawer : $header);
             }
 
             return $element + ['view' => $catalog[$type]['view']];

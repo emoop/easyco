@@ -17,6 +17,8 @@ return [
         'sidebar' => 'Sidebar',
     ],
 
+    'menu' => ['place_header' => 'The menu of the place (Header)', 'place_drawer' => 'The menu of the place (Drawer)', 'edit_menus' => 'Edit the menus'],
+
     'devices' => ['desktop' => 'Desktop', 'mobile' => 'Phone'],
     'device_label' => 'View',
 

@@ -40,14 +40,43 @@ final class HeaderValidator
     {
         $default = HeaderLayout::default();
 
-        foreach (array_diff(array_keys($layout), ['desktop', 'mobile']) as $key) {
+        foreach (array_diff(array_keys($layout), ['desktop', 'mobile', 'menu_keys']) as $key) {
             $this->fail('layout', 'unknown_key', ['key' => mb_substr((string) $key, 0, 30)]);
         }
 
-        return [
+        $clean = [
             'desktop' => $this->desktop(is_array($layout['desktop'] ?? null) ? $layout['desktop'] : $default['desktop']),
             'mobile' => $this->mobile(is_array($layout['mobile'] ?? null) ? $layout['mobile'] : $default['mobile']),
         ];
+
+        // DS-2a.1: only a COMPILED layout carries `menu_keys` (menu id => menu key, made by HeaderCompiler); a layout that names no menu has none, so it normalises exactly as before.
+        $keys = $this->menuKeys($layout['menu_keys'] ?? []);
+
+        return $keys === [] ? $clean : $clean + ['menu_keys' => $keys];
+    }
+
+    /** @return array<string, string> menu id (digits) => menu key (`[a-z0-9-]{1,40}`), nothing else */
+    private function menuKeys(mixed $keys): array
+    {
+        if (! is_array($keys)) {
+            $this->fail('layout.menu_keys', 'bad_list');
+
+            return [];
+        }
+
+        $out = [];
+
+        foreach ($keys as $id => $key) {
+            if (preg_match('/^[1-9][0-9]{0,9}$/', (string) $id) !== 1 || ! is_string($key) || preg_match('/^[a-z0-9-]{1,40}$/', $key) !== 1) {
+                $this->fail('layout.menu_keys', 'bad_list');
+
+                return [];
+            }
+
+            $out[(string) $id] = $key;
+        }
+
+        return $out;
     }
 
     /** @param  array<string, mixed>  $d */

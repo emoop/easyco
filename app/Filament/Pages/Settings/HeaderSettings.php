@@ -227,6 +227,7 @@ class HeaderSettings extends Page
                 $schema['height'] = ['kind' => 'int', 'min' => $min, 'max' => $max, 'default' => $default];
             }
 
+            $drawer && $type === 'menu' && $schema['menu']['place'] = 'drawer';
             $fields = array_map(static fn (string $field, array $definition): Component => static::field($field, $definition), array_keys($schema), array_values($schema));
             $blocks[] = Block::make($type)
                 ->label($descriptor['builtin'] ? __($descriptor['label']) : $descriptor['label'])

@@ -2,6 +2,8 @@
 
 namespace App\Filament\Design;
 
+use App\Content\Menus\MenuModel;
+use App\Filament\Pages\Design\Menus;
 use App\Storefront\Header\HeaderCatalog;
 use Filament\Forms\Components\ColorPicker;
 use Filament\Forms\Components\Repeater;
@@ -10,6 +12,7 @@ use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Schemas\Components\Component;
+use Illuminate\Support\HtmlString;
 
 /**
  * THE KIND -> CONTROL MAPPING of the admin (DS-2a): one Filament component for one field of a component's schema (FieldKinds). The old «Хедър» page and the «Дизайн» screen both build
@@ -20,12 +23,21 @@ final class FieldForms
     /** @param  array<string, mixed>  $field  the schema field: `kind` and its own keys */
     public static function make(string $name, array $field): Component
     {
-        $label = __('header.settings.'.$name);
+        // a field may name its own label (the `menu` element's `style` is «Вид», not «Стил»)
+        $label = __($field['label'] ?? 'header.settings.'.$name);
+        // DS-2a.1: an enum may OFFER fewer options than it still accepts (`offer`): a value stored earlier stays valid, it is just not listed any more
+        $offer = $field['offer'] ?? ($field['options'] ?? []);
 
         return match ($field['kind']) {
             'int' => TextInput::make($name)->label($label)->numeric()->integer()->minValue((int) ($field['min'] ?? 0))->maxValue((int) ($field['max'] ?? 9999))->default($field['default'] ?? null),
             'bool' => Toggle::make($name)->label($label)->default((bool) ($field['default'] ?? false)),
-            'enum' => Select::make($name)->label($label)->native(false)->options(array_combine($field['options'], array_map(static fn (string $o): string => __('header.options.'.$o), $field['options'])))->default($field['default'] ?? $field['options'][0]),
+            'enum' => Select::make($name)->label($label)->native(false)->options(array_combine($offer, array_map(static fn (string $o): string => __('header.options.'.$o), $offer)))->default($field['default'] ?? $field['options'][0]),
+            // DS-2a.1: the menus that exist (as the Menus editor lists them) and, as the empty choice, "the menu of this place" (`place` = header | drawer, set by the caller)
+            'menu' => Select::make($name)->label($label)->native(false)
+                ->placeholder(__('design.menu.place_'.($field['place'] ?? 'header')))
+                ->options(static fn (): array => MenuModel::query()->orderBy('id')->pluck('name', 'id')->all())
+                ->default(null)
+                ->helperText(new HtmlString('<a href="'.e(Menus::getUrl()).'" target="_blank" rel="noopener">'.e(__('design.menu.edit_menus')).' →</a>')),
             'html' => Textarea::make($name)->label($label)->rows(4)->helperText(__('header.html_help'))->default(''),
             'textarea' => Textarea::make($name)->label($label)->rows(4)->default('')->maxLength((int) ($field['max'] ?? 2000)),
             'color' => ColorPicker::make($name)->label($label)->default($field['default'] ?? null),

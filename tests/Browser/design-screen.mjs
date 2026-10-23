@@ -71,9 +71,62 @@ try {
     await page.evaluate(() => window.Alpine.store('sidebar').close());
     await shot('01-start');
 
+    // ---- DS-2a.1: the compact look ------------------------------------------------------------------------------------------------------------------
+    const look = await page.evaluate(() => {
+        const lum = (rgb) => {
+            const [r, g, b] = rgb.match(/[\d.]+/g).slice(0, 3).map(Number).map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; });
+
+            return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+        };
+        const contrast = (fg, bg) => { const [a, b] = [lum(fg), lum(bg)].sort((x, y) => y - x); return (a + 0.05) / (b + 0.05); };
+        const css = (el) => getComputedStyle(el);
+        const zones = document.querySelector('.ds-zones');
+        const bg = css(zones).backgroundColor;
+        const texts = { caption: '.ds-zones .ds-h', zone: '.ds-zone:not([disabled]):not(.ds-zone-on)', active: '.ds-zone-on', disabled: '.ds-zone[disabled]', soon: '.ds-zone[disabled] small' };
+        const ratios = {};
+
+        for (const [name, sel] of Object.entries(texts)) {
+            const el = document.querySelector(sel);
+            ratios[name] = el ? Math.round(contrast(css(el).color, name === 'active' ? css(el).backgroundColor : bg) * 100) / 100 : null;
+        }
+
+        return {
+            zonesWidth: Math.round(zones.getBoundingClientRect().width),
+            propsWidth: Math.round(document.querySelector('.ds-props').getBoundingClientRect().width),
+            mainWidth: Math.round(document.querySelector('.ds-main').getBoundingClientRect().width),
+            zonesBg: bg,
+            baseFont: css(document.querySelector('.ds')).fontSize,
+            chip: Math.round(document.querySelector('.ds-chip-add').getBoundingClientRect().height),
+            headerButton: (() => { const el = document.querySelector('.fi-header .fi-btn'); return { font: css(el).fontSize, height: Math.round(el.getBoundingClientRect().height), label: css(el.querySelector('span') ?? el).fontSize }; })(),
+            input: (() => { const el = document.querySelector('.ds-props .fi-input-wrp'); return el ? Math.round(el.getBoundingClientRect().height) : null; })(),
+            ratios,
+        };
+    });
+    check('the zones column is about 152px', Math.abs(look.zonesWidth - 152) <= 2, look.zonesWidth);
+    check('the properties column is about 296px', Math.abs(look.propsWidth - 296) <= 2, look.propsWidth);
+    check('the board takes the rest (wider than 950px at 1600; it was about 904 before)', look.mainWidth > 950, look.mainWidth);
+    check('the zone list is graphite', look.zonesBg === 'rgb(43, 47, 51)', look.zonesBg);
+    check('the screen font is 13px and the palette chips are about 28px', look.baseFont === '13px' && Math.abs(look.chip - 28) <= 2, JSON.stringify([look.baseFont, look.chip]));
+    check('every text of the zone list has contrast >= 4.5', Object.values(look.ratios).every((r) => r === null || r >= 4.5), JSON.stringify(look.ratios));
+    console.error('LOOK ' + JSON.stringify(look));
+
     // ---- the zone list: Хедър works, the others are disabled ---------------------------------------------------------------------------------------
     check('the zone list has Хедър selected and the others disabled', (await page.locator('.ds-zone[disabled]').count()) === 5 && (await page.locator('.ds-zone-on').textContent()).includes('Хедър'));
     check('the palette is disabled without a cell', (await page.locator('.ds-chip-add:not([disabled])').count()) === 0);
+
+    // ---- DS-2a.1: the menu picker on the header's menu element ------------------------------------------------------------------------------------------
+    await cell('Основен ред', 'Ляво').locator('.ds-chip-main').first().click();
+    await settle();
+    const menuField = page.locator('.ds-props .fi-fo-field', { has: page.locator('label', { hasText: 'Меню' }) }).first();
+    await menuField.locator('button.fi-select-input-btn').first().click();
+    await sleep(300);
+    const options = await page.locator('.fi-select-input-option:visible').allTextContents();
+    check('the picker lists the menus and not only one', options.length >= 2, JSON.stringify(options));
+    check('the empty choice says "the menu of the place (Хедър)"', (await menuField.textContent()).includes('Менюто на мястото (Хедър)'), (await menuField.textContent()).slice(0, 120));
+    await page.keyboard.press('Escape');
+    check('«Вид» offers two honest options (no голямо меню)', (await page.locator('.ds-props').textContent()).includes('Вид'));
+    check('a link opens the Menus editor', (await page.locator('.ds-props a[href$="/admin/menus"]').count()) === 1);
+    await shot('00-menu-picker');
 
     // ---- add a text to the top row, right cell ------------------------------------------------------------------------------------------------------
     const topRight = cell('Горен ред', 'Дясно');

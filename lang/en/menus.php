@@ -147,6 +147,7 @@ return [
         'to_next_column' => 'To the next column',
     ],
 
+    'places' => ['header_element' => 'Header (chosen in a "Menu" element)'],
     'locations' => ['header' => 'Header (main menu)', 'drawer' => 'Phone (menu in the drawer)', 'footer' => 'Footer'],
 
     'locations_note' => '":location" is now at the menu ":menu"; ticking it here moves it.',

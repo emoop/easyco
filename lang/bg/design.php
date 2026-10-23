@@ -17,6 +17,8 @@ return [
         'sidebar' => 'Сайдбар',
     ],
 
+    'menu' => ['place_header' => 'Менюто на мястото (Хедър)', 'place_drawer' => 'Менюто на мястото (Чекмедже)', 'edit_menus' => 'Редактирай менютата'],
+
     'devices' => ['desktop' => 'Десктоп', 'mobile' => 'Телефон'],
     'device_label' => 'Изглед',
 

@@ -38,7 +38,7 @@ final class HeaderLayout
     /** The seeded default (the owner's vision): categories in the main row on desktop, the logo centred, the icons right. */
     public static function default(): array
     {
-        $el = static fn (string $type, array $settings = []): array => ['type' => $type, 'settings' => $settings + HeaderCatalog::defaultsFor($type)];
+        $el = static fn (string $type, array $settings = []): array => ['type' => $type, 'settings' => array_replace(HeaderCatalog::defaultsFor($type), $settings)];
         $off = static fn (int $height): array => ['enabled' => false, 'height' => $height, 'left' => [], 'center' => [], 'right' => []];
 
         return [

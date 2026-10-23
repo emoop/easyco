@@ -8,6 +8,7 @@ use App\Settings\Contracts\SiteSettingsRepository;
 use App\Settings\StorefrontHomeSettings;
 use App\Storefront\Appearance\AppearanceCompiler;
 use App\Storefront\Appearance\StorefrontAppearance;
+use App\Storefront\Header\HeaderCompiler;
 use App\Storefront\Header\HeaderLayout;
 use App\Storefront\Header\HeaderValidator;
 use App\Storefront\Reader\CatalogReader;
@@ -37,7 +38,7 @@ final class HeaderPreviewController extends Controller
         $draft = $settings->get(AppearanceSettings::HEADER_DRAFT_KEY);
         $layout = is_string($draft) ? json_decode($draft, true) : null;
         $validation = is_array($layout) ? HeaderValidator::validate($layout) : null;
-        $show = $validation !== null && $validation->passes() ? $validation->layout : $appearance->header();
+        $show = $validation !== null && $validation->passes() ? HeaderCompiler::withMenuKeys($validation->layout) : $appearance->header();
 
         $appearance->previewHeader($show, $this->stylesheet($show));
 

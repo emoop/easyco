@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\Log;
  * The validator, the admin form and the renderer are all built from it, so a type or a setting that is not here can never be saved, compiled or printed.
  *
  * A schema field is `['kind' => ..., ...]` with kind one of `int` (min, max, default), `enum` (options, default), `text` (max, default), `url` (default; empty
- * or a safe link), `bool` (default), `html` (max bytes) or `social` (a list of {network, url}, max). An EXTENSION adds a type through
+ * or a safe link), `bool` (default), `html` (max bytes), `social` (a list of {network, url}, max) or `menu` (the id of a menu, or null = the menu of the element's place). An EXTENSION adds a type through
  * `Hook::filter('storefront.header.elements', $catalog)` with a descriptor `{type, label, schema, view}`; it can never replace or remove a built-in type:
  * a filter result that does is ignored (the built-ins win) and logged once.
  *
@@ -47,7 +47,12 @@ final class HeaderCatalog
 
         $types = [
             'logo' => ['height' => ['kind' => 'int', 'min' => 16, 'max' => 120, 'default' => 28]],
-            'menu' => ['style' => ['kind' => 'enum', 'options' => ['links', 'dropdown', 'mega'], 'default' => 'links']],
+            // DS-2a.1: `menu` = the id of the menu to show (null = the menu of this element's PLACE: the header's, or the drawer's). `style` is «Вид» in the admin: `links` = the bar, `dropdown` = one
+            // «Меню» button with a panel; `mega` is accepted in a stored layout (it prints exactly like `links`: mega panels are chosen per menu ITEM since MENU-2) but is no longer offered.
+            'menu' => [
+                'menu' => ['kind' => 'menu', 'default' => null],
+                'style' => ['kind' => 'enum', 'options' => ['links', 'dropdown', 'mega'], 'offer' => ['links', 'dropdown'], 'default' => 'links', 'label' => 'header.settings.menu_style'],
+            ],
             'menu_toggle' => ['label_visible' => ['kind' => 'bool', 'default' => false]],
             'search' => ['mode' => ['kind' => 'enum', 'options' => ['icon_row', 'field'], 'default' => 'icon_row']],
             'account' => ['style' => $styles],
@@ -163,7 +168,8 @@ final class HeaderCatalog
         $defaults = [];
 
         foreach ((self::all()[$type]['schema'] ?? []) as $name => $field) {
-            $defaults[$name] = $field['default'] ?? ($field['kind'] === 'bool' ? false : ($field['kind'] === 'int' ? ($field['min'] ?? 0) : ''));
+            // DS-2a.1: a field whose default IS null (a menu: "the menu of the place") keeps null; before, every null fell through to ''.
+            $defaults[$name] = array_key_exists('default', $field) && $field['default'] === null && $field['kind'] === 'menu' ? null : ($field['default'] ?? ($field['kind'] === 'bool' ? false : ($field['kind'] === 'int' ? ($field['min'] ?? 0) : '')));
         }
 
         return $defaults;

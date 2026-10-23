@@ -16,6 +16,7 @@
                     {
                         "type": "menu",
                         "settings": {
+                            "menu": null,
                             "style": "links"
                         }
                     }
@@ -107,6 +108,7 @@
             {
                 "type": "menu",
                 "settings": {
+                    "menu": null,
                     "style": "links"
                 }
             },

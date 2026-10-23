@@ -21,9 +21,10 @@ class Menu2HeaderTest extends TestCase
 
     public function test_the_menu_element_has_only_its_style(): void
     {
-        $this->assertSame(['style'], array_keys(HeaderCatalog::all()['menu']['schema']));
+        // DS-2a.1: the element now also names a menu (`menu`, null = the menu of its place)
+        $this->assertSame(['menu', 'style'], array_keys(HeaderCatalog::all()['menu']['schema']));
         $this->assertSame(['menu'], [HeaderLayout::default()['desktop']['rows']['main']['left'][0]['type']]);
-        $this->assertSame(['style' => 'links'], HeaderLayout::default()['desktop']['rows']['main']['left'][0]['settings']);
+        $this->assertSame(['menu' => null, 'style' => 'links'], HeaderLayout::default()['desktop']['rows']['main']['left'][0]['settings']);
     }
 
     public function test_a_layout_stored_with_a_source_still_validates_and_the_source_is_dropped(): void
@@ -35,8 +36,8 @@ class Menu2HeaderTest extends TestCase
         $validation = HeaderValidator::validate($layout);
 
         $this->assertTrue($validation->passes(), json_encode($validation->errors));
-        $this->assertSame(['style' => 'dropdown'], $validation->layout['desktop']['rows']['main']['left'][0]['settings']);
-        $this->assertSame(['style' => 'links'], $validation->layout['mobile']['drawer'][0]['settings']);
+        $this->assertSame(['menu' => null, 'style' => 'dropdown'], $validation->layout['desktop']['rows']['main']['left'][0]['settings']);
+        $this->assertSame(['menu' => null, 'style' => 'links'], $validation->layout['mobile']['drawer'][0]['settings']);
 
         app(HeaderCompiler::class)->publish($validation->layout, app(SiteSettingsRepository::class));
         $this->assertStringNotContainsString('"source"', (string) app(SiteSettingsRepository::class)->get(AppearanceSettings::HEADER_COMPILED_KEY));

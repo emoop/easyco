@@ -51,6 +51,8 @@ return [
     ],
 
     'settings' => [
+        'menu' => 'Menu',
+        'menu_style' => 'Display',
         'height' => 'Height (px)',
         'style' => 'Style',
         'label_visible' => 'Show a label next to the icon',
@@ -66,9 +68,9 @@ return [
     ],
 
     'options' => [
-        'links' => 'Links (with a panel for subcategories)',
-        'dropdown' => 'Dropdown',
-        'mega' => 'Mega menu (a dropdown for now)',
+        'links' => 'Horizontal bar',
+        'dropdown' => 'One "Menu" button with a dropdown list',
+        'mega' => 'Horizontal bar (old "mega menu" choice)',
         'icon_row' => 'An icon that opens a search row',
         'field' => 'An inline field',
         'icon' => 'Icon only',

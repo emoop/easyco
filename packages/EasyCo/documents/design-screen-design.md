@@ -114,6 +114,20 @@ A component descriptor lists the groups it supports; the properties panel shows 
 - **Количка и поръчка**: a fixed simplified header (logo, optional phone/text, a «Към магазина» link) with 3 settings; no palette. Cart and checkout keep their layout otherwise (C-D6).
 - The old pages «Хедър» and «Футър» stay during stage DS-2 for comparison and are removed in DS-3 (their menu entries redirect to the new screen with the zone selected).
 
+### 6.1 Compact density (DS-2a.1, the standard for every zone)
+
+The screen is dense on purpose: the owner works on a board, not on a form. Everything lives in `resources/css/design-screen.css`, under the screen root `.ds` (and `.fi-page:has(.ds)` for the page header's buttons), and is defined as CSS variables that EVERY later zone (footer, top banner, checkout header, home, product) must use instead of its own numbers:
+
+| Variable | Value | Meaning |
+|---|---|---|
+| `--ds-zones-w` / `--ds-props-w` | 9.5rem / 18.5rem | the zone list and the properties column (the board takes the rest; below 1100px the properties go under the schema) |
+| `--ds-fs-base` / `--ds-fs-small` / `--ds-fs-tiny` | 13px / 12px / 11px | text, labels and buttons, chips and hints |
+| `--ds-control-h` | 32px | inputs, selects, buttons |
+| `--ds-chip-h` | 28px | chips, arrows, plus and cross (44px on `pointer: coarse`) |
+| `--ds-gap` | 0.5rem | space between fields |
+
+Rules: the zone list is dark graphite (`#2b2f33`, `#1f2326` in dark mode) with text of at least 4.5:1 (the muted captions and the «следва» entries use `#a9b0b7`, the active zone a primary left bar and white text); Filament's own controls are shrunk only inside `.ds-props` and in ONE commented block «Compact Filament overrides (re-check after a Filament upgrade)». No other admin page is touched. `tests/Browser/design-screen.mjs` measures the columns, the graphite and the contrast.
+
 ## 7. Content zone (later stages, frame only)
 
 - **Начална**: sections from D5 as components — HTML block (instead of a slider), banner grid, category tiles, product row (by category / tag / season, newest or featured, fixed N: no randomness), text, the editable intro (S3-V). An untouched home renders exactly as today.

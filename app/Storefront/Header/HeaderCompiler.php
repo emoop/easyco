@@ -2,6 +2,7 @@
 
 namespace App\Storefront\Header;
 
+use App\Content\Menus\MenuModel;
 use App\Settings\AppearanceSettings;
 use App\Settings\Contracts\SiteSettingsRepository;
 use App\Storefront\Appearance\AppearanceCompiler;
@@ -30,7 +31,50 @@ final class HeaderCompiler
             throw new InvalidArgumentException('The header layout is not valid.');
         }
 
-        return ['hash' => substr(sha1((string) json_encode($validation->layout)), 0, 12), 'layout' => $validation->layout];
+        $layout = self::withMenuKeys($validation->layout);
+
+        return ['hash' => substr(sha1((string) json_encode($layout)), 0, 12), 'layout' => $layout];
+    }
+
+    /**
+     * DS-2a.1: the layout with `menu_keys` (menu id => menu key) for every menu a `menu` element names explicitly, so the storefront finds that menu among the compiled menus (which are keyed by
+     * menu key) WITHOUT a query. One query here, at publish and in the preview; a layout that names no menu gets none and is returned as it is.
+     *
+     * @param  array<string, mixed>  $layout  a VALIDATED layout
+     * @return array<string, mixed>
+     */
+    public static function withMenuKeys(array $layout): array
+    {
+        unset($layout['menu_keys']);
+        $ids = [];
+
+        foreach (['desktop', 'mobile'] as $name) {
+            $elements = $layout[$name]['drawer'] ?? [];
+
+            foreach ($layout[$name]['rows'] as $row) {
+                foreach (HeaderLayout::SLOTS as $slot) {
+                    $elements = [...$elements, ...$row[$slot]];
+                }
+            }
+
+            foreach ($elements as $element) {
+                if ($element['type'] === 'menu' && is_int($element['settings']['menu'] ?? null)) {
+                    $ids[] = $element['settings']['menu'];
+                }
+            }
+        }
+
+        if ($ids === []) {
+            return $layout;
+        }
+
+        $keys = [];
+
+        foreach (MenuModel::query()->whereIn('id', array_unique($ids))->orderBy('id')->pluck('key', 'id')->all() as $id => $key) {
+            $keys[(string) $id] = (string) $key;
+        }
+
+        return $keys === [] ? $layout : $layout + ['menu_keys' => $keys];
     }
 
     /**

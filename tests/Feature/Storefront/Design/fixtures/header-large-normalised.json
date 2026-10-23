@@ -70,6 +70,7 @@
                     {
                         "type": "menu",
                         "settings": {
+                            "menu": null,
                             "style": "dropdown"
                         }
                     }
@@ -112,6 +113,7 @@
                     {
                         "type": "menu",
                         "settings": {
+                            "menu": null,
                             "style": "links"
                         }
                     }
@@ -201,6 +203,7 @@
             {
                 "type": "menu",
                 "settings": {
+                    "menu": null,
                     "style": "links"
                 }
             },

@@ -57,7 +57,7 @@ class HeaderAdapterTest extends TestCase
         $this->assertSame('desktop', $tree['desktop']['variant']);
         $this->assertSame(['enabled' => true, 'height' => 80], $tree['desktop']['rows'][1]['props']);
         $this->assertSame([], $tree['desktop']['rows'][1]['cells'][0]['props']);
-        $this->assertSame(['id' => 'h-d-main-left-0', 'type' => 'menu', 'settings' => ['style' => 'dropdown'], 'common' => []], $tree['desktop']['rows'][1]['cells'][0]['items'][0]);
+        $this->assertSame(['id' => 'h-d-main-left-0', 'type' => 'menu', 'settings' => ['menu' => null, 'style' => 'dropdown'], 'common' => []], $tree['desktop']['rows'][1]['cells'][0]['items'][0]);
     }
 
     public function test_a_node_moved_added_and_removed_in_the_tree_gives_a_shape_the_validator_accepts(): void

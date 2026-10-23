@@ -530,6 +530,64 @@ class DesignScreenTest extends TestCase
         $this->assertMatchesRegularExpression('#<a href="[^"]*/header-preview\?[^"]*" target="_blank" rel="noopener">#', $html);
     }
 
+    // ---- DS-2a.1: the menu picker ---------------------------------------------------------------------------------------------------------------
+
+    public function test_the_menu_element_offers_the_menus_the_location_choice_and_a_vid_with_two_honest_options(): void
+    {
+        $this->actingAsStaff('Administrator');
+        $extra = \App\Content\Menus\MenuModel::create(['key' => 'promo', 'name' => 'Promo menu']);
+        $screen = $this->screen()->call('selectNode', 'h-d-main-left-0');
+        $html = $screen->html();
+
+        $this->assertStringContainsString('The menu of the place (Header)', $html);
+        $this->assertStringContainsString('Promo menu', $html);
+        $this->assertStringContainsString('Edit the menus', $html);
+        $this->assertStringContainsString('/admin/menus', $html);
+        $this->assertStringContainsString('Display', $html);
+        $this->assertStringContainsString('Horizontal bar', $html);
+        $this->assertStringContainsString('button with a dropdown list', $html);
+        $this->assertStringNotContainsString('mega menu', $html, 'mega is no longer offered');
+        $screen->assertSet('props.settings.menu', null);
+
+        $screen->set('props.settings.menu', $extra->id)->call('apply')->assertHasNoErrors();
+        $this->assertSame($extra->id, $this->draft()['desktop']['rows']['main']['left'][0]['settings']['menu']);
+
+        $screen->set('props.settings.menu', null)->call('apply')->assertHasNoErrors();
+        $this->assertNull($this->draft()['desktop']['rows']['main']['left'][0]['settings']['menu']);
+    }
+
+    public function test_the_drawers_menu_says_drawer_and_has_no_vid(): void
+    {
+        $this->actingAsStaff('Administrator');
+        $html = $this->screen()->call('setDevice', 'mobile')->call('selectNode', 'h-m-drawer-0')->html();
+
+        $this->assertStringContainsString('The menu of the place (Drawer)', $html);
+        $this->assertStringNotContainsString('Display', $html, 'no «Вид» in the drawer');
+    }
+
+    public function test_a_stored_mega_style_survives_an_apply_although_it_is_not_offered(): void
+    {
+        $this->actingAsStaff('Administrator');
+        $layout = HeaderLayout::default();
+        $layout['desktop']['rows']['main']['left'][0]['settings']['style'] = 'mega';
+        $this->settings()->set(AppearanceSettings::HEADER_DRAFT_KEY, json_encode($layout));
+
+        $this->screen()->call('selectNode', 'h-d-main-left-0')->call('apply')->assertHasNoErrors();
+
+        $this->assertSame('mega', $this->draft()['desktop']['rows']['main']['left'][0]['settings']['style']);
+    }
+
+    public function test_the_old_header_page_has_the_same_picker(): void
+    {
+        $this->actingAsStaff('Administrator');
+        \App\Content\Menus\MenuModel::create(['key' => 'promo', 'name' => 'Promo menu']);
+
+        $html = Livewire::test(HeaderSettings::class)->html();
+
+        $this->assertStringContainsString('The menu of the place (Header)', $html);
+        $this->assertStringContainsString('The menu of the place (Drawer)', $html);
+    }
+
     // ---- state that cannot be set from the client -----------------------------------------------------------------------------------------
 
     public function test_the_tree_the_selection_and_the_other_state_cannot_be_set_from_the_browser(): void

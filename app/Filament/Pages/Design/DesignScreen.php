@@ -487,7 +487,7 @@ class DesignScreen extends Page
 
         if ($sel['kind'] === 'node') {
             $node = TreeEditor::node($layout, $sel['id']);
-            $fields = $node === null ? [] : $this->fieldsOf($node['type']);
+            $fields = $node === null ? [] : $this->fieldsOf($node['type'], TreeEditor::cellOf($layout, $sel['id']) === self::DRAWER_CELL);
 
             return [Section::make($node === null ? '' : $this->typeLabel($node['type']))->schema([
                 Group::make(array_map(static fn (string $name, array $field): Component => FieldForms::make($name, $field), array_keys($fields), array_values($fields)))->statePath('settings'),
@@ -528,9 +528,15 @@ class DesignScreen extends Page
     }
 
     /** @return array<string, array<string, mixed>> the fields of a node type (the logo's height range follows the device) */
-    private function fieldsOf(string $type): array
+    private function fieldsOf(string $type, bool $inDrawer = false): array
     {
         $fields = ComponentRegistry::for('header')[$type]['fields'] ?? [];
+
+        // DS-2a.1: in the drawer the menu is always an accordion, so «Вид» would change nothing there (the stored value is kept); the menu choice says "the drawer's menu"
+        if ($type === 'menu' && $inDrawer) {
+            unset($fields['style']);
+            $fields['menu']['place'] = 'drawer';
+        }
 
         if ($type === 'logo') {
             [$min, $max, $default] = HeaderLayout::LOGO_HEIGHTS[$this->device];
@@ -595,7 +601,10 @@ class DesignScreen extends Page
         $before = $layout;
 
         if ($sel['kind'] === 'node' && ($node = TreeEditor::node($layout, $sel['id'])) !== null) {
-            $layout = TreeEditor::setSettings($layout, $sel['id'], $this->settingsFrom($this->fieldsOf($node['type']), is_array($raw['settings'] ?? null) ? $raw['settings'] : []));
+            $fields = $this->fieldsOf($node['type'], TreeEditor::cellOf($layout, $sel['id']) === self::DRAWER_CELL);
+            $settings = $this->settingsFrom($fields, is_array($raw['settings'] ?? null) ? $raw['settings'] : []);
+            // a setting the panel does not show (the drawer menu's «Вид») keeps what is stored
+            $layout = TreeEditor::setSettings($layout, $sel['id'], $settings + $node['settings']);
         } elseif ($sel['kind'] === 'row' && TreeEditor::row($layout, $sel['id']) !== null && $sel['id'] !== self::DRAWER_ROW) {
             $props = ['enabled' => (bool) ($raw['enabled'] ?? false), 'height' => $this->wholeNumber($raw['height'] ?? null)];
             $colors = array_filter(['bg' => $raw['colors']['bg'] ?? null, 'fg' => $raw['colors']['fg'] ?? null], static fn (mixed $c): bool => is_string($c) && $c !== '');
