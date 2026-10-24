@@ -85,15 +85,14 @@ class UploadDetailsTest extends TestCase
         $this->assertSame(0, MediaAssetModel::query()->count());
     }
 
-    public function test_a_truncated_jpeg_in_a_form_field_is_a_field_error_and_nothing_is_stored(): void
+    public function test_a_truncated_jpeg_in_the_picker_upload_is_refused_by_name_and_nothing_is_stored(): void
     {
         $this->panelAdministrator();
 
-        Livewire::test(CreateBrand::class)
-            ->fillForm(['name' => 'Nike', 'slug' => 'nike', 'logo' => UploadedFile::fake()->createWithContent('logo.jpg', $this->truncated())])
-            ->call('create')
-            ->assertHasErrors(['data.logo']);
+        $component = Livewire::test(\App\Livewire\MediaPickerBrowser::class, ['field' => 'data.logo_media_asset_id'])
+            ->set('files', [UploadedFile::fake()->createWithContent('logo.jpg', $this->truncated())]);
 
+        $this->assertSame(['logo.jpg'], array_column($component->get('refused'), 'name'));
         $this->assertSame([], Storage::disk('public')->allFiles());
     }
 
@@ -128,14 +127,12 @@ class UploadDetailsTest extends TestCase
         $this->assertSame((int) $staff->id, (int) $row->uploaded_by);
     }
 
-    public function test_a_form_upload_records_the_name_and_the_signed_in_staff_member_when_the_row_is_created(): void
+    public function test_a_picker_upload_records_the_name_and_the_signed_in_staff_member(): void
     {
         $staff = $this->panelAdministrator();
 
-        Livewire::test(CreateBrand::class)
-            ->fillForm(['name' => 'Nike', 'slug' => 'nike', 'logo' => UploadedFile::fake()->createWithContent('Nike logo.jpg', $this->jpeg($this->dirtyJpegSegments()))])
-            ->call('create')
-            ->assertHasNoFormErrors();
+        Livewire::test(\App\Livewire\MediaPickerBrowser::class, ['field' => 'data.logo_media_asset_id'])
+            ->set('files', [UploadedFile::fake()->createWithContent('Nike logo.jpg', $this->jpeg($this->dirtyJpegSegments()))]);
 
         $row = MediaAssetModel::query()->firstOrFail();
         $this->assertSame('Nike logo.jpg', $row->original_name);

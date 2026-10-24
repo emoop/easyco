@@ -4,13 +4,16 @@ namespace App\Media\Usage;
 
 use App\Filament\Resources\HtmlBlockResource;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Support\Facades\DB;
 
 /** `html_blocks.pictures`, a JSON list `[{media_asset_id, alt, url}]`: ONE read of every block (a shop has dozens), scanned in PHP. */
 final class HtmlBlockPictures implements MediaUsageProvider
 {
     /** @var list<array{block: int, title: string, position: int, id: int}>|null every picture of every block, read once per instance */
     private ?array $pictures = null;
+
+    public function __construct(private readonly HtmlBlockRows $blocks = new HtmlBlockRows)
+    {
+    }
 
     public function counts(array $ids): array
     {
@@ -51,7 +54,7 @@ final class HtmlBlockPictures implements MediaUsageProvider
 
         $found = [];
 
-        foreach (DB::table('html_blocks')->orderBy('id')->get(['id', 'title', 'pictures']) as $block) {
+        foreach ($this->blocks->all() as $block) {
             $list = is_string($block->pictures) ? json_decode($block->pictures, true) : null;
 
             foreach (is_array($list) ? array_values($list) : [] as $position => $picture) {

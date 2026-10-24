@@ -22,9 +22,9 @@ class CreateBrand extends CreateRecord
     {
         $brand = new Brand(id: null, name: $data['name'], slug: $data['slug']);
 
-        if (filled($data['logo'] ?? null)) {
-            $asset = BrandResource::createLogoMediaAsset($data['logo']);
-            $brand->setLogo($asset->id());
+        // ML-2: the picker hands over the id of a picture that is already in the library (checked by the field's MediaAssetId rule)
+        if (filled($data['logo_media_asset_id'] ?? null)) {
+            $brand->setLogo((string) $data['logo_media_asset_id']);
         }
 
         app(BrandRepository::class)->save($brand);

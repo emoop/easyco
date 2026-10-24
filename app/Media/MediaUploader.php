@@ -40,9 +40,10 @@ final class MediaUploader
 
     /**
      * @param  iterable<array{name: string, content: string}>  $files
+     * @param  bool  $imagesOnly  a picture field (the media picker): a video is refused with its reason
      * @return array{stored: list<int>, refused: list<array{name: string, reason: string}>}
      */
-    public function upload(iterable $files): array
+    public function upload(iterable $files, bool $imagesOnly = false): array
     {
         $stored = [];
         $refused = [];
@@ -53,6 +54,12 @@ final class MediaUploader
             $mime = (new finfo(FILEINFO_MIME_TYPE))->buffer($content);
             $isImage = in_array($mime, self::IMAGE_MIMES, true);
             $isVideo = in_array($mime, self::VIDEO_MIMES, true);
+
+            if ($isVideo && $imagesOnly) {
+                $refused[] = ['name' => $name, 'reason' => __('media.picker.images_only')];
+
+                continue;
+            }
 
             if (! $isImage && ! $isVideo) {
                 $refused[] = ['name' => $name, 'reason' => __('media.library.upload.unsupported')];

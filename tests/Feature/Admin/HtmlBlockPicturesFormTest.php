@@ -40,10 +40,13 @@ class HtmlBlockPicturesFormTest extends TestCase
     /** @param  array<string, mixed>  $more */
     private function item(?string $path, string $alt = '', string $url = '', ?int $id = null, array $more = []): array
     {
-        return ['image' => $path === null ? null : ['f'.md5($path) => $path], 'media_asset_id' => $id, 'alt' => $alt, 'url' => $url] + $more;
+        // ML-2: a picture is the id of an asset that is already in the library (the picker); a path stands for such an asset
+        $id ??= $path === null ? null : (int) MediaAssetModel::query()->firstOrCreate(['path' => $path], ['type' => 'image', 'disk' => 'public', 'processing_status' => 'ready', 'variants' => []])->id;
+
+        return ['media_asset_id' => $id, 'alt' => $alt, 'url' => $url] + $more;
     }
 
-    public function test_a_block_of_pictures_only_saves_and_each_new_file_becomes_a_media_asset_that_is_processed(): void
+    public function test_a_block_of_pictures_only_saves_with_the_ids_of_pictures_already_in_the_library(): void
     {
         Livewire::test(CreateHtmlBlock::class)
             ->fillForm(['title' => 'Banner', 'body' => '', 'pictures' => ['a' => $this->item('uploads/2026/10/boys.jpg', 'Boys', '/product-category/boys'), 'b' => $this->item('uploads/2026/10/girls.png', 'Girls', '')]])
@@ -55,7 +58,8 @@ class HtmlBlockPicturesFormTest extends TestCase
         $this->assertSame(['Boys', 'Girls'], array_column($block->pictures, 'alt'));
         $this->assertSame(['/product-category/boys', ''], array_column($block->pictures, 'url'));
         $this->assertSame(['uploads/2026/10/boys.jpg', 'uploads/2026/10/girls.png'], MediaAssetModel::query()->whereIn('id', array_column($block->pictures, 'media_asset_id'))->orderBy('id')->pluck('path')->all());
-        Queue::assertPushed(ProcessMediaAssetJob::class, 2);
+        $this->assertSame(2, MediaAssetModel::query()->count(), 'no new asset: the picker only hands over ids');
+        Queue::assertNothingPushed();
     }
 
     public function test_a_block_with_neither_body_nor_picture_is_refused(): void
@@ -95,12 +99,12 @@ class HtmlBlockPicturesFormTest extends TestCase
         $this->assertSame(0, HtmlBlockModel::query()->count());
     }
 
-    public function test_a_picture_with_no_file_and_an_unknown_asset_is_a_field_error(): void
+    public function test_a_picture_with_an_unknown_asset_is_a_field_error(): void
     {
         Livewire::test(CreateHtmlBlock::class)
             ->fillForm(['title' => 'Ghost', 'body' => '<p>x</p>', 'pictures' => ['a' => $this->item(null, 'Ghost', '', 987654)]])
             ->call('create')
-            ->assertHasErrors(['data.pictures.a.image']);
+            ->assertHasErrors(['data.pictures.a.media_asset_id']);
 
         $this->assertSame(0, HtmlBlockModel::query()->count());
     }
@@ -123,7 +127,6 @@ class HtmlBlockPicturesFormTest extends TestCase
             $this->assertSame(['Second asset first', 'First asset last'], array_column($items, 'alt'));
             $this->assertSame(['https://example.com/a', '/product-category/boys'], array_column($items, 'url'));
             $this->assertSame([$second, $first], array_map('intval', array_column($items, 'media_asset_id')));
-            $this->assertSame(['m/202.jpg', 'm/201.jpg'], array_map(fn (array $i): string => (string) array_values((array) $i['image'])[0], $items));
             $this->assertSame('Round trip', $state['title']);
         });
 

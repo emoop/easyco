@@ -16,6 +16,7 @@ use EasyCo\Catalog\Persistence\Eloquent\BrandModel;
 use EasyCo\Catalog\Persistence\Eloquent\ProductModel;
 use EasyCo\Catalog\Product;
 use EasyCo\Media\Contracts\MediaAssetRepository;
+use EasyCo\Media\Persistence\Eloquent\MediaAssetModel;
 use EasyCo\Staff\Contracts\PasswordHasher;
 use EasyCo\Staff\Contracts\RoleRepository;
 use EasyCo\Staff\Contracts\StaffRepository;
@@ -141,7 +142,7 @@ class BrandResourceTest extends TestCase
             ->assertHasNoFormErrors();
     }
 
-    public function test_uploading_a_logo_on_create_persists_a_real_media_asset(): void
+    public function test_picking_a_logo_on_create_stores_the_id_of_a_real_media_asset(): void
     {
         $this->actingAsPanelAdministrator();
 
@@ -149,7 +150,7 @@ class BrandResourceTest extends TestCase
             ->fillForm([
                 'name' => 'Nike',
                 'slug' => 'nike',
-                'logo' => UploadedFile::fake()->image('logo.jpg'),
+                'logo_media_asset_id' => $this->pictureInTheLibrary(),
             ])
             ->call('create')
             ->assertHasNoFormErrors();
@@ -173,7 +174,7 @@ class BrandResourceTest extends TestCase
             ->fillForm([
                 'name' => 'Nike',
                 'slug' => 'nike',
-                'logo' => UploadedFile::fake()->image('logo.jpg'),
+                'logo_media_asset_id' => $this->pictureInTheLibrary(),
             ])
             ->call('create')
             ->assertHasNoFormErrors();
@@ -182,7 +183,7 @@ class BrandResourceTest extends TestCase
         $this->assertNotNull($brand->logoMediaAssetId());
 
         Livewire::test(EditBrand::class, ['record' => $brand->id()])
-            ->fillForm(['logo' => null])
+            ->fillForm(['logo_media_asset_id' => null])
             ->call('save')
             ->assertHasNoFormErrors();
 
@@ -420,5 +421,11 @@ class BrandResourceTest extends TestCase
         app(BrandRepository::class)->save($brand);
 
         $this->get('/admin/brands/'.$brand->id().'/products')->assertNotFound();
+    }
+
+    /** ML-2: the logo is picked from the library (or uploaded into it first); the form only ever gets the id of a picture that is already there. */
+    private function pictureInTheLibrary(): int
+    {
+        return (int) MediaAssetModel::query()->create(['type' => 'image', 'disk' => 'public', 'path' => 'uploads/2026/10/'.uniqid().'.jpg', 'processing_status' => 'ready', 'variants' => []])->id;
     }
 }

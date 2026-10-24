@@ -161,30 +161,30 @@ class CleanUploadTest extends TestCase
 
     // ---- the admin forms ---------------------------------------------------------------------------------------------------------
 
-    public function test_a_brand_logo_that_cannot_be_cleaned_is_a_field_error_not_a_500(): void
+    // ML-2: a brand logo (and every picture field outside the products) is picked or uploaded through the media picker: its upload tab is the one place these rules are met now
+
+    public function test_a_picture_that_cannot_be_cleaned_is_refused_by_the_picker_upload_not_a_500(): void
     {
         $this->actingAsPanelAdministrator();
 
-        Livewire::test(CreateBrand::class)
-            ->fillForm(['name' => 'Nike', 'slug' => 'nike', 'logo' => UploadedFile::fake()->createWithContent('logo.jpg', $this->heic())])
-            ->call('create')
-            ->assertHasErrors(['data.logo']);
+        $component = Livewire::test(\App\Livewire\MediaPickerBrowser::class, ['field' => 'data.logo_media_asset_id'])
+            ->set('files', [UploadedFile::fake()->createWithContent('logo.jpg', $this->heic())]);
 
+        $this->assertSame(['logo.jpg'], array_column($component->get('refused'), 'name'));
         $this->assertSame([], $this->files());
     }
 
-    public function test_a_brand_logo_is_stored_clean(): void
+    public function test_a_picture_uploaded_through_the_picker_is_stored_clean(): void
     {
         $this->actingAsPanelAdministrator();
 
-        Livewire::test(CreateBrand::class)
-            ->fillForm(['name' => 'Nike', 'slug' => 'nike', 'logo' => UploadedFile::fake()->createWithContent('logo.jpg', $this->jpeg($this->dirtyJpegSegments()))])
-            ->call('create')
-            ->assertHasNoFormErrors();
+        $component = Livewire::test(\App\Livewire\MediaPickerBrowser::class, ['field' => 'data.logo_media_asset_id'])
+            ->set('files', [UploadedFile::fake()->createWithContent('logo.jpg', $this->jpeg($this->dirtyJpegSegments()))]);
 
         $paths = array_values(array_filter($this->files(), fn (string $f): bool => str_starts_with($f, 'uploads/')));
         $this->assertCount(1, $paths);
         $this->assertStringNotContainsString(self::MARKER, Storage::disk('public')->get($paths[0]));
+        $this->assertCount(1, $component->get('selected'));
     }
 
     public function test_a_product_photo_that_cannot_be_cleaned_is_a_field_error_not_a_500(): void

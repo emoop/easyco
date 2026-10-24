@@ -5,6 +5,7 @@ namespace App\Filament\Resources;
 use App\Filament\NavigationGroup;
 use App\Filament\Resources\MediaResource\Pages\ListMedia;
 use App\Media\DeleteOutcome;
+use App\Media\MediaAltText;
 use App\Media\MediaDeleter;
 use App\Media\MediaFilters;
 use App\Media\Usage\MediaUsageRegistry;
@@ -12,7 +13,6 @@ use App\Rules\PlainText;
 use App\Services\ActivityLogger;
 use App\Services\AuthenticatedStaffResolver;
 use BackedEnum;
-use EasyCo\Media\Contracts\MediaAssetRepository;
 use EasyCo\Media\Contracts\MediaStorageAdapter;
 use EasyCo\Media\Persistence\Eloquent\MediaAssetModel;
 use EasyCo\Staff\Enums\Permission;
@@ -35,7 +35,6 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Carbon;
-use Illuminate\Validation\ValidationException;
 
 /**
  * «Медия» (ML-1a, media-library-design.md §6): every uploaded picture and video in one grid: search by file name and alt text, filters (kind, use, state, month), sort, a details slide-over
@@ -385,28 +384,12 @@ class MediaResource extends Resource
         ];
     }
 
-    /** Plain text (control characters already refused by the rule), at most 200, empty = none; through the domain repository; the log line says who and which asset, never the text. */
+    /** The alt text of an asset, for someone who may use the page (the work is MediaAltText, shared with the media picker). */
     public static function saveAltText(int $id, mixed $value): void
     {
         abort_unless(static::staffMayUse(), 403);
 
-        $text = is_string($value) ? trim($value) : '';
-
-        if (mb_strlen($text) > 200 || preg_match('/[\x00-\x1F\x7F-\x9F\x{202A}-\x{202E}\x{2066}-\x{2069}]/u', $text) !== 0) {
-            throw ValidationException::withMessages(['alt_text' => __('media.library.details.alt_invalid')]);
-        }
-
-        $repository = app(MediaAssetRepository::class);
-        $asset = $repository->findById((string) $id);
-
-        if ($asset === null) {
-            return;
-        }
-
-        $asset->updateAltText($text === '' ? null : $text);
-        $repository->save($asset);
-
-        app(ActivityLogger::class)->logFieldChanged('media_asset', (string) $id, 'alt_text', null, 'saved');
+        MediaAltText::save($id, $value);
     }
 
     public static function getPages(): array

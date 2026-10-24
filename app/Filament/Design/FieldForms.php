@@ -4,6 +4,7 @@ namespace App\Filament\Design;
 
 use App\Content\HtmlBlocks\HtmlBlockModel;
 use App\Content\Menus\MenuModel;
+use App\Filament\Forms\Components\MediaPicker;
 use App\Filament\Pages\Design\Menus;
 use App\Filament\Resources\HtmlBlockResource;
 use App\Storefront\Footer\FooterCatalog;
@@ -49,6 +50,8 @@ final class FieldForms
                 ->options(static fn (): array => HtmlBlockModel::query()->orderBy('title')->pluck('title', 'id')->all())
                 ->default(null)
                 ->helperText(new HtmlString('<a href="'.e(HtmlBlockResource::getUrl('index')).'" target="_blank" rel="noopener">'.e(__('design.menu.edit_blocks')).' →</a>')),
+            // ML-2: a picture of a component (no zone uses the kind yet; DS-4 will): the media picker, the value is the id of an image in the library
+            'media' => MediaPicker::make($name)->label($label)->default(null),
             'payments' => CheckboxList::make($name)->label($label)->columns(2)->default([])
                 ->options(array_combine(FooterCatalog::PAYMENTS, array_map(static fn (string $m): string => __('footer.payments.'.$m), FooterCatalog::PAYMENTS))),
             'html' => Textarea::make($name)->label($label)->rows(4)->helperText(__('header.html_help'))->default(''),

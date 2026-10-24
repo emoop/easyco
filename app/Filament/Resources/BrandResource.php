@@ -4,6 +4,7 @@ namespace App\Filament\Resources;
 
 use App\Filament\Concerns\AuthorizesViaStaffPermission;
 use App\Filament\NavigationGroup;
+use App\Filament\Forms\Components\MediaPicker;
 use App\Filament\Resources\BrandResource\Pages\CreateBrand;
 use App\Filament\Resources\BrandResource\Pages\EditBrand;
 use App\Filament\Resources\BrandResource\Pages\ListBrands;
@@ -14,7 +15,6 @@ use EasyCo\Catalog\Contracts\BrandRepository;
 use EasyCo\Catalog\Persistence\Eloquent\BrandModel;
 use EasyCo\Media\Contracts\MediaAssetRepository;
 use EasyCo\Media\Contracts\MediaStorageAdapter;
-use EasyCo\Media\Storage\MediaUpload;
 use EasyCo\Media\Enums\MediaType;
 use EasyCo\Media\Jobs\ProcessMediaAssetJob;
 use EasyCo\Media\MediaAsset;
@@ -23,8 +23,6 @@ use EasyCo\Staff\Enums\Permission;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
-use Filament\Forms\Components\BaseFileUpload;
-use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\TextInput;
 use Filament\Infolists\Components\ImageEntry;
 use Filament\Infolists\Components\TextEntry;
@@ -35,7 +33,6 @@ use Filament\Tables\Columns\ImageColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\QueryException;
-use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 
 /**
  * Brand management — admin-panel-design.md §10, catalog-domain-design.md
@@ -142,21 +139,9 @@ class BrandResource extends Resource
                 ->label(__('brands.fields.slug'))
                 ->required()
                 ->unique(table: 'catalog_brands', column: 'slug', ignoreRecord: true),
-            FileUpload::make('logo')
-                ->label(__('brands.fields.logo'))
-                ->image()
-                ->disk(config('services.media.default_disk', 'public'))
-                // Bypasses FileUpload's own storeAs()/directory()/filename
-                // generation entirely — routes the real bytes through the
-                // exact same EasyCo\Media\Contracts\MediaStorageAdapter::
-                // store() call MediaController uses for every other
-                // upload in this app, so a Brand logo ends up on the same
-                // disk, under the same uploads/{Y}/{m}/{uuid}.{ext}
-                // convention, not a parallel path invented here.
-                ->saveUploadedFileUsing(function (TemporaryUploadedFile $file, BaseFileUpload $component): string {
-                    // ML-0: an image is stored without its metadata; one that cannot be cleaned is a field error, not a 500
-                    return MediaUpload::path($file->get(), $file->getClientOriginalName(), $component->getStatePath());
-                }),
+            // ML-2: pick the logo from the media library or upload a new one into it; «Махни» only detaches (the file stays in «Медия»)
+            MediaPicker::make('logo_media_asset_id')
+                ->label(__('brands.fields.logo')),
         ]);
     }
 

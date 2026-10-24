@@ -25,13 +25,6 @@ class EditBrand extends EditRecord
      * existing logo AND lets handleRecordUpdate() below tell "unchanged"
      * apart from "a new file was uploaded" by simple string comparison.
      */
-    protected function mutateFormDataBeforeFill(array $data): array
-    {
-        $data['logo'] = BrandResource::logoPath($this->record);
-
-        return $data;
-    }
-
     protected function handleRecordUpdate(Model $record, array $data): Model
     {
         $brand = app(BrandRepository::class)->findById((string) $record->id);
@@ -48,19 +41,13 @@ class EditBrand extends EditRecord
             $brand->changeSlug($data['slug']);
         }
 
-        $existingLogoPath = BrandResource::logoPath($record);
-        $newLogoPath = $data['logo'] ?? null;
+        // ML-2: the logo is an id from the picker; «Махни» sets it to null and only detaches (the asset stays in the library, now unused)
+        $logo = filled($data['logo_media_asset_id'] ?? null) ? (string) $data['logo_media_asset_id'] : null;
 
-        if ($newLogoPath === null && $existingLogoPath !== null) {
+        if ($logo === null && $brand->logoMediaAssetId() !== null) {
             $brand->removeLogo();
-        } elseif ($newLogoPath !== null && $newLogoPath !== $existingLogoPath) {
-            // A genuinely new upload — never reuse or mutate the old
-            // MediaAsset, mirroring the task's own explicit instruction;
-            // the old row is simply left orphaned (media cleanup is a
-            // separately tracked, deferred concern — see CLAUDE.md's
-            // "Media cleanup" entry).
-            $asset = BrandResource::createLogoMediaAsset($newLogoPath);
-            $brand->setLogo($asset->id());
+        } elseif ($logo !== null && $logo !== $brand->logoMediaAssetId()) {
+            $brand->setLogo($logo);
         }
 
         app(BrandRepository::class)->save($brand);

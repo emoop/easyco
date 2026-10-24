@@ -1,0 +1,507 @@
+/* The media picker (ML-2): the field in a form (`.mpf`) and the modal (`.mp`). Plain CSS on Filament's own variables (--primary-*, --gray-*) and its `.dark` class. Compact like «Медия» and
+   «Дизайн»: 13px base, 12px small. Every control is a real button or input; 44px targets on touch screens. */
+
+.mpf,
+.mp {
+    --mp-fs: 13px;
+    --mp-fs-small: 12px;
+    font-size: var(--mp-fs);
+}
+
+/* ---- the field ------------------------------------------------------------------------------------------------------------------------ */
+
+.mpf-empty,
+.mpf-one {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.mpf-empty {
+    min-height: 96px;
+    padding: 0 0.75rem;
+    border: 1px dashed var(--gray-300);
+    border-radius: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.dark .mpf-empty {
+    border-color: var(--gray-600);
+}
+
+.mpf-none {
+    color: var(--gray-500);
+}
+
+.mpf-thumb {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 96px;
+    height: 96px;
+    overflow: hidden;
+    border-radius: 0.4rem;
+    background: var(--gray-100);
+    color: var(--gray-500);
+}
+
+.dark .mpf-thumb {
+    background: var(--gray-800);
+}
+
+.mpf-thumb-small {
+    width: 64px;
+    height: 64px;
+}
+
+.mpf-thumb img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.mpf-wait {
+    padding: 0.25rem;
+    font-size: var(--mp-fs-small);
+    font-weight: 600;
+    text-align: center;
+}
+
+.mpf-info {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+
+.mpf-name {
+    overflow: hidden;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.mpf-dim {
+    font-size: var(--mp-fs-small);
+    color: var(--gray-500);
+}
+
+.mpf-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.15rem;
+}
+
+.mpf-remove {
+    padding: 0.25rem 0.25rem;
+    font-size: var(--mp-fs-small);
+    font-weight: 600;
+    background: none;
+    border: 0;
+    color: var(--danger-600);
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+.dark .mpf-remove {
+    color: var(--danger-400);
+}
+
+.mpf-remove:focus-visible,
+.mpf-x:focus-visible {
+    outline: 2px solid var(--primary-600);
+    outline-offset: 2px;
+}
+
+.mpf-hint {
+    margin: 0.35rem 0 0;
+    font-size: var(--mp-fs-small);
+    color: var(--gray-500);
+}
+
+.mpf-many {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 0.4rem;
+}
+
+.mpf-tile {
+    position: relative;
+}
+
+.mpf-x {
+    position: absolute;
+    top: -6px;
+    inset-inline-end: -6px;
+    width: 22px;
+    height: 22px;
+    border: 0;
+    border-radius: 999px;
+    font-size: 14px;
+    line-height: 1;
+    background: var(--gray-700);
+    color: #fff;
+    cursor: pointer;
+}
+
+/* ---- the modal ------------------------------------------------------------------------------------------------------------------------- */
+
+.mp {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+}
+
+.mp-tabs {
+    display: flex;
+    gap: 0.25rem;
+    border-bottom: 1px solid var(--gray-200);
+}
+
+.dark .mp-tabs {
+    border-color: var(--gray-700);
+}
+
+.mp-tab {
+    padding: 0.4rem 0.9rem;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    font-weight: 600;
+    background: none;
+    color: var(--gray-500);
+    cursor: pointer;
+}
+
+.mp-tab-on {
+    border-bottom-color: var(--primary-600);
+    color: var(--primary-700);
+}
+
+.dark .mp-tab-on {
+    border-bottom-color: var(--primary-400);
+    color: var(--primary-300);
+}
+
+.mp-tools {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.mp-search,
+.mp-input {
+    min-height: 32px;
+    padding: 0 0.6rem;
+    border: 1px solid var(--gray-300);
+    border-radius: 0.4rem;
+    font-size: var(--mp-fs);
+    background: transparent;
+    color: inherit;
+}
+
+.mp-search {
+    flex: 1 1 14rem;
+}
+
+.dark .mp-search,
+.dark .mp-input {
+    border-color: var(--gray-600);
+}
+
+.mp-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    cursor: pointer;
+}
+
+.mp-body {
+    display: flex;
+    gap: 0.75rem;
+    align-items: flex-start;
+}
+
+.mp-grid-wrap {
+    flex: 1 1 auto;
+    min-width: 0;
+    max-height: 26rem;
+    overflow-y: auto;
+}
+
+.mp-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(6.5rem, 1fr));
+    gap: 0.4rem;
+}
+
+.mp-card {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    aspect-ratio: 1 / 1;
+    padding: 0;
+    overflow: hidden;
+    border: 2px solid transparent;
+    border-radius: 0.4rem;
+    background: var(--gray-100);
+    color: var(--gray-500);
+    cursor: pointer;
+}
+
+.dark .mp-card {
+    background: var(--gray-800);
+}
+
+.mp-card img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.mp-card-on {
+    border-color: var(--primary-600);
+}
+
+.dark .mp-card-on {
+    border-color: var(--primary-400);
+}
+
+.mp-card:focus-visible,
+.mp-btn:focus-visible,
+.mp-tab:focus-visible {
+    outline: 2px solid var(--primary-600);
+    outline-offset: 2px;
+}
+
+.mp-check {
+    position: absolute;
+    top: 4px;
+    inset-inline-end: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 700;
+    background: var(--primary-600);
+    color: #fff;
+}
+
+.mp-wait {
+    padding: 0.25rem;
+    font-size: var(--mp-fs-small);
+    font-weight: 600;
+    text-align: center;
+}
+
+.mp-more {
+    margin-top: 0.5rem;
+    text-align: center;
+}
+
+.mp-empty,
+.mp-muted {
+    margin: 0;
+    color: var(--gray-500);
+    font-size: var(--mp-fs-small);
+}
+
+.mp-side {
+    flex: none;
+    width: 15rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+}
+
+.mp-preview {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    aspect-ratio: 4 / 3;
+    overflow: hidden;
+    border-radius: 0.4rem;
+    background: var(--gray-100);
+}
+
+.dark .mp-preview {
+    background: var(--gray-800);
+}
+
+.mp-preview img {
+    display: block;
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+}
+
+.mp-name {
+    margin: 0;
+    overflow-wrap: anywhere;
+    font-weight: 600;
+}
+
+.mp-label {
+    margin-top: 0.3rem;
+    font-size: var(--mp-fs-small);
+    font-weight: 600;
+}
+
+.mp-size {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    margin: 0.3rem 0 0;
+    padding: 0;
+    border: 0;
+}
+
+.mp-upload {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+}
+
+.mp-drop {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.25rem;
+    min-height: 12rem;
+    border: 2px dashed var(--gray-300);
+    border-radius: 0.5rem;
+    text-align: center;
+    cursor: pointer;
+}
+
+.dark .mp-drop {
+    border-color: var(--gray-600);
+}
+
+.mp-drop-over,
+.mp-drop:focus-within {
+    border-color: var(--primary-600);
+    background: var(--primary-50);
+}
+
+.dark .mp-drop-over,
+.dark .mp-drop:focus-within {
+    background: color-mix(in srgb, var(--primary-500) 12%, transparent);
+}
+
+.mp-file {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    cursor: pointer;
+}
+
+.mp-busy,
+.mp-refused,
+.mp-error {
+    margin: 0;
+    font-size: var(--mp-fs-small);
+    font-weight: 600;
+}
+
+.mp-refused,
+.mp-error {
+    padding: 0.4rem 0.75rem;
+    border-radius: 0.4rem;
+    list-style: none;
+    background: var(--danger-50);
+    color: var(--danger-700);
+}
+
+.dark .mp-refused,
+.dark .mp-error {
+    background: color-mix(in srgb, var(--danger-500) 18%, transparent);
+    color: var(--danger-300);
+}
+
+.mp-bar {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding-top: 0.6rem;
+    border-top: 1px solid var(--gray-200);
+}
+
+.dark .mp-bar {
+    border-color: var(--gray-700);
+}
+
+.mp-btn {
+    min-height: 32px;
+    padding: 0 0.9rem;
+    border: 1px solid var(--gray-300);
+    border-radius: 0.4rem;
+    font-size: var(--mp-fs);
+    font-weight: 600;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+}
+
+.dark .mp-btn {
+    border-color: var(--gray-600);
+}
+
+.mp-btn-plain {
+    border-color: transparent;
+}
+
+.mp-btn-primary {
+    border-color: var(--primary-600);
+    background: var(--primary-600);
+    color: #fff;
+}
+
+.mp-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+@media (max-width: 700px) {
+    .mp-body {
+        flex-direction: column;
+    }
+
+    .mp-side {
+        width: 100%;
+    }
+
+    .mp-grid-wrap {
+        max-height: 18rem;
+        width: 100%;
+    }
+}
+
+@media (pointer: coarse) {
+    .mp-btn,
+    .mp-search,
+    .mp-input,
+    .mp-tab {
+        min-height: 44px;
+    }
+
+    .mpf-remove,
+    .mpf-x {
+        min-height: 44px;
+        min-width: 44px;
+    }
+}

@@ -280,7 +280,7 @@ class MediaUsageRegistryTest extends TestCase
 
         $registry = new MediaUsageRegistry;
 
-        $this->assertCount(5, $registry->providers(), 'only the five built-in providers remain');
+        $this->assertCount(6, $registry->providers(), 'only the six built-in providers remain (ML-2 added HtmlBlockBody)');
         $this->assertSame([], $registry->counts([$picture]));
         (new MediaUsageRegistry)->providers();
 

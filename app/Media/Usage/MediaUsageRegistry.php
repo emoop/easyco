@@ -29,7 +29,9 @@ final class MediaUsageRegistry
             return $this->providers;
         }
 
-        $builtIn = [new ProductPhotos, new VariationPhotos, new BrandLogo, new HtmlBlockPictures, new DesignZones];
+        // the two providers that look into HTML blocks share ONE read of the blocks
+        $blocks = new HtmlBlockRows;
+        $builtIn = [new ProductPhotos, new VariationPhotos, new BrandLogo, new HtmlBlockPictures($blocks), new HtmlBlockBody($blocks), new DesignZones];
         $filtered = Hook::apply(self::HOOK, $builtIn);
         $valid = [];
 
