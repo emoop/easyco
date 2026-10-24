@@ -230,6 +230,8 @@ class StorefrontHttpSecurityTest extends TestCase
                 $this->assertNoActiveContent($response->getContent(), "{$url} with payload {$i}");
             }
 
+            DB::table('catalog_product_media')->where('media_id', 900 + $i)->delete();
+            DB::table('catalog_variation_media')->where('media_id', 900 + $i)->delete();
             DB::table('catalog_media')->where('id', 900 + $i)->delete();
             DB::table('stock_levels')->where('variation_id', 5001)->delete();
             DB::table('catalog_variations')->where('product_id', 50)->delete();

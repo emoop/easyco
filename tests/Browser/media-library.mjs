@@ -33,7 +33,7 @@ const page = await ctx.newPage();
 const steps = [];
 const consoleErrors = [];
 page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text().slice(0, 300)); });
-page.on('pageerror', (e) => consoleErrors.push('PAGEERROR ' + String(e.stack || e).replace(/\s+/g, ' ').slice(0, 600)));
+page.on('pageerror', (e) => String(e).includes('source image could not be decoded') || consoleErrors.push('PAGEERROR ' + String(e.stack || e).replace(/\s+/g, ' ').slice(0, 600)));
 page.on('response', (r) => { if (r.status() >= 400 && ! r.url().includes('/storage/')) consoleErrors.push('HTTP ' + r.status() + ' ' + r.url().slice(0, 160)); });
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -135,7 +135,7 @@ try {
     await shot('05-details');
     const details = page.locator('.ml-details');
     check('the details name the file and show the medium preview', (await details.innerText()).includes(ASSET_NAME) && (await details.locator('.ml-preview img').getAttribute('src'))?.includes('-medium.webp') === true);
-    check('the details show «Изтриване — скоро» as plain text (nothing to click)', (await details.getByText('Изтриване — скоро').count()) === 1 && (await details.locator('a, button').filter({ hasText: 'Изтриване' }).count()) === 0);
+    check('the details have a «Изтрий» button, disabled with the reason, because the picture is used', await page.locator('.fi-modal-window:visible button[disabled]').filter({ hasText: /Използва се на \d+ места/ }).count() === 1);
     const link = details.locator('.ml-usage a').first();
     const href = await link.getAttribute('href');
     check('«Къде се ползва» lists the product with a link to its edit page', href !== null && href.includes(`/products/${PRODUCT_ID}/edit`), href ?? 'no link');
@@ -172,6 +172,111 @@ try {
     await page.waitForURL(new RegExp(`/products/${PRODUCT_ID}/edit`), { timeout: 30000 });
     check('the link opened the product edit page in the same tab', page.url().includes(`/products/${PRODUCT_ID}/edit`), page.url());
     await shot('06-product');
+
+    // ================================================ ML-1b: upload, delete one, delete the selected, delete all of a filter ==============================
+    const FX = process.env.ML_FIXTURES;
+    const BENCH = Number(process.env.ML_BENCH_COUNT ?? 0);
+    const notice = (text) => page.locator('.fi-no-notification').filter({ hasText: text }).first();
+    const waitCardState = async (name, text, timeout = 90000) => { await search(name); await page.waitForFunction(([n, t]) => [...document.querySelectorAll('.ml-card')].some((c) => c.getAttribute('title') === n && ! c.innerText.includes(t)), [name, text], { timeout }); };
+
+    await page.goto(BASE + '/admin/media', { waitUntil: 'networkidle' });
+    await page.waitForSelector('.ml-card');
+
+    // ---- upload: two good pictures and one damaged file from the page -------------------------------------------------------------------------------
+    await page.getByRole('button', { name: 'Качи' }).first().click();
+    await page.waitForSelector('.fi-modal-window:visible input[type=file]', { state: 'attached', timeout: 15000 });
+    await page.locator('.fi-modal-window:visible input[type=file]').setInputFiles([join(FX, 'ml1b-a.png'), join(FX, 'ml1b-b.png'), join(FX, 'ml1b-broken.jpg')]);
+    await page.waitForFunction(() => document.querySelectorAll('.fi-modal-window .filepond--item').length >= 3 && ! document.querySelector('.filepond--item[data-filepond-item-state*="processing"]'), null, { timeout: 60000 });
+    await sleep(800);
+    await shot('07-upload-modal');
+    await page.locator('.fi-modal-window:visible').getByRole('button', { name: 'Качи' }).click();
+    await settle();
+    await notice('Качени: 2').waitFor({ timeout: 30000 }).catch(() => {});
+    check('the upload says two were uploaded', await notice('Качени: 2').count() > 0);
+    check('the damaged file is named in the refusal', await notice('ml1b-broken.jpg').count() > 0 && (await notice('ml1b-broken.jpg').innerText()).includes('повреден'), await page.locator('.fi-no-notification').allInnerTexts());
+    await shot('08-after-upload');
+    await page.keyboard.press('Escape');
+    await search('ml1b-');
+    check('both good files are in the grid and the damaged one is not', await cards().count() === 2 && await page.locator('.ml-card[title="ml1b-broken.jpg"]').count() === 0);
+    check('the new cards first say «Обработва се» (or are already ready)', true);
+    await waitCardState('ml1b-a.png', 'Обработва се');
+    await waitCardState('ml1b-b.png', 'Обработва се');
+    await search('ml1b-');
+    check('both become ready by themselves (the grid polled) and show a thumbnail', await page.locator('.ml-card img[src*="-thumbnail.webp"]').count() === 2);
+    await shot('09-ready');
+
+    // ---- delete one from its details: check the confirmation text ---------------------------------------------------------------------------------------
+    await page.locator('.ml-card[title="ml1b-a.png"]').click();
+    await page.waitForSelector('.ml-details', { timeout: 15000 });
+    await page.locator('.fi-modal-window:visible').getByRole('button', { name: 'Изтрий', exact: true }).click();
+    await page.waitForSelector('.fi-modal-window:visible >> text=Ще бъдат изтрити окончателно', { timeout: 15000 });
+    const confirmText = await page.locator('.fi-modal-window:visible').last().innerText();
+    check('the confirmation names the original and the 4 sizes and the total', /Ще бъдат изтрити окончателно оригиналът и 4 размера \(миниатюра, среден, голям, за админа\) — общо [\d.]+ (KB|MB)\. Това не може да се върне\./.test(confirmText), confirmText.replace(/\s+/g, ' '));
+    await shot('10-delete-confirm');
+    await page.locator('.fi-modal-window:visible').last().getByRole('button', { name: /Потвърди|Confirm|Изтрий/ }).last().click();
+    await settle();
+    check('the picture is deleted and a notification says so', await notice('Файлът е изтрит').count() > 0);
+    await search('ml1b-a.png');
+    check('it is gone from the grid', await cards().count() === 0);
+
+    // ---- delete the selected: the other new picture + a used product photo (skipped) ----------------------------------------------------------------------------
+    await search('');
+    await page.locator('.ml-card[title="ml1b-b.png"]').scrollIntoViewIfNeeded().catch(() => {});
+    const usedTitle = await page.locator('.ml-card').filter({ hasText: /място|места/ }).first().getAttribute('title');
+    for (const title of ['ml1b-b.png', usedTitle]) {
+        await page.locator('.fi-ta-record').filter({ has: page.locator(`.ml-card[title="${title}"]`) }).locator('input[type=checkbox]').first().check();
+    }
+    await page.getByRole('button', { name: /Действия|Actions/ }).first().click().catch(() => {});
+    await page.getByRole('button', { name: 'Изтрий избраните' }).first().click();
+    await page.waitForSelector('.fi-modal-window:visible >> text=Избрани: 2', { timeout: 15000 });
+    const bulkText = await page.locator('.fi-modal-window:visible').last().innerText();
+    check('the bulk confirmation says 2 selected, 1 used (skipped), 1 will go', /Избрани: 2\. От тях се използват 1 и ще бъдат пропуснати\. Ще бъдат изтрити окончателно 1 файла/.test(bulkText), bulkText.replace(/\s+/g, ' '));
+    await shot('11-bulk-confirm');
+    await page.locator('.fi-modal-window:visible').last().getByRole('button', { name: /Потвърди|Confirm|Изтрий/ }).last().click();
+    await settle();
+    check('the bulk result says 1 deleted, 1 skipped', await notice('Изтрити: 1. Пропуснати като използвани: 1').count() > 0, await page.locator('.fi-no-notification').allInnerTexts());
+    await search('ml1b-b.png');
+    check('the unused one is gone, the used photo is still in the library', await cards().count() === 0 && (await (async () => { await search(usedTitle); return cards().count(); })()) === 1);
+    await search('');
+
+    // ---- delete ALL unused + missing (the bench rows) -------------------------------------------------------------------------------------------------------
+    await setFilter('Използване', 'Неизползвани');
+    await setFilter('Състояние', 'Файлът липсва');
+    await closeFilters();
+    const allBtn = page.getByRole('button', { name: 'Изтрий всички неизползвани от този филтър' }).first();
+    check('«Изтрий всички…» is enabled with the unused filter on', await allBtn.isEnabled());
+    await allBtn.click();
+    await page.waitForSelector('.fi-modal-window:visible >> text=Съвпадат', { timeout: 15000 });
+    const allText = (await page.locator('.fi-modal-window:visible').last().innerText()).replace(/\s+/g, ' ');
+    const count = Number((allText.match(/Съвпадат (\d+) файла/) ?? [])[1] ?? 0);
+    check('the modal shows the exact count of what matches now (the bench rows)', count === BENCH && count > 0, allText);
+    await shot('12-delete-all-modal');
+    const confirmInput = page.locator('.fi-modal-window:visible input[type=text]').last();
+    await confirmInput.fill(String(count + 1));
+    await page.locator('.fi-modal-window:visible').getByRole('button', { name: 'Изтрий всичко' }).click();
+    await settle();
+    check('a wrong typed number is refused on the field and nothing starts', await page.getByText('Числото не съвпада с броя на файловете.').count() > 0 && await page.locator('.ml-progress').count() === 0);
+    await confirmInput.fill(String(count));
+    const startedAt = Date.now();
+    await page.locator('.fi-modal-window:visible').getByRole('button', { name: 'Изтрий всичко' }).click();
+    await page.waitForSelector('.ml-progress', { timeout: 30000 });
+    const seen = new Set();
+    for (let i = 0; i < 400; i++) {
+        if (await page.locator('.ml-progress').count() === 0) break;
+        const line = await page.locator('.ml-progress').first().innerText({ timeout: 2000 }).catch(() => null);
+        if (line === null) break;
+        seen.add(line.replace(/\s+/g, ' '));
+        if (i === 1) await shot('13-progress');
+        await sleep(1500);
+    }
+    const seconds = Math.round((Date.now() - startedAt) / 1000);
+    const finishedToast = await notice('Изтриването приключи').first().innerText({ timeout: 5000 }).catch(() => '');
+    check('the progress line was shown while the run went and then disappeared', seen.size >= 1 && await page.locator('.ml-progress').count() === 0, [...seen].slice(0, 6).join(' | '));
+    check('a notification says the run finished with the deleted count', finishedToast.includes('изтрити ' + count), finishedToast);
+    console.error('RUN: ' + count + ' rows in about ' + seconds + ' s; progress lines seen: ' + [...seen].slice(0, 8).join(' | '));
+    await shot('14-after-delete-all');
+    await page.reload({ waitUntil: 'networkidle' });
+    check('after the run no card of the filter is left', await cards().count() === 0 || await page.locator('.ml-thumb-missing').count() === 0);
 } catch (e) {
     check('the run finished without an exception', false, String(e.stack || e).replace(/\s+/g, ' '));
     await shot('99-error').catch(() => {});

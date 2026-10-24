@@ -55,6 +55,4 @@
             </ul>
         @endif
     </section>
-
-    <p class="ml-muted ml-soon">{{ __('media.library.details.delete_soon') }}</p>
 </div>

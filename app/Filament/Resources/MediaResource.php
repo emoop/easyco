@@ -4,6 +4,9 @@ namespace App\Filament\Resources;
 
 use App\Filament\NavigationGroup;
 use App\Filament\Resources\MediaResource\Pages\ListMedia;
+use App\Media\DeleteOutcome;
+use App\Media\MediaDeleter;
+use App\Media\MediaFilters;
 use App\Media\Usage\MediaUsageRegistry;
 use App\Rules\PlainText;
 use App\Services\ActivityLogger;
@@ -15,6 +18,7 @@ use EasyCo\Media\Persistence\Eloquent\MediaAssetModel;
 use EasyCo\Staff\Enums\Permission;
 use EasyCo\Staff\Persistence\Eloquent\StaffModel;
 use Filament\Actions\Action;
+use Filament\Actions\BulkAction;
 use Filament\Facades\Filament;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
@@ -28,6 +32,8 @@ use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Carbon;
 use Illuminate\Validation\ValidationException;
 
@@ -184,38 +190,14 @@ class MediaResource extends Resource
             ])
             ->filters([
                 SelectFilter::make('kind')->label(__('media.library.filters.kind'))->options(['image' => __('media.library.kind.image'), 'video' => __('media.library.kind.video')])
-                    ->query(fn (Builder $query, array $data): Builder => match ($data['value'] ?? null) {
-                        'image' => $query->whereIn('catalog_media.type', ['image', 'social_image']),
-                        'video' => $query->whereIn('catalog_media.type', ['video', 'social_video']),
-                        default => $query,
-                    }),
+                    ->query(fn (Builder $query, array $data): Builder => MediaFilters::kind($query, $data['value'] ?? null)),
                 SelectFilter::make('use')->label(__('media.library.filters.use'))->options(['used' => __('media.library.use.used'), 'unused' => __('media.library.use.unused')])
-                    ->query(function (Builder $query, array $data): Builder {
-                        $registry = new MediaUsageRegistry;
-
-                        match ($data['value'] ?? null) {
-                            'used' => $registry->onlyUsed($query),
-                            'unused' => $registry->excludeUsed($query),
-                            default => null,
-                        };
-
-                        return $query;
-                    }),
+                    ->query(fn (Builder $query, array $data): Builder => MediaFilters::use($query, $data['value'] ?? null)),
                 SelectFilter::make('state')->label(__('media.library.filters.state'))->options(['ready' => __('media.library.state.ready'), 'processing' => __('media.library.state.processing'), 'failed' => __('media.library.state.failed'), 'missing' => __('media.library.state.missing')])
                     ->query(fn (Builder $query, array $data): Builder => static::filterByState($query, $data['value'] ?? null)),
                 Filter::make('month')->label(__('media.library.filters.month'))
                     ->schema([TextInput::make('month')->label(__('media.library.filters.month'))->type('month')])
-                    ->query(function (Builder $query, array $data): Builder {
-                        $month = (string) ($data['month'] ?? '');
-
-                        if (preg_match('/^\d{4}-(0[1-9]|1[0-2])$/', $month) !== 1) {
-                            return $query;
-                        }
-
-                        $start = Carbon::createFromFormat('Y-m-d H:i:s', $month.'-01 00:00:00');
-
-                        return $query->where('catalog_media.created_at', '>=', $start)->where('catalog_media.created_at', '<', $start->copy()->addMonth());
-                    })
+                    ->query(fn (Builder $query, array $data): Builder => MediaFilters::month($query, (string) ($data['month'] ?? '')))
                     ->indicateUsing(fn (array $data): ?string => ! empty($data['month']) ? __('media.library.filters.month').': '.e((string) $data['month']) : null),
                 SelectFilter::make('sort')->label(__('media.library.filters.sort'))->options(['newest' => __('media.library.sort.newest'), 'largest' => __('media.library.sort.largest'), 'name' => __('media.library.sort.name')])
                     ->default('newest')->selectablePlaceholder(false)
@@ -231,26 +213,15 @@ class MediaResource extends Resource
             ->deferFilters(false)
             ->recordActions([static::detailsAction()])
             ->recordAction('details')
+            // a bulk action of OUR own, never Filament's DeleteBulkAction: every delete goes through MediaDeleter
+            ->toolbarActions([static::deleteSelectedAction()])
             ->emptyStateHeading(__('media.library.empty'));
     }
 
-    /** The «състояние» filter in SQL, mirroring stateOf(): the rule is the same, written once for the rows and once for the query. */
+    /** The «състояние» filter in SQL: see MediaFilters (the «delete all of this filter» job re-runs the same fragments). */
     public static function filterByState(Builder $query, ?string $state): Builder
     {
-        $missing = fn (Builder $q): Builder => $q->whereNotNull('catalog_media.missing_at');
-        $noVariants = fn (Builder $q): Builder => $q->where(fn ($i) => $i->whereNull('catalog_media.variants')->orWhere('catalog_media.variants', '[]'));
-        $notVariantFile = fn (Builder $q): Builder => $q->where('catalog_media.path', 'not like', '%-thumbnail.webp')->where('catalog_media.path', 'not like', '%-medium.webp')->where('catalog_media.path', 'not like', '%-large.webp')->where('catalog_media.path', 'not like', '%-admin_grid.webp');
-
-        return match ($state) {
-            'processing' => $query->whereNull('catalog_media.missing_at')->whereIn('catalog_media.processing_status', ['pending', 'processing'])->whereIn('catalog_media.type', ['image', 'social_image']),
-            'failed' => $query->whereNull('catalog_media.missing_at')->where('catalog_media.processing_status', 'failed')->whereIn('catalog_media.type', ['image', 'social_image']),
-            'missing' => $query->where(fn ($q) => $q
-                ->whereNotNull('catalog_media.missing_at')
-                ->orWhere(fn ($i) => $i->whereIn('catalog_media.type', ['image', 'social_image'])->where('catalog_media.processing_status', 'ready')->where(fn ($v) => $noVariants($v))->where(fn ($v) => $notVariantFile($v)))),
-            'ready' => $query->whereNull('catalog_media.missing_at')->where('catalog_media.processing_status', 'ready')
-                ->where(fn ($q) => $q->whereIn('catalog_media.type', ['video', 'social_video'])->orWhere(fn ($i) => $i->whereNotNull('catalog_media.variants')->where('catalog_media.variants', '!=', '[]')->orWhere(fn ($v) => $v->where('catalog_media.path', 'like', '%-thumbnail.webp')->orWhere('catalog_media.path', 'like', '%-medium.webp')->orWhere('catalog_media.path', 'like', '%-large.webp')->orWhere('catalog_media.path', 'like', '%-admin_grid.webp')))),
-            default => $query,
-        };
+        return MediaFilters::state($query, $state);
     }
 
     // ---- the details slide-over --------------------------------------------------------------------------------------------------
@@ -266,6 +237,7 @@ class MediaResource extends Resource
             ->modalWidth('2xl')
             ->modalSubmitActionLabel(__('media.library.details.save'))
             ->modalCancelActionLabel(__('media.library.details.close'))
+            ->extraModalFooterActions([static::deleteAction()])
             ->authorize(fn (): bool => static::staffMayUse())
             ->schema(fn (MediaAssetModel $record): array => [
                 View::make('filament.pages.media.details')->viewData(fn (): array => static::detailsData($record)),
@@ -279,6 +251,120 @@ class MediaResource extends Resource
 
                 Notification::make()->title(__('media.library.details.saved'))->success()->send();
             });
+    }
+
+    // ---- delete ------------------------------------------------------------------------------------------------------------------
+
+    /** How many places use the picture, asked live (a few queries, only when a delete button is drawn for ONE picture). */
+    public static function usesOf(int $id): int
+    {
+        return (new MediaUsageRegistry)->counts([$id])[$id] ?? 0;
+    }
+
+    /** @return array{0: int, 1: int} the number of size variants and the bytes of the original plus every variant that is on the disk (a few size reads, for ONE picture) */
+    public static function deletionSummary(MediaAssetModel $asset): array
+    {
+        $paths = array_values(array_filter(array_map(fn ($v): ?string => is_array($v) ? ($v['path'] ?? null) : null, (array) $asset->variants)));
+        $bytes = (int) $asset->size_bytes;
+        $disk = Storage::disk((string) $asset->disk);
+
+        foreach ($paths as $path) {
+            try {
+                $disk->exists($path) && $bytes += (int) $disk->size($path);
+            } catch (\Throwable) {
+                // an unreadable variant adds nothing to the total
+            }
+        }
+
+        return [count($paths), $bytes];
+    }
+
+    public static function humanSize(int $bytes): string
+    {
+        return $bytes >= 1048576 ? number_format($bytes / 1048576, 2).' MB' : number_format($bytes / 1024, 1).' KB';
+    }
+
+    /** The delete button of the details panel: disabled with the reason while the picture is used, a confirmation that names what disappears otherwise. */
+    private static function deleteAction(): Action
+    {
+        return Action::make('delete')
+            ->label(function (MediaAssetModel $record): string {
+                $uses = static::usesOf((int) $record->id);
+
+                return $uses > 0 ? __('media.library.delete.used', ['n' => $uses]) : __('media.library.delete.button');
+            })
+            ->icon('heroicon-o-trash')
+            ->color('danger')
+            ->disabled(fn (MediaAssetModel $record): bool => static::usesOf((int) $record->id) > 0)
+            ->authorize(fn (): bool => static::staffMayUse())
+            ->requiresConfirmation()
+            ->modalHeading(__('media.library.delete.heading'))
+            ->modalDescription(function (MediaAssetModel $record): string {
+                if (static::stateOf($record) === 'missing') {
+                    return __('media.library.delete.summary_missing');
+                }
+
+                [$variants, $bytes] = static::deletionSummary($record);
+
+                return __('media.library.delete.summary', ['n' => $variants, 'size' => static::humanSize($bytes)]);
+            })
+            ->action(function (MediaAssetModel $record, Action $action): void {
+                abort_unless(static::staffMayUse(), 403);
+
+                $snapshot = ['original_name' => $record->original_name, 'path' => $record->path, 'size_bytes' => $record->size_bytes];
+                $outcome = app(MediaDeleter::class)->delete((int) $record->id, static::staffId());
+
+                if ($outcome->status === DeleteOutcome::IN_USE) {
+                    Notification::make()->title(__('media.library.delete.in_use'))->danger()->send();
+
+                    return;
+                }
+
+                $outcome->wasDeleted() && app(ActivityLogger::class)->logDeleted('media', (string) $record->id, $snapshot);
+                Notification::make()->title(__('media.library.delete.done'))->success()->send();
+                $action->cancelParentActions();
+            });
+    }
+
+    /** «Изтрий избраните»: the used ones are skipped and counted, the modal says so before. */
+    private static function deleteSelectedAction(): BulkAction
+    {
+        return BulkAction::make('deleteSelected')
+            ->label(__('media.library.delete.selected'))
+            ->icon('heroicon-o-trash')
+            ->color('danger')
+            ->authorize(fn (): bool => static::staffMayUse())
+            ->requiresConfirmation()
+            ->deselectRecordsAfterCompletion()
+            ->modalHeading(__('media.library.delete.selected_heading'))
+            ->modalDescription(function (Collection $records): string {
+                $counts = (new MediaUsageRegistry)->counts($records->pluck('id')->map(fn ($id): int => (int) $id)->all());
+                $free = $records->filter(fn ($r): bool => ! isset($counts[(int) $r->id]));
+
+                return __('media.library.delete.selected_summary', ['selected' => $records->count(), 'used' => $records->count() - $free->count(), 'count' => $free->count(), 'size' => static::humanSize((int) $free->sum('size_bytes'))]);
+            })
+            ->action(function (Collection $records): void {
+                abort_unless(static::staffMayUse(), 403);
+
+                $deleter = app(MediaDeleter::class);
+                $deleted = 0;
+                $skipped = 0;
+
+                foreach ($records as $record) {
+                    $deleter->delete((int) $record->id, static::staffId())->wasDeleted() ? $deleted++ : $skipped++;
+                }
+
+                $deleted + $skipped > 0 && app(ActivityLogger::class)->logDeleted('media', 'bulk-selected', ['deleted' => $deleted, 'skipped_as_used' => $skipped, 'filter' => 'selected on the page']);
+                Notification::make()->title(__('media.library.delete.selected_done', ['deleted' => $deleted, 'skipped' => $skipped]))->success()->send();
+            });
+    }
+
+    /** The signed-in staff member's id, for the deleter and the log. */
+    public static function staffId(): ?int
+    {
+        $id = Filament::auth()->id();
+
+        return is_numeric($id) ? (int) $id : null;
     }
 
     /** @return array<string, mixed> everything the details view prints, read only when the panel is opened */

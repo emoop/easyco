@@ -296,7 +296,7 @@ class MediaLibraryPageTest extends TestCase
         $this->assertStringContainsString((string) $staff->name, $html);
         $this->assertStringContainsString('-medium.webp', $html, 'the preview is the medium variant');
         $this->assertStringContainsString('-large.webp', $html, 'the copy button holds the large variant');
-        $this->assertStringContainsString('Изтриване — скоро', $html);
+        $this->assertStringNotContainsString('Изтриване — скоро', $html);
 
         $none = $this->detailsHtml($other);
         $this->assertStringContainsString('Не се ползва никъде.', $none);

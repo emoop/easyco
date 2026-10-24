@@ -239,3 +239,20 @@
         min-height: 44px;
     }
 }
+
+/* the progress line of a «delete all unused» run (ML-1b) */
+
+.ml-progress {
+    margin-bottom: 0.5rem;
+    padding: 0.4rem 0.75rem;
+    border-radius: 0.4rem;
+    font-size: var(--ml-fs-small, 12px);
+    font-weight: 600;
+    background: var(--primary-50);
+    color: var(--primary-800);
+}
+
+.dark .ml-progress {
+    background: color-mix(in srgb, var(--primary-500) 18%, transparent);
+    color: var(--primary-200);
+}

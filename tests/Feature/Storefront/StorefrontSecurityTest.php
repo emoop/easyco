@@ -84,6 +84,8 @@ class StorefrontSecurityTest extends TestCase
             $this->assertSame([], $reader->categoryTree(), "{$label}: tree");
             $this->assertNull($reader->category('things'), "{$label}: category()");
 
+            DB::table('catalog_product_media')->delete();
+            DB::table('catalog_variation_media')->delete();
             DB::table('catalog_media')->delete();
             DB::table('stock_levels')->delete();
             DB::table('catalog_variations')->delete();
