@@ -13,10 +13,23 @@ final class ImageNotCleanableException extends RuntimeException
 {
     public const MESSAGE_BG = 'Този формат не се поддържа на този сървър — инсталирайте ImageMagick или конвертирайте снимката.';
 
+    public const MALFORMED_BG = 'Файлът е повреден или непълен — качете го отново.';
+
+    /** An image whose structure could not be walked (a truncated JPEG ...): it cannot be cleaned, so it is never stored. */
+    public static function malformed(): self
+    {
+        return new self(self::translated('media.malformed', self::MALFORMED_BG));
+    }
+
     public static function unsupportedFormat(): self
     {
-        $translated = function_exists('app') && app()->bound('translator') ? trans('media.not_cleanable') : null;
+        return new self(self::translated('media.not_cleanable', self::MESSAGE_BG));
+    }
 
-        return new self(is_string($translated) && $translated !== 'media.not_cleanable' ? $translated : self::MESSAGE_BG);
+    private static function translated(string $key, string $default): string
+    {
+        $translated = function_exists('app') && app()->bound('translator') ? trans($key) : null;
+
+        return is_string($translated) && $translated !== $key ? $translated : $default;
     }
 }

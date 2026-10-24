@@ -7,6 +7,7 @@ use EasyCo\Media\Contracts\MediaAssetRepository;
 use EasyCo\Media\Contracts\MediaImageProcessor;
 use EasyCo\Media\Contracts\MediaStorageAdapter;
 use EasyCo\Media\Enums\MediaType;
+use EasyCo\Media\Exceptions\ImageNotCleanableException;
 use EasyCo\Media\Jobs\ProcessMediaAssetJob;
 use EasyCo\Media\MediaAsset;
 use Illuminate\Http\JsonResponse;
@@ -97,9 +98,14 @@ class MediaController extends Controller
 
         $type = $topLevelType === 'image' ? MediaType::IMAGE : MediaType::VIDEO;
 
-        $storedFile = $this->storage->store($content, $file->getClientOriginalName());
+        try {
+            $storedFile = $this->storage->store($content, $file->getClientOriginalName());
+        } catch (ImageNotCleanableException $e) {
+            // a damaged / incomplete picture (ML-1a) or one this server cannot clean (ML-0): never stored
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
 
-        $asset = MediaAsset::create($type, $storedFile->disk, $storedFile->path, $validated['alt_text'] ?? null);
+        $asset = MediaAsset::create($type, $storedFile->disk, $storedFile->path, $validated['alt_text'] ?? null, $storedFile->details);
         $this->mediaAssets->save($asset);
 
         // §3.6: dispatch ONLY for images. ProcessMediaAssetJob calls

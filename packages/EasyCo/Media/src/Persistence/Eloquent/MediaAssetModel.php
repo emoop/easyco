@@ -23,9 +23,17 @@ class MediaAssetModel extends Model
         'processing_status',
         'processing_failure_reason',
         'variants',
+        'original_name',
+        'mime',
+        'size_bytes',
+        'width',
+        'height',
+        'uploaded_by',
+        'missing_at',
     ];
 
     protected $casts = [
         'variants' => 'array',
+        'missing_at' => 'datetime',
     ];
 }

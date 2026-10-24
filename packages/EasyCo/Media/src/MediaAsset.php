@@ -28,6 +28,7 @@ final class MediaAsset
         private ProcessingStatus $processingStatus,
         private ?string $processingFailureReason,
         private array $variants,
+        private ?MediaDetails $details = null,
     ) {
         if ($path === '') {
             throw new InvalidArgumentException('MediaAsset path must not be empty.');
@@ -44,7 +45,7 @@ final class MediaAsset
      * READY. variants is always empty at creation either way; only
      * markReady() ever populates it, and only for IMAGE/SOCIAL_IMAGE.
      */
-    public static function create(MediaType $type, string $disk, string $path, ?string $altText = null): self
+    public static function create(MediaType $type, string $disk, string $path, ?string $altText = null, ?MediaDetails $details = null): self
     {
         $processingStatus = match ($type) {
             MediaType::IMAGE, MediaType::SOCIAL_IMAGE => ProcessingStatus::PENDING,
@@ -60,6 +61,7 @@ final class MediaAsset
             processingStatus: $processingStatus,
             processingFailureReason: null,
             variants: [],
+            details: $details,
         );
     }
 
@@ -83,6 +85,7 @@ final class MediaAsset
         ProcessingStatus $processingStatus,
         ?string $processingFailureReason,
         array $variants,
+        ?MediaDetails $details = null,
     ): self {
         return new self(
             id: $id,
@@ -93,6 +96,7 @@ final class MediaAsset
             processingStatus: $processingStatus,
             processingFailureReason: $processingFailureReason,
             variants: $variants,
+            details: $details,
         );
     }
 
@@ -123,6 +127,12 @@ final class MediaAsset
     public function path(): string
     {
         return $this->path;
+    }
+
+    /** What is known about the stored original (ML-1a); null for a row nobody has described yet. */
+    public function details(): ?MediaDetails
+    {
+        return $this->details;
     }
 
     public function altText(): ?string

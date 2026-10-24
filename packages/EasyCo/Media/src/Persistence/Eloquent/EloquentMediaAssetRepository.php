@@ -6,6 +6,8 @@ use EasyCo\Media\Contracts\MediaAssetRepository;
 use EasyCo\Media\Enums\MediaType;
 use EasyCo\Media\Enums\ProcessingStatus;
 use EasyCo\Media\MediaAsset;
+use EasyCo\Media\MediaDetails;
+use EasyCo\Media\Storage\UploadDetailsStash;
 use EasyCo\Media\MediaVariant;
 
 /**
@@ -45,6 +47,18 @@ final class EloquentMediaAssetRepository implements MediaAssetRepository
             $asset->variants()
         );
 
+        // ML-1a: a NEW row without details takes the ones the upload left (an admin form stores the bytes first and creates the row on save)
+        $details = $asset->details() ?? ($asset->id() === null ? UploadDetailsStash::take($asset->disk(), $asset->path()) : null);
+
+        if ($details !== null) {
+            $model->original_name = $details->originalName;
+            $model->mime = $details->mime;
+            $model->size_bytes = $details->sizeBytes;
+            $model->width = $details->width;
+            $model->height = $details->height;
+            $model->uploaded_by = $details->uploadedBy;
+        }
+
         $model->save();
 
         if ($asset->id() === null) {
@@ -80,6 +94,9 @@ final class EloquentMediaAssetRepository implements MediaAssetRepository
             processingStatus: ProcessingStatus::from($model->processing_status),
             processingFailureReason: $model->processing_failure_reason,
             variants: $variants,
+            details: $model->original_name === null && $model->mime === null && $model->size_bytes === null && $model->width === null && $model->uploaded_by === null
+                ? null
+                : new MediaDetails($model->original_name, $model->mime, $model->size_bytes, $model->width, $model->height, $model->uploaded_by),
         );
     }
 }
