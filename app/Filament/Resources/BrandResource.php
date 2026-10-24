@@ -14,6 +14,7 @@ use EasyCo\Catalog\Contracts\BrandRepository;
 use EasyCo\Catalog\Persistence\Eloquent\BrandModel;
 use EasyCo\Media\Contracts\MediaAssetRepository;
 use EasyCo\Media\Contracts\MediaStorageAdapter;
+use EasyCo\Media\Storage\MediaUpload;
 use EasyCo\Media\Enums\MediaType;
 use EasyCo\Media\Jobs\ProcessMediaAssetJob;
 use EasyCo\Media\MediaAsset;
@@ -22,6 +23,7 @@ use EasyCo\Staff\Enums\Permission;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
+use Filament\Forms\Components\BaseFileUpload;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\TextInput;
 use Filament\Infolists\Components\ImageEntry;
@@ -151,10 +153,9 @@ class BrandResource extends Resource
                 // upload in this app, so a Brand logo ends up on the same
                 // disk, under the same uploads/{Y}/{m}/{uuid}.{ext}
                 // convention, not a parallel path invented here.
-                ->saveUploadedFileUsing(function (TemporaryUploadedFile $file): string {
-                    return app(MediaStorageAdapter::class)
-                        ->store($file->get(), $file->getClientOriginalName())
-                        ->path;
+                ->saveUploadedFileUsing(function (TemporaryUploadedFile $file, BaseFileUpload $component): string {
+                    // ML-0: an image is stored without its metadata; one that cannot be cleaned is a field error, not a 500
+                    return MediaUpload::path($file->get(), $file->getClientOriginalName(), $component->getStatePath());
                 }),
         ]);
     }

@@ -17,7 +17,9 @@ use Filament\Actions\DeleteAction;
 use Filament\Actions\EditAction;
 use Closure;
 use EasyCo\Media\Contracts\MediaStorageAdapter;
+use EasyCo\Media\Storage\MediaUpload;
 use EasyCo\Media\Persistence\Eloquent\MediaAssetModel;
+use Filament\Forms\Components\BaseFileUpload;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Repeater;
@@ -117,7 +119,7 @@ class HtmlBlockResource extends Resource
                         ->maxSize(5120)
                         ->disk(config('services.media.default_disk', 'public'))
                         // The same path as a brand logo: the real bytes go through the Media storage adapter; the asset itself is made when the block is saved (picturesFromForm).
-                        ->saveUploadedFileUsing(fn (TemporaryUploadedFile $file): string => app(MediaStorageAdapter::class)->store($file->get(), $file->getClientOriginalName())->path),
+                        ->saveUploadedFileUsing(fn (TemporaryUploadedFile $file, BaseFileUpload $component): string => MediaUpload::path($file->get(), $file->getClientOriginalName(), $component->getStatePath())),
                     Hidden::make('media_asset_id'),
                     TextInput::make('alt')->label(__('html_blocks.fields.alt'))->maxLength(HtmlBlockPictures::ALT_MAX)->rule(new PlainText()),
                     TextInput::make('url')->label(__('html_blocks.fields.url'))->placeholder('/product-category/boys')->maxLength(500)

@@ -45,6 +45,7 @@ use EasyCo\Catalog\Variation;
 use EasyCo\Catalog\VariationAxis;
 use EasyCo\Extensibility\Hook;
 use EasyCo\Media\Contracts\MediaStorageAdapter;
+use EasyCo\Media\Storage\MediaUpload;
 use EasyCo\Media\Contracts\ProductMediaRepository;
 use EasyCo\Media\Contracts\VariationMediaRepository;
 use EasyCo\Media\Enums\MediaType;
@@ -57,6 +58,7 @@ use EasyCo\Media\VariationMediaCountGuard;
 use EasyCo\Media\VideoCountGuard;
 use EasyCo\Staff\Enums\Permission;
 use Filament\Actions\Action;
+use Filament\Forms\Components\BaseFileUpload;
 use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\FileUpload;
@@ -1549,11 +1551,10 @@ class EditVariableProduct extends EditRecord
                         ->placeholder(ProductResource::mediaUploadPlaceholder('services.media.max_image_size_kb', 10240))
                         ->maxSize((int) config('services.media.max_image_size_kb', 10240))
                         ->disk(config('services.media.default_disk', 'public'))
-                        ->saveUploadedFileUsing(function (TemporaryUploadedFile $file): string {
-                            return app(MediaStorageAdapter::class)
-                                ->store($file->get(), $file->getClientOriginalName())
-                                ->path;
-                        })
+                        ->saveUploadedFileUsing(function (TemporaryUploadedFile $file, BaseFileUpload $component): string {
+                    // ML-0: an image is stored without its metadata; one that cannot be cleaned is a field error, not a 500
+                    return MediaUpload::path($file->get(), $file->getClientOriginalName(), $component->getStatePath());
+                })
                         // Same base PRODUCT_MANAGE permission every
                         // other per-row field in this class already
                         // uses (sku/barcode/is_purchasable/

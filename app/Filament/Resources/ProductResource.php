@@ -48,6 +48,7 @@ use EasyCo\Catalog\VariationAxis;
 use EasyCo\Extensibility\Hook;
 use EasyCo\Media\Contracts\MediaAssetRepository;
 use EasyCo\Media\Contracts\MediaStorageAdapter;
+use EasyCo\Media\Storage\MediaUpload;
 use EasyCo\Media\Enums\MediaType;
 use EasyCo\Media\Jobs\ProcessMediaAssetJob;
 use EasyCo\Media\MediaAsset;
@@ -59,6 +60,7 @@ use Filament\Actions\BulkAction;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
+use Filament\Forms\Components\BaseFileUpload;
 use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Hidden;
@@ -1103,10 +1105,9 @@ class ProductResource extends Resource
                 // sequence exactly — routes every uploaded file through
                 // the real MediaStorageAdapter::store() call, not
                 // Filament's own storeAs()/directory() generation.
-                ->saveUploadedFileUsing(function (TemporaryUploadedFile $file): string {
-                    return app(MediaStorageAdapter::class)
-                        ->store($file->get(), $file->getClientOriginalName())
-                        ->path;
+                ->saveUploadedFileUsing(function (TemporaryUploadedFile $file, BaseFileUpload $component): string {
+                    // ML-0: an image is stored without its metadata; one that cannot be cleaned is a field error, not a 500
+                    return MediaUpload::path($file->get(), $file->getClientOriginalName(), $component->getStatePath());
                 }),
         ];
     }
@@ -1146,10 +1147,9 @@ class ProductResource extends Resource
                 // enforcement point now, matching the API's own
                 // ProductMediaController::store() behavior exactly.
                 ->disk(config('services.media.default_disk', 'public'))
-                ->saveUploadedFileUsing(function (TemporaryUploadedFile $file): string {
-                    return app(MediaStorageAdapter::class)
-                        ->store($file->get(), $file->getClientOriginalName())
-                        ->path;
+                ->saveUploadedFileUsing(function (TemporaryUploadedFile $file, BaseFileUpload $component): string {
+                    // ML-0: an image is stored without its metadata; one that cannot be cleaned is a field error, not a 500
+                    return MediaUpload::path($file->get(), $file->getClientOriginalName(), $component->getStatePath());
                 }),
         ];
     }
@@ -1181,10 +1181,9 @@ class ProductResource extends Resource
                 ->placeholder(static::mediaUploadPlaceholder('services.media.max_video_size_kb', 102400))
                 ->maxSize((int) config('services.media.max_video_size_kb', 102400))
                 ->disk(config('services.media.default_disk', 'public'))
-                ->saveUploadedFileUsing(function (TemporaryUploadedFile $file): string {
-                    return app(MediaStorageAdapter::class)
-                        ->store($file->get(), $file->getClientOriginalName())
-                        ->path;
+                ->saveUploadedFileUsing(function (TemporaryUploadedFile $file, BaseFileUpload $component): string {
+                    // ML-0: an image is stored without its metadata; one that cannot be cleaned is a field error, not a 500
+                    return MediaUpload::path($file->get(), $file->getClientOriginalName(), $component->getStatePath());
                 }),
             Toggle::make('video_autoplay')
                 ->label(__('products.fields.video_autoplay'))
