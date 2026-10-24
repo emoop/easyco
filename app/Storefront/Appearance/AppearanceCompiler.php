@@ -112,9 +112,9 @@ final class AppearanceCompiler
             $vars[] = "{$variable}: ".strtolower($value).';';
         }
 
-        // DS-2a: the header rows' colours (only the rows that set one): `--sf-hdr-{d|m}-{top|main|bottom}-{bg|fg}: #rrggbb`, checked again here.
+        // DS-2a: the header rows' colours (only the rows that set one): `--sf-hdr-{d|m}-{top|main|bottom}-{bg|fg}: #rrggbb`; DS-2c: the cart element's `--sf-cart-{d|m}-{fg|badge-bg|badge-fg}`; checked again here.
         foreach ($headerColors as $variable => $value) {
-            if (preg_match('/^--sf-hdr-[dm]-(?:top|main|bottom)-(?:bg|fg)$/', (string) $variable) !== 1 || ! AppearanceSettings::isHex($value)) {
+            if (preg_match('/^--sf-(?:hdr-[dm]-(?:top|main|bottom)-(?:bg|fg)|cart-[dm]-(?:fg|badge-bg|badge-fg))$/', (string) $variable) !== 1 || ! AppearanceSettings::isHex($value)) {
                 throw new InvalidArgumentException('A header colour is not valid.');
             }
 

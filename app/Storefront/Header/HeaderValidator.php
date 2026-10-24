@@ -278,7 +278,14 @@ final class HeaderValidator
      */
     private function setting(mixed $value, array $field, string $path): mixed
     {
-        return FieldKinds::validate($value, $field + HeaderCatalog::KIND_OPTIONS, $path, $this->failer());
+        $clean = FieldKinds::validate($value, $field + HeaderCatalog::KIND_OPTIONS, $path, $this->failer());
+
+        // DS-2c: a colour is stored as `#rrggbb` (the compiler writes only that)
+        if (($field['kind'] ?? null) === 'color' && is_string($clean) && strlen($clean) === 4) {
+            $clean = '#'.$clean[1].$clean[1].$clean[2].$clean[2].$clean[3].$clean[3];
+        }
+
+        return $clean;
     }
 
     /** @return callable(string, string, array<string, mixed>=): void */

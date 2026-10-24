@@ -57,7 +57,8 @@ final class HeaderCatalog
             'search' => ['mode' => ['kind' => 'enum', 'options' => ['icon_row', 'field'], 'default' => 'icon_row']],
             'account' => ['style' => $styles],
             'wishlist' => ['style' => $styles, 'show_count' => ['kind' => 'bool', 'default' => false]],
-            'cart' => ['style' => $styles],
+            // DS-2c: the cart's own colours (null = inherit today's): the icon and label, the count badge's background and its number
+            'cart' => ['style' => $styles, 'color' => ['kind' => 'color', 'default' => null], 'badge_bg' => ['kind' => 'color', 'default' => null], 'badge_fg' => ['kind' => 'color', 'default' => null]],
             'text' => ['text' => ['kind' => 'text', 'max' => 120, 'default' => ''], 'url' => ['kind' => 'url', 'default' => '']],
             'html' => ['html' => ['kind' => 'html', 'max' => 4000, 'default' => '']],
             'button' => ['label' => ['kind' => 'text', 'max' => 30, 'default' => '', 'required' => true], 'url' => ['kind' => 'url', 'default' => '', 'required' => true], 'style' => ['kind' => 'enum', 'options' => ['primary', 'outline'], 'default' => 'primary']],
@@ -169,7 +170,7 @@ final class HeaderCatalog
 
         foreach ((self::all()[$type]['schema'] ?? []) as $name => $field) {
             // DS-2a.1: a field whose default IS null (a menu: "the menu of the place") keeps null; before, every null fell through to ''.
-            $defaults[$name] = array_key_exists('default', $field) && $field['default'] === null && $field['kind'] === 'menu' ? null : ($field['default'] ?? ($field['kind'] === 'bool' ? false : ($field['kind'] === 'int' ? ($field['min'] ?? 0) : '')));
+            $defaults[$name] = array_key_exists('default', $field) && $field['default'] === null && in_array($field['kind'], ['menu', 'color'], true) ? null : ($field['default'] ?? ($field['kind'] === 'bool' ? false : ($field['kind'] === 'int' ? ($field['min'] ?? 0) : '')));
         }
 
         return $defaults;

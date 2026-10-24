@@ -4,6 +4,7 @@ namespace App\Filament\Design\Zones;
 
 use App\Filament\Design\FieldForms;
 use App\Http\Controllers\Storefront\HeaderPreviewController;
+use App\Settings\AppearanceSettings;
 use App\Storefront\Design\ComponentRegistry;
 use App\Storefront\Design\Tree;
 use App\Storefront\Design\TreeEditor;
@@ -20,6 +21,7 @@ use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\Group;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Text;
+use Filament\Schemas\Components\Utilities\Get;
 
 /**
  * The «Хедър» zone of the Design screen (DS-2a, moved here in DS-2b without a change in behaviour): the header's desktop and phone trees, its palette and rules, its properties and its
@@ -230,9 +232,21 @@ final class HeaderZone implements DesignZone
             $node = TreeEditor::node($current, $selected['id']);
             $fields = $node === null ? [] : $this->fieldsOf($node['type'], $layout, TreeEditor::cellOf($current, $selected['id']) === self::DRAWER_CELL);
 
-            return [Section::make($node === null ? '' : $this->typeLabel($node['type']))->schema([
-                Group::make(array_map(static fn (string $name, array $field): Component => FieldForms::make($name, $field), array_keys($fields), array_values($fields)))->statePath('settings'),
-            ])];
+            $components = [];
+
+            foreach ($fields as $name => $field) {
+                // DS-2c: the colours of an element sit under a small heading, with a non-blocking hint when the badge's pair is hard to read
+                $name === 'color' && $node !== null && $node['type'] === 'cart' && $components[] = Text::make(__('design.cart.colors'))->weight('semibold');
+                $components[] = FieldForms::make($name, $field);
+            }
+
+            if ($node !== null && $node['type'] === 'cart') {
+                $components[] = Text::make(static fn (Get $get): string => (string) __('design.cart.low_contrast', ['ratio' => number_format(AppearanceSettings::contrastRatio((string) $get('badge_fg'), (string) $get('badge_bg')), 2)]))
+                    ->color('warning')->size('sm')
+                    ->visible(static fn (Get $get): bool => AppearanceSettings::isHex($get('badge_fg')) && AppearanceSettings::isHex($get('badge_bg')) && AppearanceSettings::contrastRatio((string) $get('badge_fg'), (string) $get('badge_bg')) < AppearanceSettings::MIN_CONTRAST);
+            }
+
+            return [Section::make($node === null ? '' : $this->typeLabel($node['type']))->schema([Group::make($components)->statePath('settings')])];
         }
 
         if ($selected['kind'] === 'row') {

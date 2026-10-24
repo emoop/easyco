@@ -1,5 +1,5 @@
 {
-    "hash": "498d7b99dd3b",
+    "hash": "12f30b746691",
     "layout": {
         "desktop": {
             "sticky": false,
@@ -95,7 +95,10 @@
                         {
                             "type": "cart",
                             "settings": {
-                                "style": "icon_label"
+                                "style": "icon_label",
+                                "color": null,
+                                "badge_bg": null,
+                                "badge_fg": null
                             }
                         },
                         {
@@ -195,7 +198,10 @@
                         {
                             "type": "cart",
                             "settings": {
-                                "style": "icon"
+                                "style": "icon",
+                                "color": null,
+                                "badge_bg": null,
+                                "badge_fg": null
                             }
                         }
                     ]

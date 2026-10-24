@@ -3440,3 +3440,45 @@ html:not(.js) .sf-bar-item:focus-within > .sf-sub {
         white-space: nowrap;
     }
 }
+
+/* ===== DS-2c: the colours of the header's cart element ====================================================================================================== */
+/* Variables exist only when the merchant set them (`--sf-cart-{d|m}-fg`, `-badge-bg`, `-badge-fg`). The fallbacks are TODAY's values, so an untouched shop renders the same. ORDER MATTERS: these
+   rules come after the row look (`.sf-hdr-row.sf-hdr-has-fg ...`) and after `.sf-hdr .sf-cart:hover`, and they carry three classes, so the cart's own colour wins over its row's colour; without
+   a cart colour the fallback is the row's text colour (when the row has one), else the header text colour, exactly the cascade before. */
+.sf-hdr-desktop .sf-hdr-row-top .sf-cart {
+    color: var(--sf-cart-d-fg, var(--sf-hdr-d-top-fg, var(--sf-header-text, #404040)));
+}
+
+.sf-hdr-desktop .sf-hdr-row-main .sf-cart {
+    color: var(--sf-cart-d-fg, var(--sf-hdr-d-main-fg, var(--sf-header-text, #404040)));
+}
+
+.sf-hdr-desktop .sf-hdr-row-bottom .sf-cart {
+    color: var(--sf-cart-d-fg, var(--sf-hdr-d-bottom-fg, var(--sf-header-text, #404040)));
+}
+
+.sf-hdr-mobile .sf-hdr-row-top .sf-cart {
+    color: var(--sf-cart-m-fg, var(--sf-hdr-m-top-fg, var(--sf-header-text, #404040)));
+}
+
+.sf-hdr-mobile .sf-hdr-row-main .sf-cart {
+    color: var(--sf-cart-m-fg, var(--sf-hdr-m-main-fg, var(--sf-header-text, #404040)));
+}
+
+.sf-hdr-desktop .sf-hdr-row .sf-cart:hover {
+    color: var(--sf-cart-d-fg, var(--sf-header-text, #171717));
+}
+
+.sf-hdr-mobile .sf-hdr-row .sf-cart:hover {
+    color: var(--sf-cart-m-fg, var(--sf-header-text, #171717));
+}
+
+.sf-hdr-desktop .sf-cart-count {
+    background-color: var(--sf-cart-d-badge-bg, var(--sf-primary, oklch(20.5% 0 none)));
+    color: var(--sf-cart-d-badge-fg, var(--sf-on-primary, #fff));
+}
+
+.sf-hdr-mobile .sf-cart-count {
+    background-color: var(--sf-cart-m-badge-bg, var(--sf-primary, oklch(20.5% 0 none)));
+    color: var(--sf-cart-m-badge-fg, var(--sf-on-primary, #fff));
+}

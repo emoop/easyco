@@ -126,6 +126,28 @@ final class HeaderLayout
             }
         }
 
+        // DS-2c: the cart element's colours, per device layout: `--sf-cart-{d|m}-fg`, `-badge-bg`, `-badge-fg`, only the ones that are set. A layout may hold more than one cart element (nothing forbids it):
+        // the FIRST one in reading order (rows top, main, bottom; slots left, centre, right) decides, because the variables are per layout, not per element.
+        foreach (['desktop' => 'd', 'mobile' => 'm'] as $name => $short) {
+            foreach ($layout[$name]['rows'] as $data) {
+                foreach (self::SLOTS as $slot) {
+                    foreach ($data[$slot] as $element) {
+                        if ($element['type'] !== 'cart') {
+                            continue;
+                        }
+
+                        foreach (['color' => 'fg', 'badge_bg' => 'badge-bg', 'badge_fg' => 'badge-fg'] as $setting => $suffix) {
+                            if (is_string($element['settings'][$setting] ?? null)) {
+                                $vars["--sf-cart-{$short}-{$suffix}"] = $element['settings'][$setting];
+                            }
+                        }
+
+                        continue 4;
+                    }
+                }
+            }
+        }
+
         return $vars;
     }
 

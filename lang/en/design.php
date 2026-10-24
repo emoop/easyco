@@ -47,6 +47,8 @@ return [
         ],
     ],
 
+    'cart' => ['colors' => 'Colours', 'low_contrast' => 'Low contrast between the number and the badge background (:ratio : 1, at least 4.5 : 1 is recommended).'],
+
     'footer' => [
         'lower' => 'Lower level',
         'line' => 'Text line',

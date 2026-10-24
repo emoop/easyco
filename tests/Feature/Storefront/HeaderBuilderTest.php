@@ -228,7 +228,7 @@ class HeaderBuilderTest extends TestCase
 
             return $l;
         });
-        $this->assertSame(['style' => 'icon'], HeaderValidator::validate($missing)->layout['desktop']['rows']['top']['left'][0]['settings'], 'missing settings are filled with their defaults');
+        $this->assertSame(['style' => 'icon', 'color' => null, 'badge_bg' => null, 'badge_fg' => null], HeaderValidator::validate($missing)->layout['desktop']['rows']['top']['left'][0]['settings'], 'missing settings are filled with their defaults');
     }
 
     public function test_the_html_element_is_sanitised_on_save(): void
