@@ -10,19 +10,47 @@
 
 /* ---- the field ------------------------------------------------------------------------------------------------------------------------ */
 
-.mpf-empty,
-.mpf-one {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-}
-
 .mpf-empty {
+    display: flex;
     min-height: 96px;
-    padding: 0 0.75rem;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.75rem;
     border: 1px dashed var(--gray-300);
     border-radius: 0.5rem;
-    flex-wrap: wrap;
+}
+
+/* a filled single field: the picture LARGE, the full width of the card, whole (contain) */
+.mpf-one {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.mpf-big {
+    display: flex;
+    width: 100%;
+    min-height: 120px;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    border-radius: 0.5rem;
+    background: var(--gray-100);
+    color: var(--gray-500);
+}
+
+.dark .mpf-big {
+    background: var(--gray-800);
+}
+
+.mpf-big img,
+.mpf-big video {
+    display: block;
+    width: 100%;
+    max-height: 420px;
+    object-fit: contain;
 }
 
 .dark .mpf-empty {
@@ -69,25 +97,6 @@
     text-align: center;
 }
 
-.mpf-info {
-    display: flex;
-    min-width: 0;
-    flex-direction: column;
-    gap: 0.2rem;
-}
-
-.mpf-name {
-    overflow: hidden;
-    font-weight: 600;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.mpf-dim {
-    font-size: var(--mp-fs-small);
-    color: var(--gray-500);
-}
-
 .mpf-actions {
     display: flex;
     flex-wrap: wrap;
@@ -117,21 +126,30 @@
     outline-offset: 2px;
 }
 
-.mpf-hint {
-    margin: 0.35rem 0 0;
-    font-size: var(--mp-fs-small);
-    color: var(--gray-500);
-}
-
 .mpf-many {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-    margin-bottom: 0.4rem;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
+    gap: 0.6rem;
+    margin-bottom: 0.5rem;
 }
 
 .mpf-tile {
     position: relative;
+    cursor: grab;
+}
+
+.mpf-tile.sortable-chosen {
+    cursor: grabbing;
+}
+
+.mpf-tile.sortable-ghost {
+    opacity: 0.4;
+}
+
+.mpf-tile .mpf-thumb-small {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 1;
 }
 
 .mpf-x {
@@ -147,6 +165,54 @@
     background: var(--gray-700);
     color: #fff;
     cursor: pointer;
+}
+
+/* ML-3: the order of a list of pictures — ← → under each thumbnail (real buttons, reachable by keyboard) */
+.mpf-order {
+    position: absolute;
+    inset-inline: 0;
+    bottom: 4px;
+    display: flex;
+    justify-content: center;
+    gap: 0.25rem;
+    /* keyboard reordering: invisible (but still reachable by Tab) until a button of the thumbnail has focus; laid over the picture, so it takes no room in the grid */
+    opacity: 0;
+}
+
+.mpf-tile:focus-within .mpf-order {
+    opacity: 1;
+}
+
+.mpf-move {
+    min-width: 28px;
+    padding: 0 0.3rem;
+    border: 1px solid var(--gray-300);
+    border-radius: 0.375rem;
+    font-size: var(--mp-fs-small);
+    line-height: 1.4;
+    background: rgba(255, 255, 255, 0.92);
+    color: var(--gray-900);
+    cursor: pointer;
+}
+
+.mpf-move:disabled {
+    opacity: 0.35;
+    cursor: default;
+}
+
+.mpf-move:focus-visible {
+    outline: 2px solid var(--primary-600);
+    outline-offset: 2px;
+}
+
+.dark .mpf-move {
+    border-color: var(--gray-600);
+}
+
+.mp-note {
+    margin: 0.2rem 0 0;
+    font-size: var(--mp-fs-small);
+    color: var(--gray-500);
 }
 
 /* ---- the modal ------------------------------------------------------------------------------------------------------------------------- */
@@ -338,6 +404,11 @@
     background: var(--gray-800);
 }
 
+.mp-preview video {
+    display: block;
+    max-width: 100%;
+}
+
 .mp-preview img {
     display: block;
     max-width: 100%;
@@ -500,7 +571,8 @@
     }
 
     .mpf-remove,
-    .mpf-x {
+    .mpf-x,
+    .mpf-move {
         min-height: 44px;
         min-width: 44px;
     }

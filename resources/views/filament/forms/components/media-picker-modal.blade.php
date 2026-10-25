@@ -13,5 +13,5 @@
         @endif
         $wire.unmountAction();
     " x-on:media-picker-cancel="$wire.unmountAction()">
-    @livewire(\App\Livewire\MediaPickerBrowser::class, ['field' => $field, 'multiple' => $multiple, 'max' => $max, 'tab' => $tab], key('mp-'.$field.'-'.$tab))
+    @livewire(\App\Livewire\MediaPickerBrowser::class, ['field' => $field, 'multiple' => $multiple, 'max' => $max, 'tab' => $tab, 'kind' => $kind ?? 'image', 'minWidth' => $minWidth ?? null, 'minHeight' => $minHeight ?? null], key('mp-'.$field.'-'.$tab))
 </div>

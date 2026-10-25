@@ -3,6 +3,7 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Concerns\AuthorizesViaStaffPermission;
+use App\Filament\Forms\Components\MediaPicker;
 use App\Filament\NavigationGroup;
 use App\Filament\Resources\ProductResource\Pages\CreateProduct;
 use App\Filament\Resources\ProductResource\Pages\CreateVariableProduct;
@@ -52,6 +53,7 @@ use EasyCo\Media\Storage\MediaUpload;
 use EasyCo\Media\Enums\MediaType;
 use EasyCo\Media\Jobs\ProcessMediaAssetJob;
 use EasyCo\Media\MediaAsset;
+use EasyCo\Media\Persistence\Eloquent\ProductMediaModel;
 use EasyCo\Pricing\PriceRange;
 use EasyCo\Staff\Enums\Permission;
 use Filament\Actions\Action;
@@ -1065,95 +1067,55 @@ class ProductResource extends Resource
     }
 
     /**
-     * The single featured/representative photo — a real, separate
-     * FileUpload field for this task's own WooCommerce-style split, but
-     * NOT a separate underlying concept: ProductMedia's own class
-     * docblock records a deliberate "NO is_primary field — the item at
-     * sortOrder = 0 is implicitly the primary photo" decision. This
-     * field is edited independently for a cleaner admin UI, but is
-     * merged with galleryPhotoComponents()'s own array into ONE ordered
-     * MediaType::IMAGE collection before ever reaching
-     * CreateProduct::attachMedia()/EditProduct::syncMedia() — this
-     * field's value always becomes sort_order 0, never a second,
-     * competing "is primary" concept.
+     * The single featured/representative photo — a media picker (ML-3: «Избери от медията» OR «Качи нова»; the state is a MEDIA ID, never a disk path). NOT a separate underlying
+     * concept: ProductMedia's own class docblock records a deliberate "NO is_primary field — the item at sortOrder = 0 is implicitly the primary photo" decision. This field is edited
+     * independently for a cleaner admin UI, but is merged with galleryPhotoComponents()'s own list into ONE ordered image collection before ever reaching
+     * ProductPhotoSync (CreateProduct / EditProduct / EditVariableProduct) — this field's value always becomes sort_order 0, never a second, competing "is primary" concept.
+     * Removing the photo only detaches it; the asset stays in «Медия».
      *
      * @return array<int, Component>
      */
     protected static function mainPhotoComponents(): array
     {
         return [
-            FileUpload::make('main_photo')
-                ->hiddenLabel()
-                ->image()
-                // extraAttributes() class hook — admin-product-media.css
-                // targets `.ec-product-main-photo`/`.ec-product-video`
-                // to add horizontal padding around this single large
-                // preview tile, which Filament's own FileUpload panel
-                // otherwise renders edge-to-edge.
-                ->extraAttributes(['class' => 'ec-product-main-photo'])
-                ->placeholder(static::mediaUploadPlaceholder('services.media.max_image_size_kb', 10240))
-                // Real enforcement, not just informational placeholder
-                // text — unlike ->maxFiles() on gallery_photos below,
-                // ->maxSize() has no MediaLimitExceededException-style
-                // domain message it could shadow; Filament's own
-                // "must not be greater than X KB" error is the real,
-                // only enforcement here, same config key as the
-                // placeholder text above so the two can never disagree.
-                ->maxSize((int) config('services.media.max_image_size_kb', 10240))
-                ->disk(config('services.media.default_disk', 'public'))
-                // Mirrors BrandResource's own createLogoMediaAsset()
-                // sequence exactly — routes every uploaded file through
-                // the real MediaStorageAdapter::store() call, not
-                // Filament's own storeAs()/directory() generation.
-                ->saveUploadedFileUsing(function (TemporaryUploadedFile $file, BaseFileUpload $component): string {
-                    // ML-0: an image is stored without its metadata; one that cannot be cleaned is a field error, not a 500
-                    return MediaUpload::path($file->get(), $file->getClientOriginalName(), $component->getStatePath());
-                }),
+            static::photoPicker('main_photo_id'),
         ];
     }
 
     /**
-     * The rest of the product's photos — small thumbnails, 3 per row
-     * (Filament's own 'grid' panelLayout already renders 3 columns at
-     * the 'lg' breakpoint, confirmed against its shipped CSS; no custom
-     * grid math needed). See mainPhotoComponents()'s own docblock for
-     * why this is still just the SAME underlying MediaType::IMAGE
-     * collection as the main photo, split at the UI layer only.
+     * The rest of the product's photos — a picker with a list (ML-3): thumbnails in order, ← → to reorder, × to detach. At most `max_photos_per_product` − 1 (the main photo is one of the
+     * product's photos). That is only the FIELD'S limit: ProductMediaCountGuard (which counts every pivot of the product, the video too) stays the one real enforcement point on save,
+     * with its own message, matching the API.
      *
      * @return array<int, Component>
      */
     protected static function galleryPhotoComponents(): array
     {
         return [
-            FileUpload::make('gallery_photos')
-                ->hiddenLabel()
-                ->multiple()
-                ->reorderable()
-                ->image()
-                ->panelLayout('grid')
-                ->placeholder(static::mediaUploadPlaceholder('services.media.max_image_size_kb', 10240))
-                ->maxSize((int) config('services.media.max_image_size_kb', 10240))
-                // Deliberately NO ->maxFiles(): confirmed against a real
-                // failing test that Filament's own maxFiles() is hard,
-                // blocking Livewire field validation — it would reject
-                // an over-limit submission with its own generic message
-                // ("must not have more than N items") before
-                // handleRecordCreation() ever runs, making
-                // ProductMediaCountGuard's real, specific
-                // MediaLimitExceededException message (what this task
-                // explicitly requires the user to see) unreachable. The
-                // guard inside CreateProduct::attachMedia()/
-                // EditProduct::syncMedia() is the one and only real
-                // enforcement point now, matching the API's own
-                // ProductMediaController::store() behavior exactly.
-                ->disk(config('services.media.default_disk', 'public'))
-                ->saveUploadedFileUsing(function (TemporaryUploadedFile $file, BaseFileUpload $component): string {
-                    // ML-0: an image is stored without its metadata; one that cannot be cleaned is a field error, not a 500
-                    return MediaUpload::path($file->get(), $file->getClientOriginalName(), $component->getStatePath());
-                }),
+            static::photoPicker('gallery_photo_ids', max(1, (int) config('services.media.max_photos_per_product', 10) - 1))
+                ->rules([
+                    fn (Get $get): \Closure => function (string $attribute, mixed $value, \Closure $fail) use ($get): void {
+                        $main = $get('main_photo_id');
+
+                        if (filled($main) && in_array((int) $main, array_map('intval', (array) $value), true)) {
+                            $fail(__('products.fields.gallery_has_main'));
+                        }
+                    },
+                ]),
         ];
     }
 
+    /** A product photo picker: images only, at least the configured minimum size, the photos the product already has are never re-checked against it. */
+    protected static function photoPicker(string $name, ?int $max = null): MediaPicker
+    {
+        $picker = MediaPicker::make($name)
+            ->hiddenLabel()
+            ->plainImagesOnly()
+            ->minDimensions()
+            ->exemptFromMinimum(fn (?\Illuminate\Database\Eloquent\Model $record): array => $record === null ? [] : ProductMediaModel::query()->where('product_id', $record->getKey())->pluck('media_id')->all());
+
+        return $max === null ? $picker : $picker->multiple($max);
+    }
     /**
      * media-domain-design.md §4/§8: VIDEO is a real, supported
      * MediaAsset type — stored exactly as uploaded, no processing
@@ -1174,17 +1136,10 @@ class ProductResource extends Resource
     protected static function videoComponents(): array
     {
         return [
-            FileUpload::make('video')
+            // ML-3: a media picker in video mode (single). The state is a media id; the autoplay toggle below belongs to the pivot of this one video.
+            MediaPicker::make('video_id')
                 ->hiddenLabel()
-                ->acceptedFileTypes(['video/*'])
-                ->extraAttributes(['class' => 'ec-product-video'])
-                ->placeholder(static::mediaUploadPlaceholder('services.media.max_video_size_kb', 102400))
-                ->maxSize((int) config('services.media.max_video_size_kb', 102400))
-                ->disk(config('services.media.default_disk', 'public'))
-                ->saveUploadedFileUsing(function (TemporaryUploadedFile $file, BaseFileUpload $component): string {
-                    // ML-0: an image is stored without its metadata; one that cannot be cleaned is a field error, not a 500
-                    return MediaUpload::path($file->get(), $file->getClientOriginalName(), $component->getStatePath());
-                }),
+                ->videos(),
             Toggle::make('video_autoplay')
                 ->label(__('products.fields.video_autoplay'))
                 ->default(false),
@@ -2137,6 +2092,47 @@ class ProductResource extends Resource
             });
     }
 
+    /**
+     * «Виж в магазина» (ML-3 §4): an icon button beside the page title of EditProduct, EditVariableProduct and ViewProduct that opens the product's storefront page in a NEW tab. ONE factory,
+     * three mounts, so the pages cannot drift. It reads the SAVED record (`$record`, never the form's unsaved state), so after «Запази» the header answers for what is stored. Enabled only when
+     * StorefrontVisibility::isProductVisible() says a customer can see the product; otherwise it is disabled and the tooltip says why (draft, archived, hidden from the catalogue). Stock is
+     * deliberately NOT a reason: "in stock" is a fact about a shown product, never part of visibility (StorefrontVisibility's own docblock). Nothing in the storefront changes.
+     */
+    public static function viewInStoreAction(): Action
+    {
+        return Action::make('view_in_store')
+            ->label(__('products.view_in_store.label'))
+            ->icon('heroicon-o-arrow-top-right-on-square')
+            ->iconButton()
+            ->color('gray')
+            ->tooltip(fn (ProductModel $record): string => static::storeVisibilityReason(static::savedProduct($record)) ?? __('products.view_in_store.label'))
+            ->extraAttributes(['aria-label' => __('products.view_in_store.label'), 'rel' => 'noopener'])
+            ->disabled(fn (ProductModel $record): bool => static::storeVisibilityReason(static::savedProduct($record)) !== null)
+            ->url(fn (ProductModel $record): ?string => static::storeVisibilityReason($saved = static::savedProduct($record)) === null ? route('storefront.product', ['slug' => $saved->slug]) : null, shouldOpenInNewTab: true);
+    }
+
+    /** The product as it is STORED right now (the page's own model may predate a save, and never carries unsaved form values). */
+    private static function savedProduct(ProductModel $record): ProductModel
+    {
+        return ProductModel::query()->withTrashed()->find($record->getKey()) ?? $record;
+    }
+
+    /** Why the storefront does not show this (saved) product, as a sentence; null when it is shown. */
+    public static function storeVisibilityReason(ProductModel $record): ?string
+    {
+        if (app(\App\Storefront\Visibility\StorefrontVisibility::class)->isProductVisible($record)) {
+            return null;
+        }
+
+        $why = match (true) {
+            $record->status === ProductStatus::DRAFT->value => __('products.view_in_store.draft'),
+            $record->status === ProductStatus::ARCHIVED->value => __('products.view_in_store.archived'),
+            $record->catalog_visibility !== CatalogVisibility::VISIBLE->value => __('products.view_in_store.hidden'),
+            default => null,
+        };
+
+        return __('products.view_in_store.not_shown').($why === null ? '' : ': '.$why);
+    }
     /**
      * "History" — links to ProductActivityLog, a real page navigation
      * (->url(), not ->action()) mirroring the "products" count column's

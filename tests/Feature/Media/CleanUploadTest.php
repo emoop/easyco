@@ -189,19 +189,13 @@ class CleanUploadTest extends TestCase
 
     public function test_a_product_photo_that_cannot_be_cleaned_is_a_field_error_not_a_500(): void
     {
+        // ML-3: the product photo is a media picker; its upload tab (with the product's minimum size) refuses a picture that cannot be cleaned, stores nothing and does not crash
         $this->actingAsPanelAdministrator();
 
-        Livewire::test(CreateProduct::class)
-            ->fillForm([
-                'name' => 'P', 'slug' => 'p', 'base_sku' => 'SKU-P', 'status' => ProductStatus::DRAFT->value, 'catalog_visibility' => CatalogVisibility::HIDDEN->value,
-                'main_photo' => UploadedFile::fake()->createWithContent('main.jpg', $this->heic()),
-            ])
-            ->call('create')
-            ->tap(fn ($c) => fwrite(STDERR, "
-ERR: ".json_encode(array_keys($c->errors()->toArray()))."
-"))
-            ->assertHasErrors(['data.main_photo']);
+        $component = Livewire::test(\App\Livewire\MediaPickerBrowser::class, ['field' => 'data.main_photo_id', 'minWidth' => 600, 'minHeight' => 600])
+            ->set('files', [UploadedFile::fake()->createWithContent('main.jpg', $this->heic())]);
 
+        $this->assertSame(['main.jpg'], array_column($component->get('refused'), 'name'));
         $this->assertSame([], $this->files());
     }
 
@@ -219,24 +213,13 @@ ERR: ".json_encode(array_keys($c->errors()->toArray()))."
 
     public function test_a_variation_photo_that_cannot_be_cleaned_is_a_field_error_not_a_500(): void
     {
+        // ML-3: a variation photo is a media picker; its upload tab refuses a picture that cannot be cleaned, stores nothing and does not crash
         $this->actingAsPanelAdministrator();
 
-        $definition = new AttributeDefinition(id: null, code: 'color', name: 'Color', type: AttributeType::SELECT);
-        app(AttributeDefinitionRepository::class)->save($definition);
-        $black = new AttributeValue(id: null, attributeDefinitionId: $definition->id(), value: 'Black');
-        app(AttributeValueRepository::class)->save($black);
-        $product = Product::createVariable('Variable Shirt', 'SKU-VAR', 'variable-shirt');
-        $product->declareVariationAxes([new VariationAxis($definition, [$black])]);
-        $product->addStandardVariation([$definition->id() => $black->id()], 'SKU-VAR-BLACK');
-        app(ProductRepository::class)->save($product);
+        $component = Livewire::test(\App\Livewire\MediaPickerBrowser::class, ['field' => 'data.existing_variations.x.variation_photo_ids', 'multiple' => true, 'max' => 3, 'minWidth' => 600, 'minHeight' => 600])
+            ->set('files', [UploadedFile::fake()->createWithContent('black.jpg', $this->heic())]);
 
-        $component = Livewire::test(EditVariableProduct::class, ['record' => ProductModel::find($product->id())->id]);
-        $key = array_key_first($component->get('data.existing_variations'));
-
-        $component->set("data.existing_variations.{$key}.variation_photos", [UploadedFile::fake()->createWithContent('black.jpg', $this->heic())])
-            ->call('save')
-            ->assertHasErrors(["data.existing_variations.{$key}.variation_photos"]);
-
+        $this->assertSame(['black.jpg'], array_column($component->get('refused'), 'name'));
         $this->assertSame([], $this->files());
         $this->assertSame(0, \EasyCo\Media\Persistence\Eloquent\VariationMediaModel::query()->count());
     }

@@ -22,8 +22,8 @@
 
             <label class="mp-drop" x-data="{ over: false }" x-on:dragover.prevent="over = true" x-on:dragleave.prevent="over = false" x-on:drop="over = false" x-bind:class="{ 'mp-drop-over': over }">
                 <span>{{ __('media.picker.drop') }}</span>
-                <small>{{ __('media.picker.drop_help', ['max' => $maxFiles]) }}</small>
-                <input type="file" class="mp-file" multiple accept="{{ $accept }}" wire:model="files">
+                <small>{{ $kind === 'video' ? __('media.picker.drop_help_video') : __('media.picker.drop_help', ['max' => $maxFiles]) }}@if ($minWidth) {{ __('media.picker.drop_help_min', ['w' => $minWidth, 'h' => $minHeight]) }}@endif</small>
+                <input type="file" class="mp-file" @if ($kind !== 'video') multiple @endif accept="{{ $accept }}" wire:model="files">
                 <span wire:loading wire:target="files" class="mp-busy">{{ __('media.picker.uploading') }}</span>
             </label>
         </div>
@@ -48,10 +48,15 @@
                                 @endphp
                                 <button type="button" wire:key="mp-{{ $row->id }}" class="mp-card @if ($on) mp-card-on @endif" aria-pressed="{{ $on ? 'true' : 'false' }}" title="{{ $name }}"
                                         wire:click="toggle({{ (int) $row->id }})" wire:dblclick="choose({{ (int) $row->id }})">
-                                    @if ($thumb !== null)
+                                    @if ($kind === 'video')
+                                        <span class="mp-wait">▶ {{ \Illuminate\Support\Str::limit($name, 28) }}</span>
+                                    @elseif ($thumb !== null)
                                         <img src="{{ $thumb }}" alt="{{ $row->alt_text }}" loading="lazy" decoding="async" width="150" height="150">
                                     @else
                                         <span class="mp-wait">{{ __('media.library.state.processing') }}</span>
+                                    @endif
+                                    @if ($minWidth !== null && ($row->width === null || $row->height === null))
+                                        <span class="mp-note">{{ __('media.picker.unknown_size') }}</span>
                                     @endif
                                     @if ($on)
                                         <span class="mp-check" aria-hidden="true">✓</span>
@@ -69,7 +74,9 @@
                 @if ($current !== null)
                     <aside class="mp-side" aria-label="{{ __('media.picker.selected') }}">
                         <div class="mp-preview">
-                            @if ($currentPreview !== null)
+                            @if ($currentVideoUrl !== null)
+                                <video src="{{ $currentVideoUrl }}" controls preload="metadata" muted></video>
+                            @elseif ($currentPreview !== null)
                                 <img src="{{ $currentPreview }}" alt="{{ $current->alt_text }}" decoding="async">
                             @else
                                 <span class="mp-wait">{{ __('media.library.state.processing') }}</span>
@@ -81,7 +88,7 @@
                             @if ($current->size_bytes) · {{ $current->size_bytes >= 1048576 ? number_format($current->size_bytes / 1048576, 2).' MB' : number_format($current->size_bytes / 1024, 1).' KB' }}@endif
                         </p>
 
-                        @if (! $multiple)
+                        @if (! $multiple && $kind !== 'video')
                             <label class="mp-label" for="mp-alt">{{ __('media.library.details.alt') }}</label>
                             <input type="text" id="mp-alt" class="mp-input" maxlength="200" wire:model="alt" autocomplete="off">
                             @error('alt')<p class="mp-error" role="alert">{{ $message }}</p>@enderror

@@ -62,6 +62,7 @@ use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
 use Tests\TestCase;
 use Tests\Concerns\GivesProductsAShippingClass;
+use Tests\Concerns\MakesPickerAssets;
 
 /**
  * Exercises the real, production ProductResource — SIMPLE products only
@@ -78,6 +79,7 @@ use Tests\Concerns\GivesProductsAShippingClass;
 class ProductResourceTest extends TestCase
 {
     use GivesProductsAShippingClass;
+    use MakesPickerAssets;
     use RefreshDatabase;
 
     protected function setUp(): void
@@ -559,8 +561,9 @@ class ProductResourceTest extends TestCase
 
         Storage::fake(config('services.media.default_disk', 'public'));
 
-        $mainPhoto = UploadedFile::fake()->image('main.jpg');
-        $galleryPhoto = UploadedFile::fake()->image('gallery.jpg');
+        // ML-3: the picker's state is MEDIA IDS (was fake uploaded files)
+        $mainPhoto = $this->pickerAsset()->id;
+        $galleryPhoto = $this->pickerAsset()->id;
 
         Livewire::test(CreateProduct::class)
             ->fillForm([
@@ -569,8 +572,8 @@ class ProductResourceTest extends TestCase
                 'base_sku' => 'SKU-PHOTO',
                 'status' => ProductStatus::DRAFT->value,
                 'catalog_visibility' => CatalogVisibility::HIDDEN->value,
-                'main_photo' => $mainPhoto,
-                'gallery_photos' => [$galleryPhoto],
+                'main_photo_id' => $mainPhoto,
+                'gallery_photo_ids' => [$galleryPhoto],
             ])
             ->call('create')
             ->assertHasNoFormErrors();
@@ -580,7 +583,9 @@ class ProductResourceTest extends TestCase
 
         $this->assertCount(2, $pivots);
         $this->assertSame(0, $pivots[0]->sortOrder());
+        $this->assertSame((string) $mainPhoto, $pivots[0]->mediaId());
         $this->assertSame(1, $pivots[1]->sortOrder());
+        $this->assertSame((string) $galleryPhoto, $pivots[1]->mediaId());
     }
 
     /**
@@ -600,9 +605,11 @@ class ProductResourceTest extends TestCase
 
         $form = Livewire::test(CreateProduct::class)->instance()->form;
 
-        $this->assertStringContainsString('10 MB', (string) $form->getComponent('main_photo')->getPlaceholder());
-        $this->assertStringContainsString('10 MB', (string) $form->getComponent('gallery_photos')->getPlaceholder());
-        $this->assertStringContainsString('100 MB', (string) $form->getComponent('video')->getPlaceholder());
+        // ML-3: the two photo fields are media pickers now (the size limit lives in the picker's upload tab, MediaUploader); only the video is still a FileUpload
+        $this->assertInstanceOf(\App\Filament\Forms\Components\MediaPicker::class, $form->getComponent('main_photo_id'));
+        $this->assertSame(max(1, (int) config('services.media.max_photos_per_product', 10) - 1), $form->getComponent('gallery_photo_ids')->getMaxItems());
+        // ML-3 §3: the video is a media picker in video mode too (its size limit lives in the upload tab)
+        $this->assertTrue($form->getComponent('video_id')->isVideo());
     }
 
     /**
@@ -618,52 +625,34 @@ class ProductResourceTest extends TestCase
      */
     public function test_a_main_photo_larger_than_the_real_configured_image_limit_is_rejected(): void
     {
+        // ML-3: the main photo is a media picker; the size limit is enforced by the picker's UPLOAD tab (MediaUploader, the same config key), before anything is stored.
         $this->actingAsPanelAdministrator();
 
         Storage::fake(config('services.media.default_disk', 'public'));
+        config(['services.media.max_image_size_kb' => 100]);
 
-        $maxImageKb = (int) config('services.media.max_image_size_kb', 10240);
-        $maxVideoKb = (int) config('services.media.max_video_size_kb', 102400);
+        $jpeg = $this->jpegBytes();
+        $oversize = $jpeg.str_repeat("\0", 101 * 1024);
 
-        // Deliberately between the two limits, not just $maxImageKb + 1:
-        // config/livewire.php's own global temporary-upload rule is set
-        // to the LARGER of the two real media limits (max_video_size_kb
-        // here), so a file only slightly over the image limit could
-        // still be swallowed by that earlier, coarser layer before ever
-        // reaching this field's own ->maxSize() — asserting a genuinely
-        // different, real "form has errors" outcome than that layer's
-        // own (untestable via this harness — see this test's sibling
-        // video-upload-limit note). Using the midpoint isolates THIS
-        // field's own maxSize() specifically.
-        $oversizeKb = intdiv($maxImageKb + $maxVideoKb, 2);
-        $this->assertGreaterThan($maxImageKb, $oversizeKb);
-        $this->assertLessThan($maxVideoKb, $oversizeKb);
+        $file = UploadedFile::fake()->createWithContent('too-big.jpg', $oversize);
 
-        Livewire::test(CreateProduct::class)
-            ->fillForm([
-                'name' => 'Oversized Photo Product',
-                'slug' => 'oversized-photo-product',
-                'base_sku' => 'SKU-BIGPHOTO',
-                'status' => ProductStatus::DRAFT->value,
-                'catalog_visibility' => CatalogVisibility::HIDDEN->value,
-                'main_photo' => UploadedFile::fake()->create('too-big.jpg', $oversizeKb, 'image/jpeg'),
-            ])
-            ->call('create')
-            // Not ->assertHasFormErrors(['main_photo' => 'max']): the
-            // FileUpload field validates file size via its own nested
-            // Validator::make() call internally (BaseFileUpload's real
-            // source), surfacing only that nested validator's rendered
-            // message string on the outer schema, not a bare 'max' rule
-            // name Livewire's own failedRules() could match — confirmed
-            // by running this exact assertion and reading the real
-            // failure output. Presence of any error on the field is
-            // still a real, meaningful assertion that ->maxSize() did
-            // reject the file, not a false positive from a coincidence.
-            ->assertHasFormErrors(['main_photo']);
+        $component = Livewire::test(\App\Livewire\MediaPickerBrowser::class, ['field' => 'data.main_photo_id', 'tab' => 'upload', 'minWidth' => 1, 'minHeight' => 1])
+            ->set('files', [$file]);
 
-        $this->assertNull(ProductModel::where('slug', 'oversized-photo-product')->first());
+        $this->assertSame([], \EasyCo\Media\Persistence\Eloquent\MediaAssetModel::query()->pluck('id')->all(), 'nothing was stored');
+        $this->assertCount(1, $component->get('refused'));
+        $this->assertSame(__('media.library.upload.too_large'), $component->get('refused')[0]['reason']);
     }
 
+    private function jpegBytes(): string
+    {
+        ob_start();
+        $image = imagecreatetruecolor(700, 700);
+        imagejpeg($image);
+        imagedestroy($image);
+
+        return (string) ob_get_clean();
+    }
     /**
      * Single video per product (this task's own explicit scope) — the
      * autoplay toggle's value must land on the video's own
@@ -683,7 +672,7 @@ class ProductResourceTest extends TestCase
                 'base_sku' => 'SKU-VIDEO',
                 'status' => ProductStatus::DRAFT->value,
                 'catalog_visibility' => CatalogVisibility::HIDDEN->value,
-                'video' => UploadedFile::fake()->create('clip.mp4', 500, 'video/mp4'),
+                'video_id' => $videoId = $this->pickerVideo()->id,
                 'video_autoplay' => true,
             ])
             ->call('create')
@@ -693,6 +682,7 @@ class ProductResourceTest extends TestCase
         $pivots = app(ProductMediaRepository::class)->findByProductId((string) $productModel->id);
 
         $this->assertCount(1, $pivots);
+        $this->assertSame((string) $videoId, $pivots[0]->mediaId());
         $this->assertTrue($pivots[0]->autoplay());
 
         $asset = MediaAssetModel::find($pivots[0]->mediaId());
@@ -722,7 +712,7 @@ class ProductResourceTest extends TestCase
                 'base_sku' => 'SKU-VIDEDIT',
                 'status' => ProductStatus::DRAFT->value,
                 'catalog_visibility' => CatalogVisibility::HIDDEN->value,
-                'video' => UploadedFile::fake()->create('original.mp4', 500, 'video/mp4'),
+                'video_id' => $original = $this->pickerVideo()->id,
                 'video_autoplay' => true,
             ])
             ->call('create')
@@ -734,40 +724,33 @@ class ProductResourceTest extends TestCase
             ->assertFormSet(['video_autoplay' => true]);
 
         $editComponent
-            ->fillForm(['video' => UploadedFile::fake()->create('replacement.mp4', 500, 'video/mp4'), 'video_autoplay' => false])
+            ->fillForm(['video_id' => $replacement = $this->pickerVideo()->id, 'video_autoplay' => false])
             ->call('save')
             ->assertHasNoFormErrors();
 
         $pivots = app(ProductMediaRepository::class)->findByProductId((string) $productModel->id);
         $this->assertCount(1, $pivots, 'the old video must be detached when replaced, not left attached alongside the new one');
         $this->assertFalse($pivots[0]->autoplay());
+        $this->assertSame((string) $replacement, $pivots[0]->mediaId());
+        $this->assertNotNull(MediaAssetModel::find($original), 'the replaced video is only detached: it stays in «Медия»');
     }
 
     public function test_exceeding_the_real_configured_max_photo_count_is_rejected_with_the_real_message(): void
     {
+        // ML-3: the gallery picker holds at most max-1 photos (the main photo is one of them). The guard that counts EVERY pivot (the video too) stays the one real enforcement point
+        // on save: a main photo + a full gallery + a video is one pivot too many, and the guard's own message is what the merchant sees.
         $this->actingAsPanelAdministrator();
 
         Storage::fake(config('services.media.default_disk', 'public'));
 
         $max = (int) config('services.media.max_photos_per_product', 10);
-        $files = [];
-        for ($i = 0; $i < $max + 1; $i++) {
-            $files[] = UploadedFile::fake()->image("photo{$i}.jpg");
+        $gallery = [];
+        for ($i = 0; $i < $max - 1; $i++) {
+            $gallery[] = $this->pickerAsset()->id;
         }
 
-        // AUTO_INCREMENT is not transactional in MySQL/InnoDB — never
-        // rolled back, including by RefreshDatabase's own per-test
-        // transaction rollback for every EARLIER test in this same
-        // run. MAX(id) on the currently-visible (post-rollback, so
-        // empty-of-prior-tests') rows is therefore NOT a reliable
-        // predictor of the next id — it undercounts by however many
-        // rows every previous test already inserted-then-rolled-back
-        // this run. The real next id is read directly from MySQL's own
-        // AUTO_INCREMENT counter instead, which is what this
-        // about-to-be-rolled-back Product will actually briefly hold
-        // inside the transaction — letting the real, exact
-        // MediaLimitExceededException message be predicted and
-        // asserted, not just its rollback effect.
+        // AUTO_INCREMENT is not transactional in MySQL/InnoDB — never rolled back, including by RefreshDatabase's own per-test transaction rollback for every EARLIER test in this same
+        // run. MAX(id) on the currently-visible rows is therefore NOT a reliable predictor of the next id; the real next id is read from MySQL's own AUTO_INCREMENT counter instead.
         $expectedProductId = (string) DB::table('information_schema.tables')
             ->where('table_schema', DB::getDatabaseName())
             ->where('table_name', 'catalog_products')
@@ -780,7 +763,9 @@ class ProductResourceTest extends TestCase
                 'base_sku' => 'SKU-MANY',
                 'status' => ProductStatus::DRAFT->value,
                 'catalog_visibility' => CatalogVisibility::HIDDEN->value,
-                'gallery_photos' => $files,
+                'main_photo_id' => $this->pickerAsset()->id,
+                'gallery_photo_ids' => $gallery,
+                'video_id' => $this->pickerVideo()->id,
             ])
             ->call('create')
             ->assertNotified(
@@ -789,7 +774,6 @@ class ProductResourceTest extends TestCase
 
         $this->assertNull(ProductModel::where('slug', 'too-many-photos')->first(), 'the whole creation must roll back on a media-limit rejection');
     }
-
     public function test_the_real_permission_matrix_across_all_three_shipped_roles(): void
     {
         $this->actingAsPanelAdministrator();
@@ -867,7 +851,7 @@ class ProductResourceTest extends TestCase
                 'base_sku' => 'SKU-NAV',
                 'status' => ProductStatus::DRAFT->value,
                 'catalog_visibility' => CatalogVisibility::HIDDEN->value,
-                'main_photo' => UploadedFile::fake()->image('navigable.jpg'),
+                'main_photo_id' => $this->pickerAsset()->id,
             ])
             ->call('create')
             ->assertHasNoFormErrors();
@@ -1101,8 +1085,8 @@ class ProductResourceTest extends TestCase
                 'base_sku' => 'SKU-THUMB',
                 'status' => ProductStatus::DRAFT->value,
                 'catalog_visibility' => CatalogVisibility::HIDDEN->value,
-                'main_photo' => UploadedFile::fake()->image('first.jpg'),
-                'gallery_photos' => [UploadedFile::fake()->image('second.jpg')],
+                'main_photo_id' => $this->pickerAsset()->id,
+                'gallery_photo_ids' => [$this->pickerAsset()->id],
             ])
             ->call('create')
             ->assertHasNoFormErrors();

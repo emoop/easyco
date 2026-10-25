@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\ProductResource\Pages;
 
 use App\Filament\Resources\ProductResource;
+use App\Media\SyncsProductPhotos;
 use App\Services\ActivityLogger;
 use App\Services\ProductStatusChanger;
 use App\Services\ProductPricingAndStock;
@@ -49,6 +50,14 @@ use RuntimeException;
  */
 class EditProduct extends EditRecord
 {
+    use SyncsProductPhotos;
+
+    /** «Виж в магазина» beside the title (ML-3 §4): the saved product's storefront page in a new tab. */
+    protected function getHeaderActions(): array
+    {
+        return [ProductResource::viewInStoreAction()];
+    }
+
     protected static string $resource = ProductResource::class;
 
     /**
@@ -95,29 +104,9 @@ class EditProduct extends EditRecord
         // gallery_photos. Only one video pivot is ever expected (this
         // task's own single-video-per-product scope); its own
         // autoplay() is seeded alongside it.
-        $data['main_photo'] = null;
-        $data['gallery_photos'] = [];
-        $data['video'] = null;
-        $data['video_autoplay'] = false;
-
-        foreach (app(ProductMediaRepository::class)->findByProductId($productId) as $pivot) {
-            $asset = MediaAssetModel::find($pivot->mediaId());
-
-            if ($asset === null) {
-                continue;
-            }
-
-            if ($asset->type === MediaType::IMAGE->value) {
-                if ($data['main_photo'] === null) {
-                    $data['main_photo'] = $asset->path;
-                } else {
-                    $data['gallery_photos'][] = $asset->path;
-                }
-            } elseif ($asset->type === MediaType::VIDEO->value) {
-                $data['video'] = $asset->path;
-                $data['video_autoplay'] = $pivot->autoplay();
-            }
-        }
+        // ML-3: the photos are media IDS (the picker's state), see SyncsProductPhotos
+        $data = $this->fillProductPhotos($productId, $data);
+        // the video (media id + autoplay) is filled by fillProductPhotos() too
 
         // barcode/is_purchasable live on the universal Variation, not
         // ProductModel — without this, every Edit form open silently
@@ -303,17 +292,7 @@ class EditProduct extends EditRecord
         // separate "is primary" concept; these are still ONE ordered
         // MediaType::IMAGE collection underneath the two Filament
         // fields).
-        $photoPaths = [];
-        if (filled($data['main_photo'] ?? null)) {
-            $photoPaths[] = $data['main_photo'];
-        }
-        foreach ($data['gallery_photos'] ?? [] as $path) {
-            $photoPaths[] = $path;
-        }
-        $this->syncMedia($product->id(), $photoPaths, MediaType::IMAGE);
-
-        $videoPaths = filled($data['video'] ?? null) ? [$data['video']] : [];
-        $this->syncMedia($product->id(), $videoPaths, MediaType::VIDEO, (bool) ($data['video_autoplay'] ?? false));
+        $this->syncProductPhotos($product->id(), $data);
 
         // ONLY after the normal media sync above has already reconciled
         // the submitted (unchanged) media fields against the DB — see
@@ -478,114 +457,6 @@ class EditProduct extends EditRecord
                 $tagName = TagModel::find($tagId)?->name;
                 app(ActivityLogger::class)->logFieldChanged('product', $productId, 'tags', $tagName, null);
             }
-        }
-    }
-
-    /**
-     * Diffs the submitted array of stored paths (main_photo +
-     * gallery_photos merged into one, or the single video wrapped in a
-     * 0-or-1-element array — see updateProduct()'s own comment) against
-     * the currently-attached pivots of THIS SAME $type's own resolved
-     * paths — scoped to $type, not every pivot the product has, since
-     * findByProductId() returns photos and the video together
-     * (media-domain-design.md §2.1/§8: one generic pivot, not
-     * photo-specific) and a video path must never be diffed against the
-     * photos submission or vice versa: a path present in both is KEPT
-     * (its sort_order and/or autoplay may still need updating to match
-     * the submission); a submitted path with no matching existing pivot
-     * is a NEW upload (attached exactly like Create's own
-     * attachMedia()); an existing pivot whose path is no longer
-     * anywhere in the submission was REMOVED by the user — detached via
-     * ProductMediaRepository::remove(), confirmed the real method
-     * (ProductMediaController::destroy()'s own call), never touching
-     * the underlying MediaAsset row itself (mirrors BrandResource's own
-     * "never touch the old asset" posture). $autoplay is only ever
-     * meaningful for the video call — see ProductMedia's own class
-     * docblock for why passing it for photos too is harmless.
-     *
-     * ORPHANS ARE DETACHED BEFORE ANY NEW ATTACH IS ATTEMPTED — not
-     * after, and this ordering is a real correctness requirement, not
-     * cosmetic: once VideoCountGuard's own "at most one video" invariant
-     * exists, replacing the single video (a new path submitted while
-     * the old one is dropped) would otherwise transiently look like
-     * attaching a SECOND video — the old pivot still present in the DB
-     * at the moment the guard checks — and be wrongly rejected. Freeing
-     * the slot first, then attaching, is also simply the more correct
-     * causal order for the combined photo/video guard too, even though
-     * that one has enough headroom (default 10) that the ordering bug
-     * was never actually observable there.
-     */
-    protected function syncMedia(string $productId, array $submittedPaths, MediaType $type, bool $autoplay = false): void
-    {
-        $repository = app(ProductMediaRepository::class);
-        $current = $repository->findByProductId($productId);
-
-        $pivotByPath = [];
-        foreach ($current as $pivot) {
-            $asset = MediaAssetModel::find($pivot->mediaId());
-            if ($asset !== null && $asset->type === $type->value) {
-                $pivotByPath[$asset->path] = $pivot;
-            }
-        }
-
-        $submittedValues = array_values($submittedPaths);
-
-        foreach ($pivotByPath as $path => $pivot) {
-            if (! in_array($path, $submittedValues, true)) {
-                $repository->remove($pivot->id());
-                unset($pivotByPath[$path]);
-            }
-        }
-
-        $guard = app(ProductMediaCountGuard::class);
-        // Only for the video call — see VideoCountGuard's own class
-        // docblock for why this is a separate guard, not a branch
-        // inside ProductMediaCountGuard.
-        $videoGuard = $type === MediaType::VIDEO ? app(VideoCountGuard::class) : null;
-
-        foreach ($submittedValues as $sortOrder => $path) {
-            if (isset($pivotByPath[$path])) {
-                $pivot = $pivotByPath[$path];
-                $changed = false;
-
-                if ($pivot->sortOrder() !== $sortOrder) {
-                    $pivot->updateSortOrder($sortOrder);
-                    $changed = true;
-                }
-
-                if ($pivot->autoplay() !== $autoplay) {
-                    $pivot->updateAutoplay($autoplay);
-                    $changed = true;
-                }
-
-                if ($changed) {
-                    $repository->save($pivot);
-                }
-
-                continue;
-            }
-
-            try {
-                $guard->assertCanAttach($productId);
-                $videoGuard?->assertCanAttach($productId);
-            } catch (MediaLimitExceededException $e) {
-                Notification::make()
-                    ->title($e->getMessage())
-                    ->danger()
-                    ->send();
-
-                throw (new Halt)->rollBackDatabaseTransaction();
-            }
-
-            $asset = ProductResource::createMediaAsset($path, $type);
-
-            $repository->save(new ProductMedia(
-                id: null,
-                productId: $productId,
-                mediaId: $asset->id(),
-                sortOrder: $sortOrder,
-                autoplay: $autoplay,
-            ));
         }
     }
 }

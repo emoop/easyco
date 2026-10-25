@@ -36,6 +36,7 @@ class ViewProduct extends ViewRecord
     protected function getHeaderActions(): array
     {
         return [
+            ProductResource::viewInStoreAction(),
             ProductResource::historyAction(),
             ProductResource::duplicateAction(),
             ProductResource::deleteProductAction(),

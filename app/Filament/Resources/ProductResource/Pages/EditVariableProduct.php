@@ -3,6 +3,10 @@
 namespace App\Filament\Resources\ProductResource\Pages;
 
 use App\Filament\Resources\ProductResource;
+use App\Filament\Forms\Components\MediaPicker;
+use App\Media\SyncsProductPhotos;
+use App\Media\VariationPhotoSync;
+use EasyCo\Media\Persistence\Eloquent\VariationMediaModel;
 use App\Providers\CatalogSkuGeneratorServiceProvider;
 use App\Services\ActivityLogger;
 use App\Services\ArchiveProductMediaCleaner;
@@ -188,6 +192,14 @@ use RuntimeException;
  */
 class EditVariableProduct extends EditRecord
 {
+    use SyncsProductPhotos;
+
+    /** «Виж в магазина» beside the title (ML-3 §4): the saved product's storefront page in a new tab. */
+    protected function getHeaderActions(): array
+    {
+        return [ProductResource::viewInStoreAction()];
+    }
+
     protected static string $resource = ProductResource::class;
 
     /**
@@ -428,7 +440,7 @@ class EditVariableProduct extends EditRecord
                                     // filled — confirmed against its
                                     // installed source, same finding
                                     // already documented on
-                                    // syncVariationMedia()'s own
+                                    // VariationPhotoSync's own
                                     // docblock).
                                     Tab::make(__('products.tabs.axes'))
                                         ->id('axes')
@@ -1539,27 +1551,18 @@ class EditVariableProduct extends EditRecord
                     // deliberately no ->maxFiles() here either: the
                     // real enforcement point is
                     // VariationMediaCountGuard inside
-                    // syncVariationMedia() below, whose own
+                    // VariationPhotoSync below, whose own
                     // MediaLimitExceededException message this field
                     // must not shadow with a generic Filament one.
-                    FileUpload::make('variation_photos')
+                    // ML-3: a media picker (a list of MEDIA IDS: «Избери от медията» OR «Качи нови»), at most max_photos_per_variation, ← → to reorder. The field's maximum is the
+                    // guard's own number; VariationMediaCountGuard inside VariationPhotoSync stays the one real enforcement point (its message must not be shadowed by a generic one).
+                    // A photo the variation already has is never re-checked against the minimum size.
+                    MediaPicker::make('variation_photo_ids')
                         ->label(__('products.fields.variation_photos'))
-                        ->multiple()
-                        ->reorderable()
-                        ->image()
-                        ->panelLayout('grid')
-                        ->placeholder(ProductResource::mediaUploadPlaceholder('services.media.max_image_size_kb', 10240))
-                        ->maxSize((int) config('services.media.max_image_size_kb', 10240))
-                        ->disk(config('services.media.default_disk', 'public'))
-                        ->saveUploadedFileUsing(function (TemporaryUploadedFile $file, BaseFileUpload $component): string {
-                    // ML-0: an image is stored without its metadata; one that cannot be cleaned is a field error, not a 500
-                    return MediaUpload::path($file->get(), $file->getClientOriginalName(), $component->getStatePath());
-                })
-                        // Same base PRODUCT_MANAGE permission every
-                        // other per-row field in this class already
-                        // uses (sku/barcode/is_purchasable/
-                        // stock_quantity) — no dedicated media
-                        // permission exists for variation photos.
+                        ->multiple(max(1, (int) config('services.media.max_photos_per_variation', 3)))
+                        ->plainImagesOnly()
+                        ->minDimensions()
+                        ->exemptFromMinimum(fn (Get $get): array => VariationMediaModel::query()->where('variation_id', (string) $get('variation_id'))->pluck('media_id')->all())
                         ->disabled(fn (): bool => ! ProductResource::staffHasPermission(Permission::PRODUCT_MANAGE)),
                 ]),
                 ]),
@@ -1917,29 +1920,9 @@ class EditVariableProduct extends EditRecord
 
         $data['descriptive_attributes_picker'] = ProductResource::seedDescriptiveAttributesPickerRows($product);
 
-        $data['main_photo'] = null;
-        $data['gallery_photos'] = [];
-        $data['video'] = null;
-        $data['video_autoplay'] = false;
-
-        foreach (app(ProductMediaRepository::class)->findByProductId($productId) as $pivot) {
-            $asset = MediaAssetModel::find($pivot->mediaId());
-
-            if ($asset === null) {
-                continue;
-            }
-
-            if ($asset->type === MediaType::IMAGE->value) {
-                if ($data['main_photo'] === null) {
-                    $data['main_photo'] = $asset->path;
-                } else {
-                    $data['gallery_photos'][] = $asset->path;
-                }
-            } elseif ($asset->type === MediaType::VIDEO->value) {
-                $data['video'] = $asset->path;
-                $data['video_autoplay'] = $pivot->autoplay();
-            }
-        }
+        // ML-3: the photos are media IDS (the picker's state), see SyncsProductPhotos
+        $data = $this->fillProductPhotos($productId, $data);
+        // the video (media id + autoplay) is filled by fillProductPhotos() too
 
         $pricingAndStock = app(ProductPricingAndStock::class);
 
@@ -2014,7 +1997,6 @@ class EditVariableProduct extends EditRecord
     private function existingVariationRows(Product $product): array
     {
         $pricingAndStock = app(ProductPricingAndStock::class);
-        $variationMediaRepository = app(VariationMediaRepository::class);
 
         $productRegularPrice = $pricingAndStock->regularPriceDisplayForProduct($product->id());
         $productSalePrice = $pricingAndStock->salePriceDisplayForProduct($product->id());
@@ -2042,7 +2024,7 @@ class EditVariableProduct extends EditRecord
                 'shipping_class' => $classIds[(string) $variation->shippingClass()] ?? null,
                 'regular_price_placeholder' => $productRegularPrice,
                 'sale_price_placeholder' => $productSalePrice,
-                'variation_photos' => $this->variationPhotoPaths($variationMediaRepository, $variation->id()),
+                'variation_photo_ids' => app(VariationPhotoSync::class)->current($variation->id()),
             ],
             array_filter(
                 $product->variations(),
@@ -2099,32 +2081,6 @@ class EditVariableProduct extends EditRecord
         }
 
         return implode(', ', $parts);
-    }
-
-    /**
-     * Real, persisted paths for one variation's own photos, ordered by
-     * VariationMediaRepository::findByVariationId()'s own real
-     * sort_order ASC — a pivot whose asset is somehow gone is silently
-     * skipped, same defensive posture already established for the
-     * PRODUCT-level media loop above.
-     *
-     * @return array<int, string>
-     */
-    private function variationPhotoPaths(VariationMediaRepository $variationMediaRepository, string $variationId): array
-    {
-        $paths = [];
-
-        foreach ($variationMediaRepository->findByVariationId($variationId) as $pivot) {
-            $asset = MediaAssetModel::find($pivot->mediaId());
-
-            if ($asset === null) {
-                continue;
-            }
-
-            $paths[] = $asset->path;
-        }
-
-        return $paths;
     }
 
     protected function handleRecordUpdate(Model $record, array $data): Model
@@ -2754,17 +2710,7 @@ class EditVariableProduct extends EditRecord
         $this->syncCategories($product->id(), $data['categories'] ?? []);
         $this->syncTags($product->id(), $data['tags'] ?? []);
 
-        $photoPaths = [];
-        if (filled($data['main_photo'] ?? null)) {
-            $photoPaths[] = $data['main_photo'];
-        }
-        foreach ($data['gallery_photos'] ?? [] as $path) {
-            $photoPaths[] = $path;
-        }
-        $this->syncMedia($product->id(), $photoPaths, MediaType::IMAGE);
-
-        $videoPaths = filled($data['video'] ?? null) ? [$data['video']] : [];
-        $this->syncMedia($product->id(), $videoPaths, MediaType::VIDEO, (bool) ($data['video_autoplay'] ?? false));
+        $this->syncProductPhotos($product->id(), $data);
 
         if ($shouldCleanArchivedMedia) {
             app(ArchiveProductMediaCleaner::class)->clean($product->id());
@@ -2790,7 +2736,7 @@ class EditVariableProduct extends EditRecord
                 continue;
             }
 
-            $this->syncVariationMedia($variationId, $row['variation_photos'] ?? []);
+            $this->syncVariationPhotos($variationId, $row['variation_photo_ids'] ?? []);
         }
 
         // cost/stock_quantity/regular_price/sale_price, AFTER the
@@ -3485,85 +3431,6 @@ class EditVariableProduct extends EditRecord
     }
 
     /**
-     * Duplicated verbatim from EditProduct::syncMedia() — see class
-     * docblock for why. Same ordering requirement (orphans detached
-     * before any new attach is attempted) and the same VideoCountGuard/
-     * ProductMediaCountGuard/MediaLimitExceededException handling — see
-     * that method's own full docblock for the complete reasoning,
-     * unchanged here.
-     */
-    protected function syncMedia(string $productId, array $submittedPaths, MediaType $type, bool $autoplay = false): void
-    {
-        $repository = app(ProductMediaRepository::class);
-        $current = $repository->findByProductId($productId);
-
-        $pivotByPath = [];
-        foreach ($current as $pivot) {
-            $asset = MediaAssetModel::find($pivot->mediaId());
-            if ($asset !== null && $asset->type === $type->value) {
-                $pivotByPath[$asset->path] = $pivot;
-            }
-        }
-
-        $submittedValues = array_values($submittedPaths);
-
-        foreach ($pivotByPath as $path => $pivot) {
-            if (! in_array($path, $submittedValues, true)) {
-                $repository->remove($pivot->id());
-                unset($pivotByPath[$path]);
-            }
-        }
-
-        $guard = app(ProductMediaCountGuard::class);
-        $videoGuard = $type === MediaType::VIDEO ? app(VideoCountGuard::class) : null;
-
-        foreach ($submittedValues as $sortOrder => $path) {
-            if (isset($pivotByPath[$path])) {
-                $pivot = $pivotByPath[$path];
-                $changed = false;
-
-                if ($pivot->sortOrder() !== $sortOrder) {
-                    $pivot->updateSortOrder($sortOrder);
-                    $changed = true;
-                }
-
-                if ($pivot->autoplay() !== $autoplay) {
-                    $pivot->updateAutoplay($autoplay);
-                    $changed = true;
-                }
-
-                if ($changed) {
-                    $repository->save($pivot);
-                }
-
-                continue;
-            }
-
-            try {
-                $guard->assertCanAttach($productId);
-                $videoGuard?->assertCanAttach($productId);
-            } catch (MediaLimitExceededException $e) {
-                Notification::make()
-                    ->title($e->getMessage())
-                    ->danger()
-                    ->send();
-
-                throw (new Halt)->rollBackDatabaseTransaction();
-            }
-
-            $asset = ProductResource::createMediaAsset($path, $type);
-
-            $repository->save(new ProductMedia(
-                id: null,
-                productId: $productId,
-                mediaId: $asset->id(),
-                sortOrder: $sortOrder,
-                autoplay: $autoplay,
-            ));
-        }
-    }
-
-    /**
      * The per-VARIATION counterpart of syncMedia() above — same real
      * diff-then-write logic (detach removed, reorder kept, attach new,
      * MediaLimitExceededException -> Notification+Halt), simplified:
@@ -3586,61 +3453,17 @@ class EditVariableProduct extends EditRecord
      * all without ALREADY holding PRODUCT_MANAGE — a redundant check
      * here would be unreachable dead code, not a real second gate.
      */
-    private function syncVariationMedia(string $variationId, array $submittedPaths): void
+    private function syncVariationPhotos(string $variationId, array $submittedIds): void
     {
-        $repository = app(VariationMediaRepository::class);
-        $current = $repository->findByVariationId($variationId);
+        try {
+            app(VariationPhotoSync::class)->sync($variationId, $submittedIds);
+        } catch (MediaLimitExceededException $e) {
+            Notification::make()
+                ->title($e->getMessage())
+                ->danger()
+                ->send();
 
-        $pivotByPath = [];
-        foreach ($current as $pivot) {
-            $asset = MediaAssetModel::find($pivot->mediaId());
-            if ($asset !== null) {
-                $pivotByPath[$asset->path] = $pivot;
-            }
-        }
-
-        $submittedValues = array_values($submittedPaths);
-
-        foreach ($pivotByPath as $path => $pivot) {
-            if (! in_array($path, $submittedValues, true)) {
-                $repository->remove($pivot->id());
-                unset($pivotByPath[$path]);
-            }
-        }
-
-        $guard = app(VariationMediaCountGuard::class);
-
-        foreach ($submittedValues as $sortOrder => $path) {
-            if (isset($pivotByPath[$path])) {
-                $pivot = $pivotByPath[$path];
-
-                if ($pivot->sortOrder() !== $sortOrder) {
-                    $pivot->updateSortOrder($sortOrder);
-                    $repository->save($pivot);
-                }
-
-                continue;
-            }
-
-            try {
-                $guard->assertCanAttach($variationId);
-            } catch (MediaLimitExceededException $e) {
-                Notification::make()
-                    ->title($e->getMessage())
-                    ->danger()
-                    ->send();
-
-                throw (new Halt)->rollBackDatabaseTransaction();
-            }
-
-            $asset = ProductResource::createMediaAsset($path);
-
-            $repository->save(new VariationMedia(
-                id: null,
-                variationId: $variationId,
-                mediaId: $asset->id(),
-                sortOrder: $sortOrder,
-            ));
+            throw (new Halt)->rollBackDatabaseTransaction();
         }
     }
 

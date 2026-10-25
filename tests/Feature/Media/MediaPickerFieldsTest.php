@@ -110,7 +110,7 @@ class MediaPickerFieldsTest extends TestCase
         $this->assertSame(0, BrandModel::query()->count());
     }
 
-    public function test_the_field_shows_the_empty_box_and_the_filled_row_with_the_three_controls_and_the_hint(): void
+    public function test_the_field_shows_the_empty_box_and_the_filled_picture_with_change_and_remove(): void
     {
         $this->actingAsStaff('Administrator');
         $logo = $this->asset(['original_name' => 'nike-logo.png', 'width' => 600, 'height' => 200]);
@@ -118,19 +118,19 @@ class MediaPickerFieldsTest extends TestCase
 
         $empty = Livewire::test(CreateBrand::class)->html();
         $this->assertStringContainsString('Няма избрана снимка', $empty);
-        $this->assertStringContainsString('Избери от медията', $empty);
-        $this->assertStringContainsString('Качи нова', $empty);
-        $this->assertStringNotContainsString('Махни', $empty, 'nothing to remove yet');
-        $this->assertStringContainsString('Снимката остава в Медия.', $empty);
+        $this->assertStringContainsString('Добави изображение', $empty);
+        $this->assertStringNotContainsString('Качи нова', $empty, 'one button only: the modal offers both tabs');
+        $this->assertStringNotContainsString('Премахни изображението', $empty, 'nothing to remove yet');
 
         $filled = Livewire::test(EditBrand::class, ['record' => $brand->id])->html();
-        $this->assertStringContainsString('-thumbnail.webp', $filled, 'the thumbnail variant, never the original');
+        $this->assertStringContainsString('-medium.webp', $filled, 'the picture is shown large from the medium variant, never the original');
         $this->assertStringNotContainsString('/storage/'.$logo->path, $filled);
-        $this->assertStringContainsString('nike-logo.png', $filled);
-        $this->assertStringContainsString('600×200', $filled);
-        foreach (['Смени', 'Качи нова', 'Махни'] as $control) {
-            $this->assertStringContainsString($control, $filled);
-        }
+        $this->assertStringNotContainsString('nike-logo.png', $filled, 'no file name');
+        $this->assertStringNotContainsString('600×200', $filled, 'no dimensions');
+        $this->assertStringContainsString('Смени', $filled);
+        $this->assertStringContainsString('Премахни изображението', $filled);
+        $this->assertStringContainsString('title="Снимката остава в Медия."', $filled, 'the hint is the link\'s title, not a visible line');
+        $this->assertStringNotContainsString('Качи нова', $filled);
         $this->assertStringNotContainsString('Няма избрана снимка', $filled);
     }
 
@@ -344,7 +344,7 @@ class MediaPickerFieldsTest extends TestCase
         $this->assertStringContainsString('Няма избрана снимка', $host->html());
 
         $host->set('data.field', $asset->id)->call('check')->assertHasNoErrors();
-        $this->assertStringContainsString('-thumbnail.webp', $host->html());
+        $this->assertStringContainsString('-medium.webp', $host->html());
         $this->assertSame((int) $asset->id, (int) $host->get('data.field'));
 
         $host->set('data.field', $video->id)->call('check')->assertHasErrors(['data.field']);
@@ -377,14 +377,16 @@ class MediaPickerFieldsTest extends TestCase
         $c = $this->asset();
 
         $host = Livewire::test(PickerTestHost::class, ['spec' => ['kind' => 'media', 'label' => 'x'], 'multiple' => 2]);
-        $this->assertStringContainsString('Няма избрана снимка', $host->html());
+        $this->assertStringContainsString('Няма добавени изображения', $host->html());
 
         $host->set('data.field', [$a->id, $b->id]);
         $html = $host->html();
         $this->assertSame(2, substr_count($html, 'class="mpf-tile"'));
         $this->assertSame(2, substr_count($html, 'class="mpf-x"'));
-        $this->assertStringContainsString('Добави от медията', $html);
-        $this->assertStringContainsString('Качи нови', $html);
+        $this->assertSame(2, substr_count($html, 'aria-label="Премахни изображението"'));
+        $this->assertStringContainsString('x-sortable', $html, 'drag and drop');
+        $this->assertStringContainsString('Добави изображения', $html);
+        $this->assertStringNotContainsString('Качи нови', $html, 'one button under the grid');
 
         $host->call('check')->assertHasNoErrors();
         $host->set('data.field', [$a->id, $b->id, $c->id])->call('check')->assertHasErrors(['data.field']);

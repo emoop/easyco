@@ -10,6 +10,7 @@ use EasyCo\Media\Exceptions\ImageNotCleanableException;
 use EasyCo\Media\Jobs\ProcessMediaAssetJob;
 use EasyCo\Media\MediaAsset;
 use finfo;
+use Illuminate\Support\Facades\Image;
 
 /**
  * Uploads from the «Медия» page (ML-1b): the SAME path as every other upload — MediaStorageAdapter::store() (the metadata strip and the refusal of a damaged picture of ML-0 / ML-1a), then a
@@ -41,9 +42,11 @@ final class MediaUploader
     /**
      * @param  iterable<array{name: string, content: string}>  $files
      * @param  bool  $imagesOnly  a picture field (the media picker): a video is refused with its reason
+     * @param  bool  $videosOnly  ML-3, the product video field: a picture is refused with its reason
+     * @param  int|null  $minWidth  ML-3, product photos: a smaller picture (after it is turned upright, as the API does) is refused BEFORE anything is stored
      * @return array{stored: list<int>, refused: list<array{name: string, reason: string}>}
      */
-    public function upload(iterable $files, bool $imagesOnly = false): array
+    public function upload(iterable $files, bool $imagesOnly = false, bool $videosOnly = false, ?int $minWidth = null, ?int $minHeight = null): array
     {
         $stored = [];
         $refused = [];
@@ -57,6 +60,12 @@ final class MediaUploader
 
             if ($isVideo && $imagesOnly) {
                 $refused[] = ['name' => $name, 'reason' => __('media.picker.images_only')];
+
+                continue;
+            }
+
+            if ($isImage && $videosOnly) {
+                $refused[] = ['name' => $name, 'reason' => __('media.picker.videos_only')];
 
                 continue;
             }
@@ -81,6 +90,16 @@ final class MediaUploader
                 continue;
             }
 
+            if ($isImage && ($minWidth !== null || $minHeight !== null)) {
+                $tooSmall = $this->tooSmall($content, (int) $minWidth, (int) $minHeight);
+
+                if ($tooSmall !== null) {
+                    $refused[] = ['name' => $name, 'reason' => $tooSmall];
+
+                    continue;
+                }
+            }
+
             try {
                 $file = $this->storage->store($content, $name);
             } catch (ImageNotCleanableException $e) {
@@ -96,5 +115,17 @@ final class MediaUploader
         }
 
         return ['stored' => $stored, 'refused' => $refused];
+    }
+
+    /** The reason a picture is below the minimum size, else null. The size is read the way the API reads it: decoded and turned upright (a phone photo's EXIF orientation swaps width and height). */
+    private function tooSmall(string $content, int $minWidth, int $minHeight): ?string
+    {
+        $oriented = Image::fromBytes($content)->orient();
+
+        if ($oriented->width() >= $minWidth && $oriented->height() >= $minHeight) {
+            return null;
+        }
+
+        return __('media.picker.errors.too_small', ['w' => $oriented->width(), 'h' => $oriented->height(), 'min_w' => $minWidth, 'min_h' => $minHeight]);
     }
 }

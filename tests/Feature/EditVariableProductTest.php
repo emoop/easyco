@@ -60,6 +60,7 @@ use Filament\Actions\Testing\TestAction;
 use Livewire\Livewire;
 use Tests\TestCase;
 use Tests\Concerns\GivesProductsAShippingClass;
+use Tests\Concerns\MakesPickerAssets;
 
 /**
  * EditVariableProduct — Step 1 (parent fields) + Step 2a (per-
@@ -77,6 +78,7 @@ use Tests\Concerns\GivesProductsAShippingClass;
 class EditVariableProductTest extends TestCase
 {
     use GivesProductsAShippingClass;
+    use MakesPickerAssets;
     use RefreshDatabase;
 
     protected function setUp(): void
@@ -1894,7 +1896,8 @@ class EditVariableProductTest extends TestCase
         }
         $this->assertNotNull($blackKey);
 
-        $component->set("data.existing_variations.{$blackKey}.variation_photos", [UploadedFile::fake()->image('black.jpg')])
+        // ML-3: the field is a media picker; its state is MEDIA IDS (was a fake uploaded file)
+        $component->set("data.existing_variations.{$blackKey}.variation_photo_ids", [$this->pickerAsset()->id])
             ->call('save')
             ->assertHasNoFormErrors();
 
@@ -1930,7 +1933,8 @@ class EditVariableProductTest extends TestCase
         $component = Livewire::test(EditVariableProduct::class, ['record' => $productModel->id]);
         $rowKeys = array_keys($component->get('data.existing_variations'));
 
-        $component->set("data.existing_variations.{$rowKeys[0]}.variation_photos", [UploadedFile::fake()->image('photo.jpg')])
+        $assetId = $this->pickerAsset()->id;
+        $component->set("data.existing_variations.{$rowKeys[0]}.variation_photo_ids", [$assetId])
             ->call('save')
             ->assertHasNoFormErrors();
 
@@ -1940,11 +1944,12 @@ class EditVariableProductTest extends TestCase
         $component2 = Livewire::test(EditVariableProduct::class, ['record' => $productModel->id]);
         $rowKeys2 = array_keys($component2->get('data.existing_variations'));
 
-        $component2->set("data.existing_variations.{$rowKeys2[0]}.variation_photos", [])
+        $component2->set("data.existing_variations.{$rowKeys2[0]}.variation_photo_ids", [])
             ->call('save')
             ->assertHasNoFormErrors();
 
         $this->assertCount(0, $variationMediaRepository->findByVariationId($blackId));
+        $this->assertNotNull(MediaAssetModel::find($assetId), 'detached only: the asset stays in the library');
     }
 
     /**
@@ -1962,13 +1967,13 @@ class EditVariableProductTest extends TestCase
         [$product, $blackId] = $this->persistedVariableProductWithOneVariation();
         $productModel = ProductModel::find($product->id());
 
-        $first = UploadedFile::fake()->image('first.jpg');
-        $second = UploadedFile::fake()->image('second.jpg');
+        $first = $this->pickerAsset()->id;
+        $second = $this->pickerAsset()->id;
 
         $component = Livewire::test(EditVariableProduct::class, ['record' => $productModel->id]);
         $rowKeys = array_keys($component->get('data.existing_variations'));
 
-        $component->set("data.existing_variations.{$rowKeys[0]}.variation_photos", [$first, $second])
+        $component->set("data.existing_variations.{$rowKeys[0]}.variation_photo_ids", [$first, $second])
             ->call('save')
             ->assertHasNoFormErrors();
 
@@ -1976,27 +1981,23 @@ class EditVariableProductTest extends TestCase
         $pivotsBefore = $variationMediaRepository->findByVariationId($blackId);
         $this->assertCount(2, $pivotsBefore);
 
-        $pathByAssetId = [];
-        foreach ($pivotsBefore as $pivot) {
-            $pathByAssetId[$pivot->mediaId()] = MediaAssetModel::find($pivot->mediaId())->path;
-        }
-        $firstPath = $pathByAssetId[$pivotsBefore[0]->mediaId()];
-        $secondPath = $pathByAssetId[$pivotsBefore[1]->mediaId()];
+        $firstPath = $pivotsBefore[0]->mediaId();
+        $secondPath = $pivotsBefore[1]->mediaId();
         $this->assertSame(0, $pivotsBefore[0]->sortOrder());
         $this->assertSame(1, $pivotsBefore[1]->sortOrder());
 
-        // Submit the SAME two real, already-stored paths, reversed.
+        // Submit the SAME two media ids, reversed.
         $component2 = Livewire::test(EditVariableProduct::class, ['record' => $productModel->id]);
         $rowKeys2 = array_keys($component2->get('data.existing_variations'));
 
-        $component2->set("data.existing_variations.{$rowKeys2[0]}.variation_photos", [$secondPath, $firstPath])
+        $component2->set("data.existing_variations.{$rowKeys2[0]}.variation_photo_ids", [$secondPath, $firstPath])
             ->call('save')
             ->assertHasNoFormErrors();
 
         $pivotsAfter = $variationMediaRepository->findByVariationId($blackId);
         $this->assertCount(2, $pivotsAfter);
-        $this->assertSame($secondPath, MediaAssetModel::find($pivotsAfter[0]->mediaId())->path);
-        $this->assertSame($firstPath, MediaAssetModel::find($pivotsAfter[1]->mediaId())->path);
+        $this->assertSame($secondPath, $pivotsAfter[0]->mediaId());
+        $this->assertSame($firstPath, $pivotsAfter[1]->mediaId());
     }
 
     /**
@@ -2014,16 +2015,20 @@ class EditVariableProductTest extends TestCase
         [$product, $blackId] = $this->persistedVariableProductWithOneVariation();
         $productModel = ProductModel::find($product->id());
 
+        // ML-3: the picker field itself holds at most max_photos_per_variation, so a list that long can only reach the guard when the guard's number is smaller than the form's (the
+        // configuration changed between the page being drawn and the save). That is simulated by a guard bound with one less.
         $max = (int) config('services.media.max_photos_per_variation', 3);
         $files = [];
-        for ($i = 0; $i < $max + 1; $i++) {
-            $files[] = UploadedFile::fake()->image("photo{$i}.jpg");
+        for ($i = 0; $i < $max; $i++) {
+            $files[] = $this->pickerAsset()->id;
         }
+        $max--;
+        $this->app->instance(\EasyCo\Media\VariationMediaCountGuard::class, new \EasyCo\Media\VariationMediaCountGuard(app(VariationMediaRepository::class), $max));
 
         $component = Livewire::test(EditVariableProduct::class, ['record' => $productModel->id]);
         $rowKeys = array_keys($component->get('data.existing_variations'));
 
-        $component->set("data.existing_variations.{$rowKeys[0]}.variation_photos", $files)
+        $component->set("data.existing_variations.{$rowKeys[0]}.variation_photo_ids", $files)
             ->call('save')
             ->assertNotified(
                 MediaLimitExceededException::forVariation($blackId, $max, $max)->getMessage()
@@ -2185,7 +2190,7 @@ class EditVariableProductTest extends TestCase
         $component->set("data.existing_variations.{$rowKeys[0]}.regular_price", '42.00')
             ->set("data.existing_variations.{$rowKeys[0]}.cost", '10.00')
             ->set("data.existing_variations.{$rowKeys[0]}.stock_quantity", 7)
-            ->set("data.existing_variations.{$rowKeys[0]}.variation_photos", [UploadedFile::fake()->image('photo.jpg')])
+            ->set("data.existing_variations.{$rowKeys[0]}.variation_photo_ids", [$this->pickerAsset()->id])
             ->call('save')
             ->assertHasNoFormErrors();
 

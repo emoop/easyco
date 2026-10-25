@@ -69,6 +69,7 @@ return [
         'variation_active_locked_hint' => 'To take this variation off sale, use Visible, Purchasable, or archive it.',
         'main_photo' => 'Main photo',
         'gallery_photos' => 'Gallery photos',
+        'gallery_has_main' => 'This picture is already the main picture',
         'video' => 'Video',
         'video_autoplay' => 'Autoplay on the storefront',
         'thumbnail' => 'Photo',
@@ -362,6 +363,14 @@ return [
             'new_value' => 'New value',
             'staff_name' => 'Staff member',
         ],
+    ],
+
+    'view_in_store' => [
+        'label' => 'View in the store',
+        'not_shown' => 'The product is not shown in the store',
+        'draft' => 'draft',
+        'archived' => 'archived',
+        'hidden' => 'hidden from the catalogue',
     ],
 
 ];

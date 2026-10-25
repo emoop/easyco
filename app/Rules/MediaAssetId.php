@@ -15,8 +15,21 @@ final class MediaAssetId implements ValidationRule
 {
     public const TYPES = ['image', 'social_image'];
 
-    public function __construct(private readonly ?int $max = null)
-    {
+    /** The product video field (ML-3): a picture id is refused there as a video id is refused in a picture field. */
+    public const VIDEO_TYPES = ['video'];
+
+    /**
+     * @param  list<string>  $types  the asset types the field accepts
+     * @param  int|null  $minWidth  ML-3: the smallest accepted picture; a picture with no stored size yet (not backfilled) is refused too
+     * @param  list<int|string>  $exempt  ids NOT checked against the minimum (pictures the record already has: saving a product must not fail because of an old small photo)
+     */
+    public function __construct(
+        private readonly ?int $max = null,
+        private readonly array $types = self::TYPES,
+        private readonly ?int $minWidth = null,
+        private readonly ?int $minHeight = null,
+        private readonly array $exempt = [],
+    ) {
     }
 
     public function validate(string $attribute, mixed $value, Closure $fail): void
@@ -51,10 +64,36 @@ final class MediaAssetId implements ValidationRule
             return;
         }
 
-        $found = MediaAssetModel::query()->whereIn('id', $clean)->whereIn('type', self::TYPES)->count();
+        $found = MediaAssetModel::query()->whereIn('id', $clean)->whereIn('type', $this->types)->count();
 
         if ($found !== count($clean)) {
-            $fail(__('media.picker.errors.not_a_picture'));
+            $fail(__($this->types === self::VIDEO_TYPES ? 'media.picker.errors.not_a_video' : 'media.picker.errors.not_a_picture'));
+
+            return;
+        }
+
+        $this->checkMinimum(array_values(array_diff($clean, array_map('intval', $this->exempt))), $fail);
+    }
+
+    /** @param  list<int>  $ids */
+    private function checkMinimum(array $ids, Closure $fail): void
+    {
+        if ($ids === [] || ($this->minWidth === null && $this->minHeight === null)) {
+            return;
+        }
+
+        foreach (MediaAssetModel::query()->whereIn('id', $ids)->get(['id', 'width', 'height']) as $row) {
+            if ($row->width === null || $row->height === null) {
+                $fail(__('media.picker.errors.unknown_size'));
+
+                return;
+            }
+
+            if ((int) $row->width < (int) $this->minWidth || (int) $row->height < (int) $this->minHeight) {
+                $fail(__('media.picker.errors.too_small', ['w' => $row->width, 'h' => $row->height, 'min_w' => $this->minWidth, 'min_h' => $this->minHeight]));
+
+                return;
+            }
         }
     }
 }

@@ -8,6 +8,7 @@ use App\Media\MediaFilters;
 use App\Media\MediaPickerAccess;
 use App\Media\MediaUploader;
 use App\Rules\MediaAssetId;
+use EasyCo\Media\Contracts\MediaStorageAdapter;
 use EasyCo\Media\Persistence\Eloquent\MediaAssetModel;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
@@ -31,6 +32,9 @@ class MediaPickerBrowser extends Component
 
     public const PER_PAGE = 24;
 
+    /** The most cards one request may load: `$limit` is a public property, so the browser could send any number (ML-3). */
+    public const MAX_LIMIT = 480;
+
     /** The state path of the field that opened the modal; the event names it, so only that field listens. */
     #[Locked]
     public string $field = '';
@@ -40,6 +44,17 @@ class MediaPickerBrowser extends Component
 
     #[Locked]
     public int $max = 1;
+
+    /** `image` | `video` (ML-3: the product video field lists videos only) */
+    #[Locked]
+    public string $kind = 'image';
+
+    /** ML-3, product photos: the smallest picture the field takes (null = no minimum) */
+    #[Locked]
+    public ?int $minWidth = null;
+
+    #[Locked]
+    public ?int $minHeight = null;
 
     /** The text editor's tool also asks for the size of the picture in the text. */
     #[Locked]
@@ -68,7 +83,7 @@ class MediaPickerBrowser extends Component
     /** @var list<array{name: string, reason: string}> */
     public array $refused = [];
 
-    public function mount(string $field = '', bool $multiple = false, int $max = 1, bool $withSize = false, string $tab = 'library'): void
+    public function mount(string $field = '', bool $multiple = false, int $max = 1, bool $withSize = false, string $tab = 'library', string $kind = 'image', ?int $minWidth = null, ?int $minHeight = null): void
     {
         abort_unless(MediaPickerAccess::allowed(), 403);
 
@@ -76,19 +91,31 @@ class MediaPickerBrowser extends Component
         $this->multiple = $multiple;
         $this->max = $multiple ? max(1, $max) : 1;
         $this->withSize = $withSize;
+        $this->kind = $kind === 'video' ? 'video' : 'image';
+        $this->minWidth = $this->kind === 'image' ? $minWidth : null;
+        $this->minHeight = $this->kind === 'image' ? $minHeight : null;
         $this->tab = $tab === 'upload' ? 'upload' : 'library';
     }
 
     // ---- the library -------------------------------------------------------------------------------------------------------------
 
-    /** The pictures the merchant may pick: images that are ready (with their sizes) or still processing, never a missing or failed one. */
+    /** The rows the merchant may pick: images that are ready (with their sizes) or still processing, never a missing or failed one; in video mode the ready videos. */
     private function query(): Builder
     {
-        $query = MediaAssetModel::query()
-            ->whereIn('catalog_media.type', MediaAssetId::TYPES)
-            ->where(fn (Builder $q) => $q
-                ->where(fn (Builder $r) => MediaFilters::state($r, 'ready'))
-                ->orWhere(fn (Builder $r) => MediaFilters::state($r, 'processing')));
+        $query = $this->kind === 'video'
+            ? MediaAssetModel::query()->whereIn('catalog_media.type', MediaAssetId::VIDEO_TYPES)->where(fn (Builder $r) => MediaFilters::state($r, 'ready'))
+            : MediaAssetModel::query()
+                ->whereIn('catalog_media.type', MediaAssetId::TYPES)
+                ->where(fn (Builder $q) => $q
+                    ->where(fn (Builder $r) => MediaFilters::state($r, 'ready'))
+                    ->orWhere(fn (Builder $r) => MediaFilters::state($r, 'processing')));
+
+        // ML-3: only pictures that are big enough; one with no stored size yet stays listed (marked, and refused on «Избери» until the backfill)
+        if ($this->minWidth !== null || $this->minHeight !== null) {
+            $query->where(fn (Builder $q) => $q
+                ->whereNull('catalog_media.width')->orWhereNull('catalog_media.height')
+                ->orWhere(fn (Builder $b) => $b->where('catalog_media.width', '>=', (int) $this->minWidth)->where('catalog_media.height', '>=', (int) $this->minHeight)));
+        }
 
         $term = trim($this->search);
 
@@ -133,7 +160,13 @@ class MediaPickerBrowser extends Component
     {
         abort_unless(MediaPickerAccess::allowed(), 403);
 
-        $this->limit += self::PER_PAGE;
+        $this->limit = min($this->limit + self::PER_PAGE, self::MAX_LIMIT);
+    }
+
+    /** The property is public (a browser can set it): whatever arrives is brought back into [PER_PAGE, MAX_LIMIT]. */
+    public function updatedLimit(): void
+    {
+        $this->limit = max(self::PER_PAGE, min((int) $this->limit, self::MAX_LIMIT));
     }
 
     public function updatedSearch(): void
@@ -171,7 +204,7 @@ class MediaPickerBrowser extends Component
             return;
         }
 
-        $result = app(MediaUploader::class)->upload($files, imagesOnly: true);
+        $result = app(MediaUploader::class)->upload($files, imagesOnly: $this->kind === 'image', videosOnly: $this->kind === 'video', minWidth: $this->minWidth, minHeight: $this->minHeight);
         $this->refused = $result['refused'];
 
         if ($result['stored'] !== []) {
@@ -196,14 +229,14 @@ class MediaPickerBrowser extends Component
             return;
         }
 
-        $check = Validator::make(['ids' => $this->multiple ? $ids : $ids[0]], ['ids' => [new MediaAssetId($this->multiple ? $this->max : null)]]);
+        $check = Validator::make(['ids' => $this->multiple ? $ids : $ids[0]], ['ids' => [new MediaAssetId($this->multiple ? $this->max : null, $this->kind === 'video' ? MediaAssetId::VIDEO_TYPES : MediaAssetId::TYPES, $this->minWidth, $this->minHeight)]]);
 
         if ($check->fails()) {
             throw ValidationException::withMessages(['selected' => $check->errors()->first('ids')]);
         }
 
         // the alt text is saved with the asset, for a single pick (the narrow column belongs to ONE picture)
-        if (! $this->multiple) {
+        if (! $this->multiple && $this->kind !== 'video') {
             MediaAltText::save($ids[0], $this->alt, 'alt');
         }
 
@@ -214,9 +247,11 @@ class MediaPickerBrowser extends Component
     {
         abort_unless(MediaPickerAccess::allowed(), 403);
 
-        $rows = $this->query()->limit($this->limit + 1)->get();
-        $hasMore = $rows->count() > $this->limit;
-        $rows = $rows->take($this->limit);
+        // `limit` comes from the browser: clamped here, whatever it holds (ML-3)
+        $limit = max(self::PER_PAGE, min($this->limit, self::MAX_LIMIT));
+        $rows = $this->query()->limit($limit + 1)->get();
+        $hasMore = $rows->count() > $limit;
+        $rows = $rows->take($limit);
 
         $current = $this->selected === [] ? null : MediaAssetModel::query()->find((int) end($this->selected));
 
@@ -224,9 +259,10 @@ class MediaPickerBrowser extends Component
             'rows' => $rows,
             'hasMore' => $hasMore,
             'current' => $current,
-            'currentPreview' => $current === null ? null : MediaResource::previewUrl($current, 'medium'),
+            'currentPreview' => $current === null || $this->kind === 'video' ? null : MediaResource::previewUrl($current, 'medium'),
+            'currentVideoUrl' => $current === null || $this->kind !== 'video' ? null : app(MediaStorageAdapter::class)->url((string) $current->disk, (string) $current->path),
             'maxFiles' => MediaUploader::MAX_FILES,
-            'accept' => implode(',', array_filter(MediaUploader::acceptedMimes(), fn (string $mime): bool => str_starts_with($mime, 'image/'))),
+            'accept' => implode(',', array_filter(MediaUploader::acceptedMimes(), fn (string $mime): bool => str_starts_with($mime, $this->kind === 'video' ? 'video/' : 'image/'))),
         ]);
     }
 }
