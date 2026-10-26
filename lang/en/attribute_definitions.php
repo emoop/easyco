@@ -15,6 +15,15 @@ return [
         'is_filterable_help' => 'Only such attributes can be used in the shop\'s filters. For now this changes nothing for visitors.',
         'is_filterable_column' => 'Filter',
         'filter_display' => 'How its values are shown in a filter',
+        'display_type' => 'How it is shown on the product page',
+        'display_type_help' => 'Sets how the attribute\'s values are shown on the product and in the card. For now this changes nothing for visitors.',
+    ],
+
+    'display_type' => [
+        'swatch' => 'Colour dots',
+        'buttons' => 'Buttons',
+        'dropdown' => 'Drop-down list',
+        'specs' => 'Specifications only',
     ],
 
     'filter_display' => [
@@ -25,6 +34,7 @@ return [
 
     'errors' => [
         'not_closed_list' => 'Only an attribute with a closed list of values can be filterable.',
+        'unknown_display_type' => 'Unknown display type.',
     ],
 
     'types' => [

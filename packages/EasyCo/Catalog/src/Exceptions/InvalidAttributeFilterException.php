@@ -21,4 +21,9 @@ final class InvalidAttributeFilterException extends InvalidArgumentException
     {
         return new self('Unknown filter display "'.mb_substr($value, 0, 40).'". Allowed: list, buttons, swatches.');
     }
+
+    public static function unknownDisplayType(string $value): self
+    {
+        return new self('Unknown display type "'.mb_substr($value, 0, 40).'". Allowed: swatch, buttons, dropdown, specs.');
+    }
 }

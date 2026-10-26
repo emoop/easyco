@@ -2,6 +2,7 @@
 
 namespace EasyCo\Catalog;
 
+use EasyCo\Catalog\Enums\AttributeDisplayType;
 use EasyCo\Catalog\Enums\AttributeType;
 use EasyCo\Catalog\Enums\FilterDisplay;
 use EasyCo\Catalog\Exceptions\InvalidAttributeFilterException;
@@ -31,6 +32,8 @@ final class AttributeDefinition
         // CT-2: may the shop offer this attribute as a filter, and how are its values shown in one. Nothing on the storefront reads them yet.
         private bool $filterable = false,
         private FilterDisplay $filterDisplay = FilterDisplay::LIST,
+        // CT-3: how the values are shown on the product page and in the card. Any type may have any display.
+        private AttributeDisplayType $displayType = AttributeDisplayType::DROPDOWN,
     ) {
         if ($this->filterable) {
             $this->assertFilterableAllowed();
@@ -113,6 +116,21 @@ final class AttributeDefinition
     public function setFilterDisplay(string $value): void
     {
         $this->filterDisplay = FilterDisplay::tryFrom($value) ?? throw InvalidAttributeFilterException::unknownFilterDisplay($value);
+    }
+
+    public function displayType(): AttributeDisplayType
+    {
+        return $this->displayType;
+    }
+
+    /**
+     * No rule beyond the value itself: the product page decides later what each display means for each type.
+     *
+     * @throws InvalidAttributeFilterException
+     */
+    public function setDisplayType(string $value): void
+    {
+        $this->displayType = AttributeDisplayType::tryFrom($value) ?? throw InvalidAttributeFilterException::unknownDisplayType($value);
     }
 
     private function assertFilterableAllowed(): void

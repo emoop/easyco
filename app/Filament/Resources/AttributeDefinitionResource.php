@@ -12,6 +12,7 @@ use App\Filament\Resources\AttributeDefinitionResource\Pages\ViewAttributeDefini
 use App\Filament\Resources\ProductResource;
 use BackedEnum;
 use EasyCo\Catalog\Contracts\AttributeDefinitionRepository;
+use EasyCo\Catalog\Enums\AttributeDisplayType;
 use EasyCo\Catalog\Enums\AttributeType;
 use EasyCo\Catalog\Enums\FilterDisplay;
 use EasyCo\Catalog\Persistence\Eloquent\AttributeDefinitionModel;
@@ -131,6 +132,12 @@ class AttributeDefinitionResource extends Resource
                 ->options(self::filterDisplayOptions())
                 ->default(FilterDisplay::LIST->value)
                 ->visible(fn (Get $get): bool => (bool) $get('is_filterable')),
+            // CT-3: how the values show on the product page and in the card; always visible, any type.
+            Select::make('display_type')
+                ->label(__('attribute_definitions.fields.display_type'))
+                ->helperText(__('attribute_definitions.fields.display_type_help'))
+                ->options(self::displayTypeOptions())
+                ->default(AttributeDisplayType::DROPDOWN->value),
         ]);
     }
 
@@ -288,6 +295,17 @@ class AttributeDefinitionResource extends Resource
      *
      * @return array<string, string>
      */
+    /** @return array<string, string> */
+    private static function displayTypeOptions(): array
+    {
+        return [
+            AttributeDisplayType::SWATCH->value => __('attribute_definitions.display_type.swatch'),
+            AttributeDisplayType::BUTTONS->value => __('attribute_definitions.display_type.buttons'),
+            AttributeDisplayType::DROPDOWN->value => __('attribute_definitions.display_type.dropdown'),
+            AttributeDisplayType::SPECS->value => __('attribute_definitions.display_type.specs'),
+        ];
+    }
+
     /** @return array<string, string> */
     private static function filterDisplayOptions(): array
     {

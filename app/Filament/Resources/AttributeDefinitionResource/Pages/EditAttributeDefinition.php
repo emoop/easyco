@@ -45,6 +45,13 @@ class EditAttributeDefinition extends EditRecord
             throw ValidationException::withMessages(['data.is_filterable' => __('attribute_definitions.errors.not_closed_list')]);
         }
 
+        // CT-3: the display type, on its own field and with its own message (the stored value stays when the form holds it).
+        try {
+            $definition->setDisplayType((string) ($data['display_type'] ?? $definition->displayType()->value));
+        } catch (InvalidAttributeFilterException) {
+            throw ValidationException::withMessages(['data.display_type' => __('attribute_definitions.errors.unknown_display_type')]);
+        }
+
         app(AttributeDefinitionRepository::class)->save($definition);
 
         return AttributeDefinitionModel::find($definition->id());

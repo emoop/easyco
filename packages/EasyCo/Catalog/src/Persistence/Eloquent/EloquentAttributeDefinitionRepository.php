@@ -4,6 +4,7 @@ namespace EasyCo\Catalog\Persistence\Eloquent;
 
 use EasyCo\Catalog\AttributeDefinition;
 use EasyCo\Catalog\Contracts\AttributeDefinitionRepository;
+use EasyCo\Catalog\Enums\AttributeDisplayType;
 use EasyCo\Catalog\Enums\AttributeType;
 use EasyCo\Catalog\Enums\FilterDisplay;
 use Illuminate\Support\Facades\DB;
@@ -30,6 +31,7 @@ final class EloquentAttributeDefinitionRepository implements AttributeDefinition
         $model->type = $definition->type()->value;
         $model->is_filterable = $definition->isFilterable();
         $model->filter_display = $definition->filterDisplay()->value;
+        $model->display_type = $definition->displayType()->value;
         $model->save();
 
         if ($definition->id() === null) {
@@ -81,6 +83,8 @@ final class EloquentAttributeDefinitionRepository implements AttributeDefinition
             type: AttributeType::from($model->type),
             filterable: (bool) $model->is_filterable,
             filterDisplay: FilterDisplay::from($model->filter_display),
+            // CT-3: a stored value that is not one of the four (a hand edit, a future value) reads as the default, so the list never breaks.
+            displayType: AttributeDisplayType::tryFrom((string) $model->display_type) ?? AttributeDisplayType::DROPDOWN,
         );
     }
 }

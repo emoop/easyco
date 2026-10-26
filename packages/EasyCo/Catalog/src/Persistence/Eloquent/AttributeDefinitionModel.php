@@ -20,6 +20,7 @@ class AttributeDefinitionModel extends Model
         'type',
         'is_filterable',
         'filter_display',
+        'display_type',
     ];
 
     protected $casts = [

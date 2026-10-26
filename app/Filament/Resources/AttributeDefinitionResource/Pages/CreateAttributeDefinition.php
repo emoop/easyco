@@ -33,6 +33,13 @@ class CreateAttributeDefinition extends CreateRecord
             throw ValidationException::withMessages(['data.is_filterable' => __('attribute_definitions.errors.not_closed_list')]);
         }
 
+        // CT-3: the display type is refused on its own field, with its own message.
+        try {
+            $definition->setDisplayType((string) ($data['display_type'] ?? 'dropdown'));
+        } catch (InvalidAttributeFilterException) {
+            throw ValidationException::withMessages(['data.display_type' => __('attribute_definitions.errors.unknown_display_type')]);
+        }
+
         app(AttributeDefinitionRepository::class)->save($definition);
 
         return AttributeDefinitionModel::find($definition->id());
