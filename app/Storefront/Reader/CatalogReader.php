@@ -219,7 +219,7 @@ final class CatalogReader
 
         $products = $this->visibility->products(ProductModel::query())
             ->select(['catalog_products.id', 'catalog_products.slug', 'catalog_products.name', 'catalog_products.brand_id'])
-            ->addSelect(['first_media_id' => self::firstImageIdSubquery()])
+            ->addSelect(['first_media_id' => self::firstImageIdSubquery(), 'second_media_id' => self::secondImageIdSubquery()])
             ->with('brand:id,name,slug');
 
         $this->applyScope($products, $query);
@@ -260,19 +260,39 @@ final class CatalogReader
 
     /**
      * The first customer-usable image of each product, as a correlated subquery INSIDE the page query (the same shape
-     * as the sandbox's), but returning the media id so the page's assets can be loaded in ONE query afterwards. Only an
-     * IMAGE whose processing is READY counts: a pending or failed asset has no files yet.
+     * as the sandbox's), but returning the media id so the page's assets can be loaded in ONE query afterwards.
      */
     private static function firstImageIdSubquery(): QueryBuilder
+    {
+        return self::usableImageIdSubquery(0);
+    }
+
+    /**
+     * The SECOND customer-usable image of each product (PC-1): the same usable set and the same order as the first one,
+     * one row further. A usable photo in position 2 is skipped like any other unusable one, so the second photo is the
+     * second USABLE one. Same query as the first (no extra query per card).
+     */
+    private static function secondImageIdSubquery(): QueryBuilder
+    {
+        return self::usableImageIdSubquery(1);
+    }
+
+    /**
+     * The media id of the usable image at `$position` (0 = first) of a product: an IMAGE that is READY and not missing
+     * on disk (`missing_at`), in the merchant's order (sort_order, then media id). ONE rule for both photos.
+     */
+    private static function usableImageIdSubquery(int $position): QueryBuilder
     {
         return DB::table('catalog_product_media')
             ->join('catalog_media', 'catalog_media.id', '=', 'catalog_product_media.media_id')
             ->whereColumn('catalog_product_media.product_id', 'catalog_products.id')
             ->where('catalog_media.type', MediaType::IMAGE->value)
             ->where('catalog_media.processing_status', ProcessingStatus::READY->value)
+            ->whereNull('catalog_media.missing_at')
             ->orderBy('catalog_product_media.sort_order')
             ->orderBy('catalog_media.id')
             ->limit(1)
+            ->offset($position)
             ->select('catalog_media.id');
     }
 
@@ -287,7 +307,10 @@ final class CatalogReader
         }
 
         $productIds = array_map(fn (ProductModel $p): string => (string) $p->id, $products);
-        $mediaIds = array_values(array_unique(array_filter(array_map(fn (ProductModel $p) => $p->getAttribute('first_media_id'), $products))));
+        $mediaIds = array_values(array_unique(array_filter(array_merge(
+            array_map(fn (ProductModel $p) => $p->getAttribute('first_media_id'), $products),
+            array_map(fn (ProductModel $p) => $p->getAttribute('second_media_id'), $products),
+        ))));
 
         $assets = $mediaIds === [] ? collect() : MediaAssetModel::query()->whereIn('id', $mediaIds)->get()->keyBy('id');
 
@@ -311,6 +334,8 @@ final class CatalogReader
             $id = (string) $product->id;
             $mediaId = $product->getAttribute('first_media_id');
             $asset = $mediaId === null ? null : $assets->get($mediaId);
+            $secondId = $product->getAttribute('second_media_id');
+            $second = $secondId === null ? null : $assets->get($secondId);
 
             $cards[] = new ProductCard(
                 id: $id,
@@ -319,6 +344,7 @@ final class CatalogReader
                 name: (string) $product->name,
                 brand: $this->brandOf($product),
                 image: $asset === null ? null : $this->images->build($asset, (string) $product->name, ImageSetBuilder::SIZES_CARD),
+                secondImage: $second === null ? null : $this->images->build($second, (string) $product->name, ImageSetBuilder::SIZES_CARD),
                 price: $this->productPrice($variationIdsByProduct[$id] ?? [], $quotes),
                 badges: [],
                 inStock: array_filter(

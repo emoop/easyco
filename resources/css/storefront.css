@@ -218,6 +218,10 @@
     /* ---- card ----------------------------------------------------------------------------------- */
     .sf-card {
         @apply flex flex-col overflow-hidden rounded-lg border border-neutral-200 bg-white transition hover:shadow-md;
+        /* PC-1: the hover photo's zoom and timings, in one place each (the owner tunes them here). */
+        --sf-card-zoom: 1.1;
+        --sf-card-zoom-time: 900ms;
+        --sf-card-fade-time: 450ms;
     }
 
     .sf-card-link {
@@ -225,12 +229,44 @@
     }
 
     .sf-card-image {
-        @apply w-full overflow-hidden bg-neutral-100;
-        aspect-ratio: 4 / 3;
+        @apply relative w-full overflow-hidden bg-neutral-100;
+        aspect-ratio: var(--sf-card-ratio, 3 / 4);
     }
 
     .sf-card-image > .sf-image {
         @apply h-full w-full object-cover;
+        object-position: 50% 0;
+    }
+
+    /* PC-1: the second photo is stacked over the first. It shows only with a fine pointer on hover or keyboard focus, and only
+       once it has loaded (the script adds .is-loaded). No animation when the visitor asks for less motion. */
+    .sf-card-image > .sf-card-image-hover {
+        @apply absolute inset-0 h-full w-full object-cover;
+        object-position: 50% 0;
+        opacity: 0;
+        transform: scale(1);
+        transition: opacity var(--sf-card-fade-time) ease, transform var(--sf-card-zoom-time) cubic-bezier(0.2, 0.6, 0.2, 1);
+    }
+
+    @media (hover: hover) and (pointer: fine) {
+        .sf-card:hover .sf-card-image-hover.is-loaded,
+        .sf-card:focus-within .sf-card-image-hover.is-loaded {
+            opacity: 1;
+        }
+    }
+
+    /* The zoom only where motion is allowed: with reduced motion the photo switches, instantly, and does not grow. */
+    @media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+        .sf-card:hover .sf-card-image-hover.is-loaded,
+        .sf-card:focus-within .sf-card-image-hover.is-loaded {
+            transform: scale(var(--sf-card-zoom));
+        }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .sf-card-image > .sf-card-image-hover {
+            transition: none;
+        }
     }
 
     .sf-card-brand {

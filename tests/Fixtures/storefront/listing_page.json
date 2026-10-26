@@ -46,7 +46,28 @@
                 "regular_from_minor": 10000
             },
             "badges": [],
-            "in_stock": true
+            "in_stock": true,
+            "second_image": {
+                "src": "https://cdn.test/storage/p/2-medium.webp",
+                "alt": "Summer dress",
+                "width": 900,
+                "height": 675,
+                "srcset": [
+                    {
+                        "url": "https://cdn.test/storage/p/2-thumbnail.webp",
+                        "width": 400
+                    },
+                    {
+                        "url": "https://cdn.test/storage/p/2-medium.webp",
+                        "width": 900
+                    },
+                    {
+                        "url": "https://cdn.test/storage/p/2-large.webp",
+                        "width": 1600
+                    }
+                ],
+                "sizes_hint": "(min-width: 1024px) 25vw, (min-width: 640px) 50vw, 100vw"
+            }
         },
         {
             "id": "2",

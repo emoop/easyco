@@ -430,3 +430,5 @@ Reviews е **отделен малък домейн**. Зависи от Catalog
 7. Промо блок с цветове и брояч.
 8. Долна зона и секциите в нея.
 9. Reviews домейн и неговите компоненти.
+
+**PC-1 as built (step 1).** The card's frame is `aspect-ratio: var(--sf-card-ratio, 3 / 4)` (portrait, one variable) with `object-position: 50% 0`; the second photo (the second usable one, same rule as the first: READY, IMAGE, not `missing_at`) comes from the same listing query; its URLs sit in data- attributes and `storefront.js` requests it on the first mouse hover or keyboard focus of the card (focus only with a fine pointer, so a touch tap does not fetch it). Differs from §3.2 only by that keyboard focus.

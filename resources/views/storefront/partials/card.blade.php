@@ -1,7 +1,7 @@
 <article class="sf-card">
     <a class="sf-card-link" href="{{ $card->url }}">
         @if ($card->image !== null)
-            <div class="sf-card-image">@include('storefront.partials.image', ['image' => $card->image, 'eager' => $eager])</div>
+            <div class="sf-card-image">@include('storefront.partials.image', ['image' => $card->image, 'eager' => $eager])@if ($card->secondImage !== null)<img class="sf-card-image-hover" alt="" width="{{ $card->secondImage->width }}" height="{{ $card->secondImage->height }}" decoding="async" hidden data-src="{{ $card->secondImage->src }}" data-srcset="{{ collect($card->secondImage->srcset)->map(fn ($source) => $source['url'].' '.$source['width'].'w')->implode(', ') }}" data-sizes="{{ $card->secondImage->sizesHint }}">@endif</div>
         @else
             <div class="sf-card-image sf-image-placeholder" aria-hidden="true" role="presentation"></div>
         @endif

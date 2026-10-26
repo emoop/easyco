@@ -22,13 +22,18 @@ final readonly class ProductCard
         public ?PriceBlock $price,
         public array $badges,
         public bool $inStock,
+        public ?ImageSet $secondImage = null,
     ) {
     }
 
-    /** @return array<string, mixed> */
+    /**
+     * The second photo (PC-1) is OMITTED when the product has none: a card with one photo keeps the same data as before.
+     *
+     * @return array<string, mixed>
+     */
     public function toArray(): array
     {
-        return [
+        $data = [
             'id' => $this->id,
             'slug' => $this->slug,
             'url' => $this->url,
@@ -39,5 +44,11 @@ final readonly class ProductCard
             'badges' => array_map(static fn (Badge $badge): array => $badge->toArray(), $this->badges),
             'in_stock' => $this->inStock,
         ];
+
+        if ($this->secondImage !== null) {
+            $data['second_image'] = $this->secondImage->toArray();
+        }
+
+        return $data;
     }
 }

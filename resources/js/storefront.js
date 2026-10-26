@@ -1,6 +1,7 @@
 // The storefront's only script (stage S2c): about forty lines of plain JavaScript — no framework, no
 // imports, no Livewire. It does two things and nothing else: (1) the mobile menu toggle and (2) the
-// product gallery's thumbnail swap (and, since D2, the header's drawer, search row and accordion). BOTH are progressive: without this script the pages still work —
+// product gallery's thumbnail swap (and, since D2, the header's drawer, search row and accordion), and (3) since PC-1 the second photo of a product card on hover.
+// All of them are progressive: without this script the pages still work —
 // the nav is shown by default and the first gallery image is the main one (see the `.js` rules in
 // storefront.css). The file is loaded only from the guarded @vite in
 // resources/views/storefront/layout.blade.php, so a checkout without a build gets no script at all.
@@ -340,6 +341,46 @@ document.addEventListener('click', function (event) {
         } else {
             thumbs[i].removeAttribute('aria-current');
         }
+    }
+});
+
+// PC-1: a product card's second photo is requested on the FIRST pointer hover (a mouse) or keyboard focus of the card, never before. The browser fetches nothing on its own:
+// the photo's URLs sit in data- attributes until then. Once per card: the data- attributes are removed, so a second hover finds nothing to do.
+function revealSecondPhoto(target) {
+    var card = target && target.closest ? target.closest('.sf-card') : null;
+    var image = card ? card.querySelector('.sf-card-image-hover[data-src]') : null;
+
+    if (image === null) {
+        return;
+    }
+
+    image.removeAttribute('hidden');
+    image.setAttribute('srcset', image.getAttribute('data-srcset'));
+    image.setAttribute('sizes', image.getAttribute('data-sizes'));
+    image.setAttribute('src', image.getAttribute('data-src'));
+    image.removeAttribute('data-src');
+    image.removeAttribute('data-srcset');
+    image.removeAttribute('data-sizes');
+
+    var show = function () { image.classList.add('is-loaded'); };
+    image.addEventListener('load', show, { once: true });
+
+    if (image.complete) {
+        show();
+    }
+}
+
+// pointerover bubbles (pointerenter does not), so one listener on the document serves every card. Touch never reaches here: pointerType is 'touch' or 'pen'.
+document.addEventListener('pointerover', function (event) {
+    if (event.pointerType === 'mouse') {
+        revealSecondPhoto(event.target);
+    }
+});
+
+// Keyboard focus on a card counts too, but a touch tap can also focus a link: only with a fine pointer, where the photo can be shown at all.
+document.addEventListener('focusin', function (event) {
+    if (window.matchMedia('(hover: hover) and (pointer: fine)').matches) {
+        revealSecondPhoto(event.target);
     }
 });
 

@@ -96,7 +96,10 @@ class StorefrontPagesTest extends TestCase
         $listing = $this->get('/')->assertOk()->getContent();
 
         $this->assertStringContainsString('sf-image-placeholder', $listing, 'a card without an image keeps its box');
-        $this->assertSame(1, substr_count($this->pageContent($listing), '<img '), 'only the product that has an image renders <img>');
+        // PC-1: the hover photo of a card with two photos is an <img> too; the count is of the MAIN images only.
+        preg_match_all('/<img\b[^>]*>/', $this->pageContent($listing), $images);
+        $mainImages = array_filter($images[0], fn (string $tag): bool => ! str_contains($tag, 'sf-card-image-hover'));
+        $this->assertCount(1, $mainImages, 'only the product that has an image renders <img>');
 
         // The product page of a product with no images: the gallery shows the same placeholder and no <img>.
         $page = $this->get('/product/sold-out-scarf')->assertOk()->getContent();
