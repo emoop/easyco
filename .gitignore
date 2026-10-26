@@ -46,3 +46,6 @@ Thumbs.db
 /notes/local/
 
 *.diff.txt
+
+# local Claude Code settings and caches
+/.claude/
