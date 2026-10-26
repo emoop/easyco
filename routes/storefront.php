@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Storefront\CardSizesController;
 use App\Http\Controllers\Storefront\CartPageController;
 use App\Http\Controllers\Storefront\CategoryController;
 use App\Http\Controllers\Storefront\CheckoutPageController;
@@ -77,6 +78,12 @@ Route::middleware([SecurityHeaders::class, ApplyStorefrontTheme::class])
         Route::get('/product-category/{path}', [CategoryController::class, 'show'])
             ->where('path', '[\s\S]*')
             ->name('storefront.category');
+
+        // PC-2: the sizes of a listing page's cards, one cacheable GET for all of them (the browser asks on the first hover or when idle). Sessionless as the rest
+        // of this group; the 60/min budget is the route's own inline throttle (the same way the login route has its own).
+        Route::get('/storefront/card-sizes', [CardSizesController::class, 'show'])
+            ->middleware('throttle:60,1')
+            ->name('storefront.card-sizes');
     });
 
 /*

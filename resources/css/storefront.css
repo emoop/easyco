@@ -269,6 +269,51 @@
         }
     }
 
+    /* PC-2: the sizes of the card, one line at the bottom of the photo (about 12% of it at most). Pointer-less: a click goes to the product. Desktop: shown while the
+       card is hovered or focused. Touch: slides up from the bottom once the script has filled it (.is-ready). */
+    .sf-card-image > .sf-card-sizes {
+        @apply pointer-events-none absolute inset-x-0 bottom-0 z-10 m-0 flex list-none flex-nowrap gap-1 overflow-hidden bg-white/90 px-2 py-1 text-xs leading-5;
+        opacity: 0;
+        transition: opacity var(--sf-card-fade-time) ease;
+    }
+
+    .sf-card-sizes li {
+        @apply whitespace-nowrap text-neutral-900;
+    }
+
+    .sf-card-sizes li.is-sold-out {
+        @apply text-neutral-400 line-through;
+    }
+
+    @media (hover: hover) and (pointer: fine) {
+        .sf-card:hover .sf-card-sizes,
+        .sf-card:focus-within .sf-card-sizes {
+            opacity: 1;
+        }
+    }
+
+    @media (hover: none), (pointer: coarse) {
+        .sf-card-image > .sf-card-sizes {
+            transform: translateY(100%);
+            transition-property: transform, opacity;
+            transition-duration: 350ms;
+            transition-timing-function: cubic-bezier(0.25, 0.1, 0.25, 1);
+            transition-delay: var(--sf-sizes-delay, 0ms);
+        }
+
+        .sf-card-image > .sf-card-sizes.is-ready {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .sf-card-image > .sf-card-sizes {
+            transition: none;
+            transform: none;
+        }
+    }
+
     .sf-card-brand {
         @apply mt-2 px-3 text-xs uppercase tracking-wide text-neutral-500;
     }

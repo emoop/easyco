@@ -434,3 +434,5 @@ Reviews е **отделен малък домейн**. Зависи от Catalog
 9. Reviews домейн и неговите компоненти.
 
 **PC-1 as built (step 1).** The card's frame is `aspect-ratio: var(--sf-card-ratio, 3 / 4)` (portrait, one variable) with `object-position: 50% 0`; the second photo (the second usable one, same rule as the first: READY, IMAGE, not `missing_at`) comes from the same listing query; its URLs sit in data- attributes and `storefront.js` requests it on the first mouse hover or keyboard focus of the card (focus only with a fine pointer, so a touch tap does not fetch it). Differs from §3.2 only by that keyboard focus.
+
+**PC-2 as built (step 1, sizes on the card).** The sizes of a card are the values of the product's first `buttons` axis (CT-3), in the value order, at most 8; a sold-out size is crossed out. They come in ONE cacheable GET `/storefront/card-sizes?ids=…` (60 s, no cookie) for the page's cards: on the first mouse hover on desktop, and once when idle on touch devices (the strip slides up under the photo). This replaces §3.2's "на мобилен не се прилага" (line 60) by the owner's decision of 2026-10-25; with data saver on nothing is asked.

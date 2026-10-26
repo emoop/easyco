@@ -1,6 +1,6 @@
 // The storefront's only script (stage S2c): about forty lines of plain JavaScript — no framework, no
 // imports, no Livewire. It does two things and nothing else: (1) the mobile menu toggle and (2) the
-// product gallery's thumbnail swap (and, since D2, the header's drawer, search row and accordion), and (3) since PC-1 the second photo of a product card on hover.
+// product gallery's thumbnail swap (and, since D2, the header's drawer, search row and accordion), (3) since PC-1 the second photo of a product card on hover, and (4) since PC-2 the sizes of the cards.
 // All of them are progressive: without this script the pages still work —
 // the nav is shown by default and the first gallery image is the main one (see the `.js` rules in
 // storefront.css). The file is loaded only from the guarded @vite in
@@ -374,6 +374,7 @@ function revealSecondPhoto(target) {
 document.addEventListener('pointerover', function (event) {
     if (event.pointerType === 'mouse') {
         revealSecondPhoto(event.target);
+        requestCardSizes(); // PC-2: the first mouse hover over a card asks for the sizes of the whole page (once)
     }
 });
 
@@ -383,4 +384,123 @@ document.addEventListener('focusin', function (event) {
         revealSecondPhoto(event.target);
     }
 });
+
+// PC-2: the SIZES of the cards (sold-out ones crossed out), in ONE request for the page. Desktop: asked at the first mouse hover over a card, shown by the hover.
+// Touch (no hover): asked once, when the browser is idle after the page has loaded, and slid in under every photo. Data saver: never asked. Decided once, at load.
+// Without matchMedia (an old browser, or a script host that has none) the mode is 'hover': the sizes then wait for a mouse hover, so nothing runs at load.
+var sizesMode = typeof window.matchMedia !== 'function' || window.matchMedia('(hover: hover) and (pointer: fine)').matches ? 'hover' : 'touch';
+var sizesRequested = false;
+var sizesLogged = false;
+
+function cardSizesWanted() {
+    return ! (navigator.connection && navigator.connection.saveData === true);
+}
+
+function requestCardSizes() {
+    if (sizesRequested || ! cardSizesWanted()) {
+        return;
+    }
+
+    // the first 48 cards of the page, by their product id; a card outside them simply has no sizes
+    var ids = [];
+    var cards = document.querySelectorAll('article.sf-card[data-product-id]');
+
+    for (var i = 0; i < cards.length && ids.length < 48; i++) {
+        var id = cards[i].getAttribute('data-product-id');
+
+        if (/^[1-9][0-9]{0,17}$/.test(id) && ids.indexOf(id) === -1) {
+            ids.push(id);
+        }
+    }
+
+    if (ids.length === 0) {
+        return;
+    }
+
+    sizesRequested = true;
+
+    fetch('/storefront/card-sizes?ids=' + ids.join(','), { headers: { Accept: 'application/json' }, credentials: 'omit' })
+        .then(function (response) {
+            if (! response.ok) {
+                throw new Error('status ' + response.status);
+            }
+
+            return response.json();
+        })
+        .then(function (data) {
+            fillCardSizes(data && data.sizes ? data.sizes : {});
+        })
+        .catch(function (error) {
+            if (! sizesLogged) {
+                sizesLogged = true;
+                console.debug('card sizes unavailable', error);
+            }
+        });
+}
+
+// Fills the list of every card that has sizes: one <li> per size, with textContent only (never innerHTML); sold-out sizes get .is-sold-out.
+function fillCardSizes(sizesByProduct) {
+    var filled = [];
+
+    document.querySelectorAll('article.sf-card[data-product-id]').forEach(function (card) {
+        var sizes = sizesByProduct[card.getAttribute('data-product-id')];
+        var list = card.querySelector('.sf-card-sizes');
+
+        if (! list || ! Array.isArray(sizes) || sizes.length === 0) {
+            return;
+        }
+
+        while (list.firstChild) {
+            list.removeChild(list.firstChild);
+        }
+
+        sizes.forEach(function (size) {
+            var item = document.createElement('li');
+            item.textContent = String(size.label);
+
+            if (! size.in_stock) {
+                item.className = 'is-sold-out';
+            }
+
+            list.appendChild(item);
+        });
+
+        list.removeAttribute('hidden');
+        filled.push(list);
+    });
+
+    if (sizesMode === 'touch') {
+        revealSizeStrips(filled);
+    }
+}
+
+// Touch: the strips slide in on the next two frames (so the transition runs), one after another for the first 12 cards (40 ms apart).
+function revealSizeStrips(lists) {
+    lists.forEach(function (list, index) {
+        list.style.setProperty('--sf-sizes-delay', (index < 12 ? index * 40 : 0) + 'ms');
+    });
+
+    requestAnimationFrame(function () {
+        requestAnimationFrame(function () {
+            lists.forEach(function (list) {
+                list.classList.add('is-ready');
+            });
+        });
+    });
+}
+
+// Touch mode asks once, when the browser is idle after the load (2 s at most; 1.2 s where requestIdleCallback is missing).
+if (sizesMode === 'touch') {
+    window.addEventListener('load', function () {
+        var ask = function () {
+            requestCardSizes();
+        };
+
+        if ('requestIdleCallback' in window) {
+            window.requestIdleCallback(ask, { timeout: 2000 });
+        } else {
+            setTimeout(ask, 1200);
+        }
+    });
+}
 
