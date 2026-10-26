@@ -18,7 +18,7 @@
     <div class="mpf" x-data>
         @if ($ids === [])
             <div class="mpf-empty">
-                <span class="mpf-none">{{ __($multiple ? 'media.picker.none_many' : ($isVideo ? 'media.picker.none_video' : 'media.picker.none')) }}</span>
+                <span class="mpf-none">{{ $getEmptyText() ?? __($multiple ? 'media.picker.none_many' : ($isVideo ? 'media.picker.none_video' : 'media.picker.none')) }}</span>
                 <span class="mpf-actions">{{ $getAction('pick') }}</span>
             </div>
         @elseif (! $multiple)
@@ -28,7 +28,7 @@
                 $videoUrl = $asset === null || ! $isVideo ? null : app(\EasyCo\Media\Contracts\MediaStorageAdapter::class)->url((string) $asset->disk, (string) $asset->path);
             @endphp
             <div class="mpf-one">
-                <div class="mpf-big">
+                <div class="mpf-big @if ($hasCheckerBackground()) mpf-big-checker @endif">
                     @if ($videoUrl !== null)
                         <video src="{{ $videoUrl }}" controls preload="metadata" muted></video>
                     @elseif ($thumb !== null)

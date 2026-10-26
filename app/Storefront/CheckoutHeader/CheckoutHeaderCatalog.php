@@ -9,6 +9,7 @@ namespace App\Storefront\CheckoutHeader;
  *   enabled        bool       default false: the shop keeps its full header on the cart and the checkout until the merchant switches this on and publishes
  *   logo_height_d  int 16-80  desktop logo height in px (default 28)
  *   logo_height_m  int 16-64  phone logo height in px (default 26)
+ *   logo_image     media      LG-1: the id of a PNG / WebP picture for the logo; none = the static logo (never stored when empty)
  *   back_label     text <= 30 the link's text; empty = the shop's own words «Към магазина» (the storefront language file)
  *   back_url       url        a path in the shop or an https address (default "/")
  *   phone          phone      optional, an INTERNATIONAL number (+359 ...), printed as a `tel:` link
@@ -30,6 +31,8 @@ final class CheckoutHeaderCatalog
             'enabled' => ['kind' => 'bool', 'default' => false],
             'logo_height_d' => ['kind' => 'int', 'min' => 16, 'max' => 80, 'default' => 28],
             'logo_height_m' => ['kind' => 'int', 'min' => 16, 'max' => 64, 'default' => 26],
+            // LG-1: the logo as a picture (a PNG or WebP of the library); empty = the static file, and an empty value is never stored (so `defaults()` does not list it)
+            'logo_image' => \App\Storefront\Header\HeaderCatalog::LOGO_IMAGE,
             'back_label' => ['kind' => 'text', 'max' => self::BACK_LABEL_MAX, 'default' => ''],
             'back_url' => ['kind' => 'url', 'default' => '/'],
             'phone' => ['kind' => 'phone', 'default' => ''],

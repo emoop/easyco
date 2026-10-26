@@ -21,6 +21,7 @@ final class MediaAssetId implements ValidationRule
     /**
      * @param  list<string>  $types  the asset types the field accepts
      * @param  int|null  $minWidth  ML-3: the smallest accepted picture; a picture with no stored size yet (not backfilled) is refused too
+     * @param  list<string>|null  $mimes  LG-1: only these MIME types (the stored `catalog_media.mime`); a row with no mime yet is refused with the backfill hint
      * @param  list<int|string>  $exempt  ids NOT checked against the minimum (pictures the record already has: saving a product must not fail because of an old small photo)
      */
     public function __construct(
@@ -29,6 +30,7 @@ final class MediaAssetId implements ValidationRule
         private readonly ?int $minWidth = null,
         private readonly ?int $minHeight = null,
         private readonly array $exempt = [],
+        private readonly ?array $mimes = null,
     ) {
     }
 
@@ -72,7 +74,31 @@ final class MediaAssetId implements ValidationRule
             return;
         }
 
+        if ($this->mimes !== null && ! $this->mimesAllowed($clean, $fail)) {
+            return;
+        }
+
         $this->checkMinimum(array_values(array_diff($clean, array_map('intval', $this->exempt))), $fail);
+    }
+
+    /** @param  list<int>  $ids */
+    private function mimesAllowed(array $ids, Closure $fail): bool
+    {
+        foreach (MediaAssetModel::query()->whereIn('id', $ids)->get(['id', 'mime']) as $row) {
+            if ($row->mime === null || $row->mime === '') {
+                $fail(__('media.picker.errors.unknown_mime'));
+
+                return false;
+            }
+
+            if (! in_array($row->mime, $this->mimes, true)) {
+                $fail(__('media.picker.errors.wrong_mime', ['types' => \App\Media\MediaUploader::typeNames($this->mimes)]));
+
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /** @param  list<int>  $ids */

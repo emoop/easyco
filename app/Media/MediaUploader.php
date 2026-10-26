@@ -43,10 +43,11 @@ final class MediaUploader
      * @param  iterable<array{name: string, content: string}>  $files
      * @param  bool  $imagesOnly  a picture field (the media picker): a video is refused with its reason
      * @param  bool  $videosOnly  ML-3, the product video field: a picture is refused with its reason
+     * @param  list<string>|null  $mimes  LG-1, the logo: only these MIME types (found by the CONTENT, never the file name); any other is refused BEFORE it is stored
      * @param  int|null  $minWidth  ML-3, product photos: a smaller picture (after it is turned upright, as the API does) is refused BEFORE anything is stored
      * @return array{stored: list<int>, refused: list<array{name: string, reason: string}>}
      */
-    public function upload(iterable $files, bool $imagesOnly = false, bool $videosOnly = false, ?int $minWidth = null, ?int $minHeight = null): array
+    public function upload(iterable $files, bool $imagesOnly = false, bool $videosOnly = false, ?int $minWidth = null, ?int $minHeight = null, ?array $mimes = null): array
     {
         $stored = [];
         $refused = [];
@@ -60,6 +61,12 @@ final class MediaUploader
 
             if ($isVideo && $imagesOnly) {
                 $refused[] = ['name' => $name, 'reason' => __('media.picker.images_only')];
+
+                continue;
+            }
+
+            if ($mimes !== null && ! in_array($mime, $mimes, true)) {
+                $refused[] = ['name' => $name, 'reason' => __('media.picker.mime_only', ['types' => self::typeNames($mimes)])];
 
                 continue;
             }
@@ -115,6 +122,14 @@ final class MediaUploader
         }
 
         return ['stored' => $stored, 'refused' => $refused];
+    }
+
+    /** «PNG и WebP»: the names of MIME types for a message. @param  list<string>  $mimes */
+    public static function typeNames(array $mimes): string
+    {
+        $names = ['image/png' => 'PNG', 'image/webp' => 'WebP', 'image/jpeg' => 'JPEG', 'image/gif' => 'GIF', 'image/avif' => 'AVIF', 'image/heic' => 'HEIC'];
+
+        return implode(' '.__('media.picker.and').' ', array_map(static fn (string $mime): string => $names[$mime] ?? $mime, $mimes));
     }
 
     /** The reason a picture is below the minimum size, else null. The size is read the way the API reads it: decoded and turned upright (a phone photo's EXIF orientation swaps width and height). */

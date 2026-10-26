@@ -54,6 +54,11 @@ final class CheckoutHeaderValidator
                 $clean = '#'.$clean[1].$clean[1].$clean[2].$clean[2].$clean[3].$clean[3];
             }
 
+            // LG-1: an empty picture field is not stored (a checkout header without a logo picture is what it was)
+            if ($clean === null && ($spec['kind'] ?? null) === 'media') {
+                continue;
+            }
+
             $out[$name] = $clean;
         }
 

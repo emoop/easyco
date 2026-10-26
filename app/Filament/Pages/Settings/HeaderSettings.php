@@ -227,6 +227,9 @@ class HeaderSettings extends Page
                 $schema['height'] = ['kind' => 'int', 'min' => $min, 'max' => $max, 'default' => $default];
             }
 
+            // LG-1: the logo PICTURE is chosen in the «Дизайн» screen only; a save from this page keeps the stored one (HeaderDrafts::keepLook())
+            $schema = array_filter($schema, static fn (array $definition): bool => ($definition['kind'] ?? null) !== 'media');
+
             $drawer && $type === 'menu' && $schema['menu']['place'] = 'drawer';
             $fields = array_map(static fn (string $field, array $definition): Component => static::field($field, $definition), array_keys($schema), array_values($schema));
             $blocks[] = Block::make($type)

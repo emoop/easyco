@@ -49,6 +49,14 @@ class MediaPickerBrowser extends Component
     #[Locked]
     public string $kind = 'image';
 
+    /** LG-1: only these MIME types (the logo: PNG and WebP); null = every picture type. The type is the stored `catalog_media.mime`, never the file name. @var list<string>|null */
+    #[Locked]
+    public ?array $mimes = null;
+
+    /** ML-3 review: `image` assets only (not `social_image`), as `plainImagesOnly()` says on the field */
+    #[Locked]
+    public bool $plain = false;
+
     /** ML-3, product photos: the smallest picture the field takes (null = no minimum) */
     #[Locked]
     public ?int $minWidth = null;
@@ -83,7 +91,7 @@ class MediaPickerBrowser extends Component
     /** @var list<array{name: string, reason: string}> */
     public array $refused = [];
 
-    public function mount(string $field = '', bool $multiple = false, int $max = 1, bool $withSize = false, string $tab = 'library', string $kind = 'image', ?int $minWidth = null, ?int $minHeight = null): void
+    public function mount(string $field = '', bool $multiple = false, int $max = 1, bool $withSize = false, string $tab = 'library', string $kind = 'image', ?int $minWidth = null, ?int $minHeight = null, ?array $mimes = null, bool $plain = false): void
     {
         abort_unless(MediaPickerAccess::allowed(), 403);
 
@@ -94,6 +102,8 @@ class MediaPickerBrowser extends Component
         $this->kind = $kind === 'video' ? 'video' : 'image';
         $this->minWidth = $this->kind === 'image' ? $minWidth : null;
         $this->minHeight = $this->kind === 'image' ? $minHeight : null;
+        $this->mimes = $this->kind === 'image' && $mimes !== null ? array_values(array_filter(array_map('strval', $mimes), static fn (string $mime): bool => preg_match('#^[a-z]+/[a-z0-9.+-]+$#', $mime) === 1)) : null;
+        $this->plain = $this->kind === 'image' && $plain;
         $this->tab = $tab === 'upload' ? 'upload' : 'library';
     }
 
@@ -105,10 +115,15 @@ class MediaPickerBrowser extends Component
         $query = $this->kind === 'video'
             ? MediaAssetModel::query()->whereIn('catalog_media.type', MediaAssetId::VIDEO_TYPES)->where(fn (Builder $r) => MediaFilters::state($r, 'ready'))
             : MediaAssetModel::query()
-                ->whereIn('catalog_media.type', MediaAssetId::TYPES)
+                ->whereIn('catalog_media.type', $this->plain ? ['image'] : MediaAssetId::TYPES)
                 ->where(fn (Builder $q) => $q
                     ->where(fn (Builder $r) => MediaFilters::state($r, 'ready'))
                     ->orWhere(fn (Builder $r) => MediaFilters::state($r, 'processing')));
+
+        // LG-1: only the allowed types; a row whose type is not known yet (not backfilled) stays listed (marked, and refused on «Избери»)
+        if ($this->mimes !== null) {
+            $query->where(fn (Builder $q) => $q->whereIn('catalog_media.mime', $this->mimes)->orWhereNull('catalog_media.mime'));
+        }
 
         // ML-3: only pictures that are big enough; one with no stored size yet stays listed (marked, and refused on «Избери» until the backfill)
         if ($this->minWidth !== null || $this->minHeight !== null) {
@@ -204,7 +219,7 @@ class MediaPickerBrowser extends Component
             return;
         }
 
-        $result = app(MediaUploader::class)->upload($files, imagesOnly: $this->kind === 'image', videosOnly: $this->kind === 'video', minWidth: $this->minWidth, minHeight: $this->minHeight);
+        $result = app(MediaUploader::class)->upload($files, imagesOnly: $this->kind === 'image', videosOnly: $this->kind === 'video', minWidth: $this->minWidth, minHeight: $this->minHeight, mimes: $this->mimes);
         $this->refused = $result['refused'];
 
         if ($result['stored'] !== []) {
@@ -229,7 +244,7 @@ class MediaPickerBrowser extends Component
             return;
         }
 
-        $check = Validator::make(['ids' => $this->multiple ? $ids : $ids[0]], ['ids' => [new MediaAssetId($this->multiple ? $this->max : null, $this->kind === 'video' ? MediaAssetId::VIDEO_TYPES : MediaAssetId::TYPES, $this->minWidth, $this->minHeight)]]);
+        $check = Validator::make(['ids' => $this->multiple ? $ids : $ids[0]], ['ids' => [new MediaAssetId($this->multiple ? $this->max : null, $this->kind === 'video' ? MediaAssetId::VIDEO_TYPES : ($this->plain ? ['image'] : MediaAssetId::TYPES), $this->minWidth, $this->minHeight, [], $this->mimes)]]);
 
         if ($check->fails()) {
             throw ValidationException::withMessages(['selected' => $check->errors()->first('ids')]);
@@ -262,7 +277,7 @@ class MediaPickerBrowser extends Component
             'currentPreview' => $current === null || $this->kind === 'video' ? null : MediaResource::previewUrl($current, 'medium'),
             'currentVideoUrl' => $current === null || $this->kind !== 'video' ? null : app(MediaStorageAdapter::class)->url((string) $current->disk, (string) $current->path),
             'maxFiles' => MediaUploader::MAX_FILES,
-            'accept' => implode(',', array_filter(MediaUploader::acceptedMimes(), fn (string $mime): bool => str_starts_with($mime, $this->kind === 'video' ? 'video/' : 'image/'))),
+            'accept' => implode(',', array_filter(MediaUploader::acceptedMimes(), fn (string $mime): bool => str_starts_with($mime, $this->kind === 'video' ? 'video/' : 'image/') && ($this->mimes === null || in_array($mime, $this->mimes, true)))),
         ]);
     }
 }

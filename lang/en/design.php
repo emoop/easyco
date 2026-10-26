@@ -151,4 +151,18 @@ return [
         'unknown' => 'There is no such row, cell or component.',
         'cannot_move' => 'The component cannot move that way.',
     ],
+    // LG-1: the logo as a picture
+    'logo' => [
+        'image' => 'Logo (picture)',
+        'empty' => 'The standard logo is used',
+        'help' => 'PNG or WebP, ideally with a transparent background. Upload it at least 2 times larger than shown (e.g. for a height of 40 px — about 80–100 px), so it is sharp on phones.',
+        'errors' => [
+            'missing' => 'This picture does not exist in Media.',
+            'not_picture' => 'This is not a picture.',
+            'wrong_type' => 'The logo must be a PNG or a WebP.',
+            'unknown_type' => 'The type of this picture is not known yet — run media:backfill-meta or upload it again.',
+            'not_ready' => 'The picture is still being processed — try again in a moment.',
+        ],
+    ],
+
 ];

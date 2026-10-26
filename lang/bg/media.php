@@ -20,6 +20,8 @@ return [
         'zone_header' => 'Хедър',
         'zone_footer' => 'Футър',
         'zone_checkout' => 'Количка и поръчка',
+        'zone_header_logo' => 'Хедър, лого',
+        'zone_checkout_logo' => 'Хедър на поръчката, лого',
     ],
 
     // Изборът на снимка (ML-2)
@@ -60,6 +62,10 @@ return [
         'remove_video' => 'Премахни видеото',
         'none_many' => 'Няма добавени изображения',
         'none_video' => 'Няма добавено видео',
+        'mime_only' => 'тук се приемат само :types',
+        'and' => 'и',
+        'unknown_type' => 'неизвестен тип',
+        'drop_help_max' => 'До :max файла.',
         'videos_only' => 'тук се приемат само видеа',
         'drop_help_video' => 'Едно видео (MP4, WebM, MOV).',
         'drop_help_min' => ' Снимките трябва да са поне :w×:h px.',
@@ -67,6 +73,8 @@ return [
         'move_left' => 'Премести наляво',
         'move_right' => 'Премести надясно',
         'errors' => [
+            'wrong_mime' => 'Тази снимка не е :types.',
+            'unknown_mime' => 'Типът на снимката още не е известен — изпълнете media:backfill-meta или я качете наново.',
             'not_a_video' => 'Избраният файл не е видео или не съществува.',
             'unknown_size' => 'Размерът на снимката още не е известен — изпълнете media:backfill-meta или я качете наново.',
             'too_small' => 'Снимката е твърде малка (:wx:h px) — и двата размера трябва да са поне :min_wx:min_h px.',

@@ -25,12 +25,22 @@ final class HeaderView
         $menuKeys = is_array($layout['menu_keys'] ?? null) ? $layout['menu_keys'] : [];
         // DS-2a.1: a menu chosen by id is found among the compiled menus by its key (header.compiled's `menu_keys`): the one appearance read, no query. null / unknown / empty = the place's menu.
         $menuByKey ??= static fn (string $key): array => app(StorefrontAppearance::class)->menu($key);
-        $keep = static function (array $element, bool $inDrawer = false) use ($catalog, $header, $drawer, $menuKeys, $menuByKey): ?array {
+        // LG-1: the compiled renditions of the logo pictures (id => {url, width, height}); an id with no entry (a picture that was missing or not ready at compile) means the static logo
+        $logoImages = is_array($layout['logo_images'] ?? null) ? $layout['logo_images'] : [];
+        $keep = static function (array $element, bool $inDrawer = false) use ($catalog, $header, $drawer, $menuKeys, $menuByKey, $logoImages): ?array {
             $type = $element['type'];
             $route = HeaderCatalog::FEATURE_ROUTES[$type] ?? null;
 
             if (($route !== null && ! Route::has($route)) || ! isset($catalog[$type]) || ! View::exists($catalog[$type]['view'])) {
                 return null;
+            }
+
+            if ($type === 'logo') {
+                $image = $element['settings']['image'] ?? null;
+                $rendition = is_int($image) ? ($logoImages[(string) $image] ?? null) : null;
+                unset($element['settings']['image']);
+
+                $rendition !== null && $element['settings']['logo_image'] = $rendition;
             }
 
             if ($type === 'menu') {

@@ -25,6 +25,27 @@ use Illuminate\Support\HtmlString;
  */
 final class FieldForms
 {
+    /**
+     * LG-1: a picture field. `mimes` limits the types (and, with it, only plain `image` assets), `empty` is the language key of the text of the empty box, `help` of the grey line under the field,
+     * `checker` shows a filled picture on a light checker (a transparent logo stays visible).
+     *
+     * @param  array<string, mixed>  $field
+     */
+    private static function media(string $name, array $field, string $label): MediaPicker
+    {
+        $picker = MediaPicker::make($name)->label($label)->default(null);
+
+        if (isset($field['mimes'])) {
+            $picker->mimeTypes($field['mimes'])->plainImagesOnly();
+        }
+
+        isset($field['empty']) && $picker->emptyText((string) __($field['empty']));
+        isset($field['help']) && $picker->helperText((string) __($field['help']));
+        ! empty($field['checker']) && $picker->checkerBackground();
+
+        return $picker;
+    }
+
     /** @param  array<string, mixed>  $field  the schema field: `kind` and its own keys */
     public static function make(string $name, array $field): Component
     {
@@ -51,7 +72,7 @@ final class FieldForms
                 ->default(null)
                 ->helperText(new HtmlString('<a href="'.e(HtmlBlockResource::getUrl('index')).'" target="_blank" rel="noopener">'.e(__('design.menu.edit_blocks')).' →</a>')),
             // ML-2: a picture of a component (no zone uses the kind yet; DS-4 will): the media picker, the value is the id of an image in the library
-            'media' => MediaPicker::make($name)->label($label)->default(null),
+            'media' => self::media($name, $field, $label),
             'payments' => CheckboxList::make($name)->label($label)->columns(2)->default([])
                 ->options(array_combine(FooterCatalog::PAYMENTS, array_map(static fn (string $m): string => __('footer.payments.'.$m), FooterCatalog::PAYMENTS))),
             'html' => Textarea::make($name)->label($label)->rows(4)->helperText(__('header.html_help'))->default(''),

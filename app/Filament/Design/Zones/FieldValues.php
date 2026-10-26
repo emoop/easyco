@@ -24,7 +24,7 @@ final class FieldValues
             $out[$name] = match ($field['kind']) {
                 'bool' => (bool) $value,
                 'int' => self::wholeNumber($value),
-                'menu', 'html_block' => self::id($value),
+                'menu', 'html_block', 'media' => self::id($value),
                 'social' => array_values(array_map(static fn (mixed $item): array => ['network' => (string) ($item['network'] ?? ''), 'url' => (string) ($item['url'] ?? '')], array_filter(is_array($value) ? $value : [], 'is_array'))),
                 'payments' => array_values(array_filter(is_array($value) ? $value : [], 'is_string')),
                 default => $value === null ? '' : $value,

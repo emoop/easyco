@@ -20,6 +20,8 @@ return [
         'zone_header' => 'Header',
         'zone_footer' => 'Footer',
         'zone_checkout' => 'Cart and checkout',
+        'zone_header_logo' => 'Header, logo',
+        'zone_checkout_logo' => 'Checkout header, logo',
     ],
 
     // The media picker (ML-2)
@@ -60,6 +62,10 @@ return [
         'remove_video' => 'Remove the video',
         'none_many' => 'No images added',
         'none_video' => 'No video added',
+        'mime_only' => 'only :types are accepted here',
+        'and' => 'and',
+        'unknown_type' => 'unknown type',
+        'drop_help_max' => 'Up to :max files.',
         'videos_only' => 'only videos are accepted here',
         'drop_help_video' => 'One video (MP4, WebM, MOV).',
         'drop_help_min' => ' Pictures must be at least :w×:h px.',
@@ -67,6 +73,8 @@ return [
         'move_left' => 'Move left',
         'move_right' => 'Move right',
         'errors' => [
+            'wrong_mime' => 'This picture is not :types.',
+            'unknown_mime' => 'The type of this picture is not known yet — run media:backfill-meta or upload it again.',
             'not_a_video' => 'The selected file is not a video or does not exist.',
             'unknown_size' => 'The size of this picture is not known yet — run media:backfill-meta or upload it again.',
             'too_small' => 'The picture is too small (:wx:h px) — both sizes must be at least :min_wx:min_h px.',

@@ -8,6 +8,7 @@ use App\Storefront\CheckoutHeader\CheckoutHeaderCatalog;
 use App\Storefront\CheckoutHeader\CheckoutHeaderDrafts;
 use App\Storefront\CheckoutHeader\CheckoutHeaderValidator;
 use App\Storefront\Design\ComponentRegistry;
+use App\Storefront\Design\LogoImage;
 use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Text;
@@ -144,6 +145,7 @@ final class CheckoutHeaderZone implements DesignZone
                 'bool' => (bool) $value,
                 'int' => FieldValues::wholeNumber($value),
                 'color' => is_string($value) && $value !== '' ? $value : null,
+                'media' => FieldValues::id($value),
                 default => $value === null ? '' : $value,
             };
         }
@@ -155,7 +157,13 @@ final class CheckoutHeaderZone implements DesignZone
 
     public function validate(array $tree): array
     {
-        return CheckoutHeaderValidator::validate($tree['values'] ?? []);
+        [$clean, $errors] = CheckoutHeaderValidator::validate($tree['values'] ?? []);
+
+        // LG-1: the logo picture must exist, be READY and a PNG / WebP (the validator is pure: the storefront runs it on every read, without a query)
+        $problem = is_int($clean['logo_image'] ?? null) ? LogoImage::problem($clean['logo_image']) : null;
+        $problem !== null && $errors['logo_image'] = $problem;
+
+        return [$clean, $errors];
     }
 
     public function locate(array $tree, string $path): ?array

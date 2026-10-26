@@ -6,6 +6,7 @@ use App\Filament\Design\FieldForms;
 use App\Http\Controllers\Storefront\HeaderPreviewController;
 use App\Settings\AppearanceSettings;
 use App\Storefront\Design\ComponentRegistry;
+use App\Storefront\Design\LogoImage;
 use App\Storefront\Design\Tree;
 use App\Storefront\Design\TreeEditor;
 use App\Storefront\Design\ZoneStore\HeaderAdapter;
@@ -345,7 +346,16 @@ final class HeaderZone implements DesignZone
             $fields = $this->fieldsOf($node['type'], $layout, TreeEditor::cellOf($current, $selected['id']) === self::DRAWER_CELL);
             $settings = FieldValues::settings($fields, is_array($raw['settings'] ?? null) ? $raw['settings'] : []);
             // a setting the panel does not show (the drawer menu's «Вид») keeps what is stored
-            $current = TreeEditor::setSettings($current, $selected['id'], $settings + $node['settings']);
+            $merged = $settings + $node['settings'];
+
+            // LG-1: an empty picture field is not stored (the logo's `image`): clearing it removes the stored id, and a node that never had one stays as it was
+            foreach ($fields as $name => $field) {
+                if (($field['kind'] ?? null) === 'media' && ($merged[$name] ?? null) === null) {
+                    unset($merged[$name]);
+                }
+            }
+
+            $current = TreeEditor::setSettings($current, $selected['id'], $merged);
         } elseif ($selected['kind'] === 'row' && TreeEditor::row($current, $selected['id']) !== null && $selected['id'] !== self::DRAWER_ROW) {
             $props = ['enabled' => (bool) ($raw['enabled'] ?? false), 'height' => FieldValues::wholeNumber($raw['height'] ?? null)];
             $colors = array_filter(['bg' => $raw['colors']['bg'] ?? null, 'fg' => $raw['colors']['fg'] ?? null], static fn (mixed $c): bool => is_string($c) && $c !== '');
@@ -378,8 +388,23 @@ final class HeaderZone implements DesignZone
     public function validate(array $tree): array
     {
         $validation = HeaderValidator::validate(HeaderAdapter::fromTree($tree));
+        $errors = $validation->errors;
 
-        return [$validation->layout, $validation->errors];
+        // LG-1: the picture of a logo must exist, be READY and a PNG / WebP. The validator is pure (the storefront runs it on every read: no query), so the check that needs the library is here.
+        foreach (['desktop', 'mobile'] as $name) {
+            foreach ($validation->layout[$name]['rows'] ?? [] as $rowName => $row) {
+                foreach (HeaderLayout::SLOTS as $slot) {
+                    foreach ($row[$slot] ?? [] as $i => $element) {
+                        $image = $element['type'] === 'logo' ? ($element['settings']['image'] ?? null) : null;
+                        $problem = is_int($image) ? LogoImage::problem($image) : null;
+
+                        $problem !== null && $errors["{$name}.rows.{$rowName}.{$slot}.{$i}.settings.image"] = $problem;
+                    }
+                }
+            }
+        }
+
+        return [$validation->layout, $errors];
     }
 
     public function locate(array $tree, string $path): ?array

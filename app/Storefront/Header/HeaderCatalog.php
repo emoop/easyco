@@ -29,6 +29,9 @@ final class HeaderCatalog
     /** DS-1: the options this catalog adds to a field's spec for FieldKinds (the header's behaviour IS the default: int_range with its params, too_many_slot). */
     public const KIND_OPTIONS = [];
 
+    /** LG-1: the logo's picture field (shared with the checkout header's `logo_image`). */
+    public const LOGO_IMAGE = ['kind' => 'media', 'default' => null, 'mimes' => ['image/png', 'image/webp'], 'label' => 'design.logo.image', 'empty' => 'design.logo.empty', 'help' => 'design.logo.help', 'checker' => true];
+
     public const SOCIAL_NETWORKS = ['facebook', 'instagram', 'tiktok', 'youtube', 'pinterest', 'viber', 'whatsapp', 'x'];
 
     /** Feature elements: the route that must exist for the element to be printed. */
@@ -46,7 +49,8 @@ final class HeaderCatalog
         $styles = ['kind' => 'enum', 'options' => ['icon', 'icon_label'], 'default' => 'icon'];
 
         $types = [
-            'logo' => ['height' => ['kind' => 'int', 'min' => 16, 'max' => 120, 'default' => 28]],
+            // LG-1: `image` = the id of a PNG or WebP picture in the library (null = the static public/images/logo.svg, exactly as before); never stored when empty. The label, the empty text and the help are the Design screen's.
+            'logo' => ['height' => ['kind' => 'int', 'min' => 16, 'max' => 120, 'default' => 28], 'image' => self::LOGO_IMAGE],
             // DS-2a.1: `menu` = the id of the menu to show (null = the menu of this element's PLACE: the header's, or the drawer's). `style` is «Вид» in the admin: `links` = the bar, `dropdown` = one
             // «Меню» button with a panel; `mega` is accepted in a stored layout (it prints exactly like `links`: mega panels are chosen per menu ITEM since MENU-2) but is no longer offered.
             'menu' => [
@@ -169,6 +173,11 @@ final class HeaderCatalog
         $defaults = [];
 
         foreach ((self::all()[$type]['schema'] ?? []) as $name => $field) {
+            // LG-1: an empty picture field is not stored (the logo's `image`): it is not a default, it is absent
+            if (($field['kind'] ?? null) === 'media' && ($field['default'] ?? null) === null) {
+                continue;
+            }
+
             // DS-2a.1: a field whose default IS null (a menu: "the menu of the place") keeps null; before, every null fell through to ''.
             $defaults[$name] = array_key_exists('default', $field) && $field['default'] === null && in_array($field['kind'], ['menu', 'color'], true) ? null : ($field['default'] ?? ($field['kind'] === 'bool' ? false : ($field['kind'] === 'int' ? ($field['min'] ?? 0) : '')));
         }

@@ -40,7 +40,7 @@ final class HeaderValidator
     {
         $default = HeaderLayout::default();
 
-        foreach (array_diff(array_keys($layout), ['desktop', 'mobile', 'menu_keys']) as $key) {
+        foreach (array_diff(array_keys($layout), ['desktop', 'mobile', 'menu_keys', 'logo_images']) as $key) {
             $this->fail('layout', 'unknown_key', ['key' => mb_substr((string) $key, 0, 30)]);
         }
 
@@ -52,7 +52,37 @@ final class HeaderValidator
         // DS-2a.1: only a COMPILED layout carries `menu_keys` (menu id => menu key, made by HeaderCompiler); a layout that names no menu has none, so it normalises exactly as before.
         $keys = $this->menuKeys($layout['menu_keys'] ?? []);
 
-        return $keys === [] ? $clean : $clean + ['menu_keys' => $keys];
+        $clean = $keys === [] ? $clean : $clean + ['menu_keys' => $keys];
+
+        // LG-1: only a COMPILED layout carries `logo_images` (picture id => {url, width, height}, made by HeaderCompiler); a layout with no logo picture has none
+        $logos = $this->logoImages($layout['logo_images'] ?? []);
+
+        return $logos === [] ? $clean : $clean + ['logo_images' => $logos];
+    }
+
+    /** @return array<string, array{url: string, width: int, height: int}> */
+    private function logoImages(mixed $images): array
+    {
+        if (! is_array($images)) {
+            $this->fail('layout.logo_images', 'bad_list');
+
+            return [];
+        }
+
+        $out = [];
+
+        foreach ($images as $id => $image) {
+            if (preg_match('/^[1-9][0-9]{0,9}$/', (string) $id) !== 1 || ! is_array($image) || ! is_string($image['url'] ?? null) || strlen($image['url']) > 500 || preg_match('#^(/|https?://)[^\s"<>\\\\]+$#', $image['url']) !== 1
+                || ! is_int($image['width'] ?? null) || ! is_int($image['height'] ?? null) || $image['width'] < 1 || $image['height'] < 1 || $image['width'] > 20000 || $image['height'] > 20000) {
+                $this->fail('layout.logo_images', 'bad_list');
+
+                return [];
+            }
+
+            $out[(string) $id] = ['url' => $image['url'], 'width' => $image['width'], 'height' => $image['height']];
+        }
+
+        return $out;
     }
 
     /** @return array<string, string> menu id (digits) => menu key (`[a-z0-9-]{1,40}`), nothing else */
@@ -265,7 +295,14 @@ final class HeaderValidator
         $clean = [];
 
         foreach ($schema as $name => $field) {
-            $clean[$name] = $this->setting($settings[$name] ?? ($field['default'] ?? null), $field, "{$path}.settings.{$name}");
+            $value = $this->setting($settings[$name] ?? ($field['default'] ?? null), $field, "{$path}.settings.{$name}");
+
+            // LG-1: a picture field that is empty (= its default) is NOT stored and emits nothing: a layout without a logo picture is byte for byte what it was
+            if ($value === null && ($field['kind'] ?? null) === 'media') {
+                continue;
+            }
+
+            $clean[$name] = $value;
         }
 
         return ['type' => $type, 'settings' => $clean];

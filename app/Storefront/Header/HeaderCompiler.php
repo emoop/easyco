@@ -7,6 +7,7 @@ use App\Settings\AppearanceSettings;
 use App\Settings\Contracts\SiteSettingsRepository;
 use App\Storefront\Appearance\AppearanceCompiler;
 use App\Storefront\Appearance\StorefrontAppearance;
+use App\Storefront\Design\LogoImage;
 use InvalidArgumentException;
 
 /**
@@ -45,7 +46,7 @@ final class HeaderCompiler
      */
     public static function withMenuKeys(array $layout): array
     {
-        unset($layout['menu_keys']);
+        unset($layout['menu_keys'], $layout['logo_images']);
         $ids = [];
 
         foreach (['desktop', 'mobile'] as $name) {
@@ -64,6 +65,8 @@ final class HeaderCompiler
             }
         }
 
+        $layout = self::withLogoImages($layout);
+
         if ($ids === []) {
             return $layout;
         }
@@ -75,6 +78,44 @@ final class HeaderCompiler
         }
 
         return $keys === [] ? $layout : $layout + ['menu_keys' => $keys];
+    }
+
+    /**
+     * LG-1: the rendition (url, width, height) of every logo picture a `logo` element names, so the storefront prints it WITHOUT a query (the views never query). The smallest WebP variant at least twice as wide
+     * as the logo is shown (the widest of its uses: the desktop and the phone logo may have different heights), else the largest. A picture that is missing, not ready or not a PNG / WebP gets NO entry:
+     * the logo then silently falls back to the static file. One query per picture, at publish and in the preview.
+     *
+     * @param  array<string, mixed>  $layout  a VALIDATED layout
+     * @return array<string, mixed>
+     */
+    public static function withLogoImages(array $layout): array
+    {
+        unset($layout['logo_images']);
+        $heights = [];
+
+        foreach (['desktop', 'mobile'] as $name) {
+            foreach ($layout[$name]['rows'] as $row) {
+                foreach (HeaderLayout::SLOTS as $slot) {
+                    foreach ($row[$slot] as $element) {
+                        $image = $element['type'] === 'logo' ? ($element['settings']['image'] ?? null) : null;
+
+                        if (is_int($image)) {
+                            $heights[$image] = max($heights[$image] ?? 0, (int) ($element['settings']['height'] ?? 0));
+                        }
+                    }
+                }
+            }
+        }
+
+        $images = [];
+
+        foreach ($heights as $id => $height) {
+            $rendition = LogoImage::rendition($id, $height);
+
+            $rendition !== null && $images[(string) $id] = $rendition;
+        }
+
+        return $images === [] ? $layout : $layout + ['logo_images' => $images];
     }
 
     /**

@@ -34,7 +34,8 @@ final class DesignPreviewController extends Controller
         }
 
         $draft = CheckoutHeaderDrafts::draft();
-        $show = $draft ?? CheckoutHeaderCompiler::published(app(\App\Settings\Contracts\SiteSettingsRepository::class)->get(\App\Settings\AppearanceSettings::DESIGN_COMPILED_KEY));
+        // LG-1: the draft's logo picture is looked up for the preview (it may query; the public page never does)
+        $show = ($draft !== null ? CheckoutHeaderCompiler::withLogo($draft) : null) ?? CheckoutHeaderCompiler::published(app(\App\Settings\Contracts\SiteSettingsRepository::class)->get(\App\Settings\AppearanceSettings::DESIGN_COMPILED_KEY));
         $show = $show !== null && $show['enabled'] === true ? $show : null;
 
         $appearance->previewCheckoutHeader($show, $show === null ? null : $this->stylesheet($show));

@@ -28,6 +28,15 @@ class MediaPicker extends Field
     /** ML-3: product photos are `image` assets only (a `social_image` is not a product photo) */
     protected bool $plainImagesOnly = false;
 
+    /** LG-1: the allowed MIME types (null = every picture type) @var list<string>|null */
+    protected ?array $mimes = null;
+
+    /** LG-1: the text of the empty box (null = the standard one) */
+    protected ?string $emptyText = null;
+
+    /** LG-1: show a filled picture on a light checker, so a transparent one (a logo) is visible */
+    protected bool $checker = false;
+
     protected ?int $minWidth = null;
 
     protected ?int $minHeight = null;
@@ -48,6 +57,7 @@ class MediaPicker extends Field
             $component->minWidth,
             $component->minHeight,
             array_values((array) $component->evaluate($component->exemptIds ?? [])),
+            $component->mimes,
         ));
         $this->dehydrateStateUsing(fn (mixed $state): mixed => $this->maxItems === null
             ? (filled($state) ? (int) $state : null)
@@ -83,6 +93,45 @@ class MediaPicker extends Field
         $this->exemptIds = $ids;
 
         return $this;
+    }
+
+    /**
+     * LG-1: only these MIME types, e.g. `['image/png', 'image/webp']` for the logo. The library lists only rows whose stored `mime` is in the list (a row with no mime yet is listed marked «неизвестен тип»
+     * and refused on «Избери»), the upload tab refuses another file BEFORE storing it, the file input's `accept` follows, and the save checks the ids again (MediaAssetId).
+     *
+     * @param  list<string>  $mimes
+     */
+    public function mimeTypes(array $mimes): static
+    {
+        $this->mimes = array_values(array_unique(array_map('strval', $mimes)));
+
+        return $this;
+    }
+
+    /** LG-1: the text of the empty box, e.g. «Ползва се стандартното лого». */
+    public function emptyText(string $text): static
+    {
+        $this->emptyText = $text;
+
+        return $this;
+    }
+
+    public function getEmptyText(): ?string
+    {
+        return $this->emptyText;
+    }
+
+    /** LG-1: the filled picture sits on a light checker (a transparent logo stays visible). */
+    public function checkerBackground(bool $on = true): static
+    {
+        $this->checker = $on;
+
+        return $this;
+    }
+
+    public function hasCheckerBackground(): bool
+    {
+        return $this->checker;
     }
 
     /** ML-3: the save accepts `image` assets only, not `social_image`. */
@@ -158,6 +207,8 @@ class MediaPicker extends Field
                 'kind' => $component->kind,
                 'minWidth' => $component->minWidth,
                 'minHeight' => $component->minHeight,
+                'mimes' => $component->mimes,
+                'plain' => $component->plainImagesOnly,
             ]))
             ->action(fn () => null);
     }

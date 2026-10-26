@@ -45,6 +45,15 @@
     background: var(--gray-800);
 }
 
+/* LG-1: a light checker behind a picture that may be transparent (the logo) */
+.mpf-big-checker {
+    background: repeating-conic-gradient(#e5e7eb 0% 25%, #ffffff 0% 50%) 50% / 16px 16px;
+}
+
+.dark .mpf-big-checker {
+    background: repeating-conic-gradient(#e5e7eb 0% 25%, #ffffff 0% 50%) 50% / 16px 16px;
+}
+
 .mpf-big img,
 .mpf-big video {
     display: block;

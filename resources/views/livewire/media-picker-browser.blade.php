@@ -22,7 +22,7 @@
 
             <label class="mp-drop" x-data="{ over: false }" x-on:dragover.prevent="over = true" x-on:dragleave.prevent="over = false" x-on:drop="over = false" x-bind:class="{ 'mp-drop-over': over }">
                 <span>{{ __('media.picker.drop') }}</span>
-                <small>{{ $kind === 'video' ? __('media.picker.drop_help_video') : __('media.picker.drop_help', ['max' => $maxFiles]) }}@if ($minWidth) {{ __('media.picker.drop_help_min', ['w' => $minWidth, 'h' => $minHeight]) }}@endif</small>
+                <small>{{ $kind === 'video' ? __('media.picker.drop_help_video') : ($mimes !== null ? ucfirst(__('media.picker.mime_only', ['types' => \App\Media\MediaUploader::typeNames($mimes)])).'. '.__('media.picker.drop_help_max', ['max' => $maxFiles]) : __('media.picker.drop_help', ['max' => $maxFiles])) }}@if ($minWidth) {{ __('media.picker.drop_help_min', ['w' => $minWidth, 'h' => $minHeight]) }}@endif</small>
                 <input type="file" class="mp-file" @if ($kind !== 'video') multiple @endif accept="{{ $accept }}" wire:model="files">
                 <span wire:loading wire:target="files" class="mp-busy">{{ __('media.picker.uploading') }}</span>
             </label>
@@ -57,6 +57,9 @@
                                     @endif
                                     @if ($minWidth !== null && ($row->width === null || $row->height === null))
                                         <span class="mp-note">{{ __('media.picker.unknown_size') }}</span>
+                                    @endif
+                                    @if ($mimes !== null && $row->mime === null)
+                                        <span class="mp-note">{{ __('media.picker.unknown_type') }}</span>
                                     @endif
                                     @if ($on)
                                         <span class="mp-check" aria-hidden="true">✓</span>

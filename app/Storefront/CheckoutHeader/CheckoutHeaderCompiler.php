@@ -4,6 +4,7 @@ namespace App\Storefront\CheckoutHeader;
 
 use App\Settings\AppearanceSettings;
 use App\Settings\Contracts\SiteSettingsRepository;
+use App\Storefront\Design\LogoImage;
 use App\Storefront\Header\AppearanceRecompiler;
 use InvalidArgumentException;
 
@@ -44,6 +45,10 @@ final class CheckoutHeaderCompiler
         $compiled = self::compiled($values);
         $document = self::document($settings->get(AppearanceSettings::DESIGN_COMPILED_KEY));
         $document['zones'][CheckoutHeaderCatalog::ZONE][CheckoutHeaderCatalog::SCOPE] = $compiled['values'];
+        // LG-1: the rendition of the logo picture beside the values (not in them: the values are validated again on every read), or none
+        $logo = self::logoOf($compiled['values']);
+        unset($document['zones'][CheckoutHeaderCatalog::ZONE]['logo']);
+        $logo !== null && $document['zones'][CheckoutHeaderCatalog::ZONE]['logo'] = $logo;
         $document['hash'] = substr(sha1((string) json_encode($document['zones'])), 0, 12);
         $json = (string) json_encode($document, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
 
@@ -79,7 +84,51 @@ final class CheckoutHeaderCompiler
 
         [$clean, $errors] = CheckoutHeaderValidator::validate($values);
 
-        return $errors === [] ? $clean : null;
+        if ($errors !== []) {
+            return null;
+        }
+
+        // LG-1: the compiled rendition of the logo picture, only when it is the picture the values name (no query: it is part of the one cached payload)
+        $logo = self::document($json)['zones'][CheckoutHeaderCatalog::ZONE]['logo'] ?? null;
+
+        return is_int($clean['logo_image'] ?? null) ? self::withRendition($clean, $logo) : $clean;
+    }
+
+    /**
+     * LG-1: the rendition of the logo picture the values name — {id, url, width, height} — or null (no picture, or one that is missing, not ready or not a PNG / WebP: the static logo then). The widest
+     * use decides the size (the desktop and the phone height).
+     *
+     * @param  array<string, mixed>  $values  validated
+     * @return array{id: int, url: string, width: int, height: int}|null
+     */
+    public static function logoOf(array $values): ?array
+    {
+        $id = $values['logo_image'] ?? null;
+
+        if (! is_int($id)) {
+            return null;
+        }
+
+        $rendition = LogoImage::rendition($id, max((int) ($values['logo_height_d'] ?? 0), (int) ($values['logo_height_m'] ?? 0)));
+
+        return $rendition === null ? null : ['id' => $id] + $rendition;
+    }
+
+    /** The values with `logo` ({url, width, height}) for the view: the compiled entry, when it is well formed and for THIS picture. @param  array<string, mixed>  $values  @return array<string, mixed> */
+    public static function withRendition(array $values, mixed $logo): array
+    {
+        if (is_array($logo) && ((int) ($logo['id'] ?? 0)) === (int) ($values['logo_image'] ?? -1) && is_string($logo['url'] ?? null) && preg_match('#^(/|https?://)[^\s"<>\\\\]{1,500}$#', $logo['url']) === 1
+            && is_int($logo['width'] ?? null) && is_int($logo['height'] ?? null) && $logo['width'] > 0 && $logo['height'] > 0) {
+            $values['logo'] = ['url' => $logo['url'], 'width' => $logo['width'], 'height' => $logo['height']];
+        }
+
+        return $values;
+    }
+
+    /** LG-1, the PREVIEW of a draft: the draft's values with the rendition of its logo picture looked up now (a preview may query; the public page never does). @param  array<string, mixed>  $values  validated @return array<string, mixed> */
+    public static function withLogo(array $values): array
+    {
+        return self::withRendition($values, self::logoOf($values));
     }
 
     /**
