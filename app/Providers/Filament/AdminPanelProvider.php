@@ -3,6 +3,7 @@
 namespace App\Providers\Filament;
 
 use App\Filament\NavigationGroup;
+use App\Http\Controllers\Admin\DesignRedirectController;
 use App\Http\Middleware\ApplyStoreLocale;
 use App\Http\Middleware\ApplyStoreTimezone;
 use Filament\Http\Middleware\Authenticate;
@@ -14,6 +15,7 @@ use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Assets\Css;
 use Filament\Support\Colors\Color;
+use Illuminate\Support\Facades\Route;
 use Filament\Support\Facades\FilamentAsset;
 use Filament\View\PanelsRenderHook;
 use Filament\Widgets\AccountWidget;
@@ -85,6 +87,11 @@ class AdminPanelProvider extends PanelProvider
             // unaffected: NavigationManager still sorts groups by each enum
             // case's own position among cases().
             ->navigationGroups(NavigationGroup::navigationGroups())
+            // DS-3: the old «Хедър» and «Футър» pages are gone; their urls open the «Дизайн» screen on the same zone (302). Behind the panel's login and the same `content_manage` check as the screen itself.
+            ->authenticatedRoutes(function (): void {
+                Route::get('header-settings', [DesignRedirectController::class, 'header'])->name('redirect.header');
+                Route::get('footer', [DesignRedirectController::class, 'footer'])->name('redirect.footer');
+            })
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\Filament\Widgets')
             ->widgets([
                 AccountWidget::class,

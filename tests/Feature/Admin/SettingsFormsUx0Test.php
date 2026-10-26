@@ -9,7 +9,6 @@ use App\Filament\Pages\Settings\AppearanceSettings as AppearancePage;
 use App\Filament\Pages\Settings\BankTransferSettings;
 use App\Filament\Pages\Settings\CatalogSettings;
 use App\Filament\Pages\Settings\CheckoutSettings;
-use App\Filament\Pages\Settings\HeaderSettings;
 use App\Filament\Pages\Settings\LocaleSettings;
 use App\Filament\Pages\Settings\MailSettings;
 use App\Filament\Pages\Settings\StorefrontSettings;
@@ -64,7 +63,7 @@ class SettingsFormsUx0Test extends TestCase
         $this->actingAsStaff('Administrator');
         $page = app(PageWriter::class)->create(['title' => 'Terms', 'slug' => 'terms', 'body' => '<p>x</p>', 'status' => 'published']);
         $urls = [
-            AppearancePage::getUrl(), BankTransferSettings::getUrl(), CatalogSettings::getUrl(), CheckoutSettings::getUrl(), HeaderSettings::getUrl(), LocaleSettings::getUrl(),
+            AppearancePage::getUrl(), BankTransferSettings::getUrl(), CatalogSettings::getUrl(), CheckoutSettings::getUrl(), LocaleSettings::getUrl(),
             MailSettings::getUrl(), StorefrontSettings::getUrl(), HtmlBlockResource::getUrl('create'),
             PageResource::getUrl('create'), PageResource::getUrl('edit', ['record' => $page]),
         ];
@@ -76,18 +75,7 @@ class SettingsFormsUx0Test extends TestCase
         }
     }
 
-    // ---- 2. our own refusals open the block that holds the error ---------------------------------------------------------------------------
-
-    public function test_a_header_refusal_dispatches_the_event_that_opens_the_block(): void
-    {
-        $this->actingAsStaff('Administrator');
-        $component = Livewire::test(HeaderSettings::class);
-        $logo = array_key_first($component->get('data.desktop.rows.main.center'));
-
-        $component->set('data.desktop.rows.main.height', 44)->set("data.desktop.rows.main.center.{$logo}.data.height", 40)->callAction('publish');
-
-        $component->assertHasErrors()->assertDispatched('form-validation-error');
-    }
+ 
 
     // (The menu editor is no Filament form any more: it is a page of its own that shows the errors on the cards and opens and scrolls to the first one itself; see MenusPageTest.)
 

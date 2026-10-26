@@ -358,10 +358,9 @@ try {
         await shop.close();
     }
 
-    // ---- the old Header page shows the same ----------------------------------------------------------------------------------------------------------------
+    // ---- the old Header url (DS-3: it redirects to this screen) ------------------------------------------------------------------------------------
     await page.goto(BASE + '/admin/header-settings', { waitUntil: 'networkidle' });
-    await page.waitForSelector('form#form', { timeout: 20000 });
-    check('the old Header page still opens', (await page.locator('form#form').count()) === 1);
+    check('the old Header url lands on the Design screen, zone Header', page.url().includes('/admin/design') && page.url().includes('zone=header'), page.url());
 } catch (e) {
     check('the script ran to its end', false, String(e.stack || e));
     await shot('99-failure');

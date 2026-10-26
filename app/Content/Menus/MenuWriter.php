@@ -95,6 +95,12 @@ final class MenuWriter
             throw new MenuException(__('menus.errors.protected', ['name' => $menu->name]));
         }
 
+        $design = $this->usage->design((int) $menu->id);
+
+        if ($design !== []) {
+            throw new MenuException(__('menus.errors.in_design', ['name' => $menu->name, 'places' => implode(', ', $design)]));
+        }
+
         $places = $this->usage->places($menu->key);
 
         if ($places !== []) {

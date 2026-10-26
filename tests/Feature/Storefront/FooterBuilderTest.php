@@ -345,7 +345,9 @@ class FooterBuilderTest extends TestCase
         $this->publish($this->withRows([[$this->column([$this->block('menu', ['menu' => $menu->id])]), $this->column([$this->block('text', ['body' => 'stay'])])]]));
         $this->assertStringContainsString('Vanishing', $this->footerHtml($this->home()));
 
-        app(MenuWriter::class)->delete($menu);
+        // DS-3: the writer now refuses to delete a menu the footer uses; a menu that vanishes by other means (a hand edit, an old row) must still leave the footer without an error
+        \App\Content\Menus\MenuModel::query()->whereKey($menu->id)->delete();
+        app(\App\Storefront\Menu\MenuRecompiler::class)->now();
         $this->fresh();
         $html = $this->footerHtml($this->home());
 

@@ -147,7 +147,7 @@ return [
         'to_next_column' => 'To the next column',
     ],
 
-    'places' => ['header_element' => 'Header (chosen in a "Menu" element)'],
+    'design' => ['header' => 'Design — Header', 'footer' => 'Design — Footer', 'checkout' => 'Design — Checkout header', 'draft' => '(draft)'],
     'locations' => ['header' => 'Header (main menu)', 'drawer' => 'Phone (menu in the drawer)', 'footer' => 'Footer'],
 
     'locations_note' => '":location" is now at the menu ":menu"; ticking it here moves it.',
@@ -160,6 +160,7 @@ return [
         'name' => 'Give the menu a name of up to 100 characters.',
         'protected' => 'The menu ":name" is part of the shop and cannot be deleted.',
         'in_use' => 'The menu ":name" is used by :places and cannot be deleted.',
+        'in_design' => 'The menu ":name" is used in :places and cannot be deleted.',
         'too_large' => 'The menu is too large (more than :max KB once compiled). Remove some items.',
         'missing_category' => 'This category no longer exists.',
         'missing_page' => 'This page no longer exists.',

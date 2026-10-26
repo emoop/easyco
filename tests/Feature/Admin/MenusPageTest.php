@@ -12,7 +12,7 @@ use App\Content\PageWriter;
 use App\Filament\NavigationGroup;
 use App\Filament\Pages\Design\Menus;
 use App\Filament\Pages\Settings\AppearanceSettings as AppearancePage;
-use App\Filament\Pages\Settings\HeaderSettings;
+use App\Filament\Pages\Design\DesignScreen;
 use App\Filament\Pages\Settings\StorefrontSettings;
 use App\Filament\Resources\HtmlBlockResource;
 use App\Filament\Resources\PageResource;
@@ -114,7 +114,7 @@ class MenusPageTest extends TestCase
 
     public function test_the_design_group_holds_appearance_header_menus_blocks_storefront_in_that_order(): void
     {
-        $order = [AppearancePage::class, HeaderSettings::class, Menus::class, HtmlBlockResource::class, StorefrontSettings::class];
+        $order = [DesignScreen::class, AppearancePage::class, Menus::class, HtmlBlockResource::class, StorefrontSettings::class];
         $sorts = [];
 
         foreach ($order as $class) {
@@ -440,7 +440,7 @@ class MenusPageTest extends TestCase
 
         $this->assertStringContainsString('admin-menu-editor', $this->get(Menus::getUrl())->assertOk()->getContent());
 
-        foreach ([HeaderSettings::getUrl(), AppearancePage::getUrl(), PageResource::getUrl('index'), HtmlBlockResource::getUrl('index'), '/admin'] as $url) {
+        foreach ([DesignScreen::getUrl(), AppearancePage::getUrl(), PageResource::getUrl('index'), HtmlBlockResource::getUrl('index'), '/admin'] as $url) {
             $this->assertStringNotContainsString('admin-menu-editor', $this->get($url)->assertOk()->getContent(), $url);
         }
 

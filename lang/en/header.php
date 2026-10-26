@@ -2,13 +2,9 @@
 
 // The admin page "Header" (stage D2): the header builder of the storefront. bg and en change together.
 return [
-    'title' => 'Header',
-    'navigation_label' => 'Header',
-    'add_element' => 'Add an element',
     'html_help' => 'Plain formatting only: scripts, styles and unsafe links are removed on save. Up to 4,000 characters.',
     'social_label' => 'Social networks',
 
-    'tabs' => ['desktop' => 'Desktop', 'mobile' => 'Phone'],
     'rows' => ['top' => 'Top row', 'main' => 'Main row', 'bottom' => 'Bottom row'],
     'slots' => ['left' => 'Left', 'center' => 'Centre', 'right' => 'Right'],
 
@@ -20,19 +16,6 @@ return [
         'drawer' => 'Phone menu (drawer)',
         'drawer_side' => 'Which side it opens from',
         'drawer_upper' => 'Main items in capitals',
-    ],
-
-    'actions' => [
-        'save_draft' => 'Save draft',
-        'preview' => 'Preview',
-        'discard' => 'Restore the published one',
-        'publish' => 'Publish',
-    ],
-
-    'notices' => [
-        'draft_saved' => 'The draft is saved',
-        'published' => 'The header is published',
-        'discarded' => 'The draft is discarded',
     ],
 
     'elements' => [

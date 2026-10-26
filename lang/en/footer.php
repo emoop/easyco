@@ -2,11 +2,6 @@
 
 // The footer builder (FT-1): the admin page "Footer", the validator's messages and the words the shop prints. bg and en change together.
 return [
-    'title' => 'Footer',
-    'navigation_label' => 'Footer',
-    'add_block' => 'Add a block',
-    'add_row' => 'Add a row',
-    'add_column' => 'Add a column',
 
     'sections' => ['upper' => 'Upper level', 'lower' => 'Lower level'],
 
@@ -15,16 +10,12 @@ return [
         'padding' => 'Space inside',
         'bg' => 'Background colour',
         'text' => 'Text colour',
-        'color_hint' => 'Empty = the colour from Appearance.',
         'border_color' => 'Border colour (top)',
         'border_width' => 'Border thickness',
-        'rows' => 'Rows',
         'row' => 'Row',
-        'columns' => 'Columns',
         'column' => 'Column',
         'span' => 'Width',
         'align' => 'Alignment',
-        'blocks' => 'Blocks',
         'text_template' => 'Text',
         'text_hint' => '[year] = the current year (put in when the page is shown).',
         'lower_align' => 'Alignment of the line',
@@ -69,25 +60,10 @@ return [
         'spacer' => 'Space',
     ],
 
-    'move_prev' => 'Move to the previous column',
-    'move_next' => 'Move to the next column',
     'newsletter_note' => 'Shown on the site once newsletter subscription exists.',
 
-    'actions' => [
-        'save_draft' => 'Save draft',
-        'preview' => 'Preview',
-        'discard' => 'Restore the published one',
-        'publish' => 'Publish',
-        'default' => 'Reset to default',
-    ],
-
     'notices' => [
-        'draft_saved' => 'The draft is saved',
-        'published' => 'The footer is published',
-        'discarded' => 'The draft is discarded',
-        'defaulted' => 'The default footer is in the form. Save or publish it to keep it.',
         'low_contrast' => 'Low contrast between the text and the background of the :level (:ratio:1, at least 4.5:1 is advised). You can still save.',
-        'no_column' => 'There is no column that way.',
         'level_upper' => 'upper level',
         'level_lower' => 'lower level',
     ],

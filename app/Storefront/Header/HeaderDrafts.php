@@ -43,58 +43,6 @@ final class HeaderDrafts
         return $validation !== null && $validation->passes() ? $validation->layout : null;
     }
 
-    /**
-     * A layout from a form that does not know the rows' look (the old «Хедър» page): the rows take their `bg` / `fg` / `text_size` from what is stored now (draft, else published), so a save
-     * from that page never throws away what the «Дизайн» screen set. A row the stored layout does not have gets nothing. LG-1: the same for the LOGO PICTURE (`settings.image` of the `logo`
-     * element, chosen in the «Дизайн» screen only): the logo of the saved layout keeps the one stored now.
-     *
-     * @param  array<string, mixed>  $layout
-     * @return array<string, mixed>
-     */
-    public static function keepLook(array $layout): array
-    {
-        $stored = self::startingLayout();
-
-        foreach (['desktop', 'mobile'] as $name) {
-            foreach (array_keys($layout[$name]['rows'] ?? []) as $row) {
-                $look = array_intersect_key($stored[$name]['rows'][$row] ?? [], array_flip(['bg', 'fg', 'text_size']));
-                $layout[$name]['rows'][$row] = array_merge($layout[$name]['rows'][$row], $look);
-            }
-
-            $image = self::logoImage($stored[$name] ?? []);
-
-            if ($image !== null) {
-                foreach ($layout[$name]['rows'] ?? [] as $row => $data) {
-                    foreach (HeaderLayout::SLOTS as $slot) {
-                        foreach ($data[$slot] ?? [] as $i => $element) {
-                            if (($element['type'] ?? null) === 'logo') {
-                                $layout[$name]['rows'][$row][$slot][$i]['settings']['image'] = $image;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        return $layout;
-    }
-
-    /** The picture id of the `logo` element of ONE stored device layout, or null. @param  array<string, mixed>  $device */
-    private static function logoImage(array $device): ?int
-    {
-        foreach ($device['rows'] ?? [] as $row) {
-            foreach (HeaderLayout::SLOTS as $slot) {
-                foreach ($row[$slot] ?? [] as $element) {
-                    if (($element['type'] ?? null) === 'logo' && is_int($element['settings']['image'] ?? null)) {
-                        return $element['settings']['image'];
-                    }
-                }
-            }
-        }
-
-        return null;
-    }
-
     /** @param  array<string, mixed>  $layout */
     public static function saveDraft(array $layout): void
     {

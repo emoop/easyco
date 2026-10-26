@@ -357,20 +357,7 @@ class DesignFooterZoneTest extends TestCase
         $this->assertNotNull($this->settings()->get(AppearanceSettings::FOOTER_DRAFT_KEY), 'a warning never blocks the save');
     }
 
-    // ---- «Приложи» = the old page ----------------------------------------------------------------------------------------------------------
-
-    public function test_apply_writes_a_draft_the_old_page_loads_and_saves_back_unchanged(): void
-    {
-        $screen = $this->screen()->call('addColumn', 'f-u-r0');
-        $second = $this->columns($screen)[1];
-        $screen->call('selectCell', $second)->call('addNode', 'text');
-        $screen->set('props.settings.heading', 'About')->set('props.settings.body', 'Line one')->call('apply')->assertHasNoErrors();
-        $fromScreen = $this->draft();
-
-        Livewire::test(Footer::class)->callAction('save_draft')->assertHasNoFormErrors();
-
-        $this->assertSame($fromScreen, $this->draft(), 'the old page round-trips what the screen saved');
-    }
+ 
 
     public function test_what_the_old_page_saved_is_what_the_screen_shows_after_a_reload(): void
     {

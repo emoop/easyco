@@ -361,19 +361,7 @@ class LogoCheckoutAndUsageTest extends TestCase
         $this->fresh();
         $this->assertStringContainsString($this->url($other), $this->get('/cart')->assertOk()->getContent());
     }
-    public function test_a_save_from_the_old_header_page_keeps_the_logo_picture_chosen_in_the_design_screen(): void
-    {
-        $this->actingAsStaff('Administrator');
-        $logo = $this->logo();
-        HeaderDrafts::saveDraft(HeaderValidator::validate($this->layoutWith($logo->id))->layout);
 
-        Livewire::test(\App\Filament\Pages\Settings\HeaderSettings::class)->callAction('save_draft')->assertHasNoFormErrors();
-
-        $draft = json_decode((string) $this->settings()->get(AppearanceSettings::HEADER_DRAFT_KEY), true);
-        foreach (['desktop', 'mobile'] as $device) {
-            $this->assertSame($logo->id, $draft[$device]['rows']['main']['center'][0]['settings']['image'], $device.': the old page never throws the picture away');
-        }
-    }
     public function test_the_header_panel_refuses_a_jpeg_on_the_logo_field(): void
     {
         $this->actingAsStaff('Administrator');

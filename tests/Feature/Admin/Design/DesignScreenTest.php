@@ -4,7 +4,6 @@ namespace Tests\Feature\Admin\Design;
 
 use App\Filament\NavigationGroup;
 use App\Filament\Pages\Design\DesignScreen;
-use App\Filament\Pages\Settings\HeaderSettings;
 use App\Settings\AppearanceSettings;
 use App\Settings\Contracts\SiteSettingsRepository;
 use App\Storefront\Design\ZoneStore\HeaderAdapter;
@@ -83,15 +82,12 @@ class DesignScreenTest extends TestCase
         $this->screen()->assertForbidden();
     }
 
-    public function test_it_is_the_first_entry_of_the_design_group_and_the_old_header_page_stays(): void
+    public function test_it_is_the_first_entry_of_the_design_group(): void
     {
         $this->assertSame(NavigationGroup::DESIGN, DesignScreen::getNavigationGroup());
         $this->assertSame('Design', DesignScreen::getNavigationLabel());
         app()->setLocale('bg');
         $this->assertSame('Дизайн', DesignScreen::getNavigationLabel());
-        $this->assertLessThan(HeaderSettings::getNavigationSort(), DesignScreen::getNavigationSort());
-        $this->actingAsStaff('Administrator');
-        $this->get(HeaderSettings::getUrl())->assertOk();
     }
 
     public function test_a_direct_action_call_is_refused_when_the_permission_is_gone(): void
@@ -377,7 +373,7 @@ class DesignScreenTest extends TestCase
         $screen->call('selectRow', 'h-d-top')->assertSet('props.height', 40)->assertSet('props.colors.bg', '#112233');
     }
 
-    public function test_apply_writes_the_same_draft_the_old_header_page_writes_for_that_layout(): void
+    public function test_apply_writes_the_draft_of_the_edited_layout(): void
     {
         $this->actingAsStaff('Administrator');
         $screen = $this->screen()->call('selectCell', 'h-d-top-right')->call('addNode', 'text');
@@ -390,15 +386,6 @@ class DesignScreenTest extends TestCase
         $this->assertTrue($fromScreen['desktop']['rows']['top']['enabled']);
         $screen->assertSet('dirty', false);
 
-        // the old page, given the same layout through its own form, stores the same JSON
-        $this->settings()->forget(AppearanceSettings::HEADER_DRAFT_KEY);
-        $block = fn (string $type, array $data): array => ['type' => $type, 'data' => $data];
-        Livewire::test(HeaderSettings::class)
-            ->set('data.desktop.rows.top.enabled', true)
-            ->set('data.desktop.rows.top.right', ['x1' => $block('text', ['text' => 'Call us', 'url' => '/contacts'])])
-            ->callAction('save_draft')->assertHasNoFormErrors();
-
-        $this->assertSame($fromScreen, $this->draft());
         $this->assertNotSame('', $id);
     }
 
@@ -498,26 +485,6 @@ class DesignScreenTest extends TestCase
         $this->assertSame(['draft', 'published', 'discarded'], DB::table('activity_log')->where('entity_type', 'storefront_header')->orderBy('id')->pluck('field')->all());
     }
 
-    public function test_a_save_or_publish_from_the_old_header_page_keeps_the_look_the_screen_set(): void
-    {
-        $this->actingAsStaff('Administrator');
-        $this->screen()->call('selectRow', 'h-d-top')->set('props.colors.bg', '#112233')->set('props.colors.fg', '#ffffff')->set('props.text_size', 'l')->call('apply')->assertHasNoErrors();
-        $this->assertSame('#112233', $this->draft()['desktop']['rows']['top']['bg']);
-
-        Livewire::test(HeaderSettings::class)->set('data.desktop.rows.main.height', 60)->callAction('save_draft')->assertHasNoFormErrors();
-        $top = $this->draft()['desktop']['rows']['top'];
-        $this->assertSame(['#112233', '#ffffff', 'l'], [$top['bg'], $top['fg'], $top['text_size']]);
-        $this->assertSame(60, $this->draft()['desktop']['rows']['main']['height'], 'the old page still saves what it edits');
-
-        Livewire::test(HeaderSettings::class)->callAction('publish')->assertHasNoFormErrors();
-        $compiled = json_decode((string) $this->settings()->get(AppearanceSettings::HEADER_COMPILED_KEY), true)['layout'];
-        $this->assertSame('#112233', $compiled['desktop']['rows']['top']['bg']);
-        $this->assertSame('l', $compiled['desktop']['rows']['top']['text_size']);
-
-        // and the screen shows them again after a reload
-        $this->assertSame(['colors' => ['bg' => '#112233', 'fg' => '#ffffff'], 'text_size' => 'l'], array_intersect_key($this->screen()->get('tree')['desktop']['rows'][0]['props'], array_flip(['colors', 'text_size'])));
-    }
-
     public function test_the_frame_has_a_phone_and_a_desktop_shape_and_a_link_to_open_it(): void
     {
         $this->actingAsStaff('Administrator');
@@ -575,17 +542,6 @@ class DesignScreenTest extends TestCase
         $this->screen()->call('selectNode', 'h-d-main-left-0')->call('apply')->assertHasNoErrors();
 
         $this->assertSame('mega', $this->draft()['desktop']['rows']['main']['left'][0]['settings']['style']);
-    }
-
-    public function test_the_old_header_page_has_the_same_picker(): void
-    {
-        $this->actingAsStaff('Administrator');
-        \App\Content\Menus\MenuModel::create(['key' => 'promo', 'name' => 'Promo menu']);
-
-        $html = Livewire::test(HeaderSettings::class)->html();
-
-        $this->assertStringContainsString('The menu of the place (Header)', $html);
-        $this->assertStringContainsString('The menu of the place (Drawer)', $html);
     }
 
     // ---- state that cannot be set from the client -----------------------------------------------------------------------------------------

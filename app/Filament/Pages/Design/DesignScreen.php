@@ -134,6 +134,11 @@ class DesignScreen extends Page
     public function mount(): void
     {
         $this->guard();
+
+        // DS-3: the old «Хедър» / «Футър» urls land here with `?zone=` (a key of ZONES; anything else is ignored: the first zone)
+        $zone = request()->query('zone');
+        is_string($zone) && array_key_exists($zone, self::ZONES) && $this->zone = $zone;
+
         $this->loadTree();
     }
 
