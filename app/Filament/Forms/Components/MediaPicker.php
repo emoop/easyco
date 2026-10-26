@@ -28,6 +28,9 @@ class MediaPicker extends Field
     /** ML-3: product photos are `image` assets only (a `social_image` is not a product photo) */
     protected bool $plainImagesOnly = false;
 
+    /** CT-1: the small look for a narrow row: a 64×64 square, no name, no size */
+    protected bool $compact = false;
+
     /** LG-1: the allowed MIME types (null = every picture type) @var list<string>|null */
     protected ?array $mimes = null;
 
@@ -62,7 +65,7 @@ class MediaPicker extends Field
         $this->dehydrateStateUsing(fn (mixed $state): mixed => $this->maxItems === null
             ? (filled($state) ? (int) $state : null)
             : array_values(array_map('intval', array_filter(is_array($state) ? $state : [], fn ($id): bool => filled($id)))));
-        $this->registerActions([$this->openAction('pick', 'library')]);
+        $this->registerActions([$this->openAction('pick', 'library'), $this->openAction('pick_compact', 'library', 'empty'), $this->openAction('change_compact', 'library', 'filled')]);
     }
 
     /** A list of at most `$max` pictures instead of one (built for the product gallery of ML-3). */
@@ -134,6 +137,22 @@ class MediaPicker extends Field
         return $this->checker;
     }
 
+    /**
+     * CT-1: the SMALL look of a single picture, for a narrow row. Empty: a small dashed 64×64 square with a «+» (its accessible label is «Добави изображение»); filled: a 64×64 thumbnail with, to its
+     * right, one small «Смени» and the quiet red link «Премахни». No name, no size. Only the look changes: the modal, the validation and the state (the media id) are the same.
+     */
+    public function compact(bool $on = true): static
+    {
+        $this->compact = $on;
+
+        return $this;
+    }
+
+    public function isCompact(): bool
+    {
+        return $this->compact && ! $this->isMultiple() && $this->kind !== 'video';
+    }
+
     /** ML-3: the save accepts `image` assets only, not `social_image`. */
     public function plainImagesOnly(bool $only = true): static
     {
@@ -182,14 +201,19 @@ class MediaPicker extends Field
         return $ids === [] ? [] : MediaAssetModel::query()->whereIn('id', $ids)->get()->keyBy('id')->all();
     }
 
-    private function openAction(string $name, string $tab): Action
+    /** @param  string  $style  `normal` | `empty` (the compact «+» square) | `filled` (the compact «Смени») */
+    private function openAction(string $name, string $tab, string $style = 'normal'): Action
     {
         // the closures take the field as `$component`: an action is built before the field is in its schema, so `$this` has no state to read yet
-        return Action::make($name)
+        $action = Action::make($name)
             // ONE button per field (the modal itself offers the library and the upload tab): «Добави изображение(я)» / «Добави видео» when there is nothing, «Смени» for a filled single field
-            ->label(fn (MediaPicker $component): string => __($component->isMultiple()
-                ? 'media.picker.add_images'
-                : ($component->getIds() === [] ? ($component->isVideo() ? 'media.picker.add_video' : 'media.picker.add_image') : 'media.picker.change')))
+            ->label(fn (MediaPicker $component): string => __(match (true) {
+                $style === 'empty' => 'media.picker.add_image',
+                $style === 'filled' => 'media.picker.change',
+                $component->isMultiple() => 'media.picker.add_images',
+                $component->getIds() === [] => $component->isVideo() ? 'media.picker.add_video' : 'media.picker.add_image',
+                default => 'media.picker.change',
+            }))
             ->color('primary')
             ->size('sm')
             ->outlined(fn (MediaPicker $component): bool => ! $component->isMultiple() && $component->getIds() !== [])
@@ -211,5 +235,10 @@ class MediaPicker extends Field
                 'plain' => $component->plainImagesOnly,
             ]))
             ->action(fn () => null);
+
+        // the compact «+» square: an icon button whose label is its accessible name
+        $style === 'empty' && $action->iconButton()->icon('heroicon-m-plus')->color('gray')->extraAttributes(['class' => 'mpf-compact-add']);
+
+        return $action;
     }
 }

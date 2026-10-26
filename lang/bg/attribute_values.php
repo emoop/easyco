@@ -8,7 +8,10 @@ return [
     // for page titles/breadcrumbs/delete confirmations.
     'navigation_label' => 'Атрибути стойности',
 
+    'picture_help' => 'Снимката остава в Медия, ако я махнете оттук.',
+
     'fields' => [
+        'picture' => 'Снимка',
         'attribute_definition_id' => 'Атрибут',
         'value' => 'Стойност',
         'sort_order' => 'Ред на сортиране',

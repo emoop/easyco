@@ -17,6 +17,7 @@ final class AttributeValue
         private readonly string $attributeDefinitionId,
         private string $value,
         private int $sortOrder = 0,
+        private ?string $pictureMediaAssetId = null,
     ) {
     }
 
@@ -68,5 +69,26 @@ final class AttributeValue
     public function changeSortOrder(int $newSortOrder): void
     {
         $this->sortOrder = $newSortOrder;
+    }
+
+    /** CT-1: the id of the picture in the media library (a plain string: no dependency on EasyCo\Media, as Brand's logo). */
+    public function pictureMediaAssetId(): ?string
+    {
+        return $this->pictureMediaAssetId;
+    }
+
+    public function setPicture(string $mediaAssetId): void
+    {
+        if ($mediaAssetId === '') {
+            throw new \InvalidArgumentException('An AttributeValue\'s picture media asset id must not be empty.');
+        }
+
+        $this->pictureMediaAssetId = $mediaAssetId;
+    }
+
+    /** Only detaches: the picture stays in the library. */
+    public function removePicture(): void
+    {
+        $this->pictureMediaAssetId = null;
     }
 }

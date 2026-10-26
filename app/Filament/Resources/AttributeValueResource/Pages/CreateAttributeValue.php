@@ -23,6 +23,9 @@ class CreateAttributeValue extends CreateRecord
             sortOrder: (int) ($data['sort_order'] ?? 0),
         );
 
+        // CT-1: the picture is an id of the media library (the picker validated it)
+        filled($data['picture_media_asset_id'] ?? null) && $value->setPicture((string) $data['picture_media_asset_id']);
+
         app(AttributeValueRepository::class)->save($value);
 
         return AttributeValueModel::find($value->id());

@@ -9,6 +9,7 @@
     $ids = $getIds();
     $multiple = $isMultiple();
     $isVideo = $isVideo();
+    $compact = $isCompact();
     $removeLabel = __($isVideo ? 'media.picker.remove_video' : 'media.picker.remove_image');
 @endphp
 @once
@@ -16,7 +17,30 @@
 @endonce
 <x-dynamic-component :component="$getFieldWrapperView()" :field="$field">
     <div class="mpf" x-data>
-        @if ($ids === [])
+        @if ($compact)
+            {{-- CT-1: the small look: a 64×64 square, no name, no size --}}
+            @php
+                $asset = $ids === [] ? null : ($assets[$ids[0]] ?? null);
+                $thumb = $asset === null ? null : \App\Filament\Resources\MediaResource::previewUrl($asset, 'thumbnail');
+            @endphp
+            <div class="mpf-compact">
+                @if ($ids === [])
+                    {{ $getAction('pick_compact') }}
+                @else
+                    <div class="mpf-compact-thumb">
+                        @if ($thumb !== null)
+                            <img src="{{ $thumb }}" alt="{{ $asset->alt_text }}" width="64" height="64" decoding="async">
+                        @else
+                            <span class="mpf-wait">{{ $asset === null ? __('media.picker.missing') : __('media.library.state.processing') }}</span>
+                        @endif
+                    </div>
+                    <span class="mpf-compact-actions">
+                        {{ $getAction('change_compact') }}
+                        <button type="button" class="mpf-remove" title="{{ __('media.picker.hint') }}" x-on:click="$wire.set(@js($statePath), null)">{{ __('media.picker.remove_short') }}</button>
+                    </span>
+                @endif
+            </div>
+        @elseif ($ids === [])
             <div class="mpf-empty">
                 <span class="mpf-none">{{ $getEmptyText() ?? __($multiple ? 'media.picker.none_many' : ($isVideo ? 'media.picker.none_video' : 'media.picker.none')) }}</span>
                 <span class="mpf-actions">{{ $getAction('pick') }}</span>

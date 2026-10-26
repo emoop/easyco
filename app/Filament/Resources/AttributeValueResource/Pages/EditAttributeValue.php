@@ -38,6 +38,15 @@ class EditAttributeValue extends EditRecord
             $value->changeSortOrder($newSortOrder);
         }
 
+        // CT-1: «Премахни изображението» only detaches (the asset stays in «Медия»); a save that does not touch the field keeps the picture
+        $picture = filled($data['picture_media_asset_id'] ?? null) ? (string) $data['picture_media_asset_id'] : null;
+
+        if ($picture === null && $value->pictureMediaAssetId() !== null) {
+            $value->removePicture();
+        } elseif ($picture !== null && $picture !== $value->pictureMediaAssetId()) {
+            $value->setPicture($picture);
+        }
+
         app(AttributeValueRepository::class)->save($value);
 
         return AttributeValueModel::find($value->id());

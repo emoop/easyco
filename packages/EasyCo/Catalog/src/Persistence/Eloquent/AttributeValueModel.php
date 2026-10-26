@@ -19,6 +19,7 @@ class AttributeValueModel extends Model
         'attribute_definition_id',
         'value',
         'sort_order',
+        'picture_media_asset_id',
     ];
 
     /**

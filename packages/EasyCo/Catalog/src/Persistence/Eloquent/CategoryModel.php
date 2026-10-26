@@ -19,6 +19,7 @@ class CategoryModel extends Model
         'parent_id',
         'name',
         'slug',
+        'picture_media_asset_id',
     ];
 
     /**

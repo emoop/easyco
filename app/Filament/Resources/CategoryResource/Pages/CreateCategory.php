@@ -23,6 +23,9 @@ class CreateCategory extends CreateRecord
             slug: $data['slug'],
         );
 
+        // CT-1: the picture is an id of the media library (the picker validated it); the asset is never touched here
+        filled($data['picture_media_asset_id'] ?? null) && $category->setPicture((string) $data['picture_media_asset_id']);
+
         app(CategoryRepository::class)->save($category);
 
         return CategoryModel::find($category->id());

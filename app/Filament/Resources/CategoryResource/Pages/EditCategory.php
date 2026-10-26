@@ -36,6 +36,15 @@ class EditCategory extends EditRecord
             $category->changeParent($newParentId);
         }
 
+        // CT-1: «Премахни изображението» sets the field to null and only detaches (the asset stays in «Медия», now unused); a save that does not touch it keeps the picture
+        $picture = filled($data['picture_media_asset_id'] ?? null) ? (string) $data['picture_media_asset_id'] : null;
+
+        if ($picture === null && $category->pictureMediaAssetId() !== null) {
+            $category->removePicture();
+        } elseif ($picture !== null && $picture !== $category->pictureMediaAssetId()) {
+            $category->setPicture($picture);
+        }
+
         app(CategoryRepository::class)->save($category);
 
         return CategoryModel::find($category->id());

@@ -8,7 +8,10 @@ return [
     // for page titles/breadcrumbs/delete confirmations.
     'navigation_label' => 'Attribute Values',
 
+    'picture_help' => 'The picture stays in Media if you remove it here.',
+
     'fields' => [
+        'picture' => 'Picture',
         'attribute_definition_id' => 'Attribute',
         'value' => 'Value',
         'sort_order' => 'Sort order',

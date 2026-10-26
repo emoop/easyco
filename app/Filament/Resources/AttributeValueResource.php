@@ -16,6 +16,7 @@ use EasyCo\Catalog\Enums\AttributeType;
 use EasyCo\Catalog\Persistence\Eloquent\AttributeDefinitionModel;
 use EasyCo\Catalog\Persistence\Eloquent\AttributeValueModel;
 use EasyCo\Staff\Enums\Permission;
+use App\Filament\Forms\Components\MediaPicker;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
@@ -140,6 +141,12 @@ class AttributeValueResource extends Resource
                 ->numeric()
                 ->default(0)
                 ->required(),
+            // CT-1: ONE picture for the value (a season, a colour ...), chosen from «Медия»; any picture type the library offers, never a social image, no minimum size. «Премахни изображението» only
+            // detaches (the file stays in «Медия»); a save that does not touch the field keeps it.
+            MediaPicker::make('picture_media_asset_id')
+                ->label(__('attribute_values.fields.picture'))
+                ->plainImagesOnly()
+                ->helperText(__('attribute_values.picture_help')),
         ]);
     }
 

@@ -25,6 +25,7 @@ final class EloquentCategoryRepository implements CategoryRepository
         $model->parent_id = $category->parentId();
         $model->name = $category->name();
         $model->slug = $category->slug();
+        $model->picture_media_asset_id = $category->pictureMediaAssetId();
         $model->save();
 
         if ($category->id() === null) {
@@ -66,6 +67,7 @@ final class EloquentCategoryRepository implements CategoryRepository
             parentId: $model->parent_id !== null ? (string) $model->parent_id : null,
             name: $model->name,
             slug: $model->slug,
+            pictureMediaAssetId: $model->picture_media_asset_id !== null ? (string) $model->picture_media_asset_id : null,
         );
     }
 }

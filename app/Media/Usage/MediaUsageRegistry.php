@@ -31,7 +31,7 @@ final class MediaUsageRegistry
 
         // the two providers that look into HTML blocks share ONE read of the blocks
         $blocks = new HtmlBlockRows;
-        $builtIn = [new ProductPhotos, new VariationPhotos, new BrandLogo, new HtmlBlockPictures($blocks), new HtmlBlockBody($blocks), new DesignZones];
+        $builtIn = [new ProductPhotos, new VariationPhotos, new BrandLogo, new CategoryPictures, new AttributeValuePictures, new HtmlBlockPictures($blocks), new HtmlBlockBody($blocks), new DesignZones];
         $filtered = Hook::apply(self::HOOK, $builtIn);
         $valid = [];
 

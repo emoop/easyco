@@ -13,6 +13,7 @@ use BackedEnum;
 use EasyCo\Catalog\Contracts\CategoryRepository;
 use EasyCo\Catalog\Persistence\Eloquent\CategoryModel;
 use EasyCo\Staff\Enums\Permission;
+use App\Filament\Forms\Components\MediaPicker;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
@@ -22,11 +23,13 @@ use Filament\Infolists\Components\TextEntry;
 use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
+use Filament\Tables\Columns\ImageColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Category management — admin-panel-design.md §10/Part B, catalog-
@@ -125,7 +128,33 @@ class CategoryResource extends Resource
                 ->label(__('categories.fields.slug'))
                 ->required()
                 ->unique(table: 'catalog_categories', column: 'slug', ignoreRecord: true),
+            // CT-1: ONE picture, chosen from «Медия» (or uploaded into it): any picture type the library offers, never a social image, no minimum size. The design cuts the frame later; nothing is
+            // cropped in the file. «Премахни изображението» only detaches (the file stays in «Медия»), and a save that does not touch the field keeps it.
+            MediaPicker::make('picture_media_asset_id')
+                ->label(__('categories.fields.picture'))
+                ->plainImagesOnly()
+                ->helperText(__('categories.picture_help')),
         ]);
+    }
+
+    /**
+     * CT-1: category id => the disk path of its picture's `thumbnail` size (one query for the whole list). A picture that is still being processed has no size yet: no thumbnail, not a broken image.
+     *
+     * @return array<int, string>
+     */
+    public static function pictureThumbnails(): array
+    {
+        $out = [];
+
+        foreach (DB::table('catalog_categories')->join('catalog_media', 'catalog_media.id', '=', 'catalog_categories.picture_media_asset_id')->get(['catalog_categories.id as id', 'catalog_media.variants as variants']) as $row) {
+            foreach ((array) json_decode((string) $row->variants, true) as $variant) {
+                if (is_array($variant) && ($variant['tier'] ?? null) === 'thumbnail' && is_string($variant['path'] ?? null)) {
+                    $out[(int) $row->id] = $variant['path'];
+                }
+            }
+        }
+
+        return $out;
     }
 
     public static function table(Table $table): Table
@@ -136,6 +165,8 @@ class CategoryResource extends Resource
         // would otherwise re-run the whole tree walk N times over for N
         // rows).
         ['orderedIds' => $orderedIds, 'depthById' => $depthById] = static::walkCategoryTree();
+        // CT-1: the small pictures of the list, found ONCE per render (one query), not once per row
+        $thumbnails = static::pictureThumbnails();
 
         return $table
             // Default row order is the tree order (parent immediately
@@ -157,6 +188,14 @@ class CategoryResource extends Resource
                 return $query->orderByRaw("FIELD(id, {$placeholders})", $orderedIds);
             })
             ->columns([
+                // CT-1: as the brand list shows its logo — a small 40×40 thumbnail (the `thumbnail` size, never the original)
+                ImageColumn::make('picture')
+                    ->label(__('categories.fields.picture'))
+                    ->disk(config('services.media.default_disk', 'public'))
+                    ->state(fn (CategoryModel $record): ?string => $thumbnails[(int) $record->id] ?? null)
+                    ->imageHeight(40)
+                    ->imageWidth(40)
+                    ->square(),
                 TextColumn::make('name')
                     ->formatStateUsing(fn (CategoryModel $record, string $state): string => str_repeat('— ', $depthById[$record->id] ?? 0).$state)
                     ->searchable()
