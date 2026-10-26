@@ -18,6 +18,9 @@ class CreateSeason extends CreateRecord
     {
         $season = new Season(id: null, name: $data['name'], slug: $data['slug']);
 
+        // CT-1.1: the picture is an id of the media library (the picker validated it); the asset is never touched here
+        filled($data['picture_media_asset_id'] ?? null) && $season->setPicture((string) $data['picture_media_asset_id']);
+
         app(SeasonRepository::class)->save($season);
 
         return SeasonModel::find($season->id());

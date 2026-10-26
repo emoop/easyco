@@ -6,10 +6,13 @@ return [
     'plural_label' => 'Seasons',
 
     'fields' => [
+        'picture' => 'Picture',
         'name' => 'Name',
         'slug' => 'Slug',
         'products_count' => 'Products',
     ],
+
+    'picture_help' => 'Shown on the season page. The picture stays in Media if you remove it here.',
 
     'products_count' => [
         'count' => '{0}No products|{1}1 product|[2,*]:count products',

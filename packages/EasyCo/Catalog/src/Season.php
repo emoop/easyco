@@ -19,6 +19,7 @@ final class Season
         private ?string $id,
         private string $name,
         private string $slug,
+        private ?string $pictureMediaAssetId = null,
     ) {
         self::assertValidName($name);
         self::assertValidSlug($slug);
@@ -81,5 +82,26 @@ final class Season
     {
         self::assertValidSlug($newSlug);
         $this->slug = $newSlug;
+    }
+
+    /** CT-1.1: the id of the picture in the media library (a plain string: no dependency on EasyCo\Media, as Brand's logo and Category's picture). */
+    public function pictureMediaAssetId(): ?string
+    {
+        return $this->pictureMediaAssetId;
+    }
+
+    public function setPicture(string $mediaAssetId): void
+    {
+        if ($mediaAssetId === '') {
+            throw new InvalidArgumentException('A Season\'s picture media asset id must not be empty.');
+        }
+
+        $this->pictureMediaAssetId = $mediaAssetId;
+    }
+
+    /** Only detaches: the picture stays in the library. */
+    public function removePicture(): void
+    {
+        $this->pictureMediaAssetId = null;
     }
 }

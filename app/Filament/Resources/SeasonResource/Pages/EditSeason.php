@@ -30,6 +30,15 @@ class EditSeason extends EditRecord
             $season->changeSlug($data['slug']);
         }
 
+        // CT-1.1: «Премахни изображението» sets the field to null and only detaches (the asset stays in «Медия», now unused); a save that does not touch it keeps the picture
+        $picture = filled($data['picture_media_asset_id'] ?? null) ? (string) $data['picture_media_asset_id'] : null;
+
+        if ($picture === null && $season->pictureMediaAssetId() !== null) {
+            $season->removePicture();
+        } elseif ($picture !== null && $picture !== $season->pictureMediaAssetId()) {
+            $season->setPicture($picture);
+        }
+
         app(SeasonRepository::class)->save($season);
 
         return SeasonModel::find($season->id());

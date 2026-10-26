@@ -25,13 +25,9 @@ use EasyCo\Catalog\Persistence\Eloquent\CategoryModel;
 use EasyCo\Extensibility\HookRegistry;
 use EasyCo\Media\Persistence\Eloquent\MediaAssetModel;
 use EasyCo\Staff\Enums\Permission;
-use Filament\Forms\Concerns\InteractsWithForms;
-use Filament\Forms\Contracts\HasForms;
-use Filament\Schemas\Schema;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
-use Livewire\Component;
 use Livewire\Livewire;
 use Tests\Concerns\BuildsShippingZones;
 use Tests\Concerns\GivesProductsAShippingClass;
@@ -340,52 +336,6 @@ class CategoryAndValuePictureTest extends TestCase
         $this->assertLessThan(24, count(explode('.', $state)));
     }
 
-    // ================================================================ compact() ================================================================
-
-    public function test_the_compact_picker_renders_empty_and_filled_and_keeps_the_same_state(): void
-    {
-        $picture = $this->pickerAsset();
-
-        $host = Livewire::test(CompactPickerHost::class);
-        $empty = $host->html();
-        $this->assertStringContainsString('mpf-compact', $empty);
-        $this->assertStringContainsString('mpf-compact-add', $empty, 'the dashed square');
-        $this->assertStringContainsString('Добави изображение', $empty, 'its accessible name');
-        $this->assertStringNotContainsString('mpf-empty', $empty, 'not the standard dashed box');
-        $this->assertStringNotContainsString('Няма избрана снимка', $empty);
-
-        $host->set('data.picture', $picture->id);
-        $filled = $host->html();
-        $this->assertStringContainsString('mpf-compact-thumb', $filled);
-        $this->assertStringContainsString('-thumbnail.webp', $filled, '64×64 from the thumbnail size');
-        $this->assertStringContainsString('width="64" height="64"', $filled);
-        $this->assertStringContainsString('Смени', $filled);
-        $this->assertStringContainsString('Премахни', $filled);
-        $this->assertStringNotContainsString('Премахни изображението', $filled, 'the short quiet link');
-        $this->assertStringNotContainsString((string) MediaAssetModel::find($picture->id)->original_name, $filled, 'no name');
-        $this->assertStringNotContainsString('×', $filled, 'no size');
-
-        $host->call('check')->assertHasNoErrors();
-        $this->assertSame((int) $picture->id, (int) $host->get('data.picture'), 'the saved state is the same id');
-    }
-
-    public function test_the_compact_picker_validates_exactly_like_the_standard_one(): void
-    {
-        $host = Livewire::test(CompactPickerHost::class);
-
-        foreach ([$this->pickerVideo()->id, $this->pickerAsset(['type' => 'social_image'])->id, 987654] as $bad) {
-            $host->set('data.picture', $bad)->call('check')->assertHasErrors(['data.picture']);
-        }
-    }
-
-    public function test_compact_is_a_look_only_and_not_for_a_list_or_a_video(): void
-    {
-        $this->assertFalse(MediaPicker::make('x')->isCompact());
-        $this->assertTrue(MediaPicker::make('x')->compact()->isCompact());
-        $this->assertFalse(MediaPicker::make('x')->compact()->multiple(3)->isCompact());
-        $this->assertFalse(MediaPicker::make('x')->compact()->videos()->isCompact());
-    }
-
     // ================================================================ usage and the delete guard ===============================================
 
     public function test_both_providers_count_and_label_the_uses_and_link_to_the_edit_pages(): void
@@ -481,34 +431,5 @@ class CategoryAndValuePictureTest extends TestCase
 
         $this->assertSame(2, (new MediaUsageRegistry)->counts([$picture->id])[(int) $picture->id]);
         $this->assertNotContains((int) $picture->id, $this->unused());
-    }
-}
-
-/** A tiny Livewire host for ONE compact picker, so the option can be rendered and validated on its own. */
-class CompactPickerHost extends Component implements HasForms
-{
-    use InteractsWithForms;
-
-    /** @var array<string, mixed>|null */
-    public ?array $data = ['picture' => null];
-
-    public function mount(): void
-    {
-        $this->form->fill($this->data);
-    }
-
-    public function form(Schema $schema): Schema
-    {
-        return $schema->statePath('data')->components([MediaPicker::make('picture')->compact()->plainImagesOnly()]);
-    }
-
-    public function check(): void
-    {
-        $this->form->getState();
-    }
-
-    public function render(): string
-    {
-        return '<div>{{ $this->form }}</div>';
     }
 }

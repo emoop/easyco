@@ -23,6 +23,7 @@ final class EloquentSeasonRepository implements SeasonRepository
 
         $model->name = $season->name();
         $model->slug = $season->slug();
+        $model->picture_media_asset_id = $season->pictureMediaAssetId();
         $model->save();
 
         if ($season->id() === null) {
@@ -61,6 +62,7 @@ final class EloquentSeasonRepository implements SeasonRepository
             id: (string) $model->id,
             name: $model->name,
             slug: $model->slug,
+            pictureMediaAssetId: $model->picture_media_asset_id !== null ? (string) $model->picture_media_asset_id : null,
         );
     }
 }

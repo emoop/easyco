@@ -13,6 +13,7 @@ use BackedEnum;
 use EasyCo\Catalog\Contracts\SeasonRepository;
 use EasyCo\Catalog\Persistence\Eloquent\SeasonModel;
 use EasyCo\Staff\Enums\Permission;
+use App\Filament\Forms\Components\MediaPicker;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
@@ -21,9 +22,11 @@ use Filament\Infolists\Components\TextEntry;
 use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
+use Filament\Tables\Columns\ImageColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Season management — admin-panel-design.md §10/Part B, catalog-
@@ -104,13 +107,50 @@ class SeasonResource extends Resource
                 ->label(__('seasons.fields.slug'))
                 ->required()
                 ->unique(table: 'catalog_seasons', column: 'slug', ignoreRecord: true),
+            // CT-1.1: ONE picture, chosen from «Медия» (or uploaded into it): any picture type the library offers, never a social image, no minimum size. The design cuts the frame later. «Премахни
+            // изображението» only detaches (the file stays in «Медия»), and a save that does not touch the field keeps it.
+            MediaPicker::make('picture_media_asset_id')
+                ->label(__('seasons.fields.picture'))
+                ->plainImagesOnly()
+                ->helperText(__('seasons.picture_help')),
         ]);
+    }
+
+    /**
+     * CT-1.1: season id => the disk path of its picture's `thumbnail` size (one query for the whole list). A picture still being processed has no size yet: no thumbnail, not a broken image.
+     *
+     * @return array<int, string>
+     */
+    public static function pictureThumbnails(): array
+    {
+        $out = [];
+
+        foreach (DB::table('catalog_seasons')->join('catalog_media', 'catalog_media.id', '=', 'catalog_seasons.picture_media_asset_id')->get(['catalog_seasons.id as id', 'catalog_media.variants as variants']) as $row) {
+            foreach ((array) json_decode((string) $row->variants, true) as $variant) {
+                if (is_array($variant) && ($variant['tier'] ?? null) === 'thumbnail' && is_string($variant['path'] ?? null)) {
+                    $out[(int) $row->id] = $variant['path'];
+                }
+            }
+        }
+
+        return $out;
     }
 
     public static function table(Table $table): Table
     {
+        // the small pictures of the list, found ONCE per render (one query), not once per row
+        $thumbnails = static::pictureThumbnails();
+
         return $table
             ->columns([
+                // CT-1.1: as the category and the brand lists — a small 40×40 thumbnail (the `thumbnail` size, never the original)
+                ImageColumn::make('picture')
+                    ->label(__('seasons.fields.picture'))
+                    ->disk(config('services.media.default_disk', 'public'))
+                    ->state(fn (SeasonModel $record): ?string => $thumbnails[(int) $record->id] ?? null)
+                    ->imageHeight(40)
+                    ->imageWidth(40)
+                    ->square(),
                 TextColumn::make('name')
                     ->searchable()
                     ->sortable(),

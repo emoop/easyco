@@ -17,5 +17,6 @@ class SeasonModel extends Model
     protected $fillable = [
         'name',
         'slug',
+        'picture_media_asset_id',
     ];
 }
