@@ -70,12 +70,18 @@ try {
 
     await two.hover();
     await page.waitForSelector('.sf-card-image-hover.is-loaded', { timeout: 15000 });
-    await sleep(1100); // the zoom takes 800 ms: the screenshot is taken after it has ended
+    // the zoom values come from the CSS custom properties of the card (the owner tunes them there); wait the zoom time + 300 ms
+    const tokens = await two.evaluate((el) => {
+        const style = getComputedStyle(el);
+        const time = style.getPropertyValue('--sf-card-zoom-time').trim(); // the browser returns it as written or in seconds ("1.4s")
+        return { zoom: Number(style.getPropertyValue('--sf-card-zoom')), zoomTime: time.endsWith('ms') ? parseFloat(time) : parseFloat(time) * 1000 };
+    });
+    await sleep(tokens.zoomTime + 300);
     check('after the first hover: the second photo was requested once', requested.filter((u) => u === dataSrc).length === 1, requested.filter((u) => u === dataSrc).length);
     check('after the hover the second photo is visible', (await opacity(hover)) === '1', await opacity(hover));
-    const zoom = await hover.evaluate((el) => getComputedStyle(el).transform);
-    const scaleX = zoom === 'none' ? 1 : Number(zoom.match(/matrix\(([^,]+)/)?.[1] ?? 1);
-    check('after the hover the photo has grown to 1.1 (desktop, motion allowed)', Math.abs(scaleX - 1.1) < 0.01, zoom);
+    const transform = await hover.evaluate((el) => getComputedStyle(el).transform);
+    const scaleX = transform === 'none' ? 1 : Number(transform.match(/matrix\(([^,]+)/)?.[1] ?? 1);
+    check(`after the hover the photo has grown to --sf-card-zoom (${tokens.zoom})`, Math.abs(scaleX - tokens.zoom) < 0.01, `${transform} zoom=${tokens.zoom} time=${tokens.zoomTime}ms`);
     await shot(page, '02-card-hovered-1400', two);
 
     await page.mouse.move(5, 5);

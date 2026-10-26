@@ -220,8 +220,8 @@
         @apply flex flex-col overflow-hidden rounded-lg border border-neutral-200 bg-white transition hover:shadow-md;
         /* PC-1: the hover photo's zoom and timings, in one place each (the owner tunes them here). */
         --sf-card-zoom: 1.1;
-        --sf-card-zoom-time: 900ms;
-        --sf-card-fade-time: 450ms;
+        --sf-card-zoom-time: 1400ms;
+        --sf-card-fade-time: 700ms;
     }
 
     .sf-card-link {
@@ -245,7 +245,7 @@
         object-position: 50% 0;
         opacity: 0;
         transform: scale(1);
-        transition: opacity var(--sf-card-fade-time) ease, transform var(--sf-card-zoom-time) cubic-bezier(0.2, 0.6, 0.2, 1);
+        transition: opacity var(--sf-card-fade-time) ease-in-out, transform var(--sf-card-zoom-time) cubic-bezier(0.25, 0.1, 0.25, 1);
     }
 
     @media (hover: hover) and (pointer: fine) {
