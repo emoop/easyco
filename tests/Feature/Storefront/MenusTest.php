@@ -756,7 +756,6 @@ class MenusTest extends TestCase
     {
         $page = $this->page('terms', 'Terms');
         $this->page('privacy', 'Privacy');
-        DB::table('pages')->update(['in_footer' => 1]);
         $this->saveMenu('footer', [$this->menuItem('page', ['target_id' => $page->id]), $this->link('Our blog', 'https://blog.example.com/', ['new_tab' => true]), $this->menuItem('category', ['target_id' => 3])]);
 
         $html = $this->get('/')->assertOk()->getContent();
@@ -765,31 +764,29 @@ class MenusTest extends TestCase
         $this->assertStringContainsString('<li><a href="/info/terms">Terms</a></li>', $footer);
         $this->assertStringContainsString('<li><a href="https://blog.example.com/" target="_blank" rel="noopener">Our blog</a></li>', $footer);
         $this->assertStringContainsString('<li><a href="/product-category/shoes">Shoes</a></li>', $footer);
-        $this->assertStringNotContainsString('Privacy', $footer, 'the old in_footer flag no longer puts a page in the footer');
+        $this->assertStringNotContainsString('Privacy', $footer, 'a page that is in no footer menu item is not in the footer');
     }
 
-    public function test_the_seed_puts_the_old_footer_pages_in_the_footer_menu_in_the_same_order_and_is_idempotent(): void
+    public function test_the_seed_creates_the_footer_menu_empty_and_is_idempotent(): void
     {
         $first = $this->page('terms', 'Terms');
-        $second = $this->page('privacy', 'Privacy');
-        $third = $this->page('delivery', 'Delivery');
-        $this->page('hidden', 'Not in footer');
-        DB::table('pages')->where('id', $first->id)->update(['in_footer' => 1, 'footer_order' => 2]);
-        DB::table('pages')->where('id', $second->id)->update(['in_footer' => 1, 'footer_order' => 1]);
-        DB::table('pages')->where('id', $third->id)->update(['in_footer' => 1, 'footer_order' => 1]);
+        $this->page('privacy', 'Privacy');
         MenuModel::query()->whereIn('key', ['main', 'footer'])->delete();
 
         MenuSeeder::run();
         app(MenuRecompiler::class)->now();
 
-        $this->assertSame(['Delivery', 'Privacy', 'Terms'], array_column($this->compiledMenu('footer'), 'label'), 'footer_order, then title: the order the footer had');
+        // DS-3.1: pages have no footer flag any more, so the footer menu starts EMPTY; the pages stay published and reachable (the merchant places them with a footer menu block)
+        $this->assertSame([], $this->compiledMenu('footer'));
+        $this->assertSame(0, DB::table('menu_items')->where('menu_id', MenuModel::query()->where('key', 'footer')->value('id'))->count());
+        $this->get('/info/'.$first->slug)->assertOk();
 
         // The merchant changes the main menu; a second run leaves everything alone.
         $this->saveMenu('main', [$this->link('Mine', '/mine')]);
         MenuSeeder::run();
 
         $this->assertSame(['Mine'], array_column($this->compiledMenu('main'), 'label'), 'the own main menu of the merchant is left alone');
-        $this->assertSame(3, DB::table('menu_items')->where('menu_id', MenuModel::query()->where('key', 'footer')->value('id'))->count(), 'and the footer got nothing twice');
+        $this->assertSame(0, DB::table('menu_items')->where('menu_id', MenuModel::query()->where('key', 'footer')->value('id'))->count(), 'and the footer got nothing');
         $this->assertSame(2, MenuModel::query()->count());
     }
 

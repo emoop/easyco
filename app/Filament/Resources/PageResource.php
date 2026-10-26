@@ -179,7 +179,6 @@ class PageResource extends Resource
                     ->badge()
                     ->formatStateUsing(fn (string $state): string => static::statusOptions()[$state] ?? $state)
                     ->color(fn (string $state): string => $state === PageModel::PUBLISHED ? 'success' : 'gray'),
-                IconColumn::make('in_footer')->label(__('pages.fields.in_footer'))->boolean(),
                 TextColumn::make('revision')->label(__('pages.fields.revision'))->prefix('#'),
                 TextColumn::make('updated_at')->label(__('pages.fields.updated_at'))->dateTime()->sortable(),
             ])

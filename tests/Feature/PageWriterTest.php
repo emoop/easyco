@@ -153,7 +153,7 @@ class PageWriterTest extends TestCase
         $this->assertSame(3, $page->revision);
 
         // SEO, footer, status and noindex changes write no revision and keep the number.
-        $page = $this->writer()->update($page, ['meta_title' => 'SEO', 'meta_description' => 'desc', 'noindex' => true, 'in_footer' => true, 'footer_order' => 5, 'status' => 'draft']);
+        $page = $this->writer()->update($page, ['meta_title' => 'SEO', 'meta_description' => 'desc', 'noindex' => true, 'status' => 'draft']);
         $this->assertSame(3, $page->revision);
         $this->assertSame(3, PageRevisionModel::where('page_id', $page->id)->count());
 
@@ -206,7 +206,7 @@ class PageWriterTest extends TestCase
 
     public function test_publishing_sets_published_at_once_and_archiving_keeps_the_text(): void
     {
-        $page = $this->make(['status' => 'draft', 'in_footer' => true]);
+        $page = $this->make(['status' => 'draft']);
         $this->assertNull($page->published_at);
 
         $page = $this->writer()->update($page, ['status' => 'published']);
@@ -214,7 +214,7 @@ class PageWriterTest extends TestCase
         $this->assertNotNull($first);
 
         $page = $this->writer()->archive($page);
-        $this->assertSame(['draft', false, 1], [$page->status, $page->in_footer, $page->revision]);
+        $this->assertSame(['draft', 1], [$page->status, $page->revision]);
 
         $page = $this->writer()->update($page, ['status' => 'published']);
         $this->assertEquals($first, $page->published_at, 'the FIRST publication is kept');
@@ -310,7 +310,7 @@ class PageWriterTest extends TestCase
     {
         foreach ([
             ['title' => ''], ['title' => str_repeat('я', 201)], ['title' => "Bad\nTitle"], ['meta_title' => str_repeat('a', 201)],
-            ['meta_description' => str_repeat('a', 321)], ['meta_description' => "x\0y"], ['footer_order' => -1], ['footer_order' => 70000], ['status' => 'archived'],
+            ['meta_description' => str_repeat('a', 321)], ['meta_description' => "x\0y"], ['status' => 'archived'],
         ] as $bad) {
             try {
                 $this->make(['slug' => 'p-'.md5(json_encode($bad))] + $bad);

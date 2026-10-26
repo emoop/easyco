@@ -198,7 +198,7 @@ class StorefrontContentPageTest extends TestCase
         $contacts = $this->page(['slug' => 'contacts', 'title' => 'Contacts']);
         $about = $this->page(['slug' => 'about', 'title' => 'About']);
         $delivery = $this->page(['slug' => 'доставка', 'title' => 'Доставка <b>']);
-        $this->page(['slug' => 'not-in-menu', 'title' => 'Hidden', 'in_footer' => true]); // the old flag changes nothing now
+        $this->page(['slug' => 'not-in-menu', 'title' => 'Hidden']); // a page that is in no footer menu is not in the footer
         $draft = $this->page(['slug' => 'a-draft', 'title' => 'Draft', 'status' => 'draft']);
         $this->saveMenu('footer', array_map(fn ($page) => $this->menuItem('page', ['target_id' => $page->id]), [$about, $contacts, $returns, $delivery, $draft]));
 

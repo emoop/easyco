@@ -45,7 +45,6 @@ class ContentDraftsSeeder extends Seeder
                 'slug' => $slug,
                 'body' => '',
                 'status' => PageModel::DRAFT,
-                'in_footer' => false,
             ]);
         }
 

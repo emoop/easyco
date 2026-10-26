@@ -27,14 +27,12 @@ class PageModel extends Model
     protected $table = 'pages';
 
     protected $fillable = [
-        'slug', 'title', 'body', 'status', 'revision', 'meta_title', 'meta_description', 'noindex', 'in_footer', 'footer_order', 'published_at',
+        'slug', 'title', 'body', 'status', 'revision', 'meta_title', 'meta_description', 'noindex', 'published_at',
     ];
 
     protected $casts = [
         'revision' => 'integer',
         'noindex' => 'boolean',
-        'in_footer' => 'boolean',
-        'footer_order' => 'integer',
         'published_at' => 'datetime',
     ];
 

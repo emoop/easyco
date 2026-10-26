@@ -19,8 +19,6 @@ return [
         'meta_title' => 'SEO заглавие',
         'meta_description' => 'SEO описание',
         'noindex' => 'Не индексирай (noindex)',
-        'in_footer' => 'Покажи във футъра',
-        'footer_order' => 'Ред във футъра',
         'revision' => 'Ревизия',
         'updated_at' => 'Променена',
     ],

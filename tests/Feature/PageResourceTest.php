@@ -174,16 +174,15 @@ class PageResourceTest extends TestCase
         $this->assertStringNotContainsString('strike', $html);
     }
 
-    public function test_archive_takes_a_page_off_the_site_and_the_footer_and_keeps_it(): void
+    public function test_archive_takes_a_page_off_the_site_and_keeps_it(): void
     {
-        $page = $this->page(['in_footer' => true]);
+        $page = $this->page();
         $this->actingAsStaff('Administrator');
 
         Livewire::test(EditPage::class, ['record' => $page->id])->callAction('archive_page');
 
         $fresh = $page->fresh();
         $this->assertSame('draft', $fresh->status);
-        $this->assertFalse((bool) $fresh->in_footer);
         $this->get('/info/returns')->assertNotFound();
     }
 

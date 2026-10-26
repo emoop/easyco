@@ -19,8 +19,6 @@ return [
         'meta_title' => 'SEO title',
         'meta_description' => 'SEO description',
         'noindex' => 'Do not index (noindex)',
-        'in_footer' => 'Show in the footer',
-        'footer_order' => 'Footer order',
         'revision' => 'Revision',
         'updated_at' => 'Changed',
     ],

@@ -120,7 +120,7 @@ class CheckoutPagesTest extends TestCase
     {
         $page = $this->termsPage();
 
-        app(PageWriter::class)->update($page, ['meta_title' => 'SEO', 'in_footer' => true, 'noindex' => true]);
+        app(PageWriter::class)->update($page, ['meta_title' => 'SEO', 'noindex' => true]);
 
         $this->assertStringContainsString('data-sf-terms-version="p'.$page->id.'r1"', $this->shell());
         $this->order(['terms_accepted' => true, 'terms_version' => 'p'.$page->id.'r1'])->assertStatus(201);

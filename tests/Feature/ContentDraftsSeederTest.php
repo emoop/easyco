@@ -23,7 +23,6 @@ class ContentDraftsSeederTest extends TestCase
             $page = PageModel::query()->where('slug', $slug)->firstOrFail();
             $this->assertSame('', (string) $page->body, 'no legal text ships');
             $this->assertSame('draft', $page->status);
-            $this->assertFalse((bool) $page->in_footer);
             $this->assertNull($page->published_at);
             $this->assertNotSame('', $page->title);
             $this->get('/info/'.$slug)->assertNotFound();

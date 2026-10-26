@@ -16,11 +16,11 @@ use App\Content\Models\PageModel;
  */
 final class PageReader
 {
-    /** @var list<object>|null objects with id, slug, title, revision, in_footer, footer_order */
+    /** @var list<object>|null objects with id, slug, title, revision */
     private ?array $published = null;
 
     /**
-     * Every published page, light columns only, in footer order (footer_order, then title).
+     * Every published page, light columns only, by title.
      *
      * @return list<object>
      */
@@ -28,10 +28,9 @@ final class PageReader
     {
         return $this->published ??= PageModel::query()
             ->where('status', PageModel::PUBLISHED)
-            ->orderBy('footer_order')
             ->orderBy('title')
-            ->get(['id', 'slug', 'title', 'revision', 'in_footer', 'footer_order'])
-            ->map(fn (PageModel $page): object => (object) $page->only(['id', 'slug', 'title', 'revision', 'in_footer', 'footer_order']))
+            ->get(['id', 'slug', 'title', 'revision'])
+            ->map(fn (PageModel $page): object => (object) $page->only(['id', 'slug', 'title', 'revision']))
             ->all();
     }
 

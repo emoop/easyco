@@ -49,10 +49,10 @@ class EditPage extends EditRecord
                 ->modalDescription(__('pages.archive.description'))
                 ->modalSubmitActionLabel(__('pages.archive.submit'))
                 ->modalCancelActionLabel(__('orders.modal.close'))
-                ->visible(fn (PageModel $record): bool => $record->isPublished() || $record->in_footer)
+                ->visible(fn (PageModel $record): bool => $record->isPublished())
                 ->action(function (PageModel $record): void {
                     app(PageWriter::class)->archive($record);
-                    $this->refreshFormData(['status', 'in_footer']);
+                    $this->refreshFormData(['status']);
 
                     Notification::make()->title(__('pages.notice.archived'))->success()->send();
                 }),

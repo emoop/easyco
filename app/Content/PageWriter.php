@@ -30,7 +30,7 @@ final class PageWriter
     public const BODY_MAX_BYTES = 200_000;
 
     /**
-     * @param  array<string, mixed>  $data  title, slug, body, status, meta_title, meta_description, noindex, in_footer, footer_order
+     * @param  array<string, mixed>  $data  title, slug, body, status, meta_title, meta_description, noindex
      *
      * @throws PageInvalidException
      */
@@ -49,7 +49,6 @@ final class PageWriter
         $merged = array_merge([
             'title' => $page->title, 'slug' => $page->slug, 'body' => $page->body, 'status' => $page->status,
             'meta_title' => $page->meta_title, 'meta_description' => $page->meta_description, 'noindex' => $page->noindex,
-            'in_footer' => $page->in_footer, 'footer_order' => $page->footer_order,
         ], $data);
 
         return $this->save($page, $this->validated($merged, $page), $staffId);
@@ -58,7 +57,7 @@ final class PageWriter
     /** Archive: status draft and out of the footer. Not a revision (the text did not change). */
     public function archive(PageModel $page): PageModel
     {
-        $page->forceFill(['status' => PageModel::DRAFT, 'in_footer' => false])->save();
+        $page->forceFill(['status' => PageModel::DRAFT])->save();
 
         return $page;
     }
@@ -84,11 +83,9 @@ final class PageWriter
             'meta_title' => ['nullable', 'string', 'max:200', new PlainText()],
             'meta_description' => ['nullable', 'string', 'max:320', new PlainText()],
             'noindex' => ['boolean'],
-            'in_footer' => ['boolean'],
-            'footer_order' => ['integer', 'min:0', 'max:65535'],
         ], [], [
             'title' => __('pages.fields.title'), 'slug' => __('pages.fields.slug'), 'meta_title' => __('pages.fields.meta_title'),
-            'meta_description' => __('pages.fields.meta_description'), 'footer_order' => __('pages.fields.footer_order'),
+            'meta_description' => __('pages.fields.meta_description'),
         ]);
 
         $errors = $validator->errors()->toArray();
@@ -115,8 +112,6 @@ final class PageWriter
             'meta_title' => $data['meta_title'],
             'meta_description' => $data['meta_description'],
             'noindex' => (bool) ($data['noindex'] ?? false),
-            'in_footer' => (bool) ($data['in_footer'] ?? false),
-            'footer_order' => (int) ($data['footer_order'] ?? 0),
         ];
     }
 
