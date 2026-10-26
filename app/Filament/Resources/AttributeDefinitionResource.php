@@ -13,6 +13,7 @@ use App\Filament\Resources\ProductResource;
 use BackedEnum;
 use EasyCo\Catalog\Contracts\AttributeDefinitionRepository;
 use EasyCo\Catalog\Enums\AttributeType;
+use EasyCo\Catalog\Enums\FilterDisplay;
 use EasyCo\Catalog\Persistence\Eloquent\AttributeDefinitionModel;
 use EasyCo\Staff\Enums\Permission;
 use Filament\Actions\DeleteAction;
@@ -20,10 +21,13 @@ use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Toggle;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
+use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
+use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\QueryException;
@@ -117,6 +121,16 @@ class AttributeDefinitionResource extends Resource
                 // No mutator for `type` exists either — see this class's
                 // own docblock.
                 ->disabledOn('edit'),
+            // CT-2: a filter in the shop is a closed list only; the domain refuses the rest (see AttributeDefinition::setFilterable).
+            Toggle::make('is_filterable')
+                ->label(__('attribute_definitions.fields.is_filterable'))
+                ->helperText(__('attribute_definitions.fields.is_filterable_help'))
+                ->live(),
+            Select::make('filter_display')
+                ->label(__('attribute_definitions.fields.filter_display'))
+                ->options(self::filterDisplayOptions())
+                ->default(FilterDisplay::LIST->value)
+                ->visible(fn (Get $get): bool => (bool) $get('is_filterable')),
         ]);
     }
 
@@ -130,6 +144,9 @@ class AttributeDefinitionResource extends Resource
                 TextColumn::make('name')
                     ->searchable()
                     ->sortable(),
+                IconColumn::make('is_filterable')
+                    ->label(__('attribute_definitions.fields.is_filterable_column'))
+                    ->boolean(),
                 TextColumn::make('type')
                     ->label(__('attribute_definitions.fields.type'))
                     ->badge()
@@ -271,6 +288,16 @@ class AttributeDefinitionResource extends Resource
      *
      * @return array<string, string>
      */
+    /** @return array<string, string> */
+    private static function filterDisplayOptions(): array
+    {
+        return [
+            FilterDisplay::LIST->value => __('attribute_definitions.filter_display.list'),
+            FilterDisplay::BUTTONS->value => __('attribute_definitions.filter_display.buttons'),
+            FilterDisplay::SWATCHES->value => __('attribute_definitions.filter_display.swatches'),
+        ];
+    }
+
     private static function typeOptions(): array
     {
         $options = [];

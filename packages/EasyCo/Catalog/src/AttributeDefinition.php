@@ -3,6 +3,8 @@
 namespace EasyCo\Catalog;
 
 use EasyCo\Catalog\Enums\AttributeType;
+use EasyCo\Catalog\Enums\FilterDisplay;
+use EasyCo\Catalog\Exceptions\InvalidAttributeFilterException;
 use EasyCo\Catalog\Exceptions\InvalidVariationAxisException;
 
 /**
@@ -26,7 +28,13 @@ final class AttributeDefinition
         private readonly string $code,
         private string $name,
         private readonly AttributeType $type,
+        // CT-2: may the shop offer this attribute as a filter, and how are its values shown in one. Nothing on the storefront reads them yet.
+        private bool $filterable = false,
+        private FilterDisplay $filterDisplay = FilterDisplay::LIST,
     ) {
+        if ($this->filterable) {
+            $this->assertFilterableAllowed();
+        }
     }
 
     public function id(): ?string
@@ -71,6 +79,47 @@ final class AttributeDefinition
     public function type(): AttributeType
     {
         return $this->type;
+    }
+
+    public function isFilterable(): bool
+    {
+        return $this->filterable;
+    }
+
+    /**
+     * Only an attribute with a CLOSED list of values (SELECT, MULTISELECT) can be a filter: a free-text, number or yes/no attribute has no list to offer.
+     *
+     * @throws InvalidAttributeFilterException
+     */
+    public function setFilterable(bool $filterable): void
+    {
+        if ($filterable) {
+            $this->assertFilterableAllowed();
+        }
+
+        $this->filterable = $filterable;
+    }
+
+    public function filterDisplay(): FilterDisplay
+    {
+        return $this->filterDisplay;
+    }
+
+    /**
+     * Any attribute may use any display (its values may get pictures later), so only the value itself is checked.
+     *
+     * @throws InvalidAttributeFilterException
+     */
+    public function setFilterDisplay(string $value): void
+    {
+        $this->filterDisplay = FilterDisplay::tryFrom($value) ?? throw InvalidAttributeFilterException::unknownFilterDisplay($value);
+    }
+
+    private function assertFilterableAllowed(): void
+    {
+        if (! in_array($this->type, [AttributeType::SELECT, AttributeType::MULTISELECT], true)) {
+            throw InvalidAttributeFilterException::notClosedList($this->code, $this->type->value);
+        }
     }
 
     public function assertUsableAsVariationAxis(): void

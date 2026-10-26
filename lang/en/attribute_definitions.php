@@ -11,6 +11,20 @@ return [
         'type' => 'Type',
         'descriptive_count' => 'Used descriptively',
         'axis_count' => 'Used as a variation option',
+        'is_filterable' => 'Can be filtered in the shop',
+        'is_filterable_help' => 'Only such attributes can be used in the shop\'s filters. For now this changes nothing for visitors.',
+        'is_filterable_column' => 'Filter',
+        'filter_display' => 'How its values are shown in a filter',
+    ],
+
+    'filter_display' => [
+        'list' => 'List',
+        'buttons' => 'Buttons',
+        'swatches' => 'Colour dots',
+    ],
+
+    'errors' => [
+        'not_closed_list' => 'Only an attribute with a closed list of values can be filterable.',
     ],
 
     'types' => [

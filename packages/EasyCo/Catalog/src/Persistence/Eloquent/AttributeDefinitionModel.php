@@ -18,5 +18,11 @@ class AttributeDefinitionModel extends Model
         'code',
         'name',
         'type',
+        'is_filterable',
+        'filter_display',
+    ];
+
+    protected $casts = [
+        'is_filterable' => 'boolean',
     ];
 }
