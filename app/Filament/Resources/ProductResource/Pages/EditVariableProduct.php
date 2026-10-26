@@ -736,13 +736,24 @@ class EditVariableProduct extends EditRecord
      */
     private function changeAxesModalRows(): mixed
     {
-        $mountedAction = $this->getMountedAction();
-
-        if (! $mountedAction instanceof Action || $mountedAction->getName() !== 'change_axes') {
-            return null;
+        // READ FROM THE RAW $mountedActions, NEVER THROUGH getMountedAction() (BUG-1).
+        // getMountedAction() resolves the mounted actions into objects, and that
+        // resolution walks the schema components and evaluates THEIR visibility
+        // closures — including the confirmation fields below, whose closures call
+        // this method. While the modal's own Repeater has an action of its own
+        // mounted on top of it (add / delete a row), the resolution is exactly
+        // that walk, so the two called each other without end: the stack grew
+        // until PHP died ("Allowed memory size ... exhausted"). The modal's state
+        // is plain data in the stack entry that holds the modal, so it is read
+        // from there — the entry is found by name, because a row action of the
+        // Repeater sits above it and carries no `data` of its own.
+        foreach ($this->mountedActions as $mountedAction) {
+            if (($mountedAction['name'] ?? null) === 'change_axes') {
+                return $mountedAction['data']['axes'] ?? null;
+            }
         }
 
-        return $this->mountedActions[array_key_last($this->mountedActions)]['data']['axes'] ?? null;
+        return null;
     }
 
     /** @return array<int, Component> */
