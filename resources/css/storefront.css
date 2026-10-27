@@ -34,6 +34,8 @@
         --sf-card-radius: var(--radius-lg);
         --sf-card-border-width-mobile: 0;
         --sf-card-radius-mobile: 0;
+        /* GL-3: the top of the product page's sticky right column. 1rem when the header is NOT sticky; with a sticky header the product block raises it below the header. */
+        --sf-sticky-top: 1rem;
     }
 
     html {
@@ -459,6 +461,34 @@
         .sf-product {
             column-gap: var(--sf-product-col-gap);
         }
+
+        /* GL-3: the summary (right column) stays in view while the gallery scrolls, and stops at the bottom of the product block. Its top sits below the
+           sticky header: the header rows the server rendered are the only ones in the page (a hidden row is not rendered), so they are added here. */
+        .sf-summary {
+            position: sticky;
+            top: var(--sf-sticky-top);
+            align-self: start;
+            max-height: calc(100vh - var(--sf-sticky-top) - 1rem);
+            overflow-y: auto;
+            overscroll-behavior: contain;
+            scrollbar-width: thin;
+        }
+    }
+
+    body:has(.sf-hdr-d-sticky) {
+        --sf-sticky-top: calc(var(--sf-hdr-d-visible-top, 0px) + var(--sf-hdr-d-visible-main, 0px) + var(--sf-hdr-d-visible-bottom, 0px) + 1rem);
+    }
+
+    body:has(.sf-hdr-desktop .sf-hdr-row-top) {
+        --sf-hdr-d-visible-top: var(--sf-hdr-d-top-h, 36px);
+    }
+
+    body:has(.sf-hdr-desktop .sf-hdr-row-main) {
+        --sf-hdr-d-visible-main: var(--sf-hdr-d-main-h, 64px);
+    }
+
+    body:has(.sf-hdr-desktop .sf-hdr-row-bottom) {
+        --sf-hdr-d-visible-bottom: var(--sf-hdr-d-bottom-h, 44px);
     }
 
     /* ---- GL-1: the product page gallery. ONE markup; the desktop mode (data-gal-desktop) and the mobile mode (data-gal-mobile) are chosen here
