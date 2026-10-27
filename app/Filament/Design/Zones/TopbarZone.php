@@ -2,8 +2,10 @@
 
 namespace App\Filament\Design\Zones;
 
+use App\Http\Controllers\Storefront\DesignPreviewController;
 use App\Settings\AppearanceSettings as Appearance;
 use App\Storefront\Appearance\AppearanceWriter;
+use App\Storefront\Appearance\BannerDrafts;
 use App\Storefront\Design\FieldKinds;
 use Filament\Forms\Components\ColorPicker;
 use Filament\Forms\Components\DateTimePicker;
@@ -15,8 +17,9 @@ use Filament\Schemas\Components\Text;
 use Filament\Schemas\Components\Utilities\Get;
 
 /**
- * The «Топбанер» zone of the Design screen (DS-2b): a FORM zone, no tree. The banner has no draft (it has always been saved live from «Облик»): «Запази» stores through AppearanceWriter, the
- * very code the «Облик» page saves with, and the preview is the live home page. The fields and their rules are the «Облик» page's: a plain text of at most 160 characters (required while
+ * The «Топбанер» zone of the Design screen (DS-2b, DS-5): a FORM zone, no tree. Since DS-5 the banner has a DRAFT like every zone (`banner.draft`, App\Storefront\Appearance\BannerDrafts): «Приложи» stores the
+ * working copy, «Публикувай» stores it through AppearanceWriter (the very code the «Облик» page still saves live with) and forgets the draft. The preview is the home page with the draft banner (a signed
+ * preview). The fields and their rules are the «Облик» page's: a plain text of at most 160 characters (required while
  * the banner is on), a link that is a path in the shop or an https address, a link label of at most 40, two `#rrggbb` colours, an optional start and end (the end after the start), and the
  * same non-blocking contrast warning.
  */
@@ -57,23 +60,61 @@ final class TopbarZone implements DesignZone
 
     public function hasDraft(): bool
     {
-        return false;
+        return true;
+    }
+
+    public function previewNote(): ?string
+    {
+        return null;
+    }
+
+    /** The PUBLISHED banner as the panel's values (what the shop prints now), raw. @return array<string, mixed> */
+    private function publishedValues(): array
+    {
+        $now = AppearanceWriter::current();
+
+        return [
+            'enabled' => (bool) $now['banner_enabled'], 'text' => (string) $now['banner_text'], 'url' => (string) $now['banner_url'], 'link_label' => (string) $now['banner_link_label'],
+            'text_color' => $now['c_banner_text'], 'bg_color' => $now['c_banner_bg'], 'starts_at' => $now['banner_starts_at'], 'ends_at' => $now['banner_ends_at'],
+        ];
+    }
+
+    /** The stored draft as validated values, or null when there is none (or it does not validate). @return array<string, mixed>|null */
+    private function draftValues(): ?array
+    {
+        $raw = BannerDrafts::raw();
+
+        if ($raw === null) {
+            return null;
+        }
+
+        [$clean, $errors] = $this->validate(['values' => $raw]);
+
+        return $errors === [] ? $clean : null;
+    }
+
+    /** The published banner, normalised exactly like a draft (so the two compare). @return array<string, mixed> */
+    private function normalisedPublished(): array
+    {
+        return $this->validate(['values' => $this->publishedValues()])[0];
+    }
+
+    public function hasUnpublishedChanges(): bool
+    {
+        $draft = $this->draftValues();
+
+        return $draft !== null && $draft != $this->normalisedPublished();
     }
 
     public function load(): array
     {
-        $now = AppearanceWriter::current();
-
-        return ['values' => [
-            'enabled' => (bool) $now['banner_enabled'], 'text' => (string) $now['banner_text'], 'url' => (string) $now['banner_url'], 'link_label' => (string) $now['banner_link_label'],
-            'text_color' => $now['c_banner_text'], 'bg_color' => $now['c_banner_bg'], 'starts_at' => $now['banner_starts_at'], 'ends_at' => $now['banner_ends_at'],
-        ]];
+        return ['values' => $this->draftValues() ?? $this->publishedValues()];
     }
 
-    /** The live home page; a changing query makes the frame fetch it again after «Запази». */
+    /** The home page with the working copy of the banner (a signed preview); the frame is fetched again after every «Приложи». */
     public function previewUrl(): string
     {
-        return route('storefront.home', [], false).'?ds='.time();
+        return DesignPreviewController::previewUrl('topbar');
     }
 
     public function previewScroll(): string
@@ -257,22 +298,26 @@ final class TopbarZone implements DesignZone
         return $ratio < Appearance::MIN_CONTRAST ? [(string) __('appearance.contrast_warning', ['ratio' => number_format($ratio, 2)])] : [];
     }
 
-    /** «Запази»: the SAME save the «Облик» page makes (the colours and fonts it does not show stay as they are stored). */
+    /** «Приложи»: the working copy is stored; a copy equal to the published banner is no draft (the key is forgotten). The shop is not touched. */
     public function save(array $stored): void
+    {
+        $stored == $this->normalisedPublished() ? BannerDrafts::forget('draft_equal') : BannerDrafts::save($stored);
+    }
+
+    /** «Публикувай»: the SAME save the «Облик» page makes (the colours and fonts it does not show stay as they are); the draft is then forgotten. */
+    public function publish(array $stored): void
     {
         AppearanceWriter::save(array_replace(AppearanceWriter::current(), [
             'banner_enabled' => $stored['enabled'], 'banner_text' => $stored['text'], 'banner_url' => $stored['url'], 'banner_link_label' => $stored['link_label'],
             'banner_starts_at' => $stored['starts_at'], 'banner_ends_at' => $stored['ends_at'],
             'c_banner_text' => $stored['text_color'], 'c_banner_bg' => $stored['bg_color'],
         ]));
-    }
 
-    public function publish(array $stored): void
-    {
-        $this->save($stored);
+        BannerDrafts::forget('published');
     }
 
     public function discard(): void
     {
+        BannerDrafts::forget('discarded');
     }
 }

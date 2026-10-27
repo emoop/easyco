@@ -69,7 +69,7 @@ class DesignMovedBehavioursTest extends TestCase
         $this->assertNull($this->settings()->get(AppearanceSettings::HEADER_PUBLISHED_KEY));
 
         Cache::forever(StorefrontAppearance::CACHE_KEY, ['stale' => true]);
-        $screen->callAction('publish')->assertHasNoErrors();
+        $screen->call('apply')->callAction('publish')->assertHasNoErrors();
 
         $this->assertSame(52, $this->stored(AppearanceSettings::HEADER_COMPILED_KEY)['layout']['desktop']['rows']['main']['height']);
         $this->assertNotNull($this->settings()->get(AppearanceSettings::HEADER_PUBLISHED_KEY));
@@ -96,7 +96,7 @@ class DesignMovedBehavioursTest extends TestCase
         $this->assertNull($this->settings()->get(AppearanceSettings::FOOTER_PUBLISHED_KEY));
 
         Cache::forever(StorefrontAppearance::CACHE_KEY, ['stale' => true]);
-        $screen->callAction('publish')->assertHasNoErrors();
+        $screen->call('apply')->callAction('publish')->assertHasNoErrors();
 
         $this->assertSame('Published line [year]', $this->stored(AppearanceSettings::FOOTER_COMPILED_KEY)['layout']['lower']['text_template']);
         $this->assertNotNull($this->settings()->get(AppearanceSettings::FOOTER_PUBLISHED_KEY));
@@ -137,7 +137,7 @@ class DesignMovedBehavioursTest extends TestCase
         $screen->set('props.drawer_upper', false)->call('apply')->assertHasNoErrors();
         $this->assertFalse($this->stored(AppearanceSettings::HEADER_DRAFT_KEY)['mobile']['drawer_upper']);
 
-        $screen->callAction('publish')->assertHasNoErrors();
+        $screen->call('apply')->callAction('publish')->assertHasNoErrors();
         $this->assertFalse($this->stored(AppearanceSettings::HEADER_PUBLISHED_KEY)['mobile']['drawer_upper']);
 
         $this->screen()->call('setDevice', 'mobile')->call('selectLayout')->assertSet('props.drawer_upper', false);
@@ -163,9 +163,10 @@ class DesignMovedBehavioursTest extends TestCase
         $old = HeaderLayout::default();
         $old['mobile']['drawer'] = [['type' => 'menu', 'settings' => ['style' => 'links']], ['type' => 'account', 'settings' => ['style' => 'icon']]];
         $this->assertTrue(HeaderValidator::validate($old)->passes());
-        $this->settings()->set(AppearanceSettings::HEADER_PUBLISHED_KEY, (string) json_encode($old));
+        // DS-5: it is stored as the DRAFT (publishing what is already published is «nothing to publish»), and publishing must still compile it
+        $this->settings()->set(AppearanceSettings::HEADER_DRAFT_KEY, (string) json_encode($old));
 
-        $this->screen()->callAction('publish')->assertHasNoErrors();
+        $this->screen()->call('apply')->callAction('publish')->assertHasNoErrors();
 
         $this->assertNotNull($this->settings()->get(AppearanceSettings::HEADER_COMPILED_KEY));
         $this->assertSame(['menu', 'account'], array_column($this->stored(AppearanceSettings::HEADER_PUBLISHED_KEY)['mobile']['drawer'], 'type'));
@@ -176,7 +177,7 @@ class DesignMovedBehavioursTest extends TestCase
     public function test_the_colours_and_text_size_of_a_row_come_back_after_a_reload(): void
     {
         $this->screen()->call('selectRow', 'h-d-top')->set('props.colors.bg', '#112233')->set('props.colors.fg', '#ffffff')->set('props.text_size', 'l')->call('apply')->assertHasNoErrors();
-        $this->screen()->callAction('publish')->assertHasNoErrors();
+        $this->screen()->call('apply')->callAction('publish')->assertHasNoErrors();
 
         $top = $this->stored(AppearanceSettings::HEADER_COMPILED_KEY)['layout']['desktop']['rows']['top'];
         $this->assertSame(['#112233', '#ffffff', 'l'], [$top['bg'], $top['fg'], $top['text_size']]);
@@ -195,13 +196,14 @@ class DesignMovedBehavioursTest extends TestCase
         $layout['mobile']['drawer_side'] = 'right';
         $valid = HeaderValidator::validate($layout);
         $this->assertTrue($valid->passes(), json_encode($valid->errors ?? []));
-        $this->settings()->set(AppearanceSettings::HEADER_PUBLISHED_KEY, (string) json_encode($valid->layout));
+        // DS-5: a stored DRAFT (what a working copy is), so that publishing it is a real publish
+        $this->settings()->set(AppearanceSettings::HEADER_DRAFT_KEY, (string) json_encode($valid->layout));
 
         $screen = $this->screen()->call('apply')->assertHasNoErrors();
 
         $this->assertEquals($valid->layout, $this->stored(AppearanceSettings::HEADER_DRAFT_KEY), 'every element, setting and order comes back as it was stored');
 
-        $screen->callAction('publish')->assertHasNoErrors();
+        $screen->call('apply')->callAction('publish')->assertHasNoErrors();
         $this->app->forgetScopedInstances();
         $html = $this->get('/')->assertOk()->getContent();
         $this->assertStringContainsString('0888 123 456', $html);

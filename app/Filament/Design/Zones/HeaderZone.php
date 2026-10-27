@@ -69,6 +69,16 @@ final class HeaderZone implements DesignZone
         return true;
     }
 
+    public function hasUnpublishedChanges(): bool
+    {
+        return HeaderDrafts::hasUnpublishedChanges();
+    }
+
+    public function previewNote(): ?string
+    {
+        return null;
+    }
+
     public function load(): array
     {
         return HeaderAdapter::toTree(HeaderDrafts::startingLayout());

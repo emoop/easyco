@@ -615,3 +615,29 @@
 .ds-mini-cols > :nth-child(3) {
     text-align: end;
 }
+
+/* DS-5: the state indicator beside «Публикувай» (text, not a button) */
+.ds-state {
+    display: inline-flex;
+    align-items: center;
+    margin-inline-start: 0.75rem;
+    font-size: var(--ds-fs-small);
+}
+
+.ds-state-published {
+    color: var(--gray-600, #4b5563);
+}
+
+.ds-state-draft {
+    color: var(--warning-700, #b45309);
+    font-weight: 600;
+}
+
+.ds-state-panel {
+    color: var(--danger-600, #dc2626);
+    font-weight: 600;
+}
+
+.ds-note-preview {
+    margin-top: 0.25rem;
+}

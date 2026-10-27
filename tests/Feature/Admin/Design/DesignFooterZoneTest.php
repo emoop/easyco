@@ -117,7 +117,9 @@ class DesignFooterZoneTest extends TestCase
     {
         $screen = $this->screen()->call('addRow');
         $this->assertCount(2, $screen->get('tree')['upper']['rows']);
-        $screen->assertSet('dirty', true);
+        // DS-5: a structural change is stored as the draft at once (autosave): nothing is left unsaved, and the draft already has the second row
+        $screen->assertSet('dirty', false);
+        $this->assertCount(2, $this->draft()['upper']['rows']);
 
         $before = $screen->get('tree');
         $screen->call('addRow');
@@ -378,12 +380,15 @@ class DesignFooterZoneTest extends TestCase
     {
         $screen = $this->screen()->call('selectCell', 'f-u-r0-c0')->call('addNode', 'social');
         $id = $screen->get('selected')['id'];
+        // DS-5: adding the block is a structural change, stored as the draft at once; the REFUSED apply below must leave that draft exactly as it was
+        $afterAdd = $this->settings()->get(AppearanceSettings::FOOTER_DRAFT_KEY);
+        $this->assertNotNull($afterAdd);
         $screen->set('props.settings.n_facebook', 'javascript:alert(1)');
         $screen->call('selectLayout', 'upper');
 
         $screen->call('apply')->assertHasErrors(['props.settings.n_facebook']);
 
-        $this->assertNull($this->settings()->get(AppearanceSettings::FOOTER_DRAFT_KEY), 'nothing is written');
+        $this->assertSame($afterAdd, $this->settings()->get(AppearanceSettings::FOOTER_DRAFT_KEY), 'nothing is written');
         $screen->assertSet('selected', ['kind' => 'node', 'id' => $id])->assertSet('invalid', [$id]);
     }
 
@@ -409,13 +414,13 @@ class DesignFooterZoneTest extends TestCase
 
     public function test_publish_compiles_the_footer_and_the_home_page_shows_it_then_discard_restores(): void
     {
-        $screen = $this->screen()->call('selectLayout', 'lower')->set('props.text_template', 'Screen footer line')->callAction('publish')->assertHasNoErrors();
+        $screen = $this->screen()->call('selectLayout', 'lower')->set('props.text_template', 'Screen footer line')->call('apply')->callAction('publish')->assertHasNoErrors();
 
         $compiled = json_decode((string) $this->settings()->get(AppearanceSettings::FOOTER_COMPILED_KEY), true);
         $this->assertSame('Screen footer line', $compiled['layout']['lower']['text_template']);
         $this->assertSame($compiled['layout'], json_decode((string) $this->settings()->get(AppearanceSettings::FOOTER_PUBLISHED_KEY), true));
 
-        $screen->call('selectLayout', 'lower')->set('props.text_template', 'Only a draft')->callAction('apply');
+        $screen->call('selectLayout', 'lower')->set('props.text_template', 'Only a draft')->call('apply');
         $this->assertSame('Only a draft', $this->draft()['lower']['text_template']);
 
         $screen->callAction('discard');
@@ -431,14 +436,13 @@ class DesignFooterZoneTest extends TestCase
         $this->settings()->set(AppearanceSettings::FOOTER_DRAFT_KEY, json_encode($layout));
         $screen = Livewire::test(DesignScreen::class)->call('selectZone', 'footer');
 
-        $screen->callAction('default');
+        $screen->callAction('reset');
 
+        // DS-5: «Начални настройки» puts the initial values into the WORKING COPY (the draft, stored at once); the published footer is untouched until «Публикувай»
         $this->assertSame(FooterAdapter::toTree(FooterLayout::default()), $screen->get('tree'));
-        $screen->assertSet('dirty', true);
-        $this->assertSame('Custom', $this->draft()['lower']['text_template'], 'nothing stored yet');
-
-        $screen->call('apply');
+        $screen->assertSet('dirty', false);
         $this->assertSame(FooterLayout::default()['lower']['text_template'], $this->draft()['lower']['text_template']);
+        $this->assertNull($this->settings()->get(AppearanceSettings::FOOTER_PUBLISHED_KEY), 'nothing is published');
     }
 
     public function test_the_actions_are_journalled_with_the_old_pages_names(): void

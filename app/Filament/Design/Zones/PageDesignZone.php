@@ -11,9 +11,9 @@ use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
 
 /**
- * GL-2: the two plain sections of the «Дизайн» screen, «Страница и карти» and «Продуктова страница». Both are FORM zones with no draft («Запази» is live, like the top banner): no tree, ONE
- * properties form built from PageDesign's list of fields, so the panel, the validator and the compiler share it. «Върни по подразбиране» puts the defaults into the PANEL only (like the footer's
- * default layout): nothing is stored until «Запази».
+ * GL-2 / DS-5: the two plain sections of the «Дизайн» screen, «Страница и карти» and «Продуктова страница». Both are FORM zones with a DRAFT (the one button model of the screen): no tree, ONE
+ * properties form built from PageDesign's list of fields, so the panel, the validator and the compiler share it. «Начални настройки» puts the defaults into the working copy (a draft, stored at
+ * once); nothing reaches the shop until «Публикувай».
  *
  * A subclass names its section and its groups: a group is a heading and the fields under it; a PAIR is the two columns «Десктоп» / «Телефон» side by side.
  */
@@ -57,12 +57,23 @@ abstract class PageDesignZone implements DesignZone
 
     public function hasDraft(): bool
     {
-        return false;
+        return true;
+    }
+
+    public function hasUnpublishedChanges(): bool
+    {
+        return PageDesignStore::hasUnpublishedChanges($this->section());
+    }
+
+    /** The preview of these sections is the PUBLISHED page: their values are CSS variables and (for the gallery) HTML, and a preview request must not make the storefront read a draft. */
+    public function previewNote(): ?string
+    {
+        return (string) __('design.preview.published_only');
     }
 
     public function load(): array
     {
-        return ['values' => PageDesignStore::values($this->section())];
+        return ['values' => PageDesignStore::startingValues($this->section())];
     }
 
     public function previewScroll(): string
@@ -192,17 +203,19 @@ abstract class PageDesignZone implements DesignZone
         return ['values' => PageDesign::defaults($this->section())];
     }
 
+    /** «Приложи»: the working copy is stored; the published value (and the shop) is not touched. */
     public function save(array $stored): void
     {
-        PageDesignStore::save($this->section(), $stored);
+        PageDesignStore::saveDraft($this->section(), $stored);
     }
 
     public function publish(array $stored): void
     {
-        $this->save($stored);
+        PageDesignStore::publish($this->section(), $stored);
     }
 
     public function discard(): void
     {
+        PageDesignStore::discard($this->section());
     }
 }

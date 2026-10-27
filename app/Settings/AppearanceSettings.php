@@ -38,6 +38,13 @@ final class AppearanceSettings
 
     public const PRODUCT_DESIGN_KEY = 'design.product.global';
 
+    /** DS-5: the DRAFT (working copy) of the plain sections and of the top banner, beside the published storage (same shape; the product draft also holds the gallery choices, written to `storefront.gallery.*` only on publish). Never read by the storefront. */
+    public const PAGE_DESIGN_DRAFT_KEY = 'design.page.global.draft';
+
+    public const PRODUCT_DESIGN_DRAFT_KEY = 'design.product.global.draft';
+
+    public const BANNER_DRAFT_KEY = 'banner.draft';
+
     public const CHECKOUT_HEADER_DRAFT_KEY = 'design.checkout_header.global.draft';
 
     public const CHECKOUT_HEADER_PUBLISHED_KEY = 'design.checkout_header.global.published';

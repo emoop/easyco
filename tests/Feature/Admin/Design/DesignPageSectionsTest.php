@@ -85,7 +85,7 @@ class DesignPageSectionsTest extends TestCase
     /** @return array<string, ?string> everything the two sections can store */
     private function stored(): array
     {
-        return $this->settings()->getMany([AppearanceSettings::PAGE_DESIGN_KEY, AppearanceSettings::PRODUCT_DESIGN_KEY, AppearanceSettings::COMPILED_KEY, ...array_values(PageDesign::GALLERY_KEYS)]);
+        return $this->settings()->getMany([AppearanceSettings::PAGE_DESIGN_KEY, AppearanceSettings::PRODUCT_DESIGN_KEY, AppearanceSettings::PAGE_DESIGN_DRAFT_KEY, AppearanceSettings::PRODUCT_DESIGN_DRAFT_KEY, AppearanceSettings::COMPILED_KEY, ...array_values(PageDesign::GALLERY_KEYS)]);
     }
 
     /** Nothing is stored; `$neverCompiled` also says no stylesheet file exists (after a return to the defaults the compiler keeps ONE previous file for pages cached a moment earlier: that is its own rule). */
@@ -111,7 +111,7 @@ class DesignPageSectionsTest extends TestCase
         $this->screen('product')->assertSet('zone', 'product')->assertSet('props.gallery_desktop_mode', 'grid')->assertSet('props.gallery_mobile_mode', 'carousel')
             ->assertSet('props.gallery_width', '65')->assertSet('props.gallery_odd_last', 'same')->assertSet('props.gallery_hover_zoom', 'light')
             ->assertSet('props.gal_gap', 8)->assertSet('props.gal_radius', 4)->assertSet('props.col_gap', 32)->assertSet('props.sticky', true)
-            ->assertActionVisible('default')->assertActionHidden('publish')->assertActionHidden('discard');
+            ->assertActionVisible('reset')->assertActionVisible('discard')->assertActionVisible('publish')->assertActionDisabled('publish');
     }
 
     // ---- defaults write nothing ---------------------------------------------------------------------------------------------------------
@@ -123,8 +123,8 @@ class DesignPageSectionsTest extends TestCase
         $before = $this->stored();
         $this->assertSame($baseline, $this->css());
 
-        $this->screen('page')->call('apply')->assertHasNoErrors();
-        $this->screen('product')->call('apply')->assertHasNoErrors();
+        $this->screen('page')->call('apply')->call('publish')->assertHasNoErrors();
+        $this->screen('product')->call('apply')->call('publish')->assertHasNoErrors();
 
         $this->assertSame($before, $this->stored(), 'nothing new is stored');
         $this->assertSame($baseline, $this->css(), 'the compiled stylesheet is byte-identical');
@@ -132,8 +132,8 @@ class DesignPageSectionsTest extends TestCase
 
     public function test_an_untouched_shop_compiles_to_no_stylesheet_after_both_defaults_are_saved(): void
     {
-        $this->screen('page')->call('apply')->assertHasNoErrors();
-        $this->screen('product')->call('apply')->assertHasNoErrors();
+        $this->screen('page')->call('apply')->call('publish')->assertHasNoErrors();
+        $this->screen('product')->call('apply')->call('publish')->assertHasNoErrors();
 
         $this->assertNothingStored();
     }
@@ -168,7 +168,7 @@ class DesignPageSectionsTest extends TestCase
     #[\PHPUnit\Framework\Attributes\DataProvider('table')]
     public function test_a_changed_value_changes_exactly_its_variable_or_its_key(string $zone, array $input, array $lines, array $gallery): void
     {
-        $this->fill($this->screen($zone), $input)->call('apply')->assertHasNoErrors();
+        $this->fill($this->screen($zone), $input)->call('apply')->call('publish')->assertHasNoErrors();
 
         $css = $this->css();
 
@@ -189,7 +189,7 @@ class DesignPageSectionsTest extends TestCase
 
     public function test_the_page_padding_is_one_clamp_with_the_three_parts_together(): void
     {
-        $this->fill($this->screen('page'), ['pad_min' => '12', 'pad_vw' => '3.5', 'pad_max' => '120'])->call('apply')->assertHasNoErrors();
+        $this->fill($this->screen('page'), ['pad_min' => '12', 'pad_vw' => '3.5', 'pad_max' => '120'])->call('apply')->call('publish')->assertHasNoErrors();
 
         $this->assertStringContainsString('--sf-page-pad: clamp(0.75rem, 3.5vw, 7.5rem);', (string) $this->css());
         $this->assertSame(['--sf-page-pad'], $this->ownVariables($this->css()));
@@ -198,8 +198,8 @@ class DesignPageSectionsTest extends TestCase
     public function test_the_two_sections_keep_each_others_variables_and_the_banner_colours(): void
     {
         AppearanceWriter::save(array_replace(AppearanceWriter::current(), ['c_primary' => '#123456']));
-        $this->fill($this->screen('page'), ['card_radius' => '12'])->call('apply')->assertHasNoErrors();
-        $this->fill($this->screen('product'), ['col_gap' => '48'])->call('apply')->assertHasNoErrors();
+        $this->fill($this->screen('page'), ['card_radius' => '12'])->call('apply')->call('publish')->assertHasNoErrors();
+        $this->fill($this->screen('product'), ['col_gap' => '48'])->call('apply')->call('publish')->assertHasNoErrors();
 
         $css = (string) $this->css();
         $this->assertStringContainsString('--sf-card-radius: 0.75rem;', $css);
@@ -218,10 +218,10 @@ class DesignPageSectionsTest extends TestCase
 
     public function test_sticky_off_writes_both_variables_and_on_writes_neither(): void
     {
-        $screen = $this->fill($this->screen('product'), ['sticky' => false])->call('apply')->assertHasNoErrors();
+        $screen = $this->fill($this->screen('product'), ['sticky' => false])->call('apply')->call('publish')->assertHasNoErrors();
         $this->assertEqualsCanonicalizing(['--sf-summary-position', '--sf-summary-max-height'], $this->ownVariables($this->css()));
 
-        $screen->set('props.sticky', true)->call('apply')->assertHasNoErrors();
+        $screen->set('props.sticky', true)->call('apply')->call('publish')->assertHasNoErrors();
         $this->assertSame([], $this->ownVariables($this->css()));
         $this->assertNothingStored(false);
     }
@@ -270,7 +270,7 @@ class DesignPageSectionsTest extends TestCase
         foreach (['page' => ['card_radius' => '12'], 'product' => ['gallery_width' => '70']] as $zone => $input) {
             Cache::forever(StorefrontAppearance::CACHE_KEY, ['stale' => true]);
 
-            $this->fill($this->screen($zone), $input)->call('apply')->assertHasNoErrors();
+            $this->fill($this->screen($zone), $input)->call('apply')->call('publish')->assertHasNoErrors();
 
             $cached = Cache::get(StorefrontAppearance::CACHE_KEY);
             $this->assertIsArray($cached, $zone);
@@ -290,7 +290,7 @@ class DesignPageSectionsTest extends TestCase
         $this->get(DesignScreen::getUrl().'?zone=page')->assertForbidden();
         Livewire::test(DesignScreen::class)->assertForbidden();
 
-        foreach (['apply', 'resetToDefault'] as $call) {
+        foreach (['apply', 'publish', 'discard', 'resetToDefault'] as $call) {
             $this->actingAsStaff('Administrator');
             $screen = $this->fill(Livewire::test(DesignScreen::class)->call('selectZone', 'product'), ['gal_gap' => '12']);
 
@@ -314,7 +314,7 @@ class DesignPageSectionsTest extends TestCase
 
         $this->fill($this->screen('product'), [
             'gallery_desktop_mode' => 'thumbs-left', 'gallery_mobile_mode' => 'thumbs-below', 'gallery_width' => '70', 'gallery_odd_last' => 'full', 'gallery_hover_zoom' => 'medium',
-        ])->call('apply')->assertHasNoErrors();
+        ])->call('apply')->call('publish')->assertHasNoErrors();
 
         $this->app->forgetScopedInstances();
         $html = $this->get('/product/summer-dress')->assertOk()->getContent();
@@ -328,7 +328,7 @@ class DesignPageSectionsTest extends TestCase
     public function test_the_reset_loads_the_defaults_into_the_panel_only_and_saving_them_brings_the_output_back(): void
     {
         foreach (['page' => ['pad_min' => '24', 'card_radius' => '12', 'card_border_m' => '1'], 'product' => ['gal_gap' => '12', 'sticky' => false, 'gallery_desktop_mode' => 'thumbs-left', 'gallery_hover_zoom' => 'off']] as $zone => $input) {
-            $this->fill($this->screen($zone), $input)->call('apply')->assertHasNoErrors();
+            $this->fill($this->screen($zone), $input)->call('apply')->call('publish')->assertHasNoErrors();
         }
 
         $this->assertNotNull($this->css());
@@ -336,14 +336,17 @@ class DesignPageSectionsTest extends TestCase
 
         $screen = $this->screen('product');
         $screen->call('resetToDefault')->assertSet('props.gal_gap', 8)->assertSet('props.sticky', true)->assertSet('props.gallery_desktop_mode', 'grid')->assertSet('props.gallery_hover_zoom', 'light');
-        $this->assertSame($changed, $this->stored(), 'nothing is stored until «Запази»');
+        // DS-5: the reset is the WORKING COPY (a draft, stored at once): the published values, the stylesheet and the gallery keys are exactly as they were
+        $drafts = array_flip([AppearanceSettings::PAGE_DESIGN_DRAFT_KEY, AppearanceSettings::PRODUCT_DESIGN_DRAFT_KEY]);
+        $this->assertSame(array_diff_key($changed, $drafts), array_diff_key($this->stored(), $drafts), 'nothing is published until «Публикувай»');
+        $this->assertNotNull($this->settings()->get(AppearanceSettings::PRODUCT_DESIGN_DRAFT_KEY), 'the working copy is stored as a draft');
 
-        $screen->call('apply')->assertHasNoErrors();
+        $screen->call('apply')->call('publish')->assertHasNoErrors();
         $this->assertEqualsCanonicalizing(['--sf-page-pad', '--sf-card-radius', '--sf-card-border-width-mobile'], $this->ownVariables($this->css()), 'the product section is back; the page section still holds its own');
 
         $page = $this->screen('page');
         $page->call('resetToDefault')->assertSet('props.pad_min', 16)->assertSet('props.card_radius', 8)->assertSet('props.card_border_m', 0);
-        $page->call('apply')->assertHasNoErrors();
+        $page->call('apply')->call('publish')->assertHasNoErrors();
 
         $this->assertNothingStored(false);
         $this->assertNull($this->css(), 'the stylesheet is no longer linked: the compiled entry is gone');
@@ -351,10 +354,10 @@ class DesignPageSectionsTest extends TestCase
 
     public function test_a_reset_of_one_section_leaves_the_other_one_alone(): void
     {
-        $this->fill($this->screen('page'), ['card_radius' => '12'])->call('apply')->assertHasNoErrors();
-        $this->fill($this->screen('product'), ['col_gap' => '48'])->call('apply')->assertHasNoErrors();
+        $this->fill($this->screen('page'), ['card_radius' => '12'])->call('apply')->call('publish')->assertHasNoErrors();
+        $this->fill($this->screen('product'), ['col_gap' => '48'])->call('apply')->call('publish')->assertHasNoErrors();
 
-        $this->screen('page')->call('resetToDefault')->call('apply')->assertHasNoErrors();
+        $this->screen('page')->call('resetToDefault')->call('apply')->call('publish')->assertHasNoErrors();
 
         $this->assertSame(['--sf-product-col-gap'], $this->ownVariables($this->css()));
         $this->assertNull($this->settings()->get(AppearanceSettings::PAGE_DESIGN_KEY));

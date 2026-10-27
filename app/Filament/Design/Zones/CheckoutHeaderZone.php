@@ -55,6 +55,16 @@ final class CheckoutHeaderZone implements DesignZone
         return true;
     }
 
+    public function hasUnpublishedChanges(): bool
+    {
+        return CheckoutHeaderDrafts::hasUnpublishedChanges();
+    }
+
+    public function previewNote(): ?string
+    {
+        return null;
+    }
+
     public function load(): array
     {
         return ['values' => CheckoutHeaderDrafts::startingValues()];

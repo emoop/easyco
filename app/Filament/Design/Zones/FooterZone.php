@@ -73,6 +73,16 @@ final class FooterZone implements DesignZone, RestructuresTree
         return true;
     }
 
+    public function hasUnpublishedChanges(): bool
+    {
+        return FooterDrafts::hasUnpublishedChanges();
+    }
+
+    public function previewNote(): ?string
+    {
+        return null;
+    }
+
     public function load(): array
     {
         return FooterAdapter::toTree(FooterDrafts::startingLayout());

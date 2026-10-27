@@ -117,7 +117,7 @@ try {
     console.error('LOOK ' + JSON.stringify(look));
 
     // ---- the zone list: Хедър works, the others are disabled ---------------------------------------------------------------------------------------
-    check('the zone list has four working zones (Хедър selected) and two «следва»', (await page.locator('.ds-zone[disabled]').count()) === 2 && (await page.locator('.ds-zone:not([disabled])').count()) === 4 && (await page.locator('.ds-zone-on').textContent()).includes('Хедър'));
+    check('the zone list has six working zones (Хедър selected) and two «следва»', (await page.locator('.ds-zone[disabled]').count()) === 2 && (await page.locator('.ds-zone:not([disabled])').count()) === 6 && (await page.locator('.ds-zone-on').textContent()).includes('Хедър'));
     check('the palette is disabled without a cell', (await page.locator('.ds-chip-add:not([disabled])').count()) === 0);
 
     // ---- DS-2a.1: the menu picker on the header's menu element ------------------------------------------------------------------------------------------
@@ -303,7 +303,7 @@ try {
 
     // ---- DS-2b: Топбанер ---------------------------------------------------------------------------------------------------------------------------------
     await zone('Топбанер');
-    check('the top banner zone has no palette and a «Запази» button', (await page.locator('.ds-palette').count()) === 0 && (await page.locator('.ds-props button[type=submit]').textContent()).includes('Запази'));
+    check('the top banner zone has no palette and the one button «Приложи» (DS-5)', (await page.locator('.ds-palette').count()) === 0 && (await page.locator('.ds-props button[type=submit]').textContent()).includes('Приложи'));
     const enabledSwitch = page.locator('.ds-props').getByRole('switch').first();
     (await enabledSwitch.getAttribute('aria-checked')) !== 'true' && await enabledSwitch.click();
     await sleep(300);

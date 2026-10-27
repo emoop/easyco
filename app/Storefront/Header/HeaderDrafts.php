@@ -43,6 +43,24 @@ final class HeaderDrafts
         return $validation !== null && $validation->passes() ? $validation->layout : null;
     }
 
+    /** The PUBLISHED layout (re-validated), or null when none was ever published or it does not validate. @return array<string, mixed>|null */
+    public static function published(): ?array
+    {
+        $json = app(SiteSettingsRepository::class)->get(AppearanceSettings::HEADER_PUBLISHED_KEY);
+        $layout = is_string($json) ? json_decode($json, true) : null;
+        $validation = is_array($layout) ? HeaderValidator::validate($layout) : null;
+
+        return $validation !== null && $validation->passes() ? $validation->layout : null;
+    }
+
+    /** DS-5: is there a draft that differs from what is published (or nothing is published yet)? */
+    public static function hasUnpublishedChanges(): bool
+    {
+        $draft = self::draft();
+
+        return $draft !== null && $draft != self::published();
+    }
+
     /** @param  array<string, mixed>  $layout */
     public static function saveDraft(array $layout): void
     {
@@ -56,6 +74,8 @@ final class HeaderDrafts
         $settings = app(SiteSettingsRepository::class);
         $settings->set(AppearanceSettings::HEADER_DRAFT_KEY, (string) json_encode($layout, JSON_THROW_ON_ERROR));
         app(HeaderCompiler::class)->publish($layout, $settings);
+        // DS-5: a draft that equals what is published is no draft (the compiler stores the published layout normalised)
+        $settings->forget(AppearanceSettings::HEADER_DRAFT_KEY);
         self::log('published');
     }
 

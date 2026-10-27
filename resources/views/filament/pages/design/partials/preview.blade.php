@@ -4,5 +4,8 @@
     <div class="ds-frame ds-frame-{{ $zoneObject->hasDevices() ? $this->device : 'desktop' }}" @if ($this->device === 'desktop' || ! $zoneObject->hasDevices()) x-data="{ k: 1 }" x-init="const fit = () => k = Math.min(1, $el.clientWidth / 1280); fit(); new ResizeObserver(fit).observe($el)" @endif>
         <iframe wire:key="ds-preview-{{ md5($this->previewUrl) }}-{{ $this->device }}" title="{{ $zoneObject->previewTitle() }}" src="{{ $this->previewUrl }}" loading="lazy" @if ($zoneObject->previewScroll() !== '') x-on:load="const w = $el.contentWindow; const t = w.document.querySelector('{{ $zoneObject->previewScroll() }}'); t && w.scrollTo(0, t.getBoundingClientRect().top + w.scrollY)" @endif @if ($this->device === 'desktop' || ! $zoneObject->hasDevices()) x-bind:style="{ zoom: k }" @endif></iframe>
     </div>
+    @if ($zoneObject->previewNote() !== null)
+        <p class="ds-note ds-note-preview">{{ $zoneObject->previewNote() }}</p>
+    @endif
     <p class="ds-note"><a href="{{ $this->previewUrl }}" target="_blank" rel="noopener">{{ __('design.preview.open') }}</a></p>
 </section>

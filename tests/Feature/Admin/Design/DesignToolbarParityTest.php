@@ -3,7 +3,6 @@
 namespace Tests\Feature\Admin\Design;
 
 use App\Filament\Pages\Design\DesignScreen;
-use App\Storefront\PageDesign\PageDesign;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Features\SupportAutoInjectedAssets\SupportAutoInjectedAssets;
 use Livewire\Features\SupportTesting\Testable;
@@ -12,13 +11,17 @@ use Tests\Concerns\BuildsShippingZones;
 use Tests\TestCase;
 
 /**
- * GL-2.1: the two plain sections («Страница и карти», «Продуктова страница») have the SAME toolbar as «Топбанер», the other zone without a draft. Their «Запази» is the same button; «Приложи»
- * (publish a draft) is never offered in a zone without a draft. The one button that differs is «Върни по подразбиране», which GL-2 added on purpose and which the top banner does not have.
+ * DS-5: ONE button model for every zone of the «Дизайн» screen. The toolbar is defined once (DesignScreen::getHeaderActions): «Към админа» · «Върни публикуваното» · «Начални настройки» (only a zone with
+ * initial settings) · «Публикувай» (last, danger red). The panel has ONE button, «Приложи». There is no «Запази» and no toolbar «Приложи» anywhere. «Публикувай» is disabled when there is nothing to publish
+ * and while the panel holds edits «Приложи» has not taken. The state indicator says which of three things is true.
  */
 class DesignToolbarParityTest extends TestCase
 {
     use BuildsShippingZones;
     use RefreshDatabase;
+
+    /** The zones and whether each has initial settings («Начални настройки»). */
+    private const ZONES = ['topbar' => false, 'header' => false, 'footer' => true, 'checkout' => false, 'page' => true, 'product' => true];
 
     protected function setUp(): void
     {
@@ -26,79 +29,145 @@ class DesignToolbarParityTest extends TestCase
 
         SupportAutoInjectedAssets::$hasRenderedAComponentThisRequest = false;
         $this->withoutVite();
-        app()->setLocale('bg');
+        app()->setLocale('en');
         $this->actingAsStaff('Administrator');
     }
 
-    /** @return array<string, string> zone key => the zone's own «Запази» label check */
-    private function plainZones(): array
+    private function screen(string $zone): Testable
     {
-        return ['topbar' => 'topbar', PageDesign::PAGE => PageDesign::PAGE, PageDesign::PRODUCT => PageDesign::PRODUCT];
+        return Livewire::test(DesignScreen::class)->call('selectZone', $zone);
     }
 
-    /**
-     * The toolbar buttons that are VISIBLE, by their action name, for the zone selected on the screen. Filament keeps the actions of a page as names; a hidden action is not shown.
-     *
-     * @return list<string>
-     */
-    private function visibleToolbar(string $zone): array
+    /** @return array<string, \Filament\Actions\Action> the header actions of the page, by name, in the order they are drawn */
+    private function toolbar(Testable $screen): array
     {
-        $screen = Livewire::test(DesignScreen::class)->call('selectZone', $zone);
-        $visible = [];
+        $actions = [];
 
-        foreach (['to_admin', 'default', 'discard', 'apply', 'publish'] as $name) {
-            try {
-                $screen->assertActionVisible($name);
-                $visible[] = $name;
-            } catch (\Throwable) {
-                // hidden for this zone
+        foreach ($screen->instance()->getCachedHeaderActions() as $action) {
+            $actions[$action->getName()] = $action;
+        }
+
+        return $actions;
+    }
+
+    /** @return list<string> the names of the toolbar actions that are VISIBLE, in order */
+    private function visibleToolbar(Testable $screen): array
+    {
+        return array_keys(array_filter($this->toolbar($screen), static fn ($action): bool => $action->isVisible()));
+    }
+
+    public function test_every_zone_has_exactly_the_same_toolbar_in_the_same_order(): void
+    {
+        foreach (self::ZONES as $zone => $hasInitialSettings) {
+            $this->assertSame(
+                $hasInitialSettings ? ['to_admin', 'discard', 'reset', 'publish'] : ['to_admin', 'discard', 'publish'],
+                $this->visibleToolbar($this->screen($zone)),
+                "{$zone}: «Към админа», «Върни публикуваното», «Начални настройки» (only with initial settings), «Публикувай»",
+            );
+        }
+    }
+
+    public function test_there_is_no_save_and_no_toolbar_apply_in_any_zone_and_the_labels_are_the_model_s(): void
+    {
+        foreach (array_keys(self::ZONES) as $zone) {
+            $actions = $this->toolbar($this->screen($zone));
+
+            $this->assertArrayNotHasKey('apply', $actions, "{$zone}: «Приложи» is the panel's button, not the toolbar's");
+            $this->assertArrayNotHasKey('save', $actions, "{$zone}: there is no «Запази»");
+            $this->assertSame('Revert to published', (string) $actions['discard']->getLabel(), $zone);
+            $this->assertSame('Publish', (string) $actions['publish']->getLabel(), $zone);
+            $this->assertSame('Initial settings', (string) $actions['reset']->getLabel(), $zone);
+
+            foreach ($actions as $name => $action) {
+                $this->assertDoesNotMatchRegularExpression('/Save|Запази|Apply|Приложи/u', (string) $action->getLabel(), "{$zone}: {$name}");
             }
         }
-
-        return $visible;
     }
 
-    public function test_the_two_plain_sections_show_the_same_toolbar_as_the_top_banner_except_the_reset(): void
+    public function test_publish_is_danger_red_and_the_last_button(): void
     {
-        $topbar = $this->visibleToolbar('topbar');
+        foreach (array_keys(self::ZONES) as $zone) {
+            $actions = $this->toolbar($this->screen($zone));
 
-        $this->assertSame(['to_admin', 'apply'], $topbar, 'the top banner: «Назад към админа» and «Запази»');
-
-        foreach ([PageDesign::PAGE, PageDesign::PRODUCT] as $zone) {
-            $this->assertSame(
-                ['to_admin', 'default', 'apply'],
-                $this->visibleToolbar($zone),
-                "{$zone}: the top banner's toolbar, plus the reset GL-2 added on purpose",
-            );
-            $this->assertSame(array_values(array_diff($topbar, ['to_admin', 'apply'])), [], "{$zone}: nothing the top banner does not have, except the reset");
+            $this->assertSame('publish', array_key_last($actions), "{$zone}: the last");
+            $this->assertSame('danger', $actions['publish']->getColor(), "{$zone}: red");
+            $this->assertNotSame('danger', $actions['discard']->getColor(), $zone);
         }
     }
 
-    public function test_publish_and_discard_are_never_offered_in_the_plain_sections(): void
+    public function test_the_panel_has_exactly_one_submit_button_and_it_is_apply(): void
     {
-        foreach ([PageDesign::PAGE, PageDesign::PRODUCT] as $zone) {
-            $toolbar = $this->visibleToolbar($zone);
+        foreach (array_keys(self::ZONES) as $zone) {
+            $html = $this->screen($zone)->html();
 
-            $this->assertNotContains('publish', $toolbar, "{$zone}: «Публикувай» publishes a draft, the section has none");
-            $this->assertNotContains('discard', $toolbar, "{$zone}: «Върни публикуваното» discards a draft, the section has none");
+            $this->assertSame(1, preg_match('#<aside class="ds-props".*?</aside>#s', $html, $panel), "{$zone}: the panel");
+            $this->assertSame(1, preg_match_all('/<button[^>]*type="submit"[^>]*>(.*?)<\/button>/s', $panel[0], $buttons), "{$zone}: one submit");
+            $this->assertSame('Apply', trim(strip_tags($buttons[1][0])), $zone);
+            $this->assertStringNotContainsString('Save', $panel[0], $zone);
         }
     }
 
-    public function test_the_save_label_is_zaposhi_and_apply_is_not_called_priloji_in_the_plain_sections(): void
+    public function test_publish_is_disabled_with_nothing_to_publish_and_while_the_panel_holds_edits(): void
     {
-        foreach ([PageDesign::PAGE, PageDesign::PRODUCT] as $zone) {
-            $screen = Livewire::test(DesignScreen::class)->call('selectZone', $zone);
-            $html = $screen->html();
+        foreach (array_keys(self::ZONES) as $zone) {
+            $screen = $this->screen($zone);
 
-            $this->assertStringContainsString('Запази', $html, $zone);
-            $this->assertStringNotContainsString('Приложи', $html, "{$zone}: «Приложи» belongs to a draft, there is none here");
+            $this->assertTrue($this->toolbar($screen)['publish']->isDisabled(), "{$zone}: nothing to publish");
+            $screen->assertSet('panelDirty', false);
+        }
+
+        // something to publish (a working copy that differs) enables it; the panel's un-applied edits (the browser sets the flag) disable it again
+        $screen = $this->screen('page')->set('props.card_radius', '12')->call('apply');
+
+        $this->assertFalse($this->toolbar($screen)['publish']->isDisabled());
+
+        $screen->set('panelDirty', true);
+        $this->assertTrue($this->toolbar($screen)['publish']->isDisabled(), 'the panel has edits «Приложи» has not taken');
+        $screen->call('publish');
+        $this->assertNotNull(app(\App\Settings\Contracts\SiteSettingsRepository::class)->get(\App\Settings\AppearanceSettings::PAGE_DESIGN_DRAFT_KEY), 'a publish asked while the panel is dirty is refused');
+        $this->assertNull(app(\App\Settings\Contracts\SiteSettingsRepository::class)->get(\App\Settings\AppearanceSettings::PAGE_DESIGN_KEY));
+
+        $screen->set('panelDirty', false)->call('apply')->assertSet('panelDirty', false);
+        $this->assertFalse($this->toolbar($screen)['publish']->isDisabled());
+    }
+
+    public function test_the_state_indicator_shows_the_three_states(): void
+    {
+        $screen = $this->screen('page');
+        $html = $screen->html();
+        $this->assertStringContainsString('data-ds-state="published"', $html);
+        $this->assertStringContainsString('Published', $html);
+
+        $screen->set('props.card_radius', '12')->call('apply');
+        $html = $screen->html();
+        $this->assertStringContainsString('data-ds-state="draft"', $html);
+        $this->assertStringContainsString('Draft — not published', $html);
+
+        $screen->set('panelDirty', true);
+        $html = $screen->html();
+        $this->assertStringContainsString('data-ds-state="panel"', $html);
+        $this->assertStringContainsString('The panel has changes that are not applied', $html);
+
+        $screen->set('panelDirty', false)->call('publish');
+        $this->assertStringContainsString('data-ds-state="published"', $screen->html());
+
+        $screen->set('props.card_radius', '14')->call('apply')->call('discard');
+        $this->assertStringContainsString('data-ds-state="published"', $screen->html());
+    }
+
+    public function test_every_zone_reports_a_draft(): void
+    {
+        foreach (array_keys(self::ZONES) as $zone) {
+            $this->assertTrue($this->screen($zone)->instance()->zoneObject()->hasDraft(), "{$zone}: every zone has a working copy");
         }
     }
 
-    /** ★ mutation check: a plain section that claims a draft offers «Приложи» and «Публикувай»; this test must go red. */
-    public function test_a_section_that_claims_a_draft_is_caught(): void
+    public function test_the_reset_asks_for_confirmation_with_the_models_words(): void
     {
-        $this->assertSame(false, (new \App\Filament\Design\Zones\PageCardsZone)->hasDraft(), 'the premise: the section has no draft');
-        $this->assertSame(false, (new \App\Filament\Design\Zones\ProductPageZone)->hasDraft(), 'the premise: the section has no draft');
+        $actions = $this->toolbar($this->screen('page'));
+        $reset = $actions['reset'];
+
+        $this->assertTrue($reset->isConfirmationRequired());
+        $this->assertSame('This puts the initial settings into the working copy. They take effect after “Publish”.', (string) $reset->getModalDescription());
     }
 }

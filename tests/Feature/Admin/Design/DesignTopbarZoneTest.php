@@ -69,7 +69,7 @@ class DesignTopbarZoneTest extends TestCase
 
     // ---- the zone --------------------------------------------------------------------------------------------------------------------------
 
-    public function test_it_shows_what_is_stored_now_and_has_no_palette_no_publish_and_a_save_button(): void
+    public function test_it_shows_what_is_published_now_has_no_palette_and_the_one_button_model(): void
     {
         AppearanceWriter::save(array_replace(AppearanceWriter::current(), ['banner_enabled' => true, 'banner_text' => 'Stored text', 'c_banner_bg' => '#112233']));
         $screen = $this->screen();
@@ -79,12 +79,14 @@ class DesignTopbarZoneTest extends TestCase
         $this->assertStringContainsString('Stored text', $html);
         $this->assertStringContainsString('Home page preview', $html);
         $this->assertStringNotContainsString('ds-palette', $html);
-        $this->assertStringContainsString('Save', $html);
-        $this->assertStringContainsString('Changes show in the shop at once.', $html);
-        $screen->assertActionHidden('publish')->assertActionHidden('discard');
+        // DS-5: the one button model (the panel's own button is «Apply»; there is no «Save» and no live hint any more)
+        $this->assertStringContainsString('Apply', $html);
+        $this->assertStringNotContainsString('Changes show in the shop at once.', $html);
+        $this->assertStringContainsString('data-ds-state="published"', $html);
+        $screen->assertActionVisible('discard')->assertActionVisible('publish')->assertActionDisabled('publish')->assertActionHidden('reset');
     }
 
-    public function test_publish_and_discard_do_nothing_in_this_zone_even_when_called_directly(): void
+    public function test_publish_with_nothing_to_publish_and_discard_with_no_draft_change_nothing(): void
     {
         $screen = $this->screen();
         $before = $this->stored();
@@ -98,7 +100,7 @@ class DesignTopbarZoneTest extends TestCase
 
     public function test_save_stores_the_same_values_the_appearance_page_stores_for_the_same_input(): void
     {
-        $this->fill($this->screen(), self::INPUT)->call('apply')->assertHasNoErrors();
+        $this->fill($this->screen(), self::INPUT)->call('apply')->call('publish')->assertHasNoErrors();
         $fromScreen = $this->stored();
 
         foreach (array_keys($fromScreen) as $key) {
@@ -118,7 +120,7 @@ class DesignTopbarZoneTest extends TestCase
 
     public function test_the_banner_shows_on_the_shop_at_once_and_the_stylesheet_holds_its_colour(): void
     {
-        $this->fill($this->screen(), self::INPUT)->call('apply')->assertHasNoErrors();
+        $this->fill($this->screen(), self::INPUT)->call('apply')->call('publish')->assertHasNoErrors();
 
         $html = $this->get('/')->assertOk()->getContent();
         $this->assertStringContainsString('Free delivery over 100', $html);
@@ -133,7 +135,7 @@ class DesignTopbarZoneTest extends TestCase
         AppearanceWriter::save(array_replace(AppearanceWriter::current(), ['c_primary' => '#123456', 'radius' => 'lg']));
         $before = AppearanceWriter::current();
 
-        $this->fill($this->screen(), self::INPUT)->call('apply')->assertHasNoErrors();
+        $this->fill($this->screen(), self::INPUT)->call('apply')->call('publish')->assertHasNoErrors();
 
         $after = AppearanceWriter::current();
         $this->assertSame('#123456', $after['c_primary']);
@@ -145,7 +147,7 @@ class DesignTopbarZoneTest extends TestCase
     public function test_the_dates_are_stored_and_an_end_before_the_start_is_refused(): void
     {
         $screen = $this->fill($this->screen(), self::INPUT + []);
-        $screen->set('props.starts_at', '2026-11-01 10:00')->set('props.ends_at', '2026-11-30 23:59')->call('apply')->assertHasNoErrors();
+        $screen->set('props.starts_at', '2026-11-01 10:00')->set('props.ends_at', '2026-11-30 23:59')->call('apply')->call('publish')->assertHasNoErrors();
         $this->assertSame('2026-11-01 10:00', $this->settings()->get(Appearance::BANNER_STARTS_AT));
         $this->assertSame('2026-11-30 23:59', $this->settings()->get(Appearance::BANNER_ENDS_AT));
 
@@ -184,14 +186,14 @@ class DesignTopbarZoneTest extends TestCase
 
     public function test_the_boundaries_are_accepted(): void
     {
-        $this->fill($this->screen(), array_replace(self::INPUT, ['text' => str_repeat('t', 160), 'link_label' => str_repeat('l', 40), 'url' => 'https://example.test/x']))->call('apply')->assertHasNoErrors();
+        $this->fill($this->screen(), array_replace(self::INPUT, ['text' => str_repeat('t', 160), 'link_label' => str_repeat('l', 40), 'url' => 'https://example.test/x']))->call('apply')->call('publish')->assertHasNoErrors();
 
         $this->assertSame(160, mb_strlen((string) $this->settings()->get(Appearance::BANNER_TEXT)));
     }
 
     public function test_a_low_contrast_pair_is_a_notice_and_never_blocks_the_save(): void
     {
-        $this->fill($this->screen(), array_replace(self::INPUT, ['text_color' => '#fefefe', 'bg_color' => '#ffffff']))->call('apply')->assertHasNoErrors()->assertNotified();
+        $this->fill($this->screen(), array_replace(self::INPUT, ['text_color' => '#fefefe', 'bg_color' => '#ffffff']))->call('apply')->call('publish')->assertHasNoErrors()->assertNotified();
 
         $this->assertSame('#ffffff', $this->settings()->get(Appearance::BANNER_COLOR_BG));
     }
@@ -201,7 +203,7 @@ class DesignTopbarZoneTest extends TestCase
     public function test_the_save_is_journalled_like_the_appearance_pages_with_no_value(): void
     {
         $this->settings()->set('admin.activity_log_enabled', '1');
-        $this->fill($this->screen(), self::INPUT)->call('apply');
+        $this->fill($this->screen(), self::INPUT)->call('apply')->call('publish');
 
         $rows = DB::table('activity_log')->where('entity_type', 'storefront_appearance')->orderBy('id')->get();
 

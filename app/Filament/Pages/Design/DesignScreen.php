@@ -21,6 +21,8 @@ use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Schemas\Schema;
 use Filament\Support\Enums\Width;
+use Filament\Support\Facades\FilamentView;
+use Filament\View\PanelsRenderHook;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Locked;
@@ -74,6 +76,12 @@ class DesignScreen extends Page
     #[Locked]
     public string $previewUrl = '';
 
+    /**
+     * DS-5: does the panel hold edits that «Приложи» has not taken yet? The browser sets it as soon as something in the panel is touched (Alpine, `$wire.panelDirty = true`; the panel's fields are sent
+     * with the next action), «Приложи» and every structural action clear it. «Публикувай» refuses while it is set, and the state indicator says so.
+     */
+    public bool $panelDirty = false;
+
     /** @var list<string> ids of the things the last save refused (marked in the schema) */
     #[Locked]
     public array $invalid = [];
@@ -84,6 +92,32 @@ class DesignScreen extends Page
     public function getTitle(): string
     {
         return __('design.title');
+    }
+
+    /** The page that is rendering now (the state indicator's render hook reads it) and the application the hook was registered on. */
+    private static ?self $current = null;
+
+    private static ?int $hookedApplication = null;
+
+    /**
+     * DS-5: the state indicator («Публикувано» / «Чернова — не е публикувана» / «Има неприложени промени в панела») is a small text, not a button, so it cannot be one of the header actions: it is drawn
+     * by a render hook right after them, inside this page's own render (so Livewire keeps it up to date). Registered once per application, scoped to this page.
+     */
+    public function boot(): void
+    {
+        self::$current = $this;
+
+        if (self::$hookedApplication === spl_object_id(app())) {
+            return;
+        }
+
+        self::$hookedApplication = spl_object_id(app());
+
+        FilamentView::registerRenderHook(
+            PanelsRenderHook::PAGE_HEADER_ACTIONS_AFTER,
+            static fn (): string => self::$current === null ? '' : view('filament.pages.design.partials.state', ['screen' => self::$current])->render(),
+            scopes: static::class,
+        );
     }
 
     public static function getNavigationLabel(): string
@@ -161,6 +195,7 @@ class DesignScreen extends Page
         $this->device = in_array($this->device, $layouts, true) ? $this->device : ($layouts[0] ?? 'desktop');
         $this->selected = $zone->mode() === DesignZone::FORM ? ['kind' => 'form', 'id' => $zone->key()] : null;
         $this->dirty = false;
+        $this->panelDirty = false;
         $this->invalid = [];
         $this->previewUrl = $zone->previewUrl();
         $this->refreshProps();
@@ -564,6 +599,7 @@ class DesignScreen extends Page
 
         $this->tree = $tree;
         $this->dirty = true;
+        $this->autosave();
         $removed = $action === 'remove_column' || $action === 'remove_row';
         $this->invalid = [];
 
@@ -589,8 +625,29 @@ class DesignScreen extends Page
 
         $this->tree = $tree;
         $this->dirty = true;
+        $this->autosave();
 
         return true;
+    }
+
+    /**
+     * DS-5: a structural change (add / move / remove a component, a row, a column) is stored as the DRAFT at once, so that leaving the screen never loses applied work. It is stored when the whole working
+     * copy validates; a copy that does not (a new component that still needs a value) stays in this page only and `dirty` stays set until «Приложи» takes it. The panel's own un-applied edits are never
+     * stored here (the structural actions take them into the tree first, as they always did).
+     */
+    private function autosave(): void
+    {
+        $zone = $this->zoneObject();
+        [$stored, $errors] = $zone->validate($this->tree);
+
+        if ($errors !== []) {
+            return;
+        }
+
+        $zone->save($stored);
+        $this->dirty = false;
+        $this->panelDirty = false;
+        $this->previewUrl = $zone->previewUrl();
     }
 
     private function refuse(?string $key, ?string $message = null): void
@@ -629,7 +686,7 @@ class DesignScreen extends Page
 
     // ---- save, publish, discard --------------------------------------------------------------------------------------------------------
 
-    /** «Приложи» / «Запази»: the panel goes into the tree, the tree is validated and saved (a draft where the zone has one), the preview is reloaded. */
+    /** «Приложи» (the panel's only button): the panel goes into the working copy, the working copy is validated and stored as the DRAFT, the preview is reloaded. It never publishes. */
     public function apply(): void
     {
         $this->guard();
@@ -643,7 +700,7 @@ class DesignScreen extends Page
         $zone->save($stored);
         $this->afterSave();
 
-        Notification::make()->title($zone->hasDraft() ? __('design.notices.applied') : __('design.notices.saved'))->success()->send();
+        Notification::make()->title(__('design.notices.applied'))->success()->send();
         $this->warn($zone, $stored);
     }
 
@@ -654,6 +711,18 @@ class DesignScreen extends Page
 
         if (! $zone->hasDraft()) {
             $this->refuse('unknown');
+
+            return;
+        }
+
+        if ($this->panelDirty) {
+            $this->refuse(null, (string) __('design.actions.publish_apply_first'));
+
+            return;
+        }
+
+        if (! $this->canPublish()) {
+            $this->refuse(null, (string) __('design.notices.nothing_to_publish'));
 
             return;
         }
@@ -696,7 +765,9 @@ class DesignScreen extends Page
         Notification::make()->title(__('design.notices.discarded'))->success()->send();
     }
 
-    /** «Върни по подразбиране» (the footer, the plain sections): the default goes into the TREE only; nothing is stored until «Приложи» / «Запази». */
+    /**
+     * «Начални настройки» (the footer, the plain sections): the zone's initial values go into the WORKING COPY and are stored as the draft at once; nothing reaches the shop until «Публикувай».
+     */
     public function resetToDefault(): void
     {
         $this->guard();
@@ -714,9 +785,27 @@ class DesignScreen extends Page
         $this->device = $zone->layouts()[0] ?? $this->device;
         $this->invalid = [];
         $this->dirty = true;
+        $this->panelDirty = false;
         $this->refreshProps();
+        $this->autosave();
 
-        Notification::make()->title(__($zone->mode() === DesignZone::FORM ? 'design.notices.defaulted_form' : 'design.notices.defaulted'))->success()->send();
+        Notification::make()->title(__('design.notices.reset_done'))->success()->send();
+    }
+
+    /** Is there something to publish: a stored draft that differs from the published version, or a working copy that could not be stored yet? */
+    public function canPublish(): bool
+    {
+        return ! $this->panelDirty && ($this->zoneObject()->hasUnpublishedChanges() || $this->dirty);
+    }
+
+    /** The state indicator: `panel` (the panel holds edits «Приложи» has not taken), `draft` (a working copy that is not published) or `published`. */
+    public function stateKey(): string
+    {
+        if ($this->panelDirty) {
+            return 'panel';
+        }
+
+        return $this->zoneObject()->hasUnpublishedChanges() || $this->dirty ? 'draft' : 'published';
     }
 
     public function hasDefault(): bool
@@ -728,6 +817,7 @@ class DesignScreen extends Page
     {
         $zone = $this->zoneObject();
         $this->dirty = false;
+        $this->panelDirty = false;
         $this->invalid = [];
         $this->previewUrl = $zone->previewUrl();
     }
@@ -814,12 +904,18 @@ class DesignScreen extends Page
 
     protected function getHeaderActions(): array
     {
+        // DS-5, THE ONE BUTTON MODEL: the same buttons, in the same order, in EVERY zone. «Приложи» is the panel's own button (below the panel), not one of these. A zone cannot add a button of its own:
+        // it only says whether it has initial settings (`defaultTree()`), which shows «Начални настройки». «Публикувай» is the last one and red.
         return [
             Action::make('to_admin')->label(__('design.back_to_admin'))->icon('heroicon-o-bars-3')->color('gray')->url('#')->extraAttributes(['x-on:click.prevent' => '$store.sidebar.open()']),
-            Action::make('default')->label(__('design.actions.default'))->color('gray')->requiresConfirmation()->visible(fn (): bool => $this->hasDefault())->action(fn () => $this->resetToDefault()),
-            Action::make('discard')->label(__('design.actions.discard'))->color('gray')->requiresConfirmation()->visible(fn (): bool => $this->zoneObject()->hasDraft())->action(fn () => $this->discard()),
-            Action::make('apply')->label(fn (): string => (string) __($this->zoneObject()->hasDraft() ? 'design.actions.apply' : 'design.actions.save'))->color('gray')->action(fn () => $this->apply()),
-            Action::make('publish')->label(__('design.actions.publish'))->requiresConfirmation()->visible(fn (): bool => $this->zoneObject()->hasDraft())->action(fn () => $this->publish()),
+            Action::make('discard')->label(__('design.actions.discard'))->color('gray')->requiresConfirmation()->action(fn () => $this->discard()),
+            Action::make('reset')->label(__('design.actions.reset'))->color('gray')->requiresConfirmation()->modalDescription(__('design.actions.reset_confirm'))->visible(fn (): bool => $this->hasDefault())->action(fn () => $this->resetToDefault()),
+            Action::make('publish')->label(__('design.actions.publish'))->color('danger')->requiresConfirmation()
+                ->disabled(fn (): bool => ! $this->canPublish())
+                ->tooltip(fn (): ?string => $this->panelDirty ? (string) __('design.actions.publish_apply_first') : null)
+                // the panel's edits are known to the browser first: the button is disabled there at once, without waiting for a request
+                ->extraAttributes(['x-bind:disabled' => '$wire.panelDirty'])
+                ->action(fn () => $this->publish()),
         ];
     }
 }

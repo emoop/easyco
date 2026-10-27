@@ -41,6 +41,9 @@ final class StorefrontAppearance
 
     private ?string $previewCss = null;
 
+    /** DS-5: the banner of the admin's signed preview of the top banner's draft (never set on a public request). @var array<string, mixed>|null */
+    private ?array $bannerOverride = null;
+
     /** The simplified checkout header the Design screen's preview shows (the admin's DRAFT, or null = the full header), set for ONE request by the preview controller; false on every public request. */
     private array|false|null $checkoutHeaderOverride = false;
 
@@ -384,6 +387,32 @@ final class StorefrontAppearance
         $this->previewCss = $cssUrl;
     }
 
+    /** For ONE request (DS-5, the admin's signed preview): show this banner (StorefrontAppearance::bannerFromValues) instead of the published one, and link the stylesheet with its colours. Never called on a public request. @param array<string, mixed> $banner */
+    public function previewBanner(array $banner, ?string $cssUrl): void
+    {
+        $this->bannerOverride = $banner;
+        $this->previewCss = $cssUrl;
+    }
+
+    /**
+     * The banner of the Design screen's values (`enabled`, `text`, `url`, `link_label`, `starts_at`, `ends_at`), parsed by the SAME rules as the published one: anything that would not be safe to print
+     * turns the banner off. For the admin's draft preview only.
+     *
+     * @param  array<string, mixed>  $values
+     * @return array<string, mixed>
+     */
+    public static function bannerFromValues(array $values): array
+    {
+        return self::parseBanner([
+            AppearanceSettings::BANNER_ENABLED => ! empty($values['enabled']) ? '1' : null,
+            AppearanceSettings::BANNER_TEXT => is_string($values['text'] ?? null) ? $values['text'] : '',
+            AppearanceSettings::BANNER_URL => is_string($values['url'] ?? null) ? $values['url'] : '',
+            AppearanceSettings::BANNER_LINK_LABEL => is_string($values['link_label'] ?? null) ? $values['link_label'] : '',
+            AppearanceSettings::BANNER_STARTS_AT => is_string($values['starts_at'] ?? null) ? $values['starts_at'] : null,
+            AppearanceSettings::BANNER_ENDS_AT => is_string($values['ends_at'] ?? null) ? $values['ends_at'] : null,
+        ]);
+    }
+
     /** For ONE request: show this (already validated) layout instead of the published one, and link the stylesheet with its sizes. Never called on a public request. */
     public function previewHeader(array $layout, ?string $cssUrl): void
     {
@@ -409,7 +438,7 @@ final class StorefrontAppearance
      */
     public function banner(?DateTimeImmutable $now = null): ?array
     {
-        $banner = $this->data()['banner'];
+        $banner = $this->bannerOverride ?? $this->data()['banner'];
 
         if (($banner['enabled'] ?? false) !== true) {
             return null;

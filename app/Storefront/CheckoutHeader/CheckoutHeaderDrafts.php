@@ -47,6 +47,28 @@ final class CheckoutHeaderDrafts
         return $errors === [] ? $clean : null;
     }
 
+    /** The PUBLISHED values (re-validated), or null when none were ever published or they do not validate. @return array<string, mixed>|null */
+    public static function published(): ?array
+    {
+        $values = self::decode(app(SiteSettingsRepository::class)->get(AppearanceSettings::CHECKOUT_HEADER_PUBLISHED_KEY));
+
+        if ($values === null) {
+            return null;
+        }
+
+        [$clean, $errors] = CheckoutHeaderValidator::validate($values);
+
+        return $errors === [] ? $clean : null;
+    }
+
+    /** DS-5: is there a draft that differs from what is published (or nothing is published yet)? */
+    public static function hasUnpublishedChanges(): bool
+    {
+        $draft = self::draft();
+
+        return $draft !== null && $draft != self::published();
+    }
+
     /** @param  array<string, mixed>  $values */
     public static function saveDraft(array $values): void
     {
@@ -64,6 +86,8 @@ final class CheckoutHeaderDrafts
         $settings = app(SiteSettingsRepository::class);
         $settings->set(AppearanceSettings::CHECKOUT_HEADER_DRAFT_KEY, (string) json_encode($values, JSON_THROW_ON_ERROR));
         app(CheckoutHeaderCompiler::class)->publish($values, $settings);
+        // DS-5: a draft that equals what is published is no draft (the compiler stores the published layout normalised)
+        $settings->forget(AppearanceSettings::CHECKOUT_HEADER_DRAFT_KEY);
         self::log('published');
     }
 

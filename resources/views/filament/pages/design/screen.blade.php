@@ -43,12 +43,10 @@
 
         <aside class="ds-props" aria-labelledby="ds-props-title">
             <h2 class="ds-h" id="ds-props-title">{{ __('design.props.title') }}</h2>
-            <form novalidate wire:submit="apply">
+            {{-- DS-5: the panel has ONE button, «Приложи» (it stores the working copy, it never publishes). Touching any field marks the panel as holding un-applied edits (client side, no request). --}}
+            <form novalidate wire:submit="apply" x-on:input="$wire.panelDirty = true" x-on:change="$wire.panelDirty = true" x-on:click="if ($event.target.closest('[role=switch], [role=option]')) $wire.panelDirty = true">
                 {{ $this->getSchema('propsForm') }}
-                <button type="submit" class="ds-btn ds-btn-primary">{{ __($zoneObject->hasDraft() ? 'design.actions.apply' : 'design.actions.save') }}</button>
-                @unless ($zoneObject->hasDraft())
-                    <p class="ds-note">{{ __('design.notices.live_hint') }}</p>
-                @endunless
+                <button type="submit" class="ds-btn ds-btn-primary">{{ __('design.actions.apply') }}</button>
             </form>
         </aside>
     </div>

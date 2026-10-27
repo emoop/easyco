@@ -34,6 +34,34 @@ final class FooterDrafts
         return FooterLayout::default();
     }
 
+    /** The stored draft as a validated layout, or null when there is none (or it does not validate). @return array<string, mixed>|null */
+    public static function draft(): ?array
+    {
+        $json = app(SiteSettingsRepository::class)->get(AppearanceSettings::FOOTER_DRAFT_KEY);
+        $layout = is_string($json) ? json_decode($json, true) : null;
+        $validation = is_array($layout) ? FooterValidator::validate($layout) : null;
+
+        return $validation !== null && $validation->passes() ? $validation->layout : null;
+    }
+
+    /** The PUBLISHED layout (re-validated), or null when none was ever published or it does not validate. @return array<string, mixed>|null */
+    public static function published(): ?array
+    {
+        $json = app(SiteSettingsRepository::class)->get(AppearanceSettings::FOOTER_PUBLISHED_KEY);
+        $layout = is_string($json) ? json_decode($json, true) : null;
+        $validation = is_array($layout) ? FooterValidator::validate($layout) : null;
+
+        return $validation !== null && $validation->passes() ? $validation->layout : null;
+    }
+
+    /** DS-5: is there a draft that differs from what is published (or nothing is published yet)? */
+    public static function hasUnpublishedChanges(): bool
+    {
+        $draft = self::draft();
+
+        return $draft !== null && $draft != self::published();
+    }
+
     /** @param  array<string, mixed>  $layout */
     public static function saveDraft(array $layout): void
     {
@@ -51,6 +79,8 @@ final class FooterDrafts
         $settings = app(SiteSettingsRepository::class);
         $settings->set(AppearanceSettings::FOOTER_DRAFT_KEY, (string) json_encode($layout, JSON_THROW_ON_ERROR));
         app(FooterCompiler::class)->publish($layout, $settings);
+        // DS-5: a draft that equals what is published is no draft (the compiler stores the published layout normalised)
+        $settings->forget(AppearanceSettings::FOOTER_DRAFT_KEY);
         self::log('published');
     }
 

@@ -36,8 +36,14 @@ interface DesignZone
 
     public function previewTitle(): string;
 
-    /** Does the zone keep a DRAFT (apply = draft, publish, discard)? A zone without one saves live («Запази») and has no publish / discard. */
+    /** Does the zone keep a DRAFT (the working copy)? Since DS-5 EVERY zone does (one button model: «Приложи» writes the draft, «Публикувай» publishes it): kept as a question so a test can pin it. */
     public function hasDraft(): bool;
+
+    /** DS-5: is there a stored draft that differs from what is published (or nothing is published yet)? False = «Публикувано». */
+    public function hasUnpublishedChanges(): bool;
+
+    /** DS-5: a short text under the preview when the preview cannot show the working copy (it shows the published page), or null. */
+    public function previewNote(): ?string;
 
     /** The state the page keeps in `tree`. @return array<string, mixed> */
     public function load(): array;

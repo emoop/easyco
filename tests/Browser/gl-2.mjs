@@ -2,9 +2,9 @@
 // It creates a throw-away admin («gl2-audit»), ONE throw-away product with 5 generated photos (slug gl2-gallery) and BACKS UP the `site_settings` table and the `appearance/` files first; at the end it restores
 // them, removes the product, its media, its files and the admin, and verifies the settings table is byte-for-byte what it was (a checksum of every row). Prints a JSON report; exit code 1 when a check failed.
 //
-// With real clicks: «Дизайн» → «Страница и карти»: the page padding and the cards' border and corners (desktop and phone) → «Запази» → the home page and a category page carry the computed values at 1400 and
-// 390 px; → «Продуктова страница»: a gallery mode (a select), the gap and corners of the photos, the gap to the summary and the sticky switch → «Запази» → the product page carries them (position `static`
-// when off) and the gallery's data attributes; → «Върни по подразбиране» + «Запази» on each section → the computed values are the defaults again.
+// With real clicks: «Дизайн» → «Страница и карти»: the page padding and the cards' border and corners (desktop and phone) → «Приложи» + «Публикувай» → the home page and a category page carry the computed values at 1400 and
+// 390 px; → «Продуктова страница»: a gallery mode (a select), the gap and corners of the photos, the gap to the summary and the sticky switch → «Приложи» + «Публикувай» → the product page carries them (position `static`
+// when off) and the gallery's data attributes; → «Начални настройки» + «Приложи» + «Публикувай» on each section → the computed values are the defaults again.
 //
 //   AUDIT_BASE=https://easyco-main.test PLAYWRIGHT_DIR=<dir with node_modules/playwright> [CHROMIUM=<path>] OUT=<folder for screenshots> node tests/Browser/gl-2.mjs
 import { createRequire } from 'node:module';
@@ -131,13 +131,30 @@ try {
     // the control of a field: the number box or the switch / select inside the field that carries this label text
     const field = (label) => page.locator('.ds-props .fi-fo-field', { has: page.locator('label', { hasText: label }) }).first();
     const fillNumber = async (label, value) => { const box = field(label).locator('input').first(); await box.fill(String(value)); await box.blur(); };
-    const save = async () => { await page.locator('.ds-props button[type=submit]').click(); await settle(); };
+    // DS-5: «Приложи» stores the working copy; the shop changes only after «Публикувай». save() does both (the publish is skipped when it is disabled: a refused value)
+    const save = async () => {
+        await page.locator('.ds-props button[type=submit]').click();
+        await settle();
+
+        const publish = page.locator('.fi-header-actions-ctn .fi-btn', { hasText: 'Публикувай' }).first();
+
+        if ((await publish.getAttribute('disabled')) === null && ! (await publish.getAttribute('class')).includes('fi-disabled')) {
+            await publish.click();
+            await sleep(700);
+
+            if (await page.locator('.fi-modal-window:visible').count() > 0) {
+                await page.locator('.fi-modal-window:visible').last().getByRole('button').filter({ hasNotText: /Отказ|Cancel/ }).last().click();
+            }
+
+            await settle();
+        }
+    };
     const open = async (zone) => { await page.goto(BASE + '/admin/design?zone=' + zone); await settle(); };
 
     // the dev site may hold values the owner set by hand: both sections start from their defaults (the backup above puts them back at the end)
     for (const zone of ['page', 'product']) {
         await open(zone);
-        await page.getByRole('button', { name: 'Върни по подразбиране' }).first().click();
+        await page.getByRole('button', { name: 'Начални настройки' }).first().click();
         await sleep(900);
         if (await page.locator('.fi-modal-window:visible').count() > 0) { await page.locator('.fi-modal-window:visible').last().getByRole('button').filter({ hasNotText: /Отказ|Cancel/ }).last().click(); }
         await settle();
@@ -148,15 +165,15 @@ try {
     await open('page');
     check('the zone list has both new sections', (await page.locator('.ds-zones button', { hasText: 'Страница и карти' }).count()) === 1 && (await page.locator('.ds-zones button', { hasText: 'Продуктова страница' }).count()) === 1);
 
-    // GL-2.1: the toolbar of a plain section is the top banner's (Запази, no «Приложи», no «Публикувай»); the reset is the one extra button
+    // DS-5: the toolbar of a plain section is the model's, the top banner's included (the reset is the only button a zone without initial settings does not have)
     const toolbarOf = async () => page.locator('.fi-header-actions button, .fi-ac button').evaluateAll((els) => els.filter((el) => el.offsetParent !== null).map((el) => ({ text: el.innerText.trim(), bg: getComputedStyle(el).backgroundColor })));
     const plainToolbar = await toolbarOf();
-    check('GL-2.1 the plain section has no «Приложи» and no «Публикувай» in its toolbar', ! plainToolbar.some((b) => /Приложи|Публикувай|Върни публикуваното/.test(b.text)), JSON.stringify(plainToolbar));
-    check('GL-2.1 the plain section panel has no «Приложи»', ! (await page.locator('.ds-props').innerText()).includes('Приложи'));
-    const plainSave = plainToolbar.find((b) => b.text === 'Запази');
+    check('DS-5 the plain section toolbar buttons are Върни публикуваното · Начални настройки · Публикувай (the link «Към админа» is not a button)', JSON.stringify(plainToolbar.map((b) => b.text)) === JSON.stringify(['Върни публикуваното', 'Начални настройки', 'Публикувай']), JSON.stringify(plainToolbar));
+    check('DS-5 the plain section panel has the one button «Приложи» and no «Запази»', (await page.locator('.ds-props button[type=submit]').allInnerTexts()).map((t) => t.trim()).join() === 'Приложи' && ! (await page.locator('.ds').innerText()).includes('Запази'));
+    const plainSave = plainToolbar.find((b) => b.text === 'Публикувай');
     await open('topbar');
-    const topbarSave = (await toolbarOf()).find((b) => b.text === 'Запази');
-    check('GL-2.1 the Запази of the plain section has the same background as the top banner Запази', plainSave && topbarSave && plainSave.bg === topbarSave.bg, JSON.stringify({ plainSave, topbarSave }));
+    const topbarSave = (await toolbarOf()).find((b) => b.text === 'Публикувай');
+    check('DS-5 the Публикувай of the plain section has the same background as the top banner Публикувай', plainSave && topbarSave && plainSave.bg === topbarSave.bg, JSON.stringify({ plainSave, topbarSave }));
     await open('page');
     check('the page section shows the defaults', (await field('Минимален отстъп').locator('input').first().inputValue()) === '16' && (await field('Максимален отстъп').locator('input').first().inputValue()) === '160');
     await shot('01-design-page-defaults');
@@ -260,7 +277,7 @@ try {
 
     // ---- reset: both sections ----
     await open('product');
-    await page.getByRole('button', { name: 'Върни по подразбиране' }).first().click();
+    await page.getByRole('button', { name: 'Начални настройки' }).first().click();
     await sleep(900);
     if (await page.locator('.fi-modal-window:visible').count() > 0) { await page.locator('.fi-modal-window:visible').last().getByRole('button').filter({ hasNotText: /Отказ|Cancel/ }).last().click(); }
     await settle();
@@ -268,7 +285,7 @@ try {
     await save();
 
     await open('page');
-    await page.getByRole('button', { name: 'Върни по подразбиране' }).first().click();
+    await page.getByRole('button', { name: 'Начални настройки' }).first().click();
     await sleep(900);
     if (await page.locator('.fi-modal-window:visible').count() > 0) { await page.locator('.fi-modal-window:visible').last().getByRole('button').filter({ hasNotText: /Отказ|Cancel/ }).last().click(); }
     await settle();

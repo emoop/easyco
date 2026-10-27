@@ -459,13 +459,13 @@ class DesignScreenTest extends TestCase
         $screen->set('props.settings.text', 'Screen made text');
         $screen->call('selectRow', 'h-d-top')->set('props.enabled', true);
 
-        $screen->callAction('publish')->assertHasNoErrors();
+        $screen->call('apply')->callAction('publish')->assertHasNoErrors();
         $compiled = json_decode((string) $this->settings()->get(AppearanceSettings::HEADER_COMPILED_KEY), true);
         $this->assertSame('Screen made text', $compiled['layout']['desktop']['rows']['top']['right'][0]['settings']['text']);
         $this->assertSame(HeaderValidator::validate($compiled['layout'])->layout, $compiled['layout']);
         $this->assertSame($compiled['layout'], json_decode((string) $this->settings()->get(AppearanceSettings::HEADER_PUBLISHED_KEY), true));
 
-        $screen->call('selectCell', 'h-d-top-left')->call('addNode', 'spacer')->callAction('apply');
+        $screen->call('selectCell', 'h-d-top-left')->call('addNode', 'spacer')->call('apply');
         $this->assertCount(1, $this->draft()['desktop']['rows']['top']['left']);
 
         $screen->callAction('discard');

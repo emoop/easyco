@@ -136,18 +136,19 @@ class DesignCheckoutZoneTest extends TestCase
 
     public function test_publish_compiles_and_the_cart_and_the_checkout_show_it_then_discard_forgets_the_draft(): void
     {
-        $screen = $this->fill($this->screen(), self::INPUT)->callAction('publish')->assertHasNoErrors();
+        $screen = $this->fill($this->screen(), self::INPUT)->call('apply')->callAction('publish')->assertHasNoErrors();
 
         $document = json_decode((string) $this->settings()->get(AppearanceSettings::DESIGN_COMPILED_KEY), true);
         $this->assertSame('Keep shopping', $document['zones']['checkout_header']['global']['back_label']);
-        $this->assertSame($this->draft(), $document['zones']['checkout_header']['global']);
+        $this->assertNull($this->settings()->get(AppearanceSettings::CHECKOUT_HEADER_DRAFT_KEY), 'DS-5: the published values are the draft: the draft key is forgotten');
+        $this->assertSame(json_decode((string) $this->settings()->get(AppearanceSettings::CHECKOUT_HEADER_PUBLISHED_KEY), true), $document['zones']['checkout_header']['global']);
 
         Cache::forget(StorefrontAppearance::CACHE_KEY);
         $this->app->forgetScopedInstances();
         $this->assertStringContainsString('data-sf-checkout-header', $this->get('/cart')->assertOk()->getContent());
         $this->assertStringContainsString('data-sf-checkout-header', $this->get('/checkout')->assertOk()->getContent());
 
-        $screen->set('props.back_label', 'Only a draft')->callAction('apply');
+        $screen->set('props.back_label', 'Only a draft')->call('apply');
         $this->assertSame('Only a draft', $this->draft()['back_label']);
 
         $screen->callAction('discard');
