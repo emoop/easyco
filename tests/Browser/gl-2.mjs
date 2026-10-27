@@ -39,7 +39,8 @@ const php = (code) => {
 const BACKUP = String.raw`
 use Illuminate\Support\Facades\DB; use Illuminate\Support\Facades\Storage;
 $rows = DB::table('site_settings')->orderBy('id')->get()->map(fn ($r) => (array) $r)->all();
-file_put_contents(sys_get_temp_dir().'/gl2_backup.json', json_encode(['rows' => $rows, 'files' => Storage::disk('public')->allFiles('appearance'), 'sum' => md5(json_encode($rows))]));
+$files = Storage::disk('public')->allFiles('appearance');
+file_put_contents(sys_get_temp_dir().'/gl2_backup.json', json_encode(['rows' => $rows, 'files' => $files, 'contents' => array_combine($files, array_map(fn ($f) => base64_encode(Storage::disk('public')->get($f)), $files)), 'sum' => md5(json_encode($rows))]));
 echo json_encode(['rows' => count($rows), 'sum' => md5(json_encode($rows))]);`;
 
 const SETUP = String.raw`
@@ -73,6 +74,7 @@ $bak = json_decode(file_get_contents(sys_get_temp_dir().'/gl2_backup.json'), tru
 DB::table('site_settings')->delete();
 foreach ($bak['rows'] as $row) { DB::table('site_settings')->insert($row); }
 foreach (Storage::disk('public')->allFiles('appearance') as $f) { if (! in_array($f, $bak['files'], true)) { Storage::disk('public')->delete($f); } }
+foreach ($bak['contents'] as $f => $content) { Storage::disk('public')->put($f, base64_decode($content)); }
 $pid = DB::table('catalog_products')->where('slug','gl2-gallery')->value('id');
 if ($pid) {
   $vids = DB::table('catalog_variations')->where('product_id',$pid)->pluck('id');
@@ -132,9 +134,30 @@ try {
     const save = async () => { await page.locator('.ds-props button[type=submit]').click(); await settle(); };
     const open = async (zone) => { await page.goto(BASE + '/admin/design?zone=' + zone); await settle(); };
 
+    // the dev site may hold values the owner set by hand: both sections start from their defaults (the backup above puts them back at the end)
+    for (const zone of ['page', 'product']) {
+        await open(zone);
+        await page.getByRole('button', { name: 'Върни по подразбиране' }).first().click();
+        await sleep(900);
+        if (await page.locator('.fi-modal-window:visible').count() > 0) { await page.locator('.fi-modal-window:visible').last().getByRole('button').filter({ hasNotText: /Отказ|Cancel/ }).last().click(); }
+        await settle();
+        await save();
+    }
+
     // ---- «Страница и карти» ----
     await open('page');
     check('the zone list has both new sections', (await page.locator('.ds-zones button', { hasText: 'Страница и карти' }).count()) === 1 && (await page.locator('.ds-zones button', { hasText: 'Продуктова страница' }).count()) === 1);
+
+    // GL-2.1: the toolbar of a plain section is the top banner's (Запази, no «Приложи», no «Публикувай»); the reset is the one extra button
+    const toolbarOf = async () => page.locator('.fi-header-actions button, .fi-ac button').evaluateAll((els) => els.filter((el) => el.offsetParent !== null).map((el) => ({ text: el.innerText.trim(), bg: getComputedStyle(el).backgroundColor })));
+    const plainToolbar = await toolbarOf();
+    check('GL-2.1 the plain section has no «Приложи» and no «Публикувай» in its toolbar', ! plainToolbar.some((b) => /Приложи|Публикувай|Върни публикуваното/.test(b.text)), JSON.stringify(plainToolbar));
+    check('GL-2.1 the plain section panel has no «Приложи»', ! (await page.locator('.ds-props').innerText()).includes('Приложи'));
+    const plainSave = plainToolbar.find((b) => b.text === 'Запази');
+    await open('topbar');
+    const topbarSave = (await toolbarOf()).find((b) => b.text === 'Запази');
+    check('GL-2.1 the Запази of the plain section has the same background as the top banner Запази', plainSave && topbarSave && plainSave.bg === topbarSave.bg, JSON.stringify({ plainSave, topbarSave }));
+    await open('page');
     check('the page section shows the defaults', (await field('Минимален отстъп').locator('input').first().inputValue()) === '16' && (await field('Максимален отстъп').locator('input').first().inputValue()) === '160');
     await shot('01-design-page-defaults');
 
