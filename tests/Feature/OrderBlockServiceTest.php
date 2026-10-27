@@ -35,17 +35,20 @@ class OrderBlockServiceTest extends TestCase
     {
         parent::setUp();
 
+        // BEFORE the fixtures below: what they write and a DDL later commits is a difference to restore, not part of the baseline.
+        $this->captureDatabaseFingerprint();
+
         // PH-1: a phone typed by hand is read with the STORE's country (a configured shop always has one).
         app(\App\Settings\Contracts\SiteSettingsRepository::class)->set(\App\Settings\StoreCountry::KEY, 'BG');
 
         $this->now = Carbon::parse('2026-10-19 12:00:00');
         Carbon::setTestNow($this->now);
-        $this->captureDatabaseFingerprint();
     }
 
     protected function tearDown(): void
     {
         Carbon::setTestNow();
+        $this->restoreFingerprintedState();
         $this->databaseMatchesFingerprint();
         parent::tearDown();
         $this->skipRemigrationIfClean();

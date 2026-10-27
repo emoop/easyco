@@ -11,6 +11,7 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
+use Tests\Concerns\RestoresSchemaWithoutRemigrating;
 use Tests\TestCase;
 
 /**
@@ -29,10 +30,28 @@ use Tests\TestCase;
 class PaymentRefundLegacyMappingMigrationTest extends TestCase
 {
     use RefreshDatabase;
+    use RestoresSchemaWithoutRemigrating;
 
     private const MAP = 'packages/EasyCo/Payment/database/migrations/2026_10_05_000002_map_legacy_payment_refunds.php';
 
     private const CONSTRAIN = 'packages/EasyCo/Payment/database/migrations/2026_10_05_000003_constrain_payment_refunds_breakdown.php';
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $this->captureDatabaseFingerprint();
+    }
+
+    protected function tearDown(): void
+    {
+        $this->restoreFingerprintedState();
+        $this->databaseMatchesFingerprint();
+
+        parent::tearDown();
+
+        $this->skipRemigrationIfClean();
+    }
 
     private function migration(string $path): Migration
     {

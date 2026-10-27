@@ -42,6 +42,7 @@ class PageFooterColumnsMigrationTest extends TestCase
     {
         Schema::hasColumn('pages', 'in_footer') && $this->migration()->up();
 
+        $this->restoreFingerprintedState();
         $this->databaseMatchesFingerprint();
 
         parent::tearDown();

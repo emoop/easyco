@@ -51,6 +51,7 @@ class RegionNoteStorageTest extends TestCase
             }
         }
 
+        $this->restoreFingerprintedState();
         $this->databaseMatchesFingerprint();
         parent::tearDown();
         $this->skipRemigrationIfClean();

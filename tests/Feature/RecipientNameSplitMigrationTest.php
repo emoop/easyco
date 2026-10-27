@@ -33,8 +33,10 @@ class RecipientNameSplitMigrationTest extends TestCase
     {
         parent::setUp();
 
-        $this->setUpRegionOrders();
+        // BEFORE the fixtures below: what they write and a DDL later commits is a difference to restore, not part of the baseline.
         $this->captureDatabaseFingerprint();
+
+        $this->setUpRegionOrders();
     }
 
     protected function tearDown(): void
@@ -47,6 +49,7 @@ class RecipientNameSplitMigrationTest extends TestCase
             }
         }
 
+        $this->restoreFingerprintedState();
         $this->databaseMatchesFingerprint();
         parent::tearDown();
         $this->skipRemigrationIfClean();

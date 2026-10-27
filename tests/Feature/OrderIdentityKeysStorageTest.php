@@ -33,16 +33,19 @@ class OrderIdentityKeysStorageTest extends TestCase
     {
         parent::setUp();
 
+        // BEFORE the fixtures below: what they write and a DDL later commits is a difference to restore, not part of the baseline.
+        $this->captureDatabaseFingerprint();
+
         // PH-1: a phone typed by hand is read with the STORE's country (a configured shop always has one).
         app(\App\Settings\Contracts\SiteSettingsRepository::class)->set(\App\Settings\StoreCountry::KEY, 'BG');
 
         SupportAutoInjectedAssets::$hasRenderedAComponentThisRequest = false;
         $this->setUpRegionOrders();
-        $this->captureDatabaseFingerprint();
     }
 
     protected function tearDown(): void
     {
+        $this->restoreFingerprintedState();
         $this->databaseMatchesFingerprint();
         parent::tearDown();
         $this->skipRemigrationIfClean();

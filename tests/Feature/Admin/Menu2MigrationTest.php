@@ -48,6 +48,7 @@ class Menu2MigrationTest extends TestCase
     protected function tearDown(): void
     {
         $this->restoreFinalShape();
+        $this->restoreFingerprintedState();
         $this->databaseMatchesFingerprint();
 
         parent::tearDown();
