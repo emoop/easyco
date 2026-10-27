@@ -83,9 +83,9 @@ class StorefrontPagesTest extends TestCase
     {
         $html = $this->get('/product/summer-dress')->assertOk()->getContent();
 
-        $this->assertSame(4, substr_count($this->pageContent($html), '<img '), 'each image appears twice: once as the main image, once as a thumbnail (2 images)');
-        $this->assertMatchesRegularExpression('/<img class="sf-image"\s+src="https:\/\/cdn\.test\/storage\/p\/1-medium\.webp"\s+srcset="[^"]*1-thumbnail\.webp 400w, [^"]*1-medium\.webp 900w, [^"]*1-large\.webp 1600w"\s+sizes="[^"]+"\s+width="900"\s+height="675"\s+alt="Front view"\s+loading="eager"\s+fetchpriority="high"\s+decoding="async">/s', $html);
-        $this->assertMatchesRegularExpression('/alt="Summer dress — 2"\s+loading="lazy"/s', $html);
+        $this->assertSame(5, substr_count(preg_replace('/<noscript>.*?<\/noscript>/s', '', $this->pageContent($html)), '<img '), 'each image appears twice: once as the main image, once as a thumbnail (2 images), plus the lightbox image (the noscript copy of the 2nd image left out)');
+        $this->assertMatchesRegularExpression('/<img class="sf-gal-img"\s+src="https:\/\/cdn\.test\/storage\/p\/1-medium\.webp"\s+srcset="[^"]*1-thumbnail\.webp 400w, [^"]*1-medium\.webp 900w, [^"]*1-large\.webp 1600w"\s+sizes="[^"]+"\s+width="900"\s+height="675"\s+alt="Front view"\s+loading="eager"\s+fetchpriority="high"\s+decoding="async">/s', $html);
+        $this->assertMatchesRegularExpression('/alt="Summer dress — '.preg_quote(__('storefront.gallery_photo', ['n' => 2]), '/').'"\s+loading="lazy"/s', $html);
         $this->assertSame(1, substr_count($html, 'fetchpriority="high"'));
     }
 

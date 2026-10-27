@@ -1,6 +1,6 @@
 // The storefront's only script (stage S2c): about forty lines of plain JavaScript — no framework, no
 // imports, no Livewire. It does two things and nothing else: (1) the mobile menu toggle and (2) the
-// product gallery's thumbnail swap (and, since D2, the header's drawer, search row and accordion), (3) since PC-1 the second photo of a product card on hover, and (4) since PC-2 the sizes of the cards.
+// product gallery (since GL-1: modes, lightbox; and, since D2, the header's drawer, search row and accordion), (3) since PC-1 the second photo of a product card on hover, and (4) since PC-2 the sizes of the cards.
 // All of them are progressive: without this script the pages still work —
 // the nav is shown by default and the first gallery image is the main one (see the `.js` rules in
 // storefront.css). The file is loaded only from the guarded @vite in
@@ -316,32 +316,7 @@ document.addEventListener('click', function (event) {
         return;
     }
 
-    var thumb = target.closest('[data-sf-gallery-index]');
-    var gallery = thumb ? thumb.closest('[data-sf-gallery]') : null;
-
-    if (! thumb || ! gallery) {
-        return;
-    }
-
-    var index = thumb.getAttribute('data-sf-gallery-index');
-    var items = gallery.querySelectorAll('.sf-gallery-item');
-    var thumbs = gallery.querySelectorAll('.sf-gallery-thumb');
-    var i;
-
-    for (i = 0; i < items.length; i++) {
-        items[i].classList.toggle('sf-gallery-active', String(i) === index);
-    }
-
-    for (i = 0; i < thumbs.length; i++) {
-        var current = String(i) === index;
-        thumbs[i].classList.toggle('sf-gallery-thumb-active', current);
-
-        if (current) {
-            thumbs[i].setAttribute('aria-current', 'true');
-        } else {
-            thumbs[i].removeAttribute('aria-current');
-        }
-    }
+    galleryClick(target, event);
 });
 
 // PC-1: a product card's second photo is requested on the FIRST pointer hover (a mouse) or keyboard focus of the card, never before. The browser fetches nothing on its own:
@@ -504,3 +479,312 @@ if (sizesMode === 'touch') {
     });
 }
 
+
+// GL-1: the product page gallery. One delegated click handler (called from the page's click listener above) for the thumbnails, the carousel arrow and the
+// lightbox links; the lightbox's own events are attached ONCE, when it first opens. Nothing runs on a page without a gallery. No HTML strings: attributes,
+// classes and textContent only. The zoom / pan state of the lightbox lives in CSS variables on its image.
+var GALLERY_STEP = 0.5;
+var GALLERY_MAX_ZOOM = 4;
+var GALLERY_DOUBLE_ZOOM = 2.5;
+var GALLERY_SWIPE = 50;
+var GALLERY_DESKTOP = '(min-width: 64rem)'; // the storefront's own breakpoint (where .sf-product turns two-column)
+
+var lightbox = null;
+
+function pauseVideos(gallery, except) {
+    gallery.querySelectorAll('video').forEach(function (video) {
+        if (! except || ! except.contains(video)) {
+            video.pause();
+        }
+    });
+}
+
+// A big image that waits in data-src is given its src: all of them where the layout shows every photo at once (grid, carousel), the shown one in a thumbnail mode.
+function fillGalleryImage(figure) {
+    var image = figure ? figure.querySelector('img[data-src]') : null;
+
+    if (! image) {
+        return;
+    }
+
+    if (image.hasAttribute('data-srcset')) {
+        image.setAttribute('srcset', image.getAttribute('data-srcset'));
+        image.removeAttribute('data-srcset');
+    }
+
+    image.setAttribute('src', image.getAttribute('data-src'));
+    image.removeAttribute('data-src');
+}
+
+function fillGalleryImages(gallery) {
+    var wide = typeof window.matchMedia !== 'function' || window.matchMedia(GALLERY_DESKTOP).matches;
+    var mode = gallery.getAttribute(wide ? 'data-gal-desktop' : 'data-gal-mobile');
+
+    gallery.querySelectorAll(mode === 'grid' || mode === 'carousel' ? '.sf-gal-item' : '.sf-gal-item.is-active').forEach(fillGalleryImage);
+}
+
+function activateGalleryItem(gallery, index) {
+    var items = gallery.querySelectorAll('.sf-gal-item');
+    var thumbs = gallery.querySelectorAll('.sf-gal-thumb');
+    var active = items[index];
+
+    if (! active) {
+        return;
+    }
+
+    pauseVideos(gallery, active);
+    fillGalleryImage(active);
+
+    items.forEach(function (item, i) {
+        item.classList.toggle('is-active', i === index);
+    });
+
+    thumbs.forEach(function (thumb, i) {
+        thumb.classList.toggle('is-active', i === index);
+        thumb.setAttribute('aria-current', i === index ? 'true' : 'false');
+    });
+}
+
+function updateCarouselArrow(gallery) {
+    var main = gallery.querySelector('.sf-gal-main');
+    var next = gallery.querySelector('.sf-gal-next');
+
+    if (main && next) {
+        next.classList.toggle('is-end', main.scrollLeft + main.clientWidth >= main.scrollWidth - 2);
+    }
+}
+
+function carouselNext(gallery) {
+    var main = gallery.querySelector('.sf-gal-main');
+    var items = main ? main.querySelectorAll('.sf-gal-item') : [];
+
+    if (items.length < 2) {
+        return;
+    }
+
+    pauseVideos(gallery, null);
+
+    var step = items[1].offsetLeft - items[0].offsetLeft;
+    var calm = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    main.scrollBy({ left: step, behavior: calm ? 'auto' : 'smooth' });
+}
+
+function galleryClick(target, event) {
+    var thumb = target.closest('.sf-gal-thumb');
+    var arrow = thumb ? null : target.closest('.sf-gal-next');
+    var link = thumb || arrow ? null : target.closest('[data-lightbox]');
+    var gallery = (thumb || arrow || link) ? (thumb || arrow || link).closest('[data-sf-gallery]') : null;
+
+    if (! gallery) {
+        return;
+    }
+
+    if (thumb) {
+        activateGalleryItem(gallery, [].indexOf.call(gallery.querySelectorAll('.sf-gal-thumb'), thumb));
+    } else if (arrow) {
+        carouselNext(gallery);
+    } else if (link && typeof HTMLDialogElement === 'function' && typeof HTMLDialogElement.prototype.showModal === 'function') {
+        event.preventDefault();
+        openLightbox(gallery, link);
+    }
+}
+
+// The arrow is hidden at the last slide: the one scroll listener, on the one gallery of the page (found with a single querySelector).
+(function () {
+    var gallery = document.querySelector('[data-sf-gallery]');
+    var main = gallery ? gallery.querySelector('.sf-gal-main') : null;
+
+    if (main) {
+        main.addEventListener('scroll', function () { updateCarouselArrow(gallery); }, { passive: true });
+        updateCarouselArrow(gallery);
+        fillGalleryImages(gallery);
+
+        // the layout may change from one mode to another when the window is resized across the breakpoint
+        var wide = typeof window.matchMedia === 'function' ? window.matchMedia(GALLERY_DESKTOP) : null;
+
+        if (wide && typeof wide.addEventListener === 'function') {
+            wide.addEventListener('change', function () { fillGalleryImages(gallery); updateCarouselArrow(gallery); });
+        }
+    }
+})();
+
+function openLightbox(gallery, link) {
+    var dialog = gallery.querySelector('.sf-lightbox');
+
+    if (! dialog) {
+        return;
+    }
+
+    if (! lightbox || lightbox.dialog !== dialog) {
+        lightbox = {
+            dialog: dialog,
+            image: dialog.querySelector('.sf-lightbox-img'),
+            stage: dialog.querySelector('.sf-lightbox-stage'),
+            count: dialog.querySelector('.sf-lightbox-count'),
+            prev: dialog.querySelector('.sf-lightbox-prev'),
+            next: dialog.querySelector('.sf-lightbox-next'),
+            close: dialog.querySelector('.sf-lightbox-close'),
+            links: [].slice.call(gallery.querySelectorAll('[data-lightbox]')),
+            index: 0,
+            scale: 1,
+            x: 0,
+            y: 0,
+            opener: null,
+            pointers: {},
+            pointerCount: 0,
+            dragged: false,
+            downOnStage: false,
+            startX: 0,
+            startY: 0
+        };
+
+        bindLightbox(lightbox);
+    }
+
+    lightbox.opener = link;
+    showLightboxImage(lightbox, lightbox.links.indexOf(link));
+    dialog.showModal();
+    lightbox.close.focus();
+}
+
+function showLightboxImage(box, index) {
+    var link = box.links[index];
+
+    if (! link) {
+        return;
+    }
+
+    var thumb = link.querySelector('img');
+
+    box.index = index;
+    box.image.setAttribute('src', link.getAttribute('href'));
+    box.image.setAttribute('alt', thumb ? thumb.getAttribute('alt') : '');
+    box.prev.disabled = index === 0;
+    box.next.disabled = index === box.links.length - 1;
+    box.count.textContent = box.dialog.getAttribute('data-counter').replace(':n', String(index + 1)).replace(':total', String(box.links.length));
+    setLightboxZoom(box, 1, 0, 0);
+}
+
+function setLightboxZoom(box, scale, x, y) {
+    box.scale = scale;
+    box.x = scale === 1 ? 0 : x;
+    box.y = scale === 1 ? 0 : y;
+    box.image.style.setProperty('--sf-lb-scale', String(box.scale));
+    box.image.style.setProperty('--sf-lb-x', box.x + 'px');
+    box.image.style.setProperty('--sf-lb-y', box.y + 'px');
+}
+
+// Zooms to `scale` keeping the point under the cursor where it is: the image scales around its own centre, so the centre moves by d * (1 - scale / old).
+function zoomLightboxAt(box, scale, clientX, clientY) {
+    scale = Math.max(1, Math.min(GALLERY_MAX_ZOOM, scale));
+
+    var rect = box.image.getBoundingClientRect();
+    var dx = clientX - (rect.left + rect.width / 2);
+    var dy = clientY - (rect.top + rect.height / 2);
+    var ratio = 1 - scale / box.scale;
+
+    setLightboxZoom(box, scale, box.x + dx * ratio, box.y + dy * ratio);
+}
+
+function stepLightbox(box, by) {
+    var index = box.index + by;
+
+    if (index >= 0 && index < box.links.length) {
+        showLightboxImage(box, index);
+    }
+}
+
+function bindLightbox(box) {
+    var dialog = box.dialog;
+
+    dialog.addEventListener('click', function (event) {
+        var target = event.target;
+
+        if (target.closest('.sf-lightbox-close')) {
+            dialog.close();
+        } else if (target.closest('.sf-lightbox-prev')) {
+            stepLightbox(box, -1);
+        } else if (target.closest('.sf-lightbox-next')) {
+            stepLightbox(box, 1);
+        } else if (! box.dragged && box.downOnStage && (target === dialog || target === box.stage)) {
+            // the dark area: only when the press STARTED there (a pointer captured by the stage while panning retargets the click to it)
+            dialog.close();
+        }
+
+        box.dragged = false;
+        box.downOnStage = false;
+    });
+
+    dialog.addEventListener('close', function () {
+        if (box.opener) {
+            box.opener.focus();
+        }
+    });
+
+    dialog.addEventListener('keydown', function (event) {
+        if (event.key === 'ArrowLeft') {
+            stepLightbox(box, -1);
+        } else if (event.key === 'ArrowRight') {
+            stepLightbox(box, 1);
+        }
+    });
+
+    box.stage.addEventListener('wheel', function (event) {
+        event.preventDefault();
+        zoomLightboxAt(box, box.scale + (event.deltaY < 0 ? GALLERY_STEP : -GALLERY_STEP), event.clientX, event.clientY);
+    }, { passive: false });
+
+    box.stage.addEventListener('dblclick', function (event) {
+        zoomLightboxAt(box, box.scale > 1 ? 1 : GALLERY_DOUBLE_ZOOM, event.clientX, event.clientY);
+    });
+
+    box.stage.addEventListener('pointerdown', function (event) {
+        box.pointers[event.pointerId] = true;
+        box.pointerCount = Object.keys(box.pointers).length;
+        box.startX = event.clientX;
+        box.startY = event.clientY;
+        box.dragged = false;
+        box.downOnStage = event.target === box.stage;
+        box.panX = box.x;
+        box.panY = box.y;
+
+        if (box.scale > 1 && event.pointerType !== 'touch') {
+            box.stage.setPointerCapture(event.pointerId);
+        }
+    });
+
+    box.stage.addEventListener('pointermove', function (event) {
+        if (! box.pointers[event.pointerId] || box.scale === 1 || event.pointerType === 'touch') {
+            return;
+        }
+
+        if (Math.abs(event.clientX - box.startX) + Math.abs(event.clientY - box.startY) > 3) {
+            box.dragged = true;
+        }
+
+        setLightboxZoom(box, box.scale, box.panX + event.clientX - box.startX, box.panY + event.clientY - box.startY);
+    });
+
+    var release = function (event) {
+        var wasSingle = box.pointerCount === 1;
+
+        delete box.pointers[event.pointerId];
+        box.pointerCount = Object.keys(box.pointers).length;
+
+        // A swipe of the finger (touch, not zoomed, not pinching): the next / previous image.
+        if (event.type === 'pointerup' && event.pointerType === 'touch' && wasSingle && box.scale === 1
+            && ! (window.visualViewport && window.visualViewport.scale > 1.01)) {
+            var dx = event.clientX - box.startX;
+            var dy = event.clientY - box.startY;
+
+            if (Math.abs(dx) > GALLERY_SWIPE && Math.abs(dx) > Math.abs(dy)) {
+                box.dragged = true;
+                stepLightbox(box, dx < 0 ? 1 : -1);
+            }
+        }
+    };
+
+    box.stage.addEventListener('pointerup', release);
+    box.stage.addEventListener('pointercancel', release);
+}

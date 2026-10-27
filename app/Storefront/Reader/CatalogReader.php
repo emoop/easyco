@@ -7,6 +7,7 @@ use App\Storefront\Exceptions\ListingOptionNotAvailable;
 use App\Storefront\ReadModels\Breadcrumb;
 use App\Storefront\ReadModels\CategoryNode;
 use App\Storefront\ReadModels\CategoryPage;
+use App\Storefront\ReadModels\GalleryItem;
 use App\Storefront\ReadModels\ImageSet;
 use App\Storefront\ReadModels\ListingPage;
 use App\Storefront\ReadModels\ListingQuery;
@@ -149,6 +150,8 @@ final class CatalogReader
             );
         }
 
+        $gallery = $this->gallery($productId, (string) $product->name);
+
         return new ProductPage(
             id: (string) $productId,
             slug: (string) $product->slug,
@@ -159,12 +162,13 @@ final class CatalogReader
             description: $product->description === null ? null : (string) $product->description,
             brand: $this->brandOf($product),
             breadcrumbs: $this->productBreadcrumbs($productId, (string) $product->name, (string) $product->slug),
-            images: $this->gallery($productId, (string) $product->name),
+            images: $gallery['images'],
             price: $this->productPrice($variationIds, $quotes),
             inStock: array_filter($stock, fn (int $quantity): bool => $quantity > 0) !== [],
             options: $options,
             variations: $views,
             badges: [],
+            gallery: $gallery['items'],
         );
     }
 
@@ -283,12 +287,11 @@ final class CatalogReader
      */
     private static function usableImageIdSubquery(int $position): QueryBuilder
     {
-        return DB::table('catalog_product_media')
+        $query = DB::table('catalog_product_media')
             ->join('catalog_media', 'catalog_media.id', '=', 'catalog_product_media.media_id')
-            ->whereColumn('catalog_product_media.product_id', 'catalog_products.id')
-            ->where('catalog_media.type', MediaType::IMAGE->value)
-            ->where('catalog_media.processing_status', ProcessingStatus::READY->value)
-            ->whereNull('catalog_media.missing_at')
+            ->whereColumn('catalog_product_media.product_id', 'catalog_products.id');
+
+        return self::usableMedia($query, [MediaType::IMAGE])
             ->orderBy('catalog_product_media.sort_order')
             ->orderBy('catalog_media.id')
             ->limit(1)
@@ -296,6 +299,22 @@ final class CatalogReader
             ->select('catalog_media.id');
     }
 
+    /**
+     * THE usable-media rule, for the cards' photos and the product page gallery alike: a file of one of `$types` that is READY and not missing
+     * on disk (`missing_at`). Written once; both callers apply it to their own query.
+     *
+     * @template T of QueryBuilder|\Illuminate\Database\Eloquent\Builder
+     * @param T $query
+     * @param list<MediaType> $types
+     * @return T
+     */
+    private static function usableMedia(QueryBuilder|\Illuminate\Database\Eloquent\Builder $query, array $types): QueryBuilder|\Illuminate\Database\Eloquent\Builder
+    {
+        return $query
+            ->whereIn('catalog_media.type', array_map(fn (MediaType $type): string => $type->value, $types))
+            ->where('catalog_media.processing_status', ProcessingStatus::READY->value)
+            ->whereNull('catalog_media.missing_at');
+    }
     /**
      * @param array<int, ProductModel> $products
      * @return list<ProductCard>
@@ -379,33 +398,64 @@ final class CatalogReader
 
     // ================================================================== internals: product page
 
-    /** @return list<ImageSet> the READY gallery images, first = main, in ONE query (assets carry their variants) */
+    /**
+     * The usable images (first = main) and the gallery items (usable images AND videos, in media order), from ONE query (assets carry their
+     * variants). The usable rule is the card's own (usableMedia): a READY, not-missing file. `images` keep their historic alt text (the JSON
+     * contract); the gallery items carry the alt of the gallery markup (the image's alt, else the product name + " — снимка N").
+     *
+     * @return array{images: list<ImageSet>, items: list<GalleryItem>}
+     */
     private function gallery(int $productId, string $name): array
     {
-        $assets = MediaAssetModel::query()
+        $query = MediaAssetModel::query()
             ->join('catalog_product_media', 'catalog_product_media.media_id', '=', 'catalog_media.id')
             ->where('catalog_product_media.product_id', $productId)
-            ->where('catalog_media.type', MediaType::IMAGE->value)
-            ->where('catalog_media.processing_status', ProcessingStatus::READY->value)
             ->orderBy('catalog_product_media.sort_order')
-            ->orderBy('catalog_media.id')
-            ->get(['catalog_media.*']);
+            ->orderBy('catalog_media.id');
+
+        $assets = self::usableMedia($query, [MediaType::IMAGE, MediaType::VIDEO])->get(['catalog_media.*']);
 
         $images = [];
+        $items = [];
         $position = 0;
+        $imageIndex = 0;
 
         foreach ($assets as $asset) {
+            if ($asset->type === MediaType::VIDEO->value) {
+                $items[] = new GalleryItem(
+                    kind: 'video',
+                    videoUrl: $this->images->fileUrl($asset),
+                    videoMime: (string) ($asset->mime ?? ''),
+                );
+
+                continue;
+            }
+
+            // the position among the IMAGES (a video does not count: the numbers of the alt texts are the photos')
             $position++;
+
             $set = $this->images->build($asset, $position === 1 ? $name : "{$name} — {$position}", ImageSetBuilder::SIZES_GALLERY);
 
-            if ($set !== null) {
-                $images[] = $set;
+            if ($set === null) {
+                continue;
             }
+
+            $images[] = $set;
+            $big = $this->images->build($asset, $name.' — '.__('storefront.gallery_photo', ['n' => $position]), ImageSetBuilder::SIZES_GALLERY);
+            $thumb = $set->srcset[0];
+            $items[] = new GalleryItem(
+                kind: 'image',
+                imageIndex: $imageIndex++,
+                image: $big,
+                thumbUrl: $thumb['url'],
+                thumbWidth: $thumb['width'],
+                thumbHeight: max(1, (int) round($thumb['width'] * $set->height / $set->width)),
+                largeUrl: $set->srcset[count($set->srcset) - 1]['url'],
+            );
         }
 
-        return $images;
+        return ['images' => $images, 'items' => $items];
     }
-
     /** @return list<Breadcrumb> the deepest shown category's trail, then the product */
     private function productBreadcrumbs(int $productId, string $name, string $slug): array
     {

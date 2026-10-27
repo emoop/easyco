@@ -21,6 +21,7 @@ final readonly class ProductPage
      * @param list<array{name: string, values: list<string>}>     $options
      * @param list<VariationView>                                 $variations
      * @param list<Badge>                                         $badges always empty in S1
+     * @param list<GalleryItem>                                   $gallery GL-1: the usable images AND videos in media order, for the gallery markup only (NOT in toArray(): the JSON contract is unchanged)
      */
     public function __construct(
         public string $id,
@@ -38,6 +39,7 @@ final readonly class ProductPage
         public array $options,
         public array $variations,
         public array $badges,
+        public array $gallery = [],
     ) {
     }
 

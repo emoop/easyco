@@ -421,45 +421,277 @@
 @layer components {
     /* ---- product page: gallery + summary, single column on mobile -------------------------------- */
     .sf-product {
-        @apply grid grid-cols-1 gap-6 lg:grid-cols-2;
+        --sf-product-col-gap: 2rem;
+        @apply grid grid-cols-1 gap-y-6 lg:grid-cols-2;
     }
 
+    @media (min-width: 64rem) {
+        .sf-product {
+            column-gap: var(--sf-product-col-gap);
+        }
+    }
+
+    /* ---- GL-1: the product page gallery. ONE markup; the desktop mode (data-gal-desktop) and the mobile mode (data-gal-mobile) are chosen here
+       under the storefront's own breakpoint (64rem = Tailwind lg, where .sf-product turns two-column). The JS asks the same value. ----------- */
     .sf-gallery {
-        @apply flex flex-col gap-3;
+        --sf-gal-zoom: 1.05;
+        --sf-gal-zoom-time: 1200ms;
+        --sf-gal-gap: 0.5rem;
+        --sf-gal-radius: 0.25rem;
+        @apply min-w-0;
     }
 
-    .sf-gallery-main {
+    .sf-gallery[data-gal-zoom='medium'] {
+        --sf-gal-zoom: 1.1;
+    }
+
+    .sf-gallery[data-gal-zoom='off'] {
+        --sf-gal-zoom: 1;
+    }
+
+    .sf-gal-placeholder {
         @apply overflow-hidden rounded-lg border border-neutral-200 bg-neutral-100;
         aspect-ratio: 4 / 3;
     }
 
-    .sf-gallery-item {
-        @apply hidden h-full;
+    .sf-gal-layout {
+        @apply flex min-w-0 flex-col;
+        gap: var(--sf-gal-gap);
     }
 
-    .sf-gallery-item.sf-gallery-active {
-        @apply block;
+    .sf-gal-stage {
+        @apply relative min-w-0;
     }
 
-    .sf-gallery-main .sf-image {
-        @apply h-full w-full object-contain;
+    .sf-gal-main {
+        @apply grid min-w-0;
+        gap: var(--sf-gal-gap);
     }
 
-    .sf-gallery-thumbs {
-        @apply grid grid-cols-4 gap-2;
+    /* A frame keeps the natural ratio of the photo: contained, never cropped; another ratio gets a neutral letterbox. */
+    .sf-gal-item {
+        @apply relative m-0 min-w-0 overflow-hidden border-0 p-0;
+        border-radius: var(--sf-gal-radius);
+        aspect-ratio: var(--sf-gal-ratio, 3 / 4);
+        background: var(--sf-gal-bg, transparent);
     }
 
-    .sf-gallery-thumb {
-        @apply overflow-hidden rounded-md border border-neutral-200 bg-white p-0;
-        aspect-ratio: 1 / 1;
+    .sf-gal-link {
+        @apply m-0 block h-full w-full border-0 p-0;
     }
 
-    .sf-gallery-thumb.sf-gallery-thumb-active {
-        box-shadow: 0 0 0 2px #171717;
+    .sf-gal-img,
+    .sf-gal-video {
+        @apply block h-full w-full object-contain;
     }
 
-    .sf-gallery-thumb .sf-image {
-        @apply h-full w-full object-cover;
+    .sf-gal-img[data-src]:not([src]) {
+        visibility: hidden;
+    }
+
+    .sf-gal-img {
+        transition: transform var(--sf-gal-zoom-time) cubic-bezier(0.25, 0.1, 0.25, 1);
+    }
+
+    .sf-gal-next {
+        @apply absolute right-2 top-1/2 z-10 hidden h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border-0 bg-white/90 text-2xl leading-none text-neutral-900 shadow;
+    }
+
+    .sf-gal-thumbs {
+        @apply hidden min-w-0;
+        gap: var(--sf-gal-gap);
+    }
+
+    .sf-gal-thumb {
+        @apply relative m-0 shrink-0 overflow-hidden border border-neutral-200 bg-neutral-100 p-0;
+        border-radius: var(--sf-gal-radius);
+        width: 4.5rem;
+        aspect-ratio: 3 / 4;
+    }
+
+    .sf-gal-thumb-img {
+        @apply block h-full w-full object-contain;
+    }
+
+    .sf-gal-thumb.is-active {
+        outline: 2px solid var(--sf-primary, oklch(20.5% 0 none));
+        outline-offset: 1px;
+    }
+
+    /* A video thumbnail: a neutral frame with a play triangle drawn in CSS (no icon font, no asset). */
+    .sf-gal-thumb[data-gal-kind='video']::after {
+        content: '';
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        border-style: solid;
+        border-width: 0.5rem 0 0.5rem 0.85rem;
+        border-color: transparent transparent transparent var(--sf-text, oklch(20.5% 0 none));
+        transform: translate(-35%, -50%);
+    }
+
+    /* Desktop with a mouse: the photo grows a little INSIDE its frame (overflow hidden on the frame); videos never zoom. */
+    @media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+        .sf-gal-item[data-gal-kind='image']:hover .sf-gal-img {
+            transform: scale(var(--sf-gal-zoom));
+        }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .sf-gal-img {
+            transition: none;
+        }
+    }
+
+    /* Without the script the thumbnails and the arrow do nothing: they are not shown. */
+    @media (scripting: none) {
+        .sf-gallery .sf-gal-next,
+        .sf-gallery .sf-gal-thumbs {
+            display: none !important;
+        }
+    }
+
+    /* ---- desktop ---- */
+    @media (min-width: 64rem) {
+        .sf-product:has(> .sf-gal-w-50) { grid-template-columns: minmax(0, 50fr) minmax(0, 50fr); }
+        .sf-product:has(> .sf-gal-w-55) { grid-template-columns: minmax(0, 55fr) minmax(0, 45fr); }
+        .sf-product:has(> .sf-gal-w-60) { grid-template-columns: minmax(0, 60fr) minmax(0, 40fr); }
+        .sf-product:has(> .sf-gal-w-65) { grid-template-columns: minmax(0, 65fr) minmax(0, 35fr); }
+        .sf-product:has(> .sf-gal-w-70) { grid-template-columns: minmax(0, 70fr) minmax(0, 30fr); }
+        .sf-product:has(> .sf-gal-w-75) { grid-template-columns: minmax(0, 75fr) minmax(0, 25fr); }
+        .sf-product:has(> .sf-gal-w-80) { grid-template-columns: minmax(0, 80fr) minmax(0, 20fr); }
+
+        /* grid: two equal columns; with "same" an odd last item stays at the size of the others (half width, left), with "full" it spans both;
+           a single item is full width in both cases */
+        .sf-gallery[data-gal-desktop='grid'] .sf-gal-main {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .sf-gallery[data-gal-desktop='grid'] .sf-gal-item:only-child,
+        .sf-gallery[data-gal-desktop='grid'][data-gal-odd='full'] .sf-gal-item:last-child:nth-child(odd) {
+            grid-column: 1 / -1;
+        }
+
+        .sf-gallery[data-gal-desktop='thumbs-left'] .sf-gal-item:not(.is-active),
+        .sf-gallery[data-gal-desktop='thumbs-below'] .sf-gal-item:not(.is-active) {
+            display: none;
+        }
+
+        .sf-gallery[data-gal-desktop='thumbs-left'] .sf-gal-thumbs,
+        .sf-gallery[data-gal-desktop='thumbs-below'] .sf-gal-thumbs {
+            display: flex;
+        }
+
+        .sf-gallery[data-gal-desktop='thumbs-left'] .sf-gal-layout {
+            @apply flex-row items-start;
+        }
+
+        .sf-gallery[data-gal-desktop='thumbs-left'] .sf-gal-stage {
+            @apply order-2 flex-1;
+        }
+
+        .sf-gallery[data-gal-desktop='thumbs-left'] .sf-gal-thumbs {
+            @apply order-1 flex-col overflow-y-auto;
+            max-height: 48rem;
+        }
+
+        .sf-gallery[data-gal-desktop='thumbs-below'] .sf-gal-thumbs {
+            @apply flex-row flex-wrap;
+        }
+    }
+
+    /* ---- mobile ---- */
+    @media (max-width: 63.999rem) {
+        .sf-gallery[data-gal-mobile='carousel'] .sf-gal-main {
+            @apply flex overflow-x-auto;
+            gap: var(--sf-gal-gap);
+            scroll-snap-type: x mandatory;
+            scrollbar-width: none;
+        }
+
+        .sf-gallery[data-gal-mobile='carousel'] .sf-gal-main::-webkit-scrollbar {
+            display: none;
+        }
+
+        /* the next slide peeks in from the right edge */
+        .sf-gallery[data-gal-mobile='carousel'] .sf-gal-item {
+            flex: 0 0 86%;
+            scroll-snap-align: start;
+        }
+
+        .sf-gallery[data-gal-mobile='carousel'] .sf-gal-item:only-child {
+            flex-basis: 100%;
+        }
+
+        .sf-gallery[data-gal-mobile='carousel'] .sf-gal-next {
+            display: inline-flex;
+        }
+
+        .sf-gallery[data-gal-mobile='carousel'] .sf-gal-next.is-end {
+            display: none;
+        }
+
+        .sf-gallery[data-gal-mobile='thumbs-below'] .sf-gal-item:not(.is-active) {
+            display: none;
+        }
+
+        .sf-gallery[data-gal-mobile='thumbs-below'] .sf-gal-thumbs {
+            @apply flex flex-row overflow-x-auto;
+        }
+    }
+
+    /* ---- the lightbox: one native <dialog>, the dark backdrop is its ::backdrop ---- */
+    .sf-lightbox {
+        @apply m-0 h-full max-h-none w-full max-w-none border-0 bg-transparent p-0 text-white;
+    }
+
+    .sf-lightbox:not([open]) {
+        display: none;
+    }
+
+    .sf-lightbox::backdrop {
+        background: rgb(0 0 0 / 0.88);
+    }
+
+    .sf-lightbox-stage {
+        @apply flex h-full w-full items-center justify-center overflow-hidden;
+        touch-action: pan-y pinch-zoom;
+    }
+
+    .sf-lightbox-img {
+        @apply block max-h-full max-w-full select-none object-contain;
+        transform: translate(var(--sf-lb-x, 0px), var(--sf-lb-y, 0px)) scale(var(--sf-lb-scale, 1));
+    }
+
+    .sf-lightbox-close,
+    .sf-lightbox-prev,
+    .sf-lightbox-next {
+        @apply absolute z-10 flex h-11 w-11 items-center justify-center rounded-full border-0 bg-black/60 text-3xl leading-none text-white;
+    }
+
+    .sf-lightbox-close {
+        @apply right-3 top-3;
+    }
+
+    .sf-lightbox-prev {
+        @apply left-3 top-1/2 -translate-y-1/2;
+    }
+
+    .sf-lightbox-next {
+        @apply right-3 top-1/2 -translate-y-1/2;
+    }
+
+    .sf-lightbox-prev:disabled,
+    .sf-lightbox-next:disabled {
+        @apply opacity-30;
+    }
+
+    .sf-lightbox-count {
+        @apply absolute bottom-3 left-1/2 m-0 -translate-x-1/2 rounded-full bg-black/60 px-3 py-1 text-sm text-white;
+    }
+
+    .sf-lightbox :focus-visible {
+        outline-color: #fff;
     }
 
     .sf-summary {
@@ -3562,4 +3794,24 @@ html:not(.js) .sf-bar-item:focus-within > .sf-sub {
 .sf-hdr-mobile .sf-cart-count {
     background-color: var(--sf-cart-m-badge-bg, var(--sf-primary, oklch(20.5% 0 none)));
     color: var(--sf-cart-m-badge-fg, var(--sf-on-primary, #fff));
+}
+.sf-gal-next > span,
+.sf-lightbox-prev > span,
+.sf-lightbox-next > span {
+    font-size: 0;           /* the glyph is hidden: the arrow is drawn */
+}
+
+.sf-gal-next::after,
+.sf-lightbox-prev::after,
+.sf-lightbox-next::after {
+    content: '';
+    width: 0.6rem;
+    height: 0.6rem;
+    border-top: 2px solid currentColor;
+    border-right: 2px solid currentColor;
+    transform: translateX(-12%) rotate(45deg);   /* next: › */
+}
+
+.sf-lightbox-prev::after {
+    transform: translateX(12%) rotate(-135deg);  /* previous: ‹ */
 }

@@ -30,6 +30,12 @@ final class ImageSetBuilder
     ) {
     }
 
+    /** The public URL of the asset's own file (a video has no renditions: this is the file itself). */
+    public function fileUrl(MediaAssetModel $asset): string
+    {
+        return $this->storage->url((string) $asset->disk, (string) $asset->path);
+    }
+
     public function build(MediaAssetModel $asset, string $fallbackAlt, string $sizesHint): ?ImageSet
     {
         if ($asset->processing_status !== 'ready' || $asset->type !== 'image') {
