@@ -475,7 +475,6 @@
             align-self: start;
             max-height: var(--sf-summary-max-height, calc(100vh - var(--sf-sticky-top) - 1rem));
             overflow-y: auto;
-            overscroll-behavior: contain;
             scrollbar-width: thin;
         }
     }
