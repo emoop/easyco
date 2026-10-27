@@ -454,11 +454,16 @@
     /* ---- product page: gallery + summary, single column on mobile -------------------------------- */
     .sf-product {
         --sf-product-col-gap: 2rem;
+        @apply grid grid-cols-1 gap-y-6;
+    }
+
+    /* GL-3.3: the gallery and the summary share this grid; the description is outside it, so the sticky summary stops at this box, not below it. */
+    .sf-product-main {
         @apply grid grid-cols-1 gap-y-6 lg:grid-cols-2;
     }
 
     @media (min-width: 64rem) {
-        .sf-product {
+        .sf-product-main {
             column-gap: var(--sf-product-col-gap);
         }
 
@@ -613,13 +618,13 @@
 
     /* ---- desktop ---- */
     @media (min-width: 64rem) {
-        .sf-product:has(> .sf-gal-w-50) { grid-template-columns: minmax(0, 50fr) minmax(0, 50fr); }
-        .sf-product:has(> .sf-gal-w-55) { grid-template-columns: minmax(0, 55fr) minmax(0, 45fr); }
-        .sf-product:has(> .sf-gal-w-60) { grid-template-columns: minmax(0, 60fr) minmax(0, 40fr); }
-        .sf-product:has(> .sf-gal-w-65) { grid-template-columns: minmax(0, 65fr) minmax(0, 35fr); }
-        .sf-product:has(> .sf-gal-w-70) { grid-template-columns: minmax(0, 70fr) minmax(0, 30fr); }
-        .sf-product:has(> .sf-gal-w-75) { grid-template-columns: minmax(0, 75fr) minmax(0, 25fr); }
-        .sf-product:has(> .sf-gal-w-80) { grid-template-columns: minmax(0, 80fr) minmax(0, 20fr); }
+        .sf-product-main:has(> .sf-gal-w-50) { grid-template-columns: minmax(0, 50fr) minmax(0, 50fr); }
+        .sf-product-main:has(> .sf-gal-w-55) { grid-template-columns: minmax(0, 55fr) minmax(0, 45fr); }
+        .sf-product-main:has(> .sf-gal-w-60) { grid-template-columns: minmax(0, 60fr) minmax(0, 40fr); }
+        .sf-product-main:has(> .sf-gal-w-65) { grid-template-columns: minmax(0, 65fr) minmax(0, 35fr); }
+        .sf-product-main:has(> .sf-gal-w-70) { grid-template-columns: minmax(0, 70fr) minmax(0, 30fr); }
+        .sf-product-main:has(> .sf-gal-w-75) { grid-template-columns: minmax(0, 75fr) minmax(0, 25fr); }
+        .sf-product-main:has(> .sf-gal-w-80) { grid-template-columns: minmax(0, 80fr) minmax(0, 20fr); }
 
         /* grid: two equal columns; with "same" an odd last item stays at the size of the others (half width, left), with "full" it spans both;
            a single item is full width in both cases */
@@ -792,7 +797,7 @@
 
     /* ---- description as readable prose (no typography plugin) ------------------------------------ */
     .sf-description {
-        @apply mt-8 border-t border-neutral-200 pt-6 lg:col-span-2;
+        @apply mt-8 border-t border-neutral-200 pt-6;
     }
 
     .sf-description-title {
