@@ -453,7 +453,6 @@
 @layer components {
     /* ---- product page: gallery + summary, single column on mobile -------------------------------- */
     .sf-product {
-        --sf-product-col-gap: 2rem;
         @apply grid grid-cols-1 gap-y-6;
     }
 
@@ -464,16 +463,17 @@
 
     @media (min-width: 64rem) {
         .sf-product-main {
-            column-gap: var(--sf-product-col-gap);
+            column-gap: var(--sf-product-col-gap, 2rem);
         }
 
         /* GL-3: the summary (right column) stays in view while the gallery scrolls, and stops at the bottom of the product block. Its top sits below the
            sticky header: the header rows the server rendered are the only ones in the page (a hidden row is not rendered), so they are added here. */
         .sf-summary {
-            position: sticky;
+            /* GL-2: the two values the «Продуктова страница» section switches (off = static, no max-height); the fallbacks are today's sticky column */
+            position: var(--sf-summary-position, sticky);
             top: var(--sf-sticky-top);
             align-self: start;
-            max-height: calc(100vh - var(--sf-sticky-top) - 1rem);
+            max-height: var(--sf-summary-max-height, calc(100vh - var(--sf-sticky-top) - 1rem));
             overflow-y: auto;
             overscroll-behavior: contain;
             scrollbar-width: thin;
@@ -501,8 +501,6 @@
     .sf-gallery {
         --sf-gal-zoom: 1.05;
         --sf-gal-zoom-time: 1200ms;
-        --sf-gal-gap: 0.5rem;
-        --sf-gal-radius: 0.25rem;
         @apply min-w-0;
     }
 
@@ -521,7 +519,7 @@
 
     .sf-gal-layout {
         @apply flex min-w-0 flex-col;
-        gap: var(--sf-gal-gap);
+        gap: var(--sf-gal-gap, 0.5rem);
     }
 
     .sf-gal-stage {
@@ -530,13 +528,13 @@
 
     .sf-gal-main {
         @apply grid min-w-0;
-        gap: var(--sf-gal-gap);
+        gap: var(--sf-gal-gap, 0.5rem);
     }
 
     /* A frame keeps the natural ratio of the photo: contained, never cropped; another ratio gets a neutral letterbox. */
     .sf-gal-item {
         @apply relative m-0 min-w-0 overflow-hidden border-0 p-0;
-        border-radius: var(--sf-gal-radius);
+        border-radius: var(--sf-gal-radius, 0.25rem);
         aspect-ratio: var(--sf-gal-ratio, 3 / 4);
         background: var(--sf-gal-bg, transparent);
     }
@@ -564,12 +562,12 @@
 
     .sf-gal-thumbs {
         @apply hidden min-w-0;
-        gap: var(--sf-gal-gap);
+        gap: var(--sf-gal-gap, 0.5rem);
     }
 
     .sf-gal-thumb {
         @apply relative m-0 shrink-0 overflow-hidden border border-neutral-200 bg-neutral-100 p-0;
-        border-radius: var(--sf-gal-radius);
+        border-radius: var(--sf-gal-radius, 0.25rem);
         width: 4.5rem;
         aspect-ratio: 3 / 4;
     }
@@ -669,7 +667,7 @@
     @media (max-width: 63.999rem) {
         .sf-gallery[data-gal-mobile='carousel'] .sf-gal-main {
             @apply flex overflow-x-auto;
-            gap: var(--sf-gal-gap);
+            gap: var(--sf-gal-gap, 0.5rem);
             scroll-snap-type: x mandatory;
             scrollbar-width: none;
         }

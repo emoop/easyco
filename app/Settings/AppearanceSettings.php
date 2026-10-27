@@ -33,6 +33,11 @@ final class AppearanceSettings
     /** DS-2b: the Design screen's generic zone storage (design-screen-design.md section 4): `design.{zone}.{scope}.draft|published` and ONE compiled document `{hash, zones: {zone: {scope: payload}}}`. */
     public const DESIGN_COMPILED_KEY = 'design.compiled';
 
+    /** GL-2: the values of the two plain sections of the Design screen (JSON, only what differs from the defaults; see App\Storefront\PageDesign\PageDesign). Compiled into the token stylesheet; NOT part of the cached read. */
+    public const PAGE_DESIGN_KEY = 'design.page.global';
+
+    public const PRODUCT_DESIGN_KEY = 'design.product.global';
+
     public const CHECKOUT_HEADER_DRAFT_KEY = 'design.checkout_header.global.draft';
 
     public const CHECKOUT_HEADER_PUBLISHED_KEY = 'design.checkout_header.global.published';

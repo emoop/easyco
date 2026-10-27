@@ -245,6 +245,6 @@ class FieldKindsTest extends TestCase
         $this->assertSame([], FieldKinds::default(['kind' => 'list', 'of' => 'tag']));
         $this->assertNull(FieldKinds::default(['kind' => 'color']));
         $this->assertNull(FieldKinds::default(['kind' => 'media']));
-        $this->assertCount(21, FieldKinds::KINDS);
+        $this->assertCount(22, FieldKinds::KINDS, 'GL-2 added `number` (a decimal in a range) to the 21 kinds');
     }
 }

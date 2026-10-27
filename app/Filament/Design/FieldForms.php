@@ -58,6 +58,9 @@ final class FieldForms
 
         return match ($field['kind']) {
             'int' => TextInput::make($name)->label($label)->numeric()->integer()->minValue((int) ($field['min'] ?? 0))->maxValue((int) ($field['max'] ?? 9999))->default($field['default'] ?? null),
+            // GL-2: a number with a unit shown after the box (`px`, `vw`); the dot is the decimal mark and the range is the field's own (FieldKinds::number). NOT `numeric()`: Filament's NumberStateCast would turn
+            // what was typed into a float (`1;color:red` into 1, 600 digits into INF, which the Livewire response cannot encode), and the validator must see the text exactly as it was typed.
+            'number' => TextInput::make($name)->label($label)->inputMode('decimal')->maxLength(8)->suffix($field['unit'] ?? null)->default($field['default'] ?? null),
             'bool' => Toggle::make($name)->label($label)->default((bool) ($field['default'] ?? false)),
             'enum' => Select::make($name)->label($label)->native(false)->options(array_combine($offer, array_map(static fn (string $o): string => __($prefix.$o), $offer)))->default($field['default'] ?? $field['options'][0]),
             // DS-2a.1: the menus that exist (as the Menus editor lists them) and, as the empty choice, "the menu of this place" (`place` = header | drawer, set by the caller)

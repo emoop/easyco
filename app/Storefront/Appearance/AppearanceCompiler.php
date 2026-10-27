@@ -8,6 +8,7 @@ use App\Storefront\Footer\FooterLayout;
 use App\Storefront\Footer\FooterValidator;
 use App\Storefront\Header\HeaderLayout;
 use App\Storefront\Header\HeaderValidator;
+use App\Storefront\PageDesign\PageDesign;
 use Illuminate\Support\Facades\Storage;
 use InvalidArgumentException;
 
@@ -40,9 +41,10 @@ final class AppearanceCompiler
      * The stylesheet text for these OVERRIDES (setting key => value; a missing key = its default), or null when nothing differs from the defaults.
      *
      * @param  array<string, string>  $overrides
+     * @param  array<string, string>  $pageVars  GL-2: the variables of the two plain Design sections (PageDesign::vars), only what differs from the defaults
      * @throws InvalidArgumentException a value that is not valid for its key
      */
-    public function css(array $overrides, array $metrics = [], array $badgeColors = [], array $footerVars = [], array $headerColors = [], array $checkoutVars = []): ?string
+    public function css(array $overrides, array $metrics = [], array $badgeColors = [], array $footerVars = [], array $headerColors = [], array $checkoutVars = [], array $pageVars = []): ?string
     {
         $effective = $this->effective($overrides);
         $defaults = AppearanceSettings::defaults();
@@ -133,6 +135,15 @@ final class AppearanceCompiler
             $vars[] = "{$variable}: ".strtolower($value).';';
         }
 
+        // GL-2: the page padding, the cards' border and corners, the gallery's gaps and corners, the sticky switch: a CLOSED list of variables with values of the exact form they are written in, checked again here.
+        foreach ($pageVars as $variable => $value) {
+            if (! PageDesign::isValidVar((string) $variable, $value)) {
+                throw new InvalidArgumentException('A page design variable is not valid.');
+            }
+
+            $vars[] = "{$variable}: {$value};";
+        }
+
         $faces = $this->fontFaces($this->fontKeys($effective));
         $badges = $this->badgeClasses($badgeColors);
 
@@ -173,7 +184,7 @@ final class AppearanceCompiler
      */
     public function compile(array $overrides, ?string $previousHash = null, ?array $metrics = null): ?array
     {
-        $css = $this->css($overrides, $metrics ?? $this->publishedMetrics(), $this->storedBadgeColors(), $this->publishedFooterVars(), $this->publishedHeaderColors(), $this->publishedCheckoutVars());
+        $css = $this->css($overrides, $metrics ?? $this->publishedMetrics(), $this->storedBadgeColors(), $this->publishedFooterVars(), $this->publishedHeaderColors(), $this->publishedCheckoutVars(), PageDesign::storedVars(app(SiteSettingsRepository::class)));
 
         if ($css === null) {
             $this->prune(null, $previousHash);

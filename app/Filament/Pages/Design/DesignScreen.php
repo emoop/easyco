@@ -7,6 +7,8 @@ use App\Filament\Design\Zones\CheckoutHeaderZone;
 use App\Filament\Design\Zones\DesignZone;
 use App\Filament\Design\Zones\FooterZone;
 use App\Filament\Design\Zones\HeaderZone;
+use App\Filament\Design\Zones\PageCardsZone;
+use App\Filament\Design\Zones\ProductPageZone;
 use App\Filament\Design\Zones\RestructuresTree;
 use App\Filament\Design\Zones\TopbarZone;
 use App\Filament\NavigationGroup;
@@ -41,7 +43,7 @@ class DesignScreen extends Page
     public const DRAWER_CELL = HeaderZone::DRAWER_CELL;
 
     /** The zones that work, in the order of the list: key => class. */
-    public const ZONES = ['topbar' => TopbarZone::class, 'header' => HeaderZone::class, 'footer' => FooterZone::class, 'checkout' => CheckoutHeaderZone::class];
+    public const ZONES = ['topbar' => TopbarZone::class, 'header' => HeaderZone::class, 'footer' => FooterZone::class, 'checkout' => CheckoutHeaderZone::class, 'page' => PageCardsZone::class, 'product' => ProductPageZone::class];
 
     protected static ?string $slug = 'design';
 
@@ -694,7 +696,7 @@ class DesignScreen extends Page
         Notification::make()->title(__('design.notices.discarded'))->success()->send();
     }
 
-    /** «Върни по подразбиране» (the footer): the seeded layout goes into the TREE only; nothing is stored until «Приложи». */
+    /** «Върни по подразбиране» (the footer, the plain sections): the default goes into the TREE only; nothing is stored until «Приложи» / «Запази». */
     public function resetToDefault(): void
     {
         $this->guard();
@@ -707,13 +709,14 @@ class DesignScreen extends Page
         }
 
         $this->tree = $zone->defaultTree();
-        $this->selected = null;
+        // a form zone's panel IS its selection: it stays selected (GL-2); a tree zone starts with nothing selected
+        $this->selected = $zone->mode() === DesignZone::FORM ? ['kind' => 'form', 'id' => $zone->key()] : null;
         $this->device = $zone->layouts()[0] ?? $this->device;
         $this->invalid = [];
         $this->dirty = true;
         $this->refreshProps();
 
-        Notification::make()->title(__('design.notices.defaulted'))->success()->send();
+        Notification::make()->title(__($zone->mode() === DesignZone::FORM ? 'design.notices.defaulted_form' : 'design.notices.defaulted'))->success()->send();
     }
 
     public function hasDefault(): bool

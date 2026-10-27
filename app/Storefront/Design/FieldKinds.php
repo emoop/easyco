@@ -21,12 +21,12 @@ use App\Storefront\Support\DescriptionSanitizer;
  *  - `too_many_code`   the code of a list that is too long (social, list): `too_many_slot` (header) or `too_many_social` (footer);
  *  - `numeric_string`  an int may be written as a string `^-?\d{1,6}$` (both catalogs do; true by default).
  *
- * Kinds: int, enum, bool, text, textarea, url, email, html, menu, html_block, social, payments (the union of the two catalogs) and, for the Design screen, color, phone, media, category,
+ * Kinds: int, number (GL-2, with decimals), enum, bool, text, textarea, url, email, html, menu, html_block, social, payments (the union of the two catalogs) and, for the Design screen, color, phone, media, category,
  * page, product, tag, attribute and list (not used by any catalog yet).
  */
 final class FieldKinds
 {
-    public const KINDS = ['int', 'enum', 'bool', 'text', 'textarea', 'url', 'email', 'html', 'menu', 'html_block', 'social', 'payments', 'color', 'phone', 'media', 'category', 'page', 'product', 'tag', 'attribute', 'list'];
+    public const KINDS = ['int', 'number', 'enum', 'bool', 'text', 'textarea', 'url', 'email', 'html', 'menu', 'html_block', 'social', 'payments', 'color', 'phone', 'media', 'category', 'page', 'product', 'tag', 'attribute', 'list'];
 
     /** Kinds that hold a list: not allowed as the item kind of a `list` (flat only). */
     private const LIST_KINDS = ['social', 'payments', 'list'];
@@ -43,6 +43,8 @@ final class FieldKinds
         switch ($spec['kind'] ?? null) {
             case 'int':
                 return self::intKind($value, $spec, $path, $fail);
+            case 'number':
+                return self::number($value, $spec, $path, $fail);
             case 'enum':
                 if (! in_array($value, $spec['options'], true)) {
                     $fail($path, 'bad_choice', []);
@@ -107,7 +109,7 @@ final class FieldKinds
 
         return match (true) {
             $kind === 'bool' => false,
-            $kind === 'int' => $spec['min'] ?? 0,
+            $kind === 'int' || $kind === 'number' => $spec['min'] ?? 0,
             in_array($kind, self::LIST_KINDS, true) => [],
             in_array($kind, ['color', 'media', 'category', 'page', 'product', 'tag', 'attribute'], true) => null,
             default => '',
@@ -124,6 +126,37 @@ final class FieldKinds
         $int = self::int($value, (int) ($spec['min'] ?? 0), (int) ($spec['max'] ?? PHP_INT_MAX), $path, $code, $params, $fail, $spec['numeric_string'] ?? true);
 
         return $int ?? (int) ($spec['default'] ?? $spec['min'] ?? 0);
+    }
+
+    /**
+     * GL-2: a number WITH a decimal part in a range (`4`, `4.5`): `min` .. `max`, at most `decimals` (default 2) digits after the dot. A string must be exactly that (a dot, no comma, no exponent, no
+     * unit, nothing after it): `1;color:red` is refused like any other non-number. A whole result is an int (16, not 16.0), so the stored JSON and the compared defaults read the same.
+     *
+     * @param  array<string, mixed>  $spec
+     * @param  callable(string, string, array<string, mixed>=): void  $fail
+     */
+    public static function number(mixed $value, array $spec, string $path, callable $fail): int|float
+    {
+        $min = $spec['min'] ?? 0;
+        $max = $spec['max'] ?? 9999;
+        $decimals = (int) ($spec['decimals'] ?? 2);
+        $number = null;
+
+        if (is_int($value) || (is_float($value) && is_finite($value))) {
+            $number = (float) $value;
+        } elseif (is_string($value) && preg_match('/^\d{1,5}(\.\d{1,'.max(1, $decimals).'})?$/', $value) === 1) {
+            $number = (float) $value;
+        }
+
+        if ($number === null || $number < $min || $number > $max) {
+            $fail($path, 'number_range', ['min' => $min, 'max' => $max]);
+
+            return $spec['default'] ?? $min;
+        }
+
+        $number = round($number, $decimals);
+
+        return floor($number) === $number ? (int) $number : $number;
     }
 
     /**
