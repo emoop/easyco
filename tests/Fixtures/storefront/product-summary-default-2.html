@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    
+    <link rel="icon" href="http://localhost:8000/favicon.svg">
+    <title>Linen shirt — Laravel</title>
+                <link rel="canonical" href="http://localhost:8000/product/linen-shirt">
+                
+            </head>
+<body class="sf-layout">
+    <div hidden id="sf-i18n" data-sf-i18n
+              data-m-cart-empty-text="Your cart is empty."
+              data-m-checkout-label="Checkout"
+              data-m-adding="Adding…"
+              data-m-added="Added to your cart."
+              data-m-view-cart="View cart"
+              data-m-generic-error="Something went wrong. Please try again in a moment."
+              data-m-choice-unavailable="This option is not available."
+              data-m-quantity="Quantity"
+              data-m-remove="Remove"
+              data-m-removed="Item removed."
+              data-m-updated="Cart updated."
+              data-m-product="Product"
+              data-m-unit-price="Price"
+              data-m-line-total="Total"
+              data-m-unpriced="This item is no longer available."
+              data-m-price-changed="The price changed since you added this item."
+              data-m-promo-label="Promo code"
+              data-m-promo-apply="Apply"
+              data-m-promo-remove="Remove code"
+              data-m-promo-applied="Code :code applied."
+              data-m-promo-invalid="The code :code cannot be used now."
+              data-m-promo-removed="Code removed."
+              data-m-subtotal="Subtotal"
+              data-m-discount="Discount (:code)"
+              data-m-total="Total"
+              data-m-cart-lines="Cart items"
+              data-m-cart-empty-title="Your cart is empty"
+              data-m-cart-empty-hint="Add some products and they will appear here."
+              data-m-cart-to-shop="Go to the shop"
+              data-m-cart-categories="Shop by category"
+              data-m-cart-summary="Summary"
+              data-m-cart-shipping-note="Shipping is calculated at checkout"
+              data-m-qty-decrease="Decrease quantity"
+              data-m-qty-increase="Increase quantity"
+              data-m-retry="Try again"
+              data-m-ck-placing="Placing your order…"
+              data-m-ck-loading-options="Loading delivery options…"
+              data-m-ck-enter-country="Enter your country to see delivery options."
+              data-m-ck-preview-note="These prices are indicative. Enter your city to see the final delivery price."
+              data-m-ck-from="from :price"
+              data-m-ck-choose-method="Choose a delivery method."
+              data-m-ck-no-methods="No delivery method is available for this destination."
+              data-m-ck-courier-other="Other"
+              data-m-ck-unavailable="Not available right now"
+              data-m-ck-goods="Goods"
+              data-m-ck-delivery="Delivery"
+              data-m-ck-free="Free"
+              data-m-ck-total="Total"
+              data-m-ck-to-be-chosen="Choose a delivery method"
+              data-m-ck-cart-changed="Your cart has changed. Please check it and try again."
+              data-m-ck-price-changed="The delivery price has changed to :price. Please check it and press Place order again."
+              data-m-ck-region-required="Enter your region."
+              data-m-ck-note-counter=":count / :max"
+              data-m-ck-errors-intro="Please correct the following:"
+              data-m-ck-kind-address="To address"
+              data-m-ck-kind-office="To office"
+              data-m-ck-kind-locker="To locker"
+              data-m-ck-item-count=":count × :name"
+              data-m-ck-choose-courier="Choose a courier."
+              data-m-ck-choose-type="Choose how you want to receive it."
+              data-m-ck-choice-gone="Your earlier delivery choice is no longer available for this destination. Please choose again."
+              data-m-ck-summary-show="Show order"
+              data-m-ck-payment-unavailable="This payment method is not available for this order. Please choose another one."
+              data-m-ck-contact-shop="Please use the contact methods to ask about ordering from the site."
+              data-m-ck-terms-required="Please accept the terms and conditions to place the order."
+              data-m-ck-terms-reload="Reload the page to see the current terms."
+              data-m-ck-summary-hide="Hide order"
+          data-m-cart-count-label="Items in your cart: :count"
+          data-cart-url="/cart"
+     data-home-url="/"
+     data-checkout-url="/checkout"></div>
+    
+                    
+        <header class="sf-header sf-hdr sf-hdr-d-sticky sf-hdr-m-sticky" data-sf-header>
+    <div class="sf-hdr-layout sf-hdr-desktop">
+                                                        <div class="sf-hdr-row sf-hdr-row-main">
+    <div class="sf-hdr-grid">
+                    <div class="sf-hdr-slot sf-hdr-left">
+                                                                </div>
+                    <div class="sf-hdr-slot sf-hdr-center">
+                                    <a class="sf-logo sf-logo-desktop" href="/">
+    <img src="http://localhost:8000/images/logo.svg" alt="Laravel" width="596" height="150">
+</a>
+                            </div>
+                    <div class="sf-hdr-slot sf-hdr-right">
+                                    <a class="sf-cart" href="/cart" data-sf-cart-link>
+    <svg class="sf-cart-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6 8h12l1 12H5L6 8z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/></svg>
+    <span class="sf-cart-label sf-sr-only">Cart</span>
+    <span class="sf-cart-count" data-sf-cart-count hidden></span>
+</a>
+                            </div>
+            </div>
+</div>
+                                            </div>
+    <div class="sf-hdr-layout sf-hdr-mobile">
+                                                        <div class="sf-hdr-row sf-hdr-row-main">
+    <div class="sf-hdr-grid">
+                    <div class="sf-hdr-slot sf-hdr-left">
+                                    <button class="sf-menu-toggle" type="button" aria-controls="sf-drawer" aria-expanded="false" data-sf-menu-toggle>
+    <svg class="sf-menu-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true" focusable="false"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/></svg>
+    <span class="sf-sr-only">Menu</span>
+</button>
+                            </div>
+                    <div class="sf-hdr-slot sf-hdr-center">
+                                    <a class="sf-logo sf-logo-mobile" href="/">
+    <img src="http://localhost:8000/images/logo.svg" alt="Laravel" width="596" height="150">
+</a>
+                            </div>
+                    <div class="sf-hdr-slot sf-hdr-right">
+                                    <a class="sf-cart" href="/cart" data-sf-cart-link>
+    <svg class="sf-cart-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6 8h12l1 12H5L6 8z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/></svg>
+    <span class="sf-cart-label sf-sr-only">Cart</span>
+    <span class="sf-cart-count" data-sf-cart-count hidden></span>
+</a>
+                            </div>
+            </div>
+</div>
+                        </div>
+                <div class="sf-drawer sf-drawer-left sf-drawer-upper" id="sf-drawer" data-sf-drawer>
+    <div class="sf-drawer-overlay" data-sf-drawer-close></div>
+    <div class="sf-drawer-panel" role="dialog" aria-modal="true" aria-labelledby="sf-drawer-title" tabindex="-1">
+        <div class="sf-drawer-head">
+                            <p class="sf-drawer-title" id="sf-drawer-title">Menu</p>
+                        <button class="sf-drawer-close" type="button" data-sf-drawer-close>
+                <svg class="sf-close-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true" focusable="false"><path d="M6 6l12 12"/><path d="M18 6L6 18"/></svg>
+                <span class="sf-sr-only">Close the menu</span>
+            </button>
+        </div>
+        <div class="sf-drawer-body">
+                                                                                                                                        </div>
+    </div>
+</div>
+    </header>
+        <main class="sf-main">
+            <nav class="sf-breadcrumbs" aria-label="You are here">
+    <ol class="sf-breadcrumbs-list">
+        <li class="sf-breadcrumb"><a href="/">Home</a></li>
+                                    <li class="sf-breadcrumb sf-breadcrumb-current" aria-current="page">Linen shirt</li>
+                        </ol>
+</nav>
+            <article class="sf-product">
+        <div class="sf-product-main">
+            <section class="sf-gallery sf-gal-w-65" aria-label="Product images" data-sf-gallery
+          data-gal-desktop="grid"  data-gal-mobile="carousel"  data-gal-odd="same"  data-gal-zoom="light" >
+            <div class="sf-gal-placeholder sf-image-placeholder" aria-hidden="true" role="presentation"></div>
+    </section>
+            <section class="sf-summary">
+                                    <p class="sf-product-brand">Acme</p>
+                                <h1 class="sf-title">Linen shirt</h1>
+                                                    <p class="sf-price">
+        <span class="sf-price-current">
+                    40.00 € – 45.00 €
+            </span>
+</p>
+                                                    <p class="sf-stock sf-stock-in">In stock</p>
+                                                    <div class="sf-variations">
+                        <label class="sf-variation-label" for="sf-variation">Choose an option</label>
+                        <select class="sf-variation-select" id="sf-variation" name="variation">
+                                                                                            <option value="201" disabled>
+                                                                            S — 40.00 € (unavailable)
+                                                                    </option>
+                                                                                            <option value="202" >
+                                                                            M — 45.00 €
+                                                                    </option>
+                                                    </select>
+                    </div>
+                                <div class="sf-add-to-cart-box" data-sf-add-to-cart>
+                    <button class="sf-add-to-cart" type="button" disabled data-variation-id="202">Add to cart</button>
+                    <p class="sf-cart-status" role="status" aria-live="polite" data-sf-cart-status></p>
+                </div>
+            </section>
+        </div>
+            </article>
+    </main>
+    
+    <footer class="sf-footer">
+        <div class="sf-footer-inner">
+            <div class="sf-footer-brand">
+                <span class="sf-footer-name">Laravel</span>
+                <a class="sf-footer-home" href="/">Home</a>
+            </div>
+            
+                    </div>
+    </footer>
+</body>
+</html>

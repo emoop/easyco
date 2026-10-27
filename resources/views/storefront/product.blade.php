@@ -10,47 +10,9 @@
         <div class="sf-product-main">
             @include('storefront.partials.gallery', ['product' => $product, 'gallerySettings' => $gallerySettings ?? null])
             <section class="sf-summary">
-                @if ($product->brand !== null)
-                    <p class="sf-product-brand">{{ $product->brand['name'] }}</p>
-                @endif
-                <h1 class="sf-title">{{ $product->name }}</h1>
-                @if ($product->shortDescription !== null && $product->shortDescription !== '')
-                    <p class="sf-short-description">{{ $product->shortDescription }}</p>
-                @endif
-                @if ($product->price !== null)
-                    @include('storefront.partials.price', ['price' => $product->price])
-                @endif
-                @if ($product->inStock)
-                    <p class="sf-stock sf-stock-in">{{ __('storefront.in_stock') }}</p>
-                @else
-                    <p class="sf-stock sf-stock-out">{{ __('storefront.out_of_stock') }}</p>
-                @endif
-                @if ($product->type === 'variable' && $product->variations !== [])
-                    <div class="sf-variations">
-                        <label class="sf-variation-label" for="sf-variation">{{ __('storefront.choose_variation') }}</label>
-                        <select class="sf-variation-select" id="sf-variation" name="variation">
-                            @foreach ($product->variations as $variation)
-                                @php
-                                    $available = $variation->purchasable && $variation->inStock;
-                                    $priceText = $variation->price !== null ? $prices->format($variation->price->fromMinor, $variation->price->currency) : '';
-                                @endphp
-                                <option value="{{ $variation->id }}" @disabled(! $available)>
-                                    @if ($priceText === '')
-                                        {{ $variation->label }}
-                                    @elseif ($available)
-                                        {{ __('storefront.variation_option', ['label' => $variation->label, 'price' => $priceText]) }}
-                                    @else
-                                        {{ __('storefront.variation_option_unavailable', ['label' => $variation->label, 'price' => $priceText, 'reason' => __('storefront.unavailable')]) }}
-                                    @endif
-                                </option>
-                            @endforeach
-                        </select>
-                    </div>
-                @endif
-                <div class="sf-add-to-cart-box" data-sf-add-to-cart>
-                    <button class="sf-add-to-cart" type="button" disabled data-variation-id="{{ $purchasable?->id }}">{{ __('storefront.add_to_cart') }}</button>
-                    <p class="sf-cart-status" role="status" aria-live="polite" data-sf-cart-status></p>
-                </div>
+{{-- SC-1: the right column is the published layout's components in order. The directives start at the left edge on purpose: each partial prints the page's own markup with its own indentation, so nothing is added between them. --}}@foreach ($summary ?? \App\Storefront\ProductSummary\ProductSummaryView::prepare(null) as $component)
+@php($part = $__env->make('storefront.partials.summary.'.$component['type'], \Illuminate\Support\Arr::except(get_defined_vars(), ['__data', '__path']))->render())
+{!! substr($part, 1) !!}@endforeach
             </section>
         </div>
         @if ($descriptionHtml !== '')

@@ -641,3 +641,13 @@
 .ds-note-preview {
     margin-top: 0.25rem;
 }
+
+/* SC-1: the «Дясна колона» schema is one flat, ordered list of component chips (no rows or cells) */
+.ds-chips-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}

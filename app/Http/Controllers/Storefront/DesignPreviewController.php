@@ -10,7 +10,11 @@ use App\Storefront\Appearance\StorefrontAppearance;
 use App\Storefront\CheckoutHeader\CheckoutHeaderCatalog;
 use App\Storefront\CheckoutHeader\CheckoutHeaderCompiler;
 use App\Storefront\CheckoutHeader\CheckoutHeaderDrafts;
+use App\Storefront\ProductSummary\ProductSummaryCatalog;
+use App\Storefront\ProductSummary\ProductSummaryCompiler;
+use App\Storefront\ProductSummary\ProductSummaryDrafts;
 use App\Storefront\Reader\CatalogReader;
+use App\Storefront\ReadModels\ListingQuery;
 use App\Storefront\Support\NotFoundResponse;
 use App\Storefront\Support\PriceFormatter;
 use App\Storefront\Support\SeoMeta;
@@ -20,7 +24,7 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\URL;
 
 /**
- * GET /design-preview?zone=checkout_header|topbar (route `storefront.design.preview`): the preview of a zone of the «Дизайн» screen that has no preview route of its own (DS-2b; the top banner since DS-5). Reached only through a
+ * GET /design-preview?zone=checkout_header|topbar|product_summary (route `storefront.design.preview`): the preview of a zone of the «Дизайн» screen that has no preview route of its own (DS-2b; the top banner since DS-5; the product page's right column since SC-1). Reached only through a
  * temporary SIGNED url (30 minutes); a missing or bad signature, or a zone that is not known here, is the storefront's own 404. `noindex` and `Cache-Control: private, no-store`: a draft is
  * never public and never cached. The zone `checkout_header` shows the CART page with the admin's DRAFT simplified header (an empty cart is fine: the header is what matters); its colours and
  * logo heights go into a small preview stylesheet (CSS variables, like the published ones) linked after the token stylesheet, deleted an hour later. The header and footer previews keep their
@@ -34,12 +38,16 @@ final class DesignPreviewController extends Controller
     {
         $zone = $request->query('zone');
 
-        if (! URL::hasValidSignature($request) || ! in_array($zone, [CheckoutHeaderCatalog::ZONE, 'topbar'], true)) {
+        if (! URL::hasValidSignature($request) || ! in_array($zone, [CheckoutHeaderCatalog::ZONE, 'topbar', ProductSummaryCatalog::ZONE], true)) {
             return NotFoundResponse::make();
         }
 
         if ($zone === 'topbar') {
             return $this->topbar($reader, $appearance);
+        }
+
+        if ($zone === ProductSummaryCatalog::ZONE) {
+            return $this->productSummary($reader, $appearance);
         }
 
         $draft = CheckoutHeaderDrafts::draft();
@@ -71,6 +79,28 @@ final class DesignPreviewController extends Controller
         $view->with('seo', ['title' => $seo->forHome(route('storefront.home', [], false))['title'], 'description' => '', 'canonical' => null, 'noindex' => true]);
 
         return response($view)
+            ->header('X-Robots-Tag', 'noindex')
+            ->header('Cache-Control', 'private, no-store');
+    }
+
+    /**
+     * SC-1: the product page of the FIRST visible product with the working copy of the right column (the draft, else the published layout, else the default one) injected for THIS request only
+     * (StorefrontAppearance::previewProductSummary). The storefront itself reads the published layout only. An empty shop has no product to show: the storefront's own 404 (the panel says so under the
+     * preview). `noindex`, `no-store`.
+     */
+    private function productSummary(CatalogReader $reader, StorefrontAppearance $appearance): Response
+    {
+        $slug = $reader->listing(ListingQuery::fromRequestArray([]))->items[0]->slug ?? null;
+
+        if ($slug === null) {
+            return NotFoundResponse::make();
+        }
+
+        $appearance->previewProductSummary(ProductSummaryCompiler::compiled(ProductSummaryDrafts::draft() ?? ProductSummaryDrafts::published()));
+
+        $page = app(ProductController::class)->show($slug, $reader, app(SeoMeta::class), app(\App\Settings\Contracts\SiteSettingsRepository::class), $appearance);
+
+        return ($page instanceof \Illuminate\Contracts\View\View ? response($page) : $page)
             ->header('X-Robots-Tag', 'noindex')
             ->header('Cache-Control', 'private, no-store');
     }

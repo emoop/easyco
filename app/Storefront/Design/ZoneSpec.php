@@ -5,6 +5,7 @@ namespace App\Storefront\Design;
 use App\Storefront\Footer\FooterLayout;
 use App\Storefront\Header\HeaderCatalog;
 use App\Storefront\Header\HeaderLayout;
+use App\Storefront\ProductSummary\ProductSummaryCatalog;
 use InvalidArgumentException;
 
 /**
@@ -12,11 +13,11 @@ use InvalidArgumentException;
  * whole zone may hold, which types may appear only once and which types the zone allows. Every number is READ from the constants the existing validators use (HeaderLayout, FooterLayout,
  * HeaderCatalog): nothing is copied, so a limit changed there changes here.
  *
- * Zones now: `header.desktop`, `header.mobile` (the drawer is an extra cell with its own limit and types), `footer.upper`, `footer.lower`.
+ * Zones now: `header.desktop`, `header.mobile` (the drawer is an extra cell with its own limit and types), `footer.upper`, `footer.lower`, `summary.main` (SC-1: the product page's right column, one row of one cell).
  */
 final class ZoneSpec
 {
-    public const ZONES = ['header.desktop', 'header.mobile', 'footer.upper', 'footer.lower'];
+    public const ZONES = ['header.desktop', 'header.mobile', 'footer.upper', 'footer.lower', 'summary.main'];
 
     /**
      * @param  list<string>|null  $rowNames  fixed row names (null = free rows, minRows..maxRows)
@@ -55,6 +56,7 @@ final class ZoneSpec
                 ['drawer' => ['max' => HeaderLayout::MAX_DRAWER, 'types' => HeaderCatalog::DRAWER_TYPES]]),
             'footer.upper' => new self($zone, null, 1, FooterLayout::MAX_ROWS, null, 1, FooterLayout::MAX_COLUMNS, FooterLayout::MAX_BLOCKS_PER_COLUMN, FooterLayout::MAX_BLOCKS, [], null),
             'footer.lower' => new self($zone, ['line'], 1, 1, ['line'], 1, 1, 1, 1, ['text_line' => 1], ['text_line']),
+            'summary.main' => new self($zone, ['main'], 1, 1, ['main'], 1, 1, ProductSummaryCatalog::MAX_COMPONENTS, ProductSummaryCatalog::MAX_COMPONENTS, array_map(static fn (array $d): int => $d['max'], ProductSummaryCatalog::all()), null),
             default => throw new InvalidArgumentException('Unknown zone: '.mb_substr($zone, 0, 40)),
         };
     }

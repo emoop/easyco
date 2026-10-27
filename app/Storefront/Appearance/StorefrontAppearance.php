@@ -53,6 +53,12 @@ final class StorefrontAppearance
     /** The compiled footer the footer preview shows (the admin's DRAFT: {layout, menus, blocks}), set for ONE request by the preview controller; null on every public request. */
     private ?array $footerOverride = null;
 
+    /** SC-1: the compiled right column of the product page ({layout, blocks}) the admin's signed preview shows (the DRAFT), set for ONE request by the preview controller; null on every public request. */
+    private ?array $summaryOverride = null;
+
+    /** The prepared right column (what the product view loops over); null = not computed yet. @var list<array{type: string, html: string}>|null */
+    private ?array $summaryPrepared = null;
+
     /** The prepared footer (what the views print) for this request; false = not computed yet. */
     private array|false|null $footerPrepared = false;
 
@@ -104,6 +110,7 @@ final class StorefrontAppearance
         $this->headerLayout = null;
         $this->menus = null;
         $this->footerPrepared = false;
+        $this->summaryPrepared = null;
         $this->data = $this->rebuild();
     }
 
@@ -350,6 +357,30 @@ final class StorefrontAppearance
         }
 
         return $this->footerPrepared = FooterView::prepare($validation->layout, CompiledMenus::read($stored['menus']), $blocks);
+    }
+
+    /**
+     * SC-1: the components of the product page's right column, in order: the PUBLISHED layout (read from the one cached payload, no query, validated again on every read), or the default layout when
+     * none is published or it does not validate. During a signed preview, the draft.
+     *
+     * @return list<array{type: string, html: string}>
+     */
+    public function productSummary(): array
+    {
+        if ($this->summaryPrepared !== null) {
+            return $this->summaryPrepared;
+        }
+
+        $stored = $this->summaryOverride ?? \App\Storefront\ProductSummary\ProductSummaryCompiler::published($this->data()['design'] ?? null);
+
+        return $this->summaryPrepared = \App\Storefront\ProductSummary\ProductSummaryView::prepare($stored);
+    }
+
+    /** For ONE request (SC-1, the admin's signed preview): show this compiled right column ({layout, blocks}, validated) instead of the published one. Never called on a public request. @param array<string, mixed> $compiled */
+    public function previewProductSummary(array $compiled): void
+    {
+        $this->summaryOverride = $compiled;
+        $this->summaryPrepared = null;
     }
 
     /** For ONE request: show this compiled footer ({layout, menus, blocks}) instead of the published one, and link the stylesheet with its colours. Never called on a public request. */

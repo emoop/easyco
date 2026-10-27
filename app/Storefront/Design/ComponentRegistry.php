@@ -18,7 +18,7 @@ use InvalidArgumentException;
  */
 final class ComponentRegistry
 {
-    public const ZONES = ['header', 'footer', 'checkout_header'];
+    public const ZONES = ['header', 'footer', 'checkout_header', 'product_summary'];
 
     /**
      * The component set of a zone, by type.
@@ -31,6 +31,7 @@ final class ComponentRegistry
             'header' => self::header(),
             'footer' => self::footer(),
             'checkout_header' => self::checkoutHeader(),
+            'product_summary' => self::productSummary(),
             default => throw new InvalidArgumentException('Unknown zone: '.mb_substr($zone, 0, 40)),
         };
     }
@@ -65,6 +66,22 @@ final class ComponentRegistry
             'label' => 'design.zones.checkout', 'icon' => 'checkout_header', 'zones' => ['checkout_header'], 'supports' => [], 'limits' => ['max_per_layout' => 1], 'requires_route' => null,
             'fields' => \App\Storefront\CheckoutHeader\CheckoutHeaderCatalog::fields(), 'view' => 'storefront.partials.checkout-header', 'builtin' => true,
         ]];
+    }
+
+    /** SC-1: the components of the product page's right column (a closed list, no hook). @return array<string, array<string, mixed>> */
+    private static function productSummary(): array
+    {
+        $out = [];
+
+        foreach (\App\Storefront\ProductSummary\ProductSummaryCatalog::all() as $type => $descriptor) {
+            $out[$type] = [
+                'label' => $descriptor['label'], 'icon' => $type, 'zones' => ['summary.main'], 'supports' => [],
+                'limits' => ['max_per_layout' => $descriptor['max']], 'requires_route' => null,
+                'fields' => $descriptor['schema'], 'view' => $descriptor['view'], 'builtin' => true,
+            ];
+        }
+
+        return $out;
     }
 
     /** @return array<string, array<string, mixed>> */

@@ -6,9 +6,11 @@ use App\Filament\Concerns\AuthorizesViaStaffPermission;
 use App\Filament\Design\Zones\CheckoutHeaderZone;
 use App\Filament\Design\Zones\DesignZone;
 use App\Filament\Design\Zones\FooterZone;
+use App\Filament\Design\Zones\HasOneCell;
 use App\Filament\Design\Zones\HeaderZone;
 use App\Filament\Design\Zones\PageCardsZone;
 use App\Filament\Design\Zones\ProductPageZone;
+use App\Filament\Design\Zones\ProductSummaryZone;
 use App\Filament\Design\Zones\RestructuresTree;
 use App\Filament\Design\Zones\TopbarZone;
 use App\Filament\NavigationGroup;
@@ -45,7 +47,7 @@ class DesignScreen extends Page
     public const DRAWER_CELL = HeaderZone::DRAWER_CELL;
 
     /** The zones that work, in the order of the list: key => class. */
-    public const ZONES = ['topbar' => TopbarZone::class, 'header' => HeaderZone::class, 'footer' => FooterZone::class, 'checkout' => CheckoutHeaderZone::class, 'page' => PageCardsZone::class, 'product' => ProductPageZone::class];
+    public const ZONES = ['topbar' => TopbarZone::class, 'header' => HeaderZone::class, 'footer' => FooterZone::class, 'checkout' => CheckoutHeaderZone::class, 'page' => PageCardsZone::class, 'product' => ProductPageZone::class, 'summary' => ProductSummaryZone::class];
 
     protected static ?string $slug = 'design';
 
@@ -193,12 +195,22 @@ class DesignScreen extends Page
         $this->tree = $zone->load();
         $layouts = $zone->layouts();
         $this->device = in_array($this->device, $layouts, true) ? $this->device : ($layouts[0] ?? 'desktop');
-        $this->selected = $zone->mode() === DesignZone::FORM ? ['kind' => 'form', 'id' => $zone->key()] : null;
+        $this->selected = $this->initialSelection($zone);
         $this->dirty = false;
         $this->panelDirty = false;
         $this->invalid = [];
         $this->previewUrl = $zone->previewUrl();
         $this->refreshProps();
+    }
+
+    /** A form zone's panel IS its selection; a flat list (SC-1) starts with its one cell selected, so the palette knows where a new component goes; any other tree zone starts with nothing selected. @return array{kind: string, id: string}|null */
+    private function initialSelection(DesignZone $zone): ?array
+    {
+        return match (true) {
+            $zone->mode() === DesignZone::FORM => ['kind' => 'form', 'id' => $zone->key()],
+            $zone instanceof HasOneCell => ['kind' => 'cell', 'id' => $zone->onlyCell()],
+            default => null,
+        };
     }
 
     /** @return array<string, mixed> */
@@ -433,7 +445,9 @@ class DesignScreen extends Page
         $entry = collect($this->palette())->firstWhere('type', $type);
 
         if ($entry === null) {
-            $this->refuse('unknown');
+            // SC-1: a component at its most (a second `title`, a sixth HTML block) is not offered: the refusal says why
+            $why = method_exists($this->zoneObject(), 'unavailableReason') ? $this->zoneObject()->unavailableReason($type) : null;
+            $why === null ? $this->refuse('unknown') : $this->refuse(null, $why);
 
             return;
         }
@@ -766,7 +780,7 @@ class DesignScreen extends Page
     }
 
     /**
-     * «Начални настройки» (the footer, the plain sections): the zone's initial values go into the WORKING COPY and are stored as the draft at once; nothing reaches the shop until «Публикувай».
+     * «Начални настройки» (the footer, the plain sections, the right column): the zone's initial values go into the WORKING COPY and are stored as the draft at once; nothing reaches the shop until «Публикувай».
      */
     public function resetToDefault(): void
     {
@@ -781,7 +795,7 @@ class DesignScreen extends Page
 
         $this->tree = $zone->defaultTree();
         // a form zone's panel IS its selection: it stays selected (GL-2); a tree zone starts with nothing selected
-        $this->selected = $zone->mode() === DesignZone::FORM ? ['kind' => 'form', 'id' => $zone->key()] : null;
+        $this->selected = $this->initialSelection($zone);
         $this->device = $zone->layouts()[0] ?? $this->device;
         $this->invalid = [];
         $this->dirty = true;

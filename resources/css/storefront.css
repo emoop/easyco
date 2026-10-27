@@ -769,6 +769,16 @@
         @apply m-0 text-neutral-600;
     }
 
+    /* SC-1: the product's SKU, a small muted line (the right column's `sku` component) */
+    .sf-sku {
+        @apply m-0 text-sm text-neutral-500;
+    }
+
+    /* SC-1: an HTML block of the right column: pictures never run out of the column */
+    .sf-summary-html img {
+        @apply h-auto max-w-full;
+    }
+
     .sf-variations {
         @apply mt-2 flex flex-col gap-1;
     }

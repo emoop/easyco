@@ -181,7 +181,7 @@ class DesignDraftModelTest extends TestCase
 
     public function test_publish_with_nothing_to_publish_changes_nothing_and_recompiles_nothing(): void
     {
-        foreach (['page', 'product', 'topbar', 'header', 'footer', 'checkout'] as $zone) {
+        foreach (['page', 'product', 'topbar', 'header', 'footer', 'checkout', 'summary'] as $zone) {
             Cache::forever(StorefrontAppearance::CACHE_KEY, ['stale' => true]);
 
             $this->screen($zone)->call('publish');
@@ -339,7 +339,7 @@ class DesignDraftModelTest extends TestCase
 
     public function test_every_action_of_every_zone_is_refused_without_the_permission(): void
     {
-        foreach (['topbar', 'header', 'footer', 'checkout', 'page', 'product'] as $zone) {
+        foreach (['topbar', 'header', 'footer', 'checkout', 'page', 'product', 'summary'] as $zone) {
             foreach (['apply', 'publish', 'discard', 'resetToDefault'] as $call) {
                 $this->actingAsStaff('Administrator');
                 $screen = $this->screen($zone);

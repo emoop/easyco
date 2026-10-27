@@ -11,6 +11,8 @@ namespace App\Storefront\ReadModels;
  *
  * `options` lists, per attribute (in definition order), its values (in the attribute's own value order) that occur on
  * the shown variations; empty for a SIMPLE product. `images` are the READY gallery images, first = main.
+ *
+ * SC-1: `sku` is the product-level SKU (`base_sku`), or null when it has none; like `gallery` it is for the markup only and is NOT in toArray() (the JSON contract is unchanged).
  */
 final readonly class ProductPage
 {
@@ -40,6 +42,7 @@ final readonly class ProductPage
         public array $variations,
         public array $badges,
         public array $gallery = [],
+        public ?string $sku = null,
     ) {
     }
 

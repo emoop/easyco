@@ -450,3 +450,6 @@ Reviews е **отделен малък домейн**. Зависи от Catalog
 **GL-2.1 as built (toolbar).** The two plain sections of the Design screen show the top banner's toolbar («Запази», no draft, so no «Приложи» and no «Публикувай»); the one extra button is «Върни по подразбиране», which GL-2 gives them on purpose.
 
 **DS-5 as built (one button model).** Every zone of the Design screen, the two plain sections included, has a working copy (a draft) beside its published value; «Приложи» stores the draft, «Публикувай» publishes it (and writes `storefront.gallery.*` for the product section), «Начални настройки» fills the working copy. See `design-screen-design.md`, «DS-5 as built».
+
+
+**SC-1 as built (the right column is a list of components).** The product page's right column prints the published layout of the zone «Дясна колона» (`design.product_summary.global.*`, compiled into `design.compiled`): brand, name, SKU, short description, price, stock, purchase (the variation select and the add-to-cart box, unchanged) and HTML blocks, in the order the merchant chose; the default layout is today's page byte for byte. See `design-screen-design.md`, «SC-1 as built».

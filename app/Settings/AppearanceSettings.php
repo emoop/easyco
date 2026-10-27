@@ -49,6 +49,11 @@ final class AppearanceSettings
 
     public const CHECKOUT_HEADER_PUBLISHED_KEY = 'design.checkout_header.global.published';
 
+    /** SC-1: the right column of the product page («Дясна колона»): its working copy and its published layout (`{components: [{type, settings}]}`). */
+    public const SUMMARY_DRAFT_KEY = 'design.product_summary.global.draft';
+
+    public const SUMMARY_PUBLISHED_KEY = 'design.product_summary.global.published';
+
     public const FOOTER_DRAFT_KEY = 'footer.layout.draft';
 
     public const FOOTER_PUBLISHED_KEY = 'footer.layout.published';

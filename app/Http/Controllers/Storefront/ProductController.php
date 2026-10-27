@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Storefront;
 use App\Http\Controllers\Controller;
 use App\Settings\Contracts\SiteSettingsRepository;
 use App\Settings\GallerySettings;
+use App\Storefront\Appearance\StorefrontAppearance;
 use App\Storefront\Reader\CatalogReader;
 use App\Storefront\Support\DescriptionSanitizer;
 use App\Storefront\Support\NotFoundResponse;
@@ -23,6 +24,7 @@ use Illuminate\Http\Response;
  *   categories       list<App\Storefront\ReadModels\CategoryNode>  the menu (free once the reader's CategoryIndex is loaded)
  *   seo              array{title: string, description: string, canonical: string}
  *   gallerySettings  App\Settings\GallerySettings  the gallery's modes, width, odd-last rule and hover zoom (closed sets, with defaults)
+ *   summary          list<array{type: string, html: string}>  SC-1: the components of the right column in the order of the PUBLISHED layout (the default layout when none is published)
  *
  * A missing, hidden, draft, archived or soft-deleted product, or an invalid slug: the storefront's one 404
  * (NotFoundResponse). A slug that matches only by case (the database collation) is a 301 to the canonical url that the
@@ -30,7 +32,7 @@ use Illuminate\Http\Response;
  */
 final class ProductController extends Controller
 {
-    public function show(string $slug, CatalogReader $reader, SeoMeta $seo, SiteSettingsRepository $settings): View|RedirectResponse|Response
+    public function show(string $slug, CatalogReader $reader, SeoMeta $seo, SiteSettingsRepository $settings, StorefrontAppearance $appearance): View|RedirectResponse|Response
     {
         $product = $reader->product($slug);
 
@@ -48,6 +50,7 @@ final class ProductController extends Controller
             'categories' => $reader->categoryTree(),
             'seo' => $seo->forProduct($product),
             'gallerySettings' => GallerySettings::fromRepository($settings),
+            'summary' => $appearance->productSummary(),
         ]);
     }
 }

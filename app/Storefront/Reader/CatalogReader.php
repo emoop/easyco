@@ -84,7 +84,7 @@ final class CatalogReader
 
         $product = $this->visibility->products(ProductModel::query())
             ->where('catalog_products.slug', $slug)
-            ->select(['id', 'type', 'name', 'slug', 'short_description', 'description', 'brand_id'])
+            ->select(['id', 'type', 'name', 'slug', 'short_description', 'description', 'brand_id', 'base_sku'])
             ->with('brand:id,name,slug')
             ->first();
 
@@ -169,6 +169,7 @@ final class CatalogReader
             variations: $views,
             badges: [],
             gallery: $gallery['items'],
+            sku: $product->base_sku === null || trim((string) $product->base_sku) === '' ? null : (string) $product->base_sku,
         );
     }
 

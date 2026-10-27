@@ -21,7 +21,7 @@ class DesignToolbarParityTest extends TestCase
     use RefreshDatabase;
 
     /** The zones and whether each has initial settings («Начални настройки»). */
-    private const ZONES = ['topbar' => false, 'header' => false, 'footer' => true, 'checkout' => false, 'page' => true, 'product' => true];
+    private const ZONES = ['topbar' => false, 'header' => false, 'footer' => true, 'checkout' => false, 'page' => true, 'product' => true, 'summary' => true];
 
     protected function setUp(): void
     {

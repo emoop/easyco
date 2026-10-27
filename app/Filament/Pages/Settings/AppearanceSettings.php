@@ -9,6 +9,7 @@ use App\Rules\PlainText;
 use App\Settings\AppearanceSettings as Appearance;
 use App\Settings\Contracts\SiteSettingsRepository;
 use App\Storefront\Appearance\AppearanceWriter;
+use App\Storefront\Appearance\BannerDrafts;
 use BackedEnum;
 use Closure;
 use EasyCo\Staff\Enums\Permission;
@@ -244,6 +245,9 @@ class AppearanceSettings extends Page
     public function save(): void
     {
         AppearanceWriter::save($this->form->getState());
+
+        // SC-1 (Part A): this page saves the banner LIVE; a banner draft of the «Дизайн» screen would now be stale and would overwrite what was just saved on its «Публикувай»
+        BannerDrafts::raw() !== null && BannerDrafts::forget('superseded_by_appearance');
 
         Notification::make()
             ->title(__('appearance.saved_notification'))

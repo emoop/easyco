@@ -6,6 +6,7 @@ use App\Filament\NavigationGroup;
 use App\Filament\Pages\Settings\AppearanceSettings as AppearancePage;
 use App\Settings\AppearanceSettings;
 use App\Settings\Contracts\SiteSettingsRepository;
+use App\Storefront\Appearance\BannerDrafts;
 use App\Storefront\Appearance\StorefrontAppearance;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
@@ -25,7 +26,7 @@ class AppearanceSettingsPageTest extends TestCase
     use BuildsShippingZones;
     use RefreshDatabase;
 
-    private const HELP_ANCHORS = ['action-appearance-colors', 'action-appearance-fonts', 'action-appearance-banner', 'action-appearance-themes', 'action-appearance-header', 'action-appearance-footer', 'action-appearance-menus', 'action-appearance-html-blocks', 'action-appearance-page', 'action-appearance-product-page', 'action-appearance-design-buttons'];
+    private const HELP_ANCHORS = ['action-appearance-colors', 'action-appearance-fonts', 'action-appearance-banner', 'action-appearance-themes', 'action-appearance-header', 'action-appearance-footer', 'action-appearance-menus', 'action-appearance-html-blocks', 'action-appearance-page', 'action-appearance-product-page', 'action-appearance-summary', 'action-appearance-design-buttons'];
 
     protected function setUp(): void
     {
@@ -142,6 +143,20 @@ class AppearanceSettingsPageTest extends TestCase
         }
 
         $this->assertSame(0, DB::table('site_settings')->where('key', 'like', 'appearance.%')->count());
+    }
+
+    public function test_saving_the_page_forgets_a_banner_draft_of_the_design_screen(): void
+    {
+        $this->actingAsStaff('Administrator');
+        BannerDrafts::save(['enabled' => true, 'text' => 'Old draft', 'url' => '', 'link_label' => '', 'text_color' => null, 'bg_color' => null, 'starts_at' => null, 'ends_at' => null]);
+        $this->assertNotNull($this->settings()->get(AppearanceSettings::BANNER_DRAFT_KEY));
+
+        $this->page()->fillForm(['banner_enabled' => true, 'banner_text' => 'Live now'])->call('save')->assertHasNoFormErrors();
+
+        $this->assertNull($this->settings()->get(AppearanceSettings::BANNER_DRAFT_KEY), 'the stale draft is gone');
+        $this->assertSame('Live now', $this->settings()->get(AppearanceSettings::BANNER_TEXT));
+        $screen = Livewire::test(\App\Filament\Pages\Design\DesignScreen::class)->call('selectZone', 'topbar');
+        $screen->assertSet('tree.values.text', 'Live now')->assertSee('data-ds-state="published"', false);
     }
 
     public function test_the_banner_fields_are_validated(): void
