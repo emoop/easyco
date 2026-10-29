@@ -13,12 +13,16 @@
 // Prints a JSON report; exit code 1 when a check failed.
 import { createRequire } from 'node:module';
 import { mkdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
+import { execFileSync } from 'node:child_process';
 
 const BASE = process.env.AUDIT_BASE ?? 'https://easyco-main.test';
 const EMAIL = process.env.AUDIT_EMAIL ?? 'ux-audit@example.test';
 const PASSWORD = process.env.AUDIT_PASSWORD;
 const OUT = process.env.OUT ?? '';
+const ROOT = resolve(import.meta.dirname, '..', '..');
+// SC-1.1: the number of WORKING zones is read from the code (DesignScreen::ZONES), not written here: a zone added there changes this check and nothing else
+const expectedZones = Number(execFileSync('php', ['artisan', 'tinker', '--execute', 'echo count(App\\Filament\\Pages\\Design\\DesignScreen::ZONES);'], { cwd: ROOT, encoding: 'utf8' }).trim().split('\n').pop());
 
 if (! PASSWORD || ! process.env.PLAYWRIGHT_DIR) {
     console.error('usage: AUDIT_PASSWORD=... PLAYWRIGHT_DIR=<dir with node_modules/playwright> node design-screen.mjs');
@@ -117,7 +121,10 @@ try {
     console.error('LOOK ' + JSON.stringify(look));
 
     // ---- the zone list: Хедър works, the others are disabled ---------------------------------------------------------------------------------------
-    check('the zone list has six working zones (Хедър selected) and two «следва»', (await page.locator('.ds-zone[disabled]').count()) === 2 && (await page.locator('.ds-zone:not([disabled])').count()) === 6 && (await page.locator('.ds-zone-on').textContent()).includes('Хедър'));
+    const zoneTotal = await page.locator('.ds-zones .ds-zone').count();
+    const zonesWorking = await page.locator('.ds-zone:not([disabled])').count();
+    const zonesSoon = await page.locator('.ds-zone[disabled]').count();
+    check(`the zone list has ${zonesWorking} working zones (DesignScreen::ZONES has ${expectedZones}) and ${zonesSoon} «следва» (Хедър selected)`, zonesWorking === expectedZones && zonesSoon === zoneTotal - expectedZones && (await page.locator('.ds-zone-on').textContent()).includes('Хедър'), `total ${zoneTotal}, working ${zonesWorking}, soon ${zonesSoon}, expected ${expectedZones}`);
     check('the palette is disabled without a cell', (await page.locator('.ds-chip-add:not([disabled])').count()) === 0);
 
     // ---- DS-2a.1: the menu picker on the header's menu element ------------------------------------------------------------------------------------------

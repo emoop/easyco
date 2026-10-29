@@ -453,3 +453,5 @@ Reviews е **отделен малък домейн**. Зависи от Catalog
 
 
 **SC-1 as built (the right column is a list of components).** The product page's right column prints the published layout of the zone «Дясна колона» (`design.product_summary.global.*`, compiled into `design.compiled`): brand, name, SKU, short description, price, stock, purchase (the variation select and the add-to-cart box, unchanged) and HTML blocks, in the order the merchant chose; the default layout is today's page byte for byte. See `design-screen-design.md`, «SC-1 as built».
+
+**SC-1.1 as built (loose ends).** Editing an HTML block that the published right column shows refreshes the column's compiled copy in the same rebuild that refreshes the footer (`MenuCompiler::compileAndStore`, both branches); a block the published right column holds is a user of the block (`HtmlBlockUsage::summary`, published and draft) and its delete is refused, the message naming «Дясната колона» with the other users.

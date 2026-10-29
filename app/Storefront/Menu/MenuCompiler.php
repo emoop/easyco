@@ -10,6 +10,7 @@ use App\Settings\AppearanceSettings;
 use App\Settings\Contracts\SiteSettingsRepository;
 use App\Storefront\Appearance\StorefrontAppearance;
 use App\Storefront\Footer\FooterCompiler;
+use App\Storefront\ProductSummary\ProductSummaryCompiler;
 use App\Storefront\Header\AppearanceRecompiler;
 use App\Storefront\Pages\PageReader;
 use App\Storefront\Reader\CategoryIndex;
@@ -116,6 +117,8 @@ class MenuCompiler
         if ($current === $json || ($current === null && $empty)) {
             // The menus are as they were, but the footer may show something that changed (an HTML block): it follows the same rebuild.
             app(FooterCompiler::class)->refresh($menus, $locations);
+            // SC-1.1: so does the right column of the product page (its compiled copy holds the sanitised HTML of its blocks)
+            app(ProductSummaryCompiler::class)->refresh();
 
             return false;
         }
@@ -129,6 +132,7 @@ class MenuCompiler
 
         app(StorefrontAppearance::class)->refresh();
         app(FooterCompiler::class)->refresh($menus, $locations);
+        app(ProductSummaryCompiler::class)->refresh();
 
         return true;
     }

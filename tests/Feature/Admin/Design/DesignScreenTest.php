@@ -25,6 +25,16 @@ use Tests\TestCase;
  */
 class DesignScreenTest extends TestCase
 {
+    /** SC-1.1: the zone list draws a working button for every zone of DesignScreen::ZONES and a «следва» one for the rest; tests/Browser/design-screen.mjs reads the same count from the code. */
+    public function test_the_zone_list_has_a_working_button_for_every_zone_the_screen_has(): void
+    {
+        $this->actingAsStaff('Administrator');
+        $html = Livewire::test(DesignScreen::class)->html();
+
+        $this->assertSame(count(DesignScreen::ZONES), substr_count($html, "selectZone('"), 'one working zone button per zone of the screen');
+        $this->assertSame(7, count(DesignScreen::ZONES), 'the seven zones of the screen (topbar, header, footer, checkout, page, product, summary)');
+    }
+
     use BuildsShippingZones;
     use RefreshDatabase;
 

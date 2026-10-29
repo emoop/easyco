@@ -7,8 +7,8 @@ use App\Settings\Contracts\SiteSettingsRepository;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Where an HTML block is shown: by the mega item of a menu, and (HDR-3) by an `html_block` block of the PUBLISHED or the DRAFT footer layout. A block in use is never deleted; the message
- * names the menus, and the footer as one more name. Admin only (the storefront never calls this): the footer layouts are read through the settings repository.
+ * Where an HTML block is shown: by the mega item of a menu, by an `html_block` block of the PUBLISHED or the DRAFT footer layout (HDR-3), and by an `html_block` component of the PUBLISHED or the
+ * DRAFT right column of the product page (SC-1.1). A block in use is never deleted; the message names the menus, and the footer and the right column as more names. Admin only (the storefront never calls this): the footer layouts are read through the settings repository.
  */
 final class HtmlBlockUsage
 {
@@ -50,18 +50,59 @@ final class HtmlBlockUsage
         return false;
     }
 
-    /** Is the block shown anywhere (a menu or the footer)? */
-    public static function isUsed(int $blockId): bool
+    /** SC-1.1: does the published or the draft right column hold an `html_block` component that names this block? */
+    public static function summary(int $blockId): bool
     {
-        return self::menus($blockId) !== [] || self::footer($blockId);
+        $settings = app(SiteSettingsRepository::class);
+
+        foreach ([AppearanceSettings::SUMMARY_PUBLISHED_KEY, AppearanceSettings::SUMMARY_DRAFT_KEY] as $key) {
+            $json = $settings->get($key);
+            $layout = is_string($json) ? json_decode($json, true) : null;
+
+            foreach (is_array($layout['components'] ?? null) ? $layout['components'] : [] as $component) {
+                $id = is_array($component) && ($component['type'] ?? null) === 'html_block' ? ($component['settings']['html_block'] ?? null) : null;
+
+                if ((is_int($id) || (is_string($id) && ctype_digit($id))) && (int) $id === $blockId) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
-    /** The refusal message of a delete, or null when the block is free. The format for menus is unchanged; the footer is one more name. */
+    /** Is the block shown anywhere (a menu, the footer or the right column)? */
+    public static function isUsed(int $blockId): bool
+    {
+        return self::menus($blockId) !== [] || self::footer($blockId) || self::summary($blockId);
+    }
+
+    /**
+     * The refusal message of a delete, or null when the block is free. The formats for menus and the footer are unchanged; when the right column is one of the users, the message names
+     * every user in one sentence (`in_use_places`).
+     */
     public static function refusal(HtmlBlockModel $block): ?string
     {
         $menus = self::menus((int) $block->id);
         $footer = self::footer((int) $block->id);
+        $summary = self::summary((int) $block->id);
         $params = ['title' => $block->title, 'menus' => implode(', ', $menus)];
+
+        if ($summary) {
+            $places = [];
+
+            if ($menus !== []) {
+                $places[] = (string) __('html_blocks.places.menu', $params);
+            }
+
+            if ($footer) {
+                $places[] = (string) __('html_blocks.places.footer');
+            }
+
+            $places[] = (string) __('html_blocks.places.summary');
+
+            return (string) __('html_blocks.errors.in_use_places', ['title' => $block->title, 'places' => implode((string) __('html_blocks.places.join'), $places)]);
+        }
 
         return match (true) {
             $menus !== [] && $footer => (string) __('html_blocks.errors.in_use_both', $params),

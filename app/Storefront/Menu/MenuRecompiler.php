@@ -28,7 +28,8 @@ final class MenuRecompiler
      */
     public function request(?string $type = null): void
     {
-        if ($type !== null && ! ($this->holds[$type] ??= $this->holds($type))) {
+        // `html` is not memoised: the answer changes when a layout that embeds a block is published (the right column's publish does not forget the memo, the footer's does)
+        if ($type !== null && ! ($type === 'html' ? $this->holds($type) : ($this->holds[$type] ??= $this->holds($type)))) {
             return;
         }
 
@@ -45,9 +46,12 @@ final class MenuRecompiler
         $items = \Illuminate\Support\Facades\DB::table('menu_items');
 
         if ($type === 'html') {
-            // an HTML block is shown by a mega item OR by a block of the published footer
+            // an HTML block is shown by a mega item OR by a block of the published footer OR of the published right column (SC-1.1)
+            $settings = app(\App\Settings\Contracts\SiteSettingsRepository::class);
+
             return $items->whereNotNull('html_block_id')->exists()
-                || str_contains((string) app(\App\Settings\Contracts\SiteSettingsRepository::class)->get(\App\Settings\AppearanceSettings::FOOTER_PUBLISHED_KEY), '"html_block"');
+                || str_contains((string) $settings->get(\App\Settings\AppearanceSettings::FOOTER_PUBLISHED_KEY), '"html_block"')
+                || str_contains((string) $settings->get(\App\Settings\AppearanceSettings::SUMMARY_PUBLISHED_KEY), '"html_block"');
         }
 
         return $items->where('type', $type)->exists();

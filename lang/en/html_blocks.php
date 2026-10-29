@@ -31,6 +31,14 @@ return [
 
     'notice' => ['saved' => 'The block was saved.'],
 
+    // SC-1.1: the places that show a block, named in the refusal when the right column is one of them
+    'places' => [
+        'menu' => 'the menu :menus',
+        'footer' => 'the footer',
+        'summary' => 'the right column',
+        'join' => ' and ',
+    ],
+
     'errors' => [
         'too_many' => 'At most :max pictures.',
         'picture_missing' => 'Choose a picture.',
@@ -39,5 +47,6 @@ return [
         'in_use' => 'The block ":title" is shown by the menu :menus and cannot be deleted.',
         'in_use_footer' => 'The block ":title" is shown by the footer and cannot be deleted.',
         'in_use_both' => 'The block ":title" is shown by the menu :menus and by the footer and cannot be deleted.',
+        'in_use_places' => 'The block ":title" is shown by :places and cannot be deleted.',
     ],
 ];

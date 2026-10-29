@@ -172,6 +172,61 @@ class HtmlBlockResourceTest extends TestCase
     }
 
     /** HDR-3: config/livewire.php payload.max_nesting_depth is bounded but deep enough for a link inside a list inside a list of a rich-text editor. */
+    /** @return array<string, array{0: ?string, 1: ?string, 2: bool}> [the published right column holds it, the draft right column holds it, deletable] */
+    public static function summaryUses(): array
+    {
+        return ['only in the published right column' => ['published', null, false], 'only in the draft right column' => [null, 'draft', false], 'in both' => ['published', 'draft', false], 'in neither' => [null, null, true]];
+    }
+
+    /** SC-1.1: a block the PUBLISHED or the DRAFT right column shows is never deleted silently, exactly like a footer block; the right column is named in the message. */
+    #[\PHPUnit\Framework\Attributes\DataProvider('summaryUses')]
+    public function test_a_block_the_right_column_shows_is_refused_and_a_free_one_is_deleted(?string $published, ?string $draft, bool $deleted): void
+    {
+        $this->actingAsStaff('Administrator');
+        $block = HtmlBlockModel::create(['title' => 'Club', 'body' => '<p>x</p>']);
+        $other = HtmlBlockModel::create(['title' => 'Other', 'body' => '<p>y</p>']);
+        $layoutWith = fn (int $id): string => (string) json_encode(['components' => [['type' => 'title', 'settings' => []], ['type' => 'html_block', 'settings' => ['html_block' => $id]]]]);
+        $settings = app(\App\Settings\Contracts\SiteSettingsRepository::class);
+        $published === null || $settings->set(\App\Settings\AppearanceSettings::SUMMARY_PUBLISHED_KEY, $layoutWith($block->id));
+        $draft === null || $settings->set(\App\Settings\AppearanceSettings::SUMMARY_DRAFT_KEY, $layoutWith($block->id));
+
+        $this->assertSame(! $deleted, HtmlBlockUsage::summary($block->id));
+        $this->assertFalse(HtmlBlockUsage::summary($other->id), 'another block is not protected by it');
+        Livewire::test(ListHtmlBlocks::class)->callTableAction('delete', $block);
+
+        $deleted ? $this->assertNull(HtmlBlockModel::query()->find($block->id)) : $this->assertNotNull(HtmlBlockModel::query()->find($block->id), 'refused');
+
+        if (! $deleted) {
+            $this->assertSame('The block "Club" is shown by the right column and cannot be deleted.', HtmlBlockUsage::refusal($block));
+            $this->assertFalse($block->delete(), 'the model is the last line of defence');
+            $this->assertNotNull(HtmlBlockModel::query()->find($other->id));
+        }
+    }
+
+    /** SC-1.1: the right column is one more name in the message, after the menu and the footer, and the old messages are unchanged. */
+    public function test_the_message_names_the_right_column_with_the_others_and_the_old_messages_stay(): void
+    {
+        $block = HtmlBlockModel::create(['title' => 'Banner', 'body' => '<p>x</p>']);
+        $settings = app(\App\Settings\Contracts\SiteSettingsRepository::class);
+        $summary = (string) json_encode(['components' => [['type' => 'html_block', 'settings' => ['html_block' => $block->id]]]]);
+        $footer = (string) json_encode(['upper' => ['rows' => [['columns' => [['blocks' => [['type' => 'html_block', 'settings' => ['html_block' => $block->id]]]]]]]]]);
+
+        $settings->set(\App\Settings\AppearanceSettings::SUMMARY_PUBLISHED_KEY, $summary);
+        $this->assertSame('The block "Banner" is shown by the right column and cannot be deleted.', HtmlBlockUsage::refusal($block));
+
+        $settings->set(\App\Settings\AppearanceSettings::FOOTER_PUBLISHED_KEY, $footer);
+        $this->assertSame('The block "Banner" is shown by the footer and the right column and cannot be deleted.', HtmlBlockUsage::refusal($block));
+
+        $this->saveMenu('main', [$this->menuItem('link', ['label' => 'Boys', 'url' => '/boys', 'submenu' => 'mega', 'html_block_id' => $block->id, 'mega_columns' => 1, 'children' => [$this->columnItem([$this->menuItem('link', ['label' => 'Jackets', 'url' => '/j'])])]])]);
+        $this->assertSame('The block "Banner" is shown by the menu Main menu and the footer and the right column and cannot be deleted.', HtmlBlockUsage::refusal($block));
+
+        $settings->forget(\App\Settings\AppearanceSettings::SUMMARY_PUBLISHED_KEY);
+        $settings->forget(\App\Settings\AppearanceSettings::FOOTER_PUBLISHED_KEY);
+        // the settings repository is SCOPED: an instance made during the menu save still holds the old values (one request = one instance in the shop)
+        $this->app->forgetScopedInstances();
+        $this->assertSame('The block "Banner" is shown by the menu Main menu and cannot be deleted.', HtmlBlockUsage::refusal($block), 'the old menu message, unchanged');
+    }
+
     public function test_livewires_nesting_limit_allows_a_link_inside_a_nested_list(): void
     {
         $depth = (int) config('livewire.payload.max_nesting_depth');

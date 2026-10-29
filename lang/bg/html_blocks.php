@@ -31,6 +31,14 @@ return [
 
     'notice' => ['saved' => 'Блокът е запазен.'],
 
+    // SC-1.1: the places that show a block, named in the refusal when the right column is one of them
+    'places' => [
+        'menu' => 'менюто :menus',
+        'footer' => 'футъра',
+        'summary' => 'Дясната колона',
+        'join' => ' и ',
+    ],
+
     'errors' => [
         'too_many' => 'Най-много :max снимки.',
         'picture_missing' => 'Изберете снимка.',
@@ -39,5 +47,6 @@ return [
         'in_use' => 'Блокът „:title“ се показва от менюто :menus и не може да се изтрие.',
         'in_use_footer' => 'Блокът „:title“ се показва от футъра и не може да се изтрие.',
         'in_use_both' => 'Блокът „:title“ се показва от менюто :menus и от футъра и не може да се изтрие.',
+        'in_use_places' => 'Блокът „:title“ се показва от :places и не може да се изтрие.',
     ],
 ];
