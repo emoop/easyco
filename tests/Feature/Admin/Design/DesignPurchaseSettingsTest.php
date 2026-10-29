@@ -88,7 +88,7 @@ class DesignPurchaseSettingsTest extends TestCase
             ->call('apply')
             ->assertHasNoErrors();
 
-        $this->assertSame(['label' => 'Купи сега', 'label_choose' => '', 'label_sold_out' => '', 'bg' => '#2e7d32', 'color' => '#ffffff', 'border_w' => 2, 'border_color' => null, 'rounded' => false], $this->draft());
+        $this->assertSame(['label' => 'Купи сега', 'label_choose' => '', 'label_sold_out' => '', 'bg' => '#2e7d32', 'color' => '#ffffff', 'border_w' => 2, 'border_color' => null, 'rounded' => false, 'show_quantity' => true, 'axes' => []], $this->draft());
     }
 
     public function test_a_refused_value_stores_nothing_and_the_error_stands_under_its_field(): void
@@ -140,6 +140,43 @@ class DesignPurchaseSettingsTest extends TestCase
         $this->assertStringContainsString('1.1', $zone->warnings($layout(['bg' => '#ffffff', 'color' => '#f0f0f0']))[0]);
         $this->assertSame([], $zone->warnings($layout(['bg' => '#2e7d32', 'color' => '#ffffff'])), 'enough contrast: no warning');
         $this->assertSame([], $zone->warnings($layout(['bg' => null, 'color' => null])), 'the shop\'s own colours: nothing to warn about here');
+    }
+
+    public function test_the_editor_has_the_counter_toggle_and_the_order_list_with_their_hints(): void
+    {
+        $html = $this->screen()->html();
+
+        foreach (['Show counter', 'When off, the quantity is changed in the cart.', 'Order of the attributes', 'If empty, the order is that of the attributes in the catalog. Every attribute of the product is always shown.'] as $text) {
+            $this->assertStringContainsString($text, $html, $text);
+        }
+    }
+
+    public function test_show_quantity_and_the_order_list_are_saved_normalised_and_the_defaults_come_back(): void
+    {
+        \EasyCo\Catalog\Persistence\Eloquent\AttributeDefinitionModel::query()->create(['code' => 'colour', 'name' => 'Colour', 'type' => 'select']);
+        \EasyCo\Catalog\Persistence\Eloquent\AttributeDefinitionModel::query()->create(['code' => 'size', 'name' => 'Size', 'type' => 'select']);
+        $ids = \EasyCo\Catalog\Persistence\Eloquent\AttributeDefinitionModel::query()->orderBy('id')->pluck('id')->all();
+
+        $this->screen()
+            ->set('props.settings.show_quantity', false)
+            ->set('props.settings.axes', ['a' => ['id' => (string) $ids[1]], 'b' => ['id' => $ids[0]], 'c' => ['id' => (string) $ids[1]], 'd' => ['id' => null]])
+            ->call('apply')
+            ->assertHasNoErrors();
+
+        $draft = $this->draft();
+        $this->assertFalse($draft['show_quantity']);
+        $this->assertSame([$ids[1], $ids[0]], $draft['axes'], 'a list of whole ids in the order given, the duplicate and the empty row dropped');
+
+        $this->assertSame([['id' => $ids[1]], ['id' => $ids[0]]], array_values($this->screen()->get('props.settings.axes')), 'a stored order comes back into the form as rows');
+
+        $this->screen()->set('props.settings.axes', array_map(static fn (int $i): array => ['id' => $ids[0]], range(1, 11)))->call('apply');
+        $this->assertSame([$ids[1], $ids[0]], $this->draft()['axes'], 'eleven ids: refused, the draft is what it was');
+
+        $this->screen()->set('props.settings.axes', ['k' => ['id' => 'x']])->call('apply');
+        $this->assertSame([$ids[1], $ids[0]], $this->draft()['axes'], 'not an id: refused');
+
+        $this->screen()->call('resetToDefault')->call('publish');
+        $this->assertNull($this->settings()->get(AppearanceSettings::SUMMARY_PUBLISHED_KEY), 'back to the defaults: nothing stored');
     }
 
     public function test_a_member_without_the_permission_cannot_apply_the_settings(): void

@@ -257,6 +257,7 @@ function initAddToCart() {
     var pickers = !! (data && data.pickers && data.groups > 0);
     var groups = root ? Array.prototype.slice.call(root.querySelectorAll('[data-sf-group]')) : [];
     var selected = groups.map(function () { return null; });
+    var clearButton = root ? root.querySelector('[data-sf-clear]') : null;
     var qtyInput = root ? root.querySelector('[data-sf-qty-input]') : null;
     var minus = root ? root.querySelector('[data-sf-qty-minus]') : null;
     var plus = root ? root.querySelector('[data-sf-qty-plus]') : null;
@@ -402,6 +403,8 @@ function initAddToCart() {
 
     function sync() {
         pickers && drawPickers();
+        // PB-1.1: «Изчистване» shows only while some group has a choice
+        clearButton && (clearButton.hidden = ! selected.some(function (v) { return v !== null; }));
         syncQuantity();
         drawButton();
     }
@@ -437,6 +440,20 @@ function initAddToCart() {
         groups.forEach(function (group) { group.classList.remove('is-missing'); });
         setSelect(chosen());
         sync();
+    }
+
+    // PB-1.1: «Изчистване»: back to the state of a page nobody has touched
+    function clearAll() {
+        selected = selected.map(function () { return null; });
+        groups.forEach(function (group) { group.classList.remove('is-missing'); });
+        setSelect(null);
+        qtyInput && (qtyInput.value = '1');
+        message(status, '');
+        sync();
+
+        var first = root.querySelector('[role=radio]:not([aria-disabled=true]), [data-sf-select]');
+
+        first && first.focus();
     }
 
     function colourise() {
@@ -489,6 +506,7 @@ function initAddToCart() {
     if (pickers) {
         colourise();
         pickerEvents();
+        clearButton && clearButton.addEventListener('click', clearAll);
         // nothing is chosen yet: the button asks for a choice
         select && (select.selectedIndex = -1);
     }

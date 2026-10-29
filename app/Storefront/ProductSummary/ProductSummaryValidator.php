@@ -132,9 +132,50 @@ final class ProductSummaryValidator
                 }
             }
 
+            // PB-1.1: a list of whole positive attribute ids (never a map), each once, at most `max`
+            if (($field['kind'] ?? null) === 'axes') {
+                $clean[$name] = $this->axes($settings[$name] ?? [], (int) $field['max'], "{$path}.settings.{$name}");
+
+                continue;
+            }
+
             $clean[$name] = FieldKinds::validate($settings[$name] ?? ($field['default'] ?? null), $field, "{$path}.settings.{$name}", $failer);
         }
 
         return ['type' => $type, 'settings' => $clean];
+    }
+
+    /**
+     * PB-1.1: the order of the attribute groups: a list (not a map) of at most `$max` whole positive ids (an int, never a numeric string or a float); a duplicate is dropped. Whether an id is an attribute of the
+     * product is not checked here: the page ignores an id its product does not have.
+     *
+     * @return list<int>
+     */
+    private function axes(mixed $value, int $max, string $path): array
+    {
+        if (! is_array($value) || ! array_is_list($value)) {
+            $this->fail($path, 'bad_list');
+
+            return [];
+        }
+
+        if (count($value) > $max) {
+            $this->fail($path, 'too_many_axes', ['max' => $max]);
+            $value = array_slice($value, 0, $max);
+        }
+
+        $out = [];
+
+        foreach ($value as $i => $id) {
+            if (! is_int($id) || $id < 1) {
+                $this->fail("{$path}.{$i}", 'bad_choice');
+
+                continue;
+            }
+
+            in_array($id, $out, true) || $out[] = $id;
+        }
+
+        return $out;
     }
 }

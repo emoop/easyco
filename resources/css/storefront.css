@@ -476,6 +476,8 @@
             max-height: var(--sf-summary-max-height, calc(100vh - var(--sf-sticky-top) - 1rem));
             overflow-y: auto;
             scrollbar-width: thin;
+            /* PB-1.1: room for the focus ring of the first colour / size button (overflow clips at the padding box edge) */
+            padding-inline: 6px;
         }
     }
 
@@ -760,6 +762,11 @@
         @apply flex flex-col gap-2;
     }
 
+    /* PB-1.1: the product page's price a step bigger (+15 % of the card's 1rem), the weight is the card's own */
+    .sf-summary .sf-price-current {
+        font-size: 1.15rem;
+    }
+
     .sf-product-brand {
         @apply m-0 text-sm uppercase tracking-wide text-neutral-500;
     }
@@ -816,6 +823,11 @@
         @apply mt-2 hidden flex-col gap-1;
     }
 
+    /* PB-1.1: more room BETWEEN the groups (colour, size, …); inside a group nothing changes */
+    .sf-picker ~ .sf-picker {
+        margin-top: 1.25rem;
+    }
+
     .js .sf-variations--pickers .sf-picker {
         @apply flex;
     }
@@ -824,6 +836,20 @@
     .js .sf-variations--pickers .sf-variation-select,
     .js .sf-variations--pickers .sf-variation-label {
         @apply sr-only;
+    }
+
+    /* PB-1.1: «Изчистване» — a link-styled button under the groups; the script shows it once something is chosen */
+    .sf-clear {
+        @apply mt-2 cursor-pointer self-start text-sm text-neutral-600 underline;
+    }
+
+    .sf-clear[hidden] {
+        display: none;
+    }
+
+    .sf-clear:focus-visible {
+        outline: 2px solid var(--sf-primary, oklch(20.5% 0 none));
+        outline-offset: 2px;
     }
 
     .sf-picker-label {
@@ -894,24 +920,25 @@
         border-radius: 0.375rem;
     }
 
+    /* PB-1.1: the counter and the button are ONE row: the counter a fixed compact width, the button the rest; both the same, slightly smaller height */
+    .sf-buy-row {
+        @apply mt-3 flex items-stretch gap-2;
+    }
+
     .sf-qty {
-        @apply mt-3 hidden items-center gap-3;
+        @apply hidden w-26 flex-none;
     }
 
     .js .sf-qty {
         @apply flex;
     }
 
-    .sf-qty-label {
-        @apply text-sm font-medium text-neutral-700;
-    }
-
     .sf-qty-box {
-        @apply inline-flex items-center rounded-md border border-neutral-300 bg-white;
+        @apply flex w-full items-stretch rounded-md border border-neutral-300 bg-white;
     }
 
     .sf-qty-btn {
-        @apply h-10 w-10 cursor-pointer text-lg leading-none text-neutral-900;
+        @apply w-8 flex-none cursor-pointer text-lg leading-none text-neutral-900;
     }
 
     .sf-qty-btn:disabled {
@@ -919,7 +946,11 @@
     }
 
     .sf-qty-input {
-        @apply h-10 w-12 border-0 bg-transparent p-0 text-center text-base;
+        @apply min-w-0 flex-1 border-0 bg-transparent p-0 text-center text-base;
+    }
+
+    .sf-buy-row .sf-add-to-cart {
+        @apply mt-0 min-h-11 w-auto min-w-0 flex-1 px-4 py-2;
     }
 
     /* the add-to-cart button: its look comes from the --sf-buy-* variables of the token stylesheet (set only when the merchant changed something); the fallbacks are the shop's button as it always was */

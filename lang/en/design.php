@@ -179,6 +179,9 @@ return [
             'hint' => 'The «Add to cart» button of the product page. An empty text is the standard one; with no colour the button uses the shop\'s colours. Product page only: the shop\'s general buttons are changed in «Appearance».',
             'preview' => 'What the button looks like',
             'sample' => 'Add to cart',
+            'show_quantity_hint' => 'When off, the quantity is changed in the cart.',
+            'axes_hint' => 'If empty, the order is that of the attributes in the catalog. Every attribute of the product is always shown.',
+            'axes_add' => 'Add an attribute',
             'state_normal' => 'Normal',
             'state_hover' => 'Hover',
             'state_disabled' => 'Disabled',
@@ -191,7 +194,7 @@ return [
         'no_props' => 'This component has no properties.',
         'no_product' => 'The shop has no visible product yet: there is nothing to show in the preview.',
         'sku_label' => 'SKU:',
-        'settings' => ['html_block' => 'HTML block', 'label' => 'Button text', 'label_choose' => 'Text before a choice', 'label_sold_out' => 'Text when sold out', 'bg' => 'Button background', 'color' => 'Text colour', 'border_w' => 'Border (px)', 'border_color' => 'Border colour', 'rounded' => 'Rounded corners'],
+        'settings' => ['html_block' => 'HTML block', 'label' => 'Button text', 'label_choose' => 'Text before a choice', 'label_sold_out' => 'Text when sold out', 'bg' => 'Button background', 'color' => 'Text colour', 'border_w' => 'Border (px)', 'border_color' => 'Border colour', 'rounded' => 'Rounded corners', 'show_quantity' => 'Show counter', 'axes' => 'Order of the attributes'],
         'errors' => [
             'unknown_key' => 'Unknown field: :key.',
             'unknown_setting' => 'Unknown setting: :key.',
@@ -208,6 +211,7 @@ return [
             'too_long' => 'At most :max characters.',
             'not_plain' => 'Plain text only, no tags.',
             'too_many' => 'At most :max components in the column.',
+            'too_many_axes' => 'At most :max attributes.',
         ],
     ],
     // LG-1: the logo as a picture

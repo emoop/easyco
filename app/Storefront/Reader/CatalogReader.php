@@ -138,7 +138,7 @@ final class CatalogReader
             $options[] = ['name' => $name, 'values' => array_map('strval', array_keys($optionValues[$definitionId]))];
             // AT-1: the colour is exposed only while the attribute is shown as colour
             $type = $optionDisplayType[$definitionId];
-            $optionDisplay[] = ['name' => $name, 'displayType' => $type, 'colours' => $type === 'swatch' ? $optionColours[$definitionId] : []];
+            $optionDisplay[] = ['id' => $definitionId, 'name' => $name, 'displayType' => $type, 'colours' => $type === 'swatch' ? $optionColours[$definitionId] : []];
         }
 
         $views = [];

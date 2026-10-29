@@ -201,7 +201,7 @@ class PurchaseComponentTest extends TestCase
         [$clean, $errors] = $this->validate([]);
 
         $this->assertSame([], $errors);
-        $this->assertSame(['label' => '', 'label_choose' => '', 'label_sold_out' => '', 'bg' => null, 'color' => null, 'border_w' => 0, 'border_color' => null, 'rounded' => true], $clean);
+        $this->assertSame(['label' => '', 'label_choose' => '', 'label_sold_out' => '', 'bg' => null, 'color' => null, 'border_w' => 0, 'border_color' => null, 'rounded' => true, 'show_quantity' => true, 'axes' => []], $clean);
     }
 
     public function test_the_ranges_have_exact_edges(): void

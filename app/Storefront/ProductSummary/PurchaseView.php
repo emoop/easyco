@@ -17,29 +17,39 @@ final class PurchaseView
     public const MAX_QUANTITY = 99;
 
     /**
+     * @param  array<string, mixed>  $settings  the validated settings of the `purchase` component (PB-1.1: `axes` = the merchant's order of the groups)
      * @return array{pickers: bool, groups: list<array{name: string, type: string, values: list<array{label: string, colour: ?string}>}>, table: list<array{id: string, v: list<int>, o: int, q: int}>, orderable: int, json: string}
      */
-    public static function build(ProductPage $product): array
+    public static function build(ProductPage $product, array $settings = []): array
     {
         $groups = [];
         $table = [];
         $pickers = false;
         $usable = $product->type === 'variable' && $product->options !== [] && count($product->options) === count($product->optionDisplay);
+        $options = $product->options;
+        $display = $product->optionDisplay;
+
+        // PB-1.1: the merchant's order, applied BEFORE any index is built (a group index is a position in this order): the listed axes the product has, then the others in the page's own order
+        if ($usable && is_array($settings['axes'] ?? null) && $settings['axes'] !== []) {
+            $order = self::order(array_map(static fn (array $d): mixed => $d['id'] ?? null, $display), $settings['axes']);
+            $options = array_map(static fn (int $i): array => $product->options[$i], $order);
+            $display = array_map(static fn (int $i): array => $product->optionDisplay[$i], $order);
+        }
 
         if ($usable) {
-            $names = array_column($product->options, 'name');
+            $names = array_column($options, 'name');
             $usable = count(array_unique($names)) === count($names);
         }
 
         if ($usable) {
-            foreach ($product->options as $i => $option) {
-                $display = $product->optionDisplay[$i];
-                $type = (string) ($display['displayType'] ?? 'dropdown');
+            foreach ($options as $i => $option) {
+                $shown = $display[$i];
+                $type = (string) ($shown['displayType'] ?? 'dropdown');
                 $pickers = $pickers || in_array($type, ['swatch', 'buttons'], true);
                 $values = [];
 
                 foreach ($option['values'] as $label) {
-                    $colour = $type === 'swatch' ? ($display['colours'][$label] ?? null) : null;
+                    $colour = $type === 'swatch' ? ($shown['colours'][$label] ?? null) : null;
                     $values[] = ['label' => (string) $label, 'colour' => is_string($colour) && preg_match('/\A#[0-9a-f]{6}\z/', $colour) === 1 ? $colour : null];
                 }
 
@@ -100,6 +110,33 @@ final class PurchaseView
             'orderable' => $orderable,
             'json' => (string) json_encode(['pickers' => $pickers, 'groups' => count($groups), 'variations' => $table], JSON_THROW_ON_ERROR),
         ];
+    }
+
+    /**
+     * The positions of the product's axes in the merchant's order: the axes named in `$wanted` first (an id the product does not have is ignored, a repeated one counts once), then the rest as they were. An axis
+     * is never dropped: the result is always a permutation of all positions.
+     *
+     * @param  list<mixed>  $ids  the definition id of each axis, in the page's own order (null = not known)
+     * @param  list<mixed>  $wanted
+     * @return list<int>
+     */
+    public static function order(array $ids, array $wanted): array
+    {
+        $out = [];
+
+        foreach ($wanted as $id) {
+            $position = is_int($id) ? array_search($id, $ids, true) : false;
+
+            if ($position !== false && ! in_array($position, $out, true)) {
+                $out[] = $position;
+            }
+        }
+
+        foreach (array_keys($ids) as $position) {
+            in_array($position, $out, true) || $out[] = $position;
+        }
+
+        return $out;
     }
 
     /**

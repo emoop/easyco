@@ -16,6 +16,9 @@ final class ProductSummaryCatalog
 
     public const MAX_HTML_BLOCKS = 5;
 
+    /** PB-1.1: the most attribute groups the merchant can put in order. */
+    public const MAX_AXES = 10;
+
     /** Exactly one of each, never removed, never duplicated. */
     public const LOCKED = ['title', 'purchase'];
 
@@ -43,6 +46,9 @@ final class ProductSummaryCatalog
                 'border_w' => ['kind' => 'int', 'min' => 0, 'max' => 4, 'default' => 0],
                 'border_color' => ['kind' => 'color', 'hex6' => true, 'default' => null],
                 'rounded' => ['kind' => 'bool', 'default' => true],
+                // PB-1.1: the counter next to the button (off = no counter, quantity 1) and the merchant's order of the attribute groups (ids of attribute definitions; empty = the page's own order)
+                'show_quantity' => ['kind' => 'bool', 'default' => true],
+                'axes' => ['kind' => 'axes', 'max' => self::MAX_AXES, 'default' => []],
             ]],
             'html_block' => [self::MAX_HTML_BLOCKS, ['html_block' => ['kind' => 'html_block', 'default' => null, 'required' => true]]],
         ];

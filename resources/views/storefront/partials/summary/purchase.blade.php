@@ -1,9 +1,10 @@
 <?php print("\x01"); ?>{{-- SC-1: the marker keeps Laravel's ltrim of a view's output from eating the first line's indentation; product.blade.php removes it. --}}{{-- PB-1, right column component `purchase`: the attribute pickers (colour circles, size buttons; the page's select stays the source of truth), the quantity counter and the add-to-cart button, ONE block. Texts are escaped; the script reads ids and flags from ONE data attribute; no style attribute: a colour is a validated `data-colour` the script applies. --}}
 @php
-    $buy = \App\Storefront\ProductSummary\PurchaseView::build($product);
+    $buy = \App\Storefront\ProductSummary\PurchaseView::build($product, $component['settings'] ?? []);
     $texts = \App\Storefront\ProductSummary\PurchaseView::labels($component['settings'] ?? []);
     $variable = $product->type === 'variable' && $product->variations !== [];
     $soldOut = $variable && $buy['orderable'] === 0;
+    $showQuantity = ($component['settings']['show_quantity'] ?? true) !== false;
 @endphp
                 <div class="sf-purchase" data-sf-purchase="{{ $buy['json'] }}">
                 @if ($variable)
@@ -33,6 +34,7 @@
                                     @endif
                                 </div>
                             @endforeach
+                            <button type="button" class="sf-clear" data-sf-clear hidden>{{ __('storefront.purchase.clear') }}</button>
                         @endif
                         <label class="sf-variation-label" for="sf-variation">{{ __('storefront.choose_variation') }}</label>
                         <select class="sf-variation-select" id="sf-variation" name="variation">
@@ -54,16 +56,19 @@
                         </select>
                     </div>
                 @endif
-                    <div class="sf-qty" data-sf-qty>
-                        <label class="sf-qty-label" for="sf-qty">{{ __('storefront.purchase.quantity') }}</label>
-                        <div class="sf-qty-box">
-                            <button type="button" class="sf-qty-btn" data-sf-qty-minus aria-label="{{ __('storefront.purchase.decrease') }}">−</button>
-                            <input class="sf-qty-input" id="sf-qty" type="text" inputmode="numeric" autocomplete="off" value="1" data-sf-qty-input>
-                            <button type="button" class="sf-qty-btn" data-sf-qty-plus aria-label="{{ __('storefront.purchase.increase') }}">+</button>
-                        </div>
-                    </div>
                     <div class="sf-add-to-cart-box" data-sf-add-to-cart>
-                        <button class="sf-add-to-cart sf-buy" type="button" disabled data-variation-id="{{ $purchasable?->id }}" data-sf-label="{{ $texts['label'] }}" data-sf-label-choose="{{ $texts['choose'] }}" data-sf-label-sold-out="{{ $texts['sold_out'] }}">{{ $soldOut ? $texts['sold_out'] : $texts['label'] }}</button>
+                        <div class="sf-buy-row">
+                        @if ($showQuantity)
+                            <div class="sf-qty" data-sf-qty>
+                                <div class="sf-qty-box">
+                                    <button type="button" class="sf-qty-btn" data-sf-qty-minus aria-label="{{ __('storefront.purchase.decrease') }}">−</button>
+                                    <input class="sf-qty-input" id="sf-qty" type="text" inputmode="numeric" autocomplete="off" value="1" aria-label="{{ __('storefront.purchase.quantity') }}" data-sf-qty-input>
+                                    <button type="button" class="sf-qty-btn" data-sf-qty-plus aria-label="{{ __('storefront.purchase.increase') }}">+</button>
+                                </div>
+                            </div>
+                        @endif
+                            <button class="sf-add-to-cart sf-buy" type="button" disabled data-variation-id="{{ $purchasable?->id }}" data-sf-label="{{ $texts['label'] }}" data-sf-label-choose="{{ $texts['choose'] }}" data-sf-label-sold-out="{{ $texts['sold_out'] }}">{{ $soldOut ? $texts['sold_out'] : $texts['label'] }}</button>
+                        </div>
                         <p class="sf-cart-status" role="status" aria-live="polite" data-sf-cart-status></p>
                     </div>
                 </div>

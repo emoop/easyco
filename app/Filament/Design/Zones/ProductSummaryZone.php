@@ -17,8 +17,11 @@ use App\Storefront\ReadModels\ListingQuery;
 use App\Settings\AppearanceSettings;
 use App\Settings\Contracts\SiteSettingsRepository;
 use App\Storefront\ProductSummary\PurchaseStyle;
+use EasyCo\Catalog\Persistence\Eloquent\AttributeDefinitionModel;
 use Filament\Actions\Action;
 use Filament\Forms\Components\ColorPicker;
+use Filament\Forms\Components\Repeater;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Schemas\Components\Component;
@@ -244,6 +247,11 @@ final class ProductSummaryZone implements DesignZone, HasOneCell
                 TextInput::make('border_w')->label(__('design.summary.settings.border_w'))->inputMode('numeric')->maxLength(1)->live(onBlur: true),
                 $color('border_color'),
                 Toggle::make('rounded')->label(__('design.summary.settings.rounded'))->live(),
+                // PB-1.1: the counter next to the button, and the order of the attribute groups (a small reorderable list of the shop's attributes)
+                Toggle::make('show_quantity')->label(__('design.summary.settings.show_quantity'))->helperText(__('design.summary.purchase.show_quantity_hint'))->live()->columnSpanFull(),
+                Repeater::make('axes')->label(__('design.summary.settings.axes'))->helperText(__('design.summary.purchase.axes_hint'))
+                    ->simple(Select::make('id')->native()->options(static fn (): array => AttributeDefinitionModel::query()->orderBy('name')->pluck('name', 'id')->all())->required())
+                    ->reorderableWithButtons()->maxItems(ProductSummaryCatalog::MAX_AXES)->addActionLabel(__('design.summary.purchase.axes_add'))->defaultItems(0)->columnSpanFull(),
             ])->statePath('settings'),
             Text::make(static function (Get $get): HtmlString {
                 $raw = $get('settings') ?? [];
@@ -303,6 +311,12 @@ final class ProductSummaryZone implements DesignZone, HasOneCell
 
         // PB-1: an empty border width box is «no border» (the validator still refuses anything that is not a whole number 0..4)
         $node['type'] === 'purchase' && ($settings['border_w'] ?? null) === '' && $settings['border_w'] = 0;
+
+        // PB-1.1: the rows of the order list come back as `{id}` (the simple repeater wraps each id; the stored list is plain ids), a row left empty is dropped; anything that is not a list is passed on as it is, so the validator refuses it
+        if ($node['type'] === 'purchase') {
+            $axes = $in['axes'] ?? [];
+            $settings['axes'] = is_array($axes) ? array_values(array_filter(array_map(static fn (mixed $row): mixed => FieldValues::id(is_array($row) ? ($row['id'] ?? null) : $row), $axes), static fn (mixed $id): bool => $id !== null)) : $axes;
+        }
 
         $tree['main'] = TreeEditor::setSettings($current, $selected['id'], $settings);
 

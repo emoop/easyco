@@ -93,6 +93,7 @@ const browser = await chromium.launch({ executablePath: process.env.CHROMIUM || 
 
 const steps = [];
 const consoleErrors = [];
+const diag = []; // not a failure: every response >= 400 and every console error, with its page, printed at the end (to explain a flaky step)
 const shots = [];
 const check = (name, ok, detail = '') => { steps.push({ name, ok: !! ok, detail: String(detail).slice(0, 500) }); if (! ok) console.error('FAIL ' + name + ' ' + detail); };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -107,7 +108,9 @@ try {
     const visitor = async (viewport = { width: 1400, height: 1000 }, javaScriptEnabled = true) => {
         const ctx = await browser.newContext({ viewport, ignoreHTTPSErrors: true, javaScriptEnabled });
         const page = await ctx.newPage();
-        page.on('pageerror', (e) => consoleErrors.push('PAGEERROR ' + String(e.stack || e).replace(/\s+/g, ' ').slice(0, 300)));
+        page.on('response', (r) => { r.status() >= 400 && diag.push('HTTP ' + r.status() + ' ' + r.request().method() + ' ' + r.url().slice(0, 120)); });
+        page.on('console', (m) => { m.type() === 'error' && diag.push('CONSOLE ' + page.url().slice(-40) + ' ' + m.text().slice(0, 200)); });
+        page.on('pageerror', (e) => consoleErrors.push('PAGEERROR ' + page.url().slice(-40) + ' ' + JSON.stringify({ n: e.name, m: e.message }) + ' ' + String(e.stack || e).replace(/\s+/g, ' ').slice(0, 300)));
 
         return { ctx, page };
     };
@@ -229,6 +232,81 @@ try {
     await shot(phone, 'phone-chosen', phone.locator('.sf-summary'));
     await phoneCtx.close();
 
+    // ---- PB-1.1: one row for the counter and the button, sizes, the focus ring --------------------------------------------------------------------
+    const rowOf = (page) => page.evaluate(() => {
+        const q = document.querySelector('.sf-qty'); const b = document.querySelector('.sf-buy'); const s = document.querySelector('.sf-cart-status');
+        const r = (e) => { if (! e) return null; const x = e.getBoundingClientRect(); return { top: x.top, bottom: x.bottom, left: x.left, width: x.width, height: x.height }; };
+        return { qty: r(q), buy: r(b), status: r(s), label: document.querySelector('.sf-qty-label'), aria: document.querySelector('[data-sf-qty-input]')?.getAttribute('aria-label') };
+    });
+    const sizes = (page) => page.evaluate(() => {
+        const c = (sel) => { const e = document.querySelector(sel); if (! e) return null; const s = getComputedStyle(e); return { size: s.fontSize, weight: s.fontWeight }; };
+        const a = document.querySelectorAll('.sf-picker');
+        const sum = getComputedStyle(document.querySelector('.sf-summary'));
+        return { stock: c('.sf-stock'), price: c('.sf-summary .sf-price-current'), groupGap: a.length > 1 ? Math.round(a[1].getBoundingClientRect().top - a[0].getBoundingClientRect().bottom) : null, padL: sum.paddingLeft, padR: sum.paddingRight };
+    });
+    for (const [vp, name] of [[{ width: 1400, height: 1000 }, 'desktop'], [{ width: 390, height: 844 }, 'phone']]) {
+        const { ctx, page: pg } = await visitor(vp);
+        await pg.goto(BASE + '/product/pb1-probe', { waitUntil: 'networkidle' });
+        const row = await rowOf(pg);
+        check(`${name}: no visible «Количество» label, the input has an accessible name`, row.label === null && row.aria === 'Количество', JSON.stringify(row.aria));
+        check(`${name}: counter and button on ONE line (same top, same height)`, Math.abs(row.qty.top - row.buy.top) < 1 && Math.abs(row.qty.height - row.buy.height) < 1, JSON.stringify({ q: row.qty, b: row.buy }));
+        check(`${name}: the counter is about 6.5rem wide, the button takes the rest, the status line is under the row`, Math.abs(row.qty.width - 104) < 2 && row.buy.width > 120 && row.status.top >= row.buy.bottom - 1, `${row.qty.width} ${row.buy.width}`);
+        console.error(`${name} row height ${row.buy.height}px (before PB-1.1: 48px), counter ${row.qty.width}px`);
+        console.error(`${name} sizes: ` + JSON.stringify(await sizes(pg)));
+        await shot(pg, `pb11-${name}-row`, pg.locator('.sf-summary'));
+        if (name === 'desktop') {
+            await radioByTitle(pg, 0, 'Червен').click();
+            await radioByTitle(pg, 0, 'Червен').focus();
+            const clip = await pg.evaluate(() => {
+                const sw = document.querySelector('.sf-swatch').getBoundingClientRect(); const sum = document.querySelector('.sf-summary').getBoundingClientRect();
+                return { swLeft: sw.left, sumLeft: sum.left, ring: 4, ok: sw.left - 4 >= sum.left };
+            });
+            check('the focus ring of the first swatch is not clipped on the left (ring 4px, the column has 6px)', clip.ok, JSON.stringify(clip));
+            await shot(pg, 'pb11-focus-ring', pg.locator('.sf-summary'));
+        }
+        await ctx.close();
+    }
+
+    // ---- PB-1.1 3b: «Изчистване» -------------------------------------------------------------------------------------------------------------------
+    {
+        const { ctx, page: pg } = await visitor();
+        await pg.goto(BASE + '/product/pb1-probe', { waitUntil: 'networkidle' });
+        const clear = pg.locator('[data-sf-clear]');
+        check('«Изчистване»: printed under the groups, hidden before any choice', await clear.count() === 1 && ! await clear.isVisible() && (await clear.innerText()) === 'Изчистване');
+        await radioByTitle(pg, 0, 'Червен').click();
+        check('«Изчистване»: visible once a group has a choice', await clear.isVisible());
+        await button(pg).click({ force: true });
+        check('the button before a full choice outlines the missing group', await pg.locator('.sf-picker.is-missing').count() === 1);
+        await radioByTitle(pg, 1, 'S').click();
+        await qty(pg).fill('3');
+        await button(pg).click();
+        await pg.locator('.sf-cart-status a').waitFor({ timeout: 15000 });
+        check('before clearing: a choice, quantity 3, a status line, the button ready', (await qty(pg).inputValue()) === '3' && (await pg.locator('.sf-cart-status').innerText()).length > 0 && (await button(pg).getAttribute('data-sf-state')) === 'normal');
+        await radioByTitle(pg, 1, 'S').focus();
+        await pg.keyboard.press('Tab');
+        check('the button is reachable with Tab and has a visible focus style', await pg.evaluate(() => { const e = document.activeElement; const s = getComputedStyle(e); return e.hasAttribute('data-sf-clear') && s.outlineStyle === 'solid' && parseFloat(s.outlineWidth) >= 2; }));
+        await shot(pg, 'pb11-clear-focus', pg.locator('.sf-summary'));
+        await pg.keyboard.press('Enter');
+        const after = await pg.evaluate(() => ({
+            checked: document.querySelectorAll('[role=radio][aria-checked=true]').length,
+            index: document.querySelector('#sf-variation').selectedIndex,
+            qty: document.querySelector('[data-sf-qty-input]').value,
+            status: document.querySelector('.sf-cart-status').textContent,
+            missing: document.querySelectorAll('.is-missing').length,
+            state: document.querySelector('.sf-buy').getAttribute('data-sf-state'),
+            text: document.querySelector('.sf-buy').textContent.trim(),
+            variation: document.querySelector('.sf-buy').getAttribute('data-variation-id'),
+            clearHidden: document.querySelector('[data-sf-clear]').hidden,
+            focusIsFirstChoice: document.activeElement === document.querySelector('[role=radio]:not([aria-disabled=true])'),
+        }));
+        check('«Изчистване»: every choice off, the select at -1, quantity 1, status empty, no «missing» highlight', after.checked === 0 && after.index === -1 && after.qty === '1' && after.status === '' && after.missing === 0, JSON.stringify(after));
+        check('«Изчистване»: the button is back to its «choose» state with no variation, the link hides again, focus is on the first choice', after.state === 'choose' && after.text === 'Избери размер' && after.variation === '' && after.clearHidden === true && after.focusIsFirstChoice, JSON.stringify(after));
+        await radioByTitle(pg, 0, 'Червен').click();
+        await radioByTitle(pg, 1, 'L').click();
+        check('after clearing the product can be chosen again', (await button(pg).getAttribute('data-variation-id')) === '91103');
+        await ctx.close();
+    }
+
     // ---- the settings in the Design screen ------------------------------------------------------------------------------------------------------------
     const liveButton = async () => {
         const { ctx, page } = await visitor();
@@ -248,7 +326,7 @@ try {
 
     const admin = await browser.newContext({ viewport: { width: 1500, height: 1300 }, ignoreHTTPSErrors: true });
     const page = await admin.newPage();
-    page.on('pageerror', (e) => consoleErrors.push('PAGEERROR ' + String(e.stack || e).replace(/\s+/g, ' ').slice(0, 300)));
+    page.on('pageerror', (e) => consoleErrors.push('PAGEERROR ' + page.url().slice(-40) + ' ' + JSON.stringify({ n: e.name, m: e.message }) + ' ' + String(e.stack || e).replace(/\s+/g, ' ').slice(0, 300)));
     page.on('response', (r) => { if (r.status() >= 500 && ! r.url().endsWith('/api/cart')) { consoleErrors.push('HTTP ' + r.status() + ' ' + r.url().slice(0, 160)); } });
     const settle = async () => { await page.waitForLoadState('networkidle'); await sleep(900); };
     await page.goto(BASE + '/admin/login');
@@ -301,6 +379,56 @@ try {
     check('live: the «before a choice» text is the merchant\'s', (await buttonText(chooser)) === 'Избери размер, моля', await buttonText(chooser));
     await choose.close();
 
+    // PB-1.1: counter off and the order of the attributes (Размер before Цвят), then the live page
+    await page.goto(BASE + '/admin/design?zone=summary', { waitUntil: 'networkidle' });
+    await page.waitForSelector('.ds', { timeout: 30000 });
+    await sleep(900);
+    await page.locator('.ds-chips-list > li[data-ds-component="purchase"] .ds-chip-main').click();
+    await sleep(900);
+    check('the editor has the counter toggle with its hint and the order list', await field('Показвай брояч').count() === 1 && (await page.locator('.ds-props').innerText()).includes('Когато е изключено, бройката се сменя в количката.') && (await page.locator('.ds-props').innerText()).includes('Ред на атрибутите'));
+    await shot(page, 'pb11-design-editor');
+    await field('Показвай брояч').click();
+    await sleep(400);
+    await page.locator('.ds-props').getByRole('button', { name: /Добави атрибут/ }).click();
+    await sleep(500);
+    await page.locator('.ds-props select').last().selectOption({ label: 'PB1 Цвят' });
+    await page.locator('.ds-props').getByRole('button', { name: /Добави атрибут/ }).click();
+    await sleep(500);
+    await page.locator('.ds-props select').last().selectOption({ label: 'PB1 Размер' });
+    await sleep(500);
+    // move the second row up with its arrow: Размер, Цвят
+    const up = page.locator('.ds-props').getByRole('button', { name: /нагоре|Up|up/ });
+    console.error('move-up buttons: ' + await up.count());
+    await up.last().click().catch((e) => console.error('move up failed ' + String(e).slice(0, 120)));
+    await sleep(500);
+    await shot(page, 'pb11-design-editor-filled');
+    await page.locator('.ds-props button[type=submit]').click();
+    await settle();
+    console.error('after apply: ' + (await page.locator('.ds-props .fi-fo-field-wrp-error-message, .fi-notification').allInnerTexts()).join(' | ').slice(0, 300));
+    await shot(page, 'pb11-design-editor-applied');
+    await toolbarButton('Публикувай').click();
+    await confirmModal();
+    await sleep(2500);
+    const { ctx: offCtx, page: off } = await visitor();
+    await off.goto(BASE + '/product/pb1-probe', { waitUntil: 'networkidle' });
+    check('live: no counter at all (no elements, nothing visible)', await off.locator('[data-sf-qty], .sf-qty-input, .sf-qty-box').count() === 0);
+    check('live: the groups follow the order from the editor (Размер, Цвят)', (await off.locator('.sf-picker-label').allInnerTexts()).join('|') === 'PB1 Размер|PB1 Цвят', (await off.locator('.sf-picker-label').allInnerTexts()).join('|'));
+    check('live: the button is the whole row', await off.locator('.sf-buy').evaluate((b) => Math.abs(b.getBoundingClientRect().width - b.parentElement.getBoundingClientRect().width) < 2));
+    await shot(off, 'pb11-live-no-counter-reordered', off.locator('.sf-summary'));
+    await offCtx.close();
+    const { ctx: offCtx2, page: off2 } = await visitor();
+    const errorsBefore = consoleErrors.length;
+    await off2.goto(BASE + '/product/pb1-probe', { waitUntil: 'networkidle' });
+    await radioByTitle(off2, 0, 'M').click();
+    await radioByTitle(off2, 1, 'Син').click();
+    await button(off2).click();
+    await off2.locator('.sf-cart-status a').waitFor({ timeout: 15000 });
+    const cart3 = await off2.evaluate(async () => (await fetch('/api/cart', { credentials: 'same-origin', headers: { Accept: 'application/json' } })).json());
+    const line3 = (cart3.lines ?? cart3.items ?? []).find((l) => String(l.variation_id) === '91105');
+    check('after the reorder, counter off: the right variation (Син + M = 91105) with quantity 1 reached the cart', line3 && Number(line3.quantity) === 1, JSON.stringify(cart3).slice(0, 300));
+    check('with the counter off no script error appears', consoleErrors.length === errorsBefore, consoleErrors.slice(-2).join('|'));
+    await offCtx2.close();
+
     // «Начални настройки» -> publish -> today's look again
     await toolbarButton('Начални настройки').click();
     await confirmModal();
@@ -325,5 +453,6 @@ check('no page errors, dialogs or server errors', consoleErrors.length === 0, co
 await browser.close();
 
 const failed = steps.filter((s) => ! s.ok);
+diag.length && console.error('diagnostics (' + diag.length + '): ' + diag.slice(0, 12).join(' | '));
 console.log(JSON.stringify({ total: steps.length, failed: failed.length, screenshots: shots, steps }, null, 1));
 process.exit(failed.length ? 1 : 0);

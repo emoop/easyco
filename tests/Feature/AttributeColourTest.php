@@ -168,10 +168,10 @@ class AttributeColourTest extends TestCase
         $type = fn (string $t) => DB::table('catalog_attribute_definitions')->where('id', 1)->update(['display_type' => $t]);
 
         $type('swatch');
-        $this->assertSame([['name' => 'Colour', 'displayType' => 'swatch', 'colours' => ['Red' => '#c62828', 'Blue' => '#1565c0', 'Green' => null]]], $this->reader()->product('shirt')->optionDisplay);
+        $this->assertSame([['id' => 1, 'name' => 'Colour', 'displayType' => 'swatch', 'colours' => ['Red' => '#c62828', 'Blue' => '#1565c0', 'Green' => null]]], $this->reader()->product('shirt')->optionDisplay);
 
         $type('buttons');
-        $this->assertSame([['name' => 'Colour', 'displayType' => 'buttons', 'colours' => []]], $this->reader()->product('shirt')->optionDisplay, 'no colour while the type is not swatch');
+        $this->assertSame([['id' => 1, 'name' => 'Colour', 'displayType' => 'buttons', 'colours' => []]], $this->reader()->product('shirt')->optionDisplay, 'no colour while the type is not swatch');
         $this->assertSame('#c62828', DB::table('catalog_attribute_values')->where('id', 1001)->value('colour'), 'but the stored colour stays');
 
         $type('swatch');
