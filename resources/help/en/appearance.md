@@ -8,7 +8,7 @@ Under the important pairs of colours (text and background, button, header, foote
 
 ## Fonts and shapes {#action-appearance-fonts}
 
-You can choose "System" (the font of the customer's own device), "Inter", "Manrope" and "Lora" (with serifs, nice for headings). The heading font can be the same as the body font or another one. The fonts come with the shop: nothing is loaded from another site, so nothing is sent to third parties and the page is not slowed down.
+You can choose "System" (the font of the customer's own device), "Inter", "Manrope" "Lora" (with serifs, nice for headings), "Montserrat" (clean, for text) and "Cormorant Garamond" (an elegant serif, for headings) — all of them with Latin and Cyrillic letters. The heading font can be the same as the body font or another one. The fonts come with the shop: nothing is loaded from another site, so nothing is sent to third parties and the page is not slowed down.
 
 "Corner radius" changes the corners of buttons, fields and cards (from no rounding to large). "Pill-shaped buttons" rounds only the buttons completely. "Button style": solid (filled) or outline only.
 

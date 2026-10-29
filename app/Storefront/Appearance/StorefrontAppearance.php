@@ -210,7 +210,13 @@ final class StorefrontAppearance
         $fonts = array_values(array_filter((array) ($data['fonts'] ?? []), static fn ($font): bool => is_string($font) && array_key_exists($font, AppearanceSettings::FONTS) && $font !== 'system'));
         $body = $data['body'] ?? null;
 
-        return ['hash' => $data['hash'], 'fonts' => $fonts, 'body' => is_string($body) && in_array($body, $fonts, true) ? $body : null];
+        $body = is_string($body) && in_array($body, $fonts, true) ? $body : null;
+        $compiled = ['hash' => $data['hash'], 'fonts' => $fonts, 'body' => $body];
+        // FN-1: the file of a static body family (a file name of the closed form; else the old name pattern is used)
+        $preload = $data['preload'] ?? null;
+        $body !== null && is_string($preload) && preg_match('/^[a-z0-9-]{1,80}\.woff2$/', $preload) === 1 && $compiled['preload'] = $preload;
+
+        return $compiled;
     }
 
     /**
@@ -508,7 +514,7 @@ final class StorefrontAppearance
 
         return [
             'tokensUrl' => $compiled === null ? null : '/storage/'.\App\Storefront\Appearance\AppearanceCompiler::DIRECTORY.'/tokens-'.$compiled['hash'].'.css',
-            'preloadFont' => $compiled === null || $compiled['body'] === null ? null : '/fonts/storefront/'.$compiled['body'].'/'.$compiled['body'].'-latin-wght-normal.woff2',
+            'preloadFont' => $compiled === null || $compiled['body'] === null ? null : '/fonts/storefront/'.$compiled['body'].'/'.($compiled['preload'] ?? $compiled['body'].'-latin-wght-normal.woff2'),
             'banner' => $this->banner(),
             'header' => HeaderView::prepare($this->header(), $this->menuAt('header'), $this->menuAt('drawer') ?: $this->menuAt('header')),
             'footerMenu' => $this->menuAt('footer'),

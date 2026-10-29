@@ -112,7 +112,7 @@ final class AppearanceSettings
     ];
 
     /** Font families offered (a closed list): key => label. `system` needs no file. */
-    public const FONTS = ['system' => 'System', 'inter' => 'Inter', 'manrope' => 'Manrope', 'lora' => 'Lora'];
+    public const FONTS = ['system' => 'System', 'inter' => 'Inter', 'manrope' => 'Manrope', 'lora' => 'Lora', 'montserrat' => 'Montserrat', 'cormorant' => 'Cormorant Garamond'];
 
     /** The corner radius: key => pixels of the base radius (`pill` is the base `md` for everything but buttons). */
     public const RADII = ['none' => 0, 'sm' => 4, 'md' => 8, 'lg' => 12, 'pill' => 8];

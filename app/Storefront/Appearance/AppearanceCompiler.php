@@ -227,7 +227,25 @@ final class AppearanceCompiler
         $effective = $this->effective($overrides);
         $body = $effective[AppearanceSettings::FONT_BODY];
 
-        return ['hash' => $hash, 'fonts' => $this->fontKeys($overrides), 'body' => $body === 'system' ? null : $body];
+        $compiled = ['hash' => $hash, 'fonts' => $this->fontKeys($overrides), 'body' => $body === 'system' ? null : $body];
+
+        // FN-1: a static body family names the file to preload (its regular latin face); a variable one keeps the old name pattern and the stored value stays what it was
+        $preload = $body === 'system' ? null : $this->preloadFile($body);
+        $preload === null || $compiled['preload'] = $preload;
+
+        return $compiled;
+    }
+
+    /** FN-1: the file to preload for a STATIC body family (weight 400, normal, latin), or null (a variable family: the name pattern the page always used). */
+    private function preloadFile(string $key): ?string
+    {
+        foreach ($this->manifest()[$key]['faces'] ?? [] as $face) {
+            if (isset($face['weight']) && $face['weight'] === 400 && ($face['style'] ?? null) === 'normal' && ($face['subset'] ?? null) === 'latin' && preg_match('/^[a-z0-9-]{1,80}\.woff2$/', (string) $face['file']) === 1) {
+                return $face['file'];
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -395,7 +413,8 @@ final class AppearanceCompiler
             throw new InvalidArgumentException('The font family is not available.');
         }
 
-        return "'{$family}', ".($font === 'lora' ? self::SERIF : self::SYSTEM_SANS);
+        // FN-1: a serif family says so in the manifest (`serif`); Lora, from before the flag existed, is one too
+        return "'{$family}', ".($font === 'lora' || ($this->manifest()[$font]['serif'] ?? false) === true ? self::SERIF : self::SYSTEM_SANS);
     }
 
     /** @param  list<string>  $keys */
@@ -413,6 +432,18 @@ final class AppearanceCompiler
             foreach ($entry['faces'] as $face) {
                 if (preg_match('/^[a-z0-9-]{1,80}\.woff2$/', (string) $face['file']) !== 1 || preg_match('/^[U+0-9A-Fa-f,\- ]{1,400}$/', (string) $face['range']) !== 1) {
                     throw new InvalidArgumentException('The font manifest is not valid.');
+                }
+
+                // FN-1: a face with a `weight` is a STATIC one (one weight, one style); without it the face is a variable one, printed exactly as before
+                if (isset($face['weight'])) {
+                    if (! is_int($face['weight']) || $face['weight'] < 100 || $face['weight'] > 900 || ! in_array($face['style'] ?? null, ['normal', 'italic'], true) || preg_match('/^[A-Za-z0-9 ]{1,40}$/', (string) $entry['family']) !== 1) {
+                        throw new InvalidArgumentException('The font manifest is not valid.');
+                    }
+
+                    $css .= "@font-face {\n    font-family: '{$entry['family']}';\n    font-style: {$face['style']};\n    font-display: swap;\n    font-weight: {$face['weight']};\n"
+                        ."    src: url(/fonts/storefront/{$key}/{$face['file']}) format('woff2');\n    unicode-range: {$face['range']};\n}\n";
+
+                    continue;
                 }
 
                 $css .= "@font-face {\n    font-family: '{$entry['family']}';\n    font-style: normal;\n    font-display: swap;\n    font-weight: 100 900;\n"
