@@ -17,6 +17,7 @@ use App\Rules\PlainText;
 use BackedEnum;
 use EasyCo\Staff\Enums\Permission;
 use App\Settings\AppearanceSettings;
+use App\Storefront\Conditions\ProductConditions;
 use Filament\Actions\Action;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\EditAction;
@@ -30,11 +31,14 @@ use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Actions;
+use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Text;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\HtmlString;
 use Illuminate\Validation\ValidationException;
 use Filament\Tables\Columns\TextColumn;
@@ -152,8 +156,90 @@ class HtmlBlockResource extends Resource
                 // ML-2: the picture button opens the media picker (pick or upload into the library) instead of saving loose files in public/html-blocks
                 ->plugins([MediaImagePlugin::make()])
                 ->helperText(__('html_blocks.help.body')),
-            self::styleSection(),
+            // HB-2: the two sections side by side (stacked on a phone), compact, each closed while it holds nothing and open when it holds something
+            Grid::make(['default' => 1, 'lg' => 2])->schema([self::styleSection(), self::conditionsSection()])->extraAttributes(['class' => 'fi-hb-compact']),
         ]);
+    }
+
+    /** Does the saved block have a value in this part (a style / conditions that is set)? @param  mixed  $stored */
+    private static function saved(mixed $stored): bool
+    {
+        return is_array($stored) && $stored !== [];
+    }
+
+    /** @return array<int, string> category id => «Parent › Child» (the whole tree: a few hundred rows at most) */
+    private static function categoryLabels(): array
+    {
+        $rows = DB::table('catalog_categories')->orderBy('name')->get(['id', 'parent_id', 'name'])->keyBy('id');
+        $labels = [];
+
+        foreach ($rows as $row) {
+            $path = [];
+
+            for ($current = $row, $guard = 0; $current !== null && $guard < 10; $current = $current->parent_id === null ? null : ($rows[$current->parent_id] ?? null), $guard++) {
+                array_unshift($path, (string) $current->name);
+            }
+
+            $labels[(int) $row->id] = implode(' › ', $path);
+        }
+
+        asort($labels);
+
+        return $labels;
+    }
+
+    /** HB-2: «Показвай, когато…»: the product conditions of the block, the muted line about where they apply and «Без условия». Validated by ProductConditions on save (conditionsFromForm). */
+    private static function conditionsSection(): Section
+    {
+        $hint = static fn (string $key): string => (string) __('html_blocks.conditions.hints.'.$key);
+
+        return Section::make(__('html_blocks.conditions.title'))
+            ->compact()
+            ->collapsible()
+            // closed while the SAVED block has no conditions, open when it has: decided by the record, not by what is typed, so a section never folds up under the hand that just cleared its last field
+            ->collapsed(static fn (?Model $record): bool => ! self::saved($record?->conditions))
+            ->columns(2)
+            ->schema([
+                Select::make('conditions.on_sale')->label(__('html_blocks.conditions.fields.on_sale'))->helperText($hint('on_sale'))->native(false)->default('all')
+                    ->options(['all' => __('html_blocks.conditions.options.all'), 'yes' => __('html_blocks.conditions.options.on_sale_yes'), 'no' => __('html_blocks.conditions.options.on_sale_no')]),
+                Select::make('conditions.seasons')->label(__('html_blocks.conditions.fields.seasons'))->helperText($hint('seasons'))->native(false)->multiple()->searchable()
+                    ->options(static fn (): array => DB::table('catalog_seasons')->orderBy('name')->pluck('name', 'id')->map(static fn ($name): string => (string) $name)->all()),
+                Select::make('conditions.categories')->label(__('html_blocks.conditions.fields.categories'))->helperText($hint('categories'))->native(false)->multiple()->searchable()
+                    ->options(static fn (): array => self::categoryLabels()),
+                Select::make('conditions.tags')->label(__('html_blocks.conditions.fields.tags'))->helperText($hint('tags'))->native(false)->multiple()->searchable()
+                    ->options(static fn (): array => DB::table('catalog_tags')->orderBy('name')->pluck('name', 'id')->map(static fn ($name): string => (string) $name)->all()),
+                Repeater::make('conditions.attributes')->label(__('html_blocks.conditions.fields.attributes'))->helperText($hint('attributes'))
+                    ->maxItems(ProductConditions::MAX_RULES)->defaultItems(0)->addActionLabel(__('html_blocks.conditions.add_rule'))->compact()->columns(2)->columnSpanFull()
+                    ->schema([
+                        Select::make('attribute')->label(__('html_blocks.conditions.fields.attribute'))->native(false)->live()->searchable()
+                            ->options(static fn (): array => DB::table('catalog_attribute_definitions')->orderBy('name')->pluck('name', 'id')->map(static fn ($name): string => (string) $name)->all())
+                            ->afterStateUpdated(static fn (Set $set) => $set('values', [])),
+                        Select::make('values')->label(__('html_blocks.conditions.fields.values'))->native(false)->multiple()->searchable()
+                            ->options(static fn (Get $get): array => ProductConditions::id($get('attribute')) === null ? [] : DB::table('catalog_attribute_values')->where('attribute_definition_id', ProductConditions::id($get('attribute')))->orderBy('sort_order')->orderBy('id')->pluck('value', 'id')->map(static fn ($value): string => (string) $value)->all()),
+                    ]),
+                Text::make(__('html_blocks.conditions.scope'))->color('gray')->size('sm')->columnSpanFull(),
+                Actions::make([
+                    Action::make('clear_conditions')->label(__('html_blocks.conditions.clear'))->color('gray')->action(static fn (Set $set) => $set('conditions', ProductConditions::formState(null))),
+                ])->key('conditions-actions')->columnSpanFull(),
+            ]);
+    }
+
+    /**
+     * The form's conditions as the stored ones: validated by ProductConditions (a refusal is a field error under the field, nothing is saved; the ids are checked on the server).
+     *
+     * @return array<string, mixed>|null null = no conditions
+     *
+     * @throws ValidationException
+     */
+    public static function conditionsFromForm(mixed $state): ?array
+    {
+        [$clean, $errors] = ProductConditions::validate(ProductConditions::fromForm($state));
+
+        if ($errors !== []) {
+            throw ValidationException::withMessages(array_combine(array_map(static fn (string $key): string => 'data.conditions.'.($key === 'conditions' ? 'on_sale' : $key), array_keys($errors)), array_values($errors)));
+        }
+
+        return $clean === [] ? null : $clean;
     }
 
     /** HB-1: «Стил на блока»: the fields, the live preview, the contrast warning and «Без стил». The values are validated by HtmlBlockStyle on save (styleFromForm). */
@@ -176,8 +262,10 @@ class HtmlBlockResource extends Resource
             ->options(array_combine($values, array_map(static fn (string $v): string => (string) __('html_blocks.style.options.'.$key.'.'.$v), $values)));
 
         return Section::make(__('html_blocks.style.title'))
-            ->description(__('html_blocks.style.description'))
+            ->compact()
             ->collapsible()
+            // closed while the SAVED block has no style, open when it has (decided by the record, see the conditions section)
+            ->collapsed(static fn (?Model $record): bool => ! self::saved($record?->style))
             ->columns(2)
             ->schema([
                 $color('bg'),

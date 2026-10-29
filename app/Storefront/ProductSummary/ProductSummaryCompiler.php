@@ -5,6 +5,7 @@ namespace App\Storefront\ProductSummary;
 use App\Content\HtmlBlocks\HtmlBlockModel;
 use App\Settings\AppearanceSettings;
 use App\Settings\Contracts\SiteSettingsRepository;
+use App\Storefront\Conditions\ProductConditions;
 use App\Storefront\Appearance\StorefrontAppearance;
 use App\Storefront\CheckoutHeader\CheckoutHeaderCompiler;
 use InvalidArgumentException;
@@ -45,7 +46,13 @@ final class ProductSummaryCompiler
             }
         }
 
-        return ['layout' => $layout, 'blocks' => $blocks];
+        $compiled = ['layout' => $layout, 'blocks' => $blocks];
+
+        // HB-2: the «Показвай, когато…» conditions of the blocks that have some travel with their HTML (the key is not there at all when no block has any: the copy is what it was)
+        $conditions = ProductConditions::storedFor(array_values(array_unique($ids)));
+        $conditions === [] || $compiled['conditions'] = $conditions;
+
+        return $compiled;
     }
 
     /**
@@ -139,7 +146,7 @@ final class ProductSummaryCompiler
     /**
      * The PUBLISHED layout and the sanitised HTML of its blocks, read from the compiled document and validated AGAIN (a layout that does not validate = null: the page prints the default one).
      *
-     * @return array{layout: array{components: list<array{type: string, settings: array<string, mixed>}>}, blocks: array<string, string>}|null
+     * @return array{layout: array{components: list<array{type: string, settings: array<string, mixed>}>}, blocks: array<string, string>, conditions: array<string, array<string, mixed>|false>}|null
      */
     public static function published(?string $json): ?array
     {
@@ -163,6 +170,15 @@ final class ProductSummaryCompiler
             }
         }
 
-        return ['layout' => $clean, 'blocks' => $blocks];
+        // HB-2: the conditions of the blocks, checked for their SHAPE again (no query on the storefront); a block whose conditions are not valid is `false` and is never shown
+        $conditions = [];
+
+        foreach (is_array($entry['conditions'] ?? null) ? $entry['conditions'] : [] as $id => $stored) {
+            $active = $stored === false ? false : (is_array($stored) ? ProductConditions::active($stored) : false);
+
+            $active === null || $conditions[(string) $id] = $active;
+        }
+
+        return ['layout' => $clean, 'blocks' => $blocks, 'conditions' => $conditions];
     }
 }

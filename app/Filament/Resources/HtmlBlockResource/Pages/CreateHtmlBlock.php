@@ -30,6 +30,8 @@ class CreateHtmlBlock extends CreateRecord
         $data['pictures'] = HtmlBlockResource::picturesFromForm(is_array($data['pictures'] ?? null) ? $data['pictures'] : [], array_keys(is_array($this->data['pictures'] ?? null) ? $this->data['pictures'] : [])) ?: null;
         // HB-1: the «Стил на блока» is validated by HtmlBlockStyle; a refusal is a field error
         $data['style'] = HtmlBlockResource::styleFromForm($data['style'] ?? null, null);
+        // HB-2: the «Показвай, когато…» conditions are validated by ProductConditions (the ids are checked on the server); a refusal is a field error
+        $data['conditions'] = HtmlBlockResource::conditionsFromForm($data['conditions'] ?? null);
 
         return $data;
     }

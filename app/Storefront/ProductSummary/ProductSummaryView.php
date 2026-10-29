@@ -3,6 +3,8 @@
 namespace App\Storefront\ProductSummary;
 
 use App\Content\HtmlBlocks\HtmlBlockSanitizer;
+use App\Storefront\Conditions\ProductConditions;
+use App\Storefront\Conditions\ProductContext;
 
 /**
  * Turns a VALIDATED layout of the right column (plus the sanitised HTML of its blocks) into the list the product view loops over (SC-1): `[{type, html?}]`. An HTML block whose HTML is gone (the
@@ -28,7 +30,11 @@ final class ProductSummaryView
                     continue;
                 }
 
-                $out[] = ['type' => 'html_block', 'html' => $html];
+                $entry = ['type' => 'html_block', 'html' => $html];
+                // HB-2: the block's «Показвай, когато…» conditions (`false` = invalid, never shown); the key is there only for a block that has some, so a layout with none is what it was
+                $conditions = $stored['conditions'][(string) ($component['settings']['html_block'] ?? '')] ?? null;
+                $conditions === null || $entry['conditions'] = $conditions;
+                $out[] = $entry;
 
                 continue;
             }
@@ -37,5 +43,16 @@ final class ProductSummaryView
         }
 
         return $out;
+    }
+
+    /**
+     * HB-2: the components that are for THIS product: an HTML block whose conditions do not hold for it is not in the list at all (nothing is printed, no empty row). Every other component stays.
+     *
+     * @param  list<array{type: string, html: string, conditions?: array<string, mixed>|false}>  $components  prepare()'s list
+     * @return list<array{type: string, html: string}>
+     */
+    public static function forProduct(array $components, ProductContext $context): array
+    {
+        return array_values(array_filter($components, static fn (array $component): bool => ! array_key_exists('conditions', $component) || ProductConditions::matches($context, $component['conditions'])));
     }
 }

@@ -72,6 +72,37 @@ return [
             'too_many' => 'At most :max blocks can have a style. Remove the style of another block.',
         ],
     ],
+    // HB-2: «Show when…» — the block is shown only for some products (right column of the product page)
+    'conditions' => [
+        'title' => 'Show when…',
+        'fields' => ['on_sale' => 'On sale', 'seasons' => 'Season', 'categories' => 'Categories', 'tags' => 'Tags', 'attributes' => 'Attributes', 'attribute' => 'Attribute', 'values' => 'Values'],
+        'options' => ['all' => 'All', 'on_sale_yes' => 'Only on sale', 'on_sale_no' => 'Only not on sale'],
+        'hints' => [
+            'on_sale' => 'On sale = a product with a struck-through price.',
+            'seasons' => 'The product\'s season is one of the chosen.',
+            'categories' => 'Any of the chosen; subcategories count.',
+            'tags' => 'The product has any of the chosen tags.',
+            'attributes' => 'For each attribute: any of the chosen values.',
+        ],
+        'add_rule' => 'Add an attribute',
+        'scope' => 'Applies only in the right column of the product page. In the footer and the menus the block is always shown.',
+        'clear' => 'No conditions',
+        'errors' => [
+            'unknown_key' => 'Unknown condition: :key.',
+            'bad_value' => 'Invalid conditions.',
+            'bad_boolean' => 'Choose «All», «Only on sale» or «Only not on sale».',
+            'bad_list' => 'Invalid list.',
+            'bad_id' => 'Invalid value in the list.',
+            'too_many' => 'At most :max chosen.',
+            'unknown_id' => 'Something chosen no longer exists (:id). Remove it.',
+            'too_many_rules' => 'At most :max attributes.',
+            'bad_rule' => 'Invalid attribute rule.',
+            'bad_attribute' => 'Choose an attribute.',
+            'duplicate_attribute' => 'An attribute can be used only once.',
+            'values_required' => 'Choose at least one value of the attribute.',
+            'unknown_value' => 'The attribute or its value does not exist.',
+        ],
+    ],
     // SC-1.1: the places that show a block, named in the refusal when the right column is one of them
     'places' => [
         'menu' => 'the menu :menus',

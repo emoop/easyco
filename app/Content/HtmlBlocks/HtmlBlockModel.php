@@ -2,6 +2,7 @@
 
 namespace App\Content\HtmlBlocks;
 
+use App\Storefront\Conditions\ProductConditions;
 use EasyCo\Media\Persistence\Eloquent\MediaAssetModel;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
@@ -15,14 +16,15 @@ use Illuminate\Support\Facades\DB;
  * @property string $body
  * @property ?list<array{media_asset_id: int, alt: string, url: string}> $pictures
  * @property ?array<string, mixed> $style HB-1: the «Стил на блока» (null = no style), normalised by HtmlBlockStyle on every save
+ * @property ?array<string, mixed> $conditions HB-2: «Показвай, когато…» (null = shown everywhere), normalised by ProductConditions on every save
  */
 class HtmlBlockModel extends Model
 {
     protected $table = 'html_blocks';
 
-    protected $fillable = ['title', 'body', 'pictures', 'style'];
+    protected $fillable = ['title', 'body', 'pictures', 'style', 'conditions'];
 
-    protected $casts = ['pictures' => 'array', 'style' => 'array'];
+    protected $casts = ['pictures' => 'array', 'style' => 'array', 'conditions' => 'array'];
 
     /** HB-1: set by `saving`, read by `saved`: the stored style changed with this save (the token stylesheet must be rebuilt). */
     private bool $styleChanged = false;
@@ -38,6 +40,10 @@ class HtmlBlockModel extends Model
             $block->isDirty('style') && $block->style = HtmlBlockStyle::storable($block->style);
             // remembered for `saved`: did the stored style really change (a model that was created and is saved again in the same request is still «recently created»)?
             $block->styleChanged = $block->isDirty('style') && ($block->style !== null || $block->getOriginal('style') !== null);
+
+            // HB-2: the «Показвай, когато…» conditions are validated (the ids must exist) and stored normalised; nothing set = null. The compiled right column follows through MenuRecompileListeners
+            // (asked on EVERY save of a block), which carries the conditions together with the HTML.
+            $block->isDirty('conditions') && $block->conditions = ProductConditions::storable($block->conditions);
         });
 
         // HB-1: a styled block's rule lives in the token stylesheet, so a change of the style (or a styled block that is gone) rebuilds it and replaces the reader's cache entry. The compiled copies that carry
