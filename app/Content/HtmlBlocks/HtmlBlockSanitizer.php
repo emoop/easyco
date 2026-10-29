@@ -35,8 +35,22 @@ class HtmlBlockSanitizer extends DescriptionSanitizer
         'figure' => [], 'figcaption' => [],
     ];
 
-    /** The sanitized HTML ready to print: pictures load lazily. */
+    /**
+     * The sanitized HTML ready to print: pictures load lazily. HB-1: the wrapper of a STYLED block (`<div class="sf-hb sf-hb-{id}">…</div>`, added by HtmlBlockModel::renderMany) survives a second cleaning:
+     * only that exact wrapper is recognised (its class is `sf-hb sf-hb-` and a number, nothing else) and what is INSIDE it is cleaned as always, so the call stays idempotent.
+     */
     public static function render(?string $html): string
+    {
+        $html = (string) $html;
+
+        if (preg_match('#\A<div class="sf-hb sf-hb-([1-9][0-9]{0,9})">(.*)</div>\z#s', $html, $m) === 1) {
+            return HtmlBlockStyle::wrap((int) $m[1], static::renderInner($m[2]));
+        }
+
+        return static::renderInner($html);
+    }
+
+    private static function renderInner(string $html): string
     {
         return str_replace('<img ', '<img loading="lazy" decoding="async" ', static::clean($html));
     }

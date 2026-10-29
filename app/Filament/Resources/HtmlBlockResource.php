@@ -4,6 +4,7 @@ namespace App\Filament\Resources;
 
 use App\Content\HtmlBlocks\HtmlBlockModel;
 use App\Content\HtmlBlocks\HtmlBlockPictures;
+use App\Content\HtmlBlocks\HtmlBlockStyle;
 use App\Content\HtmlBlocks\HtmlBlockUsage;
 use App\Filament\Concerns\AuthorizesViaStaffPermission;
 use App\Filament\Forms\Components\MediaImagePlugin;
@@ -15,18 +16,26 @@ use App\Filament\Resources\HtmlBlockResource\Pages\ListHtmlBlocks;
 use App\Rules\PlainText;
 use BackedEnum;
 use EasyCo\Staff\Enums\Permission;
+use App\Settings\AppearanceSettings;
+use Filament\Actions\Action;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\EditAction;
 use Closure;
 use EasyCo\Media\Persistence\Eloquent\MediaAssetModel;
 use Filament\Forms\Components\Repeater;
+use Filament\Forms\Components\ColorPicker;
 use Filament\Forms\Components\RichEditor;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
+use Filament\Schemas\Components\Actions;
+use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Text;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
+use Illuminate\Support\HtmlString;
 use Illuminate\Validation\ValidationException;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
@@ -143,7 +152,79 @@ class HtmlBlockResource extends Resource
                 // ML-2: the picture button opens the media picker (pick or upload into the library) instead of saving loose files in public/html-blocks
                 ->plugins([MediaImagePlugin::make()])
                 ->helperText(__('html_blocks.help.body')),
+            self::styleSection(),
         ]);
+    }
+
+    /** HB-1: «Стил на блока»: the fields, the live preview, the contrast warning and «Без стил». The values are validated by HtmlBlockStyle on save (styleFromForm). */
+    private static function styleSection(): Section
+    {
+        $number = static fn (string $key): TextInput => TextInput::make('style.'.$key)
+            ->label(__('html_blocks.style.fields.'.$key))
+            ->helperText(__('html_blocks.style.hints.'.$key))
+            // NOT `numeric()`: Filament casts it through floatval (GL-2); the validator must see the text as it was typed
+            ->inputMode('numeric')->maxLength(3)->suffix('px')->live(onBlur: true);
+        $color = static fn (string $key): ColorPicker => ColorPicker::make('style.'.$key)
+            ->label(__('html_blocks.style.fields.'.$key))
+            ->helperText(__('html_blocks.style.hints.'.$key))
+            ->hex()->live(onBlur: true)
+            ->hintAction(Action::make('clear_'.$key)->label(__('html_blocks.style.none'))->action(static fn (Set $set) => $set('style.'.$key, null)));
+        $options = static fn (string $key, array $values): Select => Select::make('style.'.$key)
+            ->label(__('html_blocks.style.fields.'.$key))
+            ->helperText(__('html_blocks.style.hints.'.$key))
+            ->native(false)->live()
+            ->options(array_combine($values, array_map(static fn (string $v): string => (string) __('html_blocks.style.options.'.$key.'.'.$v), $values)));
+
+        return Section::make(__('html_blocks.style.title'))
+            ->description(__('html_blocks.style.description'))
+            ->collapsible()
+            ->columns(2)
+            ->schema([
+                $color('bg'),
+                $color('color'),
+                $number('pad_v'),
+                $number('pad_h'),
+                $number('border_w'),
+                $color('border_color'),
+                $number('radius'),
+                $options('width_mode', HtmlBlockStyle::WIDTH_MODES),
+                $number('width_px')->visible(static fn (Get $get): bool => $get('style.width_mode') === 'fixed'),
+                $options('align', HtmlBlockStyle::ALIGNS),
+                $options('size', HtmlBlockStyle::SIZES),
+                Text::make(static fn (Get $get): HtmlString => new HtmlString(view('filament.resources.html-block.style-preview', [
+                    'declarations' => HtmlBlockStyle::previewDeclarations($get('style')),
+                    'sample' => (string) ($get('title') ?: __('html_blocks.style.sample')),
+                ])->render()))->columnSpanFull(),
+                Text::make(static fn (Get $get): string => (string) __('html_blocks.style.contrast_warning', ['ratio' => number_format(AppearanceSettings::contrastRatio((string) $get('style.color'), (string) $get('style.bg')), 2)]))
+                    ->color('warning')->size('sm')->columnSpanFull()
+                    ->visible(static fn (Get $get): bool => AppearanceSettings::isHex($get('style.color')) && AppearanceSettings::isHex($get('style.bg'))
+                        && AppearanceSettings::contrastRatio((string) $get('style.color'), (string) $get('style.bg')) < AppearanceSettings::MIN_CONTRAST),
+                Actions::make([
+                    Action::make('clear_style')->label(__('html_blocks.style.clear'))->color('gray')->action(static fn (Set $set) => $set('style', HtmlBlockStyle::formState(null))),
+                ])->key('style-actions')->columnSpanFull(),
+            ]);
+    }
+
+    /**
+     * The form's style as the stored one: validated by HtmlBlockStyle (a refusal is a field error under the field, nothing is saved), and the 101st styled block is refused.
+     *
+     * @return array<string, mixed>|null null = no style
+     *
+     * @throws ValidationException
+     */
+    public static function styleFromForm(mixed $style, ?int $recordId): ?array
+    {
+        [$clean, $errors] = HtmlBlockStyle::validate($style);
+
+        if ($errors === [] && HtmlBlockStyle::isSet($clean) && HtmlBlockStyle::capReached($recordId)) {
+            $errors = ['bg' => (string) __('html_blocks.style.errors.too_many', ['max' => HtmlBlockStyle::MAX_STYLED])];
+        }
+
+        if ($errors !== []) {
+            throw ValidationException::withMessages(array_combine(array_map(static fn (string $key): string => 'data.style.'.($key === 'style' ? 'bg' : $key), array_keys($errors)), array_values($errors)));
+        }
+
+        return HtmlBlockStyle::storable($clean);
     }
 
     /**

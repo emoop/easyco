@@ -14,14 +14,18 @@ use Illuminate\Support\Facades\DB;
  * @property string $title
  * @property string $body
  * @property ?list<array{media_asset_id: int, alt: string, url: string}> $pictures
+ * @property ?array<string, mixed> $style HB-1: the «Стил на блока» (null = no style), normalised by HtmlBlockStyle on every save
  */
 class HtmlBlockModel extends Model
 {
     protected $table = 'html_blocks';
 
-    protected $fillable = ['title', 'body', 'pictures'];
+    protected $fillable = ['title', 'body', 'pictures', 'style'];
 
-    protected $casts = ['pictures' => 'array'];
+    protected $casts = ['pictures' => 'array', 'style' => 'array'];
+
+    /** HB-1: set by `saving`, read by `saved`: the stored style changed with this save (the token stylesheet must be rebuilt). */
+    private bool $styleChanged = false;
 
     protected static function booted(): void
     {
@@ -29,6 +33,20 @@ class HtmlBlockModel extends Model
             $block->body = HtmlBlockSanitizer::clean((string) $block->body);
             // MENU-5: the pictures are kept as clean() leaves them (at most 4, plain alt, an acceptable address); an empty list is null.
             $block->pictures = HtmlBlockPictures::clean($block->pictures) ?: null;
+
+            // HB-1: the style is validated and stored normalised (only what differs from the defaults); all defaults = null. An invalid one is refused (the form validates first).
+            $block->isDirty('style') && $block->style = HtmlBlockStyle::storable($block->style);
+            // remembered for `saved`: did the stored style really change (a model that was created and is saved again in the same request is still «recently created»)?
+            $block->styleChanged = $block->isDirty('style') && ($block->style !== null || $block->getOriginal('style') !== null);
+        });
+
+        // HB-1: a styled block's rule lives in the token stylesheet, so a change of the style (or a styled block that is gone) rebuilds it and replaces the reader's cache entry. The compiled copies that carry
+        // the block's HTML (footer, right column, menus) follow through MenuRecompileListeners, which asks for their rebuild on EVERY save of a block (the wrapper is in the copies).
+        static::saved(static function (HtmlBlockModel $block): void {
+            $block->styleChanged && HtmlBlockStyle::rebuildStylesheet();
+        });
+        static::deleted(static function (HtmlBlockModel $block): void {
+            $block->style !== null && HtmlBlockStyle::rebuildStylesheet();
         });
 
         // The last line of defence behind the admin message: a block a menu or the footer shows is never deleted.
@@ -57,16 +75,18 @@ class HtmlBlockModel extends Model
 
         foreach (array_values(array_unique($ids)) as $id) {
             if (isset($loaded[$id])) {
-                $rows[$id] = ['body' => (string) $loaded[$id]->body, 'pictures' => $loaded[$id]->pictures];
+                $rows[$id] = ['body' => (string) $loaded[$id]->body, 'pictures' => $loaded[$id]->pictures, 'style' => $loaded[$id]->style];
             }
         }
 
         $missing = array_values(array_diff(array_unique($ids), array_keys($rows)));
 
         if ($missing !== []) {
-            foreach (DB::table('html_blocks')->whereIn('id', $missing)->get(['id', 'body', 'pictures']) as $row) {
+            $columns = HtmlBlockStyle::hasColumn() ? ['id', 'body', 'pictures', 'style'] : ['id', 'body', 'pictures'];
+
+            foreach (DB::table('html_blocks')->whereIn('id', $missing)->get($columns) as $row) {
                 $decoded = is_string($row->pictures) ? json_decode($row->pictures, true) : null;
-                $rows[(int) $row->id] = ['body' => (string) $row->body, 'pictures' => is_array($decoded) ? $decoded : null];
+                $rows[(int) $row->id] = ['body' => (string) $row->body, 'pictures' => is_array($decoded) ? $decoded : null, 'style' => $row->style ?? null];
             }
         }
 
@@ -82,7 +102,9 @@ class HtmlBlockModel extends Model
         $out = [];
 
         foreach ($rows as $id => $row) {
-            $out[$id] = HtmlBlockSanitizer::render(HtmlBlockPictures::html(is_array($row['pictures']) ? $row['pictures'] : [], $assets).$row['body']);
+            $html = HtmlBlockSanitizer::render(HtmlBlockPictures::html(is_array($row['pictures']) ? $row['pictures'] : [], $assets).$row['body']);
+            // HB-1: THE one place a styled block gets its wrapper (`div.sf-hb.sf-hb-{id}`): the mega menu, the footer and the right column all print what this method returns. No style = no wrapper.
+            $out[$id] = HtmlBlockStyle::active($row['style']) === null ? $html : HtmlBlockStyle::wrap($id, $html);
         }
 
         return $out;

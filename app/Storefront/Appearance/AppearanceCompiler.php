@@ -2,6 +2,7 @@
 
 namespace App\Storefront\Appearance;
 
+use App\Content\HtmlBlocks\HtmlBlockStyle;
 use App\Settings\AppearanceSettings;
 use App\Settings\Contracts\SiteSettingsRepository;
 use App\Storefront\Footer\FooterLayout;
@@ -42,9 +43,10 @@ final class AppearanceCompiler
      *
      * @param  array<string, string>  $overrides
      * @param  array<string, string>  $pageVars  GL-2: the variables of the two plain Design sections (PageDesign::vars), only what differs from the defaults
+     * @param  list<string>  $blockRules  HB-1: the rules of the styled HTML blocks (`.sf-hb-{id}{...}`, HtmlBlockStyle::css), each checked again here against the closed template
      * @throws InvalidArgumentException a value that is not valid for its key
      */
-    public function css(array $overrides, array $metrics = [], array $badgeColors = [], array $footerVars = [], array $headerColors = [], array $checkoutVars = [], array $pageVars = []): ?string
+    public function css(array $overrides, array $metrics = [], array $badgeColors = [], array $footerVars = [], array $headerColors = [], array $checkoutVars = [], array $pageVars = [], array $blockRules = []): ?string
     {
         $effective = $this->effective($overrides);
         $defaults = AppearanceSettings::defaults();
@@ -144,16 +146,25 @@ final class AppearanceCompiler
             $vars[] = "{$variable}: {$value};";
         }
 
+        // HB-1: a rule of a styled HTML block, a CLOSED template re-checked as a whole (an invalid one is refused, like the other closed lists); nothing is written when no block is styled
+        foreach ($blockRules as $rule) {
+            if (! is_string($rule) || ! HtmlBlockStyle::isValidRule($rule)) {
+                throw new InvalidArgumentException('An HTML block rule is not valid.');
+            }
+        }
+
+        $blocks = $blockRules === [] ? '' : implode("\n", $blockRules)."\n";
+
         $faces = $this->fontFaces($this->fontKeys($effective));
         $badges = $this->badgeClasses($badgeColors);
 
-        if ($vars === [] && $faces === '' && $badges === '') {
+        if ($vars === [] && $faces === '' && $badges === '' && $blocks === '') {
             return null;
         }
 
         $css = $vars === [] ? '' : ":root {\n    ".implode("\n    ", $vars)."\n}\n";
 
-        return $css.$badges.$faces;
+        return $css.$badges.$blocks.$faces;
     }
 
     /**
@@ -184,7 +195,7 @@ final class AppearanceCompiler
      */
     public function compile(array $overrides, ?string $previousHash = null, ?array $metrics = null): ?array
     {
-        $css = $this->css($overrides, $metrics ?? $this->publishedMetrics(), $this->storedBadgeColors(), $this->publishedFooterVars(), $this->publishedHeaderColors(), $this->publishedCheckoutVars(), PageDesign::storedVars(app(SiteSettingsRepository::class)));
+        $css = $this->css($overrides, $metrics ?? $this->publishedMetrics(), $this->storedBadgeColors(), $this->publishedFooterVars(), $this->publishedHeaderColors(), $this->publishedCheckoutVars(), PageDesign::storedVars(app(SiteSettingsRepository::class)), HtmlBlockStyle::storedRules());
 
         if ($css === null) {
             $this->prune(null, $previousHash);

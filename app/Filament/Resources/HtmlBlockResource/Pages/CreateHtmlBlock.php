@@ -28,6 +28,8 @@ class CreateHtmlBlock extends CreateRecord
     protected function mutateFormDataBeforeCreate(array $data): array
     {
         $data['pictures'] = HtmlBlockResource::picturesFromForm(is_array($data['pictures'] ?? null) ? $data['pictures'] : [], array_keys(is_array($this->data['pictures'] ?? null) ? $this->data['pictures'] : [])) ?: null;
+        // HB-1: the «Стил на блока» is validated by HtmlBlockStyle; a refusal is a field error
+        $data['style'] = HtmlBlockResource::styleFromForm($data['style'] ?? null, null);
 
         return $data;
     }

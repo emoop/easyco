@@ -778,6 +778,11 @@
         @apply h-auto max-w-full;
     }
 
+    /* HB-1: the wrapper of a styled HTML block (`.sf-hb-{id}` rules come from the token stylesheet, never inline) */
+    .sf-hb {
+        box-sizing: border-box;
+    }
+
     .sf-variations {
         @apply mt-2 flex flex-col gap-1;
     }
