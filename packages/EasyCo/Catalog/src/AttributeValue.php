@@ -2,6 +2,8 @@
 
 namespace EasyCo\Catalog;
 
+use EasyCo\Catalog\Exceptions\InvalidAttributeColourException;
+
 /**
  * One enumerable value belonging to a SELECT/MULTISELECT
  * AttributeDefinition (e.g. "Black" under the "Color" definition).
@@ -18,7 +20,10 @@ final class AttributeValue
         private string $value,
         private int $sortOrder = 0,
         private ?string $pictureMediaAssetId = null,
+        // AT-1: `#rrggbb` (lower-case) or null; presentation only, never part of a variation's identity
+        private ?string $colour = null,
     ) {
+        $this->colour = self::normaliseColour($colour);
     }
 
     public function id(): ?string
@@ -90,5 +95,30 @@ final class AttributeValue
     public function removePicture(): void
     {
         $this->pictureMediaAssetId = null;
+    }
+    /** AT-1: the colour of this value as `#rrggbb`, or null. Whether it is shown is the attribute's display type's business. */
+    public function colour(): ?string
+    {
+        return $this->colour;
+    }
+
+    /** @throws InvalidAttributeColourException */
+    public function setColour(?string $colour): void
+    {
+        $this->colour = self::normaliseColour($colour);
+    }
+
+    /**
+     * The one validator of a colour: null or an empty string = no colour; otherwise exactly `#` and six hex digits (`#fff`, `red`, `#12345`, anything with other characters is refused); stored lower-case.
+     *
+     * @throws InvalidAttributeColourException
+     */
+    public static function normaliseColour(?string $colour): ?string
+    {
+        if ($colour === null || $colour === '') {
+            return null;
+        }
+
+        return preg_match('/\A#[0-9a-fA-F]{6}\z/', $colour) === 1 ? strtolower($colour) : throw InvalidAttributeColourException::notHex($colour);
     }
 }

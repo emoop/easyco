@@ -4,9 +4,11 @@ namespace App\Filament\Resources\AttributeValueResource\Pages;
 
 use App\Filament\Resources\AttributeValueResource;
 use EasyCo\Catalog\Contracts\AttributeValueRepository;
+use EasyCo\Catalog\Exceptions\InvalidAttributeColourException;
 use EasyCo\Catalog\Persistence\Eloquent\AttributeValueModel;
 use Filament\Resources\Pages\EditRecord;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Validation\ValidationException;
 use RuntimeException;
 
 /**
@@ -45,6 +47,13 @@ class EditAttributeValue extends EditRecord
             $value->removePicture();
         } elseif ($picture !== null && $picture !== $value->pictureMediaAssetId()) {
             $value->setPicture($picture);
+        }
+
+        // AT-1: a hidden picker (the attribute is not a colour one) sends no key: the stored colour stays; a cleared picker sends null: no colour
+        try {
+            array_key_exists('colour', $data) && $value->setColour($data['colour'] === null ? null : (string) $data['colour']);
+        } catch (InvalidAttributeColourException) {
+            throw ValidationException::withMessages(['data.colour' => __('attribute_values.errors.colour')]);
         }
 
         app(AttributeValueRepository::class)->save($value);

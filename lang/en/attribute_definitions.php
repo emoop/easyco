@@ -16,7 +16,7 @@ return [
         'is_filterable_column' => 'Filter',
         'filter_display' => 'How its values are shown in a filter',
         'display_type' => 'How it is shown on the product page',
-        'display_type_help' => 'Sets how the attribute\'s values are shown on the product and in the card. For now this changes nothing for visitors.',
+        'display_type_help' => 'Sets how the attribute\'s values are shown on the product and in the card. Buttons suit sizes. Colour dots: each value gets a colour, set on the attribute\'s values. Changing the type never changes or deletes the values. For now this changes nothing for visitors.',
     ],
 
     'display_type' => [

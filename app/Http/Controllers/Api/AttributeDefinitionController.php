@@ -5,9 +5,11 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use EasyCo\Catalog\AttributeDefinition;
 use EasyCo\Catalog\Contracts\AttributeDefinitionRepository;
+use EasyCo\Catalog\Enums\AttributeDisplayType;
 use EasyCo\Catalog\Enums\AttributeType;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 /**
  * HTTP surface for the global, reusable AttributeDefinition set
@@ -29,6 +31,8 @@ class AttributeDefinitionController extends Controller
             'code' => 'required|string|max:255',
             'name' => 'required|string|max:255',
             'type' => 'required|in:text,number,boolean,select,multiselect',
+            // AT-1: how its values are shown (default dropdown)
+            'display_type' => ['nullable', Rule::enum(AttributeDisplayType::class)],
         ]);
 
         $definition = new AttributeDefinition(
@@ -38,6 +42,8 @@ class AttributeDefinitionController extends Controller
             type: AttributeType::from($validated['type']),
         );
 
+        isset($validated['display_type']) && $definition->setDisplayType($validated['display_type']);
+
         $this->definitions->save($definition);
 
         return response()->json([
@@ -45,6 +51,7 @@ class AttributeDefinitionController extends Controller
             'code' => $definition->code(),
             'name' => $definition->name(),
             'type' => $definition->type()->value,
+            'display_type' => $definition->displayType()->value,
         ], 201);
     }
 
@@ -56,6 +63,7 @@ class AttributeDefinitionController extends Controller
                 'code' => $definition->code(),
                 'name' => $definition->name(),
                 'type' => $definition->type()->value,
+                'display_type' => $definition->displayType()->value,
             ],
             $this->definitions->all()
         );

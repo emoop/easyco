@@ -111,7 +111,7 @@ final class CatalogReader
                 ->orderBy('def.id')
                 ->orderBy('val.sort_order')
                 ->orderBy('val.id')
-                ->get(['vav.variation_id', 'def.id as definition_id', 'def.name as definition_name', 'val.value as value'])
+                ->get(['vav.variation_id', 'def.id as definition_id', 'def.name as definition_name', 'def.display_type as display_type', 'val.value as value', 'val.colour as colour'])
                 ->all();
 
         $stock = $this->stockByVariation($variationIds);
@@ -120,17 +120,25 @@ final class CatalogReader
         $attributesOf = [];
         $optionValues = [];
         $optionNames = [];
+        $optionDisplayType = [];
+        $optionColours = [];
 
         foreach ($attributeRows as $row) {
             $attributesOf[(string) $row->variation_id][] = ['name' => (string) $row->definition_name, 'value' => (string) $row->value];
             $optionNames[(int) $row->definition_id] = (string) $row->definition_name;
             $optionValues[(int) $row->definition_id][(string) $row->value] = true;
+            $optionDisplayType[(int) $row->definition_id] = (string) $row->display_type;
+            $optionColours[(int) $row->definition_id][(string) $row->value] = $row->colour === null ? null : (string) $row->colour;
         }
 
         $options = [];
+        $optionDisplay = [];
 
         foreach ($optionNames as $definitionId => $name) {
             $options[] = ['name' => $name, 'values' => array_map('strval', array_keys($optionValues[$definitionId]))];
+            // AT-1: the colour is exposed only while the attribute is shown as colour
+            $type = $optionDisplayType[$definitionId];
+            $optionDisplay[] = ['name' => $name, 'displayType' => $type, 'colours' => $type === 'swatch' ? $optionColours[$definitionId] : []];
         }
 
         $views = [];
@@ -170,6 +178,7 @@ final class CatalogReader
             badges: [],
             gallery: $gallery['items'],
             sku: $product->base_sku === null || trim((string) $product->base_sku) === '' ? null : (string) $product->base_sku,
+            optionDisplay: $optionDisplay,
         );
     }
 

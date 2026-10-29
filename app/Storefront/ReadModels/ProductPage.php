@@ -12,6 +12,8 @@ namespace App\Storefront\ReadModels;
  * `options` lists, per attribute (in definition order), its values (in the attribute's own value order) that occur on
  * the shown variations; empty for a SIMPLE product. `images` are the READY gallery images, first = main.
  *
+ * AT-1: `optionDisplay` runs parallel to `options` (same order): per attribute its `displayType` (dropdown | buttons | swatch | specs) and `colours` (value => `#rrggbb` or null) which is filled ONLY for a `swatch` attribute (empty for every other type, the stored colour stays hidden). Nothing prints them yet; like `gallery` it is NOT in toArray() (the JSON contract is unchanged).
+ *
  * SC-1: `sku` is the product-level SKU (`base_sku`), or null when it has none; like `gallery` it is for the markup only and is NOT in toArray() (the JSON contract is unchanged).
  */
 final readonly class ProductPage
@@ -23,6 +25,7 @@ final readonly class ProductPage
      * @param list<array{name: string, values: list<string>}>     $options
      * @param list<VariationView>                                 $variations
      * @param list<Badge>                                         $badges always empty in S1
+     * @param list<array{name: string, displayType: string, colours: array<string, string|null>}> $optionDisplay
      * @param list<GalleryItem>                                   $gallery GL-1: the usable images AND videos in media order, for the gallery markup only (NOT in toArray(): the JSON contract is unchanged)
      */
     public function __construct(
@@ -43,6 +46,7 @@ final readonly class ProductPage
         public array $badges,
         public array $gallery = [],
         public ?string $sku = null,
+        public array $optionDisplay = [],
     ) {
     }
 

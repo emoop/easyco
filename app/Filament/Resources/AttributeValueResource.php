@@ -20,12 +20,19 @@ use App\Filament\Forms\Components\MediaPicker;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
+use Filament\Forms\Components\ColorPicker;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
+use Filament\Actions\Action;
+use Filament\Schemas\Components\Text;
+use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
+use Filament\Tables\Columns\ColorColumn;
+use EasyCo\Catalog\Enums\AttributeDisplayType;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\QueryException;
@@ -132,6 +139,7 @@ class AttributeValueResource extends Resource
                     ])->pluck('name', 'id')->all()
                 )
                 ->required()
+                ->live()
                 ->disabledOn('edit'),
             TextInput::make('value')
                 ->label(__('attribute_values.fields.value'))
@@ -147,6 +155,15 @@ class AttributeValueResource extends Resource
                 ->label(__('attribute_values.fields.picture'))
                 ->plainImagesOnly()
                 ->helperText(__('attribute_values.picture_help')),
+            // AT-1: a colour for the round swatches, only while the attribute is shown as colour («Цвят (кръгчета)»). A hidden picker is not submitted, so the stored colour stays when the attribute's type is changed away and back.
+            ColorPicker::make('colour')
+                ->label(__('attribute_values.fields.colour'))
+                ->hex()->live()
+                ->visible(static fn (Get $get): bool => self::isSwatch($get('attribute_definition_id')))
+                ->hintAction(Action::make('clear_colour')->label(__('attribute_values.colour_none'))->action(static fn (Set $set) => $set('colour', null))),
+            Text::make(__('attribute_values.colour_missing'))
+                ->color('gray')->size('sm')
+                ->visible(static fn (Get $get): bool => self::isSwatch($get('attribute_definition_id')) && blank($get('colour'))),
         ]);
     }
 
@@ -157,6 +174,10 @@ class AttributeValueResource extends Resource
                 TextColumn::make('value')
                     ->searchable()
                     ->sortable(),
+                // AT-1: a small colour dot (Filament's own column) only for a value of a colour attribute
+                ColorColumn::make('colour')
+                    ->label(__('attribute_values.fields.colour'))
+                    ->state(static fn (AttributeValueModel $record): ?string => $record->attributeDefinition?->display_type === AttributeDisplayType::SWATCH->value ? $record->colour : null),
                 TextColumn::make('attributeDefinition.name')
                     ->label(__('attribute_values.fields.attribute_definition_id')),
                 TextColumn::make('sort_order')
@@ -204,6 +225,12 @@ class AttributeValueResource extends Resource
                 static::deleteAction(),
             ])
             ->recordUrl(fn (AttributeValueModel $record): string => static::getUrl('view', ['record' => $record]));
+    }
+
+    /** AT-1: is the attribute shown as colour circles? (the one place the admin asks) */
+    public static function isSwatch(mixed $definitionId): bool
+    {
+        return filled($definitionId) && AttributeDefinitionModel::query()->whereKey($definitionId)->where('display_type', AttributeDisplayType::SWATCH->value)->exists();
     }
 
     public static function infolist(Schema $schema): Schema

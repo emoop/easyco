@@ -10,7 +10,12 @@ return [
 
     'picture_help' => 'The picture stays in Media if you remove it here.',
 
+    'colour_none' => 'No colour',
+    'colour_missing' => 'no colour — it will show as text',
+    'errors' => ['colour' => 'The colour must look like #rrggbb.'],
+
     'fields' => [
+        'colour' => 'Colour',
         'picture' => 'Picture',
         'attribute_definition_id' => 'Attribute',
         'value' => 'Value',

@@ -32,6 +32,8 @@ class AttributeValueController extends Controller
             // own column (unsignedInteger): a negative or over-wide value is a
             // 422 field error, never a 500 from MySQL.
             'sort_order' => 'nullable|integer|min:0|max:4294967295',
+            // AT-1: `#rrggbb` only (stored lower-case); absent / null / empty = no colour
+            'colour' => ['nullable', 'string', 'regex:/\A#[0-9a-fA-F]{6}\z/'],
         ]);
 
         $value = new AttributeValue(
@@ -39,6 +41,7 @@ class AttributeValueController extends Controller
             attributeDefinitionId: (string) $validated['attribute_definition_id'],
             value: $validated['value'],
             sortOrder: $validated['sort_order'] ?? 0,
+            colour: $validated['colour'] ?? null,
         );
 
         $this->values->save($value);
@@ -48,6 +51,7 @@ class AttributeValueController extends Controller
             'attribute_definition_id' => $value->attributeDefinitionId(),
             'value' => $value->value(),
             'sort_order' => $value->sortOrder(),
+            'colour' => $value->colour(),
         ], 201);
     }
 
@@ -59,6 +63,7 @@ class AttributeValueController extends Controller
                 'attribute_definition_id' => $value->attributeDefinitionId(),
                 'value' => $value->value(),
                 'sort_order' => $value->sortOrder(),
+                'colour' => $value->colour(),
             ],
             $this->values->findByAttributeDefinitionId($attributeDefinitionId)
         );

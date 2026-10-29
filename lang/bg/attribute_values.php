@@ -10,7 +10,12 @@ return [
 
     'picture_help' => 'Снимката остава в Медия, ако я махнете оттук.',
 
+    'colour_none' => 'Без цвят',
+    'colour_missing' => 'няма цвят — ще се покаже като текст',
+    'errors' => ['colour' => 'Цветът трябва да е във вида #rrggbb.'],
+
     'fields' => [
+        'colour' => 'Цвят',
         'picture' => 'Снимка',
         'attribute_definition_id' => 'Атрибут',
         'value' => 'Стойност',

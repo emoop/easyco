@@ -26,6 +26,7 @@ final class EloquentAttributeValueRepository implements AttributeValueRepository
         $model->value = $value->value();
         $model->sort_order = $value->sortOrder();
         $model->picture_media_asset_id = $value->pictureMediaAssetId();
+        $model->colour = $value->colour();
         $model->save();
 
         if ($value->id() === null) {
@@ -77,6 +78,7 @@ final class EloquentAttributeValueRepository implements AttributeValueRepository
             value: $model->value,
             sortOrder: (int) $model->sort_order,
             pictureMediaAssetId: $model->picture_media_asset_id !== null ? (string) $model->picture_media_asset_id : null,
+            colour: $model->colour,
         );
     }
 }

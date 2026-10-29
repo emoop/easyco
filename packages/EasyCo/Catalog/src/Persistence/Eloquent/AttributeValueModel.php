@@ -20,6 +20,7 @@ class AttributeValueModel extends Model
         'value',
         'sort_order',
         'picture_media_asset_id',
+        'colour',
     ];
 
     /**
