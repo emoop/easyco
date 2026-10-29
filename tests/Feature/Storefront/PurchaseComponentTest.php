@@ -201,7 +201,7 @@ class PurchaseComponentTest extends TestCase
         [$clean, $errors] = $this->validate([]);
 
         $this->assertSame([], $errors);
-        $this->assertSame(['label' => '', 'label_choose' => '', 'label_sold_out' => '', 'bg' => null, 'color' => null, 'border_w' => 0, 'border_color' => null, 'rounded' => true, 'show_quantity' => true, 'axes' => []], $clean);
+        $this->assertSame(['label' => '', 'label_choose' => '', 'label_sold_out' => '', 'bg' => null, 'color' => null, 'border_w' => 0, 'border_color' => null, 'rounded' => false, 'show_quantity' => true, 'axes' => []], $clean);
     }
 
     public function test_the_ranges_have_exact_edges(): void
@@ -254,13 +254,14 @@ class PurchaseComponentTest extends TestCase
         $this->assertSame([], PurchaseStyle::vars($this->validate([])[0]));
         $this->assertSame(['--sf-buy-bg' => '#2e7d32', '--sf-buy-bg-hover' => PurchaseStyle::hover('#2e7d32'), '--sf-buy-off' => '0.5'], PurchaseStyle::vars($this->validate(['bg' => '#2E7D32'])[0]));
         $this->assertSame(['--sf-buy-bw' => '2px', '--sf-buy-border' => 'currentcolor'], PurchaseStyle::vars($this->validate(['border_w' => 2])[0]));
-        $this->assertSame(['--sf-buy-radius' => '0'], PurchaseStyle::vars($this->validate(['rounded' => false])[0]));
+        $this->assertSame([], PurchaseStyle::vars($this->validate(['rounded' => false])[0]), 'LK-1: square is the default and emits nothing');
+        $this->assertSame(['--sf-buy-radius' => 'var(--sf-r-btn, var(--radius-md))'], PurchaseStyle::vars($this->validate(['rounded' => true])[0]), 'rounded hands the button the shop\'s radius variable');
         $this->assertSame([], PurchaseStyle::vars($this->validate(['label' => 'Buy now'])[0]), 'a text is not a style');
     }
 
     public function test_the_closed_list_accepts_what_is_generated_and_refuses_injection(): void
     {
-        foreach (PurchaseStyle::vars($this->validate(['bg' => '#0a0a0a', 'color' => '#FFFFFF', 'border_w' => 4, 'border_color' => '#ff0000', 'rounded' => false])[0]) as $variable => $value) {
+        foreach (PurchaseStyle::vars($this->validate(['bg' => '#0a0a0a', 'color' => '#FFFFFF', 'border_w' => 4, 'border_color' => '#ff0000', 'rounded' => true])[0]) as $variable => $value) {
             $this->assertTrue(PurchaseStyle::isValidVar($variable, $value), "{$variable}: {$value}");
         }
 
@@ -272,6 +273,9 @@ class PurchaseComponentTest extends TestCase
         $this->assertFalse(PurchaseStyle::isValidVar('--sf-buy-bw', '5px'));
         $this->assertFalse(PurchaseStyle::isValidVar('--sf-buy-bw', '2px;x'));
         $this->assertFalse(PurchaseStyle::isValidVar('--sf-buy-radius', '8px'));
+        $this->assertFalse(PurchaseStyle::isValidVar('--sf-buy-radius', '0'), 'the old square value is not a generated form any more');
+        $this->assertFalse(PurchaseStyle::isValidVar('--sf-buy-radius', 'var(--sf-r-btn, 9999px)'));
+        $this->assertTrue(PurchaseStyle::isValidVar('--sf-buy-radius', PurchaseStyle::ROUNDED));
         $this->assertFalse(PurchaseStyle::isValidVar('--sf-primary', '#c62828'), 'not on the list');
 
         $this->expectException(\InvalidArgumentException::class);
@@ -283,10 +287,10 @@ class PurchaseComponentTest extends TestCase
         $this->assertNull(app(AppearanceCompiler::class)->css([], buyVars: []));
         $this->assertStringNotContainsString('--sf-buy', (string) app(AppearanceCompiler::class)->css(['appearance.color.primary' => '#123456']));
 
-        $this->publishButton(['bg' => '#2E7D32', 'border_w' => 2, 'rounded' => false]);
+        $this->publishButton(['bg' => '#2E7D32', 'border_w' => 2, 'rounded' => true]);
         $css = (string) $this->tokens();
 
-        foreach (['--sf-buy-bg: #2e7d32;', '--sf-buy-bw: 2px;', '--sf-buy-border: currentcolor;', '--sf-buy-radius: 0;', '--sf-buy-off: 0.5;'] as $line) {
+        foreach (['--sf-buy-bg: #2e7d32;', '--sf-buy-bw: 2px;', '--sf-buy-border: currentcolor;', '--sf-buy-radius: var(--sf-r-btn, var(--radius-md));', '--sf-buy-off: 0.5;'] as $line) {
             $this->assertStringContainsString($line, $css);
         }
 

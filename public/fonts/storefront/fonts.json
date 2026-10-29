@@ -137,6 +137,7 @@
   "cormorant": {
     "family": "Cormorant Garamond",
     "serif": true,
+    "heading_weight": 600,
     "faces": [
       {
         "subset": "latin",

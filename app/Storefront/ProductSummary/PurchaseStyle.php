@@ -8,12 +8,15 @@ use App\Settings\Contracts\SiteSettingsRepository;
 /**
  * PB-1: the look of the product page's add-to-cart button («Покупка», right column). The settings of the `purchase` component (ProductSummaryCatalog) are VALIDATED by ProductSummaryValidator; this class turns
  * the validated ones into a CLOSED list of CSS variables (`--sf-buy-*`) and re-checks every variable the same way the token compiler does (the pattern of PageDesign::isValidVar). Only a value that differs from
- * the default is emitted, so a shop that never touched the button gets the same stylesheet it always had. Nothing a person types reaches CSS as a string: only `#rrggbb`, `Npx` with N in 1..4, `0` and `currentcolor`
+ * the default is emitted, so a shop that never touched the button gets the same stylesheet it always had. Nothing a person types reaches CSS as a string: only `#rrggbb`, `Npx` with N in 1..4, `currentcolor` and the one radius reference
  * are ever written.
  */
 final class PurchaseStyle
 {
     public const VARS = ['--sf-buy-bg', '--sf-buy-bg-hover', '--sf-buy-color', '--sf-buy-border', '--sf-buy-bw', '--sf-buy-radius', '--sf-buy-off'];
+
+    /** LK-1: what `rounded` switches on: the shop's own button radius (the default look is square). */
+    public const ROUNDED = 'var(--sf-r-btn, var(--radius-md))';
 
     /** The three texts and how long each may be. */
     public const TEXTS = ['label' => 30, 'label_choose' => 30, 'label_sold_out' => 30];
@@ -45,7 +48,8 @@ final class PurchaseStyle
             $vars['--sf-buy-border'] = $borderColor ?? 'currentcolor';
         }
 
-        ($settings['rounded'] ?? true) === false && $vars['--sf-buy-radius'] = '0';
+        // LK-1: square is the default and emits nothing; `true` hands the button the shop's radius variable
+        ($settings['rounded'] ?? false) === true && $vars['--sf-buy-radius'] = self::ROUNDED;
 
         // a button with its own colours dims when it cannot be pressed (the shop's grey disabled look is for the shop's own colours)
         ($bg !== null || $color !== null) && $vars['--sf-buy-off'] = '0.5';
@@ -64,7 +68,7 @@ final class PurchaseStyle
             '--sf-buy-bg', '--sf-buy-bg-hover', '--sf-buy-color' => preg_match('/\A#[0-9a-f]{6}\z/', $value) === 1,
             '--sf-buy-border' => preg_match('/\A(?:#[0-9a-f]{6}|currentcolor)\z/', $value) === 1,
             '--sf-buy-bw' => preg_match('/\A[1-4]px\z/', $value) === 1,
-            '--sf-buy-radius' => $value === '0',
+            '--sf-buy-radius' => $value === self::ROUNDED,
             '--sf-buy-off' => $value === '0.5',
             default => false,
         };
@@ -134,7 +138,7 @@ final class PurchaseStyle
             $d[] = 'box-shadow:inset 0 0 0 '.$vars['--sf-buy-bw'].' '.$vars['--sf-buy-border'];
         }
 
-        $d[] = 'border-radius:'.(isset($vars['--sf-buy-radius']) ? '0' : '8px');
+        $d[] = 'border-radius:'.(isset($vars['--sf-buy-radius']) ? '8px' : '0');
         $state === 'disabled' && $d[] = 'opacity:0.5';
 
         return implode(';', $d);

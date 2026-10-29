@@ -51,7 +51,7 @@ for (const [key, family] of Object.entries(families)) {
 // comment BEFORE a rule names that rule. Subsets: latin, latin-ext, cyrillic (cyrillic-ext is not copied, like the existing families).
 const staticFamilies = {
     montserrat: { package: 'montserrat', css: 'Montserrat', serif: false, styles: [['normal', [300, 400, 500, 600]]] },
-    cormorant: { package: 'cormorant-garamond', css: 'Cormorant Garamond', serif: true, styles: [['normal', [400, 500, 600]], ['italic', [500]]] },
+    cormorant: { package: 'cormorant-garamond', css: 'Cormorant Garamond', serif: true, headingWeight: 600, styles: [['normal', [400, 500, 600]], ['italic', [500]]] },
 };
 const staticSubsets = ['latin', 'latin-ext', 'cyrillic'];
 
@@ -90,7 +90,7 @@ for (const [key, family] of Object.entries(staticFamilies)) {
         }
     }
 
-    manifest[key] = { family: family.css, serif: family.serif, faces };
+    manifest[key] = { family: family.css, serif: family.serif, ...(family.headingWeight ? { heading_weight: family.headingWeight } : {}), faces };
 }
 
 writeFileSync(join(root, 'public', 'fonts', 'storefront', 'fonts.json'), JSON.stringify(manifest, null, 2) + '\n');

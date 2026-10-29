@@ -72,6 +72,18 @@ final class AppearanceCompiler
             $vars[] = '--sf-font-heading: '.$this->stack($effective[AppearanceSettings::FONT_HEADING]).';';
         }
 
+        // LK-1: a heading family that has no bold of its own (the manifest's `heading_weight`) hands the headings its heaviest real weight, so the browser never fakes a bold
+        $headingFont = $effective[AppearanceSettings::FONT_HEADING] === 'same' ? $effective[AppearanceSettings::FONT_BODY] : $effective[AppearanceSettings::FONT_HEADING];
+        $headingWeight = $headingFont === 'system' ? null : ($this->manifest()[$headingFont]['heading_weight'] ?? null);
+
+        if ($headingWeight !== null) {
+            if (! is_int($headingWeight) || $headingWeight < 100 || $headingWeight > 900) {
+                throw new InvalidArgumentException('The heading weight is not valid.');
+            }
+
+            $vars[] = '--sf-heading-weight: '.$headingWeight.';';
+        }
+
         $radius = $effective[AppearanceSettings::RADIUS];
 
         if ($radius !== 'md') {

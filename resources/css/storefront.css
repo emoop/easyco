@@ -174,7 +174,8 @@
     }
 
     .sf-title {
-        @apply text-2xl font-bold tracking-tight text-neutral-900;
+        @apply text-2xl tracking-tight text-neutral-900;
+        font-weight: var(--sf-heading-weight, 700);
     }
 
     .sf-listing .sf-title {
@@ -758,26 +759,78 @@
         outline-color: #fff;
     }
 
+    /* LK-1: the right column's look. The three colours are the shop's tokens (a merchant's choice in «Облик» always wins) with the style's own values as the fallback; nothing here is a setting. */
     .sf-summary {
         @apply flex flex-col gap-2;
+        --sf-pdp-text: var(--sf-text, #1a1a1a);
+        --sf-pdp-muted: var(--sf-muted, #6b6b6b);
+        --sf-pdp-line: var(--sf-border, #d9d9d9);
+        --sf-pdp-line-hover: color-mix(in srgb, var(--sf-pdp-line) 55%, #000);
     }
 
-    /* PB-1.1: the product page's price a step bigger (+15 % of the card's 1rem), the weight is the card's own */
+    /* price: light (weight 400), 18px on a phone and 20px from tablets up; the struck regular price 14px muted; the sale price keeps the accent rule above */
+    .sf-summary .sf-price {
+        margin-top: 0.5rem;
+    }
+
     .sf-summary .sf-price-current {
-        font-size: 1.15rem;
+        font-size: 1.125rem;
+        font-weight: 400;
+    }
+
+    .sf-summary .sf-price-regular {
+        font-size: 0.875rem;
+        color: var(--sf-pdp-muted);
     }
 
     .sf-product-brand {
-        @apply m-0 text-sm uppercase tracking-wide text-neutral-500;
+        @apply m-0;
+        font-size: 0.75rem;
+        font-weight: 400;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        color: var(--sf-pdp-muted);
+    }
+
+    /* the product title: light (500), calm, in the heading font; whatever the shop's heading weight */
+    .sf-summary .sf-title {
+        font-size: 1.625rem;
+        font-weight: 500;
+        line-height: 1.15;
+        letter-spacing: 0;
     }
 
     .sf-short-description {
         @apply m-0 text-neutral-600;
+        font-size: 0.875rem;
+        font-weight: 400;
+        line-height: 1.65;
     }
 
     /* SC-1: the product's SKU, a small muted line (the right column's `sku` component) */
     .sf-sku {
-        @apply m-0 text-sm text-neutral-500;
+        @apply m-0;
+        font-size: 0.8125rem;
+        font-weight: 400;
+        color: var(--sf-pdp-muted);
+    }
+
+    .sf-summary .sf-stock {
+        font-size: 0.8125rem;
+        font-weight: 400;
+        text-transform: none;
+        letter-spacing: 0;
+        color: var(--sf-pdp-muted);
+    }
+
+    @media (min-width: 48rem) {
+        .sf-summary .sf-title {
+            font-size: 1.875rem;
+        }
+
+        .sf-summary .sf-price-current {
+            font-size: 1.25rem;
+        }
     }
 
     /* SC-1: an HTML block of the right column: pictures never run out of the column */
@@ -791,7 +844,16 @@
     }
 
     .sf-variations {
-        @apply mt-2 flex flex-col gap-1;
+        @apply flex flex-col;
+    }
+
+    /* LK-1: price -> first group 24px; the box of the button follows the groups 24px lower */
+    .sf-summary .sf-purchase {
+        margin-top: 1rem;
+    }
+
+    .sf-summary .sf-variations + .sf-add-to-cart-box {
+        margin-top: 1.5rem;
     }
 
     .sf-variation-label {
@@ -820,12 +882,12 @@
     }
 
     .sf-picker {
-        @apply mt-2 hidden flex-col gap-1;
+        @apply hidden flex-col gap-2;
     }
 
     /* PB-1.1: more room BETWEEN the groups (colour, size, …); inside a group nothing changes */
     .sf-picker ~ .sf-picker {
-        margin-top: 1.25rem;
+        margin-top: 1.5rem;
     }
 
     .js .sf-variations--pickers .sf-picker {
@@ -840,7 +902,13 @@
 
     /* PB-1.1: «Изчистване» — a link-styled button under the groups; the script shows it once something is chosen */
     .sf-clear {
-        @apply mt-2 cursor-pointer self-start text-sm text-neutral-600 underline;
+        @apply mt-2 cursor-pointer self-start underline;
+        font-size: 0.75rem;
+        color: var(--sf-pdp-muted);
+    }
+
+    .sf-clear:hover {
+        color: var(--sf-pdp-text);
     }
 
     .sf-clear[hidden] {
@@ -853,7 +921,11 @@
     }
 
     .sf-picker-label {
-        @apply text-sm font-medium text-neutral-700;
+        font-size: 0.75rem;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--sf-pdp-text);
     }
 
     .sf-picker-values {
@@ -861,42 +933,63 @@
     }
 
     .sf-picker-select {
-        @apply w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm;
+        @apply w-full border bg-white px-3 py-2 text-sm;
+        border-color: var(--sf-pdp-line);
+        border-radius: 0;
     }
 
     .sf-swatch {
-        @apply relative inline-flex h-9 w-9 cursor-pointer items-center justify-center rounded-full border border-neutral-300 bg-white p-0.5;
+        @apply relative inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-full border-0 bg-transparent p-0;
     }
 
     .sf-swatch-dot {
-        @apply block h-full w-full rounded-full border border-black/10;
+        @apply block h-full w-full rounded-full;
+        box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.12);
     }
 
     .sf-size {
-        @apply inline-flex min-h-10 min-w-11 cursor-pointer items-center justify-center rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-900;
+        @apply inline-flex cursor-pointer items-center justify-center border bg-transparent px-3;
+        min-height: 2.75rem;
+        min-width: 3rem;
+        border-color: var(--sf-pdp-line);
+        border-radius: 0;
+        font-size: 0.8125rem;
+        font-weight: 400;
+        color: var(--sf-pdp-text);
     }
 
+    .sf-size:hover:not([aria-disabled='true']):not([aria-checked='true']) {
+        border-color: var(--sf-pdp-line-hover);
+    }
+
+    /* selected: a 1px dark border, not filled; a swatch: a 1px dark ring 3px outside the circle (the column's 6px padding leaves room for it and for the focus ring) */
     .sf-swatch[aria-checked='true'] {
-        box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--sf-primary, oklch(20.5% 0 none));
+        box-shadow: 0 0 0 3px var(--sf-bg, #fafafa), 0 0 0 4px var(--sf-pdp-text);
     }
 
     .sf-size[aria-checked='true'] {
-        border-color: var(--sf-primary, oklch(20.5% 0 none));
-        box-shadow: inset 0 0 0 1px var(--sf-primary, oklch(20.5% 0 none));
-        font-weight: 700;
+        border-color: var(--sf-pdp-text);
     }
 
     .sf-swatch:focus-visible,
     .sf-size:focus-visible,
     .sf-qty-btn:focus-visible {
-        outline: 2px solid var(--sf-primary, oklch(20.5% 0 none));
+        outline: 2px solid var(--sf-primary, #1a1a1a);
         outline-offset: 2px;
     }
 
-    /* an unavailable choice stays in sight, greyed and crossed out, and cannot be chosen */
+    .sf-swatch:focus-visible {
+        outline-offset: 4px;
+    }
+
+    /* an unavailable choice stays in sight, muted and crossed out, and cannot be chosen */
     .sf-swatch[aria-disabled='true'],
     .sf-size[aria-disabled='true'] {
-        @apply cursor-not-allowed opacity-40;
+        @apply cursor-not-allowed opacity-50;
+    }
+
+    .sf-size[aria-disabled='true'] {
+        color: var(--sf-pdp-muted);
     }
 
     .sf-size[aria-disabled='true'] {
@@ -906,7 +999,7 @@
     .sf-swatch[aria-disabled='true']::after {
         content: '';
         @apply absolute inset-0 rounded-full;
-        background: linear-gradient(to top right, transparent calc(50% - 1px), #737373 calc(50% - 1px), #737373 calc(50% + 1px), transparent calc(50% + 1px));
+        background: linear-gradient(to top right, transparent calc(50% - 0.5px), #737373 calc(50% - 0.5px), #737373 calc(50% + 0.5px), transparent calc(50% + 0.5px));
     }
 
     /* the button was pressed before a choice: the first group that is missing one is outlined */
@@ -922,7 +1015,7 @@
 
     /* PB-1.1: the counter and the button are ONE row: the counter a fixed compact width, the button the rest; both the same, slightly smaller height */
     .sf-buy-row {
-        @apply mt-3 flex items-stretch gap-2;
+        @apply flex items-stretch gap-2;
     }
 
     .sf-qty {
@@ -934,11 +1027,15 @@
     }
 
     .sf-qty-box {
-        @apply flex w-full items-stretch rounded-md border border-neutral-300 bg-white;
+        @apply flex w-full items-stretch border bg-transparent;
+        border-color: var(--sf-pdp-line);
+        border-radius: 0;
     }
 
     .sf-qty-btn {
-        @apply w-8 flex-none cursor-pointer text-lg leading-none text-neutral-900;
+        @apply w-8 flex-none cursor-pointer text-lg leading-none;
+        font-weight: 300;
+        color: var(--sf-pdp-text);
     }
 
     .sf-qty-btn:disabled {
@@ -946,23 +1043,32 @@
     }
 
     .sf-qty-input {
-        @apply min-w-0 flex-1 border-0 bg-transparent p-0 text-center text-base;
+        @apply min-w-0 flex-1 border-0 bg-transparent p-0 text-center;
+        font-size: 0.9375rem;
+        font-weight: 400;
+        color: var(--sf-pdp-text);
     }
 
     .sf-buy-row .sf-add-to-cart {
-        @apply mt-0 min-h-11 w-auto min-w-0 flex-1 px-4 py-2;
+        @apply mt-0 w-auto min-w-0 flex-1 px-4 py-2;
+        min-height: 3rem;
     }
 
     /* the add-to-cart button: its look comes from the --sf-buy-* variables of the token stylesheet (set only when the merchant changed something); the fallbacks are the shop's button as it always was */
+    /* LK-1: square, light caps; the merchant's `--sf-buy-*` always win, then the shop's own button tokens, then the style's #1a1a1a (hover: the shop's `--sf-primary-hover` or one step lighter) */
     .sf-buy {
-        background-color: var(--sf-buy-bg, var(--sf-btn-bg, var(--sf-primary, oklch(20.5% 0 none))));
+        background-color: var(--sf-buy-bg, var(--sf-btn-bg, var(--sf-primary, #1a1a1a)));
         color: var(--sf-buy-color, var(--sf-btn-text, var(--sf-on-primary, #fff)));
-        box-shadow: inset 0 0 0 var(--sf-buy-bw, var(--sf-btn-bw, 0)) var(--sf-buy-border, var(--sf-primary, oklch(20.5% 0 none)));
-        border-radius: var(--sf-buy-radius, var(--sf-r-btn, var(--radius-md)));
+        box-shadow: inset 0 0 0 var(--sf-buy-bw, var(--sf-btn-bw, 0)) var(--sf-buy-border, var(--sf-primary, #1a1a1a));
+        border-radius: var(--sf-buy-radius, 0);
+        font-size: 0.8125rem;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.14em;
     }
 
     .sf-buy:hover:not(:disabled):not([aria-disabled='true']) {
-        background-color: var(--sf-buy-bg-hover, var(--sf-buy-bg, var(--sf-btn-bg, var(--sf-primary, oklch(20.5% 0 none)))));
+        background-color: var(--sf-buy-bg-hover, var(--sf-buy-bg, var(--sf-btn-bg, var(--sf-primary-hover, #3a3a3a))));
     }
 
     .sf-buy:disabled,
@@ -1028,7 +1134,8 @@
     }
 
     .sf-404 h1 {
-        @apply text-3xl font-bold tracking-tight text-neutral-900;
+        @apply text-3xl tracking-tight text-neutral-900;
+        font-weight: var(--sf-heading-weight, 700);
     }
 
     .sf-404 p {
@@ -1121,11 +1228,13 @@
     }
 
     .sf-add-to-cart-box {
-        @apply mt-1;
+        @apply mt-0;
     }
 
     .sf-cart-status {
-        @apply mt-2 min-h-6 text-sm text-neutral-700;
+        @apply mt-1 text-neutral-700;
+        min-height: 1.25rem;
+        font-size: 0.8125rem;
     }
 
     .sf-cart-status-link {

@@ -246,7 +246,7 @@ final class ProductSummaryZone implements DesignZone, HasOneCell
                 // NOT `numeric()`: Filament would cast what was typed (the validator must see the text as typed)
                 TextInput::make('border_w')->label(__('design.summary.settings.border_w'))->inputMode('numeric')->maxLength(1)->live(onBlur: true),
                 $color('border_color'),
-                Toggle::make('rounded')->label(__('design.summary.settings.rounded'))->live(),
+                Toggle::make('rounded')->label(__('design.summary.settings.rounded'))->helperText(__('design.summary.purchase.rounded_hint'))->live(),
                 // PB-1.1: the counter next to the button, and the order of the attribute groups (a small reorderable list of the shop's attributes)
                 Toggle::make('show_quantity')->label(__('design.summary.settings.show_quantity'))->helperText(__('design.summary.purchase.show_quantity_hint'))->live()->columnSpanFull(),
                 Repeater::make('axes')->label(__('design.summary.settings.axes'))->helperText(__('design.summary.purchase.axes_hint'))
@@ -260,7 +260,7 @@ final class ProductSummaryZone implements DesignZone, HasOneCell
                     'color' => $raw['color'] ?? null,
                     'border_w' => is_string($raw['border_w'] ?? null) && preg_match('/\A[0-4]\z/', $raw['border_w']) === 1 ? (int) $raw['border_w'] : (is_int($raw['border_w'] ?? null) ? $raw['border_w'] : 0),
                     'border_color' => $raw['border_color'] ?? null,
-                    'rounded' => ! array_key_exists('rounded', $raw) || (bool) $raw['rounded'],
+                    'rounded' => array_key_exists('rounded', $raw) && (bool) $raw['rounded'],
                 ];
                 $sample = e(is_string($raw['label'] ?? null) && trim($raw['label']) !== '' ? mb_substr($raw['label'], 0, 30) : __('design.summary.purchase.sample'));
                 // the layout of this ADMIN preview is inline too (the admin has no stylesheet for it); only the sample's own colours come from validated values

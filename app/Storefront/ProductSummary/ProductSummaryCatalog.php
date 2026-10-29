@@ -36,7 +36,7 @@ final class ProductSummaryCatalog
             'short_description' => [1, []],
             'price' => [1, []],
             'stock' => [1, []],
-            // PB-1: the add-to-cart button's own texts and look. An empty text = the shop's own wording (translated); a colour is `#rrggbb` or none (= the shop's colours); `rounded` yes = the shop's button radius
+            // PB-1: the add-to-cart button's own texts and look. An empty text = the shop's own wording (translated); a colour is `#rrggbb` or none (= the shop's colours); `rounded` yes = the shop's button radius (LK-1: the default is square)
             'purchase' => [1, [
                 'label' => ['kind' => 'text', 'max' => 30, 'default' => ''],
                 'label_choose' => ['kind' => 'text', 'max' => 30, 'default' => ''],
@@ -45,7 +45,7 @@ final class ProductSummaryCatalog
                 'color' => ['kind' => 'color', 'hex6' => true, 'default' => null],
                 'border_w' => ['kind' => 'int', 'min' => 0, 'max' => 4, 'default' => 0],
                 'border_color' => ['kind' => 'color', 'hex6' => true, 'default' => null],
-                'rounded' => ['kind' => 'bool', 'default' => true],
+                'rounded' => ['kind' => 'bool', 'default' => false],
                 // PB-1.1: the counter next to the button (off = no counter, quantity 1) and the merchant's order of the attribute groups (ids of attribute definitions; empty = the page's own order)
                 'show_quantity' => ['kind' => 'bool', 'default' => true],
                 'axes' => ['kind' => 'axes', 'max' => self::MAX_AXES, 'default' => []],

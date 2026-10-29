@@ -56,6 +56,7 @@ $variation(91002, 91201, [], 10, 'universal', '15.00');
 $product(91003, 'pb1-gone', 'PB1 изчерпан', 'variable');
 $variation(91003, 91301, [9101 => 91011, 9102 => 91021], 0);
 $variation(91003, 91302, [9101 => 91012, 9102 => 91022], 0);
+app(App\Storefront\ProductSummary\ProductSummaryCompiler::class)->publish(App\Storefront\ProductSummary\ProductSummaryLayout::default(), app(App\Settings\Contracts\SiteSettingsRepository::class));
 DB::table('staff')->where('email','${EMAIL}')->delete();
 $role = app(RoleRepository::class)->findSystemRoleByName('Administrator');
 $staff = EasyCo\Staff\Staff::create('${EMAIL}', app(PasswordHasher::class)->hash('${PASSWORD}'), 'PB1 Audit', $role);
@@ -119,7 +120,7 @@ try {
     const radio = (page, n, label) => group(page, n).locator('[role=radio]', { hasText: label }).first();
     const radioByTitle = (page, n, title) => group(page, n).locator(`[role=radio][title="${title}"]`);
     const button = (page) => page.locator('.sf-buy');
-    const buttonText = async (page) => (await button(page).innerText()).trim();
+    const buttonText = async (page) => (await button(page).evaluate((e) => e.textContent)).trim();
     const qty = (page) => page.locator('[data-sf-qty-input]');
     const checked = async (page, n, title) => (await radioByTitle(page, n, title).getAttribute('aria-checked')) === 'true';
     const unavailable = async (page, n, title) => (await radioByTitle(page, n, title).getAttribute('aria-disabled')) === 'true';
@@ -129,7 +130,7 @@ try {
     const { ctx: probeCtx, page: probe } = await visitor();
     await probe.goto(BASE + '/product/pb1-probe', { waitUntil: 'networkidle' });
     check('the page root has the script class', await probe.evaluate(() => document.documentElement.classList.contains('js')));
-    check('two groups: colour first, size second (PB1 Цвят, PB1 Размер)', (await probe.locator('.sf-picker-label').allInnerTexts()).join('|') === 'PB1 Цвят|PB1 Размер', (await probe.locator('.sf-picker-label').allInnerTexts()).join('|'));
+    check('two groups: colour first, size second (PB1 Цвят, PB1 Размер)', (await probe.locator('.sf-picker-label').evaluateAll((els) => els.map((e) => e.textContent.trim()))).join('|') === 'PB1 Цвят|PB1 Размер', (await probe.locator('.sf-picker-label').evaluateAll((els) => els.map((e) => e.textContent.trim()))).join('|'));
     check('the colour group has two round swatches and a text button for the value with no colour', await probe.locator('[data-sf-group="0"] .sf-swatch').count() === 2 && await probe.locator('[data-sf-group="0"] .sf-size').count() === 1);
     check('a swatch is round, filled with its colour (set by the script, never in the served HTML)', await probe.locator('.sf-swatch').first().evaluate((el) => getComputedStyle(el).borderRadius.includes('9999') || parseFloat(getComputedStyle(el).borderTopLeftRadius) > 10) && await probe.locator('.sf-swatch-dot').first().evaluate((el) => getComputedStyle(el).backgroundColor) === 'rgb(198, 40, 40)');
     check('every swatch has a text name (title and hidden text)', await probe.locator('.sf-swatch').first().getAttribute('title') === 'Червен' && (await probe.locator('.sf-swatch .sf-sr').first().innerText()) === 'Червен');
@@ -372,7 +373,7 @@ try {
     const styled = await liveButton();
     check('live: the label is the merchant\'s', styled.text === 'Купи сега', styled.text);
     check('live: the background is green and the text white', styled.bg === 'rgb(46, 125, 50)' && styled.color === 'rgb(255, 255, 255)', JSON.stringify(styled));
-    check('live: a 2px border ring and square corners (rounded off)', styled.shadow.includes('2px') && styled.radius === '0px', JSON.stringify(styled));
+    check('live: a 2px border ring and the shop\'s rounded corners (LK-1: the toggle was off = square, now on)', styled.shadow.includes('2px') && styled.radius !== '0px', JSON.stringify(styled));
     check('live: still no inline style and no style attribute in the served HTML', styled.inlineStyle === null && ! styled.servedHasStyleAttr);
     const { ctx: choose, page: chooser } = await visitor();
     await chooser.goto(BASE + '/product/pb1-probe', { waitUntil: 'networkidle' });
@@ -412,7 +413,7 @@ try {
     const { ctx: offCtx, page: off } = await visitor();
     await off.goto(BASE + '/product/pb1-probe', { waitUntil: 'networkidle' });
     check('live: no counter at all (no elements, nothing visible)', await off.locator('[data-sf-qty], .sf-qty-input, .sf-qty-box').count() === 0);
-    check('live: the groups follow the order from the editor (Размер, Цвят)', (await off.locator('.sf-picker-label').allInnerTexts()).join('|') === 'PB1 Размер|PB1 Цвят', (await off.locator('.sf-picker-label').allInnerTexts()).join('|'));
+    check('live: the groups follow the order from the editor (Размер, Цвят)', (await off.locator('.sf-picker-label').evaluateAll((els) => els.map((e) => e.textContent.trim()))).join('|') === 'PB1 Размер|PB1 Цвят', (await off.locator('.sf-picker-label').evaluateAll((els) => els.map((e) => e.textContent.trim()))).join('|'));
     check('live: the button is the whole row', await off.locator('.sf-buy').evaluate((b) => Math.abs(b.getBoundingClientRect().width - b.parentElement.getBoundingClientRect().width) < 2));
     await shot(off, 'pb11-live-no-counter-reordered', off.locator('.sf-summary'));
     await offCtx.close();

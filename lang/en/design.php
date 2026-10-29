@@ -179,6 +179,7 @@ return [
             'hint' => 'The «Add to cart» button of the product page. An empty text is the standard one; with no colour the button uses the shop\'s colours. Product page only: the shop\'s general buttons are changed in «Appearance».',
             'preview' => 'What the button looks like',
             'sample' => 'Add to cart',
+            'rounded_hint' => 'Off = square corners (the default).',
             'show_quantity_hint' => 'When off, the quantity is changed in the cart.',
             'axes_hint' => 'If empty, the order is that of the attributes in the catalog. Every attribute of the product is always shown.',
             'axes_add' => 'Add an attribute',
