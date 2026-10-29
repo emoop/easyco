@@ -174,6 +174,16 @@ return [
     // SC-1: «Right column» — the product page's right column as an ordered list of components
     'summary' => [
         'types' => ['brand' => 'Brand', 'title' => 'Name', 'sku' => 'SKU', 'short_description' => 'Short description', 'price' => 'Price', 'stock' => 'Stock', 'purchase' => 'Purchase', 'html_block' => 'HTML block'],
+        'purchase' => [
+            'none' => 'None',
+            'hint' => 'The «Add to cart» button of the product page. An empty text is the standard one; with no colour the button uses the shop\'s colours. Product page only: the shop\'s general buttons are changed in «Appearance».',
+            'preview' => 'What the button looks like',
+            'sample' => 'Add to cart',
+            'state_normal' => 'Normal',
+            'state_hover' => 'Hover',
+            'state_disabled' => 'Disabled',
+            'low_contrast' => 'Purchase button: the text and the background have a contrast of :ratio:1 — below the recommended :min:1.',
+        ],
         'locked' => 'required',
         'order_hint' => 'The order here is the order on the storefront. Select a component to move it with the arrows or to remove it; add new ones from the «Components» bar.',
         'palette_hint' => 'Press a component to add it at the bottom of the column. Only the ones that can still be added are offered.',
@@ -181,7 +191,7 @@ return [
         'no_props' => 'This component has no properties.',
         'no_product' => 'The shop has no visible product yet: there is nothing to show in the preview.',
         'sku_label' => 'SKU:',
-        'settings' => ['html_block' => 'HTML block'],
+        'settings' => ['html_block' => 'HTML block', 'label' => 'Button text', 'label_choose' => 'Text before a choice', 'label_sold_out' => 'Text when sold out', 'bg' => 'Button background', 'color' => 'Text colour', 'border_w' => 'Border (px)', 'border_color' => 'Border colour', 'rounded' => 'Rounded corners'],
         'errors' => [
             'unknown_key' => 'Unknown field: :key.',
             'unknown_setting' => 'Unknown setting: :key.',
@@ -193,6 +203,10 @@ return [
             'locked_missing' => 'This component is required and cannot be removed.',
             'only_one' => 'This component can only be one.',
             'too_many_html' => 'At most :max HTML blocks.',
+                        'bad_color' => 'The colour must look like #rrggbb.',
+            'int_range' => 'A number from :min to :max.',
+            'too_long' => 'At most :max characters.',
+            'not_plain' => 'Plain text only, no tags.',
             'too_many' => 'At most :max components in the column.',
         ],
     ],

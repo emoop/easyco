@@ -122,6 +122,16 @@ final class ProductSummaryValidator
         $failer = fn (string $p, string $code, array $params = []) => $this->fail($p, $code, $params);
 
         foreach ($schema as $name => $field) {
+            // PB-1: a colour of this schema is `#rrggbb` only (FieldKinds::color also takes the 3-digit form)
+            if (! empty($field['hex6']) && ($settings[$name] ?? null) !== null && $settings[$name] !== '') {
+                if (! is_string($settings[$name]) || preg_match('/\A#[0-9a-fA-F]{6}\z/', $settings[$name]) !== 1) {
+                    $failer("{$path}.settings.{$name}", 'bad_color');
+                    $clean[$name] = null;
+
+                    continue;
+                }
+            }
+
             $clean[$name] = FieldKinds::validate($settings[$name] ?? ($field['default'] ?? null), $field, "{$path}.settings.{$name}", $failer);
         }
 

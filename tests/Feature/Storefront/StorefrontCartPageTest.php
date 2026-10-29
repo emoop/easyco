@@ -140,7 +140,7 @@ class StorefrontCartPageTest extends TestCase
     {
         $html = $this->get('/product/summer-dress')->getContent();
 
-        $this->assertMatchesRegularExpression('/<button class="sf-add-to-cart" type="button" disabled data-variation-id="101">/', $html);
+        $this->assertMatchesRegularExpression('/<button class="sf-add-to-cart sf-buy" type="button" disabled data-variation-id="101" /', $html);
         $this->assertMatchesRegularExpression('/<p class="sf-cart-status" role="status" aria-live="polite" data-sf-cart-status><\/p>/', $html);
         $this->assertStringContainsString('data-sf-add-to-cart', $html);
     }

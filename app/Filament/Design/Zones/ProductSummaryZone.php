@@ -14,7 +14,18 @@ use App\Storefront\ProductSummary\ProductSummaryLayout;
 use App\Storefront\ProductSummary\ProductSummaryValidator;
 use App\Storefront\Reader\CatalogReader;
 use App\Storefront\ReadModels\ListingQuery;
+use App\Settings\AppearanceSettings;
+use App\Settings\Contracts\SiteSettingsRepository;
+use App\Storefront\ProductSummary\PurchaseStyle;
+use Filament\Actions\Action;
+use Filament\Forms\Components\ColorPicker;
+use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Toggle;
 use Filament\Schemas\Components\Component;
+use Filament\Schemas\Components\Grid;
+use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Components\Utilities\Set;
+use Illuminate\Support\HtmlString;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Text;
 
@@ -195,6 +206,11 @@ final class ProductSummaryZone implements DesignZone, HasOneCell
 
         if ($selected['kind'] === 'node') {
             $node = TreeEditor::node($current, $selected['id']);
+            // PB-1: the add-to-cart button's settings have their own compact form (two fields per row) with a preview of the button
+            if ($node !== null && $node['type'] === 'purchase') {
+                return [$this->purchaseSection()];
+            }
+
             $fields = $node === null ? [] : $this->fieldsOf($node['type']);
 
             if ($fields === []) {
@@ -207,6 +223,48 @@ final class ProductSummaryZone implements DesignZone, HasOneCell
         }
 
         return [Text::make(__('design.summary.pick'))];
+    }
+
+    /**
+     * PB-1: the properties of the `purchase` component: texts, colours, border and corners, two per row, and a preview of the button in its three states (an inline style in THIS admin preview only, built from
+     * validated values by PurchaseStyle::previewStyle; the storefront never prints one).
+     */
+    private function purchaseSection(): Section
+    {
+        $clear = static fn (string $name): Action => Action::make('clear_'.$name)->label(__('design.summary.purchase.none'))->action(static fn (Set $set) => $set($name, null));
+        $text = static fn (string $name): TextInput => TextInput::make($name)->label(__('design.summary.settings.'.$name))->maxLength(30)->live(onBlur: true)->extraInputAttributes(['class' => 'text-sm']);
+        $color = static fn (string $name): ColorPicker => ColorPicker::make($name)->label(__('design.summary.settings.'.$name))->hex()->live(onBlur: true)->hintAction($clear($name));
+
+        return Section::make($this->typeLabel('purchase'))->compact()->schema([
+            Text::make(__('design.summary.purchase.hint'))->color('gray')->size('sm'),
+            Grid::make(2)->schema([
+                $text('label'), $text('label_choose'), $text('label_sold_out'),
+                $color('bg'), $color('color'),
+                // NOT `numeric()`: Filament would cast what was typed (the validator must see the text as typed)
+                TextInput::make('border_w')->label(__('design.summary.settings.border_w'))->inputMode('numeric')->maxLength(1)->live(onBlur: true),
+                $color('border_color'),
+                Toggle::make('rounded')->label(__('design.summary.settings.rounded'))->live(),
+            ])->statePath('settings'),
+            Text::make(static function (Get $get): HtmlString {
+                $raw = $get('settings') ?? [];
+                $settings = [
+                    'bg' => $raw['bg'] ?? null,
+                    'color' => $raw['color'] ?? null,
+                    'border_w' => is_string($raw['border_w'] ?? null) && preg_match('/\A[0-4]\z/', $raw['border_w']) === 1 ? (int) $raw['border_w'] : (is_int($raw['border_w'] ?? null) ? $raw['border_w'] : 0),
+                    'border_color' => $raw['border_color'] ?? null,
+                    'rounded' => ! array_key_exists('rounded', $raw) || (bool) $raw['rounded'],
+                ];
+                $sample = e(is_string($raw['label'] ?? null) && trim($raw['label']) !== '' ? mb_substr($raw['label'], 0, 30) : __('design.summary.purchase.sample'));
+                // the layout of this ADMIN preview is inline too (the admin has no stylesheet for it); only the sample's own colours come from validated values
+                $out = '<div class="ds-buy-preview" style="display:flex;flex-direction:column;gap:0.5rem"><strong style="display:block">'.e(__('design.summary.purchase.preview')).'</strong>';
+
+                foreach (['normal', 'hover', 'disabled'] as $state) {
+                    $out .= '<span class="ds-buy-state" data-state="'.$state.'" style="display:flex;align-items:center;gap:0.75rem"><small style="width:6rem">'.e(__('design.summary.purchase.state_'.$state)).'</small><span class="ds-buy-sample" style="'.e(PurchaseStyle::previewStyle($settings, $state)).';display:inline-block;padding:0.5rem 1rem;font-weight:600">'.$sample.'</span></span>';
+                }
+
+                return new HtmlString($out.'</div>');
+            }),
+        ]);
     }
 
     /** @return array<string, array<string, mixed>> the fields of a component type, each with its own label */
@@ -241,7 +299,12 @@ final class ProductSummaryZone implements DesignZone, HasOneCell
         }
 
         $in = is_array($raw['settings'] ?? null) ? $raw['settings'] : [];
-        $tree['main'] = TreeEditor::setSettings($current, $selected['id'], FieldValues::settings($this->fieldsOf($node['type']), $in) + $node['settings']);
+        $settings = FieldValues::settings($this->fieldsOf($node['type']), $in) + $node['settings'];
+
+        // PB-1: an empty border width box is «no border» (the validator still refuses anything that is not a whole number 0..4)
+        $node['type'] === 'purchase' && ($settings['border_w'] ?? null) === '' && $settings['border_w'] = 0;
+
+        $tree['main'] = TreeEditor::setSettings($current, $selected['id'], $settings);
 
         return $tree;
     }
@@ -267,8 +330,32 @@ final class ProductSummaryZone implements DesignZone, HasOneCell
         return $at['kind'] === 'node' ? 'settings.'.$at['field'] : $at['field'];
     }
 
+    /** PB-1: a non-blocking warning when the button's text and background (its own, or the shop's for the one it does not set) are below the minimum contrast. */
     public function warnings(array $stored): array
     {
+        foreach ($stored['components'] ?? [] as $component) {
+            if (($component['type'] ?? null) !== 'purchase') {
+                continue;
+            }
+
+            $s = $component['settings'] ?? [];
+
+            if (($s['bg'] ?? null) === null && ($s['color'] ?? null) === null) {
+                return [];
+            }
+
+            $settings = app(SiteSettingsRepository::class);
+            $shop = static function (string $short) use ($settings): string {
+                [$key, , $default] = AppearanceSettings::COLORS[$short];
+                $value = $settings->get($key);
+
+                return is_string($value) && AppearanceSettings::isHex($value) ? strtolower($value) : $default;
+            };
+            $ratio = AppearanceSettings::contrastRatio($s['color'] ?? $shop('on_primary'), $s['bg'] ?? $shop('primary'));
+
+            return $ratio < AppearanceSettings::MIN_CONTRAST ? [(string) __('design.summary.purchase.low_contrast', ['ratio' => number_format($ratio, 2), 'min' => AppearanceSettings::MIN_CONTRAST])] : [];
+        }
+
         return [];
     }
 

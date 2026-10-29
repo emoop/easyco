@@ -6,7 +6,7 @@ namespace App\Storefront\ReadModels;
  * A SHOWN variation on a product page. A SIMPLE product has exactly one (its universal variation) with no
  * attributes; its id is what add-to-cart needs. `purchasable` mirrors Variation::isEffectivelyPurchasable()
  * (status active AND is_purchasable) and is pinned against the domain method by a test. The stock QUANTITY is never
- * exposed, only `in_stock`.
+ * exposed, only `in_stock`; PB-1 adds `maxQuantity` for the quantity counter: the stock CAPPED at 99 (the counter's own ceiling), for the markup only, NOT in toArray() (the JSON contract is unchanged).
  */
 final readonly class VariationView
 {
@@ -21,6 +21,7 @@ final readonly class VariationView
         public ?PriceBlock $price,
         public bool $inStock,
         public bool $purchasable,
+        public int $maxQuantity = 0,
     ) {
     }
 

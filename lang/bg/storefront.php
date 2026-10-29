@@ -25,6 +25,8 @@ return [
     'variation_option_unavailable' => ':label — :price (:reason)',
     'unavailable' => 'няма наличност',
     'add_to_cart' => 'Добави в количката',
+    // PB-1: the purchase component (pickers, counter, the button's other two states)
+    'purchase' => ['choose' => 'Избери размер', 'sold_out' => 'Изчерпан', 'quantity' => 'Количество', 'decrease' => 'Намали количеството', 'increase' => 'Увеличи количеството'],
     'description' => 'Описание',
     'gallery' => 'Снимки на продукта',
     'gallery_photo' => 'снимка :n',

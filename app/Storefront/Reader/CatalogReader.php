@@ -155,6 +155,7 @@ final class CatalogReader
                 price: $this->productPrice([$id], $quotes),
                 inStock: ($stock[$id] ?? 0) > 0,
                 purchasable: $variation->status === StorefrontVisibility::VARIATION_STATUS->value && (bool) $variation->is_purchasable,
+                maxQuantity: min(99, $stock[$id] ?? 0),
             );
         }
 

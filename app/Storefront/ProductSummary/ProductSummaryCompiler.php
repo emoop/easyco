@@ -8,6 +8,7 @@ use App\Settings\Contracts\SiteSettingsRepository;
 use App\Storefront\Conditions\ProductConditions;
 use App\Storefront\Appearance\StorefrontAppearance;
 use App\Storefront\CheckoutHeader\CheckoutHeaderCompiler;
+use App\Storefront\Header\AppearanceRecompiler;
 use InvalidArgumentException;
 
 /**
@@ -107,6 +108,8 @@ final class ProductSummaryCompiler
             $settings->set(AppearanceSettings::DESIGN_COMPILED_KEY, $json);
         }
 
+        // PB-1: the button's variables live in the token stylesheet: it is rebuilt from what is stored now (the same as the footer's publish does)
+        app(AppearanceRecompiler::class)->run($settings);
         app(StorefrontAppearance::class)->refresh();
     }
 

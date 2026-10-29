@@ -225,6 +225,22 @@ async function refreshCount() {
 
 // ------------------------------------------------------------------------------------------------ add to cart
 
+// PB-1: the `purchase` block of the product page: the pickers (colour circles, size buttons), the quantity counter and the add-to-cart button. The page's own <select name="variation"> stays the SOURCE OF TRUTH: a click on a
+// choice sets the select and fires the same `change` the rest of the page listens to; without this script the select is shown and nothing here runs. The script reads ONE data attribute (ids and flags: which value of
+// which group each variation has, whether it can be bought and how many at most) and never trusts the page for anything the cart endpoint decides: its own validation stays the last word.
+
+var MAX_QUANTITY = 99;
+
+function purchaseData(root) {
+    try {
+        var data = JSON.parse(root.getAttribute('data-sf-purchase') || '');
+
+        return data && Array.isArray(data.variations) ? data : null;
+    } catch (e) {
+        return null;
+    }
+}
+
 function initAddToCart() {
     var box = document.querySelector('[data-sf-add-to-cart]');
 
@@ -235,33 +251,276 @@ function initAddToCart() {
     var button = box.querySelector('.sf-add-to-cart');
     var status = box.querySelector('[data-sf-cart-status]');
     var select = document.querySelector('.sf-variation-select');
+    var root = document.querySelector('[data-sf-purchase]');
+    var data = root ? purchaseData(root) : null;
+    var variations = data ? data.variations : [];
+    var pickers = !! (data && data.pickers && data.groups > 0);
+    var groups = root ? Array.prototype.slice.call(root.querySelectorAll('[data-sf-group]')) : [];
+    var selected = groups.map(function () { return null; });
+    var qtyInput = root ? root.querySelector('[data-sf-qty-input]') : null;
+    var minus = root ? root.querySelector('[data-sf-qty-minus]') : null;
+    var plus = root ? root.querySelector('[data-sf-qty-plus]') : null;
+    var texts = {
+        label: button.getAttribute('data-sf-label') || button.textContent,
+        choose: button.getAttribute('data-sf-label-choose') || button.textContent,
+        soldOut: button.getAttribute('data-sf-label-sold-out') || button.textContent,
+    };
+    var anyOrderable = variations.some(function (v) { return v.o === 1; });
     var busy = false;
 
-    function chosenId() {
+    function variationById(id) {
+        for (var i = 0; i < variations.length; i++) {
+            if (variations[i].id === String(id)) {
+                return variations[i];
+            }
+        }
+
+        return null;
+    }
+
+    // the chosen variation: all groups chosen (pickers), else the page's select as before (an enabled option), else the only variation of a simple product
+    function chosen() {
+        if (pickers) {
+            if (selected.some(function (v) { return v === null; })) {
+                return null;
+            }
+
+            var found = null;
+
+            variations.forEach(function (v) {
+                if (v.v.every(function (index, g) { return index === selected[g]; }) && (found === null || (v.o === 1 && found.o !== 1))) {
+                    found = v;
+                }
+            });
+
+            return found;
+        }
+
         if (select) {
             var option = select.options[select.selectedIndex];
 
-            return option && ! option.disabled ? option.value : '';
+            return option && ! option.disabled ? variationById(option.value) || { id: option.value, o: 1, q: MAX_QUANTITY } : null;
         }
 
-        return button.getAttribute('data-variation-id') || '';
+        var id = button.getAttribute('data-variation-id') || '';
+
+        return id === '' ? null : variationById(id) || { id: id, o: 1, q: MAX_QUANTITY };
+    }
+
+    function chosenId() {
+        var v = chosen();
+
+        return v && v.o === 1 ? v.id : '';
+    }
+
+    // a value is available when some variation that can be bought has it together with what is chosen in the OTHER groups
+    function available(g, j) {
+        return variations.some(function (v) {
+            return v.o === 1 && v.v[g] === j && selected.every(function (s, k) { return k === g || s === null || v.v[k] === s; });
+        });
+    }
+
+    function maxQuantity() {
+        var v = chosen();
+
+        return v === null ? MAX_QUANTITY : Math.max(1, Math.min(MAX_QUANTITY, v.q));
+    }
+
+    function clampQuantity(value) {
+        var n = parseInt(String(value).replace(/\D/g, ''), 10);
+
+        return isNaN(n) || n < 1 ? 1 : Math.min(n, maxQuantity());
+    }
+
+    function syncQuantity() {
+        if (! qtyInput) {
+            return;
+        }
+
+        var current = clampQuantity(qtyInput.value);
+
+        if (qtyInput.value !== '' && String(current) !== qtyInput.value) {
+            qtyInput.value = String(current);
+        }
+
+        minus.disabled = busy || current <= 1;
+        plus.disabled = busy || current >= maxQuantity();
+    }
+
+    function drawPickers() {
+        groups.forEach(function (group, g) {
+            var radios = Array.prototype.slice.call(group.querySelectorAll('[role=radio]'));
+            var firstEnabled = null;
+
+            radios.forEach(function (radio) {
+                var j = Number(radio.getAttribute('data-sf-value'));
+                var on = selected[g] === j;
+                var off = ! available(g, j);
+
+                radio.setAttribute('aria-checked', on ? 'true' : 'false');
+                radio.setAttribute('aria-disabled', off ? 'true' : 'false');
+                radio.classList.toggle('is-unavailable', off);
+                off || firstEnabled !== null || (firstEnabled = radio);
+            });
+
+            radios.forEach(function (radio) {
+                var on = radio.getAttribute('aria-checked') === 'true';
+
+                radio.setAttribute('tabindex', on || (selected[g] === null && radio === firstEnabled) ? '0' : '-1');
+            });
+
+            var dropdown = group.querySelector('[data-sf-select]');
+
+            if (dropdown) {
+                Array.prototype.forEach.call(dropdown.options, function (option) {
+                    option.value === '' || (option.disabled = ! available(g, Number(option.value)));
+                });
+                dropdown.value = selected[g] === null ? '' : String(selected[g]);
+            }
+        });
+    }
+
+    function drawButton() {
+        var v = chosen();
+        var state = 'normal';
+
+        if (variations.length > 0 && ! anyOrderable) {
+            state = 'sold_out';
+        } else if (pickers && v === null) {
+            state = 'choose';
+        } else if (chosenId() === '') {
+            state = 'sold_out';
+        }
+
+        button.textContent = state === 'normal' ? texts.label : (state === 'choose' ? texts.choose : texts.soldOut);
+        button.setAttribute('data-variation-id', chosenId());
+        button.setAttribute('data-sf-state', state);
+        button.setAttribute('aria-disabled', state === 'normal' && ! busy ? 'false' : 'true');
+        // «choose» stays clickable (the click shows what is missing); every other state that cannot buy is disabled
+        button.disabled = busy || state === 'sold_out' || (state === 'normal' && chosenId() === '');
     }
 
     function sync() {
-        var id = chosenId();
-
-        button.setAttribute('data-variation-id', id);
-        button.disabled = busy || id === '';
+        pickers && drawPickers();
+        syncQuantity();
+        drawButton();
     }
 
-    if (select) {
+    function setSelect(v) {
+        if (! select) {
+            return;
+        }
+
+        if (v) {
+            select.value = v.id;
+        } else {
+            select.selectedIndex = -1;
+        }
+
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    function choose(g, j) {
+        if (j !== null && ! available(g, j)) {
+            return;
+        }
+
+        selected[g] = j;
+
+        // a choice in another group that this one has made impossible is dropped
+        selected.forEach(function (s, k) {
+            if (k !== g && s !== null && ! available(k, s)) {
+                selected[k] = null;
+            }
+        });
+
+        groups.forEach(function (group) { group.classList.remove('is-missing'); });
+        setSelect(chosen());
+        sync();
+    }
+
+    function colourise() {
+        root && Array.prototype.forEach.call(root.querySelectorAll('.sf-swatch[data-colour]'), function (swatch) {
+            var colour = swatch.getAttribute('data-colour') || '';
+            var dot = swatch.querySelector('.sf-swatch-dot');
+
+            // validated again: only `#rrggbb` ever reaches a style
+            dot && /^#[0-9a-f]{6}$/.test(colour) && (dot.style.backgroundColor = colour);
+        });
+    }
+
+    function pickerEvents() {
+        groups.forEach(function (group, g) {
+            var radios = function () { return Array.prototype.slice.call(group.querySelectorAll('[role=radio]')); };
+
+            radios().forEach(function (radio) {
+                radio.addEventListener('click', function () { choose(g, Number(radio.getAttribute('data-sf-value'))); });
+                radio.addEventListener('keydown', function (event) {
+                    var step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key];
+
+                    if (! step) {
+                        return;
+                    }
+
+                    event.preventDefault();
+
+                    var list = radios();
+                    var index = list.indexOf(radio);
+
+                    for (var n = 1; n <= list.length; n++) {
+                        var next = list[(index + step * n + list.length * n) % list.length];
+
+                        if (next.getAttribute('aria-disabled') !== 'true') {
+                            next.focus();
+                            choose(g, Number(next.getAttribute('data-sf-value')));
+
+                            return;
+                        }
+                    }
+                });
+            });
+
+            var dropdown = group.querySelector('[data-sf-select]');
+
+            dropdown && dropdown.addEventListener('change', function () { choose(g, dropdown.value === '' ? null : Number(dropdown.value)); });
+        });
+    }
+
+    if (pickers) {
+        colourise();
+        pickerEvents();
+        // nothing is chosen yet: the button asks for a choice
+        select && (select.selectedIndex = -1);
+    }
+
+    if (select && ! pickers) {
         select.addEventListener('change', function () {
             message(status, chosenId() === '' ? t('choice_unavailable') : '');
             sync();
         });
     }
 
+    if (qtyInput) {
+        qtyInput.addEventListener('input', function () {
+            var digits = qtyInput.value.replace(/\D/g, '');
+
+            qtyInput.value = digits === '' ? '' : String(clampQuantity(digits));
+            syncQuantity();
+        });
+        qtyInput.addEventListener('change', function () { qtyInput.value = String(clampQuantity(qtyInput.value)); sync(); });
+        minus.addEventListener('click', function () { qtyInput.value = String(Math.max(1, clampQuantity(qtyInput.value) - 1)); sync(); });
+        plus.addEventListener('click', function () { qtyInput.value = String(Math.min(maxQuantity(), clampQuantity(qtyInput.value) + 1)); sync(); });
+    }
+
     button.addEventListener('click', async function () {
+        if (button.getAttribute('data-sf-state') === 'choose') {
+            var missing = groups.filter(function (group, g) { return selected[g] === null; })[0];
+
+            missing && missing.classList.add('is-missing');
+
+            return;
+        }
+
         var id = chosenId();
 
         if (busy || id === '') {
@@ -273,7 +532,7 @@ function initAddToCart() {
         message(status, t('adding'));
 
         try {
-            var result = await api('POST', '/api/cart/lines', { variation_id: id, quantity: 1 });
+            var result = await api('POST', '/api/cart/lines', { variation_id: id, quantity: qtyInput ? clampQuantity(qtyInput.value) : 1 });
 
             if (result.status === 201 || result.status === 200) {
                 status.textContent = t('added') + ' ';

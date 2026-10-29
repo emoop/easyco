@@ -807,6 +807,141 @@
         @apply cursor-not-allowed bg-neutral-200 text-neutral-600;
     }
 
+    /* ---- PB-1: the «Покупка» block: pickers, quantity counter and the add-to-cart button ------------- */
+    .sf-sr {
+        @apply sr-only;
+    }
+
+    .sf-picker {
+        @apply mt-2 hidden flex-col gap-1;
+    }
+
+    .js .sf-variations--pickers .sf-picker {
+        @apply flex;
+    }
+
+    /* the page's own select stays the source of truth: with the script it is only visually hidden (never inline) */
+    .js .sf-variations--pickers .sf-variation-select,
+    .js .sf-variations--pickers .sf-variation-label {
+        @apply sr-only;
+    }
+
+    .sf-picker-label {
+        @apply text-sm font-medium text-neutral-700;
+    }
+
+    .sf-picker-values {
+        @apply flex flex-wrap gap-2;
+    }
+
+    .sf-picker-select {
+        @apply w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm;
+    }
+
+    .sf-swatch {
+        @apply relative inline-flex h-9 w-9 cursor-pointer items-center justify-center rounded-full border border-neutral-300 bg-white p-0.5;
+    }
+
+    .sf-swatch-dot {
+        @apply block h-full w-full rounded-full border border-black/10;
+    }
+
+    .sf-size {
+        @apply inline-flex min-h-10 min-w-11 cursor-pointer items-center justify-center rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-900;
+    }
+
+    .sf-swatch[aria-checked='true'] {
+        box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--sf-primary, oklch(20.5% 0 none));
+    }
+
+    .sf-size[aria-checked='true'] {
+        border-color: var(--sf-primary, oklch(20.5% 0 none));
+        box-shadow: inset 0 0 0 1px var(--sf-primary, oklch(20.5% 0 none));
+        font-weight: 700;
+    }
+
+    .sf-swatch:focus-visible,
+    .sf-size:focus-visible,
+    .sf-qty-btn:focus-visible {
+        outline: 2px solid var(--sf-primary, oklch(20.5% 0 none));
+        outline-offset: 2px;
+    }
+
+    /* an unavailable choice stays in sight, greyed and crossed out, and cannot be chosen */
+    .sf-swatch[aria-disabled='true'],
+    .sf-size[aria-disabled='true'] {
+        @apply cursor-not-allowed opacity-40;
+    }
+
+    .sf-size[aria-disabled='true'] {
+        text-decoration: line-through;
+    }
+
+    .sf-swatch[aria-disabled='true']::after {
+        content: '';
+        @apply absolute inset-0 rounded-full;
+        background: linear-gradient(to top right, transparent calc(50% - 1px), #737373 calc(50% - 1px), #737373 calc(50% + 1px), transparent calc(50% + 1px));
+    }
+
+    /* the button was pressed before a choice: the first group that is missing one is outlined */
+    .sf-picker.is-missing .sf-picker-label {
+        color: #b91c1c;
+    }
+
+    .sf-picker.is-missing .sf-picker-values {
+        outline: 2px solid #b91c1c;
+        outline-offset: 4px;
+        border-radius: 0.375rem;
+    }
+
+    .sf-qty {
+        @apply mt-3 hidden items-center gap-3;
+    }
+
+    .js .sf-qty {
+        @apply flex;
+    }
+
+    .sf-qty-label {
+        @apply text-sm font-medium text-neutral-700;
+    }
+
+    .sf-qty-box {
+        @apply inline-flex items-center rounded-md border border-neutral-300 bg-white;
+    }
+
+    .sf-qty-btn {
+        @apply h-10 w-10 cursor-pointer text-lg leading-none text-neutral-900;
+    }
+
+    .sf-qty-btn:disabled {
+        @apply cursor-not-allowed opacity-40;
+    }
+
+    .sf-qty-input {
+        @apply h-10 w-12 border-0 bg-transparent p-0 text-center text-base;
+    }
+
+    /* the add-to-cart button: its look comes from the --sf-buy-* variables of the token stylesheet (set only when the merchant changed something); the fallbacks are the shop's button as it always was */
+    .sf-buy {
+        background-color: var(--sf-buy-bg, var(--sf-btn-bg, var(--sf-primary, oklch(20.5% 0 none))));
+        color: var(--sf-buy-color, var(--sf-btn-text, var(--sf-on-primary, #fff)));
+        box-shadow: inset 0 0 0 var(--sf-buy-bw, var(--sf-btn-bw, 0)) var(--sf-buy-border, var(--sf-primary, oklch(20.5% 0 none)));
+        border-radius: var(--sf-buy-radius, var(--sf-r-btn, var(--radius-md)));
+    }
+
+    .sf-buy:hover:not(:disabled):not([aria-disabled='true']) {
+        background-color: var(--sf-buy-bg-hover, var(--sf-buy-bg, var(--sf-btn-bg, var(--sf-primary, oklch(20.5% 0 none)))));
+    }
+
+    .sf-buy:disabled,
+    .sf-buy[aria-disabled='true'] {
+        @apply cursor-not-allowed;
+        background-color: var(--sf-buy-bg, var(--color-neutral-200));
+        color: var(--sf-buy-color, var(--color-neutral-600));
+        opacity: var(--sf-buy-off, 1);
+    }
+
     /* ---- description as readable prose (no typography plugin) ------------------------------------ */
     .sf-description {
         @apply mt-8 border-t border-neutral-200 pt-6;

@@ -12,7 +12,8 @@ final class ProductSummaryLayout
     public static function default(): array
     {
         return ['components' => array_map(
-            static fn (string $type): array => ['type' => $type, 'settings' => []],
+            // PB-1: every type with ITS defaults (only `purchase` has any), which is what the validator returns for an untouched component
+            static fn (string $type): array => ['type' => $type, 'settings' => ProductSummaryCatalog::defaultsFor($type)],
             ['brand', 'title', 'short_description', 'price', 'stock', 'purchase'],
         )];
     }

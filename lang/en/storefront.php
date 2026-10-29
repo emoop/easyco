@@ -25,6 +25,8 @@ return [
     'variation_option_unavailable' => ':label — :price (:reason)',
     'unavailable' => 'unavailable',
     'add_to_cart' => 'Add to cart',
+    // PB-1: the purchase component (pickers, counter, the button's other two states)
+    'purchase' => ['choose' => 'Choose a size', 'sold_out' => 'Sold out', 'quantity' => 'Quantity', 'decrease' => 'Decrease quantity', 'increase' => 'Increase quantity'],
     'description' => 'Description',
     'gallery' => 'Product images',
     'gallery_photo' => 'photo :n',

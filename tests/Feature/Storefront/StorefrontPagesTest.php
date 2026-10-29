@@ -76,7 +76,7 @@ class StorefrontPagesTest extends TestCase
         $this->assertStringContainsString('<li class="sf-breadcrumb sf-breadcrumb-current" aria-current="page">Summer dress</li>', $html);
         $this->assertStringContainsString('href="/product-category/clothing/dresses"', $html);
         $this->assertStringNotContainsString('<select', $html, 'a simple product has no variation select');
-        $this->assertMatchesRegularExpression('/<button class="sf-add-to-cart" type="button" disabled data-variation-id="101">/', $html);
+        $this->assertMatchesRegularExpression('/<button class="sf-add-to-cart sf-buy" type="button" disabled data-variation-id="101" /', $html);
     }
 
     public function test_the_gallery_images_carry_size_srcset_and_loading_hints(): void

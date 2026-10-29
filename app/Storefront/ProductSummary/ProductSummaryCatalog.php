@@ -33,7 +33,17 @@ final class ProductSummaryCatalog
             'short_description' => [1, []],
             'price' => [1, []],
             'stock' => [1, []],
-            'purchase' => [1, []],
+            // PB-1: the add-to-cart button's own texts and look. An empty text = the shop's own wording (translated); a colour is `#rrggbb` or none (= the shop's colours); `rounded` yes = the shop's button radius
+            'purchase' => [1, [
+                'label' => ['kind' => 'text', 'max' => 30, 'default' => ''],
+                'label_choose' => ['kind' => 'text', 'max' => 30, 'default' => ''],
+                'label_sold_out' => ['kind' => 'text', 'max' => 30, 'default' => ''],
+                'bg' => ['kind' => 'color', 'hex6' => true, 'default' => null],
+                'color' => ['kind' => 'color', 'hex6' => true, 'default' => null],
+                'border_w' => ['kind' => 'int', 'min' => 0, 'max' => 4, 'default' => 0],
+                'border_color' => ['kind' => 'color', 'hex6' => true, 'default' => null],
+                'rounded' => ['kind' => 'bool', 'default' => true],
+            ]],
             'html_block' => [self::MAX_HTML_BLOCKS, ['html_block' => ['kind' => 'html_block', 'default' => null, 'required' => true]]],
         ];
         $out = [];
