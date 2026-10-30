@@ -86,12 +86,16 @@ class SeoMetaTest extends TestCase
         $this->assertSame('/product-category/x', $plain['pages'][0]['url']);
     }
 
-    public function test_the_page_window_is_at_most_seven_and_slides(): void
+    /** CD-1a: up to seven pages all numbers; more: the first, the last and the current ± 2 with an ellipsis for a gap (was: a sliding window of seven numbers). */
+    public function test_the_numbered_row_shows_the_first_the_last_and_the_current_plus_minus_two(): void
     {
-        $links = (new PaginationLinks())->build('/x', $this->listing(10, 20));
+        $row = fn (int $current, int $last): array => array_map(
+            static fn (array $page): string => isset($page['ellipsis']) ? '…' : (string) $page['number'],
+            (new PaginationLinks())->build('/x', $this->listing($current, $last))['pages'],
+        );
 
-        $this->assertSame([7, 8, 9, 10, 11, 12, 13], array_column($links['pages'], 'number'));
-        $this->assertSame([14, 15, 16, 17, 18, 19, 20], array_column((new PaginationLinks())->build('/x', $this->listing(20, 20))['pages'], 'number'));
-        $this->assertSame([1, 2, 3, 4, 5, 6, 7], array_column((new PaginationLinks())->build('/x', $this->listing(1, 20))['pages'], 'number'));
+        $this->assertSame(['1', '…', '8', '9', '10', '11', '12', '…', '20'], $row(10, 20));
+        $this->assertSame(['1', '…', '18', '19', '20'], $row(20, 20));
+        $this->assertSame(['1', '2', '3', '…', '20'], $row(1, 20));
     }
 }

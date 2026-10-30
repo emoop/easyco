@@ -43,6 +43,11 @@ final class AppearanceSettings
 
     public const PRODUCT_DESIGN_DRAFT_KEY = 'design.product.global.draft';
 
+    /** CD-1a: «Каталог» (columns, per page of the product listing): the published JSON and its draft. The published one is read with the rest of the appearance (the per-page default). */
+    public const CATALOG_DESIGN_KEY = 'design.catalog.global';
+
+    public const CATALOG_DESIGN_DRAFT_KEY = 'design.catalog.global.draft';
+
     public const BANNER_DRAFT_KEY = 'banner.draft';
 
     public const CHECKOUT_HEADER_DRAFT_KEY = 'design.checkout_header.global.draft';
@@ -137,6 +142,7 @@ final class AppearanceSettings
         self::MENUS_COMPILED_KEY,
         self::FOOTER_COMPILED_KEY,
         self::DESIGN_COMPILED_KEY,
+        self::CATALOG_DESIGN_KEY,
         self::BANNER_ENABLED,
         self::BANNER_TEXT,
         self::BANNER_URL,

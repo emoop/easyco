@@ -6,6 +6,10 @@
         @endif
         <ol class="sf-pagination-pages">
             @foreach ($pagination['pages'] as $page)
+@if (isset($page['ellipsis']))
+                <li class="sf-pagination-ellipsis">…</li>
+@continue
+@endif
                 <li class="sf-pagination-page">
                     @if ($page['current'])
                         <span aria-current="page">{{ $page['number'] }}</span>

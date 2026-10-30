@@ -26,10 +26,23 @@ final class PageDesign
 
     public const PRODUCT = 'product';
 
-    public const SECTIONS = [self::PAGE, self::PRODUCT];
+    /** CD-1a: «Каталог» — the columns and the number of products per page of the product listing (the category page). */
+    public const CATALOG = 'catalog';
+
+    public const SECTIONS = [self::PAGE, self::PRODUCT, self::CATALOG];
 
     /** The settings key of a section's JSON (the variable part). */
-    public const KEYS = [self::PAGE => AppearanceSettings::PAGE_DESIGN_KEY, self::PRODUCT => AppearanceSettings::PRODUCT_DESIGN_KEY];
+    public const KEYS = [self::PAGE => AppearanceSettings::PAGE_DESIGN_KEY, self::PRODUCT => AppearanceSettings::PRODUCT_DESIGN_KEY, self::CATALOG => AppearanceSettings::CATALOG_DESIGN_KEY];
+
+    /** The settings key of a section's DRAFT. */
+    public const DRAFT_KEYS = [self::PAGE => AppearanceSettings::PAGE_DESIGN_DRAFT_KEY, self::PRODUCT => AppearanceSettings::PRODUCT_DESIGN_DRAFT_KEY, self::CATALOG => AppearanceSettings::CATALOG_DESIGN_DRAFT_KEY];
+
+    /** CD-1a: the closed lists of the catalog section (strings: what the panel posts and the JSON stores). */
+    public const CATALOG_COLS = ['3', '4', '5'];
+
+    public const CATALOG_COLS_PHONE = ['1', '2'];
+
+    public const CATALOG_PER_PAGE = ['12', '24', '36', '48', '60', '72'];
 
     /** The `site_settings` keys of the gallery choices, by field. */
     public const GALLERY_KEYS = [
@@ -69,6 +82,14 @@ final class PageDesign
                 'gal_radius' => ['kind' => 'number', 'min' => 0, 'max' => 16, 'default' => 4, 'unit' => 'px'],
                 'col_gap' => ['kind' => 'number', 'min' => 0, 'max' => 96, 'default' => 32, 'unit' => 'px'],
                 'sticky' => ['kind' => 'bool', 'default' => true],
+            ];
+        }
+
+        if ($section === self::CATALOG) {
+            return [
+                'cols' => ['kind' => 'enum', 'options' => self::CATALOG_COLS, 'default' => '4'],
+                'cols_phone' => ['kind' => 'enum', 'options' => self::CATALOG_COLS_PHONE, 'default' => '2'],
+                'per_page' => ['kind' => 'enum', 'options' => self::CATALOG_PER_PAGE, 'default' => '24'],
             ];
         }
 
@@ -163,6 +184,12 @@ final class PageDesign
             }
         }
 
+        if ($section === self::CATALOG) {
+            // `per_page` is not a variable: the listing reads it at render (StorefrontAppearance::catalogPerPage). The tablet is always 3 columns (min(desktop, 3)), so it needs no variable.
+            $differs('cols') && $vars['--sf-cat-cols'] = (string) $clean['cols'];
+            $differs('cols_phone') && $vars['--sf-cat-cols-phone'] = (string) $clean['cols_phone'];
+        }
+
         if ($section === self::PRODUCT) {
             foreach (['gal_gap' => '--sf-gal-gap', 'gal_radius' => '--sf-gal-radius', 'col_gap' => '--sf-product-col-gap'] as $name => $variable) {
                 $differs($name) && $vars[$variable] = self::rem($clean[$name]);
@@ -215,6 +242,8 @@ final class PageDesign
         return match ($variable) {
             '--sf-page-pad' => preg_match('/^clamp\('.self::LENGTH.', [0-9](?:\.[0-9]{1,3})?vw, '.self::LENGTH.'\)$/', $value) === 1,
             '--sf-card-border-width', '--sf-card-radius', '--sf-card-border-width-mobile', '--sf-card-radius-mobile', '--sf-gal-gap', '--sf-gal-radius', '--sf-product-col-gap' => preg_match('/^'.self::LENGTH.'$/', $value) === 1,
+            '--sf-cat-cols' => in_array($value, self::CATALOG_COLS, true),
+            '--sf-cat-cols-phone' => in_array($value, self::CATALOG_COLS_PHONE, true),
             '--sf-summary-position' => $value === 'static',
             '--sf-summary-max-height' => $value === 'none',
             default => false,
@@ -227,6 +256,22 @@ final class PageDesign
         $values = is_string($json) && $json !== '' ? json_decode($json, true) : null;
 
         return is_array($values) ? $values : null;
+    }
+
+    /** CD-1a: the VALIDATED values of the catalog section from its stored JSON (every field present; anything that does not validate gives the defaults). @return array<string, mixed> */
+    public static function catalogValues(?string $json): array
+    {
+        $values = self::decode($json);
+
+        if ($values !== null) {
+            [$clean, $errors] = self::validate(self::CATALOG, $values, false);
+
+            if ($errors === []) {
+                return $clean;
+            }
+        }
+
+        return self::defaults(self::CATALOG);
     }
 
     /** px -> rem for the stylesheet: `px / 16`, a dot, at most 4 decimals, no trailing zeros; zero is a plain `0`. */

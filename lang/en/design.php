@@ -16,6 +16,7 @@ return [
         'checkout' => 'Cart and checkout',
         'page' => 'Page and cards',
         'product' => 'Product page',
+        'catalog' => 'Catalog',
         'summary' => 'Right column',
         'content' => 'Content',
         'sidebar' => 'Sidebar',
@@ -137,6 +138,7 @@ return [
         'checkout' => 'Cart preview',
         'page' => 'Home page preview',
         'product' => 'Product page preview',
+        'catalog' => 'Category page preview',
         'summary' => 'Product page preview (right column)',
         'open' => 'Open in a new window',
         'unsaved' => 'There are unapplied changes: press "Apply" to refresh the preview.',
@@ -162,6 +164,7 @@ return [
         'published_topbar' => 'The top banner is published',
         'published_page' => 'The page and cards are published',
         'published_product' => 'The product page is published',
+        'published_catalog' => 'The catalog is published',
         'published_summary' => 'The right column is published',
         'reset_done' => 'The initial settings are in the working copy. They take effect after “Publish”.',
         'too_large' => 'The layout is too large to publish.',
@@ -233,6 +236,7 @@ return [
     // GL-2: «Page and cards» and «Product page»: the plain-value sections
     'page_design' => [
         'schema_page' => 'These values apply to the whole shop: the side padding of the content and the border and corners of the product cards (separately for desktop and phone). Everything is at its default until you change something.',
+        'schema_catalog' => 'How many columns and how many products per page the product listing (the category page) shows. On a tablet the columns are automatic, at most 3. The home page is not changed. The layout and the side panel come with the filters.',
         'schema_product' => 'The layout and the spacing of the gallery and of the right column of the product page. The gallery modes are separate for desktop and phone.',
         'unit_note' => 'Lengths are in pixels (px). The decimal mark is a dot (for example 4.5).',
         'groups' => [
@@ -241,6 +245,7 @@ return [
             'gallery' => 'Gallery',
             'spacing' => 'Spacing and corners',
             'column' => 'Right column',
+            'catalog' => 'Product listing',
         ],
         'devices' => ['desktop' => 'Desktop', 'mobile' => 'Phone'],
         'fields' => [
@@ -260,6 +265,9 @@ return [
             'gal_radius' => 'Photo corner radius (px)',
             'col_gap' => 'Gap between the gallery and the description (px)',
             'sticky' => 'The right column stays in view while scrolling',
+            'cols' => 'Columns on desktop',
+            'cols_phone' => 'Columns on phone',
+            'per_page' => 'Products per page',
         ],
         'hints' => [
             'pad_min' => 'The least room at the sides of the content (8 to 48). Default 16.',
@@ -278,12 +286,18 @@ return [
             'gal_radius' => 'Corner radius of the gallery photos (0 to 16). Default 4.',
             'col_gap' => 'The gap between the gallery and the column with the price and the button on desktop (0 to 96). Default 32.',
             'sticky' => 'On: the price and the «Add to cart» button stay on screen while the photos scroll (desktop only). Default on.',
+            'cols' => 'How many products sit in a row on a computer (3, 4 or 5). Default 4.',
+            'cols_phone' => 'How many products sit in a row on a phone (1 or 2). Default 2.',
+            'per_page' => 'How many products one page of the list shows (12, 24, 36, 48, 60 or 72). Default 24.',
         ],
         'options' => [
             'gallery_desktop_mode' => ['grid' => '2-column grid', 'thumbs-left' => 'Small photos on the left', 'thumbs-below' => 'Small photos below'],
             'gallery_mobile_mode' => ['carousel' => 'Carousel', 'thumbs-below' => 'Big photo and small ones below'],
             'gallery_width' => ['50' => '50 %', '55' => '55 %', '60' => '60 %', '65' => '65 %', '70' => '70 %', '75' => '75 %', '80' => '80 %'],
             'gallery_odd_last' => ['same' => 'Same size', 'full' => 'Full width'],
+            'cols' => ['3' => '3 columns', '4' => '4 columns', '5' => '5 columns'],
+            'cols_phone' => ['1' => '1 column', '2' => '2 columns'],
+            'per_page' => ['12' => '12', '24' => '24', '36' => '36', '48' => '48', '60' => '60', '72' => '72'],
             'gallery_hover_zoom' => ['light' => 'Light', 'medium' => 'Medium', 'off' => 'Off'],
         ],
         'errors' => [

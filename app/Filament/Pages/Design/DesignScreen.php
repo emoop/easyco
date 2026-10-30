@@ -3,6 +3,7 @@
 namespace App\Filament\Pages\Design;
 
 use App\Filament\Concerns\AuthorizesViaStaffPermission;
+use App\Filament\Design\Zones\CatalogZone;
 use App\Filament\Design\Zones\CheckoutHeaderZone;
 use App\Filament\Design\Zones\DesignZone;
 use App\Filament\Design\Zones\FooterZone;
@@ -47,7 +48,7 @@ class DesignScreen extends Page
     public const DRAWER_CELL = HeaderZone::DRAWER_CELL;
 
     /** The zones that work, in the order of the list: key => class. */
-    public const ZONES = ['topbar' => TopbarZone::class, 'header' => HeaderZone::class, 'footer' => FooterZone::class, 'checkout' => CheckoutHeaderZone::class, 'page' => PageCardsZone::class, 'product' => ProductPageZone::class, 'summary' => ProductSummaryZone::class];
+    public const ZONES = ['topbar' => TopbarZone::class, 'header' => HeaderZone::class, 'footer' => FooterZone::class, 'checkout' => CheckoutHeaderZone::class, 'page' => PageCardsZone::class, 'product' => ProductPageZone::class, 'catalog' => CatalogZone::class, 'summary' => ProductSummaryZone::class];
 
     protected static ?string $slug = 'design';
 

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Storefront;
 
 use App\Http\Controllers\Controller;
+use App\Storefront\Appearance\StorefrontAppearance;
 use App\Storefront\Exceptions\InvalidListingQuery;
 use App\Storefront\Reader\CatalogReader;
 use App\Storefront\Support\ListingRequest;
@@ -32,8 +33,11 @@ use Illuminate\Http\Response;
  */
 final class CategoryController extends Controller
 {
-    public function show(Request $request, string $path, CatalogReader $reader, SeoMeta $seo, PaginationLinks $pagination): View|RedirectResponse|Response
+    public function show(Request $request, string $path, CatalogReader $reader, SeoMeta $seo, PaginationLinks $pagination, StorefrontAppearance $appearance): View|RedirectResponse|Response
     {
+        // CD-1a: the PUBLISHED «Каталог» size is the default of `per_page` (one cached read, no query)
+        $perPage = $appearance->catalogPerPage();
+
         $category = $reader->category($path);
 
         if ($category === null) {
@@ -41,7 +45,7 @@ final class CategoryController extends Controller
         }
 
         try {
-            $listing = $reader->listing(ListingRequest::query($request, $category->id));
+            $listing = $reader->listing(ListingRequest::query($request, $category->id, $perPage));
         } catch (InvalidListingQuery) {
             return NotFoundResponse::make();
         }
@@ -51,13 +55,13 @@ final class CategoryController extends Controller
         }
 
         if (trim($path, '/') !== $category->path) {
-            return redirect()->to($category->url.$pagination->suffix($listing), 301);
+            return redirect()->to($category->url.$pagination->suffix($listing, null, $perPage), 301);
         }
 
         return view('storefront.category', [
             'category' => $category,
             'listing' => $listing,
-            'pagination' => $pagination->build($category->url, $listing),
+            'pagination' => $pagination->build($category->url, $listing, $perPage),
             'categories' => $reader->categoryTree(),
             'seo' => $seo->forCategory($category, $listing),
         ]);

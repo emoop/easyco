@@ -13,6 +13,7 @@ use App\Storefront\Header\HeaderValidator;
 use App\Storefront\Header\HeaderView;
 use App\Storefront\Menu\CompiledMenus;
 use App\Storefront\Menu\MenuRecompiler;
+use App\Storefront\PageDesign\PageDesign;
 use DateTimeImmutable;
 use Illuminate\Container\Attributes\Scoped;
 use Illuminate\Support\Facades\Cache;
@@ -96,7 +97,7 @@ final class StorefrontAppearance
 
         $cached = Cache::get(self::CACHE_KEY);
 
-        if (is_array($cached) && array_key_exists('theme', $cached) && array_key_exists('compiled', $cached) && array_key_exists('header', $cached) && array_key_exists('menus', $cached) && array_key_exists('locations', $cached) && array_key_exists('footer', $cached) && array_key_exists('design', $cached) && is_array($cached['banner'] ?? null)) {
+        if (is_array($cached) && array_key_exists('theme', $cached) && array_key_exists('compiled', $cached) && array_key_exists('header', $cached) && array_key_exists('menus', $cached) && array_key_exists('locations', $cached) && array_key_exists('footer', $cached) && array_key_exists('design', $cached) && array_key_exists('catalog', $cached) && is_array($cached['banner'] ?? null)) {
             return $this->data = $cached;
         }
 
@@ -143,6 +144,8 @@ final class StorefrontAppearance
             'footer' => self::parseFooter($raw[AppearanceSettings::FOOTER_COMPILED_KEY] ?? null),
             // DS-2b: the Design screen's compiled document (the simplified checkout header today); validated again when it is read
             'design' => is_string($raw[AppearanceSettings::DESIGN_COMPILED_KEY] ?? null) ? $raw[AppearanceSettings::DESIGN_COMPILED_KEY] : null,
+            // CD-1a: the published «Каталог» JSON (validated again when read: catalogPerPage)
+            'catalog' => is_string($raw[AppearanceSettings::CATALOG_DESIGN_KEY] ?? null) ? $raw[AppearanceSettings::CATALOG_DESIGN_KEY] : null,
         ];
     }
 
@@ -455,6 +458,17 @@ final class StorefrontAppearance
     {
         $this->headerOverride = $layout;
         $this->previewCss = $cssUrl;
+    }
+
+    /**
+     * CD-1a: the PUBLISHED number of cards per page of the product listing (the default when the URL has no `per_page`), read from the one cached payload (no query) and validated again against the
+     * closed list; 24 (today's) when the shop never set it or the stored value is not valid. A draft is never read.
+     */
+    public function catalogPerPage(): int
+    {
+        $values = PageDesign::catalogValues(is_string($this->data()['catalog'] ?? null) ? $this->data()['catalog'] : null);
+
+        return (int) $values['per_page'];
     }
 
     public function themeKey(): ?string

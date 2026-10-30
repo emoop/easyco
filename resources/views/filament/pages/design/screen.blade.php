@@ -7,7 +7,7 @@
         <nav class="ds-zones" aria-label="{{ __('design.zones_title') }}">
             <h2 class="ds-h">{{ __('design.zones_title') }}</h2>
             <ul>
-                @foreach (['topbar', 'header', 'footer', 'checkout', 'page', 'product', 'summary', 'content', 'sidebar'] as $zone)
+                @foreach (['topbar', 'header', 'footer', 'checkout', 'page', 'product', 'catalog', 'summary', 'content', 'sidebar'] as $zone)
                     <li>
                         @if (array_key_exists($zone, \App\Filament\Pages\Design\DesignScreen::ZONES))
                             <button type="button" class="ds-zone @if ($this->zone === $zone) ds-zone-on @endif" @if ($this->zone === $zone) aria-current="true" @endif wire:click="selectZone('{{ $zone }}')">{{ __('design.zones.'.$zone) }}</button>

@@ -3,7 +3,6 @@
 namespace App\Storefront\PageDesign;
 
 use App\Services\ActivityLogger;
-use App\Settings\AppearanceSettings;
 use App\Settings\Contracts\SiteSettingsRepository;
 use App\Settings\GallerySettings;
 use App\Storefront\Header\AppearanceRecompiler;
@@ -108,7 +107,7 @@ final class PageDesignStore
 
     public static function draftKey(string $section): string
     {
-        return $section === PageDesign::PAGE ? AppearanceSettings::PAGE_DESIGN_DRAFT_KEY : AppearanceSettings::PRODUCT_DESIGN_DRAFT_KEY;
+        return PageDesign::DRAFT_KEYS[$section];
     }
 
     /** @param  array<string, mixed>  $clean  the section's VALIDATED values */

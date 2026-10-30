@@ -232,6 +232,12 @@
         @apply grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4;
     }
 
+    /* CD-1a: «Каталог» — the category listing's columns (the home page's grid is not touched). The two variables exist only when the shop changed them; the fallbacks are today's 2 / 4, and
+       the tablet is always min(desktop, 3) = 3 (the closed list is 3, 4, 5). */
+    .sf-category .sf-grid {
+        @apply grid-cols-[repeat(var(--sf-cat-cols-phone,2),minmax(0,1fr))] md:grid-cols-3 lg:grid-cols-[repeat(var(--sf-cat-cols,4),minmax(0,1fr))];
+    }
+
     /* ---- card ----------------------------------------------------------------------------------- */
     .sf-card {
         @apply flex flex-col overflow-hidden border-neutral-200 bg-white transition hover:shadow-md;
@@ -482,6 +488,10 @@
     .sf-pagination-page > a,
     .sf-pagination-page > span {
         @apply inline-flex min-w-10 items-center justify-center rounded-md border border-neutral-300 px-3 py-2 text-sm no-underline;
+    }
+
+    .sf-pagination-ellipsis {
+        @apply inline-flex min-w-6 items-center justify-center text-sm text-neutral-500;
     }
 
     .sf-pagination-page > span {

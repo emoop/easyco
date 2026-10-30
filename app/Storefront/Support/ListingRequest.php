@@ -18,9 +18,12 @@ final class ListingRequest
     public const KEYS = ['page', 'per_page', 'sort'];
 
     /** @throws InvalidListingQuery */
-    public static function query(Request $request, ?string $categoryId = null): ListingQuery
+    public static function query(Request $request, ?string $categoryId = null, int $defaultPerPage = 24): ListingQuery
     {
         $input = $request->only(self::KEYS);
+
+        // CD-1a: without a `per_page` in the URL the published «Каталог» size decides (24 for a shop that never set it); one in the URL is validated as ever
+        array_key_exists('per_page', $input) || $input['per_page'] = $defaultPerPage;
 
         if ($categoryId !== null) {
             $input['category'] = $categoryId;
