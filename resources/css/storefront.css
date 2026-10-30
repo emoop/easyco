@@ -885,17 +885,18 @@
         @apply h-auto max-w-full;
     }
 
-    /* HB-3: a paragraph in a block reads as a paragraph (the reset gives <p> no margin): a small gap between two, none above the first or below the last */
+    /* HB-3.1: a paragraph in a block reads as a paragraph (the reset gives <p> no margin). The gap is BETWEEN two paragraphs only: no bottom margin anywhere, so nothing
+       can move a centred or padded block (the owner saw centring change after HB-3; measured: it did not, see the report) */
     .sf-summary-html p,
     .sf-mega-html p,
     .sf-ft-html p {
-        margin: 0 0 0.5em;
+        margin: 0;
     }
 
-    .sf-summary-html p:last-child,
-    .sf-mega-html p:last-child,
-    .sf-ft-html p:last-child {
-        margin-bottom: 0;
+    .sf-summary-html p + p,
+    .sf-mega-html p + p,
+    .sf-ft-html p + p {
+        margin-top: 0.5em;
     }
 
     /* HB-1: the wrapper of a styled HTML block (`.sf-hb-{id}` rules come from the token stylesheet, never inline) */

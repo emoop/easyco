@@ -151,8 +151,9 @@ class HtmlBlockStyleTest extends TestCase
             'width: full' => [['width_mode' => 'full'], '.sf-hb-5{width:100%}'],
             'width: fixed' => [['width_mode' => 'fixed', 'width_px' => 300], '.sf-hb-5{width:300px;max-width:100%}'],
             'a width in px that is not fixed is dropped' => [['width_mode' => 'auto', 'width_px' => ''], ''],
-            'align: centre' => [['align' => 'center'], ".sf-hb-5{{$tail};text-align:center}"],
-            'align: right' => [['align' => 'right'], ".sf-hb-5{{$tail};text-align:right}"],
+            // HB-3.2: a fit-content box gets the margins that move it to the middle (centre) or to the right (right)
+            'align: centre' => [['align' => 'center'], ".sf-hb-5{{$tail};margin-left:auto;margin-right:auto;text-align:center}"],
+            'align: right' => [['align' => 'right'], ".sf-hb-5{{$tail};margin-left:auto;text-align:right}"],
             'align: left is the default' => [['align' => 'left'], ''],
             'size: small' => [['size' => 'small'], ".sf-hb-5{{$tail};font-size:0.875rem}"],
             'size: large' => [['size' => 'large'], ".sf-hb-5{{$tail};font-size:1.25rem}"],
@@ -163,7 +164,7 @@ class HtmlBlockStyleTest extends TestCase
             ],
             'the example of the brief' => [
                 ['bg' => '#2e7d32', 'color' => '#ffffff', 'pad_v' => 6, 'pad_h' => 10, 'radius' => 4, 'width_mode' => 'auto', 'align' => 'center'],
-                '.sf-hb-5{background:#2e7d32;color:#ffffff;padding:6px 10px;border-radius:4px;width:fit-content;max-width:100%;text-align:center}',
+                '.sf-hb-5{background:#2e7d32;color:#ffffff;padding:6px 10px;border-radius:4px;width:fit-content;max-width:100%;margin-left:auto;margin-right:auto;text-align:center}',
             ],
             'nothing set' => [[], ''],
         ];
@@ -198,6 +199,41 @@ class HtmlBlockStyleTest extends TestCase
         }
     }
 
+    /**
+     * HB-3.2: a fit-content box moves to the middle (centre: both margins) or to the right (right: the left margin); a full-width or fixed-width box and a left-aligned one get nothing new.
+     *
+     * @return array<string, array{0: array<string, mixed>, 1: string}>
+     */
+    public static function alignmentMatrix(): array
+    {
+        return [
+            'fit-content, centre' => [['align' => 'center'], '.sf-hb-5{width:fit-content;max-width:100%;margin-left:auto;margin-right:auto;text-align:center}'],
+            'fit-content, right' => [['align' => 'right'], '.sf-hb-5{width:fit-content;max-width:100%;margin-left:auto;text-align:right}'],
+            'fit-content, left' => [['align' => 'left', 'bg' => '#2e7d32'], '.sf-hb-5{background:#2e7d32;width:fit-content;max-width:100%}'],
+            'fit-content, no align' => [['bg' => '#2e7d32'], '.sf-hb-5{background:#2e7d32;width:fit-content;max-width:100%}'],
+            'full width, centre' => [['width_mode' => 'full', 'align' => 'center'], '.sf-hb-5{width:100%;text-align:center}'],
+            'full width, right' => [['width_mode' => 'full', 'align' => 'right'], '.sf-hb-5{width:100%;text-align:right}'],
+            'fixed width, centre' => [['width_mode' => 'fixed', 'width_px' => 300, 'align' => 'center'], '.sf-hb-5{width:300px;max-width:100%;text-align:center}'],
+            'nothing set' => [['align' => 'left'], ''],
+        ];
+    }
+
+    #[DataProvider('alignmentMatrix')]
+    public function test_only_a_fit_content_box_gets_the_margins_that_move_it(array $style, string $rule): void
+    {
+        $this->assertSame($rule, HtmlBlockStyle::css(5, $style));
+
+        if ($rule !== '') {
+            $this->assertTrue(HtmlBlockStyle::isValidRule($rule), 'every generated rule passes the closed-list check');
+        }
+    }
+
+    public function test_the_margin_declarations_are_accepted_by_the_closed_list(): void
+    {
+        $this->assertTrue(HtmlBlockStyle::isValidRule('.sf-hb-5{width:fit-content;max-width:100%;margin-left:auto;margin-right:auto;text-align:center}'));
+        $this->assertTrue(HtmlBlockStyle::isValidRule('.sf-hb-5{width:fit-content;max-width:100%;margin-left:auto;text-align:right}'));
+    }
+
     /** @return array<string, array{0: string}> */
     public static function badRules(): array
     {
@@ -222,6 +258,11 @@ class HtmlBlockStyleTest extends TestCase
             'a property that is not in the table' => ['.sf-hb-5{position:fixed;width:100%}'],
             'a text-align that is not in the set' => ['.sf-hb-5{text-align:justify;width:100%}'],
             'a font size that is not in the set' => ['.sf-hb-5{font-size:5rem;width:100%}'],
+            // HB-3.2: only the two margins of a fit-content box are allowed, nothing else of the margin family
+            'a margin shorthand' => ['.sf-hb-5{margin:9999px;width:100%}'],
+            'a left margin of 1px' => ['.sf-hb-5{margin-left:1px;width:100%}'],
+            'a top margin of auto' => ['.sf-hb-5{margin-top:auto;width:100%}'],
+            'an auto margin next to a pixel margin' => ['.sf-hb-5{margin-left:auto;margin-right:1px;width:100%}'],
             'no declaration' => ['.sf-hb-5{}'],
             'no id' => ['.sf-hb-{width:100%}'],
             'id 0' => ['.sf-hb-0{width:100%}'],

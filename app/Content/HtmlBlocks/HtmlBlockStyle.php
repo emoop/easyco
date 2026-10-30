@@ -230,6 +230,13 @@ final class HtmlBlockStyle
             default => array_push($d, 'width:fit-content', 'max-width:100%'),
         };
 
+        // HB-3.2: a box that is only as wide as its content (fit-content) sits at the LEFT edge of its place; the margins move it: a centred box to the middle, a right-aligned one to the right.
+        // A full-width box fills its place already, and a left-aligned one stays where it is.
+        if ($clean['width_mode'] === 'auto') {
+            $clean['align'] === 'center' && array_push($d, 'margin-left:auto', 'margin-right:auto');
+            $clean['align'] === 'right' && $d[] = 'margin-left:auto';
+        }
+
         $align !== null && $d[] = $align;
         $size !== null && $d[] = $size;
 
@@ -249,6 +256,9 @@ final class HtmlBlockStyle
             'border-radius:(?:[1-9]|[12][0-9]|3[0-2])px',
             'width:(?:fit-content|100%|(?:[1-7][0-9]{2}|800)px)',
             'max-width:100%',
+            // HB-3.2: the two margins a fit-content box needs to sit in the middle (centre) or at the right (right); nothing else of the margin family
+            'margin-left:auto',
+            'margin-right:auto',
             'text-align:(?:center|right)',
             'font-size:(?:0\.875|1\.25)rem',
         ]).')';

@@ -195,7 +195,7 @@ class HtmlBlockStylePrintingTest extends TestCase
 
         $block->update(['style' => self::STYLE]);
 
-        $rule = '.sf-hb-'.$block->id.'{background:#2e7d32;color:#ffffff;padding:6px 10px;border-radius:4px;width:fit-content;max-width:100%;text-align:center}';
+        $rule = '.sf-hb-'.$block->id.'{background:#2e7d32;color:#ffffff;padding:6px 10px;border-radius:4px;width:fit-content;max-width:100%;margin-left:auto;margin-right:auto;text-align:center}';
         $this->assertStringContainsString($rule, $this->stylesheet(), 'the token stylesheet carries the rule');
         $home = $this->home();
         $this->assertStringContainsString($this->wrapper($block->id), substr($home, (int) strpos($home, '<footer')), 'the footer follows');
@@ -247,6 +247,21 @@ class HtmlBlockStylePrintingTest extends TestCase
     }
 
     // ---- the cap ---------------------------------------------------------------------------------------------------------------------------
+
+    /** HB-3.2: the token stylesheet carries the margin rules of a centred and of a right-aligned narrow block, and a full-width block gets none. */
+    public function test_the_stylesheet_carries_the_margins_of_a_centred_and_a_right_block_and_no_others(): void
+    {
+        $centred = HtmlBlockModel::create(['title' => 'C', 'body' => '<p>c</p>', 'style' => ['align' => 'center']]);
+        $right = HtmlBlockModel::create(['title' => 'R', 'body' => '<p>r</p>', 'style' => ['align' => 'right']]);
+        $full = HtmlBlockModel::create(['title' => 'F', 'body' => '<p>f</p>', 'style' => ['align' => 'center', 'width_mode' => 'full']]);
+        $this->showEverywhere($centred);
+
+        $css = $this->stylesheet();
+
+        $this->assertStringContainsString('.sf-hb-'.$centred->id.'{width:fit-content;max-width:100%;margin-left:auto;margin-right:auto;text-align:center}', $css);
+        $this->assertStringContainsString('.sf-hb-'.$right->id.'{width:fit-content;max-width:100%;margin-left:auto;text-align:right}', $css);
+        $this->assertStringContainsString('.sf-hb-'.$full->id.'{width:100%;text-align:center}', $css);
+    }
 
     public function test_the_stylesheet_carries_at_most_a_hundred_rules_in_order_of_id(): void
     {
