@@ -347,16 +347,63 @@
         }
     }
 
+    /* LK-2: the card's text in the style of the product page (see `.sf-summary`): the same three colours (the shop's tokens, with the style's values as the fallback; a merchant's choice in «Облик» wins),
+       a light name in the BODY font (an h3 would otherwise follow the heading font, and the owner wants no serif on cards), a small muted brand, light prices. No markup, no setting. */
+    .sf-card {
+        --sf-pdp-text: var(--sf-text, #1a1a1a);
+        --sf-pdp-muted: var(--sf-muted, #6b6b6b);
+    }
+
     .sf-card-brand {
-        @apply mt-2 px-3 text-xs uppercase tracking-wide text-neutral-500;
+        @apply mt-3 truncate px-3;
+        font-size: 0.6875rem;
+        font-weight: 400;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        color: var(--sf-pdp-muted);
     }
 
     .sf-card-name {
-        @apply px-3 pt-0.5 text-sm font-medium leading-snug text-neutral-900;
+        @apply mt-3 px-3;
+        font-family: var(--font-sans);
+        font-size: 0.875rem;
+        font-weight: 400;
+        line-height: 1.4;
+        letter-spacing: 0;
+        color: var(--sf-pdp-text);
+        /* two lines, always: a one-line name still reserves them, so the prices of a row line up */
         display: -webkit-box;
         -webkit-box-orient: vertical;
         -webkit-line-clamp: 2;
+        line-clamp: 2;
         overflow: hidden;
+        min-height: 2.8em;
+    }
+
+    .sf-card-brand + .sf-card-name {
+        margin-top: 0.25rem;
+    }
+
+    @media (min-width: 48rem) {
+        .sf-card-name {
+            font-size: 0.9375rem;
+        }
+    }
+
+    .sf-card-footer > .sf-price .sf-price-current {
+        font-size: 0.8125rem;
+        font-weight: 400;
+    }
+
+    .sf-card-footer > .sf-price .sf-price-regular {
+        font-size: 0.8125rem;
+        color: var(--sf-pdp-muted);
+    }
+
+    @media (min-width: 48rem) {
+        .sf-card-footer > .sf-price .sf-price-current {
+            font-size: 0.875rem;
+        }
     }
 
     .sf-image {
@@ -386,7 +433,7 @@
     }
 
     .sf-card-footer > .sf-price {
-        @apply px-3 pb-3 pt-1;
+        @apply px-3 pb-3 pt-2;
     }
 
     .sf-price-regular {
