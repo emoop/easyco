@@ -129,7 +129,7 @@ final class DesignPreviewController extends Controller
         $seo = app(SeoMeta::class);
         $first = $section === PageDesign::CATALOG ? (app(CategoryIndex::class)->tree()[0] ?? null) : null;
         $view = $first !== null
-            ? app(CategoryController::class)->show($request, $first->path, $reader, $seo, app(PaginationLinks::class), $appearance)
+            ? app(CategoryController::class)->show($request, $first->path, $reader, $seo, app(PaginationLinks::class), $appearance, app(\App\Storefront\Filters\FilterCatalog::class))
             : app(HomeController::class)->index($reader, $seo, app(\App\Settings\StorefrontHomeSettings::class));
 
         if (! $view instanceof \Illuminate\Contracts\View\View) {

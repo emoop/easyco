@@ -13,6 +13,7 @@
                 </ul>
             </nav>
         @endif
+@includeWhen(($filters ?? null) !== null, 'storefront.partials.filters', ['filters' => $filters ?? []])
 @yield('listing_filters'){{-- CD-1a: the empty slot of the listing's filters (CT-3): prints nothing today --}}
         @if ($listing->items === [])
             <p class="sf-empty">{{ __('storefront.no_products') }}</p>

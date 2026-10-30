@@ -107,6 +107,9 @@ class AppServiceProvider extends ServiceProvider
         // The named API rate limiters, in their one central place.
         ApiRateLimits::register();
 
+        // CT-3: the shop's filters are cached; an attribute or a value that is saved or deleted forgets them.
+        \App\Storefront\Filters\FilterCatalog::listen();
+
         // The footer of every storefront page is the `footer` menu (D3): compiled, and read with the appearance (no query of its own).
         \Illuminate\Support\Facades\View::composer('storefront.layout', static function ($view): void {
             // The merchant's appearance (storefront-customization-design.md 3.4): ONE read, cached; the token stylesheet, the font to preload and the banner.

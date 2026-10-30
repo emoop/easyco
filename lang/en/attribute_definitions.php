@@ -12,9 +12,10 @@ return [
         'descriptive_count' => 'Used descriptively',
         'axis_count' => 'Used as a variation option',
         'is_filterable' => 'Can be filtered in the shop',
-        'is_filterable_help' => 'Only such attributes can be used in the shop\'s filters. For now this changes nothing for visitors.',
+        'is_filterable_help' => 'Only such attributes can be used in the shop\'s filters. Visitors see them in the filters of a category.',
         'is_filterable_column' => 'Filter',
-        'filter_display' => 'How its values are shown in a filter',
+        'filter_display' => 'How the filter looks in the shop',
+        'filter_display_help' => 'A list with checkmarks, text links (e.g. sizes) or colour circles (for colours that have a colour set). The shop shows only values that give products.',
         'display_type' => 'How it is shown on the product page',
         'display_type_help' => 'Sets how the attribute\'s values are shown on the product and in the card. Buttons suit sizes. Colour dots: each value gets a colour, set on the attribute\'s values. Changing the type never changes or deletes the values. For now this changes nothing for visitors.',
     ],
@@ -27,9 +28,9 @@ return [
     ],
 
     'filter_display' => [
-        'list' => 'List',
-        'buttons' => 'Buttons',
-        'swatches' => 'Colour dots',
+        'list' => 'List with checkmarks',
+        'links' => 'Text links',
+        'swatches' => 'Colour circles',
     ],
 
     'errors' => [

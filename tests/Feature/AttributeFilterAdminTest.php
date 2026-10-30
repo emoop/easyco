@@ -50,17 +50,26 @@ class AttributeFilterAdminTest extends TestCase
         return collect(app(AttributeDefinitionRepository::class)->all())->first(fn (AttributeDefinition $d) => $d->code() === $code);
     }
 
-    public function test_an_administrator_creates_a_filter_with_buttons_and_it_is_saved(): void
+    public function test_an_administrator_creates_a_filter_with_text_links_and_it_is_saved(): void
     {
         $this->signInAdministrator();
 
         Livewire::test(CreateAttributeDefinition::class)
-            ->fillForm(['code' => 'size', 'name' => 'Size', 'type' => AttributeType::SELECT->value, 'is_filterable' => true, 'filter_display' => 'buttons'])
+            ->fillForm(['code' => 'size', 'name' => 'Size', 'type' => AttributeType::SELECT->value, 'is_filterable' => true, 'filter_display' => 'links'])
             ->call('create')
             ->assertHasNoFormErrors();
 
         $this->assertTrue($this->stored('size')->isFilterable());
-        $this->assertSame(FilterDisplay::BUTTONS, $this->stored('size')->filterDisplay());
+        $this->assertSame(FilterDisplay::LINKS, $this->stored('size')->filterDisplay());
+    }
+
+    public function test_the_form_offers_exactly_the_three_looks_of_a_filter_with_their_labels(): void
+    {
+        app()->setLocale('bg');
+        $options = (new \ReflectionMethod(\App\Filament\Resources\AttributeDefinitionResource::class, 'filterDisplayOptions'))->invoke(null);
+
+        $this->assertSame(['list' => 'Списък с отметки', 'links' => 'Текстови връзки', 'swatches' => 'Цветни кръгчета'], $options);
+        $this->assertSame('Как изглежда филтърът във витрината', __('attribute_definitions.fields.filter_display'));
     }
 
     public function test_a_new_attribute_without_touching_the_fields_is_not_a_filter(): void
@@ -91,7 +100,7 @@ class AttributeFilterAdminTest extends TestCase
     public function test_an_administrator_changes_the_display_to_swatches_and_it_is_saved(): void
     {
         $this->signInAdministrator();
-        $definition = new AttributeDefinition(id: null, code: 'color', name: 'Color', type: AttributeType::SELECT, filterable: true, filterDisplay: FilterDisplay::BUTTONS);
+        $definition = new AttributeDefinition(id: null, code: 'color', name: 'Color', type: AttributeType::SELECT, filterable: true, filterDisplay: FilterDisplay::LINKS);
         app(AttributeDefinitionRepository::class)->save($definition);
 
         Livewire::test(EditAttributeDefinition::class, ['record' => $definition->id()])

@@ -11,6 +11,7 @@ use App\Http\Controllers\Storefront\HomeController;
 use App\Http\Controllers\Storefront\OrderReceivedController;
 use App\Http\Controllers\Storefront\PageController;
 use App\Http\Controllers\Storefront\ProductController;
+use App\Http\Middleware\LimitFilteredCategoryRequests;
 use App\Storefront\Orders\OrderReceivedHeaders;
 use App\Storefront\Theme\ApplyStorefrontTheme;
 use App\Storefront\Support\SecurityHeaders;
@@ -75,7 +76,9 @@ Route::middleware([SecurityHeaders::class, ApplyStorefrontTheme::class])
         // The Design screen's preview of a zone that has no route of its own (DS-2b: the simplified checkout header on the cart page): the same kind of signed url.
         Route::get('/design-preview', [DesignPreviewController::class, 'show'])->name('storefront.design.preview');
 
+        // CT-3: a request WITH a `filter` parameter is limited per IP (LimitFilteredCategoryRequests); any other category request is not
         Route::get('/product-category/{path}', [CategoryController::class, 'show'])
+            ->middleware(LimitFilteredCategoryRequests::class)
             ->where('path', '[\s\S]*')
             ->name('storefront.category');
 

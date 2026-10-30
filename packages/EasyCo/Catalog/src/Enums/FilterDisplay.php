@@ -3,13 +3,12 @@
 namespace EasyCo\Catalog\Enums;
 
 /**
- * How an attribute's values are shown in a shop filter (CT-2). The set is closed and lives only here: `list` is a checkbox list (the default),
- * `buttons` small buttons (sizes), `swatches` colour dots or small pictures (colours; the value's picture is `picture_media_asset_id`).
- * Nothing renders these on the storefront yet.
+ * How an attribute's values are shown in a shop filter (CT-2, CT-3). The set is closed and lives only here: `list` is a vertical list with a checkbox mark (the default), `links` the values as plain text
+ * links on one wrapping line (sizes; it replaced the old `buttons`, CT-3), `swatches` colour circles (a value without a colour is a text link in the same row).
  */
 enum FilterDisplay: string
 {
     case LIST = 'list';
-    case BUTTONS = 'buttons';
+    case LINKS = 'links';
     case SWATCHES = 'swatches';
 }

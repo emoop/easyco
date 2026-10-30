@@ -1,2 +1,8 @@
 User-agent: *
-Disallow:
+Disallow: /admin/
+Disallow: /api/
+Disallow: /design-preview
+Disallow: /cart
+Disallow: /checkout
+Disallow: /*filter[
+Disallow: /*filter%5B

@@ -18,6 +18,8 @@ final readonly class ListingPage
         public int $total,
         public int $lastPage,
         public array $facets,
+        /** CT-3: does the shop have a filterable attribute at all? (a flag riding on the page query; NOT part of toArray()) */
+        public bool $hasFilterable = false,
     ) {
     }
 

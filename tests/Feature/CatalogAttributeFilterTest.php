@@ -12,7 +12,7 @@ use Tests\TestCase;
 
 /**
  * CT-2 (domain and repository): an attribute may be a shop filter (`is_filterable`, default no) only with a CLOSED list of values (SELECT, MULTISELECT),
- * and says how its values are shown (`filter_display`: list | buttons | swatches, default list). Both are stored, read back, and refused when invalid.
+ * and says how its values are shown (`filter_display`: list | links | swatches, default list). Both are stored, read back, and refused when invalid.
  */
 class CatalogAttributeFilterTest extends TestCase
 {
@@ -73,15 +73,15 @@ class CatalogAttributeFilterTest extends TestCase
     {
         $definition = new AttributeDefinition(id: null, code: 'size', name: 'Size', type: AttributeType::SELECT);
 
-        $definition->setFilterDisplay('buttons');
-        $this->assertSame(FilterDisplay::BUTTONS, $definition->filterDisplay());
+        $definition->setFilterDisplay('links');
+        $this->assertSame(FilterDisplay::LINKS, $definition->filterDisplay());
 
         foreach (['', 'dropdown', 'LIST', 'list ', '<script>'] as $bad) {
             try {
                 $definition->setFilterDisplay($bad);
                 $this->fail("\"{$bad}\" must be refused");
             } catch (InvalidAttributeFilterException) {
-                $this->assertSame(FilterDisplay::BUTTONS, $definition->filterDisplay(), 'a refused value changes nothing');
+                $this->assertSame(FilterDisplay::LINKS, $definition->filterDisplay(), 'a refused value changes nothing');
             }
         }
     }
@@ -113,6 +113,6 @@ class CatalogAttributeFilterTest extends TestCase
 
     public function test_the_enum_has_exactly_the_three_displays_the_owner_asked_for(): void
     {
-        $this->assertSame(['list', 'buttons', 'swatches'], array_map(fn (FilterDisplay $d) => $d->value, FilterDisplay::cases()));
+        $this->assertSame(['list', 'links', 'swatches'], array_map(fn (FilterDisplay $d) => $d->value, FilterDisplay::cases()));
     }
 }

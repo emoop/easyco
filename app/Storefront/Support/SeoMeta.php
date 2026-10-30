@@ -31,9 +31,14 @@ final class SeoMeta
         ];
     }
 
-    /** @return array{title: string, description: string, canonical: ?string} */
-    public function forCategory(CategoryPage $category, ListingPage $listing): array
+    /** @return array{title: string, description: string, canonical: ?string, noindex?: bool} */
+    public function forCategory(CategoryPage $category, ListingPage $listing, bool $filtered = false): array
     {
+        // CT-3: a filtered page is never indexed and points at the unfiltered category (one URL per selection is for visitors, not for search engines)
+        if ($filtered) {
+            return ['title' => $this->title($category->name), 'description' => '', 'canonical' => $this->absolute($category->url), 'noindex' => true];
+        }
+
         return [
             'title' => $this->title($category->name),
             'description' => '',

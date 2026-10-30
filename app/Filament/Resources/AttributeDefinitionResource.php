@@ -129,6 +129,7 @@ class AttributeDefinitionResource extends Resource
                 ->live(),
             Select::make('filter_display')
                 ->label(__('attribute_definitions.fields.filter_display'))
+                ->helperText(__('attribute_definitions.fields.filter_display_help'))
                 ->options(self::filterDisplayOptions())
                 ->default(FilterDisplay::LIST->value)
                 ->visible(fn (Get $get): bool => (bool) $get('is_filterable')),
@@ -311,7 +312,7 @@ class AttributeDefinitionResource extends Resource
     {
         return [
             FilterDisplay::LIST->value => __('attribute_definitions.filter_display.list'),
-            FilterDisplay::BUTTONS->value => __('attribute_definitions.filter_display.buttons'),
+            FilterDisplay::LINKS->value => __('attribute_definitions.filter_display.links'),
             FilterDisplay::SWATCHES->value => __('attribute_definitions.filter_display.swatches'),
         ];
     }

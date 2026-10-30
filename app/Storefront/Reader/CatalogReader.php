@@ -4,6 +4,7 @@ namespace App\Storefront\Reader;
 
 use App\Services\CatalogScopeResolver;
 use App\Storefront\Exceptions\ListingOptionNotAvailable;
+use App\Storefront\Filters\FilterConstraint;
 use App\Storefront\ReadModels\Breadcrumb;
 use App\Storefront\ReadModels\CategoryNode;
 use App\Storefront\ReadModels\CategoryPage;
@@ -226,7 +227,7 @@ final class CatalogReader
     /**
      * @throws ListingOptionNotAvailable for a price sort or a price filter (they need S7's price_from_minor)
      */
-    public function listing(ListingQuery $query): ListingPage
+    public function listing(ListingQuery $query, array $filters = []): ListingPage
     {
         if ($query->hasPriceFilter() || $query->sort === ListingSort::PRICE_ASC || $query->sort === ListingSort::PRICE_DESC) {
             throw new ListingOptionNotAvailable('Price filtering and price sorting arrive with the storefront search stage (S7).');
@@ -235,9 +236,13 @@ final class CatalogReader
         $products = $this->visibility->products(ProductModel::query())
             ->select(['catalog_products.id', 'catalog_products.slug', 'catalog_products.name', 'catalog_products.brand_id'])
             ->addSelect(['first_media_id' => self::firstImageIdSubquery(), 'second_media_id' => self::secondImageIdSubquery()])
+            // CT-3: «is there a filterable attribute?» rides on the page query (one uncorrelated scalar subquery), so a shop with no filters pays no query of its own for them
+            ->addSelect(['has_filters' => DB::table('catalog_attribute_definitions')->selectRaw('1')->where('is_filterable', true)->limit(1)])
             ->with('brand:id,name,slug');
 
         $this->applyScope($products, $query);
+        // CT-3: the visitor's filters (attribute id => value ids, already resolved against the shop's own filters); none = today's query
+        $filters === [] || FilterConstraint::apply($products, $filters);
 
         match ($query->sort) {
             ListingSort::NAME_ASC => $products->orderBy('catalog_products.name')->orderBy('catalog_products.id'),
@@ -254,7 +259,44 @@ final class CatalogReader
             total: $paginator->total(),
             lastPage: $paginator->lastPage(),
             facets: [],
+            hasFilterable: ($paginator->items()[0] ?? null)?->getAttribute('has_filters') !== null,
         );
+    }
+
+    /**
+     * CT-3: the ids of the values of ONE filter that give at least one product in this listing TOGETHER with the choices of the OTHER filters (this filter's own choices never narrow its own list). ONE
+     * query: the union of the variation-level values (on a shown, in-stock variation that also satisfies the other variation-level filters) and the product-level values of the products that match
+     * the other filters. Descendant categories, visibility and the «same variation» rule are those of listing().
+     *
+     * @param  array<int, list<int>>  $filters  the whole selection
+     * @return list<int>
+     */
+    public function filterValueIds(ListingQuery $query, array $filters, int $attribute): array
+    {
+        $others = array_diff_key($filters, [$attribute => 1]);
+
+        $onVariations = DB::table('catalog_variation_attribute_values as vv')
+            ->join('catalog_variations as v', 'v.id', '=', 'vv.variation_id')
+            ->join('catalog_products', 'catalog_products.id', '=', 'v.product_id')
+            ->where('vv.attribute_definition_id', $attribute)
+            ->select('vv.attribute_value_id');
+        $this->visibility->products($onVariations);
+        $this->visibility->variations($onVariations, 'v');
+        FilterConstraint::inStock($onVariations);
+        $this->applyScope($onVariations, $query);
+        FilterConstraint::onOneVariation($onVariations, $others, 'catalog_products');
+
+        $onProducts = DB::table('catalog_product_attributes as pa')
+            ->join('catalog_products', 'catalog_products.id', '=', 'pa.product_id')
+            ->where('pa.attribute_definition_id', $attribute)
+            ->where('pa.is_variation_axis', false)
+            ->whereNotNull('pa.attribute_value_id')
+            ->select('pa.attribute_value_id');
+        $this->visibility->products($onProducts);
+        $this->applyScope($onProducts, $query);
+        FilterConstraint::apply($onProducts, $others);
+
+        return array_map('intval', $onVariations->union($onProducts)->pluck('attribute_value_id')->all());
     }
 
     // ================================================================== internals: listing

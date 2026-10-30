@@ -24,11 +24,11 @@ final class PaginationLinks
      *
      * @return array{current: int, last: int, prev: ?string, next: ?string, pages: list<array{number: int, url: string, current: bool}|array{ellipsis: true}>}
      */
-    public function build(string $baseUrl, ListingPage $listing, int $defaultPerPage = self::DEFAULT_PER_PAGE): array
+    public function build(string $baseUrl, ListingPage $listing, int $defaultPerPage = self::DEFAULT_PER_PAGE, string $filterQuery = ''): array
     {
         $last = max(1, $listing->lastPage);
         $current = $listing->page;
-        $url = fn (int $page): string => $this->url($baseUrl, $listing, $page, $defaultPerPage);
+        $url = fn (int $page): string => $this->url($baseUrl, $listing, $page, $defaultPerPage, $filterQuery);
 
         $pages = [];
         $previous = 0;
@@ -68,28 +68,38 @@ final class PaginationLinks
     }
 
     /** The whitelisted, non-default query string of a listing, as a suffix ("" or "?..."). */
-    public function suffix(ListingPage $listing, ?int $page = null, int $defaultPerPage = self::DEFAULT_PER_PAGE): string
+    public function suffix(ListingPage $listing, ?int $page = null, int $defaultPerPage = self::DEFAULT_PER_PAGE, string $filterQuery = ''): string
+    {
+        return $this->suffixFor($page ?? $listing->page, $listing->perPage, (string) ($listing->query['sort'] ?? self::DEFAULT_SORT), $filterQuery, $defaultPerPage);
+    }
+
+    /**
+     * The same suffix from the plain values (no listing needed: the 301 to a canonical filter URL is built before the listing query runs). CT-3: the visitor's filters (`filter[2]=5,9`, already
+     * canonical, see FilterSelection::query()) come first; `page`, `per_page` and `sort` follow as before.
+     */
+    public function suffixFor(int $page, int $perPage, string $sort, string $filterQuery = '', int $defaultPerPage = self::DEFAULT_PER_PAGE): string
     {
         $query = [];
-        $page ??= $listing->page;
 
         if ($page > 1) {
             $query['page'] = $page;
         }
 
-        if ($listing->perPage !== $defaultPerPage) {
-            $query['per_page'] = $listing->perPage;
+        if ($perPage !== $defaultPerPage) {
+            $query['per_page'] = $perPage;
         }
 
-        if (($listing->query['sort'] ?? self::DEFAULT_SORT) !== self::DEFAULT_SORT) {
-            $query['sort'] = $listing->query['sort'];
+        if ($sort !== self::DEFAULT_SORT) {
+            $query['sort'] = $sort;
         }
 
-        return $query === [] ? '' : '?'.http_build_query($query, '', '&', PHP_QUERY_RFC3986);
+        $parts = array_filter([$filterQuery, $query === [] ? '' : http_build_query($query, '', '&', PHP_QUERY_RFC3986)], static fn (string $part): bool => $part !== '');
+
+        return $parts === [] ? '' : '?'.implode('&', $parts);
     }
 
-    private function url(string $baseUrl, ListingPage $listing, int $page, int $defaultPerPage): string
+    private function url(string $baseUrl, ListingPage $listing, int $page, int $defaultPerPage, string $filterQuery): string
     {
-        return $baseUrl.$this->suffix($listing, $page, $defaultPerPage);
+        return $baseUrl.$this->suffix($listing, $page, $defaultPerPage, $filterQuery);
     }
 }
