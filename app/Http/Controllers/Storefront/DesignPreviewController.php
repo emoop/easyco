@@ -13,9 +13,13 @@ use App\Storefront\CheckoutHeader\CheckoutHeaderDrafts;
 use App\Storefront\ProductSummary\ProductSummaryCatalog;
 use App\Storefront\ProductSummary\ProductSummaryCompiler;
 use App\Storefront\ProductSummary\ProductSummaryDrafts;
+use App\Storefront\PageDesign\PageDesign;
+use App\Storefront\PageDesign\PageDesignStore;
 use App\Storefront\Reader\CatalogReader;
+use App\Storefront\Reader\CategoryIndex;
 use App\Storefront\ReadModels\ListingQuery;
 use App\Storefront\Support\NotFoundResponse;
+use App\Storefront\Support\PaginationLinks;
 use App\Storefront\Support\PriceFormatter;
 use App\Storefront\Support\SeoMeta;
 use Illuminate\Http\Request;
@@ -38,12 +42,16 @@ final class DesignPreviewController extends Controller
     {
         $zone = $request->query('zone');
 
-        if (! URL::hasValidSignature($request) || ! in_array($zone, [CheckoutHeaderCatalog::ZONE, 'topbar', ProductSummaryCatalog::ZONE], true)) {
+        if (! URL::hasValidSignature($request) || ! in_array($zone, [CheckoutHeaderCatalog::ZONE, 'topbar', ProductSummaryCatalog::ZONE, PageDesign::PAGE, PageDesign::CATALOG], true)) {
             return NotFoundResponse::make();
         }
 
         if ($zone === 'topbar') {
             return $this->topbar($reader, $appearance);
+        }
+
+        if ($zone === PageDesign::PAGE || $zone === PageDesign::CATALOG) {
+            return $this->plainSection($request, $zone, $reader, $appearance);
         }
 
         if ($zone === ProductSummaryCatalog::ZONE) {
@@ -101,6 +109,36 @@ final class DesignPreviewController extends Controller
         $page = app(ProductController::class)->show($slug, $reader, app(SeoMeta::class), app(\App\Settings\Contracts\SiteSettingsRepository::class), $appearance);
 
         return ($page instanceof \Illuminate\Contracts\View\View ? response($page) : $page)
+            ->header('X-Robots-Tag', 'noindex')
+            ->header('Cache-Control', 'private, no-store');
+    }
+
+    /**
+     * CD-1a.1: the working copy (else the published values) of a plain section: «Страница и карти» on the HOME page, «Каталог» on the first shown category (the home page when the shop has none). The
+     * draft's variables go into a small preview stylesheet linked after the token stylesheet (an explicit default for a variable the published values set and the draft does not), and for «Каталог» the
+     * draft's per-page size is the page's default, for THIS request only. A public request never gets here: without a valid signature it is the storefront's 404. `noindex`, `no-store`.
+     */
+    private function plainSection(Request $request, string $section, CatalogReader $reader, StorefrontAppearance $appearance): Response
+    {
+        $published = PageDesignStore::values($section);
+        $values = PageDesignStore::draft($section) ?? $published;
+        $css = $this->write(app(AppearanceCompiler::class)->css([], [], [], [], [], [], PageDesign::previewVars($section, $values, $published)));
+
+        $section === PageDesign::CATALOG ? $appearance->previewCatalog($values, $css) : $appearance->previewStylesheet($css);
+
+        $seo = app(SeoMeta::class);
+        $first = $section === PageDesign::CATALOG ? (app(CategoryIndex::class)->tree()[0] ?? null) : null;
+        $view = $first !== null
+            ? app(CategoryController::class)->show($request, $first->path, $reader, $seo, app(PaginationLinks::class), $appearance)
+            : app(HomeController::class)->index($reader, $seo, app(\App\Settings\StorefrontHomeSettings::class));
+
+        if (! $view instanceof \Illuminate\Contracts\View\View) {
+            return NotFoundResponse::make();
+        }
+
+        $view->with('seo', ['title' => $seo->forHome(route('storefront.home', [], false))['title'], 'description' => '', 'canonical' => null, 'noindex' => true]);
+
+        return response($view)
             ->header('X-Robots-Tag', 'noindex')
             ->header('Cache-Control', 'private, no-store');
     }

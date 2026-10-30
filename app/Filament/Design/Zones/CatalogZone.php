@@ -3,7 +3,7 @@
 namespace App\Filament\Design\Zones;
 
 use App\Storefront\PageDesign\PageDesign;
-use App\Storefront\Reader\CategoryIndex;
+use App\Http\Controllers\Storefront\DesignPreviewController;
 
 /**
  * CD-1a: «Каталог» — the columns (desktop and phone) and the number of products per page of the product listing (the category page). The tablet is automatic (min(desktop, 3)). The layout / side-panel
@@ -28,10 +28,14 @@ final class CatalogZone extends PageDesignZone
         return 'filament.pages.design.partials.schema-catalog';
     }
 
+    /** CD-1a.1: the preview shows the APPLIED working copy (a signed preview; the draft never reaches a public request). */
+    public function previewNote(): ?string
+    {
+        return (string) __('design.preview.applied_note');
+    }
+
     public function previewUrl(): string
     {
-        $first = app(CategoryIndex::class)->tree()[0] ?? null;
-
-        return ($first !== null ? $first->url : route('storefront.home', [], false)).'?ds='.time();
+        return DesignPreviewController::previewUrl(PageDesign::CATALOG);
     }
 }

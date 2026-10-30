@@ -42,6 +42,9 @@ final class StorefrontAppearance
 
     private ?string $previewCss = null;
 
+    /** CD-1a.1: the validated «Каталог» values of the admin's signed preview (the working copy), set for ONE request by the preview controller; null on every public request. @var array<string, mixed>|null */
+    private ?array $catalogOverride = null;
+
     /** DS-5: the banner of the admin's signed preview of the top banner's draft (never set on a public request). @var array<string, mixed>|null */
     private ?array $bannerOverride = null;
 
@@ -427,6 +430,19 @@ final class StorefrontAppearance
         $this->previewCss = $cssUrl;
     }
 
+    /** For ONE request (CD-1a.1, the admin's signed preview): link this small stylesheet (the working copy's variables) after the token stylesheet; for a section whose values are only CSS variables. Never called on a public request. */
+    public function previewStylesheet(?string $cssUrl): void
+    {
+        $this->previewCss = $cssUrl;
+    }
+
+    /** For ONE request (CD-1a.1): the working copy of «Каталог» (its per-page size is read by catalogPerPage) and the stylesheet with its variables. Never called on a public request. @param array<string, mixed> $values validated */
+    public function previewCatalog(array $values, ?string $cssUrl): void
+    {
+        $this->catalogOverride = $values;
+        $this->previewCss = $cssUrl;
+    }
+
     /** For ONE request (DS-5, the admin's signed preview): show this banner (StorefrontAppearance::bannerFromValues) instead of the published one, and link the stylesheet with its colours. Never called on a public request. @param array<string, mixed> $banner */
     public function previewBanner(array $banner, ?string $cssUrl): void
     {
@@ -466,6 +482,10 @@ final class StorefrontAppearance
      */
     public function catalogPerPage(): int
     {
+        if ($this->catalogOverride !== null) {
+            return (int) $this->catalogOverride['per_page'];
+        }
+
         $values = PageDesign::catalogValues(is_string($this->data()['catalog'] ?? null) ? $this->data()['catalog'] : null);
 
         return (int) $values['per_page'];

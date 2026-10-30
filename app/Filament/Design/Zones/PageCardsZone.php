@@ -2,6 +2,7 @@
 
 namespace App\Filament\Design\Zones;
 
+use App\Http\Controllers\Storefront\DesignPreviewController;
 use App\Storefront\PageDesign\PageDesign;
 
 /**
@@ -25,9 +26,15 @@ final class PageCardsZone extends PageDesignZone
         ];
     }
 
-    /** The live home page; a changing query makes the frame fetch it again after «Запази». */
+    /** CD-1a.1: the preview shows the APPLIED working copy. */
+    public function previewNote(): ?string
+    {
+        return (string) __('design.preview.applied_note');
+    }
+
+    /** The home page with the working copy's variables (a signed preview; a new signature makes the frame fetch it again after «Приложи»). */
     public function previewUrl(): string
     {
-        return route('storefront.home', [], false).'?ds='.time();
+        return DesignPreviewController::previewUrl(PageDesign::PAGE);
     }
 }

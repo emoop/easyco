@@ -168,10 +168,10 @@ final class PageDesign
      * @param  array<string, mixed>  $clean
      * @return array<string, string>
      */
-    public static function vars(string $section, array $clean): array
+    public static function vars(string $section, array $clean, bool $all = false): array
     {
         $fields = self::fields($section);
-        $differs = static fn (string $name): bool => ! self::same($clean[$name] ?? $fields[$name]['default'], $fields[$name]['default']);
+        $differs = static fn (string $name): bool => $all || ! self::same($clean[$name] ?? $fields[$name]['default'], $fields[$name]['default']);
         $vars = [];
 
         if ($section === self::PAGE) {
@@ -200,6 +200,25 @@ final class PageDesign
                 $vars['--sf-summary-position'] = 'static';
                 $vars['--sf-summary-max-height'] = 'none';
             }
+        }
+
+        return $vars;
+    }
+
+    /**
+     * CD-1a.1: the variables of the admin's PREVIEW of a section's working copy: what the draft writes, plus an EXPLICIT default for every variable the PUBLISHED values write and the draft does not (so the
+     * preview frame, which also links the published token stylesheet, shows the draft and not the published value). Only for the signed preview; the public stylesheet never gets these.
+     *
+     * @param  array<string, mixed>  $draft  validated  @param  array<string, mixed>  $published  validated
+     * @return array<string, string>
+     */
+    public static function previewVars(string $section, array $draft, array $published): array
+    {
+        $vars = self::vars($section, $draft);
+        $explicit = self::vars($section, $draft, true);
+
+        foreach (array_diff_key(self::vars($section, $published), $vars) as $variable => $_) {
+            isset($explicit[$variable]) && $vars[$variable] = $explicit[$variable];
         }
 
         return $vars;

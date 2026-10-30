@@ -142,6 +142,7 @@ return [
         'summary' => 'Product page preview (right column)',
         'open' => 'Open in a new window',
         'unsaved' => 'There are unapplied changes: press "Apply" to refresh the preview.',
+        'applied_note' => 'The preview shows what is applied; it reaches the shop after «Publish».',
         'published_only' => 'The preview shows what is published. A draft shows after "Publish".',
     ],
 
