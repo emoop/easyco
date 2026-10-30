@@ -885,6 +885,19 @@
         @apply h-auto max-w-full;
     }
 
+    /* HB-3: a paragraph in a block reads as a paragraph (the reset gives <p> no margin): a small gap between two, none above the first or below the last */
+    .sf-summary-html p,
+    .sf-mega-html p,
+    .sf-ft-html p {
+        margin: 0 0 0.5em;
+    }
+
+    .sf-summary-html p:last-child,
+    .sf-mega-html p:last-child,
+    .sf-ft-html p:last-child {
+        margin-bottom: 0;
+    }
+
     /* HB-1: the wrapper of a styled HTML block (`.sf-hb-{id}` rules come from the token stylesheet, never inline) */
     .sf-hb {
         box-sizing: border-box;

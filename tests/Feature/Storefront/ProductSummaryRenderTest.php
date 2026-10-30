@@ -201,6 +201,18 @@ class ProductSummaryRenderTest extends TestCase
         }
     }
 
+    /** HB-3: a heading, a plain paragraph (two lines apart) and a list print as written, in this order, in the right column. */
+    public function test_a_heading_then_a_paragraph_then_a_list_prints_as_written_in_the_right_column(): void
+    {
+        $body = '<h2>Промокод Есен -10%</h2><p>Важи до края на месеца.<br>Един код на поръчка.</p><ul><li>безплатна доставка</li></ul>';
+        $block = HtmlBlockModel::create(['title' => 'Промо', 'body' => $body]);
+        $this->publish(['title', ['type' => 'html_block', 'settings' => ['html_block' => $block->id]], 'purchase']);
+
+        $column = $this->summary($this->page());
+
+        $this->assertStringContainsString('<div class="sf-summary-html"><h2>Промокод Есен -10%</h2><p>Важи до края на месеца.<br>Един код на поръчка.</p><ul><li>безплатна доставка</li></ul></div>', $column);
+    }
+
     public function test_html_that_was_stored_dirty_in_the_compiled_copy_is_cleaned_again_when_printed(): void
     {
         $block = HtmlBlockModel::create(['title' => 'Club', 'body' => '<p>ok</p>']);

@@ -26,6 +26,7 @@ use EasyCo\Media\Persistence\Eloquent\MediaAssetModel;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\ColorPicker;
 use Filament\Forms\Components\RichEditor;
+use Filament\Forms\Components\RichEditor\RichEditorTool;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
@@ -146,9 +147,18 @@ class HtmlBlockResource extends Resource
                 ->label(__('html_blocks.fields.body'))
                 // a block of pictures only is allowed: the body is required only when there is no picture
                 ->required(static fn (Get $get): bool => ! is_array($get('pictures')) || $get('pictures') === [])
+                // HB-3: «Параграф» turns the current block back into plain text (Filament's own paragraph command; the tool is re-declared here only for its Bulgarian label)
+                ->tools([
+                    RichEditorTool::make('paragraph')
+                        ->label(__('html_blocks.tools.paragraph'))
+                        ->jsHandler('$getEditor()?.chain().focus().setParagraph().run()')
+                        ->toggle()
+                        ->icon('fi-o-paragraph')
+                        ->iconAlias('forms:components.rich-editor.toolbar.paragraph'),
+                ])
                 ->toolbarButtons([
                     ['bold', 'italic', 'link'],
-                    ['h2', 'h3', 'h4'],
+                    ['h2', 'h3', 'h4', 'paragraph'],
                     ['bulletList', 'orderedList'],
                     [MediaImagePlugin::TOOL],
                     ['undo', 'redo'],

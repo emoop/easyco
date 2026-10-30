@@ -75,6 +75,23 @@ class HtmlBlockSanitizerTest extends TestCase
         $this->assertSame('<h2>T</h2><h3>S</h3><h4>U</h4><p><strong>b</strong> <em>i</em> <a href="https://example.com" rel="noopener nofollow">l</a><br></p><ul><li>a</li></ul><ol><li>b</li></ol>', HtmlBlockSanitizer::clean($html));
     }
 
+    /** HB-3: a paragraph and a line break are kept as they are typed (the editor's «Параграф» button makes one); their attributes are not. */
+    public function test_a_paragraph_and_a_line_break_survive_and_their_attributes_do_not(): void
+    {
+        $this->assertSame('<p>Обикновен текст.</p>', HtmlBlockSanitizer::clean('<p>Обикновен текст.</p>'));
+        $this->assertSame('<p>първи<br>втори</p>', HtmlBlockSanitizer::clean('<p>първи<br>втори</p>'));
+        $this->assertSame('<p>текст</p>', HtmlBlockSanitizer::clean('<p style="color:red" class="x" onclick="a()">текст</p>'));
+        $this->assertSame('<h2>Промокод</h2><p>Важи до края на месеца.</p>', HtmlBlockSanitizer::render('<h2>Промокод</h2><p>Важи до края на месеца.</p>'));
+
+        foreach (['<script>x</script><p>a</p>', '<p>a</p><iframe src="https://example.com"></iframe>', '<div><p>a</p></div>'] as $input) {
+            $clean = HtmlBlockSanitizer::clean($input);
+            $this->assertStringNotContainsStringIgnoringCase('<script', $clean);
+            $this->assertStringNotContainsStringIgnoringCase('<iframe', $clean);
+            $this->assertStringNotContainsStringIgnoringCase('<div', $clean);
+            $this->assertSame($clean, HtmlBlockSanitizer::clean($clean), 'idempotent: '.$input);
+        }
+    }
+
     public function test_render_adds_lazy_loading_to_every_picture(): void
     {
         $out = HtmlBlockSanitizer::render('<img src="/storage/a.jpg" alt="a"><p>x &lt;img src=x&gt;</p>');

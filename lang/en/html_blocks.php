@@ -17,6 +17,10 @@ return [
         'updated_at' => 'Changed',
     ],
 
+    'tools' => [
+        'paragraph' => 'Paragraph',
+    ],
+
     'help' => [
         'pictures' => 'A link on text is set with the "link" button in the editor; a link on a picture, here.',
         'body' => 'Headings, bold and italic, lists, a link and a picture. Scripts, styles and embedded frames are not kept.',

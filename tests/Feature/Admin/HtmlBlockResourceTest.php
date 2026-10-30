@@ -259,6 +259,28 @@ class HtmlBlockResourceTest extends TestCase
         $this->assertStringContainsString('href="https://example.com/new"', HtmlBlockModel::query()->firstOrFail()->body);
     }
 
+    /** HB-3: the «Параграф» button is in the toolbar with its Bulgarian name, and a heading followed by a paragraph is saved as written. */
+    public function test_the_paragraph_button_is_in_the_toolbar_and_a_heading_then_a_paragraph_is_saved_as_written(): void
+    {
+        $this->actingAsStaff('Administrator');
+        app()->setLocale('bg');
+        $html = $this->get(HtmlBlockResource::getUrl('create'))->assertOk()->getContent();
+
+        // the tool is in the editor's toolbar: its active state is read from the editor, under its own name
+        $this->assertStringContainsString("isActive('paragraph'", $html);
+        $this->assertStringContainsString('Параграф', $html);
+
+        $doc = ['type' => 'doc', 'content' => [
+            ['type' => 'heading', 'attrs' => ['level' => 2], 'content' => [['type' => 'text', 'text' => 'Промокод Есен -10%']]],
+            ['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'Важи до края на месеца.']]],
+        ]];
+
+        Livewire::test(CreateHtmlBlock::class)->fillForm(['title' => 'Промо', 'body' => $doc])->call('create')->assertHasNoFormErrors();
+
+        $this->assertSame('<h2>Промокод Есен -10%</h2><p>Важи до края на месеца.</p>', HtmlBlockModel::query()->firstOrFail()->body);
+        app()->setLocale('en');
+    }
+
     public function test_the_editor_offers_exactly_what_the_filter_keeps(): void
     {
         $this->actingAsStaff('Administrator');
