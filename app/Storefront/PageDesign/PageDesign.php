@@ -42,7 +42,7 @@ final class PageDesign
 
     public const CATALOG_COLS_PHONE = ['1', '2'];
 
-    public const CATALOG_PER_PAGE = ['12', '24', '36', '48', '60', '72'];
+    public const CATALOG_PER_PAGE = ['12', '20', '24', '36', '48', '60', '72'];
 
     /** The `site_settings` keys of the gallery choices, by field. */
     public const GALLERY_KEYS = [

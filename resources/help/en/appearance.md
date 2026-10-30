@@ -92,7 +92,7 @@ The «Product page» section of the Design screen lays out the gallery and the r
 
 ## Catalog {#action-appearance-catalog}
 
-The «Catalog» section of the Design screen sets how the product listing (the category page) looks: **columns on desktop** (3, 4 or 5; default 4), **columns on phone** (1 or 2; default 2) and **products per page** (12, 24, 36, 48, 60 or 72; default 24). On a tablet the columns are automatic, at most 3. The small sketch in the middle shows how many boxes sit in a row. The pages are ordinary numbered pages («Previous», numbers with an ellipsis, «Next»), good for search engines. The home page is not changed. The layout with a side panel and the filters come with a separate filters task. «Apply» keeps the changes in the working copy, «Initial settings» puts the default values back, and only what you publish with «Publish» reaches the shop.
+The «Catalog» section of the Design screen sets how the product listing (the category page) looks: **columns on desktop** (3, 4 or 5; default 4), **columns on phone** (1 or 2; default 2) and **products per page** (12, 20, 24, 36, 48, 60 or 72; default 24). On a tablet the columns are automatic, at most 3. The small sketch in the middle shows how many boxes sit in a row. The pages are ordinary numbered pages («Previous», numbers with an ellipsis, «Next»), good for search engines. The home page is not changed. The layout with a side panel and the filters come with a separate filters task. «Apply» keeps the changes in the working copy, «Initial settings» puts the default values back, and only what you publish with «Publish» reaches the shop.
 
 ## Right column {#action-appearance-summary}
 

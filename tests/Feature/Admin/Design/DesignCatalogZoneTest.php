@@ -124,6 +124,12 @@ class DesignCatalogZoneTest extends TestCase
         $this->assertSame(['cols' => '4', 'cols_phone' => '2', 'per_page' => '36'], json_decode((string) $this->published(), true), 'the section is stored as a whole while it differs');
         $this->assertNull($this->settings()->get(AppearanceSettings::COMPILED_KEY), 'the per-page size is not a stylesheet variable');
 
+        // CD-1a.2: 20 is a member of the list: stored, read back as 20 by the storefront reader and shown by the select after «Apply»
+        $screen->set('props.per_page', '20')->call('apply')->call('publish')->assertHasNoErrors()->assertSet('props.per_page', '20');
+        $this->assertSame('20', json_decode((string) $this->published(), true)['per_page']);
+        $this->app->forgetScopedInstances();
+        $this->assertSame(20, app(\App\Storefront\Appearance\StorefrontAppearance::class)->catalogPerPage());
+
         $screen->set('props.per_page', '24')->call('apply')->call('publish')->assertHasNoErrors();
 
         $this->assertNull($this->published());

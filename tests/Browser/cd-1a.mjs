@@ -231,6 +231,8 @@ try {
     check('?per_page=24 in the URL still decides (24 cards) and the links keep it', d.status === 200 && d.data.cards === 24 && d.data.hrefs.every((h) => h === URL + '?per_page=24' || h.includes('per_page=24')), JSON.stringify(d));
     d = await catalogData(URL + '?per_page=13', { width: 1400, height: 1000 });
     check('?per_page=13 (not in the list) is the storefront 404', d.status === 404, JSON.stringify(d.status));
+    d = await catalogData(URL + '?per_page=20', { width: 1400, height: 1000 });
+    check('?per_page=20 (CD-1a.2) gives 20 cards and its links keep per_page=20', d.status === 200 && d.data.cards === 20 && d.data.hrefs.every((h) => h.includes('per_page=20')), JSON.stringify(d));
     d = await catalogData(URL + '?per_page=72', { width: 1400, height: 1000 });
     check('?per_page=72 (a new member of the list) gives 72 cards', d.status === 200 && d.data.cards === 72, JSON.stringify(d));
 

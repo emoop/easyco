@@ -78,6 +78,12 @@ class CatalogListingTest extends TestCase
         $this->assertSame([], Storage::disk('public')->files('appearance'));
         $this->assertStringContainsString('<a href="/product-category/clothing?page=2">2</a>', $html);
         $this->assertStringNotContainsString('per_page', $html);
+
+        // CD-1a.2: 20 is a member of the list; the default is 24, so the links keep per_page=20
+        $twenty = $this->get('/product-category/clothing?per_page=20')->assertOk()->getContent();
+        $this->assertSame(20, substr_count($twenty, 'class="sf-card"'));
+        $this->assertStringContainsString('href="/product-category/clothing?page=2&amp;per_page=20"', $twenty);
+        $this->get('/product-category/clothing?per_page=13')->assertNotFound();
         $this->assertStringContainsString('<link rel="canonical" href="https://shop.test/product-category/clothing">', $html);
         $this->assertMatchesRegularExpression('#<li class="sf-pagination-page">\s*<span aria-current="page">1</span>\s*</li>#', $html);
         $this->assertStringNotContainsString('sf-pagination-ellipsis', $html, 'two pages: no ellipsis');
@@ -99,7 +105,7 @@ class CatalogListingTest extends TestCase
     {
         $this->products(75);
 
-        foreach ([12, 24, 36, 48, 60, 72] as $size) {
+        foreach ([12, 20, 24, 36, 48, 60, 72] as $size) {
             $this->publish(['per_page' => (string) $size]);
             $this->assertSame($size, $this->cards('/product-category/clothing'), "published {$size}");
         }

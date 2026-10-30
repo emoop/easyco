@@ -289,7 +289,7 @@ return [
             'sticky' => 'On: the price and the «Add to cart» button stay on screen while the photos scroll (desktop only). Default on.',
             'cols' => 'How many products sit in a row on a computer (3, 4 or 5). Default 4.',
             'cols_phone' => 'How many products sit in a row on a phone (1 or 2). Default 2.',
-            'per_page' => 'How many products one page of the list shows (12, 24, 36, 48, 60 or 72). Default 24.',
+            'per_page' => 'How many products one page of the list shows (12, 20, 24, 36, 48, 60 or 72). Default 24.',
         ],
         'options' => [
             'gallery_desktop_mode' => ['grid' => '2-column grid', 'thumbs-left' => 'Small photos on the left', 'thumbs-below' => 'Small photos below'],
@@ -298,7 +298,7 @@ return [
             'gallery_odd_last' => ['same' => 'Same size', 'full' => 'Full width'],
             'cols' => ['3' => '3 columns', '4' => '4 columns', '5' => '5 columns'],
             'cols_phone' => ['1' => '1 column', '2' => '2 columns'],
-            'per_page' => ['12' => '12', '24' => '24', '36' => '36', '48' => '48', '60' => '60', '72' => '72'],
+            'per_page' => ['12' => '12', '20' => '20', '24' => '24', '36' => '36', '48' => '48', '60' => '60', '72' => '72'],
             'gallery_hover_zoom' => ['light' => 'Light', 'medium' => 'Medium', 'off' => 'Off'],
         ],
         'errors' => [

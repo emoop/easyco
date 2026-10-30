@@ -54,7 +54,7 @@ class CatalogDesignTest extends TestCase
     {
         $good = [];
 
-        foreach (['cols' => ['3', '4', '5'], 'cols_phone' => ['1', '2'], 'per_page' => ['12', '24', '36', '48', '60', '72']] as $field => $values) {
+        foreach (['cols' => ['3', '4', '5'], 'cols_phone' => ['1', '2'], 'per_page' => ['12', '20', '24', '36', '48', '60', '72']] as $field => $values) {
             foreach ($values as $value) {
                 $good["$field $value"] = [$field, $value];
             }
