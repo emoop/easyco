@@ -4,18 +4,16 @@ namespace App\Filament\Pages\Settings;
 
 use App\Filament\Concerns\AuthorizesViaStaffPermission;
 use App\Filament\NavigationGroup;
+use App\Filament\Pages\Design\DesignScreen;
 use App\Filament\Support\HelpLink;
-use App\Rules\PlainText;
 use App\Settings\AppearanceSettings as Appearance;
 use App\Settings\Contracts\SiteSettingsRepository;
 use App\Storefront\Appearance\AppearanceWriter;
-use App\Storefront\Appearance\BannerDrafts;
 use BackedEnum;
 use Closure;
 use EasyCo\Staff\Enums\Permission;
 use Filament\Actions\Action;
 use Filament\Forms\Components\ColorPicker;
-use Filament\Forms\Components\DateTimePicker;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
@@ -29,12 +27,12 @@ use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Text;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
+use Illuminate\Support\HtmlString;
 
 /**
- * «Облик» / "Appearance" (stage D1, storefront-customization-design.md 3): the colours, fonts, corners and button style of the storefront and its top
- * banner. Admin group, `content_manage` (the same people as «Витрина»). No code and no CSS is ever typed here: colours come from a hex colour picker and
- * are validated `#RRGGBB`, fonts / radius / button style from closed lists, texts are plain and bounded, the banner link is a root-relative path or an
- * https address. On save only the values that DIFFER from their defaults are stored; they are compiled into one small stylesheet (AppearanceCompiler)
+ * «Облик» / "Appearance" (stage D1, storefront-customization-design.md 3): the colours, fonts, corners and button style of the storefront. The top banner is
+ * NOT edited here since OB-1: it is the «Дизайн» screen's «Топбанер» zone (this page only points to it). Admin group, `content_manage` (the same people as «Витрина»). No code and no CSS is ever typed here: colours come from a hex colour picker and
+ * are validated `#RRGGBB`, fonts / radius / button style from closed lists. On save only the values that DIFFER from their defaults are stored; they are compiled into one small stylesheet (AppearanceCompiler)
  * and the application-cache entry of the reader is REPLACED (StorefrontAppearance::refresh()). Contrast warnings (WCAG AA 4.5:1) are shown under the
  * colour pairs that matter, and never block a save.
  */
@@ -167,54 +165,8 @@ class AppearanceSettings extends Page
                             ->native(false),
                     ])
                     ->columns(2),
-                Section::make(__('appearance.sections.banner'))
-                    ->description(__('appearance.sections.banner_help'))
-                    ->schema([
-                        HelpLink::component('appearance-banner', 'appearance'),
-                        Toggle::make('banner_enabled')
-                            ->label(__('appearance.fields.banner_enabled'))
-                            ->live(),
-                        TextInput::make('banner_text')
-                            ->label(__('appearance.fields.banner_text'))
-                            ->maxLength(Appearance::BANNER_TEXT_MAX)
-                            ->rule(new PlainText)
-                            ->required(static fn (Get $get): bool => (bool) $get('banner_enabled'))
-                            ->live(debounce: 300)
-                            ->hint(static fn ($state): string => __('appearance.counter', ['count' => mb_strlen((string) $state), 'max' => Appearance::BANNER_TEXT_MAX])),
-                        TextInput::make('banner_url')
-                            ->label(__('appearance.fields.banner_url'))
-                            ->helperText(__('appearance.fields.banner_url_help'))
-                            ->maxLength(500)
-                            ->rule(static fn (): Closure => static function (string $attribute, mixed $value, Closure $fail): void {
-                                if (is_string($value) && trim($value) !== '' && ! Appearance::isSafeBannerUrl(trim($value))) {
-                                    $fail(__('appearance.errors.url'));
-                                }
-                            }),
-                        TextInput::make('banner_link_label')
-                            ->label(__('appearance.fields.banner_link_label'))
-                            ->helperText(__('appearance.fields.banner_link_label_help'))
-                            ->maxLength(Appearance::BANNER_LABEL_MAX)
-                            ->rule(new PlainText),
-                        static::color('banner_text'),
-                        static::color('banner_bg'),
-                        static::warning('banner'),
-                        DateTimePicker::make('banner_starts_at')
-                            ->label(__('appearance.fields.banner_starts_at'))
-                            ->seconds(false)
-                            ->format('Y-m-d H:i'),
-                        DateTimePicker::make('banner_ends_at')
-                            ->label(__('appearance.fields.banner_ends_at'))
-                            ->seconds(false)
-                            ->format('Y-m-d H:i')
-                            ->rule(static fn (Get $get): Closure => static function (string $attribute, mixed $value, Closure $fail) use ($get): void {
-                                $start = $get('banner_starts_at');
-
-                                if (filled($value) && filled($start) && strcmp((string) $value, (string) $start) <= 0) {
-                                    $fail(__('appearance.errors.ends_before_starts'));
-                                }
-                            }),
-                    ])
-                    ->columns(2),
+                // OB-1: the top banner is edited in the «Дизайн» screen only; this line says where it is (the same muted style as the other hints)
+                Text::make(new HtmlString('<a href="'.e(DesignScreen::getUrl(['zone' => 'topbar'])).'">'.e(__('appearance.banner_moved')).'</a>'))->color('gray')->size('sm'),
             ])
             ->statePath('data');
     }
@@ -246,8 +198,6 @@ class AppearanceSettings extends Page
     {
         AppearanceWriter::save($this->form->getState());
 
-        // SC-1 (Part A): this page saves the banner LIVE; a banner draft of the «Дизайн» screen would now be stale and would overwrite what was just saved on its «Публикувай»
-        BannerDrafts::raw() !== null && BannerDrafts::forget('superseded_by_appearance');
 
         Notification::make()
             ->title(__('appearance.saved_notification'))

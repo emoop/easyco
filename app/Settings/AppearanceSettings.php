@@ -125,7 +125,6 @@ final class AppearanceSettings
         'on_primary_on_primary' => ['on_primary', 'primary'],
         'header' => ['header_text', 'header_bg'],
         'footer' => ['footer_text', 'footer_bg'],
-        'banner' => ['banner_text', 'banner_bg'],
     ];
 
     public const MIN_CONTRAST = 4.5;

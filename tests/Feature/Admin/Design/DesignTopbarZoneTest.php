@@ -98,24 +98,20 @@ class DesignTopbarZoneTest extends TestCase
 
     // ---- «Запази» = «Облик» ----------------------------------------------------------------------------------------------------------------
 
-    public function test_save_stores_the_same_values_the_appearance_page_stores_for_the_same_input(): void
+    /** OB-1: the banner is stored by the «Дизайн» screen only. «Облик» no longer has banner fields, and a save of it stores no banner value, even after the banner was published here. */
+    public function test_the_banner_is_stored_by_design_and_a_save_of_the_appearance_page_stores_no_banner_value(): void
     {
         $this->fill($this->screen(), self::INPUT)->call('apply')->call('publish')->assertHasNoErrors();
         $fromScreen = $this->stored();
 
-        foreach (array_keys($fromScreen) as $key) {
-            $this->settings()->forget($key);
-        }
-
-        $this->assertNull($this->settings()->get(Appearance::BANNER_TEXT));
-        Livewire::test(AppearancePage::class)->fillForm([
-            'banner_enabled' => true, 'banner_text' => 'Free delivery over 100', 'banner_url' => '/sale', 'banner_link_label' => 'Shop now', 'c_banner_text' => '#ffffff', 'c_banner_bg' => '#aa0000',
-        ])->call('save')->assertHasNoFormErrors();
-
-        $this->assertSame($fromScreen, $this->stored());
         $this->assertSame('1', $fromScreen[Appearance::BANNER_ENABLED]);
         $this->assertSame('#aa0000', $fromScreen[Appearance::BANNER_COLOR_BG]);
-        $this->assertNotNull($fromScreen[Appearance::COMPILED_KEY], 'the stylesheet is compiled as «Облик» does');
+        $this->assertNotNull($fromScreen[Appearance::COMPILED_KEY], 'the stylesheet is compiled');
+
+        Livewire::test(AppearancePage::class)->fillForm(['c_primary' => '#123456'])->call('save')->assertHasNoFormErrors();
+
+        // the compiled stylesheet changes with the page's own colour; every banner key stays as Design stored it
+        $this->assertSame(array_diff_key($fromScreen, [Appearance::COMPILED_KEY => true]), array_diff_key($this->stored(), [Appearance::COMPILED_KEY => true]), 'the page\'s save leaves the banner as Design stored it');
     }
 
     public function test_the_banner_shows_on_the_shop_at_once_and_the_stylesheet_holds_its_colour(): void

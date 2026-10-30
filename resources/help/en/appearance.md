@@ -14,7 +14,7 @@ You can choose "System" (the font of the customer's own device), "Inter", "Manro
 
 ## Top banner {#action-appearance-banner}
 
-The banner is one line above the header, for example "Free delivery over 100 €". Write plain text (up to 160 characters). The link is optional: a path in the shop (starts with "/") or an address with https://. When there is a link but no "Link text", the whole banner is the link; otherwise the text is plain and the link is a separate word.
+The banner is one line above the header, for example "Free delivery over 100 €". Write plain text (up to 160 characters). The link is optional: a path in the shop (starts with "/") or an address with https://. When there is a link but no "Link text", the whole banner is the link; otherwise the text is plain and the link is a separate word. The banner is not edited in "Appearance": it is edited in "Design", in the "Top banner" zone, which also previews it and publishes it.
 
 The banner shows only while it is on and between the "From" and "Until" dates (in the shop's time). On a phone a long text is cut with "…". There is no close button.
 

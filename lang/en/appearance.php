@@ -8,14 +8,13 @@ return [
     'saved_notification' => 'Appearance saved',
     'counter' => ':count / :max',
     'contrast_warning' => 'Low contrast (:ratio:1): the text may be hard to read. At least 4.5:1 is recommended. You can still save.',
+    'banner_moved' => 'The top banner is edited in Design.',
 
     'sections' => [
         'colors' => 'Colours',
         'colors_help' => 'The colours of the shop. Only a colour you change is stored; the others stay standard.',
         'fonts' => 'Fonts and shapes',
         'fonts_help' => 'The fonts come with the shop (nothing is loaded from another site). The shape decides how round the corners are.',
-        'banner' => 'Top banner',
-        'banner_help' => 'One line above the header, for a promotion for example. It shows only while it is on and inside the dates.',
     ],
 
     'colors' => [

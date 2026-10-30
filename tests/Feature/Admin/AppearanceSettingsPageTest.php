@@ -6,6 +6,7 @@ use App\Filament\NavigationGroup;
 use App\Filament\Pages\Settings\AppearanceSettings as AppearancePage;
 use App\Settings\AppearanceSettings;
 use App\Settings\Contracts\SiteSettingsRepository;
+use App\Storefront\Appearance\AppearanceWriter;
 use App\Storefront\Appearance\BannerDrafts;
 use App\Storefront\Appearance\StorefrontAppearance;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -123,7 +124,9 @@ class AppearanceSettingsPageTest extends TestCase
     public function test_the_page_the_customer_sees_follows_the_save_at_once(): void
     {
         $this->actingAsStaff('Administrator');
-        $this->page()->fillForm(['c_primary' => '#123456', 'banner_enabled' => true, 'banner_text' => 'Saved today'])->call('save')->assertHasNoFormErrors();
+        $this->page()->fillForm(['c_primary' => '#123456'])->call('save')->assertHasNoFormErrors();
+        // OB-1: the banner is saved by the «Дизайн» screen's «Топбанер» zone, the way it is published there
+        AppearanceWriter::save(array_replace(AppearanceWriter::current(), ['banner_enabled' => true, 'banner_text' => 'Saved today']));
         $this->app->forgetScopedInstances();
 
         $html = $this->get('/')->assertOk()->getContent();
@@ -145,57 +148,15 @@ class AppearanceSettingsPageTest extends TestCase
         $this->assertSame(0, DB::table('site_settings')->where('key', 'like', 'appearance.%')->count());
     }
 
-    public function test_saving_the_page_forgets_a_banner_draft_of_the_design_screen(): void
+    // OB-1: the banner's draft and its validation moved to the «Дизайн» screen with the banner (DesignTopbarZoneTest); this page has no banner fields any more.
+    public function test_a_save_of_the_page_leaves_a_banner_draft_of_the_design_screen_alone(): void
     {
         $this->actingAsStaff('Administrator');
-        BannerDrafts::save(['enabled' => true, 'text' => 'Old draft', 'url' => '', 'link_label' => '', 'text_color' => null, 'bg_color' => null, 'starts_at' => null, 'ends_at' => null]);
-        $this->assertNotNull($this->settings()->get(AppearanceSettings::BANNER_DRAFT_KEY));
+        BannerDrafts::save(['enabled' => true, 'text' => 'Draft text', 'url' => '', 'link_label' => '', 'text_color' => null, 'bg_color' => null, 'starts_at' => null, 'ends_at' => null]);
 
-        $this->page()->fillForm(['banner_enabled' => true, 'banner_text' => 'Live now'])->call('save')->assertHasNoFormErrors();
+        $this->page()->fillForm(['c_primary' => '#123456'])->call('save')->assertHasNoFormErrors();
 
-        $this->assertNull($this->settings()->get(AppearanceSettings::BANNER_DRAFT_KEY), 'the stale draft is gone');
-        $this->assertSame('Live now', $this->settings()->get(AppearanceSettings::BANNER_TEXT));
-        $screen = Livewire::test(\App\Filament\Pages\Design\DesignScreen::class)->call('selectZone', 'topbar');
-        $screen->assertSet('tree.values.text', 'Live now')->assertSee('data-ds-state="published"', false);
-    }
-
-    public function test_the_banner_fields_are_validated(): void
-    {
-        $this->actingAsStaff('Administrator');
-
-        $this->page()->fillForm(['banner_enabled' => true, 'banner_text' => ''])->call('save')->assertHasFormErrors(['banner_text']);
-        $this->page()->fillForm(['banner_enabled' => true, 'banner_text' => str_repeat('a', 161)])->call('save')->assertHasFormErrors(['banner_text']);
-        $this->page()->fillForm(['banner_enabled' => true, 'banner_text' => "Evil\u{202E}text"])->call('save')->assertHasFormErrors(['banner_text']);
-        $this->page()->fillForm(['banner_text' => 'ok', 'banner_link_label' => str_repeat('b', 41)])->call('save')->assertHasFormErrors(['banner_link_label']);
-
-        foreach (['javascript:alert(1)', 'data:text/html,x', '//evil.test', 'http://example.com'] as $url) {
-            $this->page()->fillForm(['banner_text' => 'ok', 'banner_url' => $url])->call('save')->assertHasFormErrors(['banner_url']);
-        }
-
-        $this->page()->fillForm(['banner_text' => 'ok', 'banner_starts_at' => '2026-06-10 10:00', 'banner_ends_at' => '2026-06-01 10:00'])->call('save')->assertHasFormErrors(['banner_ends_at']);
-
-        $this->assertNull($this->settings()->get(AppearanceSettings::BANNER_TEXT));
-    }
-
-    public function test_a_valid_banner_is_stored_and_an_empty_optional_field_forgets_its_key(): void
-    {
-        $this->actingAsStaff('Administrator');
-
-        $this->page()->fillForm([
-            'banner_enabled' => true, 'banner_text' => '  Free delivery  ', 'banner_url' => '/product-category/clothing', 'banner_link_label' => 'See',
-            'banner_starts_at' => '2026-06-01 10:00', 'banner_ends_at' => '2026-06-30 18:00',
-        ])->call('save')->assertHasNoFormErrors();
-
-        $this->assertSame('1', $this->settings()->get(AppearanceSettings::BANNER_ENABLED));
-        $this->assertSame('Free delivery', $this->settings()->get(AppearanceSettings::BANNER_TEXT));
-        $this->assertSame('/product-category/clothing', $this->settings()->get(AppearanceSettings::BANNER_URL));
-        $this->assertSame('2026-06-30 18:00', $this->settings()->get(AppearanceSettings::BANNER_ENDS_AT));
-
-        $this->page()->fillForm(['banner_enabled' => false, 'banner_url' => '', 'banner_link_label' => '', 'banner_starts_at' => null, 'banner_ends_at' => null])->call('save')->assertHasNoFormErrors();
-
-        $this->assertNull($this->settings()->get(AppearanceSettings::BANNER_ENABLED));
-        $this->assertNull($this->settings()->get(AppearanceSettings::BANNER_URL));
-        $this->assertNull($this->settings()->get(AppearanceSettings::BANNER_ENDS_AT));
+        $this->assertNotNull($this->settings()->get(AppearanceSettings::BANNER_DRAFT_KEY), 'the draft is the Design screen\'s and stays');
     }
 
     // ---- contrast -------------------------------------------------------------------------------------------------------------------
@@ -230,22 +191,21 @@ class AppearanceSettingsPageTest extends TestCase
         $this->settings()->set('admin.activity_log_enabled', '1');
         $staff = $this->actingAsStaff('Administrator');
 
-        $this->page()->fillForm(['c_primary' => '#1a2b3c', 'banner_enabled' => true, 'banner_text' => 'Sale secret text'])->call('save')->assertHasNoFormErrors();
+        $this->page()->fillForm(['c_primary' => '#1a2b3c'])->call('save')->assertHasNoFormErrors();
 
         $rows = DB::table('activity_log')->where('entity_type', 'storefront_appearance')->orderBy('id')->get();
 
-        $this->assertSame(['colors', 'banner'], $rows->pluck('field')->all(), 'one line per section that changed, the font section did not');
-        $this->assertSame(['saved', 'saved'], $rows->pluck('new_value')->all());
-        $this->assertSame([null, null], $rows->pluck('old_value')->all());
-        $this->assertSame([$staff->name, $staff->name], $rows->pluck('staff_name')->all(), 'who');
+        $this->assertSame(['colors'], $rows->pluck('field')->all(), 'one line for the section that changed; the font section did not');
+        $this->assertSame(['saved'], $rows->pluck('new_value')->all());
+        $this->assertSame([null], $rows->pluck('old_value')->all());
+        $this->assertSame([$staff->name], $rows->pluck('staff_name')->all(), 'who');
 
         $dump = json_encode($rows->all());
         $this->assertStringNotContainsString('1a2b3c', (string) $dump);
-        $this->assertStringNotContainsString('secret', (string) $dump);
 
         // A save that changes nothing writes nothing.
         $this->page()->call('save');
-        $this->assertSame(2, DB::table('activity_log')->where('entity_type', 'storefront_appearance')->count());
+        $this->assertSame(1, DB::table('activity_log')->where('entity_type', 'storefront_appearance')->count());
     }
 
     // ---- UX-0: a value the person typed is the value they get back --------------------------------------------------------------------
@@ -257,8 +217,6 @@ class AppearanceSettingsPageTest extends TestCase
             'c_background' => '#f8fafc', 'c_text' => '#0f172a', 'c_muted' => '#475569', 'c_primary' => '#1d4ed8', 'c_on_primary' => '#f0f9ff', 'c_accent' => '#be123c',
             'c_border' => '#cbd5e1', 'c_header_bg' => '#f1f5f9', 'c_header_text' => '#111827', 'c_footer_bg' => '#e2e8f0', 'c_footer_text' => '#334155',
             'font_body' => 'inter', 'font_heading' => 'lora', 'radius' => 'lg', 'button' => 'outline',
-            'banner_enabled' => true, 'banner_text' => 'Одит банер ✓', 'banner_url' => '/cart', 'banner_link_label' => 'Виж', 'c_banner_text' => '#fefce8', 'c_banner_bg' => '#1e3a8a',
-            'banner_starts_at' => '2026-01-01 00:00', 'banner_ends_at' => '2030-01-01 00:00',
         ];
 
         $this->page()->fillForm($values)->call('save')->assertHasNoFormErrors();
@@ -268,7 +226,6 @@ class AppearanceSettingsPageTest extends TestCase
 
         // ...and the shop shows it at once (the cache entry was replaced).
         $html = $this->get('/')->assertOk()->getContent();
-        $this->assertStringContainsString('Одит банер', $html);
         preg_match('#appearance/(tokens-[0-9a-f]{12}\.css)#', $html, $m);
         $this->assertStringContainsString('--sf-primary: #1d4ed8;', Storage::disk('public')->get('appearance/'.$m[1]));
     }
@@ -290,7 +247,8 @@ class AppearanceSettingsPageTest extends TestCase
         $html = $this->get(AppearancePage::getUrl())->assertOk()->getContent();
         preg_match_all('#<a href="[^"]*/admin/help/appearance\#(action-[a-z-]+)"#', $html, $links);
 
-        $this->assertSame(['action-appearance-colors', 'action-appearance-fonts', 'action-appearance-banner'], $links[1]);
+        // OB-1: the page no longer links to the banner's help (the banner is edited in «Дизайн»)
+        $this->assertSame(['action-appearance-colors', 'action-appearance-fonts'], $links[1]);
 
         foreach ($links[1] as $anchor) {
             $this->assertContains($anchor, self::HELP_ANCHORS);

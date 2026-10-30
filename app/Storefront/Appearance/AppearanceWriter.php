@@ -59,6 +59,14 @@ final class AppearanceWriter
         $defaults = Appearance::defaults();
         $before = self::snapshot($settings);
 
+        // OB-1: the top banner is edited in the «Дизайн» screen only. A save that does not carry the banner (the «Облик» page) keeps the banner as it is stored: its two colours are read
+        // back here so that the stylesheet still holds them, and the banner's own values are not written at all (see the `$ownsBanner` guard below).
+        $ownsBanner = array_key_exists('banner_enabled', $data);
+
+        if (! $ownsBanner) {
+            $data = array_replace($data, array_intersect_key(self::current(), array_flip(['c_banner_text', 'c_banner_bg'])));
+        }
+
         // Only what DIFFERS from its default is stored (the key of a default value is forgotten): the compiled stylesheet then holds exactly that.
         $overrides = [];
 
@@ -77,7 +85,7 @@ final class AppearanceWriter
             array_key_exists($key, $overrides) ? $settings->set($key, $overrides[$key]) : $settings->forget($key);
         }
 
-        self::storeBanner($settings, $data);
+        $ownsBanner && self::storeBanner($settings, $data);
 
         $previous = StorefrontAppearance::build([Appearance::COMPILED_KEY => $before['compiled']])['compiled']['hash'] ?? null;
         $compiled = app(AppearanceCompiler::class)->compile($overrides, $previous);
