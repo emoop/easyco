@@ -93,7 +93,8 @@ class StorefrontHttpSecurityTest extends TestCase
             $html = $this->get($url)->getContent();
 
             $this->assertDoesNotMatchRegularExpression('/csrf|_token|xsrf/i', $html, $url);
-            $this->assertStringNotContainsString('<form', $html, $url);
+            // CD-1b: the ONLY form a storefront page may print is the category's filters form: a plain GET form, which carries no token (every <form> on the page is exactly that one)
+            $this->assertSame(substr_count($html, '<form'), substr_count($html, '<form class="sf-filters-form" method="get" action="/'), $url);
         }
     }
 

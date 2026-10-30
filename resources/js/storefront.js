@@ -788,3 +788,146 @@ function bindLightbox(box) {
     box.stage.addEventListener('pointerup', release);
     box.stage.addEventListener('pointercancel', release);
 }
+
+// ---- CD-1b: the category page's filters --------------------------------------------------------------------------------------------------------------------------------
+// Everything here is PROGRESS: the filters and the sort are one plain GET form («Филтрирай» submits it; the links of the sort and of the chips are plain links), so without this script the page works.
+// Below 64rem the form is a drawer opened by the trigger «Филтриране и сортиране» — the same mechanism as the menu drawer's (a class that makes it visible, the page locked behind it, the focus
+// moved in and trapped, Esc / the overlay / the close button close it and the focus returns to the trigger); without the script it is a plain block above the list. From 64rem a change of a
+// checkbox or a radio submits the form, and the bar's dropdowns (<details>) close on an outside click and on Esc.
+(function () {
+    var fdrawer = document.querySelector('[data-sf-fdrawer]');
+
+    if (! fdrawer) {
+        return;
+    }
+
+    var form = fdrawer.querySelector('.sf-filters-form');
+    var panel = fdrawer.querySelector('.sf-fdrawer-panel');
+    var query = window.matchMedia ? window.matchMedia('(min-width: 64rem)') : null;
+    var opener = null;
+    var isDesktop = function () { return !! query && query.matches; };
+    var isOpen = function () { return fdrawer.classList.contains('sf-fdrawer-open'); };
+
+    function openFDrawer(from) {
+        opener = from;
+        fdrawer.classList.add('sf-fdrawer-open');
+        document.documentElement.classList.add('sf-locked');
+        // a static panel is no dialog: it is one only while it is an open drawer
+        panel.setAttribute('role', 'dialog');
+        panel.setAttribute('aria-modal', 'true');
+        from.setAttribute('aria-expanded', 'true');
+        (panel.querySelector('.sf-fdrawer-close') || panel).focus();
+    }
+
+    function closeFDrawer() {
+        if (! isOpen()) {
+            return;
+        }
+
+        fdrawer.classList.remove('sf-fdrawer-open');
+        document.documentElement.classList.remove('sf-locked');
+        panel.removeAttribute('role');
+        panel.removeAttribute('aria-modal');
+
+        if (opener) {
+            opener.setAttribute('aria-expanded', 'false');
+            opener.focus();
+        }
+    }
+
+    var closeDropdowns = function (except) {
+        var open = document.querySelectorAll('.sf-cat-layout-full .sf-fgroup[open], .sf-sortdd[open]');
+
+        for (var i = 0; i < open.length; i++) {
+            if (open[i] !== except) {
+                open[i].removeAttribute('open');
+            }
+        }
+    };
+
+    // the bar's dropdowns start closed on a computer (a group with a choice is printed open for the drawer and the no-script page)
+    if (isDesktop() && document.querySelector('.sf-cat-layout-full')) {
+        closeDropdowns(null);
+    }
+
+    document.addEventListener('click', function (event) {
+        var target = event.target;
+
+        if (! (target instanceof Element)) {
+            return;
+        }
+
+        var open = target.closest('[data-sf-fdrawer-open]');
+
+        if (open) {
+            event.preventDefault();
+            openFDrawer(open);
+
+            return;
+        }
+
+        if (target.closest('[data-sf-fdrawer-close]')) {
+            closeFDrawer();
+
+            return;
+        }
+
+        if (isDesktop()) {
+            var keep = target.closest('.sf-fgroup, .sf-sortdd');
+            closeDropdowns(keep);
+        }
+    });
+
+    // opening one dropdown of the bar closes the others
+    document.addEventListener('toggle', function (event) {
+        var details = event.target;
+
+        if (isDesktop() && details instanceof Element && details.open && details.matches('.sf-cat-layout-full .sf-fgroup, .sf-sortdd')) {
+            closeDropdowns(details);
+        }
+    }, true);
+
+    document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape') {
+            if (isOpen()) {
+                closeFDrawer();
+            } else if (isDesktop()) {
+                closeDropdowns(null);
+            }
+
+            return;
+        }
+
+        if (event.key !== 'Tab' || ! isOpen()) {
+            return;
+        }
+
+        var items = panel.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]), summary');
+
+        if (items.length === 0) {
+            event.preventDefault();
+
+            return;
+        }
+
+        var first = items[0];
+        var last = items[items.length - 1];
+
+        if (event.shiftKey && (document.activeElement === first || ! panel.contains(document.activeElement))) {
+            event.preventDefault();
+            last.focus();
+        } else if (! event.shiftKey && (document.activeElement === last || ! panel.contains(document.activeElement))) {
+            event.preventDefault();
+            first.focus();
+        }
+    });
+
+    form && form.addEventListener('change', function (event) {
+        var field = event.target;
+
+        // a computer: a choice applies at once; below 64rem the drawer waits for «Филтрирай»
+        if (isDesktop() && field instanceof HTMLInputElement && (field.type === 'checkbox' || field.type === 'radio')) {
+            form.requestSubmit ? form.requestSubmit() : form.submit();
+        }
+    });
+})();

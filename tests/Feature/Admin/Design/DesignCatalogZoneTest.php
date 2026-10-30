@@ -79,8 +79,11 @@ class DesignCatalogZoneTest extends TestCase
             $this->assertStringContainsString($text, $html);
         }
 
-        $this->assertStringNotContainsString('side panel', strtolower(strip_tags(str_replace('The layout and the side panel come with the filters.', '', $html))), 'no layout / side-panel control yet (they come with the filters)');
-        $this->assertSame(['cols', 'cols_phone', 'per_page'], array_keys(array_intersect_key($screen->get('props'), array_flip(['cols', 'cols_phone', 'per_page', 'layout', 'side']))));
+        // CD-1b: the layout and the side of the panel; the side is shown only with the panel layout
+        $screen->assertSet('props.layout', 'full')->assertSet('props.side', 'left');
+        $this->assertStringContainsString('Layout', $html);
+        $this->assertStringNotContainsString('Side panel', strip_tags(str_replace('With a side panel', '', $html)), 'the side control is hidden with the full-width layout');
+        $this->assertStringContainsString('Side panel', $screen->set('props.layout', 'sidebar')->html(), 'and shown with the side-panel layout');
     }
 
     public function test_the_schematic_shows_the_working_copy(): void
@@ -105,12 +108,12 @@ class DesignCatalogZoneTest extends TestCase
         $screen = $this->fill($this->screen(), ['cols' => '5', 'cols_phone' => '1', 'per_page' => '48'])->call('apply')->assertHasNoErrors();
 
         $this->assertNull($this->published(), 'the shop is not touched by «Apply»');
-        $this->assertSame(['cols' => '5', 'cols_phone' => '1', 'per_page' => '48'], json_decode((string) $this->draft(), true));
+        $this->assertSame(['cols' => '5', 'cols_phone' => '1', 'per_page' => '48', 'layout' => 'full', 'side' => 'left'], json_decode((string) $this->draft(), true));
         $this->assertNull($this->settings()->get(AppearanceSettings::COMPILED_KEY));
 
         $screen->call('publish')->assertHasNoErrors();
 
-        $this->assertSame(['cols' => '5', 'cols_phone' => '1', 'per_page' => '48'], json_decode((string) $this->published(), true));
+        $this->assertSame(['cols' => '5', 'cols_phone' => '1', 'per_page' => '48', 'layout' => 'full', 'side' => 'left'], json_decode((string) $this->published(), true));
         $this->assertNull($this->draft(), 'the draft is forgotten after publishing');
         $compiled = json_decode((string) $this->settings()->get(AppearanceSettings::COMPILED_KEY), true);
         $css = (string) Storage::disk('public')->get('appearance/tokens-'.$compiled['hash'].'.css');
@@ -121,7 +124,7 @@ class DesignCatalogZoneTest extends TestCase
     public function test_only_what_differs_is_stored_and_a_return_to_the_defaults_forgets_the_key(): void
     {
         $screen = $this->fill($this->screen(), ['per_page' => '36'])->call('apply')->call('publish')->assertHasNoErrors();
-        $this->assertSame(['cols' => '4', 'cols_phone' => '2', 'per_page' => '36'], json_decode((string) $this->published(), true), 'the section is stored as a whole while it differs');
+        $this->assertSame(['cols' => '4', 'cols_phone' => '2', 'per_page' => '36', 'layout' => 'full', 'side' => 'left'], json_decode((string) $this->published(), true), 'the section is stored as a whole while it differs');
         $this->assertNull($this->settings()->get(AppearanceSettings::COMPILED_KEY), 'the per-page size is not a stylesheet variable');
 
         // CD-1a.2: 20 is a member of the list: stored, read back as 20 by the storefront reader and shown by the select after «Apply»
@@ -144,7 +147,7 @@ class DesignCatalogZoneTest extends TestCase
         $screen->call('resetToDefault')->assertSet('props.cols', '4')->assertSet('props.per_page', '24');
 
         $this->assertSame($live, $this->published(), 'nothing reaches the shop until «Publish»');
-        $this->assertSame(['cols' => '4', 'cols_phone' => '2', 'per_page' => '24'], json_decode((string) $this->draft(), true));
+        $this->assertSame(['cols' => '4', 'cols_phone' => '2', 'per_page' => '24', 'layout' => 'full', 'side' => 'left'], json_decode((string) $this->draft(), true));
 
         $screen->call('publish')->assertHasNoErrors();
         $this->assertNull($this->published());

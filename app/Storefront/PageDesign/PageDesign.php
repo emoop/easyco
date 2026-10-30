@@ -44,6 +44,11 @@ final class PageDesign
 
     public const CATALOG_PER_PAGE = ['12', '20', '24', '36', '48', '60', '72'];
 
+    /** CD-1b: where the filters sit on a desktop (a bar above the list or a side panel) and, with a panel, on which side. Not variables: classes of the category wrapper. */
+    public const CATALOG_LAYOUTS = ['full', 'sidebar'];
+
+    public const CATALOG_SIDES = ['left', 'right'];
+
     /** The `site_settings` keys of the gallery choices, by field. */
     public const GALLERY_KEYS = [
         'gallery_desktop_mode' => GallerySettings::DESKTOP_MODE_KEY,
@@ -90,6 +95,8 @@ final class PageDesign
                 'cols' => ['kind' => 'enum', 'options' => self::CATALOG_COLS, 'default' => '4'],
                 'cols_phone' => ['kind' => 'enum', 'options' => self::CATALOG_COLS_PHONE, 'default' => '2'],
                 'per_page' => ['kind' => 'enum', 'options' => self::CATALOG_PER_PAGE, 'default' => '24'],
+                'layout' => ['kind' => 'enum', 'options' => self::CATALOG_LAYOUTS, 'default' => 'full', 'live' => true],
+                'side' => ['kind' => 'enum', 'options' => self::CATALOG_SIDES, 'default' => 'left', 'visible_when' => ['layout' => 'sidebar']],
             ];
         }
 

@@ -71,10 +71,16 @@ final class HtmlBlockUsage
         return false;
     }
 
-    /** Is the block shown anywhere (a menu, the footer or the right column)? */
+    /** CD-1b: the names of the categories that show the block as their banner («Блок отгоре»). @return list<string> */
+    public static function categories(int $blockId): array
+    {
+        return DB::table('catalog_categories')->where('header_block_id', $blockId)->orderBy('name')->pluck('name')->map(fn ($name): string => (string) $name)->all();
+    }
+
+    /** Is the block shown anywhere (a menu, the footer, the right column or a category)? */
     public static function isUsed(int $blockId): bool
     {
-        return self::menus($blockId) !== [] || self::footer($blockId) || self::summary($blockId);
+        return self::menus($blockId) !== [] || self::footer($blockId) || self::summary($blockId) || self::categories($blockId) !== [];
     }
 
     /**
@@ -86,9 +92,14 @@ final class HtmlBlockUsage
         $menus = self::menus((int) $block->id);
         $footer = self::footer((int) $block->id);
         $summary = self::summary((int) $block->id);
+        $categories = self::categories((int) $block->id);
         $params = ['title' => $block->title, 'menus' => implode(', ', $menus)];
 
-        if ($summary) {
+        if ($categories !== [] && ! $summary && $menus === [] && ! $footer) {
+            return (string) __('html_blocks.errors.in_use_category', ['title' => $block->title, 'categories' => implode(', ', $categories)]);
+        }
+
+        if ($summary || $categories !== []) {
             $places = [];
 
             if ($menus !== []) {
@@ -99,7 +110,8 @@ final class HtmlBlockUsage
                 $places[] = (string) __('html_blocks.places.footer');
             }
 
-            $places[] = (string) __('html_blocks.places.summary');
+            $summary && $places[] = (string) __('html_blocks.places.summary');
+            $categories !== [] && $places[] = (string) __('html_blocks.places.category', ['categories' => implode(', ', $categories)]);
 
             return (string) __('html_blocks.errors.in_use_places', ['title' => $block->title, 'places' => implode((string) __('html_blocks.places.join'), $places)]);
         }

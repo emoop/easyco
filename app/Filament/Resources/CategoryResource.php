@@ -130,6 +130,14 @@ class CategoryResource extends Resource
                 ->unique(table: 'catalog_categories', column: 'slug', ignoreRecord: true),
             // CT-1: ONE picture, chosen from «Медия» (or uploaded into it): any picture type the library offers, never a social image, no minimum size. The design cuts the frame later; nothing is
             // cropped in the file. «Премахни изображението» only detaches (the file stays in «Медия»), and a save that does not touch the field keeps it.
+            // CD-1b: «Блок отгоре» — an HTML block shown full width above this category's list (page 1, no filter chosen). Saved by the pages (a plain column, not part of the domain aggregate).
+            \Filament\Forms\Components\Select::make('header_block_id')
+                ->label(__('categories.fields.header_block'))
+                ->helperText(__('categories.header_block_help'))
+                ->options(fn (): array => \App\Content\HtmlBlocks\HtmlBlockModel::query()->orderBy('title')->pluck('title', 'id')->all())
+                ->native(false)
+                ->searchable()
+                ->exists(table: 'html_blocks', column: 'id'),
             MediaPicker::make('picture_media_asset_id')
                 ->label(__('categories.fields.picture'))
                 ->plainImagesOnly()

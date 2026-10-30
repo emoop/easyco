@@ -28,6 +28,9 @@ class CreateCategory extends CreateRecord
 
         app(CategoryRepository::class)->save($category);
 
+        // CD-1b: «Блок отгоре» is a plain column of the category row
+        filled($data['header_block_id'] ?? null) && \Illuminate\Support\Facades\DB::table('catalog_categories')->where('id', $category->id())->update(['header_block_id' => (int) $data['header_block_id']]);
+
         return CategoryModel::find($category->id());
     }
 }

@@ -130,6 +130,22 @@ abstract class PageDesignZone implements DesignZone
         $control = FieldForms::make($name, $field);
         method_exists($control, 'helperText') && $control->helperText((string) __('design.page_design.hints.'.$name));
 
+        // CD-1b: a field that changes what another one shows is live; a dependent one is shown only with the other's value («Страничен панел» only with the panel layout)
+        ! empty($field['live']) && method_exists($control, 'live') && $control->live();
+
+        if (! empty($field['visible_when'])) {
+            $when = $field['visible_when'];
+            $control->visible(static function (\Filament\Schemas\Components\Utilities\Get $get) use ($when): bool {
+                foreach ($when as $other => $value) {
+                    if ((string) $get($other) !== $value) {
+                        return false;
+                    }
+                }
+
+                return true;
+            });
+        }
+
         return $control;
     }
 

@@ -117,16 +117,33 @@ class CategoryFiltersTest extends TestCase
         return $ids;
     }
 
-    /** @return list<string> the labels of the values printed in the filter block of an attribute */
+    /** @return list<string> the labels of the values printed in the group of an attribute (the labels of its checkboxes) */
     private function shown(string $html, int $attribute): array
     {
-        if (preg_match('#<h3 class="sf-filter-name" id="sf-filter-'.$attribute.'">.*?</ul>#s', $html, $block) !== 1) {
-            return [];
+        preg_match_all('#<details class="sf-fgroup".*?</details>#s', $html, $groups);
+
+        foreach ($groups[0] as $group) {
+            if (! str_contains($group, 'name="filter['.$attribute.'][]"')) {
+                continue;
+            }
+
+            preg_match_all('#<label class="sf-fv[^"]*"[^>]*>.*?</label>#s', $group, $labels);
+
+            return array_map(static function (string $label): string {
+                preg_match('#<span class="sf-(?:fv-text|sr)">([^<]*)</span>#', $label, $m);
+
+                return html_entity_decode($m[1] ?? '');
+            }, $labels[0]);
         }
 
-        preg_match_all('#<a class="sf-fv[^"]*"[^>]*?(?:title="([^"]*)")?[^>]*>(?:<svg.*?</svg><span class="sf-sr">([^<,]*)|([^<]*))#s', $block[0], $m, PREG_SET_ORDER);
+        return [];
+    }
 
-        return array_map(static fn (array $row): string => trim($row[1] !== '' ? $row[1] : ($row[2] ?? '') . ($row[3] ?? '')), $m);
+    private function checked(string $html, int $attribute): array
+    {
+        preg_match_all('#<input class="sf-fv-input" type="checkbox" name="filter\['.$attribute.'\]\[\]" value="(\d+)" checked>#', $html, $m);
+
+        return array_map('intval', $m[1]);
     }
 
     // ---- no filters: nothing changes ----------------------------------------------------------------------------------------------------
@@ -139,8 +156,8 @@ class CategoryFiltersTest extends TestCase
 
         $html = $this->visit('/product-category/clothing')->assertOk()->getContent();
 
-        $this->assertStringNotContainsString('sf-filters', $html);
-        $this->assertStringNotContainsString('Filters', $html);
+        $this->assertStringNotContainsString('sf-fgroup', $html);
+        $this->assertStringNotContainsString('sf-filter-chip', $html);
         $this->assertSame([7, 6, 5, 4, 3, 2, 1], $this->ids($html), 'the category as it was');
 
         $queries = [];
@@ -159,7 +176,7 @@ class CategoryFiltersTest extends TestCase
 
         $html = $this->visit('/product-category/clothing')->assertOk()->getContent();
 
-        $this->assertStringNotContainsString('sf-filters', $html);
+        $this->assertStringNotContainsString('sf-fgroup', $html);
     }
 
     // ---- the parameter guard --------------------------------------------------------------------------------------------------------------
@@ -177,7 +194,14 @@ class CategoryFiltersTest extends TestCase
             'filter is a string' => ['filter=x'],
             'filter empty' => ['filter='],
             'a list instead of a map' => ['filter[]=1001'],
-            'a nested array' => ['filter[1][]=1001'],
+            'a list of lists' => ['filter[][]=1001'],
+            'a nested array' => ['filter[1][0][]=1001'],
+            'an associative array' => ['filter[1][a]=1001'],
+            'an empty array element' => ['filter[1][]='],
+            'a duplicated array value' => ['filter[1][]=1001&filter[1][]=1001'],
+            'an unknown array value' => ['filter[1][]=9999'],
+            'an array value that is not a number' => ['filter[1][]=%3Cb%3E'],
+            'an array value of another attribute' => ['filter[1][]=2001'],
             'an empty value list' => ['filter[1]='],
             'a trailing comma' => ['filter[1]=1001,'],
             'a duplicated value' => ['filter[1]=1001,1001'],
@@ -329,8 +353,8 @@ class CategoryFiltersTest extends TestCase
 
         $html = $this->visit('/product-category/clothing?filter[1]=1001')->getContent();
 
-        $this->assertStringNotContainsString('filter[2]=2002', $html, 'red + M gives no product any more: M is gone from the red list');
-        $this->assertStringNotContainsString('id="sf-filter-2"', $html, 'and a filter with one value left and nothing chosen is hidden');
+        $this->assertStringNotContainsString('value="2002"', $html, 'red + M gives no product any more: M is gone from the red list');
+        $this->assertStringNotContainsString('name="filter[2][]"', $html, 'and a filter with one value left and nothing chosen is hidden');
     }
 
     public function test_a_selected_value_that_gives_nothing_stays_visible_so_it_can_be_removed(): void
@@ -349,8 +373,8 @@ class CategoryFiltersTest extends TestCase
     {
         $html = $this->visit('/product-category/clothing?filter[1]=1003')->assertOk()->getContent(); // green: only L exists in green
 
-        $this->assertStringNotContainsString('id="sf-filter-2"', $html, 'the size filter has one value (L) and nothing chosen: hidden');
-        $this->assertStringContainsString('id="sf-filter-1"', $html);
+        $this->assertStringNotContainsString('name="filter[2][]"', $html, 'the size filter has one value (L) and nothing chosen: hidden');
+        $this->assertStringContainsString('name="filter[1][]"', $html);
     }
 
     // ---- the looks ----------------------------------------------------------------------------------------------------------------------------
@@ -359,29 +383,29 @@ class CategoryFiltersTest extends TestCase
     {
         $html = $this->visit('/product-category/clothing')->assertOk()->getContent();
 
-        // swatches: an inline SVG circle with the validated colour; a value with no colour is a text link in the same row
+        // swatches: an inline SVG circle with the validated colour inside the label of a checkbox; a value with no colour is a text label in the same row
         $this->assertStringContainsString('<svg class="sf-fv-circle" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="12" fill="#cc0000"/></svg>', $html);
         $this->assertStringContainsString('fill="#0000cc"', $html);
-        $this->assertMatchesRegularExpression('#<a class="sf-fv sf-fv-link" href="[^"]*filter\[1\]=1003" rel="nofollow">Green</a>#', $html);
+        $this->assertMatchesRegularExpression('#<label class="sf-fv sf-fv-link">\s*<input class="sf-fv-input" type="checkbox" name="filter\[1\]\[\]" value="1003"\s*>\s*<span class="sf-fv-text">Green</span>#', $html);
         $this->assertStringContainsString('title="Red"', $html);
-        // links
-        $this->assertMatchesRegularExpression('#<div class="sf-filter sf-filter-links">.*?<a class="sf-fv sf-fv-link" href="[^"]*filter\[2\]=2001" rel="nofollow">S</a>#s', $html);
-        // list
-        $this->assertMatchesRegularExpression('#<div class="sf-filter sf-filter-list">.*?<a class="sf-fv sf-fv-list" href="[^"]*filter\[3\]=3001" rel="nofollow">Cotton</a>#s', $html);
+        // links: the checkbox is hidden by CSS, the label is the text
+        $this->assertMatchesRegularExpression('#<ul class="sf-filter-values sf-fvalues-links">.*?<label class="sf-fv sf-fv-link">\s*<input class="sf-fv-input" type="checkbox" name="filter\[2\]\[\]" value="2001"\s*>\s*<span class="sf-fv-text">S</span>#s', $html);
+        // list: a visible square mark
+        $this->assertMatchesRegularExpression('#<ul class="sf-filter-values sf-fvalues-list">.*?<label class="sf-fv sf-fv-list">\s*<input class="sf-fv-input" type="checkbox" name="filter\[3\]\[\]" value="3001"\s*>\s*<span class="sf-fv-mark"></span>\s*<span class="sf-fv-text">Cotton</span>#s', $html);
         $this->assertDoesNotMatchRegularExpression('/\sstyle=/i', $html);
         $this->assertDoesNotMatchRegularExpression('/<script(?![^>]*\ssrc=)[^>]*>/i', $html);
     }
 
-    public function test_a_chosen_value_is_marked_and_toggles_off_and_every_link_is_the_canonical_url(): void
+    public function test_a_chosen_value_is_checked_and_its_chip_removes_it_and_the_links_are_the_canonical_url(): void
     {
         $html = $this->visit('/product-category/clothing?filter[1]=1001&filter[2]=2001')->assertOk()->getContent();
 
-        $this->assertStringContainsString('sf-fv-on', $html);
-        $this->assertStringContainsString('selected', $html, 'the state as text for screen readers');
-        $this->assertStringContainsString('href="/product-category/clothing?filter[2]=2001"', $html, 'red removed');
-        $this->assertStringContainsString('href="/product-category/clothing?filter[1]=1001"', $html, 'S removed');
-        $this->assertStringContainsString('href="/product-category/clothing?filter[1]=1001&amp;filter[2]=2001,2002"', $html, 'M added to S (the canonical order)');
+        $this->assertSame([1001], $this->checked($html, 1));
+        $this->assertSame([2001], $this->checked($html, 2));
+        $this->assertStringContainsString('href="/product-category/clothing?filter[2]=2001" rel="nofollow">Red', $html, 'the chip of red removes red');
+        $this->assertStringContainsString('href="/product-category/clothing?filter[1]=1001" rel="nofollow">S', $html, 'the chip of S removes S');
         $this->assertStringContainsString('href="/product-category/clothing" rel="nofollow">Clear all', $html);
+        $this->assertStringContainsString('(1)', $html, 'a group with a choice shows its count');
     }
 
     public function test_a_hostile_value_label_is_escaped(): void

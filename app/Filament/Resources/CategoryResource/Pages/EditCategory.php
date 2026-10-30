@@ -47,6 +47,9 @@ class EditCategory extends EditRecord
 
         app(CategoryRepository::class)->save($category);
 
+        // CD-1b: «Блок отгоре» is a plain column of the category row
+        \Illuminate\Support\Facades\DB::table('catalog_categories')->where('id', $category->id())->update(['header_block_id' => filled($data['header_block_id'] ?? null) ? (int) $data['header_block_id'] : null]);
+
         return CategoryModel::find($category->id());
     }
 }

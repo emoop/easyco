@@ -111,6 +111,7 @@ return [
     'places' => [
         'menu' => 'the menu :menus',
         'footer' => 'the footer',
+        'category' => 'the banner of the category :categories',
         'summary' => 'the right column',
         'join' => ' and ',
     ],
@@ -123,6 +124,7 @@ return [
         'in_use' => 'The block ":title" is shown by the menu :menus and cannot be deleted.',
         'in_use_footer' => 'The block ":title" is shown by the footer and cannot be deleted.',
         'in_use_both' => 'The block ":title" is shown by the menu :menus and by the footer and cannot be deleted.',
+        'in_use_category' => 'The block ":title" is shown as the banner of the category ":categories" and cannot be deleted.',
         'in_use_places' => 'The block ":title" is shown by :places and cannot be deleted.',
     ],
 ];

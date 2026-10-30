@@ -23,7 +23,7 @@ class CatalogDesignTest extends TestCase
 
     public function test_the_defaults_are_todays_values(): void
     {
-        $this->assertSame(['cols' => '4', 'cols_phone' => '2', 'per_page' => '24'], PageDesign::defaults(PageDesign::CATALOG));
+        $this->assertSame(['cols' => '4', 'cols_phone' => '2', 'per_page' => '24', 'layout' => 'full', 'side' => 'left'], PageDesign::defaults(PageDesign::CATALOG));
         $this->assertSame([], PageDesign::vars(PageDesign::CATALOG, PageDesign::defaults(PageDesign::CATALOG)), 'a shop that never touched it writes no variable');
         $this->assertTrue(PageDesign::isDefault(PageDesign::CATALOG, PageDesign::defaults(PageDesign::CATALOG)));
     }
@@ -36,7 +36,9 @@ class CatalogDesignTest extends TestCase
             'columns 600 digits' => ['cols', str_repeat('9', 600)], 'columns float' => ['cols', '4.5'], 'columns empty' => ['cols', ''], 'columns null' => ['cols', null], 'columns array' => ['cols', ['4']],
             'phone 0' => ['cols_phone', '0'], 'phone 3' => ['cols_phone', '3'], 'phone declaration' => ['cols_phone', '1;color:red'], 'phone 600 digits' => ['cols_phone', str_repeat('1', 600)],
             'per page 10' => ['per_page', '10'], 'per page 100' => ['per_page', '100'], 'per page 0' => ['per_page', '0'], 'per page text' => ['per_page', 'all'], 'per page float' => ['per_page', '24.5'],
-            'per page declaration' => ['per_page', '24;color:red'], 'per page 600 digits' => ['per_page', str_repeat('9', 600)], 'per page negative' => ['per_page', '-24'],
+            'per page declaration' => ['per_page', '24;color:red'],
+            'layout bar' => ['layout', 'bar'], 'layout empty' => ['layout', ''], 'layout array' => ['layout', ['full']], 'layout 600 chars' => ['layout', str_repeat('s', 600)], 'layout upper case' => ['layout', 'FULL'], 'layout declaration' => ['layout', 'full;color:red'],
+            'side middle' => ['side', 'middle'], 'side empty' => ['side', ''], 'side array' => ['side', ['left']], 'side 600 chars' => ['side', str_repeat('l', 600)], 'side upper case' => ['side', 'LEFT'], 'side null' => ['side', null], 'per page 600 digits' => ['per_page', str_repeat('9', 600)], 'per page negative' => ['per_page', '-24'],
         ];
     }
 
@@ -54,7 +56,7 @@ class CatalogDesignTest extends TestCase
     {
         $good = [];
 
-        foreach (['cols' => ['3', '4', '5'], 'cols_phone' => ['1', '2'], 'per_page' => ['12', '20', '24', '36', '48', '60', '72']] as $field => $values) {
+        foreach (['cols' => ['3', '4', '5'], 'cols_phone' => ['1', '2'], 'per_page' => ['12', '20', '24', '36', '48', '60', '72'], 'layout' => ['full', 'sidebar'], 'side' => ['left', 'right']] as $field => $values) {
             foreach ($values as $value) {
                 $good["$field $value"] = [$field, $value];
             }
@@ -74,8 +76,8 @@ class CatalogDesignTest extends TestCase
 
     public function test_an_unknown_key_is_refused_and_an_empty_list_is_the_defaults(): void
     {
-        $this->assertArrayHasKey('layout', $this->validate(['layout' => 'sidebar'])[1]);
-        $this->assertArrayHasKey('side', $this->validate(['side' => 'left'])[1], 'the layout and side-panel controls come with the filters');
+        $this->assertArrayHasKey('columns', $this->validate(['columns' => '4'])[1]);
+        $this->assertArrayHasKey('bar', $this->validate(['bar' => 'full'])[1]);
         $this->assertSame([[], PageDesign::defaults(PageDesign::CATALOG)], [$this->validate([])[1], $this->validate([])[0]]);
     }
 
@@ -87,6 +89,7 @@ class CatalogDesignTest extends TestCase
         $this->assertSame(['--sf-cat-cols' => '3'], $vars(['cols' => '3']));
         $this->assertSame(['--sf-cat-cols-phone' => '1'], $vars(['cols_phone' => '1']));
         $this->assertSame([], $vars(['per_page' => '48']), 'the per-page size is read at render, it is not a variable');
+        $this->assertSame([], $vars(['layout' => 'sidebar', 'side' => 'right']), 'the layout and the side select CLASSES, they are no variables');
         $this->assertSame([], $vars(['cols' => '4', 'cols_phone' => '2']), 'the defaults write nothing');
         $this->assertFalse(PageDesign::isDefault(PageDesign::CATALOG, array_replace(PageDesign::defaults(PageDesign::CATALOG), ['per_page' => '48'])), 'but it IS stored');
     }

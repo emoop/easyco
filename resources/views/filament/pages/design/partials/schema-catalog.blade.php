@@ -5,6 +5,10 @@
     $desktopCols = (int) $catalogValues['cols'];
     $phoneCols = (int) $catalogValues['cols_phone'];
     $perPage = (int) $catalogValues['per_page'];
+    $layout = (string) $catalogValues['layout'];
+    $side = (string) $catalogValues['side'];
+    $bar = 'display:block;height:0.75rem;background:#d1d5db;border-radius:2px';
+    $panel = 'width:3.5rem;flex:none;background:#d1d5db;border-radius:2px';
     $box = 'display:block;height:1.5rem;background:#e5e7eb;border-radius:2px';
 @endphp
 <section class="ds-schema" aria-labelledby="ds-schema-title">
@@ -12,9 +16,15 @@
     <p class="ds-note">{{ __('design.page_design.schema_catalog') }}</p>
     <div class="ds-catalog-sketch" aria-hidden="true" style="display:flex;flex-wrap:wrap;gap:1.5rem;align-items:flex-start">
         <div style="width:16rem;max-width:100%">
-            <small>{{ __('design.page_design.devices.desktop') }}: {{ $desktopCols }}</small>
-            <div style="display:grid;gap:4px;margin-top:4px;grid-template-columns:repeat({{ $desktopCols }}, 1fr)">
-                @for ($i = 0; $i < $desktopCols * 2; $i++)<span style="{{ $box }}"></span>@endfor
+            <small>{{ __('design.page_design.devices.desktop') }}: {{ $desktopCols }} · {{ __('design.page_design.options.layout.'.$layout) }}@if ($layout === 'sidebar') · {{ __('design.page_design.options.side.'.$side) }}@endif</small>
+            @if ($layout === 'full')
+                <span style="{{ $bar }};margin-top:4px"></span>
+            @endif
+            <div style="display:flex;gap:4px;margin-top:4px;@if ($side === 'right')flex-direction:row-reverse @endif">
+                @if ($layout === 'sidebar')<span style="{{ $panel }}"></span>@endif
+                <div style="display:grid;gap:4px;flex:1;grid-template-columns:repeat({{ $desktopCols }}, 1fr)">
+                    @for ($i = 0; $i < $desktopCols * 2; $i++)<span style="{{ $box }}"></span>@endfor
+                </div>
             </div>
         </div>
         <div style="width:7rem;max-width:100%">

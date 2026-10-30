@@ -33,6 +33,15 @@ trait AssertsSafeHtml
                 continue;
             }
 
+            // CD-1b / CT-3: the category's filters are ONE plain GET form (method get, a relative action, no token) and a colour swatch is a validated #rrggbb circle: each accepted only as exactly that
+            if ($name === 'svg' && $this->isASwatch($element)) {
+                continue;
+            }
+
+            if ($name === 'form' && $this->isTheFiltersForm($element)) {
+                continue;
+            }
+
             if (in_array($name, ['script', 'iframe', 'frame', 'object', 'embed', 'svg', 'math', 'form', 'style', 'base', 'applet'], true)) {
                 $problems[] = "<{$name}> element";
             }
@@ -91,6 +100,50 @@ trait AssertsSafeHtml
         return true;
     }
 
+    /** CD-1b: the filters form of a category: class `sf-filters-form`, method get, a relative action, and no other attribute (no token, no handler). */
+    private function isTheFiltersForm(DOMElement $form): bool
+    {
+        if (trim($form->getAttribute('class')) !== 'sf-filters-form' || strtolower($form->getAttribute('method')) !== 'get' || ! str_starts_with($form->getAttribute('action'), '/')) {
+            return false;
+        }
+
+        foreach ($form->attributes as $attribute) {
+            if (! in_array(strtolower($attribute->nodeName), ['class', 'method', 'action'], true)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /** CT-3: a filter swatch: class `sf-fv-circle`, aria-hidden, ONE <circle> whose fill is a plain #rrggbb. */
+    private function isASwatch(DOMElement $svg): bool
+    {
+        if (trim($svg->getAttribute('class')) !== 'sf-fv-circle' || $svg->getAttribute('aria-hidden') !== 'true') {
+            return false;
+        }
+
+        foreach ($svg->attributes as $attribute) {
+            if (! in_array(strtolower($attribute->nodeName), ['class', 'width', 'height', 'viewbox', 'aria-hidden', 'focusable'], true)) {
+                return false;
+            }
+        }
+
+        $children = $svg->getElementsByTagName('*');
+
+        if ($children->length !== 1 || strtolower($children->item(0)->nodeName) !== 'circle') {
+            return false;
+        }
+
+        foreach ($children->item(0)->attributes as $attribute) {
+            if (! in_array(strtolower($attribute->nodeName), ['cx', 'cy', 'r', 'fill'], true)) {
+                return false;
+            }
+        }
+
+        return preg_match('/A#[0-9a-f]{6}z/', $children->item(0)->getAttribute('fill')) === 1;
+    }
+
     private function isAKnownIcon(DOMElement $svg): bool
     {
         $class = ' '.$svg->getAttribute('class').' ';
@@ -98,7 +151,7 @@ trait AssertsSafeHtml
         $known = false;
 
         // The CLOSED set of decorative icons the storefront prints (bag, hamburger, close, search/account/wishlist, the eight social glyphs).
-        foreach (['sf-cart-icon', 'sf-menu-icon', 'sf-close-icon', 'sf-hdr-icon', 'sf-social-icon'] as $icon) {
+        foreach (['sf-cart-icon', 'sf-menu-icon', 'sf-close-icon', 'sf-hdr-icon', 'sf-social-icon', 'sf-ftrigger-icon', 'sf-ftrigger-arrow'] as $icon) {
             $known = $known || str_contains($class, ' '.$icon.' ');
         }
 

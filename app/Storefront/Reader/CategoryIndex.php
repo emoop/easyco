@@ -86,7 +86,7 @@ final class CategoryIndex
         $this->load();
 
         return isset($this->byId[$id])
-            ? ['id' => $id, 'name' => $this->byId[$id]['name'], 'slug' => $this->byId[$id]['slug']]
+            ? ['id' => $id, 'name' => $this->byId[$id]['name'], 'slug' => $this->byId[$id]['slug'], 'header_block_id' => $this->byId[$id]['header_block_id']]
             : null;
     }
 
@@ -208,7 +208,7 @@ final class CategoryIndex
 
         $this->loaded = true;
 
-        $rows = DB::table('catalog_categories')->select('id', 'parent_id', 'name', 'slug')->orderBy('name')->orderBy('id')->get();
+        $rows = DB::table('catalog_categories')->select('id', 'parent_id', 'name', 'slug', 'header_block_id')->orderBy('name')->orderBy('id')->get();
 
         foreach ($rows as $row) {
             $id = (int) $row->id;
@@ -217,6 +217,7 @@ final class CategoryIndex
                 'parent' => $row->parent_id === null ? null : (int) $row->parent_id,
                 'name' => (string) $row->name,
                 'slug' => (string) $row->slug,
+                'header_block_id' => $row->header_block_id === null ? null : (int) $row->header_block_id,
             ];
             $this->idBySlug[mb_strtolower((string) $row->slug, 'UTF-8')] = $id;
         }

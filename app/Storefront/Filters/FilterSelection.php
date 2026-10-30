@@ -59,18 +59,33 @@ final readonly class FilterSelection
 
         $given = [];
         $total = 0;
+        $arrayForm = false;
 
         foreach ($raw as $key => $list) {
             $attribute = self::number((string) $key);
 
-            if ($attribute === null || ! isset($known[$attribute]) || isset($given[$attribute]) || ! is_string($list) || $list === '') {
+            if ($attribute === null || ! isset($known[$attribute]) || isset($given[$attribute])) {
+                throw new InvalidListingQuery('filter', 'names an unknown filter');
+            }
+
+            // CD-1b: the form sends `filter[12][]=7&filter[12][]=9` (a plain list of whole numbers, one level deep); it is valid and ALWAYS a 301 to the canonical comma form
+            if (is_array($list)) {
+                if ($list === [] || ! array_is_list($list)) {
+                    throw new InvalidListingQuery('filter', 'is not a list of values');
+                }
+
+                $arrayForm = true;
+                $tokens = $list;
+            } elseif (is_string($list) && $list !== '') {
+                $tokens = explode(',', $list);
+            } else {
                 throw new InvalidListingQuery('filter', 'names an unknown filter');
             }
 
             $values = [];
 
-            foreach (explode(',', $list) as $token) {
-                $value = self::number($token);
+            foreach ($tokens as $token) {
+                $value = is_string($token) ? self::number($token) : null;
 
                 if ($value === null || ! in_array($value, $known[$attribute], true) || in_array($value, $values, true)) {
                     throw new InvalidListingQuery('filter', 'names an unknown value');
@@ -95,7 +110,7 @@ final readonly class FilterSelection
             }
         }
 
-        return new self($map, $map === $given);
+        return new self($map, $map === $given && ! $arrayForm);
     }
 
     /** The selection with this value turned on (or off when it is on), the order kept canonical. */

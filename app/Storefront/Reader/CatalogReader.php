@@ -219,6 +219,7 @@ final class CatalogReader
             productCount: $this->categories->productCount($id),
             breadcrumbs: $this->categories->breadcrumbs($id),
             children: $this->categories->shownChildren($id),
+            headerBlockId: $row['header_block_id'] ?? null,
         );
     }
 

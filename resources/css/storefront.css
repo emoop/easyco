@@ -490,12 +490,120 @@
         @apply inline-flex min-w-10 items-center justify-center rounded-md border border-neutral-300 px-3 py-2 text-sm no-underline;
     }
 
-    /* CT-3: the category's filters (a plain block above the grid; CD-1b will place it). The text colours are the product page's style (the shop's tokens, with the style's values as fallback). */
-    .sf-filters {
+    /* CD-1b: the category page — the toolbar, the filters form in its three placements (a bar above the list, a side panel, the phone drawer) and the banner. ONE form; the placement is CSS only, the DOM order
+       is always the filters first, then the list. Desktop is the base; the drawer rules are in the max-width block below (64rem is the menu drawer's breakpoint too). Text colours are the product page's
+       style (the shop's tokens with the style's values as the fallback); hairlines #e5e5e5; no new colours. */
+    .sf-cat-body {
         --sf-pdp-text: var(--sf-text, #1a1a1a);
         --sf-pdp-muted: var(--sf-muted, #6b6b6b);
         --sf-pdp-line: var(--sf-border, #d9d9d9);
+    }
+
+    .sf-cat-main {
+        grid-area: main;
+        min-width: 0;
+    }
+
+    .sf-cat-banner {
         margin-bottom: 1.5rem;
+    }
+
+    .sf-toolbar {
+        @apply flex flex-wrap items-center justify-between;
+        gap: 0.5rem 1rem;
+        margin-bottom: 1rem;
+    }
+
+    .sf-count {
+        @apply m-0;
+        font-size: 0.8125rem;
+        color: var(--sf-pdp-muted);
+    }
+
+    .sf-ftrigger {
+        @apply hidden cursor-pointer items-center border-0 bg-transparent p-0;
+        gap: 0.5rem;
+        min-height: 2.75rem;
+        font-size: 0.875rem;
+        color: var(--sf-pdp-text);
+    }
+
+    .sf-ftrigger-count {
+        color: var(--sf-pdp-muted);
+    }
+
+    .sf-ftrigger:focus-visible,
+    .sf-fdrawer-close:focus-visible,
+    .sf-fbtn:focus-visible,
+    .sf-sortdd-summary:focus-visible,
+    .sf-fgroup-summary:focus-visible {
+        outline: 2px solid var(--sf-pdp-text);
+        outline-offset: 2px;
+    }
+
+    /* the sort (a computer): a <details> of plain links on the right of the toolbar */
+    .sf-sortdd {
+        @apply relative;
+        font-size: 0.875rem;
+    }
+
+    .sf-sortdd-summary {
+        @apply cursor-pointer;
+        list-style: none;
+        color: var(--sf-pdp-text);
+    }
+
+    .sf-sortdd-summary::-webkit-details-marker {
+        display: none;
+    }
+
+    .sf-sortdd-summary::after,
+    .sf-fgroup-summary::after {
+        content: '';
+        display: inline-block;
+        width: 0.4375rem;
+        height: 0.4375rem;
+        margin-left: 0.5rem;
+        border-right: 1px solid currentColor;
+        border-bottom: 1px solid currentColor;
+        transform: translateY(-0.125rem) rotate(45deg);
+    }
+
+    .sf-sortdd-label {
+        color: var(--sf-pdp-muted);
+    }
+
+    .sf-sortdd-list {
+        @apply absolute m-0 list-none bg-white;
+        right: 0;
+        top: 100%;
+        z-index: 30;
+        min-width: 12rem;
+        margin-top: 0.375rem;
+        padding: 0.5rem 0;
+        border: 1px solid var(--sf-pdp-line);
+    }
+
+    .sf-sortdd-link {
+        @apply block no-underline;
+        padding: 0.375rem 1rem;
+        color: var(--sf-pdp-muted);
+    }
+
+    .sf-sortdd-link:hover,
+    .sf-sortdd-link[aria-current] {
+        color: var(--sf-pdp-text);
+    }
+
+    /* the filters form (placement-free parts) */
+    .sf-fdrawer {
+        grid-area: filters;
+    }
+
+    .sf-fdrawer-overlay,
+    .sf-fdrawer-head,
+    .sf-fsort {
+        display: none;
     }
 
     .sf-filters-head {
@@ -539,77 +647,92 @@
         text-decoration: underline;
     }
 
-    .sf-filters-grid {
-        @apply grid;
-        grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
-        gap: 1.5rem 2rem;
+    .sf-fgroup-summary {
+        @apply flex cursor-pointer items-center;
+        list-style: none;
     }
 
-    .sf-filter-name {
-        margin-bottom: 0.625rem;
+    .sf-fgroup-summary::-webkit-details-marker {
+        display: none;
+    }
+
+    .sf-fgroup-count {
+        margin-left: 0.25rem;
+        font-size: 0.75rem;
+        color: var(--sf-pdp-muted);
     }
 
     .sf-filter-values {
         @apply m-0 list-none p-0;
     }
 
-    .sf-fv {
-        color: var(--sf-pdp-muted);
-        text-decoration: none;
+    .sf-fvalues-links,
+    .sf-fvalues-swatches {
+        @apply flex flex-wrap;
+        gap: 0.5rem 1rem;
     }
 
-    .sf-fv:hover,
-    .sf-fv-on {
+    .sf-fvalues-swatches {
+        gap: 0.75rem;
+    }
+
+    /* a value is a label around a checkbox (or a radio) that is visually hidden but keeps the focus; the look is drawn on its siblings */
+    .sf-fv {
+        @apply relative inline-flex cursor-pointer items-center;
+        color: var(--sf-pdp-muted);
+    }
+
+    .sf-fv-input {
+        @apply absolute m-0;
+        opacity: 0;
+        width: 1px;
+        height: 1px;
+        pointer-events: none;
+    }
+
+    .sf-fv:hover {
         color: var(--sf-pdp-text);
     }
 
-    .sf-fv:focus-visible {
-        outline: 2px solid var(--sf-pdp-text);
-        outline-offset: 2px;
-    }
-
-    /* list: one value a line, a 14px square mark (drawn in CSS) that is ticked when selected; the whole line is the link */
     .sf-fv-list {
-        @apply flex items-center;
+        @apply flex;
         gap: 0.625rem;
         padding: 0.25rem 0;
         font-size: 0.875rem;
         color: var(--sf-pdp-text);
     }
 
-    .sf-fv-list::before {
-        content: '';
+    .sf-fv-mark {
         flex: none;
         box-sizing: border-box;
         width: 0.875rem;
         height: 0.875rem;
         border: 1px solid var(--sf-pdp-text);
-        background: transparent;
     }
 
-    .sf-fv-list.sf-fv-on::before {
+    .sf-fv-mark-round {
+        border-radius: 9999px;
+    }
+
+    .sf-fv-input:checked + .sf-fv-mark {
         background: var(--sf-pdp-text);
         box-shadow: inset 0 0 0 2px var(--sf-bg, #fafafa);
-    }
-
-    /* links: the values in one wrapping line, 16px apart; selected = text colour and underline, the others muted */
-    .sf-filter-links .sf-filter-values,
-    .sf-filter-swatches .sf-filter-values {
-        @apply flex flex-wrap;
-        gap: 0.5rem 1rem;
     }
 
     .sf-fv-link {
         font-size: 0.875rem;
     }
 
-    .sf-fv-link.sf-fv-on {
+    .sf-fv-input:checked + .sf-fv-text {
+        color: var(--sf-pdp-text);
         text-decoration: underline;
     }
 
-    /* swatches: 24px circles with a hairline ring; selected = the product page's ring (1px, 3px outside) */
+    .sf-fv-list .sf-fv-input:checked + .sf-fv-mark + .sf-fv-text {
+        text-decoration: none;
+    }
+
     .sf-fv-dot {
-        @apply inline-flex;
         width: 1.5rem;
         height: 1.5rem;
         border-radius: 9999px;
@@ -620,8 +743,331 @@
         box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.12);
     }
 
-    .sf-fv-dot.sf-fv-on {
-        box-shadow: 0 0 0 3px var(--sf-bg, #fafafa), 0 0 0 4px var(--sf-pdp-text);
+    .sf-fv-input:checked + .sf-fv-circle {
+        box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.12), 0 0 0 3px var(--sf-bg, #fafafa), 0 0 0 4px var(--sf-pdp-text);
+    }
+
+    .sf-fv-input:focus-visible + .sf-fv-mark,
+    .sf-fv-input:focus-visible + .sf-fv-text,
+    .sf-fv-input:focus-visible + .sf-fv-circle {
+        outline: 2px solid var(--sf-pdp-text);
+        outline-offset: 2px;
+    }
+
+    .sf-fbtn {
+        @apply inline-flex cursor-pointer items-center justify-center no-underline;
+        min-height: 2.5rem;
+        padding: 0 1.25rem;
+        font-size: 0.875rem;
+    }
+
+    .sf-fbtn-primary {
+        border: 1px solid var(--sf-primary, #171717);
+        border-radius: var(--sf-r-btn, 0);
+        background: var(--sf-btn-bg, var(--sf-primary, #171717));
+        color: var(--sf-btn-text, var(--sf-on-primary, #fff));
+        font-weight: 600;
+    }
+
+    .sf-fbtn-secondary {
+        border: 1px solid var(--sf-pdp-line);
+        background: transparent;
+        color: var(--sf-pdp-text);
+    }
+
+    /* a computer, «Цяла ширина»: a bar above the list; each group is a dropdown, «Филтрирай» / «Изчисти» at the end, the chips row below */
+    .sf-cat-layout-full .sf-filters-form {
+        @apply relative flex flex-wrap items-start;
+        gap: 0.75rem 0.75rem;
+        margin-bottom: 1.25rem;
+    }
+
+    .sf-cat-layout-full .sf-fdrawer-body {
+        display: contents;
+    }
+
+    .sf-cat-layout-full .sf-fgroups {
+        @apply flex flex-wrap;
+        gap: 0.5rem 0.75rem;
+        order: 1;
+    }
+
+    .sf-cat-layout-full .sf-fdrawer-foot {
+        @apply flex;
+        gap: 0.5rem;
+        order: 2;
+    }
+
+    .sf-cat-layout-full .sf-filters-head {
+        order: 3;
+        flex: 1 0 100%;
+        margin: 0.25rem 0 0;
+    }
+
+    .sf-cat-layout-full .sf-fgroup {
+        @apply relative;
+    }
+
+    .sf-cat-layout-full .sf-fgroup-summary {
+        min-height: 2.5rem;
+        padding: 0 0.875rem;
+        border: 1px solid var(--sf-pdp-line);
+        background: #fff;
+    }
+
+    .sf-cat-layout-full .sf-fgroup-panel {
+        @apply absolute bg-white;
+        left: 0;
+        top: 100%;
+        z-index: 30;
+        min-width: 14rem;
+        max-height: 20rem;
+        overflow-y: auto;
+        margin-top: 0.25rem;
+        padding: 0.75rem 1rem;
+        border: 1px solid var(--sf-pdp-line);
+    }
+
+    /* a computer, «Със страничен панел»: a fixed 17rem panel and the list beside it, on the chosen side (CSS only: the panel is first in the DOM) */
+    .sf-cat-layout-sidebar .sf-cat-body {
+        @apply grid items-start;
+        grid-template-columns: 17rem minmax(0, 1fr);
+        grid-template-areas: 'filters main';
+        gap: 2rem;
+    }
+
+    .sf-cat-layout-sidebar.sf-cat-side-right .sf-cat-body {
+        grid-template-columns: minmax(0, 1fr) 17rem;
+        grid-template-areas: 'main filters';
+    }
+
+    .sf-cat-layout-sidebar .sf-fgroup {
+        padding: 0.75rem 0;
+        border-bottom: 1px solid var(--sf-pdp-line);
+    }
+
+    .sf-cat-layout-sidebar .sf-fgroup-summary::after {
+        margin-left: auto;
+    }
+
+    .sf-cat-layout-sidebar .sf-fgroup-panel {
+        padding-top: 0.625rem;
+    }
+
+    .sf-cat-layout-sidebar .sf-fdrawer-foot {
+        @apply flex;
+        gap: 0.5rem;
+        margin-top: 1rem;
+    }
+
+    /* below 64rem the form lives in a drawer that slides in from the side like the menu drawer (the script opens it); the groups are stacked accordions */
+    @media (max-width: 63.999rem) {
+        .sf-ftrigger {
+            @apply inline-flex;
+        }
+
+        .sf-sortdd {
+            display: none;
+        }
+
+        .sf-fsort {
+            @apply block;
+            margin: 0 0 0.5rem;
+            padding: 0 0 0.75rem;
+            border: 0;
+            border-bottom: 1px solid var(--sf-pdp-line);
+        }
+
+        .sf-fsort legend {
+            padding: 0 0 0.5rem;
+        }
+
+        .sf-fdrawer {
+            position: fixed;
+            inset: 0;
+            z-index: 60;
+            visibility: hidden;
+            pointer-events: none;
+        }
+
+        .sf-fdrawer-open {
+            visibility: visible;
+            pointer-events: auto;
+        }
+
+        .sf-fdrawer-overlay {
+            @apply absolute block;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.45);
+            opacity: 0;
+            transition: opacity 200ms ease;
+        }
+
+        .sf-fdrawer-open .sf-fdrawer-overlay {
+            opacity: 1;
+        }
+
+        .sf-fdrawer-panel {
+            @apply absolute flex flex-col bg-white;
+            top: 0;
+            bottom: 0;
+            right: 0;
+            width: min(90vw, 24rem);
+            transform: translateX(100%);
+            transition: transform 200ms ease;
+            color: var(--sf-pdp-text);
+        }
+
+        .sf-fdrawer-open .sf-fdrawer-panel {
+            transform: none;
+        }
+
+        .sf-fdrawer-head {
+            @apply flex flex-none items-center justify-between;
+            padding: 0 0.5rem 0 1.25rem;
+            border-bottom: 1px solid var(--sf-pdp-line);
+        }
+
+        .sf-fdrawer-title {
+            @apply m-0;
+            font-size: 0.9375rem;
+            font-weight: 500;
+        }
+
+        .sf-fdrawer-close {
+            @apply inline-flex cursor-pointer items-center justify-center border-0 bg-transparent;
+            width: 2.75rem;
+            height: 2.75rem;
+            color: inherit;
+        }
+
+        .sf-filters-form,
+        .sf-cat-layout-full .sf-filters-form {
+            @apply flex min-h-0 flex-1 flex-col;
+            gap: 0;
+            margin: 0;
+        }
+
+        .sf-fdrawer-body,
+        .sf-cat-layout-full .sf-fdrawer-body {
+            display: block;
+            flex: 1 1 auto;
+            overflow-y: auto;
+            padding: 1rem 1.25rem;
+        }
+
+        .sf-cat-layout-full .sf-fgroups,
+        .sf-cat-layout-full .sf-filters-head {
+            display: block;
+            order: 0;
+        }
+
+        .sf-cat-layout-full .sf-filters-head,
+        .sf-filters-head {
+            @apply flex;
+            margin: 0 0 1rem;
+        }
+
+        .sf-fgroup,
+        .sf-cat-layout-full .sf-fgroup,
+        .sf-cat-layout-sidebar .sf-fgroup {
+            @apply static;
+            padding: 0.75rem 0;
+            border-bottom: 1px solid var(--sf-pdp-line);
+        }
+
+        .sf-fgroup-summary,
+        .sf-cat-layout-full .sf-fgroup-summary {
+            min-height: 0;
+            padding: 0;
+            border: 0;
+            background: transparent;
+        }
+
+        .sf-fgroup-summary::after {
+            margin-left: auto;
+        }
+
+        .sf-fgroup-panel,
+        .sf-cat-layout-full .sf-fgroup-panel,
+        .sf-cat-layout-sidebar .sf-fgroup-panel {
+            @apply static;
+            min-width: 0;
+            max-height: none;
+            margin: 0;
+            padding: 0.625rem 0 0;
+            border: 0;
+        }
+
+        .sf-fdrawer-foot,
+        .sf-cat-layout-full .sf-fdrawer-foot,
+        .sf-cat-layout-sidebar .sf-fdrawer-foot {
+            @apply flex flex-none;
+            order: 0;
+            gap: 0.75rem;
+            margin: 0;
+            padding: 1rem 1.25rem;
+            border-top: 1px solid var(--sf-pdp-line);
+            background: #fff;
+        }
+
+        .sf-fdrawer-foot .sf-fbtn {
+            flex: 1 1 0;
+        }
+
+        .sf-cat-layout-sidebar .sf-cat-body {
+            display: block;
+        }
+
+        /* the sort in the toolbar is replaced by the drawer's radios; the trigger is on the left, the count on the right */
+        .sf-toolbar .sf-count {
+            margin-left: auto;
+        }
+    }
+
+    /* without the script the drawer is a plain block above the list (as the menu drawer is under the header) and the trigger is not shown; the bar's dropdowns open in the flow */
+    @media (scripting: none) {
+        .sf-ftrigger {
+            display: none;
+        }
+
+        .sf-cat-layout-full .sf-fgroup-panel {
+            @apply static;
+            min-width: 0;
+            max-height: none;
+        }
+    }
+
+    @media (max-width: 63.999rem) and (scripting: none) {
+        .sf-fdrawer {
+            position: static;
+            visibility: visible;
+            pointer-events: auto;
+        }
+
+        .sf-fdrawer-overlay,
+        .sf-fdrawer-close {
+            display: none;
+        }
+
+        .sf-fdrawer-panel {
+            position: static;
+            width: auto;
+            transform: none;
+            border: 1px solid var(--sf-pdp-line);
+            margin-bottom: 1rem;
+        }
+
+        .sf-fdrawer-head {
+            display: flex;
+        }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .sf-fdrawer-overlay,
+        .sf-fdrawer-panel {
+            transition: none;
+        }
     }
 
     .sf-pagination-ellipsis {

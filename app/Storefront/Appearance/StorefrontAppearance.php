@@ -491,6 +491,19 @@ final class StorefrontAppearance
         return (int) $values['per_page'];
     }
 
+    /**
+     * CD-1b: the PUBLISHED layout of the category page (`full` | `sidebar`) and the side of the panel (`left` | `right`), from the same cached payload as the page size (no query), validated again against
+     * the closed lists; today's `full` / `left` for a shop that never set them. The admin's signed preview carries the working copy for ONE request. A draft is never read otherwise.
+     *
+     * @return array{layout: string, side: string}
+     */
+    public function catalogLayout(): array
+    {
+        $values = $this->catalogOverride ?? PageDesign::catalogValues(is_string($this->data()['catalog'] ?? null) ? $this->data()['catalog'] : null);
+
+        return ['layout' => (string) $values['layout'], 'side' => (string) $values['side']];
+    }
+
     public function themeKey(): ?string
     {
         return $this->data()['theme'];

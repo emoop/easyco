@@ -19,7 +19,7 @@ final class CatalogZone extends PageDesignZone
     protected function groups(): array
     {
         return [
-            ['heading' => 'design.page_design.groups.catalog', 'fields' => ['cols', 'cols_phone', 'per_page']],
+            ['heading' => 'design.page_design.groups.catalog', 'fields' => ['cols', 'cols_phone', 'per_page', 'layout', 'side']],
         ];
     }
 

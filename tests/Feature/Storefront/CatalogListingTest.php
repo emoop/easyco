@@ -72,7 +72,7 @@ class CatalogListingTest extends TestCase
 
         $this->assertSame(24, substr_count($html, 'class="sf-card"'), 'the default size is today\'s 24');
         $this->assertStringContainsString('<div class="sf-grid">', $html);
-        $this->assertStringNotContainsString('sf-cat-', $html);
+        $this->assertStringNotContainsString('--sf-cat-', $html);
         $this->assertStringNotContainsString('rel="stylesheet" href="/storage/appearance/tokens-', $html, 'no token stylesheet for a shop that changed nothing');
         $this->assertNull($this->css());
         $this->assertSame([], Storage::disk('public')->files('appearance'));
@@ -234,12 +234,12 @@ class CatalogListingTest extends TestCase
         $this->products(2);
         $view = file_get_contents(resource_path('views/storefront/category.blade.php'));
 
-        $this->assertStringContainsString("@yield('listing_filters')", $view, 'the clearly named empty slot');
+        $this->assertStringContainsString("@include('storefront.partials.filters'", $view, 'the filters form (CD-1b) is one partial for every placement');
         $this->assertStringContainsString("@include('storefront.partials.pagination'", $view);
         $this->assertSame(1, preg_match_all('#Route::get\(.*(listing|tag|brand|search|season)#i', (string) file_get_contents(base_path('routes/storefront.php'))) + 1, 'no route for another listing was added');
 
         $html = $this->get('/product-category/clothing')->assertOk()->getContent();
-        $this->assertSame(1, substr_count($html, 'class="sf-listing sf-category"'));
+        $this->assertSame(1, substr_count($html, 'class="sf-listing sf-category sf-cat-layout-full sf-cat-side-left"'));
     }
 
     public function test_the_page_stays_sessionless_without_inline_style_or_script(): void

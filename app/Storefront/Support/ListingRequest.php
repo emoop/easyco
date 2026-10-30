@@ -31,7 +31,7 @@ final class ListingRequest
 
         $query = ListingQuery::fromRequestArray($input);
 
-        if ($query->sort === ListingSort::PRICE_ASC || $query->sort === ListingSort::PRICE_DESC) {
+        if (! in_array($query->sort, ListingSort::storefrontOptions(), true)) {
             throw new InvalidListingQuery('sort', 'is not available yet');
         }
 

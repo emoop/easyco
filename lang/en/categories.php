@@ -13,6 +13,8 @@ return [
         'products_count' => 'Products',
     ],
 
+    'header_block' => 'Block on top',
+    'header_block_help' => 'A full-width banner above the list of this category.',
     'picture_help' => 'Shown on the category page and in the category tiles. The picture stays in Media if you remove it here.',
 
     'products_count' => [

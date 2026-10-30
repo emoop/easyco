@@ -21,6 +21,8 @@ final readonly class CategoryPage
         public int $productCount,
         public array $breadcrumbs,
         public array $children,
+        /** CD-1b: the HTML block shown as the category's banner (an id), or null */
+        public ?int $headerBlockId = null,
     ) {
     }
 

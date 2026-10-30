@@ -237,7 +237,7 @@ return [
     // GL-2: «Page and cards» and «Product page»: the plain-value sections
     'page_design' => [
         'schema_page' => 'These values apply to the whole shop: the side padding of the content and the border and corners of the product cards (separately for desktop and phone). Everything is at its default until you change something.',
-        'schema_catalog' => 'How many columns and how many products per page the product listing (the category page) shows. On a tablet the columns are automatic, at most 3. The home page is not changed. The layout and the side panel come with the filters.',
+        'schema_catalog' => 'How many columns and how many products per page the product listing (the category page) shows. On a tablet the columns are automatic, at most 3. The home page is not changed. The filters sit in a bar above the list or in a side panel (left or right); on a phone and a tablet they are in a drawer.',
         'schema_product' => 'The layout and the spacing of the gallery and of the right column of the product page. The gallery modes are separate for desktop and phone.',
         'unit_note' => 'Lengths are in pixels (px). The decimal mark is a dot (for example 4.5).',
         'groups' => [
@@ -269,6 +269,8 @@ return [
             'cols' => 'Columns on desktop',
             'cols_phone' => 'Columns on phone',
             'per_page' => 'Products per page',
+            'layout' => 'Layout',
+            'side' => 'Side panel',
         ],
         'hints' => [
             'pad_min' => 'The least room at the sides of the content (8 to 48). Default 16.',
@@ -290,6 +292,8 @@ return [
             'cols' => 'How many products sit in a row on a computer (3, 4 or 5). Default 4.',
             'cols_phone' => 'How many products sit in a row on a phone (1 or 2). Default 2.',
             'per_page' => 'How many products one page of the list shows (12, 20, 24, 36, 48, 60 or 72). Default 24.',
+            'layout' => 'Where the filters sit on a computer: in a bar above the list («Full width») or in a side panel beside the list. On a phone and a tablet the filters are always in a drawer. Default «Full width».',
+            'side' => 'Which side the panel is on (only with the side panel). Default «Left».',
         ],
         'options' => [
             'gallery_desktop_mode' => ['grid' => '2-column grid', 'thumbs-left' => 'Small photos on the left', 'thumbs-below' => 'Small photos below'],
@@ -299,6 +303,8 @@ return [
             'cols' => ['3' => '3 columns', '4' => '4 columns', '5' => '5 columns'],
             'cols_phone' => ['1' => '1 column', '2' => '2 columns'],
             'per_page' => ['12' => '12', '20' => '20', '24' => '24', '36' => '36', '48' => '48', '60' => '60', '72' => '72'],
+            'layout' => ['full' => 'Full width', 'sidebar' => 'With a side panel'],
+            'side' => ['left' => 'Left', 'right' => 'Right'],
             'gallery_hover_zoom' => ['light' => 'Light', 'medium' => 'Medium', 'off' => 'Off'],
         ],
         'errors' => [
