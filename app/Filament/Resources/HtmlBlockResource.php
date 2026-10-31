@@ -4,6 +4,7 @@ namespace App\Filament\Resources;
 
 use App\Content\HtmlBlocks\HtmlBlockModel;
 use App\Content\HtmlBlocks\HtmlBlockPictures;
+use App\Content\HtmlBlocks\HtmlBlockBackground;
 use App\Content\HtmlBlocks\HtmlBlockStyle;
 use App\Content\HtmlBlocks\HtmlBlockUsage;
 use App\Filament\Concerns\AuthorizesViaStaffPermission;
@@ -271,6 +272,8 @@ class HtmlBlockResource extends Resource
             ->native(false)->live()
             ->options(array_combine($values, array_map(static fn (string $v): string => (string) __('html_blocks.style.options.'.$key.'.'.$v), $values)));
 
+        $withPicture = static fn (Get $get): bool => filled($get('style.bg_image'));
+
         return Section::make(__('html_blocks.style.title'))
             ->compact()
             ->collapsible()
@@ -289,6 +292,18 @@ class HtmlBlockResource extends Resource
                 $number('width_px')->visible(static fn (Get $get): bool => $get('style.width_mode') === 'fixed'),
                 $options('align', HtmlBlockStyle::ALIGNS),
                 $options('size', HtmlBlockStyle::SIZES),
+                // HB-4: a background picture from the media library (its id is the whole value) and, only with a picture, how it fills the box, how dark the veil is, the minimum height and the text's place in it
+                MediaPicker::make('style.bg_image')
+                    ->label(__('html_blocks.style.fields.bg_image'))
+                    ->helperText(__('html_blocks.style.hints.bg_image'))
+                    ->plainImagesOnly()
+                    ->live()
+                    ->columnSpanFull(),
+                $options('bg_size', HtmlBlockStyle::BG_SIZES)->visible($withPicture),
+                $options('bg_position', HtmlBlockStyle::BG_POSITIONS)->visible($withPicture),
+                $options('overlay', array_map('strval', HtmlBlockStyle::OVERLAYS))->visible($withPicture),
+                $options('min_height', array_map('strval', HtmlBlockStyle::MIN_HEIGHTS))->visible($withPicture),
+                $options('valign', HtmlBlockStyle::VALIGNS)->visible($withPicture),
                 Text::make(static fn (Get $get): HtmlString => new HtmlString(view('filament.resources.html-block.style-preview', [
                     'declarations' => HtmlBlockStyle::previewDeclarations($get('style')),
                     'sample' => (string) ($get('title') ?: __('html_blocks.style.sample')),
@@ -313,6 +328,11 @@ class HtmlBlockResource extends Resource
     public static function styleFromForm(mixed $style, ?int $recordId): ?array
     {
         [$clean, $errors] = HtmlBlockStyle::validate($style);
+
+        // HB-4: the picture must be an image of the library
+        if (! isset($errors['bg_image']) && $clean['bg_image'] !== null && ! HtmlBlockBackground::isPicture($clean['bg_image'])) {
+            $errors['bg_image'] = (string) __('html_blocks.style.errors.bad_picture');
+        }
 
         if ($errors === [] && HtmlBlockStyle::isSet($clean) && HtmlBlockStyle::capReached($recordId)) {
             $errors = ['bg' => (string) __('html_blocks.style.errors.too_many', ['max' => HtmlBlockStyle::MAX_STYLED])];

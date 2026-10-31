@@ -44,11 +44,17 @@ return [
         'clear' => 'No style',
         'contrast_warning' => 'Low contrast (:ratio:1): the text may be hard to read. At least 4.5:1 is recommended. You can save it anyway.',
         'fields' => [
-            'bg' => 'Background', 'color' => 'Text colour', 'pad_v' => 'Vertical padding (px)', 'pad_h' => 'Horizontal padding (px)', 'border_w' => 'Border width (px)',
+            'bg' => 'Background', 'bg_image' => 'Background picture', 'bg_size' => 'Picture size', 'bg_position' => 'Position', 'overlay' => 'Darkening', 'min_height' => 'Minimum height', 'valign' => 'Text vertically', 'color' => 'Text colour', 'pad_v' => 'Vertical padding (px)', 'pad_h' => 'Horizontal padding (px)', 'border_w' => 'Border width (px)',
             'border_color' => 'Border colour', 'radius' => 'Corner radius (px)', 'width_mode' => 'Width', 'width_px' => 'Width in px', 'align' => 'Alignment', 'size' => 'Text size',
         ],
         'hints' => [
             'bg' => 'A colour like #1a2b3c. «none» = no background.',
+            'bg_image' => 'A picture from «Media» (or upload a new one). Good for a banner: the text sits on it. «Remove» takes it off the block (the file stays in Media).',
+            'bg_size' => 'Default «Fill»: the picture covers the whole box.',
+            'bg_position' => 'Which part of the picture shows when the box crops it. Default centre.',
+            'overlay' => 'Darkens the picture so the text can be read. Light text on a dark picture: set the text colour.',
+            'min_height' => 'How tall the box is, even with little text. The same height on a phone.',
+            'valign' => 'Where the text sits in that height (works with a minimum height). Default top.',
             'color' => 'A colour like #1a2b3c. «none» = the colour of the place.',
             'pad_v' => 'Top and bottom, 0 to 64 (default 0).',
             'pad_h' => 'Left and right, 0 to 64 (default 0).',
@@ -61,12 +67,14 @@ return [
             'size' => 'As the place by default.',
         ],
         'options' => [
+            'bg_size' => ['cover' => 'Fill', 'contain' => 'Fit whole'], 'bg_position' => ['center' => 'Center', 'top' => 'Top', 'bottom' => 'Bottom', 'left' => 'Left', 'right' => 'Right'], 'overlay' => ['0' => 'No darkening', '20' => 'Light', '40' => 'Medium', '60' => 'Strong'], 'min_height' => ['0' => 'None', '160' => 'Low', '240' => 'Medium', '320' => 'High', '400' => 'Very high'], 'valign' => ['top' => 'Top', 'center' => 'Middle', 'bottom' => 'Bottom'],
             'width_mode' => ['auto' => 'As wide as the content', 'full' => 'Full width', 'fixed' => 'Fixed'],
             'align' => ['left' => 'Left', 'center' => 'Centre', 'right' => 'Right'],
             'size' => ['small' => 'Small', 'normal' => 'Normal', 'large' => 'Large'],
         ],
         'errors' => [
             'bad_style' => 'Invalid style.',
+            'bad_picture' => 'Choose a picture from Media.',
             'unknown_key' => 'Unknown field: :key.',
             'bad_color' => 'A colour like #1a2b3c.',
             'bad_number' => 'A whole number from 0 to :max.',

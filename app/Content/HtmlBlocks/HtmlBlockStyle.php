@@ -38,10 +38,26 @@ final class HtmlBlockStyle
 
     public const WIDTH_MAX = 800;
 
+    /** HB-4: the closed lists of the background picture's choices. */
+    public const BG_SIZES = ['cover', 'contain'];
+
+    public const BG_POSITIONS = ['center', 'top', 'bottom', 'left', 'right'];
+
+    public const OVERLAYS = [0, 20, 40, 60];
+
+    public const MIN_HEIGHTS = [0, 160, 240, 320, 400];
+
+    public const VALIGNS = ['top', 'center', 'bottom'];
+
+    /** The keys that mean something only with a picture (`bg_image`). */
+    public const PICTURE_KEYS = ['bg_size', 'bg_position', 'overlay', 'min_height', 'valign'];
+
     /** @var array<string, mixed> every key with its default */
     public const DEFAULTS = [
         'bg' => null, 'color' => null, 'pad_v' => 0, 'pad_h' => 0, 'border_w' => 0, 'border_color' => null, 'radius' => 0,
         'width_mode' => 'auto', 'width_px' => null, 'align' => 'left', 'size' => 'normal',
+        // HB-4: a background picture of the library (a media id), how it fills the box, how dark the veil over it is, a minimum height and where the content sits in it
+        'bg_image' => null, 'bg_size' => 'cover', 'bg_position' => 'center', 'overlay' => 0, 'min_height' => 0, 'valign' => 'top',
     ];
 
     private const FONT_SIZES = ['small' => '0.875rem', 'large' => '1.25rem'];
@@ -134,6 +150,40 @@ final class HtmlBlockStyle
             FieldKinds::int($widthPx, self::WIDTH_MIN, self::WIDTH_MAX, 'width_px', 'bad_width', ['min' => self::WIDTH_MIN, 'max' => self::WIDTH_MAX], $fail);
         }
 
+        // HB-4: the picture is a media id (a positive whole number; that it is a picture of the library is checked by the form and, again, when the stylesheet is built); the keys that only make sense with
+        // a picture are ignored (and not stored) without one
+        $image = $style['bg_image'] ?? null;
+
+        if (! $empty($image)) {
+            $id = is_int($image) ? $image : (is_string($image) && preg_match('/\A[1-9][0-9]{0,17}\z/', $image) === 1 ? (int) $image : null);
+
+            if ($id === null || $id < 1) {
+                $fail('bg_image', 'bad_picture');
+            } else {
+                $clean['bg_image'] = $id;
+
+                foreach (['bg_size' => self::BG_SIZES, 'bg_position' => self::BG_POSITIONS, 'valign' => self::VALIGNS] as $key => $set) {
+                    $value = $style[$key] ?? null;
+
+                    if (! $empty($value)) {
+                        in_array($value, $set, true) ? $clean[$key] = $value : $fail($key, 'bad_choice');
+                    }
+                }
+
+                foreach (['overlay' => self::OVERLAYS, 'min_height' => self::MIN_HEIGHTS] as $key => $set) {
+                    $value = $style[$key] ?? null;
+
+                    if ($empty($value)) {
+                        continue;
+                    }
+
+                    $int = is_int($value) ? $value : (is_string($value) && preg_match('/\A(?:0|[1-9][0-9]{0,5})\z/', $value) === 1 ? (int) $value : null);
+
+                    $int !== null && in_array($int, $set, true) ? $clean[$key] = $int : $fail($key, 'bad_choice');
+                }
+            }
+        }
+
         return [$clean, $errors];
     }
 
@@ -187,14 +237,21 @@ final class HtmlBlockStyle
      * The ONE rule of a block: `.sf-hb-{id}{declarations}`, from a closed template. The style is validated HERE (an invalid one throws), so the template only ever prints validated values; px are
      * written as `Npx`, numbers with no locale, colours lower case. A style that is not set has no rule ('').
      *
+     * HB-4: `$imageUrl` is the address of the style's background picture, resolved from the media id by HtmlBlockBackground (null = the picture is gone or unusable): the block then compiles WITHOUT its
+     * picture keys, exactly as if it had none.
+     *
      * @throws InvalidArgumentException a style that does not validate
      */
-    public static function css(int $id, mixed $style): string
+    public static function css(int $id, mixed $style, ?string $imageUrl = null): string
     {
         [$clean, $errors] = self::validate($style);
 
         if ($errors !== []) {
             throw new InvalidArgumentException('The block style is not valid.');
+        }
+
+        if ($clean['bg_image'] !== null && ($imageUrl === null || ! HtmlBlockBackground::isLibraryPath($imageUrl))) {
+            $clean = array_replace($clean, array_intersect_key(self::DEFAULTS, array_flip(['bg_image', ...self::PICTURE_KEYS])));
         }
 
         if (! self::isSet($clean)) {
@@ -219,8 +276,18 @@ final class HtmlBlockStyle
         $size = isset(self::FONT_SIZES[$clean['size']]) ? 'font-size:'.self::FONT_SIZES[$clean['size']] : null;
         $align ??= null;
 
+        // HB-4: the picture's declarations, appended to the rule (the content stays a normal block flow inside; the flex column only places it vertically, and only when the box has a minimum height)
+        $picture = [];
+
+        if ($clean['bg_image'] !== null) {
+            $veil = $clean['overlay'] > 0 ? 'linear-gradient(rgba(0,0,0,.'.($clean['overlay'] / 10).'),rgba(0,0,0,.'.($clean['overlay'] / 10).')),' : '';
+            array_push($picture, 'background-image:'.$veil.'url('.$imageUrl.')', 'background-size:'.$clean['bg_size'], 'background-position:'.$clean['bg_position'], 'background-repeat:no-repeat');
+            $clean['min_height'] > 0 && $picture[] = 'min-height:'.$clean['min_height'].'px';
+            $clean['min_height'] > 0 && $clean['valign'] !== 'top' && array_push($picture, 'display:flex', 'flex-direction:column', 'justify-content:'.($clean['valign'] === 'center' ? 'center' : 'flex-end'));
+        }
+
         // «auto» (as wide as the content) is what a styled box does by default; on its own it is nothing to print (a style that only names a border colour has no border to colour)
-        if ($d === [] && $align === null && $size === null && $clean['width_mode'] === 'auto') {
+        if ($d === [] && $align === null && $size === null && $picture === [] && $clean['width_mode'] === 'auto') {
             return '';
         }
 
@@ -240,7 +307,7 @@ final class HtmlBlockStyle
         $align !== null && $d[] = $align;
         $size !== null && $d[] = $size;
 
-        return '.'.self::className($id).'{'.implode(';', $d).'}';
+        return '.'.self::className($id).'{'.implode(';', [...$d, ...$picture]).'}';
     }
 
     /** Is this string exactly one rule of the closed template (checked again by the token compiler)? The pattern covers the WHOLE rule: nothing else can ride along. */
@@ -261,9 +328,19 @@ final class HtmlBlockStyle
             'margin-right:auto',
             'text-align:(?:center|right)',
             'font-size:(?:0\.875|1\.25)rem',
+            // HB-4: the background picture: ONLY an address of our own storage (HtmlBlockBackground::URL_PATH, the very pattern the resolver uses) with an optional black veil of exactly 20, 40 or 60 percent
+            '(?:background-image:(?:linear-gradient\(rgba\(0,0,0,\.2\),rgba\(0,0,0,\.2\)\),|linear-gradient\(rgba\(0,0,0,\.4\),rgba\(0,0,0,\.4\)\),|linear-gradient\(rgba\(0,0,0,\.6\),rgba\(0,0,0,\.6\)\),)?url\('.HtmlBlockBackground::URL_PATH.'\))',
+            'background-size:(?:cover|contain)',
+            'background-position:(?:center|top|bottom|left|right)',
+            'background-repeat:no-repeat',
+            'min-height:(?:160|240|320|400)px',
+            'display:flex',
+            'flex-direction:column',
+            'justify-content:(?:center|flex-end)',
         ]).')';
 
-        return preg_match('/\A\.sf-hb-[1-9][0-9]{0,9}\{'.$declaration.'(?:;'.$declaration.')*\}\z/', $rule) === 1;
+        // `~` is the delimiter: the picture's address has slashes in it
+        return preg_match('~\A\.sf-hb-[1-9][0-9]{0,9}\{'.$declaration.'(?:;'.$declaration.')*\}\z~', $rule) === 1;
     }
 
     /** The wrapper of a styled block's HTML; an empty HTML has nothing to wrap. */
@@ -285,10 +362,18 @@ final class HtmlBlockStyle
             return $rules;
         }
 
+        $styled = [];
+
         foreach (DB::table('html_blocks')->whereNotNull('style')->orderBy('id')->limit(self::MAX_STYLED)->get(['id', 'style']) as $row) {
             $style = self::active($row->style);
+            $style !== null && $styled[(int) $row->id] = $style;
+        }
 
-            $rule = $style === null ? '' : self::css((int) $row->id, $style);
+        // HB-4: the addresses of every background picture, resolved at once (one query); a picture that is gone has none and its block compiles without it
+        $urls = HtmlBlockBackground::urls(array_values(array_filter(array_column($styled, 'bg_image'))));
+
+        foreach ($styled as $id => $style) {
+            $rule = self::css($id, $style, $style['bg_image'] === null ? null : ($urls[$style['bg_image']] ?? null));
 
             $rule !== '' && $rules[] = $rule;
         }
@@ -310,6 +395,11 @@ final class HtmlBlockStyle
         }
 
         $style['width_px'] = $style['width_px'] === null ? '' : (string) $style['width_px'];
+
+        // HB-4: the selects hold strings
+        foreach (['overlay', 'min_height'] as $key) {
+            $style[$key] = (string) $style[$key];
+        }
 
         return $style;
     }
@@ -340,7 +430,8 @@ final class HtmlBlockStyle
             return '';
         }
 
-        $rule = self::css(1, $style);
+        $image = is_array($style) && filled($style['bg_image'] ?? null) ? HtmlBlockBackground::urlFor((int) $style['bg_image']) : null;
+        $rule = self::css(1, $style, $image);
 
         return $rule === '' ? '' : substr($rule, strpos($rule, '{') + 1, -1);
     }

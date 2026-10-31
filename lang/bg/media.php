@@ -17,6 +17,7 @@ return [
         'attribute_value' => 'Стойност „:value“ на атрибут „:attribute“',
         'season' => 'Сезон „:name“',
         'html_block' => 'HTML блок „:name“ — снимка :n',
+        'html_block_background' => 'HTML блок „:name“ — фонова снимка',
         'html_block_body' => 'HTML блок „:name“ — в текста',
         'design' => 'Дизайн — :zone',
         'draft' => '(чернова)',

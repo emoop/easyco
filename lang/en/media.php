@@ -17,6 +17,7 @@ return [
         'attribute_value' => 'Value “:value” of attribute “:attribute”',
         'season' => 'Season “:name”',
         'html_block' => 'HTML block “:name” — picture :n',
+        'html_block_background' => 'HTML block “:name” — background picture',
         'html_block_body' => 'HTML block “:name” — in the text',
         'design' => 'Design — :zone',
         'draft' => '(draft)',
