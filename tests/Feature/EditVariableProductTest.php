@@ -2633,4 +2633,108 @@ class EditVariableProductTest extends TestCase
 
         $this->assertSame(1, $unknownTabTabs->getActiveTab());
     }
+
+    // ---- BUG-COST-1: «Задай себестойност за всички варианти» starts from the saved cost ---------------------------------------------------------
+
+    /** @param  array<int, ?string>  $costs  variation id => saved cost (null = none) */
+    private function saveCosts(array $costs): void
+    {
+        foreach ($costs as $id => $cost) {
+            $cost !== null && app(ProductPricingAndStock::class)->writeCost((string) $id, $cost);
+        }
+    }
+
+    public function test_the_bulk_cost_field_shows_the_cost_every_variation_has(): void
+    {
+        $this->actingAsPanelAdministrator();
+        app()->setLocale('en');
+        [$product, $black, $white] = $this->persistedVariableProductWithTwoVariations();
+        $this->saveCosts([$black => '12.50', $white => '12.50']);
+
+        $component = Livewire::test(EditVariableProduct::class, ['record' => ProductModel::find($product->id())->id])->set('data.edit_all', true);
+
+        $component->assertSet('data.bulk_cost', '12.50')->assertSet('data.bulk_cost_mixed', false);
+        $this->assertStringNotContainsString('placeholder="Different values"', $component->html());
+    }
+
+    public function test_different_costs_leave_the_field_empty_with_the_different_values_placeholder(): void
+    {
+        $this->actingAsPanelAdministrator();
+        app()->setLocale('en');
+        [$product, $black, $white] = $this->persistedVariableProductWithTwoVariations();
+        $this->saveCosts([$black => '12.50', $white => '9.00']);
+
+        $component = Livewire::test(EditVariableProduct::class, ['record' => ProductModel::find($product->id())->id])->set('data.edit_all', true);
+
+        $component->assertSet('data.bulk_cost', null)->assertSet('data.bulk_cost_mixed', true);
+        $this->assertStringContainsString('placeholder="Different values"', $component->html());
+    }
+
+    public function test_only_some_variations_having_a_cost_is_different_values_too(): void
+    {
+        $this->actingAsPanelAdministrator();
+        [$product, $black, $white] = $this->persistedVariableProductWithTwoVariations();
+        $this->saveCosts([$black => '12.50', $white => null]);
+
+        Livewire::test(EditVariableProduct::class, ['record' => ProductModel::find($product->id())->id])
+            ->assertSet('data.bulk_cost', null)->assertSet('data.bulk_cost_mixed', true);
+    }
+
+    public function test_no_cost_at_all_is_an_empty_field_without_the_placeholder(): void
+    {
+        $this->actingAsPanelAdministrator();
+        app()->setLocale('en');
+        [$product] = $this->persistedVariableProductWithTwoVariations();
+
+        $component = Livewire::test(EditVariableProduct::class, ['record' => ProductModel::find($product->id())->id])->set('data.edit_all', true);
+
+        $component->assertSet('data.bulk_cost', null)->assertSet('data.bulk_cost_mixed', false);
+        $this->assertStringNotContainsString('Different values', $component->html());
+    }
+
+    public function test_an_archived_variation_is_not_counted(): void
+    {
+        $this->actingAsPanelAdministrator();
+        [$product, $black, $white] = $this->persistedVariableProductWithTwoVariations();
+        $this->saveCosts([$black => '12.50', $white => '9.00']);
+        \Illuminate\Support\Facades\DB::table('catalog_variations')->where('id', $white)->update(['status' => 'archived']);
+
+        Livewire::test(EditVariableProduct::class, ['record' => ProductModel::find($product->id())->id])
+            ->assertSet('data.bulk_cost', '12.50')->assertSet('data.bulk_cost_mixed', false);
+    }
+
+    public function test_the_seed_is_decided_by_the_texts_of_the_rows_without_arithmetic(): void
+    {
+        $this->assertSame(['12.50', false], EditVariableProduct::bulkCostSeed([['cost' => '12.50'], ['cost' => '12.50']]));
+        $this->assertSame([null, true], EditVariableProduct::bulkCostSeed([['cost' => '12.50'], ['cost' => '12.5']]), '12.5 is another text: never compared as numbers');
+        $this->assertSame([null, true], EditVariableProduct::bulkCostSeed([['cost' => '1.00'], ['cost' => null]]));
+        $this->assertSame([null, false], EditVariableProduct::bulkCostSeed([['cost' => null], ['cost' => '']]));
+        $this->assertSame([null, false], EditVariableProduct::bulkCostSeed([]));
+        $this->assertSame(['3.00', false], EditVariableProduct::bulkCostSeed([['cost' => '3.00']]));
+    }
+
+    public function test_an_untouched_field_saves_every_cost_unchanged_and_a_typed_value_sets_them_all(): void
+    {
+        $this->actingAsPanelAdministrator();
+        [$product, $black, $white] = $this->persistedVariableProductWithTwoVariations();
+        $this->saveCosts([$black => '12.50', $white => '9.00']);
+        $record = ProductModel::find($product->id())->id;
+        $costs = fn (): array => [app(ProductPricingAndStock::class)->costDisplay($black), app(ProductPricingAndStock::class)->costDisplay($white)];
+
+        Livewire::test(EditVariableProduct::class, ['record' => $record])->call('save')->assertHasNoFormErrors();
+        $this->assertSame(['12.50', '9.00'], $costs(), 'the empty (different values) field changed nothing');
+
+        $this->saveCosts([$black => '5.00', $white => '5.00']);
+        Livewire::test(EditVariableProduct::class, ['record' => $record])->call('save')->assertHasNoFormErrors();
+        $this->assertSame(['5.00', '5.00'], $costs(), 'a prefilled field changed nothing either');
+
+        Livewire::test(EditVariableProduct::class, ['record' => $record])->set('data.edit_all', true)->set('data.bulk_cost', '7.25')->call('save')->assertHasNoFormErrors();
+        $this->assertSame(['7.25', '7.25'], $costs(), 'a typed value applies to every variation, as before');
+    }
+
+    public function test_the_placeholder_text_exists_in_both_languages(): void
+    {
+        $this->assertSame('Различни стойности', __('products.wizard.variations.bulk_cost_mixed', [], 'bg'));
+        $this->assertSame('Different values', __('products.wizard.variations.bulk_cost_mixed', [], 'en'));
+    }
 }

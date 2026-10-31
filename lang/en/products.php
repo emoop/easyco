@@ -43,6 +43,7 @@ return [
             'active_label' => 'Active',
             'edit_all' => 'Edit all',
             'bulk_cost' => 'Set cost for all variations',
+            'bulk_cost_mixed' => 'Different values',
             'bulk_stock_quantity' => 'Set stock for all variations',
             'after_create_help' => 'After creating → prices and stock for the variations',
         ],

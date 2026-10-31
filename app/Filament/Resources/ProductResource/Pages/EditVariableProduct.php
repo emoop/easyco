@@ -1187,6 +1187,9 @@ class EditVariableProduct extends EditRecord
                 ->dehydrated(false),
             Hidden::make('sale_price_override_count')
                 ->dehydrated(false),
+            // BUG-COST-1: seeded once with the bulk-cost field (true = the variations' costs differ: the placeholder says so)
+            Hidden::make('bulk_cost_mixed')
+                ->dehydrated(false),
             // Explicit, opt-in flatten of every VARIATION-level override
             // back to the PRODUCT-level price — §4.3's own structural
             // priority otherwise keeps a variation's own override
@@ -1221,6 +1224,7 @@ class EditVariableProduct extends EditRecord
                 ->minValue(0)
                 ->step(0.01)
                 ->dehydrated(false)
+                ->placeholder(fn (Get $get): ?string => $get('bulk_cost_mixed') ? (string) __('products.wizard.variations.bulk_cost_mixed') : null)
                 // AND, not OR — both the merchant's own edit_all opt-in
                 // AND the real COST_VIEW permission must hold for this
                 // field to appear; a staff member without COST_VIEW must
@@ -1980,6 +1984,11 @@ class EditVariableProduct extends EditRecord
         $data['existing_variations'] = $this->existingVariationRows($product);
         $data['archived_variations'] = $this->archivedVariationRows($product);
 
+        // BUG-COST-1: «Задай себестойност за всички варианти» starts from what is saved: the ONE cost every variation of the panel's list has (compared as the decimal TEXT the rows hold, no
+        // arithmetic), else empty; costs that differ (or only some variations have one) are flagged for the «Различни стойности» placeholder. Nothing is invented. The field is dehydrated(false)
+        // and writes into the rows only when the merchant changes it, so seeding it changes nothing on save.
+        [$data['bulk_cost'], $data['bulk_cost_mixed']] = self::bulkCostSeed($data['existing_variations']);
+
         // 'new_variations' has no seed — it is a page ONLY the
         // merchant fills in per save, never populated from persisted
         // state (there is nothing persisted to seed it FROM: every row
@@ -1987,6 +1996,25 @@ class EditVariableProduct extends EditRecord
         $data['new_variations'] = [];
 
         return $data;
+    }
+
+    /**
+     * BUG-COST-1: the bulk-cost field's starting value from the panel's own rows (the archived ones are not in the list): [the cost all rows share or null, whether the costs differ].
+     *
+     * @param  array<int, array<string, mixed>>  $rows
+     * @return array{0: ?string, 1: bool}
+     */
+    public static function bulkCostSeed(array $rows): array
+    {
+        $costs = array_map(static fn (array $row): ?string => isset($row['cost']) && $row['cost'] !== '' ? (string) $row['cost'] : null, $rows);
+        $distinct = array_values(array_unique($costs, SORT_STRING));
+
+        if ($rows === [] || count($distinct) !== 1) {
+            // several different values, or some with a cost and some without: different; no row has one is the empty case below
+            return [null, count(array_filter($costs, static fn (?string $cost): bool => $cost !== null)) > 0];
+        }
+
+        return [$distinct[0], false];
     }
 
     /**
