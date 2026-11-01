@@ -113,12 +113,6 @@ final readonly class FilterSelection
         return new self($map, $map === $given && ! $arrayForm);
     }
 
-    /** CD-1c: the selection without ONE filter (what the «Изчисти» of a bar control follows). */
-    public function without(int $attribute): self
-    {
-        return new self(array_diff_key($this->map, [$attribute => 1]));
-    }
-
     /** The selection with this value turned on (or off when it is on), the order kept canonical. */
     public function toggled(int $attribute, int $value, array $catalog): self
     {

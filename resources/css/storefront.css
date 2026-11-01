@@ -618,7 +618,7 @@
         height: 2.75rem;
         padding: 0 0.125rem;
         gap: 0.5rem;
-        border-bottom: 1px solid var(--sf-pdp-line);
+        border-bottom: 1px solid var(--sf-pdp-muted);
         font-size: 0.875rem;
         list-style: none;
         color: var(--sf-pdp-text);
@@ -681,10 +681,24 @@
         color: var(--sf-pdp-muted);
     }
 
-    .sf-bctl-clear {
-        font-size: 0.8125rem;
+    /* CD-1c.1: the ONE «Изчисти» of the bar, the cell after the last control (printed only with a selection); a 44px row like the controls, underlined */
+    .sf-bar-clear {
+        @apply inline-flex;
+        align-items: flex-end;
+        align-self: stretch;
+        box-sizing: border-box;
+        min-height: 2.75rem;
+        padding: 0 2px;
+        font-size: 0.75rem;
         color: var(--sf-pdp-text);
         text-decoration: underline;
+        text-underline-offset: 3px;
+        white-space: nowrap;
+    }
+
+    .sf-bar-clear:focus-visible {
+        outline: 2px solid var(--sf-pdp-text);
+        outline-offset: 2px;
     }
 
     .sf-bctl-values {
@@ -982,6 +996,17 @@
             @apply flex items-center;
             gap: 1rem;
             margin-top: 1rem;
+        }
+
+        /* CD-1c.1: with the script a side panel applies on every change, so its «Филтрирай» is not shown and an empty foot (no «Изчисти») is not drawn; without the script the button stays (the only way to apply) */
+        @media (scripting: enabled) {
+            .sf-cat-layout-sidebar .sf-fdrawer-foot .sf-fbtn-outline {
+                display: none;
+            }
+
+            .sf-cat-layout-sidebar .sf-fdrawer-foot:not(:has(.sf-fclear)) {
+                display: none;
+            }
         }
     }
 

@@ -8,8 +8,8 @@ use App\Storefront\Support\PaginationLinks;
 /**
  * CT-3 / CD-1b / CD-1c: what the filters and the sort print, as plain data. For every filter of the shop (the admin's order) the values to SHOW: those that give products together with the OTHER
  * filters' choices (the facet ids, one query per filter) plus every selected value (kept visible so the visitor can remove it, even when it now gives nothing). A filter with fewer than two values to
- * show and nothing selected is not shown. Every value carries the URL that toggles it (the desktop bar follows it: a choice applies at once) and every group the URL without THIS filter; both keep the
- * other filters, `per_page` and `sort`, drop `page` (a new choice starts at page 1) and are in the canonical order, so one selection is one URL. The phone drawer prints the same values as checkboxes of
+ * show and nothing selected is not shown. Every value carries the URL that toggles it (the desktop bar follows it: a choice applies at once); that URL keeps the
+ * other filters, `per_page` and `sort`, drops `page` (a new choice starts at page 1) and is in the canonical order, so one selection is one URL. The phone drawer prints the same values as checkboxes of
  * ONE GET form (`selected` is the `checked` state).
  */
 final class FilterView
@@ -46,9 +46,8 @@ final class FilterView
 
             $groups[] = [
                 'id' => $filter['id'], 'name' => $filter['name'], 'display' => $filter['display'], 'count' => count($chosen), 'values' => $values,
-                // «Цвят: Червен, Син» in the bar / the row of the drawer, and the link that clears THIS filter only
+                // «Цвят: Червен, Син» in the bar's control
                 'current' => implode(', ', $labels),
-                'clear' => $chosen === [] ? null : $url($selection->without($filter['id'])),
             ];
         }
 

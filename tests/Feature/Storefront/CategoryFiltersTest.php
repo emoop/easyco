@@ -157,7 +157,7 @@ class CategoryFiltersTest extends TestCase
         $html = $this->visit('/product-category/clothing')->assertOk()->getContent();
 
         $this->assertStringNotContainsString('name="filter[', $html);
-        $this->assertStringNotContainsString('sf-bctl-clear', $html);
+        $this->assertStringNotContainsString('sf-bar-clear', $html);
         $this->assertSame([7, 6, 5, 4, 3, 2, 1], $this->ids($html), 'the category as it was');
 
         $queries = [];
@@ -323,7 +323,7 @@ class CategoryFiltersTest extends TestCase
         $html = $this->visit('/product-category/clothing?filter[1]=1001&filter[3]=3001')->assertOk()->getContent();
 
         $this->assertStringContainsString('class="sf-empty"', $html);
-        $this->assertStringContainsString('sf-bctl-clear', $html, 'a bar control still has its own «Clear»');
+        $this->assertSame(1, substr_count($html, 'class="sf-bar-clear"'), 'the bar has its one «Clear» (CD-1c.1)');
         $this->assertStringContainsString('sf-fclear', $html, 'and the drawer its «Clear»');
     }
 
@@ -366,7 +366,8 @@ class CategoryFiltersTest extends TestCase
         $this->assertContains('Green', $this->shown($html, 1));
         $this->assertContains('L', $this->shown($html, 2), 'the chosen size stays');
         $this->assertSame(3, substr_count($html, 'sf-bv-on'), 'blue and L are marked as chosen in the bar (plus the current sort), so each can be removed');
-        $this->assertSame(2, substr_count($html, 'class="sf-bctl-clear"'), 'and each control has its own «Clear»');
+        $this->assertSame(0, substr_count($html, 'sf-bctl-clear'), 'no control has its own «Clear» (CD-1c.1)');
+        $this->assertSame(1, substr_count($html, 'class="sf-bar-clear"'), 'and the bar has ONE «Clear» for all of them');
     }
 
     public function test_a_filter_with_fewer_than_two_values_and_nothing_chosen_is_not_shown(): void
@@ -404,8 +405,8 @@ class CategoryFiltersTest extends TestCase
         $this->assertSame([2001], $this->checked($html, 2));
         $this->assertMatchesRegularExpression('#<a class="sf-bv sf-bv-dot sf-bv-on" href="/product-category/clothing\?filter\[2\]=2001" rel="nofollow" title="Red">#', $html, 'the bar link of red removes red');
         $this->assertStringContainsString('href="/product-category/clothing?filter[1]=1001" rel="nofollow">S', $html, 'the bar link of S removes S');
-        $this->assertStringContainsString('class="sf-bctl-clear" href="/product-category/clothing?filter[2]=2001"', $html, 'the colour control clears the colour only');
-        $this->assertStringContainsString('class="sf-bctl-clear" href="/product-category/clothing?filter[1]=1001"', $html, 'the size control clears the size only');
+        $this->assertStringNotContainsString('sf-bctl-clear', $html, 'no control has its own «Clear» (CD-1c.1)');
+        $this->assertSame(1, substr_count($html, 'class="sf-bar-clear" href="/product-category/clothing"'), 'the bar has ONE «Clear» after its last control, and it clears everything');
         $this->assertStringContainsString('class="sf-fclear" href="/product-category/clothing"', $html, 'the drawer clears everything');
         $this->assertStringContainsString('Selected filters: 1', $html);
     }

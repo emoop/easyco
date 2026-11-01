@@ -132,19 +132,16 @@ class CategoryBarTest extends TestCase
         $this->assertStringContainsString('<a class="sf-bv sf-bv-list" href="/product-category/clothing?filter[3]=3001" rel="nofollow">Cotton</a>', $controls[3]);
     }
 
-    public function test_the_clear_link_of_a_control_exists_only_with_a_selection_and_clears_that_filter_only(): void
+    public function test_the_bar_has_one_clear_after_its_last_control_only_with_a_selection_and_no_control_has_its_own(): void
     {
-        $none = $this->controls($this->visit('/product-category/clothing')->getContent());
-        foreach ($none as $control) {
-            $this->assertStringNotContainsString('sf-bctl-clear', $control);
-        }
+        $none = $this->visit('/product-category/clothing')->getContent();
+        $this->assertStringNotContainsString('sf-bar-clear', $none);
 
         $html = $this->visit('/product-category/clothing?filter[1]=1001&filter[2]=2001&per_page=12')->assertOk()->getContent();
-        $controls = $this->controls($html);
 
-        $this->assertStringContainsString('<span class="sf-bctl-chosen">Selected filters: 1</span><a class="sf-bctl-clear" href="/product-category/clothing?filter[2]=2001&amp;per_page=12" rel="nofollow">Clear</a>', preg_replace('#\s*\n\s*#', '', $controls[1]));
-        $this->assertStringContainsString('class="sf-bctl-clear" href="/product-category/clothing?filter[1]=1001&amp;per_page=12"', preg_replace('#\s*\n\s*#', '', $controls[2]));
-        $this->assertStringNotContainsString('sf-bctl-clear', $controls[0], 'the sort has none');
+        $this->assertSame(1, substr_count($html, 'class="sf-bar-clear"'), 'exactly one');
+        $this->assertMatchesRegularExpression('#</details>\s*<a class="sf-bar-clear" href="/product-category/clothing\?per_page=12" rel="nofollow">Clear</a>\s*</div>#', $html, 'the cell after the last control, the URL without the filters but with per_page');
+        $this->assertStringNotContainsString('sf-bctl-clear', $html, 'no control prints its own «Clear»');
     }
 
     public function test_the_control_of_a_selected_filter_shows_its_name_in_weight_500_and_the_chosen_values_and_they_are_escaped(): void

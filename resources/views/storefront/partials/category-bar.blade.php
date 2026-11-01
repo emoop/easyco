@@ -1,7 +1,8 @@
 {{-- CD-1c: the BAR of «filters on top» (a computer, from 56.25rem): a grid of dropdown controls — the sort first, then one per filter. Each is a native <details> (the `name` makes it one open at a time) whose panel is
      ONE column of plain links: a value is a link that toggles it (applies at once, rel="nofollow", the canonical URL); the control of a filter with a selection shows «Име: избраните». No JavaScript is needed;
-     the same page's FORM is the phone drawer. A swatch colour is the fill of an inline SVG circle (a validated #rrggbb); there is no style attribute. $filters = {groups: [{id, name, display, count, current, clear,
+     the same page's FORM is the phone drawer. A swatch colour is the fill of an inline SVG circle (a validated #rrggbb); there is no style attribute. $filters = {groups: [{id, name, display, count, current,
      values: [{label, colour, selected, url}]}], clear, active}|null, $sorts = [{label, url, current}] --}}
+{{-- CD-1c.1: ONE «Изчисти» for the whole bar, the last cell of the grid (only with a selection); a control's panel has none --}}
 @if (($filters ?? null) !== null || count($sorts ?? []) >= 2)
 <div class="sf-cbar">
     @if (count($sorts ?? []) >= 2)
@@ -22,9 +23,6 @@
             <div class="sf-bctl-panel">
                 <div class="sf-bctl-meta">
                     <span class="sf-bctl-chosen">{{ __('storefront.filters_selected', ['count' => $group['count']]) }}</span>
-                    @if ($group['clear'] !== null)
-                        <a class="sf-bctl-clear" href="{{ $group['clear'] }}" rel="nofollow">{{ __('storefront.filter_reset') }}</a>
-                    @endif
                 </div>
                 <ul class="sf-bctl-values sf-bctl-values-{{ $group['display'] }}">
                     @foreach ($group['values'] as $value)
@@ -40,5 +38,8 @@
             </div>
         </details>
     @endforeach
+    @if (($filters['clear'] ?? null) !== null)
+        <a class="sf-bar-clear" href="{{ $filters['clear'] }}" rel="nofollow">{{ __('storefront.filter_reset') }}</a>
+    @endif
 </div>
 @endif

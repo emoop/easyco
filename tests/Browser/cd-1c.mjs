@@ -102,6 +102,13 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const near = (a, b, t = 1.5) => Math.abs(a - b) <= t;
 // a click that leaves the page: wait until the address changed, then until the new page is quiet
 const nav = async (page, locator) => { const from = page.url(); await locator.click(); await page.waitForFunction((u) => location.href !== u, from, { timeout: 20000 }); await page.waitForLoadState('networkidle'); };
+// the category page's layout as the published design holds it (CD-1c.1 checks the side panel); the appearance cache is refreshed in the same call
+const LAYOUT = (layout) => String.raw`
+use Illuminate\Support\Facades\DB;
+DB::table('site_settings')->where('key', 'design.catalog.global')->delete();
+DB::table('site_settings')->insert(['key' => 'design.catalog.global', 'value' => json_encode(['layout' => '${layout}', 'side' => 'left']), 'created_at' => now(), 'updated_at' => now()]);
+app(App\Storefront\Appearance\StorefrontAppearance::class)->refresh();
+echo 'layout ${layout}';`;
 
 let before = null;
 let backedUp = false;
@@ -136,6 +143,10 @@ try {
     check('1280: the bar is a grid of 5 columns, 24px between columns and 12px between rows', cols === 5 && barBox.columnGap === '24px' && barBox.rowGap === '12px', JSON.stringify({ cols, barBox }));
     const sum0 = await style(page, '.sf-bctl-sum', ['height', 'borderBottomWidth', 'borderBottomStyle', 'backgroundColor', 'borderRadius', 'paddingLeft', 'fontSize', 'borderBottomColor', 'borderTopWidth']);
     check('1280: a control is 44px high, has only a 1px bottom line, no background, no radius, 14px text', sum0.h === 44 && sum0.borderBottomWidth === '1px' && sum0.borderTopWidth === '0px' && sum0.backgroundColor === 'rgba(0, 0, 0, 0)' && sum0.borderRadius === '0px' && sum0.fontSize === '14px', JSON.stringify(sum0));
+    // CD-1c.1: the bottom line of a control is the muted token (darker than the page line token), still 1px
+    const tokens = await page.evaluate(() => { const bar = document.querySelector('.sf-cbar'); const tok = (v) => { const p = document.createElement('i'); p.style.borderTopColor = v; bar.append(p); const c = getComputedStyle(p).borderTopColor; p.remove(); return c; }; return { line: tok('var(--sf-pdp-line)'), muted: tok('var(--sf-pdp-muted)') }; });
+    const ruleColour = await page.$eval('.sf-bctl-sum', (e) => getComputedStyle(e).borderBottomColor);
+    check('1280: the bottom line of a control is the muted grey token, darker than the page line token, 1px', ruleColour === tokens.muted && ruleColour !== tokens.line && sum0.borderBottomWidth === '1px', JSON.stringify({ was: tokens.line, now: ruleColour }));
     const chev = await page.evaluate(() => { const cs = getComputedStyle(document.querySelector('.sf-bctl-sum'), '::after'); return { w: cs.width, h: cs.height, bb: cs.borderBottomWidth, br: cs.borderRightWidth, tf: cs.transform }; });
     check('1280: the chevron is made with CSS: 8px, 1px borders, rotated', chev.w === '8px' && chev.h === '8px' && chev.bb === '1px' && chev.br === '1px' && chev.tf !== 'none', JSON.stringify(chev));
     const first = await page.$$eval('.sf-bctl', (els) => els.map((e) => ({ sort: e.classList.contains('sf-bctl-sort'), text: e.querySelector('.sf-bctl-text').textContent.trim(), weight: getComputedStyle(e.querySelector('.sf-bctl-text')).fontWeight })));
@@ -173,12 +184,10 @@ try {
     check('1280: the text-links panel is ONE column', linksPanel.length >= 2 && linksPanel.every((l) => l.x === linksPanel[0].x));
     await shot('cd1c-04-bar-two-selections-1280');
     await page.locator('.sf-bctl-sum', { hasText: 'Цвят' }).click();
-    check('1280: with a selection the meta row shows «Избрани филтри: 1» and the underlined «Изчисти» of THIS filter', (await page.locator('.sf-bctl[open] .sf-bctl-chosen').innerText()) === 'Избрани филтри: 1' && (await page.locator('.sf-bctl[open] .sf-bctl-clear').innerText()) === 'Изчисти' && (await page.locator('.sf-bctl[open] .sf-bctl-clear').evaluate((e) => getComputedStyle(e).textDecorationLine)) === 'underline');
+    check('1280: with a selection the meta row shows «Избрани филтри: 1» and no control has its own «Изчисти» (CD-1c.1)', (await page.locator('.sf-bctl[open] .sf-bctl-chosen').innerText()) === 'Избрани филтри: 1' && (await page.locator('.sf-bctl-clear, .sf-bctl .sf-bar-clear').count()) === 0);
     const sel = await page.$eval('.sf-bctl[open] .sf-bv-dot.sf-bv-on', (e) => getComputedStyle(e).boxShadow);
     check('1280: the selected circle has a 1px ink ring 3px outside', /0px 0px 0px 3px/.test(sel) && /0px 0px 0px 4px/.test(sel), sel);
     await shot('cd1c-05-bar-clear-visible-1280');
-    await nav(page, page.locator('.sf-bctl[open] .sf-bctl-clear'));
-    check('1280: «Изчисти» of the colour control removes the colour only (the material stays)', ! qs(page).includes(`filter[${ids.colour}]`) && qs(page).includes(`filter[${ids.material}]`), qs(page));
     const countNow = await page.locator('.sf-count').innerText();
     check('1280: «Брой продукти» follows the result', /^Брой продукти: \d+$/.test(countNow) && parseInt(countNow.split(': ')[1], 10) < 60 && parseInt(countNow.split(': ')[1], 10) === (await page.evaluate(() => parseInt(document.querySelector('.sf-pagination-status')?.textContent.match(/\d+ от (\d+)/)?.[1] ?? '1', 10)) >= 0 ? parseInt(countNow.split(': ')[1], 10) : -1), countNow);
 
@@ -193,6 +202,23 @@ try {
     await page.keyboard.press('Tab');
     const focusRing = await page.evaluate(() => { document.querySelector('.sf-bctl-sum').focus(); const cs = getComputedStyle(document.activeElement); return { o: cs.outlineWidth + ' ' + cs.outlineStyle, off: cs.outlineOffset }; });
     check('1280: keyboard focus is a 2px solid ring with a 2px offset', /^2px solid/.test(focusRing.o) && focusRing.off === '2px', JSON.stringify(focusRing));
+
+    // CD-1c.1: the ONE «Изчисти» of the bar: the last cell, on the controls' row, underlined; it clears every filter and keeps the sort; gone with no selection
+    const clearBox = await page.locator('.sf-bar-clear').boundingBox();
+    const lastCtl = await page.locator('.sf-cbar > .sf-bctl').last().boundingBox();
+    const lastIsClear = await page.$eval('.sf-cbar', (e) => e.lastElementChild.classList.contains('sf-bar-clear'));
+    check('1280: ONE «Изчисти» is the last cell of the bar, on the row of the controls, after the last control', lastIsClear && (await page.locator('.sf-bar-clear').count()) === 1 && near(clearBox.y, lastCtl.y, 2) && clearBox.x > lastCtl.x, JSON.stringify({ clearBox, lastCtl }));
+    // flex-end: the clear's TEXT sits on the bottom of the row, on the same line as the controls' bottom rule (measured on the text, not the box)
+    const textRect = (sel) => page.$eval(sel, (el) => { const r = document.createRange(); r.selectNodeContents(el); const b = r.getBoundingClientRect(); return { top: b.top, bottom: b.bottom }; });
+    const clearTxt = await textRect('.sf-bar-clear');
+    const ruleY = lastCtl.y + lastCtl.height;
+    check('1280: the bar «Изчисти» text sits on the bottom line of the row: its text bottom is 0–6px above the controls\' bottom rule', ruleY - clearTxt.bottom >= 0 && ruleY - clearTxt.bottom <= 6, JSON.stringify({ textBottom: clearTxt.bottom, controlRule: ruleY, gap: ruleY - clearTxt.bottom }));
+    const clearCss = await page.locator('.sf-bar-clear').evaluate((e) => ({ dec: getComputedStyle(e).textDecorationLine, size: getComputedStyle(e).fontSize, h: e.getBoundingClientRect().height }));
+    check('1280: the bar «Изчисти» is 12px, underlined and as high as a control (44px)', clearCss.dec === 'underline' && clearCss.size === '12px' && clearCss.h === 44, JSON.stringify(clearCss));
+    await shot('cd1c-05b-bar-clear-after-last-control-1280', null);
+    await nav(page, page.locator('.sf-bar-clear'));
+    check('1280: «Изчисти» clears every filter and keeps the sort (the canonical URL)', ! qs(page).includes('filter[') && qs(page).includes('sort=name_asc'), page.url());
+    check('1280: with no selection the bar has no «Изчисти»', (await page.locator('.sf-bar-clear').count()) === 0);
     await ctx.close();
 
     // ============================================================ 1000: 4 columns
@@ -270,6 +296,20 @@ try {
     check('320: a filter screen has no horizontal scroll either', await noOverflow(page) && (await page.$eval('.sf-fgroup[open]', (e) => e.scrollWidth <= e.clientWidth + 1)));
     await shot('cd1c-12-phone-level2-320');
     await ctx.close();
+
+    // ============================================================ 1280: the side panel with the script: no «Филтрирай», no empty foot, «Изчисти» only with a selection
+    php(LAYOUT('sidebar'));
+    ({ ctx, page, shot } = await open(1280, URL, 'cd1c-13-sidebar-empty-1280'));
+    check('1280 side panel: the panel is shown beside the list', await page.locator('.sf-cat-layout-sidebar .sf-fdrawer').first().isVisible());
+    const btnShown = await page.locator('.sf-cat-layout-sidebar .sf-fdrawer-foot .sf-fbtn-outline').first().isVisible();
+    const footShown = await page.locator('.sf-cat-layout-sidebar .sf-fdrawer-foot').first().isVisible();
+    check('1280 side panel, script on, nothing selected: no «Филтрирай», no «Изчисти», no empty foot under the list', ! btnShown && ! footShown && (await page.locator('.sf-cat-layout-sidebar .sf-fclear').count()) === 0, JSON.stringify({ btnShown, footShown }));
+    await nav(page, page.locator('.sf-cat-layout-sidebar .sf-fv-list', { hasText: 'Памук' }));
+    check('1280 side panel: a choice still applies at once, with no button', qs(page).includes(`filter[${ids.material}]=${ids.m['Памук']}`), page.url());
+    check('1280 side panel, with a selection: «Изчисти» is visible and the foot shows, «Филтрирай» stays hidden', (await page.locator('.sf-cat-layout-sidebar .sf-fclear').first().isVisible()) && (await page.locator('.sf-cat-layout-sidebar .sf-fdrawer-foot').first().isVisible()) && ! (await page.locator('.sf-cat-layout-sidebar .sf-fbtn-outline').first().isVisible()));
+    await shot('cd1c-14-sidebar-selected-1280');
+    await ctx.close();
+    php(LAYOUT('full'));
 } catch (e) {
     check('the run finished without an exception', false, String(e.stack || e).replace(/\s+/g, ' ').slice(0, 700));
 } finally {
