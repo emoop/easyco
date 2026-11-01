@@ -156,8 +156,8 @@ class CategoryFiltersTest extends TestCase
 
         $html = $this->visit('/product-category/clothing')->assertOk()->getContent();
 
-        $this->assertStringNotContainsString('sf-fgroup', $html);
-        $this->assertStringNotContainsString('sf-filter-chip', $html);
+        $this->assertStringNotContainsString('name="filter[', $html);
+        $this->assertStringNotContainsString('sf-bctl-clear', $html);
         $this->assertSame([7, 6, 5, 4, 3, 2, 1], $this->ids($html), 'the category as it was');
 
         $queries = [];
@@ -176,7 +176,7 @@ class CategoryFiltersTest extends TestCase
 
         $html = $this->visit('/product-category/clothing')->assertOk()->getContent();
 
-        $this->assertStringNotContainsString('sf-fgroup', $html);
+        $this->assertStringNotContainsString('name="filter[', $html);
     }
 
     // ---- the parameter guard --------------------------------------------------------------------------------------------------------------
@@ -323,8 +323,8 @@ class CategoryFiltersTest extends TestCase
         $html = $this->visit('/product-category/clothing?filter[1]=1001&filter[3]=3001')->assertOk()->getContent();
 
         $this->assertStringContainsString('class="sf-empty"', $html);
-        $this->assertStringContainsString('sf-filters', $html);
-        $this->assertStringContainsString('sf-filter-clear', $html);
+        $this->assertStringContainsString('sf-bctl-clear', $html, 'a bar control still has its own «Clear»');
+        $this->assertStringContainsString('sf-fclear', $html, 'and the drawer its «Clear»');
     }
 
     // ---- the facets -------------------------------------------------------------------------------------------------------------------------
@@ -365,8 +365,8 @@ class CategoryFiltersTest extends TestCase
         $this->assertContains('Blue', $this->shown($html, 1));
         $this->assertContains('Green', $this->shown($html, 1));
         $this->assertContains('L', $this->shown($html, 2), 'the chosen size stays');
-        $this->assertStringContainsString('class="sf-filter-chip"', $html);
-        $this->assertSame(2, substr_count($html, 'class="sf-filter-chip"'), 'one removable item per chosen value');
+        $this->assertSame(3, substr_count($html, 'sf-bv-on'), 'blue and L are marked as chosen in the bar (plus the current sort), so each can be removed');
+        $this->assertSame(2, substr_count($html, 'class="sf-bctl-clear"'), 'and each control has its own «Clear»');
     }
 
     public function test_a_filter_with_fewer_than_two_values_and_nothing_chosen_is_not_shown(): void
@@ -396,16 +396,18 @@ class CategoryFiltersTest extends TestCase
         $this->assertDoesNotMatchRegularExpression('/<script(?![^>]*\ssrc=)[^>]*>/i', $html);
     }
 
-    public function test_a_chosen_value_is_checked_and_its_chip_removes_it_and_the_links_are_the_canonical_url(): void
+    public function test_a_chosen_value_is_checked_the_bar_link_removes_it_and_the_links_are_the_canonical_url(): void
     {
         $html = $this->visit('/product-category/clothing?filter[1]=1001&filter[2]=2001')->assertOk()->getContent();
 
         $this->assertSame([1001], $this->checked($html, 1));
         $this->assertSame([2001], $this->checked($html, 2));
-        $this->assertStringContainsString('href="/product-category/clothing?filter[2]=2001" rel="nofollow">Red', $html, 'the chip of red removes red');
-        $this->assertStringContainsString('href="/product-category/clothing?filter[1]=1001" rel="nofollow">S', $html, 'the chip of S removes S');
-        $this->assertStringContainsString('href="/product-category/clothing" rel="nofollow">Clear all', $html);
-        $this->assertStringContainsString('(1)', $html, 'a group with a choice shows its count');
+        $this->assertMatchesRegularExpression('#<a class="sf-bv sf-bv-dot sf-bv-on" href="/product-category/clothing\?filter\[2\]=2001" rel="nofollow" title="Red">#', $html, 'the bar link of red removes red');
+        $this->assertStringContainsString('href="/product-category/clothing?filter[1]=1001" rel="nofollow">S', $html, 'the bar link of S removes S');
+        $this->assertStringContainsString('class="sf-bctl-clear" href="/product-category/clothing?filter[2]=2001"', $html, 'the colour control clears the colour only');
+        $this->assertStringContainsString('class="sf-bctl-clear" href="/product-category/clothing?filter[1]=1001"', $html, 'the size control clears the size only');
+        $this->assertStringContainsString('class="sf-fclear" href="/product-category/clothing"', $html, 'the drawer clears everything');
+        $this->assertStringContainsString('Selected filters: 1', $html);
     }
 
     public function test_a_hostile_value_label_is_escaped(): void

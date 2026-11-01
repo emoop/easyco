@@ -120,12 +120,13 @@ class CategoryLayoutTest extends TestCase
             $this->assertSame(2, substr_count($html, '<details class="sf-fgroup" open>'), 'with the side panel every group is open');
         }
 
+        // CD-1c: only the side panel prints its groups open; the bar and the drawer are lists of closed controls (the selection is shown in the control / the row)
         $this->publish([]);
         $plain = $this->visit('/product-category/clothing')->getContent();
         $this->assertSame(0, substr_count($plain, '<details class="sf-fgroup" open>'), 'a bar: closed with no choice');
         $chosen = $this->visit('/product-category/clothing?filter[1]=1001')->getContent();
-        $this->assertSame(1, substr_count($chosen, '<details class="sf-fgroup" open>'), 'a group with a choice is open');
-        $this->assertStringContainsString('(1)', $chosen);
+        $this->assertSame(0, substr_count($chosen, '<details class="sf-fgroup" open>'), 'a group with a choice is a closed row of the drawer');
+        $this->assertStringContainsString('<span class="sf-fgroup-current">Red</span>', $chosen, 'the row shows the current value');
     }
 
     public function test_the_per_page_hidden_input_exists_only_for_a_size_that_is_not_the_published_one(): void
@@ -144,24 +145,25 @@ class CategoryLayoutTest extends TestCase
 
         $this->assertStringContainsString('data-sf-fdrawer-open', $html);
         $this->assertStringContainsString('Filter and sort', $html);
-        $this->assertStringContainsString('<button type="submit" class="sf-fbtn sf-fbtn-primary">Apply</button>', $html);
-        $this->assertStringContainsString('class="sf-fbtn sf-fbtn-secondary" href="/product-category/clothing"', $html);
+        $this->assertStringContainsString('<button type="submit" class="sf-fbtn sf-fbtn-outline">Apply</button>', $html);
+        $this->assertStringNotContainsString('sf-fclear', $html, 'nothing is selected: no «Clear» in the drawer');
         $this->assertSame(1, substr_count($html, 'data-sf-fdrawer>'));
         $this->assertDoesNotMatchRegularExpression('/\sstyle=/i', $html);
         $this->assertDoesNotMatchRegularExpression('/<script(?![^>]*\ssrc=)[^>]*>/i', $html);
 
-        $clear = $this->visit('/product-category/clothing?per_page=12')->getContent();
-        $this->assertStringContainsString('class="sf-fbtn sf-fbtn-secondary" href="/product-category/clothing?per_page=12"', $clear, '«Clear» keeps only a non-default size');
+        $clear = $this->visit('/product-category/clothing?per_page=12&filter[1]=1001')->getContent();
+        $this->assertStringContainsString('class="sf-fclear" href="/product-category/clothing?per_page=12"', $clear, '«Clear» keeps only a non-default size');
     }
 
     public function test_nothing_to_show_prints_no_trigger_and_no_drawer(): void
     {
-        $html = view('storefront.partials.filters', ['filters' => null, 'sorts' => [], 'perPageHidden' => null, 'clearUrl' => '/x', 'actionUrl' => '/x', 'layout' => 'full'])->render();
-        $toolbar = view('storefront.partials.category-toolbar', ['total' => 3, 'filters' => null, 'sorts' => []])->render();
+        $html = view('storefront.partials.filters', ['filters' => null, 'sorts' => [], 'perPageHidden' => null, 'clearUrl' => '/x', 'actionUrl' => '/x', 'layout' => 'full', 'total' => 3])->render();
+        $bar = view('storefront.partials.category-bar', ['filters' => null, 'sorts' => []])->render();
+        $toolbar = view('storefront.partials.category-toolbar', ['filters' => null, 'sorts' => []])->render();
 
         $this->assertSame('', trim($html));
+        $this->assertSame('', trim($bar));
         $this->assertStringNotContainsString('data-sf-fdrawer-open', $toolbar);
-        $this->assertStringContainsString('3 products', $toolbar);
     }
 
     // ---- the array form, the empty submission ---------------------------------------------------------------------------------------------
@@ -266,15 +268,16 @@ class CategoryLayoutTest extends TestCase
 
     public function test_the_count_of_products(): void
     {
-        $this->assertStringContainsString('<p class="sf-count">14 products</p>', $this->visit('/product-category/clothing')->getContent());
-        $this->assertStringContainsString('<p class="sf-count">8 products</p>', $this->visit('/product-category/clothing?filter[1]=1001')->getContent());
-        $this->assertStringContainsString('<p class="sf-count">0 products</p>', $this->visit('/product-category/clothing?filter[1]=1001&filter[2]=2002')->getContent());
+        // CD-1c: «Брой продукти: N» beside the title (the total of the current result)
+        $this->assertStringContainsString('<p class="sf-count">Products: 14</p>', $this->visit('/product-category/clothing')->getContent());
+        $this->assertStringContainsString('<p class="sf-count">Products: 8</p>', $this->visit('/product-category/clothing?filter[1]=1001')->getContent());
+        $this->assertStringContainsString('<p class="sf-count">Products: 0</p>', $this->visit('/product-category/clothing?filter[1]=1001&filter[2]=2002')->getContent());
 
         DB::table('catalog_products')->where('id', '>', 1)->update(['catalog_visibility' => 'hidden']);
-        $this->assertStringContainsString('<p class="sf-count">1 product</p>', $this->visit('/product-category/clothing')->getContent());
+        $this->assertStringContainsString('<p class="sf-count">Products: 1</p>', $this->visit('/product-category/clothing')->getContent());
 
         app()->setLocale('bg');
-        $this->assertStringContainsString('<p class="sf-count">1 продукт</p>', $this->visit('/product-category/clothing')->getContent());
+        $this->assertStringContainsString('<p class="sf-count">Брой продукти: 1</p>', $this->visit('/product-category/clothing')->getContent());
     }
 
     // ---- «Блок отгоре» ----------------------------------------------------------------------------------------------------------------------------

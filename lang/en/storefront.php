@@ -40,6 +40,8 @@ return [
     'pagination' => 'Pages',
     'filters' => 'Filters',
     'filter_and_sort' => 'Filter and sort',
+    'products_total' => 'Products: :count',
+    'filters_selected' => 'Selected filters: :count',
     'filter_close' => 'Close',
     'filter_apply' => 'Apply',
     'filter_reset' => 'Clear',

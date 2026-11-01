@@ -793,7 +793,8 @@ function bindLightbox(box) {
 // Everything here is PROGRESS: the filters and the sort are one plain GET form («Филтрирай» submits it; the links of the sort and of the chips are plain links), so without this script the page works.
 // Below 64rem the form is a drawer opened by the trigger «Филтриране и сортиране» — the same mechanism as the menu drawer's (a class that makes it visible, the page locked behind it, the focus
 // moved in and trapped, Esc / the overlay / the close button close it and the focus returns to the trigger); without the script it is a plain block above the list. From 64rem a change of a
-// checkbox or a radio submits the form, and the bar's dropdowns (<details>) close on an outside click and on Esc.
+// checkbox or a radio submits the form, and the bar's dropdowns (<details>) close on an outside click and on Esc. CD-1c: in the drawer one filter screen (an open <details>) is open at a time, and the groups printed open
+// for the side panel start closed (the drawer is a list of rows).
 (function () {
     var fdrawer = document.querySelector('[data-sf-fdrawer]');
 
@@ -836,7 +837,7 @@ function bindLightbox(box) {
     }
 
     var closeDropdowns = function (except) {
-        var open = document.querySelectorAll('.sf-cat-layout-full .sf-fgroup[open], .sf-sortdd[open]');
+        var open = document.querySelectorAll('.sf-bctl[open], .sf-sortdd[open]');
 
         for (var i = 0; i < open.length; i++) {
             if (open[i] !== except) {
@@ -845,9 +846,13 @@ function bindLightbox(box) {
         }
     };
 
-    // the bar's dropdowns start closed on a computer (a group with a choice is printed open for the drawer and the no-script page)
-    if (isDesktop() && document.querySelector('.sf-cat-layout-full')) {
-        closeDropdowns(null);
+    // the groups printed open for the side panel start closed in the drawer (a list of rows)
+    if (! isDesktop()) {
+        var printedOpen = fdrawer.querySelectorAll('.sf-fgroup[open]');
+
+        for (var g = 0; g < printedOpen.length; g++) {
+            printedOpen[g].removeAttribute('open');
+        }
     }
 
     document.addEventListener('click', function (event) {
@@ -872,18 +877,26 @@ function bindLightbox(box) {
             return;
         }
 
-        if (isDesktop()) {
-            var keep = target.closest('.sf-fgroup, .sf-sortdd');
-            closeDropdowns(keep);
-        }
+        // an outside click closes the bar's open dropdown (and the sort's)
+        closeDropdowns(target.closest('.sf-bctl, .sf-sortdd'));
     });
 
-    // opening one dropdown of the bar closes the others
+    // opening one dropdown closes the others; in the drawer one filter screen is open at a time
     document.addEventListener('toggle', function (event) {
         var details = event.target;
 
-        if (isDesktop() && details instanceof Element && details.open && details.matches('.sf-cat-layout-full .sf-fgroup, .sf-sortdd')) {
+        if (! (details instanceof Element) || ! details.open) {
+            return;
+        }
+
+        if (details.matches('.sf-sortdd')) {
             closeDropdowns(details);
+        } else if (! isDesktop() && details.matches('.sf-fdrawer .sf-fgroup')) {
+            var others = fdrawer.querySelectorAll('.sf-fgroup[open]');
+
+            for (var o = 0; o < others.length; o++) {
+                others[o] !== details && others[o].removeAttribute('open');
+            }
         }
     }, true);
 
@@ -891,7 +904,7 @@ function bindLightbox(box) {
         if (event.key === 'Escape') {
             if (isOpen()) {
                 closeFDrawer();
-            } else if (isDesktop()) {
+            } else {
                 closeDropdowns(null);
             }
 

@@ -490,13 +490,26 @@
         @apply inline-flex min-w-10 items-center justify-center rounded-md border border-neutral-300 px-3 py-2 text-sm no-underline;
     }
 
-    /* CD-1b: the category page — the toolbar, the filters form in its three placements (a bar above the list, a side panel, the phone drawer) and the banner. ONE form; the placement is CSS only, the DOM order
-       is always the filters first, then the list. Desktop is the base; the drawer rules are in the max-width block below (64rem is the menu drawer's breakpoint too). Text colours are the product page's
-       style (the shop's tokens with the style's values as the fallback); hairlines #e5e5e5; no new colours. */
-    .sf-cat-body {
+    /* ===== CD-1c filters ============================================================================================================================================================
+       The category page's filters in the new look (thin lines, ink on white, only the shop's tokens). A computer in «filters on top» (from 56.25rem = 900px): the BAR, a grid of dropdown controls (the sort,
+       then one per filter), each a native <details> whose panel is ONE column of plain links; a choice applies at once. Below that, and in the side-panel layout below 64rem: the phone DRAWER, two levels
+       (a list of rows; one filter per screen) with «Изчисти» and a delicate «Филтрирай» at the bottom. The side panel of the «with a side panel» layout is unchanged in structure; it shares the value look.
+       The DOM order is always: the bar, the form, the list. Text / muted / hairline are the product page's tokens. */
+    .sf-category {
         --sf-pdp-text: var(--sf-text, #1a1a1a);
         --sf-pdp-muted: var(--sf-muted, #6b6b6b);
         --sf-pdp-line: var(--sf-border, #d9d9d9);
+    }
+
+    .sf-cat-head {
+        @apply flex flex-wrap items-baseline;
+        gap: 0 1rem;
+    }
+
+    .sf-count {
+        @apply m-0;
+        font-size: 0.8125rem;
+        color: var(--sf-pdp-muted);
     }
 
     .sf-cat-main {
@@ -508,16 +521,11 @@
         margin-bottom: 1.5rem;
     }
 
+    /* the row above the list: the drawer's trigger (below the breakpoint) and, in the side-panel layout, the sort */
     .sf-toolbar {
         @apply flex flex-wrap items-center justify-between;
         gap: 0.5rem 1rem;
         margin-bottom: 1rem;
-    }
-
-    .sf-count {
-        @apply m-0;
-        font-size: 0.8125rem;
-        color: var(--sf-pdp-muted);
     }
 
     .sf-ftrigger {
@@ -535,13 +543,13 @@
     .sf-ftrigger:focus-visible,
     .sf-fdrawer-close:focus-visible,
     .sf-fbtn:focus-visible,
+    .sf-fclear:focus-visible,
     .sf-sortdd-summary:focus-visible,
     .sf-fgroup-summary:focus-visible {
         outline: 2px solid var(--sf-pdp-text);
         outline-offset: 2px;
     }
 
-    /* the sort (a computer): a <details> of plain links on the right of the toolbar */
     .sf-sortdd {
         @apply relative;
         font-size: 0.875rem;
@@ -557,8 +565,7 @@
         display: none;
     }
 
-    .sf-sortdd-summary::after,
-    .sf-fgroup-summary::after {
+    .sf-sortdd-summary::after {
         content: '';
         display: inline-block;
         width: 0.4375rem;
@@ -595,56 +602,195 @@
         color: var(--sf-pdp-text);
     }
 
-    /* the filters form (placement-free parts) */
+    /* ---- the BAR (a computer, «filters on top») --------------------------------------------------------------------------------------------------------------------------------- */
+    .sf-cbar {
+        display: none;
+    }
+
+    .sf-bctl {
+        @apply relative;
+        min-width: 0;
+    }
+
+    .sf-bctl-sum {
+        @apply flex cursor-pointer items-center;
+        box-sizing: border-box;
+        height: 2.75rem;
+        padding: 0 0.125rem;
+        gap: 0.5rem;
+        border-bottom: 1px solid var(--sf-pdp-line);
+        font-size: 0.875rem;
+        list-style: none;
+        color: var(--sf-pdp-text);
+    }
+
+    .sf-bctl-sum::-webkit-details-marker {
+        display: none;
+    }
+
+    .sf-bctl-sum::after {
+        content: '';
+        flex: none;
+        width: 0.5rem;
+        height: 0.5rem;
+        margin: 0 0.125rem 0 auto;
+        border-right: 1px solid currentColor;
+        border-bottom: 1px solid currentColor;
+        transform: translateY(-0.125rem) rotate(45deg);
+    }
+
+    .sf-bctl-sum:hover,
+    .sf-bctl[open] > .sf-bctl-sum {
+        border-bottom-color: var(--sf-pdp-text);
+    }
+
+    .sf-bctl-sum:focus-visible {
+        outline: 2px solid var(--sf-pdp-text);
+        outline-offset: 2px;
+    }
+
+    .sf-bctl-text {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .sf-bctl-strong {
+        font-weight: 500;
+    }
+
+    .sf-bctl-panel {
+        @apply absolute bg-white;
+        box-sizing: border-box;
+        left: 0;
+        top: 100%;
+        z-index: 30;
+        width: 17.5rem;
+        padding: 1rem;
+        border: 1px solid var(--sf-pdp-line);
+    }
+
+    .sf-bctl-meta {
+        @apply flex items-baseline justify-between;
+        margin-bottom: 0.5rem;
+    }
+
+    .sf-bctl-chosen {
+        font-size: 0.75rem;
+        color: var(--sf-pdp-muted);
+    }
+
+    .sf-bctl-clear {
+        font-size: 0.8125rem;
+        color: var(--sf-pdp-text);
+        text-decoration: underline;
+    }
+
+    .sf-bctl-values {
+        @apply m-0 list-none p-0;
+        max-height: 13.75rem;
+        overflow-y: auto;
+    }
+
+    .sf-bctl-values-swatches {
+        @apply flex flex-wrap;
+        gap: 0.75rem;
+        padding: 0.25rem;
+    }
+
+    /* a value of the bar: a link; «list» draws a 20px box (a tick when selected), «links» is text (selected = weight 500 and underlined), «swatches» are the circles (selected = a 1px ink ring 3px outside) */
+    .sf-bv {
+        @apply relative flex items-center no-underline;
+        box-sizing: border-box;
+        min-height: 2.25rem;
+        gap: 0.75rem;
+        font-size: 0.875rem;
+        color: var(--sf-pdp-text);
+    }
+
+    .sf-bv:focus-visible {
+        outline: 2px solid var(--sf-pdp-text);
+        outline-offset: 2px;
+    }
+
+    .sf-bv-list::before {
+        content: '';
+        flex: none;
+        box-sizing: border-box;
+        width: 1.25rem;
+        height: 1.25rem;
+        /* the shop's hairline token is very light: the box needs the muted text colour to be seen */
+        border: 1px solid var(--sf-pdp-muted);
+        border-radius: 3px;
+        background: #fff;
+    }
+
+    .sf-bv-list.sf-bv-on::before {
+        border-color: var(--sf-pdp-text);
+        background: var(--sf-pdp-text);
+    }
+
+    .sf-bv-list.sf-bv-on::after {
+        content: '';
+        position: absolute;
+        left: 0.4375rem;
+        top: 50%;
+        width: 0.3125rem;
+        height: 0.625rem;
+        border: solid #fff;
+        border-width: 0 2px 2px 0;
+        transform: translateY(-65%) rotate(45deg);
+    }
+
+    .sf-bv-link.sf-bv-on {
+        font-weight: 500;
+        text-decoration: underline;
+    }
+
+    .sf-bv-dot {
+        @apply inline-flex;
+        width: 1.75rem;
+        height: 1.75rem;
+        min-height: 0;
+        border-radius: 9999px;
+    }
+
+    .sf-bv-dot.sf-bv-on {
+        box-shadow: 0 0 0 3px #fff, 0 0 0 4px var(--sf-pdp-text);
+    }
+
+    @media (min-width: 56.25rem) {
+        .sf-cat-layout-full .sf-cbar {
+            @apply grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 0.75rem 1.5rem;
+            margin: 0.5rem 0 1.5rem;
+        }
+
+        /* «filters on top»: the bar replaces the form (the drawer) and the row above the list */
+        .sf-cat-layout-full .sf-fdrawer,
+        .sf-cat-layout-full .sf-toolbar {
+            display: none;
+        }
+    }
+
+    @media (min-width: 75rem) {
+        .sf-cat-layout-full .sf-cbar {
+            grid-template-columns: repeat(5, minmax(0, 1fr));
+        }
+    }
+
+    /* ---- the FORM: the phone drawer, and the side panel ------------------------------------------------------------------------------------------------------------------------- */
     .sf-fdrawer {
         grid-area: filters;
     }
 
     .sf-fdrawer-overlay,
     .sf-fdrawer-head,
-    .sf-fsort {
+    .sf-fcount,
+    .sf-fgroup-meta {
         display: none;
-    }
-
-    .sf-filters-head {
-        @apply flex flex-wrap items-center;
-        gap: 0.5rem 1rem;
-        margin-bottom: 1rem;
-    }
-
-    .sf-filters-title,
-    .sf-filter-name {
-        @apply m-0;
-        font-size: 0.75rem;
-        font-weight: 500;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        color: var(--sf-pdp-text);
-        font-family: var(--sf-font-body, inherit);
-    }
-
-    .sf-filter-chips {
-        @apply m-0 flex list-none flex-wrap p-0;
-        gap: 0.5rem;
-    }
-
-    .sf-filter-chip {
-        @apply inline-flex items-center no-underline;
-        gap: 0.375rem;
-        padding: 0.125rem 0.625rem;
-        border: 1px solid var(--sf-pdp-line);
-        font-size: 0.8125rem;
-        color: var(--sf-pdp-text);
-    }
-
-    .sf-filter-chip:hover {
-        border-color: var(--sf-pdp-text);
-    }
-
-    .sf-filter-clear {
-        font-size: 0.8125rem;
-        color: var(--sf-pdp-muted);
-        text-decoration: underline;
     }
 
     .sf-fgroup-summary {
@@ -656,10 +802,29 @@
         display: none;
     }
 
-    .sf-fgroup-count {
-        margin-left: 0.25rem;
+    .sf-fgroup-name {
+        @apply m-0;
         font-size: 0.75rem;
-        color: var(--sf-pdp-muted);
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--sf-pdp-text);
+        font-family: var(--sf-font-body, inherit);
+    }
+
+    .sf-fgroup-current {
+        display: none;
+    }
+
+    .sf-fgroup-summary::after {
+        content: '';
+        flex: none;
+        width: 0.4375rem;
+        height: 0.4375rem;
+        margin-left: auto;
+        border-right: 1px solid currentColor;
+        border-bottom: 1px solid currentColor;
+        transform: translateY(-0.125rem) rotate(45deg);
     }
 
     .sf-filter-values {
@@ -674,9 +839,10 @@
 
     .sf-fvalues-swatches {
         gap: 0.75rem;
+        padding: 0.25rem;
     }
 
-    /* a value is a label around a checkbox (or a radio) that is visually hidden but keeps the focus; the look is drawn on its siblings */
+    /* a value is a label around a checkbox (or a radio) that is visually hidden but keeps the focus; the look is drawn on its siblings. The 20px box with a tick is shared with the bar */
     .sf-fv {
         @apply relative inline-flex cursor-pointer items-center;
         color: var(--sf-pdp-muted);
@@ -696,8 +862,8 @@
 
     .sf-fv-list {
         @apply flex;
-        gap: 0.625rem;
-        padding: 0.25rem 0;
+        min-height: 2.25rem;
+        gap: 0.75rem;
         font-size: 0.875rem;
         color: var(--sf-pdp-text);
     }
@@ -705,9 +871,11 @@
     .sf-fv-mark {
         flex: none;
         box-sizing: border-box;
-        width: 0.875rem;
-        height: 0.875rem;
-        border: 1px solid var(--sf-pdp-text);
+        width: 1.25rem;
+        height: 1.25rem;
+        border: 1px solid var(--sf-pdp-muted);
+        border-radius: 3px;
+        background: #fff;
     }
 
     .sf-fv-mark-round {
@@ -715,8 +883,9 @@
     }
 
     .sf-fv-input:checked + .sf-fv-mark {
+        border-color: var(--sf-pdp-text);
         background: var(--sf-pdp-text);
-        box-shadow: inset 0 0 0 2px var(--sf-bg, #fafafa);
+        box-shadow: inset 0 0 0 4px #fff;
     }
 
     .sf-fv-link {
@@ -725,26 +894,28 @@
 
     .sf-fv-input:checked + .sf-fv-text {
         color: var(--sf-pdp-text);
+    }
+
+    .sf-fv-link .sf-fv-input:checked + .sf-fv-text {
+        font-weight: 500;
         text-decoration: underline;
     }
 
-    .sf-fv-list .sf-fv-input:checked + .sf-fv-mark + .sf-fv-text {
-        text-decoration: none;
-    }
-
     .sf-fv-dot {
-        width: 1.5rem;
-        height: 1.5rem;
+        width: 1.75rem;
+        height: 1.75rem;
         border-radius: 9999px;
     }
 
     .sf-fv-circle {
         @apply block rounded-full;
+        width: 1.75rem;
+        height: 1.75rem;
         box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.12);
     }
 
     .sf-fv-input:checked + .sf-fv-circle {
-        box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.12), 0 0 0 3px var(--sf-bg, #fafafa), 0 0 0 4px var(--sf-pdp-text);
+        box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.12), 0 0 0 3px #fff, 0 0 0 4px var(--sf-pdp-text);
     }
 
     .sf-fv-input:focus-visible + .sf-fv-mark,
@@ -756,111 +927,66 @@
 
     .sf-fbtn {
         @apply inline-flex cursor-pointer items-center justify-center no-underline;
-        min-height: 2.5rem;
+        min-height: 3rem;
         padding: 0 1.25rem;
-        font-size: 0.875rem;
+        font-size: 0.8125rem;
+        font-weight: 500;
     }
 
-    .sf-fbtn-primary {
-        border: 1px solid var(--sf-primary, #171717);
-        border-radius: var(--sf-r-btn, 0);
-        background: var(--sf-btn-bg, var(--sf-primary, #171717));
-        color: var(--sf-btn-text, var(--sf-on-primary, #fff));
-        font-weight: 600;
-    }
-
-    .sf-fbtn-secondary {
-        border: 1px solid var(--sf-pdp-line);
-        background: transparent;
+    /* «Филтрирай»: delicate, an outline (1px ink on white), no fill */
+    .sf-fbtn-outline {
+        flex: 1 1 auto;
+        border: 1px solid var(--sf-pdp-text);
+        border-radius: 0;
+        background: #fff;
         color: var(--sf-pdp-text);
     }
 
-    /* a computer, «Цяла ширина»: a bar above the list; each group is a dropdown, «Филтрирай» / «Изчисти» at the end, the chips row below */
-    .sf-cat-layout-full .sf-filters-form {
-        @apply relative flex flex-wrap items-start;
-        gap: 0.75rem 0.75rem;
-        margin-bottom: 1.25rem;
+    .sf-fclear {
+        @apply inline-flex items-center no-underline;
+        min-height: 2.75rem;
+        font-size: 0.8125rem;
+        color: var(--sf-pdp-text);
+        text-decoration: underline;
+        white-space: nowrap;
     }
 
-    .sf-cat-layout-full .sf-fdrawer-body {
-        display: contents;
+    /* a computer, «Със страничен панел»: a fixed 17rem panel and the list beside it, on the chosen side (CSS only: the panel is first in the DOM). The groups are stacked and open; the sort is the row above the list */
+    @media (min-width: 64rem) {
+        .sf-cat-layout-sidebar .sf-cat-body {
+            @apply grid items-start;
+            grid-template-columns: 17rem minmax(0, 1fr);
+            grid-template-areas: 'filters main';
+            gap: 2rem;
+        }
+
+        .sf-cat-layout-sidebar.sf-cat-side-right .sf-cat-body {
+            grid-template-columns: minmax(0, 1fr) 17rem;
+            grid-template-areas: 'main filters';
+        }
+
+        .sf-cat-layout-sidebar .sf-fgroup-sort {
+            display: none;
+        }
+
+        .sf-cat-layout-sidebar .sf-fgroup {
+            padding: 0.75rem 0;
+            border-bottom: 1px solid var(--sf-pdp-line);
+        }
+
+        .sf-cat-layout-sidebar .sf-fgroup-panel {
+            padding-top: 0.625rem;
+        }
+
+        .sf-cat-layout-sidebar .sf-fdrawer-foot {
+            @apply flex items-center;
+            gap: 1rem;
+            margin-top: 1rem;
+        }
     }
 
-    .sf-cat-layout-full .sf-fgroups {
-        @apply flex flex-wrap;
-        gap: 0.5rem 0.75rem;
-        order: 1;
-    }
-
-    .sf-cat-layout-full .sf-fdrawer-foot {
-        @apply flex;
-        gap: 0.5rem;
-        order: 2;
-    }
-
-    .sf-cat-layout-full .sf-filters-head {
-        order: 3;
-        flex: 1 0 100%;
-        margin: 0.25rem 0 0;
-    }
-
-    .sf-cat-layout-full .sf-fgroup {
-        @apply relative;
-    }
-
-    .sf-cat-layout-full .sf-fgroup-summary {
-        min-height: 2.5rem;
-        padding: 0 0.875rem;
-        border: 1px solid var(--sf-pdp-line);
-        background: #fff;
-    }
-
-    .sf-cat-layout-full .sf-fgroup-panel {
-        @apply absolute bg-white;
-        left: 0;
-        top: 100%;
-        z-index: 30;
-        min-width: 14rem;
-        max-height: 20rem;
-        overflow-y: auto;
-        margin-top: 0.25rem;
-        padding: 0.75rem 1rem;
-        border: 1px solid var(--sf-pdp-line);
-    }
-
-    /* a computer, «Със страничен панел»: a fixed 17rem panel and the list beside it, on the chosen side (CSS only: the panel is first in the DOM) */
-    .sf-cat-layout-sidebar .sf-cat-body {
-        @apply grid items-start;
-        grid-template-columns: 17rem minmax(0, 1fr);
-        grid-template-areas: 'filters main';
-        gap: 2rem;
-    }
-
-    .sf-cat-layout-sidebar.sf-cat-side-right .sf-cat-body {
-        grid-template-columns: minmax(0, 1fr) 17rem;
-        grid-template-areas: 'main filters';
-    }
-
-    .sf-cat-layout-sidebar .sf-fgroup {
-        padding: 0.75rem 0;
-        border-bottom: 1px solid var(--sf-pdp-line);
-    }
-
-    .sf-cat-layout-sidebar .sf-fgroup-summary::after {
-        margin-left: auto;
-    }
-
-    .sf-cat-layout-sidebar .sf-fgroup-panel {
-        padding-top: 0.625rem;
-    }
-
-    .sf-cat-layout-sidebar .sf-fdrawer-foot {
-        @apply flex;
-        gap: 0.5rem;
-        margin-top: 1rem;
-    }
-
-    /* below 64rem the form lives in a drawer that slides in from the side like the menu drawer (the script opens it); the groups are stacked accordions */
+    /* below 64rem the form is the DRAWER that slides in from the right like the menu drawer (the script opens it). Level 1 is a list of rows; a row is the <summary> of a <details>; the OPEN <details> is level 2,
+       laid over the drawer (its summary is the header with a back arrow). */
     @media (max-width: 63.999rem) {
         .sf-ftrigger {
             @apply inline-flex;
@@ -868,18 +994,6 @@
 
         .sf-sortdd {
             display: none;
-        }
-
-        .sf-fsort {
-            @apply block;
-            margin: 0 0 0.5rem;
-            padding: 0 0 0.75rem;
-            border: 0;
-            border-bottom: 1px solid var(--sf-pdp-line);
-        }
-
-        .sf-fsort legend {
-            padding: 0 0 0.5rem;
         }
 
         .sf-fdrawer {
@@ -909,6 +1023,7 @@
 
         .sf-fdrawer-panel {
             @apply absolute flex flex-col bg-white;
+            --sf-ffoot: 4.5625rem;
             top: 0;
             bottom: 0;
             right: 0;
@@ -923,15 +1038,20 @@
         }
 
         .sf-fdrawer-head {
-            @apply flex flex-none items-center justify-between;
-            padding: 0 0.5rem 0 1.25rem;
+            @apply relative flex flex-none items-center;
+            box-sizing: border-box;
+            height: 3.5rem;
+            padding: 0 0.5rem;
             border-bottom: 1px solid var(--sf-pdp-line);
         }
 
         .sf-fdrawer-title {
-            @apply m-0;
+            @apply absolute m-0 text-center;
+            left: 3.5rem;
+            right: 3.5rem;
             font-size: 0.9375rem;
             font-weight: 500;
+            pointer-events: none;
         }
 
         .sf-fdrawer-close {
@@ -941,100 +1061,161 @@
             color: inherit;
         }
 
-        .sf-filters-form,
-        .sf-cat-layout-full .sf-filters-form {
+        /* not positioned: the open filter screen is laid over the whole PANEL (its header replaces the level 1 header) */
+        .sf-filters-form {
             @apply flex min-h-0 flex-1 flex-col;
-            gap: 0;
             margin: 0;
         }
 
-        .sf-fdrawer-body,
-        .sf-cat-layout-full .sf-fdrawer-body {
-            display: block;
+        .sf-fdrawer-body {
+            @apply block overflow-y-auto;
             flex: 1 1 auto;
-            overflow-y: auto;
-            padding: 1rem 1.25rem;
+            padding: 0;
         }
 
-        .sf-cat-layout-full .sf-fgroups,
-        .sf-cat-layout-full .sf-filters-head {
-            display: block;
-            order: 0;
+        .sf-fcount {
+            @apply block m-0;
+            padding: 0.75rem 1rem;
+            font-size: 0.8125rem;
+            color: var(--sf-pdp-muted);
         }
 
-        .sf-cat-layout-full .sf-filters-head,
-        .sf-filters-head {
-            @apply flex;
-            margin: 0 0 1rem;
-        }
-
-        .sf-fgroup,
-        .sf-cat-layout-full .sf-fgroup,
-        .sf-cat-layout-sidebar .sf-fgroup {
-            @apply static;
-            padding: 0.75rem 0;
+        .sf-fgroup {
             border-bottom: 1px solid var(--sf-pdp-line);
         }
 
-        .sf-fgroup-summary,
-        .sf-cat-layout-full .sf-fgroup-summary {
-            min-height: 0;
-            padding: 0;
-            border: 0;
-            background: transparent;
+        .sf-fgroup-summary {
+            @apply relative;
+            box-sizing: border-box;
+            min-height: 3.5rem;
+            padding: 0 1rem;
+            gap: 0.5rem;
+            font-size: 0.9375rem;
+        }
+
+        .sf-fgroup-name {
+            font-size: 0.9375rem;
+            font-weight: 400;
+            text-transform: none;
+            letter-spacing: 0;
+        }
+
+        .sf-fgroup-current {
+            @apply block;
+            min-width: 0;
+            max-width: 50%;
+            margin-left: auto;
+            overflow: hidden;
+            font-size: 0.875rem;
+            font-weight: 600;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
 
         .sf-fgroup-summary::after {
-            margin-left: auto;
+            margin-left: 0.25rem;
         }
 
-        .sf-fgroup-panel,
-        .sf-cat-layout-full .sf-fgroup-panel,
-        .sf-cat-layout-sidebar .sf-fgroup-panel {
-            @apply static;
-            min-width: 0;
-            max-height: none;
-            margin: 0;
-            padding: 0.625rem 0 0;
-            border: 0;
+        /* level 2: the open filter is laid over the drawer (above the foot); its summary is the header: a back arrow on the left, the name in the middle */
+        .sf-fgroup[open] {
+            @apply absolute overflow-y-auto bg-white;
+            inset: 0 0 var(--sf-ffoot) 0;
+            z-index: 3;
+            border-bottom: 0;
         }
 
-        .sf-fdrawer-foot,
-        .sf-cat-layout-full .sf-fdrawer-foot,
-        .sf-cat-layout-sidebar .sf-fdrawer-foot {
-            @apply flex flex-none;
-            order: 0;
-            gap: 0.75rem;
-            margin: 0;
-            padding: 1rem 1.25rem;
-            border-top: 1px solid var(--sf-pdp-line);
+        .sf-fgroup[open] > .sf-fgroup-summary {
+            position: sticky;
+            top: 0;
+            z-index: 1;
+            justify-content: center;
+            padding: 0 3.5rem;
+            border-bottom: 1px solid var(--sf-pdp-line);
             background: #fff;
         }
 
-        .sf-fdrawer-foot .sf-fbtn {
-            flex: 1 1 0;
+        .sf-fgroup[open] > .sf-fgroup-summary > .sf-fgroup-current,
+        .sf-fgroup[open] > .sf-fgroup-summary::after {
+            display: none;
+        }
+
+        .sf-fgroup[open] > .sf-fgroup-summary::before {
+            content: '';
+            position: absolute;
+            left: 1.25rem;
+            top: 50%;
+            width: 0.5625rem;
+            height: 0.5625rem;
+            border-left: 1px solid currentColor;
+            border-bottom: 1px solid currentColor;
+            transform: translateY(-50%) rotate(45deg);
+        }
+
+        .sf-fgroup-meta {
+            @apply block m-0;
+            padding: 1rem;
+            font-size: 0.75rem;
+            color: var(--sf-pdp-muted);
+        }
+
+        .sf-fgroup-sort .sf-fgroup-panel {
+            padding-top: 0.5rem;
+        }
+
+        .sf-fgroup-panel .sf-fv-list {
+            @apply flex;
+            box-sizing: border-box;
+            width: 100%;
+            min-height: 3rem;
+            padding: 0 1rem;
+        }
+
+        .sf-fgroup-panel .sf-filter-values {
+            padding: 0 1rem 1rem;
+        }
+
+        .sf-fgroup-panel .sf-filter-values .sf-fv-list {
+            padding: 0;
+        }
+
+        .sf-fgroup-panel .sf-fv-link {
+            min-height: 3rem;
+            align-items: center;
+        }
+
+        .sf-fvalues-links {
+            @apply block;
+        }
+
+        .sf-fdrawer-foot {
+            @apply relative flex flex-none items-center;
+            box-sizing: border-box;
+            height: var(--sf-ffoot);
+            padding: 0.75rem 1rem;
+            gap: 1rem;
+            border-top: 1px solid var(--sf-pdp-line);
+            background: #fff;
+            z-index: 4;
         }
 
         .sf-cat-layout-sidebar .sf-cat-body {
             display: block;
         }
 
-        /* the sort in the toolbar is replaced by the drawer's radios; the trigger is on the left, the count on the right */
-        .sf-toolbar .sf-count {
-            margin-left: auto;
+        .sf-cat-layout-sidebar .sf-fdrawer-foot {
+            margin-top: 0;
         }
     }
 
-    /* without the script the drawer is a plain block above the list (as the menu drawer is under the header) and the trigger is not shown; the bar's dropdowns open in the flow */
+    /* without the script the drawer is a plain block above the list (as the menu drawer is under the header), every filter a stacked, open accordion; the trigger is not shown and the bar's controls open in the flow */
     @media (scripting: none) {
         .sf-ftrigger {
             display: none;
         }
 
-        .sf-cat-layout-full .sf-fgroup-panel {
+        .sf-bctl-panel {
             @apply static;
-            min-width: 0;
-            max-height: none;
+            width: auto;
         }
     }
 
@@ -1058,8 +1239,24 @@
             margin-bottom: 1rem;
         }
 
-        .sf-fdrawer-head {
-            display: flex;
+        .sf-fgroup[open] {
+            position: static;
+            overflow: visible;
+        }
+
+        .sf-fgroup[open] > .sf-fgroup-summary {
+            position: static;
+            justify-content: flex-start;
+            padding: 0 1rem;
+        }
+
+        .sf-fgroup[open] > .sf-fgroup-summary::before {
+            display: none;
+        }
+
+        .sf-fdrawer-foot {
+            position: static;
+            height: auto;
         }
     }
 
@@ -1069,6 +1266,8 @@
             transition: none;
         }
     }
+
+    /* ===== end of CD-1c filters ======================================================================================================================================================= */
 
     .sf-pagination-ellipsis {
         @apply inline-flex min-w-6 items-center justify-center text-sm text-neutral-500;

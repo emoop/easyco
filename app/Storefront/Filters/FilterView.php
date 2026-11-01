@@ -6,27 +6,28 @@ use App\Storefront\ReadModels\ListingSort;
 use App\Storefront\Support\PaginationLinks;
 
 /**
- * CT-3 / CD-1b: what the filters form and the sort control print, as plain data. For every filter of the shop (the admin's order) the values to SHOW: those that give products together with the OTHER
+ * CT-3 / CD-1b / CD-1c: what the filters and the sort print, as plain data. For every filter of the shop (the admin's order) the values to SHOW: those that give products together with the OTHER
  * filters' choices (the facet ids, one query per filter) plus every selected value (kept visible so the visitor can remove it, even when it now gives nothing). A filter with fewer than two values to
- * show and nothing selected is not shown. The chips (the chosen values) are links that remove ONE choice: the other filters, `per_page` and `sort` kept, `page` dropped (a new choice starts at page 1),
- * the filters in the canonical order, so one selection is one URL. The values themselves are checkboxes of ONE GET form (CD-1b); their `selected` flag is the `checked` state.
+ * show and nothing selected is not shown. Every value carries the URL that toggles it (the desktop bar follows it: a choice applies at once) and every group the URL without THIS filter; both keep the
+ * other filters, `per_page` and `sort`, drop `page` (a new choice starts at page 1) and are in the canonical order, so one selection is one URL. The phone drawer prints the same values as checkboxes of
+ * ONE GET form (`selected` is the `checked` state).
  */
 final class FilterView
 {
     /**
      * @param  list<array{id: int, name: string, display: string, values: list<array{id: int, label: string, colour: ?string}>}>  $catalog
      * @param  array<int, list<int>>  $facets  attribute id => the value ids that give products
-     * @return array{groups: list<array<string, mixed>>, chips: list<array{label: string, url: string}>, clear: ?string, active: int}|null null = nothing to print
+     * @return array{groups: list<array<string, mixed>>, clear: ?string, active: int}|null null = nothing to print
      */
     public static function build(array $catalog, FilterSelection $selection, array $facets, string $baseUrl, int $perPage, string $sort, int $defaultPerPage, PaginationLinks $links): ?array
     {
         $url = static fn (FilterSelection $chosen): string => $baseUrl.$links->suffixFor(1, $perPage, $sort, $chosen->query(), $defaultPerPage);
         $groups = [];
-        $chips = [];
 
         foreach ($catalog as $filter) {
             $chosen = $selection->map[$filter['id']] ?? [];
             $values = [];
+            $labels = [];
 
             foreach ($filter['values'] as $value) {
                 $isChosen = in_array($value['id'], $chosen, true);
@@ -35,15 +36,20 @@ final class FilterView
                     continue;
                 }
 
-                $values[] = ['id' => $value['id'], 'label' => $value['label'], 'colour' => $value['colour'], 'selected' => $isChosen];
-                $isChosen && $chips[] = ['label' => $value['label'], 'url' => $url($selection->toggled($filter['id'], $value['id'], $catalog))];
+                $values[] = ['id' => $value['id'], 'label' => $value['label'], 'colour' => $value['colour'], 'selected' => $isChosen, 'url' => $url($selection->toggled($filter['id'], $value['id'], $catalog))];
+                $isChosen && $labels[] = $value['label'];
             }
 
             if (count($values) < 2 && $chosen === []) {
                 continue;
             }
 
-            $groups[] = ['id' => $filter['id'], 'name' => $filter['name'], 'display' => $filter['display'], 'count' => count($chosen), 'values' => $values];
+            $groups[] = [
+                'id' => $filter['id'], 'name' => $filter['name'], 'display' => $filter['display'], 'count' => count($chosen), 'values' => $values,
+                // «Цвят: Червен, Син» in the bar / the row of the drawer, and the link that clears THIS filter only
+                'current' => implode(', ', $labels),
+                'clear' => $chosen === [] ? null : $url($selection->without($filter['id'])),
+            ];
         }
 
         if ($groups === []) {
@@ -52,7 +58,6 @@ final class FilterView
 
         return [
             'groups' => $groups,
-            'chips' => $chips,
             'clear' => $selection->isEmpty() ? null : $url(new FilterSelection()),
             'active' => count(array_filter($groups, static fn (array $group): bool => $group['count'] > 0)),
         ];
