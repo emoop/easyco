@@ -3,7 +3,7 @@
 @section('content')
     {{-- The region rule per country (CheckoutRegionPolicy::all()): the script resolves the mode of the CURRENT country from it. --}}
     <section class="sf-checkout" data-sf-checkout data-region-policy="{{ json_encode($regionPolicy, JSON_THROW_ON_ERROR | JSON_FORCE_OBJECT) }}">
-        <h1 class="sf-title">{{ __('storefront.checkout_heading') }}</h1>
+        <p class="sf-title">{{ __('storefront.checkout_heading') }}</p>
         <p class="sf-cart-loading" data-sf-checkout-loading>{{ __('storefront.checkout_loading') }}</p>
         <noscript>
             <p class="sf-cart-noscript">{{ __('storefront.checkout_noscript') }}</p>
@@ -20,7 +20,7 @@
             </button>
 
             <aside class="sf-checkout-summary" id="sf-summary-panel" data-open="false" aria-labelledby="sf-summary-title">
-                <h2 class="sf-section-title" id="sf-summary-title">{{ __('storefront.checkout_summary_title') }}</h2>
+                <p class="sf-section-title" id="sf-summary-title">{{ __('storefront.checkout_summary_title') }}</p>
                 <ul class="sf-summary-lines" data-sf-summary-lines></ul>
                 {{-- The promo code box (the cart page's own, filled by the script): inside the summary, so inside the mobile panel too, and OUTSIDE the checkout form. --}}
                 <div class="sf-summary-promo" data-sf-promo hidden></div>

@@ -2,7 +2,7 @@
 
 @section('content')
     <section class="sf-cart-page" data-sf-cart-page>
-        <h1 class="sf-title">{{ __('storefront.cart_title') }}</h1>
+        <p class="sf-title">{{ __('storefront.cart_title') }}</p>
         <p class="sf-cart-loading" data-sf-cart-loading>{{ __('storefront.cart_loading') }}</p>
         <noscript>
             <p class="sf-cart-noscript">{{ __('storefront.cart_noscript') }}</p>
