@@ -261,6 +261,10 @@ class CategoryLayoutTest extends TestCase
             $this->visit('/product-category/clothing?sort='.$sort)->assertNotFound();
         }
 
+        // DRIBNI-1: the array form of the sort is the same 404 as an unknown value (it was a 400 from the request bag)
+        $this->visit('/product-category/clothing?sort[]=name_asc')->assertNotFound();
+        $this->visit('/product-category/clothing?sort[]=')->assertNotFound();
+
         $this->visit('/product-category/clothing?sort=newest')->assertOk(); // today's behaviour: the default's own name is accepted (no redirect)
     }
 

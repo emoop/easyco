@@ -231,6 +231,7 @@
     /* ---- product grid: 2 / 3 / 4 ---------------------------------------------------------------- */
     .sf-grid {
         @apply grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4;
+       
     }
 
     /* CD-1a: «Каталог» — the category listing's columns (the home page's grid is not touched). The two variables exist only when the shop changed them; the fallbacks are today's 2 / 4, and
@@ -395,6 +396,18 @@
         .sf-card-name {
             font-size: 0.9375rem;
         }
+    }
+
+    /* DRIBNI-1: «Изчерпан» on a card is a quiet line, not a label: the muted token, the footer's text size, no capitals, no spacing, no background, border or radius */
+    .sf-card-footer > .sf-stock-out {
+        font-size: 0.8125rem;
+        font-weight: 400;
+        text-transform: none;
+        letter-spacing: 0;
+        color: var(--sf-pdp-muted);
+        background: none;
+        border: 0;
+        border-radius: 0;
     }
 
     .sf-card-footer > .sf-price .sf-price-current {

@@ -48,7 +48,8 @@ final class CategoryController extends Controller
         }
 
         // CD-1b: the filters form sends an EMPTY `sort` for the default option; it is not a sort, it is a reason to answer with the URL that has none
-        $emptySort = $request->query->has('sort') && in_array($request->query->get('sort'), ['', null], true);
+        // DRIBNI-1: read the raw value, not `query->get()`: Symfony throws a 400 for an ARRAY value (`sort[]=x`); an array is not an empty sort, it falls through to the 404 of an unknown sort
+        $emptySort = $request->query->has('sort') && in_array($request->query->all()['sort'] ?? null, ['', null], true);
         $emptySort && $request->query->remove('sort');
 
         // CT-3: a request WITH a `filter` parameter is resolved against the shop's filters first; one without it asks for them only when the page query says the shop has any (no query of their own otherwise)

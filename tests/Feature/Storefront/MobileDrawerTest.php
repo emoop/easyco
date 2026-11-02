@@ -145,11 +145,41 @@ class MobileDrawerTest extends TestCase
         $this->assertStringNotContainsString('href="/wishlist"', $html);
     }
 
+    /** DRIBNI-1: the `.sf-acc-row` whose link has the text $name, parsed as markup (whitespace and attribute order are not part of the check). */
+    private function accRow(string $html, string $name): ?\DOMElement
+    {
+        $dom = new \DOMDocument();
+        libxml_use_internal_errors(true);
+        $dom->loadHTML('<?xml encoding="UTF-8"?>'.$html, LIBXML_NOERROR | LIBXML_NOWARNING);
+        libxml_clear_errors();
+
+        foreach ((new \DOMXPath($dom))->query("//div[contains(concat(' ', normalize-space(@class), ' '), ' sf-acc-row ')]") as $row) {
+            $link = $row->getElementsByTagName('a')->item(0);
+
+            if ($row instanceof \DOMElement && $link !== null && trim($link->textContent) === $name) {
+                return $row;
+            }
+        }
+
+        return null;
+    }
+
     public function test_the_name_is_a_link_and_the_chevron_a_separate_button(): void
     {
         $html = $this->drawer();
 
-        $this->assertMatchesRegularExpression('#<div class="sf-acc-row">\s*<a class="sf-acc-link" href="/product-category/clothing">Clothing</a>\s*<button class="sf-acc-toggle" type="button" aria-expanded="false" aria-controls="sf-acc-drawer-0-1" data-sf-acc-toggle>#', $html);
+        // DRIBNI-1: the row is checked as a DOM (its children in order, each attribute on its own), so a space or another attribute order does not matter
+        $row = $this->accRow($html, 'Clothing');
+        $this->assertNotNull($row, 'the parent has a row: its link, then its chevron');
+        $children = array_values(array_filter(iterator_to_array($row->childNodes), static fn ($node): bool => $node instanceof \DOMElement));
+        $this->assertSame(['a', 'button'], array_map(static fn (\DOMElement $e): string => $e->tagName, $children));
+        $this->assertSame('sf-acc-link', $children[0]->getAttribute('class'));
+        $this->assertSame('/product-category/clothing', $children[0]->getAttribute('href'));
+        $this->assertSame('sf-acc-toggle', $children[1]->getAttribute('class'));
+        $this->assertSame('button', $children[1]->getAttribute('type'));
+        $this->assertSame('false', $children[1]->getAttribute('aria-expanded'));
+        $this->assertSame('sf-acc-drawer-0-1', $children[1]->getAttribute('aria-controls'));
+        $this->assertTrue($children[1]->hasAttribute('data-sf-acc-toggle'));
         $this->assertStringContainsString('<div class="sf-acc-sub" id="sf-acc-drawer-0-1">', $html);
         $this->assertSame(1, substr_count($html, 'data-sf-acc-toggle'), 'only the parent has a chevron');
         $this->assertStringContainsString('<a class="sf-acc-link" href="/">Home</a>', $html, 'a row without children is a plain link');
