@@ -110,6 +110,9 @@ class AppServiceProvider extends ServiceProvider
         // CT-3: the shop's filters are cached; an attribute or a value that is saved or deleted forgets them.
         \App\Storefront\Filters\FilterCatalog::listen();
 
+        // HB-4.1: a media asset that became ready recompiles the HTML blocks that use it as their background picture
+        \Illuminate\Support\Facades\Event::listen(\EasyCo\Media\Events\MediaAssetReady::class, \App\Content\HtmlBlocks\RecompileBlockPicturesOnReady::class);
+
         // The footer of every storefront page is the `footer` menu (D3): compiled, and read with the appearance (no query of its own).
         \Illuminate\Support\Facades\View::composer('storefront.layout', static function ($view): void {
             // The merchant's appearance (storefront-customization-design.md 3.4): ONE read, cached; the token stylesheet, the font to preload and the banner.

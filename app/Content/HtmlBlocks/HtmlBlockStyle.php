@@ -282,7 +282,8 @@ final class HtmlBlockStyle
         if ($clean['bg_image'] !== null) {
             $veil = $clean['overlay'] > 0 ? 'linear-gradient(rgba(0,0,0,.'.($clean['overlay'] / 10).'),rgba(0,0,0,.'.($clean['overlay'] / 10).')),' : '';
             array_push($picture, 'background-image:'.$veil.'url('.$imageUrl.')', 'background-size:'.$clean['bg_size'], 'background-position:'.$clean['bg_position'], 'background-repeat:no-repeat');
-            $clean['min_height'] > 0 && $picture[] = 'min-height:'.$clean['min_height'].'px';
+            // HB-4.1: the height is N px on a desktop and shrinks with the screen on a phone (70vw): one declaration, no media query, never taller than N
+            $clean['min_height'] > 0 && $picture[] = 'min-height:min('.$clean['min_height'].'px,70vw)';
             $clean['min_height'] > 0 && $clean['valign'] !== 'top' && array_push($picture, 'display:flex', 'flex-direction:column', 'justify-content:'.($clean['valign'] === 'center' ? 'center' : 'flex-end'));
         }
 
@@ -333,7 +334,7 @@ final class HtmlBlockStyle
             'background-size:(?:cover|contain)',
             'background-position:(?:center|top|bottom|left|right)',
             'background-repeat:no-repeat',
-            'min-height:(?:160|240|320|400)px',
+            'min-height:min\((?:160|240|320|400)px,70vw\)',
             'display:flex',
             'flex-direction:column',
             'justify-content:(?:center|flex-end)',

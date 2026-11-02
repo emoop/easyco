@@ -128,14 +128,14 @@ class HtmlBlockBackgroundTest extends TestCase
             [['bg_image' => 5], ".sf-hb-9{width:fit-content;max-width:100%;background-image:url({$url});background-size:cover;background-position:center;background-repeat:no-repeat}"],
             [['bg_image' => 5, 'overlay' => 20], ".sf-hb-9{width:fit-content;max-width:100%;background-image:linear-gradient(rgba(0,0,0,.2),rgba(0,0,0,.2)),url({$url});background-size:cover;background-position:center;background-repeat:no-repeat}"],
             [['bg_image' => 5, 'overlay' => 40, 'bg_size' => 'contain', 'bg_position' => 'top'], ".sf-hb-9{width:fit-content;max-width:100%;background-image:linear-gradient(rgba(0,0,0,.4),rgba(0,0,0,.4)),url({$url});background-size:contain;background-position:top;background-repeat:no-repeat}"],
-            [['bg_image' => 5, 'overlay' => 60, 'min_height' => 160], ".sf-hb-9{width:fit-content;max-width:100%;background-image:linear-gradient(rgba(0,0,0,.6),rgba(0,0,0,.6)),url({$url});background-size:cover;background-position:center;background-repeat:no-repeat;min-height:160px}"],
-            [['bg_image' => 5, 'min_height' => 240, 'valign' => 'center'], ".sf-hb-9{width:fit-content;max-width:100%;background-image:url({$url});background-size:cover;background-position:center;background-repeat:no-repeat;min-height:240px;display:flex;flex-direction:column;justify-content:center}"],
-            [['bg_image' => 5, 'min_height' => 400, 'valign' => 'bottom', 'bg_position' => 'bottom'], ".sf-hb-9{width:fit-content;max-width:100%;background-image:url({$url});background-size:cover;background-position:bottom;background-repeat:no-repeat;min-height:400px;display:flex;flex-direction:column;justify-content:flex-end}"],
+            [['bg_image' => 5, 'overlay' => 60, 'min_height' => 160], ".sf-hb-9{width:fit-content;max-width:100%;background-image:linear-gradient(rgba(0,0,0,.6),rgba(0,0,0,.6)),url({$url});background-size:cover;background-position:center;background-repeat:no-repeat;min-height:min(160px,70vw)}"],
+            [['bg_image' => 5, 'min_height' => 240, 'valign' => 'center'], ".sf-hb-9{width:fit-content;max-width:100%;background-image:url({$url});background-size:cover;background-position:center;background-repeat:no-repeat;min-height:min(240px,70vw);display:flex;flex-direction:column;justify-content:center}"],
+            [['bg_image' => 5, 'min_height' => 400, 'valign' => 'bottom', 'bg_position' => 'bottom'], ".sf-hb-9{width:fit-content;max-width:100%;background-image:url({$url});background-size:cover;background-position:bottom;background-repeat:no-repeat;min-height:min(400px,70vw);display:flex;flex-direction:column;justify-content:flex-end}"],
             // a vertical position with no minimum height has nothing to position in: no flex
             [['bg_image' => 5, 'valign' => 'center'], ".sf-hb-9{width:fit-content;max-width:100%;background-image:url({$url});background-size:cover;background-position:center;background-repeat:no-repeat}"],
             // the picture with the older keys: the picture's declarations are APPENDED, HB-3.2's centring margins stay
-            [['bg_image' => 5, 'color' => '#ffffff', 'align' => 'center', 'pad_v' => 20, 'pad_h' => 24, 'overlay' => 40, 'min_height' => 240, 'valign' => 'center'], ".sf-hb-9{color:#ffffff;padding:20px 24px;width:fit-content;max-width:100%;margin-left:auto;margin-right:auto;text-align:center;background-image:linear-gradient(rgba(0,0,0,.4),rgba(0,0,0,.4)),url({$url});background-size:cover;background-position:center;background-repeat:no-repeat;min-height:240px;display:flex;flex-direction:column;justify-content:center}"],
-            [['bg_image' => 5, 'width_mode' => 'full', 'min_height' => 320], ".sf-hb-9{width:100%;background-image:url({$url});background-size:cover;background-position:center;background-repeat:no-repeat;min-height:320px}"],
+            [['bg_image' => 5, 'color' => '#ffffff', 'align' => 'center', 'pad_v' => 20, 'pad_h' => 24, 'overlay' => 40, 'min_height' => 240, 'valign' => 'center'], ".sf-hb-9{color:#ffffff;padding:20px 24px;width:fit-content;max-width:100%;margin-left:auto;margin-right:auto;text-align:center;background-image:linear-gradient(rgba(0,0,0,.4),rgba(0,0,0,.4)),url({$url});background-size:cover;background-position:center;background-repeat:no-repeat;min-height:min(240px,70vw);display:flex;flex-direction:column;justify-content:center}"],
+            [['bg_image' => 5, 'width_mode' => 'full', 'min_height' => 320], ".sf-hb-9{width:100%;background-image:url({$url});background-size:cover;background-position:center;background-repeat:no-repeat;min-height:min(320px,70vw)}"],
         ];
 
         foreach ($cases as [$style, $expected]) {
@@ -254,7 +254,7 @@ class HtmlBlockBackgroundTest extends TestCase
 
         HtmlBlockStyle::rebuildStylesheet();
 
-        $this->assertStringContainsString(".sf-hb-{$block->id}{width:fit-content;max-width:100%;background-image:linear-gradient(rgba(0,0,0,.4),rgba(0,0,0,.4)),url(/storage/uploads/2026/10/banner-large.webp);background-size:cover;background-position:center;background-repeat:no-repeat;min-height:240px;display:flex;flex-direction:column;justify-content:center}", (string) $this->css());
+        $this->assertStringContainsString(".sf-hb-{$block->id}{width:fit-content;max-width:100%;background-image:linear-gradient(rgba(0,0,0,.4),rgba(0,0,0,.4)),url(/storage/uploads/2026/10/banner-large.webp);background-size:cover;background-position:center;background-repeat:no-repeat;min-height:min(240px,70vw);display:flex;flex-direction:column;justify-content:center}", (string) $this->css());
 
         $html = HtmlBlockModel::renderMany([(int) $block->id])[(int) $block->id];
         $this->assertSame('<div class="sf-hb sf-hb-'.$block->id.'"><p>Sale</p></div>', $html);
@@ -313,7 +313,7 @@ class HtmlBlockBackgroundTest extends TestCase
         $declarations = HtmlBlockStyle::previewDeclarations(['bg_image' => $asset->id, 'overlay' => '20', 'min_height' => '160']);
 
         $this->assertStringContainsString('background-image:linear-gradient(rgba(0,0,0,.2),rgba(0,0,0,.2)),url(/storage/uploads/2026/10/p-large.webp)', $declarations);
-        $this->assertStringContainsString('min-height:160px', $declarations);
+        $this->assertStringContainsString('min-height:min(160px,70vw)', $declarations);
         $this->assertSame('', HtmlBlockStyle::previewDeclarations(['bg_image' => 'x']), 'a bad id shows nothing');
     }
 }

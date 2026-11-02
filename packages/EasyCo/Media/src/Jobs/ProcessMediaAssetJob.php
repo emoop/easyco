@@ -3,9 +3,11 @@
 namespace EasyCo\Media\Jobs;
 
 use EasyCo\Media\Contracts\MediaAssetRepository;
+use EasyCo\Media\Events\MediaAssetReady;
 use EasyCo\Media\Contracts\MediaImageProcessor;
 use EasyCo\Media\Contracts\MediaStorageAdapter;
 use Illuminate\Bus\Queueable;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
@@ -43,11 +45,14 @@ class ProcessMediaAssetJob implements ShouldQueue
         $asset->markProcessing();
         $assets->save($asset);
 
+        $ready = false;
+
         try {
             $sourceContent = $storage->get($asset->disk(), $asset->path());
             $variants = $processor->generateVariants($sourceContent, $asset->disk(), $asset->path());
 
             $asset->markReady($variants);
+            $ready = true;
         } catch (Throwable $e) {
             // Catches Throwable, not just MediaProcessingException: an
             // asset stuck forever in PROCESSING after an unexpected
@@ -63,5 +68,8 @@ class ProcessMediaAssetJob implements ShouldQueue
         }
 
         $assets->save($asset);
+
+        // HB-4.1: an application listener (an HTML block's picture) reacts once the asset is saved as ready
+        $ready && Event::dispatch(new MediaAssetReady((string) $asset->id()));
     }
 }
