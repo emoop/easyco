@@ -228,7 +228,7 @@ final class CatalogReader
     /**
      * @throws ListingOptionNotAvailable for a price sort or a price filter (they need S7's price_from_minor)
      */
-    public function listing(ListingQuery $query, array $filters = []): ListingPage
+    public function listing(ListingQuery $query, array $filters = [], ?string $cardSizes = null): ListingPage
     {
         if ($query->hasPriceFilter() || $query->sort === ListingSort::PRICE_ASC || $query->sort === ListingSort::PRICE_DESC) {
             throw new ListingOptionNotAvailable('Price filtering and price sorting arrive with the storefront search stage (S7).');
@@ -260,7 +260,7 @@ final class CatalogReader
 
         return new ListingPage(
             query: $query->toArray(),
-            items: $this->cards($paginator->items()),
+            items: $this->cards($paginator->items(), $cardSizes ?? ImageSetBuilder::SIZES_CARD),
             page: $paginator->currentPage(),
             perPage: $paginator->perPage(),
             total: $paginator->total(),
@@ -422,7 +422,7 @@ final class CatalogReader
      * @param array<int, ProductModel> $products
      * @return list<ProductCard>
      */
-    private function cards(array $products): array
+    private function cards(array $products, string $sizes = ImageSetBuilder::SIZES_CARD): array
     {
         if ($products === []) {
             return [];
@@ -465,8 +465,8 @@ final class CatalogReader
                 url: $this->urls->product((string) $product->slug),
                 name: (string) $product->name,
                 brand: $this->brandOf($product),
-                image: $asset === null ? null : $this->images->build($asset, (string) $product->name, ImageSetBuilder::SIZES_CARD),
-                secondImage: $second === null ? null : $this->images->build($second, (string) $product->name, ImageSetBuilder::SIZES_CARD),
+                image: $asset === null ? null : $this->images->build($asset, (string) $product->name, $sizes),
+                secondImage: $second === null ? null : $this->images->build($second, (string) $product->name, $sizes),
                 price: $this->productPrice($variationIdsByProduct[$id] ?? [], $quotes),
                 badges: [],
                 inStock: array_filter(

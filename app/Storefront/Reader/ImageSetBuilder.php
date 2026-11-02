@@ -25,6 +25,30 @@ final class ImageSetBuilder
 
     private const DEFAULT_TIER = 'medium';
 
+    /**
+     * SIZES-1: the `sizes` of a product card in the CATEGORY grid, from the PUBLISHED column counts (desktop 3–5, phone 1–2; the tablet is always 3). Pure: only the validated integers reach the string (a
+     * value outside the closed lists is today's 4 / 2), so no free text can get into the attribute.
+     *
+     * Where it comes from (storefront.css): the grid is `.sf-main`'s width = 100vw − 2 × the page padding; below 40rem the gap is 0.75rem, from 40rem 1rem; the columns are the phone's below 48rem, 3 from 48rem
+     * (tablet), the desktop's from 64rem. A card is (container − (n − 1) gaps) / n. The page padding is a design setting (a `clamp` the merchant can change, and a CSS variable that `sizes` cannot read), so the
+     * formula takes the SMALLEST padding the Design screen allows (8px a side = 1rem in all): the container is never narrower than that, so the value is never SMALLER than the real card (the browser never picks
+     * a blurry image) and is rounded UP by up to a few vw for the usual padding. The side-panel layout has narrower cards still: also safe.
+     */
+    public static function cardSizes(int $cols = 4, int $colsPhone = 2): string
+    {
+        $cols = in_array($cols, [3, 4, 5], true) ? $cols : 4;
+        $colsPhone = in_array($colsPhone, [1, 2], true) ? $colsPhone : 2;
+
+        $calc = static fn (float $spare, int $columns): string => 'calc((100vw - '.rtrim(rtrim(number_format($spare, 4, '.', ''), '0'), '.').'rem) / '.$columns.')';
+
+        return implode(', ', [
+            '(min-width: 64rem) '.$calc(1 + ($cols - 1) * 1.0, $cols),
+            '(min-width: 48rem) '.$calc(1 + 2 * 1.0, 3),
+            '(min-width: 40rem) '.$calc(1 + ($colsPhone - 1) * 1.0, $colsPhone),
+            $calc(1 + ($colsPhone - 1) * 0.75, $colsPhone),
+        ]);
+    }
+
     public function __construct(
         private readonly MediaStorageAdapter $storage,
     ) {

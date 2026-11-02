@@ -9,6 +9,7 @@ use App\Storefront\Filters\FilterCatalog;
 use App\Storefront\Filters\FilterSelection;
 use App\Storefront\Filters\FilterView;
 use App\Storefront\Reader\CatalogReader;
+use App\Storefront\Reader\ImageSetBuilder;
 use App\Storefront\Support\ListingRequest;
 use App\Storefront\Support\NotFoundResponse;
 use App\Storefront\Support\PaginationLinks;
@@ -69,7 +70,9 @@ final class CategoryController extends Controller
             return redirect()->to($category->url.$pagination->suffixFor($query->page, $query->perPage->value, $query->sort->value, $selection->query(), $perPage), 301);
         }
 
-        $listing = $reader->listing($query, $selection->map);
+        // SIZES-1: the card images' `sizes` follow the PUBLISHED column counts of this grid (the home page keeps its own default)
+        $columns = $appearance->catalogColumns();
+        $listing = $reader->listing($query, $selection->map, ImageSetBuilder::cardSizes($columns['desktop'], $columns['phone']));
         ! $filtered && $listing->hasFilterable && $catalog = $filters->all();
 
         if ($listing->page > $listing->lastPage) {

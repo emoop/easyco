@@ -505,6 +505,19 @@ final class StorefrontAppearance
     }
 
     /**
+     * SIZES-1: the PUBLISHED column counts of the category grid (desktop 3–5, phone 1–2) from the same cached payload as the layout (no query); today's 4 / 2 for a shop that never set them. The signed preview
+     * carries the working copy for ONE request.
+     *
+     * @return array{desktop: int, phone: int}
+     */
+    public function catalogColumns(): array
+    {
+        $values = $this->catalogOverride ?? PageDesign::catalogValues(is_string($this->data()['catalog'] ?? null) ? $this->data()['catalog'] : null);
+
+        return ['desktop' => (int) $values['cols'], 'phone' => (int) $values['cols_phone']];
+    }
+
+    /**
      * CT-4: how each built-in filter of the category page is shown (`off` | `list` | `links` | `buttons`), from the same PUBLISHED payload as the layout (no query); the signed preview carries the working copy.
      *
      * @return array{brand: string, season: string, tag: string}
