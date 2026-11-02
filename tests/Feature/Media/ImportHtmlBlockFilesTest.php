@@ -46,7 +46,9 @@ class ImportHtmlBlockFilesTest extends TestCase
     {
         $asset = MediaAssetModel::query()->where('original_name', $originalName)->firstOrFail();
         $uuid = pathinfo($asset->path, PATHINFO_FILENAME);
-        $asset->update(['processing_status' => 'ready', 'variants' => [['tier' => 'large', 'width' => 40, 'height' => 30, 'quality' => 80, 'path' => "uploads/2026/10/{$uuid}-large.webp"]]]);
+        // MEDIA-1: the variant lives in the same folder as the original (`uploads/<year>/<month>/`, whatever the date today is)
+        $folder = dirname($asset->path);
+        $asset->update(['processing_status' => 'ready', 'variants' => [['tier' => 'large', 'width' => 40, 'height' => 30, 'quality' => 80, 'path' => "{$folder}/{$uuid}-large.webp"]]]);
 
         return $asset->fresh();
     }
@@ -91,7 +93,7 @@ class ImportHtmlBlockFilesTest extends TestCase
         $this->block('Two', '<img src="/storage/html-blocks/used.png" alt="" width="40" height="30"> and <p>none</p>');
         $this->artisan('media:import-html-block-files --execute')->assertSuccessful();
         $asset = $this->makeReady('used.png');
-        $large = '/storage/uploads/2026/10/'.pathinfo($asset->path, PATHINFO_FILENAME).'-large.webp';
+        $large = '/storage/'.dirname($asset->path).'/'.pathinfo($asset->path, PATHINFO_FILENAME).'-large.webp';
 
         $this->artisan('media:import-html-block-files --execute')->expectsOutputToContain('вече внесени: 1')->expectsOutputToContain('внесени сега: 0')->expectsOutputToContain('пренаписани адреса в текстове: 2')->assertSuccessful();
 
