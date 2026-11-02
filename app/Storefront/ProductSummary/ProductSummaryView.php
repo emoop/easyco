@@ -42,6 +42,8 @@ final class ProductSummaryView
             $entry = ['type' => $component['type'], 'html' => ''];
             // PB-1: the add-to-cart button's settings travel with the component ONLY when some differ from the defaults (the key is absent otherwise: the list is what it was)
             $component['type'] === 'purchase' && ($component['settings'] ?? []) != ProductSummaryCatalog::defaultsFor('purchase') && $entry['settings'] = $component['settings'];
+            // SKU-1: the article line's label travels the same way (only when it is not the default «Арт.»)
+            $component['type'] === 'sku' && ($component['settings'] ?? []) != ProductSummaryCatalog::defaultsFor('sku') && $entry['settings'] = $component['settings'];
             $out[] = $entry;
         }
 

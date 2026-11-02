@@ -1730,6 +1730,7 @@
         font-size: 0.8125rem;
         font-weight: 400;
         color: var(--sf-pdp-muted);
+        white-space: nowrap;
     }
 
     .sf-summary .sf-stock {

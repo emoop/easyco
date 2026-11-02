@@ -199,7 +199,8 @@ return [
         'no_props' => 'This component has no properties.',
         'no_product' => 'The shop has no visible product yet: there is nothing to show in the preview.',
         'sku_label' => 'SKU:',
-        'settings' => ['html_block' => 'HTML block', 'label' => 'Button text', 'label_choose' => 'Text before a choice', 'label_sold_out' => 'Text when sold out', 'bg' => 'Button background', 'color' => 'Text colour', 'border_w' => 'Border (px)', 'border_color' => 'Border colour', 'rounded' => 'Rounded corners', 'show_quantity' => 'Show counter', 'axes' => 'Order of the attributes'],
+        'sku_choices' => ['sku' => 'SKU:', 'art' => 'Art.', 'art_no' => 'Art. №'],
+        'settings' => ['prefix' => 'Label', 'html_block' => 'HTML block', 'label' => 'Button text', 'label_choose' => 'Text before a choice', 'label_sold_out' => 'Text when sold out', 'bg' => 'Button background', 'color' => 'Text colour', 'border_w' => 'Border (px)', 'border_color' => 'Border colour', 'rounded' => 'Rounded corners', 'show_quantity' => 'Show counter', 'axes' => 'Order of the attributes'],
         'errors' => [
             'unknown_key' => 'Unknown field: :key.',
             'unknown_setting' => 'Unknown setting: :key.',

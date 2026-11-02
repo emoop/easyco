@@ -32,7 +32,10 @@ final class ProductSummaryCatalog
         $types = [
             'brand' => [1, []],
             'title' => [1, []],
-            'sku' => [1, []],
+            // SKU-1: the article number line; «prefix» is the closed choice of its label (SKU: | Арт. | Арт. №), default «Арт.»
+            'sku' => [1, [
+                'prefix' => ['kind' => 'enum', 'options' => ['sku', 'art', 'art_no'], 'default' => 'art', 'options_prefix' => 'design.summary.sku_choices.'],
+            ]],
             'short_description' => [1, []],
             'price' => [1, []],
             'stock' => [1, []],
