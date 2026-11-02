@@ -349,7 +349,7 @@ final class FooterZone implements DesignZone, RestructuresTree
                 ColorPicker::make('colors.fg')->label(__('footer.fields.text'))->hex(),
                 $this->contrast(),
                 Select::make('align')->label(__('footer.fields.lower_align'))->native(false)->options($this->aligns()),
-                TextInput::make('text_template')->label(__('footer.fields.text_template'))->helperText(__('footer.fields.text_hint'))->maxLength(FooterLayout::MAX_TEMPLATE)->columnSpanFull(),
+                TextInput::make('text_template')->label(__('footer.fields.text_template'))->afterLabel(\App\Filament\Design\InfoHint::make(__('footer.fields.text_hint'), 'text_template'))->maxLength(FooterLayout::MAX_TEMPLATE)->columnSpanFull(),
             ])->columns(2),
         ];
     }

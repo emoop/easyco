@@ -246,10 +246,10 @@ final class ProductSummaryZone implements DesignZone, HasOneCell
                 // NOT `numeric()`: Filament would cast what was typed (the validator must see the text as typed)
                 TextInput::make('border_w')->label(__('design.summary.settings.border_w'))->inputMode('numeric')->maxLength(1)->live(onBlur: true),
                 $color('border_color'),
-                Toggle::make('rounded')->label(__('design.summary.settings.rounded'))->helperText(__('design.summary.purchase.rounded_hint'))->live(),
+                Toggle::make('rounded')->label(__('design.summary.settings.rounded'))->afterLabel(\App\Filament\Design\InfoHint::make(__('design.summary.purchase.rounded_hint'), 'rounded'))->live(),
                 // PB-1.1: the counter next to the button, and the order of the attribute groups (a small reorderable list of the shop's attributes)
-                Toggle::make('show_quantity')->label(__('design.summary.settings.show_quantity'))->helperText(__('design.summary.purchase.show_quantity_hint'))->live()->columnSpanFull(),
-                Repeater::make('axes')->label(__('design.summary.settings.axes'))->helperText(__('design.summary.purchase.axes_hint'))
+                Toggle::make('show_quantity')->label(__('design.summary.settings.show_quantity'))->afterLabel(\App\Filament\Design\InfoHint::make(__('design.summary.purchase.show_quantity_hint'), 'show_quantity'))->live()->columnSpanFull(),
+                Repeater::make('axes')->label(__('design.summary.settings.axes'))->afterLabel(\App\Filament\Design\InfoHint::make(__('design.summary.purchase.axes_hint'), 'axes'))
                     ->simple(Select::make('id')->native()->options(static fn (): array => AttributeDefinitionModel::query()->orderBy('name')->pluck('name', 'id')->all())->required())
                     ->reorderableWithButtons()->maxItems(ProductSummaryCatalog::MAX_AXES)->addActionLabel(__('design.summary.purchase.axes_add'))->defaultItems(0)->columnSpanFull(),
             ])->statePath('settings'),

@@ -128,7 +128,8 @@ abstract class PageDesignZone implements DesignZone
     {
         $field = PageDesign::fields($this->section())[$name] + ['label' => 'design.page_design.fields.'.$name, 'options_prefix' => 'design.page_design.options.'.$name.'.'];
         $control = FieldForms::make($name, $field);
-        method_exists($control, 'helperText') && $control->helperText((string) __('design.page_design.hints.'.$name));
+        // HINT-1: the hint is an info icon next to the label (the same text, linked by aria-describedby), not a paragraph under the field
+        method_exists($control, 'afterLabel') && $control->afterLabel(\App\Filament\Design\InfoHint::make((string) __('design.page_design.hints.'.$name), $name));
 
         // CD-1b: a field that changes what another one shows is live; a dependent one is shown only with the other's value («Страничен панел» only with the panel layout)
         ! empty($field['live']) && method_exists($control, 'live') && $control->live();

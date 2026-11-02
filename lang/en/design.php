@@ -333,4 +333,7 @@ return [
             'pad_order' => 'The minimum padding cannot be larger than the maximum.',
         ],
     ],
+
+    // HINT-1: the accessible name of the info icon that shows a field's explanation
+    'hint' => ['info' => 'Information'],
 ];

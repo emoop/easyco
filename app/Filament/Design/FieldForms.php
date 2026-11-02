@@ -40,7 +40,7 @@ final class FieldForms
         }
 
         isset($field['empty']) && $picker->emptyText((string) __($field['empty']));
-        isset($field['help']) && $picker->helperText((string) __($field['help']));
+        isset($field['help']) && $picker->afterLabel(\App\Filament\Design\InfoHint::make((string) __($field['help']), $name));
         ! empty($field['checker']) && $picker->checkerBackground();
 
         return $picker;
@@ -78,7 +78,7 @@ final class FieldForms
             'media' => self::media($name, $field, $label),
             'payments' => CheckboxList::make($name)->label($label)->columns(2)->default([])
                 ->options(array_combine(FooterCatalog::PAYMENTS, array_map(static fn (string $m): string => __('footer.payments.'.$m), FooterCatalog::PAYMENTS))),
-            'html' => Textarea::make($name)->label($label)->rows(4)->helperText(__('header.html_help'))->default(''),
+            'html' => Textarea::make($name)->label($label)->rows(4)->afterLabel(\App\Filament\Design\InfoHint::make(__('header.html_help'), $name))->default(''),
             'textarea' => Textarea::make($name)->label($label)->rows(4)->default('')->maxLength((int) ($field['max'] ?? 2000)),
             'color' => ColorPicker::make($name)->label($label)->default($field['default'] ?? null),
             'social' => Repeater::make($name)->label($label)->maxItems((int) ($field['max'] ?? 8))->default([])

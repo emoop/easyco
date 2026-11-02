@@ -266,7 +266,7 @@ final class HeaderZone implements DesignZone
             return [
                 Section::make(__('design.props.general'))->schema([
                     Toggle::make('enabled')->label(__('header.fields.enabled')),
-                    TextInput::make('height')->label(__('header.fields.height'))->helperText(__('header.fields.height_hint', ['min' => $min, 'max' => $max]))->numeric()->integer()->minValue($min)->maxValue($max)->suffix('px'),
+                    TextInput::make('height')->label(__('header.fields.height'))->afterLabel(\App\Filament\Design\InfoHint::make(__('header.fields.height_hint', ['min' => $min, 'max' => $max]), 'height'))->numeric()->integer()->minValue($min)->maxValue($max)->suffix('px'),
                 ]),
                 Section::make(__('design.props.colors'))->schema([
                     ColorPicker::make('colors.bg')->label(__('design.props.bg')),

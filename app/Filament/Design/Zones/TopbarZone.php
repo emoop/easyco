@@ -167,8 +167,8 @@ final class TopbarZone implements DesignZone
         return [Section::make(__('design.topbar.title'))->schema([
             Toggle::make('enabled')->label(__('appearance.fields.banner_enabled')),
             TextInput::make('text')->label(__('appearance.fields.banner_text'))->maxLength(Appearance::BANNER_TEXT_MAX)->hint(static fn ($state): string => __('appearance.counter', ['count' => mb_strlen((string) $state), 'max' => Appearance::BANNER_TEXT_MAX])),
-            TextInput::make('url')->label(__('appearance.fields.banner_url'))->helperText(__('appearance.fields.banner_url_help'))->maxLength(500),
-            TextInput::make('link_label')->label(__('appearance.fields.banner_link_label'))->helperText(__('appearance.fields.banner_link_label_help'))->maxLength(Appearance::BANNER_LABEL_MAX),
+            TextInput::make('url')->label(__('appearance.fields.banner_url'))->afterLabel(\App\Filament\Design\InfoHint::make(__('appearance.fields.banner_url_help'), 'banner_url'))->maxLength(500),
+            TextInput::make('link_label')->label(__('appearance.fields.banner_link_label'))->afterLabel(\App\Filament\Design\InfoHint::make(__('appearance.fields.banner_link_label_help'), 'banner_link_label'))->maxLength(Appearance::BANNER_LABEL_MAX),
             ColorPicker::make('text_color')->label(__('appearance.colors.banner_text'))->hex(),
             ColorPicker::make('bg_color')->label(__('appearance.colors.banner_bg'))->hex(),
             $this->contrast(),

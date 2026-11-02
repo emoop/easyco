@@ -651,3 +651,95 @@
     padding: 0;
     list-style: none;
 }
+
+/* ===== HINT-1: a field's explanation as an info icon next to its label ======================================================================================================== */
+/* The icon is a 16px thin-line circle with an «i» in the muted colour; the bubble is hidden until the icon is hovered, focused or tapped (Alpine sets data-open for a tap). It opens ABOVE the field, so on a phone it
+   never covers the field it explains. White (graphite in the dark theme), a 1px hairline, no shadow, square corners, 13px text, at most 280px wide and always inside its panel. */
+.ds .fi-fo-field {
+    position: relative;
+}
+
+/* Filament puts the after-label slot at the far end of the label row; the icon belongs right next to the label text */
+.ds .fi-fo-field-label-ctn {
+    justify-content: flex-start;
+    gap: 0.25rem;
+}
+
+.ds .fi-fo-field-label-ctn > .fi-sc {
+    flex: 0 0 auto;
+    width: auto;
+}
+
+.ds .info-hint {
+    display: inline-flex;
+    align-items: center;
+    margin-inline-start: 0.35rem;
+    vertical-align: middle;
+}
+
+.ds .info-hint-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--gray-500);
+    cursor: help;
+}
+
+.ds .info-hint-btn:hover,
+.ds .info-hint[data-open='true'] .info-hint-btn {
+    color: var(--gray-700);
+}
+
+.ds .info-hint-btn:focus-visible {
+    outline: 2px solid var(--gray-700);
+    outline-offset: 2px;
+}
+
+.ds .info-hint-bubble {
+    display: none;
+    position: absolute;
+    left: 0;
+    bottom: calc(100% - 0.15rem);
+    z-index: 40;
+    box-sizing: border-box;
+    width: max-content;
+    max-width: min(280px, 100%);
+    padding: 8px 12px;
+    border: 1px solid var(--gray-200);
+    border-radius: 0;
+    background: #fff;
+    box-shadow: none;
+    color: var(--gray-700);
+    font-size: 13px;
+    font-weight: 400;
+    line-height: 1.4;
+    text-align: start;
+    text-transform: none;
+    letter-spacing: 0;
+    white-space: normal;
+}
+
+.ds .info-hint:hover .info-hint-bubble,
+.ds .info-hint:focus-within .info-hint-bubble,
+.ds .info-hint[data-open='true'] .info-hint-bubble {
+    display: block;
+}
+
+.dark .ds .info-hint-btn {
+    color: var(--gray-400);
+}
+
+.dark .ds .info-hint-btn:hover,
+.dark .ds .info-hint[data-open='true'] .info-hint-btn {
+    color: var(--gray-200);
+}
+
+.dark .ds .info-hint-bubble {
+    border-color: var(--gray-700);
+    background: var(--gray-900);
+    color: var(--gray-200);
+}
+/* ===== end of HINT-1 ================================================================================================================================================================ */

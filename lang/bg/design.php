@@ -333,4 +333,7 @@ return [
             'pad_order' => 'Минималният отстъп не може да е по-голям от максималния.',
         ],
     ],
+
+    // HINT-1: the accessible name of the info icon that shows a field's explanation
+    'hint' => ['info' => 'Информация'],
 ];
