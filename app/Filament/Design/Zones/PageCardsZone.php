@@ -23,6 +23,8 @@ final class PageCardsZone extends PageDesignZone
                 'design.page_design.devices.desktop' => ['card_border', 'card_radius'],
                 'design.page_design.devices.mobile' => ['card_border_m', 'card_radius_m'],
             ]],
+            // GAP-1: the space between the cards of the category listing
+            ['heading' => 'design.page_design.groups.gaps', 'fields' => ['gapX', 'gapY']],
         ];
     }
 

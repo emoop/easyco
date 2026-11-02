@@ -100,7 +100,7 @@ final class StorefrontAppearance
 
         $cached = Cache::get(self::CACHE_KEY);
 
-        if (is_array($cached) && array_key_exists('theme', $cached) && array_key_exists('compiled', $cached) && array_key_exists('header', $cached) && array_key_exists('menus', $cached) && array_key_exists('locations', $cached) && array_key_exists('footer', $cached) && array_key_exists('design', $cached) && array_key_exists('catalog', $cached) && is_array($cached['banner'] ?? null)) {
+        if (is_array($cached) && array_key_exists('theme', $cached) && array_key_exists('compiled', $cached) && array_key_exists('header', $cached) && array_key_exists('menus', $cached) && array_key_exists('locations', $cached) && array_key_exists('footer', $cached) && array_key_exists('design', $cached) && array_key_exists('page', $cached) && array_key_exists('catalog', $cached) && is_array($cached['banner'] ?? null)) {
             return $this->data = $cached;
         }
 
@@ -149,6 +149,8 @@ final class StorefrontAppearance
             'design' => is_string($raw[AppearanceSettings::DESIGN_COMPILED_KEY] ?? null) ? $raw[AppearanceSettings::DESIGN_COMPILED_KEY] : null,
             // CD-1a: the published «Каталог» JSON (validated again when read: catalogPerPage)
             'catalog' => is_string($raw[AppearanceSettings::CATALOG_DESIGN_KEY] ?? null) ? $raw[AppearanceSettings::CATALOG_DESIGN_KEY] : null,
+            // GAP-1: the published «Страници и карти» JSON (validated again when read: catalogGapX); the card grid's horizontal gap reaches the image `sizes` from here, with no query of its own
+            'page' => is_string($raw[AppearanceSettings::PAGE_DESIGN_KEY] ?? null) ? $raw[AppearanceSettings::PAGE_DESIGN_KEY] : null,
         ];
     }
 
@@ -515,6 +517,12 @@ final class StorefrontAppearance
         $values = $this->catalogOverride ?? PageDesign::catalogValues(is_string($this->data()['catalog'] ?? null) ? $this->data()['catalog'] : null);
 
         return ['desktop' => (int) $values['cols'], 'phone' => (int) $values['cols_phone']];
+    }
+
+    /** GAP-1: the PUBLISHED horizontal gap (px) of the card grid, from the cached payload (no query); 16 for a shop that never set it. */
+    public function catalogGapX(): int
+    {
+        return PageDesign::gaps(is_string($this->data()['page'] ?? null) ? $this->data()['page'] : null)['gapX'];
     }
 
     /**

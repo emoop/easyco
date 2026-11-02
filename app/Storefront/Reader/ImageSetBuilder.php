@@ -2,6 +2,7 @@
 
 namespace App\Storefront\Reader;
 
+use App\Storefront\PageDesign\PageDesign;
 use App\Storefront\ReadModels\ImageSet;
 use EasyCo\Media\Contracts\MediaStorageAdapter;
 use EasyCo\Media\Persistence\Eloquent\MediaAssetModel;
@@ -34,18 +35,23 @@ final class ImageSetBuilder
      * formula takes the SMALLEST padding the Design screen allows (8px a side = 1rem in all): the container is never narrower than that, so the value is never SMALLER than the real card (the browser never picks
      * a blurry image) and is rounded UP by up to a few vw for the usual padding. The side-panel layout has narrower cards still: also safe.
      */
-    public static function cardSizes(int $cols = 4, int $colsPhone = 2): string
+    public static function cardSizes(int $cols = 4, int $colsPhone = 2, int $gapX = 16): string
     {
         $cols = in_array($cols, [3, 4, 5], true) ? $cols : 4;
         $colsPhone = in_array($colsPhone, [1, 2], true) ? $colsPhone : 2;
+        // GAP-1: the published horizontal gap (px, the closed list of PageDesign::GRID_GAPS); a larger gap makes the card NARROWER, so the unsure value is the smallest gap (0), never a larger one
+        $gapX = in_array((string) $gapX, PageDesign::GRID_GAPS, true) ? $gapX : 0;
+        $gap = $gapX / 16;
+        // below 40rem the grid's gap used to be 12px for every shop: that stays the value here (never SMALLER than the real card, and today's exact string for the default 16)
+        $phoneGap = min($gapX, 12) / 16;
 
         $calc = static fn (float $spare, int $columns): string => 'calc((100vw - '.rtrim(rtrim(number_format($spare, 4, '.', ''), '0'), '.').'rem) / '.$columns.')';
 
         return implode(', ', [
-            '(min-width: 64rem) '.$calc(1 + ($cols - 1) * 1.0, $cols),
-            '(min-width: 48rem) '.$calc(1 + 2 * 1.0, 3),
-            '(min-width: 40rem) '.$calc(1 + ($colsPhone - 1) * 1.0, $colsPhone),
-            $calc(1 + ($colsPhone - 1) * 0.75, $colsPhone),
+            '(min-width: 64rem) '.$calc(1 + ($cols - 1) * $gap, $cols),
+            '(min-width: 48rem) '.$calc(1 + 2 * $gap, 3),
+            '(min-width: 40rem) '.$calc(1 + ($colsPhone - 1) * $gap, $colsPhone),
+            $calc(1 + ($colsPhone - 1) * $phoneGap, $colsPhone),
         ]);
     }
 

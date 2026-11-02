@@ -143,6 +143,7 @@ final class AppearanceSettings
         self::FOOTER_COMPILED_KEY,
         self::DESIGN_COMPILED_KEY,
         self::CATALOG_DESIGN_KEY,
+        self::PAGE_DESIGN_KEY,
         self::BANNER_ENABLED,
         self::BANNER_TEXT,
         self::BANNER_URL,

@@ -52,6 +52,12 @@ final class PageDesign
     /** CD-1d: the width of the side panel: «wide» is the width it always had (the maximum), then two narrower steps. A class of the category wrapper, not a variable. */
     public const CATALOG_SIDE_WIDTHS = ['wide', 'medium', 'narrow'];
 
+    /** GAP-1: the closed list of the card grid's gaps, in px (the steps of «Отстояние между колоните» / «…между редовете»). Strings, as the other choices of the closed lists. */
+    public const GRID_GAPS = ['0', '4', '8', '12', '16', '20', '24', '32'];
+
+    /** GAP-1: the page section's fields that fall back to their own default on read WITHOUT making the rest of the section contribute nothing. */
+    public const PAGE_SOFT_FIELDS = ['gapX', 'gapY'];
+
     /** CT-4: how a built-in filter (brand, season, tag) is shown: not at all, a list of checkboxes, text links or buttons (chips). Defaults: brand and season a list, the tag off. */
     public const CATALOG_FILTER_KINDS = ['off', 'list', 'links', 'buttons'];
 
@@ -82,6 +88,9 @@ final class PageDesign
                 'card_radius' => ['kind' => 'number', 'min' => 0, 'max' => 32, 'default' => 8, 'unit' => 'px'],
                 'card_border_m' => ['kind' => 'number', 'min' => 0, 'max' => 4, 'default' => 0, 'unit' => 'px'],
                 'card_radius_m' => ['kind' => 'number', 'min' => 0, 'max' => 32, 'default' => 0, 'unit' => 'px'],
+                // GAP-1: the space between the cards of the category listing (columns / rows), px from the closed list; 16 = what it always was on a desktop
+                'gapX' => ['kind' => 'enum', 'options' => self::GRID_GAPS, 'default' => '16'],
+                'gapY' => ['kind' => 'enum', 'options' => self::GRID_GAPS, 'default' => '16'],
             ];
         }
 
@@ -202,6 +211,11 @@ final class PageDesign
             foreach (['card_border' => '--sf-card-border-width', 'card_radius' => '--sf-card-radius', 'card_border_m' => '--sf-card-border-width-mobile', 'card_radius_m' => '--sf-card-radius-mobile'] as $name => $variable) {
                 $differs($name) && $vars[$variable] = self::rem($clean[$name]);
             }
+
+            // GAP-1: the listing grid's gaps, written only when they differ from 16 (the stylesheet's own fallback is 1rem)
+            foreach (['gapX' => '--sf-grid-gap-x', 'gapY' => '--sf-grid-gap-y'] as $name => $variable) {
+                $differs($name) && $vars[$variable] = self::rem((int) $clean[$name]);
+            }
         }
 
         if ($section === self::CATALOG) {
@@ -263,7 +277,8 @@ final class PageDesign
 
             [$clean, $errors] = self::validate($section, $values, false);
 
-            if ($errors === []) {
+            // GAP-1: a bad grid gap alone is only THAT gap falling back to 16 (the rest of the page section still applies); any other problem makes the section contribute nothing, as before
+            if ($errors === [] || ($section === self::PAGE && array_diff(array_keys($errors), self::PAGE_SOFT_FIELDS) === [])) {
                 $vars += self::vars($section, $clean);
             }
         }
@@ -280,7 +295,7 @@ final class PageDesign
 
         return match ($variable) {
             '--sf-page-pad' => preg_match('/^clamp\('.self::LENGTH.', [0-9](?:\.[0-9]{1,3})?vw, '.self::LENGTH.'\)$/', $value) === 1,
-            '--sf-card-border-width', '--sf-card-radius', '--sf-card-border-width-mobile', '--sf-card-radius-mobile', '--sf-gal-gap', '--sf-gal-radius', '--sf-product-col-gap' => preg_match('/^'.self::LENGTH.'$/', $value) === 1,
+            '--sf-card-border-width', '--sf-card-radius', '--sf-card-border-width-mobile', '--sf-card-radius-mobile', '--sf-gal-gap', '--sf-gal-radius', '--sf-product-col-gap', '--sf-grid-gap-x', '--sf-grid-gap-y' => preg_match('/^'.self::LENGTH.'$/', $value) === 1,
             '--sf-cat-cols' => in_array($value, self::CATALOG_COLS, true),
             '--sf-cat-cols-phone' => in_array($value, self::CATALOG_COLS_PHONE, true),
             '--sf-summary-position' => $value === 'static',
@@ -312,6 +327,26 @@ final class PageDesign
         }
 
         return self::defaults(self::CATALOG);
+    }
+
+    /**
+     * GAP-1: the PUBLISHED grid gaps (px) from the page section's stored JSON, validated again; 16 / 16 for a shop that never set them, for a bad value (that gap alone) and for a section with another problem.
+     *
+     * @return array{gapX: int, gapY: int}
+     */
+    public static function gaps(?string $json): array
+    {
+        $values = self::decode($json);
+
+        if ($values !== null) {
+            [$clean, $errors] = self::validate(self::PAGE, $values, false);
+
+            if (array_diff(array_keys($errors), self::PAGE_SOFT_FIELDS) === []) {
+                return ['gapX' => (int) $clean['gapX'], 'gapY' => (int) $clean['gapY']];
+            }
+        }
+
+        return ['gapX' => 16, 'gapY' => 16];
     }
 
     /** px -> rem for the stylesheet: `px / 16`, a dot, at most 4 decimals, no trailing zeros; zero is a plain `0`. */

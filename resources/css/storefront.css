@@ -238,6 +238,9 @@
        the tablet is always min(desktop, 3) = 3 (the closed list is 3, 4, 5). */
     .sf-category .sf-grid {
         @apply grid-cols-[repeat(var(--sf-cat-cols-phone,2),minmax(0,1fr))] md:grid-cols-3 lg:grid-cols-[repeat(var(--sf-cat-cols,4),minmax(0,1fr))];
+        /* GAP-1: the space between the cards of the CATEGORY listing (the home page's grid keeps its own gap); the variables exist only for a shop that changed them, the fallback is 1rem at every width */
+        column-gap: var(--sf-grid-gap-x, 1rem);
+        row-gap: var(--sf-grid-gap-y, 1rem);
     }
 
     /* ---- card ----------------------------------------------------------------------------------- */

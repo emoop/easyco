@@ -32,7 +32,7 @@ class DesignPageSectionsTest extends TestCase
     use RefreshDatabase;
 
     /** Every variable the two sections can write (so that a test can say "exactly this one"). */
-    private const OWN_VARIABLES = '--sf-page-pad|--sf-card-border-width|--sf-card-radius|--sf-card-border-width-mobile|--sf-card-radius-mobile|--sf-gal-gap|--sf-gal-radius|--sf-product-col-gap|--sf-summary-position|--sf-summary-max-height';
+    private const OWN_VARIABLES = '--sf-page-pad|--sf-card-border-width|--sf-card-radius|--sf-card-border-width-mobile|--sf-card-radius-mobile|--sf-gal-gap|--sf-gal-radius|--sf-product-col-gap|--sf-grid-gap-x|--sf-grid-gap-y|--sf-summary-position|--sf-summary-max-height';
 
     protected function setUp(): void
     {
@@ -152,6 +152,10 @@ class DesignPageSectionsTest extends TestCase
             'card border phone' => ['page', ['card_border_m' => '1'], ['--sf-card-border-width-mobile' => '0.0625rem'], []],
             'card radius phone' => ['page', ['card_radius_m' => '6'], ['--sf-card-radius-mobile' => '0.375rem'], []],
             'card without a border' => ['page', ['card_border' => '0'], ['--sf-card-border-width' => '0'], []],
+            // GAP-1: the listing grid's gaps (the variable only when it differs from 16)
+            'grid column gap' => ['page', ['gapX' => '8'], ['--sf-grid-gap-x' => '0.5rem'], []],
+            'grid row gap' => ['page', ['gapY' => '0'], ['--sf-grid-gap-y' => '0'], []],
+            'grid gaps at the default write nothing' => ['page', ['gapX' => '16', 'gapY' => '16'], [], []],
             'gallery gap' => ['product', ['gal_gap' => '12'], ['--sf-gal-gap' => '0.75rem'], []],
             'gallery radius' => ['product', ['gal_radius' => '8'], ['--sf-gal-radius' => '0.5rem'], []],
             'column gap' => ['product', ['col_gap' => '48'], ['--sf-product-col-gap' => '3rem'], []],

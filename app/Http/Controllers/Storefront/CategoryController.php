@@ -72,7 +72,7 @@ final class CategoryController extends Controller
 
         // SIZES-1: the card images' `sizes` follow the PUBLISHED column counts of this grid (the home page keeps its own default)
         $columns = $appearance->catalogColumns();
-        $listing = $reader->listing($query, $selection->map, ImageSetBuilder::cardSizes($columns['desktop'], $columns['phone']));
+        $listing = $reader->listing($query, $selection->map, ImageSetBuilder::cardSizes($columns['desktop'], $columns['phone'], $appearance->catalogGapX()));
         ! $filtered && $listing->hasFilterable && $catalog = $filters->all();
 
         if ($listing->page > $listing->lastPage) {
