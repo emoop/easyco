@@ -272,6 +272,9 @@ return [
             'layout' => 'Layout',
             'side' => 'Side panel',
             'sideWidth' => 'Side panel width',
+            'filterBrand' => 'Brand filter',
+            'filterSeason' => 'Season filter',
+            'filterTag' => 'Tag filter',
         ],
         'hints' => [
             'pad_min' => 'The least room at the sides of the content (8 to 48). Default 16.',
@@ -295,6 +298,9 @@ return [
             'per_page' => 'How many products one page of the list shows (12, 20, 24, 36, 48, 60 or 72). Default 24.',
             'layout' => 'Where the filters sit on a computer: in a bar above the list («Full width») or in a side panel beside the list. On a phone and a tablet the filters are always in a drawer. Default «Full width».',
             'side' => 'Which side the panel is on (only with the side panel). Default «Left».',
+            'filterBrand' => 'Whether and how the «Brand» filter is shown on a category: a list, links or buttons. It is shown only when at least two brands give products. Default «List».',
+            'filterSeason' => 'Whether and how the «Season» filter is shown on a category. It is shown only when at least two seasons give products. Default «List».',
+            'filterTag' => 'Whether and how the «Tag» filter is shown on a category (tags work well as buttons). It is shown only when at least two tags give products. Default «Not shown».',
             'sideWidth' => 'How wide the side panel is on a computer (only with the side panel). «Wide» is the current width and the largest. Default «Wide».',
         ],
         'options' => [
@@ -308,6 +314,9 @@ return [
             'layout' => ['full' => 'Full width', 'sidebar' => 'With a side panel'],
             'side' => ['left' => 'Left', 'right' => 'Right'],
             'sideWidth' => ['wide' => 'Wide', 'medium' => 'Medium', 'narrow' => 'Narrow'],
+            'filterBrand' => ['off' => 'Not shown', 'list' => 'List', 'links' => 'Links', 'buttons' => 'Buttons'],
+            'filterSeason' => ['off' => 'Not shown', 'list' => 'List', 'links' => 'Links', 'buttons' => 'Buttons'],
+            'filterTag' => ['off' => 'Not shown', 'list' => 'List', 'links' => 'Links', 'buttons' => 'Buttons'],
             'gallery_hover_zoom' => ['light' => 'Light', 'medium' => 'Medium', 'off' => 'Off'],
         ],
         'errors' => [

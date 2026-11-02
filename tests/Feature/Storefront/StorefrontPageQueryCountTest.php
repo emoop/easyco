@@ -21,7 +21,8 @@ class StorefrontPageQueryCountTest extends TestCase
     /** Pinned CEILINGS: the measured counts (see the printed lines); they must never grow. Each includes the ONE query of the footer's content pages (P1, memoised per request). */
     public const HOME = 26;
 
-    public const CATEGORY = 26;
+    // CT-4: марка/сезон по подразбиране са Списък; магазин с марки плаща +1 заявка (фасета) топло и +2 студено; броят пак не зависи от броя продукти
+    public const CATEGORY = 28;
 
     public const PRODUCT = 27;
 
@@ -56,6 +57,7 @@ class StorefrontPageQueryCountTest extends TestCase
         // A fresh "request": scoped instances and the controllers cached on the routes are dropped.
         $this->app->forgetScopedInstances();
         \Illuminate\Support\Facades\Cache::forget(\App\Storefront\Appearance\StorefrontAppearance::CACHE_KEY); // D1: every measurement is a COLD page (+1 for the appearance read)
+        \App\Storefront\Filters\FilterCatalog::forget(); // CT-4: and a cold read of the filter lists too, so the measurement is honest
 
         foreach (Route::getRoutes() as $route) {
             $route->flushController();

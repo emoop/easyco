@@ -79,9 +79,10 @@
     }
 
     .sf-header {
-        @apply z-30 border-b border-neutral-200 shadow-sm;
+        @apply z-30 border-b border-neutral-200;
         background-color: var(--sf-header-bg, #fff);
         color: var(--sf-header-text, currentcolor);
+        border-color:#dbdbdb;
     }
 
     /* Three columns — the menu toggle left, the mark in the MIDDLE, the cart right — so the mark stays centred
@@ -1302,6 +1303,48 @@
         .sf-fdrawer-overlay,
         .sf-fdrawer-panel {
             transition: none;
+        }
+    }
+
+    /* ---- CT-4: «Бутони» (chips) — the look of a value of a built-in filter (brand, season, tag) shown as buttons ------------------------------------------------------------------------ */
+    .sf-bctl-values-buttons,
+    .sf-fvalues-buttons {
+        @apply flex flex-wrap;
+        gap: 0.5rem;
+    }
+
+    /* a chip: a 36px box, 13px text, a 1px muted border, white, the corners of the product cards (--sf-card-radius; the phone's own value on a phone). Selected = the border is the text colour and 2px thick (1px border + 1px inner ring), the text weight 500 */
+    .sf-bv-chip,
+    .sf-fv-chip .sf-fv-text {
+        @apply inline-flex items-center;
+        box-sizing: border-box;
+        min-height: 2.25rem;
+        padding: 0 0.875rem;
+        font-size: 0.8125rem;
+        font-family: var(--sf-font-body, inherit);
+        color: var(--sf-pdp-text);
+        background: #fff;
+        border: 1px solid var(--sf-pdp-muted);
+        border-radius: var(--sf-card-radius);
+    }
+
+    .sf-bv-chip:hover,
+    .sf-fv-chip:hover .sf-fv-text {
+        border-color: var(--sf-pdp-text);
+    }
+
+    .sf-bv-chip.sf-bv-on,
+    .sf-fv-chip .sf-fv-input:checked + .sf-fv-text {
+        border-color: var(--sf-pdp-text);
+        box-shadow: inset 0 0 0 1px var(--sf-pdp-text);
+        font-weight: 500;
+    }
+
+    @media (max-width: 63.999rem) {
+        .sf-bv-chip,
+        .sf-fv-chip .sf-fv-text {
+            min-height: 2.75rem;
+            border-radius: var(--sf-card-radius-mobile);
         }
     }
 

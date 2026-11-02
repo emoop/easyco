@@ -52,6 +52,12 @@ final class PageDesign
     /** CD-1d: the width of the side panel: «wide» is the width it always had (the maximum), then two narrower steps. A class of the category wrapper, not a variable. */
     public const CATALOG_SIDE_WIDTHS = ['wide', 'medium', 'narrow'];
 
+    /** CT-4: how a built-in filter (brand, season, tag) is shown: not at all, a list of checkboxes, text links or buttons (chips). Defaults: brand and season a list, the tag off. */
+    public const CATALOG_FILTER_KINDS = ['off', 'list', 'links', 'buttons'];
+
+    /** CT-4: the closed-list fields that fall back to their own default on read WITHOUT disturbing the other choices. */
+    public const CATALOG_SOFT_FIELDS = ['sideWidth', 'filterBrand', 'filterSeason', 'filterTag'];
+
     /** The `site_settings` keys of the gallery choices, by field. */
     public const GALLERY_KEYS = [
         'gallery_desktop_mode' => GallerySettings::DESKTOP_MODE_KEY,
@@ -101,6 +107,9 @@ final class PageDesign
                 'layout' => ['kind' => 'enum', 'options' => self::CATALOG_LAYOUTS, 'default' => 'full', 'live' => true],
                 'side' => ['kind' => 'enum', 'options' => self::CATALOG_SIDES, 'default' => 'left', 'visible_when' => ['layout' => 'sidebar']],
                 'sideWidth' => ['kind' => 'enum', 'options' => self::CATALOG_SIDE_WIDTHS, 'default' => 'wide', 'visible_when' => ['layout' => 'sidebar']],
+                'filterBrand' => ['kind' => 'enum', 'options' => self::CATALOG_FILTER_KINDS, 'default' => 'list'],
+                'filterSeason' => ['kind' => 'enum', 'options' => self::CATALOG_FILTER_KINDS, 'default' => 'list'],
+                'filterTag' => ['kind' => 'enum', 'options' => self::CATALOG_FILTER_KINDS, 'default' => 'off'],
             ];
         }
 
@@ -296,8 +305,8 @@ final class PageDesign
         if ($values !== null) {
             [$clean, $errors] = self::validate(self::CATALOG, $values, false);
 
-            // CD-1d: a bad panel width alone is only that width falling back to «wide» (it must not turn a side-panel shop into the bar layout); any other problem is the defaults as before
-            if ($errors === [] || array_keys($errors) === ['sideWidth']) {
+            // CD-1d / CT-4: a bad panel width or a bad built-in-filter choice is only THAT key falling back to its default (it must not turn a side-panel shop into the bar layout); any other problem is the defaults as before
+            if (array_diff(array_keys($errors), self::CATALOG_SOFT_FIELDS) === []) {
                 return $clean;
             }
         }

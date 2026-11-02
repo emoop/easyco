@@ -6,9 +6,10 @@ use App\Storefront\Exceptions\InvalidListingQuery;
 use Illuminate\Http\Request;
 
 /**
- * CT-3: what the visitor chose, as `attribute id => value ids` in the CANONICAL order (the filters in the admin's order, the values in the admin's order), so that one selection has one URL.
+ * CT-3 / CT-4: what the visitor chose, as `filter key => value ids` in the CANONICAL order (the filters in the order of the shop's list: brand, season, the attributes in the admin's order, tag; the values in the
+ * order the list shows them), so that one selection has one URL. A key is an attribute's id or one of the reserved words `brand`, `season`, `tag` (a built-in that is switched off or has no values is not in the list: 404).
  *
- * The URL form is `filter[<attribute id>]=<value id>,<value id>` (comma = OR inside one filter; separate filters = AND). Everything that is not exactly that is the storefront's 404 (InvalidListingQuery):
+ * The URL form is `filter[<attribute id or reserved word>]=<value id>,<value id>` (comma = OR inside one filter; separate filters = AND). Everything that is not exactly that is the storefront's 404 (InvalidListingQuery):
  * a `filter` that is not an array, a key or a value that is not a plain whole number (no sign, no leading zero, at most 18 digits), an attribute that is not a filter of THIS shop, a value that does not
  * belong to it, a value given twice, an empty list, more than MAX_FILTERS filters, MAX_PER_FILTER values in one or MAX_TOTAL in all. The same selection in another order is valid, but `canonical` is false:
  * the controller answers 301 to the canonical URL (before any query).
@@ -21,7 +22,7 @@ final readonly class FilterSelection
 
     public const MAX_TOTAL = 15;
 
-    /** @param array<int, list<int>> $map attribute id => value ids, canonical order */
+    /** @param array<int|string, list<int>> $map filter key (attribute id or `brand` | `season` | `tag`) => value ids, canonical order */
     public function __construct(public array $map = [], public bool $canonical = true)
     {
     }
@@ -32,7 +33,7 @@ final readonly class FilterSelection
     }
 
     /**
-     * @param  list<array{id: int, name: string, display: string, values: list<array{id: int, label: string, colour: ?string}>}>  $catalog
+     * @param  list<array{id: int|string, name: string, display: string, values: list<array{id: int, label: string, colour: ?string}>}>  $catalog
      * @throws InvalidListingQuery
      */
     public static function fromRequest(Request $request, array $catalog): self
@@ -62,7 +63,7 @@ final readonly class FilterSelection
         $arrayForm = false;
 
         foreach ($raw as $key => $list) {
-            $attribute = self::number((string) $key);
+            $attribute = in_array($key, FilterConstraint::BUILTIN, true) ? $key : self::number((string) $key);
 
             if ($attribute === null || ! isset($known[$attribute]) || isset($given[$attribute])) {
                 throw new InvalidListingQuery('filter', 'names an unknown filter');
@@ -114,7 +115,7 @@ final readonly class FilterSelection
     }
 
     /** The selection with this value turned on (or off when it is on), the order kept canonical. */
-    public function toggled(int $attribute, int $value, array $catalog): self
+    public function toggled(int|string $attribute, int $value, array $catalog): self
     {
         $map = $this->map;
         $values = $map[$attribute] ?? [];

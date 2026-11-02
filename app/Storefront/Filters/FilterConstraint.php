@@ -18,14 +18,23 @@ use Illuminate\Support\Facades\DB;
 final class FilterConstraint
 {
     /**
+     * CT-4: the reserved keys of the built-in filters. A built-in is a fact of the PRODUCT (its brand, its season, its tags), so it narrows the products directly: no variation, no stock and no «same
+     * variation» rule is involved; it is ANDed with the attribute filters.
+     */
+    public const BUILTIN = ['brand', 'season', 'tag'];
+
+    /**
      * Restricts a products query (`$productTable` is its alias or name) to the products that match the selection, leaving out the filter `$except` (a filter's own choices never narrow its own list).
      *
      * @param  \Illuminate\Database\Eloquent\Builder|QueryBuilder  $query
-     * @param  array<int, list<int>>  $map
+     * @param  array<int|string, list<int>>  $map
      */
-    public static function apply($query, array $map, ?int $except = null, string $productTable = 'catalog_products'): void
+    public static function apply($query, array $map, int|string|null $except = null, string $productTable = 'catalog_products'): void
     {
         $map = array_diff_key($map, $except === null ? [] : [$except => 1]);
+        [$builtin, $map] = self::split($map);
+
+        self::builtin($query, $builtin, $productTable);
 
         if ($map === []) {
             return;
@@ -38,6 +47,36 @@ final class FilterConstraint
                 }
             })->orWhereExists(self::onOneVariation(self::shownInStockVariations($productTable), $map, $productTable));
         });
+    }
+
+    /**
+     * CT-4: the selection split into its built-in part (brand / season / tag) and its attribute part.
+     *
+     * @param  array<int|string, list<int>>  $map
+     * @return array{0: array<string, list<int>>, 1: array<int, list<int>>}
+     */
+    public static function split(array $map): array
+    {
+        $builtin = array_intersect_key($map, array_flip(self::BUILTIN));
+
+        return [$builtin, array_diff_key($map, $builtin)];
+    }
+
+    /**
+     * CT-4: «the product has the brand / season / tag» for each built-in of the map (OR inside one, AND between). Parameterised: the ids are whole numbers FilterSelection resolved against the shop's own lists.
+     *
+     * @param  \Illuminate\Database\Eloquent\Builder|QueryBuilder  $query
+     * @param  array<string, list<int>>  $map
+     */
+    public static function builtin($query, array $map, string $productTable = 'catalog_products'): void
+    {
+        foreach ($map as $kind => $ids) {
+            match ($kind) {
+                'brand' => $query->whereIn($productTable.'.brand_id', $ids),
+                'season' => $query->whereIn($productTable.'.season_id', $ids),
+                'tag' => $query->whereExists(DB::table('catalog_product_tags as pt')->selectRaw('1')->whereColumn('pt.product_id', $productTable.'.id')->whereIn('pt.tag_id', $ids)),
+            };
+        }
     }
 
     /** `catalog_variations as v` of the product (`$productTable.id`), shown to customers and in stock. */

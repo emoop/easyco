@@ -241,6 +241,12 @@ final class CatalogReader
             ->addSelect(['has_filters' => DB::table('catalog_attribute_definitions')->selectRaw('1')->where('is_filterable', true)->limit(1)])
             ->with('brand:id,name,slug');
 
+        // CT-4: the same scalar-subquery trick for the built-in filters (brand / season / tag): a shop with only brands still shows its filters, and none of it costs a query of its own. Which of them are SWITCHED ON is
+        // decided when the filter list is composed (FilterCatalog::all), not here: this query reads no appearance setting
+        foreach (['brand' => 'catalog_brands', 'season' => 'catalog_seasons', 'tag' => 'catalog_tags'] as $kind => $table) {
+            $products->addSelect(['has_'.$kind.'_filter' => DB::table($table)->selectRaw('1')->limit(1)]);
+        }
+
         $this->applyScope($products, $query);
         // CT-3: the visitor's filters (attribute id => value ids, already resolved against the shop's own filters); none = today's query
         $filters === [] || FilterConstraint::apply($products, $filters);
@@ -260,8 +266,24 @@ final class CatalogReader
             total: $paginator->total(),
             lastPage: $paginator->lastPage(),
             facets: [],
-            hasFilterable: ($paginator->items()[0] ?? null)?->getAttribute('has_filters') !== null,
+            hasFilterable: self::hasFilterable($paginator->items()[0] ?? null),
         );
+    }
+
+    /** CT-3 / CT-4: does the shop have a filterable attribute, or at least one brand / season / tag? Read from the first card of the page (an empty page: no). */
+    private static function hasFilterable(?ProductModel $first): bool
+    {
+        if ($first === null) {
+            return false;
+        }
+
+        foreach (['has_filters', 'has_brand_filter', 'has_season_filter', 'has_tag_filter'] as $column) {
+            if ($first->getAttribute($column) !== null) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -269,12 +291,20 @@ final class CatalogReader
      * query: the union of the variation-level values (on a shown, in-stock variation that also satisfies the other variation-level filters) and the product-level values of the products that match
      * the other filters. Descendant categories, visibility and the «same variation» rule are those of listing().
      *
-     * @param  array<int, list<int>>  $filters  the whole selection
+     * CT-4: for a built-in (`brand` | `season` | `tag`) the ids that give products among the visible products of the category that match the OTHER filters (the same visibility and scope as the listing; product-level
+     * facts, so no variation or stock rule): ONE indexed query.
+     *
+     * @param  array<int|string, list<int>>  $filters  the whole selection
      * @return list<int>
      */
-    public function filterValueIds(ListingQuery $query, array $filters, int $attribute): array
+    public function filterValueIds(ListingQuery $query, array $filters, int|string $attribute): array
     {
+        if (is_string($attribute)) {
+            return $this->builtinValueIds($query, $filters, $attribute);
+        }
+
         $others = array_diff_key($filters, [$attribute => 1]);
+        [$builtinOthers, $attributeOthers] = FilterConstraint::split($others);
 
         $onVariations = DB::table('catalog_variation_attribute_values as vv')
             ->join('catalog_variations as v', 'v.id', '=', 'vv.variation_id')
@@ -285,7 +315,8 @@ final class CatalogReader
         $this->visibility->variations($onVariations, 'v');
         FilterConstraint::inStock($onVariations);
         $this->applyScope($onVariations, $query);
-        FilterConstraint::onOneVariation($onVariations, $others, 'catalog_products');
+        FilterConstraint::onOneVariation($onVariations, $attributeOthers, 'catalog_products');
+        FilterConstraint::builtin($onVariations, $builtinOthers);
 
         $onProducts = DB::table('catalog_product_attributes as pa')
             ->join('catalog_products', 'catalog_products.id', '=', 'pa.product_id')
@@ -298,6 +329,24 @@ final class CatalogReader
         FilterConstraint::apply($onProducts, $others);
 
         return array_map('intval', $onVariations->union($onProducts)->pluck('attribute_value_id')->all());
+    }
+
+    /** @return list<int> */
+    private function builtinValueIds(ListingQuery $query, array $filters, string $kind): array
+    {
+        $products = DB::table('catalog_products');
+        $this->visibility->products($products);
+        $this->applyScope($products, $query);
+        FilterConstraint::apply($products, $filters, $kind);
+
+        $ids = match ($kind) {
+            'brand' => $products->whereNotNull('catalog_products.brand_id')->distinct()->pluck('catalog_products.brand_id'),
+            'season' => $products->whereNotNull('catalog_products.season_id')->distinct()->pluck('catalog_products.season_id'),
+            'tag' => $products->join('catalog_product_tags as pt', 'pt.product_id', '=', 'catalog_products.id')->distinct()->pluck('pt.tag_id'),
+            default => collect(),
+        };
+
+        return array_map('intval', $ids->all());
     }
 
     // ================================================================== internals: listing

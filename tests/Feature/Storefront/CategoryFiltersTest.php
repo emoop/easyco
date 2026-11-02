@@ -543,7 +543,8 @@ class CategoryFiltersTest extends TestCase
 
         $this->assertSame($none + 2, $two, 'one facet query per filter');
         $this->assertSame($none + 3, $three);
-        $this->assertSame($two + 1, $cold, 'a cold shop pays one query to read the filters');
+        // CT-4 (the owner's decision): a cold shop pays TWO queries to read the filters now: the attributes (one) and the built-in brand / season / tag lists (one UNION ALL). A warm shop pays none (the other lines).
+        $this->assertSame($two + 2, $cold, 'a cold shop pays two queries to read the filters');
         $this->assertSame($three, $selected, 'a chosen filter costs no more than an unchosen one');
     }
 

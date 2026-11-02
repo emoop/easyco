@@ -23,7 +23,7 @@ class CatalogDesignTest extends TestCase
 
     public function test_the_defaults_are_todays_values(): void
     {
-        $this->assertSame(['cols' => '4', 'cols_phone' => '2', 'per_page' => '24', 'layout' => 'full', 'side' => 'left', 'sideWidth' => 'wide'], PageDesign::defaults(PageDesign::CATALOG));
+        $this->assertSame(['cols' => '4', 'cols_phone' => '2', 'per_page' => '24', 'layout' => 'full', 'side' => 'left', 'sideWidth' => 'wide', 'filterBrand' => 'list', 'filterSeason' => 'list', 'filterTag' => 'off'], PageDesign::defaults(PageDesign::CATALOG));
         $this->assertSame([], PageDesign::vars(PageDesign::CATALOG, PageDesign::defaults(PageDesign::CATALOG)), 'a shop that never touched it writes no variable');
         $this->assertTrue(PageDesign::isDefault(PageDesign::CATALOG, PageDesign::defaults(PageDesign::CATALOG)));
     }

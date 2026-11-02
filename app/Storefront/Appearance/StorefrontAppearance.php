@@ -504,6 +504,18 @@ final class StorefrontAppearance
         return ['layout' => (string) $values['layout'], 'side' => (string) $values['side'], 'sideWidth' => (string) $values['sideWidth']];
     }
 
+    /**
+     * CT-4: how each built-in filter of the category page is shown (`off` | `list` | `links` | `buttons`), from the same PUBLISHED payload as the layout (no query); the signed preview carries the working copy.
+     *
+     * @return array{brand: string, season: string, tag: string}
+     */
+    public function catalogFilterKinds(): array
+    {
+        $values = $this->catalogOverride ?? PageDesign::catalogValues(is_string($this->data()['catalog'] ?? null) ? $this->data()['catalog'] : null);
+
+        return ['brand' => (string) $values['filterBrand'], 'season' => (string) $values['filterSeason'], 'tag' => (string) $values['filterTag']];
+    }
+
     public function themeKey(): ?string
     {
         return $this->data()['theme'];

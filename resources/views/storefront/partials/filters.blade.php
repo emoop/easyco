@@ -56,6 +56,11 @@
                                                         <span class="sf-fv-mark"></span>
                                                         <span class="sf-fv-text">{{ $value['label'] }}</span>
                                                     </label>
+                                                @elseif ($group['display'] === 'buttons')
+                                                    <label class="sf-fv sf-fv-chip">
+                                                        <input class="sf-fv-input" type="checkbox" name="filter[{{ $group['id'] }}][]" value="{{ $value['id'] }}" @checked($value['selected'])>
+                                                        <span class="sf-fv-text">{{ $value['label'] }}</span>
+                                                    </label>
                                                 @else
                                                     <label class="sf-fv sf-fv-link">
                                                         <input class="sf-fv-input" type="checkbox" name="filter[{{ $group['id'] }}][]" value="{{ $value['id'] }}" @checked($value['selected'])>
