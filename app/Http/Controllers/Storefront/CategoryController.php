@@ -101,6 +101,7 @@ final class CategoryController extends Controller
             'sorts' => $sorts,
             'layout' => $layout['layout'],
             'side' => $layout['side'],
+            'sideWidth' => $layout['sideWidth'],
             'perPageHidden' => $listing->perPage !== $perPage ? $listing->perPage : null,
             'clearUrl' => $category->url.$pagination->suffixFor(1, $listing->perPage, 'newest', '', $perPage),
             'headerBlock' => $this->headerBlock($category, $query->page, $selection),

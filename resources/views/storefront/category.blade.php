@@ -2,7 +2,7 @@
 
 @section('content')
     @include('storefront.partials.breadcrumbs', ['crumbs' => $category->breadcrumbs])
-    <section class="sf-listing sf-category sf-cat-layout-{{ $layout ?? 'full' }} sf-cat-side-{{ $side ?? 'left' }}">
+    <section class="sf-listing sf-category sf-cat-layout-{{ $layout ?? 'full' }} sf-cat-side-{{ $side ?? 'left' }}{{ ($layout ?? 'full') === 'sidebar' ? ' sf-cat-sidew-'.($sideWidth ?? 'wide') : '' }}">
         {{-- CD-1c: the title and «Брой продукти: N» (the total of the current result) on one line. CD-1b: with a «Блок отгоре» the heading stays for search engines and screen readers and is hidden for the eye (the banner says it) --}}
         <div class="sf-cat-head">
             <h1 class="sf-title{{ ($headerBlock ?? null) !== null ? ' sf-sr' : '' }}">{{ $category->name }}</h1>

@@ -969,14 +969,27 @@
     @media (min-width: 64rem) {
         .sf-cat-layout-sidebar .sf-cat-body {
             @apply grid items-start;
-            grid-template-columns: 17rem minmax(0, 1fr);
+            grid-template-columns: var(--sf-cat-side-w, 17rem) minmax(0, 1fr);
             grid-template-areas: 'filters main';
             gap: 2rem;
         }
 
         .sf-cat-layout-sidebar.sf-cat-side-right .sf-cat-body {
-            grid-template-columns: minmax(0, 1fr) 17rem;
+            grid-template-columns: minmax(0, 1fr) var(--sf-cat-side-w, 17rem);
             grid-template-areas: 'main filters';
+        }
+
+        /* CD-1d: the width of the panel, a closed choice of three (the class comes from the published design; «wide» is the width it always had and the maximum) */
+        .sf-cat-sidew-wide {
+            --sf-cat-side-w: 17rem;
+        }
+
+        .sf-cat-sidew-medium {
+            --sf-cat-side-w: 15rem;
+        }
+
+        .sf-cat-sidew-narrow {
+            --sf-cat-side-w: 13rem;
         }
 
         .sf-cat-layout-sidebar .sf-fgroup-sort {
@@ -985,7 +998,7 @@
 
         .sf-cat-layout-sidebar .sf-fgroup {
             padding: 0.75rem 0;
-            border-bottom: 1px solid var(--sf-pdp-line);
+            border-bottom: 1px solid var(--sf-pdp-muted);
         }
 
         .sf-cat-layout-sidebar .sf-fgroup-panel {

@@ -271,6 +271,7 @@ return [
             'per_page' => 'Products per page',
             'layout' => 'Layout',
             'side' => 'Side panel',
+            'sideWidth' => 'Side panel width',
         ],
         'hints' => [
             'pad_min' => 'The least room at the sides of the content (8 to 48). Default 16.',
@@ -294,6 +295,7 @@ return [
             'per_page' => 'How many products one page of the list shows (12, 20, 24, 36, 48, 60 or 72). Default 24.',
             'layout' => 'Where the filters sit on a computer: in a bar above the list («Full width») or in a side panel beside the list. On a phone and a tablet the filters are always in a drawer. Default «Full width».',
             'side' => 'Which side the panel is on (only with the side panel). Default «Left».',
+            'sideWidth' => 'How wide the side panel is on a computer (only with the side panel). «Wide» is the current width and the largest. Default «Wide».',
         ],
         'options' => [
             'gallery_desktop_mode' => ['grid' => '2-column grid', 'thumbs-left' => 'Small photos on the left', 'thumbs-below' => 'Small photos below'],
@@ -305,6 +307,7 @@ return [
             'per_page' => ['12' => '12', '20' => '20', '24' => '24', '36' => '36', '48' => '48', '60' => '60', '72' => '72'],
             'layout' => ['full' => 'Full width', 'sidebar' => 'With a side panel'],
             'side' => ['left' => 'Left', 'right' => 'Right'],
+            'sideWidth' => ['wide' => 'Wide', 'medium' => 'Medium', 'narrow' => 'Narrow'],
             'gallery_hover_zoom' => ['light' => 'Light', 'medium' => 'Medium', 'off' => 'Off'],
         ],
         'errors' => [

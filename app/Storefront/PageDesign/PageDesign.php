@@ -49,6 +49,9 @@ final class PageDesign
 
     public const CATALOG_SIDES = ['left', 'right'];
 
+    /** CD-1d: the width of the side panel: «wide» is the width it always had (the maximum), then two narrower steps. A class of the category wrapper, not a variable. */
+    public const CATALOG_SIDE_WIDTHS = ['wide', 'medium', 'narrow'];
+
     /** The `site_settings` keys of the gallery choices, by field. */
     public const GALLERY_KEYS = [
         'gallery_desktop_mode' => GallerySettings::DESKTOP_MODE_KEY,
@@ -97,6 +100,7 @@ final class PageDesign
                 'per_page' => ['kind' => 'enum', 'options' => self::CATALOG_PER_PAGE, 'default' => '24'],
                 'layout' => ['kind' => 'enum', 'options' => self::CATALOG_LAYOUTS, 'default' => 'full', 'live' => true],
                 'side' => ['kind' => 'enum', 'options' => self::CATALOG_SIDES, 'default' => 'left', 'visible_when' => ['layout' => 'sidebar']],
+                'sideWidth' => ['kind' => 'enum', 'options' => self::CATALOG_SIDE_WIDTHS, 'default' => 'wide', 'visible_when' => ['layout' => 'sidebar']],
             ];
         }
 
@@ -292,7 +296,8 @@ final class PageDesign
         if ($values !== null) {
             [$clean, $errors] = self::validate(self::CATALOG, $values, false);
 
-            if ($errors === []) {
+            // CD-1d: a bad panel width alone is only that width falling back to «wide» (it must not turn a side-panel shop into the bar layout); any other problem is the defaults as before
+            if ($errors === [] || array_keys($errors) === ['sideWidth']) {
                 return $clean;
             }
         }
