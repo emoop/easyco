@@ -43,6 +43,11 @@ class HtmlBlockSanitizer extends DescriptionSanitizer
     {
         $html = (string) $html;
 
+        // HB-5: a «Снимка с текст» block is exactly one box `div.sf-hb.sf-hb-{id}.sf-pc…`: it is cleaned by the NARROW card filter (HtmlBlockCardSanitizer), and only then; any other markup is a text block's
+        if (preg_match('#\A<div class="sf-hb sf-hb-[1-9][0-9]{0,9} sf-pc[ "]#', $html) === 1) {
+            return HtmlBlockCardSanitizer::clean($html);
+        }
+
         if (preg_match('#\A<div class="sf-hb sf-hb-([1-9][0-9]{0,9})">(.*)</div>\z#s', $html, $m) === 1) {
             return HtmlBlockStyle::wrap((int) $m[1], static::renderInner($m[2]));
         }

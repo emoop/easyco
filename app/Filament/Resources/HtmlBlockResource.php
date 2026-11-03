@@ -2,12 +2,14 @@
 
 namespace App\Filament\Resources;
 
+use App\Content\HtmlBlocks\HtmlBlockBackground;
+use App\Content\HtmlBlocks\HtmlBlockCard;
 use App\Content\HtmlBlocks\HtmlBlockModel;
 use App\Content\HtmlBlocks\HtmlBlockPictures;
-use App\Content\HtmlBlocks\HtmlBlockBackground;
 use App\Content\HtmlBlocks\HtmlBlockStyle;
 use App\Content\HtmlBlocks\HtmlBlockUsage;
 use App\Filament\Concerns\AuthorizesViaStaffPermission;
+use App\Filament\Design\InfoHint;
 use App\Filament\Forms\Components\MediaImagePlugin;
 use App\Filament\Forms\Components\MediaPicker;
 use App\Filament\NavigationGroup;
@@ -29,11 +31,13 @@ use Filament\Forms\Components\ColorPicker;
 use Filament\Forms\Components\RichEditor;
 use Filament\Forms\Components\RichEditor\RichEditorTool;
 use Filament\Forms\Components\Select;
+use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\Grid;
+use Filament\Schemas\Components\Group;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Text;
 use Filament\Schemas\Components\Utilities\Get;
@@ -111,12 +115,24 @@ class HtmlBlockResource extends Resource
 
     public static function form(Schema $schema): Schema
     {
+        $text = static fn (Get $get): bool => ($get('kind') ?: 'text') === 'text';
+
         return $schema->columns(1)->components([
             TextInput::make('title')->label(__('html_blocks.fields.title'))->required()->maxLength(120)->rule(new PlainText()),
+            // HB-5: the kind is chosen when the block is created; on an existing block it is only shown (it is never changed)
+            Select::make('kind')
+                ->label(__('html_blocks.kind.label'))
+                ->afterLabel(InfoHint::make((string) __('html_blocks.kind.hint'), 'kind'))
+                ->native(false)->live()->default('text')->selectablePlaceholder(false)
+                ->options(array_combine(HtmlBlockCard::KINDS, array_map(static fn (string $kind): string => (string) __('html_blocks.kind.'.$kind), HtmlBlockCard::KINDS)))
+                ->disabled(static fn (?Model $record): bool => $record !== null)
+                ->dehydrated(static fn (?Model $record): bool => $record === null),
+            self::cardSection(),
             // MENU-5: «Снимки с връзки»: each picture is a Media-domain asset with its OWN address field (a link on a picture is set here; a link on text with the editor's link button).
             Repeater::make('pictures')
                 ->label(__('html_blocks.fields.pictures'))
                 ->helperText(__('html_blocks.help.pictures'))
+                ->visible($text)
                 ->maxItems(HtmlBlockPictures::MAX)
                 ->defaultItems(0)
                 ->addActionLabel(__('html_blocks.actions.add_picture'))
@@ -146,6 +162,7 @@ class HtmlBlockResource extends Resource
                 ->columns(1),
             RichEditor::make('body')
                 ->label(__('html_blocks.fields.body'))
+                ->visible($text)
                 // a block of pictures only is allowed: the body is required only when there is no picture
                 ->required(static fn (Get $get): bool => ! is_array($get('pictures')) || $get('pictures') === [])
                 // HB-3: «Параграф» turns the current block back into plain text (Filament's own paragraph command; the tool is re-declared here only for its Bulgarian label)
@@ -168,8 +185,88 @@ class HtmlBlockResource extends Resource
                 ->plugins([MediaImagePlugin::make()])
                 ->helperText(__('html_blocks.help.body')),
             // HB-2: the two sections side by side (stacked on a phone), compact, each closed while it holds nothing and open when it holds something
-            Grid::make(['default' => 1, 'lg' => 2])->schema([self::styleSection(), self::conditionsSection()])->extraAttributes(['class' => 'fi-hb-compact']),
+            // HB-5: «Стил на блока» belongs to the text kind only; the conditions work for both kinds
+            Grid::make(['default' => 1, 'lg' => 2])->schema([self::styleSection()->visible($text), self::conditionsSection()])->extraAttributes(['class' => 'fi-hb-compact']),
         ]);
+    }
+
+    /**
+     * HB-5: «Снимка с текст»: the plain form (no editor, no HTML) with the live preview next to it. The explanations are info icons (HINT-1), not paragraphs. The values are validated by HtmlBlockCard on
+     * save (cardFromForm); the picture's id is the whole value (as in «Стил на блока»).
+     */
+    private static function cardSection(): Section
+    {
+        $hint = static fn (string $key): string => (string) __('html_blocks.card.hints.'.$key);
+        $label = static fn (string $key): string => (string) __('html_blocks.card.fields.'.$key);
+        $default = static fn (string $key): mixed => HtmlBlockCard::formState(null)[$key];
+        $input = static fn (string $key, int $max): TextInput => TextInput::make('card.'.$key)->label($label($key))->afterLabel(InfoHint::make($hint($key), 'card-'.$key))
+            ->maxLength($max)->live(onBlur: true)->default('');
+        $choice = static fn (string $key, array $values): Select => Select::make('card.'.$key)->label($label($key))->afterLabel(InfoHint::make($hint($key), 'card-'.$key))
+            ->native(false)->live()->selectablePlaceholder(false)->default($default($key))
+            ->options(array_combine(array_map('strval', $values), array_map(static fn (mixed $v): string => (string) __('html_blocks.card.options.'.$key.'.'.$v), $values)));
+        $color = static fn (string $key, string $choiceKey): ColorPicker => ColorPicker::make('card.'.$key)->label($label($key))->afterLabel(InfoHint::make($hint($key), 'card-'.$key))
+            ->hex()->live(onBlur: true)->visible(static fn (Get $get): bool => $get('card.'.$choiceKey) === 'custom');
+
+        return Section::make(__('html_blocks.card.title'))
+            ->compact()
+            ->visible(static fn (Get $get): bool => $get('kind') === 'card')
+            ->columns(1)
+            ->schema([
+                Grid::make(['default' => 1, 'lg' => 2])->extraAttributes(['class' => 'fi-hb-compact'])->schema([
+                    Group::make([
+                        MediaPicker::make('card.picture')->label($label('picture'))->afterLabel(InfoHint::make($hint('picture'), 'card-picture'))->plainImagesOnly()->live(),
+                        $input('title', HtmlBlockCard::TITLE_MAX),
+                        $input('subtitle', HtmlBlockCard::SUBTITLE_MAX),
+                        Textarea::make('card.text')->label($label('text'))->afterLabel(InfoHint::make($hint('text'), 'card-text'))->rows(3)->maxLength(HtmlBlockCard::TEXT_MAX)->live(onBlur: true)->default(''),
+                        $input('link', 500)->placeholder('/product-category/boys'),
+                        $input('alt', HtmlBlockCard::ALT_MAX),
+                        Grid::make(2)->schema([
+                            $choice('title_size', HtmlBlockCard::TITLE_SIZES),
+                            $choice('overlay', HtmlBlockCard::OVERLAYS),
+                            $choice('halign', HtmlBlockCard::HALIGNS),
+                            $choice('valign', HtmlBlockCard::VALIGNS),
+                            $choice('height', HtmlBlockCard::HEIGHTS),
+                            $choice('text_color', HtmlBlockCard::TEXT_COLORS),
+                            $color('text_custom', 'text_color'),
+                            $choice('border_w', HtmlBlockCard::BORDER_WIDTHS),
+                            $choice('border_color', HtmlBlockCard::BORDER_COLORS),
+                            $color('border_custom', 'border_color'),
+                            $choice('radius', HtmlBlockCard::RADII),
+                        ]),
+                    ])->columnSpan(1),
+                    Group::make([
+                        Text::make(static fn (Get $get): HtmlString => new HtmlString(view('filament.resources.html-block.card-preview', [
+                            'p' => HtmlBlockCard::preview($get('card'), filled($get('card.picture')) ? HtmlBlockBackground::urlFor((int) $get('card.picture')) : null),
+                        ])->render())),
+                    ])->columnSpan(1),
+                ]),
+            ]);
+    }
+
+    /**
+     * The form's card as the stored one: validated by HtmlBlockCard (a refusal is a field error under the field, nothing is saved); the picture must be an image of the library, and the 101st card is refused.
+     *
+     * @return array<string, mixed>
+     *
+     * @throws ValidationException
+     */
+    public static function cardFromForm(mixed $card, ?int $recordId): array
+    {
+        [$clean, $errors] = HtmlBlockCard::validate($card);
+
+        if (! isset($errors['picture']) && $clean['picture'] !== null && ! HtmlBlockBackground::isPicture($clean['picture'])) {
+            $errors['picture'] = (string) __('html_blocks.card.errors.bad_picture');
+        }
+
+        if ($errors === [] && HtmlBlockCard::capReached($recordId)) {
+            $errors = ['picture' => (string) __('html_blocks.card.errors.too_many', ['max' => HtmlBlockCard::MAX_CARDS])];
+        }
+
+        if ($errors !== []) {
+            throw ValidationException::withMessages(array_combine(array_map(static fn (string $key): string => 'data.card.'.($key === 'card' ? 'picture' : $key), array_keys($errors)), array_values($errors)));
+        }
+
+        return HtmlBlockCard::storable($clean);
     }
 
     /** Does the saved block have a value in this part (a style / conditions that is set)? @param  mixed  $stored */
@@ -398,6 +495,8 @@ class HtmlBlockResource extends Resource
             ->defaultSort('title')
             ->columns([
                 TextColumn::make('title')->label(__('html_blocks.fields.title'))->weight('bold')->searchable(),
+                TextColumn::make('kind')->label(__('html_blocks.kind.label'))->badge()
+                    ->formatStateUsing(static fn (mixed $state): string => (string) __('html_blocks.kind.'.(in_array($state, HtmlBlockCard::KINDS, true) ? $state : 'text'))),
                 TextColumn::make('updated_at')->label(__('html_blocks.fields.updated_at'))->dateTime('d.m.Y H:i'),
             ])
             ->recordActions([

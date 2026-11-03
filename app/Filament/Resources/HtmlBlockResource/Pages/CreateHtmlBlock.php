@@ -27,6 +27,19 @@ class CreateHtmlBlock extends CreateRecord
     /** MENU-5: the pictures of the form become the stored list (new files become Media assets); a refusal is a field error. */
     protected function mutateFormDataBeforeCreate(array $data): array
     {
+        // HB-5: a «Снимка с текст» block keeps its settings in `card` (validated by HtmlBlockCard) and nothing in the text kind's fields
+        if (($data['kind'] ?? 'text') === 'card') {
+            $data['card'] = HtmlBlockResource::cardFromForm($data['card'] ?? null, null);
+            $data['pictures'] = null;
+            $data['style'] = null;
+            $data['body'] = '';
+            $data['conditions'] = HtmlBlockResource::conditionsFromForm($data['conditions'] ?? null);
+
+            return $data;
+        }
+
+        $data['kind'] = 'text';
+        $data['card'] = null;
         $data['pictures'] = HtmlBlockResource::picturesFromForm(is_array($data['pictures'] ?? null) ? $data['pictures'] : [], array_keys(is_array($this->data['pictures'] ?? null) ? $this->data['pictures'] : [])) ?: null;
         // HB-1: the «Стил на блока» is validated by HtmlBlockStyle; a refusal is a field error
         $data['style'] = HtmlBlockResource::styleFromForm($data['style'] ?? null, null);

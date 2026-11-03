@@ -334,6 +334,8 @@ final class HtmlBlockStyle
             'background-size:(?:cover|contain)',
             'background-position:(?:center|top|bottom|left|right)',
             'background-repeat:no-repeat',
+            // HB-5: the border colour of a picture card (a custom colour; the width and the radius are classes)
+            "border-color:{$color}",
             'min-height:min\((?:160|240|320|400)px,70vw\)',
             'display:flex',
             'flex-direction:column',
@@ -378,6 +380,9 @@ final class HtmlBlockStyle
 
             $rule !== '' && $rules[] = $rule;
         }
+
+        // HB-5: the rules of the picture cards (the picture and the custom colours), after those of the styled text blocks
+        array_push($rules, ...HtmlBlockCard::storedRules());
 
         return $rules;
     }
