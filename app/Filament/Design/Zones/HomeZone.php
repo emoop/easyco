@@ -8,14 +8,21 @@ use App\Storefront\Design\ComponentRegistry;
 use App\Storefront\Design\Tree;
 use App\Storefront\Design\TreeEditor;
 use App\Storefront\Design\ZoneStore\HomeAdapter;
+use App\Content\HtmlBlocks\HtmlBlockModel;
 use App\Storefront\Home\HomeCatalog;
 use App\Storefront\Home\HomeDrafts;
 use App\Storefront\Home\HomeLayout;
 use App\Storefront\Home\HomeValidator;
+use App\Storefront\Home\ImageGridGeometry;
+use Filament\Forms\Components\Radio;
+use Filament\Forms\Components\Repeater;
+use Filament\Forms\Components\Select;
 use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\Group;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Text;
+use Filament\Schemas\Components\Utilities\Get;
+use Illuminate\Support\HtmlString;
 
 /**
  * The «Начална» zone of the Design screen (HP-1): the home page as ONE ordered list of SECTIONS, each holding ONE component (heading with lines, free HTML block; later HP-2 … HP-6 add more types to
@@ -129,6 +136,12 @@ final class HomeZone implements DesignZone, HasOneCell
             return (string) __('design.home.hidden');
         }
 
+        if ($node['type'] === 'image_grid') {
+            $scheme = is_string($settings['scheme'] ?? null) && isset(ImageGridGeometry::SCHEMES[$settings['scheme']]) ? $settings['scheme'] : ImageGridGeometry::DEFAULT_SCHEME;
+
+            return (string) __('design.home.grid.summary', ['scheme' => __('design.home.grid.schemes.'.$scheme)]);
+        }
+
         return $node['type'] === 'heading' && is_string($settings['text'] ?? null) ? mb_strimwidth($settings['text'], 0, 24, '…') : '';
     }
 
@@ -192,6 +205,11 @@ final class HomeZone implements DesignZone, HasOneCell
 
         if ($selected['kind'] === 'node') {
             $node = TreeEditor::node($current, $selected['id']);
+
+            if ($node !== null && $node['type'] === 'image_grid') {
+                return $this->gridPanel();
+            }
+
             $fields = $node === null ? [] : $this->fieldsOf($node['type']);
 
             return [Section::make($node === null ? '' : $this->typeLabel($node['type']))->schema([
@@ -202,15 +220,122 @@ final class HomeZone implements DesignZone, HasOneCell
         return [Text::make(__('design.home.pick'))];
     }
 
+    /**
+     * HP-2: the panel of an «Решетка от снимки» section. The scheme is a row of radio cards (a small CSS picture of the cells), the proportion / gap / radius are selects, there is ONE block selector per cell of
+     * the chosen scheme (the list follows the scheme live), the size diagram comes from ImageGridGeometry, and the phone list is a repeater of up to 4 selectors (add, remove, ↑ ↓). Every control that another one
+     * shows is live (Livewire; no JavaScript is added). The values are put back into the settings by applyProps.
+     *
+     * @return list<Component>
+     */
+    private function gridPanel(): array
+    {
+        $schema = HomeCatalog::all()['image_grid']['schema'];
+        $common = HomeCatalog::common();
+        $control = function (string $name, array $field): Component {
+            $control = $this->hinted(FieldForms::make($name, $field + ['label' => 'design.home.grid.settings.'.$name]), $name);
+            method_exists($control, 'live') && $control->live();
+
+            return $control;
+        };
+        $blocks = static fn (): array => HtmlBlockModel::query()->orderBy('title')->pluck('title', 'id')->all();
+        $schemes = [];
+
+        foreach (ImageGridGeometry::SCHEMES as $name => $spec) {
+            $thumb = '<span class="ds-gt ds-gt-'.$name.'" aria-hidden="true">'.implode('', array_map(static fn (string $cell): string => '<i class="ds-ga-'.$cell.'"></i>', array_keys($spec['cells']))).'</span>';
+            $schemes[$name] = new HtmlString($thumb.e((string) __('design.home.grid.schemes.'.$name)));
+        }
+
+        $cells = [];
+
+        foreach (['a', 'b', 'c', 'd', 'e', 'f'] as $cell) {
+            $cells[] = Select::make('cells.'.$cell)->label((string) __('design.home.grid.settings.cells.'.$cell))->native(false)->options($blocks)->placeholder((string) __('design.home.grid.cell_empty'))
+                ->afterLabel(\App\Filament\Design\InfoHint::make((string) __('design.home.grid.hints.cell'), 'cell-'.$cell))
+                ->visible(static fn (Get $get): bool => in_array($cell, ImageGridGeometry::names((string) $get('scheme')), true));
+        }
+
+        $emptyPhone = static fn (Get $get): bool => array_filter(is_array($get('phone_items')) ? array_map(static fn (mixed $item): mixed => is_array($item) ? ($item['block'] ?? null) : null, $get('phone_items')) : []) === [];
+
+        return [Section::make($this->typeLabel('image_grid'))->schema([
+            Group::make([
+                $control('show', $common['show'] + ['label' => 'design.home.settings.show']),
+                $control('spacing', $common['spacing'] + ['label' => 'design.home.settings.spacing']),
+                $this->hinted(Radio::make('scheme')->label((string) __('design.home.grid.settings.scheme'))->options($schemes)->default(ImageGridGeometry::DEFAULT_SCHEME)->live(), 'scheme'),
+                $control('ratio', $schema['ratio']),
+                $control('gap', $schema['gap']),
+                $control('radius', $schema['radius']),
+                ...$cells,
+                // the diagram reads the panel's own state (the screen's `props`), the one that every live control has just written: the numbers are always those of what is chosen now
+                Text::make(static function (Get $get, $livewire): HtmlString {
+                    $own = is_array($livewire->props['settings'] ?? null) ? $livewire->props['settings'] : [];
+                    $scheme = isset(ImageGridGeometry::SCHEMES[(string) ($own['scheme'] ?? $get('scheme'))]) ? (string) ($own['scheme'] ?? $get('scheme')) : ImageGridGeometry::DEFAULT_SCHEME;
+                    $ratio = in_array($own['ratio'] ?? $get('ratio'), ImageGridGeometry::RATIOS, true) ? (string) ($own['ratio'] ?? $get('ratio')) : ImageGridGeometry::DEFAULT_RATIO;
+                    $gap = in_array((string) ($own['gap'] ?? $get('gap')), ImageGridGeometry::GAPS, true) ? (string) ($own['gap'] ?? $get('gap')) : ImageGridGeometry::DEFAULT_GAP;
+
+                    return new HtmlString(view('filament.pages.design.partials.image-grid-diagram', ['scheme' => $scheme, 'ratio' => $ratio, 'gap' => $gap, 'cells' => ImageGridGeometry::cells($scheme, $ratio, (int) $gap)])->render());
+                }),
+                Repeater::make('phone_items')->label((string) __('design.home.grid.settings.phone_blocks'))
+                    ->afterLabel(\App\Filament\Design\InfoHint::make((string) __('design.home.grid.hints.phone_blocks'), 'phone_blocks'))
+                    ->maxItems(HomeCatalog::PHONE_BLOCKS_MAX)->defaultItems(0)->reorderableWithButtons()->addActionLabel((string) __('design.home.grid.phone_add'))->live()
+                    ->schema([Select::make('block')->label((string) __('design.home.grid.settings.phone_block'))->native(false)->options($blocks)->required()]),
+                Text::make((string) __('design.home.grid.phone_note'))->color('gray')->size('sm'),
+                Text::make((string) __('design.home.grid.phone_empty'))->color('warning')->size('sm')->visible($emptyPhone),
+                $control('phone_gap', $schema['phone_gap']),
+            ])->statePath('settings'),
+        ])];
+    }
+
     /** HINT-1: the explanation is an info icon next to the label (the text is in a bubble linked by aria-describedby), not a paragraph under the field. */
     private function hinted(Component $control, string $name): Component
     {
         $key = 'design.home.hints.'.$name;
         $text = (string) __($key);
 
+        // HP-2: the image grid's own explanations
+        if ($text === $key) {
+            $key = 'design.home.grid.hints.'.$name;
+            $text = (string) __($key);
+        }
+
         $text !== $key && method_exists($control, 'afterLabel') && $control->afterLabel(\App\Filament\Design\InfoHint::make($text, $name));
 
         return $control;
+    }
+
+    /**
+     * The settings of an image grid from the panel: the enums as they are (the validator refuses a value outside its list), the cells as a map of block ids (an empty select is null), the phone repeater's items
+     * as a list of ids in order (an empty item is left out). Never validates.
+     *
+     * @param  array<string, mixed>  $in
+     * @return array<string, mixed>
+     */
+    private function gridSettings(array $in): array
+    {
+        $out = [
+            'show' => (bool) ($in['show'] ?? true),
+            'spacing' => $in['spacing'] ?? 'default',
+        ];
+
+        foreach (['scheme', 'ratio', 'gap', 'radius', 'phone_gap'] as $name) {
+            isset($in[$name]) && $out[$name] = $in[$name];
+        }
+
+        $cells = [];
+
+        foreach (is_array($in['cells'] ?? null) ? $in['cells'] : [] as $name => $id) {
+            $cells[$name] = FieldValues::id($id);
+        }
+
+        $out['cells'] = $cells;
+        $phone = [];
+
+        foreach (is_array($in['phone_items'] ?? null) ? array_values($in['phone_items']) : [] as $item) {
+            $id = is_array($item) ? FieldValues::id($item['block'] ?? null) : null;
+            $id === null || $phone[] = $id;
+        }
+
+        $out['phone_blocks'] = $phone;
+
+        return $out;
     }
 
     /** @return array<string, array<string, mixed>> the fields of a section type: the common ones, then the component's own, each with its own label */
@@ -241,6 +366,14 @@ final class HomeZone implements DesignZone, HasOneCell
 
         $node = TreeEditor::node($tree['main'] ?? [], $selected['id']);
 
+        if ($node !== null && $node['type'] === 'image_grid') {
+            // the phone list is a repeater of `{block}` items in the panel and a plain list of ids in the settings
+            $settings = $node['settings'];
+            $settings['phone_items'] = array_map(static fn (mixed $id): array => ['block' => $id], array_values(is_array($settings['phone_blocks'] ?? null) ? $settings['phone_blocks'] : []));
+
+            return ['settings' => $settings];
+        }
+
         return $node === null ? [] : ['settings' => $node['settings']];
     }
 
@@ -265,6 +398,14 @@ final class HomeZone implements DesignZone, HasOneCell
         }
 
         $in = is_array($raw['settings'] ?? null) ? $raw['settings'] : [];
+
+        if ($node['type'] === 'image_grid') {
+            $settings = $this->gridSettings($in) + $node['settings'];
+            $tree['main'] = TreeEditor::setSettings($current, $selected['id'], $settings);
+
+            return $tree;
+        }
+
         $settings = FieldValues::settings($this->fieldsOf($node['type']), $in) + $node['settings'];
         $tree['main'] = TreeEditor::setSettings($current, $selected['id'], $settings);
 

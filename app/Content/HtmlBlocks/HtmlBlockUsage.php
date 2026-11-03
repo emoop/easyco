@@ -81,10 +81,18 @@ final class HtmlBlockUsage
             $layout = is_string($json) ? json_decode($json, true) : null;
 
             foreach (is_array($layout['sections'] ?? null) ? $layout['sections'] : [] as $section) {
-                $id = is_array($section) && ($section['type'] ?? null) === 'html_block' ? ($section['settings']['html_block'] ?? null) : null;
+                // HP-2: an html_block section's block, and every cell and phone slot of an image grid (the draft may hold a value the validator has not cleaned yet: any whole number or numeric string counts)
+                $own = is_array($section) && is_array($section['settings'] ?? null) ? $section['settings'] : [];
+                $ids = match (is_array($section) ? ($section['type'] ?? null) : null) {
+                    'html_block' => [$own['html_block'] ?? null],
+                    'image_grid' => [...array_values(is_array($own['cells'] ?? null) ? $own['cells'] : []), ...array_values(is_array($own['phone_blocks'] ?? null) ? $own['phone_blocks'] : [])],
+                    default => [],
+                };
 
-                if ((is_int($id) || (is_string($id) && ctype_digit($id))) && (int) $id === $blockId) {
-                    return true;
+                foreach ($ids as $id) {
+                    if ((is_int($id) || (is_string($id) && ctype_digit($id))) && (int) $id === $blockId) {
+                        return true;
+                    }
                 }
             }
         }

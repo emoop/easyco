@@ -14,6 +14,9 @@ final class HomeValidator
     /** @var array<string, string> */
     private array $errors = [];
 
+    /** @var array<string, true> HP-2: the paths of an image grid's settings: a bad value there falls back to its own default (the other settings stay), so READING the layout does not refuse it for them */
+    private array $soft = [];
+
     /**
      * @param  array<string, mixed>  $layout
      * @return array{0: array{spacing: string, sections: list<array{type: string, settings: array<string, mixed>}>}, 1: array<string, string>} the normalised layout and the messages by path
@@ -24,6 +27,21 @@ final class HomeValidator
         $clean = $validator->layout($layout);
 
         return [$clean, $validator->errors];
+    }
+
+    /**
+     * HP-2: the same as validate(), for READING a stored layout: an image grid's bad value is replaced by its default (validate() reports it, the page must still print the other settings), so only the
+     * errors that really make the layout unusable are returned.
+     *
+     * @param  array<string, mixed>  $layout
+     * @return array{0: array{spacing: string, sections: list<array{type: string, settings: array<string, mixed>}>}, 1: array<string, string>}
+     */
+    public static function validateForRead(array $layout): array
+    {
+        $validator = new self;
+        $clean = $validator->layout($layout);
+
+        return [$clean, array_diff_key($validator->errors, $validator->soft)];
     }
 
     /** @param  array<string, mixed>  $params */
@@ -110,9 +128,19 @@ final class HomeValidator
         }
 
         $clean = [];
-        $failer = fn (string $p, string $code, array $params = []) => $this->fail($p, $code, $params);
+        $soft = $type === 'image_grid';
+        $failer = function (string $p, string $code, array $params = []) use ($soft): void {
+            $this->fail($p, $code, $params);
+            $soft && $this->soft[$p] = true;
+        };
 
         foreach ($schema as $name => $field) {
+            if (($field['kind'] ?? null) === 'cells') {
+                $clean[$name] = $this->cells($settings[$name] ?? [], (string) ($clean['scheme'] ?? ImageGridGeometry::DEFAULT_SCHEME), "{$path}.settings.{$name}", $failer);
+
+                continue;
+            }
+
             $clean[$name] = FieldKinds::validate($settings[$name] ?? ($field['default'] ?? null), $field, "{$path}.settings.{$name}", $failer);
         }
 
@@ -123,5 +151,37 @@ final class HomeValidator
         }
 
         return ['type' => $type, 'settings' => $clean];
+    }
+
+    /**
+     * HP-2: the cells of an image grid: a map from a cell name of the CHOSEN scheme to an HTML block id or nothing. A name that is not in the scheme is dropped (and reported); a value that is not an id is
+     * refused (that cell is empty). Every cell of the scheme is in the result, in reading order.
+     *
+     * @param  callable(string, string, array<string, mixed>=): void  $fail
+     * @return array<string, int|null>
+     */
+    private function cells(mixed $value, string $scheme, string $path, callable $fail): array
+    {
+        $names = ImageGridGeometry::names($scheme);
+        $out = array_fill_keys($names, null);
+
+        if (! is_array($value)) {
+            $fail($path, 'bad_cells', []);
+
+            return $out;
+        }
+
+        foreach ($value as $name => $id) {
+            if (! is_string($name) || ! in_array($name, $names, true)) {
+                // an empty cell of a scheme that is no longer chosen is not a mistake: only a cell that holds a block is reported
+                $id === null || $id === '' || $fail($path.'.'.(is_string($name) ? mb_substr($name, 0, 10) : '?'), 'unknown_cell', []);
+
+                continue;
+            }
+
+            $out[$name] = FieldKinds::reference($id, false, "{$path}.{$name}", $fail);
+        }
+
+        return $out;
     }
 }

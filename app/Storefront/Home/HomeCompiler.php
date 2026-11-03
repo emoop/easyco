@@ -30,10 +30,9 @@ final class HomeCompiler
     {
         $ids = [];
 
+        // HP-2: an html_block's block, an image grid's cells and phone list: all of them in the ONE batch below
         foreach ($layout['sections'] as $section) {
-            if ($section['type'] === 'html_block' && is_int($section['settings']['html_block'] ?? null)) {
-                $ids[] = $section['settings']['html_block'];
-            }
+            array_push($ids, ...HomeCatalog::blockIds($section));
         }
 
         $blocks = [];
@@ -119,7 +118,7 @@ final class HomeCompiler
             return false;
         }
 
-        [$clean, $errors] = HomeValidator::validate($layout);
+        [$clean, $errors] = HomeValidator::validateForRead($layout);
 
         if ($errors !== []) {
             return false;
@@ -151,7 +150,8 @@ final class HomeCompiler
             return null;
         }
 
-        [$clean, $errors] = HomeValidator::validate($entry['layout']);
+        // HP-2: an image grid's bad value is its default here (the other settings stay); any other error makes the layout unusable, as before
+        [$clean, $errors] = HomeValidator::validateForRead($entry['layout']);
 
         if ($errors !== [] || $clean['sections'] === []) {
             return null;

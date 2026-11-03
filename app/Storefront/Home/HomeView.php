@@ -46,6 +46,17 @@ final class HomeView
                 }
             }
 
+            $grid = null;
+
+            if ($type === 'image_grid') {
+                $grid = self::grid($settings, $stored['blocks']);
+
+                // a grid with no block to show (no cell, no phone block) prints nothing: no empty box in the page
+                if ($grid === null) {
+                    continue;
+                }
+            }
+
             $class = 'sf-hp-section sf-hp-'.str_replace('_', '-', $type);
             $own = $settings['spacing'] ?? 'default';
 
@@ -53,10 +64,53 @@ final class HomeView
                 $class .= ' sf-hp-mt-'.$own;
             }
 
-            $items[] = ['type' => $type, 'class' => $class, 'view' => $catalog[$type]['view'], 'settings' => $settings, 'html' => $html];
+            $items[] = ['type' => $type, 'class' => $class, 'view' => $catalog[$type]['view'], 'settings' => $settings, 'html' => $html, 'grid' => $grid];
         }
 
         // every section hidden or empty: nothing to show, but the layout is published (the page is NOT the old one)
         return ['gap' => $gap, 'items' => $items];
+    }
+
+    /**
+     * HP-2: what an image grid prints. Every class is from a closed list (checked again here; a value outside it is its default); the blocks are the compiled, sanitised HTML, cleaned AGAIN on read. A cell with
+     * no block (or a block that is gone) is NOT printed; the phone list is the chosen blocks in order. Null = nothing to show at all.
+     *
+     * @param  array<string, mixed>  $settings
+     * @param  array<string, string>  $blocks  the compiled HTML by block id
+     * @return array{class: string, cells: list<array{name: string, html: string}>, phone_class: string, phone: list<string>}|null
+     */
+    private static function grid(array $settings, array $blocks): ?array
+    {
+        $pick = static fn (string $key, array $list, string $default): string => in_array($settings[$key] ?? null, $list, true) ? (string) $settings[$key] : $default;
+        $scheme = $pick('scheme', array_keys(ImageGridGeometry::SCHEMES), ImageGridGeometry::DEFAULT_SCHEME);
+        $ratio = $pick('ratio', ImageGridGeometry::RATIOS, ImageGridGeometry::DEFAULT_RATIO);
+        $gap = $pick('gap', ImageGridGeometry::GAPS, ImageGridGeometry::DEFAULT_GAP);
+        $radius = $pick('radius', ImageGridGeometry::RADII, ImageGridGeometry::DEFAULT_RADIUS);
+        $phoneGap = $pick('phone_gap', ImageGridGeometry::GAPS, ImageGridGeometry::PHONE_DEFAULT_GAP);
+        $html = static fn (mixed $id): string => is_int($id) ? HtmlBlockSanitizer::render((string) ($blocks[(string) $id] ?? '')) : '';
+        $cells = [];
+
+        foreach (ImageGridGeometry::names($scheme) as $name) {
+            $one = $html(is_array($settings['cells'] ?? null) ? ($settings['cells'][$name] ?? null) : null);
+            $one === '' || $cells[] = ['name' => $name, 'html' => $one];
+        }
+
+        $phone = [];
+
+        foreach (array_slice(is_array($settings['phone_blocks'] ?? null) ? array_values($settings['phone_blocks']) : [], 0, HomeCatalog::PHONE_BLOCKS_MAX) as $id) {
+            $one = $html($id);
+            $one === '' || $phone[] = $one;
+        }
+
+        if ($cells === [] && $phone === []) {
+            return null;
+        }
+
+        return [
+            'class' => 'sf-hp-grid sf-hp-s-'.$scheme.' sf-hp-r-'.str_replace(':', '-', $ratio).' sf-hp-gg-'.$gap.' sf-hp-cr-'.$radius,
+            'cells' => $cells,
+            'phone_class' => 'sf-hp-phone sf-hp-pg-'.$phoneGap.' sf-hp-cr-'.$radius,
+            'phone' => $phone,
+        ];
     }
 }

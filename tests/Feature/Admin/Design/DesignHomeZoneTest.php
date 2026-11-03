@@ -74,7 +74,7 @@ class DesignHomeZoneTest extends TestCase
 
     // ---- the zone -----------------------------------------------------------------------------------------------------------------------
 
-    public function test_the_zone_is_in_the_list_starts_empty_with_its_one_cell_selected_and_offers_the_two_components(): void
+    public function test_the_zone_is_in_the_list_starts_empty_with_its_one_cell_selected_and_offers_its_components(): void
     {
         $screen = $this->screen();
 
@@ -82,7 +82,7 @@ class DesignHomeZoneTest extends TestCase
         $this->assertStringContainsString('>Home</button>', $screen->html(), 'the zone is a button of the list');
         $this->assertSame([], $this->types($screen));
         $screen->assertSet('selected', ['kind' => 'cell', 'id' => 'h-r0-c0'])->assertSet('dirty', false);
-        $this->assertSame(['heading', 'html_block'], array_column($screen->instance()->palette(), 'type'));
+        $this->assertSame(['heading', 'html_block', 'image_grid'], array_column($screen->instance()->palette(), 'type'));
         $this->assertNull($this->settings()->get(AppearanceSettings::HOME_PUBLISHED_KEY));
     }
 

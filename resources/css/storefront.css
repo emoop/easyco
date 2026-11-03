@@ -5266,3 +5266,92 @@ html:not(.js) .sf-bar-item:focus-within > .sf-sub {
 .sf-pc-c-light { color: #fff; }
 .sf-pc-c-dark { color: var(--sf-text, #1a1a1a); }
 /* ===== end of HB-5 picture block ===================================================================================================================================================== */
+
+/* ===== HP-2 image grid =============================================================================================================================================================== */
+/* «Решетка от снимки»: HTML blocks in the cells of a scheme. The grid is a box of a fixed proportion (a class of a closed list), its columns and rows are equal units, a cell has a NAMED AREA per scheme. The gap
+   and the corner radius are classes of closed lists. Every cell is filled by its block: `.sf-hp-grid .sf-hp-cell > .sf-hb` has THREE classes, the rules of a block (`.sf-hb-{id}` in the token stylesheet, `.sf-pc-*` of
+   HB-5) have ONE, so the override wins without `!important`. No JavaScript: below 48rem the grid is hidden and the phone list is shown, from 48rem the other way round. */
+.sf-hp-grid {
+    display: grid;
+    width: 100%;
+}
+
+.sf-hp-s-one { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); grid-template-areas: "a"; }
+.sf-hp-s-two { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: minmax(0, 1fr); grid-template-areas: "a b"; }
+.sf-hp-s-three { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: minmax(0, 1fr); grid-template-areas: "a b c"; }
+.sf-hp-s-four { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); grid-template-areas: "a b" "c d"; }
+.sf-hp-s-six { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); grid-template-areas: "a b c" "d e f"; }
+.sf-hp-s-uneven-a { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: repeat(6, minmax(0, 1fr)); grid-template-areas: "a c d" "a c d" "a c e" "b c e" "b c f" "b c f"; }
+.sf-hp-s-uneven-b { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); grid-template-areas: "a a b" "a a c"; }
+.sf-hp-s-uneven-c { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); grid-template-areas: "a c c" "b c c"; }
+
+.sf-hp-r-16-9 { aspect-ratio: 16 / 9; }
+.sf-hp-r-3-2 { aspect-ratio: 3 / 2; }
+.sf-hp-r-4-3 { aspect-ratio: 4 / 3; }
+
+.sf-hp-gg-0 { gap: 0; }
+.sf-hp-gg-4 { gap: 4px; }
+.sf-hp-gg-8 { gap: 8px; }
+.sf-hp-gg-12 { gap: 12px; }
+.sf-hp-gg-16 { gap: 16px; }
+.sf-hp-gg-20 { gap: 20px; }
+.sf-hp-gg-24 { gap: 24px; }
+.sf-hp-gg-32 { gap: 32px; }
+
+.sf-hp-cell,
+.sf-hp-pcell {
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.sf-hp-a-a { grid-area: a; }
+.sf-hp-a-b { grid-area: b; }
+.sf-hp-a-c { grid-area: c; }
+.sf-hp-a-d { grid-area: d; }
+.sf-hp-a-e { grid-area: e; }
+.sf-hp-a-f { grid-area: f; }
+
+.sf-hp-cr-4 .sf-hp-cell, .sf-hp-cr-4 .sf-hp-pcell { border-radius: 4px; }
+.sf-hp-cr-8 .sf-hp-cell, .sf-hp-cr-8 .sf-hp-pcell { border-radius: 8px; }
+.sf-hp-cr-12 .sf-hp-cell, .sf-hp-cr-12 .sf-hp-pcell { border-radius: 12px; }
+.sf-hp-cr-16 .sf-hp-cell, .sf-hp-cr-16 .sf-hp-pcell { border-radius: 16px; }
+.sf-hp-cr-24 .sf-hp-cell, .sf-hp-cr-24 .sf-hp-pcell { border-radius: 24px; }
+
+/* the block fills its cell: the picture covers it, the text keeps its place; the block's own width, height and margins give way (three classes against one) */
+.sf-hp-grid .sf-hp-cell > .sf-hb {
+    box-sizing: border-box;
+    width: 100%;
+    max-width: none;
+    height: 100%;
+    min-height: 0;
+    margin: 0;
+}
+
+/* the phone list: up to 4 blocks, one under another, each the full width; not shown from 48rem */
+.sf-hp-phone {
+    display: none;
+    flex-direction: column;
+}
+
+.sf-hp-pg-0 { gap: 0; }
+.sf-hp-pg-4 { gap: 4px; }
+.sf-hp-pg-8 { gap: 8px; }
+.sf-hp-pg-12 { gap: 12px; }
+.sf-hp-pg-16 { gap: 16px; }
+.sf-hp-pg-20 { gap: 20px; }
+.sf-hp-pg-24 { gap: 24px; }
+.sf-hp-pg-32 { gap: 32px; }
+
+.sf-hp-phone .sf-hp-pcell > .sf-hb {
+    box-sizing: border-box;
+    width: 100%;
+    max-width: none;
+    margin: 0;
+}
+
+@media (max-width: 47.99rem) {
+    .sf-hp-grid { display: none; }
+    .sf-hp-phone { display: flex; }
+}
+/* ===== end of HP-2 image grid ======================================================================================================================================================== */

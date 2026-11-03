@@ -743,3 +743,79 @@
     color: var(--gray-200);
 }
 /* ===== end of HINT-1 ================================================================================================================================================================ */
+
+/* ===== HP-2 image grid =============================================================================================================================================================== */
+/* The scheme cards (a small picture of the cell layout in a radio card) and the size diagram of the «Решетка от снимки» component. Plain CSS grid, no inline style, no script. */
+.ds-gt {
+    display: inline-grid;
+    width: 3.5rem;
+    height: 2.4rem;
+    gap: 2px;
+    vertical-align: middle;
+    margin-inline-end: 0.5rem;
+}
+
+.ds-gt i { background: var(--gray-400, #9ca3af); border-radius: 2px; }
+.ds-gt-one { grid-template-columns: 1fr; grid-template-rows: 1fr; grid-template-areas: "a"; }
+.ds-gt-two { grid-template-columns: repeat(2, 1fr); grid-template-areas: "a b"; }
+.ds-gt-three { grid-template-columns: repeat(3, 1fr); grid-template-areas: "a b c"; }
+.ds-gt-four { grid-template-columns: repeat(2, 1fr); grid-template-rows: repeat(2, 1fr); grid-template-areas: "a b" "c d"; }
+.ds-gt-six { grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(2, 1fr); grid-template-areas: "a b c" "d e f"; }
+.ds-gt-uneven-a { grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(6, 1fr); grid-template-areas: "a c d" "a c d" "a c e" "b c e" "b c f" "b c f"; }
+.ds-gt-uneven-b { grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(2, 1fr); grid-template-areas: "a a b" "a a c"; }
+.ds-gt-uneven-c { grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(2, 1fr); grid-template-areas: "a c c" "b c c"; }
+.ds-gt .ds-ga-a, .ds-gd-a-a { grid-area: a; }
+.ds-gt .ds-ga-b, .ds-gd-a-b { grid-area: b; }
+.ds-gt .ds-ga-c, .ds-gd-a-c { grid-area: c; }
+.ds-gt .ds-ga-d, .ds-gd-a-d { grid-area: d; }
+.ds-gt .ds-ga-e, .ds-gd-a-e { grid-area: e; }
+.ds-gt .ds-ga-f, .ds-gd-a-f { grid-area: f; }
+
+.ds-gd { margin-block: 0.25rem; }
+
+.ds-gd-box {
+    display: grid;
+    width: 100%;
+    max-width: 26rem;
+}
+
+.ds-gd-s-one { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); grid-template-areas: "a"; }
+.ds-gd-s-two { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: minmax(0, 1fr); grid-template-areas: "a b"; }
+.ds-gd-s-three { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: minmax(0, 1fr); grid-template-areas: "a b c"; }
+.ds-gd-s-four { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); grid-template-areas: "a b" "c d"; }
+.ds-gd-s-six { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); grid-template-areas: "a b c" "d e f"; }
+.ds-gd-s-uneven-a { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: repeat(6, minmax(0, 1fr)); grid-template-areas: "a c d" "a c d" "a c e" "b c e" "b c f" "b c f"; }
+.ds-gd-s-uneven-b { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); grid-template-areas: "a a b" "a a c"; }
+.ds-gd-s-uneven-c { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); grid-template-areas: "a c c" "b c c"; }
+.ds-gd-r-16-9 { aspect-ratio: 16 / 9; }
+.ds-gd-r-3-2 { aspect-ratio: 3 / 2; }
+.ds-gd-r-4-3 { aspect-ratio: 4 / 3; }
+.ds-gd-g-0 { gap: 0; }
+.ds-gd-g-4 { gap: 1px; }
+.ds-gd-g-8 { gap: 2px; }
+.ds-gd-g-12 { gap: 3px; }
+.ds-gd-g-16 { gap: 4px; }
+.ds-gd-g-20 { gap: 5px; }
+.ds-gd-g-24 { gap: 6px; }
+.ds-gd-g-32 { gap: 8px; }
+
+.ds-gd-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    border: 1px solid var(--gray-400, #9ca3af);
+    background: var(--gray-100, #f3f4f6);
+    font-size: 0.6875rem;
+    line-height: 1.25;
+    text-align: center;
+}
+
+.ds-gd-cell b { font-size: 0.8125rem; }
+.ds-gd-cell em { font-style: normal; opacity: 0.7; }
+.ds-gd-note { margin-top: 0.375rem; font-size: 0.75rem; opacity: 0.8; }
+.ds-gs-warn { color: var(--warning-600, #b45309); font-size: 0.8125rem; }
+/* ===== end of HP-2 image grid ======================================================================================================================================================== */
