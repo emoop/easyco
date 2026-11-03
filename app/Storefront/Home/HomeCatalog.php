@@ -56,6 +56,19 @@ final class HomeCatalog
 
     public const MAX_PRODUCT_GRIDS = 2;
 
+    /** HP-5: a «Карусел»: at most 2 in a layout; the lists it holds (1–12 blocks, 1–24 pictures), the brands it shows (every brand with a logo, at most 24), the longest label and alt text. */
+    public const MAX_CAROUSELS = 2;
+
+    public const CAROUSEL_BLOCKS_MAX = 12;
+
+    public const CAROUSEL_IMAGES_MAX = 24;
+
+    public const CAROUSEL_BRANDS_MAX = 24;
+
+    public const CAROUSEL_LABEL_MAX = 60;
+
+    public const CAROUSEL_ALT_MAX = 120;
+
     /** HP-2: the most blocks the phone list of an image grid holds. */
     public const PHONE_BLOCKS_MAX = 4;
 
@@ -119,6 +132,23 @@ final class HomeCatalog
                 'columns_phone' => ['kind' => 'enum', 'options' => self::PRODUCT_PHONE_COLUMNS, 'default' => '2', 'options_prefix' => 'design.home.tiles.columns.'],
                 'gap' => ['kind' => 'enum', 'options' => self::PRODUCT_GAPS, 'default' => '16', 'options_prefix' => 'design.home.tiles.gap.'],
             ],
+            // HP-5: one row that scrolls sideways: products (read at request time), HTML blocks, pictures or the logos of the brands. `blocks` / `images` are validated by HomeValidator itself; the settings a kind does not use are ignored (their defaults).
+            'carousel' => [
+                'kind' => ['kind' => 'enum', 'options' => CarouselGeometry::KINDS, 'default' => 'products', 'options_prefix' => 'design.home.carousel.kinds.'],
+                'source' => ['kind' => 'enum', 'options' => self::PRODUCT_SOURCES, 'default' => 'newest', 'options_prefix' => 'design.home.products.sources.'],
+                'entity' => ['kind' => 'entity', 'default' => null],
+                'count' => ['kind' => 'enum', 'options' => CarouselGeometry::COUNTS, 'default' => CarouselGeometry::DEFAULT_COUNT, 'options_prefix' => 'design.home.carousel.counts.'],
+                'sort' => ['kind' => 'enum', 'options' => self::PRODUCT_SORTS, 'default' => 'newest', 'options_prefix' => 'design.home.products.sorts.'],
+                'height' => ['kind' => 'enum', 'options' => CarouselGeometry::heights(), 'default' => CarouselGeometry::DEFAULT_HEIGHT, 'options_prefix' => 'design.home.carousel.heights.'],
+                'height_phone' => ['kind' => 'enum', 'options' => CarouselGeometry::heights(), 'default' => CarouselGeometry::DEFAULT_HEIGHT_PHONE, 'options_prefix' => 'design.home.carousel.heights.'],
+                'ratio' => ['kind' => 'enum', 'options' => CarouselGeometry::RATIOS, 'default' => CarouselGeometry::DEFAULT_RATIO, 'options_prefix' => 'design.home.carousel.ratios.'],
+                'gap' => ['kind' => 'enum', 'options' => CarouselGeometry::GAPS, 'default' => CarouselGeometry::DEFAULT_GAP, 'options_prefix' => 'design.home.tiles.gap.'],
+                'radius' => ['kind' => 'enum', 'options' => CarouselGeometry::RADII, 'default' => CarouselGeometry::DEFAULT_RADIUS, 'options_prefix' => 'design.home.grid.radius.'],
+                'arrows' => ['kind' => 'bool', 'default' => true],
+                'label' => ['kind' => 'text', 'max' => self::CAROUSEL_LABEL_MAX, 'default' => ''],
+                'blocks' => ['kind' => 'carousel_blocks', 'default' => []],
+                'images' => ['kind' => 'carousel_images', 'default' => []],
+            ],
         ];
         $out = [];
 
@@ -141,10 +171,28 @@ final class HomeCatalog
         $ids = match ($section['type']) {
             'html_block' => [$settings['html_block'] ?? null],
             'image_grid' => [...array_values(is_array($settings['cells'] ?? null) ? $settings['cells'] : []), ...array_values(is_array($settings['phone_blocks'] ?? null) ? $settings['phone_blocks'] : [])],
+            // HP-5: a blocks carousel's list (the other kinds hold none)
+            'carousel' => ($settings['kind'] ?? null) === 'blocks' ? array_values(is_array($settings['blocks'] ?? null) ? $settings['blocks'] : []) : [],
             default => [],
         };
 
         return array_values(array_unique(array_filter($ids, static fn (mixed $id): bool => is_int($id) && $id > 0)));
+    }
+
+    /**
+     * HP-5: the settings of a carousel that a kind USES (the others are ignored: their defaults, no message).
+     *
+     * @return list<string>
+     */
+    public static function carouselUses(string $kind): array
+    {
+        return match ($kind) {
+            'products' => ['source', 'entity', 'count', 'sort'],
+            'blocks' => ['height', 'height_phone', 'ratio', 'gap', 'radius', 'blocks'],
+            'images' => ['height', 'height_phone', 'ratio', 'gap', 'radius', 'images'],
+            'brands' => ['height', 'height_phone', 'ratio', 'gap', 'radius'],
+            default => [],
+        };
     }
 
     /** The defaults of a type's settings: the common ones, then its own (an id kind starts as «none chosen»). @return array<string, mixed> */

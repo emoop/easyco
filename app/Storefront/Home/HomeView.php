@@ -79,6 +79,17 @@ final class HomeView
                 }
             }
 
+            $carousel = null;
+
+            if ($type === 'carousel') {
+                $carousel = self::carousel($settings, $stored['blocks'], $stored['carousels'][(string) $index] ?? []);
+
+                // nothing to show (no usable block, picture or source): nothing is printed, no empty box in the page
+                if ($carousel === null) {
+                    continue;
+                }
+            }
+
             $class = 'sf-hp-section sf-hp-'.str_replace('_', '-', $type);
             $own = $settings['spacing'] ?? 'default';
 
@@ -86,7 +97,7 @@ final class HomeView
                 $class .= ' sf-hp-mt-'.$own;
             }
 
-            $items[] = ['type' => $type, 'class' => $class, 'view' => $catalog[$type]['view'], 'settings' => $settings, 'html' => $html, 'grid' => $grid, 'tiles' => $tiles, 'products' => $products];
+            $items[] = ['type' => $type, 'class' => $class, 'view' => $catalog[$type]['view'], 'settings' => $settings, 'html' => $html, 'grid' => $grid, 'tiles' => $tiles, 'products' => $products, 'carousel' => $carousel];
         }
 
         // every section hidden or empty: nothing to show, but the layout is published (the page is NOT the old one)
@@ -131,16 +142,32 @@ final class HomeView
      * HP-4: reads the cards of every product grid of the prepared sections, at request time (`$read(source, entity, sort, count, sizes)` = CatalogReader::homeProducts), in the order of the layout. A grid with
      * no product is dropped, and the top spacing is put right again: the first section that is printed has none. Sections without a product grid come back as they are.
      *
+     * HP-5: a PRODUCT carousel is read the same way (one card read), its card images' `sizes` from the catalog's own gap and phone columns (GAP-1: the carousel's card is a cell of that grid).
+     *
      * @param  array{gap: string, items: list<array<string, mixed>>}  $sections  prepare()'s result
      * @param  \Closure(string, int|null, string, int, string): list<\App\Storefront\ReadModels\ProductCard>  $read
      * @return array{gap: string, items: list<array<string, mixed>>}
      */
-    public static function fill(array $sections, \Closure $read): array
+    public static function fill(array $sections, \Closure $read, int $gapX = 16, int $phoneColumns = 2): array
     {
         $items = [];
         $dropped = false;
 
         foreach ($sections['items'] as $item) {
+            if ($item['type'] === 'carousel' && ($item['carousel']['kind'] ?? null) === 'products') {
+                $carousel = $item['carousel'];
+                $carousel['sizes'] = \App\Storefront\Reader\ImageSetBuilder::cardSizes(CarouselGeometry::CARD_COLUMNS, $phoneColumns, $gapX);
+                $carousel['cards'] = $read($carousel['source'], $carousel['entity'], $carousel['sort'], $carousel['count'], $carousel['sizes']);
+
+                if ($carousel['cards'] === []) {
+                    $dropped = true;
+
+                    continue;
+                }
+
+                $item['carousel'] = $carousel;
+            }
+
             if ($item['type'] === 'product_grid' && is_array($item['products'] ?? null)) {
                 $grid = $item['products'];
                 $grid['cards'] = $read($grid['source'], $grid['entity'], $grid['sort'], $grid['count'], $grid['sizes']);
@@ -165,6 +192,64 @@ final class HomeView
         $sections['items'] = $items;
 
         return $sections;
+    }
+
+    /**
+     * HP-5: what a «Карусел» prints. Every class is from a closed list (checked again here; a value outside it is its default); a products carousel is read later by fill(); blocks are the compiled, sanitised HTML
+     * (cleaned AGAIN here); images and brands are the compiled, checked pictures. Null = nothing to show.
+     *
+     * @param  array<string, mixed>  $settings
+     * @param  array<string, string>  $blocks  the compiled HTML by block id
+     * @param  list<array<string, mixed>>  $pictures  the compiled pictures of this section (images, brands), validated
+     * @return array{kind: string, class: string, label: string, arrows: bool, source: string, entity: int|null, sort: string, count: int, sizes: string, cards: list<\App\Storefront\ReadModels\ProductCard>, blocks: list<string>, pictures: list<array<string, mixed>>}|null
+     */
+    private static function carousel(array $settings, array $blocks, array $pictures): ?array
+    {
+        $pick = static fn (string $key, array $list, string $default): string => in_array($settings[$key] ?? null, $list, true) ? (string) $settings[$key] : $default;
+        $kind = $pick('kind', CarouselGeometry::KINDS, 'products');
+        $label = is_string($settings['label'] ?? null) ? trim($settings['label']) : '';
+        $label = mb_strlen($label) > HomeCatalog::CAROUSEL_LABEL_MAX || $label !== strip_tags($label) ? '' : $label;
+        $one = ['kind' => $kind, 'class' => 'sf-car sf-car-k-'.$kind, 'label' => $label, 'arrows' => ($settings['arrows'] ?? true) !== false, 'source' => 'newest', 'entity' => null, 'sort' => 'newest', 'count' => (int) CarouselGeometry::DEFAULT_COUNT, 'sizes' => \App\Storefront\Reader\ImageSetBuilder::cardSizes(CarouselGeometry::CARD_COLUMNS), 'cards' => [], 'blocks' => [], 'pictures' => []];
+
+        if ($kind === 'products') {
+            $source = $pick('source', HomeCatalog::PRODUCT_SOURCES, 'newest');
+            $entity = $settings['entity'] ?? null;
+            $entity = is_int($entity) && $entity > 0 ? $entity : null;
+
+            // a source that needs an item and has none prints nothing
+            if (in_array($source, HomeCatalog::PRODUCT_SOURCES_WITH_ENTITY, true) && $entity === null) {
+                return null;
+            }
+
+            return ['source' => $source, 'entity' => $source === 'newest' ? null : $entity, 'sort' => $pick('sort', HomeCatalog::PRODUCT_SORTS, 'newest'), 'count' => (int) $pick('count', CarouselGeometry::COUNTS, CarouselGeometry::DEFAULT_COUNT)] + $one;
+        }
+
+        $height = $pick('height', CarouselGeometry::heights(), CarouselGeometry::DEFAULT_HEIGHT);
+        $phone = $pick('height_phone', CarouselGeometry::heights(), CarouselGeometry::DEFAULT_HEIGHT_PHONE);
+        $ratio = $pick('ratio', CarouselGeometry::RATIOS, CarouselGeometry::DEFAULT_RATIO);
+        $gap = $pick('gap', CarouselGeometry::GAPS, CarouselGeometry::DEFAULT_GAP);
+        $radius = $pick('radius', CarouselGeometry::RADII, CarouselGeometry::DEFAULT_RADIUS);
+        $one['class'] .= ' sf-car-box sf-car-h-'.$height.' sf-car-hp-'.$phone.' sf-car-r-'.str_replace(':', '-', $ratio).' sf-car-g-'.$gap.' sf-car-cr-'.$radius;
+        $one['sizes'] = CarouselGeometry::sizes((int) $height, (int) $phone, $ratio);
+
+        if ($kind === 'blocks') {
+            foreach (array_slice(is_array($settings['blocks'] ?? null) ? array_values($settings['blocks']) : [], 0, HomeCatalog::CAROUSEL_BLOCKS_MAX) as $id) {
+                $html = is_int($id) ? HtmlBlockSanitizer::render((string) ($blocks[(string) $id] ?? '')) : '';
+                $html === '' || $one['blocks'][] = $html;
+            }
+
+            return $one['blocks'] === [] ? null : $one;
+        }
+
+        // images (up to 24) and brands (up to 24): the compiled pictures, in order
+        // each picture says the width it is DISPLAYED at (contain, never enlarged): the sizes of its own box fit
+        $one['pictures'] = array_map(static function (array $picture) use ($height, $phone, $ratio): array {
+            $natural = max([(int) $picture['width'], ...array_map(static fn (array $row): int => (int) $row['width'], $picture['srcset'])]);
+
+            return $picture + ['sizes' => CarouselGeometry::pictureSizes((int) $height, (int) $phone, $ratio, $natural, (int) round($natural * $picture['height'] / max(1, $picture['width'])))];
+        }, array_slice($pictures, 0, HomeCatalog::CAROUSEL_IMAGES_MAX));
+
+        return $one['pictures'] === [] ? null : $one;
     }
 
     /**

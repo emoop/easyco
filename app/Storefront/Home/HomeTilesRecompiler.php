@@ -25,7 +25,10 @@ final class HomeTilesRecompiler
     /** A category, season, tag or brand changed: recompile when a tile shows exactly that one. */
     public function entity(string $source, int $id): void
     {
-        ($this->shown()[$source][$id] ?? false) && $this->ask();
+        $shown = $this->shown();
+
+        // HP-5: a brands carousel shows EVERY brand that has a logo: any brand that is saved or deleted
+        (($shown[$source][$id] ?? false) || ($source === 'brand' && ($shown['brands'] ?? false))) && $this->ask();
     }
 
     /** Which categories are shown changed (a product's visibility, its categories): recompile when a tile shows any category. */
@@ -70,8 +73,8 @@ final class HomeTilesRecompiler
     {
         $json = app(SiteSettingsRepository::class)->get(AppearanceSettings::HOME_PUBLISHED_KEY);
 
-        // the cheap test first: a layout with no tiles section is not even decoded
-        if (! is_string($json) || ! str_contains($json, '"tiles"')) {
+        // the cheap test first: a layout with no tiles section and no brands carousel is not even decoded
+        if (! is_string($json) || (! str_contains($json, '"tiles"') && ! str_contains($json, '"brands"'))) {
             return [];
         }
 
@@ -79,6 +82,11 @@ final class HomeTilesRecompiler
         $shown = [];
 
         foreach (is_array($layout['sections'] ?? null) ? $layout['sections'] : [] as $section) {
+            // HP-5: a brands carousel (the flag `brands` is no source name: it is read by entity())
+            if (is_array($section) && ($section['type'] ?? null) === 'carousel' && ($section['settings']['kind'] ?? null) === 'brands') {
+                $shown['brands'] = true;
+            }
+
             if (is_array($section) && ($section['type'] ?? null) === 'tiles') {
                 foreach (is_array($section['settings']['tiles'] ?? null) ? $section['settings']['tiles'] : [] as $tile) {
                     is_array($tile) && is_string($tile['source'] ?? null) && is_int($tile['entity'] ?? null) && $shown[$tile['source']][$tile['entity']] = true;

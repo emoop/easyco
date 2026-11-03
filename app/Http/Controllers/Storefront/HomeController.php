@@ -32,7 +32,7 @@ final class HomeController extends Controller
 
         if ($sections !== null) {
             // HP-4: the product grids are read NOW (prices, stock and visibility change): one card read each, no count
-            $sections = HomeView::fill($sections, static fn (string $source, ?int $entity, string $sort, int $count, string $sizes): array => $reader->homeProducts($source, $entity, $sort, $count, $sizes));
+            $sections = HomeView::fill($sections, static fn (string $source, ?int $entity, string $sort, int $count, string $sizes): array => $reader->homeProducts($source, $entity, $sort, $count, $sizes), $appearance->catalogGapX(), $appearance->catalogColumns()['phone']);
 
             return view('storefront.home_sections', [
                 'sections' => $sections,

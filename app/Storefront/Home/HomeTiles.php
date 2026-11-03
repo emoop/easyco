@@ -88,6 +88,142 @@ final class HomeTiles
     }
 
     /**
+     * HP-5: what the `images` and `brands` carousels of the layout show, resolved at PUBLISH time like the tiles (the page then costs no query): an images carousel's pictures (the renditions of our media, its own
+     * alt and link), and for a brands carousel EVERY brand that has a logo, by name, at most 24 (the logo is the picture, the brand's name the alt text, no link: the shop has no public brand page). ONE read of the
+     * brands and ONE of all the pictures. An item whose picture cannot be shown (not ready, gone) is not in the result.
+     *
+     * @param  array{spacing: string, sections: list<array{type: string, settings: array<string, mixed>}>}  $layout  VALIDATED
+     * @return array{carousels: array<string, list<array<string, mixed>>>, assets: list<int>} the items by the index of their section, and every picture (ready or not) they depend on
+     */
+    public static function carousels(array $layout): array
+    {
+        $wanted = [];
+        $brands = [];
+        $assetIds = [];
+
+        foreach ($layout['sections'] as $index => $section) {
+            if ($section['type'] !== 'carousel') {
+                continue;
+            }
+
+            $kind = $section['settings']['kind'] ?? null;
+
+            if ($kind === 'images') {
+                foreach ($section['settings']['images'] ?? [] as $item) {
+                    $assetIds[(int) $item['picture']] = true;
+                }
+
+                $wanted[$index] = 'images';
+            } elseif ($kind === 'brands') {
+                $wanted[$index] = 'brands';
+            }
+        }
+
+        if ($wanted === []) {
+            return ['carousels' => [], 'assets' => []];
+        }
+
+        if (in_array('brands', $wanted, true)) {
+            foreach (DB::table('catalog_brands')->whereNotNull('logo_media_asset_id')->orderBy('name')->orderBy('id')->limit(HomeCatalog::CAROUSEL_BRANDS_MAX)->get(['id', 'name', 'logo_media_asset_id']) as $row) {
+                $brands[] = ['name' => (string) $row->name, 'logo' => (int) $row->logo_media_asset_id];
+                $assetIds[(int) $row->logo_media_asset_id] = true;
+            }
+        }
+
+        $assets = $assetIds === [] ? [] : MediaAssetModel::query()->whereIn('id', array_keys($assetIds))->get()->keyBy('id')->all();
+        $builder = app(ImageSetBuilder::class);
+        $set = static function (int $id) use ($assets, $builder): ?\App\Storefront\ReadModels\ImageSet {
+            $asset = $assets[$id] ?? null;
+
+            return $asset instanceof MediaAssetModel ? $builder->build($asset, '', '') : null;
+        };
+        $out = [];
+
+        foreach ($wanted as $index => $kind) {
+            $list = [];
+            $source = $kind === 'brands' ? array_map(static fn (array $b): array => ['picture' => $b['logo'], 'alt' => $b['name'], 'link' => null], $brands) : $layout['sections'][$index]['settings']['images'];
+
+            foreach ($source as $item) {
+                $picture = $set((int) $item['picture']);
+                $one = $picture === null ? null : self::pictureOf((string) $item['alt'], $item['link'] ?? null, $picture->src, array_map(static fn (array $row): array => ['url' => $row['url'], 'width' => $row['width']], $picture->srcset), $picture->width, $picture->height);
+                $one === null || $list[] = $one;
+            }
+
+            $out[(string) $index] = $list;
+        }
+
+        return ['carousels' => $out, 'assets' => array_map('intval', array_keys($assetIds))];
+    }
+
+    /**
+     * HP-5: what a stored (compiled) list of carousel items is worth, every item checked again (our own picture paths only, the shop's link rule, the alt text); an item that is not is dropped.
+     *
+     * @return array<string, list<array{alt: string, url: string|null, src: string, srcset: list<array{url: string, width: int}>, width: int, height: int}>>
+     */
+    public static function cleanCarousels(mixed $stored): array
+    {
+        $out = [];
+
+        foreach (is_array($stored) ? $stored : [] as $index => $list) {
+            if (! is_array($list) || ! array_is_list($list)) {
+                continue;
+            }
+
+            $clean = [];
+
+            foreach (array_slice($list, 0, HomeCatalog::CAROUSEL_IMAGES_MAX) as $item) {
+                if (! is_array($item)) {
+                    continue;
+                }
+
+                $one = self::pictureOf(
+                    is_string($item['alt'] ?? null) ? $item['alt'] : '',
+                    is_string($item['url'] ?? null) ? $item['url'] : null,
+                    is_string($item['src'] ?? null) ? $item['src'] : '',
+                    is_array($item['srcset'] ?? null) ? $item['srcset'] : [],
+                    is_int($item['width'] ?? null) ? $item['width'] : 0,
+                    is_int($item['height'] ?? null) ? $item['height'] : 0,
+                );
+                $one === null || $clean[] = $one;
+            }
+
+            $out[(string) $index] = $clean;
+        }
+
+        return $out;
+    }
+
+    /**
+     * One carousel picture as it is kept: the checks of both the compiler and the reader. The alt text is plain and at most 120 characters (empty only without a link); a link must pass the shop's rule (an item with
+     * a link that does not is dropped, not printed without it); the picture is one of our own storage paths.
+     *
+     * @param  list<array<string, mixed>>  $srcset
+     * @return array{alt: string, url: string|null, src: string, srcset: list<array{url: string, width: int}>, width: int, height: int}|null
+     */
+    private static function pictureOf(string $alt, ?string $url, string $src, array $srcset, int $width, int $height): ?array
+    {
+        $alt = trim($alt);
+        $link = $url === null || trim($url) === '' ? null : HtmlBlockPictures::safeUrl($url);
+        $src = self::ours($src);
+
+        if (mb_strlen($alt) > HomeCatalog::CAROUSEL_ALT_MAX || $alt !== strip_tags($alt) || ($url !== null && trim($url) !== '' && $link === null) || ($link !== null && $alt === '') || $src === null || $width < 1 || $height < 1) {
+            return null;
+        }
+
+        $rows = [];
+
+        foreach ($srcset as $row) {
+            $path = is_array($row) && is_string($row['url'] ?? null) ? self::ours($row['url']) : null;
+
+            if ($path !== null && is_int($row['width'] ?? null) && $row['width'] > 0) {
+                $rows[] = ['url' => $path, 'width' => $row['width']];
+            }
+        }
+
+        return ['alt' => $alt, 'url' => $link, 'src' => $src, 'srcset' => $rows, 'width' => $width, 'height' => $height];
+    }
+
+    /**
      * What a stored (compiled) list of tiles is worth: every tile checked again. A tile with a caption that is empty or over 60 characters, a link the shop's rule refuses, or a picture address that is not one of
      * our own storage paths is dropped; a rendition that is not is dropped from the srcset.
      *

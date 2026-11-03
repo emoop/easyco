@@ -239,4 +239,7 @@ return [
     // DS-2b: the simplified header of the cart and the checkout
     'back_to_shop' => 'Back to the shop',
     'call_us' => 'Call us',
+
+    // HP-5: the carousel
+    'carousel' => ['label' => 'Carousel', 'previous' => 'Previous', 'next' => 'Next'],
 ];

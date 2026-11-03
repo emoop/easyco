@@ -82,6 +82,7 @@ final class HomeValidator
         $catalog = HomeCatalog::all();
         $clean = [];
         $grids = 0;
+        $carousels = 0;
 
         foreach ($list as $i => $section) {
             $one = $this->section($section, "sections.{$i}", $catalog);
@@ -89,6 +90,14 @@ final class HomeValidator
             // HP-4: at most 2 product grids: saving refuses the layout, reading drops the extra ones (the path is soft)
             if ($one !== null && $one['type'] === 'product_grid' && ++$grids > HomeCatalog::MAX_PRODUCT_GRIDS) {
                 $this->fail("sections.{$i}", 'too_many_product_grids', ['max' => HomeCatalog::MAX_PRODUCT_GRIDS]);
+                $this->soft["sections.{$i}"] = true;
+
+                continue;
+            }
+
+            // HP-5: at most 2 carousels, the same way
+            if ($one !== null && $one['type'] === 'carousel' && ++$carousels > HomeCatalog::MAX_CAROUSELS) {
+                $this->fail("sections.{$i}", 'too_many_carousels', ['max' => HomeCatalog::MAX_CAROUSELS]);
                 $this->soft["sections.{$i}"] = true;
 
                 continue;
@@ -146,14 +155,43 @@ final class HomeValidator
             return null;
         }
 
+        // HP-5: a carousel whose KIND is not one of the closed list is dropped (reported; soft, so reading prints the other sections)
+        if ($type === 'carousel' && array_key_exists('kind', $settings) && ! (is_string($settings['kind']) && in_array($settings['kind'], CarouselGeometry::KINDS, true))) {
+            $this->fail("{$path}.settings.kind", 'bad_choice');
+            $this->soft["{$path}.settings.kind"] = true;
+
+            return null;
+        }
+
         $clean = [];
-        $soft = in_array($type, ['image_grid', 'tiles', 'product_grid'], true);
+        $soft = in_array($type, ['image_grid', 'tiles', 'product_grid', 'carousel'], true);
         $failer = function (string $p, string $code, array $params = []) use ($soft): void {
             $this->fail($p, $code, $params);
             $soft && $this->soft[$p] = true;
         };
 
+        $uses = $type === 'carousel' ? HomeCatalog::carouselUses((string) ($settings['kind'] ?? 'products')) : [];
+
         foreach ($schema as $name => $field) {
+            // HP-5: a setting the chosen kind of carousel does not use is IGNORED (its default, no message)
+            if ($type === 'carousel' && ! in_array($name, ['kind', 'arrows', 'label', 'show', 'spacing'], true) && ! in_array($name, $uses, true)) {
+                $clean[$name] = $field['default'] ?? null;
+
+                continue;
+            }
+
+            if (($field['kind'] ?? null) === 'carousel_blocks') {
+                $clean[$name] = $this->carouselBlocks($settings[$name] ?? [], "{$path}.settings.{$name}", $failer);
+
+                continue;
+            }
+
+            if (($field['kind'] ?? null) === 'carousel_images') {
+                $clean[$name] = $this->carouselImages($settings[$name] ?? [], "{$path}.settings.{$name}", $failer);
+
+                continue;
+            }
+
             if (($field['kind'] ?? null) === 'tiles') {
                 $clean[$name] = $this->tiles($settings[$name] ?? [], "{$path}.settings.{$name}", $failer);
 
@@ -181,7 +219,114 @@ final class HomeValidator
             $clean['text'] = '';
         }
 
+        // the carousel's label (its accessible name) is plain text too
+        if (isset($clean['label']) && is_string($clean['label']) && $clean['label'] !== strip_tags($clean['label'])) {
+            $this->fail("{$path}.settings.label", 'not_plain');
+            $clean['label'] = '';
+        }
+
         return ['type' => $type, 'settings' => $clean];
+    }
+
+    /**
+     * HP-5: the blocks of a «Блокове» carousel: 1 to 12 block ids in order (a repeated block is allowed). 0 is refused; more than 12 are refused (reading keeps the first 12); an element that is not an id is dropped (reported).
+     *
+     * @param  callable(string, string, array<string, mixed>=): void  $fail
+     * @return list<int>
+     */
+    private function carouselBlocks(mixed $value, string $path, callable $fail): array
+    {
+        if (! is_array($value) || ! array_is_list($value)) {
+            $fail($path, 'bad_list', []);
+
+            return [];
+        }
+
+        if (count($value) > HomeCatalog::CAROUSEL_BLOCKS_MAX) {
+            $fail($path, 'too_many_blocks', ['max' => HomeCatalog::CAROUSEL_BLOCKS_MAX]);
+            $value = array_slice($value, 0, HomeCatalog::CAROUSEL_BLOCKS_MAX);
+        }
+
+        $out = [];
+
+        foreach ($value as $i => $id) {
+            $one = FieldKinds::reference($id, true, "{$path}.{$i}", $fail);
+            $one === null || $out[] = $one;
+        }
+
+        $out === [] && $fail($path, 'too_few_blocks', []);
+
+        return $out;
+    }
+
+    /**
+     * HP-5: the pictures of an «Снимки» carousel: 1 to 24 items `{picture (required), link (optional, the shop's link rule), alt (plain, at most 120; required when there is a link)}`. An item that does not validate is
+     * DROPPED from the result (and reported): saving refuses the layout, reading prints the items that are fine.
+     *
+     * @param  callable(string, string, array<string, mixed>=): void  $fail
+     * @return list<array{picture: int, link: string|null, alt: string}>
+     */
+    private function carouselImages(mixed $value, string $path, callable $fail): array
+    {
+        if (! is_array($value) || ! array_is_list($value)) {
+            $fail($path, 'bad_list', []);
+
+            return [];
+        }
+
+        if ($value === []) {
+            $fail($path, 'too_few_images', []);
+        }
+
+        if (count($value) > HomeCatalog::CAROUSEL_IMAGES_MAX) {
+            $fail($path, 'too_many_images', ['max' => HomeCatalog::CAROUSEL_IMAGES_MAX]);
+            $value = array_slice($value, 0, HomeCatalog::CAROUSEL_IMAGES_MAX);
+        }
+
+        $out = [];
+
+        foreach ($value as $i => $item) {
+            $bad = false;
+            $at = "{$path}.{$i}";
+            $report = function (string $p, string $code, array $params = []) use (&$bad, $fail): void {
+                $bad = true;
+                $fail($p, $code, $params);
+            };
+
+            if (! is_array($item)) {
+                $report($at, 'bad_element');
+
+                continue;
+            }
+
+            foreach (array_diff(array_keys($item), ['picture', 'link', 'alt']) as $key) {
+                $report($at, 'unknown_key', ['key' => mb_substr((string) $key, 0, 30)]);
+            }
+
+            $picture = FieldKinds::reference($item['picture'] ?? null, true, "{$at}.picture", $report);
+            $link = $item['link'] ?? null;
+            $link = is_string($link) && trim($link) !== '' ? trim($link) : null;
+
+            if ($link !== null) {
+                $safe = HtmlBlockPictures::safeUrl($link);
+                $safe === null ? $report("{$at}.link", 'bad_link') : $link = $safe;
+            }
+
+            $alt = FieldKinds::text($item['alt'] ?? '', HomeCatalog::CAROUSEL_ALT_MAX, false, "{$at}.alt", $report);
+
+            if ($alt !== strip_tags($alt)) {
+                $report("{$at}.alt", 'not_plain');
+                $alt = '';
+            }
+
+            $link !== null && $alt === '' && $report("{$at}.alt", 'alt_required');
+
+            $bad || $picture === null || $out[] = ['picture' => $picture, 'link' => $link, 'alt' => $alt];
+        }
+
+        $out === [] && $value !== [] && $fail($path, 'too_few_images', []);
+
+        return $out;
     }
 
     /**

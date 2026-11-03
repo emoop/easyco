@@ -24,7 +24,7 @@ final class HomeCompiler
      * What a layout needs from the rest of the shop, as it is NOW: the sanitised HTML of its HTML blocks (ONE batched read for all of them).
      *
      * @param  array{spacing: string, sections: list<array{type: string, settings: array<string, mixed>}>}  $layout  VALIDATED
-     * @return array{layout: array<string, mixed>, blocks: array<string, string>, tiles?: array<string, list<array<string, mixed>>>, assets?: list<int>}
+     * @return array{layout: array<string, mixed>, blocks: array<string, string>, tiles?: array<string, list<array<string, mixed>>>, carousels?: array<string, list<array<string, mixed>>>, assets?: list<int>}
      */
     public static function compiled(array $layout): array
     {
@@ -52,6 +52,14 @@ final class HomeCompiler
             $resolved = HomeTiles::resolve($layout);
             $compiled['tiles'] = $resolved['tiles'];
             $compiled['assets'] = $resolved['assets'];
+        }
+
+        // HP-5: the pictures of an images carousel and the logos of a brands carousel are resolved NOW too; their pictures join `assets` (a recompile follows when one is ready)
+        $carousels = HomeTiles::carousels($layout);
+
+        if ($carousels['carousels'] !== []) {
+            $compiled['carousels'] = $carousels['carousels'];
+            $compiled['assets'] = array_values(array_unique([...($compiled['assets'] ?? []), ...$carousels['assets']]));
         }
 
         return $compiled;
@@ -178,6 +186,9 @@ final class HomeCompiler
 
         // HP-3: the compiled tiles, checked again (our own picture paths only, the shop's link rule, the caption)
         isset($entry['tiles']) && $published['tiles'] = HomeTiles::clean($entry['tiles']);
+
+        // HP-5: the compiled pictures of the images / brands carousels, checked again the same way
+        isset($entry['carousels']) && $published['carousels'] = HomeTiles::cleanCarousels($entry['carousels']);
 
         return $published;
     }

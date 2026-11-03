@@ -10,6 +10,7 @@ use App\Storefront\Design\Tree;
 use App\Storefront\Design\TreeEditor;
 use App\Storefront\Design\ZoneStore\HomeAdapter;
 use App\Content\HtmlBlocks\HtmlBlockModel;
+use App\Storefront\Home\CarouselGeometry;
 use App\Storefront\Home\HomeCatalog;
 use App\Storefront\Home\HomeDrafts;
 use App\Storefront\Home\HomeLayout;
@@ -161,6 +162,21 @@ final class HomeZone implements DesignZone, HasOneCell
             return (string) __('design.home.products.summary', ['source' => __('design.home.products.sources.'.$source), 'count' => $count]);
         }
 
+        // HP-5: «Карусел: Марки, 120px» (products: «Карусел: Продукти, 12 продукта»)
+        if ($node['type'] === 'carousel') {
+            $kind = is_string($settings['kind'] ?? null) && in_array($settings['kind'], CarouselGeometry::KINDS, true) ? $settings['kind'] : 'products';
+
+            if ($kind === 'products') {
+                $count = in_array($settings['count'] ?? null, CarouselGeometry::COUNTS, true) ? $settings['count'] : CarouselGeometry::DEFAULT_COUNT;
+
+                return (string) __('design.home.carousel.summary_products', ['kind' => __('design.home.carousel.kinds.'.$kind), 'count' => __('design.home.carousel.counts.'.$count)]);
+            }
+
+            $height = in_array($settings['height'] ?? null, CarouselGeometry::heights(), true) ? $settings['height'] : CarouselGeometry::DEFAULT_HEIGHT;
+
+            return (string) __('design.home.carousel.summary', ['kind' => __('design.home.carousel.kinds.'.$kind), 'size' => $height.'px']);
+        }
+
         return $node['type'] === 'heading' && is_string($settings['text'] ?? null) ? mb_strimwidth($settings['text'], 0, 24, '…') : '';
     }
 
@@ -172,12 +188,15 @@ final class HomeZone implements DesignZone, HasOneCell
         $out = [];
 
         $grids = count(array_filter($items, static fn (array $node): bool => ($node['type'] ?? null) === 'product_grid'));
+        $carousels = count(array_filter($items, static fn (array $node): bool => ($node['type'] ?? null) === 'carousel'));
 
         foreach (HomeCatalog::all() as $type => $descriptor) {
             $reason = $cellId === null ? (string) __('design.palette.no_cell') : (count($items) >= HomeCatalog::MAX_SECTIONS ? (string) __('design.home.errors.too_many', ['max' => HomeCatalog::MAX_SECTIONS]) : null);
 
             // HP-4: at most 2 product grids
             $reason === null && $type === 'product_grid' && $grids >= HomeCatalog::MAX_PRODUCT_GRIDS && $reason = (string) __('design.home.errors.too_many_product_grids', ['max' => HomeCatalog::MAX_PRODUCT_GRIDS]);
+            // HP-5: at most 2 carousels
+            $reason === null && $type === 'carousel' && $carousels >= HomeCatalog::MAX_CAROUSELS && $reason = (string) __('design.home.errors.too_many_carousels', ['max' => HomeCatalog::MAX_CAROUSELS]);
             $out[] = ['type' => $type, 'label' => $this->typeLabel($type), 'reason' => $reason, 'hint' => null];
         }
 
@@ -240,6 +259,10 @@ final class HomeZone implements DesignZone, HasOneCell
 
             if ($node !== null && $node['type'] === 'product_grid') {
                 return $this->productsPanel();
+            }
+
+            if ($node !== null && $node['type'] === 'carousel') {
+                return $this->carouselPanel();
             }
 
             $fields = $node === null ? [] : $this->fieldsOf($node['type']);
@@ -448,6 +471,152 @@ final class HomeZone implements DesignZone, HasOneCell
         ])];
     }
 
+    /**
+     * HP-5: the panel of a «Карусел» section. The settings are in PAIRS (two per row from the medium width: kind and source, count and order, the two heights, ratio and gap, radius and arrows); the lists (blocks,
+     * pictures) and the item select are full width; the fields the chosen kind does not use are hidden (live). The recommended size comes from CarouselGeometry (the very function the tests pin), from the panel's own
+     * `props`. Explanations are info icons.
+     *
+     * @return list<Component>
+     */
+    private function carouselPanel(): array
+    {
+        $schema = HomeCatalog::all()['carousel']['schema'];
+        $common = HomeCatalog::common();
+        $label = static fn (string $name): string => (string) __('design.home.carousel.settings.'.$name);
+        $hint = static fn (string $name): HtmlString => \App\Filament\Design\InfoHint::make((string) __('design.home.carousel.hints.'.$name), 'carousel-'.$name);
+        $control = function (string $name, array $field) use ($hint): Component {
+            $control = FieldForms::make($name, $field + ['label' => 'design.home.carousel.settings.'.$name]);
+            method_exists($control, 'afterLabel') && $control->afterLabel($hint($name));
+            method_exists($control, 'live') && $control->live();
+
+            return $control;
+        };
+        $kind = static fn (Get $get): string => in_array($get('kind'), CarouselGeometry::KINDS, true) ? (string) $get('kind') : 'products';
+        $products = static fn (Get $get): bool => $kind($get) === 'products';
+        $box = static fn (Get $get): bool => $kind($get) !== 'products';
+        $blocks = static fn (): array => HtmlBlockModel::query()->orderBy('title')->pluck('title', 'id')->all();
+
+        return [Section::make($this->typeLabel('carousel'))->schema([
+            Group::make([
+                Grid::make(['default' => 1, 'md' => 2])->schema([
+                    $control('show', $common['show'] + ['label' => 'design.home.settings.show']),
+                    $control('spacing', $common['spacing'] + ['label' => 'design.home.settings.spacing']),
+                    $control('kind', $schema['kind']),
+                    $control('source', $schema['source'])->afterStateUpdated(static fn (Set $set) => $set('entity', null))->visible($products),
+                    Select::make('entity')->label($label('entity'))->afterLabel($hint('entity'))->native(false)->searchable()->live()->columnSpanFull()
+                        ->options(fn (Get $get): array => self::tileEntities((string) $get('source')))
+                        ->visible(static fn (Get $get): bool => $products($get) && in_array((string) $get('source'), HomeCatalog::PRODUCT_SOURCES_WITH_ENTITY, true)),
+                    $control('count', $schema['count'])->visible($products),
+                    $control('sort', $schema['sort'])->visible($products),
+                    $control('height', $schema['height'])->visible($box),
+                    $control('height_phone', $schema['height_phone'])->visible($box),
+                    $control('ratio', $schema['ratio'])->visible($box),
+                    $control('gap', $schema['gap'])->visible($box),
+                    $control('radius', $schema['radius'])->visible($box),
+                    $control('arrows', $schema['arrows']),
+                    $control('label', $schema['label'])->columnSpanFull(),
+                ]),
+                // the recommended size (non-product kinds: the box and its 2× size; products: the card), from CarouselGeometry
+                Text::make(static function ($livewire): HtmlString {
+                    $own = is_array($livewire->props['settings'] ?? null) ? $livewire->props['settings'] : [];
+                    $pick = static fn (string $key, array $list, string $default): string => in_array((string) ($own[$key] ?? ''), $list, true) ? (string) $own[$key] : $default;
+
+                    if ($pick('kind', CarouselGeometry::KINDS, 'products') === 'products') {
+                        $card = CarouselGeometry::card(CarouselGeometry::CARD_COLUMNS, 16);
+
+                        return new HtmlString('<span class="text-gray-600">'.e((string) __('design.home.carousel.hint_card', ['w' => $card['rounded_width'], 'h' => $card['rounded_image_height'], 'w2' => $card['double_width'], 'h2' => $card['double_image_height']])).'</span>');
+                    }
+
+                    $ratio = $pick('ratio', CarouselGeometry::RATIOS, CarouselGeometry::DEFAULT_RATIO);
+                    $desktop = CarouselGeometry::hint((int) $pick('height', CarouselGeometry::heights(), CarouselGeometry::DEFAULT_HEIGHT), $ratio);
+                    $phone = CarouselGeometry::hint((int) $pick('height_phone', CarouselGeometry::heights(), CarouselGeometry::DEFAULT_HEIGHT_PHONE), $ratio);
+
+                    return new HtmlString('<span class="text-gray-600">'.e((string) __('design.home.carousel.hint_box', [
+                        'w' => $desktop['rounded_width'], 'h' => $desktop['rounded_height'], 'w2' => $desktop['double_width'], 'h2' => $desktop['double_height'],
+                        'pw' => $phone['rounded_width'], 'ph' => $phone['rounded_height'], 'pw2' => $phone['double_width'], 'ph2' => $phone['double_height'],
+                    ])).'</span>');
+                }),
+                Repeater::make('block_items')->label($label('blocks'))->afterLabel($hint('blocks'))
+                    ->maxItems(HomeCatalog::CAROUSEL_BLOCKS_MAX)->defaultItems(0)->reorderableWithButtons()->addActionLabel((string) __('design.home.carousel.block_add'))->live()->columnSpanFull()
+                    ->schema([Select::make('block')->label($label('block'))->native(false)->options($blocks)->required()])
+                    ->visible(static fn (Get $get): bool => $kind($get) === 'blocks'),
+                Repeater::make('images')->label($label('images'))->afterLabel($hint('images'))
+                    ->maxItems(HomeCatalog::CAROUSEL_IMAGES_MAX)->defaultItems(0)->reorderableWithButtons()->addActionLabel((string) __('design.home.carousel.image_add'))->live()->columnSpanFull()
+                    ->schema([
+                        Grid::make(['default' => 1, 'md' => 2])->schema([
+                            MediaPicker::make('picture')->label($label('picture'))->plainImagesOnly()->live()->columnSpanFull(),
+                            TextInput::make('link')->label($label('link'))->placeholder('/product-category/…')->maxLength(500),
+                            TextInput::make('alt')->label($label('alt'))->maxLength(HomeCatalog::CAROUSEL_ALT_MAX),
+                        ]),
+                    ])
+                    ->visible(static fn (Get $get): bool => $kind($get) === 'images'),
+                Text::make(static function ($livewire): HtmlString {
+                    $own = is_array($livewire->props['settings'] ?? null) ? $livewire->props['settings'] : [];
+                    $n = ($own['kind'] ?? 'products') === 'products' ? self::carouselCount($own) : null;
+
+                    return new HtmlString($n === null ? '' : '<span class="'.($n === 0 ? 'text-warning-600' : 'text-gray-600').'">'.e($n === 0 ? (string) __('design.home.carousel.none') : (string) __('design.home.carousel.count_line', ['count' => $n])).'</span>');
+                }),
+            ])->statePath('settings'),
+        ])];
+    }
+
+    /** HP-5: how many products a product carousel with these (panel) settings resolves to now (the shop's own read). @param  array<string, mixed>  $own */
+    private static function carouselCount(array $own): int
+    {
+        $source = in_array($own['source'] ?? null, HomeCatalog::PRODUCT_SOURCES, true) ? (string) $own['source'] : 'newest';
+        $count = in_array((string) ($own['count'] ?? ''), CarouselGeometry::COUNTS, true) ? (int) $own['count'] : (int) CarouselGeometry::DEFAULT_COUNT;
+        $sort = in_array($own['sort'] ?? null, HomeCatalog::PRODUCT_SORTS, true) ? (string) $own['sort'] : 'newest';
+
+        return count(app(\App\Storefront\Reader\CatalogReader::class)->homeProducts($source, FieldValues::id($own['entity'] ?? null), $sort, $count, \App\Storefront\Reader\ImageSetBuilder::SIZES_CARD));
+    }
+
+    /**
+     * HP-5: the settings of a «Карусел» from the panel: the selects as they are (the validator refuses a value outside its list), the item as an id (none for «най-нови»), the blocks as a list of ids in order and the
+     * pictures as a list of `{picture, link, alt}` (an empty link is none). Never validates.
+     *
+     * @param  array<string, mixed>  $in
+     * @return array<string, mixed>
+     */
+    private function carouselSettings(array $in): array
+    {
+        $out = ['show' => (bool) ($in['show'] ?? true), 'spacing' => $in['spacing'] ?? 'default'];
+
+        foreach (['kind', 'source', 'count', 'sort', 'height', 'height_phone', 'ratio', 'gap', 'radius', 'label'] as $name) {
+            isset($in[$name]) && $out[$name] = $in[$name];
+        }
+
+        array_key_exists('arrows', $in) && $out['arrows'] = (bool) $in['arrows'];
+        array_key_exists('source', $in) && $out['entity'] = ($in['source'] ?? 'newest') === 'newest' ? null : FieldValues::id($in['entity'] ?? null);
+
+        if (array_key_exists('block_items', $in)) {
+            $blocks = [];
+
+            foreach (is_array($in['block_items']) ? array_values($in['block_items']) : [] as $item) {
+                $id = is_array($item) ? FieldValues::id($item['block'] ?? null) : null;
+                $id === null || $blocks[] = $id;
+            }
+
+            $out['blocks'] = $blocks;
+        }
+
+        if (array_key_exists('images', $in)) {
+            $images = [];
+
+            foreach (is_array($in['images']) ? array_values($in['images']) : [] as $item) {
+                if (! is_array($item)) {
+                    continue;
+                }
+
+                $link = is_string($item['link'] ?? null) ? trim($item['link']) : '';
+                $images[] = ['picture' => FieldValues::id($item['picture'] ?? null), 'link' => $link === '' ? null : $link, 'alt' => is_string($item['alt'] ?? null) ? trim($item['alt']) : ''];
+            }
+
+            $out['images'] = $images;
+        }
+
+        return $out;
+    }
+
     /** HP-4: how many products a product grid with these (panel) settings resolves to now: the shop's own read (visibility, the in-stock rule), at most the chosen count. @param  array<string, mixed>  $own */
     private static function productCount(array $own): int
     {
@@ -637,6 +806,14 @@ final class HomeZone implements DesignZone, HasOneCell
             return ['settings' => $settings];
         }
 
+        if ($node !== null && $node['type'] === 'carousel') {
+            // the blocks are a repeater of `{block}` items in the panel and a plain list of ids in the settings
+            $settings = $node['settings'];
+            $settings['block_items'] = array_map(static fn (mixed $id): array => ['block' => $id], array_values(is_array($settings['blocks'] ?? null) ? $settings['blocks'] : []));
+
+            return ['settings' => $settings];
+        }
+
         return $node === null ? [] : ['settings' => $node['settings']];
     }
 
@@ -664,6 +841,13 @@ final class HomeZone implements DesignZone, HasOneCell
 
         if ($node['type'] === 'product_grid') {
             $settings = $this->productsSettings($in) + $node['settings'];
+            $tree['main'] = TreeEditor::setSettings($current, $selected['id'], $settings);
+
+            return $tree;
+        }
+
+        if ($node['type'] === 'carousel') {
+            $settings = $this->carouselSettings($in) + $node['settings'];
             $tree['main'] = TreeEditor::setSettings($current, $selected['id'], $settings);
 
             return $tree;

@@ -944,3 +944,35 @@ function bindLightbox(box) {
         }
     });
 })();
+
+// ---- the carousel (HP-5): the arrows -------------------------------------------------------------------------------------------------------------------------------------
+// The row scrolls by itself (CSS scroll-snap). The arrows are printed `hidden`; here they are shown, scroll the track by one item and are disabled at the ends. Without this script the row still scrolls.
+document.querySelectorAll('[data-carousel]').forEach(function (box) {
+    var track = box.querySelector('.sf-car-track');
+    var arrows = box.querySelectorAll('[data-car-step]');
+
+    var sync = function () {
+        var room = track.scrollWidth - track.clientWidth - 1;
+
+        arrows.forEach(function (arrow) {
+            arrow.hidden = room <= 0;
+            arrow.disabled = arrow.dataset.carStep === '-1' ? track.scrollLeft <= 0 : track.scrollLeft >= room;
+        });
+    };
+
+    arrows.forEach(function (arrow) {
+        arrow.addEventListener('click', function () {
+            var item = track.querySelector('.sf-car-item');
+            var gap = parseFloat(getComputedStyle(track).columnGap) || 0;
+
+            track.scrollBy({ left: (item ? item.getBoundingClientRect().width + gap : track.clientWidth) * Number(arrow.dataset.carStep) });
+        });
+    });
+
+    if (track && arrows.length) {
+        track.addEventListener('scroll', sync, { passive: true });
+        window.addEventListener('resize', sync, { passive: true });
+        window.addEventListener('load', sync);
+        sync();
+    }
+});

@@ -5463,3 +5463,206 @@ html:not(.js) .sf-bar-item:focus-within > .sf-sub {
 .sf-hp-prg-24 { gap: 24px; }
 .sf-hp-prg-32 { gap: 32px; }
 /* ===== end of HP-4 product grid ====================================================================================================================================================== */
+
+/* ===== Carousel (shared) ============================================================================================================================================================= */
+/* HP-5: one row of items that scrolls sideways, for any page (the home page's «Карусел» today; the product page's related products later). The markup is `section.sf-car > ul.sf-car-track > li.sf-car-item` plus
+   two arrow buttons (`hidden` until storefront.js shows them: without JavaScript the row still scrolls). CSS scroll-snap, no library: the scrollbar is hidden, the finger, the trackpad, shift + wheel and the
+   keyboard (the track is focusable) scroll it, `scroll-behavior: smooth` only where the visitor accepts motion. Every choice is a class of a closed list that sets a variable (never an inline style); selectors are
+   one or two classes. A product card (`.sf-car-card`) is ONE CELL of the product grid: the same columns (4 from 64rem, 3 from 48rem, the catalog's phone columns below) and the catalog's gap (GAP-1). */
+.sf-car {
+    position: relative;
+    --sf-car-gap: 16px;
+}
+
+.sf-car-track {
+    display: flex;
+    gap: var(--sf-car-gap);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scroll-snap-type: x proximity;
+    scrollbar-width: none;
+    overscroll-behavior-x: contain;
+}
+
+.sf-car-track::-webkit-scrollbar {
+    display: none;
+}
+
+.sf-car-track:focus-visible {
+    outline: 2px solid var(--sf-pdp-text, #1a1a1a);
+    outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+    .sf-car-track {
+        scroll-behavior: smooth;
+    }
+}
+
+.sf-car-item {
+    flex: 0 0 auto;
+    min-width: 0;
+    scroll-snap-align: start;
+}
+
+/* the cards: the width of one cell of the grid (the content width less the gaps, shared by the columns) */
+.sf-car-k-products {
+    --sf-car-gap: var(--sf-grid-gap-x, 1rem);
+    --sf-car-n: var(--sf-cat-cols-phone, 2);
+}
+
+.sf-car-k-products .sf-car-item {
+    width: calc((100% - (var(--sf-car-n) - 1) * var(--sf-car-gap)) / var(--sf-car-n));
+}
+
+.sf-car-k-products .sf-car-card > .sf-card {
+    height: 100%;
+}
+
+@media (min-width: 48rem) {
+    .sf-car-k-products { --sf-car-n: 3; }
+}
+
+@media (min-width: 64rem) {
+    .sf-car-k-products { --sf-car-n: 4; }
+}
+
+/* the arrows: two thin outline buttons at the middle of the row, a 44px touch target */
+.sf-car-arrow {
+    position: absolute;
+    top: 50%;
+    z-index: 1;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    transform: translateY(-50%);
+    border: 1px solid var(--sf-border, #d9d9d9);
+    border-radius: var(--sf-card-radius, 0);
+    background: #fff;
+    color: var(--sf-pdp-text, #1a1a1a);
+    cursor: pointer;
+}
+
+.sf-car-arrow::before {
+    content: '';
+    display: block;
+    width: 10px;
+    height: 10px;
+    margin: auto;
+    border-style: solid;
+    border-color: currentColor;
+    border-width: 0 0 1px 1px;
+}
+
+.sf-car-prev { left: 8px; }
+.sf-car-next { right: 8px; }
+.sf-car-prev::before { transform: translateX(2px) rotate(45deg); }
+.sf-car-next::before { transform: translateX(-2px) rotate(225deg); }
+
+.sf-car-arrow:disabled {
+    opacity: 0.35;
+    cursor: default;
+}
+
+.sf-car-arrow[hidden] {
+    display: none;
+}
+/* ===== end of Carousel (shared) ====================================================================================================================================================== */
+
+/* ===== HP-5 carousel ================================================================================================================================================================= */
+/* «Карусел» of the home page: the height-driven kinds (blocks, images, brands) are a BOX of the chosen height and proportion (width = height × ratio; the phone has its own height below 48rem). A picture is shown whole
+   (`contain`), centred, shrunk to the box and never enlarged beyond its own size; a block fills the box like a cell of the grid (two classes against the block's one). The products have no height setting. */
+.sf-car-h-80 { --sf-car-hd: 80px; }
+.sf-car-h-100 { --sf-car-hd: 100px; }
+.sf-car-h-120 { --sf-car-hd: 120px; }
+.sf-car-h-160 { --sf-car-hd: 160px; }
+.sf-car-h-200 { --sf-car-hd: 200px; }
+.sf-car-h-240 { --sf-car-hd: 240px; }
+.sf-car-h-300 { --sf-car-hd: 300px; }
+.sf-car-h-360 { --sf-car-hd: 360px; }
+.sf-car-h-420 { --sf-car-hd: 420px; }
+.sf-car-h-480 { --sf-car-hd: 480px; }
+
+.sf-car-hp-80 { --sf-car-hm: 80px; }
+.sf-car-hp-100 { --sf-car-hm: 100px; }
+.sf-car-hp-120 { --sf-car-hm: 120px; }
+.sf-car-hp-160 { --sf-car-hm: 160px; }
+.sf-car-hp-200 { --sf-car-hm: 200px; }
+.sf-car-hp-240 { --sf-car-hm: 240px; }
+.sf-car-hp-300 { --sf-car-hm: 300px; }
+.sf-car-hp-360 { --sf-car-hm: 360px; }
+.sf-car-hp-420 { --sf-car-hm: 420px; }
+.sf-car-hp-480 { --sf-car-hm: 480px; }
+
+.sf-car-r-1-1 { --sf-car-ratio: 1 / 1; }
+.sf-car-r-4-5 { --sf-car-ratio: 4 / 5; }
+.sf-car-r-3-2 { --sf-car-ratio: 3 / 2; }
+.sf-car-r-2-1 { --sf-car-ratio: 2 / 1; }
+.sf-car-r-3-1 { --sf-car-ratio: 3 / 1; }
+.sf-car-r-16-9 { --sf-car-ratio: 16 / 9; }
+
+.sf-car-g-0 { --sf-car-gap: 0px; }
+.sf-car-g-4 { --sf-car-gap: 4px; }
+.sf-car-g-8 { --sf-car-gap: 8px; }
+.sf-car-g-12 { --sf-car-gap: 12px; }
+.sf-car-g-16 { --sf-car-gap: 16px; }
+.sf-car-g-20 { --sf-car-gap: 20px; }
+.sf-car-g-24 { --sf-car-gap: 24px; }
+.sf-car-g-32 { --sf-car-gap: 32px; }
+
+.sf-car-cr-0 { --sf-car-radius: 0px; }
+.sf-car-cr-4 { --sf-car-radius: 4px; }
+.sf-car-cr-8 { --sf-car-radius: 8px; }
+.sf-car-cr-12 { --sf-car-radius: 12px; }
+.sf-car-cr-16 { --sf-car-radius: 16px; }
+.sf-car-cr-24 { --sf-car-radius: 24px; }
+
+.sf-car-box .sf-car-item {
+    height: var(--sf-car-hm, 120px);
+    aspect-ratio: var(--sf-car-ratio, 3 / 2);
+    border-radius: var(--sf-car-radius, 0);
+    overflow: hidden;
+}
+
+@media (min-width: 48rem) {
+    .sf-car-box .sf-car-item {
+        height: var(--sf-car-hd, 160px);
+    }
+}
+
+.sf-car-picture {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.sf-car-link {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+}
+
+.sf-car-img {
+    display: block;
+    width: auto;
+    height: auto;
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+}
+
+/* the block fills the box (the block's own width, height and margins give way: two classes against one) */
+.sf-car-item > .sf-hb {
+    box-sizing: border-box;
+    width: 100%;
+    max-width: none;
+    height: 100%;
+    min-height: 0;
+    margin: 0;
+}
+/* ===== end of HP-5 carousel ========================================================================================================================================================== */

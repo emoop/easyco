@@ -86,6 +86,8 @@ final class HtmlBlockUsage
                 $ids = match (is_array($section) ? ($section['type'] ?? null) : null) {
                     'html_block' => [$own['html_block'] ?? null],
                     'image_grid' => [...array_values(is_array($own['cells'] ?? null) ? $own['cells'] : []), ...array_values(is_array($own['phone_blocks'] ?? null) ? $own['phone_blocks'] : [])],
+                    // HP-5: a blocks carousel's list
+                    'carousel' => ($own['kind'] ?? null) === 'blocks' ? array_values(is_array($own['blocks'] ?? null) ? $own['blocks'] : []) : [],
                     default => [],
                 };
 

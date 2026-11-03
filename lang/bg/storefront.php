@@ -239,4 +239,7 @@ return [
     // DS-2b: the simplified header of the cart and the checkout
     'back_to_shop' => 'Към магазина',
     'call_us' => 'Обади се',
+
+    // HP-5: the carousel
+    'carousel' => ['label' => 'Карусел', 'previous' => 'Предишна', 'next' => 'Следваща'],
 ];

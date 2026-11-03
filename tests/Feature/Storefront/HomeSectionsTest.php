@@ -297,7 +297,7 @@ class HomeSectionsTest extends TestCase
         foreach ([
             ['spacing' => '10', 'sections' => [$this->heading('Hi')]],
             ['spacing' => '32', 'sections' => [$this->heading('Hi', ['level' => 'h1'])]],
-            ['spacing' => '32', 'sections' => [['type' => 'carousel', 'settings' => []]]],
+            ['spacing' => '32', 'sections' => [['type' => 'slider', 'settings' => []]]],
         ] as $layout) {
             $settings->set(AppearanceSettings::DESIGN_COMPILED_KEY, (string) json_encode(['hash' => 'x', 'zones' => ['home' => ['global' => ['layout' => $layout, 'blocks' => []]]]]));
             app(StorefrontAppearance::class)->refresh();
