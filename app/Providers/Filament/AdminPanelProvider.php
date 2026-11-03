@@ -18,6 +18,8 @@ use Filament\Support\Colors\Color;
 use Illuminate\Support\Facades\Route;
 use Filament\Support\Facades\FilamentAsset;
 use Filament\View\PanelsRenderHook;
+use Filament\Support\Facades\FilamentView;
+use Illuminate\Support\Facades\Blade;
 use Filament\Widgets\AccountWidget;
 use Filament\Widgets\FilamentInfoWidget;
 use Illuminate\Contracts\View\View;
@@ -51,6 +53,9 @@ class AdminPanelProvider extends PanelProvider
             Css::make('admin-product-media-gallery', asset('css/admin/product-media-gallery.css')),
             Css::make('admin-order-view', asset('css/admin/order-view.css')),
         ]);
+
+        // HINT-1 / HB-5.1: the info icon and its tooltip look the same on every admin page, so their stylesheet is loaded on every page (a Vite build, as the Design screen's; a render hook in the head)
+        FilamentView::registerRenderHook(PanelsRenderHook::HEAD_END, static fn (): string => Blade::render("@vite('resources/css/admin-info-hint.css')"));
     }
 
     public function panel(Panel $panel): Panel

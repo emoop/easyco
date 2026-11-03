@@ -131,7 +131,7 @@ class HtmlBlockResource extends Resource
             // MENU-5: «Снимки с връзки»: each picture is a Media-domain asset with its OWN address field (a link on a picture is set here; a link on text with the editor's link button).
             Repeater::make('pictures')
                 ->label(__('html_blocks.fields.pictures'))
-                ->helperText(__('html_blocks.help.pictures'))
+                ->afterLabel(InfoHint::make((string) __('html_blocks.help.pictures'), 'pictures'))
                 ->visible($text)
                 ->maxItems(HtmlBlockPictures::MAX)
                 ->defaultItems(0)
@@ -183,7 +183,7 @@ class HtmlBlockResource extends Resource
                 ])
                 // ML-2: the picture button opens the media picker (pick or upload into the library) instead of saving loose files in public/html-blocks
                 ->plugins([MediaImagePlugin::make()])
-                ->helperText(__('html_blocks.help.body')),
+                ->afterLabel(InfoHint::make((string) __('html_blocks.help.body'), 'body')),
             // HB-2: the two sections side by side (stacked on a phone), compact, each closed while it holds nothing and open when it holds something
             // HB-5: «Стил на блока» belongs to the text kind only; the conditions work for both kinds
             Grid::make(['default' => 1, 'lg' => 2])->schema([self::styleSection()->visible($text), self::conditionsSection()])->extraAttributes(['class' => 'fi-hb-compact']),
@@ -220,7 +220,7 @@ class HtmlBlockResource extends Resource
                         Textarea::make('card.text')->label($label('text'))->afterLabel(InfoHint::make($hint('text'), 'card-text'))->rows(3)->maxLength(HtmlBlockCard::TEXT_MAX)->live(onBlur: true)->default(''),
                         $input('link', 500)->placeholder('/product-category/boys'),
                         $input('alt', HtmlBlockCard::ALT_MAX),
-                        Grid::make(2)->schema([
+                        Grid::make(['default' => 1, 'md' => 2])->schema([
                             $choice('title_size', HtmlBlockCard::TITLE_SIZES),
                             $choice('overlay', HtmlBlockCard::OVERLAYS),
                             $choice('halign', HtmlBlockCard::HALIGNS),
@@ -306,18 +306,19 @@ class HtmlBlockResource extends Resource
             ->collapsible()
             // closed while the SAVED block has no conditions, open when it has: decided by the record, not by what is typed, so a section never folds up under the hand that just cleared its last field
             ->collapsed(static fn (?Model $record): bool => ! self::saved($record?->conditions))
-            ->columns(2)
+            ->afterHeader(InfoHint::make((string) __('html_blocks.conditions.scope'), 'conditions-scope'))
+            ->columns(['default' => 1, 'md' => 2])
             ->schema([
-                Select::make('conditions.on_sale')->label(__('html_blocks.conditions.fields.on_sale'))->helperText($hint('on_sale'))->native(false)->default('all')
+                Select::make('conditions.on_sale')->label(__('html_blocks.conditions.fields.on_sale'))->afterLabel(InfoHint::make($hint('on_sale'), 'on_sale'))->native(false)->default('all')
                     ->options(['all' => __('html_blocks.conditions.options.all'), 'yes' => __('html_blocks.conditions.options.on_sale_yes'), 'no' => __('html_blocks.conditions.options.on_sale_no')]),
-                Select::make('conditions.seasons')->label(__('html_blocks.conditions.fields.seasons'))->helperText($hint('seasons'))->native(false)->multiple()->searchable()
+                Select::make('conditions.seasons')->label(__('html_blocks.conditions.fields.seasons'))->afterLabel(InfoHint::make($hint('seasons'), 'seasons'))->native(false)->multiple()->searchable()
                     ->options(static fn (): array => DB::table('catalog_seasons')->orderBy('name')->pluck('name', 'id')->map(static fn ($name): string => (string) $name)->all()),
-                Select::make('conditions.categories')->label(__('html_blocks.conditions.fields.categories'))->helperText($hint('categories'))->native(false)->multiple()->searchable()
+                Select::make('conditions.categories')->label(__('html_blocks.conditions.fields.categories'))->afterLabel(InfoHint::make($hint('categories'), 'categories'))->native(false)->multiple()->searchable()
                     ->options(static fn (): array => self::categoryLabels()),
-                Select::make('conditions.tags')->label(__('html_blocks.conditions.fields.tags'))->helperText($hint('tags'))->native(false)->multiple()->searchable()
+                Select::make('conditions.tags')->label(__('html_blocks.conditions.fields.tags'))->afterLabel(InfoHint::make($hint('tags'), 'tags'))->native(false)->multiple()->searchable()
                     ->options(static fn (): array => DB::table('catalog_tags')->orderBy('name')->pluck('name', 'id')->map(static fn ($name): string => (string) $name)->all()),
-                Repeater::make('conditions.attributes')->label(__('html_blocks.conditions.fields.attributes'))->helperText($hint('attributes'))
-                    ->maxItems(ProductConditions::MAX_RULES)->defaultItems(0)->addActionLabel(__('html_blocks.conditions.add_rule'))->compact()->columns(2)->columnSpanFull()
+                Repeater::make('conditions.attributes')->label(__('html_blocks.conditions.fields.attributes'))->afterLabel(InfoHint::make($hint('attributes'), 'attributes'))
+                    ->maxItems(ProductConditions::MAX_RULES)->defaultItems(0)->addActionLabel(__('html_blocks.conditions.add_rule'))->compact()->columns(['default' => 1, 'md' => 2])->columnSpanFull()
                     ->schema([
                         Select::make('attribute')->label(__('html_blocks.conditions.fields.attribute'))->native(false)->live()->searchable()
                             ->options(static fn (): array => DB::table('catalog_attribute_definitions')->orderBy('name')->pluck('name', 'id')->map(static fn ($name): string => (string) $name)->all())
@@ -325,7 +326,6 @@ class HtmlBlockResource extends Resource
                         Select::make('values')->label(__('html_blocks.conditions.fields.values'))->native(false)->multiple()->searchable()
                             ->options(static fn (Get $get): array => ProductConditions::id($get('attribute')) === null ? [] : DB::table('catalog_attribute_values')->where('attribute_definition_id', ProductConditions::id($get('attribute')))->orderBy('sort_order')->orderBy('id')->pluck('value', 'id')->map(static fn ($value): string => (string) $value)->all()),
                     ]),
-                Text::make(__('html_blocks.conditions.scope'))->color('gray')->size('sm')->columnSpanFull(),
                 Actions::make([
                     Action::make('clear_conditions')->label(__('html_blocks.conditions.clear'))->color('gray')->action(static fn (Set $set) => $set('conditions', ProductConditions::formState(null))),
                 ])->key('conditions-actions')->columnSpanFull(),
@@ -355,17 +355,20 @@ class HtmlBlockResource extends Resource
     {
         $number = static fn (string $key): TextInput => TextInput::make('style.'.$key)
             ->label(__('html_blocks.style.fields.'.$key))
-            ->helperText(__('html_blocks.style.hints.'.$key))
+            ->afterLabel(InfoHint::make((string) __('html_blocks.style.hints.'.$key), 'style-'.$key))
             // NOT `numeric()`: Filament casts it through floatval (GL-2); the validator must see the text as it was typed
             ->inputMode('numeric')->maxLength(3)->suffix('px')->live(onBlur: true);
         $color = static fn (string $key): ColorPicker => ColorPicker::make('style.'.$key)
             ->label(__('html_blocks.style.fields.'.$key))
-            ->helperText(__('html_blocks.style.hints.'.$key))
-            ->hex()->live(onBlur: true)
-            ->hintAction(Action::make('clear_'.$key)->label(__('html_blocks.style.none'))->action(static fn (Set $set) => $set('style.'.$key, null)));
+            // the icon and the «none» button share the label row: a field's after-label slot is ONE slot (Filament's hint actions are in it too), so both go there together
+            ->afterLabel([
+                InfoHint::make((string) __('html_blocks.style.hints.'.$key), 'style-'.$key),
+                Action::make('clear_'.$key)->label(__('html_blocks.style.none'))->link()->size('sm')->action(static fn (Set $set) => $set('style.'.$key, null)),
+            ])
+            ->hex()->live(onBlur: true);
         $options = static fn (string $key, array $values): Select => Select::make('style.'.$key)
             ->label(__('html_blocks.style.fields.'.$key))
-            ->helperText(__('html_blocks.style.hints.'.$key))
+            ->afterLabel(InfoHint::make((string) __('html_blocks.style.hints.'.$key), 'style-'.$key))
             ->native(false)->live()
             ->options(array_combine($values, array_map(static fn (string $v): string => (string) __('html_blocks.style.options.'.$key.'.'.$v), $values)));
 
@@ -376,7 +379,7 @@ class HtmlBlockResource extends Resource
             ->collapsible()
             // closed while the SAVED block has no style, open when it has (decided by the record, see the conditions section)
             ->collapsed(static fn (?Model $record): bool => ! self::saved($record?->style))
-            ->columns(2)
+            ->columns(['default' => 1, 'md' => 2])
             ->schema([
                 $color('bg'),
                 $color('color'),
@@ -392,7 +395,7 @@ class HtmlBlockResource extends Resource
                 // HB-4: a background picture from the media library (its id is the whole value) and, only with a picture, how it fills the box, how dark the veil is, the minimum height and the text's place in it
                 MediaPicker::make('style.bg_image')
                     ->label(__('html_blocks.style.fields.bg_image'))
-                    ->helperText(__('html_blocks.style.hints.bg_image'))
+                    ->afterLabel(InfoHint::make((string) __('html_blocks.style.hints.bg_image'), 'style-bg_image'))
                     ->plainImagesOnly()
                     ->live()
                     ->columnSpanFull(),

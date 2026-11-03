@@ -1,0 +1,89 @@
+/* HINT-1 / HB-5.1: a field's explanation as an info icon next to its label, with the text in a tooltip bubble. These rules are NOT tied to the Design screen: the file is loaded on every admin page
+   (AdminPanelProvider, a render hook in the head). The bubble's position is set for a field that holds the icon only (.fi-fo-field:has(.info-hint)); no other Filament rule is changed here. */
+.info-hint {
+    display: inline-flex;
+    align-items: center;
+    margin-inline-start: 0.35rem;
+    vertical-align: middle;
+}
+
+.info-hint-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--gray-500);
+    cursor: help;
+}
+
+.info-hint-btn:hover,
+.info-hint[data-open='true'] .info-hint-btn {
+    color: var(--gray-700);
+}
+
+.info-hint-btn:focus-visible {
+    outline: 2px solid var(--gray-700);
+    outline-offset: 2px;
+}
+
+.info-hint-bubble {
+    display: none;
+    position: absolute;
+    left: 0;
+    bottom: calc(100% - 0.15rem);
+    z-index: 40;
+    box-sizing: border-box;
+    width: max-content;
+    max-width: min(280px, 100%);
+    padding: 8px 12px;
+    border: 1px solid var(--gray-200);
+    border-radius: 0;
+    background: #fff;
+    box-shadow: none;
+    color: var(--gray-700);
+    font-size: 13px;
+    font-weight: 400;
+    line-height: 1.4;
+    text-align: start;
+    text-transform: none;
+    letter-spacing: 0;
+    white-space: normal;
+}
+
+.info-hint:hover .info-hint-bubble,
+.info-hint:focus-within .info-hint-bubble,
+.info-hint[data-open='true'] .info-hint-bubble {
+    display: block;
+}
+
+.dark .info-hint-btn {
+    color: var(--gray-400);
+}
+
+.dark .info-hint-btn:hover,
+.dark .info-hint[data-open='true'] .info-hint-btn {
+    color: var(--gray-200);
+}
+
+.dark .info-hint-bubble {
+    border-color: var(--gray-700);
+    background: var(--gray-900);
+    color: var(--gray-200);
+}
+
+/* a field that holds the icon: the bubble is placed against the field, and the icon sits next to the label text (Filament puts the after-label slot at the far end of the label row) */
+.fi-fo-field:has(.info-hint) {
+    position: relative;
+}
+
+.fi-fo-field:has(.info-hint) .fi-fo-field-label-ctn {
+    justify-content: flex-start;
+    gap: 0.25rem;
+}
+
+.fi-fo-field:has(.info-hint) .fi-fo-field-label-ctn > .fi-sc {
+    flex: 0 0 auto;
+    width: auto;
+}
