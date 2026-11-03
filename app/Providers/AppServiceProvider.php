@@ -82,6 +82,7 @@ class AppServiceProvider extends ServiceProvider
 
         // D3: the debounced rebuild of the compiled menus keeps its asked-for flag for the whole process.
         $this->app->singleton(\App\Storefront\Menu\MenuRecompiler::class);
+        $this->app->singleton(\App\Storefront\Home\HomeTilesRecompiler::class);
 
         // The order's context (origin, invoice request) is read ONCE per order per request and remembered, and the full client address
         // (order-context-design.md 7.1) is held only for a permitted reader: one instance per request, never shared across requests.
@@ -123,6 +124,9 @@ class AppServiceProvider extends ServiceProvider
         // transaction committed); domain packages never call Hook:: themselves, so the registration lives here.
         // D3: the compiled menus are rebuilt (debounced) when a page, a category, a product's visibility or a menu picture changes.
         \App\Storefront\Menu\MenuRecompileListeners::register();
+
+        // HP-3: the published home layout's tiles (names, links, pictures) are recompiled when what they show changes
+        \App\Storefront\Home\HomeTilesListeners::register();
 
         Hook::action('order.placed', static fn (Order $order) => app(SendOrderConfirmation::class)->handle($order));
     }

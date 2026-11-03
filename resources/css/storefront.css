@@ -5355,3 +5355,81 @@ html:not(.js) .sf-bar-item:focus-within > .sf-sub {
     .sf-hp-phone { display: flex; }
 }
 /* ===== end of HP-2 image grid ======================================================================================================================================================== */
+
+/* ===== HP-3 tiles ==================================================================================================================================================================== */
+/* «Плочки»: a row of tiles, each one link with a picture and its caption BELOW it. CSS only. Every choice is a class of a closed list: the columns (the phone's 1 or 2 below 48rem; the tablet shows min(desktop, 3)
+   from 48rem; the desktop's 3, 4 or 5 from 64rem: the breakpoints of the category grid), the gap, the shape (the picture's proportion), the corner radius of the picture in percent (50 on a square is a circle, 60 is the
+   most) and the caption size. The caption is ONE line with an ellipsis and never makes a tile wider; the gap between the picture and the caption is fixed. Selectors are low (one or two classes). */
+.sf-hp-tiles-row {
+    display: grid;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.sf-hp-tp-1 { grid-template-columns: minmax(0, 1fr); }
+.sf-hp-tp-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+@media (min-width: 48rem) {
+    .sf-hp-tc-3, .sf-hp-tc-4, .sf-hp-tc-5 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@media (min-width: 64rem) {
+    .sf-hp-tc-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .sf-hp-tc-5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+}
+
+.sf-hp-tg-0 { gap: 0; }
+.sf-hp-tg-4 { gap: 4px; }
+.sf-hp-tg-8 { gap: 8px; }
+.sf-hp-tg-12 { gap: 12px; }
+.sf-hp-tg-16 { gap: 16px; }
+.sf-hp-tg-20 { gap: 20px; }
+.sf-hp-tg-24 { gap: 24px; }
+.sf-hp-tg-32 { gap: 32px; }
+
+.sf-hp-tile {
+    min-width: 0;
+}
+
+.sf-hp-tile-link {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+    color: var(--sf-text, #1a1a1a);
+    text-decoration: none;
+}
+
+.sf-hp-tile-img {
+    display: block;
+    width: 100%;
+    height: auto;
+    object-fit: cover;
+}
+
+.sf-hp-sh-portrait .sf-hp-tile-img { aspect-ratio: 4 / 5; }
+.sf-hp-sh-square .sf-hp-tile-img { aspect-ratio: 1 / 1; }
+.sf-hp-sh-landscape .sf-hp-tile-img { aspect-ratio: 4 / 3; }
+
+.sf-hp-tr-5 .sf-hp-tile-img { border-radius: 5%; }
+.sf-hp-tr-10 .sf-hp-tile-img { border-radius: 10%; }
+.sf-hp-tr-20 .sf-hp-tile-img { border-radius: 20%; }
+.sf-hp-tr-30 .sf-hp-tile-img { border-radius: 30%; }
+.sf-hp-tr-40 .sf-hp-tile-img { border-radius: 40%; }
+.sf-hp-tr-50 .sf-hp-tile-img { border-radius: 50%; }
+.sf-hp-tr-60 .sf-hp-tile-img { border-radius: 60%; }
+
+.sf-hp-tile-cap {
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+    text-align: center;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.sf-hp-cap-s .sf-hp-tile-cap { font-size: 13px; }
+.sf-hp-cap-m .sf-hp-tile-cap { font-size: 15px; }
+.sf-hp-cap-l .sf-hp-tile-cap { font-size: 18px; }
+/* ===== end of HP-3 tiles ============================================================================================================================================================= */

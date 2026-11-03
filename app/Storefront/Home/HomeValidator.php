@@ -2,6 +2,7 @@
 
 namespace App\Storefront\Home;
 
+use App\Content\HtmlBlocks\HtmlBlockPictures;
 use App\Storefront\Design\FieldKinds;
 
 /**
@@ -128,13 +129,19 @@ final class HomeValidator
         }
 
         $clean = [];
-        $soft = $type === 'image_grid';
+        $soft = in_array($type, ['image_grid', 'tiles'], true);
         $failer = function (string $p, string $code, array $params = []) use ($soft): void {
             $this->fail($p, $code, $params);
             $soft && $this->soft[$p] = true;
         };
 
         foreach ($schema as $name => $field) {
+            if (($field['kind'] ?? null) === 'tiles') {
+                $clean[$name] = $this->tiles($settings[$name] ?? [], "{$path}.settings.{$name}", $failer);
+
+                continue;
+            }
+
             if (($field['kind'] ?? null) === 'cells') {
                 $clean[$name] = $this->cells($settings[$name] ?? [], (string) ($clean['scheme'] ?? ImageGridGeometry::DEFAULT_SCHEME), "{$path}.settings.{$name}", $failer);
 
@@ -151,6 +158,98 @@ final class HomeValidator
         }
 
         return ['type' => $type, 'settings' => $clean];
+    }
+
+    /**
+     * HP-3: the manual list of tiles of a «Плочки» section: 1 to 12, each tile validated by tile(). A tile that does not validate is DROPPED from the result (and reported): saving refuses the layout, reading
+     * prints the tiles that are fine.
+     *
+     * @param  callable(string, string, array<string, mixed>=): void  $fail
+     * @return list<array{source: string, entity: int|null, label: string, picture: int|null, link: string|null}>
+     */
+    private function tiles(mixed $value, string $path, callable $fail): array
+    {
+        if (! is_array($value) || ! array_is_list($value)) {
+            $fail($path, 'bad_list', []);
+
+            return [];
+        }
+
+        if ($value === []) {
+            $fail($path, 'too_few_tiles', []);
+        }
+
+        if (count($value) > HomeCatalog::TILES_MAX) {
+            $fail($path, 'too_many_tiles', ['max' => HomeCatalog::TILES_MAX]);
+            $value = array_slice($value, 0, HomeCatalog::TILES_MAX);
+        }
+
+        $out = [];
+
+        foreach ($value as $i => $tile) {
+            $one = $this->tile($tile, "{$path}.{$i}", $fail);
+            $one === null || $out[] = $one;
+        }
+
+        return $out;
+    }
+
+    /**
+     * One tile: its source (a closed list), the entity (a whole number, but for a free tile), the caption (plain text, at most 60; a free tile needs one), the picture (the library's id; a free tile needs one) and the
+     * link (the shop's own address or https:, never javascript:; a season, a tag, a brand and a free tile have no page of their own, so the link is required). Null = the tile is not valid.
+     *
+     * @param  callable(string, string, array<string, mixed>=): void  $fail
+     * @return array{source: string, entity: int|null, label: string, picture: int|null, link: string|null}|null
+     */
+    private function tile(mixed $tile, string $path, callable $fail): ?array
+    {
+        $bad = false;
+        $report = function (string $p, string $code, array $params = []) use (&$bad, $fail): void {
+            $bad = true;
+            $fail($p, $code, $params);
+        };
+
+        if (! is_array($tile)) {
+            $report($path, 'bad_element');
+
+            return null;
+        }
+
+        foreach (array_diff(array_keys($tile), ['source', 'entity', 'label', 'picture', 'link']) as $key) {
+            $report($path, 'unknown_key', ['key' => mb_substr((string) $key, 0, 30)]);
+        }
+
+        $source = $tile['source'] ?? null;
+
+        if (! is_string($source) || ! in_array($source, HomeCatalog::TILE_SOURCES, true)) {
+            $report("{$path}.source", 'bad_choice');
+
+            return null;
+        }
+
+        $custom = $source === 'custom';
+        $entity = $custom ? null : FieldKinds::reference($tile['entity'] ?? null, true, "{$path}.entity", $report);
+
+        $label = FieldKinds::text($tile['label'] ?? '', HomeCatalog::TILE_LABEL_MAX, $custom, "{$path}.label", $report);
+
+        if ($label !== strip_tags($label)) {
+            $report("{$path}.label", 'not_plain');
+            $label = '';
+        }
+
+        $picture = FieldKinds::reference($tile['picture'] ?? null, $custom, "{$path}.picture", $report);
+
+        $link = $tile['link'] ?? null;
+        $link = is_string($link) && trim($link) !== '' ? trim($link) : null;
+
+        if ($link !== null) {
+            $safe = HtmlBlockPictures::safeUrl($link);
+            $safe === null ? $report("{$path}.link", 'bad_link') : $link = $safe;
+        } elseif (! in_array($source, HomeCatalog::SOURCES_WITH_PAGE, true)) {
+            $report("{$path}.link", 'link_required');
+        }
+
+        return $bad ? null : ['source' => $source, 'entity' => $entity, 'label' => $label, 'picture' => $picture, 'link' => $link];
     }
 
     /**

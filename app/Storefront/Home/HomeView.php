@@ -26,7 +26,7 @@ final class HomeView
         $gap = in_array($stored['layout']['spacing'], HomeCatalog::SPACINGS, true) ? $stored['layout']['spacing'] : HomeCatalog::DEFAULT_SPACING;
         $items = [];
 
-        foreach ($stored['layout']['sections'] as $section) {
+        foreach ($stored['layout']['sections'] as $index => $section) {
             $type = $section['type'];
             $settings = $section['settings'];
 
@@ -57,6 +57,17 @@ final class HomeView
                 }
             }
 
+            $tiles = null;
+
+            if ($type === 'tiles') {
+                $tiles = self::tiles($settings, $stored['tiles'][(string) $index] ?? []);
+
+                // a row with no tile to show prints nothing: no empty box in the page
+                if ($tiles === null) {
+                    continue;
+                }
+            }
+
             $class = 'sf-hp-section sf-hp-'.str_replace('_', '-', $type);
             $own = $settings['spacing'] ?? 'default';
 
@@ -64,11 +75,45 @@ final class HomeView
                 $class .= ' sf-hp-mt-'.$own;
             }
 
-            $items[] = ['type' => $type, 'class' => $class, 'view' => $catalog[$type]['view'], 'settings' => $settings, 'html' => $html, 'grid' => $grid];
+            $items[] = ['type' => $type, 'class' => $class, 'view' => $catalog[$type]['view'], 'settings' => $settings, 'html' => $html, 'grid' => $grid, 'tiles' => $tiles];
         }
 
         // every section hidden or empty: nothing to show, but the layout is published (the page is NOT the old one)
         return ['gap' => $gap, 'items' => $items];
+    }
+
+    /**
+     * HP-3: what a «Плочки» row prints: every class from a closed list (checked again here; a value outside it is its default), the compiled tiles and the `sizes` of their pictures (TileGeometry, from the
+     * published columns and gap). The first row of tiles is loaded at once, the rest lazily. Null = no tile to show.
+     *
+     * @param  array<string, mixed>  $settings
+     * @param  list<array<string, mixed>>  $tiles  the compiled tiles of this section, validated
+     * @return array{class: string, tiles: list<array<string, mixed>>, sizes: string, width: int, height: int, eager: int, caption: int}|null
+     */
+    private static function tiles(array $settings, array $tiles): ?array
+    {
+        if ($tiles === []) {
+            return null;
+        }
+
+        $pick = static fn (string $key, array $list, string $default): string => in_array($settings[$key] ?? null, $list, true) ? (string) $settings[$key] : $default;
+        $columns = $pick('columns', TileGeometry::COLUMNS, TileGeometry::DEFAULT_COLUMNS);
+        $phone = $pick('columns_phone', TileGeometry::PHONE_COLUMNS, TileGeometry::DEFAULT_PHONE_COLUMNS);
+        $gap = $pick('gap', TileGeometry::GAPS, TileGeometry::DEFAULT_GAP);
+        $shape = $pick('shape', array_keys(TileGeometry::SHAPES), TileGeometry::DEFAULT_SHAPE);
+        $radius = $pick('radius', TileGeometry::RADII, TileGeometry::DEFAULT_RADIUS);
+        $caption = $pick('caption', array_keys(TileGeometry::CAPTIONS), TileGeometry::DEFAULT_CAPTION);
+        [$width, $height] = TileGeometry::attributes($shape);
+
+        return [
+            'class' => 'sf-hp-tiles-row sf-hp-tc-'.$columns.' sf-hp-tp-'.$phone.' sf-hp-tg-'.$gap.' sf-hp-sh-'.$shape.' sf-hp-tr-'.$radius.' sf-hp-cap-'.$caption,
+            'tiles' => $tiles,
+            'sizes' => TileGeometry::sizes((int) $columns, (int) $phone, (int) $gap),
+            'width' => $width,
+            'height' => $height,
+            'eager' => (int) $columns,
+            'caption' => TileGeometry::CAPTIONS[$caption],
+        ];
     }
 
     /**

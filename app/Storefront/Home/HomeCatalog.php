@@ -29,6 +29,16 @@ final class HomeCatalog
 
     public const HEADING_MAX = 120;
 
+    /** HP-3: the tiles of one «Плочки» section (a manual list), the sources a tile can show and the longest caption. */
+    public const TILES_MAX = 12;
+
+    public const TILE_SOURCES = ['category', 'season', 'tag', 'brand', 'custom'];
+
+    /** The sources whose public page exists: only a category has one (/product-category/…); a season, a tag and a brand need a link of their own. */
+    public const SOURCES_WITH_PAGE = ['category'];
+
+    public const TILE_LABEL_MAX = 60;
+
     /** HP-2: the most blocks the phone list of an image grid holds. */
     public const PHONE_BLOCKS_MAX = 4;
 
@@ -71,6 +81,16 @@ final class HomeCatalog
                 'cells' => ['kind' => 'cells', 'default' => []],
                 'phone_blocks' => ['kind' => 'list', 'of' => 'html_block', 'max' => self::PHONE_BLOCKS_MAX, 'too_many_code' => 'too_many_phone', 'default' => []],
                 'phone_gap' => ['kind' => 'enum', 'options' => ImageGridGeometry::GAPS, 'default' => ImageGridGeometry::PHONE_DEFAULT_GAP, 'options_prefix' => 'design.home.grid.gap.'],
+            ],
+            // HP-3: a row of tiles (a picture with its caption below and a link): categories, seasons, tags, brands or free tiles. `tiles` (the manual list) is validated by HomeValidator itself.
+            'tiles' => [
+                'columns' => ['kind' => 'enum', 'options' => TileGeometry::COLUMNS, 'default' => TileGeometry::DEFAULT_COLUMNS, 'options_prefix' => 'design.home.tiles.columns.'],
+                'columns_phone' => ['kind' => 'enum', 'options' => TileGeometry::PHONE_COLUMNS, 'default' => TileGeometry::DEFAULT_PHONE_COLUMNS, 'options_prefix' => 'design.home.tiles.columns.'],
+                'gap' => ['kind' => 'enum', 'options' => TileGeometry::GAPS, 'default' => TileGeometry::DEFAULT_GAP, 'options_prefix' => 'design.home.tiles.gap.'],
+                'shape' => ['kind' => 'enum', 'options' => array_keys(TileGeometry::SHAPES), 'default' => TileGeometry::DEFAULT_SHAPE, 'options_prefix' => 'design.home.tiles.shapes.'],
+                'radius' => ['kind' => 'enum', 'options' => TileGeometry::RADII, 'default' => TileGeometry::DEFAULT_RADIUS, 'options_prefix' => 'design.home.tiles.radius.'],
+                'caption' => ['kind' => 'enum', 'options' => array_keys(TileGeometry::CAPTIONS), 'default' => TileGeometry::DEFAULT_CAPTION, 'options_prefix' => 'design.home.tiles.captions.'],
+                'tiles' => ['kind' => 'tiles', 'default' => []],
             ],
         ];
         $out = [];

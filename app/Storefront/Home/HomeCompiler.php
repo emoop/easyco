@@ -24,7 +24,7 @@ final class HomeCompiler
      * What a layout needs from the rest of the shop, as it is NOW: the sanitised HTML of its HTML blocks (ONE batched read for all of them).
      *
      * @param  array{spacing: string, sections: list<array{type: string, settings: array<string, mixed>}>}  $layout  VALIDATED
-     * @return array{layout: array<string, mixed>, blocks: array<string, string>}
+     * @return array{layout: array<string, mixed>, blocks: array<string, string>, tiles?: array<string, list<array<string, mixed>>>, assets?: list<int>}
      */
     public static function compiled(array $layout): array
     {
@@ -45,7 +45,16 @@ final class HomeCompiler
             }
         }
 
-        return ['layout' => $layout, 'blocks' => $blocks];
+        $compiled = ['layout' => $layout, 'blocks' => $blocks];
+
+        // HP-3: the tiles are resolved NOW (names, links, the renditions of the pictures): the page prints them with no query. `assets` are the pictures they depend on (a recompile follows when one is ready)
+        if (array_filter($layout['sections'], static fn (array $section): bool => $section['type'] === 'tiles') !== []) {
+            $resolved = HomeTiles::resolve($layout);
+            $compiled['tiles'] = $resolved['tiles'];
+            $compiled['assets'] = $resolved['assets'];
+        }
+
+        return $compiled;
     }
 
     /**
@@ -165,6 +174,11 @@ final class HomeCompiler
             }
         }
 
-        return ['layout' => $clean, 'blocks' => $blocks];
+        $published = ['layout' => $clean, 'blocks' => $blocks];
+
+        // HP-3: the compiled tiles, checked again (our own picture paths only, the shop's link rule, the caption)
+        isset($entry['tiles']) && $published['tiles'] = HomeTiles::clean($entry['tiles']);
+
+        return $published;
     }
 }

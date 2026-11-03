@@ -3,6 +3,7 @@
 namespace App\Filament\Design\Zones;
 
 use App\Filament\Design\FieldForms;
+use App\Filament\Forms\Components\MediaPicker;
 use App\Http\Controllers\Storefront\DesignPreviewController;
 use App\Storefront\Design\ComponentRegistry;
 use App\Storefront\Design\Tree;
@@ -14,9 +15,14 @@ use App\Storefront\Home\HomeDrafts;
 use App\Storefront\Home\HomeLayout;
 use App\Storefront\Home\HomeValidator;
 use App\Storefront\Home\ImageGridGeometry;
+use App\Storefront\Home\TileGeometry;
 use Filament\Forms\Components\Radio;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
+use Filament\Forms\Components\TextInput;
+use Filament\Schemas\Components\Grid;
+use Filament\Schemas\Components\Utilities\Set;
+use Illuminate\Support\Facades\DB;
 use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\Group;
 use Filament\Schemas\Components\Section;
@@ -142,6 +148,12 @@ final class HomeZone implements DesignZone, HasOneCell
             return (string) __('design.home.grid.summary', ['scheme' => __('design.home.grid.schemes.'.$scheme)]);
         }
 
+        if ($node['type'] === 'tiles') {
+            $columns = in_array($settings['columns'] ?? null, TileGeometry::COLUMNS, true) ? $settings['columns'] : TileGeometry::DEFAULT_COLUMNS;
+
+            return (string) __('design.home.tiles.summary', ['count' => count(is_array($settings['tiles'] ?? null) ? $settings['tiles'] : []), 'columns' => $columns]);
+        }
+
         return $node['type'] === 'heading' && is_string($settings['text'] ?? null) ? mb_strimwidth($settings['text'], 0, 24, '…') : '';
     }
 
@@ -208,6 +220,10 @@ final class HomeZone implements DesignZone, HasOneCell
 
             if ($node !== null && $node['type'] === 'image_grid') {
                 return $this->gridPanel();
+            }
+
+            if ($node !== null && $node['type'] === 'tiles') {
+                return $this->tilesPanel();
             }
 
             $fields = $node === null ? [] : $this->fieldsOf($node['type']);
@@ -296,9 +312,167 @@ final class HomeZone implements DesignZone, HasOneCell
             $text = (string) __($key);
         }
 
+        // HP-3: the tiles' own
+        if ($text === $key) {
+            $key = 'design.home.tiles.hints.'.$name;
+            $text = (string) __($key);
+        }
+
         $text !== $key && method_exists($control, 'afterLabel') && $control->afterLabel(\App\Filament\Design\InfoHint::make($text, $name));
 
         return $control;
+    }
+
+    /**
+     * HP-3: the panel of a «Плочки» section. The look settings are selects in PAIRS (two per row from the medium width), the size hint is computed live by TileGeometry from what is chosen now (read from the
+     * screen's own `props`, the state every live control has just written), and the tiles are a repeater (add, remove, ↑ ↓) of full-width items: the source, the item of that source (a select that follows the
+     * source), the caption, the link and the picture; a tile that would have no picture shows a warning line.
+     *
+     * @return list<Component>
+     */
+    private function tilesPanel(): array
+    {
+        $schema = HomeCatalog::all()['tiles']['schema'];
+        $common = HomeCatalog::common();
+        $control = function (string $name, array $field): Component {
+            $control = $this->hinted(FieldForms::make($name, $field + ['label' => 'design.home.tiles.settings.'.$name]), $name);
+            method_exists($control, 'live') && $control->live();
+
+            return $control;
+        };
+        $hint = static fn (string $name): \Illuminate\Support\HtmlString => \App\Filament\Design\InfoHint::make((string) __('design.home.tiles.hints.'.$name), 'tile-'.$name);
+        $label = static fn (string $name): string => (string) __('design.home.tiles.settings.'.$name);
+
+        return [Section::make($this->typeLabel('tiles'))->schema([
+            Group::make([
+                Grid::make(['default' => 1, 'md' => 2])->schema([
+                    $control('show', $common['show'] + ['label' => 'design.home.settings.show']),
+                    $control('spacing', $common['spacing'] + ['label' => 'design.home.settings.spacing']),
+                    $control('columns', $schema['columns']),
+                    $control('columns_phone', $schema['columns_phone']),
+                    $control('gap', $schema['gap']),
+                    $control('shape', $schema['shape']),
+                    $control('radius', $schema['radius']),
+                    $control('caption', $schema['caption']),
+                ]),
+                // the recommended picture size: the numbers are TileGeometry's (the very function the tests pin)
+                Text::make(static function ($livewire): HtmlString {
+                    $own = is_array($livewire->props['settings'] ?? null) ? $livewire->props['settings'] : [];
+                    $pick = static fn (string $key, array $list, string $default): string => in_array((string) ($own[$key] ?? ''), $list, true) ? (string) $own[$key] : $default;
+                    $gap = (int) $pick('gap', TileGeometry::GAPS, TileGeometry::DEFAULT_GAP);
+                    $shape = $pick('shape', array_keys(TileGeometry::SHAPES), TileGeometry::DEFAULT_SHAPE);
+
+                    return new HtmlString(view('filament.pages.design.partials.tiles-hint', [
+                        'desktop' => TileGeometry::tile((int) $pick('columns', TileGeometry::COLUMNS, TileGeometry::DEFAULT_COLUMNS), $gap, $shape, TileGeometry::REFERENCE_WIDTH),
+                        'phone' => TileGeometry::tile((int) $pick('columns_phone', TileGeometry::PHONE_COLUMNS, TileGeometry::DEFAULT_PHONE_COLUMNS), $gap, $shape, TileGeometry::PHONE_REFERENCE_WIDTH),
+                    ])->render());
+                }),
+                Repeater::make('tiles')->label($label('tiles'))->afterLabel($hint('tiles'))
+                    ->maxItems(HomeCatalog::TILES_MAX)->defaultItems(0)->reorderableWithButtons()->addActionLabel((string) __('design.home.tiles.add'))->columnSpanFull()
+                    ->schema([
+                        Grid::make(['default' => 1, 'md' => 2])->schema([
+                            Select::make('source')->label($label('source'))->afterLabel($hint('source'))->native(false)->default('category')->live()
+                                ->options(array_combine(HomeCatalog::TILE_SOURCES, array_map(static fn (string $s): string => (string) __('design.home.tiles.sources.'.$s), HomeCatalog::TILE_SOURCES)))
+                                ->afterStateUpdated(static fn (Set $set) => $set('entity', null)),
+                            Select::make('entity')->label($label('entity'))->afterLabel($hint('entity'))->native(false)->searchable()->live()
+                                ->options(fn (Get $get): array => self::tileEntities((string) $get('source')))
+                                ->visible(static fn (Get $get): bool => $get('source') !== 'custom'),
+                            TextInput::make('label')->label($label('label'))->afterLabel($hint('label'))->maxLength(HomeCatalog::TILE_LABEL_MAX),
+                            TextInput::make('link')->label($label('link'))->afterLabel($hint('link'))->placeholder('/product-category/…')->maxLength(500)->columnSpanFull(),
+                            MediaPicker::make('picture')->label($label('picture'))->afterLabel($hint('picture'))->plainImagesOnly()->live()->columnSpanFull(),
+                            Text::make((string) __('design.home.tiles.no_picture'))->color('warning')->size('sm')->columnSpanFull()
+                                ->visible(static fn (Get $get): bool => self::tileHasNoPicture((string) $get('source'), $get('entity'), $get('picture'))),
+                        ]),
+                    ]),
+            ])->statePath('settings'),
+        ])];
+    }
+
+    /** The items a tile of this source can show, by name: a category as «Parent › Child». @return array<int, string> */
+    private static function tileEntities(string $source): array
+    {
+        if ($source === 'category') {
+            $rows = DB::table('catalog_categories')->orderBy('name')->get(['id', 'parent_id', 'name'])->keyBy('id');
+            $labels = [];
+
+            foreach ($rows as $row) {
+                $path = [];
+
+                for ($current = $row, $guard = 0; $current !== null && $guard < 10; $current = $current->parent_id === null ? null : ($rows[$current->parent_id] ?? null), $guard++) {
+                    array_unshift($path, (string) $current->name);
+                }
+
+                $labels[(int) $row->id] = implode(' › ', $path);
+            }
+
+            asort($labels);
+
+            return $labels;
+        }
+
+        $table = ['season' => 'catalog_seasons', 'tag' => 'catalog_tags', 'brand' => 'catalog_brands'][$source] ?? null;
+
+        return $table === null ? [] : DB::table($table)->orderBy('name')->pluck('name', 'id')->map(static fn ($name): string => (string) $name)->all();
+    }
+
+    /** Would this tile end up with no picture (so it would not be shown)? A free tile with none; an item that has no picture of its own (a tag never has one) and none given here. Nothing chosen yet: no warning. */
+    private static function tileHasNoPicture(string $source, mixed $entity, mixed $picture): bool
+    {
+        if (filled($picture)) {
+            return false;
+        }
+
+        if ($source === 'custom') {
+            return true;
+        }
+
+        $id = FieldValues::id($entity);
+
+        if (! is_int($id)) {
+            return false;
+        }
+
+        $own = ['category' => ['catalog_categories', 'picture_media_asset_id'], 'season' => ['catalog_seasons', 'picture_media_asset_id'], 'brand' => ['catalog_brands', 'logo_media_asset_id']][$source] ?? null;
+
+        return $own === null || DB::table($own[0])->where('id', $id)->value($own[1]) === null;
+    }
+
+    /**
+     * The settings of a «Плочки» section from the panel: the selects as they are (the validator refuses a value outside its list), the tiles as a list in order (the free tile has no item; an empty link is none).
+     * Never validates.
+     *
+     * @param  array<string, mixed>  $in
+     * @return array<string, mixed>
+     */
+    private function tilesSettings(array $in): array
+    {
+        $out = ['show' => (bool) ($in['show'] ?? true), 'spacing' => $in['spacing'] ?? 'default'];
+
+        foreach (['columns', 'columns_phone', 'gap', 'shape', 'radius', 'caption'] as $name) {
+            isset($in[$name]) && $out[$name] = $in[$name];
+        }
+
+        $tiles = [];
+
+        foreach (is_array($in['tiles'] ?? null) ? array_values($in['tiles']) : [] as $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+
+            $source = is_string($item['source'] ?? null) ? $item['source'] : '';
+            $link = is_string($item['link'] ?? null) ? trim($item['link']) : '';
+            $tiles[] = [
+                'source' => $source,
+                'entity' => $source === 'custom' ? null : FieldValues::id($item['entity'] ?? null),
+                'label' => is_string($item['label'] ?? null) ? trim($item['label']) : '',
+                'picture' => FieldValues::id($item['picture'] ?? null),
+                'link' => $link === '' ? null : $link,
+            ];
+        }
+
+        $out['tiles'] = $tiles;
+
+        return $out;
     }
 
     /**
@@ -398,6 +572,13 @@ final class HomeZone implements DesignZone, HasOneCell
         }
 
         $in = is_array($raw['settings'] ?? null) ? $raw['settings'] : [];
+
+        if ($node['type'] === 'tiles') {
+            $settings = $this->tilesSettings($in) + $node['settings'];
+            $tree['main'] = TreeEditor::setSettings($current, $selected['id'], $settings);
+
+            return $tree;
+        }
 
         if ($node['type'] === 'image_grid') {
             $settings = $this->gridSettings($in) + $node['settings'];
