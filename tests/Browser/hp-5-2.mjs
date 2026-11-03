@@ -1,6 +1,6 @@
 // A REAL-BROWSER check of HP-5.2: the carousel arrows are bare chevrons at the very edges of the row, the same at every screen size (no button look). Two carousels on the home page (a product carousel
 // and a brand-logo carousel), measured at 1280px and 390px:
-//   - each arrow has no border, a transparent background and no shadow of its own (the chevron is the only visible thing);
+//   - each arrow has no border and its own background and shadow (HP-5.3: the white disc of the gallery's arrow; it was transparent in HP-5.2);
 //   - each arrow is 32–44px wide and at least 44px high (the touch target);
 //   - the «previous» arrow sits within 1px of the carousel's left edge, the «next» arrow within 1px of its right edge;
 //   - each arrow is vertically centred on the row (within 1px); the disabled «previous» arrow is at 0.35 opacity;
@@ -189,7 +189,7 @@ try {
             const [prev, next] = arrows;
             const tag = `${width}px, ${names[i]}`;
             check(`${tag}: both arrows are shown by the script`, [prev, next].every((a) => ! a.hidden && a.display !== 'none'), JSON.stringify(arrows.map((a) => a.display)));
-            check(`${tag}: no border (border-top 0px), no background (transparent), no shadow`, [prev, next].every((a) => a.borderTop === '0px' && a.bg === 'rgba(0, 0, 0, 0)' && a.shadow === 'none'), JSON.stringify(arrows.map((a) => [a.borderTop, a.bg, a.shadow])));
+            check(`${tag}: no border (border-top 0px), a white background (not transparent) and a shadow (the HP-5.3 look)`, [prev, next].every((a) => a.borderTop === '0px' && a.bg !== 'rgba(0, 0, 0, 0)' && a.shadow !== 'none'), JSON.stringify(arrows.map((a) => [a.borderTop, a.bg, a.shadow])));
             check(`${tag}: the touch target is 32–44px wide and at least 44px high`, [prev, next].every((a) => a.w >= 32 && a.w <= 44.5 && a.h >= 44), JSON.stringify(arrows.map((a) => [Math.round(a.w * 10) / 10, a.h])));
             check(`${tag}: «previous» sits at the left edge of the row (within 1px), «next» at the right edge (within 1px)`, Math.abs(prev.edge) <= 1 && Math.abs(next.edge) <= 1, JSON.stringify(arrows.map((a) => Math.round(a.edge * 10) / 10)));
             check(`${tag}: both arrows are vertically centred on the row (within 1px)`, [prev, next].every((a) => Math.abs(a.centre) <= 1), JSON.stringify(arrows.map((a) => Math.round(a.centre * 10) / 10)));

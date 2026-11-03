@@ -5530,7 +5530,8 @@ html:not(.js) .sf-bar-item:focus-within > .sf-sub {
     .sf-car-k-products { --sf-car-n: 4; }
 }
 
-/* the arrows: bare chevrons at the very edges of the row, the same at every screen size (no button look): an invisible 36 × 44px hit area, a thin 13px chevron centred in it, a faint white halo so it reads over a picture */
+/* the arrows: the look of the product gallery's arrows (its phone «carousel» mode): a white round disc at 90%, the gallery's shadow, text colour and chevron. The disc is 40px, inside a 44px touch target
+   (the 2px padding; the background is clipped to the content box). The arrow sits at the very edge of the row (the gallery's is 8px in). */
 .sf-car-arrow {
     position: absolute;
     top: 50%;
@@ -5538,33 +5539,34 @@ html:not(.js) .sf-bar-item:focus-within > .sf-sub {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 36px;
+    width: 44px;
     height: 44px;
-    padding: 0;
+    padding: 2px;
     transform: translateY(-50%);
     border: 0;
-    border-radius: 0;
-    background: transparent;
-    box-shadow: none;
-    color: var(--sf-pdp-text, #1a1a1a);
-    filter: drop-shadow(0 0 2px #fff);
+    border-radius: 50%;
+    background-color: color-mix(in oklab, var(--color-white) 90%, transparent);
+    background-clip: content-box;
+    box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+    color: oklch(20.5% 0 none);
     cursor: pointer;
 }
 
 .sf-car-arrow::before {
     content: '';
     display: block;
-    width: 13px;
-    height: 13px;
+    box-sizing: border-box;
+    width: 0.6rem;
+    height: 0.6rem;
     border-style: solid;
     border-color: currentColor;
-    border-width: 0 0 1px 1px;
+    border-width: 2px 2px 0 0;
 }
 
 .sf-car-prev { left: 0; }
 .sf-car-next { right: 0; }
-.sf-car-prev::before { transform: translateX(2px) rotate(45deg); }
-.sf-car-next::before { transform: translateX(-2px) rotate(225deg); }
+.sf-car-prev::before { transform: translateX(12%) rotate(-135deg); }
+.sf-car-next::before { transform: translateX(-12%) rotate(45deg); }
 
 .sf-car-arrow:disabled {
     opacity: 0.35;
