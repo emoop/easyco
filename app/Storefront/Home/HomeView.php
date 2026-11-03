@@ -68,6 +68,17 @@ final class HomeView
                 }
             }
 
+            $products = null;
+
+            if ($type === 'product_grid') {
+                $products = self::products($settings);
+
+                // no usable source (an item that is not chosen): nothing to print; the cards are read later, by fill()
+                if ($products === null) {
+                    continue;
+                }
+            }
+
             $class = 'sf-hp-section sf-hp-'.str_replace('_', '-', $type);
             $own = $settings['spacing'] ?? 'default';
 
@@ -75,11 +86,85 @@ final class HomeView
                 $class .= ' sf-hp-mt-'.$own;
             }
 
-            $items[] = ['type' => $type, 'class' => $class, 'view' => $catalog[$type]['view'], 'settings' => $settings, 'html' => $html, 'grid' => $grid, 'tiles' => $tiles];
+            $items[] = ['type' => $type, 'class' => $class, 'view' => $catalog[$type]['view'], 'settings' => $settings, 'html' => $html, 'grid' => $grid, 'tiles' => $tiles, 'products' => $products];
         }
 
         // every section hidden or empty: nothing to show, but the layout is published (the page is NOT the old one)
         return ['gap' => $gap, 'items' => $items];
+    }
+
+    /**
+     * HP-4: what a «Продуктова решетка» needs: the source, the classes (closed lists, checked again here; a value outside the list is its default) and the `sizes` of the card images from the component's
+     * own columns and gap (ImageSetBuilder::cardSizes, as the category page). The cards are NOT here: they are read at request time by fill(). Null = no usable source (an item that is not chosen).
+     *
+     * @param  array<string, mixed>  $settings
+     * @return array{class: string, source: string, entity: int|null, sort: string, count: int, sizes: string, cards: list<\App\Storefront\ReadModels\ProductCard>}|null
+     */
+    private static function products(array $settings): ?array
+    {
+        $pick = static fn (string $key, array $list, string $default): string => in_array($settings[$key] ?? null, $list, true) ? (string) $settings[$key] : $default;
+        $source = $pick('source', HomeCatalog::PRODUCT_SOURCES, 'newest');
+        $entity = $settings['entity'] ?? null;
+        $entity = is_int($entity) && $entity > 0 ? $entity : null;
+
+        // a source that needs an item and has none prints nothing
+        if (in_array($source, HomeCatalog::PRODUCT_SOURCES_WITH_ENTITY, true) && $entity === null) {
+            return null;
+        }
+
+        $columns = $pick('columns', HomeCatalog::PRODUCT_COLUMNS, '4');
+        $phone = $pick('columns_phone', HomeCatalog::PRODUCT_PHONE_COLUMNS, '2');
+        $gap = $pick('gap', HomeCatalog::PRODUCT_GAPS, '16');
+
+        return [
+            'class' => 'sf-hp-products sf-hp-prc-'.$columns.' sf-hp-prp-'.$phone.' sf-hp-prg-'.$gap,
+            'source' => $source,
+            'entity' => $source === 'newest' ? null : $entity,
+            'sort' => $pick('sort', HomeCatalog::PRODUCT_SORTS, 'newest'),
+            'count' => (int) $pick('count', HomeCatalog::PRODUCT_COUNTS, '12'),
+            'sizes' => \App\Storefront\Reader\ImageSetBuilder::cardSizes((int) $columns, (int) $phone, (int) $gap),
+            'cards' => [],
+        ];
+    }
+
+    /**
+     * HP-4: reads the cards of every product grid of the prepared sections, at request time (`$read(source, entity, sort, count, sizes)` = CatalogReader::homeProducts), in the order of the layout. A grid with
+     * no product is dropped, and the top spacing is put right again: the first section that is printed has none. Sections without a product grid come back as they are.
+     *
+     * @param  array{gap: string, items: list<array<string, mixed>>}  $sections  prepare()'s result
+     * @param  \Closure(string, int|null, string, int, string): list<\App\Storefront\ReadModels\ProductCard>  $read
+     * @return array{gap: string, items: list<array<string, mixed>>}
+     */
+    public static function fill(array $sections, \Closure $read): array
+    {
+        $items = [];
+        $dropped = false;
+
+        foreach ($sections['items'] as $item) {
+            if ($item['type'] === 'product_grid' && is_array($item['products'] ?? null)) {
+                $grid = $item['products'];
+                $grid['cards'] = $read($grid['source'], $grid['entity'], $grid['sort'], $grid['count'], $grid['sizes']);
+
+                if ($grid['cards'] === []) {
+                    $dropped = true;
+
+                    continue;
+                }
+
+                $item['products'] = $grid;
+            }
+
+            $items[] = $item;
+        }
+
+        // the section that is printed first has no top spacing (a spacing class is `sf-hp-mt-N`)
+        if ($dropped && $items !== []) {
+            $items[0]['class'] = (string) preg_replace('/ sf-hp-mt-\d+/', '', (string) $items[0]['class']);
+        }
+
+        $sections['items'] = $items;
+
+        return $sections;
     }
 
     /**

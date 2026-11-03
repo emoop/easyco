@@ -234,6 +234,30 @@ final class CatalogReader
             throw new ListingOptionNotAvailable('Price filtering and price sorting arrive with the storefront search stage (S7).');
         }
 
+        $products = $this->listingProducts($query, $filters);
+
+        $paginator = $products->paginate($query->perPage->value, ['*'], 'page', $query->page);
+
+        return new ListingPage(
+            query: $query->toArray(),
+            items: $this->cards($paginator->items(), $cardSizes ?? ImageSetBuilder::SIZES_CARD),
+            page: $paginator->currentPage(),
+            perPage: $paginator->perPage(),
+            total: $paginator->total(),
+            lastPage: $paginator->lastPage(),
+            facets: [],
+            hasFilterable: self::hasFilterable($paginator->items()[0] ?? null),
+        );
+    }
+
+    /**
+     * The query of a listing, shared by listing() and homeProducts(): the visible products with the card's columns (the two photos, the filter flags), the scope, the visitor's filters and the sort. No page, no
+     * limit and no count: the caller adds what it needs.
+     *
+     * @param  array<int|string, list<int>>  $filters
+     */
+    private function listingProducts(ListingQuery $query, array $filters): \Illuminate\Database\Eloquent\Builder
+    {
         $products = $this->visibility->products(ProductModel::query())
             ->select(['catalog_products.id', 'catalog_products.slug', 'catalog_products.name', 'catalog_products.brand_id'])
             ->addSelect(['first_media_id' => self::firstImageIdSubquery(), 'second_media_id' => self::secondImageIdSubquery()])
@@ -256,18 +280,40 @@ final class CatalogReader
             default => $products->orderByDesc('catalog_products.timeline_at')->orderByDesc('catalog_products.id'),
         };
 
-        $paginator = $products->paginate($query->perPage->value, ['*'], 'page', $query->page);
+        return $products;
+    }
 
-        return new ListingPage(
-            query: $query->toArray(),
-            items: $this->cards($paginator->items(), $cardSizes ?? ImageSetBuilder::SIZES_CARD),
-            page: $paginator->currentPage(),
-            perPage: $paginator->perPage(),
-            total: $paginator->total(),
-            lastPage: $paginator->lastPage(),
-            facets: [],
-            hasFilterable: self::hasFilterable($paginator->items()[0] ?? null),
-        );
+    /**
+     * HP-4: the first `$limit` cards of a source for the home page's product grid: `newest`, or the products of ONE category (with its shown descendants, as the category page), brand, tag or season. The SAME
+     * query and the SAME card read as listing() (visibility, in-stock rule, batched assets / variations / stock / prices), but no page and no count query. An unknown source, a missing entity, a category that
+     * is not shown: no cards. `$sort` is one of the storefront's offered sorts (anything else is `newest`).
+     *
+     * @return list<ProductCard>
+     */
+    public function homeProducts(string $kind, ?int $entity, string $sort, int $limit, string $sizes): array
+    {
+        if ($kind !== 'newest' && ($entity === null || $entity < 1)) {
+            return [];
+        }
+
+        [$scope, $filters] = match ($kind) {
+            'newest' => [ListingScope::ALL, []],
+            'category' => [ListingScope::CATEGORY, []],
+            'brand' => [ListingScope::BRAND, []],
+            'tag' => [ListingScope::TAG, []],
+            'season' => [ListingScope::ALL, ['season' => [$entity]]],
+            default => [null, []],
+        };
+
+        if ($scope === null) {
+            return [];
+        }
+
+        $order = ListingSort::tryFrom($sort);
+        $order = $order !== null && in_array($order, ListingSort::storefrontOptions(), true) ? $order : ListingSort::NEWEST;
+        $query = ListingQuery::create($scope, $scope === ListingScope::ALL ? null : $entity, $order);
+
+        return $this->cards($this->listingProducts($query, $filters)->limit(max(1, min(24, $limit)))->get()->all(), $sizes);
     }
 
     /** CT-3 / CT-4: does the shop have a filterable attribute, or at least one brand / season / tag? Read from the first card of the page (an empty page: no). */

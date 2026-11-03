@@ -82,7 +82,7 @@ class DesignHomeZoneTest extends TestCase
         $this->assertStringContainsString('>Home</button>', $screen->html(), 'the zone is a button of the list');
         $this->assertSame([], $this->types($screen));
         $screen->assertSet('selected', ['kind' => 'cell', 'id' => 'h-r0-c0'])->assertSet('dirty', false);
-        $this->assertSame(['heading', 'html_block', 'image_grid', 'tiles'], array_column($screen->instance()->palette(), 'type'));
+        $this->assertSame(['heading', 'html_block', 'image_grid', 'tiles', 'product_grid'], array_column($screen->instance()->palette(), 'type'));
         $this->assertNull($this->settings()->get(AppearanceSettings::HOME_PUBLISHED_KEY));
     }
 

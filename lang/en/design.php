@@ -339,7 +339,7 @@ return [
 
     // HP-1: «Home» — the home page as an ordered list of sections, each holding ONE component
     'home' => [
-        'types' => ['heading' => 'Heading with lines', 'html_block' => 'Free HTML block', 'image_grid' => 'Image grid', 'tiles' => 'Tiles'],
+        'types' => ['heading' => 'Heading with lines', 'html_block' => 'Free HTML block', 'image_grid' => 'Image grid', 'tiles' => 'Tiles', 'product_grid' => 'Product grid'],
         'hidden' => 'hidden',
         'general' => 'General settings',
         'gap_now' => 'spacing :px px',
@@ -365,6 +365,7 @@ return [
             'too_many_tiles' => 'At most :max tiles.',
             'bad_link' => 'An address of the shop (starts with /) or https:; not javascript:, data: or //.',
             'link_required' => 'The link is required: a season, a tag, a brand and a free tile have no page of their own.',
+            'too_many_product_grids' => 'At most :max product grids on the home page.',
         ],
         'settings' => [
             'gap' => 'Space between sections',
@@ -541,6 +542,38 @@ return [
             'hint_title' => 'Recommended picture size',
             'hint_desktop' => 'Recommended size: :w × :h px (for a 1440px screen), 2× for sharp screens: :w2 × :h2.',
             'hint_phone' => 'On a phone: :w × :h px (for a 390px screen), 2× for sharp screens: :w2 × :h2.',
+        ],
+        'products' => [
+            'summary' => 'Products: :source, :count',
+            'sources' => [
+                'newest' => 'Newest',
+                'category' => 'Category',
+                'season' => 'Season',
+                'tag' => 'Tag',
+                'brand' => 'Brand',
+            ],
+            'counts' => ['4' => '4 products', '8' => '8 products', '12' => '12 products', '16' => '16 products', '20' => '20 products', '24' => '24 products'],
+            'sorts' => ['newest' => 'Newest first', 'name_asc' => 'Name (A–Z)'],
+            'settings' => [
+                'source' => 'Source',
+                'entity' => 'Item',
+                'count' => 'Number of products',
+                'sort' => 'Order',
+                'columns' => 'Columns on a computer',
+                'columns_phone' => 'Columns on a phone',
+                'gap' => 'Gap between the cards',
+            ],
+            'hints' => [
+                'source' => 'Where the products come from: the newest in the shop, or the products of one category, season, tag or brand. Only the products the shop shows are listed.',
+                'entity' => 'Which category, season, tag or brand. A category includes its subcategories, as its page in the shop does.',
+                'count' => 'How many products are shown (4 to 24): the first ones in the chosen order. There are no pages.',
+                'sort' => 'Newest first or by name (A–Z): the same two orders as in the categories.',
+                'columns' => 'How many cards are in a row on a computer (3, 4 or 5). On a tablet there are at most 3.',
+                'columns_phone' => 'How many cards are in a row on a phone (1 or 2).',
+                'gap' => 'The space between the cards in px, horizontally and vertically; it applies to this grid only.',
+            ],
+            'count_line' => 'The grid shows :count products.',
+            'none' => 'No products for this choice',
         ],
     ],
 

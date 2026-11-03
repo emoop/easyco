@@ -81,9 +81,19 @@ final class HomeValidator
 
         $catalog = HomeCatalog::all();
         $clean = [];
+        $grids = 0;
 
         foreach ($list as $i => $section) {
             $one = $this->section($section, "sections.{$i}", $catalog);
+
+            // HP-4: at most 2 product grids: saving refuses the layout, reading drops the extra ones (the path is soft)
+            if ($one !== null && $one['type'] === 'product_grid' && ++$grids > HomeCatalog::MAX_PRODUCT_GRIDS) {
+                $this->fail("sections.{$i}", 'too_many_product_grids', ['max' => HomeCatalog::MAX_PRODUCT_GRIDS]);
+                $this->soft["sections.{$i}"] = true;
+
+                continue;
+            }
+
             $one === null || $clean[] = $one;
         }
 
@@ -128,8 +138,16 @@ final class HomeValidator
             $this->fail("{$path}.settings.{$key}", 'unknown_setting', ['key' => mb_substr((string) $key, 0, 30)]);
         }
 
+        // HP-4: a product grid whose SOURCE is not one of the closed list is dropped (reported; soft, so reading prints the other sections)
+        if ($type === 'product_grid' && array_key_exists('source', $settings) && ! (is_string($settings['source']) && in_array($settings['source'], HomeCatalog::PRODUCT_SOURCES, true))) {
+            $this->fail("{$path}.settings.source", 'bad_choice');
+            $this->soft["{$path}.settings.source"] = true;
+
+            return null;
+        }
+
         $clean = [];
-        $soft = in_array($type, ['image_grid', 'tiles'], true);
+        $soft = in_array($type, ['image_grid', 'tiles', 'product_grid'], true);
         $failer = function (string $p, string $code, array $params = []) use ($soft): void {
             $this->fail($p, $code, $params);
             $soft && $this->soft[$p] = true;
@@ -138,6 +156,12 @@ final class HomeValidator
         foreach ($schema as $name => $field) {
             if (($field['kind'] ?? null) === 'tiles') {
                 $clean[$name] = $this->tiles($settings[$name] ?? [], "{$path}.settings.{$name}", $failer);
+
+                continue;
+            }
+
+            if (($field['kind'] ?? null) === 'entity') {
+                $clean[$name] = $this->entity($settings[$name] ?? null, (string) ($clean['source'] ?? 'newest'), "{$path}.settings.{$name}", $failer);
 
                 continue;
             }
@@ -158,6 +182,21 @@ final class HomeValidator
         }
 
         return ['type' => $type, 'settings' => $clean];
+    }
+
+    /**
+     * HP-4: the item (category, season, tag, brand) of a product grid's source: a positive whole number, required when the source needs one; `newest` has none (a value given is dropped). Whether the item
+     * still exists is checked when the page is printed (a missing one prints nothing), not here.
+     *
+     * @param  callable(string, string, array<string, mixed>=): void  $fail
+     */
+    private function entity(mixed $value, string $source, string $path, callable $fail): ?int
+    {
+        if (! in_array($source, HomeCatalog::PRODUCT_SOURCES_WITH_ENTITY, true)) {
+            return null;
+        }
+
+        return FieldKinds::reference($value, true, $path, $fail);
     }
 
     /**

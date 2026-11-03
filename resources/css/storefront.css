@@ -5433,3 +5433,33 @@ html:not(.js) .sf-bar-item:focus-within > .sf-sub {
 .sf-hp-cap-m .sf-hp-tile-cap { font-size: 15px; }
 .sf-hp-cap-l .sf-hp-tile-cap { font-size: 18px; }
 /* ===== end of HP-3 tiles ============================================================================================================================================================= */
+
+/* ===== HP-4 product grid ============================================================================================================================================================= */
+/* «Продуктова решетка»: the cards of the category listing (`.sf-card`, not touched) in a grid of the home page. CSS only; every choice is a class of a closed list: the phone's 1 or 2 columns below 48rem, 3 from
+   48rem (the tablet shows min(desktop, 3) = 3), the desktop's 3, 4 or 5 from 64rem (the breakpoints of the category grid), and the gap between the cards in px (the list of GAP-1; both directions). The gap is
+   set on THIS component only. Selectors are one class. */
+.sf-hp-products {
+    display: grid;
+}
+
+.sf-hp-prp-1 { grid-template-columns: minmax(0, 1fr); }
+.sf-hp-prp-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+@media (min-width: 48rem) {
+    .sf-hp-prc-3, .sf-hp-prc-4, .sf-hp-prc-5 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@media (min-width: 64rem) {
+    .sf-hp-prc-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .sf-hp-prc-5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+}
+
+.sf-hp-prg-0 { gap: 0; }
+.sf-hp-prg-4 { gap: 4px; }
+.sf-hp-prg-8 { gap: 8px; }
+.sf-hp-prg-12 { gap: 12px; }
+.sf-hp-prg-16 { gap: 16px; }
+.sf-hp-prg-20 { gap: 20px; }
+.sf-hp-prg-24 { gap: 24px; }
+.sf-hp-prg-32 { gap: 32px; }
+/* ===== end of HP-4 product grid ====================================================================================================================================================== */

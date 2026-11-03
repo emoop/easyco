@@ -39,6 +39,23 @@ final class HomeCatalog
 
     public const TILE_LABEL_MAX = 60;
 
+    /** HP-4: the sources of a «Продуктова решетка» (closed), the ones that need an item of their own, the counts, the sorts and the columns; the gap is the product grid's list (GAP-1). At most 2 such sections in a layout. */
+    public const PRODUCT_SOURCES = ['newest', 'category', 'season', 'tag', 'brand'];
+
+    public const PRODUCT_SOURCES_WITH_ENTITY = ['category', 'season', 'tag', 'brand'];
+
+    public const PRODUCT_COUNTS = ['4', '8', '12', '16', '20', '24'];
+
+    public const PRODUCT_SORTS = ['newest', 'name_asc'];
+
+    public const PRODUCT_COLUMNS = ['3', '4', '5'];
+
+    public const PRODUCT_PHONE_COLUMNS = ['1', '2'];
+
+    public const PRODUCT_GAPS = \App\Storefront\PageDesign\PageDesign::GRID_GAPS;
+
+    public const MAX_PRODUCT_GRIDS = 2;
+
     /** HP-2: the most blocks the phone list of an image grid holds. */
     public const PHONE_BLOCKS_MAX = 4;
 
@@ -91,6 +108,16 @@ final class HomeCatalog
                 'radius' => ['kind' => 'enum', 'options' => TileGeometry::RADII, 'default' => TileGeometry::DEFAULT_RADIUS, 'options_prefix' => 'design.home.tiles.radius.'],
                 'caption' => ['kind' => 'enum', 'options' => array_keys(TileGeometry::CAPTIONS), 'default' => TileGeometry::DEFAULT_CAPTION, 'options_prefix' => 'design.home.tiles.captions.'],
                 'tiles' => ['kind' => 'tiles', 'default' => []],
+            ],
+            // HP-4: the first N products of a source, read at request time. `entity` (the item of the source) is validated by HomeValidator itself.
+            'product_grid' => [
+                'source' => ['kind' => 'enum', 'options' => self::PRODUCT_SOURCES, 'default' => 'newest', 'options_prefix' => 'design.home.products.sources.'],
+                'entity' => ['kind' => 'entity', 'default' => null],
+                'count' => ['kind' => 'enum', 'options' => self::PRODUCT_COUNTS, 'default' => '12', 'options_prefix' => 'design.home.products.counts.'],
+                'sort' => ['kind' => 'enum', 'options' => self::PRODUCT_SORTS, 'default' => 'newest', 'options_prefix' => 'design.home.products.sorts.'],
+                'columns' => ['kind' => 'enum', 'options' => self::PRODUCT_COLUMNS, 'default' => '4', 'options_prefix' => 'design.home.tiles.columns.'],
+                'columns_phone' => ['kind' => 'enum', 'options' => self::PRODUCT_PHONE_COLUMNS, 'default' => '2', 'options_prefix' => 'design.home.tiles.columns.'],
+                'gap' => ['kind' => 'enum', 'options' => self::PRODUCT_GAPS, 'default' => '16', 'options_prefix' => 'design.home.tiles.gap.'],
             ],
         ];
         $out = [];

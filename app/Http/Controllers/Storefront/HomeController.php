@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Storefront;
 
 use App\Http\Controllers\Controller;
 use App\Storefront\Appearance\StorefrontAppearance;
+use App\Storefront\Home\HomeView;
 use App\Storefront\Reader\CatalogReader;
 use App\Storefront\ReadModels\ListingQuery;
 use App\Storefront\ReadModels\PerPage;
@@ -30,6 +31,9 @@ final class HomeController extends Controller
         $sections = $appearance->homeSections();
 
         if ($sections !== null) {
+            // HP-4: the product grids are read NOW (prices, stock and visibility change): one card read each, no count
+            $sections = HomeView::fill($sections, static fn (string $source, ?int $entity, string $sort, int $count, string $sizes): array => $reader->homeProducts($source, $entity, $sort, $count, $sizes));
+
             return view('storefront.home_sections', [
                 'sections' => $sections,
                 'seo' => $seo->forHome(route('storefront.home', [], false)),

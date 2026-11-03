@@ -154,6 +154,13 @@ final class HomeZone implements DesignZone, HasOneCell
             return (string) __('design.home.tiles.summary', ['count' => count(is_array($settings['tiles'] ?? null) ? $settings['tiles'] : []), 'columns' => $columns]);
         }
 
+        if ($node['type'] === 'product_grid') {
+            $source = is_string($settings['source'] ?? null) && in_array($settings['source'], HomeCatalog::PRODUCT_SOURCES, true) ? $settings['source'] : 'newest';
+            $count = in_array($settings['count'] ?? null, HomeCatalog::PRODUCT_COUNTS, true) ? $settings['count'] : '12';
+
+            return (string) __('design.home.products.summary', ['source' => __('design.home.products.sources.'.$source), 'count' => $count]);
+        }
+
         return $node['type'] === 'heading' && is_string($settings['text'] ?? null) ? mb_strimwidth($settings['text'], 0, 24, '…') : '';
     }
 
@@ -164,8 +171,13 @@ final class HomeZone implements DesignZone, HasOneCell
         $items = $tree['main']['rows'][0]['cells'][0]['items'] ?? [];
         $out = [];
 
+        $grids = count(array_filter($items, static fn (array $node): bool => ($node['type'] ?? null) === 'product_grid'));
+
         foreach (HomeCatalog::all() as $type => $descriptor) {
             $reason = $cellId === null ? (string) __('design.palette.no_cell') : (count($items) >= HomeCatalog::MAX_SECTIONS ? (string) __('design.home.errors.too_many', ['max' => HomeCatalog::MAX_SECTIONS]) : null);
+
+            // HP-4: at most 2 product grids
+            $reason === null && $type === 'product_grid' && $grids >= HomeCatalog::MAX_PRODUCT_GRIDS && $reason = (string) __('design.home.errors.too_many_product_grids', ['max' => HomeCatalog::MAX_PRODUCT_GRIDS]);
             $out[] = ['type' => $type, 'label' => $this->typeLabel($type), 'reason' => $reason, 'hint' => null];
         }
 
@@ -224,6 +236,10 @@ final class HomeZone implements DesignZone, HasOneCell
 
             if ($node !== null && $node['type'] === 'tiles') {
                 return $this->tilesPanel();
+            }
+
+            if ($node !== null && $node['type'] === 'product_grid') {
+                return $this->productsPanel();
             }
 
             $fields = $node === null ? [] : $this->fieldsOf($node['type']);
@@ -388,6 +404,60 @@ final class HomeZone implements DesignZone, HasOneCell
         ])];
     }
 
+    /**
+     * HP-4: the panel of a «Продуктова решетка» section: the settings in PAIRS (two per row from the medium width), the item select follows the source, and a live line says how many products the grid
+     * resolves to NOW (the very read the shop does, from the screen's own `props`). Explanations are info icons.
+     *
+     * @return list<Component>
+     */
+    private function productsPanel(): array
+    {
+        $schema = HomeCatalog::all()['product_grid']['schema'];
+        $common = HomeCatalog::common();
+        $control = function (string $name, array $field): Component {
+            $control = FieldForms::make($name, $field + ['label' => 'design.home.products.settings.'.$name]);
+            method_exists($control, 'afterLabel') && $control->afterLabel(\App\Filament\Design\InfoHint::make((string) __('design.home.products.hints.'.$name), 'products-'.$name));
+            method_exists($control, 'live') && $control->live();
+
+            return $control;
+        };
+        $hint = static fn (string $name): HtmlString => \App\Filament\Design\InfoHint::make((string) __('design.home.products.hints.'.$name), 'products-'.$name);
+
+        return [Section::make($this->typeLabel('product_grid'))->schema([
+            Group::make([
+                Grid::make(['default' => 1, 'md' => 2])->schema([
+                    $control('show', $common['show'] + ['label' => 'design.home.settings.show']),
+                    $control('spacing', $common['spacing'] + ['label' => 'design.home.settings.spacing']),
+                    $control('source', $schema['source'])->afterStateUpdated(static fn (Set $set) => $set('entity', null)),
+                    Select::make('entity')->label((string) __('design.home.products.settings.entity'))->afterLabel($hint('entity'))->native(false)->searchable()->live()
+                        ->options(fn (Get $get): array => self::tileEntities((string) $get('source')))
+                        ->visible(static fn (Get $get): bool => in_array((string) $get('source'), HomeCatalog::PRODUCT_SOURCES_WITH_ENTITY, true)),
+                    $control('count', $schema['count']),
+                    $control('sort', $schema['sort']),
+                    $control('columns', $schema['columns']),
+                    $control('columns_phone', $schema['columns_phone']),
+                    $control('gap', $schema['gap']),
+                ]),
+                Text::make(static function ($livewire): HtmlString {
+                    $own = is_array($livewire->props['settings'] ?? null) ? $livewire->props['settings'] : [];
+                    $n = self::productCount($own);
+
+                    return new HtmlString('<span class="'.($n === 0 ? 'text-warning-600' : 'text-gray-600').'">'.e($n === 0 ? (string) __('design.home.products.none') : (string) __('design.home.products.count_line', ['count' => $n])).'</span>');
+                }),
+            ])->statePath('settings'),
+        ])];
+    }
+
+    /** HP-4: how many products a product grid with these (panel) settings resolves to now: the shop's own read (visibility, the in-stock rule), at most the chosen count. @param  array<string, mixed>  $own */
+    private static function productCount(array $own): int
+    {
+        $source = in_array($own['source'] ?? null, HomeCatalog::PRODUCT_SOURCES, true) ? (string) $own['source'] : 'newest';
+        $count = in_array((string) ($own['count'] ?? ''), HomeCatalog::PRODUCT_COUNTS, true) ? (int) $own['count'] : 12;
+        $sort = in_array($own['sort'] ?? null, HomeCatalog::PRODUCT_SORTS, true) ? (string) $own['sort'] : 'newest';
+
+        return count(app(\App\Storefront\Reader\CatalogReader::class)->homeProducts($source, FieldValues::id($own['entity'] ?? null), $sort, $count, \App\Storefront\Reader\ImageSetBuilder::SIZES_CARD));
+    }
+
     /** The items a tile of this source can show, by name: a category as «Parent › Child». @return array<int, string> */
     private static function tileEntities(string $source): array
     {
@@ -435,6 +505,25 @@ final class HomeZone implements DesignZone, HasOneCell
         $own = ['category' => ['catalog_categories', 'picture_media_asset_id'], 'season' => ['catalog_seasons', 'picture_media_asset_id'], 'brand' => ['catalog_brands', 'logo_media_asset_id']][$source] ?? null;
 
         return $own === null || DB::table($own[0])->where('id', $id)->value($own[1]) === null;
+    }
+
+    /**
+     * The settings of a «Продуктова решетка» from the panel: the selects as they are (the validator refuses a value outside its list), the item as an id (none for «най-нови»). Never validates.
+     *
+     * @param  array<string, mixed>  $in
+     * @return array<string, mixed>
+     */
+    private function productsSettings(array $in): array
+    {
+        $out = ['show' => (bool) ($in['show'] ?? true), 'spacing' => $in['spacing'] ?? 'default'];
+
+        foreach (['source', 'count', 'sort', 'columns', 'columns_phone', 'gap'] as $name) {
+            isset($in[$name]) && $out[$name] = $in[$name];
+        }
+
+        $out['entity'] = ($in['source'] ?? 'newest') === 'newest' ? null : FieldValues::id($in['entity'] ?? null);
+
+        return $out;
     }
 
     /**
@@ -572,6 +661,13 @@ final class HomeZone implements DesignZone, HasOneCell
         }
 
         $in = is_array($raw['settings'] ?? null) ? $raw['settings'] : [];
+
+        if ($node['type'] === 'product_grid') {
+            $settings = $this->productsSettings($in) + $node['settings'];
+            $tree['main'] = TreeEditor::setSettings($current, $selected['id'], $settings);
+
+            return $tree;
+        }
 
         if ($node['type'] === 'tiles') {
             $settings = $this->tilesSettings($in) + $node['settings'];
