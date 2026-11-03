@@ -59,6 +59,11 @@ final class AppearanceSettings
 
     public const SUMMARY_PUBLISHED_KEY = 'design.product_summary.global.published';
 
+    /** HP-1: the home page («Начална»): its working copy and its published layout (`{spacing, sections: [{type, settings}]}`). */
+    public const HOME_DRAFT_KEY = 'design.home.global.draft';
+
+    public const HOME_PUBLISHED_KEY = 'design.home.global.published';
+
     public const FOOTER_DRAFT_KEY = 'footer.layout.draft';
 
     public const FOOTER_PUBLISHED_KEY = 'footer.layout.published';

@@ -4,6 +4,7 @@ namespace App\Storefront\Design;
 
 use App\Storefront\Footer\FooterLayout;
 use App\Storefront\Header\HeaderCatalog;
+use App\Storefront\Home\HomeCatalog;
 use App\Storefront\Header\HeaderLayout;
 use App\Storefront\ProductSummary\ProductSummaryCatalog;
 use InvalidArgumentException;
@@ -17,7 +18,7 @@ use InvalidArgumentException;
  */
 final class ZoneSpec
 {
-    public const ZONES = ['header.desktop', 'header.mobile', 'footer.upper', 'footer.lower', 'summary.main'];
+    public const ZONES = ['header.desktop', 'header.mobile', 'footer.upper', 'footer.lower', 'summary.main', 'home.main'];
 
     /**
      * @param  list<string>|null  $rowNames  fixed row names (null = free rows, minRows..maxRows)
@@ -57,6 +58,8 @@ final class ZoneSpec
             'footer.upper' => new self($zone, null, 1, FooterLayout::MAX_ROWS, null, 1, FooterLayout::MAX_COLUMNS, FooterLayout::MAX_BLOCKS_PER_COLUMN, FooterLayout::MAX_BLOCKS, [], null),
             'footer.lower' => new self($zone, ['line'], 1, 1, ['line'], 1, 1, 1, 1, ['text_line' => 1], ['text_line']),
             'summary.main' => new self($zone, ['main'], 1, 1, ['main'], 1, 1, ProductSummaryCatalog::MAX_COMPONENTS, ProductSummaryCatalog::MAX_COMPONENTS, array_map(static fn (array $d): int => $d['max'], ProductSummaryCatalog::all()), null),
+            // HP-1: the home page: ONE list of at most 12 sections, any component type any number of times (the limit is the number of sections)
+            'home.main' => new self($zone, ['main'], 1, 1, ['main'], 1, 1, HomeCatalog::MAX_SECTIONS, HomeCatalog::MAX_SECTIONS, [], null),
             default => throw new InvalidArgumentException('Unknown zone: '.mb_substr($zone, 0, 40)),
         };
     }

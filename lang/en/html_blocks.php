@@ -121,6 +121,7 @@ return [
         'footer' => 'the footer',
         'category' => 'the banner of the category :categories',
         'summary' => 'the right column',
+        'home' => 'the home page',
         'join' => ' and ',
     ],
 

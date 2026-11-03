@@ -39,6 +39,21 @@ class DesignOldPagesRedirectTest extends TestCase
         }
     }
 
+    public function test_the_retired_storefront_page_redirects_to_the_home_zone(): void
+    {
+        $this->actingAsStaff('Administrator');
+
+        $response = $this->get('/admin/storefront-settings');
+
+        $response->assertStatus(302)->assertRedirect(DesignScreen::getUrl(['zone' => 'home']));
+        $this->assertStringEndsWith('/admin/design?zone=home', (string) $response->headers->get('Location'));
+        Livewire::withQueryParams(['zone' => 'home'])->test(DesignScreen::class)->assertSet('zone', 'home');
+
+        auth('staff')->logout();
+        $this->app['auth']->forgetGuards();
+        $this->get('/admin/storefront-settings')->assertRedirect('/admin/login');
+    }
+
     public function test_the_screen_opens_on_the_zone_of_the_url_and_ignores_an_unknown_one(): void
     {
         $this->actingAsStaff('Administrator');

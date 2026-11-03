@@ -13,7 +13,6 @@ use App\Filament\NavigationGroup;
 use App\Filament\Pages\Design\Menus;
 use App\Filament\Pages\Settings\AppearanceSettings as AppearancePage;
 use App\Filament\Pages\Design\DesignScreen;
-use App\Filament\Pages\Settings\StorefrontSettings;
 use App\Filament\Resources\HtmlBlockResource;
 use App\Filament\Resources\PageResource;
 use App\Settings\AppearanceSettings;
@@ -112,9 +111,9 @@ class MenusPageTest extends TestCase
         }
     }
 
-    public function test_the_design_group_holds_appearance_header_menus_blocks_storefront_in_that_order(): void
+    public function test_the_design_group_holds_appearance_header_menus_blocks_in_that_order(): void
     {
-        $order = [DesignScreen::class, AppearancePage::class, Menus::class, HtmlBlockResource::class, StorefrontSettings::class];
+        $order = [DesignScreen::class, AppearancePage::class, Menus::class, HtmlBlockResource::class];
         $sorts = [];
 
         foreach ($order as $class) {
@@ -125,7 +124,7 @@ class MenusPageTest extends TestCase
         $sorted = $sorts;
         sort($sorted);
         $this->assertSame($sorted, $sorts, 'the sorts ascend in the order of the brief');
-        $this->assertSame(5, count(array_unique($sorts)));
+        $this->assertSame(4, count(array_unique($sorts)));
         $this->assertSame('Design', NavigationGroup::DESIGN->getLabel());
         app()->setLocale('bg');
         $this->assertSame('Дизайн', NavigationGroup::DESIGN->getLabel());

@@ -146,54 +146,39 @@ class StorefrontHomeAndCartS3vTest extends TestCase
 
     // ---- the home page --------------------------------------------------------------------------------------------------------------
 
-    public function test_the_default_intro_comes_from_the_language_file_when_the_keys_are_empty(): void
+    public function test_the_home_page_has_no_intro_and_one_hidden_h1_with_the_shop_name(): void
     {
         $html = $this->get('/')->assertOk()->getContent();
 
-        $this->assertStringContainsString('<h1 class="sf-title">Welcome to Raf Shop</h1>', $html);
-        $this->assertStringContainsString(__('storefront.home_intro_text'), $html);
+        $this->assertStringContainsString('<h1 class="sf-sr">Raf Shop</h1>', $html);
         $this->assertSame(1, substr_count($html, '<h1'));
+        foreach (['sf-intro', 'sf-title', 'sf-intro-button', 'href="#newest"'] as $gone) {
+            $this->assertStringNotContainsString($gone, $html, $gone);
+        }
+        $this->assertStringNotContainsString(__('storefront.home_intro_text'), $html);
+        $this->assertStringNotContainsString('Browse the newest<', $html);
     }
 
-    public function test_a_configured_heading_and_text_are_shown_and_escaped(): void
+    public function test_the_old_heading_and_text_settings_are_kept_but_no_longer_printed(): void
     {
         $settings = app(SiteSettingsRepository::class);
-        $settings->set(StorefrontHomeSettings::TITLE_KEY, '<script>alert(1)</script> Spring & co');
-        $settings->set(StorefrontHomeSettings::TEXT_KEY, 'Fresh <b>arrivals</b> every week');
+        $settings->set(StorefrontHomeSettings::TITLE_KEY, 'Spring & co');
+        $settings->set(StorefrontHomeSettings::TEXT_KEY, 'Fresh arrivals every week');
 
         $html = $this->get('/')->assertOk()->getContent();
 
-        $this->assertStringContainsString('<h1 class="sf-title">&lt;script&gt;alert(1)&lt;/script&gt; Spring &amp; co</h1>', $html, 'text, not markup');
-        $this->assertStringContainsString('Fresh &lt;b&gt;arrivals&lt;/b&gt; every week', $html);
-        $this->assertStringNotContainsString('<script>alert(1)', $html);
-        $this->assertStringNotContainsString('Welcome to Raf Shop', $html, 'the default is replaced, not appended');
-        $this->assertNoActiveContent($html, 'home');
+        $this->assertStringNotContainsString('Spring', $html);
+        $this->assertStringNotContainsString('Fresh arrivals', $html);
+        $this->assertSame('Spring & co', $settings->get(StorefrontHomeSettings::TITLE_KEY), 'the data is not touched');
     }
 
-    public function test_one_configured_field_leaves_the_other_at_its_default(): void
-    {
-        app(SiteSettingsRepository::class)->set(StorefrontHomeSettings::TITLE_KEY, 'Our shop');
-
-        $html = $this->get('/')->getContent();
-
-        $this->assertStringContainsString('<h1 class="sf-title">Our shop</h1>', $html);
-        $this->assertStringContainsString(__('storefront.home_intro_text'), $html);
-    }
-
-    public function test_a_stored_value_longer_than_the_limit_is_cut_by_the_reader(): void
-    {
-        app(SiteSettingsRepository::class)->set(StorefrontHomeSettings::TITLE_KEY, str_repeat('a', 300));
-
-        $this->assertSame(StorefrontHomeSettings::MAX_TITLE, mb_strlen((string) app(StorefrontHomeSettings::class)->title()));
-    }
-
-    public function test_the_primary_button_jumps_to_an_element_that_exists(): void
+    public function test_the_home_page_prints_the_category_row_and_the_newest_products_only(): void
     {
         $html = $this->get('/')->getContent();
 
-        $this->assertMatchesRegularExpression('/<a class="sf-intro-button" href="#newest">Browse the newest<\/a>/', $html);
         $this->assertSame(1, substr_count($html, 'id="newest"'));
         $this->assertMatchesRegularExpression('/<section class="sf-listing sf-home" id="newest"/', $html);
+        $this->assertStringContainsString('class="sf-category-row"', $html);
     }
 
     public function test_the_first_two_cards_stay_eager_and_the_category_tiles_are_whole_links(): void

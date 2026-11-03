@@ -51,7 +51,8 @@ final class MenuRecompiler
 
             return $items->whereNotNull('html_block_id')->exists()
                 || str_contains((string) $settings->get(\App\Settings\AppearanceSettings::FOOTER_PUBLISHED_KEY), '"html_block"')
-                || str_contains((string) $settings->get(\App\Settings\AppearanceSettings::SUMMARY_PUBLISHED_KEY), '"html_block"');
+                || str_contains((string) $settings->get(\App\Settings\AppearanceSettings::SUMMARY_PUBLISHED_KEY), '"html_block"')
+                || str_contains((string) $settings->get(\App\Settings\AppearanceSettings::HOME_PUBLISHED_KEY), '"html_block"');
         }
 
         return $items->where('type', $type)->exists();

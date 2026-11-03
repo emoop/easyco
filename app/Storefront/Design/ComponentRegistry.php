@@ -18,7 +18,7 @@ use InvalidArgumentException;
  */
 final class ComponentRegistry
 {
-    public const ZONES = ['header', 'footer', 'checkout_header', 'product_summary'];
+    public const ZONES = ['header', 'footer', 'checkout_header', 'product_summary', 'home'];
 
     /**
      * The component set of a zone, by type.
@@ -32,6 +32,7 @@ final class ComponentRegistry
             'footer' => self::footer(),
             'checkout_header' => self::checkoutHeader(),
             'product_summary' => self::productSummary(),
+            'home' => self::home(),
             default => throw new InvalidArgumentException('Unknown zone: '.mb_substr($zone, 0, 40)),
         };
     }
@@ -78,6 +79,22 @@ final class ComponentRegistry
                 'label' => $descriptor['label'], 'icon' => $type, 'zones' => ['summary.main'], 'supports' => [],
                 'limits' => ['max_per_layout' => $descriptor['max']], 'requires_route' => null,
                 'fields' => $descriptor['schema'], 'view' => $descriptor['view'], 'builtin' => true,
+            ];
+        }
+
+        return $out;
+    }
+
+    /** HP-1: the sections of the home page (a closed list, no hook). Every section also has the common settings (show, spacing). @return array<string, array<string, mixed>> */
+    private static function home(): array
+    {
+        $out = [];
+
+        foreach (\App\Storefront\Home\HomeCatalog::all() as $type => $descriptor) {
+            $out[$type] = [
+                'label' => $descriptor['label'], 'icon' => $type, 'zones' => ['home.main'], 'supports' => [],
+                'limits' => ['max_per_layout' => \App\Storefront\Home\HomeCatalog::MAX_SECTIONS], 'requires_route' => null,
+                'fields' => \App\Storefront\Home\HomeCatalog::common() + $descriptor['schema'], 'view' => $descriptor['view'], 'builtin' => true,
             ];
         }
 

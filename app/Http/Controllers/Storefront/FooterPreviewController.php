@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Storefront;
 use App\Http\Controllers\Controller;
 use App\Settings\AppearanceSettings;
 use App\Settings\Contracts\SiteSettingsRepository;
-use App\Settings\StorefrontHomeSettings;
 use App\Storefront\Appearance\AppearanceCompiler;
 use App\Storefront\Appearance\StorefrontAppearance;
 use App\Storefront\Footer\FooterCompiler;
@@ -31,7 +30,7 @@ final class FooterPreviewController extends Controller
 
     private const VARIABLES = ['--sf-ftu-bg', '--sf-ftu-text', '--sf-ftu-bc', '--sf-ftu-bw', '--sf-ftl-bg', '--sf-ftl-text'];
 
-    public function show(Request $request, CatalogReader $reader, SeoMeta $seo, StorefrontHomeSettings $intro, StorefrontAppearance $appearance, SiteSettingsRepository $settings): Response
+    public function show(Request $request, CatalogReader $reader, SeoMeta $seo, StorefrontAppearance $appearance, SiteSettingsRepository $settings): Response
     {
         if (! URL::hasValidSignature($request)) {
             return NotFoundResponse::make();
@@ -45,7 +44,7 @@ final class FooterPreviewController extends Controller
             $appearance->previewFooter(FooterCompiler::compiled($validation->layout), $this->stylesheet($validation->layout));
         }
 
-        $view = app(HomeController::class)->index($reader, $seo, $intro);
+        $view = app(HomeController::class)->index($reader, $seo);
         $view->with('seo', ['title' => $seo->forHome(route('storefront.home', [], false))['title'], 'description' => '', 'canonical' => null, 'noindex' => true]);
 
         return response($view)

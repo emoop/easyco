@@ -60,6 +60,13 @@ final class StorefrontAppearance
     /** SC-1: the compiled right column of the product page ({layout, blocks}) the admin's signed preview shows (the DRAFT), set for ONE request by the preview controller; null on every public request. */
     private ?array $summaryOverride = null;
 
+    /** HP-1: the home layout of a signed preview ({layout, blocks}, validated) and the prepared sections of this request. */
+    private ?array $homeOverride = null;
+
+    private bool $homePrepared = false;
+
+    private ?array $homeSections = null;
+
     /** The prepared right column (what the product view loops over); null = not computed yet. @var list<array{type: string, html: string}>|null */
     private ?array $summaryPrepared = null;
 
@@ -115,6 +122,7 @@ final class StorefrontAppearance
         $this->menus = null;
         $this->footerPrepared = false;
         $this->summaryPrepared = null;
+        $this->homePrepared = false;
         $this->data = $this->rebuild();
     }
 
@@ -388,6 +396,31 @@ final class StorefrontAppearance
         $stored = $this->summaryOverride ?? \App\Storefront\ProductSummary\ProductSummaryCompiler::published($this->data()['design'] ?? null);
 
         return $this->summaryPrepared = \App\Storefront\ProductSummary\ProductSummaryView::prepare($stored);
+    }
+
+    /**
+     * HP-1: the sections of the home page when a layout is PUBLISHED (read from the one cached payload, no query, validated again on every read), else null: the page prints the home it always printed.
+     * During a signed preview, the working copy.
+     *
+     * @return array{gap: string, items: list<array<string, mixed>>}|null
+     */
+    public function homeSections(): ?array
+    {
+        if ($this->homePrepared) {
+            return $this->homeSections;
+        }
+
+        $stored = $this->homeOverride ?? \App\Storefront\Home\HomeCompiler::published($this->data()['design'] ?? null);
+        $this->homePrepared = true;
+
+        return $this->homeSections = \App\Storefront\Home\HomeView::prepare($stored);
+    }
+
+    /** For ONE request (HP-1, the admin's signed preview): show this compiled home layout ({layout, blocks}, validated) instead of the published one. Never called on a public request. @param array<string, mixed> $compiled */
+    public function previewHome(array $compiled): void
+    {
+        $this->homeOverride = $compiled;
+        $this->homePrepared = false;
     }
 
     /** For ONE request (SC-1, the admin's signed preview): show this compiled right column ({layout, blocks}, validated) instead of the published one. Never called on a public request. @param array<string, mixed> $compiled */

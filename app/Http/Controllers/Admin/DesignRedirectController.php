@@ -21,6 +21,12 @@ final class DesignRedirectController
         return $this->to('footer');
     }
 
+    /** The old «Витрина» page (`/admin/storefront-settings`; the home page's heading and text) is gone: the home page is now the «Начална» zone. */
+    public function home(): RedirectResponse
+    {
+        return $this->to('home');
+    }
+
     private function to(string $zone): RedirectResponse
     {
         abort_unless(DesignScreen::canAccess(), 403);

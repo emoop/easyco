@@ -61,6 +61,4 @@ This help and the platform give no legal advice.
 
 ## Home page {#action-storefront-home}
 
-The heading and the text at the top of the shop home page are written in "Admin" → "Storefront" (the "Manage content pages" permission). The heading is up to 120 characters, the text up to 400, plain text only: no formatting and no links inside the text. The counter under each field shows how many characters you have used.
-
-If you leave a field empty and save, the standard text comes back ("Welcome to …" and a short description). The "Browse the newest" button under the text leads to the list of the newest products further down the same page.
+The shop home page is arranged in "Admin" → "Design" → "Home" (the "Manage content pages" permission): you add sections (a heading with lines, a free HTML block), put them in order and choose the spacing between them. Until a layout is published, the page shows the "Shop by category" list and the newest products. The old "Storefront" page (the heading and text at the top) is gone; its address leads to "Design".

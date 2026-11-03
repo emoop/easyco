@@ -91,6 +91,7 @@ class AdminPanelProvider extends PanelProvider
             ->authenticatedRoutes(function (): void {
                 Route::get('header-settings', [DesignRedirectController::class, 'header'])->name('redirect.header');
                 Route::get('footer', [DesignRedirectController::class, 'footer'])->name('redirect.footer');
+                Route::get('storefront-settings', [DesignRedirectController::class, 'home'])->name('redirect.home');
             })
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\Filament\Widgets')
             ->widgets([

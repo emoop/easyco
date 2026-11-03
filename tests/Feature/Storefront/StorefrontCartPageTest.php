@@ -156,13 +156,12 @@ class StorefrontCartPageTest extends TestCase
 
     // ---- home ------------------------------------------------------------------------------------------------
 
-    public function test_the_home_page_has_the_intro_the_category_row_and_the_newest_products(): void
+    public function test_the_home_page_has_the_category_row_and_the_newest_products_and_no_intro(): void
     {
         $html = $this->get('/')->assertOk()->getContent();
 
-        $this->assertStringContainsString('<section class="sf-intro">', $html);
-        $this->assertStringContainsString('Welcome to Raf Shop', $html);
-        $this->assertStringContainsString('Browse the newest products', $html);
+        $this->assertStringNotContainsString('sf-intro', $html);
+        $this->assertStringNotContainsString('Welcome to Raf Shop', $html);
         $this->assertStringContainsString('<section class="sf-category-row"', $html);
         $this->assertStringContainsString('Shop by category', $html);
         $this->assertMatchesRegularExpression('/<a class="sf-category-tile-link" href="\/product-category\/clothing">\s*<span class="sf-category-tile-name">Clothing<\/span>\s*<span class="sf-category-tile-count">3 products<\/span>/', $html);
@@ -207,7 +206,6 @@ class StorefrontCartPageTest extends TestCase
 
         $html = $this->get('/')->assertOk()->getContent();
 
-        $this->assertStringContainsString('sf-intro', $html);
         $this->assertStringNotContainsString('sf-category-row', $html);
         $this->assertStringContainsString('There are no products here yet.', $html);
     }

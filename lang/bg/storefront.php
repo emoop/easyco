@@ -71,8 +71,6 @@ return [
     'cart_loading' => 'Зареждане на количката…',
     'cart_noscript' => 'Количката се нуждае от JavaScript, за да показва и променя артикулите. Моля, включете го или се свържете с нас, за да поръчате.',
     'continue_shopping' => 'Продължете с пазаруването',
-    'home_intro_title' => 'Добре дошли в :shop',
-    'home_intro_text' => 'Разгледайте най-новите продукти по-долу или изберете категория, за да намерите това, което търсите.',
     'home_categories' => 'Пазарувайте по категория',
     'home_category_count' => ':count продукт|:count продукта',
     // Stage D2: the header (drawer, search row, account and wishlist links).
@@ -84,8 +82,6 @@ return [
     'search_submit' => 'Търси',
     'account' => 'Профил',
     'wishlist' => 'Любими',
-    // Stage S3-V: the home page's button.
-    'home_browse_new' => 'Разгледайте новите',
 
     // Текстове, които скриптът на количката показва (подават му се през data атрибути; вж. partials/messages.blade.php).
     'js' => [

@@ -5105,3 +5105,79 @@ html:not(.js) .sf-bar-item:focus-within > .sf-sub {
 .sf-lightbox-prev::after {
     transform: translateX(12%) rotate(-135deg);  /* previous: ‹ */
 }
+/* ===== HP-1 home sections ============================================================================================================================================================ */
+/* The home page built from the sections of «Дизайн» → «Начална». The spacing between the sections is a CLOSED list of steps (0, 8, 16, 24, 32, 48, 64, 96 px, written in rem): the whole page's step is a class of
+   the wrapper (`sf-hp-gap-N`, 32 = 2rem when there is none) and a section's own top spacing is `sf-hp-mt-N`; the first section has none. The sections are the full width of the content area; no style attribute. */
+.sf-hp {
+    --sf-hp-gap: 2rem;
+}
+
+.sf-hp-gap-0 { --sf-hp-gap: 0; }
+.sf-hp-gap-8 { --sf-hp-gap: 0.5rem; }
+.sf-hp-gap-16 { --sf-hp-gap: 1rem; }
+.sf-hp-gap-24 { --sf-hp-gap: 1.5rem; }
+.sf-hp-gap-32 { --sf-hp-gap: 2rem; }
+.sf-hp-gap-48 { --sf-hp-gap: 3rem; }
+.sf-hp-gap-64 { --sf-hp-gap: 4rem; }
+.sf-hp-gap-96 { --sf-hp-gap: 6rem; }
+
+.sf-hp-section {
+    min-width: 0;
+}
+
+.sf-hp-section + .sf-hp-section {
+    margin-top: var(--sf-hp-gap);
+}
+
+.sf-hp-section.sf-hp-mt-0 { margin-top: 0; }
+.sf-hp-section.sf-hp-mt-8 { margin-top: 0.5rem; }
+.sf-hp-section.sf-hp-mt-16 { margin-top: 1rem; }
+.sf-hp-section.sf-hp-mt-24 { margin-top: 1.5rem; }
+.sf-hp-section.sf-hp-mt-32 { margin-top: 2rem; }
+.sf-hp-section.sf-hp-mt-48 { margin-top: 3rem; }
+.sf-hp-section.sf-hp-mt-64 { margin-top: 4rem; }
+.sf-hp-section.sf-hp-mt-96 { margin-top: 6rem; }
+
+/* «Заглавие с линии»: a line, the text, a line. The text wraps and the lines shrink on a narrow screen (they may reach nothing), so nothing overflows. The lines are decorative (the neutral border token). */
+.sf-hp-heading-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+}
+
+.sf-hp-line {
+    flex: 1 1 0;
+    min-width: 0;
+    border-top: 1px solid var(--sf-border, #d9d9d9);
+}
+
+.sf-hp-l2 .sf-hp-line {
+    border-top-width: 2px;
+}
+
+.sf-hp-heading-text {
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 100%;
+    margin: 0;
+    text-align: center;
+    overflow-wrap: anywhere;
+    font-weight: var(--sf-heading-weight, 700);
+    line-height: 1.25;
+}
+
+.sf-hp-h2 .sf-hp-heading-text { font-size: 1.5rem; }
+.sf-hp-h3 .sf-hp-heading-text { font-size: 1.25rem; }
+.sf-hp-h4 .sf-hp-heading-text { font-size: 1.0625rem; }
+
+@media (min-width: 40rem) {
+    .sf-hp-heading-row {
+        gap: 1.25rem;
+    }
+
+    .sf-hp-h2 .sf-hp-heading-text { font-size: 1.875rem; }
+    .sf-hp-h3 .sf-hp-heading-text { font-size: 1.5rem; }
+    .sf-hp-h4 .sf-hp-heading-text { font-size: 1.1875rem; }
+}
+/* ===== end of HP-1 home sections ===================================================================================================================================================== */

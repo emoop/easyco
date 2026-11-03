@@ -71,8 +71,6 @@ return [
     'cart_loading' => 'Loading your cart…',
     'cart_noscript' => 'Your cart needs JavaScript to show and change its items. Please turn it on, or contact us to order.',
     'continue_shopping' => 'Continue shopping',
-    'home_intro_title' => 'Welcome to :shop',
-    'home_intro_text' => 'Browse the newest products below, or pick a category to find what you are looking for.',
     'home_categories' => 'Shop by category',
     'home_category_count' => ':count product|:count products',
     // Stage D2: the header (drawer, search row, account and wishlist links).
@@ -84,8 +82,6 @@ return [
     'search_submit' => 'Search',
     'account' => 'Account',
     'wishlist' => 'Wishlist',
-    // Stage S3-V: the home page's button.
-    'home_browse_new' => 'Browse the newest',
 
     // Texts the cart script prints (handed to it through data attributes; see partials/messages.blade.php).
     'js' => [

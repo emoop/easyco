@@ -71,6 +71,27 @@ final class HtmlBlockUsage
         return false;
     }
 
+    /** HP-1: does the published or the draft home layout hold an `html_block` section that names this block? */
+    public static function home(int $blockId): bool
+    {
+        $settings = app(SiteSettingsRepository::class);
+
+        foreach ([AppearanceSettings::HOME_PUBLISHED_KEY, AppearanceSettings::HOME_DRAFT_KEY] as $key) {
+            $json = $settings->get($key);
+            $layout = is_string($json) ? json_decode($json, true) : null;
+
+            foreach (is_array($layout['sections'] ?? null) ? $layout['sections'] : [] as $section) {
+                $id = is_array($section) && ($section['type'] ?? null) === 'html_block' ? ($section['settings']['html_block'] ?? null) : null;
+
+                if ((is_int($id) || (is_string($id) && ctype_digit($id))) && (int) $id === $blockId) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
     /** CD-1b: the names of the categories that show the block as their banner («Блок отгоре»). @return list<string> */
     public static function categories(int $blockId): array
     {
@@ -80,7 +101,7 @@ final class HtmlBlockUsage
     /** Is the block shown anywhere (a menu, the footer, the right column or a category)? */
     public static function isUsed(int $blockId): bool
     {
-        return self::menus($blockId) !== [] || self::footer($blockId) || self::summary($blockId) || self::categories($blockId) !== [];
+        return self::menus($blockId) !== [] || self::footer($blockId) || self::summary($blockId) || self::home($blockId) || self::categories($blockId) !== [];
     }
 
     /**
@@ -92,14 +113,15 @@ final class HtmlBlockUsage
         $menus = self::menus((int) $block->id);
         $footer = self::footer((int) $block->id);
         $summary = self::summary((int) $block->id);
+        $home = self::home((int) $block->id);
         $categories = self::categories((int) $block->id);
         $params = ['title' => $block->title, 'menus' => implode(', ', $menus)];
 
-        if ($categories !== [] && ! $summary && $menus === [] && ! $footer) {
+        if ($categories !== [] && ! $summary && ! $home && $menus === [] && ! $footer) {
             return (string) __('html_blocks.errors.in_use_category', ['title' => $block->title, 'categories' => implode(', ', $categories)]);
         }
 
-        if ($summary || $categories !== []) {
+        if ($summary || $home || $categories !== []) {
             $places = [];
 
             if ($menus !== []) {
@@ -111,6 +133,7 @@ final class HtmlBlockUsage
             }
 
             $summary && $places[] = (string) __('html_blocks.places.summary');
+            $home && $places[] = (string) __('html_blocks.places.home');
             $categories !== [] && $places[] = (string) __('html_blocks.places.category', ['categories' => implode(', ', $categories)]);
 
             return (string) __('html_blocks.errors.in_use_places', ['title' => $block->title, 'places' => implode((string) __('html_blocks.places.join'), $places)]);

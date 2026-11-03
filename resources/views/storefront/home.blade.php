@@ -1,12 +1,8 @@
 @extends('storefront.layout')
 
 @section('content')
-    {{-- The merchant's heading and text (Admin > Storefront) when set, else the language default; both are PLAIN text, printed escaped. --}}
-    <section class="sf-intro">
-        <h1 class="sf-title">{{ $introTitle ?? __('storefront.home_intro_title', ['shop' => config('app.name')]) }}</h1>
-        <p class="sf-intro-text">{{ $introText ?? __('storefront.home_intro_text') }}</p>
-        <a class="sf-intro-button" href="#newest">{{ __('storefront.home_browse_new') }}</a>
-    </section>
+    {{-- HP-1: the page has no intro any more (heading, text, button); its one <h1> is the shop's name, for search engines and screen readers only. --}}
+    <h1 class="sf-sr">{{ config('app.name') }}</h1>
 
     @if (! empty($categories))
         <section class="sf-category-row" aria-labelledby="sf-category-row-title">

@@ -11,7 +11,6 @@ use App\Filament\Pages\Settings\CatalogSettings;
 use App\Filament\Pages\Settings\CheckoutSettings;
 use App\Filament\Pages\Settings\LocaleSettings;
 use App\Filament\Pages\Settings\MailSettings;
-use App\Filament\Pages\Settings\StorefrontSettings;
 use App\Filament\Resources\HtmlBlockResource;
 use App\Filament\Resources\PageResource;
 use App\Filament\Resources\PageResource\Pages\CreatePage;
@@ -64,7 +63,7 @@ class SettingsFormsUx0Test extends TestCase
         $page = app(PageWriter::class)->create(['title' => 'Terms', 'slug' => 'terms', 'body' => '<p>x</p>', 'status' => 'published']);
         $urls = [
             AppearancePage::getUrl(), BankTransferSettings::getUrl(), CatalogSettings::getUrl(), CheckoutSettings::getUrl(), LocaleSettings::getUrl(),
-            MailSettings::getUrl(), StorefrontSettings::getUrl(), HtmlBlockResource::getUrl('create'),
+            MailSettings::getUrl(), HtmlBlockResource::getUrl('create'),
             PageResource::getUrl('create'), PageResource::getUrl('edit', ['record' => $page]),
         ];
 

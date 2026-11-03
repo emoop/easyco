@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Storefront;
 use App\Http\Controllers\Controller;
 use App\Settings\AppearanceSettings;
 use App\Settings\Contracts\SiteSettingsRepository;
-use App\Settings\StorefrontHomeSettings;
 use App\Storefront\Appearance\AppearanceCompiler;
 use App\Storefront\Appearance\StorefrontAppearance;
 use App\Storefront\Header\HeaderCompiler;
@@ -29,7 +28,7 @@ final class HeaderPreviewController extends Controller
 {
     public const MINUTES = 30;
 
-    public function show(Request $request, CatalogReader $reader, SeoMeta $seo, StorefrontHomeSettings $intro, StorefrontAppearance $appearance, SiteSettingsRepository $settings): Response
+    public function show(Request $request, CatalogReader $reader, SeoMeta $seo, StorefrontAppearance $appearance, SiteSettingsRepository $settings): Response
     {
         if (! URL::hasValidSignature($request)) {
             return NotFoundResponse::make();
@@ -42,7 +41,7 @@ final class HeaderPreviewController extends Controller
 
         $appearance->previewHeader($show, $this->stylesheet($show));
 
-        $view = app(HomeController::class)->index($reader, $seo, $intro);
+        $view = app(HomeController::class)->index($reader, $seo);
         $view->with('seo', ['title' => $seo->forHome(route('storefront.home', [], false))['title'], 'description' => '', 'canonical' => null, 'noindex' => true]);
 
         return response($view)

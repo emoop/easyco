@@ -42,7 +42,7 @@ final class DesignPreviewController extends Controller
     {
         $zone = $request->query('zone');
 
-        if (! URL::hasValidSignature($request) || ! in_array($zone, [CheckoutHeaderCatalog::ZONE, 'topbar', ProductSummaryCatalog::ZONE, PageDesign::PAGE, PageDesign::CATALOG], true)) {
+        if (! URL::hasValidSignature($request) || ! in_array($zone, [CheckoutHeaderCatalog::ZONE, 'topbar', ProductSummaryCatalog::ZONE, PageDesign::PAGE, PageDesign::CATALOG, \App\Storefront\Home\HomeCatalog::ZONE], true)) {
             return NotFoundResponse::make();
         }
 
@@ -56,6 +56,10 @@ final class DesignPreviewController extends Controller
 
         if ($zone === ProductSummaryCatalog::ZONE) {
             return $this->productSummary($reader, $appearance);
+        }
+
+        if ($zone === \App\Storefront\Home\HomeCatalog::ZONE) {
+            return $this->home($reader, $appearance);
         }
 
         $draft = CheckoutHeaderDrafts::draft();
@@ -83,7 +87,24 @@ final class DesignPreviewController extends Controller
         }
 
         $seo = app(SeoMeta::class);
-        $view = app(HomeController::class)->index($reader, $seo, app(\App\Settings\StorefrontHomeSettings::class));
+        $view = app(HomeController::class)->index($reader, $seo);
+        $view->with('seo', ['title' => $seo->forHome(route('storefront.home', [], false))['title'], 'description' => '', 'canonical' => null, 'noindex' => true]);
+
+        return response($view)
+            ->header('X-Robots-Tag', 'noindex')
+            ->header('Cache-Control', 'private, no-store');
+    }
+
+    /**
+     * HP-1: the HOME page with the working copy of the home layout (the draft, else the published layout, else the default one: no sections = the old home), injected for THIS request only
+     * (StorefrontAppearance::previewHome). The storefront itself reads the published layout only. `noindex`, `no-store`.
+     */
+    private function home(CatalogReader $reader, StorefrontAppearance $appearance): Response
+    {
+        $appearance->previewHome(\App\Storefront\Home\HomeCompiler::compiled(\App\Storefront\Home\HomeDrafts::draft() ?? \App\Storefront\Home\HomeDrafts::published()));
+
+        $seo = app(SeoMeta::class);
+        $view = app(HomeController::class)->index($reader, $seo, $appearance);
         $view->with('seo', ['title' => $seo->forHome(route('storefront.home', [], false))['title'], 'description' => '', 'canonical' => null, 'noindex' => true]);
 
         return response($view)
@@ -130,7 +151,7 @@ final class DesignPreviewController extends Controller
         $first = $section === PageDesign::CATALOG ? (app(CategoryIndex::class)->tree()[0] ?? null) : null;
         $view = $first !== null
             ? app(CategoryController::class)->show($request, $first->path, $reader, $seo, app(PaginationLinks::class), $appearance, app(\App\Storefront\Filters\FilterCatalog::class))
-            : app(HomeController::class)->index($reader, $seo, app(\App\Settings\StorefrontHomeSettings::class));
+            : app(HomeController::class)->index($reader, $seo);
 
         if (! $view instanceof \Illuminate\Contracts\View\View) {
             return NotFoundResponse::make();

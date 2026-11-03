@@ -9,6 +9,7 @@ use App\Filament\Design\Zones\DesignZone;
 use App\Filament\Design\Zones\FooterZone;
 use App\Filament\Design\Zones\HasOneCell;
 use App\Filament\Design\Zones\HeaderZone;
+use App\Filament\Design\Zones\HomeZone;
 use App\Filament\Design\Zones\PageCardsZone;
 use App\Filament\Design\Zones\ProductPageZone;
 use App\Filament\Design\Zones\ProductSummaryZone;
@@ -48,7 +49,7 @@ class DesignScreen extends Page
     public const DRAWER_CELL = HeaderZone::DRAWER_CELL;
 
     /** The zones that work, in the order of the list: key => class. */
-    public const ZONES = ['topbar' => TopbarZone::class, 'header' => HeaderZone::class, 'footer' => FooterZone::class, 'checkout' => CheckoutHeaderZone::class, 'page' => PageCardsZone::class, 'product' => ProductPageZone::class, 'catalog' => CatalogZone::class, 'summary' => ProductSummaryZone::class];
+    public const ZONES = ['topbar' => TopbarZone::class, 'header' => HeaderZone::class, 'footer' => FooterZone::class, 'checkout' => CheckoutHeaderZone::class, 'page' => PageCardsZone::class, 'product' => ProductPageZone::class, 'catalog' => CatalogZone::class, 'summary' => ProductSummaryZone::class, 'home' => HomeZone::class];
 
     protected static ?string $slug = 'design';
 
