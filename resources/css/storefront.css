@@ -5530,35 +5530,39 @@ html:not(.js) .sf-bar-item:focus-within > .sf-sub {
     .sf-car-k-products { --sf-car-n: 4; }
 }
 
-/* the arrows: two thin outline buttons at the middle of the row, a 44px touch target */
+/* the arrows: bare chevrons at the very edges of the row, the same at every screen size (no button look): an invisible 36 × 44px hit area, a thin 13px chevron centred in it, a faint white halo so it reads over a picture */
 .sf-car-arrow {
     position: absolute;
     top: 50%;
     z-index: 1;
-    width: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
     height: 44px;
     padding: 0;
     transform: translateY(-50%);
-    border: 1px solid var(--sf-border, #d9d9d9);
-    border-radius: var(--sf-card-radius, 0);
-    background: #fff;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
     color: var(--sf-pdp-text, #1a1a1a);
+    filter: drop-shadow(0 0 2px #fff);
     cursor: pointer;
 }
 
 .sf-car-arrow::before {
     content: '';
     display: block;
-    width: 10px;
-    height: 10px;
-    margin: auto;
+    width: 13px;
+    height: 13px;
     border-style: solid;
     border-color: currentColor;
     border-width: 0 0 1px 1px;
 }
 
-.sf-car-prev { left: 8px; }
-.sf-car-next { right: 8px; }
+.sf-car-prev { left: 0; }
+.sf-car-next { right: 0; }
 .sf-car-prev::before { transform: translateX(2px) rotate(45deg); }
 .sf-car-next::before { transform: translateX(-2px) rotate(225deg); }
 
