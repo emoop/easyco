@@ -7,6 +7,7 @@ use App\Filament\Pages\Design\DesignScreen;
 use App\Settings\AppearanceSettings;
 use App\Settings\Contracts\SiteSettingsRepository;
 use App\Storefront\Home\HomeCatalog;
+use App\Storefront\Home\HomeValidator;
 use App\Storefront\Home\ImageGridGeometry;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Features\SupportAutoInjectedAssets\SupportAutoInjectedAssets;
@@ -50,7 +51,8 @@ class DesignHomeGridZoneTest extends TestCase
         $node = $screen->get('tree')['main']['rows'][0]['cells'][0]['items'][0];
 
         $this->assertSame('image_grid', $node['type']);
-        $this->assertSame(['three', '3:2', '16', '0', '8', [], []], [$node['settings']['scheme'], $node['settings']['ratio'], $node['settings']['gap'], $node['settings']['radius'], $node['settings']['phone_gap'], $node['settings']['phone_blocks'], $node['settings']['cells']]);
+        // DRIBNI-2: a NEW grid starts at 16:9 (was 3:2)
+        $this->assertSame(['three', '16:9', '16', '0', '8', [], []],[$node['settings']['scheme'], $node['settings']['ratio'], $node['settings']['gap'], $node['settings']['radius'], $node['settings']['phone_gap'], $node['settings']['phone_blocks'], $node['settings']['cells']]);
         $screen->assertSee('Image grid');
         $this->assertContains('image_grid', array_keys(HomeCatalog::all()));
     }
@@ -68,7 +70,8 @@ class DesignHomeGridZoneTest extends TestCase
                 $i < $count ? $this->assertStringContainsString($label, $html, "{$scheme} {$cell}") : $this->assertStringNotContainsString($label, $html, "{$scheme} {$cell}");
             }
 
-            foreach (ImageGridGeometry::cells($scheme, '3:2', 16) as $cell) {
+            // DRIBNI-2: the diagram of a new grid is at its new default ratio (16:9, was 3:2)
+            foreach (ImageGridGeometry::cells($scheme, '16:9', 16) as $cell) {
                 $this->assertStringContainsString($cell['rounded_width'].' × '.$cell['rounded_height'], $html, "{$scheme} {$cell['name']}");
             }
         }
@@ -134,6 +137,48 @@ class DesignHomeGridZoneTest extends TestCase
         $screen = $this->screen()->set('props.settings.scheme', 'uneven-a')->call('apply');
 
         $screen->assertSee('Grid: Uneven A');
+    }
+
+    /** DRIBNI-2: a NEW image grid starts at 16:9. A saved ratio stays, and a section saved without one still reads as 3:2 (HomeValidator's fallback, not changed). */
+    public function test_a_new_grid_starts_at_16_9_and_the_reading_fallback_stays_3_2(): void
+    {
+        $this->assertSame('16:9', $this->screen()->get('tree')['main']['rows'][0]['cells'][0]['items'][0]['settings']['ratio']);
+
+        [$missing] = HomeValidator::validate(['spacing' => '32', 'sections' => [['type' => 'image_grid', 'settings' => ['scheme' => 'one', 'cells' => ['a' => null]]]]]);
+        $this->assertSame('3:2', $missing['sections'][0]['settings']['ratio'], 'a section saved without a ratio still reads as 3:2');
+
+        [$saved] = HomeValidator::validate(['spacing' => '32', 'sections' => [['type' => 'image_grid', 'settings' => ['scheme' => 'one', 'ratio' => '4:3', 'cells' => ['a' => null]]]]]);
+        $this->assertSame('4:3', $saved['sections'][0]['settings']['ratio'], 'a saved ratio stays');
+    }
+
+    /** DRIBNI-2: the scheme labels fit the narrow panel (at most 18 characters, both languages). The long description is in the scheme's explanation now; the stored keys did not change. */
+    public function test_the_scheme_labels_are_short_and_the_stored_keys_are_the_same(): void
+    {
+        $this->assertSame(['one', 'two', 'three', 'four', 'six', 'uneven-a', 'uneven-b', 'uneven-c'], array_keys(ImageGridGeometry::SCHEMES));
+
+        foreach (['bg', 'en'] as $locale) {
+            foreach (array_keys(ImageGridGeometry::SCHEMES) as $scheme) {
+                $label = (string) __('design.home.grid.schemes.'.$scheme, [], $locale);
+                $this->assertLessThanOrEqual(18, mb_strlen($label), "{$locale} {$scheme}: {$label}");
+            }
+
+            $hint = (string) __('design.home.grid.hints.scheme', [], $locale);
+            $this->assertNotSame('design.home.grid.hints.scheme', $hint, $locale);
+
+            foreach (['uneven-a', 'uneven-b', 'uneven-c'] as $scheme) {
+                $this->assertStringContainsString((string) __('design.home.grid.schemes.'.$scheme, [], $locale), $hint, "{$locale}: the explanation names {$scheme}");
+            }
+        }
+    }
+
+    /** DRIBNI-2: the grid's `gap` and `radius` show the GRID's own explanation; the section's «gap» text is not shown here. */
+    public function test_gap_and_radius_show_the_grids_own_explanation(): void
+    {
+        $html = $this->screen()->html();
+
+        $this->assertStringContainsString(e((string) __('design.home.grid.hints.gap')), $html, 'gap');
+        $this->assertStringContainsString(e((string) __('design.home.grid.hints.radius')), $html, 'radius');
+        $this->assertStringNotContainsString(e((string) __('design.home.hints.gap')), $html, 'the section gap explanation is not the grid gap');
     }
 
     public function test_every_label_hint_option_and_error_exists_in_both_languages(): void

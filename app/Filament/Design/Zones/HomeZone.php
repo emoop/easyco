@@ -226,9 +226,21 @@ final class HomeZone implements DesignZone, HasOneCell
         return isset(HomeCatalog::all()[$type]) ? (string) __('design.home.errors.too_many', ['max' => HomeCatalog::MAX_SECTIONS]) : null;
     }
 
+    /**
+     * DRIBNI-2: the ratio a NEW image grid starts with (the owner's preferred value). Only the default of a new section: a saved ratio stays, and HomeCatalog's schema default (which HomeValidator reads for a
+     * missing value) and ImageGridGeometry::DEFAULT_RATIO (the reading fallback) are NOT changed, so a published page does not change.
+     */
+    private const NEW_GRID_RATIO = '16:9';
+
     public function newNode(string $type, string $layout, string $id): array
     {
-        return Tree::node($id, $type, HomeCatalog::defaultsFor($type));
+        $settings = HomeCatalog::defaultsFor($type);
+
+        if ($type === 'image_grid') {
+            $settings['ratio'] = self::NEW_GRID_RATIO;
+        }
+
+        return Tree::node($id, $type, $settings);
     }
 
     /** The first rule about the LIST as a whole that the tree breaks (too many sections), or null. */
@@ -308,7 +320,7 @@ final class HomeZone implements DesignZone, HasOneCell
         $schema = HomeCatalog::all()['image_grid']['schema'];
         $common = HomeCatalog::common();
         $control = function (string $name, array $field): Component {
-            $control = $this->hinted(FieldForms::make($name, $field + ['label' => 'design.home.grid.settings.'.$name]), $name);
+            $control = $this->hinted(FieldForms::make($name, $field + ['label' => 'design.home.grid.settings.'.$name]), $name, 'grid');
             method_exists($control, 'live') && $control->live();
 
             return $control;
@@ -335,8 +347,8 @@ final class HomeZone implements DesignZone, HasOneCell
             Group::make([
                 $control('show', $common['show'] + ['label' => 'design.home.settings.show']),
                 $control('spacing', $common['spacing'] + ['label' => 'design.home.settings.spacing']),
-                $this->hinted(Radio::make('scheme')->label((string) __('design.home.grid.settings.scheme'))->options($schemes)->default(ImageGridGeometry::DEFAULT_SCHEME)->live(), 'scheme'),
-                $control('ratio', $schema['ratio']),
+                $this->hinted(Radio::make('scheme')->label((string) __('design.home.grid.settings.scheme'))->options($schemes)->default(ImageGridGeometry::DEFAULT_SCHEME)->live(), 'scheme', 'grid'),
+                $control('ratio', array_merge($schema['ratio'], ['default' => self::NEW_GRID_RATIO])),
                 $control('gap', $schema['gap']),
                 $control('radius', $schema['radius']),
                 ...$cells,
@@ -360,31 +372,29 @@ final class HomeZone implements DesignZone, HasOneCell
         ])];
     }
 
-    /** HINT-1: the explanation is an info icon next to the label (the text is in a bubble linked by aria-describedby), not a paragraph under the field. */
-    private function hinted(Component $control, string $name): Component
+    /**
+     * HINT-1: the explanation is an info icon next to the label (the text is in a bubble linked by aria-describedby), not a paragraph under the field. The lookup takes the panel's OWN section first
+     * when it names one (`$section`: the tiles' `gap` and `radius` are also names of the section's and the image grid's, so the common texts would win there), then the common ones, the image grid's, the tiles'.
+     */
+    private function hinted(Component $control, string $name, string $section = ''): Component
     {
-        $key = 'design.home.hints.'.$name;
-        $text = (string) __($key);
+        $keys = [...($section === '' ? [] : ['design.home.'.$section.'.hints.'.$name]), 'design.home.hints.'.$name, 'design.home.grid.hints.'.$name, 'design.home.tiles.hints.'.$name];
 
-        // HP-2: the image grid's own explanations
-        if ($text === $key) {
-            $key = 'design.home.grid.hints.'.$name;
+        foreach ($keys as $key) {
             $text = (string) __($key);
-        }
 
-        // HP-3: the tiles' own
-        if ($text === $key) {
-            $key = 'design.home.tiles.hints.'.$name;
-            $text = (string) __($key);
-        }
+            if ($text !== $key) {
+                method_exists($control, 'afterLabel') && $control->afterLabel(\App\Filament\Design\InfoHint::make($text, $name));
 
-        $text !== $key && method_exists($control, 'afterLabel') && $control->afterLabel(\App\Filament\Design\InfoHint::make($text, $name));
+                break;
+            }
+        }
 
         return $control;
     }
 
     /**
-     * HP-3: the panel of a «Плочки» section. The look settings are selects in PAIRS (two per row from the medium width), the size hint is computed live by TileGeometry from what is chosen now (read from the
+     * HP-3: the panel of a «Плочки» section. The look settings are selects, ONE per row (DRIBNI-2: a narrow panel, the admin standard), the size hint is computed live by TileGeometry from what is chosen now (read from the
      * screen's own `props`, the state every live control has just written), and the tiles are a repeater (add, remove, ↑ ↓) of full-width items: the source, the item of that source (a select that follows the
      * source), the caption, the link and the picture; a tile that would have no picture shows a warning line.
      *
@@ -395,7 +405,7 @@ final class HomeZone implements DesignZone, HasOneCell
         $schema = HomeCatalog::all()['tiles']['schema'];
         $common = HomeCatalog::common();
         $control = function (string $name, array $field): Component {
-            $control = $this->hinted(FieldForms::make($name, $field + ['label' => 'design.home.tiles.settings.'.$name]), $name);
+            $control = $this->hinted(FieldForms::make($name, $field + ['label' => 'design.home.tiles.settings.'.$name]), $name, 'tiles');
             method_exists($control, 'live') && $control->live();
 
             return $control;
@@ -405,7 +415,7 @@ final class HomeZone implements DesignZone, HasOneCell
 
         return [Section::make($this->typeLabel('tiles'))->schema([
             Group::make([
-                Grid::make(['default' => 1, 'md' => 2])->schema([
+                Grid::make(['default' => 1])->schema([
                     $control('show', $common['show'] + ['label' => 'design.home.settings.show']),
                     $control('spacing', $common['spacing'] + ['label' => 'design.home.settings.spacing']),
                     $control('columns', $schema['columns']),
@@ -430,7 +440,7 @@ final class HomeZone implements DesignZone, HasOneCell
                 Repeater::make('tiles')->label($label('tiles'))->afterLabel($hint('tiles'))
                     ->maxItems(HomeCatalog::TILES_MAX)->defaultItems(0)->reorderableWithButtons()->addActionLabel((string) __('design.home.tiles.add'))->columnSpanFull()
                     ->schema([
-                        Grid::make(['default' => 1, 'md' => 2])->schema([
+                        Grid::make(['default' => 1])->schema([
                             Select::make('source')->label($label('source'))->afterLabel($hint('source'))->native(false)->default('category')->live()
                                 ->options(array_combine(HomeCatalog::TILE_SOURCES, array_map(static fn (string $s): string => (string) __('design.home.tiles.sources.'.$s), HomeCatalog::TILE_SOURCES)))
                                 ->afterStateUpdated(static fn (Set $set) => $set('entity', null)),
@@ -449,7 +459,7 @@ final class HomeZone implements DesignZone, HasOneCell
     }
 
     /**
-     * HP-4: the panel of a «Продуктова решетка» section: the settings in PAIRS (two per row from the medium width), the item select follows the source, and a live line says how many products the grid
+     * HP-4: the panel of a «Продуктова решетка» section: the settings ONE per row (DRIBNI-2), the item select follows the source, and a live line says how many products the grid
      * resolves to NOW (the very read the shop does, from the screen's own `props`). Explanations are info icons.
      *
      * @return list<Component>
@@ -469,7 +479,7 @@ final class HomeZone implements DesignZone, HasOneCell
 
         return [Section::make($this->typeLabel('product_grid'))->schema([
             Group::make([
-                Grid::make(['default' => 1, 'md' => 2])->schema([
+                Grid::make(['default' => 1])->schema([
                     $control('show', $common['show'] + ['label' => 'design.home.settings.show']),
                     $control('spacing', $common['spacing'] + ['label' => 'design.home.settings.spacing']),
                     $control('source', $schema['source'])->afterStateUpdated(static fn (Set $set) => $set('entity', null)),
@@ -493,7 +503,7 @@ final class HomeZone implements DesignZone, HasOneCell
     }
 
     /**
-     * HP-5: the panel of a «Карусел» section. The settings are in PAIRS (two per row from the medium width: kind and source, count and order, the two heights, ratio and gap, radius and arrows); the lists (blocks,
+     * HP-5: the panel of a «Карусел» section. The settings are ONE per row (DRIBNI-2: kind, source, count, order, the two heights, ratio, gap, radius and arrows in their order); the lists (blocks,
      * pictures) and the item select are full width; the fields the chosen kind does not use are hidden (live). The recommended size comes from CarouselGeometry (the very function the tests pin), from the panel's own
      * `props`. Explanations are info icons.
      *
@@ -519,7 +529,7 @@ final class HomeZone implements DesignZone, HasOneCell
 
         return [Section::make($this->typeLabel('carousel'))->schema([
             Group::make([
-                Grid::make(['default' => 1, 'md' => 2])->schema([
+                Grid::make(['default' => 1])->schema([
                     $control('show', $common['show'] + ['label' => 'design.home.settings.show']),
                     $control('spacing', $common['spacing'] + ['label' => 'design.home.settings.spacing']),
                     $control('kind', $schema['kind']),
@@ -564,7 +574,7 @@ final class HomeZone implements DesignZone, HasOneCell
                 Repeater::make('images')->label($label('images'))->afterLabel($hint('images'))
                     ->maxItems(HomeCatalog::CAROUSEL_IMAGES_MAX)->defaultItems(0)->reorderableWithButtons()->addActionLabel((string) __('design.home.carousel.image_add'))->live()->columnSpanFull()
                     ->schema([
-                        Grid::make(['default' => 1, 'md' => 2])->schema([
+                        Grid::make(['default' => 1])->schema([
                             MediaPicker::make('picture')->label($label('picture'))->plainImagesOnly()->live()->columnSpanFull(),
                             TextInput::make('link')->label($label('link'))->placeholder('/product-category/…')->maxLength(500),
                             TextInput::make('alt')->label($label('alt'))->maxLength(HomeCatalog::CAROUSEL_ALT_MAX),
@@ -582,7 +592,7 @@ final class HomeZone implements DesignZone, HasOneCell
     }
 
     /**
-     * HP-6: the panel of a «Hero слайдер» section. The settings are selects and a switch in PAIRS (two per row from the medium width; the seconds are hidden while the slides do not change by themselves), the recommended
+     * HP-6: the panel of a «Hero слайдер» section. The settings are selects and a switch, ONE per row (the seconds are hidden while the slides do not change by themselves), the recommended
      * picture size comes from HeroGeometry (the very function the tests pin) for what is chosen NOW (the screen's own `props`), and the slides are a repeater (add, remove, ↑ ↓) of full-width items: the desktop block
      * and the optional phone block in two TABS (one selector each). Explanations are info icons. The values are put back into the settings by applyProps.
      *

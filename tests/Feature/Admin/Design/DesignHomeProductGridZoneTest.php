@@ -18,7 +18,7 @@ use Tests\TestCase;
 
 /**
  * HP-4: the «Продуктова решетка» component in the «Начална» zone of the Design screen: it is offered by the palette, the item select follows the source, the live line says how many products the grid
- * resolves to, apply → publish makes it live, a bad value is refused under its field, the settings are two per row, and every label, hint and option exists in both languages.
+ * resolves to, apply → publish makes it live, a bad value is refused under its field, the settings are one per row, and every label, hint and option exists in both languages.
  */
 class DesignHomeProductGridZoneTest extends TestCase
 {
@@ -85,11 +85,12 @@ class DesignHomeProductGridZoneTest extends TestCase
         $this->assertStringContainsString('No products for this choice', $screen->html());
     }
 
-    public function test_the_settings_are_two_per_row_and_the_hints_are_info_icons(): void
+    public function test_the_settings_are_one_per_row_and_the_hints_are_info_icons(): void
     {
         $html = $this->screen()->html();
 
-        $this->assertStringContainsString('--cols-md: repeat(2, minmax(0, 1fr))', substr($html, (int) strpos($html, 'Product grid')), 'a grid of two columns from the medium width');
+        // DRIBNI-2: the narrow panel is one field per row (was two from the medium width)
+        $this->assertStringNotContainsString('--cols-md', substr($html, (int) strpos($html, 'Product grid')), 'no two-column grid in the panel');
 
         foreach (['source', 'count', 'sort', 'columns', 'columns_phone', 'gap'] as $k) {
             $this->assertStringContainsString(e((string) __('design.home.products.hints.'.$k)), $html, $k);

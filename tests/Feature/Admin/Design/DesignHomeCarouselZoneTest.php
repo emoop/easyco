@@ -21,7 +21,7 @@ use Tests\TestCase;
 
 /**
  * HP-5: the «Карусел» component in the «Начална» zone of the Design screen: the fields the chosen kind does not use are hidden, the recommended size comes from CarouselGeometry (the numbers the tests pin), the
- * settings are two per row, apply → publish makes it live, a bad value is refused under its field, the third carousel cannot be added, and every label, hint and option exists in both languages.
+ * settings are one per row, apply → publish makes it live, a bad value is refused under its field, the third carousel cannot be added, and every label, hint and option exists in both languages.
  */
 class DesignHomeCarouselZoneTest extends TestCase
 {
@@ -129,11 +129,12 @@ class DesignHomeCarouselZoneTest extends TestCase
         $this->assertStringContainsString('The carousel shows 1 products.', $this->screen()->html());
     }
 
-    public function test_the_settings_are_two_per_row_and_the_hints_are_info_icons(): void
+    public function test_the_settings_are_one_per_row_and_the_hints_are_info_icons(): void
     {
         $html = $this->screen()->html();
 
-        $this->assertStringContainsString('--cols-md: repeat(2, minmax(0, 1fr))', substr($html, (int) strpos($html, 'Carousel')), 'a grid of two columns from the medium width');
+        // DRIBNI-2: the narrow panel is one field per row (was two from the medium width)
+        $this->assertStringNotContainsString('--cols-md', substr($html, (int) strpos($html, 'Carousel')), 'no two-column grid in the panel');
 
         foreach (['kind', 'source', 'count', 'sort', 'arrows', 'label'] as $k) {
             $this->assertStringContainsString(e((string) __('design.home.carousel.hints.'.$k)), $html, $k);

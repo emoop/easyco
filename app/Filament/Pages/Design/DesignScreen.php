@@ -885,13 +885,31 @@ class DesignScreen extends Page
             $this->select($first['kind'], $first['id']);
         }
 
+        // DRIBNI-2: a repeater's items are keyed by id (Filament: a uuid) in the state, but the validator counts them by POSITION («tiles.1.picture»): the position is turned into the key of
+        // the item at that place, so the message sits at its own row. A name that is not in the state (a repeater whose state has another name) is kept as it is.
+        $stateKey = function (string $field): string {
+            $node = $this->props;
+            $parts = [];
+
+            foreach (explode('.', $field) as $part) {
+                if (is_array($node) && ! array_key_exists($part, $node) && ctype_digit($part)) {
+                    $keys = array_keys($node);
+                    $part = isset($keys[(int) $part]) ? (string) $keys[(int) $part] : $part;
+                }
+
+                $parts[] = $part;
+                $node = is_array($node) && array_key_exists($part, $node) ? $node[$part] : null;
+            }
+
+            return implode('.', $parts);
+        };
         $messages = [];
 
         foreach ($known as $e) {
             $at = $e['at'];
 
             if ($first !== null && $at['kind'] === $first['kind'] && $at['id'] === $first['id'] && ($field = $zone->fieldPath($at)) !== null) {
-                $messages['props.'.$field] = $e['message'];
+                $messages['props.'.$stateKey($field)] = $e['message'];
             }
         }
 
