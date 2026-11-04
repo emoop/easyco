@@ -45,5 +45,14 @@ Layout of a listing page, top to bottom:
 - Setting in «Дизайн» → Каталог: «Име на картата: 1 ред / 2 реда», default 1 line.
 - One line = cut visually with an ellipsis (`text-overflow: ellipsis`); the FULL name stays in the HTML (SEO), in the picture `alt` and in the link. Price always at the same place; frees the third line for the bottom badge of part 5.
 
+## 7. Public promo codes in the cart («Налични промокоди») — owner's idea, 2026-11-04
+Goal: a visitor always knows a small discount is available, so he does not leave the cart to search coupon sites («Google: промокод [магазин]»), and the shop has a «bargain» feel. Seen on AliExpress / Temu («available coupons»), rare in Bulgaria.
+- A promo code gets a flag **«Публичен»** and a short customer-facing description (e.g. «5% над 100 €»). Personal codes are NEVER listed.
+- In the cart, next to the code field: a link «Виж наличните промокоди» (the owner's wording: «Потърси промокод») opens a dropdown list of the public codes; a click applies the code through the existing promo flow (no new discount logic).
+- A public code whose condition the cart does not meet yet is still listed, with a hint: «Остават ви 20 € до този код» (nudges a bigger order).
+- **Risk and rule:** a public code without a condition is just a permanent price cut. Public codes should carry a condition that brings something: a minimum order, first order, a category to clear, an end date. The admin form shows a short warning when «Публичен» is set on a code with no condition.
+- The cart is dynamic (not cached), so the list does not conflict with the planned S4 caching. The list is served through the cart API, only active public codes (valid dates, usage limits not exhausted).
+- Depends on: the existing promo-code domain (conditions, dates, limits). Check against it before writing the prompt. Medium task (admin flag + description, API list, cart UI).
+
 ## Suggested order
-Sidebar → season / tag / brand public pages → «Съдържание» for listing pages (defaults + inheritance + cloud) → product page layout → prices → badge builder. The card-name setting (part 6) is a small Haiku task that can go any time. Small fixes («дреболии») go in between as small Haiku tasks.
+Sidebar → season / tag / brand public pages → «Съдържание» for listing pages (defaults + inheritance + cloud) → product page layout → prices → badge builder. The card-name setting (part 6) is a small Haiku task that can go any time; public promo codes (part 7) is a medium task that can go after the cart limit work (DRIBNI-3). Small fixes («дреболии») go in between as small Haiku tasks.
