@@ -8,7 +8,7 @@
         @if ($card->brand !== null)
             <p class="sf-card-brand">{{ $card->brand['name'] }}</p>
         @endif
-        <h3 class="sf-card-name">{{ $card->name }}</h3>
+        <h3 class="sf-card-name{{ app(\App\Storefront\Appearance\StorefrontAppearance::class)->catalogCardNameLines() === 2 ? ' sf-card-name-2' : '' }}">{{ $card->name }}</h3>
     </a>
     @if ($card->price !== null || ! $card->inStock)
         <div class="sf-card-footer">

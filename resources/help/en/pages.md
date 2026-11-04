@@ -58,7 +58,3 @@ A page selected as the **terms** or **privacy policy** in the checkout settings,
 The platform creates two empty drafts, "Terms and conditions" and "Privacy policy", so you can see where they go. They are **empty and unpublished**. Fill them with text prepared by a lawyer, publish them, then choose them in the "Admin" → "Checkout" settings. Until the terms are published and chosen, the terms checkbox does not appear at checkout.
 
 This help and the platform give no legal advice.
-
-## Home page {#action-storefront-home}
-
-The shop home page is arranged in "Admin" → "Design" → "Home" (the "Manage content pages" permission): you add sections (a heading with lines, a free HTML block), put them in order and choose the spacing between them. Until a layout is published, the page shows the "Shop by category" list and the newest products. The old "Storefront" page (the heading and text at the top) is gone; its address leads to "Design".

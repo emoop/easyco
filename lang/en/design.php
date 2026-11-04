@@ -281,6 +281,7 @@ return [
             'filterBrand' => 'Brand filter',
             'filterSeason' => 'Season filter',
             'filterTag' => 'Tag filter',
+            'cardName' => 'Card name',
         ],
         'hints' => [
             'pad_min' => 'The least room at the sides of the content (8 to 48). Default 16.',
@@ -309,6 +310,7 @@ return [
             'filterBrand' => 'Whether and how the «Brand» filter is shown on a category: a list, links or buttons. It is shown only when at least two brands give products. Default «List».',
             'filterSeason' => 'Whether and how the «Season» filter is shown on a category. It is shown only when at least two seasons give products. Default «List».',
             'filterTag' => 'Whether and how the «Tag» filter is shown on a category (tags work well as buttons). It is shown only when at least two tags give products. Default «Not shown».',
+            'cardName' => 'How many lines the product name takes on the card: one line (a long name is cut with an ellipsis and the price sits right under it) or two. The full name stays in the page. Applies to the listing, the home page and the carousels. Default 1 line.',
             'sideWidth' => 'How wide the side panel is on a computer (only with the side panel). «Wide» is the current width and the largest. Default «Wide».',
         ],
         'options' => [
@@ -327,6 +329,7 @@ return [
             'filterBrand' => ['off' => 'Not shown', 'list' => 'List', 'links' => 'Links', 'buttons' => 'Buttons'],
             'filterSeason' => ['off' => 'Not shown', 'list' => 'List', 'links' => 'Links', 'buttons' => 'Buttons'],
             'filterTag' => ['off' => 'Not shown', 'list' => 'List', 'links' => 'Links', 'buttons' => 'Buttons'],
+            'cardName' => ['1' => '1 line', '2' => '2 lines'],
             'gallery_hover_zoom' => ['light' => 'Light', 'medium' => 'Medium', 'off' => 'Off'],
         ],
         'errors' => [

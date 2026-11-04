@@ -9,6 +9,7 @@ use App\Settings\Contracts\SiteSettingsRepository;
 use App\Storefront\Home\HeroGeometry;
 use App\Storefront\Home\HomeCatalog;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 use Livewire\Features\SupportAutoInjectedAssets\SupportAutoInjectedAssets;
 use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
@@ -211,6 +212,24 @@ class DesignHomeHeroZoneTest extends TestCase
         $this->assertNull($palette['heading']['reason']);
         $this->assertNull($palette['carousel']['reason'], 'a hero does not count against the carousel limit');
         $this->assertSame(1, HomeCatalog::MAX_HEROES);
+    }
+
+    /** DRIBNI-4: an invalid slide #2 shows its message at ITS OWN row (state `slide_items`, settings `slides`), and slide #1 shows none. */
+    public function test_an_invalid_slide_gets_its_message_at_its_own_row(): void
+    {
+        $a = $this->block('A');
+        $phone = $this->block('P');
+        $screen = $this->screen()->set('props.settings.slide_items', [
+            (string) Str::uuid() => ['block' => (string) $a->id, 'block_phone' => ''],
+            (string) Str::uuid() => ['block' => '', 'block_phone' => (string) $phone->id],
+        ])->call('apply');
+
+        // Filament re-keys the items while the request runs: the rendered keys are the ones after it
+        [$first, $second] = array_keys($screen->get('props')['settings']['slide_items']);
+
+        $screen->assertHasErrors(["props.settings.slide_items.{$second}.block"]);
+        $screen->assertHasNoErrors(["props.settings.slide_items.{$first}.block"]);
+        $this->assertStringContainsString(e((string) $screen->errors()->first("props.settings.slide_items.{$second}.block")), $screen->html(), 'the message of slide #2 is in the page');
     }
 
     public function test_every_label_hint_option_and_error_exists_in_both_languages(): void

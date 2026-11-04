@@ -84,9 +84,9 @@ class DesignInfoHintTest extends TestCase
 
     public function test_one_icon_per_visible_field_with_a_hint_and_none_for_a_field_without(): void
     {
-        // the full-width layout: columns, phone columns, per page, layout, and the three built-in filters (the side and its width are hidden)
-        $this->assertCount(7, $this->bubbles($this->screen('catalog')->html()));
-        $this->assertCount(9, $this->bubbles($this->screen('catalog')->set('props.layout', 'sidebar')->html()), 'the side panel adds its side and width');
+        // the full-width layout: columns, phone columns, per page, layout, the three built-in filters and (DRIBNI-4) the card name (the side and its width are hidden)
+        $this->assertCount(8, $this->bubbles($this->screen('catalog')->html()));
+        $this->assertCount(10, $this->bubbles($this->screen('catalog')->set('props.layout', 'sidebar')->html()), 'the side panel adds its side and width');
 
         // the banner: the switch, the text (a live character counter, not an explanation) and the colours have no hint; only the link and its label do
         $this->assertCount(2, $this->bubbles($this->screen('topbar')->html()));

@@ -181,6 +181,14 @@ class DesignHomeGridZoneTest extends TestCase
         $this->assertStringNotContainsString(e((string) __('design.home.hints.gap')), $html, 'the section gap explanation is not the grid gap');
     }
 
+    /** DRIBNI-4: too many phone blocks is reported at the phone repeater (state `phone_items`, settings `phone_blocks`). */
+    public function test_the_phone_list_error_is_at_the_phone_repeater(): void
+    {
+        $screen = $this->screen()->set('props.settings.phone_items', array_fill(0, 5, ['block' => '1']))->call('apply');
+
+        $screen->assertHasErrors(['props.settings.phone_items']);
+    }
+
     public function test_every_label_hint_option_and_error_exists_in_both_languages(): void
     {
         $keys = [];

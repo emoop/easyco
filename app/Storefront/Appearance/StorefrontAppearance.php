@@ -552,6 +552,17 @@ final class StorefrontAppearance
         return ['desktop' => (int) $values['cols'], 'phone' => (int) $values['cols_phone']];
     }
 
+    /**
+     * DRIBNI-4: how many lines the name of a product card may take (1 | 2), from the same cached payload (no query), validated again against the closed list; 1 for a shop that never set it or a bad value
+     * (that value alone). The signed preview carries the working copy for ONE request.
+     */
+    public function catalogCardNameLines(): int
+    {
+        $values = $this->catalogOverride ?? PageDesign::catalogValues(is_string($this->data()['catalog'] ?? null) ? $this->data()['catalog'] : null);
+
+        return (int) $values['cardName'];
+    }
+
     /** GAP-1: the PUBLISHED horizontal gap (px) of the card grid, from the cached payload (no query); 16 for a shop that never set it. */
     public function catalogGapX(): int
     {

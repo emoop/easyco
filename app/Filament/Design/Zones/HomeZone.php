@@ -1035,10 +1035,36 @@ final class HomeZone implements DesignZone, HasOneCell
         }
 
         return match ($at['kind']) {
-            'node' => 'settings.'.$at['field'],
+            'node' => 'settings.'.self::stateField($at['field']),
             'layout' => 'layout.'.$at['field'],
             default => $at['field'],
         };
+    }
+
+    /**
+     * DRIBNI-4: the repeaters whose STATE name is not the settings name: settings name => [state name, the field of an item that holds a plain value (a list of ids has no field of its own in the
+     * settings, the item's one select is `block`)]. The screen turns the position of an item into its key; this table gives it the name the panel's repeater has.
+     */
+    private const REPEATER_STATE = [
+        'slides' => ['slide_items', null],
+        'blocks' => ['block_items', 'block'],
+        'phone_blocks' => ['phone_items', 'block'],
+    ];
+
+    /** The path of a settings field as the panel's state knows it (`slides.1.block` → `slide_items.1.block`; `blocks.0` → `block_items.0.block`). */
+    private static function stateField(string $field): string
+    {
+        $parts = explode('.', $field);
+        $map = self::REPEATER_STATE[$parts[0]] ?? null;
+
+        if ($map === null) {
+            return $field;
+        }
+
+        $parts[0] = $map[0];
+        $map[1] !== null && count($parts) === 2 && ctype_digit($parts[1]) && $parts[] = $map[1];
+
+        return implode('.', $parts);
     }
 
     public function warnings(array $stored): array

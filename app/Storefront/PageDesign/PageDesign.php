@@ -62,7 +62,10 @@ final class PageDesign
     public const CATALOG_FILTER_KINDS = ['off', 'list', 'links', 'buttons'];
 
     /** CT-4: the closed-list fields that fall back to their own default on read WITHOUT disturbing the other choices. */
-    public const CATALOG_SOFT_FIELDS = ['sideWidth', 'filterBrand', 'filterSeason', 'filterTag'];
+    public const CATALOG_SOFT_FIELDS = ['sideWidth', 'filterBrand', 'filterSeason', 'filterTag', 'cardName'];
+
+    /** DRIBNI-4: how many lines the name on a product card may take: one (cut with an ellipsis, the default) or two (a two-line clamp). Not a variable: a class on the name (only «2» writes it). */
+    public const CATALOG_CARD_NAMES = ['1', '2'];
 
     /** The `site_settings` keys of the gallery choices, by field. */
     public const GALLERY_KEYS = [
@@ -119,6 +122,7 @@ final class PageDesign
                 'filterBrand' => ['kind' => 'enum', 'options' => self::CATALOG_FILTER_KINDS, 'default' => 'list'],
                 'filterSeason' => ['kind' => 'enum', 'options' => self::CATALOG_FILTER_KINDS, 'default' => 'list'],
                 'filterTag' => ['kind' => 'enum', 'options' => self::CATALOG_FILTER_KINDS, 'default' => 'off'],
+                'cardName' => ['kind' => 'enum', 'options' => self::CATALOG_CARD_NAMES, 'default' => '1'],
             ];
         }
 

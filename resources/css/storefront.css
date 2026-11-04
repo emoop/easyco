@@ -382,12 +382,21 @@
         line-height: 1.4;
         letter-spacing: 0;
         color: var(--sf-pdp-text);
-        /* two lines, always: a one-line name still reserves them, so the prices of a row line up */
+        /* DRIBNI-4: ONE line by default (the «Име на картата» setting of «Каталог»): the whole name stays in the HTML, the cut is visual; no second line is reserved, so the price sits right under the
+           name and at the same height on every card of a row (every name is one line) */
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    /* «2 реда»: a two-line clamp that always reserves both lines, so the prices of a row line up (the class is written only for this choice) */
+    .sf-card-name.sf-card-name-2 {
+        white-space: normal;
         display: -webkit-box;
         -webkit-box-orient: vertical;
         -webkit-line-clamp: 2;
         line-clamp: 2;
-        overflow: hidden;
+        text-overflow: clip;
         min-height: 2.8em;
     }
 

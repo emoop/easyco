@@ -223,6 +223,28 @@ class DesignHomeCarouselZoneTest extends TestCase
         $this->assertCount(2, $screen->get('tree')['main']['rows'][0]['cells'][0]['items'], 'the third one is refused');
     }
 
+    /** DRIBNI-4: too many blocks is reported at the blocks repeater (state `block_items`, settings `blocks`). */
+    public function test_the_blocks_list_error_is_at_the_blocks_repeater(): void
+    {
+        $screen = $this->screen()->set('props.settings.kind', 'blocks')->set('props.settings.block_items', array_fill(0, 13, ['block' => '1']))->call('apply');
+
+        $screen->assertHasErrors(['props.settings.block_items']);
+    }
+
+    /** DRIBNI-4: the repeaters whose state name is not the settings name are mapped by ONE table (an item's position keeps its place; a list of ids gets the item's `block` field). */
+    public function test_the_repeater_state_names_are_mapped_by_one_table(): void
+    {
+        $zone = new \App\Filament\Design\Zones\HomeZone();
+        $at = static fn (string $field): array => ['kind' => 'node', 'id' => 'x', 'field' => $field];
+
+        $this->assertSame('settings.slide_items.1.block_phone', $zone->fieldPath($at('slides.1.block_phone')));
+        $this->assertSame('settings.block_items.0.block', $zone->fieldPath($at('blocks.0')));
+        $this->assertSame('settings.phone_items.2.block', $zone->fieldPath($at('phone_blocks.2')));
+        $this->assertSame('settings.phone_items', $zone->fieldPath($at('phone_blocks')));
+        $this->assertSame('settings.images.1.picture', $zone->fieldPath($at('images.1.picture')), 'a repeater whose names agree is left alone');
+        $this->assertSame('settings.columns', $zone->fieldPath($at('columns')));
+    }
+
     public function test_every_label_hint_option_and_error_exists_in_both_languages(): void
     {
         $keys = ['design.home.types.carousel', 'design.home.carousel.summary', 'design.home.carousel.summary_products', 'design.home.carousel.count_line', 'design.home.carousel.none', 'design.home.carousel.hint_box', 'design.home.carousel.hint_card', 'design.home.carousel.block_add', 'design.home.carousel.image_add',
