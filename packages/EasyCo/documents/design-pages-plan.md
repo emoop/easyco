@@ -37,6 +37,13 @@ Layout of a listing page, top to bottom:
 - «Промо» is mandatory, with show / hide; «Нови»; free-text badges with conditions.
 - Conditions reuse the HTML-block conditions mechanism (`ProductConditions`).
 - Depends on price lists (for «Промо») → after the price task.
+- **Two positions on the product card** (owner, 2026-11-04): TOP over the picture (Промо, Нови) and BOTTOM under the price (informative: «Безплатна доставка», «Последни бройки», «Само онлайн»…). No empty row is reserved when a card has no bottom badge (only if it turns out visible: reserve it when at least one bottom badge is enabled).
+- **«Безплатна доставка» badge** depends ONLY on the product (the card is identical for every visitor, cached): shown when the product's shipping class gives free shipping OR its current price (with promotion) is at or above the shop's free-shipping threshold (owner's example: threshold 80.00 € → a product at 80.00 € gets the badge, at 79.99 € it does not). The badge means «this product has a free shipping option», not that every method is free. Reuse the threshold the cart already uses (do not store a second one).
+- The cart keeps working as today: a cart total at or above the threshold (e.g. 50.00 € + 30.00 €) shows the free methods together with the paid ones. That is a cart feature, NOT a card badge.
+
+## 6. Product card name: one or two lines (small task)
+- Setting in «Дизайн» → Каталог: «Име на картата: 1 ред / 2 реда», default 1 line.
+- One line = cut visually with an ellipsis (`text-overflow: ellipsis`); the FULL name stays in the HTML (SEO), in the picture `alt` and in the link. Price always at the same place; frees the third line for the bottom badge of part 5.
 
 ## Suggested order
-Sidebar → season / tag / brand public pages → «Съдържание» for listing pages (defaults + inheritance + cloud) → product page layout → prices → badge builder. Small fixes («дреболии») go in between as small Haiku tasks.
+Sidebar → season / tag / brand public pages → «Съдържание» for listing pages (defaults + inheritance + cloud) → product page layout → prices → badge builder. The card-name setting (part 6) is a small Haiku task that can go any time. Small fixes («дреболии») go in between as small Haiku tasks.
