@@ -4,6 +4,7 @@ namespace App\Content\HtmlBlocks;
 
 use App\Settings\AppearanceSettings;
 use App\Settings\Contracts\SiteSettingsRepository;
+use App\Storefront\Home\HomeCatalog;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -88,6 +89,8 @@ final class HtmlBlockUsage
                     'image_grid' => [...array_values(is_array($own['cells'] ?? null) ? $own['cells'] : []), ...array_values(is_array($own['phone_blocks'] ?? null) ? $own['phone_blocks'] : [])],
                     // HP-5: a blocks carousel's list
                     'carousel' => ($own['kind'] ?? null) === 'blocks' ? array_values(is_array($own['blocks'] ?? null) ? $own['blocks'] : []) : [],
+                    // HP-6: every slide's block and phone block of a hero
+                    'hero' => HomeCatalog::heroBlockIds($own),
                     default => [],
                 };
 

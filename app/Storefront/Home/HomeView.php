@@ -90,6 +90,17 @@ final class HomeView
                 }
             }
 
+            $hero = null;
+
+            if ($type === 'hero') {
+                $hero = self::hero($settings, $stored['blocks']);
+
+                // no slide with a block that still exists: nothing is printed, no empty box in the page
+                if ($hero === null) {
+                    continue;
+                }
+            }
+
             $class = 'sf-hp-section sf-hp-'.str_replace('_', '-', $type);
             $own = $settings['spacing'] ?? 'default';
 
@@ -97,7 +108,7 @@ final class HomeView
                 $class .= ' sf-hp-mt-'.$own;
             }
 
-            $items[] = ['type' => $type, 'class' => $class, 'view' => $catalog[$type]['view'], 'settings' => $settings, 'html' => $html, 'grid' => $grid, 'tiles' => $tiles, 'products' => $products, 'carousel' => $carousel];
+            $items[] = ['type' => $type, 'class' => $class, 'view' => $catalog[$type]['view'], 'settings' => $settings, 'html' => $html, 'grid' => $grid, 'tiles' => $tiles, 'products' => $products, 'carousel' => $carousel, 'hero' => $hero];
         }
 
         // every section hidden or empty: nothing to show, but the layout is published (the page is NOT the old one)
@@ -192,6 +203,46 @@ final class HomeView
         $sections['items'] = $items;
 
         return $sections;
+    }
+
+    /**
+     * HP-6: what a «Hero слайдер» prints. Every class is from a closed list (checked again here; a value outside it is its default); the blocks are the compiled, sanitised HTML (cleaned AGAIN here). A slide whose
+     * desktop block is gone (or empty) is dropped; a phone block that is gone is none (the desktop block then shows at every size); no slide left = nothing to show. The number of slides in the classes is the number
+     * of slides PRINTED, so the timing follows what is really there. A hero with one slide, or with autoplay off, is the manual row (no animation).
+     *
+     * @param  array<string, mixed>  $settings
+     * @param  array<string, string>  $blocks  the compiled HTML by block id
+     * @return array{class: string, slides: list<array{d: string, m: string}>, count: int, autoplay: bool}|null
+     */
+    private static function hero(array $settings, array $blocks): ?array
+    {
+        $pick = static fn (string $key, array $list, string $default): string => in_array($settings[$key] ?? null, $list, true) ? (string) $settings[$key] : $default;
+        $html = static fn (mixed $id): string => is_int($id) ? HtmlBlockSanitizer::render((string) ($blocks[(string) $id] ?? '')) : '';
+        $slides = [];
+
+        foreach (array_slice(is_array($settings['slides'] ?? null) ? array_values($settings['slides']) : [], 0, HeroGeometry::SLIDES_MAX) as $slide) {
+            $slide = is_array($slide) ? $slide : [];
+            $desktop = $html($slide['block'] ?? null);
+
+            $desktop === '' || $slides[] = ['d' => $desktop, 'm' => $html($slide['block_phone'] ?? null)];
+        }
+
+        if ($slides === []) {
+            return null;
+        }
+
+        $count = count($slides);
+        $autoplay = ($settings['autoplay'] ?? true) !== false && $count > 1;
+        $seconds = $pick('seconds', HeroGeometry::SECONDS, HeroGeometry::DEFAULT_SECONDS);
+        $ratio = $pick('ratio', HeroGeometry::RATIOS, HeroGeometry::DEFAULT_RATIO);
+        $phone = $pick('ratio_phone', HeroGeometry::PHONE_RATIOS, HeroGeometry::DEFAULT_PHONE_RATIO);
+
+        return [
+            'class' => 'sf-hs '.($autoplay ? 'sf-hs-auto' : 'sf-hs-manual').' sf-hs-n-'.$count.' sf-hs-t-'.$seconds.' sf-hs-r-'.HeroGeometry::slug($ratio).' sf-hs-rp-'.HeroGeometry::slug($phone),
+            'slides' => $slides,
+            'count' => $count,
+            'autoplay' => $autoplay,
+        ];
     }
 
     /**

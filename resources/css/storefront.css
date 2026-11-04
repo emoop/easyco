@@ -5672,3 +5672,215 @@ html:not(.js) .sf-bar-item:focus-within > .sf-sub {
     margin: 0;
 }
 /* ===== end of HP-5 carousel ========================================================================================================================================================== */
+
+/* ===== HP-6 hero slider ============================================================================================================================================================== */
+/* «Hero слайдер» of the home page: ONE big banner at a time, changing by itself with CSS only (no JavaScript). Every choice is a class of a closed list that sets a CSS variable: the number of slides (--sf-hs-n, 1..6),
+   the seconds each slide stays (--sf-hs-show) and the two proportions of the box (desktop from 48rem, phone below). The BASE is the manual row: a scroll-snap strip (the shared carousel's track and arrows, HP-5), which is also
+   what a visitor with `prefers-reduced-motion: reduce` and a hero with autoplay off get. Only under `prefers-reduced-motion: no-preference` AND autoplay does the track become a one-cell stack whose slides cross-fade: the
+   cycle is N × show, each slide's phase is its position (a negative delay, so the FIRST slide is visible at the very first paint) and only `opacity` and `visibility` are animated (the `visibility` keeps a faded-out slide
+   unclickable and out of the tab order). The animation pauses while the pointer is over the hero or focus is inside it, and with the pause checkbox (`:checked`). Selectors are two or three classes (the shared
+   `.sf-car-track` / `.sf-car-item` have one) so nothing here needs `!important`. */
+.sf-hs {
+    position: relative;
+    width: 100%;
+    --sf-hs-n: 1;
+    --sf-hs-show: 5s;
+    --sf-hs-ratio: 21 / 9;
+    --sf-hs-ratio-phone: 4 / 5;
+}
+
+.sf-hs-n-1 { --sf-hs-n: 1; }
+.sf-hs-n-2 { --sf-hs-n: 2; }
+.sf-hs-n-3 { --sf-hs-n: 3; }
+.sf-hs-n-4 { --sf-hs-n: 4; }
+.sf-hs-n-5 { --sf-hs-n: 5; }
+.sf-hs-n-6 { --sf-hs-n: 6; }
+
+.sf-hs-t-3 { --sf-hs-show: 3s; }
+.sf-hs-t-4 { --sf-hs-show: 4s; }
+.sf-hs-t-5 { --sf-hs-show: 5s; }
+.sf-hs-t-6 { --sf-hs-show: 6s; }
+.sf-hs-t-8 { --sf-hs-show: 8s; }
+.sf-hs-t-10 { --sf-hs-show: 10s; }
+
+.sf-hs-r-3-1 { --sf-hs-ratio: 3 / 1; }
+.sf-hs-r-21-9 { --sf-hs-ratio: 21 / 9; }
+.sf-hs-r-2-1 { --sf-hs-ratio: 2 / 1; }
+.sf-hs-r-16-9 { --sf-hs-ratio: 16 / 9; }
+
+.sf-hs-rp-1-1 { --sf-hs-ratio-phone: 1 / 1; }
+.sf-hs-rp-4-5 { --sf-hs-ratio-phone: 4 / 5; }
+.sf-hs-rp-3-4 { --sf-hs-ratio-phone: 3 / 4; }
+.sf-hs-rp-4-3 { --sf-hs-ratio-phone: 4 / 3; }
+
+/* the box and the slides (the manual row): every slide is the whole box */
+.sf-hs .sf-hs-track {
+    gap: 0;
+    aspect-ratio: var(--sf-hs-ratio-phone);
+    scroll-snap-type: x mandatory;
+}
+
+.sf-hs .sf-hs-slide {
+    position: relative;
+    flex: 0 0 100%;
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+}
+
+/* the desktop block and the phone block: below 48rem the phone block (when the slide has one), from 48rem the desktop one; a slide with no phone block shows the desktop block at every size */
+.sf-hs .sf-hs-d,
+.sf-hs .sf-hs-m {
+    height: 100%;
+    min-height: 0;
+}
+
+.sf-hs .sf-hs-slide-p > .sf-hs-d { display: none; }
+
+@media (min-width: 48rem) {
+    .sf-hs .sf-hs-track { aspect-ratio: var(--sf-hs-ratio); }
+    .sf-hs .sf-hs-slide-p > .sf-hs-d { display: block; }
+    .sf-hs .sf-hs-slide-p > .sf-hs-m { display: none; }
+}
+
+/* the block fills its slide like a cell of the grid (HP-2): the picture covers it, the text keeps its place; the block's own width, height and margins give way (two classes and an element against one class) */
+.sf-hs-slide > div > .sf-hb {
+    box-sizing: border-box;
+    width: 100%;
+    max-width: none;
+    height: 100%;
+    min-height: 0;
+    margin: 0;
+}
+
+/* the pause control belongs to the animated mode only */
+.sf-hs .sf-hs-toggle,
+.sf-hs .sf-hs-pause {
+    display: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+    .sf-hs-auto .sf-hs-track {
+        display: grid;
+        grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+        overflow: hidden;
+        scroll-snap-type: none;
+    }
+
+    .sf-hs-auto .sf-hs-slide {
+        grid-area: 1 / 1;
+        flex: none;
+        animation-duration: calc(var(--sf-hs-n) * var(--sf-hs-show));
+        animation-timing-function: linear;
+        animation-iteration-count: infinite;
+    }
+
+    .sf-hs-auto.sf-hs-n-2 .sf-hs-slide { animation-name: sf-hs-2; }
+    .sf-hs-auto.sf-hs-n-3 .sf-hs-slide { animation-name: sf-hs-3; }
+    .sf-hs-auto.sf-hs-n-4 .sf-hs-slide { animation-name: sf-hs-4; }
+    .sf-hs-auto.sf-hs-n-5 .sf-hs-slide { animation-name: sf-hs-5; }
+    .sf-hs-auto.sf-hs-n-6 .sf-hs-slide { animation-name: sf-hs-6; }
+
+    /* the phase of a slide: slide i (0-based) starts i × show after the first one; written as a NEGATIVE delay so every slide is already in the right place at the first paint (the first one fully visible) */
+    .sf-hs-auto .sf-hs-slide:nth-child(1) { animation-delay: calc(var(--sf-hs-show) * var(--sf-hs-n) * -1); }
+    .sf-hs-auto .sf-hs-slide:nth-child(2) { animation-delay: calc(var(--sf-hs-show) * (1 - var(--sf-hs-n))); }
+    .sf-hs-auto .sf-hs-slide:nth-child(3) { animation-delay: calc(var(--sf-hs-show) * (2 - var(--sf-hs-n))); }
+    .sf-hs-auto .sf-hs-slide:nth-child(4) { animation-delay: calc(var(--sf-hs-show) * (3 - var(--sf-hs-n))); }
+    .sf-hs-auto .sf-hs-slide:nth-child(5) { animation-delay: calc(var(--sf-hs-show) * (4 - var(--sf-hs-n))); }
+    .sf-hs-auto .sf-hs-slide:nth-child(6) { animation-delay: calc(var(--sf-hs-show) * (5 - var(--sf-hs-n))); }
+
+    /* paused while the pointer is over the hero, while focus is inside it and while the pause checkbox is checked */
+    .sf-hs-auto:hover .sf-hs-slide,
+    .sf-hs-auto:focus-within .sf-hs-slide,
+    .sf-hs-auto .sf-hs-toggle:checked ~ .sf-hs-track .sf-hs-slide {
+        animation-play-state: paused;
+    }
+
+    /* no arrows in the animated mode (the pause control instead) */
+    .sf-hs-auto .sf-car-arrow {
+        display: none;
+    }
+
+    /* the pause control: the carousel arrow's round white disc (the `.sf-car-arrow` rule), in the bottom right corner; the checkbox is visually hidden but focusable, the label is the control */
+    .sf-hs-auto .sf-hs-toggle {
+        position: absolute;
+        display: block;
+        width: 1px;
+        height: 1px;
+        margin: 0;
+        opacity: 0;
+    }
+
+    .sf-hs-auto .sf-hs-pause {
+        display: flex;
+        top: auto;
+        right: 8px;
+        bottom: 8px;
+        z-index: 2;
+        transform: none;
+    }
+
+    /* ⏸ drawn in CSS (two bars); ▶ (a triangle) when the checkbox is checked */
+    .sf-hs-auto .sf-hs-pause::before {
+        width: 0.6rem;
+        height: 0.7rem;
+        border-width: 0 3px;
+        transform: none;
+    }
+
+    .sf-hs-auto .sf-hs-toggle:checked + .sf-hs-pause::before {
+        width: 0;
+        height: 0;
+        border-style: solid;
+        border-width: 0.4rem 0 0.4rem 0.65rem;
+        border-color: transparent transparent transparent currentColor;
+        transform: translateX(10%);
+    }
+
+    .sf-hs-auto .sf-hs-toggle:focus-visible + .sf-hs-pause {
+        outline: 2px solid var(--sf-pdp-text, #1a1a1a);
+        outline-offset: 2px;
+    }
+
+    /* the accessible name: «Пауза» while it runs, «Пуск» while it is paused */
+    .sf-hs-auto .sf-hs-play-text,
+    .sf-hs-auto .sf-hs-toggle:checked + .sf-hs-pause .sf-hs-pause-text {
+        display: none;
+    }
+
+    .sf-hs-auto .sf-hs-toggle:checked + .sf-hs-pause .sf-hs-play-text {
+        display: inline;
+    }
+
+    /* the cross-fade: fully visible for most of the slide's 1/N share of the cycle, fading out over its last tenth while the next one fades in over ITS last tenth of the previous share */
+    @keyframes sf-hs-2 {
+        0%, 45% { opacity: 1; visibility: visible; }
+        50%, 95% { opacity: 0; visibility: hidden; }
+        100% { opacity: 1; visibility: visible; }
+    }
+
+    @keyframes sf-hs-3 {
+        0%, 30% { opacity: 1; visibility: visible; }
+        33.3333%, 96.6667% { opacity: 0; visibility: hidden; }
+        100% { opacity: 1; visibility: visible; }
+    }
+
+    @keyframes sf-hs-4 {
+        0%, 22.5% { opacity: 1; visibility: visible; }
+        25%, 97.5% { opacity: 0; visibility: hidden; }
+        100% { opacity: 1; visibility: visible; }
+    }
+
+    @keyframes sf-hs-5 {
+        0%, 18% { opacity: 1; visibility: visible; }
+        20%, 98% { opacity: 0; visibility: hidden; }
+        100% { opacity: 1; visibility: visible; }
+    }
+
+    @keyframes sf-hs-6 {
+        0%, 15% { opacity: 1; visibility: visible; }
+        16.6667%, 98.3333% { opacity: 0; visibility: hidden; }
+        100% { opacity: 1; visibility: visible; }
+    }
+}
+/* ===== end of HP-6 hero slider ======================================================================================================================================================= */

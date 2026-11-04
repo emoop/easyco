@@ -242,4 +242,5 @@ return [
 
     // HP-5: the carousel
     'carousel' => ['label' => 'Карусел', 'previous' => 'Предишна', 'next' => 'Следваща'],
+    'hero' => ['label' => 'Hero слайдер', 'pause' => 'Пауза', 'play' => 'Пуск'],
 ];

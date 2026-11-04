@@ -11,6 +11,7 @@ use App\Storefront\Design\TreeEditor;
 use App\Storefront\Design\ZoneStore\HomeAdapter;
 use App\Content\HtmlBlocks\HtmlBlockModel;
 use App\Storefront\Home\CarouselGeometry;
+use App\Storefront\Home\HeroGeometry;
 use App\Storefront\Home\HomeCatalog;
 use App\Storefront\Home\HomeDrafts;
 use App\Storefront\Home\HomeLayout;
@@ -27,6 +28,7 @@ use Illuminate\Support\Facades\DB;
 use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\Group;
 use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Tabs;
 use Filament\Schemas\Components\Text;
 use Filament\Schemas\Components\Utilities\Get;
 use Illuminate\Support\HtmlString;
@@ -177,6 +179,18 @@ final class HomeZone implements DesignZone, HasOneCell
             return (string) __('design.home.carousel.summary', ['kind' => __('design.home.carousel.kinds.'.$kind), 'size' => $height.'px']);
         }
 
+        // HP-6: «Hero слайдер: 4 слайда, 5 с» (autoplay off: «…, ръчно»; one slide: «Hero слайдер: 1 слайд»)
+        if ($node['type'] === 'hero') {
+            $count = count(is_array($settings['slides'] ?? null) ? $settings['slides'] : []);
+            $seconds = in_array($settings['seconds'] ?? null, HeroGeometry::SECONDS, true) ? $settings['seconds'] : HeroGeometry::DEFAULT_SECONDS;
+
+            return (string) match (true) {
+                $count === 1 => __('design.home.hero.summary_one'),
+                ($settings['autoplay'] ?? true) === false => __('design.home.hero.summary_manual', ['count' => $count]),
+                default => __('design.home.hero.summary', ['count' => $count, 'seconds' => $seconds]),
+            };
+        }
+
         return $node['type'] === 'heading' && is_string($settings['text'] ?? null) ? mb_strimwidth($settings['text'], 0, 24, '…') : '';
     }
 
@@ -189,6 +203,7 @@ final class HomeZone implements DesignZone, HasOneCell
 
         $grids = count(array_filter($items, static fn (array $node): bool => ($node['type'] ?? null) === 'product_grid'));
         $carousels = count(array_filter($items, static fn (array $node): bool => ($node['type'] ?? null) === 'carousel'));
+        $heroes = count(array_filter($items, static fn (array $node): bool => ($node['type'] ?? null) === 'hero'));
 
         foreach (HomeCatalog::all() as $type => $descriptor) {
             $reason = $cellId === null ? (string) __('design.palette.no_cell') : (count($items) >= HomeCatalog::MAX_SECTIONS ? (string) __('design.home.errors.too_many', ['max' => HomeCatalog::MAX_SECTIONS]) : null);
@@ -197,6 +212,8 @@ final class HomeZone implements DesignZone, HasOneCell
             $reason === null && $type === 'product_grid' && $grids >= HomeCatalog::MAX_PRODUCT_GRIDS && $reason = (string) __('design.home.errors.too_many_product_grids', ['max' => HomeCatalog::MAX_PRODUCT_GRIDS]);
             // HP-5: at most 2 carousels
             $reason === null && $type === 'carousel' && $carousels >= HomeCatalog::MAX_CAROUSELS && $reason = (string) __('design.home.errors.too_many_carousels', ['max' => HomeCatalog::MAX_CAROUSELS]);
+            // HP-6: at most 1 hero slider
+            $reason === null && $type === 'hero' && $heroes >= HomeCatalog::MAX_HEROES && $reason = (string) __('design.home.errors.too_many_heroes', ['max' => HomeCatalog::MAX_HEROES]);
             $out[] = ['type' => $type, 'label' => $this->typeLabel($type), 'reason' => $reason, 'hint' => null];
         }
 
@@ -263,6 +280,10 @@ final class HomeZone implements DesignZone, HasOneCell
 
             if ($node !== null && $node['type'] === 'carousel') {
                 return $this->carouselPanel();
+            }
+
+            if ($node !== null && $node['type'] === 'hero') {
+                return $this->heroPanel();
             }
 
             $fields = $node === null ? [] : $this->fieldsOf($node['type']);
@@ -560,6 +581,103 @@ final class HomeZone implements DesignZone, HasOneCell
         ])];
     }
 
+    /**
+     * HP-6: the panel of a «Hero слайдер» section. The settings are selects and a switch in PAIRS (two per row from the medium width; the seconds are hidden while the slides do not change by themselves), the recommended
+     * picture size comes from HeroGeometry (the very function the tests pin) for what is chosen NOW (the screen's own `props`), and the slides are a repeater (add, remove, ↑ ↓) of full-width items: the desktop block
+     * and the optional phone block in two TABS (one selector each). Explanations are info icons. The values are put back into the settings by applyProps.
+     *
+     * @return list<Component>
+     */
+    private function heroPanel(): array
+    {
+        $schema = HomeCatalog::all()['hero']['schema'];
+        $common = HomeCatalog::common();
+        $label = static fn (string $name): string => (string) __('design.home.hero.settings.'.$name);
+        $hint = static fn (string $name): HtmlString => \App\Filament\Design\InfoHint::make((string) __('design.home.hero.hints.'.$name), 'hero-'.$name);
+        $control = function (string $name, array $field) use ($hint): Component {
+            $control = FieldForms::make($name, $field + ['label' => 'design.home.hero.settings.'.$name]);
+            method_exists($control, 'afterLabel') && $control->afterLabel($hint($name));
+            method_exists($control, 'live') && $control->live();
+
+            return $control;
+        };
+        $general = function (string $name) use ($common): Component {
+            $control = $this->hinted(FieldForms::make($name, $common[$name] + ['label' => 'design.home.settings.'.$name]), $name);
+            method_exists($control, 'live') && $control->live();
+
+            return $control;
+        };
+        $blocks = static fn (): array => HtmlBlockModel::query()->orderBy('title')->pluck('title', 'id')->all();
+
+        return [Section::make($this->typeLabel('hero'))->schema([
+            Group::make([
+                Grid::make(['default' => 1])->schema([
+                    $general('show'),
+                    $general('spacing'),
+                    $control('autoplay', $schema['autoplay']),
+                    $control('seconds', $schema['seconds'])->visible(static fn (Get $get): bool => (bool) $get('autoplay')),
+                    $control('ratio', $schema['ratio']),
+                    $control('ratio_phone', $schema['ratio_phone']),
+                ]),
+                // the recommended picture sizes of the two blocks (desktop: the 1320px reference; phone: 358px), from HeroGeometry
+                Text::make(static function ($livewire): HtmlString {
+                    $own = is_array($livewire->props['settings'] ?? null) ? $livewire->props['settings'] : [];
+                    $desktop = HeroGeometry::desktop((string) ($own['ratio'] ?? ''));
+                    $phone = HeroGeometry::phone((string) ($own['ratio_phone'] ?? ''));
+
+                    return new HtmlString('<span class="text-gray-600">'.e((string) __('design.home.hero.hint_size', [
+                        'w' => $desktop['rounded_width'], 'h' => $desktop['rounded_height'], 'w2' => $desktop['double_width'], 'h2' => $desktop['double_height'],
+                        'pw' => $phone['rounded_width'], 'ph' => $phone['rounded_height'], 'pw2' => $phone['double_width'], 'ph2' => $phone['double_height'],
+                    ])).'</span>');
+                }),
+                Repeater::make('slide_items')->label($label('slides'))->afterLabel($hint('slides'))
+                    ->maxItems(HeroGeometry::SLIDES_MAX)->defaultItems(0)->reorderableWithButtons()->addActionLabel((string) __('design.home.hero.slide_add'))->live()->columnSpanFull()
+                    // a slide is two tabs, «Компютър» and «Телефон»: each tab holds ONE selector, so the fields stay one per row and are not crowded
+                    ->schema([
+                        Tabs::make('slide')->tabs([
+                            Tabs\Tab::make((string) __('design.home.hero.tabs.desktop'))->schema([
+                                Select::make('block')->label($label('block'))->afterLabel($hint('block'))->native(false)->options($blocks)->required(),
+                            ]),
+                            Tabs\Tab::make((string) __('design.home.hero.tabs.phone'))->schema([
+                                Select::make('block_phone')->label($label('block_phone'))->afterLabel($hint('block_phone'))->native(false)->options($blocks)->placeholder((string) __('design.home.grid.cell_empty')),
+                            ]),
+                        ]),
+                    ]),
+            ])->statePath('settings'),
+        ])];
+    }
+
+    /**
+     * HP-6: the settings of a «Hero слайдер» from the panel: the selects and the switch as they are (the validator refuses a value outside its list), the slides as a list in order `{block, block_phone}` (an empty
+     * phone block is none; an item with no block is kept so that the validator names it). Never validates.
+     *
+     * @param  array<string, mixed>  $in
+     * @return array<string, mixed>
+     */
+    private function heroSettings(array $in): array
+    {
+        $out = ['show' => (bool) ($in['show'] ?? true), 'spacing' => $in['spacing'] ?? 'default'];
+
+        foreach (['seconds', 'ratio', 'ratio_phone'] as $name) {
+            isset($in[$name]) && $out[$name] = $in[$name];
+        }
+
+        array_key_exists('autoplay', $in) && $out['autoplay'] = (bool) $in['autoplay'];
+
+        if (array_key_exists('slide_items', $in)) {
+            $slides = [];
+
+            foreach (is_array($in['slide_items']) ? array_values($in['slide_items']) : [] as $item) {
+                $item = is_array($item) ? $item : [];
+                $slides[] = ['block' => FieldValues::id($item['block'] ?? null), 'block_phone' => FieldValues::id($item['block_phone'] ?? null)];
+            }
+
+            $out['slides'] = $slides;
+        }
+
+        return $out;
+    }
+
     /** HP-5: how many products a product carousel with these (panel) settings resolves to now (the shop's own read). @param  array<string, mixed>  $own */
     private static function carouselCount(array $own): int
     {
@@ -806,6 +924,14 @@ final class HomeZone implements DesignZone, HasOneCell
             return ['settings' => $settings];
         }
 
+        if ($node !== null && $node['type'] === 'hero') {
+            // the slides are a repeater of `{block, block_phone}` items in the panel (the very same shape as the settings)
+            $settings = $node['settings'];
+            $settings['slide_items'] = array_map(static fn (mixed $slide): array => ['block' => is_array($slide) ? ($slide['block'] ?? null) : null, 'block_phone' => is_array($slide) ? ($slide['block_phone'] ?? null) : null], array_values(is_array($settings['slides'] ?? null) ? $settings['slides'] : []));
+
+            return ['settings' => $settings];
+        }
+
         if ($node !== null && $node['type'] === 'carousel') {
             // the blocks are a repeater of `{block}` items in the panel and a plain list of ids in the settings
             $settings = $node['settings'];
@@ -841,6 +967,13 @@ final class HomeZone implements DesignZone, HasOneCell
 
         if ($node['type'] === 'product_grid') {
             $settings = $this->productsSettings($in) + $node['settings'];
+            $tree['main'] = TreeEditor::setSettings($current, $selected['id'], $settings);
+
+            return $tree;
+        }
+
+        if ($node['type'] === 'hero') {
+            $settings = $this->heroSettings($in) + $node['settings'];
             $tree['main'] = TreeEditor::setSettings($current, $selected['id'], $settings);
 
             return $tree;

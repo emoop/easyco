@@ -339,7 +339,7 @@ return [
 
     // HP-1: «Home» — the home page as an ordered list of sections, each holding ONE component
     'home' => [
-        'types' => ['heading' => 'Heading with lines', 'html_block' => 'Free HTML block', 'image_grid' => 'Image grid', 'tiles' => 'Tiles', 'product_grid' => 'Product grid', 'carousel' => 'Carousel'],
+        'types' => ['heading' => 'Heading with lines', 'html_block' => 'Free HTML block', 'image_grid' => 'Image grid', 'tiles' => 'Tiles', 'product_grid' => 'Product grid', 'carousel' => 'Carousel', 'hero' => 'Hero slider'],
         'hidden' => 'hidden',
         'general' => 'General settings',
         'gap_now' => 'spacing :px px',
@@ -372,6 +372,9 @@ return [
             'too_few_images' => 'Add at least one picture.',
             'too_many_images' => 'At most :max pictures.',
             'alt_required' => 'When there is a link, the alt text is required.',
+            'too_many_heroes' => 'Only :max hero slider on the home page.',
+            'too_few_slides' => 'Add at least one slide.',
+            'too_many_slides' => 'At most :max slides.',
         ],
         'settings' => [
             'gap' => 'Space between sections',
@@ -632,6 +635,36 @@ return [
             'hint_title' => 'Recommended size',
             'hint_box' => 'Item box: :w × :h px (computer), 2× for sharp screens: :w2 × :h2. On a phone: :pw × :ph px, 2×: :pw2 × :ph2.',
             'hint_card' => 'Card: :w px wide on a computer (4 in a row), its picture about :h px high, 2×: :w2 × :h2. The card is the catalog\'s and has no height setting.',
+        ],
+
+        // HP-6: «Hero slider»
+        'hero' => [
+            'summary' => 'Hero slider: :count slides, :seconds s',
+            'summary_one' => 'Hero slider: 1 slide',
+            'summary_manual' => 'Hero slider: :count slides, manual',
+            'seconds' => ['3' => '3 seconds', '4' => '4 seconds', '5' => '5 seconds', '6' => '6 seconds', '8' => '8 seconds', '10' => '10 seconds'],
+            'ratios' => ['3:1' => '3:1', '21:9' => '21:9', '2:1' => '2:1', '16:9' => '16:9', '1:1' => '1:1 (square)', '4:5' => '4:5 (portrait)', '3:4' => '3:4', '4:3' => '4:3'],
+            'settings' => [
+                'autoplay' => 'Change by itself',
+                'seconds' => 'Seconds per slide',
+                'ratio' => 'Proportion on a desktop',
+                'ratio_phone' => 'Proportion on a phone',
+                'slides' => 'Slides',
+                'block' => 'Block for a desktop',
+                'block_phone' => 'Block for a phone (optional)',
+            ],
+            'hints' => [
+                'autoplay' => 'The slides change by themselves, with a soft cross-fade, in CSS only. Off: the row is moved by hand with arrows. A visitor who asked their system for reduced motion always gets it by hand.',
+                'seconds' => 'How many seconds each slide stays before the next one.',
+                'ratio' => 'The proportion of the banner from 48rem up (on a desktop): width : height.',
+                'ratio_phone' => 'The proportion of the banner on a phone (below 48rem): width : height. The phone banner is taller and narrower.',
+                'slides' => 'From 1 to 6 slides, in order. A slide is only an HTML block, best a «Picture with text». Optionally a second block for the phone; with none, the same block is shown on a phone.',
+                'block' => 'The block shown on a desktop (and on a phone when there is no phone block).',
+                'block_phone' => 'Optional: another block for a phone only (below 48rem), made for a taller and narrower box.',
+            ],
+            'tabs' => ['desktop' => 'Desktop', 'phone' => 'Phone'],
+            'slide_add' => 'Add a slide',
+            'hint_size' => 'Picture for a desktop: :w × :h px, 2× for sharp screens: :w2 × :h2. Picture for a phone: :pw × :ph px, 2×: :pw2 × :ph2.',
         ],
     ],
 

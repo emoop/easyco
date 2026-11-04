@@ -83,6 +83,7 @@ final class HomeValidator
         $clean = [];
         $grids = 0;
         $carousels = 0;
+        $heroes = 0;
 
         foreach ($list as $i => $section) {
             $one = $this->section($section, "sections.{$i}", $catalog);
@@ -98,6 +99,14 @@ final class HomeValidator
             // HP-5: at most 2 carousels, the same way
             if ($one !== null && $one['type'] === 'carousel' && ++$carousels > HomeCatalog::MAX_CAROUSELS) {
                 $this->fail("sections.{$i}", 'too_many_carousels', ['max' => HomeCatalog::MAX_CAROUSELS]);
+                $this->soft["sections.{$i}"] = true;
+
+                continue;
+            }
+
+            // HP-6: at most 1 hero, the same way
+            if ($one !== null && $one['type'] === 'hero' && ++$heroes > HomeCatalog::MAX_HEROES) {
+                $this->fail("sections.{$i}", 'too_many_heroes', ['max' => HomeCatalog::MAX_HEROES]);
                 $this->soft["sections.{$i}"] = true;
 
                 continue;
@@ -164,7 +173,7 @@ final class HomeValidator
         }
 
         $clean = [];
-        $soft = in_array($type, ['image_grid', 'tiles', 'product_grid', 'carousel'], true);
+        $soft = in_array($type, ['image_grid', 'tiles', 'product_grid', 'carousel', 'hero'], true);
         $failer = function (string $p, string $code, array $params = []) use ($soft): void {
             $this->fail($p, $code, $params);
             $soft && $this->soft[$p] = true;
@@ -176,6 +185,12 @@ final class HomeValidator
             // HP-5: a setting the chosen kind of carousel does not use is IGNORED (its default, no message)
             if ($type === 'carousel' && ! in_array($name, ['kind', 'arrows', 'label', 'show', 'spacing'], true) && ! in_array($name, $uses, true)) {
                 $clean[$name] = $field['default'] ?? null;
+
+                continue;
+            }
+
+            if (($field['kind'] ?? null) === 'hero_slides') {
+                $clean[$name] = $this->heroSlides($settings[$name] ?? [], "{$path}.settings.{$name}", $failer);
 
                 continue;
             }
@@ -226,6 +241,61 @@ final class HomeValidator
         }
 
         return ['type' => $type, 'settings' => $clean];
+    }
+
+    /**
+     * HP-6: the slides of a «Hero слайдер»: 1 to 6 items `{block (required), block_phone (optional)}`, each an id of an HTML block (of ANY kind). A slide that does not validate is DROPPED from the result (and reported):
+     * saving refuses the layout, reading shows the slides that are fine. That a block still exists is not decided here (this class asks no database): a block that is gone drops its slide when the page is printed.
+     *
+     * @param  callable(string, string, array<string, mixed>=): void  $fail
+     * @return list<array{block: int, block_phone: int|null}>
+     */
+    private function heroSlides(mixed $value, string $path, callable $fail): array
+    {
+        if (! is_array($value) || ! array_is_list($value)) {
+            $fail($path, 'bad_list', []);
+
+            return [];
+        }
+
+        if ($value === []) {
+            $fail($path, 'too_few_slides', []);
+        }
+
+        if (count($value) > HeroGeometry::SLIDES_MAX) {
+            $fail($path, 'too_many_slides', ['max' => HeroGeometry::SLIDES_MAX]);
+            $value = array_slice($value, 0, HeroGeometry::SLIDES_MAX);
+        }
+
+        $out = [];
+
+        foreach ($value as $i => $item) {
+            $bad = false;
+            $at = "{$path}.{$i}";
+            $report = function (string $p, string $code, array $params = []) use (&$bad, $fail): void {
+                $bad = true;
+                $fail($p, $code, $params);
+            };
+
+            if (! is_array($item)) {
+                $report($at, 'bad_element');
+
+                continue;
+            }
+
+            foreach (array_diff(array_keys($item), ['block', 'block_phone']) as $key) {
+                $report($at, 'unknown_key', ['key' => mb_substr((string) $key, 0, 30)]);
+            }
+
+            $block = FieldKinds::reference($item['block'] ?? null, true, "{$at}.block", $report);
+            $phone = FieldKinds::reference($item['block_phone'] ?? null, false, "{$at}.block_phone", $report);
+
+            $bad || $block === null || $out[] = ['block' => $block, 'block_phone' => $phone];
+        }
+
+        $out === [] && $value !== [] && $fail($path, 'too_few_slides', []);
+
+        return $out;
     }
 
     /**

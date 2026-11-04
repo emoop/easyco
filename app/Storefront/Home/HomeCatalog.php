@@ -69,6 +69,9 @@ final class HomeCatalog
 
     public const CAROUSEL_ALT_MAX = 120;
 
+    /** HP-6: a «Hero слайдер»: at most 1 in a layout; its slides are 1 to HeroGeometry::SLIDES_MAX (6). */
+    public const MAX_HEROES = 1;
+
     /** HP-2: the most blocks the phone list of an image grid holds. */
     public const PHONE_BLOCKS_MAX = 4;
 
@@ -149,6 +152,15 @@ final class HomeCatalog
                 'blocks' => ['kind' => 'carousel_blocks', 'default' => []],
                 'images' => ['kind' => 'carousel_images', 'default' => []],
             ],
+            // HP-6: one big banner at a time, changing by itself (CSS only). A slide is an HTML block and, optionally, another one for the phone; `slides` is validated by HomeValidator itself. The seconds each slide stays are
+            // `seconds` (NOT `show`: every section already has the common `show`, visible or hidden).
+            'hero' => [
+                'autoplay' => ['kind' => 'bool', 'default' => true],
+                'seconds' => ['kind' => 'enum', 'options' => HeroGeometry::SECONDS, 'default' => HeroGeometry::DEFAULT_SECONDS, 'options_prefix' => 'design.home.hero.seconds.'],
+                'ratio' => ['kind' => 'enum', 'options' => HeroGeometry::RATIOS, 'default' => HeroGeometry::DEFAULT_RATIO, 'options_prefix' => 'design.home.hero.ratios.'],
+                'ratio_phone' => ['kind' => 'enum', 'options' => HeroGeometry::PHONE_RATIOS, 'default' => HeroGeometry::DEFAULT_PHONE_RATIO, 'options_prefix' => 'design.home.hero.ratios.'],
+                'slides' => ['kind' => 'hero_slides', 'default' => []],
+            ],
         ];
         $out = [];
 
@@ -173,10 +185,30 @@ final class HomeCatalog
             'image_grid' => [...array_values(is_array($settings['cells'] ?? null) ? $settings['cells'] : []), ...array_values(is_array($settings['phone_blocks'] ?? null) ? $settings['phone_blocks'] : [])],
             // HP-5: a blocks carousel's list (the other kinds hold none)
             'carousel' => ($settings['kind'] ?? null) === 'blocks' ? array_values(is_array($settings['blocks'] ?? null) ? $settings['blocks'] : []) : [],
+            // HP-6: every slide's desktop block and its phone block (when set)
+            'hero' => self::heroBlockIds($settings),
             default => [],
         };
 
         return array_values(array_unique(array_filter($ids, static fn (mixed $id): bool => is_int($id) && $id > 0)));
+    }
+
+    /**
+     * HP-6: the block ids of a hero's slides (the desktop block, then the phone block of each slide, when set), in order.
+     *
+     * @param  array<string, mixed>  $settings
+     * @return list<mixed>
+     */
+    public static function heroBlockIds(array $settings): array
+    {
+        $ids = [];
+
+        foreach (is_array($settings['slides'] ?? null) ? $settings['slides'] : [] as $slide) {
+            $ids[] = is_array($slide) ? ($slide['block'] ?? null) : null;
+            $ids[] = is_array($slide) ? ($slide['block_phone'] ?? null) : null;
+        }
+
+        return $ids;
     }
 
     /**
