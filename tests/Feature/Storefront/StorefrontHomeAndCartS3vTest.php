@@ -3,7 +3,6 @@
 namespace Tests\Feature\Storefront;
 
 use App\Settings\Contracts\SiteSettingsRepository;
-use App\Settings\StorefrontHomeSettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
@@ -155,21 +154,24 @@ class StorefrontHomeAndCartS3vTest extends TestCase
         foreach (['sf-intro', 'sf-title', 'sf-intro-button', 'href="#newest"'] as $gone) {
             $this->assertStringNotContainsString($gone, $html, $gone);
         }
-        $this->assertStringNotContainsString(__('storefront.home_intro_text'), $html);
-        $this->assertStringNotContainsString('Browse the newest<', $html);
+        // DRIBNI-3: the intro's button «Разгледайте новите» (its English text too) and its anchor to #newest are not printed
+        $this->assertStringNotContainsString('Разгледайте новите', $html);
+        $this->assertStringNotContainsString('Browse the newest', $html);
+        $this->assertStringNotContainsString('href="#newest"', $html);
     }
 
     public function test_the_old_heading_and_text_settings_are_kept_but_no_longer_printed(): void
     {
         $settings = app(SiteSettingsRepository::class);
-        $settings->set(StorefrontHomeSettings::TITLE_KEY, 'Spring & co');
-        $settings->set(StorefrontHomeSettings::TEXT_KEY, 'Fresh arrivals every week');
+        // DRIBNI-3: the reader class is gone; the two keys are written and read here as plain strings
+        $settings->set('storefront.home.title', 'Spring & co');
+        $settings->set('storefront.home.text', 'Fresh arrivals every week');
 
         $html = $this->get('/')->assertOk()->getContent();
 
         $this->assertStringNotContainsString('Spring', $html);
         $this->assertStringNotContainsString('Fresh arrivals', $html);
-        $this->assertSame('Spring & co', $settings->get(StorefrontHomeSettings::TITLE_KEY), 'the data is not touched');
+        $this->assertSame('Spring & co', $settings->get('storefront.home.title'), 'the data is not touched');
     }
 
     public function test_the_home_page_prints_the_category_row_and_the_newest_products_only(): void
@@ -194,8 +196,9 @@ class StorefrontHomeAndCartS3vTest extends TestCase
         $without = $this->countQueries('/');
 
         $settings = app(SiteSettingsRepository::class);
-        $settings->set(StorefrontHomeSettings::TITLE_KEY, 'Our shop');
-        $settings->set(StorefrontHomeSettings::TEXT_KEY, 'Some text');
+        // DRIBNI-3: the keys as plain strings (the reader class is gone); nothing reads them, so the count must not move
+        $settings->set('storefront.home.title', 'Our shop');
+        $settings->set('storefront.home.text', 'Some text');
         $with = $this->countQueries('/');
 
         fwrite(STDERR, "\n[query-count] storefront home (S3-V): {$without} queries without the intro keys, {$with} with them (before S3-V: ".self::HOME_QUERIES.")\n");

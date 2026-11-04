@@ -16,6 +16,7 @@ use App\Storefront\ReadModels\ListingScope;
 use App\Storefront\ReadModels\ListingSort;
 use App\Storefront\ReadModels\PriceBlock;
 use App\Storefront\ReadModels\ProductCard;
+use App\Storefront\ProductSummary\PurchaseView;
 use App\Storefront\ReadModels\ProductPage;
 use App\Storefront\ReadModels\VariationView;
 use App\Storefront\Url\StorefrontUrls;
@@ -156,7 +157,8 @@ final class CatalogReader
                 price: $this->productPrice([$id], $quotes),
                 inStock: ($stock[$id] ?? 0) > 0,
                 purchasable: $variation->status === StorefrontVisibility::VARIATION_STATUS->value && (bool) $variation->is_purchasable,
-                maxQuantity: min(99, $stock[$id] ?? 0),
+                // DRIBNI-3: the same cap as the cart's (PurchaseView::MAX_QUANTITY), not a second 99
+                maxQuantity: min(PurchaseView::MAX_QUANTITY, $stock[$id] ?? 0),
             );
         }
 

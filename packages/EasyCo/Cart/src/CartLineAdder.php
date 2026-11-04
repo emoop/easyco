@@ -40,6 +40,9 @@ final class CartLineAdder
      * requested), not just the newly-requested amount — adding 3 more
      * of something you already have 8 of checks for 11, not 3.
      *
+     * DRIBNI-3: `$quantityCap` is the storefront's own upper limit for one line (the shop passes 99): the
+     * available amount is the stock or the cap, whichever is smaller. Null = the stock alone (the old rule).
+     *
      * @throws InsufficientStockForCartException
      */
     public function addLine(
@@ -48,8 +51,13 @@ final class CartLineAdder
         int $quantity,
         ?int $priceAtAddMinor,
         ?string $priceAtAddCurrency,
+        ?int $quantityCap = null,
     ): void {
         $available = $this->stockLevels->findByVariationId($variationId)->quantity();
+
+        if ($quantityCap !== null) {
+            $available = min($available, $quantityCap);
+        }
 
         $alreadyInCart = 0;
         foreach ($cart->lines() as $existingLine) {

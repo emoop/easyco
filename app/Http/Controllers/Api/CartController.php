@@ -11,6 +11,7 @@ use App\Services\CatalogScopeResolver;
 use App\Services\UnpricedLines;
 use App\Services\VariationDisplayReader;
 use App\Storefront\Cart\CartLineEnricher;
+use App\Storefront\ProductSummary\PurchaseView;
 use DateTimeImmutable;
 use EasyCo\Cart\Cart;
 use EasyCo\Cart\CartLine;
@@ -113,12 +114,14 @@ class CartController extends Controller
         $unitPrice = $quote->final->gross();
 
         try {
+            // DRIBNI-3: one line never goes above the storefront's own limit (99) nor above the stock: the same number the product page's counter shows
             $this->cartLineAdder->addLine(
                 $cart,
                 $variationId,
                 $validated['quantity'],
                 $unitPrice->minorValue(),
                 $unitPrice->currency()->code(),
+                PurchaseView::MAX_QUANTITY,
             );
         } catch (InsufficientStockForCartException $e) {
             return response()->json([
@@ -146,7 +149,8 @@ class CartController extends Controller
             ], 404);
         }
 
-        $available = $this->stockLevels->findByVariationId($variationId)->quantity();
+        // DRIBNI-3: the same cap as the add: the stock or the storefront limit (99), whichever is smaller
+        $available = min(PurchaseView::MAX_QUANTITY, $this->stockLevels->findByVariationId($variationId)->quantity());
 
         if ($validated['quantity'] > $available) {
             return response()->json([

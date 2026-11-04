@@ -106,7 +106,7 @@ The settings page (Settings > Checkout, `SETTINGS_MANAGE`) forgets a key that ho
 
 | Key | Values | Absent means |
 |---|---|---|
-| `storefront.home.title` | plain text, at most 120 characters (`App\Settings\StorefrontHomeSettings`; the admin form enforces `PlainText` and the limit, the reader cuts at it) | the language default «Добре дошли в :shop» |
+| `storefront.home.title` | plain text, at most 120 characters (the admin form enforced `PlainText` and the limit; no reader since DRIBNI-3 removed `App\Settings\StorefrontHomeSettings`, the rows stay unread) | the language default «Добре дошли в :shop» |
 | `storefront.home.text` | plain multi-line text, at most 400 characters (`PlainMultilineText`) | the language default text |
 
 Edited in Admin > Storefront (`content_manage`). Saving an empty field FORGETS its key. Both keys are read in one `getMany` together with `site.currency_symbol_position` (a key the home page reads anyway), so they cost the page no query.

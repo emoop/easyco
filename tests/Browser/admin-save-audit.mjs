@@ -443,33 +443,6 @@ const PAGES = {
         },
     }),
 
-    storefront: async () => {
-        await audit('Витрина', 'storefront-settings', {
-            mutate: async () => [['home_title', 'Добре дошли — UX одит'], ['home_text', 'Текст на началото с кирилица и числа 123.']],
-            save: SAVE,
-            storefront: async () => {
-                const html = await publicHtml('/');
-                const checks = [];
-                expectIn(checks, 'title on the home page', html.includes('Добре дошли — UX одит'));
-                expectIn(checks, 'text on the home page', html.includes('Текст на началото с кирилица'));
-
-                return checks;
-            },
-        });
-
-        return audit('Витрина (празно = по подразбиране)', 'storefront-settings', {
-            mutate: async () => [['home_title', ''], ['home_text', '']],
-            save: SAVE,
-            storefront: async () => {
-                const html = await publicHtml('/');
-                const checks = [];
-                expectIn(checks, 'the custom title is gone', ! html.includes('Добре дошли — UX одит'));
-
-                return checks;
-            },
-        });
-    },
-
     catalog: async () => audit('Каталог', 'catalog-settings', {
         mutate: async () => ['season_field_enabled', 'brand_field_enabled', 'tags_field_enabled', 'product_group_field_enabled', 'product_group_required'].map((p) => [p, undefined]),
         save: SAVE,

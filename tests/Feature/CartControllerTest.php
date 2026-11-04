@@ -271,6 +271,55 @@ class CartControllerTest extends TestCase
         $this->assertSame(0, CartModel::count());
     }
 
+    /** DRIBNI-3: the server refuses a line above the stock OR the shop's limit of 99, whichever is smaller (stock 3 → 10 is refused; stock 500 → 100 is refused, 99 is fine). */
+    public function test_add_line_is_capped_at_99_and_at_the_stock(): void
+    {
+        $small = $this->pricedPurchasableVariation(stock: 3);
+        $this->postJson('/api/cart/lines', ['variation_id' => $small, 'quantity' => 10])
+            ->assertStatus(422)
+            ->assertJsonPath('available', 3);
+
+        $big = $this->pricedPurchasableVariation(stock: 500);
+        $this->postJson('/api/cart/lines', ['variation_id' => $big, 'quantity' => 100])
+            ->assertStatus(422)
+            ->assertJsonPath('available', 99)
+            ->assertJsonPath('message', 'Cannot add 100 of variation "'.$big.'" to cart: only 99 available.');
+        $this->postJson('/api/cart/lines', ['variation_id' => $big, 'quantity' => 99])->assertStatus(201);
+        $this->assertSame(1, CartModel::count());
+    }
+
+    /** DRIBNI-3: the cap counts what is already in the cart: 60 + 50 is refused (110 > 99), 60 + 39 is fine. */
+    public function test_the_cap_counts_the_line_already_in_the_cart(): void
+    {
+        $variationId = $this->pricedPurchasableVariation(stock: 500);
+
+        $this->postJson('/api/cart/lines', ['variation_id' => $variationId, 'quantity' => 60])->assertStatus(201);
+        $this->postJson('/api/cart/lines', ['variation_id' => $variationId, 'quantity' => 50])->assertStatus(422)->assertJsonPath('available', 99);
+        $this->postJson('/api/cart/lines', ['variation_id' => $variationId, 'quantity' => 39])->assertStatus(201)->assertJsonPath('lines.0.quantity', 99);
+    }
+
+    /** DRIBNI-3: a change of quantity is capped the same way as an add (stock 500: 100 is refused, the line stays; 99 is fine). */
+    public function test_patch_is_capped_at_99_and_keeps_the_line_when_refused(): void
+    {
+        $variationId = $this->pricedPurchasableVariation(stock: 500);
+        $this->postJson('/api/cart/lines', ['variation_id' => $variationId, 'quantity' => 1])->assertStatus(201);
+
+        $this->patchJson("/api/cart/lines/{$variationId}", ['quantity' => 100])
+            ->assertStatus(422)
+            ->assertJsonPath('available', 99)
+            ->assertJsonPath('message', 'Cannot set quantity to 100: only 99 available.');
+        $this->patchJson("/api/cart/lines/{$variationId}", ['quantity' => 99])->assertStatus(200)->assertJsonPath('lines.0.quantity', 99);
+    }
+
+    /** DRIBNI-3: a change of quantity above a small stock is refused with the stock as the available amount. */
+    public function test_patch_above_a_small_stock_is_refused(): void
+    {
+        $variationId = $this->pricedPurchasableVariation(stock: 3);
+        $this->postJson('/api/cart/lines', ['variation_id' => $variationId, 'quantity' => 1])->assertStatus(201);
+
+        $this->patchJson("/api/cart/lines/{$variationId}", ['quantity' => 10])->assertStatus(422)->assertJsonPath('available', 3);
+    }
+
     public function test_add_a_variation_with_no_configured_price_returns_422_not_500(): void
     {
         // The "Regular Prices" system list itself must exist (that's
