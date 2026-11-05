@@ -82,6 +82,7 @@ use Illuminate\Support\HtmlString;
 use WeakMap;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Component;
+use Filament\Schemas\Components\Flex;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Group;
 use Filament\Schemas\Components\Section;
@@ -315,6 +316,27 @@ class ProductResource extends Resource
     }
 
     /**
+     * «Препоръчан» — ONE definition for the three product forms (SIMPLE
+     * create/edit here, the variable wizard in CreateVariableProduct, the
+     * variable edit in EditVariableProduct). PRODUCT level only: it is a
+     * flag of the parent product and is never offered on a variation
+     * (no variation repeater, row or table has this field). The name
+     * `is_featured` and the save path (the Create and Edit pages call
+     * setFeatured()) are the same in all three forms.
+     */
+    public static function featuredToggle(): Toggle
+    {
+        return Toggle::make('is_featured')
+            ->label(__('products.fields.is_featured'))
+            ->afterLabel(\App\Filament\Design\InfoHint::make((string) __('products.fields.is_featured_help'), 'is_featured'))
+            ->default(false)
+            // Not growable: inside the top row a switch takes its own width,
+            // so the row's switches end at the right edge instead of each
+            // stretching to half of it (Flex grows its children by default).
+            ->grow(false);
+    }
+
+    /**
      * Laid out in PAIRS rather than one full-width field per row — the
      * same compaction EditVariableProduct::generalTabComponents() already
      * applies to this same set (the "empty space, lots of scrolling"
@@ -339,25 +361,23 @@ class ProductResource extends Resource
     protected static function generalTabComponents(): array
     {
         return [
-            // Name + the purchasable switch SHARE the tab's first row
-            // (3/4 + 1/4) instead of each owning a full-width row of its
-            // own. is_purchasable is the one boolean a merchant looks for
-            // before anything else on this tab, so the top-right corner is
-            // where it belongs, and pairing it with name costs no extra
-            // vertical space. Grid's own breakpoint default is lg
-            // (confirmed against HasColumns::columns(),
-            // vendor/filament/schemas), so below 1024px the switch simply
-            // stacks beneath the name again — no narrow-screen regression.
-            Grid::make(4)
-                ->schema([
-                    TextInput::make('name')
-                        ->label(__('products.fields.name'))
-                        ->required()
-                        ->columnSpan(3),
-                    Toggle::make('is_purchasable')
-                        ->label(__('products.fields.is_purchasable'))
-                        ->default(true),
-                ]),
+            // The two switches sit in their OWN row ABOVE the name, aligned
+            // to the right: «Препоръчан» (product-level only, see
+            // featuredToggle()) then the purchasable switch. From the md
+            // breakpoint (768px) they share one row; below it Flex stacks
+            // them one above the other. The name stays full width below.
+            Flex::make([
+                static::featuredToggle(),
+                Toggle::make('is_purchasable')
+                    ->label(__('products.fields.is_purchasable'))
+                    ->default(true)
+                    ->grow(false),
+            ])
+                ->alignment('end')
+                ->from('md'),
+            TextInput::make('name')
+                ->label(__('products.fields.name'))
+                ->required(),
             TextInput::make('slug')
                 ->label(__('products.fields.slug'))
                 ->helperText(__('products.fields.slug_help')),
@@ -443,10 +463,6 @@ class ProductResource extends Resource
                         ])
                         ->default(CatalogVisibility::HIDDEN->value)
                         ->required(),
-                    Toggle::make('is_featured')
-                        ->label(__('products.fields.is_featured'))
-                        ->afterLabel(\App\Filament\Design\InfoHint::make((string) __('products.fields.is_featured_help'), 'is_featured'))
-                        ->default(false),
                     Select::make('brand_id')
                         ->label(__('products.fields.brand_id'))
                         ->options(fn (): array => BrandModel::pluck('name', 'id')->all())

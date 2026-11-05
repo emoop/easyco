@@ -27,6 +27,7 @@ use Filament\Forms\Components\RichEditor;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
+use Filament\Schemas\Components\Flex;
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\CreateRecord;
@@ -167,6 +168,14 @@ class CreateVariableProduct extends CreateRecord
         return [
             Step::make(__('products.wizard.steps.general'))
                 ->schema([
+                    // «Препоръчан» has its own row ABOVE the name, aligned
+                    // right, the same row as the simple product's form (there
+                    // with «Продаваем» beside it). The PRODUCT's flag only.
+                    Flex::make([
+                        ProductResource::featuredToggle(),
+                    ])
+                        ->alignment('end')
+                        ->from('md'),
                     TextInput::make('name')
                         ->label(__('products.fields.name'))
                         ->required(),
@@ -207,10 +216,6 @@ class CreateVariableProduct extends CreateRecord
                         ])
                         ->default(CatalogVisibility::HIDDEN->value)
                         ->required(),
-                    Toggle::make('is_featured')
-                        ->label(__('products.fields.is_featured'))
-                        ->afterLabel(\App\Filament\Design\InfoHint::make((string) __('products.fields.is_featured_help'), 'is_featured'))
-                        ->default(false),
                     Select::make('brand_id')
                         ->label(__('products.fields.brand_id'))
                         ->options(fn (): array => BrandModel::pluck('name', 'id')->all())

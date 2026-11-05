@@ -77,6 +77,7 @@ use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\EditRecord;
 use Filament\Schemas\Components\Component;
+use Filament\Schemas\Components\Flex;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Group;
 use Filament\Schemas\Components\Section;
@@ -479,6 +480,14 @@ class EditVariableProduct extends EditRecord
     private function generalTabComponents(): array
     {
         return [
+            // «Препоръчан» has its own row ABOVE the name, aligned right (the
+            // same row as the simple product's form). The PRODUCT's flag
+            // only: no variation row (existing, new or archived) has it.
+            Flex::make([
+                ProductResource::featuredToggle(),
+            ])
+                ->alignment('end')
+                ->from('md'),
             TextInput::make('name')
                 ->label(__('products.fields.name'))
                 ->required(),
@@ -521,10 +530,6 @@ class EditVariableProduct extends EditRecord
                 ])
                 ->default(CatalogVisibility::HIDDEN->value)
                 ->required(),
-            Toggle::make('is_featured')
-                ->label(__('products.fields.is_featured'))
-                ->afterLabel(\App\Filament\Design\InfoHint::make((string) __('products.fields.is_featured_help'), 'is_featured'))
-                ->default(false),
             Select::make('brand_id')
                 ->label(__('products.fields.brand_id'))
                 ->options(fn (): array => BrandModel::pluck('name', 'id')->all())
