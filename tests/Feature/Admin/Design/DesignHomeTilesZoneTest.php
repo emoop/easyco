@@ -148,7 +148,7 @@ class DesignHomeTilesZoneTest extends TestCase
     public function test_a_tile_without_what_it_needs_is_refused(): void
     {
         foreach ([
-            [['source' => 'season', 'entity' => '1', 'label' => '', 'picture' => null, 'link' => '']],
+            // P3: a season tile without a link is valid now (its page exists); a FREE tile still needs one
             [['source' => 'custom', 'entity' => null, 'label' => '', 'picture' => null, 'link' => '/x']],
             [['source' => 'category', 'entity' => '1', 'label' => '', 'picture' => null, 'link' => 'javascript:alert(1)']],
         ] as $tiles) {

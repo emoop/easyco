@@ -91,7 +91,8 @@ class DesignFooterZoneTest extends TestCase
         $screen = $this->screen();
         $screen->assertSet('zone', 'footer');
 
-        $screen->call('selectZone', 'content')->assertSet('zone', 'footer');
+        // (P3: «content» is a real zone now; any name the screen does not know is refused)
+        $screen->call('selectZone', 'no-such-zone')->assertSet('zone', 'footer');
         $screen->call('selectZone', '../x')->assertSet('zone', 'footer');
         $screen->call('selectZone', 'header')->assertSet('zone', 'header');
         $this->assertStringContainsString('wire:click="selectZone(\'footer\')"', $screen->html());

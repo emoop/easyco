@@ -325,20 +325,21 @@ final class HomeTiles
         }
 
         if ($ids['season'] !== []) {
-            foreach (DB::table('catalog_seasons')->whereIn('id', $ids['season'])->get(['id', 'name', 'picture_media_asset_id']) as $row) {
-                $out['season'][(int) $row->id] = ['name' => (string) $row->name, 'picture' => $row->picture_media_asset_id === null ? null : (int) $row->picture_media_asset_id];
+            foreach (DB::table('catalog_seasons')->whereIn('id', $ids['season'])->get(['id', 'name', 'slug', 'picture_media_asset_id']) as $row) {
+                // P3: the tile links to the season's page (the slug is read with the season: no query per tile)
+                $out['season'][(int) $row->id] = ['name' => (string) $row->name, 'picture' => $row->picture_media_asset_id === null ? null : (int) $row->picture_media_asset_id, 'url' => app(StorefrontUrls::class)->season((string) $row->slug)];
             }
         }
 
         if ($ids['tag'] !== []) {
-            foreach (DB::table('catalog_tags')->whereIn('id', $ids['tag'])->get(['id', 'name']) as $row) {
-                $out['tag'][(int) $row->id] = ['name' => (string) $row->name, 'picture' => null];
+            foreach (DB::table('catalog_tags')->whereIn('id', $ids['tag'])->get(['id', 'name', 'slug']) as $row) {
+                $out['tag'][(int) $row->id] = ['name' => (string) $row->name, 'picture' => null, 'url' => app(StorefrontUrls::class)->tag((string) $row->slug)];
             }
         }
 
         if ($ids['brand'] !== []) {
-            foreach (DB::table('catalog_brands')->whereIn('id', $ids['brand'])->get(['id', 'name', 'logo_media_asset_id']) as $row) {
-                $out['brand'][(int) $row->id] = ['name' => (string) $row->name, 'picture' => $row->logo_media_asset_id === null ? null : (int) $row->logo_media_asset_id];
+            foreach (DB::table('catalog_brands')->whereIn('id', $ids['brand'])->get(['id', 'name', 'slug', 'logo_media_asset_id']) as $row) {
+                $out['brand'][(int) $row->id] = ['name' => (string) $row->name, 'picture' => $row->logo_media_asset_id === null ? null : (int) $row->logo_media_asset_id, 'url' => app(StorefrontUrls::class)->brand((string) $row->slug)];
             }
         }
 

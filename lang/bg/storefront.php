@@ -16,6 +16,7 @@ return [
     'more' => 'Още',
     'see_all' => 'Виж всички',
     'subcategories' => 'Подкатегории',
+    'cloud_categories' => 'Категории',
     'no_products' => 'Тук все още няма продукти.',
     'in_stock' => 'В наличност',
     'out_of_stock' => 'Изчерпан',

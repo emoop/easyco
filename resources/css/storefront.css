@@ -5129,6 +5129,9 @@ html:not(.js) .sf-bar-item:focus-within > .sf-sub {
 .sf-hp-gap-48 { --sf-hp-gap: 3rem; }
 .sf-hp-gap-64 { --sf-hp-gap: 4rem; }
 .sf-hp-gap-96 { --sf-hp-gap: 6rem; }
+/* P3: the blocks of a listing page's template (above and below the product list) keep their distance from what they sit next to */
+.sf-lp-slot-top { margin-block: 1rem 1.5rem; }
+.sf-lp-slot-bottom { margin-block-start: 2.5rem; }
 
 .sf-hp-section {
     min-width: 0;

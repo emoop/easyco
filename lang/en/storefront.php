@@ -16,6 +16,7 @@ return [
     'more' => 'More',
     'see_all' => 'See all',
     'subcategories' => 'Subcategories',
+    'cloud_categories' => 'Categories',
     'no_products' => 'There are no products here yet.',
     'in_stock' => 'In stock',
     'out_of_stock' => 'Out of stock',

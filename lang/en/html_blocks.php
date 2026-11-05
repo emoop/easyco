@@ -122,6 +122,7 @@ return [
         'category' => 'the banner of the category :categories',
         'summary' => 'the right column',
         'home' => 'the home page',
+        'content' => 'the category, brand, season or tag pages',
         'join' => ' and ',
     ],
 

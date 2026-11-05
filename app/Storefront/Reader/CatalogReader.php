@@ -267,6 +267,46 @@ final class CatalogReader
         );
     }
 
+    /**
+     * P3: the quick-navigation cloud of a listing page's title. A category: its shown sub-categories (the category index is already loaded for the menu: no query of its own). A brand, season or tag: the categories
+     * that hold VISIBLE products of it (a hidden, draft or archived product brings no category in): ONE grouped read over the visible (category, product) pairs. At most `$max` links, by the number of visible
+     * products (most first), then by name. Names are plain text (the view escapes them).
+     *
+     * @return list<array{name: string, url: string}>
+     */
+    public function cloud(ListingScope $scope, int $id, int $max = 12): array
+    {
+        $rows = [];
+
+        if ($scope === ListingScope::CATEGORY) {
+            foreach ($this->categories->shownChildren($id) as $node) {
+                $rows[] = ['name' => $node->name, 'url' => $node->url, 'n' => $node->productCount, 'id' => (int) $node->id];
+            }
+        } else {
+            $pairs = $this->visibility->visibleCategoryPairs()
+                ->select('catalog_product_categories.category_id')
+                ->selectRaw('count(distinct catalog_product_categories.product_id) as n')
+                ->groupBy('catalog_product_categories.category_id');
+
+            match ($scope) {
+                ListingScope::BRAND => $pairs->where('catalog_products.brand_id', $id),
+                ListingScope::SEASON => $pairs->where('catalog_products.season_id', $id),
+                ListingScope::TAG => $pairs->whereIn('catalog_products.id', DB::table('catalog_product_tags')->where('tag_id', $id)->select('product_id')),
+                default => null,
+            };
+
+            foreach ($pairs->get() as $pair) {
+                $category = $this->categories->row((int) $pair->category_id);
+
+                $category === null || $rows[] = ['name' => (string) $category['name'], 'url' => $this->urls->category($this->categories->path((int) $pair->category_id)), 'n' => (int) $pair->n, 'id' => (int) $pair->category_id];
+            }
+        }
+
+        usort($rows, static fn (array $a, array $b): int => [$b['n'], mb_strtolower($a['name'], 'UTF-8'), $a['id']] <=> [$a['n'], mb_strtolower($b['name'], 'UTF-8'), $b['id']]);
+
+        return array_map(static fn (array $row): array => ['name' => $row['name'], 'url' => $row['url']], array_slice($rows, 0, max(0, $max)));
+    }
+
     // ================================================================== listing
 
     /**
@@ -334,8 +374,18 @@ final class CatalogReader
      *
      * @return list<ProductCard>
      */
-    public function homeProducts(string $kind, ?int $entity, string $sort, int $limit, string $sizes): array
+    public function homeProducts(string $kind, ?int $entity, string $sort, int $limit, string $sizes, ?ListingScope $subject = null, ?int $subjectId = null): array
     {
+        // P3: `current` = the products of the PAGE's own category / brand / season / tag, read through the same sources below (the home page passes no subject: nothing)
+        if ($kind === 'current') {
+            if ($subject === null || $subjectId === null || $subjectId < 1) {
+                return [];
+            }
+
+            $kind = $subject->value;
+            $entity = $subjectId;
+        }
+
         if ($kind !== 'newest' && $kind !== 'featured' && ($entity === null || $entity < 1)) {
             return [];
         }

@@ -121,6 +121,8 @@ class MenuCompiler
             app(ProductSummaryCompiler::class)->refresh();
             // HP-1: and the home layout's compiled copy
             app(\App\Storefront\Home\HomeCompiler::class)->refresh();
+            // P3: and the listing-page templates'
+            app(\App\Storefront\Content\ContentCompiler::class)->refresh();
 
             return false;
         }
@@ -136,6 +138,7 @@ class MenuCompiler
         app(FooterCompiler::class)->refresh($menus, $locations);
         app(ProductSummaryCompiler::class)->refresh();
         app(\App\Storefront\Home\HomeCompiler::class)->refresh();
+        app(\App\Storefront\Content\ContentCompiler::class)->refresh();
 
         return true;
     }

@@ -15,6 +15,9 @@ final class HomeValidator
     /** @var array<string, string> */
     private array $errors = [];
 
+    /** P3: validating a listing page's template (the «Съдържание» zone): the carousel is limited to CONTENT_CAROUSEL_KINDS and may have the source `current` */
+    private bool $content = false;
+
     /** @var array<string, true> HP-2: the paths of an image grid's settings: a bad value there falls back to its own default (the other settings stay), so READING the layout does not refuse it for them */
     private array $soft = [];
 
@@ -22,9 +25,10 @@ final class HomeValidator
      * @param  array<string, mixed>  $layout
      * @return array{0: array{spacing: string, sections: list<array{type: string, settings: array<string, mixed>}>}, 1: array<string, string>} the normalised layout and the messages by path
      */
-    public static function validate(array $layout): array
+    public static function validate(array $layout, bool $content = false): array
     {
         $validator = new self;
+        $validator->content = $content;
         $clean = $validator->layout($layout);
 
         return [$clean, $validator->errors];
@@ -37,9 +41,10 @@ final class HomeValidator
      * @param  array<string, mixed>  $layout
      * @return array{0: array{spacing: string, sections: list<array{type: string, settings: array<string, mixed>}>}, 1: array<string, string>}
      */
-    public static function validateForRead(array $layout): array
+    public static function validateForRead(array $layout, bool $content = false): array
     {
         $validator = new self;
+        $validator->content = $content;
         $clean = $validator->layout($layout);
 
         return [$clean, array_diff_key($validator->errors, $validator->soft)];
@@ -152,6 +157,9 @@ final class HomeValidator
 
         $schema = HomeCatalog::common() + $catalog[$type]['schema'];
 
+        // P3: a listing page's carousel may take its products from the page itself
+        $this->content && $type === 'carousel' && $schema['source']['options'] = [...$schema['source']['options'], HomeCatalog::CURRENT_SOURCE];
+
         foreach (array_diff(array_keys($settings), array_keys($schema)) as $key) {
             $this->fail("{$path}.settings.{$key}", 'unknown_setting', ['key' => mb_substr((string) $key, 0, 30)]);
         }
@@ -165,7 +173,7 @@ final class HomeValidator
         }
 
         // HP-5: a carousel whose KIND is not one of the closed list is dropped (reported; soft, so reading prints the other sections)
-        if ($type === 'carousel' && array_key_exists('kind', $settings) && ! (is_string($settings['kind']) && in_array($settings['kind'], CarouselGeometry::KINDS, true))) {
+        if ($type === 'carousel' && array_key_exists('kind', $settings) && ! (is_string($settings['kind']) && in_array($settings['kind'], $this->content ? HomeCatalog::CONTENT_CAROUSEL_KINDS : CarouselGeometry::KINDS, true))) {
             $this->fail("{$path}.settings.kind", 'bad_choice');
             $this->soft["{$path}.settings.kind"] = true;
 

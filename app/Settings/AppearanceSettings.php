@@ -67,6 +67,11 @@ final class AppearanceSettings
     /** HP-1: the home page («Начална»): its working copy and its published layout (`{spacing, sections: [{type, settings}]}`). */
     public const HOME_DRAFT_KEY = 'design.home.global.draft';
 
+    /** P3: the listing-page templates of «Съдържание»: the published set (the admin's source; the storefront reads the compiled copy in the design document) and the draft. */
+    public const CONTENT_PUBLISHED_KEY = 'design.content.published';
+
+    public const CONTENT_DRAFT_KEY = 'design.content.draft';
+
     public const HOME_PUBLISHED_KEY = 'design.home.global.published';
 
     public const FOOTER_DRAFT_KEY = 'footer.layout.draft';

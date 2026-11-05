@@ -11,7 +11,7 @@
         @if (($headerBlock ?? null) !== null)
             <div class="sf-cat-banner">{!! $headerBlock !!}</div>
         @endif
-        @if ($category->children !== [])
+        @if ($category->children !== [] && ($content['cloud'] ?? null) === null)
             <nav class="sf-subcategories" aria-label="{{ __('storefront.subcategories') }}">
                 <ul class="sf-subcategory-list">
                     @foreach ($category->children as $child)
@@ -20,6 +20,17 @@
                 </ul>
             </nav>
         @endif
+@if (($content['cloud'] ?? null) !== null && $content['cloud'] !== [])
+        {{-- P3: with a template that has the cloud on, the quick-navigation cloud (at most 12 links, the most products first) takes the place of the plain list of sub-categories --}}
+        <nav class="sf-subcategories sf-cloud" aria-label="{{ $content['label'] }}">
+            <ul class="sf-subcategory-list">
+                @foreach ($content['cloud'] as $link)
+                    <li class="sf-subcategory"><a href="{{ $link['url'] }}">{{ $link['name'] }}</a></li>
+                @endforeach
+            </ul>
+        </nav>
+@endif
+@include('storefront.partials.listing-slot', ['slot' => $content['top'] ?? null, 'where' => 'top'])
         {{-- CD-1c: «filters on top» prints the BAR (a computer: the sort and one dropdown per filter, plain links); every layout prints the FORM (the phone drawer; the side panel). CSS shows the one that fits: the DOM order is always
              the bar, the form, then the list. --}}
         <div class="sf-cat-body">
@@ -39,5 +50,6 @@
                 @include('storefront.partials.pagination', ['pagination' => $pagination])
             </div>
         </div>
+@include('storefront.partials.listing-slot', ['slot' => $content['bottom'] ?? null, 'where' => 'bottom'])
     </section>
 @endsection

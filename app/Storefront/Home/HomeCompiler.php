@@ -102,7 +102,7 @@ final class HomeCompiler
     }
 
     /** @param  array{hash: string, zones: array<string, mixed>}  $document */
-    private function store(array $document, SiteSettingsRepository $settings): void
+    public function store(array $document, SiteSettingsRepository $settings): void
     {
         if ($document['zones'] === []) {
             $settings->forget(AppearanceSettings::DESIGN_COMPILED_KEY);

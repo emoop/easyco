@@ -42,7 +42,7 @@ final class DesignPreviewController extends Controller
     {
         $zone = $request->query('zone');
 
-        if (! URL::hasValidSignature($request) || ! in_array($zone, [CheckoutHeaderCatalog::ZONE, 'topbar', ProductSummaryCatalog::ZONE, PageDesign::PAGE, PageDesign::CATALOG, \App\Storefront\Home\HomeCatalog::ZONE, \App\Filament\Design\Zones\SidebarZone::KEY], true)) {
+        if (! URL::hasValidSignature($request) || ! in_array($zone, [CheckoutHeaderCatalog::ZONE, 'topbar', ProductSummaryCatalog::ZONE, PageDesign::PAGE, PageDesign::CATALOG, \App\Storefront\Home\HomeCatalog::ZONE, \App\Filament\Design\Zones\SidebarZone::KEY, \App\Filament\Design\Zones\ContentZone::KEY], true)) {
             return NotFoundResponse::make();
         }
 
@@ -56,6 +56,10 @@ final class DesignPreviewController extends Controller
 
         if ($zone === \App\Filament\Design\Zones\SidebarZone::KEY) {
             return $this->sidebar($request, $reader, $appearance);
+        }
+
+        if ($zone === \App\Filament\Design\Zones\ContentZone::KEY) {
+            return $this->content($request, $reader, $appearance);
         }
 
         if ($zone === ProductSummaryCatalog::ZONE) {
@@ -177,6 +181,31 @@ final class DesignPreviewController extends Controller
     private function sidebar(Request $request, CatalogReader $reader, StorefrontAppearance $appearance): Response
     {
         $appearance->previewSidebar(\App\Storefront\Sidebar\SidebarStore::draft() ?? \App\Storefront\Sidebar\SidebarStore::values());
+
+        $seo = app(SeoMeta::class);
+        $first = app(CategoryIndex::class)->tree()[0] ?? null;
+        $view = $first !== null
+            ? app(CategoryController::class)->show($request, $first->path, $reader, new \App\Storefront\Listing\ListingPageRenderer($reader, $seo, app(PaginationLinks::class), $appearance, app(\App\Storefront\Filters\FilterCatalog::class)))
+            : app(HomeController::class)->index($reader, $seo);
+
+        if (! $view instanceof \Illuminate\Contracts\View\View) {
+            return NotFoundResponse::make();
+        }
+
+        $view->with('seo', ['title' => $seo->forHome(route('storefront.home', [], false))['title'], 'description' => '', 'canonical' => null, 'noindex' => true]);
+
+        return response($view)
+            ->header('X-Robots-Tag', 'noindex')
+            ->header('Cache-Control', 'private, no-store');
+    }
+
+    /**
+     * P3: the first shown category with the working copy of the listing-page templates (the draft, else the published set) for THIS request only (StorefrontAppearance::previewContent). The home page when the shop
+     * has no category. A public request never gets here (no valid signature: the storefront's 404). `noindex`, `no-store`.
+     */
+    private function content(Request $request, CatalogReader $reader, StorefrontAppearance $appearance): Response
+    {
+        $appearance->previewContent(\App\Storefront\Content\ContentCompiler::compiled(\App\Storefront\Content\ContentStore::draft() ?? \App\Storefront\Content\ContentStore::values()));
 
         $seo = app(SeoMeta::class);
         $first = app(CategoryIndex::class)->tree()[0] ?? null;

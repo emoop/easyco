@@ -756,7 +756,7 @@ final class HomeZone implements DesignZone, HasOneCell
     }
 
     /** The items a tile of this source can show, by name: a category as «Parent › Child». @return array<int, string> */
-    private static function tileEntities(string $source): array
+    public static function tileEntities(string $source): array
     {
         if ($source === 'category') {
             $rows = DB::table('catalog_categories')->orderBy('name')->get(['id', 'parent_id', 'name'])->keyBy('id');

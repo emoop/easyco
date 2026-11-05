@@ -16,7 +16,7 @@ final class HomeView
      * @param  array{layout: array{spacing: string, sections: list<array{type: string, settings: array<string, mixed>}>}, blocks: array<string, string>}|null  $stored  HomeCompiler::published()
      * @return array{gap: string, items: list<array{type: string, class: string, view: string, settings: array<string, mixed>, html: string}>}|null null = print the home page as it always was
      */
-    public static function prepare(?array $stored): ?array
+    public static function prepare(?array $stored, bool $content = false): ?array
     {
         if ($stored === null) {
             return null;
@@ -82,7 +82,7 @@ final class HomeView
             $carousel = null;
 
             if ($type === 'carousel') {
-                $carousel = self::carousel($settings, $stored['blocks'], $stored['carousels'][(string) $index] ?? []);
+                $carousel = self::carousel($settings, $stored['blocks'], $stored['carousels'][(string) $index] ?? [], $content);
 
                 // nothing to show (no usable block, picture or source): nothing is printed, no empty box in the page
                 if ($carousel === null) {
@@ -254,7 +254,7 @@ final class HomeView
      * @param  list<array<string, mixed>>  $pictures  the compiled pictures of this section (images, brands), validated
      * @return array{kind: string, class: string, label: string, arrows: bool, source: string, entity: int|null, sort: string, count: int, sizes: string, cards: list<\App\Storefront\ReadModels\ProductCard>, blocks: list<string>, pictures: list<array<string, mixed>>}|null
      */
-    private static function carousel(array $settings, array $blocks, array $pictures): ?array
+    private static function carousel(array $settings, array $blocks, array $pictures, bool $content = false): ?array
     {
         $pick = static fn (string $key, array $list, string $default): string => in_array($settings[$key] ?? null, $list, true) ? (string) $settings[$key] : $default;
         $kind = $pick('kind', CarouselGeometry::KINDS, 'products');
@@ -263,7 +263,8 @@ final class HomeView
         $one = ['kind' => $kind, 'class' => 'sf-car sf-car-k-'.$kind, 'label' => $label, 'arrows' => ($settings['arrows'] ?? true) !== false, 'source' => 'newest', 'entity' => null, 'sort' => 'newest', 'count' => (int) CarouselGeometry::DEFAULT_COUNT, 'sizes' => \App\Storefront\Reader\ImageSetBuilder::cardSizes(CarouselGeometry::CARD_COLUMNS), 'cards' => [], 'blocks' => [], 'pictures' => []];
 
         if ($kind === 'products') {
-            $source = $pick('source', HomeCatalog::PRODUCT_SOURCES, 'newest');
+            // P3: a listing page's carousel (content mode only) may take the page's own products: the source `current`
+            $source = $pick('source', $content ? [...HomeCatalog::PRODUCT_SOURCES, HomeCatalog::CURRENT_SOURCE] : HomeCatalog::PRODUCT_SOURCES, 'newest');
             $entity = $settings['entity'] ?? null;
             $entity = is_int($entity) && $entity > 0 ? $entity : null;
 

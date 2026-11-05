@@ -96,6 +96,53 @@ class HomeTilesTest extends TestCase
         return $n;
     }
 
+    /** ★ P3: a tile of a season, a tag or a brand with no link of its own links to that page (the slug is compiled at publish: no query per tile); a link given by hand still wins */
+    public function test_a_season_tag_and_brand_tile_links_to_its_public_page(): void
+    {
+        $season = $this->season('Winter', $this->asset->id);
+        $brand = BrandModel::query()->create(['name' => 'Acme', 'slug' => 'acme', 'logo_media_asset_id' => $this->asset->id]);
+        $tag = DB::table('catalog_tags')->insertGetId(['name' => 'Sale', 'slug' => 'sale', 'created_at' => self::STAMP, 'updated_at' => self::STAMP]);
+
+        $this->publish([$this->section([
+            $this->tile(['source' => 'season', 'entity' => $season->id]),
+            $this->tile(['source' => 'tag', 'entity' => $tag, 'picture' => $this->asset->id]),
+            $this->tile(['source' => 'brand', 'entity' => $brand->id]),
+            $this->tile(['source' => 'brand', 'entity' => $brand->id, 'label' => 'By hand', 'link' => '/by-hand']),
+        ])]);
+        $page = $this->home();
+
+        foreach (['href="/season/winter"', 'href="/product-tag/sale"', 'href="/brand/acme"', 'href="/by-hand"'] as $href) {
+            $this->assertStringContainsString($href, $page);
+        }
+
+        $this->assertSame(4, substr_count($page, 'class="sf-hp-tile"'));
+
+        // the same layout with every link given by hand costs the same queries: the page links cost none
+        $with = $this->queries();
+        $this->publish([$this->section([
+            $this->tile(['source' => 'season', 'entity' => $season->id, 'link' => '/a']),
+            $this->tile(['source' => 'tag', 'entity' => $tag, 'picture' => $this->asset->id, 'link' => '/b']),
+            $this->tile(['source' => 'brand', 'entity' => $brand->id, 'link' => '/c']),
+            $this->tile(['source' => 'brand', 'entity' => $brand->id, 'label' => 'By hand', 'link' => '/by-hand']),
+        ])]);
+
+        $this->assertSame($this->queries(), $with, 'a tile\'s page link costs no query');
+        $this->get('/season/winter')->assertOk(); // the link lands on a real page (the season's own listing)
+    }
+
+    /** ★ P3: the slug follows: a renamed slug recompiles the tile's link */
+    public function test_a_tile_link_follows_a_changed_slug(): void
+    {
+        $brand = BrandModel::query()->create(['name' => 'Acme', 'slug' => 'acme', 'logo_media_asset_id' => $this->asset->id]);
+        $this->publish([$this->section([$this->tile(['source' => 'brand', 'entity' => $brand->id])])]);
+        $this->assertStringContainsString('href="/brand/acme"', $this->home());
+
+        $brand->update(['slug' => 'acme-2']);
+        app(\App\Storefront\Home\HomeTilesRecompiler::class)->flush();
+
+        $this->assertStringContainsString('href="/brand/acme-2"', $this->home());
+    }
+
     private function season(string $name, ?int $picture = null): SeasonModel
     {
         return SeasonModel::query()->create(['name' => $name, 'slug' => strtolower($name), 'picture_media_asset_id' => $picture]);
@@ -127,8 +174,7 @@ class HomeTilesTest extends TestCase
             'label 61' => [$tiles(['label' => str_repeat('a', 61)] + $ok), 'tiles.0.label'], 'label html' => [$tiles(['label' => '<b>x</b>'] + $ok), 'tiles.0.label'],
             'javascript link' => [$tiles(['link' => 'javascript:alert(1)'] + $ok), 'tiles.0.link'], 'protocol relative link' => [$tiles(['link' => '//evil.test/x'] + $ok), 'tiles.0.link'],
             'data link' => [$tiles(['link' => 'data:text/html,x'] + $ok), 'tiles.0.link'], 'http link' => [$tiles(['link' => 'http://evil.test'] + $ok), 'tiles.0.link'],
-            'season without link' => [$tiles(['source' => 'season', 'entity' => 1, 'link' => null] + $ok), 'tiles.0.link'],
-            'tag without link' => [$tiles(['source' => 'tag', 'entity' => 1] + $ok), 'tiles.0.link'], 'brand without link' => [$tiles(['source' => 'brand', 'entity' => 1] + $ok), 'tiles.0.link'],
+            // P3: a season, a tag and a brand have a public page now: a tile of one without a link is valid (it links to that page); see test_a_season_tag_and_brand_tile_links_to_its_public_page
             'custom without link' => [$tiles(['source' => 'custom', 'entity' => null, 'label' => 'x', 'picture' => 5, 'link' => null] + $ok), 'tiles.0.link'],
             'custom without picture' => [$tiles(['source' => 'custom', 'entity' => null, 'label' => 'x', 'picture' => null, 'link' => '/x'] + $ok), 'tiles.0.picture'],
             'custom without label' => [$tiles(['source' => 'custom', 'entity' => null, 'label' => '', 'picture' => 5, 'link' => '/x'] + $ok), 'tiles.0.label'],

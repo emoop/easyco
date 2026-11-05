@@ -34,8 +34,8 @@ final class HomeCatalog
 
     public const TILE_SOURCES = ['category', 'season', 'tag', 'brand', 'custom'];
 
-    /** The sources whose public page exists: only a category has one (/product-category/…); a season, a tag and a brand need a link of their own. */
-    public const SOURCES_WITH_PAGE = ['category'];
+    /** The sources whose public page exists: a category (/product-category/…) and, since P2, a season, a tag and a brand (/season/…, /product-tag/…, /brand/…): a tile of one needs no link of its own (a free tile does). */
+    public const SOURCES_WITH_PAGE = ['category', 'season', 'tag', 'brand'];
 
     public const TILE_LABEL_MAX = 60;
 
@@ -47,6 +47,14 @@ final class HomeCatalog
     public const PRODUCT_COUNTS = ['4', '8', '12', '16', '20', '24'];
 
     public const PRODUCT_SORTS = ['newest', 'name_asc'];
+
+    /**
+     * P3: the carousel of a listing page's bottom slot («Съдържание»): only the kinds that need no compiled picture, and one source more: `current` = the products of the page's own category / brand / season / tag (the subject
+     * comes from the PAGE, the stored template is the same for every page). `current` is NOT in PRODUCT_SOURCES: the home page never offers it and HomeValidator refuses it there.
+     */
+    public const CONTENT_CAROUSEL_KINDS = ['products', 'blocks'];
+
+    public const CURRENT_SOURCE = 'current';
 
     public const PRODUCT_COLUMNS = ['3', '4', '5'];
 

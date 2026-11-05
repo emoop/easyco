@@ -118,9 +118,47 @@ final class ListingPageRenderer
             'perPageHidden' => $listing->perPage !== $perPage ? $listing->perPage : null,
             'clearUrl' => $category->url.$pagination->suffixFor(1, $listing->perPage, 'newest', '', $perPage),
             'headerBlock' => $this->headerBlock($category, $query->page, $selection),
+            // P3: the page's template (title cloud, top block, bottom block / carousel): null = the page it always was
+            'content' => $this->content($category, $scope, $query->page, $reader),
         ]);
 
         return $selection->isEmpty() ? $view : response($view)->header('X-Robots-Tag', 'noindex, follow');
+    }
+
+    /**
+     * P3: what the page's TEMPLATE adds, or null (no template, or one that prints nothing: the page is byte-identical to today's). The cloud is on every page of the pagination; the top and the bottom block only
+     * on page 1 (no duplicate content on `?page=2`), whatever the sort or filters. A category's OWN banner («Блок отгоре» of the category, `headerBlock`) is the more specific top block: where it is set it keeps
+     * the place and the template's top block is not printed. The carousel's `current` source is read for THIS page's subject, not filtered by the visitor's choices.
+     *
+     * @return array{cloud: list<array{name: string, url: string}>|null, label: string, top: array<string, mixed>|null, bottom: array<string, mixed>|null}|null
+     */
+    private function content(CategoryPage $category, ListingScope $scope, int $page, CatalogReader $reader): ?array
+    {
+        $found = $this->appearance->listingContent($scope, (int) $category->id);
+
+        if ($found === null) {
+            return null;
+        }
+
+        $template = $found['template'];
+        $slot = static function (?array $section) use ($found): ?array {
+            $prepared = $section === null ? null : \App\Storefront\Home\HomeView::prepare(['layout' => ['spacing' => '0', 'sections' => [$section]], 'blocks' => $found['blocks']], true);
+
+            return $prepared === null || $prepared['items'] === [] ? null : $prepared;
+        };
+
+        $top = $page === 1 && $category->headerBlockId === null ? $slot(\App\Storefront\Content\ContentTemplate::topSection($template)) : null;
+        $bottom = $page === 1 ? $slot(\App\Storefront\Content\ContentTemplate::bottomSection($template)) : null;
+
+        if ($bottom !== null) {
+            $id = (int) $category->id;
+            $bottom = \App\Storefront\Home\HomeView::fill($bottom, static fn (string $source, ?int $entity, string $sort, int $count, string $sizes): array => $reader->homeProducts($source, $entity, $sort, $count, $sizes, $scope, $id), $this->appearance->catalogGapX(), $this->appearance->catalogColumns()['phone']);
+            $bottom = $bottom['items'] === [] ? null : $bottom;
+        }
+
+        $cloud = $template['cloud'] ? $reader->cloud($scope, (int) $category->id) : null;
+
+        return $cloud === null && $top === null && $bottom === null ? null : ['cloud' => $cloud, 'label' => $scope === ListingScope::CATEGORY ? (string) __('storefront.subcategories') : (string) __('storefront.cloud_categories'), 'top' => $top, 'bottom' => $bottom];
     }
 
     /**
