@@ -142,6 +142,7 @@ return [
         'catalog' => 'Category page preview',
         'summary' => 'Product page preview (right column)',
         'home' => 'Home page preview',
+        'sidebar' => 'Category page preview',
         'open' => 'Open in a new window',
         'unsaved' => 'There are unapplied changes: press "Apply" to refresh the preview.',
         'applied_note' => 'The preview shows what is applied; it reaches the shop after «Publish».',
@@ -167,6 +168,7 @@ return [
         'published_topbar' => 'The top banner is published',
         'published_page' => 'The page and cards are published',
         'published_product' => 'The product page is published',
+        'published_sidebar' => 'The sidebar is published',
         'published_catalog' => 'The catalog is published',
         'published_home' => 'The home page is published',
         'published_summary' => 'The right column is published',
@@ -238,6 +240,28 @@ return [
 
 
     // GL-2: «Page and cards» and «Product page»: the plain-value sections
+    'sidebar' => [
+        'heading' => 'Filters',
+        'schema' => 'Which filters a category shows and in what order. The same list drives the side panel and the bar above the list. A hidden filter is not shown anywhere, and a URL with its parameter is a «page not found».',
+        'hidden' => 'hidden',
+        'fields' => ['filters' => 'Filters in order', 'show' => 'Show', 'kind' => 'Kind'],
+        'kinds' => ['list' => 'List', 'links' => 'Links', 'buttons' => 'Buttons'],
+        'hints' => [
+            'filters' => 'Order the filters with the arrows. A filter added later appears at the end, shown.',
+            'show' => 'Turn off to hide the filter from the shop. A hidden filter costs no query.',
+            'kind' => 'How the values are shown: a list, links or buttons. Shown only when at least two values give products.',
+        ],
+        'errors' => [
+            'bad_list' => 'The list of filters is not valid.',
+            'too_many' => 'Too many filters.',
+            'bad_row' => 'The row is not valid.',
+            'unknown_filter' => 'Unknown filter.',
+            'duplicate' => 'The filter is listed twice.',
+            'bad_show' => 'The «Show» switch is not valid.',
+            'bad_kind' => 'The kind is not one of the allowed ones.',
+        ],
+    ],
+
     'page_design' => [
         'schema_page' => 'These values apply to the whole shop: the side padding of the content and the border and corners of the product cards (separately for desktop and phone). Everything is at its default until you change something.',
         'schema_catalog' => 'How many columns and how many products per page the product listing (the category page) shows. On a tablet the columns are automatic, at most 3. The home page is not changed. The filters sit in a bar above the list or in a side panel (left or right); on a phone and a tablet they are in a drawer.',
@@ -559,6 +583,7 @@ return [
             'summary' => 'Products: :source, :count',
             'sources' => [
                 'newest' => 'Newest',
+                'featured' => 'Featured',
                 'category' => 'Category',
                 'season' => 'Season',
                 'tag' => 'Tag',
@@ -576,7 +601,7 @@ return [
                 'gap' => 'Gap between the cards',
             ],
             'hints' => [
-                'source' => 'Where the products come from: the newest in the shop, or the products of one category, season, tag or brand. Only the products the shop shows are listed.',
+                'source' => 'Where the products come from: the newest in the shop, the featured ones, or the products of one category, season, tag or brand. Only the products the shop shows are listed.',
                 'entity' => 'Which category, season, tag or brand. A category includes its subcategories, as its page in the shop does.',
                 'count' => 'How many products are shown (4 to 24): the first ones in the chosen order. There are no pages.',
                 'sort' => 'Newest first or by name (A–Z): the same two orders as in the categories.',
@@ -617,7 +642,7 @@ return [
             ],
             'hints' => [
                 'kind' => 'Products (as in the catalog), your own HTML blocks, your own pictures, or the logos of all the shop\'s brands (automatic, by name, at most 24, only brands with a logo).',
-                'source' => 'Where the products come from: the newest in the shop, or the products of one category, season, tag or brand.',
+                'source' => 'Where the products come from: the newest in the shop, the featured ones, or the products of one category, season, tag or brand.',
                 'entity' => 'Which category, season, tag or brand.',
                 'count' => 'How many products are shown (8 to 24). A card is exactly the one of the catalog grid: the same cell width and the same gap.',
                 'sort' => 'Newest first, or by name (A–Z).',

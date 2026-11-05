@@ -45,6 +45,9 @@ final class StorefrontAppearance
     /** CD-1a.1: the validated «Каталог» values of the admin's signed preview (the working copy), set for ONE request by the preview controller; null on every public request. @var array<string, mixed>|null */
     private ?array $catalogOverride = null;
 
+    /** P1: the working copy of «Сайдбар» for ONE signed preview request: {filters, kinds}. */
+    private ?array $sidebarOverride = null;
+
     /** DS-5: the banner of the admin's signed preview of the top banner's draft (never set on a public request). @var array<string, mixed>|null */
     private ?array $bannerOverride = null;
 
@@ -107,7 +110,7 @@ final class StorefrontAppearance
 
         $cached = Cache::get(self::CACHE_KEY);
 
-        if (is_array($cached) && array_key_exists('theme', $cached) && array_key_exists('compiled', $cached) && array_key_exists('header', $cached) && array_key_exists('menus', $cached) && array_key_exists('locations', $cached) && array_key_exists('footer', $cached) && array_key_exists('design', $cached) && array_key_exists('page', $cached) && array_key_exists('catalog', $cached) && is_array($cached['banner'] ?? null)) {
+        if (is_array($cached) && array_key_exists('theme', $cached) && array_key_exists('compiled', $cached) && array_key_exists('header', $cached) && array_key_exists('menus', $cached) && array_key_exists('locations', $cached) && array_key_exists('footer', $cached) && array_key_exists('design', $cached) && array_key_exists('page', $cached) && array_key_exists('catalog', $cached) && array_key_exists('sidebar', $cached) && is_array($cached['banner'] ?? null)) {
             return $this->data = $cached;
         }
 
@@ -157,6 +160,8 @@ final class StorefrontAppearance
             'design' => is_string($raw[AppearanceSettings::DESIGN_COMPILED_KEY] ?? null) ? $raw[AppearanceSettings::DESIGN_COMPILED_KEY] : null,
             // CD-1a: the published «Каталог» JSON (validated again when read: catalogPerPage)
             'catalog' => is_string($raw[AppearanceSettings::CATALOG_DESIGN_KEY] ?? null) ? $raw[AppearanceSettings::CATALOG_DESIGN_KEY] : null,
+            // P1: the published «Сайдбар» JSON (the filters' order and switches; cleaned again when read: sidebarFilters)
+            'sidebar' => is_string($raw[AppearanceSettings::SIDEBAR_FILTERS_KEY] ?? null) ? $raw[AppearanceSettings::SIDEBAR_FILTERS_KEY] : null,
             // GAP-1: the published «Страници и карти» JSON (validated again when read: catalogGapX); the card grid's horizontal gap reaches the image `sizes` from here, with no query of its own
             'page' => is_string($raw[AppearanceSettings::PAGE_DESIGN_KEY] ?? null) ? $raw[AppearanceSettings::PAGE_DESIGN_KEY] : null,
         ];
@@ -576,9 +581,30 @@ final class StorefrontAppearance
      */
     public function catalogFilterKinds(): array
     {
+        if ($this->sidebarOverride !== null) {
+            return $this->sidebarOverride['kinds'];
+        }
+
         $values = $this->catalogOverride ?? PageDesign::catalogValues(is_string($this->data()['catalog'] ?? null) ? $this->data()['catalog'] : null);
 
         return ['brand' => (string) $values['filterBrand'], 'season' => (string) $values['filterSeason'], 'tag' => (string) $values['filterTag']];
+    }
+
+    /**
+     * P1: the PUBLISHED raw rows of the «Сайдбар» list (`{key, show}`, not yet cleaned against the shop's known filters: FilterCatalog does that), or null when the merchant never saved it (the defaults apply).
+     * The signed preview carries the working copy for ONE request. From the same cached payload: no query.
+     *
+     * @return list<mixed>|null
+     */
+    public function sidebarFilters(): ?array
+    {
+        return $this->sidebarOverride !== null ? $this->sidebarOverride['filters'] : \App\Storefront\Sidebar\SidebarFilters::rowsFromJson($this->data()['sidebar'] ?? null);
+    }
+
+    /** P1: the signed preview of «Сайдбар»: the validated working copy for THIS request only. @param array{filters: list<array{key: string, show: bool}>, kinds: array<string, string>} $values */
+    public function previewSidebar(array $values): void
+    {
+        $this->sidebarOverride = $values;
     }
 
     public function themeKey(): ?string

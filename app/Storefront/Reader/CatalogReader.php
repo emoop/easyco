@@ -294,12 +294,12 @@ final class CatalogReader
      */
     public function homeProducts(string $kind, ?int $entity, string $sort, int $limit, string $sizes): array
     {
-        if ($kind !== 'newest' && ($entity === null || $entity < 1)) {
+        if ($kind !== 'newest' && $kind !== 'featured' && ($entity === null || $entity < 1)) {
             return [];
         }
 
         [$scope, $filters] = match ($kind) {
-            'newest' => [ListingScope::ALL, []],
+            'newest', 'featured' => [ListingScope::ALL, []],
             'category' => [ListingScope::CATEGORY, []],
             'brand' => [ListingScope::BRAND, []],
             'tag' => [ListingScope::TAG, []],
@@ -315,7 +315,10 @@ final class CatalogReader
         $order = $order !== null && in_array($order, ListingSort::storefrontOptions(), true) ? $order : ListingSort::NEWEST;
         $query = ListingQuery::create($scope, $scope === ListingScope::ALL ? null : $entity, $order);
 
-        return $this->cards($this->listingProducts($query, $filters)->limit(max(1, min(24, $limit)))->get()->all(), $sizes);
+        $products = $this->listingProducts($query, $filters);
+        $kind === 'featured' && $products->where('catalog_products.is_featured', true);
+
+        return $this->cards($products->limit(max(1, min(24, $limit)))->get()->all(), $sizes);
     }
 
     /** CT-3 / CT-4: does the shop have a filterable attribute, or at least one brand / season / tag? Read from the first card of the page (an empty page: no). */

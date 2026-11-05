@@ -48,6 +48,11 @@ final class AppearanceSettings
 
     public const CATALOG_DESIGN_DRAFT_KEY = 'design.catalog.global.draft';
 
+    /** P1: «Сайдбар» — the shop's filters as one ordered list (shown / hidden): the published JSON `{"filters": [...]}` (read with the rest of the appearance) and its draft (which also carries the built-ins' kinds). */
+    public const SIDEBAR_FILTERS_KEY = 'design.sidebar.filters';
+
+    public const SIDEBAR_FILTERS_DRAFT_KEY = 'design.sidebar.filters.draft';
+
     public const BANNER_DRAFT_KEY = 'banner.draft';
 
     public const CHECKOUT_HEADER_DRAFT_KEY = 'design.checkout_header.global.draft';
@@ -148,6 +153,7 @@ final class AppearanceSettings
         self::FOOTER_COMPILED_KEY,
         self::DESIGN_COMPILED_KEY,
         self::CATALOG_DESIGN_KEY,
+        self::SIDEBAR_FILTERS_KEY,
         self::PAGE_DESIGN_KEY,
         self::BANNER_ENABLED,
         self::BANNER_TEXT,

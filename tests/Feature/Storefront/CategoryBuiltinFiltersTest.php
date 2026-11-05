@@ -283,11 +283,12 @@ class CategoryBuiltinFiltersTest extends TestCase
 
     public function test_a_draft_choice_never_reaches_the_shop_and_the_signed_preview_shows_it(): void
     {
-        [$draft] = PageDesign::validate(PageDesign::CATALOG, ['filterTag' => 'buttons'] + PageDesign::defaults(PageDesign::CATALOG), false);
-        PageDesignStore::saveDraft(PageDesign::CATALOG, $draft);
+        // P1: the kinds of the built-ins are the «Сайдбар» zone's working copy now (its signed preview carries them)
+        [$draft] = \App\Storefront\Sidebar\SidebarFilters::validate(['filters' => [['key' => 'tag', 'show' => true, 'kind' => 'buttons']]], app(FilterCatalog::class)->knownKeys());
+        \App\Storefront\Sidebar\SidebarStore::saveDraft($draft);
 
         $this->assertArrayNotHasKey('Tag', $this->bar($this->visit('/product-category/clothing')->getContent()));
-        $this->assertArrayHasKey('Tag', $this->bar($this->visit(DesignPreviewController::previewUrl(PageDesign::CATALOG))->assertOk()->getContent()), 'the preview carries the working copy');
+        $this->assertArrayHasKey('Tag', $this->bar($this->visit(DesignPreviewController::previewUrl('sidebar'))->assertOk()->getContent()), 'the preview carries the working copy');
     }
 
     public function test_old_stored_data_without_the_keys_and_a_hand_edited_bad_value_use_the_defaults(): void

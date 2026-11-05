@@ -60,6 +60,8 @@ return [
         'status' => 'Status',
         'catalog_visibility' => 'Catalog visibility',
         'catalog_visibility_column' => 'Catalog',
+        'is_featured' => 'Featured',
+        'is_featured_help' => 'Featured products can be shown on the home page (a product grid or carousel with the source «Featured»).',
         'brand_id' => 'Brand',
         'season_id' => 'Season',
         'product_group_id' => 'Product group',

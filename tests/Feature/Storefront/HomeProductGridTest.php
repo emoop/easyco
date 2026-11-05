@@ -130,12 +130,49 @@ class HomeProductGridTest extends TestCase
         $this->assertArrayHasKey($path, $errors, json_encode($errors));
     }
 
-    public function test_featured_is_not_a_source(): void
+    /** P1: `featured` IS a source now (it was not before; this test was flipped). It needs no item, and a given one is dropped. */
+    public function test_featured_is_a_source(): void
     {
-        $this->assertNotContains('featured', HomeCatalog::PRODUCT_SOURCES);
-        [, $errors] = HomeValidator::validate(['spacing' => '32', 'sections' => [$this->grid(['source' => 'featured'])]]);
+        $this->assertContains('featured', HomeCatalog::PRODUCT_SOURCES);
+        $this->assertNotContains('featured', HomeCatalog::PRODUCT_SOURCES_WITH_ENTITY);
+        [$clean, $errors] = HomeValidator::validate(['spacing' => '32', 'sections' => [$this->grid(['source' => 'featured', 'entity' => 5])]]);
+
+        $this->assertSame([], $errors);
+        $this->assertSame('featured', $clean['sections'][0]['settings']['source']);
+        $this->assertNull($clean['sections'][0]['settings']['entity']);
+    }
+
+    public function test_a_bad_source_still_falls_back_to_the_default_on_read(): void
+    {
+        [, $errors] = HomeValidator::validate(['spacing' => '32', 'sections' => [$this->grid(['source' => 'featured2'])]]);
 
         $this->assertArrayHasKey('sections.0.settings.source', $errors);
+    }
+
+    public function test_featured_returns_only_flagged_active_visible_products_newest_first(): void
+    {
+        $this->makeProduct(1, ['name' => 'Old featured', 'slug' => 'a', 'featured' => true, 'price' => '1.00', 'stock' => 1, 'timeline' => '2026-01-01 10:00:00']);
+        $this->makeProduct(2, ['name' => 'New featured', 'slug' => 'b', 'featured' => true, 'price' => '1.00', 'stock' => 1, 'timeline' => '2026-01-05 10:00:00']);
+        $this->makeProduct(3, ['name' => 'Plain', 'slug' => 'c', 'price' => '1.00', 'stock' => 1, 'timeline' => '2026-01-09 10:00:00']);
+        $this->makeProduct(4, ['name' => 'Draft featured', 'slug' => 'd', 'featured' => true, 'status' => 'draft', 'price' => '1.00', 'stock' => 1, 'timeline' => '2026-01-10 10:00:00']);
+        $this->makeProduct(5, ['name' => 'Hidden featured', 'slug' => 'e', 'featured' => true, 'visibility' => 'hidden', 'price' => '1.00', 'stock' => 1, 'timeline' => '2026-01-11 10:00:00']);
+        $this->makeProduct(6, ['name' => 'Deleted featured', 'slug' => 'f', 'featured' => true, 'deleted' => true, 'price' => '1.00', 'stock' => 1, 'timeline' => '2026-01-12 10:00:00']);
+        $this->publish([$this->grid(['source' => 'featured'])]);
+
+        $this->assertSame(['New featured', 'Old featured'], $this->names($this->home()));
+
+        $this->publish([$this->grid(['source' => 'featured', 'sort' => 'name_asc', 'count' => '4'])]);
+        $this->assertSame(['New featured', 'Old featured'], $this->names($this->home()));
+    }
+
+    public function test_a_featured_grid_costs_the_same_queries_as_a_newest_one(): void
+    {
+        $this->products(['A', 'B', 'C'], ['featured' => true]);
+        $this->publish([$this->grid(['source' => 'newest'])]);
+        $newest = $this->queries();
+        $this->publish([$this->grid(['source' => 'featured'])]);
+
+        $this->assertSame($newest, $this->queries(), 'a featured grid is pinned to the cost of a newest one');
     }
 
     public function test_defaults_and_good_values_are_accepted_and_two_grids_are_the_limit(): void
@@ -172,7 +209,7 @@ class HomeProductGridTest extends TestCase
     public function test_on_read_a_grid_with_an_unknown_source_is_dropped_and_the_rest_stays(): void
     {
         [$clean, $errors] = HomeValidator::validateForRead(['spacing' => '32', 'sections' => [
-            ['type' => 'heading', 'settings' => ['text' => 'Kept']], $this->grid(['source' => 'featured']), $this->grid(['count' => '4']),
+            ['type' => 'heading', 'settings' => ['text' => 'Kept']], $this->grid(['source' => 'sale']), $this->grid(['count' => '4']),
         ]]);
 
         $this->assertSame([], $errors);

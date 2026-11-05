@@ -94,6 +94,7 @@ class CreateProduct extends CreateRecord
         };
 
         $product->setCatalogVisibility(CatalogVisibility::from($data['catalog_visibility'] ?? CatalogVisibility::HIDDEN->value));
+        $product->setFeatured((bool) ($data['is_featured'] ?? false));
         $product->assignBrand($data['brand_id'] ?? null);
         $product->assignSeason($data['season_id'] ?? null);
         $product->assignProductGroup($data['product_group_id'] ?? null);

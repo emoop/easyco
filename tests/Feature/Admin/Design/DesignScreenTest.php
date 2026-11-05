@@ -32,8 +32,8 @@ class DesignScreenTest extends TestCase
         $html = Livewire::test(DesignScreen::class)->html();
 
         $this->assertSame(count(DesignScreen::ZONES), substr_count($html, "selectZone('"), 'one working zone button per zone of the screen');
-        // HP-1: «Начална» (home) is the ninth zone of the screen, in the place of the «Съдържание» placeholder
-        $this->assertSame(9, count(DesignScreen::ZONES), 'the nine zones of the screen (topbar, header, footer, checkout, page, product, catalog, summary, home)');
+        // HP-1: «Начална» (home) is the ninth zone of the screen; P1: «Сайдбар» is the tenth, in the place of its «следва» placeholder
+        $this->assertSame(10, count(DesignScreen::ZONES), 'the ten zones of the screen (topbar, header, footer, checkout, page, product, catalog, summary, home, sidebar)');
     }
 
     use BuildsShippingZones;

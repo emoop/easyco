@@ -64,7 +64,7 @@ trait BuildsStorefrontCatalog
      *
      * @param array{
      *   name?: string, slug?: string, type?: string, status?: string, visibility?: string, deleted?: bool,
-     *   brand?: ?int, categories?: list<int>, tags?: list<int>, timeline?: string, description?: ?string, short?: ?string,
+     *   brand?: ?int, featured?: bool, categories?: list<int>, tags?: list<int>, timeline?: string, description?: ?string, short?: ?string,
      *   price?: ?string, sale?: ?string, stock?: int,
      *   variations?: list<array{attrs?: array<int, string>, status?: string, visible?: bool, purchasable?: bool, deleted?: bool, price?: ?string, sale?: ?string, stock?: int, sku?: string, type?: string}>
      * } $o
@@ -85,7 +85,7 @@ trait BuildsStorefrontCatalog
             'brand_id' => $o['brand'] ?? null,
             'status' => $o['status'] ?? 'active',
             'catalog_visibility' => $o['visibility'] ?? 'visible',
-            'is_featured' => false,
+            'is_featured' => $o['featured'] ?? false,
             'created_at' => self::STAMP,
             'updated_at' => self::STAMP,
             'timeline_at' => $o['timeline'] ?? self::STAMP,

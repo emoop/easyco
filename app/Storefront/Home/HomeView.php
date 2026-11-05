@@ -141,7 +141,7 @@ final class HomeView
         return [
             'class' => 'sf-hp-products sf-hp-prc-'.$columns.' sf-hp-prp-'.$phone.' sf-hp-prg-'.$gap,
             'source' => $source,
-            'entity' => $source === 'newest' ? null : $entity,
+            'entity' => in_array($source, HomeCatalog::PRODUCT_SOURCES_WITH_ENTITY, true) ? $entity : null,
             'sort' => $pick('sort', HomeCatalog::PRODUCT_SORTS, 'newest'),
             'count' => (int) $pick('count', HomeCatalog::PRODUCT_COUNTS, '12'),
             'sizes' => \App\Storefront\Reader\ImageSetBuilder::cardSizes((int) $columns, (int) $phone, (int) $gap),
@@ -272,7 +272,7 @@ final class HomeView
                 return null;
             }
 
-            return ['source' => $source, 'entity' => $source === 'newest' ? null : $entity, 'sort' => $pick('sort', HomeCatalog::PRODUCT_SORTS, 'newest'), 'count' => (int) $pick('count', CarouselGeometry::COUNTS, CarouselGeometry::DEFAULT_COUNT)] + $one;
+            return ['source' => $source, 'entity' => in_array($source, HomeCatalog::PRODUCT_SOURCES_WITH_ENTITY, true) ? $entity : null, 'sort' => $pick('sort', HomeCatalog::PRODUCT_SORTS, 'newest'), 'count' => (int) $pick('count', CarouselGeometry::COUNTS, CarouselGeometry::DEFAULT_COUNT)] + $one;
         }
 
         $height = $pick('height', CarouselGeometry::heights(), CarouselGeometry::DEFAULT_HEIGHT);

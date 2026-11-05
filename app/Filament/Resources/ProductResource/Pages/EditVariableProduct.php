@@ -521,6 +521,10 @@ class EditVariableProduct extends EditRecord
                 ])
                 ->default(CatalogVisibility::HIDDEN->value)
                 ->required(),
+            Toggle::make('is_featured')
+                ->label(__('products.fields.is_featured'))
+                ->afterLabel(\App\Filament\Design\InfoHint::make((string) __('products.fields.is_featured_help'), 'is_featured'))
+                ->default(false),
             Select::make('brand_id')
                 ->label(__('products.fields.brand_id'))
                 ->options(fn (): array => BrandModel::pluck('name', 'id')->all())
@@ -2597,6 +2601,12 @@ class EditVariableProduct extends EditRecord
         if ($product->catalogVisibility() !== $newVisibility) {
             $logger->logFieldChanged('product', $product->id(), 'catalog_visibility', $product->catalogVisibility()->value, $newVisibility->value);
             $product->setCatalogVisibility($newVisibility);
+        }
+
+        $newFeatured = (bool) ($data['is_featured'] ?? false);
+        if ($product->isFeatured() !== $newFeatured) {
+            $logger->logFieldChanged('product', $product->id(), 'is_featured', $product->isFeatured() ? '1' : '0', $newFeatured ? '1' : '0');
+            $product->setFeatured($newFeatured);
         }
 
         $newBrandId = $data['brand_id'] ?? null;

@@ -40,7 +40,7 @@ final class HomeCatalog
     public const TILE_LABEL_MAX = 60;
 
     /** HP-4: the sources of a «Продуктова решетка» (closed), the ones that need an item of their own, the counts, the sorts and the columns; the gap is the product grid's list (GAP-1). At most 2 such sections in a layout. */
-    public const PRODUCT_SOURCES = ['newest', 'category', 'season', 'tag', 'brand'];
+    public const PRODUCT_SOURCES = ['newest', 'featured', 'category', 'season', 'tag', 'brand'];
 
     public const PRODUCT_SOURCES_WITH_ENTITY = ['category', 'season', 'tag', 'brand'];
 

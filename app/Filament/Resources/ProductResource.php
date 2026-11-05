@@ -443,6 +443,10 @@ class ProductResource extends Resource
                         ])
                         ->default(CatalogVisibility::HIDDEN->value)
                         ->required(),
+                    Toggle::make('is_featured')
+                        ->label(__('products.fields.is_featured'))
+                        ->afterLabel(\App\Filament\Design\InfoHint::make((string) __('products.fields.is_featured_help'), 'is_featured'))
+                        ->default(false),
                     Select::make('brand_id')
                         ->label(__('products.fields.brand_id'))
                         ->options(fn (): array => BrandModel::pluck('name', 'id')->all())

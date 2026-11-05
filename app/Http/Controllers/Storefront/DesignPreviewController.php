@@ -42,7 +42,7 @@ final class DesignPreviewController extends Controller
     {
         $zone = $request->query('zone');
 
-        if (! URL::hasValidSignature($request) || ! in_array($zone, [CheckoutHeaderCatalog::ZONE, 'topbar', ProductSummaryCatalog::ZONE, PageDesign::PAGE, PageDesign::CATALOG, \App\Storefront\Home\HomeCatalog::ZONE], true)) {
+        if (! URL::hasValidSignature($request) || ! in_array($zone, [CheckoutHeaderCatalog::ZONE, 'topbar', ProductSummaryCatalog::ZONE, PageDesign::PAGE, PageDesign::CATALOG, \App\Storefront\Home\HomeCatalog::ZONE, \App\Filament\Design\Zones\SidebarZone::KEY], true)) {
             return NotFoundResponse::make();
         }
 
@@ -52,6 +52,10 @@ final class DesignPreviewController extends Controller
 
         if ($zone === PageDesign::PAGE || $zone === PageDesign::CATALOG) {
             return $this->plainSection($request, $zone, $reader, $appearance);
+        }
+
+        if ($zone === \App\Filament\Design\Zones\SidebarZone::KEY) {
+            return $this->sidebar($request, $reader, $appearance);
         }
 
         if ($zone === ProductSummaryCatalog::ZONE) {
@@ -143,12 +147,39 @@ final class DesignPreviewController extends Controller
     {
         $published = PageDesignStore::values($section);
         $values = PageDesignStore::draft($section) ?? $published;
+        // P1: the kinds of the built-in filters are the «Сайдбар» zone's: this preview shows the published ones
+        $section === PageDesign::CATALOG && $values = array_replace($values, array_intersect_key($published, array_flip(['filterBrand', 'filterSeason', 'filterTag'])));
         $css = $this->write(app(AppearanceCompiler::class)->css([], [], [], [], [], [], PageDesign::previewVars($section, $values, $published)));
 
         $section === PageDesign::CATALOG ? $appearance->previewCatalog($values, $css) : $appearance->previewStylesheet($css);
 
         $seo = app(SeoMeta::class);
         $first = $section === PageDesign::CATALOG ? (app(CategoryIndex::class)->tree()[0] ?? null) : null;
+        $view = $first !== null
+            ? app(CategoryController::class)->show($request, $first->path, $reader, $seo, app(PaginationLinks::class), $appearance, app(\App\Storefront\Filters\FilterCatalog::class))
+            : app(HomeController::class)->index($reader, $seo);
+
+        if (! $view instanceof \Illuminate\Contracts\View\View) {
+            return NotFoundResponse::make();
+        }
+
+        $view->with('seo', ['title' => $seo->forHome(route('storefront.home', [], false))['title'], 'description' => '', 'canonical' => null, 'noindex' => true]);
+
+        return response($view)
+            ->header('X-Robots-Tag', 'noindex')
+            ->header('Cache-Control', 'private, no-store');
+    }
+
+    /**
+     * P1: the first shown category with the working copy of «Сайдбар» (the draft, else the published list and kinds) for THIS request only (StorefrontAppearance::previewSidebar); the layout, the side and the
+     * widths are the published «Каталог» ones. The home page when the shop has no category. A public request never gets here (no valid signature: the storefront's 404). `noindex`, `no-store`.
+     */
+    private function sidebar(Request $request, CatalogReader $reader, StorefrontAppearance $appearance): Response
+    {
+        $appearance->previewSidebar(\App\Storefront\Sidebar\SidebarStore::draft() ?? \App\Storefront\Sidebar\SidebarStore::values());
+
+        $seo = app(SeoMeta::class);
+        $first = app(CategoryIndex::class)->tree()[0] ?? null;
         $view = $first !== null
             ? app(CategoryController::class)->show($request, $first->path, $reader, $seo, app(PaginationLinks::class), $appearance, app(\App\Storefront\Filters\FilterCatalog::class))
             : app(HomeController::class)->index($reader, $seo);

@@ -1,0 +1,157 @@
+effective DB: easyco_testing_4bc
+
+[query-count] shipping overview class health line: 1 catalog_variations query
+
+[query-count] GET /api/cart (1 line, cold, with a hint): 3 shipping + 3 settings reads (29 total)
+
+[query-count] GET /api/cart (10 lines, cold, with a hint): 3 shipping + 2 settings reads (127 total)
+
+[query-count] GET /api/cart: 2 lines: 34 queries (2 on the attribute tables), 10 lines: 122 queries (2 on the attribute tables)
+
+[query-count] POST /api/checkout (fresh): 61 total, 2 settings reads, 1 payment selects | (replay): 6 total, 0 settings reads, 1 payment selects
+
+[query-count] CheckoutOrchestrator::place() — before the snapshot write: 78 queries, after: 79 queries (+1)
+
+[query-count] CheckoutShippingResolver::resolve() (cold, 8 lines): 95 queries | ShippingQuoteService::quote() (cold, same cart): 95 queries
+
+[query-count] N=1: 5 queries, N=50: 5 queries
+
+[query-count] 3 distinct winning lists, 30 contexts: 6 queries
+
+[query-count] 1 assignment-less variation: 2 queries, 10 assignment-less variations: 2 queries
+
+[query-count] no assignments: 2 queries, with assignments: 2 queries
+
+[query-count] products list, all view: 5 rows = 40 queries, 25 rows = 40 queries
+
+[query-count] products list, active view: 5 rows = 32 queries, 25 rows = 32 queries
+
+[query-count] products list, draft view: 5 rows = 30 queries, 25 rows = 30 queries
+
+[query-count] products list, archived view: 5 rows = 30 queries, 25 rows = 30 queries
+
+[query-count] forOrder(): 9 queries on 01398d9 (no events, no returns read), 12 with the events read and stage 7c-1's returns read
+
+[query-count] forOrder(): 5 events = 12 queries, 25 events = 12 queries
+
+[query-count] forOrder(): 1 line = 12 queries, 5 lines = 12 queries
+
+[query-count] orders list filter, 5 rows: 1 queries, 25 rows: 1 queries; payment-method options: 1
+
+[query-count] order view page (2-line, shipped): page load 25 queries, mount cancel +3, mount record_return +14
+
+[query-count] OrderCurrentLinesResolver: resolveRows() 4 queries; resolve() 8 queries (2 transactions hold current lines)
+
+[query-count] order view page: never edited 34 queries, after three edits 35 queries
+
+[query-count] order edit dialog (2-line order): mount 2 queries, form fill 8, submit (1 line reduced, payment reissued, incl. redirect-side work) 34
+
+[query-count] add-a-line: search 'widget' 2 queries (1 match + 1 BATCHED axis-value read covering every row returned, however many), one label 2 (variation + its own axis values), dialog mount 27, pick + price preview (2 state changes) 54, submit (add 1 line, payment reissued, incl. redirect-side work) 54
+
+[query-count] OrderEditor::apply() — 2 lines changed + delivery changed + code kept: 2-line order: 30 queries, 6-line order: 30 queries
+
+[query-count] matches card: 4 (2 orders) / 4 (17 orders) key queries
+
+[query-count] orders list page, 5-per-page: 6 queries, 25-per-page: 6 queries
+
+[query-count] orders list page — unfiltered 5/25 rows: 6/6 queries; filtered 5/25 rows: 6/6 queries
+
+[query-count] OrderStatusChanger::cancel() on a real 2-line order: unedited 30 queries, edited once 32 queries
+
+[query-count] OrderStatusChanger — confirm(): 4 queries
+[query-count] OrderStatusChanger — ship() unguarded (cash_on_delivery): 5 queries
+[query-count] OrderStatusChanger — ship() guarded (bank_transfer, settled): 5 queries
+[query-count] OrderStatusChanger — deliver(), R10 confirms: 11 queries
+[query-count] OrderStatusChanger — deliver(), R10 skips (no payment row): 5 queries
+
+[query-count] OrderStatusChanger — cancel(), single-line full, placed: 21 queries
+[query-count] OrderStatusChanger — recordReturn(), single-line partial, shipped: 16 queries
+
+[query-count] order view page with the four actions' own visibility checks (shipped, mark_as_received eligible): 31 queries
+
+[query-count] order view page — money not recorded: 34 queries, money held: 34 queries
+
+[query-count] order view page, history goods: 1 return = 35 queries, 3 returns = 35 queries
+
+[query-count] order view page, 2 lines: 34 queries, 10 lines: 34 queries
+
+[query-count] first call: 12 queries, second call (same ids): 0 queries
+
+[query-count] 5 products: 12 queries, 25 products: 12 queries
+
+[query-count] 5-product page: 14 queries, 25-product page: 14 queries
+
+[query-count] price column rendering, 5 rows: 0 queries, 25 rows: 0 queries
+
+[query-count] variable product edit page: 2 shipping_classes read(s) for 2 variation rows
+
+[query-count] SaleLineSnapshotBuilder::buildForCart(): 2 lines: 4 queries, 10 lines: 4 queries
+
+[query-count] sandbox list page: 24 products = 19 queries, 5 products = 19 queries
+
+[query-count] POST /api/shipping/quote single street address, 1 line: 19 queries
+
+[query-count] POST /api/shipping/quote single street address, 5 lines: 63 queries
+
+[query-count] POST /api/shipping/quote all kinds, 1 line: 20 queries (single: 19)
+
+[query-count] POST /api/shipping/quote all kinds, 5 lines: 64 queries (single: 63)
+
+[query-count] POST /api/shipping/quote all kinds preview, 1 line: 20 queries
+
+[query-count] shipping classes list: 3 classes 4 shipping reads (classes 2, rates 1, variations 1; 6 total), 12 classes 4 shipping reads (classes 2, rates 1, variations 1; 6 total)
+
+[query-count] shipping class edit page: 1 shipping_classes read(s)
+
+[query-count] shipping methods list with couriers: 3 methods 8 queries, 12 methods 8 queries
+
+[query-count] shipping methods list: 3 methods 5 shipping reads (methods 2, zones 1, rates 1, classes 1; 8 total), 12 methods 5 shipping reads (methods 2, zones 1, rates 1, classes 1; 8 total)
+
+[query-count] shipping method edit page: 6 shipping reads (methods 3, zones 1, rates 1, classes 1; 8 total)
+
+[query-count] shipping overview: 1 zone 5 shipping reads (17 total), 12 zones 5 shipping reads (5 total)
+
+[query-count] Try it tester: FLAT-only 3 shipping reads, with a PER_CLASS method 4
+
+[query-count] POST /api/shipping/quote (cold, no hint): 3 shipping + 1 settings reads (19 total)
+
+[query-count] POST /api/shipping/quote (cold, with a hint): 3 shipping + 2 settings reads (20 total)
+
+[query-count] POST /api/shipping/quote (cold, filter removed the hinted method): 3 shipping + 2 settings reads (20 total)
+
+[query-count] shipping zones list: 3 zones 3 shipping reads (zones 1, methods 1, rates 1; 6 total), 12 zones 3 shipping reads (zones 1, methods 1, rates 1; 6 total)
+
+[query-count] shipping zone edit page: 1 shipping_zones read(s)
+
+[query-count] products list render: 4 site_settings queries for 4 distinct key(s): catalog.brand_field_enabled, catalog.season_field_enabled, catalog.product_group_field_enabled, catalog.tags_field_enabled
+
+[query-count] cart line enricher: 1 line/1 image = 4 queries, 6 lines/up to 6 images each = 4 queries (fixed delta of GET /api/cart)
+
+[query-count] category page: no filters 22, 2 filters 24 (cold 26), 3 filters 25, 2 chosen of 3 25
+
+[query-count] category page CD-1b: with 2 filters 24, no filters 22
+
+[query-count] storefront S3: / = 23 queries, /cart = 6 queries (home ceiling 25, cart ceiling 7)
+
+[query-count] storefront /checkout: 8 queries (pinned ceiling 9)
+
+[query-count] storefront home (S3-V): 23 queries without the intro keys, 23 with them (before S3-V: 24)
+
+[query-count] storefront order-received page: 1 line = 8 queries, 5 lines = 8 queries (pinned ceiling 9)
+
+[query-count] storefront page /: 24 products = 25 queries, 5 products = 25 queries (pinned ceiling 26)
+
+[query-count] storefront page /product-category/clothing: 24 products = 28 queries, 5 products = 28 queries (pinned ceiling 28)
+
+[query-count] storefront page /product: variable product 1 image = 26 queries, with 7 images and 5 variations = 26 queries; simple product = 25 (pinned ceiling 27)
+
+[query-count] storefront listing: 24 products = 19 queries, 5 products = 19 queries (pinned ceiling 19, design budget 14)
+
+[query-count] storefront category listing: 21 queries (unscoped 19; pinned ceiling 21)
+
+[query-count] storefront product page: 2 variations/1 image = 22 queries, 6 variations/8 images = 22 queries (pinned ceiling 22, design budget 16)
+
+[query-count] storefront product page (simple product): 21 queries (pinned ceiling 22, design budget 16)
+
+[query-count] storefront category tree: 2 categories = 2 queries, 33 categories = 2 queries; category page = 2 (budget 3)
+{"tool":"phpunit","result":"passed","tests":7774,"passed":7773,"assertions":137319,"duration_ms":1391174,"skipped":1}

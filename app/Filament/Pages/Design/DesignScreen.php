@@ -49,7 +49,7 @@ class DesignScreen extends Page
     public const DRAWER_CELL = HeaderZone::DRAWER_CELL;
 
     /** The zones that work, in the order of the list: key => class. */
-    public const ZONES = ['topbar' => TopbarZone::class, 'header' => HeaderZone::class, 'footer' => FooterZone::class, 'checkout' => CheckoutHeaderZone::class, 'page' => PageCardsZone::class, 'product' => ProductPageZone::class, 'catalog' => CatalogZone::class, 'summary' => ProductSummaryZone::class, 'home' => HomeZone::class];
+    public const ZONES = ['topbar' => TopbarZone::class, 'header' => HeaderZone::class, 'footer' => FooterZone::class, 'checkout' => CheckoutHeaderZone::class, 'page' => PageCardsZone::class, 'product' => ProductPageZone::class, 'catalog' => CatalogZone::class, 'summary' => ProductSummaryZone::class, 'home' => HomeZone::class, 'sidebar' => \App\Filament\Design\Zones\SidebarZone::class];
 
     protected static ?string $slug = 'design';
 

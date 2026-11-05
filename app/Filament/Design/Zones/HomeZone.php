@@ -714,7 +714,7 @@ final class HomeZone implements DesignZone, HasOneCell
         }
 
         array_key_exists('arrows', $in) && $out['arrows'] = (bool) $in['arrows'];
-        array_key_exists('source', $in) && $out['entity'] = ($in['source'] ?? 'newest') === 'newest' ? null : FieldValues::id($in['entity'] ?? null);
+        array_key_exists('source', $in) && $out['entity'] = in_array($in['source'] ?? 'newest', HomeCatalog::PRODUCT_SOURCES_WITH_ENTITY, true) ? FieldValues::id($in['entity'] ?? null) : null;
 
         if (array_key_exists('block_items', $in)) {
             $blocks = [];
@@ -818,7 +818,7 @@ final class HomeZone implements DesignZone, HasOneCell
             isset($in[$name]) && $out[$name] = $in[$name];
         }
 
-        $out['entity'] = ($in['source'] ?? 'newest') === 'newest' ? null : FieldValues::id($in['entity'] ?? null);
+        $out['entity'] = in_array($in['source'] ?? 'newest', HomeCatalog::PRODUCT_SOURCES_WITH_ENTITY, true) ? FieldValues::id($in['entity'] ?? null) : null;
 
         return $out;
     }

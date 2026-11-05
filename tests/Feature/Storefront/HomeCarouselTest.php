@@ -277,6 +277,20 @@ class HomeCarouselTest extends TestCase
         $this->assertStringNotContainsString('data-carousel', $this->home(), 'an empty source prints nothing');
     }
 
+    public function test_a_featured_product_carousel_shows_only_flagged_products_and_costs_what_a_newest_one_costs(): void
+    {
+        $this->makeProduct(1, ['name' => 'Alpha', 'slug' => 'alpha', 'featured' => true, 'price' => '10.00', 'stock' => 3, 'timeline' => '2026-01-02 10:00:00']);
+        $this->makeProduct(2, ['name' => 'Beta', 'slug' => 'beta', 'price' => '12.00', 'stock' => 3, 'timeline' => '2026-01-03 10:00:00']);
+        $this->makeProduct(3, ['name' => 'Gamma', 'slug' => 'gamma', 'featured' => true, 'price' => '12.00', 'stock' => 3, 'timeline' => '2026-01-04 10:00:00']);
+
+        $this->publish([$this->car('products', ['source' => 'newest'])]);
+        $newest = $this->queries();
+        $this->publish([$this->car('products', ['source' => 'featured', 'entity' => 7])]);
+
+        $this->assertSame(['Gamma', 'Alpha'], $this->names($this->home()));
+        $this->assertSame($newest, $this->queries());
+    }
+
     /** @return list<string> */
     private function names(string $html): array
     {

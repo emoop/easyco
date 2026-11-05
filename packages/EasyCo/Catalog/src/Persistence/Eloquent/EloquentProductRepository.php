@@ -48,6 +48,7 @@ final class EloquentProductRepository implements ProductRepository
             $productModel->brand_id = $product->brandId();
             $productModel->season_id = $product->seasonId();
             $productModel->product_group_id = $product->productGroupId();
+            $productModel->is_featured = $product->isFeatured();
 
             if ($product->id() === null) {
                 // New product only: set created_at explicitly from the
@@ -637,6 +638,7 @@ final class EloquentProductRepository implements ProductRepository
             descriptiveAttributes: $descriptiveAttributes,
             description: $model->description,
             productGroupId: $model->product_group_id !== null ? (string) $model->product_group_id : null,
+            isFeatured: (bool) $model->is_featured,
         );
     }
 

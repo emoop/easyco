@@ -169,6 +169,34 @@ class ProductActivityLogTest extends TestCase
         $this->assertSame($brand->id(), $updated['brand_id']->new_value);
     }
 
+    /** P1: the «Препоръчан» toggle is saved by the create page, loaded by the edit page, changed through the domain and logged. */
+    public function test_the_featured_toggle_saves_loads_changes_and_is_logged(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        $product = $this->createSimpleProduct('Featured shoe', 'featured-shoe', ['is_featured' => true]);
+        $this->assertTrue((bool) $product->is_featured);
+
+        Livewire::test(EditProduct::class, ['record' => $product->id])
+            ->assertFormSet(['is_featured' => true])
+            ->fillForm(['is_featured' => false])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $this->assertFalse((bool) ProductModel::find($product->id)->is_featured);
+        $entry = ActivityLogModel::where('entity_type', 'product')->where('entity_id', $product->id)->where('field', 'is_featured')->first();
+        $this->assertNotNull($entry);
+        $this->assertSame('1', $entry->old_value);
+        $this->assertSame('0', $entry->new_value);
+    }
+
+    public function test_a_new_product_is_not_featured_by_default(): void
+    {
+        $this->actingAsPanelAdministrator();
+
+        $this->assertFalse((bool) $this->createSimpleProduct('Plain shoe', 'plain-shoe')->is_featured);
+    }
+
     public function test_editing_without_changing_anything_logs_nothing_new(): void
     {
         $this->actingAsPanelAdministrator();

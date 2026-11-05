@@ -3,6 +3,7 @@
 namespace App\Storefront\Filters;
 
 use App\Storefront\Appearance\StorefrontAppearance;
+use App\Storefront\Sidebar\SidebarFilters;
 use EasyCo\Catalog\Persistence\Eloquent\AttributeDefinitionModel;
 use EasyCo\Catalog\Persistence\Eloquent\AttributeValueModel;
 use EasyCo\Catalog\Persistence\Eloquent\BrandModel;
@@ -35,19 +36,71 @@ final class FilterCatalog
     /** @var array{attributes: list<array<string, mixed>>, builtin: array<string, list<array{id: int, label: string, colour: null}>>}|null memoised for the request */
     private ?array $data = null;
 
-    /** @return list<Filter> */
+    /**
+     * P1: the filters the visitor can use, in the order of the «Сайдбар» list, without the hidden ones. A hidden filter is not here at all: it is not printed (side panel, top bar, chips), costs no facet query and
+     * its key in a URL is the storefront's 404 (FilterSelection knows only these). Without a saved list: brand, season, the attributes, tag, a built-in shown unless its older «Каталог» choice is `off`.
+     *
+     * @return list<Filter>
+     */
     public function all(): array
     {
-        $this->data ??= Cache::remember(self::CACHE_KEY, self::TTL, fn (): array => ['attributes' => $this->loadAttributes(), 'builtin' => $this->loadBuiltins()]);
+        $this->load();
 
-        $kinds = app(StorefrontAppearance::class)->catalogFilterKinds();
-        $builtin = function (string $kind) use ($kinds): array {
+        $appearance = app(StorefrontAppearance::class);
+        $kinds = $appearance->catalogFilterKinds();
+        $byKey = [];
+
+        foreach (SidebarFilters::BUILTIN as $kind) {
             $values = $this->data['builtin'][$kind] ?? [];
 
-            return ($kinds[$kind] ?? 'off') === 'off' || $values === [] ? [] : [['id' => $kind, 'name' => (string) __('storefront.filter_'.$kind), 'display' => $kinds[$kind], 'values' => $values]];
-        };
+            $values === [] || $byKey[$kind] = ['id' => $kind, 'name' => (string) __('storefront.filter_'.$kind), 'display' => SidebarFilters::kindToPrint($kinds[$kind] ?? null), 'values' => $values];
+        }
 
-        return [...$builtin('brand'), ...$builtin('season'), ...$this->data['attributes'], ...$builtin('tag')];
+        foreach ($this->data['attributes'] as $attribute) {
+            $byKey[(string) $attribute['id']] = $attribute;
+        }
+
+        $out = [];
+
+        foreach (SidebarFilters::effective($appearance->sidebarFilters(), $this->knownKeys(), $kinds) as $row) {
+            $row['show'] && isset($byKey[$row['key']]) && $out[] = $byKey[$row['key']];
+        }
+
+        return $out;
+    }
+
+    /**
+     * P1: every filter key the shop knows now, in the default order (brand, season, the attributes by id, tag) with its admin name: what the «Сайдбар» list may hold. Reads the cached data (no query when warm).
+     *
+     * @return array<string, string> key => name
+     */
+    public function names(): array
+    {
+        $this->load();
+        $names = [];
+
+        foreach (['brand', 'season'] as $kind) {
+            $names[$kind] = (string) __('storefront.filter_'.$kind);
+        }
+
+        foreach ($this->data['attributes'] as $attribute) {
+            $names[(string) $attribute['id']] = (string) $attribute['name'];
+        }
+
+        $names['tag'] = (string) __('storefront.filter_tag');
+
+        return $names;
+    }
+
+    /** @return list<string> */
+    public function knownKeys(): array
+    {
+        return array_map('strval', array_keys($this->names()));
+    }
+
+    private function load(): void
+    {
+        $this->data ??= Cache::remember(self::CACHE_KEY, self::TTL, fn (): array => ['attributes' => $this->loadAttributes(), 'builtin' => $this->loadBuiltins()]);
     }
 
     public static function forget(): void

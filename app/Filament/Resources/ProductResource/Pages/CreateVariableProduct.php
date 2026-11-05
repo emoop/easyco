@@ -207,6 +207,10 @@ class CreateVariableProduct extends CreateRecord
                         ])
                         ->default(CatalogVisibility::HIDDEN->value)
                         ->required(),
+                    Toggle::make('is_featured')
+                        ->label(__('products.fields.is_featured'))
+                        ->afterLabel(\App\Filament\Design\InfoHint::make((string) __('products.fields.is_featured_help'), 'is_featured'))
+                        ->default(false),
                     Select::make('brand_id')
                         ->label(__('products.fields.brand_id'))
                         ->options(fn (): array => BrandModel::pluck('name', 'id')->all())
@@ -471,6 +475,7 @@ class CreateVariableProduct extends CreateRecord
         }
 
         $product->setCatalogVisibility(CatalogVisibility::from($data['catalog_visibility'] ?? CatalogVisibility::HIDDEN->value));
+        $product->setFeatured((bool) ($data['is_featured'] ?? false));
         $product->assignBrand($data['brand_id'] ?? null);
         $product->assignProductGroup($data['product_group_id'] ?? null);
 

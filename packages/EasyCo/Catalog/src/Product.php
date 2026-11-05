@@ -77,6 +77,8 @@ final class Product
         // case than "when was this product made").
         private ?\DateTimeImmutable $createdAt = null,
         private ?\DateTimeImmutable $timelineAt = null,
+        // P1: the «Препоръчан» flag (catalog_products.is_featured); a plain on / off, new products start off
+        private bool $isFeatured = false,
     ) {
         self::assertValidName($name);
         self::assertValidBaseSku($baseSku);
@@ -253,6 +255,7 @@ final class Product
         array $descriptiveAttributes = [],
         ?string $description = null,
         ?string $productGroupId = null,
+        bool $isFeatured = false,
     ): self {
         $product = new self(
             id: $id,
@@ -268,6 +271,7 @@ final class Product
             productGroupId: $productGroupId,
             createdAt: $createdAt,
             timelineAt: $timelineAt,
+            isFeatured: $isFeatured,
         );
 
         if ($variationAxes !== []) {
@@ -579,6 +583,16 @@ final class Product
         // Deliberately no coupling to sellability here — a HIDDEN product
         // may still have purchasable variations for POS / direct-order use.
         $this->catalogVisibility = $visibility;
+    }
+
+    public function isFeatured(): bool
+    {
+        return $this->isFeatured;
+    }
+
+    public function setFeatured(bool $featured): void
+    {
+        $this->isFeatured = $featured;
     }
 
     /** @return Variation[] */

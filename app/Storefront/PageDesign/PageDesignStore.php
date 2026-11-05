@@ -111,7 +111,7 @@ final class PageDesignStore
     }
 
     /** @param  array<string, mixed>  $clean  the section's VALIDATED values */
-    private static function save(string $section, array $clean): void
+    public static function save(string $section, array $clean): void
     {
         $settings = app(SiteSettingsRepository::class);
         $variables = array_intersect_key($clean, PageDesign::variableFields($section));

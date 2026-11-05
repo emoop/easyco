@@ -247,6 +247,12 @@ class EditProduct extends EditRecord
             $product->setCatalogVisibility($newVisibility);
         }
 
+        $newFeatured = (bool) ($data['is_featured'] ?? false);
+        if ($product->isFeatured() !== $newFeatured) {
+            $logger->logFieldChanged('product', $product->id(), 'is_featured', $product->isFeatured() ? '1' : '0', $newFeatured ? '1' : '0');
+            $product->setFeatured($newFeatured);
+        }
+
         $newBrandId = $data['brand_id'] ?? null;
         if ($product->brandId() !== $newBrandId) {
             $logger->logFieldChanged('product', $product->id(), 'brand_id', $product->brandId(), $newBrandId);
