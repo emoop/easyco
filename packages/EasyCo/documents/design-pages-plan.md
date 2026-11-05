@@ -54,5 +54,20 @@ Goal: a visitor always knows a small discount is available, so he does not leave
 - The cart is dynamic (not cached), so the list does not conflict with the planned S4 caching. The list is served through the cart API, only active public codes (valid dates, usage limits not exhausted).
 - Depends on: the existing promo-code domain (conditions, dates, limits). Check against it before writing the prompt. Medium task (admin flag + description, API list, cart UI).
 
-## Suggested order
-Sidebar → season / tag / brand public pages → «Съдържание» for listing pages (defaults + inheritance + cloud) → product page layout → prices → badge builder. The card-name setting (part 6) is a small Haiku task that can go any time; public promo codes (part 7) is a medium task that can go after the cart limit work (DRIBNI-3). Small fixes («дреболии») go in between as small Haiku tasks.
+## Work packages (owner, 2026-11-05: group small tasks so the FULL suite runs once per package)
+Each package is ONE coder task: targeted tests while working, folder runs after the last change, and ONE full-suite run (`./rt.sh --full`) at the very end of the package (not per sub-task). Grouped by the area they touch, so one full run covers related changes.
+
+| # | Package | Contents | Model |
+|---|---|---|---|
+| P1 | Catalog listing extras | Sidebar zone (part 1: filters on/off + order, one list for side panel and top bar) + «Препоръчани» (the `is_featured` flag in the domain — the owner explicitly allows the `Product.php` change for this — the product form toggle, the `featured` source for the home product grid and carousel; flip `test_featured_is_not_a_source`) | Sonnet |
+| P2 | Public pages | Season / tag / brand public pages on the category template (part 2) + brand links in the HP-5 brand-logo carousel | Sonnet |
+| P3 | «Съдържание» — listing pages | Part 3: default templates per kind + per-page override via search, inheritance, title with the quick-navigation cloud, top HTML block, bottom carousel / block | Sonnet |
+| P4 | «Съдържание» — product page | Part 4: ordered slots under the gallery and accordion (tabs, carousel, «Подобни продукти» as a carousel kind, HTML block) | Sonnet |
+| P5 | Cart | Cart performance (122 queries for 10 lines: remove the N+1, before caching) + `max_quantity` per line from the same grouped read + public promo codes in the cart (part 7) | Sonnet |
+| P6 | Prices | `price_from_minor`, sort by price, price lists — the base for the «Промо» badge | Sonnet |
+| P7 | Badge builder | Part 5: top / bottom positions on the card, «Промо» (mandatory, show/hide), «Нови», «Безплатна доставка» (shipping class OR price ≥ the cart's threshold), free-text badges with `ProductConditions` | Sonnet |
+| P8 | Before production | S4 caching + the security stage | Opus review, Sonnet build |
+
+Order: P1 → P2 → P3 → P4 → P5 → P6 → P7 → P8. P5 may move earlier if needed (it touches only the cart). A package that turns out too big for one session is split at a working point with a HANDOVER file; the full run then happens at the end of the last part only.
+
+Part 6 (card name 1/2 lines) is DONE (DRIBNI-4, 2026-11-04).
