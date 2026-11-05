@@ -2,11 +2,13 @@
      decorative empty spans (aria-hidden). $item['settings'] = {text, level, lines, thickness, show, spacing}. --}}
 @php
     $level = in_array($item['settings']['level'] ?? null, \App\Storefront\Home\HomeCatalog::LEVELS, true) ? $item['settings']['level'] : 'h2';
+    // P3.1: the title of a listing page is the page's ONE <h1>, in this look: `tag` = h1 is the only other value (the size still follows `level`)
+    $tag = ($item['tag'] ?? null) === 'h1' ? 'h1' : $level;
     $withLines = ($item['settings']['lines'] ?? 'lines') === 'lines';
     $thick = ($item['settings']['thickness'] ?? '1') === '2' ? '2' : '1';
 @endphp
 <div class="sf-hp-heading-row sf-hp-{{ $level }} {{ $withLines ? 'sf-hp-lines sf-hp-l'.$thick : 'sf-hp-plain' }}">
     @if ($withLines)<span class="sf-hp-line" aria-hidden="true"></span>@endif
-    <{{ $level }} class="sf-hp-heading-text">{{ $item['settings']['text'] ?? '' }}</{{ $level }}>
+    <{{ $tag }} class="sf-hp-heading-text">{{ $item['settings']['text'] ?? '' }}</{{ $tag }}>
     @if ($withLines)<span class="sf-hp-line" aria-hidden="true"></span>@endif
 </div>

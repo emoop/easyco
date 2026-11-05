@@ -120,8 +120,8 @@ final class HtmlBlockUsage
             $json = $settings->get($key);
             $set = \App\Storefront\Content\ContentSet::read(is_string($json) ? json_decode($json, true) : null);
 
-            foreach ($set as $entry) {
-                foreach ([$entry['default'], ...array_values($entry['own'])] as $template) {
+            foreach (array_keys(\App\Storefront\Content\ContentTemplate::KINDS) as $kind) {
+                foreach ([$set[$kind]['default'], ...array_values($set[$kind]['own'])] as $template) {
                     if ($template !== null && in_array($blockId, \App\Storefront\Content\ContentTemplate::blockIds($template), true)) {
                         return true;
                     }

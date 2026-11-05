@@ -12,7 +12,7 @@ use InvalidArgumentException;
 /**
  * P3: the PUBLISHED listing-page templates as the storefront reads them: one compiled copy `zones.content` inside the design document the appearance already reads once per request (no query of its own).
  *
- *   {blocks: {id: sanitised HTML}, kinds: {categories: {default: Template|null, own: {"12": Template}}, …}}
+ *   {blocks: {id: sanitised HTML}, style: {cloud_shape, title_style}, kinds: {categories: {default: Template|null, own: {"12": Template}}, …}}
  *
  * The HTML of every block any template shows is read in ONE batch and kept once (a block shared by 80 templates is stored once). The page reads the copy and validates ONLY the template it prints (ContentTemplate::read),
  * so a stored value that is bad costs that slot, never the page. A change of an HTML block recompiles the copy (refresh(), called where the home layout's is).
@@ -28,14 +28,16 @@ final class ContentCompiler
 
     /**
      * @param  Set  $set  VALIDATED
-     * @return array{blocks: array<string, string>, kinds: array<string, array{default: array<string, mixed>|null, own: array<string, array<string, mixed>>}>}
+     * @return array{blocks: array<string, string>, style: array<string, string>, kinds: array<string, array{default: array<string, mixed>|null, own: array<string, array<string, mixed>>}>}
      */
     public static function compiled(array $set): array
     {
         $ids = [];
         $kinds = [];
 
-        foreach ($set as $kind => $entry) {
+        foreach (ContentTemplate::KINDS as $kind => $scope) {
+            $entry = $set[$kind];
+
             if ($entry['default'] === null && $entry['own'] === []) {
                 continue;
             }
@@ -59,7 +61,7 @@ final class ContentCompiler
             }
         }
 
-        return ['blocks' => $blocks, 'kinds' => $kinds];
+        return ['blocks' => $blocks, 'style' => ContentSet::style($set['style'] ?? null), 'kinds' => $kinds];
     }
 
     /**
@@ -124,7 +126,7 @@ final class ContentCompiler
     /**
      * The compiled copy from the design document, with the HTML of the blocks kept only when it is a string of a sane size; null when there is none. The TEMPLATES are not validated here (see template()).
      *
-     * @return array{blocks: array<string, string>, kinds: array<string, mixed>}|null
+     * @return array{blocks: array<string, string>, style: array<string, string>, kinds: array<string, mixed>}|null
      */
     public static function published(?string $json): ?array
     {
@@ -140,14 +142,14 @@ final class ContentCompiler
             is_string($html) && strlen($html) <= 65_536 && $blocks[(string) $id] = $html;
         }
 
-        return ['blocks' => $blocks, 'kinds' => $entry['kinds']];
+        return ['blocks' => $blocks, 'style' => ContentSet::style($entry['style'] ?? null), 'kinds' => $entry['kinds']];
     }
 
     /**
      * The template a page prints from a compiled copy: its own when it has one, else the kind's default, else null; ONLY that one is validated (ContentTemplate::read).
      *
-     * @param  array{blocks: array<string, string>, kinds: array<string, mixed>}  $compiled
-     * @return array{cloud: bool, top: int|null, bottom: array<string, mixed>|null}|null
+     * @param  array{blocks: array<string, string>, style?: array<string, string>, kinds: array<string, mixed>}  $compiled
+     * @return array{cloud: bool, title: bool, top: int|null, bottom: array<string, mixed>|null, bottom_heading: string}|null
      */
     public static function template(array $compiled, string $kind, int $id): ?array
     {

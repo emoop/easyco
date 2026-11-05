@@ -430,21 +430,22 @@ final class StorefrontAppearance
 
     /**
      * P3: the template a LISTING page prints (the «Съдържание» zone) and the compiled HTML of its blocks, from the one cached payload (no query, the template validated again on every read): the page's own template
-     * when it has one, else the kind's default, else null = the page it always was. During a signed preview, the working copy.
+     * when it has one, else the kind's default, else null (no template). P3.1: the shop-wide `style` (the cloud's shape, the title's look) is always there. During a signed preview, the working copy.
      *
-     * @return array{template: array{cloud: bool, top: int|null, bottom: array<string, mixed>|null}, blocks: array<string, string>}|null
+     * @return array{template: array{cloud: bool, title: bool, top: int|null, bottom: array<string, mixed>|null, bottom_heading: string}|null, blocks: array<string, string>, style: array{cloud_shape: string, title_style: string}}
      */
-    public function listingContent(\App\Storefront\ReadModels\ListingScope $scope, int $id): ?array
+    public function listingContent(\App\Storefront\ReadModels\ListingScope $scope, int $id): array
     {
         $this->contentDoc ??= $this->contentOverride ?? \App\Storefront\Content\ContentCompiler::published($this->data()['design'] ?? null) ?? false;
 
         if ($this->contentDoc === false) {
-            return null;
+            // nothing is published: no template, the default look of the title and the cloud
+            return ['template' => null, 'blocks' => [], 'style' => \App\Storefront\Content\ContentSet::defaultStyle()];
         }
 
         $template = \App\Storefront\Content\ContentCompiler::template($this->contentDoc, \App\Storefront\Content\ContentTemplate::kindOf($scope), $id);
 
-        return $template === null ? null : ['template' => $template, 'blocks' => $this->contentDoc['blocks']];
+        return ['template' => $template, 'blocks' => $this->contentDoc['blocks'], 'style' => \App\Storefront\Content\ContentSet::style($this->contentDoc['style'] ?? null)];
     }
 
     /** For ONE request (P3, the admin's signed preview): show this compiled set of listing templates ({blocks, kinds}) instead of the published one. Never called on a public request. @param array<string, mixed> $compiled */

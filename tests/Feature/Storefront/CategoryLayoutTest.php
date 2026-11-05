@@ -158,8 +158,8 @@ class CategoryLayoutTest extends TestCase
     public function test_nothing_to_show_prints_no_trigger_and_no_drawer(): void
     {
         $html = view('storefront.partials.filters', ['filters' => null, 'sorts' => [], 'perPageHidden' => null, 'clearUrl' => '/x', 'actionUrl' => '/x', 'layout' => 'full', 'total' => 3])->render();
-        $bar = view('storefront.partials.category-bar', ['filters' => null, 'sorts' => []])->render();
-        $toolbar = view('storefront.partials.category-toolbar', ['filters' => null, 'sorts' => []])->render();
+        $bar = view('storefront.partials.category-bar', ['filters' => null, 'sorts' => [], 'listing' => (object) ['total' => 3]])->render();
+        $toolbar = view('storefront.partials.category-toolbar', ['filters' => null, 'sorts' => [], 'listing' => (object) ['total' => 3]])->render();
 
         $this->assertSame('', trim($html));
         $this->assertSame('', trim($bar));
@@ -272,16 +272,16 @@ class CategoryLayoutTest extends TestCase
 
     public function test_the_count_of_products(): void
     {
-        // CD-1c: «Брой продукти: N» beside the title (the total of the current result)
-        $this->assertStringContainsString('<p class="sf-count">Products: 14</p>', $this->visit('/product-category/clothing')->getContent());
-        $this->assertStringContainsString('<p class="sf-count">Products: 8</p>', $this->visit('/product-category/clothing?filter[1]=1001')->getContent());
-        $this->assertStringContainsString('<p class="sf-count">Products: 0</p>', $this->visit('/product-category/clothing?filter[1]=1001&filter[2]=2002')->getContent());
+        // CD-1c / P3.1: «Брой продукти: N» on the sort row (the total of the current result)
+        $this->assertStringContainsString('<p class="sf-count sf-count-right">Products: 14</p>', $this->visit('/product-category/clothing')->getContent());
+        $this->assertStringContainsString('<p class="sf-count sf-count-right">Products: 8</p>', $this->visit('/product-category/clothing?filter[1]=1001')->getContent());
+        $this->assertStringContainsString('<p class="sf-count sf-count-right">Products: 0</p>', $this->visit('/product-category/clothing?filter[1]=1001&filter[2]=2002')->getContent());
 
         DB::table('catalog_products')->where('id', '>', 1)->update(['catalog_visibility' => 'hidden']);
-        $this->assertStringContainsString('<p class="sf-count">Products: 1</p>', $this->visit('/product-category/clothing')->getContent());
+        $this->assertStringContainsString('<p class="sf-count sf-count-right">Products: 1</p>', $this->visit('/product-category/clothing')->getContent());
 
         app()->setLocale('bg');
-        $this->assertStringContainsString('<p class="sf-count">Брой продукти: 1</p>', $this->visit('/product-category/clothing')->getContent());
+        $this->assertStringContainsString('<p class="sf-count sf-count-right">Брой продукти: 1</p>', $this->visit('/product-category/clothing')->getContent());
     }
 
     // ---- «Блок отгоре» ----------------------------------------------------------------------------------------------------------------------------
@@ -299,7 +299,7 @@ class CategoryLayoutTest extends TestCase
         $this->assertStringNotContainsString('Spring sale', $this->visit('/product-category/clothing?per_page=12&page=2')->assertOk()->getContent(), 'not on page 2');
         $filtered = $this->visit('/product-category/clothing?filter[1]=1001')->assertOk()->getContent();
         $this->assertStringNotContainsString('Spring sale', $filtered, 'not with a filter');
-        $this->assertStringContainsString('<h1 class="sf-title">Clothing</h1>', $filtered, 'and then the heading is visible');
+        $this->assertStringContainsString('<h1 class="sf-hp-heading-text">Clothing</h1>', $filtered, 'and then the heading is visible');
     }
 
     public function test_a_gone_or_empty_banner_prints_nothing_and_the_heading_is_visible(): void
@@ -308,7 +308,7 @@ class CategoryLayoutTest extends TestCase
         $html = $this->visit('/product-category/clothing')->assertOk()->getContent();
 
         $this->assertStringNotContainsString('sf-cat-banner', $html);
-        $this->assertStringContainsString('<h1 class="sf-title">Clothing</h1>', $html);
+        $this->assertStringContainsString('<h1 class="sf-hp-heading-text">Clothing</h1>', $html);
 
         $id = $this->block('<p>Gone</p>');
         DB::table('catalog_categories')->where('id', 1)->update(['header_block_id' => $id]);
@@ -318,7 +318,7 @@ class CategoryLayoutTest extends TestCase
 
         $gone = $this->visit('/product-category/clothing')->assertOk()->getContent();
         $this->assertStringNotContainsString('sf-cat-banner', $gone);
-        $this->assertStringContainsString('<h1 class="sf-title">Clothing</h1>', $gone);
+        $this->assertStringContainsString('<h1 class="sf-hp-heading-text">Clothing</h1>', $gone);
     }
 
     public function test_a_block_that_is_a_banner_cannot_be_deleted_and_the_message_names_the_category(): void

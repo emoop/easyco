@@ -133,7 +133,7 @@ class StorefrontPagesTest extends TestCase
         $html = $this->get('/product-category/clothing/dresses')->assertOk()->getContent();
 
         $this->assertStringContainsString('<title>Dresses — Raf Shop</title>', $html);
-        $this->assertStringContainsString('<h1 class="sf-title">Dresses</h1>', $html);
+        $this->assertStringContainsString('<h1 class="sf-hp-heading-text">Dresses</h1>', $html);
         $this->assertStringContainsString('<link rel="canonical" href="https://shop.test/product-category/clothing/dresses">', $html);
         $this->assertSame(2, substr_count($html, 'class="sf-card"'));
         $this->assertStringContainsString('Sold-out scarf', $html);
@@ -142,12 +142,13 @@ class StorefrontPagesTest extends TestCase
         $this->assertMatchesRegularExpression('/<a href="\/product-category\/clothing">Clothing<\/a>.*aria-current="page">Dresses/s', $html);
     }
 
-    public function test_the_parent_category_includes_descendants_and_links_its_children(): void
+    public function test_the_parent_category_includes_descendants_and_prints_no_sub_category_list_without_a_cloud(): void
     {
         $html = $this->get('/product-category/clothing')->assertOk()->getContent();
 
         $this->assertSame(3, substr_count($html, 'class="sf-card"'));
-        $this->assertStringContainsString('<li class="sf-subcategory"><a href="/product-category/clothing/dresses">Dresses</a></li>', $html);
+        // P3.1: the sub-category links are printed only by a template's cloud; none is saved here
+        $this->assertStringNotContainsString('sf-subcategor', $html);
     }
 
     public function test_pagination_shows_prev_next_and_numbered_pages_with_only_whitelisted_keys(): void

@@ -203,4 +203,64 @@ class DesignContentZoneTest extends TestCase
 
         Livewire::test(DesignScreen::class)->assertForbidden();
     }
+
+    /** ★ P3.1: the zone opens with the default look (cloud «Като сайта», title «С линии»); the two shop-wide choices are saved with the set, published and read back; a bad value is refused */
+    public function test_the_shop_wide_cloud_shape_and_title_style_are_saved_and_checked(): void
+    {
+        $screen = $this->screen();
+        $this->assertSame('site', $screen->get('props.cloud_shape'));
+        $this->assertSame('lines', $screen->get('props.title_style'));
+        $this->assertStringContainsString('Cloud shape', $screen->html());
+        $this->assertStringContainsString('Title style', $screen->html());
+
+        $screen->set('props.cloud_shape', 'pill')->set('props.title_style', 'plain')->call('apply')->assertHasNoErrors()->call('publish')->assertHasNoErrors();
+
+        $published = $this->stored(AppearanceSettings::CONTENT_PUBLISHED_KEY);
+        $this->assertSame(['cloud_shape' => 'pill', 'title_style' => 'plain'], $published['style']);
+
+        $again = $this->screen();
+        $this->assertSame('pill', $again->get('props.cloud_shape'));
+        $this->assertSame('plain', $again->get('props.title_style'));
+
+        $this->makeProduct(1, ['name' => 'P1', 'slug' => 'p1', 'categories' => [2], 'price' => '10.00', 'stock' => 3]);
+        $this->app->forgetScopedInstances();
+        $this->get('/product-category/clothing/dresses')->assertOk()->assertSee('<h1 class="sf-title">Dresses</h1>', false);
+
+        // a value that is not in its list is refused and nothing is written
+        $before = app(SiteSettingsRepository::class)->get(AppearanceSettings::CONTENT_PUBLISHED_KEY);
+        $this->screen()->set('props.cloud_shape', 'triangle')->call('publish');
+        $this->assertSame($before, app(SiteSettingsRepository::class)->get(AppearanceSettings::CONTENT_PUBLISHED_KEY));
+
+        // «Начални настройки»-like: the default look and no template is the same as nothing published
+        $this->assertTrue(ContentSet::isBlank(ContentSet::blank()));
+        $this->assertFalse(ContentSet::isBlank(ContentSet::read(['style' => ['cloud_shape' => 'pill']])));
+    }
+
+    /** ★ P3.1: «Покажи заглавието» and «Заглавие над долния блок» are fields of every template, saved and refused when too long */
+    public function test_a_template_has_the_title_switch_and_the_heading_above_the_bottom_block(): void
+    {
+        $block = $this->block('LOWER');
+        $screen = $this->screen();
+        $this->assertTrue($screen->get('props.categories.default.title'));
+        $this->assertSame('', $screen->get('props.categories.default.bottom_heading'));
+        $this->assertStringContainsString('Show the title', $screen->html());
+
+        $form = ['title' => false, 'bottom_heading' => 'More to read', 'bottom_block' => $block->id] + $this->form(false, null, 'html_block');
+        $screen->set('props.categories.default', $form)->call('apply')->assertHasNoErrors()->call('publish')->assertHasNoErrors();
+
+        $default = $this->stored(AppearanceSettings::CONTENT_PUBLISHED_KEY)['categories']['default'];
+        $this->assertFalse($default['title']);
+        $this->assertSame('More to read', $default['bottom_heading']);
+
+        $this->makeProduct(1, ['name' => 'P1', 'slug' => 'p1', 'categories' => [2], 'price' => '10.00', 'stock' => 3]);
+        $this->app->forgetScopedInstances();
+        $html = $this->get('/product-category/clothing/dresses')->assertOk()->getContent();
+        $this->assertStringContainsString('<h1 class="sf-title sf-sr">Dresses</h1>', $html);
+        $this->assertStringContainsString('More to read', $html);
+
+        // too long: refused, nothing changes
+        $before = app(SiteSettingsRepository::class)->get(AppearanceSettings::CONTENT_PUBLISHED_KEY);
+        $this->screen()->set('props.categories.default', ['bottom_heading' => str_repeat('x', 81)] + $form)->call('publish');
+        $this->assertSame($before, app(SiteSettingsRepository::class)->get(AppearanceSettings::CONTENT_PUBLISHED_KEY));
+    }
 }

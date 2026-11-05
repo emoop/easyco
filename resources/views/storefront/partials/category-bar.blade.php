@@ -17,6 +17,8 @@
             </div>
         </details>
     @endif
+    {{-- P3.1: «Брой продукти: N» in the first row of the bar, in its last column (the same text as the toolbar's, which is not shown while the bar is) --}}
+    <p class="sf-count sf-count-bar">{{ __('storefront.products_total', ['count' => $listing->total]) }}</p>
     @foreach (($filters['groups'] ?? []) as $group)
         <details class="sf-bctl" name="sf-cbar">
             <summary class="sf-bctl-sum"><span class="sf-bctl-text">@if ($group['count'] > 0)<strong class="sf-bctl-strong">{{ $group['name'] }}</strong>: {{ $group['current'] }}@else{{ $group['name'] }}@endif</span></summary>

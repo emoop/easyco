@@ -130,17 +130,14 @@ final class ListingPageRenderer
      * on page 1 (no duplicate content on `?page=2`), whatever the sort or filters. A category's OWN banner («Блок отгоре» of the category, `headerBlock`) is the more specific top block: where it is set it keeps
      * the place and the template's top block is not printed. The carousel's `current` source is read for THIS page's subject, not filtered by the visitor's choices.
      *
-     * @return array{cloud: list<array{name: string, url: string}>|null, label: string, top: array<string, mixed>|null, bottom: array<string, mixed>|null}|null
+     * P3.1: always an array (the shop-wide look of the title and of the cloud applies to every page); the cloud is read ONLY when the template has it on.
+     *
+     * @return array{cloud: list<array{name: string, url: string}>|null, label: string, top: array<string, mixed>|null, bottom: array<string, mixed>|null, bottom_heading: string|null, title: bool, shape: string, title_style: string}
      */
-    private function content(CategoryPage $category, ListingScope $scope, int $page, CatalogReader $reader): ?array
+    private function content(CategoryPage $category, ListingScope $scope, int $page, CatalogReader $reader): array
     {
         $found = $this->appearance->listingContent($scope, (int) $category->id);
-
-        if ($found === null) {
-            return null;
-        }
-
-        $template = $found['template'];
+        $template = $found['template'] ?? \App\Storefront\Content\ContentTemplate::blank();
         $slot = static function (?array $section) use ($found): ?array {
             $prepared = $section === null ? null : \App\Storefront\Home\HomeView::prepare(['layout' => ['spacing' => '0', 'sections' => [$section]], 'blocks' => $found['blocks']], true);
 
@@ -158,7 +155,17 @@ final class ListingPageRenderer
 
         $cloud = $template['cloud'] ? $reader->cloud($scope, (int) $category->id) : null;
 
-        return $cloud === null && $top === null && $bottom === null ? null : ['cloud' => $cloud, 'label' => $scope === ListingScope::CATEGORY ? (string) __('storefront.subcategories') : (string) __('storefront.cloud_categories'), 'top' => $top, 'bottom' => $bottom];
+        return [
+            'cloud' => $cloud === [] ? null : $cloud,
+            'label' => $scope === ListingScope::CATEGORY ? (string) __('storefront.subcategories') : (string) __('storefront.cloud_categories'),
+            'top' => $top,
+            'bottom' => $bottom,
+            // the heading above the bottom slot: only where the slot is printed (page 1 and something to show)
+            'bottom_heading' => $bottom !== null && $template['bottom_heading'] !== '' ? $template['bottom_heading'] : null,
+            'title' => $template['title'],
+            'shape' => $found['style']['cloud_shape'],
+            'title_style' => $found['style']['title_style'],
+        ];
     }
 
     /**

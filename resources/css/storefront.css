@@ -224,6 +224,18 @@
         @apply m-0 flex list-none flex-wrap gap-2 p-0;
     }
 
+    /* P3.1: the cloud is a computer's navigation: below the filter drawer's breakpoint (64rem) it is not shown (the sub-categories stay in the menu, the breadcrumbs and the filters) */
+    @media (max-width: 63.999rem) {
+        .sf-cloud {
+            display: none;
+        }
+    }
+
+    /* the cloud's shape «Като сайта»: the side panel's chip (sf-bv-chip: its border, its corner radius = the cards'), a link without an underline */
+    .sf-cloud-site .sf-bv-chip {
+        text-decoration: none;
+    }
+
     .sf-subcategory > a {
         @apply inline-flex items-center rounded-full border border-neutral-200 bg-white px-3 py-1.5 text-sm text-neutral-700 no-underline hover:border-neutral-300 hover:bg-neutral-100;
     }
@@ -538,6 +550,21 @@
         color: var(--sf-pdp-muted);
     }
 
+    /* P3.1: «Брой продукти: N» is on the sort row, at the far right; where the row wraps (a narrow screen) it goes under the sort and stays on the right (no horizontal scroll) */
+    .sf-count-right {
+        margin-left: auto;
+        text-align: right;
+    }
+
+    /* the copy in the bar (a computer in «filters on top»): the first row, the last column (the bar is a grid; the other cells flow around it) */
+    .sf-count-bar {
+        grid-column: -2 / -1;
+        grid-row: 1;
+        justify-self: end;
+        align-self: center;
+        text-align: right;
+    }
+
     .sf-cat-main {
         grid-area: main;
         min-width: 0;
@@ -810,7 +837,7 @@
 
         /* «filters on top»: the bar replaces the form (the drawer) and the row above the list */
         .sf-cat-layout-full .sf-fdrawer,
-        .sf-cat-layout-full .sf-toolbar {
+        .sf-cat-layout-full .sf-toolbar-bar {
             display: none;
         }
     }
@@ -5132,6 +5159,9 @@ html:not(.js) .sf-bar-item:focus-within > .sf-sub {
 /* P3: the blocks of a listing page's template (above and below the product list) keep their distance from what they sit next to */
 .sf-lp-slot-top { margin-block: 1rem 1.5rem; }
 .sf-lp-slot-bottom { margin-block-start: 2.5rem; }
+.sf-lp-slot-bottom .sf-hp-heading + .sf-hp-section { margin-top: 1rem; }
+/* P3.1: the page's title with lines (the home heading): a block of its own, with the room the plain title had */
+.sf-cat-head-lines { display: block; margin-bottom: 0.5rem; }
 
 .sf-hp-section {
     min-width: 0;
@@ -5156,6 +5186,9 @@ html:not(.js) .sf-bar-item:focus-within > .sf-sub {
     align-items: center;
     justify-content: center;
     gap: 0.75rem;
+    margin-bottom:3rem;
+    margin-top:2rem;
+
 }
 
 .sf-hp-line {

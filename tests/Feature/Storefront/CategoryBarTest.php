@@ -175,20 +175,23 @@ class CategoryBarTest extends TestCase
 
     // ---- the count --------------------------------------------------------------------------------------------------------------------------------
 
-    public function test_the_count_beside_the_title_is_the_total_of_the_result_on_every_page(): void
+    public function test_the_count_on_the_sort_row_is_the_total_of_the_result_on_every_page(): void
     {
         $html = $this->visit('/product-category/clothing?per_page=12')->assertOk()->getContent();
 
-        $this->assertMatchesRegularExpression('#<div class="sf-cat-head">\s*<h1 class="sf-title">Clothing</h1>\s*<p class="sf-count">Products: 5</p>\s*</div>#', $html);
+        // P3.1: the title (the home heading with lines, the one <h1>) has no count beside it; the count is on the sort row (the bar's copy and the toolbar's)
+        $this->assertMatchesRegularExpression('#<div class="sf-cat-head sf-cat-head-lines">\s*<div class="sf-hp-heading-row[^"]*">.*?<h1 class="sf-hp-heading-text">Clothing</h1>.*?</div>\s*</div>#s', $html);
+        $this->assertStringContainsString('<p class="sf-count sf-count-bar">Products: 5</p>', $html);
+        $this->assertStringContainsString('<p class="sf-count sf-count-right">Products: 5</p>', $html);
         $this->assertStringContainsString('<p class="sf-fcount">Products: 5</p>', $html, 'and at the top of the drawer');
-        $this->assertStringContainsString('<p class="sf-count">Products: 1</p>', $this->visit('/product-category/clothing?filter[2]=2001')->getContent());
+        $this->assertStringContainsString('<p class="sf-count sf-count-bar">Products: 1</p>', $this->visit('/product-category/clothing?filter[2]=2001')->getContent());
 
         for ($i = 6; $i <= 16; $i++) {
             $this->makeProduct($i, ['name' => "P{$i}", 'slug' => "p{$i}", 'categories' => [1], 'price' => '10.00', 'stock' => 1, 'timeline' => '2026-02-01 10:00:00']);
         }
 
         $page2 = $this->visit('/product-category/clothing?per_page=12&page=2')->assertOk()->getContent();
-        $this->assertStringContainsString('<p class="sf-count">Products: 16</p>', $page2, 'the total of the whole result, not of the page');
+        $this->assertStringContainsString('<p class="sf-count sf-count-bar">Products: 16</p>', $page2, 'the total of the whole result, not of the page');
     }
 
     // ---- the phone drawer -------------------------------------------------------------------------------------------------------------------------

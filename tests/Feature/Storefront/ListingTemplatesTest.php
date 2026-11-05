@@ -84,9 +84,9 @@ class ListingTemplatesTest extends TestCase
     }
 
     /** @return array<string, mixed> */
-    private function template(bool $cloud = false, ?HtmlBlockModel $top = null, ?array $bottom = null): array
+    private function template(bool $cloud = false, ?HtmlBlockModel $top = null, ?array $bottom = null, bool $title = true, string $heading = ''): array
     {
-        return ['cloud' => $cloud, 'top' => $top?->id, 'bottom' => $bottom];
+        return ['cloud' => $cloud, 'title' => $title, 'top' => $top?->id, 'bottom' => $bottom, 'bottom_heading' => $heading];
     }
 
     private function bottomBlock(HtmlBlockModel $block): array
@@ -100,9 +100,10 @@ class ListingTemplatesTest extends TestCase
     }
 
     /** publishes a set built from `kind => ['default' => template|null, 'own' => [id => template]]` (the others blank) through the real validator and store */
-    private function publish(array $kinds): void
+    private function publish(array $kinds, ?array $style = null): void
     {
         $set = ContentSet::blank();
+        $style === null || $set['style'] = $style;
 
         foreach ($kinds as $kind => $entry) {
             $set[$kind] = ['default' => $entry['default'] ?? null, 'own' => $entry['own'] ?? []];
@@ -125,11 +126,11 @@ class ListingTemplatesTest extends TestCase
     /** @return list<string> the names in the cloud, in order (empty = no cloud markup) */
     private function cloud(string $html): array
     {
-        if (! preg_match('#<nav class="sf-subcategories sf-cloud"[^>]*>(.*?)</nav>#s', $html, $nav)) {
+        if (! preg_match('#<nav class="sf-subcategories sf-cloud [^"]*"[^>]*>(.*?)</nav>#s', $html, $nav)) {
             return [];
         }
 
-        preg_match_all('#<li class="sf-subcategory"><a href="[^"]*">(.*?)</a></li>#s', $nav[1], $m);
+        preg_match_all('#<li(?: class="sf-subcategory")?><a (?:class="sf-bv-chip" )?href="[^"]*">(.*?)</a></li>#s', $nav[1], $m);
 
         return array_map(static fn (string $name): string => html_entity_decode($name, ENT_QUOTES | ENT_HTML5), $m[1]);
     }
@@ -254,7 +255,7 @@ class ListingTemplatesTest extends TestCase
         $this->publish(['brands' => ['default' => $this->template(true, $top, $this->bottomBlock($bottom))]]);
 
         $one = $this->visit('/brand/zed?per_page=12')->assertOk()->getContent();
-        $heading = strpos($one, '<h1 class="sf-title">');
+        $heading = strpos($one, '<h1 class="sf-hp-heading-text">');
         $cloud = strpos($one, 'sf-cloud');
         $topAt = strpos($one, 'TOPBLOCKTEXT');
         $firstCard = strpos($one, 'data-product-id');
@@ -267,7 +268,7 @@ class ListingTemplatesTest extends TestCase
         $this->assertSame(['Dresses'], $this->cloud($two), 'the cloud is on every page');
         $this->assertStringNotContainsString('TOPBLOCKTEXT', $two);
         $this->assertStringNotContainsString('BOTTOMBLOCKTEXT', $two);
-        $this->assertStringContainsString('<h1 class="sf-title">Zed</h1>', $two);
+        $this->assertStringContainsString('<h1 class="sf-hp-heading-text">Zed</h1>', $two);
 
         // sort and a filter do not hide the blocks on page 1
         $this->assertStringContainsString('TOPBLOCKTEXT', $this->visit('/brand/zed?per_page=12&sort=name_asc')->getContent());
@@ -427,9 +428,9 @@ class ListingTemplatesTest extends TestCase
     public function test_a_stored_template_is_cleaned_on_read(): void
     {
         $this->assertSame(ContentTemplate::blank(), ContentTemplate::read('nonsense'));
-        $this->assertSame(['cloud' => false, 'top' => null, 'bottom' => null], ContentTemplate::read(['cloud' => 'yes', 'top' => 'x', 'bottom' => ['type' => 'script'], 'junk' => 1]));
-        $this->assertSame(['cloud' => true, 'top' => 5, 'bottom' => null], ContentTemplate::read(['cloud' => true, 'top' => 5, 'bottom' => ['type' => 'carousel', 'settings' => ['kind' => 'products', 'source' => 'sale']]]), 'an unknown source drops the bottom slot only');
-        $this->assertSame(['cloud' => false, 'top' => null, 'bottom' => null], ContentTemplate::read(['bottom' => ['type' => 'carousel', 'settings' => ['kind' => 'brands']]]), 'a carousel of logos is not offered here');
+        $this->assertSame(ContentTemplate::blank(), ContentTemplate::read(['cloud' => 'yes', 'top' => 'x', 'bottom' => ['type' => 'script'], 'junk' => 1]));
+        $this->assertSame(['cloud' => true, 'title' => true, 'top' => 5, 'bottom' => null, 'bottom_heading' => ''], ContentTemplate::read(['cloud' => true, 'top' => 5, 'bottom' => ['type' => 'carousel', 'settings' => ['kind' => 'products', 'source' => 'sale']]]), 'an unknown source drops the bottom slot only');
+        $this->assertSame(ContentTemplate::blank(), ContentTemplate::read(['bottom' => ['type' => 'carousel', 'settings' => ['kind' => 'brands']]]), 'a carousel of logos is not offered here');
 
         // strict on save
         $errors = [];
@@ -441,7 +442,7 @@ class ListingTemplatesTest extends TestCase
 
         // a hand-edited compiled copy: only the template a page prints is judged, and a bad value costs that slot
         $compiled = ['blocks' => [], 'kinds' => ['categories' => ['default' => ['cloud' => true, 'top' => 'x', 'bottom' => 7, 'zzz' => 1], 'own' => ['2' => 'garbage']]]];
-        $this->assertSame(['cloud' => true, 'top' => null, 'bottom' => null], ContentCompiler::template($compiled, 'categories', 3));
+        $this->assertSame(['cloud' => true, 'title' => true, 'top' => null, 'bottom' => null, 'bottom_heading' => ''], ContentCompiler::template($compiled, 'categories', 3));
         $this->assertSame(ContentTemplate::blank(), ContentCompiler::template($compiled, 'categories', 2), 'garbage as an own template is a blank one, not the default');
         $this->assertNull(ContentCompiler::template($compiled, 'brands', 1));
     }
@@ -490,5 +491,194 @@ class ListingTemplatesTest extends TestCase
         $this->assertSame($first->getContent(), $second->getContent());
         $this->assertSame([], $first->headers->getCookies());
         $this->assertStringNotContainsString('style=', substr($first->getContent(), (int) strpos($first->getContent(), 'TOPTEXT') - 200, 400));
+    }
+
+    // ---- P3.1 ------------------------------------------------------------------------------------------------------------------------------------
+
+    /** the markup of the title area (the head div), whitespace collapsed */
+    private function titleArea(string $html): string
+    {
+        $this->assertSame(1, preg_match('#<div class="sf-cat-head[^"]*">.*?</div>(?=\s*(?:<div class="sf-cat-banner"|<nav|<div class="sf-hp |<div class="sf-cat-body"))#s', $html, $m), 'the title area');
+
+        return trim((string) preg_replace('/\s+/', ' ', $m[0]));
+    }
+
+    /** ★ the cloud is printed ONLY when the template's cloud is on: no template and cloud off print no sub-category markup at all */
+    public function test_without_the_cloud_switched_on_no_sub_category_links_are_printed(): void
+    {
+        foreach ([self::CLOTHING, '/brand/acme', '/season/autumn', '/product-tag/alpha'] as $url) {
+            $html = $this->visit($url)->assertOk()->getContent();
+            $this->assertStringNotContainsString('sf-subcategor', $html, 'no template: '.$url);
+            $this->assertStringNotContainsString('sf-cloud', $html, 'no template: '.$url);
+        }
+
+        // a template with the cloud OFF (a top block, say) does not bring the old list back
+        $this->publish(['categories' => ['default' => $this->template(false, $this->block('SOMETOP'))]]);
+        $html = $this->visit(self::CLOTHING)->getContent();
+        $this->assertStringContainsString('SOMETOP', $html);
+        $this->assertStringNotContainsString('sf-subcategor', $html);
+        $this->assertStringNotContainsString('sf-cloud', $html);
+
+        // switched on: printed
+        $this->publish(['categories' => ['default' => $this->template(true)]]);
+        $this->assertSame(['Dresses', 'Coats'], $this->cloud($this->visit(self::CLOTHING)->getContent()));
+    }
+
+    /** ★ the shape «Като сайта» (default) = the side panel's button chips (the cards' corner radius); «Заоблени» = today's rounded chips; a bad stored value is «Като сайта» */
+    public function test_the_cloud_shape_is_the_sidebar_buttons_by_default_and_rounded_on_request(): void
+    {
+        $this->publish(['categories' => ['default' => $this->template(true)]]);
+        $site = $this->visit(self::CLOTHING)->getContent();
+
+        $this->assertStringContainsString('<nav class="sf-subcategories sf-cloud sf-cloud-site"', $site);
+        $this->assertStringContainsString('class="sf-subcategory-list sf-bctl-values-buttons"', $site);
+        $this->assertStringContainsString('<a class="sf-bv-chip" href="/product-category/clothing/dresses">Dresses</a>', $site);
+        $this->assertStringNotContainsString('class="sf-subcategory"', $site);
+
+        // the chip takes its corners from the cards' radius variable (square when the cards have none): the same rule the side panel's buttons use
+        $css = (string) file_get_contents(base_path('resources/css/storefront.css'));
+        $this->assertMatchesRegularExpression('/\.sf-bv-chip,\s*\.sf-fv-chip \.sf-fv-text \{[^}]*border-radius: var\(--sf-card-radius\);/s', $css);
+
+        $this->publish(['categories' => ['default' => $this->template(true)]], ['cloud_shape' => 'pill', 'title_style' => 'lines']);
+        $pill = $this->visit(self::CLOTHING)->getContent();
+        $this->assertStringContainsString('<nav class="sf-subcategories sf-cloud sf-cloud-pill"', $pill);
+        $this->assertStringContainsString('<li class="sf-subcategory"><a href="/product-category/clothing/dresses">Dresses</a></li>', $pill);
+        $this->assertStringNotContainsString('sf-bv-chip', $pill);
+
+        // a bad stored value: read as «Като сайта»; refused on save
+        $this->assertSame('site', ContentSet::read(['style' => ['cloud_shape' => 'triangle']])['style']['cloud_shape']);
+        [, $errors] = ContentSet::validate(['style' => ['cloud_shape' => 'triangle']], ContentStore::existing());
+        $this->assertArrayHasKey('style.cloud_shape', $errors);
+        $compiled = ['blocks' => [], 'style' => ['cloud_shape' => '<x>', 'title_style' => 'neon'], 'kinds' => []];
+        $this->assertSame(['cloud_shape' => 'site', 'title_style' => 'lines'], ContentCompiler::published((string) json_encode(['zones' => ['content' => $compiled]]))['style']);
+    }
+
+    /** ★ the cloud's wrapper carries the class that hides it on phones, and the CSS rule sits under the filter drawer's breakpoint */
+    public function test_the_cloud_is_hidden_below_the_drawer_breakpoint(): void
+    {
+        $this->publish(['categories' => ['default' => $this->template(true)]]);
+        $this->assertStringContainsString('class="sf-subcategories sf-cloud ', $this->visit(self::CLOTHING)->getContent());
+
+        $css = (string) file_get_contents(base_path('resources/css/storefront.css'));
+        $this->assertMatchesRegularExpression('/@media \(max-width: 63\.999rem\) \{\s*\.sf-cloud \{\s*display: none;\s*\}\s*\}/', $css);
+        // 63.999rem is the breakpoint of the filter drawer (its trigger appears, the sort drop-down goes)
+        $this->assertMatchesRegularExpression('/@media \(max-width: 63\.999rem\) \{\s*\.sf-ftrigger \{/', $css);
+    }
+
+    /** ★ «Покажи заглавието» off: the <h1> stays (visually hidden, no lines) and nothing else prints the name in the title area; on = as today */
+    public function test_the_title_can_be_hidden_for_the_eye_but_stays_for_search_engines(): void
+    {
+        $this->publish(['categories' => ['default' => $this->template(false, $this->block('MYTOP'), null, false)]]);
+        $off = $this->visit('/product-category/clothing/dresses')->assertOk()->getContent();
+
+        $this->assertSame('<div class="sf-cat-head"> <h1 class="sf-title sf-sr">Dresses</h1> </div>', $this->titleArea($off));
+        $this->assertSame(1, substr_count($off, '<h1'));
+        $this->assertStringNotContainsString('sf-hp-lines', $off, 'no lines around a hidden title');
+        $this->assertStringContainsString('MYTOP', $off);
+
+        $this->publish(['categories' => ['default' => $this->template(false, $this->block('MYTOP'))]]);
+        $on = $this->visit('/product-category/clothing/dresses')->getContent();
+        $this->assertStringContainsString('<h1 class="sf-hp-heading-text">Dresses</h1>', $on);
+        $this->assertStringNotContainsString('sf-sr', $this->titleArea($on));
+
+        // an own template replaces the default completely, the title switch too
+        $this->publish(['categories' => ['default' => $this->template(false, null, null, false), 'own' => [3 => $this->template()]]]);
+        $this->assertStringContainsString('sf-hp-heading-text">Coats', $this->visit('/product-category/clothing/coats')->getContent());
+        $this->assertStringContainsString('sf-title sf-sr">Dresses', $this->visit('/product-category/clothing/dresses')->getContent());
+    }
+
+    /** ★ the title style: «С линии» (default) = the home heading's own markup on the one <h1>; «Обикновено» = today's plain title; a bad value = «С линии» */
+    public function test_the_title_style_is_the_home_heading_by_default_and_plain_on_request(): void
+    {
+        $lines = $this->visit('/brand/acme')->assertOk()->getContent();
+        $this->assertStringContainsString('<div class="sf-hp-heading-row sf-hp-h2 sf-hp-lines sf-hp-l1">', $lines);
+        $this->assertStringContainsString('<h1 class="sf-hp-heading-text">Acme</h1>', $lines);
+        $this->assertSame(1, substr_count($lines, '<h1'));
+        $this->assertSame(2, substr_count($lines, 'class="sf-hp-line"'));
+
+        $this->publish([], ['cloud_shape' => 'site', 'title_style' => 'plain']);
+
+        foreach ([self::CLOTHING, '/brand/acme', '/season/autumn', '/product-tag/alpha'] as $url) {
+            $plain = $this->visit($url)->assertOk()->getContent();
+            $this->assertStringContainsString('<h1 class="sf-title">', $plain, $url);
+            $this->assertStringNotContainsString('sf-hp-lines', $plain, $url);
+        }
+
+        $this->assertSame('lines', ContentSet::read(['style' => ['title_style' => 'fancy']])['style']['title_style']);
+        [, $errors] = ContentSet::validate(['style' => ['title_style' => 'fancy']], ContentStore::existing());
+        $this->assertArrayHasKey('style.title_style', $errors);
+
+        // the category's own banner still hides the heading (the banner says it), whatever the style
+        DB::table('catalog_categories')->where('id', 2)->update(['header_block_id' => $this->block('BANNER')->id]);
+        $this->publish([], ['cloud_shape' => 'site', 'title_style' => 'lines']);
+        $this->assertStringContainsString('<h1 class="sf-title sf-sr">Dresses</h1>', $this->visit('/product-category/clothing/dresses')->getContent());
+    }
+
+    /** ★ the heading above the bottom slot: the HOME heading partial's markup, only when set AND the bottom slot is printed (page 1), escaped */
+    public function test_the_heading_above_the_bottom_slot(): void
+    {
+        foreach (range(10, 23) as $id) {
+            $this->makeProduct($id, ['name' => "Z{$id}", 'slug' => "z{$id}", 'brand' => 3, 'price' => '10.00', 'stock' => 3, 'categories' => [2], 'timeline' => sprintf('2026-02-%02d 10:00:00', $id)]);
+        }
+
+        $bottom = $this->block('BOTTOMTEXT');
+        $heading = '<i>New</i> & "more"';
+        $this->publish(['brands' => ['default' => $this->template(false, null, $this->bottomBlock($bottom), true, $heading)]]);
+
+        $one = $this->visit('/brand/zed?per_page=12')->assertOk()->getContent();
+        $expected = trim(view('storefront.partials.home.heading', ['item' => ['settings' => ['text' => $heading, 'level' => 'h2', 'lines' => 'lines', 'thickness' => '1']]])->render());
+
+        $this->assertStringContainsString($expected, $one, 'the home heading partial, the text escaped by it');
+        $this->assertStringContainsString('&lt;i&gt;New&lt;/i&gt; &amp; &quot;more&quot;', $one);
+        $this->assertStringNotContainsString('<i>New', $one);
+        $this->assertTrue(strpos($one, '<h2 class="sf-hp-heading-text">') < strpos($one, 'BOTTOMTEXT'), 'above the bottom block');
+        $this->assertTrue(strpos($one, 'data-product-id') < strpos($one, '<h2 class="sf-hp-heading-text">'), 'below the list');
+
+        $two = $this->visit('/brand/zed?per_page=12&page=2')->getContent();
+        $this->assertStringNotContainsString('<h2 class="sf-hp-heading-text">', $two, 'page 2 has no bottom slot, so no heading');
+
+        // a heading with no bottom slot prints nothing
+        $this->publish(['brands' => ['default' => $this->template(false, null, null, true, 'ORPHAN HEADING')]]);
+        $this->assertStringNotContainsString('ORPHAN HEADING', $this->visit('/brand/zed?per_page=12')->getContent());
+
+        // saved strictly: at most 80 characters, no control characters
+        $errors = [];
+        ContentTemplate::validate($this->template(false, null, null, true, str_repeat('я', 81)), 'brands.default', $errors);
+        $this->assertArrayHasKey('brands.default.bottom_heading', $errors);
+        $errors = [];
+        $clean = ContentTemplate::validate($this->template(false, null, null, true, str_repeat('я', 80)), 'brands.default', $errors);
+        $this->assertSame([], $errors);
+        $this->assertSame(80, mb_strlen($clean['bottom_heading']));
+        $errors = [];
+        ContentTemplate::validate(['bottom_heading' => "a\u{0007}b"] + $this->template(), 'brands.default', $errors);
+        $this->assertArrayHasKey('brands.default.bottom_heading', $errors);
+        $this->assertSame('', ContentTemplate::read(['bottom_heading' => str_repeat('x', 81)])['bottom_heading'], 'read: too long = none');
+    }
+
+    /** ★ «Брой продукти: N» is on the sort row, after the sort control, at the right; not in the title area any more; the same text, on all four kinds of page */
+    public function test_the_product_count_is_on_the_sort_row(): void
+    {
+        foreach ([self::CLOTHING => 5, '/brand/acme' => 3, '/season/autumn' => 2, '/product-tag/alpha' => 2] as $url => $total) {
+            $html = $this->visit($url)->assertOk()->getContent();
+            $line = '<p class="sf-count sf-count-%s">Products: '.$total.'</p>';
+
+            $head = (string) substr($html, (int) strpos($html, 'sf-cat-head'), (int) strpos($html, 'sf-cat-body') - (int) strpos($html, 'sf-cat-head'));
+            $this->assertStringNotContainsString('sf-count', $head, 'not beside the title: '.$url);
+
+            // the bar (a computer in «filters on top»): the sort control, then the count
+            $bar = (string) substr($html, (int) strpos($html, '<div class="sf-cbar">'));
+            $bar = substr($bar, 0, (int) strpos($bar, 'sf-fdrawer'));
+            $this->assertStringContainsString(sprintf($line, 'bar'), $bar, $url);
+            $this->assertTrue(strpos($bar, 'sf-bctl-sort') < strpos($bar, sprintf($line, 'bar')), 'the bar: the count after the sort: '.$url);
+
+            // the row above the list (a phone; the side-panel layout): the trigger, then the count with the right-alignment class
+            $row = (string) substr($html, (int) strpos($html, '<div class="sf-toolbar'));
+            $row = substr($row, 0, (int) strpos($row, 'sf-grid'));
+            $this->assertTrue(strpos($row, 'sf-ftrigger') < strpos($row, sprintf($line, 'right')), 'the toolbar: the count after the trigger: '.$url);
+        }
+
+        $css = (string) file_get_contents(base_path('resources/css/storefront.css'));
+        $this->assertMatchesRegularExpression('/\.sf-count-right \{\s*margin-left: auto;\s*text-align: right;/', $css);
+        $this->assertMatchesRegularExpression('/\.sf-count-bar \{\s*grid-column: -2 \/ -1;\s*grid-row: 1;\s*justify-self: end;/', $css);
     }
 }

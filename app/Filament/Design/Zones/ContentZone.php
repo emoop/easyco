@@ -13,6 +13,7 @@ use App\Storefront\Home\HomeCatalog;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
+use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\Group;
@@ -143,7 +144,12 @@ final class ContentZone implements DesignZone
 
     public function propsComponents(array $tree, string $layout, ?array $selected): array
     {
-        $sections = [Select::make('kind')->label((string) __('design.content.kind'))->afterLabel(InfoHint::make((string) __('design.content.hints.kind'), 'content-kind'))->native(false)->selectablePlaceholder(false)->live()
+        $sections = [
+            Select::make('cloud_shape')->label((string) __('design.content.cloud_shape'))->afterLabel(InfoHint::make((string) __('design.content.hints.cloud_shape'), 'content-cloud-shape'))->native(false)->selectablePlaceholder(false)->live()
+                ->options(array_combine(ContentSet::CLOUD_SHAPES, array_map(static fn (string $s): string => (string) __('design.content.cloud_shapes.'.$s), ContentSet::CLOUD_SHAPES))),
+            Select::make('title_style')->label((string) __('design.content.title_style'))->afterLabel(InfoHint::make((string) __('design.content.hints.title_style'), 'content-title-style'))->native(false)->selectablePlaceholder(false)->live()
+                ->options(array_combine(ContentSet::TITLE_STYLES, array_map(static fn (string $s): string => (string) __('design.content.title_styles.'.$s), ContentSet::TITLE_STYLES))),
+            Select::make('kind')->label((string) __('design.content.kind'))->afterLabel(InfoHint::make((string) __('design.content.hints.kind'), 'content-kind'))->native(false)->selectablePlaceholder(false)->live()
             ->options(array_combine(array_keys(ContentTemplate::KINDS), array_map(static fn (string $kind): string => (string) __('design.content.kinds.'.$kind), array_keys(ContentTemplate::KINDS))))];
 
         foreach (array_keys(ContentTemplate::KINDS) as $kind) {
@@ -209,9 +215,12 @@ final class ContentZone implements DesignZone
 
         return [
             Toggle::make('cloud')->label((string) __('design.content.fields.cloud'))->afterLabel($hint('cloud'))->default(false),
+            Toggle::make('title')->label((string) __('design.content.fields.title'))->afterLabel($hint('title'))->default(true),
             Select::make('top')->label((string) __('design.content.fields.top'))->afterLabel($hint('top'))->native(false)->searchable()->placeholder((string) __('design.content.none'))->options($blocks)->default(null),
             Select::make('bottom_type')->label((string) __('design.content.fields.bottom'))->afterLabel($hint('bottom'))->native(false)->selectablePlaceholder(false)->live()->default('')
                 ->options(['' => (string) __('design.content.none'), 'html_block' => (string) __('design.content.bottom_types.html_block'), 'carousel' => (string) __('design.content.bottom_types.carousel')]),
+            TextInput::make('bottom_heading')->label((string) __('design.content.fields.bottom_heading'))->afterLabel($hint('bottom_heading'))->maxLength(ContentTemplate::HEADING_MAX)->default('')
+                ->visible(static fn (Get $get): bool => $bottom($get) !== ''),
             Select::make('bottom_block')->label((string) __('design.content.fields.bottom_block'))->afterLabel($hint('bottom_block'))->native(false)->searchable()->placeholder((string) __('design.content.none'))->options($blocks)->default(null)
                 ->visible(static fn (Get $get): bool => $bottom($get) === 'html_block'),
             Group::make([
@@ -240,7 +249,7 @@ final class ContentZone implements DesignZone
     public function propsState(array $tree, string $layout, ?array $selected): array
     {
         $set = is_array($tree['values'] ?? null) ? $tree['values'] : ContentSet::blank();
-        $state = ['kind' => in_array($tree['kind'] ?? null, array_keys(ContentTemplate::KINDS), true) ? $tree['kind'] : 'categories'];
+        $state = ['kind' => in_array($tree['kind'] ?? null, array_keys(ContentTemplate::KINDS), true) ? $tree['kind'] : 'categories'] + ContentSet::style($set['style'] ?? null);
 
         foreach (array_keys(ContentTemplate::KINDS) as $kind) {
             $names = self::names($kind);
@@ -260,7 +269,8 @@ final class ContentZone implements DesignZone
     /** The panel's values put back as the working copy, never validated here. */
     public function applyProps(array $tree, string $layout, ?array $selected, array $raw): array
     {
-        $values = [];
+        // the shop-wide style as typed (a value that is not in its list is validate()'s to refuse)
+        $values = ['style' => ['cloud_shape' => $raw['cloud_shape'] ?? ContentSet::CLOUD_SHAPES[0], 'title_style' => $raw['title_style'] ?? ContentSet::TITLE_STYLES[0]]];
 
         foreach (array_keys(ContentTemplate::KINDS) as $kind) {
             $entry = is_array($raw[$kind] ?? null) ? $raw[$kind] : [];
@@ -296,6 +306,8 @@ final class ContentZone implements DesignZone
 
         return [
             'cloud' => ($template['cloud'] ?? false) === true,
+            'title' => ($template['title'] ?? true) !== false,
+            'bottom_heading' => (string) ($template['bottom_heading'] ?? ''),
             'top' => $template['top'] ?? null,
             'bottom_type' => $bottom === null ? '' : (string) $bottom['type'],
             'bottom_block' => $bottom !== null && $bottom['type'] === 'html_block' ? ($bottom['html_block'] ?? null) : null,
@@ -340,7 +352,7 @@ final class ContentZone implements DesignZone
             ]];
         }
 
-        return ['cloud' => ($form['cloud'] ?? false) === true, 'top' => FieldValues::id($form['top'] ?? null), 'bottom' => $bottom];
+        return ['cloud' => ($form['cloud'] ?? false) === true, 'title' => ($form['title'] ?? true) !== false, 'top' => FieldValues::id($form['top'] ?? null), 'bottom' => $bottom, 'bottom_heading' => is_string($form['bottom_heading'] ?? '') ? ($form['bottom_heading'] ?? '') : ''];
     }
 
     // ---- subjects --------------------------------------------------------------------------------------------------------------------

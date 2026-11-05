@@ -263,7 +263,7 @@ class SubjectListingPageTest extends TestCase
             $html = $this->visit($url)->assertOk()->getContent();
 
             $this->assertStringContainsString("<title>{$name} — Raf Shop</title>", $html);
-            $this->assertStringContainsString('<h1 class="sf-title">'.$name.'</h1>', $html);
+            $this->assertStringContainsString('<h1 class="sf-hp-heading-text">'.$name.'</h1>', $html);
             $this->assertStringContainsString('<link rel="canonical" href="https://shop.test'.$path.'">', $html);
             $this->assertStringNotContainsString('name="robots"', $html);
             $this->assertStringContainsString('<li class="sf-breadcrumb"><a href="/">Home</a></li>', $html);

@@ -3,24 +3,47 @@
 namespace App\Storefront\Content;
 
 /**
- * P3: ALL the listing-page templates of the shop, as one value: per kind (`categories` | `brands` | `seasons` | `tags`) the DEFAULT template (null = none: today's page) and a map subject id => the subject's OWN
+ * P3: ALL the listing-page templates of the shop, as one value: the shop-wide `style` (P3.1: the cloud shape and the title look) and, per kind (`categories` | `brands` | `seasons` | `tags`) the DEFAULT template (null = none: today's page) and a map subject id => the subject's OWN
  * template. Pure (no query): which subjects exist is passed in by the store.
  *
- *   {categories: {default: Template|null, own: {"12": Template}}, brands: {…}, seasons: {…}, tags: {…}}
+ *   {style: {cloud_shape: site|pill, title_style: lines|plain}, categories: {default: Template|null, own: {"12": Template}}, brands: {…}, seasons: {…}, tags: {…}}
  *
  * The own map is keyed by the subject's id; a key that is not a plain positive whole number is dropped on read and refused on save, and so is a key of a subject that does not exist (the page cannot be asked
  * for, and «Страници със собствени настройки» must not list a ghost).
  *
  * @phpstan-import-type Template from ContentTemplate
  *
- * @phpstan-type Set array<string, array{default: Template|null, own: array<int, Template>}>
+ * @phpstan-type Style array{cloud_shape: string, title_style: string}
+ * @phpstan-type Set array<string, mixed>  (`style` => Style, a kind => array{default: Template|null, own: array<int, Template>})
  */
 final class ContentSet
 {
+    /** the closed lists of the shop-wide style; the FIRST value of each is the default */
+    public const CLOUD_SHAPES = ['site', 'pill'];
+
+    public const TITLE_STYLES = ['lines', 'plain'];
+
+    /** @return Style the default look: the cloud like the side panel's buttons, the title with lines */
+    public static function defaultStyle(): array
+    {
+        return ['cloud_shape' => self::CLOUD_SHAPES[0], 'title_style' => self::TITLE_STYLES[0]];
+    }
+
+    /** The style read leniently: anything that is not in its closed list is the default. @return Style */
+    public static function style(mixed $value): array
+    {
+        $value = is_array($value) ? $value : [];
+
+        return [
+            'cloud_shape' => in_array($value['cloud_shape'] ?? null, self::CLOUD_SHAPES, true) ? $value['cloud_shape'] : self::CLOUD_SHAPES[0],
+            'title_style' => in_array($value['title_style'] ?? null, self::TITLE_STYLES, true) ? $value['title_style'] : self::TITLE_STYLES[0],
+        ];
+    }
+
     /** @return Set */
     public static function blank(): array
     {
-        $set = [];
+        $set = ['style' => self::defaultStyle()];
 
         foreach (array_keys(ContentTemplate::KINDS) as $kind) {
             $set[$kind] = ['default' => null, 'own' => []];
@@ -32,8 +55,12 @@ final class ContentSet
     /** @param  Set  $set */
     public static function isBlank(array $set): bool
     {
-        foreach ($set as $entry) {
-            if ($entry['default'] !== null || $entry['own'] !== []) {
+        if ($set['style'] != self::defaultStyle()) {
+            return false;
+        }
+
+        foreach (array_keys(ContentTemplate::KINDS) as $kind) {
+            if (($set[$kind]['default'] ?? null) !== null || ($set[$kind]['own'] ?? []) !== []) {
                 return false;
             }
         }
@@ -58,9 +85,23 @@ final class ContentSet
             return [$set, $errors];
         }
 
-        foreach (array_diff(array_keys($value), array_keys(ContentTemplate::KINDS)) as $key) {
+        foreach (array_diff(array_keys($value), ['style', ...array_keys(ContentTemplate::KINDS)]) as $key) {
             $errors['kind'] ??= (string) __('design.content.errors.unknown_key', ['key' => mb_substr((string) $key, 0, 30)]);
         }
+
+        $style = $value['style'] ?? self::defaultStyle();
+
+        if (! is_array($style) || array_diff(array_keys($style), array_keys(self::defaultStyle())) !== []) {
+            $errors['style'] ??= (string) __('design.content.errors.bad_set');
+        } else {
+            foreach (['cloud_shape' => self::CLOUD_SHAPES, 'title_style' => self::TITLE_STYLES] as $name => $allowed) {
+                if (isset($style[$name]) && ! in_array($style[$name], $allowed, true)) {
+                    $errors['style.'.$name] ??= (string) __('design.content.errors.bad_choice');
+                }
+            }
+        }
+
+        $set['style'] = self::style($style);
 
         foreach (array_keys(ContentTemplate::KINDS) as $kind) {
             $entry = $value[$kind] ?? ['default' => null, 'own' => []];
@@ -121,6 +162,8 @@ final class ContentSet
         if (! is_array($stored)) {
             return $set;
         }
+
+        $set['style'] = self::style($stored['style'] ?? null);
 
         foreach (array_keys(ContentTemplate::KINDS) as $kind) {
             $entry = is_array($stored[$kind] ?? null) ? $stored[$kind] : [];
