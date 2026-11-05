@@ -76,7 +76,7 @@ class SidebarFiltersTest extends TestCase
     /** @param  list<array{key: string, show: bool}>  $rows  @param  array<string, string>  $kinds */
     private function publishList(array $rows, array $kinds = ['brand' => 'list', 'season' => 'list', 'tag' => 'list']): void
     {
-        [$clean, $errors] = SidebarFilters::validate(['filters' => $rows, 'kinds' => $kinds], app(FilterCatalog::class)->knownKeys());
+        [$clean, $errors] = SidebarFilters::validate(['filters' => $rows, 'kinds' => $kinds], app(FilterCatalog::class)->knownKeys(), app(FilterCatalog::class)->hiddenByDefault());
         $this->assertSame([], $errors, json_encode($errors));
         SidebarStore::publish($clean);
         $this->app->forgetScopedInstances();
@@ -206,9 +206,9 @@ class SidebarFiltersTest extends TestCase
         app(StorefrontAppearance::class)->refresh();
         $this->app->forgetScopedInstances();
 
-        $rows = SidebarFilters::effective(app(StorefrontAppearance::class)->sidebarFilters(), app(FilterCatalog::class)->knownKeys(), []);
+        $rows = SidebarFilters::effective(app(StorefrontAppearance::class)->sidebarFilters(), app(FilterCatalog::class)->knownKeys(), [], app(FilterCatalog::class)->hiddenByDefault());
 
-        $this->assertSame([['key' => '1', 'show' => false], ['key' => 'brand', 'show' => true], ['key' => 'season', 'show' => true], ['key' => 'tag', 'show' => true]], $rows);
+        $this->assertSame([['key' => '1', 'show' => false], ['key' => 'brand', 'show' => true], ['key' => 'season', 'show' => true], ['key' => 'tag', 'show' => true], ['key' => 'featured', 'show' => false]], $rows, 'P2: «Препоръчани» is the one filter appended HIDDEN');
         $this->assertSame(['Brand', 'Season', 'Tag'], $this->bar($this->visit('/product-category/clothing')->assertOk()->getContent()), 'Colour is hidden by the list, the tag appended shown');
     }
 
@@ -255,10 +255,11 @@ class SidebarFiltersTest extends TestCase
 
     public function test_a_good_working_copy_is_accepted_and_completed(): void
     {
-        [$clean, $errors] = SidebarFilters::validate(['filters' => [['key' => 'tag', 'show' => true, 'kind' => 'buttons']]], app(FilterCatalog::class)->knownKeys());
+        [$clean, $errors] = SidebarFilters::validate(['filters' => [['key' => 'tag', 'show' => true, 'kind' => 'buttons']]], app(FilterCatalog::class)->knownKeys(), app(FilterCatalog::class)->hiddenByDefault());
 
         $this->assertSame([], $errors);
-        $this->assertSame(['tag', 'brand', 'season', '1'], array_column($clean['filters'], 'key'), 'the missing known keys are appended');
+        $this->assertSame(['tag', 'brand', 'season', '1', 'featured'], array_column($clean['filters'], 'key'), 'the missing known keys are appended');
+        $this->assertSame([true, true, true, true, false], array_column($clean['filters'], 'show'), 'shown, but «Препоръчани» (hidden by default)');
         $this->assertSame(['brand' => 'list', 'season' => 'list', 'tag' => 'buttons'], $clean['kinds']);
     }
 
@@ -288,7 +289,7 @@ class SidebarFiltersTest extends TestCase
 
     public function test_the_draft_never_reaches_the_shop_and_the_signed_preview_shows_it(): void
     {
-        [$clean] = SidebarFilters::validate(['filters' => [['key' => '1', 'show' => false]], 'kinds' => ['brand' => 'list', 'season' => 'list', 'tag' => 'list']], app(FilterCatalog::class)->knownKeys());
+        [$clean] = SidebarFilters::validate(['filters' => [['key' => '1', 'show' => false]], 'kinds' => ['brand' => 'list', 'season' => 'list', 'tag' => 'list']], app(FilterCatalog::class)->knownKeys(), app(FilterCatalog::class)->hiddenByDefault());
         SidebarStore::saveDraft($clean);
         $this->app->forgetScopedInstances();
 

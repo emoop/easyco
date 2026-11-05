@@ -24,13 +24,13 @@
                 <div class="sf-bctl-meta">
                     <span class="sf-bctl-chosen">{{ __('storefront.filters_selected', ['count' => $group['count']]) }}</span>
                 </div>
-                <ul class="sf-bctl-values sf-bctl-values-{{ $group['display'] }}">
+                <ul class="sf-bctl-values sf-bctl-values-{{ $group['display'] === 'switch' ? 'list' : $group['display'] }}">
                     @foreach ($group['values'] as $value)
                         <li>
                             @if ($group['display'] === 'swatches' && $value['colour'] !== null)
                                 <a class="sf-bv sf-bv-dot{{ $value['selected'] ? ' sf-bv-on' : '' }}" href="{{ $value['url'] }}" rel="nofollow" title="{{ $value['label'] }}"><svg class="sf-fv-circle" width="28" height="28" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="12" fill="{{ $value['colour'] }}"/></svg><span class="sf-sr">{{ $value['label'] }}@if ($value['selected']), {{ __('storefront.filter_selected') }}@endif</span></a>
                             @else
-                                <a class="sf-bv {{ ['list' => 'sf-bv-list', 'buttons' => 'sf-bv-chip'][$group['display']] ?? 'sf-bv-link' }}{{ $value['selected'] ? ' sf-bv-on' : '' }}" href="{{ $value['url'] }}" rel="nofollow">{{ $value['label'] }}@if ($value['selected'])<span class="sf-sr">, {{ __('storefront.filter_selected') }}</span>@endif</a>
+                                <a class="sf-bv {{ ['list' => 'sf-bv-list', 'switch' => 'sf-bv-list', 'buttons' => 'sf-bv-chip'][$group['display']] ?? 'sf-bv-link' }}{{ $value['selected'] ? ' sf-bv-on' : '' }}" href="{{ $value['url'] }}" rel="nofollow">{{ $value['label'] }}@if ($value['selected'])<span class="sf-sr">, {{ __('storefront.filter_selected') }}</span>@endif</a>
                             @endif
                         </li>
                     @endforeach

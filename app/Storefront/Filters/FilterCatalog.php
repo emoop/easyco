@@ -33,6 +33,12 @@ final class FilterCatalog
 
     public const TTL = 600;
 
+    /**
+     * P2: the filters that are HIDDEN until the merchant switches them on in «Сайдбар»: a list that does not mention one of them (a fresh shop, a list saved before the filter existed) gets it appended HIDDEN, every other
+     * missing filter is appended shown. The per-filter default lives here, not in the sidebar store.
+     */
+    public const HIDDEN_BY_DEFAULT = ['featured'];
+
     /** @var array{attributes: list<array<string, mixed>>, builtin: array<string, list<array{id: int, label: string, colour: null}>>}|null memoised for the request */
     private ?array $data = null;
 
@@ -60,9 +66,12 @@ final class FilterCatalog
             $byKey[(string) $attribute['id']] = $attribute;
         }
 
+        // P2: «Препоръчани» is a SWITCH (`display: switch`, no values): the page prints one control that toggles `featured=1`
+        $byKey['featured'] = ['id' => 'featured', 'name' => (string) __('storefront.filter_featured'), 'display' => 'switch', 'values' => []];
+
         $out = [];
 
-        foreach (SidebarFilters::effective($appearance->sidebarFilters(), $this->knownKeys(), $kinds) as $row) {
+        foreach (SidebarFilters::effective($appearance->sidebarFilters(), $this->knownKeys(), $kinds, self::HIDDEN_BY_DEFAULT) as $row) {
             $row['show'] && isset($byKey[$row['key']]) && $out[] = $byKey[$row['key']];
         }
 
@@ -88,8 +97,29 @@ final class FilterCatalog
         }
 
         $names['tag'] = (string) __('storefront.filter_tag');
+        $names['featured'] = (string) __('storefront.filter_featured');
 
         return $names;
+    }
+
+    /**
+     * P2: is a SWITCH («Препоръчани») shown by the merchant? Read from the saved list alone (the appearance: no query, no filter data): a list that does not mention it has it hidden.
+     */
+    public function hasShownSwitch(): bool
+    {
+        foreach (app(StorefrontAppearance::class)->sidebarFilters() ?? [] as $row) {
+            if (is_array($row) && in_array($row['key'] ?? null, SidebarFilters::SWITCHES, true) && ($row['show'] ?? true) !== false) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /** @return list<string> the keys that are hidden until the merchant switches them on (see HIDDEN_BY_DEFAULT) */
+    public function hiddenByDefault(): array
+    {
+        return self::HIDDEN_BY_DEFAULT;
     }
 
     /** @return list<string> */

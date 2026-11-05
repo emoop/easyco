@@ -400,7 +400,8 @@ class HomeCarouselTest extends TestCase
         $this->assertStringNotContainsString('javascript:', $page);
     }
 
-    public function test_brands_print_every_brand_with_a_logo_by_name_and_no_link(): void
+    /** ★ P2: each logo is a link to its brand's page (it was «no link» before the brand page existed) */
+    public function test_brands_print_every_brand_with_a_logo_by_name_each_a_link_to_its_page(): void
     {
         $this->brand('Zeta', $this->asset->id);
         $this->brand('alpha', $this->pickerAsset()->id);
@@ -412,9 +413,30 @@ class HomeCarouselTest extends TestCase
 
         preg_match_all('/class="sf-car-img" src="[^"]*"[^>]*alt="([^"]*)"/', $page, $m);
         $this->assertSame(['alpha', 'Zeta'], $m[1], 'by name; the brand without a logo and the one whose logo is not ready are dropped');
-        $this->assertStringNotContainsString('sf-car-link', $page, 'the shop has no public brand page: no link');
-        $brandRoutes = array_filter(array_map(fn ($route): string => $route->uri(), $this->app['router']->getRoutes()->getRoutes()), fn (string $uri): bool => str_starts_with($uri, 'brand'));
-        $this->assertSame([], array_values($brandRoutes), 'step 0: there is no public brand page route yet; when one exists the carousel must link to it');
+        $this->assertSame(2, substr_count($page, 'class="sf-car-link"'), 'one link per logo');
+        $this->assertStringContainsString('<a class="sf-car-link" href="/brand/alpha"><img class="sf-car-img"', $page);
+        $this->assertStringContainsString('<a class="sf-car-link" href="/brand/zeta"><img class="sf-car-img"', $page);
+        $this->assertStringNotContainsString('/brand/no-logo', $page);
+        $this->assertStringNotContainsString('/brand/pending', $page);
+
+        // the link lands on a real page: the brand's own listing
+        $this->get('/brand/alpha')->assertOk();
+    }
+
+    /** ★ P2: the address is built from the stored slug (percent-encoded for a native-script slug) and the link follows a slug change */
+    public function test_a_brand_logo_link_is_encoded_and_follows_the_slug(): void
+    {
+        $brand = $this->brand('Зима', $this->asset->id);
+        $brand->update(['slug' => 'зима']);
+        $this->publish([$this->car('brands')]);
+
+        $this->assertStringContainsString('<a class="sf-car-link" href="/brand/%D0%B7%D0%B8%D0%BC%D0%B0"><img', $this->home());
+
+        $brand->update(['slug' => 'zima-2']);
+        $this->recompiler()->flush();
+
+        $this->assertStringContainsString('<a class="sf-car-link" href="/brand/zima-2"><img', $this->home(), 'a saved brand recompiles the carousel: the link is the new slug');
+        $this->assertStringNotContainsString('%D0%B7%D0%B8%D0%BC%D0%B0', $this->home());
     }
 
     public function test_a_brands_carousel_holds_at_most_24_brands(): void

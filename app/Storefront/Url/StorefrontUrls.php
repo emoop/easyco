@@ -40,6 +40,12 @@ final class StorefrontUrls
         return '/brand/'.rawurlencode($slug);
     }
 
+    /** P2: the season's page, `/season/{slug}` (the brand's and the tag's urls were here already: `/brand/`, `/product-tag/`, the tag following the category's `/product-category/` pattern). */
+    public function season(string $slug): string
+    {
+        return '/season/'.rawurlencode($slug);
+    }
+
     public function isValidSlug(string $slug): bool
     {
         return $slug !== ''

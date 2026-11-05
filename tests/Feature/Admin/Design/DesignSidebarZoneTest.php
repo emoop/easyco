@@ -71,7 +71,7 @@ class DesignSidebarZoneTest extends TestCase
         $screen = $this->screen();
 
         $this->assertArrayHasKey('sidebar', DesignScreen::ZONES);
-        $this->assertSame(['brand' => [true, 'list'], 'season' => [true, 'list'], '1' => [true, null], 'tag' => [false, 'list']], $this->rows($screen), 'brand, season, the attributes, tag (off by default)');
+        $this->assertSame(['brand' => [true, 'list'], 'season' => [true, 'list'], '1' => [true, null], 'tag' => [false, 'list'], 'featured' => [false, null]], $this->rows($screen), 'brand, season, the attributes, tag (off by default), «Препоръчани» (hidden by default, no kind)');
         $this->assertStringContainsString('Colour', $screen->html());
         $this->assertStringContainsString('Show', $screen->html());
     }
@@ -106,18 +106,18 @@ class DesignSidebarZoneTest extends TestCase
             ['key' => 'season', 'show' => false, 'kind' => 'list'],
             ['key' => 'brand', 'show' => true, 'kind' => 'links'],
         ];
-        $this->assertCount(4, $rows);
+        $this->assertCount(5, $rows);
 
         $screen->set('props.filters', $new)->call('apply')->assertHasNoErrors();
 
         $this->assertNull(app(SiteSettingsRepository::class)->get(AppearanceSettings::SIDEBAR_FILTERS_KEY), 'the shop is not touched by «Apply»');
         $draft = $this->stored(AppearanceSettings::SIDEBAR_FILTERS_DRAFT_KEY);
-        $this->assertSame(['1', 'tag', 'season', 'brand'], array_column($draft['filters'], 'key'));
+        $this->assertSame(['1', 'tag', 'season', 'brand', 'featured'], array_column($draft['filters'], 'key'));
         $this->assertSame(['brand' => 'links', 'season' => 'list', 'tag' => 'buttons'], $draft['kinds']);
 
         $screen->call('publish')->assertHasNoErrors();
 
-        $this->assertSame([['key' => '1', 'show' => true], ['key' => 'tag', 'show' => true], ['key' => 'season', 'show' => false], ['key' => 'brand', 'show' => true]], $this->stored(AppearanceSettings::SIDEBAR_FILTERS_KEY)['filters']);
+        $this->assertSame([['key' => '1', 'show' => true], ['key' => 'tag', 'show' => true], ['key' => 'season', 'show' => false], ['key' => 'brand', 'show' => true], ['key' => 'featured', 'show' => false]], $this->stored(AppearanceSettings::SIDEBAR_FILTERS_KEY)['filters']);
         $live = $this->stored(AppearanceSettings::CATALOG_DESIGN_KEY);
         $this->assertSame(['links', 'list', 'buttons'], [$live['filterBrand'], $live['filterSeason'], $live['filterTag']], 'the kinds are in the «Каталог» JSON, where they have always been');
         $this->assertNull(app(SiteSettingsRepository::class)->get(AppearanceSettings::SIDEBAR_FILTERS_DRAFT_KEY), 'the draft is forgotten');
@@ -129,7 +129,7 @@ class DesignSidebarZoneTest extends TestCase
         PageDesignStore::publish(PageDesign::CATALOG, ['filterSeason' => 'off', 'cols' => '3', 'filterTag' => 'buttons'] + PageDesignStore::values(PageDesign::CATALOG));
 
         $screen = $this->screen();
-        $this->assertSame(['brand' => [true, 'list'], 'season' => [false, 'list'], '1' => [true, null], 'tag' => [true, 'buttons']], $this->rows($screen));
+        $this->assertSame(['brand' => [true, 'list'], 'season' => [false, 'list'], '1' => [true, null], 'tag' => [true, 'buttons'], 'featured' => [false, null]], $this->rows($screen));
 
         $screen->set('props.filters', array_values((array) $screen->get('props.filters')))->call('apply')->call('publish')->assertHasNoErrors();
         $this->assertSame('3', $this->stored(AppearanceSettings::CATALOG_DESIGN_KEY)['cols']);
@@ -157,7 +157,7 @@ class DesignSidebarZoneTest extends TestCase
 
         $screen->call('resetToDefault');
 
-        $this->assertSame(['brand' => [true, 'list'], 'season' => [true, 'list'], '1' => [true, null], 'tag' => [false, 'list']], $this->rows($screen));
+        $this->assertSame(['brand' => [true, 'list'], 'season' => [true, 'list'], '1' => [true, null], 'tag' => [false, 'list'], 'featured' => [false, null]], $this->rows($screen));
     }
 
     public function test_the_info_icons_are_there(): void

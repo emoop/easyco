@@ -225,6 +225,48 @@ final class CatalogReader
         );
     }
 
+    /**
+     * P2: a brand, a season or a tag as the SUBJECT of a listing page, in the shape the listing view already prints for a category (CategoryPage: no children, no banner). The slug is looked up in its table
+     * (unique); a slug outside the URL alphabet is refused before any query, an unknown one is null (the storefront's 404). One indexed read. The breadcrumb's parent step is plain text (no index page exists):
+     * its url is ''.
+     */
+    public function subject(ListingScope $scope, string $slug): ?CategoryPage
+    {
+        $table = match ($scope) {
+            ListingScope::BRAND => 'catalog_brands',
+            ListingScope::SEASON => 'catalog_seasons',
+            ListingScope::TAG => 'catalog_tags',
+            default => null,
+        };
+
+        if ($table === null || ! $this->urls->isValidSlug($slug)) {
+            return null;
+        }
+
+        $row = DB::table($table)->where('slug', $slug)->first(['id', 'name', 'slug']);
+
+        if ($row === null) {
+            return null;
+        }
+
+        $url = match ($scope) {
+            ListingScope::BRAND => $this->urls->brand((string) $row->slug),
+            ListingScope::SEASON => $this->urls->season((string) $row->slug),
+            default => $this->urls->tag((string) $row->slug),
+        };
+
+        return new CategoryPage(
+            id: (string) $row->id,
+            name: (string) $row->name,
+            slug: (string) $row->slug,
+            path: (string) $row->slug,
+            url: $url,
+            productCount: 0,
+            breadcrumbs: [new Breadcrumb((string) __('storefront.crumb_'.$scope->value), ''), new Breadcrumb((string) $row->name, $url)],
+            children: [],
+        );
+    }
+
     // ================================================================== listing
 
     /**
@@ -413,6 +455,8 @@ final class CatalogReader
             $products->where('catalog_products.brand_id', (int) $query->scopeId);
         } elseif ($query->scope === ListingScope::TAG) {
             $products->whereIn('catalog_products.id', DB::table('catalog_product_tags')->where('tag_id', (int) $query->scopeId)->select('product_id'));
+        } elseif ($query->scope === ListingScope::SEASON) {
+            $products->where('catalog_products.season_id', (int) $query->scopeId);
         }
     }
 

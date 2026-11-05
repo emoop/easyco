@@ -19,7 +19,7 @@ final readonly class ListingQuery
     public const MAX_PRICE_MINOR = 99_999_999_999;
 
     /** Request keys that select a scope; fromRequestArray() accepts at most one of them. */
-    private const SCOPE_KEYS = ['category' => ListingScope::CATEGORY, 'brand' => ListingScope::BRAND, 'tag' => ListingScope::TAG];
+    private const SCOPE_KEYS = ['category' => ListingScope::CATEGORY, 'brand' => ListingScope::BRAND, 'tag' => ListingScope::TAG, 'season' => ListingScope::SEASON];
 
     private function __construct(
         public ListingScope $scope,
@@ -71,7 +71,7 @@ final readonly class ListingQuery
     }
 
     /**
-     * Whitelists `category|brand|tag` (at most one), `sort`, `page`, `per_page`, `price_min`, `price_max`; unknown
+     * Whitelists `category|brand|tag|season` (at most one), `sort`, `page`, `per_page`, `price_min`, `price_max`; unknown
      * keys are ignored. A null value means "not given"; an empty string is NOT "not given" (it is refused).
      *
      * @param array<array-key, mixed> $input

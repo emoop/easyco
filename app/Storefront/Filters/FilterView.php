@@ -25,6 +25,17 @@ final class FilterView
         $groups = [];
 
         foreach ($catalog as $filter) {
+            // P2: a SWITCH («Препоръчани») is one value that turns itself on or off: always printed while the merchant shows it, no facet (it costs no query)
+            if ($filter['display'] === 'switch') {
+                $on = $selection->featured;
+                $groups[] = [
+                    'id' => $filter['id'], 'name' => $filter['name'], 'display' => 'switch', 'count' => $on ? 1 : 0, 'current' => $on ? (string) __('storefront.filter_on') : '',
+                    'values' => [['id' => 1, 'label' => $filter['name'], 'colour' => null, 'selected' => $on, 'url' => $url($selection->withFeatured(! $on))]],
+                ];
+
+                continue;
+            }
+
             $chosen = $selection->map[$filter['id']] ?? [];
             $values = [];
             $labels = [];

@@ -184,7 +184,7 @@ final class SidebarZone implements DesignZone
 
     public function validate(array $tree): array
     {
-        return SidebarFilters::validate($tree['values'] ?? [], app(FilterCatalog::class)->knownKeys());
+        return SidebarFilters::validate($tree['values'] ?? [], app(FilterCatalog::class)->knownKeys(), app(FilterCatalog::class)->hiddenByDefault());
     }
 
     public function locate(array $tree, string $path): ?array
@@ -210,7 +210,7 @@ final class SidebarZone implements DesignZone
         $defaults = PageDesign::defaults(PageDesign::CATALOG);
 
         return ['values' => [
-            'filters' => SidebarFilters::defaults(app(FilterCatalog::class)->knownKeys(), ['brand' => (string) $defaults['filterBrand'], 'season' => (string) $defaults['filterSeason'], 'tag' => (string) $defaults['filterTag']]),
+            'filters' => SidebarFilters::defaults(app(FilterCatalog::class)->knownKeys(), ['brand' => (string) $defaults['filterBrand'], 'season' => (string) $defaults['filterSeason'], 'tag' => (string) $defaults['filterTag']], app(FilterCatalog::class)->hiddenByDefault()),
             'kinds' => array_fill_keys(SidebarFilters::BUILTIN, 'list'),
         ]];
     }

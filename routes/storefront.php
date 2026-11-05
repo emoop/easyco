@@ -11,6 +11,7 @@ use App\Http\Controllers\Storefront\HomeController;
 use App\Http\Controllers\Storefront\OrderReceivedController;
 use App\Http\Controllers\Storefront\PageController;
 use App\Http\Controllers\Storefront\ProductController;
+use App\Http\Controllers\Storefront\SubjectListingController;
 use App\Http\Middleware\LimitFilteredCategoryRequests;
 use App\Storefront\Orders\OrderReceivedHeaders;
 use App\Storefront\Theme\ApplyStorefrontTheme;
@@ -81,6 +82,11 @@ Route::middleware([SecurityHeaders::class, ApplyStorefrontTheme::class])
             ->middleware(LimitFilteredCategoryRequests::class)
             ->where('path', '[\s\S]*')
             ->name('storefront.category');
+
+        // P2: the same listing page for a brand, a season and a tag. The slug is a single segment looked up in the database; the same limit for a filtered request as for a category.
+        Route::get('/brand/{slug}', [SubjectListingController::class, 'brand'])->middleware(LimitFilteredCategoryRequests::class)->where('slug', '[^/]+')->name('storefront.brand');
+        Route::get('/season/{slug}', [SubjectListingController::class, 'season'])->middleware(LimitFilteredCategoryRequests::class)->where('slug', '[^/]+')->name('storefront.season');
+        Route::get('/product-tag/{slug}', [SubjectListingController::class, 'tag'])->middleware(LimitFilteredCategoryRequests::class)->where('slug', '[^/]+')->name('storefront.tag');
 
         // PC-2: the sizes of a listing page's cards, one cacheable GET for all of them (the browser asks on the first hover or when idle). Sessionless as the rest
         // of this group; the 60/min budget is the route's own inline throttle (the same way the login route has its own).

@@ -89,7 +89,7 @@ final class HomeTiles
 
     /**
      * HP-5: what the `images` and `brands` carousels of the layout show, resolved at PUBLISH time like the tiles (the page then costs no query): an images carousel's pictures (the renditions of our media, its own
-     * alt and link), and for a brands carousel EVERY brand that has a logo, by name, at most 24 (the logo is the picture, the brand's name the alt text, no link: the shop has no public brand page). ONE read of the
+     * alt and link), and for a brands carousel EVERY brand that has a logo, by name, at most 24 (the logo is the picture, the brand's name the alt text and the link the brand's page, /brand/{slug}: P2). ONE read of the
      * brands and ONE of all the pictures. An item whose picture cannot be shown (not ready, gone) is not in the result.
      *
      * @param  array{spacing: string, sections: list<array{type: string, settings: array<string, mixed>}>}  $layout  VALIDATED
@@ -124,8 +124,9 @@ final class HomeTiles
         }
 
         if (in_array('brands', $wanted, true)) {
-            foreach (DB::table('catalog_brands')->whereNotNull('logo_media_asset_id')->orderBy('name')->orderBy('id')->limit(HomeCatalog::CAROUSEL_BRANDS_MAX)->get(['id', 'name', 'logo_media_asset_id']) as $row) {
-                $brands[] = ['name' => (string) $row->name, 'logo' => (int) $row->logo_media_asset_id];
+            foreach (DB::table('catalog_brands')->whereNotNull('logo_media_asset_id')->orderBy('name')->orderBy('id')->limit(HomeCatalog::CAROUSEL_BRANDS_MAX)->get(['id', 'name', 'slug', 'logo_media_asset_id']) as $row) {
+                // P2: the logo links to the brand's page (the slug is read with the brand: no query per logo)
+                $brands[] = ['name' => (string) $row->name, 'logo' => (int) $row->logo_media_asset_id, 'link' => app(\App\Storefront\Url\StorefrontUrls::class)->brand((string) $row->slug)];
                 $assetIds[(int) $row->logo_media_asset_id] = true;
             }
         }
@@ -141,7 +142,7 @@ final class HomeTiles
 
         foreach ($wanted as $index => $kind) {
             $list = [];
-            $source = $kind === 'brands' ? array_map(static fn (array $b): array => ['picture' => $b['logo'], 'alt' => $b['name'], 'link' => null], $brands) : $layout['sections'][$index]['settings']['images'];
+            $source = $kind === 'brands' ? array_map(static fn (array $b): array => ['picture' => $b['logo'], 'alt' => $b['name'], 'link' => $b['link']], $brands) : $layout['sections'][$index]['settings']['images'];
 
             foreach ($source as $item) {
                 $picture = $set((int) $item['picture']);

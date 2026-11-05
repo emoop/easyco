@@ -23,6 +23,9 @@ final class FilterConstraint
      */
     public const BUILTIN = ['brand', 'season', 'tag'];
 
+    /** P2: the switches (`featured`): in the constraint map like a built-in, but never a `filter[...]` key of the URL. */
+    public const SWITCHES = ['featured'];
+
     /**
      * Restricts a products query (`$productTable` is its alias or name) to the products that match the selection, leaving out the filter `$except` (a filter's own choices never narrow its own list).
      *
@@ -57,7 +60,7 @@ final class FilterConstraint
      */
     public static function split(array $map): array
     {
-        $builtin = array_intersect_key($map, array_flip(self::BUILTIN));
+        $builtin = array_intersect_key($map, array_flip([...self::BUILTIN, ...self::SWITCHES]));
 
         return [$builtin, array_diff_key($map, $builtin)];
     }
@@ -74,6 +77,7 @@ final class FilterConstraint
             match ($kind) {
                 'brand' => $query->whereIn($productTable.'.brand_id', $ids),
                 'season' => $query->whereIn($productTable.'.season_id', $ids),
+                'featured' => $query->where($productTable.'.is_featured', true),
                 'tag' => $query->whereExists(DB::table('catalog_product_tags as pt')->selectRaw('1')->whereColumn('pt.product_id', $productTable.'.id')->whereIn('pt.tag_id', $ids)),
             };
         }

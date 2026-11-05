@@ -32,7 +32,7 @@ final class SidebarStore
         $rows = SidebarFilters::rowsFromJson(app(SiteSettingsRepository::class)->get(AppearanceSettings::SIDEBAR_FILTERS_KEY));
 
         return [
-            'filters' => SidebarFilters::effective($rows, $known, $raw),
+            'filters' => SidebarFilters::effective($rows, $known, $raw, app(FilterCatalog::class)->hiddenByDefault()),
             'kinds' => array_map(static fn (string $kind): string => SidebarFilters::kindToPrint($kind), $raw),
         ];
     }
@@ -53,7 +53,7 @@ final class SidebarStore
             return null;
         }
 
-        [$clean, $errors] = SidebarFilters::validate($stored, app(FilterCatalog::class)->knownKeys());
+        [$clean, $errors] = SidebarFilters::validate($stored, app(FilterCatalog::class)->knownKeys(), app(FilterCatalog::class)->hiddenByDefault());
 
         return $errors === [] ? $clean : null;
     }

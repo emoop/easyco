@@ -17,6 +17,9 @@ final class SidebarFilters
 {
     public const BUILTIN = ['brand', 'season', 'tag'];
 
+    /** P2: filters that are a plain on / off SWITCH (no values, no display kind): `featured`. Their DEFAULT (shown or hidden) is the filter catalog's, passed in as `$hidden`. */
+    public const SWITCHES = ['featured'];
+
     /** The kinds the screen offers for a built-in. (A stored `off` of the older «Каталог» form is still READ — as «hidden» — but never offered or written.) */
     public const KINDS = ['list', 'links', 'buttons'];
 
@@ -25,7 +28,7 @@ final class SidebarFilters
     /** Is this a key the closed grammar allows (a built-in word or a plain positive whole number)? */
     public static function isKey(mixed $key): bool
     {
-        return is_string($key) && (in_array($key, self::BUILTIN, true) || preg_match('/\A[1-9][0-9]{0,17}\z/', $key) === 1);
+        return is_string($key) && (in_array($key, self::BUILTIN, true) || in_array($key, self::SWITCHES, true) || preg_match('/\A[1-9][0-9]{0,17}\z/', $key) === 1);
     }
 
     /**
@@ -33,11 +36,12 @@ final class SidebarFilters
      *
      * @param  list<string>  $known
      * @param  array<string, string>  $kinds  the stored kind by built-in (`off` | list | links | buttons)
+     * @param  list<string>  $hidden  the keys that are HIDDEN until the merchant switches them on (FilterCatalog::hiddenByDefault)
      * @return list<Row>
      */
-    public static function defaults(array $known, array $kinds): array
+    public static function defaults(array $known, array $kinds, array $hidden = []): array
     {
-        return array_map(static fn (string $key): array => ['key' => $key, 'show' => ! in_array($key, self::BUILTIN, true) || ($kinds[$key] ?? 'off') !== 'off'], $known);
+        return array_map(static fn (string $key): array => ['key' => $key, 'show' => ! in_array($key, $hidden, true) && (! in_array($key, self::BUILTIN, true) || ($kinds[$key] ?? 'off') !== 'off')], $known);
     }
 
     /**
@@ -46,12 +50,13 @@ final class SidebarFilters
      *
      * @param  list<string>  $known
      * @param  array<string, string>  $kinds
+     * @param  list<string>  $hidden  the keys appended HIDDEN (not shown) when the list does not mention them: the per-filter default
      * @return list<Row>
      */
-    public static function effective(?array $stored, array $known, array $kinds): array
+    public static function effective(?array $stored, array $known, array $kinds, array $hidden = []): array
     {
         if ($stored === null) {
-            return self::defaults($known, $kinds);
+            return self::defaults($known, $kinds, $hidden);
         }
 
         $rows = [];
@@ -69,7 +74,7 @@ final class SidebarFilters
         }
 
         foreach ($known as $key) {
-            isset($seen[$key]) || $rows[] = ['key' => $key, 'show' => true];
+            isset($seen[$key]) || $rows[] = ['key' => $key, 'show' => ! in_array($key, $hidden, true)];
         }
 
         return $rows;
@@ -94,9 +99,10 @@ final class SidebarFilters
      * clean copy of what could be kept (the caller does not store it when there are errors).
      *
      * @param  list<string>  $known
+     * @param  list<string>  $hidden  the keys appended HIDDEN when the copy does not mention them
      * @return array{0: array{filters: list<Row>, kinds: array<string, string>}, 1: array<string, string>}
      */
-    public static function validate(mixed $value, array $known): array
+    public static function validate(mixed $value, array $known, array $hidden = []): array
     {
         $errors = [];
         $fail = static function (string $path, string $code) use (&$errors): void {
@@ -166,7 +172,7 @@ final class SidebarFilters
         }
 
         foreach ($known as $key) {
-            isset($seen[$key]) || $rows[] = ['key' => $key, 'show' => true];
+            isset($seen[$key]) || $rows[] = ['key' => $key, 'show' => ! in_array($key, $hidden, true)];
         }
 
         return [['filters' => $rows, 'kinds' => $kinds], $errors];

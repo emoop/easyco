@@ -22,14 +22,30 @@ final readonly class FilterSelection
 
     public const MAX_TOTAL = 15;
 
-    /** @param array<int|string, list<int>> $map filter key (attribute id or `brand` | `season` | `tag`) => value ids, canonical order */
-    public function __construct(public array $map = [], public bool $canonical = true)
+    /**
+     * P2: `featured` is the «Препоръчани» switch (the URL's `featured=1`, a filter of its own kind: no values, nothing to resolve against a list).
+     *
+     * @param array<int|string, list<int>> $map filter key (attribute id or `brand` | `season` | `tag`) => value ids, canonical order
+     */
+    public function __construct(public array $map = [], public bool $canonical = true, public bool $featured = false)
     {
     }
 
     public function isEmpty(): bool
     {
-        return $this->map === [];
+        return $this->map === [] && ! $this->featured;
+    }
+
+    /** P2: what the product query is constrained by: the filters' map and, when the switch is on, `featured` (FilterConstraint::SWITCHES). @return array<int|string, list<int>> */
+    public function constraintMap(): array
+    {
+        return $this->featured ? $this->map + ['featured' => [1]] : $this->map;
+    }
+
+    /** P2: the same selection with the switch turned on or off. */
+    public function withFeatured(bool $on): self
+    {
+        return new self($this->map, $this->canonical, $on);
     }
 
     /**
@@ -38,8 +54,10 @@ final readonly class FilterSelection
      */
     public static function fromRequest(Request $request, array $catalog): self
     {
+        $featured = self::featured($request, $catalog);
+
         if (! $request->query->has('filter')) {
-            return new self();
+            return new self([], true, $featured);
         }
 
         $raw = $request->query->all()['filter'] ?? null;
@@ -111,7 +129,24 @@ final readonly class FilterSelection
             }
         }
 
-        return new self($map, $map === $given && ! $arrayForm);
+        return new self($map, $map === $given && ! $arrayForm, $featured);
+    }
+
+    /**
+     * P2: the `featured` switch. Not a filter of this shop's list (hidden, or never switched on) = the storefront's 404 for ANY value, as for any hidden filter; when it IS one, `featured=1` turns it on and any other
+     * value (`2`, empty, an array) is no filter at all.
+     */
+    private static function featured(Request $request, array $catalog): bool
+    {
+        if (! $request->query->has('featured')) {
+            return false;
+        }
+
+        if (! in_array('featured', array_column($catalog, 'id'), true)) {
+            throw new InvalidListingQuery('featured', 'is not a filter of this shop');
+        }
+
+        return ($request->query->all()['featured'] ?? null) === '1';
     }
 
     /** The selection with this value turned on (or off when it is on), the order kept canonical. */
@@ -131,7 +166,7 @@ final readonly class FilterSelection
             }
         }
 
-        return new self($ordered);
+        return new self($ordered, true, $this->featured);
     }
 
     /** `filter[2]=5,9&filter[7]=1` (brackets and commas as they are: readable, and PHP reads them back the same) or '' for nothing. */
@@ -142,6 +177,8 @@ final readonly class FilterSelection
         foreach ($this->map as $attribute => $values) {
             $parts[] = 'filter['.$attribute.']='.implode(',', $values);
         }
+
+        $this->featured && $parts[] = 'featured=1';
 
         return implode('&', $parts);
     }

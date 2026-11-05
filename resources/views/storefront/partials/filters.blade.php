@@ -41,10 +41,17 @@
                                 <summary class="sf-fgroup-summary"><span class="sf-fgroup-name">{{ $group['name'] }}</span><span class="sf-fgroup-current">{{ $group['current'] }}</span></summary>
                                 <div class="sf-fgroup-panel">
                                     <p class="sf-fgroup-meta">{{ __('storefront.filters_selected', ['count' => $group['count']]) }}</p>
-                                    <ul class="sf-filter-values sf-fvalues-{{ $group['display'] }}">
+                                    <ul class="sf-filter-values sf-fvalues-{{ $group['display'] === 'switch' ? 'list' : $group['display'] }}">
                                         @foreach ($group['values'] as $value)
                                             <li>
-                                                @if ($group['display'] === 'swatches' && $value['colour'] !== null)
+                                                @if ($group['display'] === 'switch')
+                                                    {{-- P2: «Препоръчани» — one checkbox, `featured=1` (the look of a list value) --}}
+                                                    <label class="sf-fv sf-fv-list">
+                                                        <input class="sf-fv-input" type="checkbox" name="featured" value="1" @checked($value['selected'])>
+                                                        <span class="sf-fv-mark"></span>
+                                                        <span class="sf-fv-text">{{ $value['label'] }}</span>
+                                                    </label>
+                                                @elseif ($group['display'] === 'swatches' && $value['colour'] !== null)
                                                     <label class="sf-fv sf-fv-dot" title="{{ $value['label'] }}">
                                                         <input class="sf-fv-input" type="checkbox" name="filter[{{ $group['id'] }}][]" value="{{ $value['id'] }}" @checked($value['selected'])>
                                                         <svg class="sf-fv-circle" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="12" fill="{{ $value['colour'] }}"/></svg>
