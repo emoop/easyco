@@ -217,7 +217,7 @@
 
     /* ---- subcategory chips ---------------------------------------------------------------------- */
     .sf-subcategories {
-        @apply mb-4;
+        @apply mb-10;
     }
 
     .sf-subcategory-list {
