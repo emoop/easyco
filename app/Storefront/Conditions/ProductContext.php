@@ -32,12 +32,14 @@ final class ProductContext
         public readonly int $productId,
         public readonly array $variationIds,
         public readonly ?PriceBlock $price,
+        /** P4c: the product's brand id, from the product row the page already loaded (null = no brand): the `in_brand` predicate costs no query */
+        public readonly ?int $brandId = null,
     ) {
     }
 
     public static function fromPage(ProductPage $page): self
     {
-        return new self((int) $page->id, array_map(static fn ($variation): int => (int) $variation->id, $page->variations), $page->price);
+        return new self((int) $page->id, array_map(static fn ($variation): int => (int) $variation->id, $page->variations), $page->price, $page->brandId);
     }
 
     /** Forgets what is shared between contexts (tests, long-lived workers). */

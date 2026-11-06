@@ -2170,6 +2170,15 @@
         font-size: 0.9375rem;
     }
 
+    /* P4c: «Мета информация» (two lines: «Сезон:» / «Етикети:» with plain links) and the blocks of a «HTML блокове» section, one under another */
+    .sf-psec-meta-label {
+        font-weight: 600;
+    }
+
+    .sf-psec-block + .sf-psec-block {
+        margin-top: 1rem;
+    }
+
     /* «Табове»: radio inputs first (visually hidden, still focusable: the arrow keys move between them), then the row of labels, then the panels. The k-th checked input shows the k-th panel and marks the k-th label
        (up to 8 tabs: the most sections there are). The first printed tab is the checked one. */
     .sf-ptabs {

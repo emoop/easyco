@@ -174,4 +174,36 @@ class DesignSectionsZoneTest extends TestCase
         $this->assertSame('Accordion', __('design.summary.types.accordion'));
         $this->assertSame('Акордеон', __('design.summary.types.accordion', [], 'bg'));
     }
+    /** ★ P4c: the «Мета информация» switches and the «HTML блокове» list are in the panel, applied, published and loaded back; another source keeps its old shape; 11 blocks or none are refused */
+    public function test_the_meta_and_blocks_sources_in_the_panel(): void
+    {
+        $a = (int) \App\Content\HtmlBlocks\HtmlBlockModel::query()->create(['title' => 'Sizes A', 'body' => '<p>A</p>'])->id;
+        $b = (int) \App\Content\HtmlBlocks\HtmlBlockModel::query()->create(['title' => 'Sizes B', 'body' => '<p>B</p>'])->id;
+
+        $screen = $this->screen();
+        $this->assertStringContainsString('Meta information', $screen->html().__('design.sections.sources.meta'));
+        $screen->set('props.sections', [
+            'm' => ['key' => self::KEY, 'title' => 'Meta', 'source' => 'meta', 'text' => '', 'show_seasons' => false, 'show_tags' => true, 'block_items' => []],
+            'b' => ['key' => '22222222-2222-4222-8222-222222222222', 'title' => 'Sizes', 'source' => 'blocks', 'text' => '', 'show_seasons' => true, 'show_tags' => true, 'block_items' => [['block' => $b], ['block' => $a]]],
+            'g' => ['key' => '33333333-3333-4333-8333-333333333333', 'title' => 'Delivery', 'source' => 'global', 'text' => '<p>G</p>', 'show_seasons' => false, 'show_tags' => false, 'block_items' => [['block' => $a]]],
+        ])->call('apply')->call('publish')->assertHasNoErrors();
+
+        $published = $this->stored(AppearanceSettings::SECTIONS_PUBLISHED_KEY)['sections'];
+        $this->assertSame(['seasons' => false, 'tags' => true], $published[0]['meta']);
+        $this->assertSame([$b, $a], $published[1]['blocks'], 'the chosen order');
+        $this->assertSame(['key', 'title', 'source', 'text'], array_keys($published[2]), 'another source: no new keys');
+
+        $back = array_values((array) $this->screen()->get('props.sections'));
+        $this->assertFalse($back[0]['show_seasons']);
+        $this->assertSame([(string) $b, (string) $a], array_map(static fn (array $row): string => (string) $row['block'], array_values($back[1]['block_items'])), 'the select shows the ids as text');
+
+        // none and eleven blocks are refused, nothing changes
+        $before = app(SiteSettingsRepository::class)->get(AppearanceSettings::SECTIONS_PUBLISHED_KEY);
+        $many = array_map(static fn (int $n): array => ['block' => $a + $n], range(0, 10));
+
+        foreach ([[], $many] as $items) {
+            $screen->set('props.sections', ['b' => ['key' => self::KEY, 'title' => 'Sizes', 'source' => 'blocks', 'text' => '', 'block_items' => $items]])->call('apply')->call('publish');
+            $this->assertSame($before, app(SiteSettingsRepository::class)->get(AppearanceSettings::SECTIONS_PUBLISHED_KEY));
+        }
+    }
 }

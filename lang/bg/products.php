@@ -5,6 +5,9 @@ return [
     'label' => 'Продукт',
     'plural_label' => 'Продукти',
 
+    // P4c: the «Информация» tab of the product form
+    'sections' => ['shown' => 'Показвай на този продукт', 'shown_hint' => 'Изключи, ако секцията не е за този продукт.', 'text' => 'Текст за този продукт'],
+
     'tabs' => [
         'information' => 'Информация',
         'general' => 'Основни',

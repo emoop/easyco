@@ -158,7 +158,7 @@ class ProductDescriptionSectionTest extends TestCase
     /** ★ the closed list of sources: exactly these four, a bad value is refused and dropped on read; stored data stays valid */
     public function test_the_source_list_is_closed(): void
     {
-        $this->assertEqualsCanonicalizing(['description', 'global', 'product', 'product_or_global'], SectionSet::SOURCES);
+        $this->assertEqualsCanonicalizing(['description', 'global', 'product', 'product_or_global', 'meta', 'blocks'], SectionSet::SOURCES);
 
         [, $errors] = SectionSet::validate(['sections' => [['title' => 'T', 'source' => 'html_block']]]);
         $this->assertNotSame([], $errors);
@@ -170,7 +170,7 @@ class ProductDescriptionSectionTest extends TestCase
         $this->assertSame('', $clean['sections'][0]['text'], 'no general text for the description source');
     }
 
-    /** ★ +0 queries for the description source, and the page without sections is unchanged (pin) */
+    /** ★ the description itself costs nothing (it is on the loaded row); the page with sections reads the product's texts and switches in ONE query (P4c), the page without sections is unchanged (pin) */
     public function test_the_description_source_costs_no_query(): void
     {
         $this->visit('p1');
@@ -182,8 +182,8 @@ class ProductDescriptionSectionTest extends TestCase
         $this->publishTabs();
 
         $this->visit('p1');
-        $this->assertSame($plain, $this->queryCount('p1'), 'the description is on the loaded row: +0');
-        $this->assertSame($plainVar, $this->queryCount('p5'), 'variable product: +0');
+        $this->assertSame($plain + 1, $this->queryCount('p1'), 'the description is on the loaded row: only the one read of the texts and switches');
+        $this->assertSame($plainVar + 1, $this->queryCount('p5'), 'variable product: the same one read');
         fwrite(STDERR, "\n[query-count] P4b.1 product page: simple {$plain}, variable {$plainVar}\n");
     }
 

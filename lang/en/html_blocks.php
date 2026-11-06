@@ -87,11 +87,12 @@ return [
     // HB-2: «Show when…» — the block is shown only for some products (right column of the product page)
     'conditions' => [
         'title' => 'Show when…',
-        'fields' => ['on_sale' => 'On sale', 'seasons' => 'Season', 'categories' => 'Categories', 'tags' => 'Tags', 'attributes' => 'Attributes', 'attribute' => 'Attribute', 'values' => 'Values'],
+        'fields' => ['on_sale' => 'On sale', 'seasons' => 'Season', 'brands' => 'Brand', 'categories' => 'Categories', 'tags' => 'Tags', 'attributes' => 'Attributes', 'attribute' => 'Attribute', 'values' => 'Values'],
         'options' => ['all' => 'All', 'on_sale_yes' => 'Only on sale', 'on_sale_no' => 'Only not on sale'],
         'hints' => [
             'on_sale' => 'On sale = a product with a struck-through price.',
             'seasons' => 'The product\'s season is one of the chosen.',
+            'brands' => 'The product\'s brand is one of the chosen.',
             'categories' => 'Any of the chosen; subcategories count.',
             'tags' => 'The product has any of the chosen tags.',
             'attributes' => 'For each attribute: any of the chosen values.',
@@ -124,6 +125,7 @@ return [
         'home' => 'the home page',
         'content' => 'the category, brand, season or tag pages',
         'below' => 'the product page («Below the gallery»)',
+        'sections' => 'the product sections',
         'join' => ' and ',
     ],
 

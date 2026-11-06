@@ -7,7 +7,10 @@ use Illuminate\Support\Str;
 /**
  * P4b: the SECTIONS of the product page the merchant defines in «Дизайн» → «Секции на продукта» (Description, Individual size, Composition, Delivery and returns …): one ordered list for every product, at most MAX.
  *
- *   {sections: [ {key: uuid, title: string, source: description|global|product|product_or_global, text: string (html)} ]}
+ *   {sections: [ {key: uuid, title: string, source: description|global|product|product_or_global|meta|blocks, text: string (html), meta?: {seasons: bool, tags: bool}, blocks?: list<int>} ]}
+ *
+ * P4c: `meta` = the product's season and tags as links (the two switches in `meta`, both on by default); `blocks` = an ordered list of at most BLOCKS_MAX HTML blocks (`blocks`), of which the ones whose conditions
+ * match the product are printed. `meta` / `blocks` are present only for their own source (a section of another source is stored as before).
  *
  * `source` says where the text of a section comes from: `global` = the section's own «общ текст» (the same for every product), `product` = the text of the product (the «Информация» tab of the product form),
  * `product_or_global` = the product's text, and when it has none the general one. The `text` is the rich-text editor's HTML (the one a product description is edited in); it is cleaned by the storefront's
@@ -16,7 +19,7 @@ use Illuminate\Support\Str;
  * SAVE validates strictly (a missing key is generated, errors by path `sections.2.title`); READ never fails: a section that does not validate is dropped, more than MAX are cut, an unknown key is dropped.
  * Pure: no query, no setting.
  *
- * @phpstan-type Section array{key: string, title: string, source: string, text: string}
+ * @phpstan-type Section array{key: string, title: string, source: string, text: string, meta?: array{seasons: bool, tags: bool}, blocks?: list<int>}
  * @phpstan-type Set array{sections: list<Section>}
  */
 final class SectionSet
@@ -28,7 +31,10 @@ final class SectionSet
     /** The longest general text of a section (characters of HTML). */
     public const TEXT_MAX = 20_000;
 
-    public const SOURCES = ['description', 'global', 'product', 'product_or_global'];
+    public const SOURCES = ['description', 'global', 'product', 'product_or_global', 'meta', 'blocks'];
+
+    /** P4c: the most HTML blocks one `blocks` section holds. */
+    public const BLOCKS_MAX = 10;
 
     /** @return Set no section: the product page it always was */
     public static function blank(): array
@@ -40,6 +46,20 @@ final class SectionSet
     public static function isBlank(array $set): bool
     {
         return $set['sections'] === [];
+    }
+
+    /** P4c: the ids of the HTML blocks the sections show. @param Set $set @return list<int> */
+    public static function blockIds(array $set): array
+    {
+        $ids = [];
+
+        foreach ($set['sections'] as $section) {
+            foreach ($section['blocks'] ?? [] as $id) {
+                $ids[$id] = $id;
+            }
+        }
+
+        return array_values($ids);
     }
 
     /** Does a source take the product's own text? */
@@ -162,7 +182,7 @@ final class SectionSet
             return null;
         }
 
-        foreach (array_diff(array_keys($section), ['key', 'title', 'source', 'text']) as $key) {
+        foreach (array_diff(array_keys($section), ['key', 'title', 'source', 'text', 'meta', 'blocks']) as $key) {
             $fail($path, 'unknown_key', ['key' => mb_substr((string) $key, 0, 30)]);
         }
 
@@ -210,7 +230,39 @@ final class SectionSet
             return null;
         }
 
-        // the general text only means something for a source that uses it
-        return ['key' => (string) $key, 'title' => $title, 'source' => $source, 'text' => self::usesGlobalText($source) ? $text : ''];
+        $one = ['key' => (string) $key, 'title' => $title, 'source' => $source, 'text' => self::usesGlobalText($source) ? $text : ''];
+
+        // P4c: the settings of the two new sources (only for their own source; any other source is stored as it always was)
+        if ($source === 'meta') {
+            $meta = $section['meta'] ?? ['seasons' => true, 'tags' => true];
+
+            if (! is_array($meta) || array_diff(array_keys($meta), ['seasons', 'tags']) !== [] || ! is_bool($meta['seasons'] ?? true) || ! is_bool($meta['tags'] ?? true)) {
+                $fail($path.'.meta', 'bad_choice');
+
+                return null;
+            }
+
+            $one['meta'] = ['seasons' => $meta['seasons'] ?? true, 'tags' => $meta['tags'] ?? true];
+        }
+
+        if ($source === 'blocks') {
+            $blocks = $section['blocks'] ?? [];
+
+            if (! is_array($blocks) || ! array_is_list($blocks) || count($blocks) > self::BLOCKS_MAX || count(array_filter($blocks, static fn (mixed $id): bool => is_int($id) && $id > 0)) !== count($blocks) || count(array_unique($blocks)) !== count($blocks)) {
+                $fail($path.'.blocks', 'bad_blocks', ['max' => self::BLOCKS_MAX]);
+
+                return null;
+            }
+
+            if ($blocks === [] && $generate) {
+                $fail($path.'.blocks', 'blocks_required');
+
+                return null;
+            }
+
+            $one['blocks'] = $blocks;
+        }
+
+        return $one;
     }
 }

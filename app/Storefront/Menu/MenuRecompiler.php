@@ -58,7 +58,9 @@ final class MenuRecompiler
                 || str_contains((string) $settings->get(\App\Settings\AppearanceSettings::CONTENT_PUBLISHED_KEY), '"top"')
                 // P4: a product page slot's block (an `html_block` slot, or the `blocks` of a block carousel)
                 || str_contains((string) $settings->get(\App\Settings\AppearanceSettings::BELOW_PUBLISHED_KEY), '"html_block"')
-                || str_contains((string) $settings->get(\App\Settings\AppearanceSettings::BELOW_PUBLISHED_KEY), '"blocks"');
+                || str_contains((string) $settings->get(\App\Settings\AppearanceSettings::BELOW_PUBLISHED_KEY), '"blocks"')
+                // P4c: the blocks of a `blocks` section of the product sections
+                || str_contains((string) $settings->get(\App\Settings\AppearanceSettings::SECTIONS_PUBLISHED_KEY), '"source":"blocks"');
         }
 
         return $items->where('type', $type)->exists();

@@ -82,6 +82,7 @@ use Illuminate\Support\HtmlString;
 use WeakMap;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Component;
+use Filament\Schemas\Components\Fieldset;
 use Filament\Schemas\Components\Flex;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Group;
@@ -234,15 +235,25 @@ class ProductResource extends Resource
      */
     public static function sectionTextsTab(): Tab
     {
-        $sections = array_values(array_filter(\App\Storefront\Sections\SectionStore::values()['sections'], static fn (array $section): bool => \App\Storefront\Sections\SectionSet::usesProductText($section['source'])));
+        // P4c: EVERY published section is here: its switch «Показвай на този продукт» (ON by default) and, for a source that takes a product text, the rich-text field below it
+        $sections = \App\Storefront\Sections\SectionStore::values()['sections'];
 
         return Tab::make(__('products.tabs.information'))
             ->visible($sections !== [])
-            ->schema([
-                Group::make(array_map(static fn (array $section): RichEditor => RichEditor::make($section['key'])
-                    ->label($section['title'])
-                    ->toolbarButtons(static::RICH_TEXT_TOOLBAR), $sections))->statePath('section_texts'),
-            ]);
+            ->schema(array_map(static function (array $section): Fieldset {
+                $fields = [
+                    Toggle::make('section_shown.'.$section['key'])
+                        ->label(__('products.sections.shown'))
+                        ->hintIcon('heroicon-m-information-circle', tooltip: __('products.sections.shown_hint'))
+                        ->default(true),
+                ];
+
+                \App\Storefront\Sections\SectionSet::usesProductText($section['source']) && $fields[] = RichEditor::make('section_texts.'.$section['key'])
+                    ->label(__('products.sections.text'))
+                    ->toolbarButtons(static::RICH_TEXT_TOOLBAR);
+
+                return Fieldset::make($section['title'])->columns(1)->schema($fields);
+            }, $sections));
     }
 
     /**

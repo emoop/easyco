@@ -47,6 +47,8 @@ final readonly class ProductPage
         public array $gallery = [],
         public ?string $sku = null,
         public array $optionDisplay = [],
+        /** P4c: the brand's id (the product row the reader already loaded): for the product conditions only, NOT in toArray() (the JSON contract is unchanged) */
+        public ?int $brandId = null,
     ) {
     }
 

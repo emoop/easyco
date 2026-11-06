@@ -12,6 +12,8 @@ use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\RichEditor;
 use Filament\Forms\Components\RichEditor\RichContentRenderer;
 use Filament\Forms\Components\Select;
+use Filament\Forms\Components\Toggle;
+use App\Content\HtmlBlocks\HtmlBlockModel;
 use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\Utilities\Get;
@@ -161,6 +163,16 @@ final class SectionsZone implements DesignZone
                 ->options(array_combine(SectionSet::SOURCES, array_map(static fn (string $s): string => (string) __('design.sections.sources.'.$s), SectionSet::SOURCES))),
             RichEditor::make('text')->label((string) __('design.sections.text'))->afterLabel($hint('text'))->toolbarButtons(ProductResource::RICH_TEXT_TOOLBAR)->live(onBlur: true)->columnSpanFull()
                 ->visible(static fn (Get $get): bool => SectionSet::usesGlobalText((string) $get('source'))),
+            // P4c: «Мета информация» — the two lines
+            Toggle::make('show_seasons')->label((string) __('design.sections.show_seasons'))->afterLabel($hint('show_seasons'))->default(true)
+                ->visible(static fn (Get $get): bool => $get('source') === 'meta'),
+            Toggle::make('show_tags')->label((string) __('design.sections.show_tags'))->afterLabel($hint('show_tags'))->default(true)
+                ->visible(static fn (Get $get): bool => $get('source') === 'meta'),
+            // P4c: «HTML блокове» — an ordered list of up to 10 existing blocks (the picker of the HTML-block slots)
+            Repeater::make('block_items')->label((string) __('design.sections.blocks'))->afterLabel($hint('blocks'))
+                ->maxItems(SectionSet::BLOCKS_MAX)->defaultItems(0)->reorderableWithButtons()->addActionLabel((string) __('design.sections.block_add'))->columnSpanFull()
+                ->schema([Select::make('block')->label((string) __('design.sections.block'))->native(false)->searchable()->options(static fn (): array => HtmlBlockModel::query()->orderBy('title')->pluck('title', 'id')->all())->required()])
+                ->visible(static fn (Get $get): bool => $get('source') === 'blocks'),
         ];
     }
 
@@ -173,7 +185,12 @@ final class SectionsZone implements DesignZone
         $sections = [];
 
         foreach ($set['sections'] ?? [] as $section) {
-            $sections[(string) Str::uuid()] = ['key' => $section['key'], 'title' => $section['title'], 'source' => $section['source'], 'text' => $section['text']];
+            $sections[(string) Str::uuid()] = [
+                'key' => $section['key'], 'title' => $section['title'], 'source' => $section['source'], 'text' => $section['text'],
+                'show_seasons' => $section['meta']['seasons'] ?? true,
+                'show_tags' => $section['meta']['tags'] ?? true,
+                'block_items' => array_map(static fn (int $id): array => ['block' => $id], $section['blocks'] ?? []),
+            ];
         }
 
         return ['sections' => $sections];
@@ -185,12 +202,27 @@ final class SectionsZone implements DesignZone
         $sections = [];
 
         foreach (is_array($raw['sections'] ?? null) ? array_values($raw['sections']) : [] as $form) {
-            is_array($form) && $sections[] = [
+            if (! is_array($form)) {
+                continue;
+            }
+
+            $section = [
                 'key' => $form['key'] ?? null,
                 'title' => is_string($form['title'] ?? '') ? (string) ($form['title'] ?? '') : '',
                 'source' => $form['source'] ?? 'product_or_global',
                 'text' => self::html($form['text'] ?? ''),
             ];
+
+            // P4c: the settings of the two new sources go only with their own source
+            if ($section['source'] === 'meta') {
+                $section['meta'] = ['seasons' => ($form['show_seasons'] ?? true) !== false, 'tags' => ($form['show_tags'] ?? true) !== false];
+            }
+
+            if ($section['source'] === 'blocks') {
+                $section['blocks'] = array_values(array_filter(array_map(static fn (mixed $row): mixed => is_array($row) ? FieldValues::id($row['block'] ?? null) : null, is_array($form['block_items'] ?? null) ? array_values($form['block_items']) : []), static fn (mixed $id): bool => $id !== null));
+            }
+
+            $sections[] = $section;
         }
 
         $tree['values'] = ['sections' => $sections];

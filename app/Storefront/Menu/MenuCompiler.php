@@ -125,6 +125,8 @@ class MenuCompiler
             app(\App\Storefront\Content\ContentCompiler::class)->refresh();
             // P4: and the slots below the product page's main area
             app(\App\Storefront\Below\BelowCompiler::class)->refresh();
+            // P4c: and the product sections' HTML blocks
+            app(\App\Storefront\Sections\SectionCompiler::class)->refresh();
 
             return false;
         }
@@ -142,6 +144,7 @@ class MenuCompiler
         app(\App\Storefront\Home\HomeCompiler::class)->refresh();
         app(\App\Storefront\Content\ContentCompiler::class)->refresh();
         app(\App\Storefront\Below\BelowCompiler::class)->refresh();
+        app(\App\Storefront\Sections\SectionCompiler::class)->refresh();
 
         return true;
     }

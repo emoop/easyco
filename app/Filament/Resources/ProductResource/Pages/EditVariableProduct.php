@@ -1933,7 +1933,7 @@ class EditVariableProduct extends EditRecord
         $productId = (string) $this->record->id;
 
         // P4b: the texts of the «Информация» tab (section key => html): ONE query, and none when no section takes a product text
-        $data['section_texts'] = \App\Storefront\Sections\SectionTexts::formKeys() === [] ? [] : \App\Storefront\Sections\SectionTexts::forProduct((int) $productId);
+        $data = array_merge($data, \App\Storefront\Sections\SectionTexts::switchKeys() === [] ? ['section_texts' => [], 'section_shown' => []] : \App\Storefront\Sections\SectionTexts::forForm((int) $productId));
 
         $data['categories'] = array_map(
             fn ($c) => (string) $c->categoryId(),
@@ -2146,7 +2146,7 @@ class EditVariableProduct extends EditRecord
         $saved = DB::transaction(function () use ($record, $data): Model {
             $saved = $this->updateProduct($record, $data);
             // P4b: the texts of the «Информация» tab, saved with the product (the same transaction)
-            \App\Storefront\Sections\SectionTexts::save((int) $record->getKey(), is_array($data['section_texts'] ?? null) ? $data['section_texts'] : [], \App\Storefront\Sections\SectionTexts::formKeys());
+            \App\Storefront\Sections\SectionTexts::save((int) $record->getKey(), is_array($data['section_texts'] ?? null) ? $data['section_texts'] : [], \App\Storefront\Sections\SectionTexts::formKeys(), is_array($data['section_shown'] ?? null) ? $data['section_shown'] : [], \App\Storefront\Sections\SectionTexts::switchKeys());
 
             return $saved;
         });

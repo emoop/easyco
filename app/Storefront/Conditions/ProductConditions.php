@@ -16,10 +16,11 @@ use InvalidArgumentException;
  *   in_category    [id | list<id>]          the product is in ANY of these categories or in a DESCENDANT of one
  *   has_tag        [id | list<id>]          the product has ANY of these tags
  *   in_season      [id | list<id>]          the product's season is ANY of these
+ *   in_brand       [id | list<id>]          P4c: the product's brand is ANY of these (the brand id is on the page's own product row: no query)
  *   has_attribute  [attribute id, value id | list<value id> = any value]   the product (its shown variations) has ANY of the values of that attribute
  * There is no «new» predicate: the shop has no concept of a new product (no flag, no time window).
  *
- * CONDITIONS (stored as the block's JSON `conditions`, null = none): `on_sale` true|false (a `false` IS a condition), `categories` (≤ 50 ids), `tags` (≤ 50), `seasons` (≤ 20), `attributes` (≤ 5 rules
+ * CONDITIONS (stored as the block's JSON `conditions`, null = none): `on_sale` true|false (a `false` IS a condition), `categories` (≤ 50 ids), `tags` (≤ 50), `seasons` (≤ 20), `brands` (≤ 20), `attributes` (≤ 5 rules
  * `{attribute, values ≤ 20}`, an attribute once). ALL set conditions must hold (AND); inside a list the values are alternatives (OR).
  */
 final class ProductConditions
@@ -30,11 +31,13 @@ final class ProductConditions
 
     public const MAX_SEASONS = 20;
 
+    public const MAX_BRANDS = 20;
+
     public const MAX_RULES = 5;
 
     public const MAX_VALUES = 20;
 
-    public const KEYS = ['on_sale', 'categories', 'tags', 'seasons', 'attributes'];
+    public const KEYS = ['on_sale', 'categories', 'tags', 'seasons', 'brands', 'attributes'];
 
     private static ?bool $hasColumn = null;
 
@@ -46,6 +49,7 @@ final class ProductConditions
             'in_category' => static fn (ProductContext $c, array $p): bool => array_intersect(self::ids($p), $c->categoryIds()) !== [],
             'has_tag' => static fn (ProductContext $c, array $p): bool => array_intersect(self::ids($p), $c->tagIds()) !== [],
             'in_season' => static fn (ProductContext $c, array $p): bool => $c->seasonId() !== null && in_array($c->seasonId(), self::ids($p), true),
+            'in_brand' => static fn (ProductContext $c, array $p): bool => $c->brandId !== null && in_array($c->brandId, self::ids($p), true),
             'has_attribute' => static function (ProductContext $c, array $p): bool {
                 $own = $c->attributeValues()[(int) ($p[0] ?? 0)] ?? [];
                 $wanted = self::ids(array_slice($p, 1));
@@ -104,7 +108,7 @@ final class ProductConditions
 
         array_key_exists('on_sale', $clean) && $checks[] = $predicates['on_sale']($context, [$clean['on_sale']]);
 
-        foreach (['categories' => 'in_category', 'tags' => 'has_tag', 'seasons' => 'in_season'] as $key => $predicate) {
+        foreach (['categories' => 'in_category', 'tags' => 'has_tag', 'seasons' => 'in_season', 'brands' => 'in_brand'] as $key => $predicate) {
             ($clean[$key] ?? []) !== [] && $checks[] = $predicates[$predicate]($context, [$clean[$key]]);
         }
 
@@ -146,7 +150,7 @@ final class ProductConditions
             is_bool($conditions['on_sale']) ? $clean['on_sale'] = $conditions['on_sale'] : $errors['on_sale'] = self::message('bad_boolean');
         }
 
-        foreach (['categories' => [self::MAX_CATEGORIES, 'catalog_categories'], 'tags' => [self::MAX_TAGS, 'catalog_tags'], 'seasons' => [self::MAX_SEASONS, 'catalog_seasons']] as $key => [$max, $table]) {
+        foreach (['categories' => [self::MAX_CATEGORIES, 'catalog_categories'], 'tags' => [self::MAX_TAGS, 'catalog_tags'], 'seasons' => [self::MAX_SEASONS, 'catalog_seasons'], 'brands' => [self::MAX_BRANDS, 'catalog_brands']] as $key => [$max, $table]) {
             $ids = self::idList($conditions[$key] ?? null, $max, $key, $errors);
 
             if ($ids === []) {
@@ -252,7 +256,7 @@ final class ProductConditions
         $conditions = is_array($conditions) ? $conditions : [];
         $state = ['on_sale' => ! array_key_exists('on_sale', $conditions) ? 'all' : ($conditions['on_sale'] ? 'yes' : 'no')];
 
-        foreach (['categories' => 'catalog_categories', 'tags' => 'catalog_tags', 'seasons' => 'catalog_seasons'] as $key => $table) {
+        foreach (['categories' => 'catalog_categories', 'tags' => 'catalog_tags', 'seasons' => 'catalog_seasons', 'brands' => 'catalog_brands'] as $key => $table) {
             $state[$key] = self::existing($table, $conditions[$key] ?? []);
         }
 
@@ -290,7 +294,7 @@ final class ProductConditions
             default => null,
         };
 
-        foreach (['categories', 'tags', 'seasons'] as $key) {
+        foreach (['categories', 'tags', 'seasons', 'brands'] as $key) {
             is_array($state[$key] ?? null) && $state[$key] !== [] && $raw[$key] = array_values($state[$key]);
         }
 

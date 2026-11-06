@@ -58,7 +58,10 @@ final class ProductController extends Controller
         $belowCompiled = $appearance->productBelow();
         $definitions = $appearance->productSections();
         $usesSections = $definitions !== null && (in_array('accordion', array_column($summary, 'type'), true) || in_array('tabs', array_column($belowCompiled['slots'] ?? [], 'type'), true));
-        $sections = $usesSections ? \App\Storefront\Sections\SectionResolver::resolve($definitions, \App\Storefront\Sections\SectionResolver::needsProductTexts($definitions) ? \App\Storefront\Sections\SectionTexts::forProduct((int) $product->id) : [], $description) : [];
+        // P4c: ONE read of the product's texts AND its «Показвай на този продукт» switches whenever the page prints sections; one read of its season and tags only when a `meta` section is defined
+        $rows = $usesSections ? \App\Storefront\Sections\SectionTexts::rowsForProduct((int) $product->id) : ['texts' => [], 'hidden' => []];
+        $meta = $usesSections && \App\Storefront\Sections\SectionMeta::isUsed($definitions) ? \App\Storefront\Sections\SectionMeta::forProduct((int) $product->id, app(\App\Storefront\Url\StorefrontUrls::class)) : null;
+        $sections = $usesSections ? \App\Storefront\Sections\SectionResolver::resolve($definitions, $rows['texts'], $description, $rows['hidden'], $meta, $context) : [];
 
         return view('storefront.product', [
             'product' => $product,

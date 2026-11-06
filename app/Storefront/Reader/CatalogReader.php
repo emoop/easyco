@@ -183,6 +183,7 @@ final class CatalogReader
             gallery: $gallery['items'],
             sku: $product->base_sku === null || trim((string) $product->base_sku) === '' ? null : (string) $product->base_sku,
             optionDisplay: $optionDisplay,
+            brandId: $product->brand_id === null ? null : (int) $product->brand_id,
         );
     }
 

@@ -313,6 +313,8 @@ class HtmlBlockResource extends Resource
                     ->options(['all' => __('html_blocks.conditions.options.all'), 'yes' => __('html_blocks.conditions.options.on_sale_yes'), 'no' => __('html_blocks.conditions.options.on_sale_no')]),
                 Select::make('conditions.seasons')->label(__('html_blocks.conditions.fields.seasons'))->afterLabel(InfoHint::make($hint('seasons'), 'seasons'))->native(false)->multiple()->searchable()
                     ->options(static fn (): array => DB::table('catalog_seasons')->orderBy('name')->pluck('name', 'id')->map(static fn ($name): string => (string) $name)->all()),
+                Select::make('conditions.brands')->label(__('html_blocks.conditions.fields.brands'))->afterLabel(InfoHint::make($hint('brands'), 'brands'))->native(false)->multiple()->searchable()
+                    ->options(static fn (): array => DB::table('catalog_brands')->orderBy('name')->pluck('name', 'id')->map(static fn ($name): string => (string) $name)->all()),
                 Select::make('conditions.categories')->label(__('html_blocks.conditions.fields.categories'))->afterLabel(InfoHint::make($hint('categories'), 'categories'))->native(false)->multiple()->searchable()
                     ->options(static fn (): array => self::categoryLabels()),
                 Select::make('conditions.tags')->label(__('html_blocks.conditions.fields.tags'))->afterLabel(InfoHint::make($hint('tags'), 'tags'))->native(false)->multiple()->searchable()

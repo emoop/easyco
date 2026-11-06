@@ -71,7 +71,7 @@ class CreateProduct extends CreateRecord
         $created = DB::transaction(function () use ($data): Model {
             $created = $this->createProduct($data);
             // P4b: the texts of the «Информация» tab, saved with the product (the same transaction)
-            \App\Storefront\Sections\SectionTexts::save((int) $created->getKey(), is_array($data['section_texts'] ?? null) ? $data['section_texts'] : [], \App\Storefront\Sections\SectionTexts::formKeys());
+            \App\Storefront\Sections\SectionTexts::save((int) $created->getKey(), is_array($data['section_texts'] ?? null) ? $data['section_texts'] : [], \App\Storefront\Sections\SectionTexts::formKeys(), is_array($data['section_shown'] ?? null) ? $data['section_shown'] : [], \App\Storefront\Sections\SectionTexts::switchKeys());
 
             return $created;
         });

@@ -248,4 +248,7 @@ return [
     // HP-5: the carousel
     'carousel' => ['label' => 'Карусел', 'previous' => 'Предишна', 'next' => 'Следваща'],
     'hero' => ['label' => 'Hero слайдер', 'pause' => 'Пауза', 'play' => 'Пуск'],
+
+    // P4c: the «Мета информация» section
+    'meta' => ['season' => 'Сезон:', 'tags' => 'Етикети:'],
 ];

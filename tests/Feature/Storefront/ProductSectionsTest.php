@@ -312,7 +312,8 @@ class ProductSectionsTest extends TestCase
         $this->publishAccordion();
         $this->publishSections([$this->defs()[0]]);
         $global = $this->queryCount('p1');
-        $this->assertSame($plain, $global, 'only global sections: the definitions are in the compiled document, no query');
+        // P4c: the product's texts AND its «Показвай на този продукт» switches are ONE read that now runs whenever the page prints sections (the switch matters for every source): +1, whatever the sources
+        $this->assertSame($plain + 1, $global, 'sections defined: the definitions cost nothing, the product\'s texts and switches ONE query');
 
         $this->publishSections();
         $this->texts(1, [self::SIZE => '<p>S</p>']);
@@ -320,7 +321,7 @@ class ProductSectionsTest extends TestCase
 
         fwrite(STDERR, "\n[query-count] product page: plain {$plain}, with global sections {$global}, with a product-text section {$withProduct}\n");
 
-        $this->assertSame($plain + 1, $withProduct, 'ONE query for the product\'s texts');
+        $this->assertSame($plain + 1, $withProduct, 'still ONE query for the product\'s texts and switches');
 
         // the tabs ask for the texts the same way: one query
         $this->publishTabs([$this->tabs([self::SIZE])]);

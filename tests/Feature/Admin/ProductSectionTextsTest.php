@@ -101,10 +101,12 @@ class ProductSectionTextsTest extends TestCase
         // «Delivery» is a general-text section: it has no field
         $this->assertSame([self::SIZE, self::COMP], SectionTexts::formKeys());
 
-        // only global sections: no tab
+        // P4c: only global sections: the tab is there (the switch «Показвай на този продукт» of every section), with no text field
         [$clean] = SectionSet::validate(['sections' => [['key' => self::DELIV, 'title' => 'Delivery', 'source' => 'global', 'text' => '<p>G</p>']]]);
         SectionStore::publish($clean);
-        $this->assertFalse(ProductResource::sectionTextsTab()->isVisible());
+        $this->assertTrue(ProductResource::sectionTextsTab()->isVisible());
+        $this->assertSame([], SectionTexts::formKeys(), 'no text field');
+        $this->assertSame([self::DELIV], SectionTexts::switchKeys(), 'one switch');
     }
 
     /** ★ the simple edit form loads the texts and saves them; an empty text deletes the row; a text of a section that is not a product-text one is not saved */
@@ -183,5 +185,84 @@ class ProductSectionTextsTest extends TestCase
         $page->fillForm(['section_texts' => [self::SIZE => '<p>VARSIZE</p>', self::COMP => '']])->call('save')->assertHasNoFormErrors();
 
         $this->assertSame([self::SIZE => '<p>VARSIZE</p>'], $this->rows((int) $model->id));
+    }
+    /** @return array<string, array{0: string, 1: bool}> the rows of the product: section key => [body, hidden] */
+    private function switchRows(int $product): array
+    {
+        $rows = DB::table('product_section_texts')->where('product_id', $product)->get(['section_key', 'body', 'hidden'])->mapWithKeys(fn ($r): array => [$r->section_key => [(string) $r->body, (bool) $r->hidden]])->all();
+        ksort($rows);
+
+        return $rows;
+    }
+
+    /** ★ P4c: every published section has the switch «Показвай на този продукт» (ON by default), the text field only for the product-text sources; saved as a flag next to the text; the text is kept while it is off */
+    public function test_the_simple_edit_form_has_a_switch_for_every_section(): void
+    {
+        $this->publishSections();
+        $product = $this->product();
+        $id = (int) $product->id;
+
+        $page = Livewire::test(EditProduct::class, ['record' => $product->id]);
+        $page->assertFormSet(['section_shown.'.self::DELIV => true, 'section_shown.'.self::SIZE => true, 'section_shown.'.self::COMP => true]);
+        $this->assertStringContainsString('Show on this product', $page->html());
+        $this->assertSame([self::DELIV, self::SIZE, self::COMP], SectionTexts::switchKeys());
+        $this->assertSame([self::SIZE, self::COMP], SectionTexts::formKeys(), 'the text fields: only the product-text sources');
+
+        // all ON and no text: nothing is stored
+        $page->call('save')->assertHasNoFormErrors();
+        $this->assertSame([], $this->switchRows($id));
+
+        // «Delivery» (a global text) OFF for this product, «Size» with a text and OFF: two rows
+        $page->fillForm(['section_shown' => [self::DELIV => false, self::SIZE => false, self::COMP => true], 'section_texts' => [self::SIZE => '<p>SIZETEXT</p>']])->call('save')->assertHasNoFormErrors();
+        $this->assertSame([self::DELIV => ['', true], self::SIZE => ['<p>SIZETEXT</p>', true]], $this->switchRows($id));
+
+        // loaded again: the switches are OFF, the text is there
+        $again = Livewire::test(EditProduct::class, ['record' => $product->id]);
+        $again->assertFormSet(['section_shown.'.self::DELIV => false, 'section_shown.'.self::SIZE => false, 'section_shown.'.self::COMP => true, 'section_texts.'.self::SIZE => '<p>SIZETEXT</p>']);
+
+        // switched back ON: the text stays, the empty row of the global section goes
+        $again->fillForm(['section_shown' => [self::DELIV => true, self::SIZE => true, self::COMP => true]])->call('save')->assertHasNoFormErrors();
+        $this->assertSame([self::SIZE => ['<p>SIZETEXT</p>', false]], $this->switchRows($id));
+
+        // a switch for a section that is not defined is ignored
+        $again->fillForm(['section_shown' => ['99999999-9999-4999-8999-999999999999' => false]])->call('save')->assertHasNoFormErrors();
+        $this->assertArrayNotHasKey('99999999-9999-4999-8999-999999999999', $this->switchRows($id));
+    }
+
+    /** the create form saves the switches with the new product (the tab is there for a product that does not exist yet) */
+    public function test_the_create_form_saves_the_switches(): void
+    {
+        $this->publishSections();
+
+        Livewire::test(CreateProduct::class)
+            ->assertFormSet(['section_shown.'.self::DELIV => true])
+            ->fillForm(['name' => 'Created 2', 'slug' => 'created-2', 'base_sku' => 'SKU-CREATED-2', 'status' => ProductStatus::DRAFT->value, 'catalog_visibility' => CatalogVisibility::HIDDEN->value, 'section_shown' => [self::DELIV => false, self::SIZE => true, self::COMP => true]])
+            ->call('create')
+            ->assertHasNoFormErrors();
+
+        $id = (int) ProductModel::where('slug', 'created-2')->value('id');
+        $this->assertSame([self::DELIV => ['', true]], $this->switchRows($id));
+    }
+
+    /** the variable product's edit form has the switches too (not the wizard, not the variations) */
+    public function test_the_variable_edit_form_saves_the_switches(): void
+    {
+        $this->publishSections();
+
+        $definition = new AttributeDefinition(id: null, code: 'color2', name: 'Color2', type: AttributeType::SELECT);
+        app(AttributeDefinitionRepository::class)->save($definition);
+        $black = new AttributeValue(id: null, attributeDefinitionId: $definition->id(), value: 'Black');
+        app(AttributeValueRepository::class)->save($black);
+        $product = Product::createVariable('Variable Shirt 2', 'SKU-VAR2', 'variable-shirt-2');
+        $product->declareVariationAxes([new VariationAxis($definition, [$black])]);
+        $product->addStandardVariation([$definition->id() => $black->id()], 'SKU-VAR2-BLACK');
+        app(ProductRepository::class)->save($product);
+        $model = ProductModel::where('slug', 'variable-shirt-2')->firstOrFail();
+
+        $page = Livewire::test(EditVariableProduct::class, ['record' => $model->id]);
+        $page->assertFormSet(['section_shown.'.self::DELIV => true]);
+        $page->fillForm(['section_shown' => [self::DELIV => false, self::SIZE => true, self::COMP => true]])->call('save')->assertHasNoFormErrors();
+
+        $this->assertSame([self::DELIV => ['', true]], $this->switchRows((int) $model->id));
     }
 }
