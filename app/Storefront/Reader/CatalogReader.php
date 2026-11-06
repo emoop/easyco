@@ -386,6 +386,21 @@ final class CatalogReader
             $entity = $subjectId;
         }
 
+        // P4: `similar` = the products of the same category as the PAGE's product (`$subjectId` = the product id), without that product: one category read (the product's own categories), then the category's listing
+        $exclude = null;
+
+        if ($kind === 'similar') {
+            $category = $subjectId === null || $subjectId < 1 ? null : $this->similarCategory($subjectId);
+
+            if ($category === null) {
+                return [];
+            }
+
+            $exclude = $subjectId;
+            $kind = 'category';
+            $entity = $category;
+        }
+
         if ($kind !== 'newest' && $kind !== 'featured' && ($entity === null || $entity < 1)) {
             return [];
         }
@@ -409,8 +424,34 @@ final class CatalogReader
 
         $products = $this->listingProducts($query, $filters);
         $kind === 'featured' && $products->where('catalog_products.is_featured', true);
+        $exclude === null || $products->where('catalog_products.id', '!=', $exclude);
 
         return $this->cards($products->limit(max(1, min(24, $limit)))->get()->all(), $sizes);
+    }
+
+    /**
+     * P4: the category a product's «Подобни продукти» come from. A product has many categories and no primary one: the SHOWN category with the fewest visible products (the most specific), a tie to the smallest
+     * id. ONE query (the product's category ids); the counts are the category index's, already loaded.
+     */
+    private function similarCategory(int $productId): ?int
+    {
+        $best = null;
+
+        foreach (DB::table('catalog_product_categories')->where('product_id', $productId)->pluck('category_id') as $id) {
+            $id = (int) $id;
+
+            if (! $this->categories->isShown($id)) {
+                continue;
+            }
+
+            $key = [$this->categories->productCount($id), $id];
+
+            if ($best === null || $key < $best[0]) {
+                $best = [$key, $id];
+            }
+        }
+
+        return $best[1] ?? null;
     }
 
     /** CT-3 / CT-4: does the shop have a filterable attribute, or at least one brand / season / tag? Read from the first card of the page (an empty page: no). */

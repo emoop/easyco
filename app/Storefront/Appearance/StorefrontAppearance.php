@@ -127,6 +127,7 @@ final class StorefrontAppearance
         $this->summaryPrepared = null;
         $this->homePrepared = false;
         $this->contentDoc = null;
+        $this->belowDoc = null;
         $this->data = $this->rebuild();
     }
 
@@ -446,6 +447,32 @@ final class StorefrontAppearance
         $template = \App\Storefront\Content\ContentCompiler::template($this->contentDoc, \App\Storefront\Content\ContentTemplate::kindOf($scope), $id);
 
         return ['template' => $template, 'blocks' => $this->contentDoc['blocks'], 'style' => \App\Storefront\Content\ContentSet::style($this->contentDoc['style'] ?? null)];
+    }
+
+    /** @var array<string, mixed>|false|null P4: the compiled slots below the product page's main area of this request (false = none published) */
+    private array|false|null $belowDoc = null;
+
+    /** @var array<string, mixed>|null */
+    private ?array $belowOverride = null;
+
+    /**
+     * P4: the slots a PRODUCT page prints below its main area («Под галерията»), from the one cached payload (no query, the slots validated again on every read), or null = none (the page it always was). During a
+     * signed preview, the working copy.
+     *
+     * @return array{blocks: array<string, string>, conditions: array<string, mixed>, slots: list<array<string, mixed>>}|null
+     */
+    public function productBelow(): ?array
+    {
+        $this->belowDoc ??= $this->belowOverride ?? \App\Storefront\Below\BelowCompiler::published($this->data()['design'] ?? null) ?? false;
+
+        return $this->belowDoc === false ? null : $this->belowDoc;
+    }
+
+    /** For ONE request (P4, the admin's signed preview): show this compiled set of slots instead of the published one. Never called on a public request. @param array<string, mixed> $compiled */
+    public function previewBelow(array $compiled): void
+    {
+        $this->belowOverride = $compiled;
+        $this->belowDoc = null;
     }
 
     /** For ONE request (P3, the admin's signed preview): show this compiled set of listing templates ({blocks, kinds}) instead of the published one. Never called on a public request. @param array<string, mixed> $compiled */

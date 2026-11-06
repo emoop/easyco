@@ -16,7 +16,7 @@ final class HomeView
      * @param  array{layout: array{spacing: string, sections: list<array{type: string, settings: array<string, mixed>}>}, blocks: array<string, string>}|null  $stored  HomeCompiler::published()
      * @return array{gap: string, items: list<array{type: string, class: string, view: string, settings: array<string, mixed>, html: string}>}|null null = print the home page as it always was
      */
-    public static function prepare(?array $stored, bool $content = false): ?array
+    public static function prepare(?array $stored, bool|string $content = false): ?array
     {
         if ($stored === null) {
             return null;
@@ -254,7 +254,7 @@ final class HomeView
      * @param  list<array<string, mixed>>  $pictures  the compiled pictures of this section (images, brands), validated
      * @return array{kind: string, class: string, label: string, arrows: bool, source: string, entity: int|null, sort: string, count: int, sizes: string, cards: list<\App\Storefront\ReadModels\ProductCard>, blocks: list<string>, pictures: list<array<string, mixed>>}|null
      */
-    private static function carousel(array $settings, array $blocks, array $pictures, bool $content = false): ?array
+    private static function carousel(array $settings, array $blocks, array $pictures, bool|string $content = false): ?array
     {
         $pick = static fn (string $key, array $list, string $default): string => in_array($settings[$key] ?? null, $list, true) ? (string) $settings[$key] : $default;
         $kind = $pick('kind', CarouselGeometry::KINDS, 'products');
@@ -264,7 +264,7 @@ final class HomeView
 
         if ($kind === 'products') {
             // P3: a listing page's carousel (content mode only) may take the page's own products: the source `current`
-            $source = $pick('source', $content ? [...HomeCatalog::PRODUCT_SOURCES, HomeCatalog::CURRENT_SOURCE] : HomeCatalog::PRODUCT_SOURCES, 'newest');
+            $source = $pick('source', [...HomeCatalog::PRODUCT_SOURCES, ...HomeCatalog::extraSources($content)], 'newest');
             $entity = $settings['entity'] ?? null;
             $entity = is_int($entity) && $entity > 0 ? $entity : null;
 

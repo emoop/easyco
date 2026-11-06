@@ -132,10 +132,26 @@ final class HtmlBlockUsage
         return false;
     }
 
+    /** P4: does the published or the draft set of the product page's «Под галерията» slots show this block (an HTML block slot, a block of a block carousel)? */
+    public static function below(int $blockId): bool
+    {
+        $settings = app(SiteSettingsRepository::class);
+
+        foreach ([AppearanceSettings::BELOW_PUBLISHED_KEY, AppearanceSettings::BELOW_DRAFT_KEY] as $key) {
+            $json = $settings->get($key);
+
+            if (in_array($blockId, \App\Storefront\Below\BelowSlots::blockIds(\App\Storefront\Below\BelowSlots::read(is_string($json) ? json_decode($json, true) : null)), true)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /** Is the block shown anywhere (a menu, the footer, the right column, the home page, a listing-page template or a category)? */
     public static function isUsed(int $blockId): bool
     {
-        return self::menus($blockId) !== [] || self::footer($blockId) || self::summary($blockId) || self::home($blockId) || self::content($blockId) || self::categories($blockId) !== [];
+        return self::menus($blockId) !== [] || self::footer($blockId) || self::summary($blockId) || self::home($blockId) || self::content($blockId) || self::below($blockId) || self::categories($blockId) !== [];
     }
 
     /**
@@ -149,14 +165,15 @@ final class HtmlBlockUsage
         $summary = self::summary((int) $block->id);
         $home = self::home((int) $block->id);
         $content = self::content((int) $block->id);
+        $below = self::below((int) $block->id);
         $categories = self::categories((int) $block->id);
         $params = ['title' => $block->title, 'menus' => implode(', ', $menus)];
 
-        if ($categories !== [] && ! $summary && ! $home && ! $content && $menus === [] && ! $footer) {
+        if ($categories !== [] && ! $summary && ! $home && ! $content && ! $below && $menus === [] && ! $footer) {
             return (string) __('html_blocks.errors.in_use_category', ['title' => $block->title, 'categories' => implode(', ', $categories)]);
         }
 
-        if ($summary || $home || $content || $categories !== []) {
+        if ($summary || $home || $content || $below || $categories !== []) {
             $places = [];
 
             if ($menus !== []) {
@@ -170,6 +187,7 @@ final class HtmlBlockUsage
             $summary && $places[] = (string) __('html_blocks.places.summary');
             $home && $places[] = (string) __('html_blocks.places.home');
             $content && $places[] = (string) __('html_blocks.places.content');
+            $below && $places[] = (string) __('html_blocks.places.below');
             $categories !== [] && $places[] = (string) __('html_blocks.places.category', ['categories' => implode(', ', $categories)]);
 
             return (string) __('html_blocks.errors.in_use_places', ['title' => $block->title, 'places' => implode((string) __('html_blocks.places.join'), $places)]);

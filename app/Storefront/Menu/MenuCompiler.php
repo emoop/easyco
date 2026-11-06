@@ -123,6 +123,8 @@ class MenuCompiler
             app(\App\Storefront\Home\HomeCompiler::class)->refresh();
             // P3: and the listing-page templates'
             app(\App\Storefront\Content\ContentCompiler::class)->refresh();
+            // P4: and the slots below the product page's main area
+            app(\App\Storefront\Below\BelowCompiler::class)->refresh();
 
             return false;
         }
@@ -139,6 +141,7 @@ class MenuCompiler
         app(ProductSummaryCompiler::class)->refresh();
         app(\App\Storefront\Home\HomeCompiler::class)->refresh();
         app(\App\Storefront\Content\ContentCompiler::class)->refresh();
+        app(\App\Storefront\Below\BelowCompiler::class)->refresh();
 
         return true;
     }

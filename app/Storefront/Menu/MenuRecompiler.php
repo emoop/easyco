@@ -55,7 +55,10 @@ final class MenuRecompiler
                 || str_contains((string) $settings->get(\App\Settings\AppearanceSettings::HOME_PUBLISHED_KEY), '"html_block"')
                 // P3: a listing-page template's block (the top / bottom block and a bottom carousel's blocks are `html_block` / `blocks` of its JSON)
                 || str_contains((string) $settings->get(\App\Settings\AppearanceSettings::CONTENT_PUBLISHED_KEY), '"html_block"')
-                || str_contains((string) $settings->get(\App\Settings\AppearanceSettings::CONTENT_PUBLISHED_KEY), '"top"');
+                || str_contains((string) $settings->get(\App\Settings\AppearanceSettings::CONTENT_PUBLISHED_KEY), '"top"')
+                // P4: a product page slot's block (an `html_block` slot, or the `blocks` of a block carousel)
+                || str_contains((string) $settings->get(\App\Settings\AppearanceSettings::BELOW_PUBLISHED_KEY), '"html_block"')
+                || str_contains((string) $settings->get(\App\Settings\AppearanceSettings::BELOW_PUBLISHED_KEY), '"blocks"');
         }
 
         return $items->where('type', $type)->exists();

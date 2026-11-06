@@ -21,5 +21,6 @@
                 {!! $descriptionHtml !!}
             </section>
         @endif
+@include('storefront.partials.product-below', ['below' => $below ?? null])
     </article>
 @endsection

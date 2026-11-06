@@ -56,6 +56,21 @@ final class HomeCatalog
 
     public const CURRENT_SOURCE = 'current';
 
+    /**
+     * P4: the carousel of a PRODUCT page's «Под галерията» slot: `similar` = the products of the same category as the page's product, without the product itself. Like `current` it is not in PRODUCT_SOURCES (the
+     * home page never offers it, HomeValidator refuses it there and in the listing templates); the product comes from the PAGE, the stored slot is the same for every product.
+     */
+    public const SIMILAR_SOURCE = 'similar';
+
+    /** The content modes a carousel is validated / prepared in: `true` = a listing page's template (extra source `current`), `'product'` = a product page's slot (extra source `similar`). */
+    public const PRODUCT_MODE = 'product';
+
+    /** @return list<string> the one source a content mode adds to the home page's list (none for the home page itself) */
+    public static function extraSources(bool|string $content): array
+    {
+        return $content === self::PRODUCT_MODE ? [self::SIMILAR_SOURCE] : ($content === true ? [self::CURRENT_SOURCE] : []);
+    }
+
     public const PRODUCT_COLUMNS = ['3', '4', '5'];
 
     public const PRODUCT_PHONE_COLUMNS = ['1', '2'];

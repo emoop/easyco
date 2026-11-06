@@ -72,6 +72,11 @@ final class AppearanceSettings
 
     public const CONTENT_DRAFT_KEY = 'design.content.draft';
 
+    /** P4: the slots below the product page's main area («Под галерията»): the published set (the admin's source; the storefront reads the compiled copy in the design document) and the draft. */
+    public const BELOW_PUBLISHED_KEY = 'design.below.published';
+
+    public const BELOW_DRAFT_KEY = 'design.below.draft';
+
     public const HOME_PUBLISHED_KEY = 'design.home.global.published';
 
     public const FOOTER_DRAFT_KEY = 'footer.layout.draft';

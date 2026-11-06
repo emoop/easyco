@@ -16,6 +16,7 @@ return [
         'checkout' => 'Cart and checkout',
         'page' => 'Page and cards',
         'product' => 'Product page',
+        'below' => 'Below the gallery',
         'catalog' => 'Catalog',
         'summary' => 'Right column',
         'home' => 'Home',
@@ -139,6 +140,7 @@ return [
         'checkout' => 'Cart preview',
         'page' => 'Home page preview',
         'product' => 'Product page preview',
+        'below' => 'Product page preview',
         'catalog' => 'Category page preview',
         'summary' => 'Product page preview (right column)',
         'home' => 'Home page preview',
@@ -242,6 +244,34 @@ return [
 
 
     // GL-2: «Page and cards» and «Product page»: the plain-value sections
+    // P4: «Below the gallery»: the slots below the main area of the product page
+    'below' => [
+        'schema' => 'Slots below the gallery and the right column of every product page: a carousel, «Similar products» and an HTML block, in the order you choose. The same layout for all products.',
+        'slots' => 'Slots',
+        'add' => 'Add a slot',
+        'remove' => 'Remove',
+        'none' => 'None',
+        'type' => 'Type',
+        'types' => ['carousel' => 'Carousel', 'similar' => 'Similar products', 'html_block' => 'HTML block'],
+        'heading' => 'Heading above the slot',
+        'block' => 'HTML block',
+        'hints' => [
+            'slots' => 'Up to 6 slots, ordered with the arrows. Shown below the gallery and the right column, full width. A slot with nothing to show is not printed.',
+            'type' => 'Carousel: products from a chosen source, or HTML blocks. Similar products: the products of the same category, without the current one (at least 2, otherwise it is not shown). HTML block: a block that may have display conditions.',
+            'heading' => 'A short text shown as a heading with lines above the slot (up to 80 characters). Empty = no heading.',
+            'block' => 'Which HTML block to show. A block with «Show when…» conditions is shown only for the products they hold for.',
+        ],
+        'errors' => [
+            'bad_set' => 'Invalid settings.',
+            'unknown_key' => 'Unknown setting «:key».',
+            'too_many' => 'At most :max slots.',
+            'bad_slot' => 'Invalid slot.',
+            'bad_slot_value' => 'Invalid setting of the slot: :message',
+            'bad_choice' => 'Invalid choice.',
+            'heading_too_long' => 'The heading is at most :max characters.',
+            'bad_block' => 'Choose an HTML block.',
+        ],
+    ],
     'content' => [
         'schema' => 'Templates for the pages that list products. The default template applies to every page of its kind; a page with its own template replaces it completely.',
         'kind' => 'Page kind',

@@ -1752,6 +1752,16 @@
         color: var(--sf-pdp-muted);
     }
 
+    /* P4: the brand name is a link to the brand's page; it keeps the look of the plain name */
+    .sf-product-brand a {
+        color: inherit;
+        text-decoration: none;
+    }
+
+    .sf-product-brand a:hover {
+        text-decoration: underline;
+    }
+
     .sf-product-brand {
         @apply m-0;
         font-size: 0.75rem;

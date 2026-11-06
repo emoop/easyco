@@ -59,6 +59,14 @@ final class ProductController extends Controller
             'seo' => $seo->forProduct($product),
             'gallerySettings' => GallerySettings::fromRepository($settings),
             'summary' => ProductSummaryView::forProduct($appearance->productSummary(), $context),
+            // P4: the slots below the main area («Под галерията»): null = nothing (no query, no markup)
+            'below' => \App\Storefront\Below\BelowView::forProduct(
+                $appearance->productBelow(),
+                $context,
+                static fn (string $source, ?int $entity, string $sort, int $count, string $sizes): array => $reader->homeProducts($source, $entity, $sort, $count, $sizes, null, (int) $product->id),
+                $appearance->catalogGapX(),
+                $appearance->catalogColumns()['phone'],
+            ),
         ]);
     }
 }

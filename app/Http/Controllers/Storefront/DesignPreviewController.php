@@ -42,7 +42,7 @@ final class DesignPreviewController extends Controller
     {
         $zone = $request->query('zone');
 
-        if (! URL::hasValidSignature($request) || ! in_array($zone, [CheckoutHeaderCatalog::ZONE, 'topbar', ProductSummaryCatalog::ZONE, PageDesign::PAGE, PageDesign::CATALOG, \App\Storefront\Home\HomeCatalog::ZONE, \App\Filament\Design\Zones\SidebarZone::KEY, \App\Filament\Design\Zones\ContentZone::KEY], true)) {
+        if (! URL::hasValidSignature($request) || ! in_array($zone, [CheckoutHeaderCatalog::ZONE, 'topbar', ProductSummaryCatalog::ZONE, PageDesign::PAGE, PageDesign::CATALOG, \App\Storefront\Home\HomeCatalog::ZONE, \App\Filament\Design\Zones\SidebarZone::KEY, \App\Filament\Design\Zones\ContentZone::KEY, \App\Filament\Design\Zones\BelowZone::KEY], true)) {
             return NotFoundResponse::make();
         }
 
@@ -60,6 +60,10 @@ final class DesignPreviewController extends Controller
 
         if ($zone === \App\Filament\Design\Zones\ContentZone::KEY) {
             return $this->content($request, $reader, $appearance);
+        }
+
+        if ($zone === \App\Filament\Design\Zones\BelowZone::KEY) {
+            return $this->below($reader, $appearance);
         }
 
         if ($zone === ProductSummaryCatalog::ZONE) {
@@ -125,6 +129,27 @@ final class DesignPreviewController extends Controller
      * (StorefrontAppearance::previewProductSummary). The storefront itself reads the published layout only. An empty shop has no product to show: the storefront's own 404 (the panel says so under the
      * preview). `noindex`, `no-store`.
      */
+    /**
+     * P4: the first product the shop shows, with the working copy of the slots below its main area (the draft, else the published set) for THIS request only (StorefrontAppearance::previewBelow). A public request
+     * never gets here (no valid signature: the storefront's 404). `noindex`, `no-store`.
+     */
+    private function below(CatalogReader $reader, StorefrontAppearance $appearance): Response
+    {
+        $slug = $reader->listing(ListingQuery::fromRequestArray([]))->items[0]->slug ?? null;
+
+        if ($slug === null) {
+            return NotFoundResponse::make();
+        }
+
+        $appearance->previewBelow(\App\Storefront\Below\BelowCompiler::compiled(\App\Storefront\Below\BelowStore::startingValues()));
+
+        $page = app(ProductController::class)->show($slug, $reader, app(SeoMeta::class), app(\App\Settings\Contracts\SiteSettingsRepository::class), $appearance);
+
+        return ($page instanceof \Illuminate\Contracts\View\View ? response($page) : $page)
+            ->header('X-Robots-Tag', 'noindex')
+            ->header('Cache-Control', 'private, no-store');
+    }
+
     private function productSummary(CatalogReader $reader, StorefrontAppearance $appearance): Response
     {
         $slug = $reader->listing(ListingQuery::fromRequestArray([]))->items[0]->slug ?? null;

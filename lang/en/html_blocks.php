@@ -123,6 +123,7 @@ return [
         'summary' => 'the right column',
         'home' => 'the home page',
         'content' => 'the category, brand, season or tag pages',
+        'below' => 'the product page («Below the gallery»)',
         'join' => ' and ',
     ],
 

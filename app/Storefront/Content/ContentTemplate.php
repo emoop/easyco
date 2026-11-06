@@ -155,8 +155,8 @@ final class ContentTemplate
         return $bottom['type'] === 'html_block' ? ['type' => 'html_block', 'settings' => ['html_block' => $bottom['html_block']]] : ['type' => 'carousel', 'settings' => $bottom['settings']];
     }
 
-    /** The heading above the bottom slot: plain text, at most HEADING_MAX characters, no control characters (it is escaped when printed). '' = none. @param  callable(string, string, array<string, mixed>=): void  $fail */
-    private static function heading(mixed $value, string $path, callable $fail): string
+    /** The heading above a slot: plain text, at most HEADING_MAX characters, no control characters (it is escaped when printed). '' = none. P4: shared with the product page's slots. @param  callable(string, string, array<string, mixed>=): void  $fail */
+    public static function heading(mixed $value, string $path, callable $fail): string
     {
         if ($value === null || $value === '') {
             return '';
@@ -198,10 +198,12 @@ final class ContentTemplate
     }
 
     /**
+     * A slot below a page's content: an HTML block or a carousel (P3: the bottom slot of a listing template; P4: `$mode` = HomeCatalog::PRODUCT_MODE for a product page's slot, whose carousel has the source `similar`).
+     *
      * @param  callable(string, string, array<string, mixed>=): void  $fail
      * @return array<string, mixed>|null
      */
-    private static function bottom(mixed $value, string $path, callable $fail): ?array
+    public static function bottom(mixed $value, string $path, callable $fail, bool|string $mode = true): ?array
     {
         if ($value === null) {
             return null;
@@ -226,7 +228,7 @@ final class ContentTemplate
         }
 
         $section = $type === 'html_block' ? ['type' => 'html_block', 'settings' => ['html_block' => $value['html_block'] ?? null]] : ['type' => 'carousel', 'settings' => is_array($value['settings'] ?? null) ? $value['settings'] : []];
-        [$clean, $errors] = HomeValidator::validate(['spacing' => HomeCatalog::DEFAULT_SPACING, 'sections' => [$section]], true);
+        [$clean, $errors] = HomeValidator::validate(['spacing' => HomeCatalog::DEFAULT_SPACING, 'sections' => [$section]], $mode);
 
         foreach ($errors as $at => $message) {
             // `sections.0.settings.source` -> `bottom.settings.source`

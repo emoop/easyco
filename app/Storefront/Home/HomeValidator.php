@@ -18,6 +18,9 @@ final class HomeValidator
     /** P3: validating a listing page's template (the «Съдържание» zone): the carousel is limited to CONTENT_CAROUSEL_KINDS and may have the source `current` */
     private bool $content = false;
 
+    /** P4: the source a content mode adds (`current` for a listing template, `similar` for a product page's slot) */
+    private array $extra = [];
+
     /** @var array<string, true> HP-2: the paths of an image grid's settings: a bad value there falls back to its own default (the other settings stay), so READING the layout does not refuse it for them */
     private array $soft = [];
 
@@ -25,10 +28,11 @@ final class HomeValidator
      * @param  array<string, mixed>  $layout
      * @return array{0: array{spacing: string, sections: list<array{type: string, settings: array<string, mixed>}>}, 1: array<string, string>} the normalised layout and the messages by path
      */
-    public static function validate(array $layout, bool $content = false): array
+    public static function validate(array $layout, bool|string $content = false): array
     {
         $validator = new self;
-        $validator->content = $content;
+        $validator->content = $content !== false;
+        $validator->extra = HomeCatalog::extraSources($content);
         $clean = $validator->layout($layout);
 
         return [$clean, $validator->errors];
@@ -41,10 +45,11 @@ final class HomeValidator
      * @param  array<string, mixed>  $layout
      * @return array{0: array{spacing: string, sections: list<array{type: string, settings: array<string, mixed>}>}, 1: array<string, string>}
      */
-    public static function validateForRead(array $layout, bool $content = false): array
+    public static function validateForRead(array $layout, bool|string $content = false): array
     {
         $validator = new self;
-        $validator->content = $content;
+        $validator->content = $content !== false;
+        $validator->extra = HomeCatalog::extraSources($content);
         $clean = $validator->layout($layout);
 
         return [$clean, array_diff_key($validator->errors, $validator->soft)];
@@ -158,7 +163,7 @@ final class HomeValidator
         $schema = HomeCatalog::common() + $catalog[$type]['schema'];
 
         // P3: a listing page's carousel may take its products from the page itself
-        $this->content && $type === 'carousel' && $schema['source']['options'] = [...$schema['source']['options'], HomeCatalog::CURRENT_SOURCE];
+        $this->content && $type === 'carousel' && $schema['source']['options'] = [...$schema['source']['options'], ...$this->extra];
 
         foreach (array_diff(array_keys($settings), array_keys($schema)) as $key) {
             $this->fail("{$path}.settings.{$key}", 'unknown_setting', ['key' => mb_substr((string) $key, 0, 30)]);
