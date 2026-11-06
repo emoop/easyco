@@ -976,3 +976,39 @@ document.querySelectorAll('[data-carousel]').forEach(function (box) {
         sync();
     }
 });
+
+/*
+ * P4b.1: the product page's right column (`.sf-summary`) never scrolls inside itself. It is sticky (when the shop leaves it on); its `top` is the custom property `--sf-summary-top`, set here as
+ * min(the sticky top, viewport height − column height − 1rem): a column that fits is pinned by its top, a column taller than the screen (an opened accordion section) is pinned by its BOTTOM edge, so the
+ * page scroll reveals the rest of it until the product block ends. Re-computed on load, on resize, when the column's size changes and when an accordion section (`<details>`) opens or closes. Without the
+ * script the CSS fallback is `top: auto` = the column simply flows. No `style=` in the HTML: the value is written through the DOM API.
+ */
+(function () {
+    var column = document.querySelector('.sf-summary');
+
+    if (!column || !window.matchMedia) {
+        return;
+    }
+
+    var wide = window.matchMedia('(min-width: 64rem)');
+    var fit = function () {
+        if (!wide.matches) {
+            column.style.removeProperty('--sf-summary-top');
+
+            return;
+        }
+
+        var room = window.innerHeight - column.offsetHeight - 16;
+
+        column.style.setProperty('--sf-summary-top', 'min(var(--sf-sticky-top, 1rem), ' + Math.round(room) + 'px)');
+    };
+
+    fit();
+    window.addEventListener('resize', fit, { passive: true });
+    window.addEventListener('load', fit);
+    column.addEventListener('toggle', fit, true);
+
+    if (typeof ResizeObserver === 'function') {
+        new ResizeObserver(fit).observe(column);
+    }
+})();

@@ -65,8 +65,8 @@ class ProductPageStructureTest extends TestCase
         $this->assertSame(1, $xpath->query("{$wrapper}/section[{$this->hasClass('sf-summary')}]")->length, 'the summary is a direct child of the wrapper');
         $this->assertSame(2, $xpath->query("{$wrapper}/*")->length, 'the wrapper holds ONLY the gallery and the summary');
 
-        $this->assertSame(1, $xpath->query("{$article}/section[{$this->hasClass('sf-description')}]")->length, 'the description is a direct child of the article');
-        $this->assertSame(0, $xpath->query("{$wrapper}//section[{$this->hasClass('sf-description')}]")->length, 'the description is NOT inside the wrapper (the sticky summary would run over it)');
+        // P4b.1: the description block is gone from the page (the description is the source of a section)
+        $this->assertSame(0, $xpath->query("//section[{$this->hasClass('sf-description')}]")->length, 'no description block');
     }
 
     public function test_with_photos_the_gallery_and_the_summary_share_the_wrapper_and_the_description_stays_outside(): void

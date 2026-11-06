@@ -31,7 +31,6 @@ return [
     'add_to_cart' => 'Добави в количката',
     // PB-1: the purchase component (pickers, counter, the button's other two states)
     'purchase' => ['choose' => 'Избери размер', 'sold_out' => 'Изчерпан', 'quantity' => 'Количество', 'decrease' => 'Намали количеството', 'increase' => 'Увеличи количеството', 'clear' => 'Изчистване'],
-    'description' => 'Описание',
     'gallery' => 'Снимки на продукта',
     'gallery_photo' => 'снимка :n',
     'gallery_thumb' => 'Снимка :n от :total',

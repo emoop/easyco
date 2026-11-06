@@ -22,8 +22,7 @@ use Illuminate\Http\Response;
  *
  * VIEW `storefront.product` receives EXACTLY:
  *   product          App\Storefront\ReadModels\ProductPage (raw text: the view escapes with {{ }})
- *   descriptionHtml  string  the product description, already passed through DescriptionSanitizer: the ONLY value the
- *                    view may print with {!! !!}
+ *   (P4b.1: the description is no block of its own any more: it is the text of a `description` section, see SectionResolver)
  *   categories       list<App\Storefront\ReadModels\CategoryNode>  the menu (free once the reader's CategoryIndex is loaded)
  *   seo              array{title: string, description: string, canonical: string}
  *   gallerySettings  App\Settings\GallerySettings  the gallery's modes, width, odd-last rule and hover zoom (closed sets, with defaults)
@@ -54,15 +53,15 @@ final class ProductController extends Controller
 
         // P4b: the sections (the «Акордеон» of the right column, the «Табове» slot below): the definitions come with the compiled document (0 queries); the product's own texts cost ONE query, and only when the page
         // uses sections AND some section takes a product text
+        $description = DescriptionSanitizer::clean($product->description);
         $summary = ProductSummaryView::forProduct($appearance->productSummary(), $context);
         $belowCompiled = $appearance->productBelow();
         $definitions = $appearance->productSections();
         $usesSections = $definitions !== null && (in_array('accordion', array_column($summary, 'type'), true) || in_array('tabs', array_column($belowCompiled['slots'] ?? [], 'type'), true));
-        $sections = $usesSections ? \App\Storefront\Sections\SectionResolver::resolve($definitions, \App\Storefront\Sections\SectionResolver::needsProductTexts($definitions) ? \App\Storefront\Sections\SectionTexts::forProduct((int) $product->id) : []) : [];
+        $sections = $usesSections ? \App\Storefront\Sections\SectionResolver::resolve($definitions, \App\Storefront\Sections\SectionResolver::needsProductTexts($definitions) ? \App\Storefront\Sections\SectionTexts::forProduct((int) $product->id) : [], $description) : [];
 
         return view('storefront.product', [
             'product' => $product,
-            'descriptionHtml' => DescriptionSanitizer::clean($product->description),
             'categories' => $reader->categoryTree(),
             'seo' => $seo->forProduct($product),
             'gallerySettings' => GallerySettings::fromRepository($settings),

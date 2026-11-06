@@ -1439,14 +1439,13 @@
         /* GL-3: the summary (right column) stays in view while the gallery scrolls, and stops at the bottom of the product block. Its top sits below the
            sticky header: the header rows the server rendered are the only ones in the page (a hidden row is not rendered), so they are added here. */
         .sf-summary {
-            /* GL-2: the two values the «Продуктова страница» section switches (off = static, no max-height); the fallbacks are today's sticky column */
+            /* GL-2: the value the «Продуктова страница» section switches (off = static); the fallback is the sticky column.
+               P4b.1: the column never scrolls inside itself (no max-height, no overflow): `--sf-summary-top` is set by storefront.js = min(the sticky top, viewport − column height − 1rem), so a column
+               taller than the screen is pinned by its BOTTOM edge until the product block ends; a shorter one stays pinned by its top. Without the script `top: auto` = plain flow. */
             position: var(--sf-summary-position, sticky);
-            top: var(--sf-sticky-top);
+            top: var(--sf-summary-top, auto);
             align-self: start;
-            max-height: var(--sf-summary-max-height, calc(100vh - var(--sf-sticky-top) - 1rem));
-            overflow-y: auto;
-            scrollbar-width: thin;
-            /* PB-1.1: room for the focus ring of the first colour / size button (overflow clips at the padding box edge) */
+            /* PB-1.1: room for the focus ring of the first colour / size button */
             padding-inline: 6px;
         }
     }
@@ -2078,9 +2077,6 @@
         @apply mt-8 border-t border-neutral-200 pt-6;
     }
 
-    .sf-description-title {
-        @apply mb-4 text-lg font-semibold text-neutral-900;
-    }
 
     :is(.sf-description, .sf-psec-body, .sf-ptab-panel) :where(p, ul, ol, table, blockquote) {
         @apply my-3 text-neutral-700 leading-relaxed;

@@ -19,15 +19,17 @@ final class SectionResolver
     /**
      * @param  list<array{key: string, title: string, source: string, html: string}>|null  $definitions  SectionCompiler::published()
      * @param  array<string, string>  $texts  the product's texts by section key (SectionTexts::forProduct), `[]` when none were asked for
+     * @param  string  $description  P4b.1: the product's description (the field the product already has, on the row the page loads: no query), already passed through DescriptionSanitizer; the text of a `description` section
      * @return list<array{key: string, title: string, html: string}>
      */
-    public static function resolve(?array $definitions, array $texts): array
+    public static function resolve(?array $definitions, array $texts, string $description = ''): array
     {
         $out = [];
 
         foreach ($definitions ?? [] as $section) {
             $own = SectionSet::usesProductText($section['source']) ? DescriptionSanitizer::clean($texts[$section['key']] ?? '') : '';
             $html = match ($section['source']) {
+                'description' => $description,
                 'global' => $section['html'],
                 'product' => $own,
                 default => self::isEmpty($own) ? $section['html'] : $own,

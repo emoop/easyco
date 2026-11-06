@@ -15,12 +15,6 @@
 {!! substr($part, 1) !!}@endforeach
             </section>
         </div>
-        @if ($descriptionHtml !== '')
-            <section class="sf-description">
-                <h2 class="sf-description-title">{{ __('storefront.description') }}</h2>
-                {!! $descriptionHtml !!}
-            </section>
-        @endif
 @include('storefront.partials.product-below', ['below' => $below ?? null])
     </article>
 @endsection

@@ -7,7 +7,7 @@ use Illuminate\Support\Str;
 /**
  * P4b: the SECTIONS of the product page the merchant defines in «Дизайн» → «Секции на продукта» (Description, Individual size, Composition, Delivery and returns …): one ordered list for every product, at most MAX.
  *
- *   {sections: [ {key: uuid, title: string, source: global|product|product_or_global, text: string (html)} ]}
+ *   {sections: [ {key: uuid, title: string, source: description|global|product|product_or_global, text: string (html)} ]}
  *
  * `source` says where the text of a section comes from: `global` = the section's own «общ текст» (the same for every product), `product` = the text of the product (the «Информация» tab of the product form),
  * `product_or_global` = the product's text, and when it has none the general one. The `text` is the rich-text editor's HTML (the one a product description is edited in); it is cleaned by the storefront's
@@ -28,7 +28,7 @@ final class SectionSet
     /** The longest general text of a section (characters of HTML). */
     public const TEXT_MAX = 20_000;
 
-    public const SOURCES = ['global', 'product', 'product_or_global'];
+    public const SOURCES = ['description', 'global', 'product', 'product_or_global'];
 
     /** @return Set no section: the product page it always was */
     public static function blank(): array

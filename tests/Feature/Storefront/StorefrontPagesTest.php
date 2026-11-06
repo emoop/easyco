@@ -62,6 +62,14 @@ class StorefrontPagesTest extends TestCase
 
     public function test_the_product_page_for_a_simple_product(): void
     {
+        // P4b.1: the description is shown by a section whose source is the description (the accordion of the right column)
+        [$sections] = \App\Storefront\Sections\SectionSet::validate(['sections' => [['key' => '44444444-4444-4444-8444-444444444444', 'title' => 'Description', 'source' => 'description']]]);
+        \App\Storefront\Sections\SectionStore::publish($sections);
+        $layout = \App\Storefront\ProductSummary\ProductSummaryLayout::default();
+        $layout['components'][] = ['type' => 'accordion', 'settings' => ['first_open' => false]];
+        app(\App\Storefront\ProductSummary\ProductSummaryCompiler::class)->publish($layout, app(\App\Settings\Contracts\SiteSettingsRepository::class));
+        $this->app->forgetScopedInstances();
+
         $html = $this->get('/product/summer-dress')->assertOk()->getContent();
 
         $this->assertStringContainsString('<title>Summer dress — Raf Shop</title>', $html);

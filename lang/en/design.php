@@ -255,11 +255,11 @@ return [
         'title' => 'Title',
         'source' => 'Source of the text',
         'text' => 'General text',
-        'sources' => ['global' => 'A general text for all products', 'product' => 'The product\'s text', 'product_or_global' => 'The product\'s text, else the general one'],
+        'sources' => ['description' => 'The product\'s description', 'global' => 'A general text for all products', 'product' => 'The product\'s text', 'product_or_global' => 'The product\'s text, else the general one'],
         'hints' => [
             'list' => 'Up to 8 sections, ordered with the arrows. Renaming or moving a section does not lose the products\' texts. A section with no text for the product is not shown.',
             'title' => 'The title of the section, up to 60 characters.',
-            'source' => 'Where the text comes from: general for all products, only from the product (the «Information» tab), or from the product and, when it is empty, the general one.',
+            'source' => 'Where the text comes from: the product\'s description, general for all products, only from the product (the «Information» tab), or from the product and, when it is empty, the general one.',
             'text' => 'The text shown with a general source. The same editor as the product description.',
         ],
         'errors' => [

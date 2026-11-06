@@ -250,6 +250,14 @@ class StorefrontHttpSecurityTest extends TestCase
         ]);
         $this->makeImage(990, 60, 0, alt: 'a "quoted" <alt>');
 
+        // P4b.1: the description is shown by a section whose source is the description (the accordion of the right column)
+        [$sections] = \App\Storefront\Sections\SectionSet::validate(['sections' => [['key' => '44444444-4444-4444-8444-444444444444', 'title' => 'Description', 'source' => 'description']]]);
+        \App\Storefront\Sections\SectionStore::publish($sections);
+        $layout = \App\Storefront\ProductSummary\ProductSummaryLayout::default();
+        $layout['components'][] = ['type' => 'accordion', 'settings' => ['first_open' => false]];
+        app(\App\Storefront\ProductSummary\ProductSummaryCompiler::class)->publish($layout, app(\App\Settings\Contracts\SiteSettingsRepository::class));
+        $this->app->forgetScopedInstances();
+
         $html = $this->get('/product/escaped')->assertOk()->getContent();
 
         $this->assertStringContainsString('&lt;script&gt;alert(1)&lt;/script&gt; &amp; &quot;q&quot;', $html);
