@@ -22,9 +22,10 @@ final class BelowView
     /**
      * @param  array{blocks: array<string, string>, conditions: array<string, mixed>, slots: list<array<string, mixed>>}|null  $compiled  BelowCompiler::published()
      * @param  \Closure(string, ?int, string, int, string): list<\App\Storefront\ReadModels\ProductCard>  $read  the carousel's products (source, entity, sort, count, sizes), for THIS product
-     * @return list<array{gap: string, items: list<array<string, mixed>>, heading: string|null}>|null null = nothing to print (the page is what it always was)
+     * @param  list<array{key: string, title: string, html: string}>  $sections  P4b: the sections of THIS product with a text (SectionResolver::resolve), for the «Табове» slots
+     * @return list<array{gap: string, items: list<array<string, mixed>>, heading: string|null, tabs?: list<array{key: string, title: string, html: string}>}>|null null = nothing to print (the page is what it always was)
      */
-    public static function forProduct(?array $compiled, ProductContext $context, \Closure $read, int $gapX = 16, int $phoneColumns = 2): ?array
+    public static function forProduct(?array $compiled, ProductContext $context, \Closure $read, int $gapX = 16, int $phoneColumns = 2, array $sections = []): ?array
     {
         if ($compiled === null) {
             return null;
@@ -33,6 +34,15 @@ final class BelowView
         $out = [];
 
         foreach ($compiled['slots'] as $slot) {
+            // P4b: tabs of the product's sections: the chosen ones that have a text for THIS product, in the sections' order; none left = no slot (and no heading)
+            if ($slot['type'] === 'tabs') {
+                $tabs = array_values(array_filter($sections, static fn (array $section): bool => in_array($section['key'], $slot['sections'] ?? [], true)));
+
+                $tabs === [] || $out[] = ['gap' => '0', 'items' => [], 'tabs' => $tabs, 'heading' => ($slot['heading'] ?? '') === '' ? null : $slot['heading']];
+
+                continue;
+            }
+
             // HB-2: an HTML block that is not for this product is not printed at all
             if ($slot['type'] === 'html_block') {
                 $conditions = $compiled['conditions'][(string) ($slot['html_block'] ?? '')] ?? null;

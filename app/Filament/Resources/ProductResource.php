@@ -219,6 +219,32 @@ class ProductResource extends Resource
         return static::staffCanForAction($permission);
     }
 
+    /** The rich-text editor's toolbar of a product description, shared by every product text (P4b: the section texts use the SAME editor). */
+    public const RICH_TEXT_TOOLBAR = [
+        ['bold', 'italic', 'underline', 'strike', 'link'],
+        ['h2', 'h3'],
+        ['bulletList', 'orderedList'],
+        ['textColor'],
+        ['undo', 'redo'],
+    ];
+
+    /**
+     * P4b: the «Информация» tab: one rich-text field per section of the PUBLISHED «Секции на продукта» whose source takes a product text (`product` | `product_or_global`), in the sections' order, labelled with the
+     * section's title. Hidden when no section needs one. The values are the form's `section_texts` (section key => html); the pages load them (SectionTexts::forProduct) and save them from the product's own save.
+     */
+    public static function sectionTextsTab(): Tab
+    {
+        $sections = array_values(array_filter(\App\Storefront\Sections\SectionStore::values()['sections'], static fn (array $section): bool => \App\Storefront\Sections\SectionSet::usesProductText($section['source'])));
+
+        return Tab::make(__('products.tabs.information'))
+            ->visible($sections !== [])
+            ->schema([
+                Group::make(array_map(static fn (array $section): RichEditor => RichEditor::make($section['key'])
+                    ->label($section['title'])
+                    ->toolbarButtons(static::RICH_TEXT_TOOLBAR), $sections))->statePath('section_texts'),
+            ]);
+    }
+
     /**
      * Two columns, per admin-panel-design.md's own "the user scrolls a
      * lot" complaint about the old single-column, three-tab layout:
@@ -263,6 +289,8 @@ class ProductResource extends Resource
                                         ->schema(static::attributesTabComponents()),
                                     Tab::make(__('products.tabs.price_stock'))
                                         ->schema(static::priceStockTabComponents()),
+                                    // P4b: the texts of the product for the sections of «Дизайн» → «Секции на продукта» (hidden when no section takes a product text)
+                                    static::sectionTextsTab(),
                                 ]),
                         ]),
                     Group::make()
@@ -414,13 +442,7 @@ class ProductResource extends Resource
             // enough for real HTML content.
             RichEditor::make('description')
                 ->label(__('products.fields.description'))
-                ->toolbarButtons([
-                    ['bold', 'italic', 'underline', 'strike', 'link'],
-                    ['h2', 'h3'],
-                    ['bulletList', 'orderedList'],
-                    ['textColor'],
-                    ['undo', 'redo'],
-                ]),
+                ->toolbarButtons(static::RICH_TEXT_TOOLBAR),
             // Status/visibility/brand/group as one 2x2 block — exactly the
             // shape EditVariableProduct::generalTabComponents() already
             // gives these same four fields, so a SIMPLE and a VARIABLE

@@ -44,6 +44,8 @@ final class ProductSummaryView
             $component['type'] === 'purchase' && ($component['settings'] ?? []) != ProductSummaryCatalog::defaultsFor('purchase') && $entry['settings'] = $component['settings'];
             // SKU-1: the article line's label travels the same way (only when it is not the default «Арт.»)
             $component['type'] === 'sku' && ($component['settings'] ?? []) != ProductSummaryCatalog::defaultsFor('sku') && $entry['settings'] = $component['settings'];
+            // P4b: the accordion's «first open» travels the same way (only when it is on)
+            $component['type'] === 'accordion' && ($component['settings'] ?? []) != ProductSummaryCatalog::defaultsFor('accordion') && $entry['settings'] = $component['settings'];
             $out[] = $entry;
         }
 

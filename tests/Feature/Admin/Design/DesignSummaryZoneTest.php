@@ -94,10 +94,10 @@ class DesignSummaryZoneTest extends TestCase
         $screen = $this->screen();
         $offered = array_column($screen->instance()->palette(), 'type');
 
-        $this->assertSame(['sku', 'html_block'], $offered, 'the six that are in the column are at their most (one each)');
+        $this->assertSame(['sku', 'accordion', 'html_block'], $offered, 'the six that are in the column are at their most (one each); P4b: the accordion is offered too');
 
         $screen->call('removeNode', $this->idOf($screen, 'brand'));
-        $this->assertSame(['brand', 'sku', 'html_block'], array_column($screen->instance()->palette(), 'type'));
+        $this->assertSame(['brand', 'sku', 'accordion', 'html_block'], array_column($screen->instance()->palette(), 'type'));
     }
 
     public function test_adding_a_component_is_stored_as_the_draft_at_once_and_the_shop_does_not_change(): void

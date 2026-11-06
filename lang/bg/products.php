@@ -6,6 +6,7 @@ return [
     'plural_label' => 'Продукти',
 
     'tabs' => [
+        'information' => 'Информация',
         'general' => 'Основни',
         'attributes' => 'Атрибути',
         'price_stock' => 'Цена и наличност',

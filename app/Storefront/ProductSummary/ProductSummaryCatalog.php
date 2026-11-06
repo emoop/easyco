@@ -53,6 +53,10 @@ final class ProductSummaryCatalog
                 'show_quantity' => ['kind' => 'bool', 'default' => true],
                 'axes' => ['kind' => 'axes', 'max' => self::MAX_AXES, 'default' => []],
             ]],
+            // P4b: «Акордеон» — the product's sections («Секции на продукта») as independent, closed-by-default <details>; `first_open` opens the first printed one. Placed by the merchant (typically under the purchase block)
+            'accordion' => [1, [
+                'first_open' => ['kind' => 'bool', 'default' => false],
+            ]],
             'html_block' => [self::MAX_HTML_BLOCKS, ['html_block' => ['kind' => 'html_block', 'default' => null, 'required' => true]]],
         ];
         $out = [];

@@ -33,7 +33,7 @@ final class BelowZone implements DesignZone
     public const KEY = 'below';
 
     /** the slot types of the panel */
-    private const TYPES = ['carousel', 'similar', 'html_block'];
+    private const TYPES = ['carousel', 'similar', 'html_block', 'tabs'];
 
     public function key(): string
     {
@@ -174,6 +174,9 @@ final class BelowZone implements DesignZone
             Select::make('type')->label((string) __('design.below.type'))->afterLabel($hint('type'))->native(false)->selectablePlaceholder(false)->live()->default('similar')
                 ->options(array_combine(self::TYPES, array_map(static fn (string $t): string => (string) __('design.below.types.'.$t), self::TYPES))),
             TextInput::make('heading')->label((string) __('design.below.heading'))->afterLabel($hint('heading'))->maxLength(\App\Storefront\Content\ContentTemplate::HEADING_MAX)->default(''),
+            Select::make('sections')->label((string) __('design.below.sections'))->afterLabel($hint('sections'))->native(false)->multiple()->maxItems(\App\Storefront\Sections\SectionSet::MAX)->default([])
+                ->options(static fn (): array => array_column(\App\Storefront\Sections\SectionStore::startingValues()['sections'], 'title', 'key'))
+                ->visible(static fn (Get $get): bool => $type($get) === 'tabs'),
             Select::make('block')->label((string) __('design.below.block'))->afterLabel($hint('block'))->native(false)->searchable()->placeholder((string) __('design.below.none'))->options($blocks)->default(null)
                 ->visible(static fn (Get $get): bool => $type($get) === 'html_block'),
             Group::make([
@@ -240,9 +243,15 @@ final class BelowZone implements DesignZone
         $similar = ($slot['type'] ?? '') === 'carousel' && ($settings['source'] ?? null) === HomeCatalog::SIMILAR_SOURCE && ($settings['kind'] ?? 'products') === 'products';
 
         return [
-            'type' => ($slot['type'] ?? '') === 'html_block' ? 'html_block' : ($similar ? 'similar' : 'carousel'),
+            'type' => match (true) {
+                ($slot['type'] ?? '') === 'html_block' => 'html_block',
+                ($slot['type'] ?? '') === 'tabs' => 'tabs',
+                $similar => 'similar',
+                default => 'carousel',
+            },
             'heading' => (string) ($slot['heading'] ?? ''),
             'block' => ($slot['type'] ?? '') === 'html_block' ? ($slot['html_block'] ?? null) : null,
+            'sections' => ($slot['type'] ?? '') === 'tabs' && is_array($slot['sections'] ?? null) ? array_values($slot['sections']) : [],
             'carousel' => [
                 'kind' => in_array($settings['kind'] ?? null, HomeCatalog::CONTENT_CAROUSEL_KINDS, true) ? $settings['kind'] : 'products',
                 'source' => in_array($settings['source'] ?? null, HomeCatalog::PRODUCT_SOURCES, true) ? $settings['source'] : 'newest',
@@ -269,6 +278,10 @@ final class BelowZone implements DesignZone
 
         if ($type === 'html_block') {
             return ['type' => 'html_block', 'heading' => $heading, 'html_block' => FieldValues::id($form['block'] ?? null)];
+        }
+
+        if ($type === 'tabs') {
+            return ['type' => 'tabs', 'heading' => $heading, 'sections' => is_array($form['sections'] ?? null) ? array_values($form['sections']) : []];
         }
 
         $carousel = is_array($form['carousel'] ?? null) ? $form['carousel'] : [];

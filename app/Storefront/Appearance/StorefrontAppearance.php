@@ -128,6 +128,7 @@ final class StorefrontAppearance
         $this->homePrepared = false;
         $this->contentDoc = null;
         $this->belowDoc = null;
+        $this->sectionsDoc = null;
         $this->data = $this->rebuild();
     }
 
@@ -466,6 +467,32 @@ final class StorefrontAppearance
         $this->belowDoc ??= $this->belowOverride ?? \App\Storefront\Below\BelowCompiler::published($this->data()['design'] ?? null) ?? false;
 
         return $this->belowDoc === false ? null : $this->belowDoc;
+    }
+
+    /** @var list<array<string, string>>|false|null P4b: the product sections' definitions of this request (false = none published) */
+    private array|false|null $sectionsDoc = null;
+
+    /** @var list<array<string, string>>|null */
+    private ?array $sectionsOverride = null;
+
+    /**
+     * P4b: the sections of the product page (the definitions of «Секции на продукта»: key, title, source and the general text), from the one cached payload (no query, validated and cleaned again on every read), or
+     * null = none (the page it always was). During a signed preview, the working copy.
+     *
+     * @return list<array{key: string, title: string, source: string, html: string}>|null
+     */
+    public function productSections(): ?array
+    {
+        $this->sectionsDoc ??= $this->sectionsOverride ?? \App\Storefront\Sections\SectionCompiler::published($this->data()['design'] ?? null) ?? false;
+
+        return $this->sectionsDoc === false ? null : $this->sectionsDoc;
+    }
+
+    /** For ONE request (P4b, the admin's signed preview): show these compiled sections instead of the published ones. Never called on a public request. @param list<array<string, string>> $compiled */
+    public function previewSections(array $compiled): void
+    {
+        $this->sectionsOverride = $compiled;
+        $this->sectionsDoc = null;
     }
 
     /** For ONE request (P4, the admin's signed preview): show this compiled set of slots instead of the published one. Never called on a public request. @param array<string, mixed> $compiled */

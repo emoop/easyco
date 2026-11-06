@@ -77,6 +77,11 @@ final class AppearanceSettings
 
     public const BELOW_DRAFT_KEY = 'design.below.draft';
 
+    /** P4b: the sections of the product page («Секции на продукта»): the published set (the admin's source; the storefront reads the compiled copy in the design document) and the draft. */
+    public const SECTIONS_PUBLISHED_KEY = 'design.sections.published';
+
+    public const SECTIONS_DRAFT_KEY = 'design.sections.draft';
+
     public const HOME_PUBLISHED_KEY = 'design.home.global.published';
 
     public const FOOTER_DRAFT_KEY = 'footer.layout.draft';

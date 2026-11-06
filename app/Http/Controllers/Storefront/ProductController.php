@@ -52,20 +52,30 @@ final class ProductController extends Controller
         $context = ProductContext::fromPage($product);
         app(CurrentProduct::class)->set($context);
 
+        // P4b: the sections (the «Акордеон» of the right column, the «Табове» slot below): the definitions come with the compiled document (0 queries); the product's own texts cost ONE query, and only when the page
+        // uses sections AND some section takes a product text
+        $summary = ProductSummaryView::forProduct($appearance->productSummary(), $context);
+        $belowCompiled = $appearance->productBelow();
+        $definitions = $appearance->productSections();
+        $usesSections = $definitions !== null && (in_array('accordion', array_column($summary, 'type'), true) || in_array('tabs', array_column($belowCompiled['slots'] ?? [], 'type'), true));
+        $sections = $usesSections ? \App\Storefront\Sections\SectionResolver::resolve($definitions, \App\Storefront\Sections\SectionResolver::needsProductTexts($definitions) ? \App\Storefront\Sections\SectionTexts::forProduct((int) $product->id) : []) : [];
+
         return view('storefront.product', [
             'product' => $product,
             'descriptionHtml' => DescriptionSanitizer::clean($product->description),
             'categories' => $reader->categoryTree(),
             'seo' => $seo->forProduct($product),
             'gallerySettings' => GallerySettings::fromRepository($settings),
-            'summary' => ProductSummaryView::forProduct($appearance->productSummary(), $context),
+            'summary' => $summary,
+            'sections' => $sections,
             // P4: the slots below the main area («Под галерията»): null = nothing (no query, no markup)
             'below' => \App\Storefront\Below\BelowView::forProduct(
-                $appearance->productBelow(),
+                $belowCompiled,
                 $context,
                 static fn (string $source, ?int $entity, string $sort, int $count, string $sizes): array => $reader->homeProducts($source, $entity, $sort, $count, $sizes, null, (int) $product->id),
                 $appearance->catalogGapX(),
                 $appearance->catalogColumns()['phone'],
+                $sections,
             ),
         ]);
     }

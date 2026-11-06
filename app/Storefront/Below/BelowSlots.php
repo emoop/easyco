@@ -9,14 +9,15 @@ use App\Storefront\Home\HomeCatalog;
  * P4: the slots BELOW the main area of the product page («Дизайн» → «Под галерията»): ONE template for every product page, an ordered list of at most MAX slots.
  *
  *   {slots: [ {type: 'carousel', heading: string, settings: {…the home carousel's settings, its source may be `similar`…}}
- *           | {type: 'html_block', heading: string, html_block: int} ]}
+ *           | {type: 'html_block', heading: string, html_block: int}
+ *           | {type: 'tabs', heading: string, sections: list<uuid>} ]}   (P4b: tabs of the product's sections, «Секции на продукта»)
  *
  * The same engine as P3's listing templates: a slot is validated by the HOME layout's own validator (HomeValidator in its product mode: a carousel of the kinds `products` | `blocks` with the extra source
  * `similar`), the heading by ContentTemplate::heading. No second implementation. Pure: no query, no setting.
  *
  * SAVE validates strictly (errors by path `slots.2.heading`); READ never fails: a slot that does not validate is dropped, more than MAX slots are cut, an unknown key is dropped.
  *
- * @phpstan-type Slot array{type: string, heading: string, settings?: array<string, mixed>, html_block?: int}
+ * @phpstan-type Slot array{type: string, heading: string, settings?: array<string, mixed>, html_block?: int, sections?: list<string>}
  * @phpstan-type Set array{slots: list<Slot>}
  */
 final class BelowSlots
@@ -24,7 +25,7 @@ final class BelowSlots
     /** The most slots a product page holds. */
     public const MAX = 6;
 
-    public const TYPES = ['carousel', 'html_block'];
+    public const TYPES = ['carousel', 'html_block', 'tabs'];
 
     /** @return Set no slot: the product page it always was */
     public static function blank(): array
@@ -112,6 +113,10 @@ final class BelowSlots
         $ids = [];
 
         foreach ($set['slots'] as $slot) {
+            if ($slot['type'] === 'tabs') {
+                continue;
+            }
+
             $ids = [...$ids, ...($slot['type'] === 'html_block' ? [$slot['html_block'] ?? null] : HomeCatalog::blockIds(['type' => 'carousel', 'settings' => $slot['settings'] ?? []]))];
         }
 
@@ -153,6 +158,24 @@ final class BelowSlots
 
         $heading = ContentTemplate::heading($slot['heading'] ?? '', $path.'.heading', $fail);
         unset($slot['heading']);
+
+        // P4b: tabs of the product's sections: a list of 1 to SectionSet::MAX section keys (that they still exist is the page's question: a key that is gone is dropped when printed)
+        if (($slot['type'] ?? null) === 'tabs') {
+            foreach (array_diff(array_keys($slot), ['type', 'sections']) as $key) {
+                $fail($path, 'unknown_key', ['key' => mb_substr((string) $key, 0, 30)]);
+            }
+
+            $given = is_array($slot['sections'] ?? null) ? array_values($slot['sections']) : [];
+            $keys = array_values(array_unique(array_filter($given, [\App\Storefront\Sections\SectionSet::class, 'isKey'])));
+
+            if ($keys === [] || count($keys) !== count($given) || count($keys) > \App\Storefront\Sections\SectionSet::MAX) {
+                $fail($path.'.sections', 'bad_tabs');
+
+                return null;
+            }
+
+            return ['type' => 'tabs', 'heading' => $heading, 'sections' => $keys];
+        }
 
         $one = ContentTemplate::bottom($slot === [] ? null : $slot, $path, $fail, HomeCatalog::PRODUCT_MODE);
 

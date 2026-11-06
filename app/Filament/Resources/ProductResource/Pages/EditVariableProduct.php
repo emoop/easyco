@@ -456,6 +456,8 @@ class EditVariableProduct extends EditRecord
                                     Tab::make(__('products.tabs.variations'))
                                         ->id(ProductResource::VARIATIONS_TAB_ID)
                                         ->schema($this->existingVariationsComponents()),
+                                    // P4b: the texts of the product for the «Секции на продукта» (hidden when no section takes one); the wizard is not changed: the texts are added after the creation
+                                    ProductResource::sectionTextsTab()->id('information'),
                                 ]),
                         ]),
                     Group::make()
@@ -1930,6 +1932,9 @@ class EditVariableProduct extends EditRecord
     {
         $productId = (string) $this->record->id;
 
+        // P4b: the texts of the «Информация» tab (section key => html): ONE query, and none when no section takes a product text
+        $data['section_texts'] = \App\Storefront\Sections\SectionTexts::formKeys() === [] ? [] : \App\Storefront\Sections\SectionTexts::forProduct((int) $productId);
+
         $data['categories'] = array_map(
             fn ($c) => (string) $c->categoryId(),
             app(ProductCategoryRepository::class)->findByProductId($productId)
@@ -2138,7 +2143,13 @@ class EditVariableProduct extends EditRecord
             $storedCodes[(string) $variation->id()] = $variation->shippingClass();
         }
 
-        $saved = DB::transaction(fn (): Model => $this->updateProduct($record, $data));
+        $saved = DB::transaction(function () use ($record, $data): Model {
+            $saved = $this->updateProduct($record, $data);
+            // P4b: the texts of the «Информация» tab, saved with the product (the same transaction)
+            \App\Storefront\Sections\SectionTexts::save((int) $record->getKey(), is_array($data['section_texts'] ?? null) ? $data['section_texts'] : [], \App\Storefront\Sections\SectionTexts::formKeys());
+
+            return $saved;
+        });
 
         // After the commit: ShippingClassAssigner is its own write per variation (one audit entry and one hook each).
         foreach ($data['existing_variations'] ?? [] as $row) {

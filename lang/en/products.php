@@ -6,6 +6,7 @@ return [
     'plural_label' => 'Products',
 
     'tabs' => [
+        'information' => 'Information',
         'general' => 'General',
         'attributes' => 'Attributes',
         'price_stock' => 'Price & Stock',

@@ -3,7 +3,11 @@
          BelowView) with its optional heading with lines. Nothing is printed without a slot (this file's first line is flush-left for that), so a page with no slot is byte-identical to the page it always was. --}}
     <div class="sf-below">
         @foreach ($below as $one)
-            @include('storefront.partials.listing-slot', ['slot' => $one, 'where' => 'bottom', 'heading' => $one['heading']])
+            @if (isset($one['tabs']))
+                @include('storefront.partials.product-tabs', ['slot' => $one, 'n' => $loop->iteration])
+            @else
+                @include('storefront.partials.listing-slot', ['slot' => $one, 'where' => 'bottom', 'heading' => $one['heading']])
+            @endif
         @endforeach
     </div>
 @endif

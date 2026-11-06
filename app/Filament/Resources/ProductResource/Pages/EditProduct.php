@@ -80,6 +80,9 @@ class EditProduct extends EditRecord
             app(ProductCategoryRepository::class)->findByProductId($productId)
         );
 
+        // P4b: the texts of the «Информация» tab (section key => html): ONE query, and none when no section takes a product text
+        $data['section_texts'] = \App\Storefront\Sections\SectionTexts::formKeys() === [] ? [] : \App\Storefront\Sections\SectionTexts::forProduct((int) $productId);
+
         $data['tags'] = array_map(
             fn ($t) => (string) $t->tagId(),
             app(ProductTagRepository::class)->findByProductId($productId)
@@ -138,7 +141,13 @@ class EditProduct extends EditRecord
     {
         $storedCode = app(ProductRepository::class)->findByIdWithVariations((string) $record->id)?->universalVariation()?->shippingClass();
 
-        $saved = DB::transaction(fn (): Model => $this->updateProduct($record, $data));
+        $saved = DB::transaction(function () use ($record, $data): Model {
+            $saved = $this->updateProduct($record, $data);
+            // P4b: the texts of the «Информация» tab, saved with the product (the same transaction)
+            \App\Storefront\Sections\SectionTexts::save((int) $record->getKey(), is_array($data['section_texts'] ?? null) ? $data['section_texts'] : [], \App\Storefront\Sections\SectionTexts::formKeys());
+
+            return $saved;
+        });
 
         // After the commit: ShippingClassAssigner is its own write (one audit entry, hook after commit).
         ProductResource::applyShippingClass('product', (string) $record->id, $data['shipping_class'] ?? null, $storedCode);

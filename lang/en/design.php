@@ -17,6 +17,7 @@ return [
         'page' => 'Page and cards',
         'product' => 'Product page',
         'below' => 'Below the gallery',
+        'sections' => 'Product sections',
         'catalog' => 'Catalog',
         'summary' => 'Right column',
         'home' => 'Home',
@@ -141,6 +142,7 @@ return [
         'page' => 'Home page preview',
         'product' => 'Product page preview',
         'below' => 'Product page preview',
+        'sections' => 'Product page preview',
         'catalog' => 'Category page preview',
         'summary' => 'Product page preview (right column)',
         'home' => 'Home page preview',
@@ -186,7 +188,7 @@ return [
 
     // SC-1: «Right column» — the product page's right column as an ordered list of components
     'summary' => [
-        'types' => ['brand' => 'Brand', 'title' => 'Name', 'sku' => 'SKU', 'short_description' => 'Short description', 'price' => 'Price', 'stock' => 'Stock', 'purchase' => 'Purchase', 'html_block' => 'HTML block'],
+        'types' => ['brand' => 'Brand', 'title' => 'Name', 'sku' => 'SKU', 'short_description' => 'Short description', 'price' => 'Price', 'stock' => 'Stock', 'purchase' => 'Purchase', 'accordion' => 'Accordion', 'html_block' => 'HTML block'],
         'purchase' => [
             'none' => 'None',
             'hint' => 'The «Add to cart» button of the product page. An empty text is the standard one; with no colour the button uses the shop\'s colours. Product page only: the shop\'s general buttons are changed in «Appearance».',
@@ -208,7 +210,7 @@ return [
         'no_props' => 'This component has no properties.',
         'no_product' => 'The shop has no visible product yet: there is nothing to show in the preview.',
         'sku_choices' => ['sku' => 'SKU:', 'art' => 'Art.', 'art_no' => 'Art. №'],
-        'settings' => ['prefix' => 'Label', 'html_block' => 'HTML block', 'label' => 'Button text', 'label_choose' => 'Text before a choice', 'label_sold_out' => 'Text when sold out', 'bg' => 'Button background', 'color' => 'Text colour', 'border_w' => 'Border (px)', 'border_color' => 'Border colour', 'rounded' => 'Rounded corners', 'show_quantity' => 'Show counter', 'axes' => 'Order of the attributes'],
+        'settings' => ['first_open' => 'The first section is open', 'prefix' => 'Label', 'html_block' => 'HTML block', 'label' => 'Button text', 'label_choose' => 'Text before a choice', 'label_sold_out' => 'Text when sold out', 'bg' => 'Button background', 'color' => 'Text colour', 'border_w' => 'Border (px)', 'border_color' => 'Border colour', 'rounded' => 'Rounded corners', 'show_quantity' => 'Show counter', 'axes' => 'Order of the attributes'],
         'errors' => [
             'unknown_key' => 'Unknown field: :key.',
             'unknown_setting' => 'Unknown setting: :key.',
@@ -244,6 +246,36 @@ return [
 
 
     // GL-2: «Page and cards» and «Product page»: the plain-value sections
+    // P4b: «Product sections»: the definitions of the sections (Description, Composition, Delivery …) of the product page
+    'sections' => [
+        'schema' => 'The sections of the product page (Description, Individual size, Composition, Delivery and returns …): one layout for every product. Shown by the «Accordion» component of the right column and by a «Tabs» slot of «Below the gallery». The text for each product is written in the product\'s «Information» tab.',
+        'list' => 'Sections',
+        'add' => 'Add a section',
+        'remove' => 'Remove',
+        'title' => 'Title',
+        'source' => 'Source of the text',
+        'text' => 'General text',
+        'sources' => ['global' => 'A general text for all products', 'product' => 'The product\'s text', 'product_or_global' => 'The product\'s text, else the general one'],
+        'hints' => [
+            'list' => 'Up to 8 sections, ordered with the arrows. Renaming or moving a section does not lose the products\' texts. A section with no text for the product is not shown.',
+            'title' => 'The title of the section, up to 60 characters.',
+            'source' => 'Where the text comes from: general for all products, only from the product (the «Information» tab), or from the product and, when it is empty, the general one.',
+            'text' => 'The text shown with a general source. The same editor as the product description.',
+        ],
+        'errors' => [
+            'bad_set' => 'Invalid settings.',
+            'unknown_key' => 'Unknown setting «:key».',
+            'too_many' => 'At most :max sections.',
+            'bad_section' => 'Invalid section.',
+            'bad_key' => 'Invalid section key.',
+            'duplicate_key' => 'Two sections have the same key.',
+            'bad_title' => 'Invalid title.',
+            'title_required' => 'The title is required.',
+            'title_too_long' => 'The title is at most :max characters.',
+            'bad_choice' => 'Invalid choice.',
+            'text_too_long' => 'The text is at most :max characters.',
+        ],
+    ],
     // P4: «Below the gallery»: the slots below the main area of the product page
     'below' => [
         'schema' => 'Slots below the gallery and the right column of every product page: a carousel, «Similar products» and an HTML block, in the order you choose. The same layout for all products.',
@@ -252,13 +284,15 @@ return [
         'remove' => 'Remove',
         'none' => 'None',
         'type' => 'Type',
-        'types' => ['carousel' => 'Carousel', 'similar' => 'Similar products', 'html_block' => 'HTML block'],
+        'types' => ['carousel' => 'Carousel', 'similar' => 'Similar products', 'html_block' => 'HTML block', 'tabs' => 'Tabs'],
+        'sections' => 'Sections in the tabs',
         'heading' => 'Heading above the slot',
         'block' => 'HTML block',
         'hints' => [
             'slots' => 'Up to 6 slots, ordered with the arrows. Shown below the gallery and the right column, full width. A slot with nothing to show is not printed.',
             'type' => 'Carousel: products from a chosen source, or HTML blocks. Similar products: the products of the same category, without the current one (at least 2, otherwise it is not shown). HTML block: a block that may have display conditions.',
             'heading' => 'A short text shown as a heading with lines above the slot (up to 80 characters). Empty = no heading.',
+            'sections' => 'Which of the product sections are tabs (at least one). A tab with no text for the product is not shown; with no tab left the slot is not shown.',
             'block' => 'Which HTML block to show. A block with «Show when…» conditions is shown only for the products they hold for.',
         ],
         'errors' => [
@@ -270,6 +304,7 @@ return [
             'bad_choice' => 'Invalid choice.',
             'heading_too_long' => 'The heading is at most :max characters.',
             'bad_block' => 'Choose an HTML block.',
+            'bad_tabs' => 'Choose at least one section.',
         ],
     ],
     'content' => [
