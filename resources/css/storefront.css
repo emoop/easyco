@@ -1412,8 +1412,18 @@
         color: var(--sf-cloud-color, var(--color-neutral-700));
     }
 
-    .sf-cloud-pill .sf-subcategory > a:hover {
-        background-color: var(--sf-cloud-bg, var(--color-neutral-100));
+    /* DRIBNI-6: on hover and on keyboard focus the cloud's two colours SWAP places (the chip is then the text colour, its text the background colour). Only under the cloud
+       (.sf-cloud-site / .sf-cloud-pill), never on the filter chips that share .sf-bv-chip. The fallbacks are the same pairs as above, so a shop with no colours swaps its own look. */
+    .sf-cloud-site .sf-bv-chip:hover,
+    .sf-cloud-site .sf-bv-chip:focus-visible {
+        background: var(--sf-cloud-color, var(--sf-pdp-text));
+        color: var(--sf-cloud-bg, #fff);
+    }
+
+    .sf-cloud-pill .sf-subcategory > a:hover,
+    .sf-cloud-pill .sf-subcategory > a:focus-visible {
+        background-color: var(--sf-cloud-color, var(--color-neutral-700));
+        color: var(--sf-cloud-bg, var(--color-white));
     }
 
     /* ===== end of CD-1c filters ======================================================================================================================================================= */
@@ -2036,15 +2046,18 @@
     }
 
     .sf-qty-box {
-        @apply flex w-full items-stretch border bg-transparent;
+        @apply flex w-full items-stretch overflow-hidden border bg-transparent;
         border-color: var(--sf-pdp-line);
-        border-radius: 0;
+        border-radius: var(--sf-buy-radius, 0);
+        min-height: 3rem;
     }
 
     .sf-qty-btn {
         @apply w-8 flex-none cursor-pointer text-lg leading-none;
         font-weight: 300;
-        color: var(--sf-pdp-text);
+        /* DRIBNI-6: the −/+ are the add-to-cart button's colours (the same fallback chain as .sf-buy); no hover change, no swap */
+        background-color: var(--sf-buy-bg, var(--sf-btn-bg, var(--sf-primary, #1a1a1a)));
+        color: var(--sf-buy-color, var(--sf-btn-text, var(--sf-on-primary, #fff)));
     }
 
     .sf-qty-btn:disabled {
@@ -2072,6 +2085,11 @@
 
         .sf-buy-row > .sf-qty {
             @apply w-full flex-none;
+        }
+
+        /* DRIBNI-6: the −/+ are 3rem on a phone (easier to tap); more specific than .sf-qty-btn, so the desktop's 2rem stays */
+        .sf-buy-row .sf-qty-btn {
+            @apply w-12;
         }
 
         .sf-buy-row .sf-add-to-cart {

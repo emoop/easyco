@@ -105,7 +105,10 @@ class DribniFiveStorefrontTest extends TestCase
 
         $this->assertMatchesRegularExpression('/\.sf-cloud-site \.sf-bv-chip \{\s*background: var\(--sf-cloud-bg, #fff\);\s*color: var\(--sf-cloud-color, var\(--sf-pdp-text\)\);\s*\}/', $css);
         $this->assertMatchesRegularExpression('/\.sf-cloud-pill \.sf-subcategory > a \{\s*background-color: var\(--sf-cloud-bg, var\(--color-white\)\);\s*color: var\(--sf-cloud-color, var\(--color-neutral-700\)\);\s*\}/', $css);
-        $this->assertMatchesRegularExpression('/\.sf-cloud-pill \.sf-subcategory > a:hover \{\s*background-color: var\(--sf-cloud-bg, var\(--color-neutral-100\)\);\s*\}/', $css);
+        // DRIBNI-6: on hover and keyboard focus the two colours swap places (the DRIBNI-5 hover that kept the background is gone)
+        $this->assertMatchesRegularExpression('/\.sf-cloud-site \.sf-bv-chip:hover,\s*\.sf-cloud-site \.sf-bv-chip:focus-visible \{\s*background: var\(--sf-cloud-color, var\(--sf-pdp-text\)\);\s*color: var\(--sf-cloud-bg, #fff\);\s*\}/', $css);
+        $this->assertMatchesRegularExpression('/\.sf-cloud-pill \.sf-subcategory > a:hover,\s*\.sf-cloud-pill \.sf-subcategory > a:focus-visible \{\s*background-color: var\(--sf-cloud-color, var\(--color-neutral-700\)\);\s*color: var\(--sf-cloud-bg, var\(--color-white\)\);\s*\}/', $css);
+        $this->assertDoesNotMatchRegularExpression('/\.sf-bv-chip:hover \{[^}]*background/', $css, 'the swap is never on the chip shared with the filters');
     }
 
     /** ★ an empty colour changes nothing: the same HTML as with no colour set, no variable in the stylesheet, and the same queries (the colours cost no query on a page) */
@@ -168,7 +171,8 @@ class DribniFiveStorefrontTest extends TestCase
     {
         $css = (string) file_get_contents(base_path('resources/css/storefront.css'));
 
-        $this->assertMatchesRegularExpression('/@media \(max-width: 47\.99rem\) \{\s*\.sf-buy-row \{\s*@apply flex-wrap;\s*\}\s*\.sf-buy-row > \.sf-qty \{\s*@apply w-full flex-none;\s*\}\s*\.sf-buy-row \.sf-add-to-cart \{\s*@apply w-full flex-none;\s*\}\s*\}/s', $css);
+        // DRIBNI-6: the −/+ of a phone (`.sf-buy-row .sf-qty-btn { w-12 }`, with a comment) sit between the counter's rule and the button's
+        $this->assertMatchesRegularExpression('/@media \(max-width: 47\.99rem\) \{\s*\.sf-buy-row \{\s*@apply flex-wrap;\s*\}\s*\.sf-buy-row > \.sf-qty \{\s*@apply w-full flex-none;\s*\}\s*(?:\/\*[^*]*\*\/\s*)?\.sf-buy-row \.sf-qty-btn \{\s*@apply w-12;\s*\}\s*\.sf-buy-row \.sf-add-to-cart \{\s*@apply w-full flex-none;\s*\}\s*\}/s', $css);
         $this->assertSame(1, substr_count($css, '.sf-buy-row > .sf-qty {'), 'one rule for the counter');
     }
 }
