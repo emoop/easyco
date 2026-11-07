@@ -188,6 +188,7 @@ return [
 
     // SC-1: «Right column» — the product page's right column as an ordered list of components
     'summary' => [
+        'accordion_hint' => 'The accordion shows the sections created in the «Product sections» zone.',
         'types' => ['brand' => 'Brand', 'title' => 'Name', 'sku' => 'SKU', 'short_description' => 'Short description', 'price' => 'Price', 'stock' => 'Stock', 'purchase' => 'Purchase', 'accordion' => 'Accordion', 'html_block' => 'HTML block'],
         'purchase' => [
             'none' => 'None',
@@ -322,6 +323,8 @@ return [
         'kind' => 'Page kind',
         'cloud_shape' => 'Cloud shape',
         'cloud_shapes' => ['site' => 'Like the site', 'pill' => 'Rounded'],
+        'cloud_bg' => 'Button background colour',
+        'cloud_color' => 'Button text colour',
         'title_style' => 'Title style',
         'title_styles' => ['lines' => 'With lines', 'plain' => 'Plain'],
         'kinds' => ['categories' => 'Categories', 'brands' => 'Brands', 'seasons' => 'Seasons', 'tags' => 'Tags'],
@@ -353,6 +356,8 @@ return [
             'cloud' => 'Quick-navigation links under the title: for a category its sub-categories, for a brand, season or tag the categories that hold its visible products. Up to 12 links, the most products first. Printed only when it is on, and not shown on a phone.',
             'top' => 'An HTML block above the product list, for example «Image with text». Shown on the first page only.',
             'cloud_shape' => 'How the cloud links look on every page: «Like the site» are like the side panel\'s buttons (their corners follow the cards\' corners), «Rounded» are rounded chips.',
+            'cloud_bg' => 'The background of the cloud\'s links (the quick-navigation buttons) on every listing page. Empty = as it is now. Pick a colour only if it has enough contrast with the text.',
+            'cloud_color' => 'The text colour of the cloud\'s links. Empty = as it is now.',
             'title_style' => 'How the title of the listing pages looks: «With lines» is like the headings of the home page, «Plain» is only the text. Applies to every kind of page.',
             'title' => 'Turn it off when you put your own block with a name and a picture on top. The title is not visible but stays in the page for search engines.',
             'bottom_heading' => 'A short text shown as a heading with lines above the bottom block or carousel (up to 80 characters). Empty = no heading. Shown only when there is a bottom block, on the first page.',
@@ -361,6 +366,7 @@ return [
         ],
         'errors' => [
             'bad_set' => 'Invalid settings.',
+            'bad_colour' => 'The colour must be a hex code, for example #1a2b3c.',
             'unknown_key' => 'Unknown setting «:key».',
             'too_many' => 'At most :max pages with their own template per kind.',
             'unknown_subject' => 'A page that no longer exists.',

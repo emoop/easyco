@@ -91,6 +91,9 @@ final class ContentCompiler
         // the design document first: when it is refused (too large) the published set is not touched
         app(HomeCompiler::class)->store($document, $settings);
         $blank ? $settings->forget(AppearanceSettings::CONTENT_PUBLISHED_KEY) : $settings->set(AppearanceSettings::CONTENT_PUBLISHED_KEY, (string) json_encode($set, JSON_THROW_ON_ERROR));
+
+        // DRIBNI-5: the cloud's colours are variables of the token stylesheet: it is written again from the set just stored
+        app(\App\Storefront\Header\AppearanceRecompiler::class)->run($settings);
     }
 
     /** Rebuilds the compiled copy from the PUBLISHED set when something it shows changed (an HTML block). Returns whether it changed; nothing is published = nothing happens. */

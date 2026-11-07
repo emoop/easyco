@@ -220,9 +220,12 @@ final class ProductSummaryZone implements DesignZone, HasOneCell
                 return [Section::make($node === null ? '' : $this->typeLabel($node['type']))->schema([Text::make(__('design.summary.no_props'))])];
             }
 
-            return [Section::make($this->typeLabel($node['type']))->schema([
+            // DRIBNI-5: the accordion says where its sections come from (the zone «Секции на продукта»)
+            $section = Section::make($this->typeLabel($node['type']))->schema([
                 \Filament\Schemas\Components\Group::make(array_map(static fn (string $name, array $field): Component => FieldForms::make($name, $field), array_keys($fields), array_values($fields)))->statePath('settings'),
-            ])];
+            ]);
+
+            return [$node['type'] === 'accordion' ? $section->afterHeader(\App\Filament\Design\InfoHint::make((string) __('design.summary.accordion_hint'), 'summary-accordion')) : $section];
         }
 
         return [Text::make(__('design.summary.pick'))];

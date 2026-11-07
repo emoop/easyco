@@ -216,7 +216,8 @@ class DesignContentZoneTest extends TestCase
         $screen->set('props.cloud_shape', 'pill')->set('props.title_style', 'plain')->call('apply')->assertHasNoErrors()->call('publish')->assertHasNoErrors();
 
         $published = $this->stored(AppearanceSettings::CONTENT_PUBLISHED_KEY);
-        $this->assertSame(['cloud_shape' => 'pill', 'title_style' => 'plain'], $published['style']);
+        // DRIBNI-5: the style also holds the two cloud colours (null = the shop's look); the two choices are the ones saved
+        $this->assertSame(['cloud_shape' => 'pill', 'title_style' => 'plain', 'cloud_bg' => null, 'cloud_color' => null], $published['style']);
 
         $again = $this->screen();
         $this->assertSame('pill', $again->get('props.cloud_shape'));

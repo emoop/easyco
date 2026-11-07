@@ -10,6 +10,7 @@ use App\Storefront\Content\ContentSet;
 use App\Storefront\Content\ContentStore;
 use App\Storefront\Content\ContentTemplate;
 use App\Storefront\Home\HomeCatalog;
+use Filament\Forms\Components\ColorPicker;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
@@ -149,6 +150,9 @@ final class ContentZone implements DesignZone
                 ->options(array_combine(ContentSet::CLOUD_SHAPES, array_map(static fn (string $s): string => (string) __('design.content.cloud_shapes.'.$s), ContentSet::CLOUD_SHAPES))),
             Select::make('title_style')->label((string) __('design.content.title_style'))->afterLabel(InfoHint::make((string) __('design.content.hints.title_style'), 'content-title-style'))->native(false)->selectablePlaceholder(false)->live()
                 ->options(array_combine(ContentSet::TITLE_STYLES, array_map(static fn (string $s): string => (string) __('design.content.title_styles.'.$s), ContentSet::TITLE_STYLES))),
+            // DRIBNI-5: the cloud's button colours; empty = the shop's look (a valid hex only, checked on save)
+            ColorPicker::make('cloud_bg')->label((string) __('design.content.cloud_bg'))->afterLabel(InfoHint::make((string) __('design.content.hints.cloud_bg'), 'content-cloud-bg'))->hex()->live(),
+            ColorPicker::make('cloud_color')->label((string) __('design.content.cloud_color'))->afterLabel(InfoHint::make((string) __('design.content.hints.cloud_color'), 'content-cloud-color'))->hex()->live(),
             Select::make('kind')->label((string) __('design.content.kind'))->afterLabel(InfoHint::make((string) __('design.content.hints.kind'), 'content-kind'))->native(false)->selectablePlaceholder(false)->live()
             ->options(array_combine(array_keys(ContentTemplate::KINDS), array_map(static fn (string $kind): string => (string) __('design.content.kinds.'.$kind), array_keys(ContentTemplate::KINDS))))];
 
@@ -270,7 +274,7 @@ final class ContentZone implements DesignZone
     public function applyProps(array $tree, string $layout, ?array $selected, array $raw): array
     {
         // the shop-wide style as typed (a value that is not in its list is validate()'s to refuse)
-        $values = ['style' => ['cloud_shape' => $raw['cloud_shape'] ?? ContentSet::CLOUD_SHAPES[0], 'title_style' => $raw['title_style'] ?? ContentSet::TITLE_STYLES[0]]];
+        $values = ['style' => ['cloud_shape' => $raw['cloud_shape'] ?? ContentSet::CLOUD_SHAPES[0], 'title_style' => $raw['title_style'] ?? ContentSet::TITLE_STYLES[0], 'cloud_bg' => $raw['cloud_bg'] ?? null, 'cloud_color' => $raw['cloud_color'] ?? null]];
 
         foreach (array_keys(ContentTemplate::KINDS) as $kind) {
             $entry = is_array($raw[$kind] ?? null) ? $raw[$kind] : [];

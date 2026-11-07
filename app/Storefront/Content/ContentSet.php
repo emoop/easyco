@@ -13,7 +13,10 @@ namespace App\Storefront\Content;
  *
  * @phpstan-import-type Template from ContentTemplate
  *
- * @phpstan-type Style array{cloud_shape: string, title_style: string}
+ * DRIBNI-5: the style also holds the two colours of the cloud's buttons (`cloud_bg`, `cloud_color`: `#rrggbb` or null = today's look). They reach the page only as CSS variables of the token stylesheet
+ * (`--sf-cloud-bg`, `--sf-cloud-color`, see cloudVars / storedVars), never as an attribute.
+ *
+ * @phpstan-type Style array{cloud_shape: string, title_style: string, cloud_bg: string|null, cloud_color: string|null}
  * @phpstan-type Set array<string, mixed>  (`style` => Style, a kind => array{default: Template|null, own: array<int, Template>})
  */
 final class ContentSet
@@ -23,10 +26,19 @@ final class ContentSet
 
     public const TITLE_STYLES = ['lines', 'plain'];
 
+    /** DRIBNI-5: a colour of the cloud's buttons: `#rrggbb` (the merchant's colour picker gives lower case; an upper-case value is accepted and lowered) */
+    public const HEX = '/\A#[0-9a-fA-F]{6}\z/';
+
     /** @return Style the default look: the cloud like the side panel's buttons, the title with lines */
     public static function defaultStyle(): array
     {
-        return ['cloud_shape' => self::CLOUD_SHAPES[0], 'title_style' => self::TITLE_STYLES[0]];
+        return ['cloud_shape' => self::CLOUD_SHAPES[0], 'title_style' => self::TITLE_STYLES[0], 'cloud_bg' => null, 'cloud_color' => null];
+    }
+
+    /** DRIBNI-5: a colour read leniently: a `#rrggbb` (any case, lower-cased), anything else is null (= the shop's look). */
+    public static function hex(mixed $value): ?string
+    {
+        return is_string($value) && preg_match(self::HEX, $value) === 1 ? strtolower($value) : null;
     }
 
     /** The style read leniently: anything that is not in its closed list is the default. @return Style */
@@ -37,6 +49,9 @@ final class ContentSet
         return [
             'cloud_shape' => in_array($value['cloud_shape'] ?? null, self::CLOUD_SHAPES, true) ? $value['cloud_shape'] : self::CLOUD_SHAPES[0],
             'title_style' => in_array($value['title_style'] ?? null, self::TITLE_STYLES, true) ? $value['title_style'] : self::TITLE_STYLES[0],
+            // DRIBNI-5: a colour that is not a valid hex is no colour (read never fails)
+            'cloud_bg' => self::hex($value['cloud_bg'] ?? null),
+            'cloud_color' => self::hex($value['cloud_color'] ?? null),
         ];
     }
 
@@ -50,6 +65,41 @@ final class ContentSet
         }
 
         return $set;
+    }
+
+    /**
+     * DRIBNI-5: the CSS variables of the cloud's colours, only for a colour that is set (no colour = no variable: the shop's look). A CLOSED list.
+     *
+     * @param  Style  $style  read with style()
+     * @return array<string, string>
+     */
+    public static function cloudVars(array $style): array
+    {
+        $vars = [];
+
+        $style['cloud_bg'] !== null && $vars['--sf-cloud-bg'] = $style['cloud_bg'];
+        $style['cloud_color'] !== null && $vars['--sf-cloud-color'] = $style['cloud_color'];
+
+        return $vars;
+    }
+
+    /** Is this one of the cloud's variables, with a value of the form it is written in? The closed list the token compiler re-checks. */
+    public static function isValidCloudVar(string $variable, mixed $value): bool
+    {
+        return in_array($variable, ['--sf-cloud-bg', '--sf-cloud-color'], true) && is_string($value) && preg_match(self::HEX, $value) === 1;
+    }
+
+    /**
+     * The cloud's variables of the PUBLISHED set, read again (a stored value that is not a hex is no colour). Used by the token compiler: nothing per request.
+     *
+     * @return array<string, string>
+     */
+    public static function storedVars(\App\Settings\Contracts\SiteSettingsRepository $settings): array
+    {
+        $json = $settings->get(\App\Settings\AppearanceSettings::CONTENT_PUBLISHED_KEY);
+        $stored = is_string($json) && $json !== '' ? json_decode($json, true) : null;
+
+        return self::cloudVars(self::style(is_array($stored) ? ($stored['style'] ?? null) : null));
     }
 
     /** @param  Set  $set */
@@ -97,6 +147,13 @@ final class ContentSet
             foreach (['cloud_shape' => self::CLOUD_SHAPES, 'title_style' => self::TITLE_STYLES] as $name => $allowed) {
                 if (isset($style[$name]) && ! in_array($style[$name], $allowed, true)) {
                     $errors['style.'.$name] ??= (string) __('design.content.errors.bad_choice');
+                }
+            }
+
+            // DRIBNI-5: a colour is empty (null / '') or a `#rrggbb`; anything else is refused on save (read drops it)
+            foreach (['cloud_bg', 'cloud_color'] as $name) {
+                if (isset($style[$name]) && $style[$name] !== '' && (! is_string($style[$name]) || preg_match(self::HEX, $style[$name]) !== 1)) {
+                    $errors['style.'.$name] ??= (string) __('design.content.errors.bad_colour');
                 }
             }
         }

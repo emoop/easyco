@@ -7,7 +7,12 @@
         <nav class="ds-zones" aria-label="{{ __('design.zones_title') }}">
             <h2 class="ds-h">{{ __('design.zones_title') }}</h2>
             <ul>
-                @foreach (['topbar', 'header', 'footer', 'checkout', 'page', 'product', 'below', 'sections', 'catalog', 'summary', 'home', 'content', 'sidebar'] as $zone)
+                {{-- DRIBNI-5: the order of the groups; a divider (a closed class, the menu's own grey line) between the groups --}}
+                @foreach (['topbar', 'header', 'footer', 'checkout', '|', 'home', 'page', 'content', 'catalog', 'sidebar', '|', 'product', 'sections', 'summary', 'below'] as $zone)
+                    @if ($zone === '|')
+                        <li class="ds-zone-divider" role="presentation" aria-hidden="true"></li>
+                        @continue
+                    @endif
                     <li>
                         @if (array_key_exists($zone, \App\Filament\Pages\Design\DesignScreen::ZONES))
                             <button type="button" class="ds-zone @if ($this->zone === $zone) ds-zone-on @endif" @if ($this->zone === $zone) aria-current="true" @endif wire:click="selectZone('{{ $zone }}')">{{ __('design.zones.'.$zone) }}</button>

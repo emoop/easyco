@@ -550,7 +550,8 @@ class ListingTemplatesTest extends TestCase
         [, $errors] = ContentSet::validate(['style' => ['cloud_shape' => 'triangle']], ContentStore::existing());
         $this->assertArrayHasKey('style.cloud_shape', $errors);
         $compiled = ['blocks' => [], 'style' => ['cloud_shape' => '<x>', 'title_style' => 'neon'], 'kinds' => []];
-        $this->assertSame(['cloud_shape' => 'site', 'title_style' => 'lines'], ContentCompiler::published((string) json_encode(['zones' => ['content' => $compiled]]))['style']);
+        // DRIBNI-5: the style also holds the two cloud colours (null = the shop's look): the two choices are the ones compared
+        $this->assertSame(['cloud_shape' => 'site', 'title_style' => 'lines', 'cloud_bg' => null, 'cloud_color' => null], ContentCompiler::published((string) json_encode(['zones' => ['content' => $compiled]]))['style']);
     }
 
     /** ★ the cloud's wrapper carries the class that hides it on phones, and the CSS rule sits under the filter drawer's breakpoint */

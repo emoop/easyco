@@ -10,6 +10,7 @@ use App\Storefront\Footer\FooterValidator;
 use App\Storefront\Header\HeaderLayout;
 use App\Storefront\Header\HeaderValidator;
 use App\Storefront\PageDesign\PageDesign;
+use App\Storefront\Content\ContentSet;
 use App\Storefront\ProductSummary\PurchaseStyle;
 use Illuminate\Support\Facades\Storage;
 use InvalidArgumentException;
@@ -44,11 +45,12 @@ final class AppearanceCompiler
      *
      * @param  array<string, string>  $overrides
      * @param  array<string, string>  $pageVars  GL-2: the variables of the two plain Design sections (PageDesign::vars), only what differs from the defaults
+     * @param  array<string, string>  $cloudVars  DRIBNI-5: the listing cloud's colours (ContentSet::storedVars), a CLOSED list re-checked here
      * @param  array<string, string>  $buyVars  PB-1: the product page's add-to-cart button (`--sf-buy-*`, PurchaseStyle::vars), only what differs from the defaults, a CLOSED list re-checked here
      * @param  list<string>  $blockRules  HB-1: the rules of the styled HTML blocks (`.sf-hb-{id}{...}`, HtmlBlockStyle::css), each checked again here against the closed template
      * @throws InvalidArgumentException a value that is not valid for its key
      */
-    public function css(array $overrides, array $metrics = [], array $badgeColors = [], array $footerVars = [], array $headerColors = [], array $checkoutVars = [], array $pageVars = [], array $blockRules = [], array $buyVars = []): ?string
+    public function css(array $overrides, array $metrics = [], array $badgeColors = [], array $footerVars = [], array $headerColors = [], array $checkoutVars = [], array $pageVars = [], array $blockRules = [], array $buyVars = [], array $cloudVars = []): ?string
     {
         $effective = $this->effective($overrides);
         $defaults = AppearanceSettings::defaults();
@@ -169,6 +171,15 @@ final class AppearanceCompiler
             $vars[] = "{$variable}: {$value};";
         }
 
+        // DRIBNI-5: the listing cloud's colours, a CLOSED list with values of the exact form they are written in
+        foreach ($cloudVars as $variable => $value) {
+            if (! ContentSet::isValidCloudVar((string) $variable, $value)) {
+                throw new InvalidArgumentException('A cloud colour variable is not valid.');
+            }
+
+            $vars[] = "{$variable}: {$value};";
+        }
+
         // HB-1: a rule of a styled HTML block, a CLOSED template re-checked as a whole (an invalid one is refused, like the other closed lists); nothing is written when no block is styled
         foreach ($blockRules as $rule) {
             if (! is_string($rule) || ! HtmlBlockStyle::isValidRule($rule)) {
@@ -218,7 +229,7 @@ final class AppearanceCompiler
      */
     public function compile(array $overrides, ?string $previousHash = null, ?array $metrics = null): ?array
     {
-        $css = $this->css($overrides, $metrics ?? $this->publishedMetrics(), $this->storedBadgeColors(), $this->publishedFooterVars(), $this->publishedHeaderColors(), $this->publishedCheckoutVars(), PageDesign::storedVars(app(SiteSettingsRepository::class)), HtmlBlockStyle::storedRules(), PurchaseStyle::storedVars(app(SiteSettingsRepository::class)));
+        $css = $this->css($overrides, $metrics ?? $this->publishedMetrics(), $this->storedBadgeColors(), $this->publishedFooterVars(), $this->publishedHeaderColors(), $this->publishedCheckoutVars(), PageDesign::storedVars(app(SiteSettingsRepository::class)), HtmlBlockStyle::storedRules(), PurchaseStyle::storedVars(app(SiteSettingsRepository::class)), ContentSet::storedVars(app(SiteSettingsRepository::class)));
 
         if ($css === null) {
             $this->prune(null, $previousHash);

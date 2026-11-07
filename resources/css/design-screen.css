@@ -99,6 +99,12 @@
     cursor: default;
 }
 
+.ds-zone-divider {
+    height: 0;
+    margin: 0.5rem 0.4rem;
+    border-top: 1px solid #40474e;
+}
+
 .ds-zone small {
     display: block;
     font-size: var(--ds-fs-tiny);

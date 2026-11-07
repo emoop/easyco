@@ -1400,6 +1400,22 @@
         }
     }
 
+    /* DRIBNI-5: the listing cloud's colours («Съдържание» → Цвят на фона / на текста на бутоните). The two variables exist only when the merchant set a colour (the token stylesheet);
+       the fallbacks are the chip's colours as they always were (site: #fff and the text colour; rounded: the white and the neutral-700 of the tailwind link). Hover keeps the colour of the background. */
+    .sf-cloud-site .sf-bv-chip {
+        background: var(--sf-cloud-bg, #fff);
+        color: var(--sf-cloud-color, var(--sf-pdp-text));
+    }
+
+    .sf-cloud-pill .sf-subcategory > a {
+        background-color: var(--sf-cloud-bg, var(--color-white));
+        color: var(--sf-cloud-color, var(--color-neutral-700));
+    }
+
+    .sf-cloud-pill .sf-subcategory > a:hover {
+        background-color: var(--sf-cloud-bg, var(--color-neutral-100));
+    }
+
     /* ===== end of CD-1c filters ======================================================================================================================================================= */
 
     .sf-pagination-ellipsis {
@@ -2045,6 +2061,22 @@
     .sf-buy-row .sf-add-to-cart {
         @apply mt-0 w-auto min-w-0 flex-1 px-4 py-2;
         min-height: 3rem;
+    }
+
+    /* DRIBNI-5: on a phone (below 48rem) the counter and the add-to-cart button are TWO rows, each the full width of the column. Without the counter there is no `.sf-qty` and the button stays as it was;
+       from 48rem they are one line again (the rules above). */
+    @media (max-width: 47.99rem) {
+        .sf-buy-row {
+            @apply flex-wrap;
+        }
+
+        .sf-buy-row > .sf-qty {
+            @apply w-full flex-none;
+        }
+
+        .sf-buy-row .sf-add-to-cart {
+            @apply w-full flex-none;
+        }
     }
 
     /* the add-to-cart button: its look comes from the --sf-buy-* variables of the token stylesheet (set only when the merchant changed something); the fallbacks are the shop's button as it always was */
