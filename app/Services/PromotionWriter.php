@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Services\Exceptions\PromotionInvalidException;
 use DateTimeImmutable;
+use EasyCo\Extensibility\Hook;
 use EasyCo\Pricing\DefaultCurrency;
 use EasyCo\Pricing\Money;
 use EasyCo\Promotions\Contracts\PromotionRepository;
@@ -15,6 +16,7 @@ use EasyCo\Promotions\Exceptions\PromotionCodeAlreadyExistsException;
 use EasyCo\Promotions\Promotion;
 use EasyCo\Promotions\PromotionScope;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
 use Throwable;
 
@@ -136,6 +138,9 @@ final class PromotionWriter
             throw new PromotionInvalidException(['code' => [__('promotions.errors.code_taken')]]);
         }
 
+        // P5d: after the commit, never inside the transaction; a refused write never reaches this line
+        $this->fireContained('promotion.created', $promotion);
+
         return $promotion;
     }
 
@@ -196,6 +201,13 @@ final class PromotionWriter
             $this->auditChanges((string) $promotion->id(), $before, $after);
         });
 
+        // P5d: after the commit. An update that also flipped the status fires `updated` AND the status hook, once each.
+        $this->fireContained('promotion.updated', $promotion, $before);
+
+        if ($before['status'] !== $after['status']) {
+            $this->fireStatusHook($promotion);
+        }
+
         return $promotion;
     }
 
@@ -222,6 +234,9 @@ final class PromotionWriter
             $this->promotions->save($promotion);
             $this->audit->logFieldChanged(self::ENTITY, (string) $promotion->id(), 'status', $active ? 'inactive' : 'active', $active ? 'active' : 'inactive');
         });
+
+        // P5d: after the commit; only when the status really changed (the early return above covers the rest)
+        $this->fireStatusHook($promotion);
 
         return $promotion;
     }
@@ -443,6 +458,24 @@ final class PromotionWriter
         ];
     }
 
+    /**
+     * P5d: fires a promotion hook. The write is already committed when this runs, so a listener that throws is LOGGED and
+     * never undoes or breaks the write. (Unlike Hook::doAction() by itself, which lets the exception through to the caller.)
+     */
+    private function fireContained(string $hook, mixed ...$args): void
+    {
+        try {
+            Hook::fire($hook, ...$args);
+        } catch (Throwable $exception) {
+            Log::error('A promotion hook listener failed; the promotion write stands.', ['hook' => $hook, 'exception' => $exception->getMessage()]);
+        }
+    }
+
+    /** promotion.activated / promotion.deactivated, by the promotion's CURRENT status. */
+    private function fireStatusHook(Promotion $promotion): void
+    {
+        $this->fireContained($promotion->isActive() ? 'promotion.activated' : 'promotion.deactivated', $promotion);
+    }
     /** @return list<string> the `type:mode:reference` keys of the promotion's stored scopes of the types the form manages */
     private function managedScopeKeys(Promotion $promotion): array
     {
