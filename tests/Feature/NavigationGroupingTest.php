@@ -127,9 +127,11 @@ class NavigationGroupingTest extends TestCase
         $this->assertSame(NavigationGroup::SALES, $cases[0]);
         $this->assertSame(NavigationGroup::CATALOG, $cases[1]);
         $this->assertSame(NavigationGroup::SHIPPING, $cases[2]);
-        $this->assertSame(NavigationGroup::CONTENT, $cases[3]);
-        $this->assertSame(NavigationGroup::DESIGN, $cases[4], 'MENU-2: «Дизайн» sits between Съдържание and Админ');
-        $this->assertSame(NavigationGroup::ADMIN, $cases[5]);
+        // P5b: «Маркетинг» was added on purpose, after Доставка and before Съдържание, so every later group moved down by one
+        $this->assertSame(NavigationGroup::MARKETING, $cases[3]);
+        $this->assertSame(NavigationGroup::CONTENT, $cases[4]);
+        $this->assertSame(NavigationGroup::DESIGN, $cases[5], 'MENU-2: «Дизайн» sits between Съдържание and Админ');
+        $this->assertSame(NavigationGroup::ADMIN, $cases[6]);
     }
 
     public function test_the_six_catalog_group_items_sort_in_the_exact_stated_order(): void

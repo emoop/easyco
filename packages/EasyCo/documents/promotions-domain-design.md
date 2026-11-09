@@ -1,8 +1,19 @@
 # Promotions Domain Design
 
-**Status:** Draft v1 — approved scope, not yet implemented.
+**Status:** Implemented (domain, persistence, cart, checkout, admin). The original design below is kept; where it is outdated a note says so, and «As built» (right after this header) is the current state.
 **Builds on:** `pricing-domain-design.md` §1/§7 (the Pricing/Promotions boundary — Pricing resolves catalog price, Promotions adjusts cart totals on top, as a separate step Cart/Checkout orchestrate), `pricing-persistence-domain-design.md` §3 (`PriceListScope` — the scope shape this domain deliberately mirrors, without sharing code — see §3 below for why), `cart-domain-design.md` §4/§6/§7 (the live-resolution-not-snapshot philosophy, applied here to promo codes), `catalog-domain-design.md` (cross-domain-by-id reference to Product/Variation/Brand/Category/Tag/AttributeValue), `account-domain-design.md` (cross-domain-by-id reference to Account).
 **Origin:** designed through a structured conversation researching WooCommerce's native coupon fields (General/Usage Restriction/Usage Limits tabs) and Bagisto's Cart Rules (conditions, actions, coupon codes) as real-world precedent, then adapted to this project's existing cross-domain-by-id conventions rather than copied verbatim.
+
+---
+
+## As built (P5 and P5b, 2026-11)
+
+- **Admin:** «Маркетинг» → «Промокодове» (`App\Filament\Resources\PromotionResource`, permission `promotion_manage`): the list, the create / edit form and «Дублирай». EVERY write goes through `App\Services\PromotionWriter` (the domain entity, the repositories, the scopes — one transaction); a Filament page never writes a promotion row. The JSON API (`/api/promotions`) stays and is unchanged in behaviour (it also takes `is_public` / `public_description`).
+- **A promotion is never deleted** (it has redemption history): it is switched on / off (`status`). There is no delete action anywhere.
+- **The update rule (`Promotion::update()`):** only the EDITABLE part can change after creation — the public flag and its description, minimum / maximum spend, `exclude_sale_items`, `new_customers_only`, `individual_use_only`, the three usage limits and `valid_from` / `valid_until`; the status has `activate()` / `deactivate()`. The **code, the discount type and the discount value are immutable** (to change one, create a new code and switch the old one off). `update()` re-runs exactly the invariants of the constructor and changes nothing when one fails.
+- **Public codes (P5):** `is_public` + `public_description` (plain text, at most 120 characters, required while public, escaped on output). A public code is listed in the cart («Потърси промокод», `GET /api/cart?public_promotions=1`, built by `App\Services\PublicPromotionList` with the validator's own verdicts). A row read back from storage that is public but has no usable description is returned as NON-public (`reconstituteFromStorage` never throws), so one badly edited row cannot break the cart. The admin form warns (amber, never blocking) when a code is public and has NO condition (a minimum, a scope, new customers only, a valid-until date, a usage limit): that is a permanent discount for everybody.
+- **Scopes in the form:** the closed lists brand, category, tag, product and attribute value, each include / exclude, picked with server-side searches (at most 20 results). **ACCOUNT scopes are not offered**; one made through the API is left untouched by a save. **There is no season scope:** a season is its own entity, not an attribute value, and `PromotionScopeType` has no such case.
+- **Redemptions are written by Checkout** (`App\Services\PromotionRedeemer`, also by order editing): `usage_limit_total` / `usage_limit_per_customer` count the redemptions that are not released (`released_at IS NULL`). The admin list reads the used count of all listed promotions in ONE grouped query.
 
 ---
 
@@ -24,7 +35,7 @@ This document defines the **Promotions domain**: customer-entered discount codes
 - Free shipping toggle — no `Shipping` domain exists yet; the field would be inert. Add when Shipping is designed.
 - Auto-generated codes (bulk generation with prefix/suffix, à la Bagisto) — needed later for abandoned-cart recovery (`cart-abandoned-recovery-note.md`), not required for V1's manually merchant-created codes.
 - BOGO / buy-X-get-Y mechanics — a genuinely different, quantity-based mechanism, not an amount-based discount.
-- Checkout integration — the `Checkout` domain doesn't exist yet. This document covers Promotion definition, validation, and Cart-level application only (see §5 for why redemption counting specifically waits for Checkout).
+- ~~Checkout integration — the `Checkout` domain doesn't exist yet.~~ **Outdated:** Checkout exists and redeems promotions (see «As built»). This document's own scope stays Promotion definition, validation and Cart-level application.
 - Any stacking-priority resolution beyond `individual_use_only`'s binary block — no `priority` field in V1; nothing would consume it yet (see §3.1).
 
 ---
@@ -99,6 +110,8 @@ Given that, sharing runtime code would mean refactoring already-tested, already-
 
 ## 5. Redemption tracking waits for Checkout
 
+> **Outdated in its last part (see «As built»):** the Checkout domain now exists and writes the `PromotionRedemption` rows, so the usage limits count real redemptions. The reasoning below (a redemption is written only when an order is placed, never at cart-apply time) still holds and is what Checkout does.
+
 A `PromotionRedemption` record should only ever be written at the point something becomes a permanent, historical fact — order placement — not at cart-apply time, mirroring exactly how Pricing resolves live but `OperationalSales\SaleLine` snapshots once, permanently, at sale time. The `Checkout` domain doesn't exist yet, so **`usage_limit_total` and `usage_limit_per_customer` have nothing real to count against until it does** — Promotion definition and live cart-side validation can be built and tested now, but actual redemption counting activates only once Checkout writes the first `PromotionRedemption` row. This is flagged explicitly rather than building a counting mechanism against Cart events, which are not permanent — a cart can be abandoned, edited, or emptied, none of which should decrement a usage counter.
 
 ---
@@ -108,9 +121,9 @@ A `PromotionRedemption` record should only ever be written at the point somethin
 - Free shipping toggle (needs a `Shipping` domain that doesn't exist yet).
 - Auto-generated codes / bulk generation with prefix/suffix (needed for abandoned-cart recovery, not V1's manually created codes).
 - BOGO / quantity-based mechanics.
-- Actual redemption counting (needs Checkout to exist — see §5). `usage_limit_total`/`usage_limit_per_customer` are stored and validated for shape, but nothing decrements them yet.
+- ~~Actual redemption counting (needs Checkout to exist).~~ **Done:** Checkout writes the redemptions and the limits count them (see «As built»).
 - A `priority` field or any stacking-priority resolution beyond `individual_use_only`'s binary block.
-- The `Checkout` domain itself, and therefore any code path that turns an applied Promotion into a real, permanent discount on a placed order.
+- ~~The `Checkout` domain itself.~~ **Done:** it exists (see «As built»).
 
 ---
 

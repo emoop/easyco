@@ -12,7 +12,7 @@ use Filament\Support\Contracts\HasLabel;
  *
  * THE RENDER ORDER IS THIS FILE'S CASE ORDER: SALES (Продажби) first — the
  * day's orders are what a merchant opens the panel for — then CATALOG, then
- * SHIPPING, then ADMIN.
+ * SHIPPING, then MARKETING (P5b: promo codes; price lists, badges and newsletters will join it), then CONTENT, DESIGN and ADMIN.
  *
  * Deliberately an enum case's identity, NOT a raw translated string,
  * returned from every Resource/Page's getNavigationGroup(): Filament's
@@ -36,6 +36,7 @@ enum NavigationGroup implements Collapsible, HasLabel
     case SALES;
     case CATALOG;
     case SHIPPING;
+    case MARKETING;
     case CONTENT;
     case DESIGN;
     case ADMIN;
@@ -45,6 +46,7 @@ enum NavigationGroup implements Collapsible, HasLabel
         return match ($this) {
             self::CATALOG => __('navigation.groups.catalog'),
             self::SHIPPING => __('navigation.groups.shipping'),
+            self::MARKETING => __('navigation.groups.marketing'),
             self::CONTENT => __('navigation.groups.content'),
             self::DESIGN => __('navigation.groups.design'),
             self::SALES => __('navigation.groups.sales'),

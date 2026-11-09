@@ -8,6 +8,7 @@ return [
     'groups' => [
         'catalog' => 'Catalog',
         'shipping' => 'Shipping',
+        'marketing' => 'Marketing',
         'content' => 'Content',
         'design' => 'Design',
         'sales' => 'Sales',

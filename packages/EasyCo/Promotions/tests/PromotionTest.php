@@ -519,4 +519,93 @@ final class PromotionTest extends TestCase
         $this->assertSame(PromotionDiscountType::FIXED_AMOUNT, $promotion->discountType());
         $this->assertSame($discountAmount, $promotion->discountAmount());
     }
+    // --- P5b: update() — the editable part only, same invariants as the constructor -----
+
+    private function editable(): Promotion
+    {
+        return Promotion::create('edit-me', PromotionDiscountType::PERCENTAGE, percentageBasisPoints: 1000);
+    }
+
+    /** @param array<string, mixed> $over */
+    private function update(Promotion $promotion, array $over = []): void
+    {
+        $a = $over + [
+            'individualUseOnly' => false, 'excludeSaleItems' => false, 'minimumSpend' => null, 'maximumSpend' => null, 'newCustomersOnly' => false,
+            'usageLimitTotal' => null, 'usageLimitPerCustomer' => null, 'usageLimitItems' => null, 'validFrom' => null, 'validUntil' => null,
+            'isPublic' => false, 'publicDescription' => null,
+        ];
+        $promotion->update(...$a);
+    }
+
+    public function test_update_changes_every_editable_field(): void
+    {
+        $promotion = $this->editable();
+        $from = new DateTimeImmutable('2030-01-01');
+        $until = new DateTimeImmutable('2030-02-01');
+
+        $this->update($promotion, [
+            'individualUseOnly' => true, 'excludeSaleItems' => true, 'minimumSpend' => Money::fromMinorUnits(7999, 'EUR'), 'maximumSpend' => Money::fromMinorUnits(20000, 'EUR'),
+            'newCustomersOnly' => true, 'usageLimitTotal' => 5, 'usageLimitPerCustomer' => 2, 'usageLimitItems' => 3, 'validFrom' => $from, 'validUntil' => $until,
+            'isPublic' => true, 'publicDescription' => '  10% off  ',
+        ]);
+
+        $this->assertTrue($promotion->individualUseOnly());
+        $this->assertTrue($promotion->excludeSaleItems());
+        $this->assertSame(7999, $promotion->minimumSpend()->minorValue());
+        $this->assertSame(20000, $promotion->maximumSpend()->minorValue());
+        $this->assertTrue($promotion->newCustomersOnly());
+        $this->assertSame([5, 2, 3], [$promotion->usageLimitTotal(), $promotion->usageLimitPerCustomer(), $promotion->usageLimitItems()]);
+        $this->assertSame($from, $promotion->validFrom());
+        $this->assertSame($until, $promotion->validUntil());
+        $this->assertTrue($promotion->isPublic());
+        $this->assertSame('10% off', $promotion->publicDescription());
+    }
+
+    public function test_update_never_touches_the_code_the_type_or_the_value(): void
+    {
+        $promotion = $this->editable();
+        $this->update($promotion, ['isPublic' => true, 'publicDescription' => 'x']);
+
+        $this->assertSame('edit-me', $promotion->code());
+        $this->assertSame(PromotionDiscountType::PERCENTAGE, $promotion->discountType());
+        $this->assertSame(1000, $promotion->percentageBasisPoints());
+        $this->assertFalse((new \ReflectionMethod(Promotion::class, 'update'))->isStatic());
+        $names = array_map(static fn (\ReflectionParameter $p): string => $p->getName(), (new \ReflectionMethod(Promotion::class, 'update'))->getParameters());
+        $this->assertSame([], array_values(array_intersect($names, ['code', 'discountType', 'percentageBasisPoints', 'discountAmount', 'status'])));
+    }
+
+    public function test_update_rejects_what_the_constructor_rejects_and_changes_nothing(): void
+    {
+        $promotion = $this->editable();
+        $this->update($promotion, ['minimumSpend' => Money::fromMinorUnits(1000, 'EUR'), 'newCustomersOnly' => true]);
+
+        foreach ([
+            ['minimumSpend' => Money::fromMinorUnits(5000, 'EUR'), 'maximumSpend' => Money::fromMinorUnits(5000, 'EUR')],
+            ['validFrom' => new DateTimeImmutable('2030-02-01'), 'validUntil' => new DateTimeImmutable('2030-01-01')],
+            ['usageLimitTotal' => 0],
+            ['isPublic' => true, 'publicDescription' => '  '],
+            ['isPublic' => true, 'publicDescription' => str_repeat('я', 121)],
+        ] as $bad) {
+            try {
+                $this->update($promotion, $bad + ['excludeSaleItems' => true, 'newCustomersOnly' => false]);
+                $this->fail('expected InvalidArgumentException');
+            } catch (InvalidArgumentException) {
+                // expected
+            }
+        }
+
+        $this->assertSame(1000, $promotion->minimumSpend()->minorValue(), 'a refused update changes nothing');
+        $this->assertTrue($promotion->newCustomersOnly());
+        $this->assertFalse($promotion->excludeSaleItems());
+    }
+
+    public function test_update_to_non_public_drops_the_description(): void
+    {
+        $promotion = $this->editable();
+        $this->update($promotion, ['isPublic' => true, 'publicDescription' => 'Shown']);
+        $this->update($promotion, ['isPublic' => false, 'publicDescription' => 'left over']);
+
+        $this->assertFalse($promotion->isPublic());
+        $this->assertNull($promotion->publicDescription());
+    }
 }

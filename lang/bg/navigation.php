@@ -10,6 +10,7 @@ return [
         'content' => 'Съдържание',
         'design' => 'Дизайн',
         'shipping' => 'Доставка',
+        'marketing' => 'Маркетинг',
         'sales' => 'Продажби',
         'admin' => 'Админ',
     ],

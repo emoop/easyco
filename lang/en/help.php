@@ -14,5 +14,6 @@ return [
         'checkout' => 'Checkout settings',
         'pages' => 'Pages',
         'appearance' => 'Appearance and header',
+        'promotions' => 'Promo codes',
     ],
 ];

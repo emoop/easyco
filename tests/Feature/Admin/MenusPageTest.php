@@ -129,7 +129,8 @@ class MenusPageTest extends TestCase
         app()->setLocale('bg');
         $this->assertSame('Дизайн', NavigationGroup::DESIGN->getLabel());
         $cases = NavigationGroup::cases();
-        $this->assertSame([NavigationGroup::CONTENT, NavigationGroup::DESIGN, NavigationGroup::ADMIN], array_slice($cases, 3, 3));
+        // P5b: «Маркетинг» was added on purpose before Съдържание, so these three now start at position 4
+        $this->assertSame([NavigationGroup::CONTENT, NavigationGroup::DESIGN, NavigationGroup::ADMIN], array_slice($cases, 4, 3));
     }
 
     // ---- what the browser gets ---------------------------------------------------------------------------------------------------------------

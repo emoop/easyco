@@ -32,18 +32,18 @@ final class Promotion
         private readonly PromotionDiscountType $discountType,
         private readonly ?int $percentageBasisPoints,
         private readonly ?Money $discountAmount,
-        private readonly bool $individualUseOnly,
-        private readonly bool $excludeSaleItems,
-        private readonly ?Money $minimumSpend,
-        private readonly ?Money $maximumSpend,
-        private readonly bool $newCustomersOnly,
-        private readonly ?int $usageLimitTotal,
-        private readonly ?int $usageLimitPerCustomer,
-        private readonly ?int $usageLimitItems,
-        private readonly ?DateTimeImmutable $validFrom,
-        private readonly ?DateTimeImmutable $validUntil,
+        private bool $individualUseOnly,
+        private bool $excludeSaleItems,
+        private ?Money $minimumSpend,
+        private ?Money $maximumSpend,
+        private bool $newCustomersOnly,
+        private ?int $usageLimitTotal,
+        private ?int $usageLimitPerCustomer,
+        private ?int $usageLimitItems,
+        private ?DateTimeImmutable $validFrom,
+        private ?DateTimeImmutable $validUntil,
         private PromotionStatus $status,
-        private readonly bool $isPublic = false,
+        private bool $isPublic = false,
         private ?string $publicDescription = null,
     ) {
         $this->code = self::normalizeAndValidateCode($code);
@@ -407,6 +407,48 @@ final class Promotion
         }
 
         return true;
+    }
+
+    /**
+     * P5b: the ONE way to change a promotion after it was created. The EDITABLE part only: the public flag and its description, the minimum / maximum
+     * spend, the three flags, the three usage limits and the valid-from / valid-until dates. The code, the discount type and the discount value are NOT here
+     * on purpose (they stay what they were created as: to change one, create a new code and switch the old one off); the status has activate() / deactivate().
+     *
+     * It re-runs EXACTLY the invariants the constructor enforces and changes NOTHING when any of them fails (the new values are checked first, then assigned).
+     *
+     * @throws InvalidArgumentException
+     */
+    public function update(
+        bool $individualUseOnly,
+        bool $excludeSaleItems,
+        ?Money $minimumSpend,
+        ?Money $maximumSpend,
+        bool $newCustomersOnly,
+        ?int $usageLimitTotal,
+        ?int $usageLimitPerCustomer,
+        ?int $usageLimitItems,
+        ?DateTimeImmutable $validFrom,
+        ?DateTimeImmutable $validUntil,
+        bool $isPublic,
+        ?string $publicDescription,
+    ): void {
+        self::assertValidSpendRange($minimumSpend, $maximumSpend);
+        self::assertValidTimeWindow($validFrom, $validUntil);
+        self::assertPositiveUsageLimits($usageLimitTotal, $usageLimitPerCustomer, $usageLimitItems);
+        $description = self::normalizePublicDescription($isPublic, $publicDescription);
+
+        $this->individualUseOnly = $individualUseOnly;
+        $this->excludeSaleItems = $excludeSaleItems;
+        $this->minimumSpend = $minimumSpend;
+        $this->maximumSpend = $maximumSpend;
+        $this->newCustomersOnly = $newCustomersOnly;
+        $this->usageLimitTotal = $usageLimitTotal;
+        $this->usageLimitPerCustomer = $usageLimitPerCustomer;
+        $this->usageLimitItems = $usageLimitItems;
+        $this->validFrom = $validFrom;
+        $this->validUntil = $validUntil;
+        $this->isPublic = $isPublic;
+        $this->publicDescription = $description;
     }
 
     public function activate(): void

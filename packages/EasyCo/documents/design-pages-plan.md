@@ -1,6 +1,6 @@
 # EasyCo — «Дизайн»: Sidebar, page content, product page, badge builder (plan, owner-approved 2026-11-04)
 
-Status (2026-11-09): P1, P1.1, P2, P3, P3.1, P4, P4b, P4b.1, P4c done; DRIBNI-5 (menu groups, cloud button colours, accordion hint, phone buy row) and DRIBNI-6 (quantity counter like the buy button, cloud hover swap) done; P5 next. Each part becomes its own coder task (prompt written when it starts). Everything follows the storefront security rules (closed lists, no `style=`, no inline JS, validated on save / publish / read, published data only, draft via signed preview, identical HTML for every visitor) and `admin-ui-standard.md` (narrow «Дизайн» panels: one field per row).
+Status (2026-11-09): P1, P1.1, P2, P3, P3.1, P4, P4b, P4b.1, P4c done; DRIBNI-5 (menu groups, cloud button colours, accordion hint, phone buy row) and DRIBNI-6 (quantity counter like the buy button, cloud hover swap) done; P5 reviewed and approved (commit block given; cart read = 24 queries for 1, 10 or 30 lines, was 23 / 122 / 342; owner accepted +1 query at 1 line); P5b (admin «Маркетинг» → «Промокодове») next. Each part becomes its own coder task (prompt written when it starts). Everything follows the storefront security rules (closed lists, no `style=`, no inline JS, validated on save / publish / read, published data only, draft via signed preview, identical HTML for every visitor) and `admin-ui-standard.md` (narrow «Дизайн» panels: one field per row).
 
 ## 1. Sidebar zone (filters)
 - The merchant switches each filter on / off and orders them.
@@ -53,7 +53,13 @@ Goal: a visitor always knows a small discount is available, so he does not leave
 - A public code whose condition the cart does not meet yet is still listed, with a hint: «Остават ви 20 € до този код» (nudges a bigger order).
 - **Risk and rule:** a public code without a condition is just a permanent price cut. Public codes should carry a condition that brings something: a minimum order, first order, a category to clear, an end date. The admin form shows a short warning when «Публичен» is set on a code with no condition.
 - The cart is dynamic (not cached), so the list does not conflict with the planned S4 caching. The list is served through the cart API, only active public codes (valid dates, usage limits not exhausted).
-- Depends on: the existing promo-code domain (conditions, dates, limits). Check against it before writing the prompt. Medium task (admin flag + description, API list, cart UI).
+- **As built in P5 (2026-11-09):** migration `is_public` + `public_description` (≤120); `PublicPromotionList` (every verdict is `PromotionValidator`'s; states applicable / applied / below_minimum / unavailable; max 8); the list rides `GET /api/cart?public_promotions=1` ONLY (writes, checkout and the header badge never get it); native `<details>`, texts via `textContent`; a row stored public but badly written is read back as non-public. The ADMIN part (switch, description, amber warning, list badge) was NOT built because no promotion admin existed → P5b.
+
+## 8. Admin: «Маркетинг» group and «Промокодове» (P5b, owner decisions 2026-11-09)
+- New navigation group **«Маркетинг»** (a new case in `App\Filament\NavigationGroup`), after «Доставка» and before «Съдържание». «Промокодове» is its first item; price lists, badges and newsletters join it later. Permission: the existing `promotion_manage`.
+- Never deleted, only switched on / off. After creation the code, the discount type and the discount value are NOT editable (create a new code and switch the old one off; a «Дублирай» action prefills a new one). Everything else is editable.
+- Scopes from closed lists: brand, category, tag, product, attribute value (include / exclude). No account scope in v1; existing account scopes are left untouched. **Season is its own entity → no season scope** (owner 2026-11-09: a season scope is WANTED later; for now the merchant uses a tag as the condition; a season scope needs a domain change in Promotions + the validator, to be planned separately).
+- Contains the «Публичен» switch, the description (required when public) and the amber warning for a public code without any condition (condition = minimum, scope, new customers only, end date or any limit).
 
 ## Work packages (owner, 2026-11-05: group small tasks so the FULL suite runs once per package)
 Each package is ONE coder task: targeted tests while working, folder runs after the last change, and ONE full-suite run (`./rt.sh --full`) at the very end of the package (not per sub-task). Grouped by the area they touch, so one full run covers related changes.
@@ -67,14 +73,16 @@ Each package is ONE coder task: targeted tests while working, folder runs after 
 | P4b | Product sections | Accordion sections (product-edit tab, global texts), accordion component, «Табове» slot kind | Sonnet |
 | P4b.1 | Sections corrections | Remove the `sf-description` block (description becomes a section source `description`), tab slot heading only when typed, right column without inner scroll (sticky) | Sonnet |
 | P4c | Section sources + per-product switch | Source `meta` («Сезон:», «Етикети:» as links), source `blocks` (HTML blocks decided by their conditions, e.g. brand size tables; brand condition if missing), per-product «Показвай на този продукт» switch in the «Информация» tab (migration: `hidden` flag) | Sonnet |
-| P5 | Cart | Cart performance (122 queries for 10 lines: remove the N+1, before caching) + `max_quantity` per line from the same grouped read + public promo codes in the cart (part 7) | Sonnet |
-| P6 | Prices | `price_from_minor`, sort by price, price lists — the base for the «Промо» badge | Sonnet |
+| P5 | Cart | Cart performance (N+1 removed: 24 queries for any number of lines), `max_quantity` per line from the same grouped read, public codes in the cart (API + cart UI; part 7). DONE, reviewed 2026-11-09 | Sonnet |
+| P5b | Admin: Маркетинг / Промокодове | Part 8: new menu group, list + create / edit / duplicate, update path in the Promotions domain, scopes, «Публичен» switch + description + warning, list badge, docs fix | Sonnet |
+| P6 | Prices | `price_from_minor`, sort by price, price lists — the base for the «Промо» badge (also needs the price-list admin, which does not exist yet; it will join «Маркетинг») | Sonnet |
 | P7 | Badge builder | Part 5: top / bottom positions on the card, «Промо» (mandatory, show/hide), «Нови», «Безплатна доставка» (shipping class OR price ≥ the cart's threshold), free-text badges with `ProductConditions` | Sonnet |
 | P8 | Before production | S4 caching + the security stage | Opus review, Sonnet build |
 
-Order: P1 → P2 → P3 → P4 → P4b → P4b.1 → P4c → P5 → P6 → P7 → P8. P5 may move earlier if needed (it touches only the cart). A package that turns out too big for one session is split at a working point with a HANDOVER file; the full run then happens at the end of the last part only.
+Order: P1 → P2 → P3 → P4 → P4b → P4b.1 → P4c → P5 → P5b → P6 → P7 → P8. A package that turns out too big for one session is split at a working point with a HANDOVER file; the full run then happens at the end of the last part only.
 
 Part 6 (card name 1/2 lines) is DONE (DRIBNI-4, 2026-11-04).
 
-Leftovers noted: `LimitFilteredCategoryRequests` does not cover `featured=1` (→ P8); listing-page signed preview shows the first category, not the edited page (small improvement); carousel kinds with pictures / brand logos are not offered in the listing bottom slot; brand / season / tag names as links on cards and filters (product page brand link is in P4).
+Leftovers noted: `LimitFilteredCategoryRequests` does not cover `featured=1` (→ P8); listing-page signed preview shows the first category, not the edited page (small improvement); carousel kinds with pictures / brand logos are not offered in the listing bottom slot; brand / season / tag names as links on cards and filters (product page brand link is in P4); checkout unit costs are still read one query per line (`costFor` in the line loop; a small grouped-read task); P5 left the `CatalogReader`-style direct Eloquent reads in `CartController` / `PublicPromotionList` (works, bypasses repositories).
+Not yet in the repo (checked 2026-11-09): admin for price lists, POS screens (`OperationalSales` is domain only).
 Section icons: not done (no closed storefront icon set yet; with the ICN-1 icons task). Decided 2026-11-06 (P4c): section sources `meta` and `blocks` (size tables per brand = HTML blocks with brand conditions inside one section) and a per-product «Показвай на този продукт» switch; no mass / category-wide hiding for now; no new brand field.
