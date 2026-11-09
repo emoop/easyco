@@ -1,6 +1,6 @@
 # EasyCo — «Дизайн»: Sidebar, page content, product page, badge builder (plan, owner-approved 2026-11-04)
 
-Status (2026-11-06): P1, P1.1, P2, P3, P3.1, P4, P4b done; P4b.1 (corrections) in progress. Each part becomes its own coder task (prompt written when it starts). Everything follows the storefront security rules (closed lists, no `style=`, no inline JS, validated on save / publish / read, published data only, draft via signed preview, identical HTML for every visitor) and `admin-ui-standard.md` (narrow «Дизайн» panels: one field per row).
+Status (2026-11-09): P1, P1.1, P2, P3, P3.1, P4, P4b, P4b.1, P4c done; DRIBNI-5 (menu groups, cloud button colours, accordion hint, phone buy row) and DRIBNI-6 (quantity counter like the buy button, cloud hover swap) done; P5 next. Each part becomes its own coder task (prompt written when it starts). Everything follows the storefront security rules (closed lists, no `style=`, no inline JS, validated on save / publish / read, published data only, draft via signed preview, identical HTML for every visitor) and `admin-ui-standard.md` (narrow «Дизайн» panels: one field per row).
 
 ## 1. Sidebar zone (filters)
 - The merchant switches each filter on / off and orders them.
@@ -66,14 +66,15 @@ Each package is ONE coder task: targeted tests while working, folder runs after 
 | P4 | Zone «Под галерията» | Part 4: ordered slots under the product page's main area (carousel, «Подобни продукти» as a carousel source, HTML block) + brand link | Sonnet |
 | P4b | Product sections | Accordion sections (product-edit tab, global texts), accordion component, «Табове» slot kind | Sonnet |
 | P4b.1 | Sections corrections | Remove the `sf-description` block (description becomes a section source `description`), tab slot heading only when typed, right column without inner scroll (sticky) | Sonnet |
+| P4c | Section sources + per-product switch | Source `meta` («Сезон:», «Етикети:» as links), source `blocks` (HTML blocks decided by their conditions, e.g. brand size tables; brand condition if missing), per-product «Показвай на този продукт» switch in the «Информация» tab (migration: `hidden` flag) | Sonnet |
 | P5 | Cart | Cart performance (122 queries for 10 lines: remove the N+1, before caching) + `max_quantity` per line from the same grouped read + public promo codes in the cart (part 7) | Sonnet |
 | P6 | Prices | `price_from_minor`, sort by price, price lists — the base for the «Промо» badge | Sonnet |
 | P7 | Badge builder | Part 5: top / bottom positions on the card, «Промо» (mandatory, show/hide), «Нови», «Безплатна доставка» (shipping class OR price ≥ the cart's threshold), free-text badges with `ProductConditions` | Sonnet |
 | P8 | Before production | S4 caching + the security stage | Opus review, Sonnet build |
 
-Order: P1 → P2 → P3 → P4 → P4b → P4b.1 → P5 → P6 → P7 → P8. P5 may move earlier if needed (it touches only the cart). A package that turns out too big for one session is split at a working point with a HANDOVER file; the full run then happens at the end of the last part only.
+Order: P1 → P2 → P3 → P4 → P4b → P4b.1 → P4c → P5 → P6 → P7 → P8. P5 may move earlier if needed (it touches only the cart). A package that turns out too big for one session is split at a working point with a HANDOVER file; the full run then happens at the end of the last part only.
 
 Part 6 (card name 1/2 lines) is DONE (DRIBNI-4, 2026-11-04).
 
 Leftovers noted: `LimitFilteredCategoryRequests` does not cover `featured=1` (→ P8); listing-page signed preview shows the first category, not the edited page (small improvement); carousel kinds with pictures / brand logos are not offered in the listing bottom slot; brand / season / tag names as links on cards and filters (product page brand link is in P4).
-Section icons: not done (no closed storefront icon set yet; with the ICN-1 icons task). Idea parked by the owner (2026-11-06): a section source «HTML блокове» (e.g. size tables per brand as HTML blocks with conditions) — the owner will design how it is switched on/off per product before it is built; no new brand field.
+Section icons: not done (no closed storefront icon set yet; with the ICN-1 icons task). Decided 2026-11-06 (P4c): section sources `meta` and `blocks` (size tables per brand = HTML blocks with brand conditions inside one section) and a per-product «Показвай на този продукт» switch; no mass / category-wide hiding for now; no new brand field.
