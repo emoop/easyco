@@ -610,6 +610,55 @@ function formatMoney(money) {
  * takes the whole width with the promo text as a FLOATING LABEL (a one-space placeholder, the label drawn inside the field by CSS) and the Apply button is attached
  * to the field's right end inside one wrapper, so the two read as one control. The applied / invalid / Remove states are the same in both modes.
  */
+/**
+ * P5: the «Потърси промокод» list: a native <details> (no script needed to open it) with the PUBLIC codes the cart read gave. Every text is set with
+ * textContent (the description is plain text, never markup). «Приложи» runs the SAME call typing the code does (PUT /api/cart/promotion).
+ */
+function publicPromotionList(cart, act) {
+    var data = cart.public_promotions;
+
+    if (! data || ! Array.isArray(data.items) || data.items.length === 0) {
+        return null;
+    }
+
+    var texts = data.texts || {};
+    var details = el('details', 'sf-promo-list');
+    details.appendChild(el('summary', 'sf-promo-list-summary', texts.link || ''));
+    var list = el('ul', 'sf-promo-list-items');
+
+    data.items.forEach(function (item) {
+        var row = el('li', 'sf-promo-list-item sf-promo-list-' + String(item.state).replace(/_/g, '-'));
+        var info = el('div', 'sf-promo-list-info');
+        info.appendChild(el('span', 'sf-promo-list-code', item.code));
+        info.appendChild(el('span', 'sf-promo-list-text', item.description));
+
+        if (item.state === 'below_minimum' && item.remaining) {
+            info.appendChild(el('span', 'sf-promo-list-hint', String(texts.remaining || '').split(':amount').join(formatMoney(item.remaining))));
+        }
+
+        row.appendChild(info);
+
+        if (item.state === 'applicable') {
+            var use = el('button', 'sf-promo-list-apply', texts.apply || '');
+            use.setAttribute('type', 'button');
+            use.addEventListener('click', function () {
+                act(function () {
+                    return api('PUT', '/api/cart/promotion', { code: item.code });
+                }, null);
+            });
+            row.appendChild(use);
+        } else if (item.state === 'applied') {
+            row.appendChild(el('span', 'sf-promo-list-badge', texts.applied || ''));
+        }
+
+        list.appendChild(row);
+    });
+
+    details.appendChild(list);
+
+    return details;
+}
+
 function promotionBox(cart, act, options) {
     var compact = !! (options && options.compact);
     var box = el('div', compact ? 'sf-cart-promo sf-promo-compact' : 'sf-cart-promo');
@@ -628,6 +677,12 @@ function promotionBox(cart, act, options) {
             }, t('promo_removed'));
         });
         box.appendChild(removeCode);
+
+        var listWhenApplied = publicPromotionList(cart, act);
+
+        if (listWhenApplied) {
+            box.appendChild(listWhenApplied);
+        }
 
         return box;
     }
@@ -672,6 +727,12 @@ function promotionBox(cart, act, options) {
     });
     box.appendChild(form);
 
+    var list = publicPromotionList(cart, act);
+
+    if (list) {
+        box.appendChild(list);
+    }
+
     return box;
 }
 
@@ -687,6 +748,8 @@ function initCartPage() {
     var loading = root.querySelector('[data-sf-cart-loading]');
     var categoryLinks = root.querySelector('[data-sf-cart-empty-extras]');
     var working = false;
+    // P5: only the cart READ carries the public-codes list; while the page shows one, a write is followed by a fresh read so the states stay true.
+    var hasPublicList = false;
 
     function clear(node) {
         while (node.firstChild) {
@@ -723,7 +786,7 @@ function initCartPage() {
             var result = await call();
             var ok = result.status >= 200 && result.status < 300;
 
-            if (ok && result.status !== 204 && result.data) {
+            if (ok && result.status !== 204 && result.data && ! hasPublicList) {
                 render(result.data);
                 setCount(result.data);
                 message(status, successText);
@@ -744,7 +807,7 @@ function initCartPage() {
 
     async function reload(successText, keepMessage) {
         try {
-            var result = await api('GET', '/api/cart');
+            var result = await api('GET', '/api/cart?public_promotions=1');
 
             if (result.status === 200) {
                 render(result.data);
@@ -966,6 +1029,7 @@ function initCartPage() {
     }
 
     function render(cart) {
+        hasPublicList = !! (cart && cart.public_promotions);
         clear(content);
 
         if (loading) {
@@ -1047,7 +1111,7 @@ function initCartPage() {
         }
 
         try {
-            var result = await api('GET', '/api/cart');
+            var result = await api('GET', '/api/cart?public_promotions=1');
 
             if (result.status === 200) {
                 render(result.data);

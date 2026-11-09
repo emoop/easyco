@@ -42,6 +42,8 @@ final class EloquentPromotionRepository implements PromotionRepository
         $model->valid_from = $promotion->validFrom();
         $model->valid_until = $promotion->validUntil();
         $model->status = $promotion->status()->value;
+        $model->is_public = $promotion->isPublic();
+        $model->public_description = $promotion->publicDescription();
 
         try {
             $model->save();
@@ -77,6 +79,26 @@ final class EloquentPromotionRepository implements PromotionRepository
     {
         return PromotionModel::all()
             ->map(fn (PromotionModel $model) => $this->toDomainPromotion($model))
+            ->all();
+    }
+
+    /**
+     * P5: every promotion flagged public AND active, in ONE query (the cart's list of codes). Whether it is within its
+     * dates, under its usage limits and so on is the validator's job, not the query's.
+     *
+     * @return Promotion[]
+     */
+    public function allPublicActive(): array
+    {
+        return PromotionModel::query()
+            ->where('is_public', true)
+            ->where('status', PromotionStatus::ACTIVE->value)
+            ->orderBy('id')
+            ->get()
+            ->map(fn (PromotionModel $model) => $this->toDomainPromotion($model))
+            // a row flagged public but written badly (no usable description) comes back non-public from the entity: it is not offered
+            ->filter(static fn (Promotion $promotion): bool => $promotion->isPublic())
+            ->values()
             ->all();
     }
 
@@ -122,6 +144,8 @@ final class EloquentPromotionRepository implements PromotionRepository
             validFrom: $model->valid_from?->toDateTimeImmutable(),
             validUntil: $model->valid_until?->toDateTimeImmutable(),
             status: PromotionStatus::from($model->status),
+            isPublic: (bool) $model->is_public,
+            publicDescription: $model->public_description,
         );
     }
 

@@ -39,12 +39,15 @@ class PromotionModel extends Model
         'valid_from',
         'valid_until',
         'status',
+        'is_public',
+        'public_description',
     ];
 
     protected $casts = [
         'individual_use_only' => 'boolean',
         'exclude_sale_items' => 'boolean',
         'new_customers_only' => 'boolean',
+        'is_public' => 'boolean',
         'valid_from' => 'datetime',
         'valid_until' => 'datetime',
     ];

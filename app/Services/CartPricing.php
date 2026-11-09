@@ -65,12 +65,18 @@ class CartPricing
         $lineResults = [];
         $unpricedVariationIds = [];
 
-        foreach ($cart->lines() as $line) {
-            try {
-                $result = $this->linePricer->priceLine($line->variationId(), $line->quantity(), $currency, $includeUnitCost);
-            } catch (PriceNotConfiguredException $exception) {
+        // P5: every line is priced in ONE grouped read (CheckoutLinePricer::priceLines()), never one read per line
+        $batch = $this->linePricer->priceLines(array_map(
+            static fn ($line): array => ['variationId' => $line->variationId(), 'quantity' => $line->quantity()],
+            $cart->lines(),
+        ), $currency, $includeUnitCost);
+
+        foreach ($cart->lines() as $index => $line) {
+            $result = $batch[$index];
+
+            if ($result instanceof PriceNotConfiguredException) {
                 if ($unpriced === UnpricedLines::REFUSE) {
-                    throw $exception;
+                    throw $result;
                 }
 
                 // Left out of the subtotal entirely: counting it as 0 would

@@ -76,6 +76,9 @@ class PromotionController extends Controller
             'usage_limit_items' => 'nullable|integer|min:1|max:4294967295',
             'valid_from' => 'nullable|date',
             'valid_until' => 'nullable|date',
+            // P5: a PUBLIC code is listed in every customer's cart, so it must carry a short plain-text description for them.
+            'is_public' => 'boolean',
+            'public_description' => ['nullable', 'string', 'max:120', 'required_if:is_public,true,1', new PlainText()],
         ], self::amountFormatMessages());
 
         $discountType = PromotionDiscountType::from($validated['discount_type']);
@@ -101,6 +104,8 @@ class PromotionController extends Controller
             usageLimitItems: $validated['usage_limit_items'] ?? null,
             validFrom: isset($validated['valid_from']) ? new DateTimeImmutable($validated['valid_from']) : null,
             validUntil: isset($validated['valid_until']) ? new DateTimeImmutable($validated['valid_until']) : null,
+            isPublic: (bool) ($validated['is_public'] ?? false),
+            publicDescription: $validated['public_description'] ?? null,
         );
 
         try {
@@ -180,6 +185,8 @@ class PromotionController extends Controller
             'valid_from' => $promotion->validFrom()?->format(DateTimeImmutable::ATOM),
             'valid_until' => $promotion->validUntil()?->format(DateTimeImmutable::ATOM),
             'status' => $promotion->status()->value,
+            'is_public' => $promotion->isPublic(),
+            'public_description' => $promotion->publicDescription(),
         ];
     }
 

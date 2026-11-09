@@ -25,4 +25,11 @@ interface PromotionRepository
 
     /** @return Promotion[] */
     public function all(): array;
+
+    /**
+     * P5: every promotion that is flagged public AND active, in one read (the cart's list of public codes).
+     *
+     * @return Promotion[]
+     */
+    public function allPublicActive(): array;
 }

@@ -2508,6 +2508,55 @@
         @apply mb-2 text-sm font-medium text-green-800;
     }
 
+    /* P5: the list of public promo codes (a native <details>): closed by default, one row per code. */
+    .sf-promo-list {
+        @apply mt-3 text-sm;
+    }
+
+    .sf-promo-list-summary {
+        @apply cursor-pointer font-medium text-neutral-800 underline underline-offset-2;
+    }
+
+    .sf-promo-list-items {
+        @apply mt-2 list-none space-y-2 p-0;
+    }
+
+    .sf-promo-list-item {
+        @apply flex items-center justify-between gap-3 rounded-md border border-neutral-200 bg-white p-3;
+    }
+
+    .sf-promo-list-info {
+        @apply flex min-w-0 flex-col gap-0.5;
+    }
+
+    .sf-promo-list-code {
+        @apply font-semibold uppercase tracking-wide text-neutral-900;
+    }
+
+    .sf-promo-list-text {
+        @apply break-words text-neutral-700;
+    }
+
+    .sf-promo-list-hint {
+        @apply text-amber-800;
+    }
+
+    .sf-promo-list-unavailable .sf-promo-list-code,
+    .sf-promo-list-unavailable .sf-promo-list-text {
+        @apply text-neutral-500;
+    }
+
+    .sf-promo-list-apply {
+        @apply shrink-0 px-3 py-1.5 text-sm font-semibold;
+        background-color: var(--sf-btn-bg, var(--sf-primary, oklch(20.5% 0 none)));
+        color: var(--sf-btn-text, var(--sf-on-primary, #fff));
+        border-radius: var(--sf-r-btn, var(--radius-md));
+    }
+
+    .sf-promo-list-badge {
+        @apply shrink-0 text-sm font-semibold text-green-800;
+    }
+
     .sf-cart-promo-invalid {
         @apply mb-2 text-sm font-medium text-red-800;
     }

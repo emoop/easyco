@@ -30,7 +30,7 @@ class StorefrontCartScriptTest extends TestCase
         preg_match_all("/api\\(\\s*'([A-Z]+)',\\s*'([^']+)'/", $this->script(), $calls, PREG_SET_ORDER);
 
         $seen = array_map(fn (array $call) => $call[1].' '.preg_replace('#/api/cart/lines/.*#', '/api/cart/lines/{id}', $call[2]), $calls);
-        $allowed = ['GET /api/cart', 'POST /api/cart/lines', 'PATCH /api/cart/lines/{id}', 'DELETE /api/cart/lines/{id}', 'PUT /api/cart/promotion', 'DELETE /api/cart/promotion'];
+        $allowed = ['GET /api/cart', 'GET /api/cart?public_promotions=1' /* P5: the cart PAGE's reads ask for the list of public codes */, 'POST /api/cart/lines', 'PATCH /api/cart/lines/{id}', 'DELETE /api/cart/lines/{id}', 'PUT /api/cart/promotion', 'DELETE /api/cart/promotion'];
 
         $this->assertNotEmpty($seen);
         $this->assertSame([], array_values(array_diff(array_unique($seen), $allowed)));
@@ -75,8 +75,10 @@ class StorefrontCartScriptTest extends TestCase
 
         // ... and GET /api/cart is requested from exactly four places: those two, and the cart page's own reload()/act() after a
         // write the visitor made (a write needs the csrf-cookie request first, which is the only request without a cookie).
-        preg_match_all("/api\('GET', '\/api\/cart'\)/", $script, $gets);
+        // P5: the header count's read is the plain one; the cart page's two (first load, reload) carry `?public_promotions=1`
+        preg_match_all("/api\('GET', '\/api\/cart(\?public_promotions=1)?'\)/", $script, $gets);
         $this->assertCount(3, $gets[0]);
+        $this->assertSame(1, substr_count($script, "api('GET', '/api/cart')"), 'the header badge never asks for the list');
         $this->assertSame(1, substr_count($script, "'/sanctum/csrf-cookie'"));
     }
 

@@ -8,6 +8,8 @@ use App\Services\CartFreeShippingHint;
 use App\Services\CartPricing;
 use App\Services\CartPricingResult;
 use App\Services\CatalogScopeResolver;
+use App\Settings\StoreLocale;
+use App\Services\PublicPromotionList;
 use App\Services\UnpricedLines;
 use App\Services\VariationDisplayReader;
 use App\Storefront\Cart\CartLineEnricher;
@@ -20,6 +22,7 @@ use EasyCo\Cart\Contracts\CartRepository;
 use EasyCo\Cart\Exceptions\InsufficientStockForCartException;
 use EasyCo\Catalog\Contracts\VariationRepository;
 use EasyCo\Inventory\Contracts\StockLevelRepository;
+use EasyCo\Inventory\Persistence\Eloquent\StockLevelModel;
 use EasyCo\Pricing\Contracts\PriceContext;
 use EasyCo\Pricing\Contracts\PriceResolver;
 use EasyCo\Pricing\DefaultCurrency;
@@ -67,12 +70,15 @@ class CartController extends Controller
         private readonly VariationDisplayReader $displayReader,
         private readonly CartFreeShippingHint $freeShippingHint,
         private readonly CartLineEnricher $lineEnricher,
+        private readonly PublicPromotionList $publicPromotions,
+        private readonly StoreLocale $storeLocale,
     ) {
     }
 
     public function index(Request $request): JsonResponse
     {
-        return response()->json($this->serializeCart($this->findCurrentCart($request)));
+        // P5: ONLY the cart read, and only when the cart page asks for it (?public_promotions=1), carries the list of public codes: the writes, checkout and the header badge never do.
+        return response()->json($this->serializeCart($this->findCurrentCart($request), withPublicPromotions: $request->boolean('public_promotions')));
     }
 
     public function store(Request $request): JsonResponse
@@ -307,7 +313,7 @@ class CartController extends Controller
         return new DateTimeImmutable($isAccountCart ? '+30 days' : '+10 days');
     }
 
-    private function serializeCart(?Cart $cart): array
+    private function serializeCart(?Cart $cart, bool $withPublicPromotions = false): array
     {
         $currency = DefaultCurrency::get();
         $subtotal = Money::fromMinorUnits(0, $currency);
@@ -343,6 +349,14 @@ class CartController extends Controller
             $cart->lines(),
         ));
 
+        // P5: each line's `max_quantity` (the most the quantity control may be set to) from ONE grouped stock read for the whole cart: the stock capped at the storefront's own limit, the same number the add and the update
+        // enforce; a variation with no stock row has 0 (as StockLevelRepository::findByVariationId() says). Never one read per line.
+        $stockByVariationId = [];
+
+        foreach (StockLevelModel::query()->whereIn('variation_id', array_map(static fn (CartLine $line): string => $line->variationId(), $cart->lines()))->get(['variation_id', 'quantity']) as $level) {
+            $stockByVariationId[(string) $level->variation_id] = (int) $level->quantity;
+        }
+
         // The subtotal, the promotion and the discount come from the ONE shared
         // calculation checkout also uses (CartPricing, stage 3.0c). The preview's two
         // decisions are explicit: an unpriced line is SKIPPED and flagged (never
@@ -373,6 +387,7 @@ class CartController extends Controller
                     'attributes' => $displayByVariationId[$line->variationId()]['attributes'],
                     'product_url' => $storefrontByVariationId[$line->variationId()]['product_url'] ?? null,
                     'image' => $storefrontByVariationId[$line->variationId()]['image'] ?? null,
+                    'max_quantity' => max(0, min(PurchaseView::MAX_QUANTITY, $stockByVariationId[$line->variationId()] ?? 0)),
                 ];
 
                 continue;
@@ -399,6 +414,7 @@ class CartController extends Controller
                 'attributes' => $displayByVariationId[$line->variationId()]['attributes'],
                 'product_url' => $storefrontByVariationId[$line->variationId()]['product_url'] ?? null,
                 'image' => $storefrontByVariationId[$line->variationId()]['image'] ?? null,
+                'max_quantity' => max(0, min(PurchaseView::MAX_QUANTITY, $stockByVariationId[$line->variationId()] ?? 0)),
             ];
         }
 
@@ -421,7 +437,7 @@ class CartController extends Controller
         // reads, never one per cart line, and null whenever nothing applies.
         $freeShippingHint = $this->freeShippingHint->forCart($cart, $pricing->goodsAfterDiscount()->minorValue(), $currency->code());
 
-        return [
+        $response = [
             // The live cart's id, so a client can name the cart it is buying at
             // checkout — REQUIRED there since cart-domain-design.md §14.2, and the
             // only way a replay can be answered after the cart stops being current.
@@ -432,6 +448,18 @@ class CartController extends Controller
             'promotion' => $promotion,
             'free_shipping_hint' => $freeShippingHint?->toArray(),
         ];
+
+        if ($withPublicPromotions) {
+            // Left out entirely when there is nothing to list, so a shop with no public codes answers exactly as before.
+            $publicPromotions = $this->publicPromotions->forCart($pricing, $accountId);
+
+            if ($publicPromotions !== []) {
+                // The texts travel with the list (localized here): the page's own text attributes are not touched, so the cacheable pages stay byte-identical.
+                $response['public_promotions'] = ['texts' => trans('storefront.public_promos', [], $this->storeLocale->current()), 'items' => $publicPromotions];
+            }
+        }
+
+        return $response;
     }
 
     /**

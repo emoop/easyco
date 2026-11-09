@@ -237,7 +237,7 @@ class CartLineEnricherTest extends TestCase
         $this->addLine('101')->assertStatus(201);
 
         $this->assertSame(
-            ['variation_id', 'quantity', 'price_at_add', 'unit_price', 'line_total', 'price_changed_since_add', 'price_available', 'product_name', 'sku', 'attributes', 'product_url', 'image'],
+            ['variation_id', 'quantity', 'price_at_add', 'unit_price', 'line_total', 'price_changed_since_add', 'price_available', 'product_name', 'sku', 'attributes', 'product_url', 'image', 'max_quantity'],
             array_keys($this->getJson('/api/cart')->json('lines.0')),
         );
     }

@@ -88,6 +88,15 @@ return [
     'account' => 'Account',
     'wishlist' => 'Wishlist',
 
+    // P5: the cart's list of public promo codes (comes in the GET /api/cart answer together with the list).
+    'public_promos' => [
+        'link' => 'Find a promo code',
+        'apply' => 'Apply',
+        'applied' => 'Applied',
+        'remaining' => 'You are :amount away from this code',
+        'unavailable' => 'Not available right now',
+    ],
+
     // Texts the cart script prints (handed to it through data attributes; see partials/messages.blade.php).
     'js' => [
         'cart_empty_text' => 'Your cart is empty.',

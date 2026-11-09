@@ -619,8 +619,9 @@ class ShippingQuoteServiceTest extends TestCase
 
         $this->service()->quote($cart, null, $this->bg());
 
-        // (CartPricing's own line pricer reads each variation singly; that is the shared calculation's cost, not this service's.)
-        $this->assertSame(1, $variationReads, 'VariationRepository::findByIds: ONE query naming all three lines');
+        // P5: CartPricing's line pricer now prices ALL the lines in one grouped read (CatalogScopeResolver::forVariations(): ONE `in (?, ?, ?)` query naming all three lines), which this counter also sees; it used to
+        // read each variation singly (`where id = ?`), which it did not. So the count is that one grouped read of the shared calculation PLUS this service's own ONE read of the shipping classes: two, whatever the number of lines.
+        $this->assertSame(2, $variationReads, 'VariationRepository::findByIds: ONE query naming all three lines for the pricing + ONE for the shipping classes');
     }
 
     /** @return array<string, int> */

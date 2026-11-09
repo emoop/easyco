@@ -1,0 +1,104 @@
+{
+    "cart_id": "CART",
+    "lines": [
+        {
+            "variation_id": "V1",
+            "quantity": 1,
+            "price_at_add": {
+                "minor": 6000,
+                "currency": "EUR"
+            },
+            "unit_price": {
+                "minor": 6000,
+                "currency": "EUR"
+            },
+            "line_total": {
+                "minor": 6000,
+                "currency": "EUR"
+            },
+            "price_changed_since_add": false,
+            "price_available": true,
+            "product_name": "P5 Product 11",
+            "sku": "P5-11",
+            "attributes": [],
+            "product_url": null,
+            "image": null
+        },
+        {
+            "variation_id": "V2",
+            "quantity": 2,
+            "price_at_add": {
+                "minor": 3500,
+                "currency": "EUR"
+            },
+            "unit_price": {
+                "minor": 3500,
+                "currency": "EUR"
+            },
+            "line_total": {
+                "minor": 7000,
+                "currency": "EUR"
+            },
+            "price_changed_since_add": false,
+            "price_available": true,
+            "product_name": "P5 Variable 12",
+            "sku": "P5-VAR-12-M",
+            "attributes": [
+                {
+                    "name": "Size",
+                    "value": "M"
+                }
+            ],
+            "product_url": "/product/p5-variable-12",
+            "image": null
+        },
+        {
+            "variation_id": "V3",
+            "quantity": 4,
+            "price_at_add": {
+                "minor": 450,
+                "currency": "EUR"
+            },
+            "unit_price": {
+                "minor": 450,
+                "currency": "EUR"
+            },
+            "line_total": {
+                "minor": 1800,
+                "currency": "EUR"
+            },
+            "price_changed_since_add": false,
+            "price_available": true,
+            "product_name": "P5 Product 13",
+            "sku": "P5-13",
+            "attributes": [],
+            "product_url": null,
+            "image": null
+        }
+    ],
+    "subtotal": {
+        "minor": 14800,
+        "currency": "EUR"
+    },
+    "total": {
+        "minor": 14300,
+        "currency": "EUR"
+    },
+    "promotion": {
+        "code": "p5-new",
+        "valid": true,
+        "reason": null,
+        "applicable_variation_ids": [
+            "V1",
+            "V2",
+            "V3"
+        ],
+        "discount_amount": {
+            "minor": 500,
+            "currency": "EUR"
+        },
+        "discount_capped": false,
+        "nominal_discount_amount": null
+    },
+    "free_shipping_hint": null
+}

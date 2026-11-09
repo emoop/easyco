@@ -206,7 +206,8 @@ globalThis.fetch = async (path, init = {}) => {
     calls.push({ method: method_, path, body });
     let result = { status: 404, data: null };
 
-    if (method_ === 'GET' && path === '/api/cart') result = cartReply ?? { status: 200, data: currentCart() };
+    // P5: the cart PAGE reads the cart with `?public_promotions=1` (it asks for the list of public codes); it is the same cart read
+    if (method_ === 'GET' && path.split('?')[0] === '/api/cart') result = cartReply ?? { status: 200, data: currentCart() };
 
     const patch = /^\/api\/cart\/lines\/(\d+)$/.exec(path);
 
@@ -228,7 +229,7 @@ const content = () => q('[data-sf-cart-content]');
 const i18n = q('#sf-i18n');
 const T = (key) => i18n.getAttribute(`data-m-${key.replace(/_/g, '-')}`);
 const patches = () => calls.filter((c) => c.method === 'PATCH');
-const gets = () => calls.filter((c) => c.method === 'GET' && c.path === '/api/cart');
+const gets = () => calls.filter((c) => c.method === 'GET' && c.path.split('?')[0] === '/api/cart');
 const byClass = (name, root = content()) => root.all().filter((n) => (n.attrs.class || '').split(' ').includes(name));
 const text = (node) => node.textContent.trim().replace(/\s+/g, ' ');
 

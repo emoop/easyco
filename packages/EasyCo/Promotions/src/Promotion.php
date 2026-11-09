@@ -43,12 +43,42 @@ final class Promotion
         private readonly ?DateTimeImmutable $validFrom,
         private readonly ?DateTimeImmutable $validUntil,
         private PromotionStatus $status,
+        private readonly bool $isPublic = false,
+        private ?string $publicDescription = null,
     ) {
         $this->code = self::normalizeAndValidateCode($code);
         self::assertDiscountValueMatchesType($discountType, $percentageBasisPoints, $discountAmount);
         self::assertValidSpendRange($minimumSpend, $maximumSpend);
         self::assertValidTimeWindow($validFrom, $validUntil);
         self::assertPositiveUsageLimits($usageLimitTotal, $usageLimitPerCustomer, $usageLimitItems);
+        $this->publicDescription = self::normalizePublicDescription($isPublic, $publicDescription);
+    }
+
+    public const PUBLIC_DESCRIPTION_MAX_LENGTH = 120;
+
+    /**
+     * P5: a PUBLIC promotion's code is shown to every customer in the cart, so it must carry a customer-facing
+     * description (required, at most 120 characters). A non-public promotion has none: whatever is passed is dropped,
+     * so a description can never linger on a code that is not listed. The text is stored as typed (trimmed); it is
+     * escaped where it is shown, never trusted as markup.
+     */
+    private static function normalizePublicDescription(bool $isPublic, ?string $description): ?string
+    {
+        if (! $isPublic) {
+            return null;
+        }
+
+        $description = $description === null ? '' : trim($description);
+
+        if ($description === '') {
+            throw new InvalidArgumentException('A public Promotion requires a customer-facing description.');
+        }
+
+        if (mb_strlen($description) > self::PUBLIC_DESCRIPTION_MAX_LENGTH) {
+            throw new InvalidArgumentException('A public Promotion description must be at most '.self::PUBLIC_DESCRIPTION_MAX_LENGTH.' characters.');
+        }
+
+        return $description;
     }
 
     /**
@@ -171,6 +201,8 @@ final class Promotion
         ?int $usageLimitItems = null,
         ?DateTimeImmutable $validFrom = null,
         ?DateTimeImmutable $validUntil = null,
+        bool $isPublic = false,
+        ?string $publicDescription = null,
     ): self {
         return new self(
             id: null,
@@ -189,6 +221,8 @@ final class Promotion
             validFrom: $validFrom,
             validUntil: $validUntil,
             status: PromotionStatus::ACTIVE,
+            isPublic: $isPublic,
+            publicDescription: $publicDescription,
         );
     }
 
@@ -218,7 +252,19 @@ final class Promotion
         ?DateTimeImmutable $validFrom,
         ?DateTimeImmutable $validUntil,
         PromotionStatus $status,
+        bool $isPublic = false,
+        ?string $publicDescription = null,
     ): self {
+        // A row edited by hand to `is_public = 1` with an empty or over-long description must NOT break every read of the promotions (the cart, applying a code, checkout all read through here):
+        // it comes back as a NON-public promotion (never listed). The strict rule stays on create() and the API: only a row read back from storage is forgiven.
+        if ($isPublic) {
+            try {
+                self::normalizePublicDescription(true, $publicDescription);
+            } catch (InvalidArgumentException) {
+                $isPublic = false;
+            }
+        }
+
         return new self(
             id: $id,
             code: $code,
@@ -236,6 +282,8 @@ final class Promotion
             validFrom: $validFrom,
             validUntil: $validUntil,
             status: $status,
+            isPublic: $isPublic,
+            publicDescription: $publicDescription,
         );
     }
 
@@ -326,6 +374,16 @@ final class Promotion
     public function status(): PromotionStatus
     {
         return $this->status;
+    }
+
+    public function isPublic(): bool
+    {
+        return $this->isPublic;
+    }
+
+    public function publicDescription(): ?string
+    {
+        return $this->publicDescription;
     }
 
     public function isActive(): bool

@@ -1,0 +1,265 @@
+{
+    "cart_id": "CART",
+    "lines": [
+        {
+            "variation_id": "V1",
+            "quantity": 2,
+            "price_at_add": {
+                "minor": 1000,
+                "currency": "EUR"
+            },
+            "unit_price": {
+                "minor": 1000,
+                "currency": "EUR"
+            },
+            "line_total": {
+                "minor": 2000,
+                "currency": "EUR"
+            },
+            "price_changed_since_add": false,
+            "price_available": true,
+            "product_name": "P5 Product 1",
+            "sku": "P5-1",
+            "attributes": [],
+            "product_url": null,
+            "image": null
+        },
+        {
+            "variation_id": "V2",
+            "quantity": 1,
+            "price_at_add": {
+                "minor": 2550,
+                "currency": "EUR"
+            },
+            "unit_price": {
+                "minor": 2550,
+                "currency": "EUR"
+            },
+            "line_total": {
+                "minor": 2550,
+                "currency": "EUR"
+            },
+            "price_changed_since_add": false,
+            "price_available": true,
+            "product_name": "P5 Product 2",
+            "sku": "P5-2",
+            "attributes": [],
+            "product_url": null,
+            "image": null
+        },
+        {
+            "variation_id": "V3",
+            "quantity": 3,
+            "price_at_add": {
+                "minor": 4000,
+                "currency": "EUR"
+            },
+            "unit_price": {
+                "minor": 4000,
+                "currency": "EUR"
+            },
+            "line_total": {
+                "minor": 12000,
+                "currency": "EUR"
+            },
+            "price_changed_since_add": false,
+            "price_available": true,
+            "product_name": "P5 Variable 3",
+            "sku": "P5-VAR-3-M",
+            "attributes": [
+                {
+                    "name": "Size",
+                    "value": "M"
+                }
+            ],
+            "product_url": "/product/p5-variable-3",
+            "image": null
+        },
+        {
+            "variation_id": "V4",
+            "quantity": 1,
+            "price_at_add": {
+                "minor": 2400,
+                "currency": "EUR"
+            },
+            "unit_price": {
+                "minor": 2400,
+                "currency": "EUR"
+            },
+            "line_total": {
+                "minor": 2400,
+                "currency": "EUR"
+            },
+            "price_changed_since_add": false,
+            "price_available": true,
+            "product_name": "P5 Product 4",
+            "sku": "P5-4",
+            "attributes": [],
+            "product_url": null,
+            "image": null
+        },
+        {
+            "variation_id": "V5",
+            "quantity": 2,
+            "price_at_add": {
+                "minor": 2000,
+                "currency": "EUR"
+            },
+            "unit_price": {
+                "minor": 1200,
+                "currency": "EUR"
+            },
+            "line_total": {
+                "minor": 2400,
+                "currency": "EUR"
+            },
+            "price_changed_since_add": true,
+            "price_available": true,
+            "product_name": "P5 Product 5",
+            "sku": "P5-5",
+            "attributes": [],
+            "product_url": null,
+            "image": null
+        },
+        {
+            "variation_id": "V6",
+            "quantity": 3,
+            "price_at_add": {
+                "minor": 800,
+                "currency": "EUR"
+            },
+            "unit_price": {
+                "minor": 800,
+                "currency": "EUR"
+            },
+            "line_total": {
+                "minor": 2400,
+                "currency": "EUR"
+            },
+            "price_changed_since_add": false,
+            "price_available": true,
+            "product_name": "P5 Product 6",
+            "sku": "P5-6",
+            "attributes": [],
+            "product_url": null,
+            "image": null
+        },
+        {
+            "variation_id": "V7",
+            "quantity": 1,
+            "price_at_add": {
+                "minor": 900,
+                "currency": "EUR"
+            },
+            "unit_price": {
+                "minor": 900,
+                "currency": "EUR"
+            },
+            "line_total": {
+                "minor": 900,
+                "currency": "EUR"
+            },
+            "price_changed_since_add": false,
+            "price_available": true,
+            "product_name": "P5 Product 7",
+            "sku": "P5-7",
+            "attributes": [],
+            "product_url": null,
+            "image": null
+        },
+        {
+            "variation_id": "V8",
+            "quantity": 1,
+            "price_at_add": {
+                "minor": 1100,
+                "currency": "EUR"
+            },
+            "unit_price": null,
+            "line_total": null,
+            "price_changed_since_add": false,
+            "price_available": false,
+            "product_name": "P5 Product 8",
+            "sku": "P5-8",
+            "attributes": [],
+            "product_url": null,
+            "image": null
+        },
+        {
+            "variation_id": "V9",
+            "quantity": 1,
+            "price_at_add": {
+                "minor": 1500,
+                "currency": "EUR"
+            },
+            "unit_price": {
+                "minor": 1700,
+                "currency": "EUR"
+            },
+            "line_total": {
+                "minor": 1700,
+                "currency": "EUR"
+            },
+            "price_changed_since_add": true,
+            "price_available": true,
+            "product_name": "P5 Product 9",
+            "sku": "P5-9",
+            "attributes": [],
+            "product_url": null,
+            "image": null
+        },
+        {
+            "variation_id": "V10",
+            "quantity": 1,
+            "price_at_add": {
+                "minor": 500,
+                "currency": "EUR"
+            },
+            "unit_price": {
+                "minor": 500,
+                "currency": "EUR"
+            },
+            "line_total": {
+                "minor": 500,
+                "currency": "EUR"
+            },
+            "price_changed_since_add": false,
+            "price_available": true,
+            "product_name": "P5 Product 10",
+            "sku": "P5-10",
+            "attributes": [],
+            "product_url": null,
+            "image": null
+        }
+    ],
+    "subtotal": {
+        "minor": 26850,
+        "currency": "EUR"
+    },
+    "total": {
+        "minor": 24165,
+        "currency": "EUR"
+    },
+    "promotion": {
+        "code": "p5-ten",
+        "valid": true,
+        "reason": null,
+        "applicable_variation_ids": [
+            "V1",
+            "V2",
+            "V3",
+            "V4",
+            "V5",
+            "V6",
+            "V7",
+            "V9",
+            "V10"
+        ],
+        "discount_amount": {
+            "minor": 2685,
+            "currency": "EUR"
+        },
+        "discount_capped": false,
+        "nominal_discount_amount": null
+    },
+    "free_shipping_hint": null
+}

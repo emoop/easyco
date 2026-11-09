@@ -25,12 +25,13 @@ class ShippingAllKindsQueryCountTest extends TestCase
     /** The single-kind (street address) quote of this fixture, cold: every query of the request, with 1 line and with 5. */
     private const SINGLE_1 = 19;
 
-    private const SINGLE_5 = 63;
+    // P5: CartPricing prices ALL the lines in one grouped read, so 5 lines cost what 1 line costs (was 63 / 64: about 11 queries per line); lowered with the cart's own count
+    private const SINGLE_5 = 19;
 
     /** The `all` quote of this fixture, cold, with 1 line and with 5: never more than the single-kind quote + 2 (here: +1, the hint's settings read). */
     private const ALL_1 = 20;
 
-    private const ALL_5 = 64;
+    private const ALL_5 = 20;
 
     protected function setUp(): void
     {

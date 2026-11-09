@@ -158,7 +158,7 @@ class CartLineDisplayFieldsTest extends TestCase
         $this->assertSame($product['sku'], $line['sku']);
         $this->assertSame([], $line['attributes'], 'a SIMPLE product\'s universal variation has no attributes');
 
-        // Nothing else was added — ten keys, exactly these.
+        // Nothing else was added — exactly these keys (P5 added `max_quantity` at the end: the stock capped at 99, which the cart page's quantity control already reads).
         $this->assertSame([
             'variation_id',
             'quantity',
@@ -172,6 +172,7 @@ class CartLineDisplayFieldsTest extends TestCase
             'attributes',
             'product_url',
             'image',
+            'max_quantity',
         ], array_keys($line));
     }
 
