@@ -135,7 +135,8 @@ class ActivityLogJournal extends Page implements HasTable
                     ->dateTime()
                     ->sortable(),
                 TextColumn::make('entity_type')
-                    ->label(__('journal.columns.entity_type')),
+                    ->label(__('journal.columns.entity_type'))
+                    ->formatStateUsing(fn (string $state): string => static::entityLabel($state)),
                 TextColumn::make('entity_id')
                     ->label(__('journal.columns.entity_id'))
                     ->searchable(),
@@ -157,6 +158,7 @@ class ActivityLogJournal extends Page implements HasTable
                         ->distinct()
                         ->orderBy('entity_type')
                         ->pluck('entity_type', 'entity_type')
+                        ->map(fn (string $type): string => static::entityLabel($type))
                         ->all()),
                 SelectFilter::make('staff_name')
                     ->label(__('journal.columns.staff_name'))
@@ -186,6 +188,17 @@ class ActivityLogJournal extends Page implements HasTable
                             );
                     }),
             ]);
+    }
+
+    /**
+     * The readable name of an entity type where the journal knows one (`journal.entities.<type>`: «Промокод» / «Promo code»); any other type is shown as it is stored.
+     */
+    protected static function entityLabel(string $type): string
+    {
+        $key = 'journal.entities.'.$type;
+        $label = __($key);
+
+        return $label === $key ? $type : $label;
     }
 
     /**

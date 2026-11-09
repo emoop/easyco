@@ -30,6 +30,9 @@ use Throwable;
  */
 final class PromotionWriter
 {
+    /** The activity log's entity name (the journal shows it as «Промокод» / «Promo code»). */
+    public const ENTITY = 'promotion';
+
     /** The scope types the form offers. */
     public const SCOPE_TYPES = [
         PromotionScopeType::BRAND,
@@ -43,6 +46,7 @@ final class PromotionWriter
         private readonly PromotionRepository $promotions,
         private readonly PromotionScopeRepository $scopes,
         private readonly PromotionAdminReader $reader,
+        private readonly ActivityLogger $audit,
     ) {
     }
 
@@ -125,6 +129,8 @@ final class PromotionWriter
                 foreach ($scopes as $scope) {
                     $this->scopes->attach(new PromotionScope(null, (string) $promotion->id(), $scope['type'], $scope['reference'], $scope['mode']));
                 }
+
+                $this->audit->logCreated(self::ENTITY, (string) $promotion->id());
             });
         } catch (PromotionCodeAlreadyExistsException) {
             throw new PromotionInvalidException(['code' => [__('promotions.errors.code_taken')]]);
@@ -154,6 +160,8 @@ final class PromotionWriter
             throw new PromotionInvalidException($errors);
         }
 
+        $before = self::snapshot($promotion, $this->managedScopeKeys($promotion));
+
         try {
             $promotion->update(
                 individualUseOnly: $editable['individualUseOnly'],
@@ -175,9 +183,17 @@ final class PromotionWriter
 
         ($data['is_active'] ?? $promotion->isActive()) ? $promotion->activate() : $promotion->deactivate();
 
-        DB::transaction(function () use ($promotion, $scopes): void {
+        $after = self::snapshot($promotion, self::scopeKeysOf($scopes));
+
+        // an update that changes nothing writes nothing: no save, no audit entry
+        if ($after === $before) {
+            return $promotion;
+        }
+
+        DB::transaction(function () use ($promotion, $scopes, $before, $after): void {
             $this->promotions->save($promotion);
             $this->reconcileScopes($promotion, $scopes);
+            $this->auditChanges((string) $promotion->id(), $before, $after);
         });
 
         return $promotion;
@@ -196,8 +212,16 @@ final class PromotionWriter
             throw new PromotionInvalidException(['code' => [__('promotions.errors.not_found')]]);
         }
 
-        $active ? $promotion->activate() : $promotion->deactivate();
-        $this->promotions->save($promotion);
+        // switching to the state it already has writes nothing
+        if ($promotion->isActive() === $active) {
+            return $promotion;
+        }
+
+        DB::transaction(function () use ($promotion, $active): void {
+            $active ? $promotion->activate() : $promotion->deactivate();
+            $this->promotions->save($promotion);
+            $this->audit->logFieldChanged(self::ENTITY, (string) $promotion->id(), 'status', $active ? 'inactive' : 'active', $active ? 'active' : 'inactive');
+        });
 
         return $promotion;
     }
@@ -382,6 +406,79 @@ final class PromotionWriter
         }
 
         return $out;
+    }
+
+    /**
+     * The values the audit compares, by the FORM's own field names, as short readable strings: money as 79.99, dates as Y-m-d H:i, booleans as 1 / 0, a missing value as an empty string, the scopes as one compact
+     * sorted list (`brand:include:12, tag:exclude:7`). Only the scope types the form manages; nothing about a customer ever goes in.
+     *
+     * @param  list<string>  $scopeKeys  `type:mode:reference` of every managed scope
+     * @return array<string, string>
+     */
+    private static function snapshot(Promotion $promotion, array $scopeKeys): array
+    {
+        $flag = static fn (bool $value): string => $value ? '1' : '0';
+        $int = static fn (?int $value): string => $value === null ? '' : (string) $value;
+        $money = static fn (?Money $value): string => $value === null ? '' : $value->decimalValue();
+        $date = static fn (?DateTimeImmutable $value): string => $value === null ? '' : $value->format('Y-m-d H:i');
+
+        $keys = array_values(array_unique($scopeKeys));
+        sort($keys);
+
+        return [
+            'minimum_spend' => $money($promotion->minimumSpend()),
+            'maximum_spend' => $money($promotion->maximumSpend()),
+            'new_customers_only' => $flag($promotion->newCustomersOnly()),
+            'exclude_sale_items' => $flag($promotion->excludeSaleItems()),
+            'individual_use_only' => $flag($promotion->individualUseOnly()),
+            'usage_limit_total' => $int($promotion->usageLimitTotal()),
+            'usage_limit_per_customer' => $int($promotion->usageLimitPerCustomer()),
+            'usage_limit_items' => $int($promotion->usageLimitItems()),
+            'valid_from' => $date($promotion->validFrom()),
+            'valid_until' => $date($promotion->validUntil()),
+            'is_public' => $flag($promotion->isPublic()),
+            'public_description' => (string) $promotion->publicDescription(),
+            'status' => $promotion->isActive() ? 'active' : 'inactive',
+            'scopes' => implode(', ', $keys),
+        ];
+    }
+
+    /** @return list<string> the `type:mode:reference` keys of the promotion's stored scopes of the types the form manages */
+    private function managedScopeKeys(Promotion $promotion): array
+    {
+        $keys = [];
+
+        foreach ($this->scopes->findByPromotionId((string) $promotion->id()) as $scope) {
+            if (in_array($scope->scopeType(), self::SCOPE_TYPES, true)) {
+                $keys[] = $scope->scopeType()->value.':'.$scope->mode()->value.':'.$scope->scopeReferenceId();
+            }
+        }
+
+        return $keys;
+    }
+
+    /**
+     * @param  list<array{type: PromotionScopeType, mode: PromotionScopeMode, reference: string}>  $scopes
+     * @return list<string>
+     */
+    private static function scopeKeysOf(array $scopes): array
+    {
+        return array_map(static fn (array $row): string => $row['type']->value.':'.$row['mode']->value.':'.$row['reference'], $scopes);
+    }
+
+    /**
+     * ONE activity-log entry per field that really changed (the same transaction as the save).
+     *
+     * @param  array<string, string>  $before
+     * @param  array<string, string>  $after
+     */
+    private function auditChanges(string $id, array $before, array $after): void
+    {
+        foreach ($after as $field => $new) {
+            if ($before[$field] !== $new) {
+                $this->audit->logFieldChanged(self::ENTITY, $id, $field, $before[$field], $new);
+            }
+        }
     }
 
     /**

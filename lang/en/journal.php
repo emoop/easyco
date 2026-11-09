@@ -7,6 +7,11 @@ return [
     'action_created' => 'Created',
     'system_actor' => 'System',
 
+    // A readable entity name where the journal knows one; other types are shown as stored.
+    'entities' => [
+        'promotion' => 'Promo code',
+    ],
+
     'columns' => [
         'occurred_at' => 'Date',
         'entity_type' => 'Type',

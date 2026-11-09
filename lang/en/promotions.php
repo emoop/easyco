@@ -76,8 +76,12 @@ return [
         'is_active' => 'A switched-off code cannot be applied. A promo code is never deleted, because orders keep its history.',
         'scopes' => 'An empty scope means the whole cart. «Only for» limits the discount to the chosen ones, «Except» leaves them out. They can be combined.',
         'is_public' => 'A public code is shown to every visitor of the cart («Find a promo code»). The code itself is public by design: do not keep it secret.',
+        'account_scopes' => 'This code is restricted to specific customers. That restriction is set through the API only: the form shows it, never changes it and leaves it as it is when you save.',
         'public_description' => 'A short text for the customer, up to 120 characters, plain text only.',
     ],
+
+    // P5c: read-only, under the scope (ACCOUNT scopes are set through the API only)
+    'account_scopes' => '{1} Restricted to :count customer (set through the API only)|[2,*] Restricted to :count customers (set through the API only)',
 
     'public_warning' => 'A public code without a condition is a permanent discount. Add a condition: a minimum amount, a category, a first order or an end date.',
 

@@ -26,6 +26,7 @@ use EasyCo\Staff\Enums\Permission;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
 use Filament\Forms\Components\DateTimePicker;
+use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
@@ -267,6 +268,15 @@ class PromotionResource extends Resource
                                 ->getSearchResultsUsing(fn (string $search, Get $get): array => static::scopeOptions($get('type'), $search))
                                 ->getOptionLabelUsing(fn ($value, Get $get): ?string => static::scopeLabel($get('type'), $value)),
                         ]),
+
+                    // P5c: the customer restrictions (ACCOUNT scopes) are made through the API only; the form shows how many there are, read-only, and never submits or changes them
+                    Hidden::make('account_scope_count')->default(0)->dehydrated(false),
+                    View::make('filament.promotions.account-scopes')
+                        ->viewData(fn (Get $get): array => [
+                            'count' => (int) $get('account_scope_count'),
+                            'hint' => InfoHint::make(__('promotions.hints.account_scopes'), 'account_scopes'),
+                        ])
+                        ->visible(fn (Get $get): bool => (int) $get('account_scope_count') > 0),
                 ]),
 
                 Section::make(__('promotions.sections.public'))->compact()->columns(['default' => 1, 'md' => 2])->schema([
@@ -287,6 +297,7 @@ class PromotionResource extends Resource
                             newCustomersOnly: (bool) $get('new_customers_only'),
                             validUntil: $get('valid_until'),
                             limits: [$get('usage_limit_total'), $get('usage_limit_per_customer'), $get('usage_limit_items')],
+                            accountScopes: (int) $get('account_scope_count'),
                         ))
                         ->columnSpanFull(),
                 ]),
@@ -301,9 +312,10 @@ class PromotionResource extends Resource
      * @param  array<int, mixed>|null  $scopes
      * @param  list<mixed>  $limits
      */
-    public static function hasAnyCondition(mixed $minimumSpend, mixed $scopes, bool $newCustomersOnly, mixed $validUntil, array $limits): bool
+    public static function hasAnyCondition(mixed $minimumSpend, mixed $scopes, bool $newCustomersOnly, mixed $validUntil, array $limits, int $accountScopes = 0): bool
     {
-        if ($newCustomersOnly || filled($minimumSpend) || filled($validUntil) || (is_array($scopes) && $scopes !== [])) {
+        // an existing ACCOUNT scope (a customer restriction made through the API) is a condition too: the code is not for everybody
+        if ($accountScopes > 0 || $newCustomersOnly || filled($minimumSpend) || filled($validUntil) || (is_array($scopes) && $scopes !== [])) {
             return true;
         }
 
@@ -377,6 +389,7 @@ class PromotionResource extends Resource
             'is_public' => (bool) $model->is_public,
             'public_description' => $model->public_description,
             'scopes' => $scopes,
+            'account_scope_count' => $duplicate ? 0 : PromotionScopeModel::query()->where('promotion_id', $model->id)->where('scope_type', PromotionScopeType::ACCOUNT->value)->count(),
         ];
     }
 
