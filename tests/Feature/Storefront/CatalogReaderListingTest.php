@@ -140,17 +140,22 @@ class CatalogReaderListingTest extends TestCase
         $this->assertNull($cards['ranged']->price->regularFromMinor);
     }
 
-    public function test_price_filters_and_price_sorts_are_refused_until_s7(): void
+    /** P6a: the price FILTER is still refused (a later step); the price SORT is served by the stored price (CatalogListingPriceSortTest) */
+    public function test_price_filters_are_refused_but_the_price_sorts_are_served(): void
     {
         $this->makeProduct(1, ['price' => '1.00']);
 
-        foreach ([['sort' => 'price_asc'], ['sort' => 'price_desc'], ['price_min' => '100'], ['price_max' => '900']] as $request) {
+        foreach ([['price_min' => '100'], ['price_max' => '900']] as $request) {
             try {
                 $this->listing($request);
-                $this->fail('Expected the S1 reader to refuse '.json_encode($request));
+                $this->fail('Expected the reader to refuse '.json_encode($request));
             } catch (ListingOptionNotAvailable) {
                 $this->addToAssertionCount(1);
             }
+        }
+
+        foreach (['price_asc', 'price_desc'] as $sort) {
+            $this->assertCount(1, $this->listing(['sort' => $sort])->items, $sort);
         }
     }
 

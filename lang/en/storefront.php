@@ -55,7 +55,7 @@ return [
     'filter_reset' => 'Clear',
     'sort_label' => 'Sort by:',
     'sort_title' => 'Sort',
-    'sort' => ['newest' => 'Newest', 'name_asc' => 'Name (A–Z)', 'price_asc' => 'Price (low to high)', 'price_desc' => 'Price (high to low)'],
+    'sort' => ['newest' => 'Newest', 'price_asc' => 'Price: low to high', 'price_desc' => 'Price: high to low'],
     'products_count' => '{0} :count products|{1} :count product|[2,*] :count products',
     'too_many_title' => 'Too many requests',
     'too_many_text' => 'Too many requests. Please try again in a moment.',

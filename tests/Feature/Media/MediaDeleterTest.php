@@ -199,9 +199,10 @@ class MediaDeleterTest extends TestCase
     #[\PHPUnit\Framework\Attributes\DataProvider('usages')]
     public function test_a_used_asset_is_never_deleted_and_nothing_changes(callable $use): void
     {
-        Queue::fake();
         $asset = $this->asset();
         $use($this, $asset);
+        // P6a: the faked queue starts AFTER the setup (a product saved while arranging queues its sort-price refresh); what must queue nothing is the delete itself
+        Queue::fake();
 
         $outcome = $this->deleter()->delete((int) $asset->id);
 

@@ -259,8 +259,8 @@ class CategoryFiltersTest extends TestCase
             ->assertRedirect(url('/product-category/clothing?filter[1]=1001&filter[2]=2001'));
         $this->visit('/product-category/clothing?filter[1]=1002,1001')->assertStatus(301)
             ->assertRedirect(url('/product-category/clothing?filter[1]=1001,1002'));
-        $this->visit('/product-category/clothing?filter[2]=2001&filter[1]=1001&per_page=12&sort=name_asc&page=2')->assertStatus(301)
-            ->assertRedirect(url('/product-category/clothing?filter[1]=1001&filter[2]=2001&page=2&per_page=12&sort=name_asc'));
+        $this->visit('/product-category/clothing?filter[2]=2001&filter[1]=1001&per_page=12&sort=price_asc&page=2')->assertStatus(301)
+            ->assertRedirect(url('/product-category/clothing?filter[1]=1001&filter[2]=2001&page=2&per_page=12&sort=price_asc'));
 
         $this->visit('/product-category/clothing?filter[1]=1001,1002&filter[2]=2001')->assertOk();
     }
@@ -307,13 +307,13 @@ class CategoryFiltersTest extends TestCase
             $this->makeProduct($i, ['type' => 'variable', 'name' => "R{$i}", 'slug' => "r{$i}", 'categories' => [1], 'timeline' => '2026-02-01 10:00:00', 'variations' => [['attrs' => [1 => 'Red', 2 => 'S'], 'price' => '10.00', 'stock' => 1]]]);
         }
 
-        $html = $this->visit('/product-category/clothing?filter[1]=1001&per_page=12&sort=name_asc')->assertOk()->getContent();
+        $html = $this->visit('/product-category/clothing?filter[1]=1001&per_page=12&sort=price_asc')->assertOk()->getContent();
 
         $this->assertSame(12, count($this->ids($html)));
         $this->assertStringContainsString('Page 1 of 3', $html, '33 red products at 12 per page');
-        $this->assertStringContainsString('href="/product-category/clothing?filter[1]=1001&amp;page=2&amp;per_page=12&amp;sort=name_asc"', $html);
+        $this->assertStringContainsString('href="/product-category/clothing?filter[1]=1001&amp;page=2&amp;per_page=12&amp;sort=price_asc"', $html);
 
-        $page3 = $this->visit('/product-category/clothing?filter[1]=1001&page=3&per_page=12&sort=name_asc')->assertOk()->getContent();
+        $page3 = $this->visit('/product-category/clothing?filter[1]=1001&page=3&per_page=12&sort=price_asc')->assertOk()->getContent();
         $this->assertSame(9, count($this->ids($page3)), '33 red products: the last page holds 9');
         $this->visit('/product-category/clothing?filter[1]=1001&page=4&per_page=12')->assertNotFound();
     }
@@ -469,7 +469,7 @@ class CategoryFiltersTest extends TestCase
 
         // another IP is not affected; the limited one still reaches everything that carries no filter
         $this->visit('/product-category/clothing?filter[1]=1001', '198.51.100.8')->assertOk();
-        foreach (['/product-category/clothing' => 200, '/product-category/clothing?per_page=12&sort=name_asc' => 200, '/product/p4' => 200, '/' => 200, '/cart' => 200] as $url => $status) {
+        foreach (['/product-category/clothing' => 200, '/product-category/clothing?per_page=12&sort=price_asc' => 200, '/product/p4' => 200, '/' => 200, '/cart' => 200] as $url => $status) {
             $this->assertSame($status, $this->visit($url, '198.51.100.7')->getStatusCode(), $url);
         }
 

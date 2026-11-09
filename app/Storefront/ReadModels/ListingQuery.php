@@ -10,7 +10,7 @@ use App\Storefront\Exceptions\InvalidListingQuery;
  *
  * Ids in this project are auto-increment integers (catalog_* tables), carried as strings: `[1-9][0-9]{0,18}`.
  * Price bounds are non-negative integers in MINOR units. Both are validated and carried here, but the reader refuses
- * to apply them in S1 (ListingOptionNotAvailable): a price filter or price sort needs S7's `price_from_minor`.
+ * to apply a price FILTER (ListingOptionNotAvailable); the price SORT is served by the stored `price_from_minor` (P6a).
  */
 final readonly class ListingQuery
 {

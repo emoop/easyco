@@ -172,7 +172,7 @@ class CategoryLayoutTest extends TestCase
     {
         $this->visit('/product-category/clothing?filter[1][]=1001')->assertStatus(301)->assertRedirect(url('/product-category/clothing?filter[1]=1001'));
         $this->visit('/product-category/clothing?filter[1][]=1002&filter[1][]=1001&filter[2][]=2001')->assertStatus(301)->assertRedirect(url('/product-category/clothing?filter[1]=1001,1002&filter[2]=2001'));
-        $this->visit('/product-category/clothing?filter[2][]=2001&filter[1][]=1001&sort=name_asc&per_page=12')->assertStatus(301)->assertRedirect(url('/product-category/clothing?filter[1]=1001&filter[2]=2001&per_page=12&sort=name_asc'));
+        $this->visit('/product-category/clothing?filter[2][]=2001&filter[1][]=1001&sort=price_asc&per_page=12')->assertStatus(301)->assertRedirect(url('/product-category/clothing?filter[1]=1001&filter[2]=2001&per_page=12&sort=price_asc'));
         $this->visit('/product-category/clothing?filter[1]=1001,1002')->assertOk();
     }
 
@@ -235,34 +235,37 @@ class CategoryLayoutTest extends TestCase
 
     public function test_the_sort_options_are_the_one_list_and_the_default_is_empty(): void
     {
-        $this->assertSame([ListingSort::NEWEST, ListingSort::NAME_ASC], ListingSort::storefrontOptions());
+        // P6a: the newest and the price in both directions; the sort by name is no longer offered
+        $this->assertSame([ListingSort::NEWEST, ListingSort::PRICE_ASC, ListingSort::PRICE_DESC], ListingSort::storefrontOptions());
 
         $html = $this->visit('/product-category/clothing?filter[1]=1001&per_page=12')->assertOk()->getContent();
 
-        $this->assertSame(2, substr_count($html, 'class="sf-sortdd-link"'), 'the dropdown links = the options');
-        $this->assertSame(2, substr_count($html, 'type="radio" name="sort"'), 'the radios = the options');
+        $this->assertSame(3, substr_count($html, 'class="sf-sortdd-link"'), 'the dropdown links = the options');
+        $this->assertSame(3, substr_count($html, 'type="radio" name="sort"'), 'the radios = the options');
         $this->assertStringContainsString('<input class="sf-fv-input" type="radio" name="sort" value="" checked>', $html, 'the default option has an EMPTY value');
-        $this->assertStringContainsString('type="radio" name="sort" value="name_asc"', $html);
-        $this->assertStringNotContainsString('value="price_', $html, 'no price sort is offered');
-        $this->assertStringNotContainsString('sort=price', $html);
+        $this->assertStringContainsString('type="radio" name="sort" value="price_asc"', $html);
+        $this->assertStringContainsString('type="radio" name="sort" value="price_desc"', $html);
+        $this->assertStringNotContainsString('name_asc', $html, 'the sort by name is not offered');
         $this->assertStringContainsString('href="/product-category/clothing?filter[1]=1001&amp;per_page=12" rel="nofollow" aria-current="true">Newest', $html, 'the default link has no sort and keeps the filter and the size');
-        $this->assertStringContainsString('href="/product-category/clothing?filter[1]=1001&amp;per_page=12&amp;sort=name_asc" rel="nofollow">Name (A–Z)', $html);
+        $this->assertStringContainsString('href="/product-category/clothing?filter[1]=1001&amp;per_page=12&amp;sort=price_asc" rel="nofollow">Price: low to high', $html);
+        $this->assertStringContainsString('href="/product-category/clothing?filter[1]=1001&amp;per_page=12&amp;sort=price_desc" rel="nofollow">Price: high to low', $html);
         $this->assertStringContainsString('Sort by:', $html);
     }
 
-    public function test_the_current_sort_is_marked_and_a_price_sort_is_still_a_404(): void
+    public function test_the_current_sort_is_marked_and_the_sort_by_name_is_a_404(): void
     {
-        $html = $this->visit('/product-category/clothing?sort=name_asc')->assertOk()->getContent();
+        $html = $this->visit('/product-category/clothing?sort=price_asc')->assertOk()->getContent();
 
-        $this->assertStringContainsString('type="radio" name="sort" value="name_asc" checked', $html);
-        $this->assertStringContainsString('aria-current="true">Name (A–Z)', $html);
+        $this->assertStringContainsString('type="radio" name="sort" value="price_asc" checked', $html);
+        $this->assertStringContainsString('aria-current="true">Price: low to high', $html);
 
-        foreach (['price_asc', 'price_desc', 'nope'] as $sort) {
+        // P6a: the sort by name is not accepted any more (the same 404 as any unknown value)
+        foreach (['name_asc', 'nope'] as $sort) {
             $this->visit('/product-category/clothing?sort='.$sort)->assertNotFound();
         }
 
         // DRIBNI-1: the array form of the sort is the same 404 as an unknown value (it was a 400 from the request bag)
-        $this->visit('/product-category/clothing?sort[]=name_asc')->assertNotFound();
+        $this->visit('/product-category/clothing?sort[]=price_asc')->assertNotFound();
         $this->visit('/product-category/clothing?sort[]=')->assertNotFound();
 
         $this->visit('/product-category/clothing?sort=newest')->assertOk(); // today's behaviour: the default's own name is accepted (no redirect)

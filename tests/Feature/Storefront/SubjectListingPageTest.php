@@ -170,7 +170,10 @@ class SubjectListingPageTest extends TestCase
     public function test_sort_and_pagination_work(): void
     {
         $this->assertSame([2, 1], $this->ids($this->visit('/brand/acme')->getContent()));
-        $this->assertSame([1, 2], $this->ids($this->visit('/brand/acme?sort=name_asc')->assertOk()->getContent()));
+        // P6a: the price sort orders by the stored price: product 1 is the cheaper one
+        \Illuminate\Support\Facades\DB::table('catalog_products')->where('id', 1)->update(['price_from_minor' => 1000]);
+        \Illuminate\Support\Facades\DB::table('catalog_products')->where('id', 2)->update(['price_from_minor' => 2000]);
+        $this->assertSame([1, 2], $this->ids($this->visit('/brand/acme?sort=price_asc')->assertOk()->getContent()));
 
         $this->visit('/brand/acme?sort=nonsense')->assertNotFound();
         $this->visit('/brand/acme?page=2')->assertNotFound(); // a page past the last one
@@ -199,7 +202,7 @@ class SubjectListingPageTest extends TestCase
     public function test_a_slug_in_another_case_is_a_301_to_the_canonical_one(): void
     {
         $this->visit('/brand/ACME')->assertStatus(301)->assertRedirect('/brand/acme');
-        $this->visit('/season/Winter?sort=name_asc')->assertStatus(301)->assertRedirect('/season/winter?sort=name_asc');
+        $this->visit('/season/Winter?sort=price_asc')->assertStatus(301)->assertRedirect('/season/winter?sort=price_asc');
     }
 
     public function test_a_subject_with_no_visible_products_shows_the_category_empty_state(): void
@@ -276,7 +279,7 @@ class SubjectListingPageTest extends TestCase
     {
         $this->allFiltersOn();
 
-        $sorted = $this->visit('/brand/acme?sort=name_asc')->assertOk()->getContent();
+        $sorted = $this->visit('/brand/acme?sort=price_asc')->assertOk()->getContent();
         $this->assertStringContainsString('<link rel="canonical" href="https://shop.test/brand/acme">', $sorted);
 
         $filtered = $this->visit('/brand/acme?filter[season]=1')->assertOk();

@@ -102,12 +102,12 @@ class CategoryBarTest extends TestCase
 
     public function test_the_sort_panel_lists_plain_links_the_current_one_marked(): void
     {
-        $html = $this->visit('/product-category/clothing?sort=name_asc&filter[2]=2001')->assertOk()->getContent();
+        $html = $this->visit('/product-category/clothing?sort=price_asc&filter[2]=2001')->assertOk()->getContent();
         $sort = $this->controls($html)[0];
 
-        $this->assertStringContainsString('<span class="sf-bctl-text sf-bctl-strong">Name (A–Z)</span>', $sort);
+        $this->assertStringContainsString('<span class="sf-bctl-text sf-bctl-strong">Price: low to high</span>', $sort);
         $this->assertStringContainsString('<a class="sf-bv sf-bv-link" href="/product-category/clothing?filter[2]=2001" rel="nofollow">Newest</a>', $sort, 'the default link has no sort and keeps the filter');
-        $this->assertStringContainsString('<a class="sf-bv sf-bv-link sf-bv-on" href="/product-category/clothing?filter[2]=2001&amp;sort=name_asc" rel="nofollow" aria-current="true">Name (A–Z)</a>', $sort);
+        $this->assertStringContainsString('<a class="sf-bv sf-bv-link sf-bv-on" href="/product-category/clothing?filter[2]=2001&amp;sort=price_asc" rel="nofollow" aria-current="true">Price: low to high</a>', $sort);
         $this->assertStringNotContainsString('sf-bctl-meta', $sort, 'the sort panel has no meta row');
     }
 
@@ -198,13 +198,13 @@ class CategoryBarTest extends TestCase
 
     public function test_the_drawer_is_a_list_of_rows_the_sort_first_then_one_screen_per_filter(): void
     {
-        $html = $this->visit('/product-category/clothing?filter[1]=1001,1002&sort=name_asc')->assertOk()->getContent();
+        $html = $this->visit('/product-category/clothing?filter[1]=1001,1002&sort=price_asc')->assertOk()->getContent();
 
         preg_match('#<div class="sf-fdrawer".*?</form>#s', $html, $m);
         $drawer = $m[0];
 
         $this->assertLessThan(strpos($drawer, 'sf-fgroups'), strpos($drawer, 'sf-fgroup-sort'), 'the sort row is the first row');
-        $this->assertStringContainsString('<span class="sf-fgroup-name">Sort</span><span class="sf-fgroup-current">Name (A–Z)</span>', $drawer);
+        $this->assertStringContainsString('<span class="sf-fgroup-name">Sort</span><span class="sf-fgroup-current">Price: low to high</span>', $drawer);
         $this->assertStringContainsString('<span class="sf-fgroup-name">Colour</span><span class="sf-fgroup-current">Red, Blue</span>', $drawer, 'a row shows the chosen values');
         $this->assertStringContainsString('<span class="sf-fgroup-name">Size</span><span class="sf-fgroup-current"></span>', $drawer);
         $this->assertSame(3, substr_count($drawer, '<details class="sf-fgroup'), 'the sort, Colour and Size (the material gives nothing with these colours): one screen each');

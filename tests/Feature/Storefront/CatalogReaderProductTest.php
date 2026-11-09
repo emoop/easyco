@@ -71,7 +71,8 @@ class CatalogReaderProductTest extends TestCase
         $this->assertSame([['name' => 'Size', 'values' => ['S', 'M']]], $page->options, 'values in the attribute value order');
         $this->assertSame([true, false], array_map(fn ($v) => $v->inStock, $page->variations));
         $this->assertSame([3000, 2500], array_map(fn ($v) => $v->price->fromMinor, $page->variations));
-        $this->assertSame([2500, 3000], [$page->price->fromMinor, $page->price->toMinor], 'exact range on a product page');
+        // P6a: the sold-out cheapest size (S, 25.00) is ignored while another size is available: the page's range is taken from the AVAILABLE variations (the same rule as the card and the stored sort price)
+        $this->assertSame([3000, 3000], [$page->price->fromMinor, $page->price->toMinor], 'the range of the AVAILABLE variations on a product page');
         $this->assertTrue($page->inStock, 'one shown size has stock');
         $this->assertSame([['name' => 'Size', 'value' => 'M']], $page->variations[0]->attributes);
     }

@@ -207,10 +207,10 @@ class CatalogListingTest extends TestCase
         $this->products(60);
         $this->publish(['per_page' => '12']);
 
-        $html = $this->get('/product-category/clothing?page=2&sort=name_asc')->assertOk()->getContent();
+        $html = $this->get('/product-category/clothing?page=2&sort=price_asc')->assertOk()->getContent();
 
-        $this->assertStringContainsString('<a href="/product-category/clothing?sort=name_asc">1</a>', $html);
-        $this->assertStringContainsString('<a href="/product-category/clothing?page=3&amp;sort=name_asc">3</a>', $html);
+        $this->assertStringContainsString('<a href="/product-category/clothing?sort=price_asc">1</a>', $html);
+        $this->assertStringContainsString('<a href="/product-category/clothing?page=3&amp;sort=price_asc">3</a>', $html);
     }
 
     // ---- everything else stays ------------------------------------------------------------------------------------------------------------

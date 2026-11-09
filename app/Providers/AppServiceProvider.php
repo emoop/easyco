@@ -27,6 +27,9 @@ class AppServiceProvider extends ServiceProvider
         // record-derived source (shipping-domain-design.md 9.3.7).
         $this->app->bind(\App\Services\PickupKindSource::class, \App\Services\ClientClaimedPickupKindSource::class);
 
+        // P6a: a stock change that can change what is AVAILABLE queues a refresh of the product's stored sort price (an app-layer decorator: the Inventory package is untouched)
+        $this->app->extend(\EasyCo\Inventory\Contracts\StockLevelRepository::class, static fn (\EasyCo\Inventory\Contracts\StockLevelRepository $inner, $app) => new \App\Services\PriceSort\StockRefreshingRepository($inner, $app->make(\App\Services\PriceSort\SortPriceRefreshDispatcher::class)));
+
         // This project's first scoped() binding — deliberately NOT
         // singleton(): ProductPriceRangeProvider itself holds no mutable
         // state of its own, but per-REQUEST memoization is exactly what
@@ -110,6 +113,9 @@ class AppServiceProvider extends ServiceProvider
 
         // CT-3: the shop's filters are cached; an attribute or a value that is saved or deleted forgets them.
         \App\Storefront\Filters\FilterCatalog::listen();
+
+        // P6a: the fast path of the stored sort price (`catalog_products.price_from_minor`): the persistence models' own saved / deleted events queue a refresh of the affected products
+        \App\Services\PriceSort\SortPriceTriggers::register();
 
         // HB-4.1: a media asset that became ready recompiles the HTML blocks that use it as their background picture
         \Illuminate\Support\Facades\Event::listen(\EasyCo\Media\Events\MediaAssetReady::class, \App\Content\HtmlBlocks\RecompileBlockPicturesOnReady::class);

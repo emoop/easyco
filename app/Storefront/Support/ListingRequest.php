@@ -10,9 +10,8 @@ use Illuminate\Http\Request;
 
 /**
  * The ONLY door from a request to a ListingQuery: the keys `page`, `per_page` and `sort` and nothing else (a price
- * filter or any other key in the URL is ignored, never passed on). A price sort is valid for ListingQuery but is not
- * offered by the storefront until S7, so it is refused here like any unknown sort: the reader's
- * ListingOptionNotAvailable can therefore never be reached from a request.
+ * filter or any other key in the URL is ignored, never passed on). A sort that the storefront does not OFFER (ListingSort::storefrontOptions(): the newest and the price in both directions; NOT the name) is refused
+ * here like any unknown sort, so the reader's ListingOptionNotAvailable (a price FILTER) can never be reached from a request.
  */
 final class ListingRequest
 {
@@ -34,7 +33,7 @@ final class ListingRequest
         $query = ListingQuery::fromRequestArray($input);
 
         if (! in_array($query->sort, ListingSort::storefrontOptions(), true)) {
-            throw new InvalidListingQuery('sort', 'is not available yet');
+            throw new InvalidListingQuery('sort', 'is not an offered sort');
         }
 
         return $query;

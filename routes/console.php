@@ -32,3 +32,10 @@ Schedule::command('privacy:anonymise-order-ips')->daily();
 // cod-protection-design.md 3.1: a cash-on-delivery block is personal data with its own clock; the ones that ended more than 30 days ago are deleted.
 // Daily, like the other prune commands: a cheap no-op when nothing has aged out; only counts are logged.
 Schedule::command('order-blocks:prune')->daily();
+
+// P6a: the stored sort price of the products (`catalog_products.price_from_minor`). EVERY MINUTE a cheap check (ONE query: does an active price list start or end in the window since the last run?) refreshes only the
+// products such a list can touch; once a night, at 03:30 SHOP time, the whole catalog is recomputed in chunks (the safety net, writes only what changed). The shop's time is read when the schedule RUNS (the `when()`
+// closure), never when this file loads, so no artisan command pays a settings query at boot.
+Schedule::command('prices:refresh-boundaries')->everyMinute()->withoutOverlapping();
+Schedule::command('prices:refresh-from')->everyMinute()->withoutOverlapping()
+    ->when(static fn (): bool => (new DateTimeImmutable('now', app(App\Settings\StoreTimezone::class)->zone()))->format('H:i') === '03:30');

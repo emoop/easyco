@@ -163,7 +163,7 @@ class ListingTemplatesTest extends TestCase
     /** ★ with no template saved, or a set that says nothing, every listing page prints exactly the bytes the P2 view printed */
     public function test_with_no_template_every_listing_page_is_byte_identical(): void
     {
-        $urls = [self::CLOTHING, '/product-category/clothing/dresses', '/brand/acme', '/season/autumn', '/product-tag/alpha', '/brand/zed', self::CLOTHING.'?sort=name_asc', '/brand/acme?filter[season]=1'];
+        $urls = [self::CLOTHING, '/product-category/clothing/dresses', '/brand/acme', '/season/autumn', '/product-tag/alpha', '/brand/zed', self::CLOTHING.'?sort=price_asc', '/brand/acme?filter[season]=1'];
 
         foreach ($urls as $url) {
             $response = $this->visit($url)->assertOk();
@@ -271,7 +271,7 @@ class ListingTemplatesTest extends TestCase
         $this->assertStringContainsString('<h1 class="sf-hp-heading-text">Zed</h1>', $two);
 
         // sort and a filter do not hide the blocks on page 1
-        $this->assertStringContainsString('TOPBLOCKTEXT', $this->visit('/brand/zed?per_page=12&sort=name_asc')->getContent());
+        $this->assertStringContainsString('TOPBLOCKTEXT', $this->visit('/brand/zed?per_page=12&sort=price_asc')->getContent());
     }
 
     // ---- ★ the cloud -----------------------------------------------------------------------------------------------------------------------

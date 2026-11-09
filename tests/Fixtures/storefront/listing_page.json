@@ -100,7 +100,7 @@
                 "sizes_hint": "(min-width: 1024px) 25vw, (min-width: 640px) 50vw, 100vw"
             },
             "price": {
-                "from_minor": 4000,
+                "from_minor": 4500,
                 "to_minor": 4500,
                 "currency": "EUR",
                 "regular_from_minor": null

@@ -127,7 +127,7 @@ class StorefrontHttpSecurityTest extends TestCase
             '/product/a%20b', '/product/%00', '/product/a%2Fb', '/product/..', '/product/'.str_repeat('a', 5000),
             '/product-category/missing', '/product-category/empty', '/product-category/hidden-only', '/product-category/a/b/c/d/e/f/g/h/i',
             '/product-category/clothing?page=0', '/product-category/clothing?page=abc', '/product-category/clothing?page=2',
-            '/product-category/clothing?sort=price_asc', '/product-category/clothing?sort=nope', '/product-category/clothing?per_page=100',
+            '/product-category/clothing?sort=name_asc', '/product-category/clothing?sort=nope', '/product-category/clothing?per_page=100',
         ];
 
         foreach ($urls as $url) {
@@ -166,8 +166,8 @@ class StorefrontHttpSecurityTest extends TestCase
         $noisy->assertOk();
         $this->assertSame($plain->getContent(), $noisy->getContent());
 
-        $this->get('/product-category/clothing?sort=price_desc')->assertNotFound();
-        $this->get('/product-category/clothing?sort=price_asc&price_min=5')->assertNotFound();
+        $this->get('/product-category/clothing?sort=name_asc')->assertNotFound(); // P6a: the sort by name is no longer offered (the price sorts are)
+        $this->get('/product-category/clothing?sort=name_asc&price_min=5')->assertNotFound();
     }
 
     public function test_a_different_case_of_a_product_slug_is_a_301_to_the_canonical_url(): void
@@ -189,10 +189,10 @@ class StorefrontHttpSecurityTest extends TestCase
         $this->get('/product-category/dresses')->assertStatus(301)->assertHeader('Location', url('/product-category/clothing/dresses'));
         $this->get('/product-category/Clothing/Dresses')->assertStatus(301)->assertHeader('Location', url('/product-category/clothing/dresses'));
 
-        $response = $this->get('/product-category/wrong/dresses?per_page=12&sort=name_asc&utm_source=x&price_min=1');
+        $response = $this->get('/product-category/wrong/dresses?per_page=12&sort=price_asc&utm_source=x&price_min=1');
 
         $response->assertStatus(301);
-        $this->assertSame(url('/product-category/clothing/dresses?per_page=12&sort=name_asc'), $response->headers->get('Location'));
+        $this->assertSame(url('/product-category/clothing/dresses?per_page=12&sort=price_asc'), $response->headers->get('Location'));
         $this->get('/product-category/clothing/dresses')->assertOk();
         $this->get('/product-category/clothing/dresses/')->assertOk();
     }
@@ -287,7 +287,7 @@ class StorefrontHttpSecurityTest extends TestCase
             $this->makeProduct($id, ['categories' => [2], 'price' => '1.00', 'stock' => 1]);
         }
 
-        $html = $this->get('/product-category/clothing/dresses?page=2&per_page=12&evil="><script>=1&sort=name_asc')->assertOk()->getContent();
+        $html = $this->get('/product-category/clothing/dresses?page=2&per_page=12&evil="><script>=1&sort=price_asc')->assertOk()->getContent();
 
         preg_match_all('/<a [^>]*href="([^"]*)"/', $html, $matches);
         $links = array_filter($matches[1], fn (string $href) => str_contains($href, '?'));

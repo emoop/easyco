@@ -154,7 +154,7 @@ final class CatalogReader
                 sku: $variation->sku === null ? null : (string) $variation->sku,
                 label: implode(' / ', array_column($attributes, 'value')),
                 attributes: $attributes,
-                price: $this->productPrice([$id], $quotes),
+                price: $this->productPrice([$id], $quotes, $stock),
                 inStock: ($stock[$id] ?? 0) > 0,
                 purchasable: $variation->status === StorefrontVisibility::VARIATION_STATUS->value && (bool) $variation->is_purchasable,
                 // DRIBNI-3: the same cap as the cart's (PurchaseView::MAX_QUANTITY), not a second 99
@@ -175,7 +175,7 @@ final class CatalogReader
             brand: $this->brandOf($product),
             breadcrumbs: $this->productBreadcrumbs($productId, (string) $product->name, (string) $product->slug),
             images: $gallery['images'],
-            price: $this->productPrice($variationIds, $quotes),
+            price: $this->productPrice($variationIds, $quotes, $stock),
             inStock: array_filter($stock, fn (int $quantity): bool => $quantity > 0) !== [],
             options: $options,
             variations: $views,
@@ -311,12 +311,12 @@ final class CatalogReader
     // ================================================================== listing
 
     /**
-     * @throws ListingOptionNotAvailable for a price sort or a price filter (they need S7's price_from_minor)
+     * @throws ListingOptionNotAvailable for a price FILTER (the price SORT is served by the stored `price_from_minor`)
      */
     public function listing(ListingQuery $query, array $filters = [], ?string $cardSizes = null): ListingPage
     {
-        if ($query->hasPriceFilter() || $query->sort === ListingSort::PRICE_ASC || $query->sort === ListingSort::PRICE_DESC) {
-            throw new ListingOptionNotAvailable('Price filtering and price sorting arrive with the storefront search stage (S7).');
+        if ($query->hasPriceFilter()) {
+            throw new ListingOptionNotAvailable('Price filtering is not available yet.');
         }
 
         $products = $this->listingProducts($query, $filters);
@@ -362,6 +362,9 @@ final class CatalogReader
 
         match ($query->sort) {
             ListingSort::NAME_ASC => $products->orderBy('catalog_products.name')->orderBy('catalog_products.id'),
+            // P6a: the stored sort price; a product with NO price (NULL) is last in BOTH directions, then the newest, then the id: the order is total, so pages never overlap or skip. No query of its own.
+            ListingSort::PRICE_ASC => $products->orderByRaw('catalog_products.price_from_minor IS NULL')->orderBy('catalog_products.price_from_minor')->orderByDesc('catalog_products.timeline_at')->orderByDesc('catalog_products.id'),
+            ListingSort::PRICE_DESC => $products->orderByRaw('catalog_products.price_from_minor IS NULL')->orderByDesc('catalog_products.price_from_minor')->orderByDesc('catalog_products.timeline_at')->orderByDesc('catalog_products.id'),
             default => $products->orderByDesc('catalog_products.timeline_at')->orderByDesc('catalog_products.id'),
         };
 
@@ -420,7 +423,7 @@ final class CatalogReader
         }
 
         $order = ListingSort::tryFrom($sort);
-        $order = $order !== null && in_array($order, ListingSort::storefrontOptions(), true) ? $order : ListingSort::NEWEST;
+        $order = $order !== null && in_array($order, ListingSort::homeGridOptions(), true) ? $order : ListingSort::NEWEST;
         $query = ListingQuery::create($scope, $scope === ListingScope::ALL ? null : $entity, $order);
 
         $products = $this->listingProducts($query, $filters);
@@ -654,7 +657,7 @@ final class CatalogReader
                 brand: $this->brandOf($product),
                 image: $asset === null ? null : $this->images->build($asset, (string) $product->name, $sizes),
                 secondImage: $second === null ? null : $this->images->build($second, (string) $product->name, $sizes),
-                price: $this->productPrice($variationIdsByProduct[$id] ?? [], $quotes),
+                price: $this->productPrice($variationIdsByProduct[$id] ?? [], $quotes, $stock),
                 badges: [],
                 inStock: array_filter(
                     array_map(fn (string $variationId): int => $stock[$variationId] ?? 0, $variationIdsByProduct[$id] ?? []),
@@ -667,21 +670,16 @@ final class CatalogReader
     }
 
     /**
-     * ONE price rule for a card and a product page: the exact block of the quotes of the product's SHOWN variations
-     * (a variation with no price is absent), or null when none is priced.
+     * ONE price rule for a card and a product page: the exact block of the quotes AvailablePriceRule picks among the product's SHOWN variations
+     * (P6a: the available ones, or all the priced ones when none is available; the same rule the stored sort price uses), or null when none is priced.
      *
      * @param list<string> $variationIds the product's shown variations
      * @param array<string, PriceQuote> $quotes quotes by variation id (any superset)
+     * @param array<string, int> $stock quantity by variation id
      */
-    private function productPrice(array $variationIds, array $quotes): ?PriceBlock
+    private function productPrice(array $variationIds, array $quotes, array $stock): ?PriceBlock
     {
-        $own = [];
-
-        foreach ($variationIds as $variationId) {
-            if (isset($quotes[$variationId])) {
-                $own[$variationId] = $quotes[$variationId];
-            }
-        }
+        $own = AvailablePriceRule::select($variationIds, $quotes, $stock);
 
         return $own === [] ? null : $this->priceBlock($own);
     }

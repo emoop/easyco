@@ -1314,7 +1314,9 @@ class OrderStatusChangerTest extends TestCase
        // +1 each since refunds R4a-2 (cancel 20 -> 21, return 15 -> 16): the unreconciled-receipt guard reads the
         // order's payments once, before the refund path, in performReturnLocked (both go through it). A constant
         // read, it does not grow with the number of lines.
-        $this->assertLessThanOrEqual(21, $cancelCount);
-        $this->assertLessThanOrEqual(16, $returnCount);
+        // +1 each since P6a (cancel 21 -> 22, return 16 -> 17): the stock decorator (StockRefreshingRepository) reads the quantity once before increase() to know whether the variation just became available again
+        // (the sort-price refresh is queued only then). A constant read per restocked line.
+        $this->assertLessThanOrEqual(22, $cancelCount);
+        $this->assertLessThanOrEqual(17, $returnCount);
     }
 }

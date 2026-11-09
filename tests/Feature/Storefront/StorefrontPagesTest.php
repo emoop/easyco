@@ -124,7 +124,9 @@ class StorefrontPagesTest extends TestCase
         $this->assertMatchesRegularExpression('/<option value="201" disabled>\s*S — 40\.00 € \(unavailable\)\s*<\/option>/', $html);
         $this->assertMatchesRegularExpression('/<option value="202" >\s*M — 45\.00 €\s*<\/option>/', $html);
         $this->assertStringContainsString('data-variation-id="202"', $html, 'the first purchasable in-stock variation');
-        $this->assertStringContainsString('40.00 € – 45.00 €', $html, 'from-to');
+        // P6a: the sold-out cheapest size (S, 40.00) is ignored while another size is available: the page's price comes from the AVAILABLE variations (the same rule as the card)
+        $this->assertStringNotContainsString('40.00 € – 45.00 €', $html);
+        $this->assertMatchesRegularExpression('/<span class="sf-price-current">\s*45\.00 €\s*<\/span>/', $html, 'the price of the available sizes');
     }
 
     public function test_a_sold_out_product_says_so(): void
@@ -168,11 +170,11 @@ class StorefrontPagesTest extends TestCase
             $this->makeProduct($id, ['categories' => [2], 'price' => '1.00', 'stock' => 1, 'timeline' => '2026-04-01 10:00:00']);
         }
 
-        $second = $this->get('/product-category/clothing/dresses?page=2&per_page=12&sort=name_asc&utm_source=x&price_min=5')->assertOk()->getContent();
+        $second = $this->get('/product-category/clothing/dresses?page=2&per_page=12&sort=price_asc&utm_source=x&price_min=5')->assertOk()->getContent();
 
         $this->assertStringContainsString('Page 2 of 3', $second);
-        $this->assertStringContainsString('rel="prev" href="/product-category/clothing/dresses?per_page=12&amp;sort=name_asc"', $second);
-        $this->assertStringContainsString('rel="next" href="/product-category/clothing/dresses?page=3&amp;per_page=12&amp;sort=name_asc"', $second);
+        $this->assertStringContainsString('rel="prev" href="/product-category/clothing/dresses?per_page=12&amp;sort=price_asc"', $second);
+        $this->assertStringContainsString('rel="next" href="/product-category/clothing/dresses?page=3&amp;per_page=12&amp;sort=price_asc"', $second);
         $this->assertStringContainsString('<link rel="canonical" href="https://shop.test/product-category/clothing/dresses?page=2">', $second);
         $this->assertStringNotContainsString('utm_source', $second);
         $this->assertStringNotContainsString('price_min', $second);

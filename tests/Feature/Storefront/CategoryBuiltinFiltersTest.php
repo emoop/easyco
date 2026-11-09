@@ -209,7 +209,7 @@ class CategoryBuiltinFiltersTest extends TestCase
         $this->visit('/product-category/clothing?filter[tag]=2&filter[1]=1001&filter[season]=1&filter[brand]=2')->assertStatus(301)
             ->assertRedirect('/product-category/clothing?filter[brand]=2&filter[season]=1&filter[1]=1001&filter[tag]=2');
         $this->visit('/product-category/clothing?filter[brand][]=1&filter[brand][]=2')->assertStatus(301)->assertRedirect('/product-category/clothing?filter[brand]=1,2');
-        $this->visit('/product-category/clothing?filter[brand]=1,2&per_page=12&page=1&sort=name_asc')->assertOk();
+        $this->visit('/product-category/clothing?filter[brand]=1,2&per_page=12&page=1&sort=price_asc')->assertOk();
     }
 
     public function test_the_caps_count_the_built_ins_too(): void

@@ -181,10 +181,13 @@ class FeaturedFilterTest extends TestCase
 
         $this->assertSame([1], $this->ids($this->visit('/product-category/clothing?featured=1&filter[brand]=1')->assertOk()->getContent()));
         $this->assertSame([4], $this->ids($this->visit('/product-category/clothing?filter[1]=1002&featured=1')->assertOk()->getContent()));
-        $this->assertSame([1, 4], $this->ids($this->visit('/product-category/clothing?featured=1&sort=name_asc')->assertOk()->getContent()));
+        // P6a: the price sort orders by the stored price: the two featured products get one (product 1 the cheaper)
+        \Illuminate\Support\Facades\DB::table('catalog_products')->where('id', 1)->update(['price_from_minor' => 1000]);
+        \Illuminate\Support\Facades\DB::table('catalog_products')->where('id', 4)->update(['price_from_minor' => 2000]);
+        $this->assertSame([1, 4], $this->ids($this->visit('/product-category/clothing?featured=1&sort=price_asc')->assertOk()->getContent()));
 
         $html = $this->visit('/product-category/clothing?filter[brand]=1&featured=1')->assertOk()->getContent();
-        $this->assertStringContainsString('href="/product-category/clothing?filter[brand]=1&amp;featured=1&amp;sort=name_asc"', $html, 'the sort keeps the switch');
+        $this->assertStringContainsString('href="/product-category/clothing?filter[brand]=1&amp;featured=1&amp;sort=price_asc"', $html, 'the sort keeps the switch');
         $this->assertStringContainsString('href="/product-category/clothing?filter[brand]=1"', $html, 'turning it off keeps the other filter');
 
         // one selection, one URL: the order is canonical, `featured` last
