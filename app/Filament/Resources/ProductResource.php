@@ -60,6 +60,11 @@ use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
 use Filament\Actions\BulkAction;
 use Filament\Actions\BulkActionGroup;
+use App\Filament\Design\InfoHint;
+use App\Services\MassEdit\MassEditRefused;
+use App\Services\MassEdit\MassEditResult;
+use App\Services\MassEdit\MassEditSelection;
+use App\Services\MassEdit\ProductMassEditor;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
 use Filament\Forms\Components\BaseFileUpload;
@@ -1764,6 +1769,7 @@ class ProductResource extends Resource
                     static::bulkPublishAction(),
                     static::bulkDeleteAction(),
                 ]),
+                static::massActionsGroup(),
             ])
             // NO ROW LINK ANY MORE — and ->recordUrl(null) is NOT the same
             // as deleting this call, which is why it is written out
@@ -2784,6 +2790,183 @@ class ProductResource extends Resource
         $livewire->isTrackingDeselectedTableRecords = false;
 
         $livewire->deselectAllTableRecords();
+    }
+
+    // ================================================================== P6d: «Масови действия»
+
+    /**
+     * P6d: the ONE menu «Масови действия»: categories (add / remove), tags (add / remove), the season, the article group and the reset of the manual promo prices, on the filtered or hand-picked products. The
+     * actions are hidden by their Catalog switch and their permission, but that is only a UI affordance: ProductMassEditor and runMassEdit() re-check everything on the server.
+     */
+    public static function massActionsGroup(): BulkActionGroup
+    {
+        return BulkActionGroup::make([
+            static::massAction(ProductMassEditor::ADD_CATEGORY, 'heroicon-o-folder-plus', fn (): array => CategoryResource::hierarchicalOptions(), null),
+            static::massAction(ProductMassEditor::REMOVE_CATEGORY, 'heroicon-o-folder-minus', fn (): array => CategoryResource::hierarchicalOptions(), null),
+            static::massAction(ProductMassEditor::ADD_TAG, 'heroicon-o-tag', fn (): array => TagModel::pluck('name', 'id')->all(), fn (): bool => static::tagsFieldEnabled()),
+            static::massAction(ProductMassEditor::REMOVE_TAG, 'heroicon-o-minus-circle', fn (): array => TagModel::pluck('name', 'id')->all(), fn (): bool => static::tagsFieldEnabled()),
+            static::massAction(ProductMassEditor::SET_SEASON, 'heroicon-o-sun', fn (): array => SeasonModel::pluck('name', 'id')->all(), fn (): bool => static::seasonFieldEnabled(), clearable: true),
+            static::massAction(ProductMassEditor::SET_GROUP, 'heroicon-o-rectangle-group', fn (): array => ProductGroupModel::pluck('name', 'id')->all(), fn (): bool => static::productGroupFieldEnabled(), clearable: true),
+            static::massResetAction(),
+        ])
+            ->label(__('product_mass.group'))
+            ->icon('heroicon-m-ellipsis-vertical')
+            ->color('gray');
+    }
+
+    /**
+     * One mass action with a picker. `$clearable`: an empty choice CLEARS the value (the season; the article group unless the Catalog settings make it required).
+     *
+     * @param  \Closure(): array<int|string, string>  $options
+     */
+    private static function massAction(string $operation, string $icon, \Closure $options, ?\Closure $switchedOn, bool $clearable = false): BulkAction
+    {
+        $selection = null;
+        $resolve = static function ($livewire) use (&$selection): MassEditSelection {
+            return $selection ??= static::massSelection($livewire);
+        };
+        $mayClear = static fn (): bool => $clearable && ! ($operation === ProductMassEditor::SET_GROUP && (app(SiteSettingsRepository::class)->get('catalog.product_group_required') ?? '0') === '1');
+
+        return BulkAction::make('mass_'.$operation)
+            ->label(__('product_mass.actions.'.$operation))
+            ->icon($icon)
+            ->color('gray')
+            ->visible(fn (): bool => static::staffHasPermission(Permission::PRODUCT_MANAGE) && ($switchedOn === null || $switchedOn()))
+            ->fetchSelectedRecords(false)
+            ->modalWidth('md')
+            ->modalHeading(__('product_mass.actions.'.$operation))
+            ->modalDescription(fn ($livewire): string => static::massDescription($resolve($livewire)))
+            ->modalSubmitActionLabel(__('product_mass.submit'))
+            ->modalCancelActionLabel(__('products.deletion.confirm_cancel'))
+            ->modalSubmitAction(fn ($livewire, Action $action): Action|false => static::massIsAllowed($resolve($livewire)) ? $action : false)
+            ->schema(fn (): array => [
+                Select::make('value')
+                    ->label(__('product_mass.fields.'.$operation))
+                    ->afterLabel(InfoHint::make(__('product_mass.hints.'.$operation), 'value'))
+                    ->options($options)
+                    ->searchable()
+                    ->placeholder($mayClear() ? __('product_mass.clear_choice') : null)
+                    ->required(! $mayClear()),
+            ])
+            ->action(function (array $data, $livewire) use ($operation): void {
+                static::runMassEdit($livewire, $operation, filled($data['value'] ?? null) ? (string) $data['value'] : null, [Permission::PRODUCT_MANAGE]);
+            })
+            ->deselectRecordsAfterCompletion();
+    }
+
+    /**
+     * «Върни към регулярни цени»: deletes the manual promo prices of ALL variations of the selection. Red, `price_manage` AND the product-edit permission, no audit, no restore (the owner's decision); the modal
+     * says so in red.
+     */
+    private static function massResetAction(): BulkAction
+    {
+        $selection = null;
+        $resolve = static function ($livewire) use (&$selection): MassEditSelection {
+            return $selection ??= static::massSelection($livewire);
+        };
+
+        return BulkAction::make('mass_'.ProductMassEditor::RESET_MANUAL_PRICES)
+            ->label(__('product_mass.actions.reset_manual_prices'))
+            ->icon('heroicon-o-arrow-uturn-left')
+            ->color('danger')
+            ->visible(fn (): bool => static::staffHasPermission(Permission::PRODUCT_MANAGE) && static::staffHasPermission(Permission::PRICE_MANAGE))
+            ->fetchSelectedRecords(false)
+            ->modalWidth('md')
+            ->modalHeading(__('product_mass.actions.reset_manual_prices'))
+            ->modalDescription(fn ($livewire): string => static::massDescription($resolve($livewire)))
+            ->modalContent(fn ($livewire): ?View => static::massIsAllowed($resolve($livewire)) ? view('filament.products.mass-reset-warning', ['count' => $resolve($livewire)->count()]) : null)
+            ->modalSubmitActionLabel(__('product_mass.reset_submit'))
+            ->modalCancelActionLabel(__('products.deletion.confirm_cancel'))
+            ->modalSubmitAction(fn ($livewire, Action $action): Action|false => static::massIsAllowed($resolve($livewire)) ? $action : false)
+            ->action(function ($livewire): void {
+                static::runMassEdit($livewire, ProductMassEditor::RESET_MANUAL_PRICES, null, [Permission::PRODUCT_MANAGE, Permission::PRICE_MANAGE]);
+            })
+            ->deselectRecordsAfterCompletion();
+    }
+
+    /**
+     * WHAT the staff member selected and HOW, decided from the Livewire component's own state on the SERVER: picked by hand (not «select all»), or «all matching» of a table where a filter or a search is active.
+     * The ids are read as a plain key pluck (never hydrated), capped one above the limit.
+     */
+    public static function massSelection(mixed $livewire): MassEditSelection
+    {
+        $handPicked = ! $livewire->isTrackingDeselectedTableRecords;
+        $filtered = $livewire->getTable()->isFiltered() || filled($livewire->tableSearch);
+
+        if ($handPicked) {
+            return new MassEditSelection(array_values($livewire->selectedTableRecords), true, $filtered);
+        }
+
+        $query = $livewire->getSelectedTableRecordsQuery(false);
+        $ids = $query->toBase()->limit(ProductMassEditor::MAX_PRODUCTS + 1)->pluck($query->getModel()->getQualifiedKeyName())->all();
+
+        return new MassEditSelection($ids, false, $filtered);
+    }
+
+    private static function massIsAllowed(MassEditSelection $selection): bool
+    {
+        try {
+            $selection->assertAllowed();
+
+            return true;
+        } catch (MassEditRefused) {
+            return false;
+        }
+    }
+
+    /** The count of the confirmation (the count that WILL be processed), or the reason the run is refused. */
+    private static function massDescription(MassEditSelection $selection): string
+    {
+        try {
+            $selection->assertAllowed();
+        } catch (MassEditRefused $refused) {
+            return __('product_mass.refused.'.$refused->reason, ['limit' => ProductMassEditor::MAX_PRODUCTS]);
+        }
+
+        return __('product_mass.confirm', ['count' => $selection->count()]);
+    }
+
+    /**
+     * The server-side gate of EVERY mass action: the permissions, then the rules inside ProductMassEditor::start(); the outcome is one notification. A refusal changes nothing.
+     *
+     * @param  list<Permission>  $permissions
+     */
+    public static function runMassEdit(mixed $livewire, string $operation, ?string $value, array $permissions): void
+    {
+        foreach ($permissions as $permission) {
+            if (! static::staffHasPermission($permission)) {
+                Notification::make()->title(__('product_mass.unauthorized'))->danger()->send();
+
+                return;
+            }
+        }
+
+        try {
+            $actor = \Filament\Facades\Filament::auth()->user()?->getAuthIdentifier();
+            $result = app(ProductMassEditor::class)->start($operation, $value, static::massSelection($livewire), $actor === null ? null : (string) $actor);
+        } catch (MassEditRefused $refused) {
+            Notification::make()->title(__('product_mass.refused.'.$refused->reason, ['limit' => ProductMassEditor::MAX_PRODUCTS]))->danger()->send();
+
+            return;
+        }
+
+        static::clearTableSelection($livewire);
+        static::massNotify($operation, $result);
+    }
+
+    private static function massNotify(string $operation, MassEditResult $result): void
+    {
+        if ($result->queued > 0) {
+            Notification::make()->title(__('product_mass.queued', ['count' => $result->queued]))->success()->send();
+
+            return;
+        }
+
+        $body = __('product_mass.result', ['changed' => $result->changed, 'unchanged' => $result->unchanged]);
+        $operation === ProductMassEditor::RESET_MANUAL_PRICES && $body = __('product_mass.result_prices', ['prices' => $result->removedPrices, 'changed' => $result->changed, 'unchanged' => $result->unchanged]);
+        $result->skipped > 0 && $body .= ' '.__('product_mass.result_skipped', ['skipped' => $result->skipped]);
+
+        Notification::make()->title($body)->success()->send();
     }
 
     /**

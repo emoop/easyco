@@ -998,6 +998,16 @@ merchant-API exposure of these bulk operations.
 
 ---
 
+### 13.10 As built (P6d): «Масови действия» on the products list
+
+A second bulk group, «Масови действия», sits next to the status group: add / remove a category, add / remove a tag, set or clear the season, change or clear the article group (`catalog_products.product_group_id`, the cash-register group; the options are the same as the product form's) and «Върни към регулярни цени». Everything is done by `App\Services\MassEdit\ProductMassEditor`, which the table actions only call; the queued job `ProductMassEditChunk` calls the same `applyChunk()`.
+
+- **Selection rule (enforced in the service, not only in the UI):** the rows are picked by hand, OR «select all matching» is used while at least one table filter or the search is active. The server reads both facts from the Livewire component (`isTrackingDeselectedTableRecords`, `Table::isFiltered()`, `tableSearch`); an unfiltered «select all» is refused. At most `ProductMassEditor::MAX_PRODUCTS` (5000) products per operation. The ids are a plain key pluck (`fetchSelectedRecords(false)`), never hydrated models. The confirmation names the count that will be processed.
+- **Size:** up to `SYNC_LIMIT` (200) products run in the request; above it one job per `CHUNK` (100) is queued and the notification says «Задачата е приета: N продукта». The panel has no database notifications, so each queued chunk logs its outcome (`Product mass edit chunk done.`); the audit entries carry the staff member who started the edit.
+- **Same path as a manual save:** categories and tags through `ProductCategoryRepository` / `ProductTagRepository` (one grouped read, one write and one audit entry per changed product, like `EditProduct::syncCategories()`), season and group through the `Product` aggregate (`assignSeason()` / `assignProductGroup()`) and `ProductRepository::save()` with the audit entry of a manual save. The P6a / P6c triggers are muted per chunk and ONE `SortPriceRefreshDispatcher` call per chunk refreshes the changed products (the article group is not a price scope). Idempotent: «променени N, без промяна M»; a missing product is «пропуснат». Measured: a pivot action costs ≈ 2 queries per changed product plus ≈ 22 fixed; a no-op run of 200 products 7 queries; season / group ≈ 8 queries per changed product (the aggregate is loaded and saved one by one).
+- **Switches and permissions:** the season and tags actions are hidden (and refused by the service) when the Catalog settings switch the field off; the article group cannot be cleared while `catalog.product_group_required` is on. All actions need `product_manage`; the reset also needs `price_manage`; both are re-checked in `ProductResource::runMassEdit()`.
+- **The reset** deletes only the items of the system list «Manual Sale» (variation-level items of every variation of the selected products, soft-deleted ones included, and the product-level item) through `PriceListItemRepository::remove()`; regular prices and campaign items are never touched. By the owner's decision it writes no audit entry and has no restore.
+
 ## §14. Orders (read-only)
 prerequisite for exercising cart → checkout → order end to end before
 any order-editing UI exists. Confirmed decisions:
