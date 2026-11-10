@@ -15,6 +15,7 @@ class CatalogReaderCategoryTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        $this->showSoldOutProducts();
 
         $this->seedPricing();
     }

@@ -159,6 +159,9 @@ final class AppearanceSettings
 
     public const MIN_CONTRAST = 4.5;
 
+    /** P6c: «Скрий продуктите без наличност» (`1` / `0`; a missing key is ON). Read INSIDE the list queries (StorefrontVisibility::availableOnly): no query of its own, never stale. */
+    public const HIDE_SOLD_OUT_KEY = 'catalog.hide_sold_out';
+
     /** Every key the appearance reader fetches in its ONE `getMany` (D2 adds `header.compiled` here). */
     public const READ_KEYS = [
         self::COMPILED_KEY,

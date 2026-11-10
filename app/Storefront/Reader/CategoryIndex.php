@@ -38,6 +38,9 @@ final class CategoryIndex
     /** @var array<int, array<int, true>> category id => set of visible product ids in its subtree */
     private array $subtreeProducts = [];
 
+    /** @var array<int, array<int, true>> P6c: the same, only the LISTED products (available, or the shop shows its sold-out products): what the counts show */
+    private array $subtreeListed = [];
+
     /** @var array<int, string> */
     private array $paths = [];
 
@@ -98,11 +101,17 @@ final class CategoryIndex
         return $this->paths[$id] ?? '';
     }
 
+    /** The number of products the category's LISTING shows (P6c: the listed ones). A category with only sold-out products stays shown, with a count of 0. */
     public function productCount(int $id): int
     {
         $this->load();
 
-        return count($this->subtreeProducts[$id] ?? []);
+        return $this->listedCount($id);
+    }
+
+    private function listedCount(int $id): int
+    {
+        return count($this->subtreeListed[$id] ?? []);
     }
 
     /** @return list<int> the id and every descendant id */
@@ -192,7 +201,7 @@ final class CategoryIndex
                 slug: $row['slug'],
                 path: $this->paths[$id],
                 url: $this->urls->category($this->paths[$id]),
-                productCount: count($this->subtreeProducts[$id] ?? []),
+                productCount: $this->listedCount($id),
                 children: $this->nodes($this->childrenOf[$id] ?? [], [...$trail, $id]),
             );
         }
@@ -236,9 +245,11 @@ final class CategoryIndex
         }
 
         $direct = [];
+        $directListed = [];
 
         foreach ($this->visibility->visibleCategoryPairs()->get() as $pair) {
             $direct[(int) $pair->category_id][(int) $pair->product_id] = true;
+            (bool) $pair->is_listed && $directListed[(int) $pair->category_id][(int) $pair->product_id] = true;
         }
 
         foreach (array_keys($this->byId) as $id) {
@@ -251,6 +262,16 @@ final class CategoryIndex
             }
 
             $this->subtreeProducts[$id] = $set;
+
+            $listed = [];
+
+            foreach ($this->selfAndDescendantIds($id) as $member) {
+                foreach ($directListed[$member] ?? [] as $productId => $true) {
+                    $listed[$productId] = true;
+                }
+            }
+
+            $this->subtreeListed[$id] = $listed;
         }
     }
 }

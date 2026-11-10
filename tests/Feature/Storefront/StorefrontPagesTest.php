@@ -16,6 +16,7 @@ class StorefrontPagesTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        $this->showSoldOutProducts();
 
         // A Livewire test earlier in the same PHP process leaves this static flag set; a real request starts with it false
         // (and a storefront page renders no Livewire component), so it must not inject Livewire's <script>/<style> here.

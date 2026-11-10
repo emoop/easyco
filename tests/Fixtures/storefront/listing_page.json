@@ -107,27 +107,11 @@
             },
             "badges": [],
             "in_stock": true
-        },
-        {
-            "id": "3",
-            "slug": "sold-out-scarf",
-            "url": "/product/sold-out-scarf",
-            "name": "Sold-out scarf",
-            "brand": null,
-            "image": null,
-            "price": {
-                "from_minor": 1500,
-                "to_minor": 1500,
-                "currency": "EUR",
-                "regular_from_minor": null
-            },
-            "badges": [],
-            "in_stock": false
         }
     ],
     "page": 1,
     "per_page": 12,
-    "total": 3,
+    "total": 2,
     "last_page": 1,
     "facets": []
 }

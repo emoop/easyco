@@ -18,6 +18,7 @@ class StorefrontCartPageTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        $this->showSoldOutProducts();
 
         // See StorefrontHttpSecurityTest::setUp: a static flag left by a Livewire test in the same process.
         SupportAutoInjectedAssets::$hasRenderedAComponentThisRequest = false;

@@ -57,6 +57,37 @@ final class StorefrontVisibility
             ->whereNull($table.'.deleted_at');
     }
 
+    /**
+     * P6c: the products a LIST may show: visible (products()) and, while the shop hides sold-out products, available (`is_available`, kept by ProductSortPriceRefresher). ONE indexed condition, no sub-select.
+     * The product PAGE and every direct lookup use products(), never this: a sold-out product stays reachable by its link.
+     *
+     * @template TQuery of EloquentBuilder|QueryBuilder
+     *
+     * @param TQuery $query
+     * @return TQuery
+     */
+    public function listed(EloquentBuilder|QueryBuilder $query, string $table = 'catalog_products'): EloquentBuilder|QueryBuilder
+    {
+        return $this->availableOnly($this->products($query, $table), $table);
+    }
+
+    /**
+     * Only the availability part of listed(), for a query that already carries the visibility rule: `is_available = 1`, OR the shop shows its sold-out products (the setting row `catalog.hide_sold_out` is `0`). The
+     * setting is read INSIDE the statement by an uncorrelated sub-condition (MySQL evaluates it once): the storefront never needs a query of its own for it, and it can never be stale (an admin save is live at once).
+     */
+    public function availableOnly(EloquentBuilder|QueryBuilder $query, string $table = 'catalog_products'): EloquentBuilder|QueryBuilder
+    {
+        return $query->where(function ($either) use ($table): void {
+            $either->where($table.'.is_available', true)->orWhereExists(self::soldOutShownSetting());
+        });
+    }
+
+    /** `site_settings` has the row «show the sold-out products» (`catalog.hide_sold_out` = `0`). */
+    public static function soldOutShownSetting(): QueryBuilder
+    {
+        return \Illuminate\Support\Facades\DB::table('site_settings')->selectRaw('1')->where('key', \App\Settings\AppearanceSettings::HIDE_SOLD_OUT_KEY)->where('value', '0');
+    }
+
     /** The predicate twin of products(): is this LOADED row visible? */
     public function isProductVisible(ProductModel $product): bool
     {
@@ -142,6 +173,7 @@ final class StorefrontVisibility
             \Illuminate\Support\Facades\DB::table('catalog_product_categories')
                 ->join('catalog_products', 'catalog_products.id', '=', 'catalog_product_categories.product_id')
                 ->select('catalog_product_categories.category_id', 'catalog_product_categories.product_id')
+                ->selectRaw('(catalog_products.is_available = 1 or exists ('.($off = self::soldOutShownSetting())->toSql().')) as is_listed', $off->getBindings())
         );
     }
 

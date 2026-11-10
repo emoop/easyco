@@ -19,6 +19,15 @@ trait BuildsStorefrontCatalog
 {
     private const STAMP = '2026-01-01 10:00:00';
 
+    /**
+     * P6c: the shop hides its sold-out products from the lists by default. A test that is about something else than stock and lists products that have none, or that is about the sold-out product itself,
+     * turns the setting off here (the setting row, as the admin page writes it: the list queries read it themselves).
+     */
+    protected function showSoldOutProducts(): void
+    {
+        app(\App\Settings\Contracts\SiteSettingsRepository::class)->set(\App\Settings\AppearanceSettings::HIDE_SOLD_OUT_KEY, '0');
+    }
+
     protected function seedPricing(): void
     {
         app(PricingSystemListsSeeder::class)->run(app(PriceListRepository::class));

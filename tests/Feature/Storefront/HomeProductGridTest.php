@@ -29,6 +29,7 @@ class HomeProductGridTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        $this->showSoldOutProducts();
 
         SupportAutoInjectedAssets::$hasRenderedAComponentThisRequest = false;
         $this->withoutVite();

@@ -23,6 +23,7 @@ class CardSecondPhotoTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        $this->showSoldOutProducts();
 
         config(['filesystems.disks.public.url' => 'https://cdn.test/storage']);
         $this->seedPricing();

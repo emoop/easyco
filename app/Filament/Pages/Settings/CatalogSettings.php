@@ -4,6 +4,8 @@ namespace App\Filament\Pages\Settings;
 
 use App\Filament\Concerns\AuthorizesViaStaffPermission;
 use App\Filament\NavigationGroup;
+use App\Filament\Design\InfoHint;
+use App\Settings\AppearanceSettings;
 use App\Settings\Contracts\SiteSettingsRepository;
 use BackedEnum;
 use EasyCo\Staff\Enums\Permission;
@@ -93,6 +95,8 @@ class CatalogSettings extends Page
         $settings = app(SiteSettingsRepository::class);
 
         $this->form->fill([
+            // P6c: ON unless a stored `0` (the default also for a shop that never saved this page)
+            'hide_sold_out' => $settings->get(AppearanceSettings::HIDE_SOLD_OUT_KEY) !== '0',
             'product_group_required' => ($settings->get('catalog.product_group_required') ?? '0') === '1',
             // Default TRUE for all four — see ProductResource's own
             // seasonFieldEnabled()/brandFieldEnabled()/tagsFieldEnabled()/
@@ -110,6 +114,10 @@ class CatalogSettings extends Page
     {
         return $schema
             ->components([
+                Toggle::make('hide_sold_out')
+                    ->label(__('settings.catalog.hide_sold_out_label'))
+                    ->afterLabel(InfoHint::make(__('settings.catalog.hide_sold_out_hint'), 'hide_sold_out'))
+                    ->default(true),
                 Toggle::make('season_field_enabled')
                     ->label(__('settings.catalog.season_enabled_label'))
                     ->helperText(__('settings.catalog.season_enabled_help'))
@@ -166,6 +174,9 @@ class CatalogSettings extends Page
     {
         $data = $this->form->getState();
         $settings = app(SiteSettingsRepository::class);
+
+        // P6c: the list queries read this row themselves (a sub-condition of the same statement), so the change is live at once
+        $settings->set(AppearanceSettings::HIDE_SOLD_OUT_KEY, $data['hide_sold_out'] ? '1' : '0');
 
         $settings->set('catalog.season_field_enabled', $data['season_field_enabled'] ? '1' : '0');
         $settings->set('catalog.brand_field_enabled', $data['brand_field_enabled'] ? '1' : '0');

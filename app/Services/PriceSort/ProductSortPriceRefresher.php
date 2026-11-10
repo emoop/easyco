@@ -22,6 +22,9 @@ use InvalidArgumentException;
  * StorefrontVisibility's, the prices come ONLY through the existing contracts (CatalogScopeResolver::forVariations() + PriceRangeResolver::resolveQuotes(), the pair the card
  * reads), so a replaced resolver is honoured and the value equals the card's «от» price.
  *
+ * P6c: the SAME pass also keeps `catalog_products.is_available` (does the product have a SHOWN variation with stock > 0?). It comes from the same two reads (the shown variations and their stock): no query of its own,
+ * and the changed rows of BOTH columns are written by the ONE statement below. The "sold out" fact does not need prices: a product with no price can still be available.
+ *
  * A CHUNK COSTS A CONSTANT NUMBER OF QUERIES whatever the number of products: the shown variations (1), the stock (1), the scope inputs and the prices (the resolvers' fixed few),
  * the current values (1) and ONE write for all the changed rows. Only rows whose value changed are written; running it twice writes nothing the second time (idempotent).
  * The resolvers are made fresh for every chunk: a queue worker lives for days and must never serve a cached price list.
@@ -61,20 +64,22 @@ final class ProductSortPriceRefresher
         $stock = $this->stock($allVariationIds);
         $quotes = $this->quotes($allVariationIds);
 
-        $current = DB::table('catalog_products')->whereIn('id', $ids)->pluck('price_from_minor', 'id');
+        $current = DB::table('catalog_products')->whereIn('id', $ids)->get(['id', 'price_from_minor', 'is_available'])->keyBy('id');
         $changes = [];
 
         foreach ($ids as $id) {
-            if (! $current->has($id) && ! $current->has((int) $id)) {
+            $row = $current->get($id) ?? $current->get((int) $id);
+
+            if ($row === null) {
                 continue; // the product no longer exists
             }
 
-            $new = $this->priceOf($variationsByProduct[$id] ?? [], $quotes, $stock);
-            $old = $current->get($id) ?? $current->get((int) $id);
-            $old = $old === null ? null : (int) $old;
+            $newPrice = $this->priceOf($variationsByProduct[$id] ?? [], $quotes, $stock);
+            $newAvailable = self::availableOf($variationsByProduct[$id] ?? [], $stock);
+            $oldPrice = $row->price_from_minor === null ? null : (int) $row->price_from_minor;
 
-            if ($old !== $new) {
-                $changes[$id] = $new;
+            if ($oldPrice !== $newPrice || (bool) $row->is_available !== $newAvailable) {
+                $changes[$id] = [$newPrice, $newAvailable];
             }
         }
 
@@ -82,19 +87,24 @@ final class ProductSortPriceRefresher
             return 0;
         }
 
-        // ONE statement for every changed row (a CASE), whatever their number; updated_at is not touched (a derived column)
+        // ONE statement for every changed row and BOTH columns (two CASEs), whatever their number; updated_at is not touched (derived columns)
         $cases = str_repeat('WHEN ? THEN ? ', count($changes));
         $bindings = [];
 
-        foreach ($changes as $id => $price) {
+        foreach ($changes as $id => [$price]) {
             $bindings[] = (int) $id;
             $bindings[] = $price;
+        }
+
+        foreach ($changes as $id => [, $available]) {
+            $bindings[] = (int) $id;
+            $bindings[] = $available ? 1 : 0;
         }
 
         $bindings = array_merge($bindings, array_map('intval', array_keys($changes)));
         $in = implode(',', array_fill(0, count($changes), '?'));
 
-        DB::update("UPDATE catalog_products SET price_from_minor = CASE id {$cases}END WHERE id IN ({$in})", $bindings);
+        DB::update("UPDATE catalog_products SET price_from_minor = CASE id {$cases}END, is_available = CASE id {$cases}END WHERE id IN ({$in})", $bindings);
 
         return count($changes);
     }
@@ -125,6 +135,23 @@ final class ProductSortPriceRefresher
         }
 
         return ['products' => $products, 'written' => $written];
+    }
+
+    /**
+     * P6c: a product is available when at least one of its SHOWN variations has stock > 0 (the same stock reading as AvailablePriceRule); with none shown it is not.
+     *
+     * @param list<string> $variationIds the product's shown variations
+     * @param array<string, int> $stock quantity by variation id (a missing id is 0)
+     */
+    public static function availableOf(array $variationIds, array $stock): bool
+    {
+        foreach ($variationIds as $variationId) {
+            if (($stock[$variationId] ?? 0) > 0) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

@@ -284,7 +284,7 @@ final class CatalogReader
                 $rows[] = ['name' => $node->name, 'url' => $node->url, 'n' => $node->productCount, 'id' => (int) $node->id];
             }
         } else {
-            $pairs = $this->visibility->visibleCategoryPairs()
+            $pairs = $this->visibility->availableOnly($this->visibility->visibleCategoryPairs())
                 ->select('catalog_product_categories.category_id')
                 ->selectRaw('count(distinct catalog_product_categories.product_id) as n')
                 ->groupBy('catalog_product_categories.category_id');
@@ -343,7 +343,8 @@ final class CatalogReader
      */
     private function listingProducts(ListingQuery $query, array $filters): \Illuminate\Database\Eloquent\Builder
     {
-        $products = $this->visibility->products(ProductModel::query())
+        // P6c: a LIST (listed(): visible AND, while the shop hides sold-out products, available); the product page and the direct lookups keep products()
+        $products = $this->visibility->listed(ProductModel::query())
             ->select(['catalog_products.id', 'catalog_products.slug', 'catalog_products.name', 'catalog_products.brand_id'])
             ->addSelect(['first_media_id' => self::firstImageIdSubquery(), 'second_media_id' => self::secondImageIdSubquery()])
             // CT-3: «is there a filterable attribute?» rides on the page query (one uncorrelated scalar subquery), so a shop with no filters pays no query of its own for them
@@ -499,7 +500,7 @@ final class CatalogReader
             ->join('catalog_products', 'catalog_products.id', '=', 'v.product_id')
             ->where('vv.attribute_definition_id', $attribute)
             ->select('vv.attribute_value_id');
-        $this->visibility->products($onVariations);
+        $this->visibility->listed($onVariations);
         $this->visibility->variations($onVariations, 'v');
         FilterConstraint::inStock($onVariations);
         $this->applyScope($onVariations, $query);
@@ -512,7 +513,7 @@ final class CatalogReader
             ->where('pa.is_variation_axis', false)
             ->whereNotNull('pa.attribute_value_id')
             ->select('pa.attribute_value_id');
-        $this->visibility->products($onProducts);
+        $this->visibility->listed($onProducts);
         $this->applyScope($onProducts, $query);
         FilterConstraint::apply($onProducts, $others);
 
@@ -523,7 +524,7 @@ final class CatalogReader
     private function builtinValueIds(ListingQuery $query, array $filters, string $kind): array
     {
         $products = DB::table('catalog_products');
-        $this->visibility->products($products);
+        $this->visibility->listed($products);
         $this->applyScope($products, $query);
         FilterConstraint::apply($products, $filters, $kind);
 

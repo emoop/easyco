@@ -36,6 +36,8 @@ return [
 
     'catalog' => [
         'title' => 'Catalog',
+        'hide_sold_out_label' => 'Hide sold-out products',
+        'hide_sold_out_hint' => 'When on, a product whose every size is sold out disappears from the catalogue (categories, brand, season and tag pages, the home page, “Similar products”) and from the counts. It comes back by itself once it is in stock. The product address stays reachable and shows “Sold out”. Turn it off if you take pre-orders.',
         'season_enabled_label' => 'Show "Season" field',
         'season_enabled_help' => 'When off, the season field and filter disappear from products and from the menu.',
         'brand_enabled_label' => 'Show "Brand" field',
