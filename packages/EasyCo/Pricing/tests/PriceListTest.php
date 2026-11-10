@@ -389,4 +389,39 @@ final class PriceListTest extends TestCase
         $this->assertTrue($list->isValidAt(new DateTimeImmutable('2026-01-01')));
         $this->assertTrue($list->isValidAt(new DateTimeImmutable('2026-03-01')));
     }
+
+    // --- moveToPriority() (P6b.1) -------------------------------------
+
+    public function test_a_campaign_can_be_moved_inside_the_band(): void
+    {
+        $list = PriceList::create('Spring', PriceListMode::PERCENTAGE_OFF_REGULAR, priority: 500, percentageBasisPoints: 3000);
+        $list->moveToPriority(501);
+        $this->assertSame(501, $list->priority());
+    }
+
+    public function test_moving_refuses_a_system_list_a_fixed_items_list_and_a_priority_outside_the_band(): void
+    {
+        $system = PriceList::createSystemList('Manual Sale', PriceListMode::FIXED_ITEMS, priority: 1000);
+        try {
+            $system->moveToPriority(500);
+            $this->fail('a system list cannot be moved');
+        } catch (CannotModifySystemPriceListException) {
+            $this->assertSame(1000, $system->priority());
+        }
+
+        $fixed = PriceList::create('Wholesale', PriceListMode::FIXED_ITEMS, priority: 10);
+        $campaign = PriceList::create('Spring', PriceListMode::PERCENTAGE_OFF_REGULAR, priority: 500, percentageBasisPoints: 3000);
+
+        foreach ([[$fixed, 20], [$campaign, 0], [$campaign, 1000]] as [$list, $to]) {
+            try {
+                $list->moveToPriority($to);
+                $this->fail('expected a refusal');
+            } catch (InvalidArgumentException) {
+                // expected
+            }
+        }
+
+        $this->assertSame(10, $fixed->priority());
+        $this->assertSame(500, $campaign->priority());
+    }
 }

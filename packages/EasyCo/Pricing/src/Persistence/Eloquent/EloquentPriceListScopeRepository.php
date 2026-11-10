@@ -45,9 +45,9 @@ final class EloquentPriceListScopeRepository implements PriceListScopeRepository
         });
     }
 
-    public function replaceForPriceList(string $priceListId, array $scopes): void
+    public function replaceForPriceList(string $priceListId, array $scopes, ?int $priority = null): void
     {
-        DB::transaction(function () use ($priceListId, $scopes): void {
+        DB::transaction(function () use ($priceListId, $scopes, $priority): void {
             $wanted = [];
 
             foreach ($scopes as $scope) {
@@ -81,7 +81,7 @@ final class EloquentPriceListScopeRepository implements PriceListScopeRepository
                 $row->save();
             }
 
-            $this->recalculateSignature($priceListId);
+            $this->recalculateSignature($priceListId, $priority);
         });
     }
 
@@ -119,14 +119,14 @@ final class EloquentPriceListScopeRepository implements PriceListScopeRepository
             ->all();
     }
 
-    private function recalculateSignature(string $priceListId): void
+    private function recalculateSignature(string $priceListId, ?int $priority = null): void
     {
         $currentScopes = $this->findByPriceListId($priceListId);
         $signature = PriceListSignature::forScopes($currentScopes);
 
         PriceListModel::where('id', $priceListId)->update([
             'scope_signature' => $signature->value(),
-        ]);
+        ] + ($priority === null ? [] : ['priority' => $priority]));
     }
 
     private function toDomainScope(PriceListScopeModel $model): PriceListScope

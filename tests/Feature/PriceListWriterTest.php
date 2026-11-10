@@ -131,20 +131,13 @@ class PriceListWriterTest extends TestCase
         Queue::assertNothingPushed();
     }
 
-    /** two campaigns with an IDENTICAL scope cannot exist: a field error on the scope, nothing written */
-    public function test_an_identical_scope_is_a_field_error(): void
+    /** P6b.1: two campaigns with an IDENTICAL scope may exist: the writer gives the second one the next free priority (500, 501) */
+    public function test_an_identical_scope_gets_the_next_priority(): void
     {
-        app(PriceListWriter::class)->create($this->data());
-        $before = PriceListModel::query()->count();
+        $first = app(PriceListWriter::class)->create($this->data());
+        $second = app(PriceListWriter::class)->create($this->data());
 
-        try {
-            app(PriceListWriter::class)->create($this->data());
-            $this->fail('expected a refusal');
-        } catch (PriceListInvalidException $exception) {
-            $this->assertArrayHasKey('scopes', $exception->errors);
-        }
-
-        $this->assertSame($before, PriceListModel::query()->count());
+        $this->assertSame([500, 501], [(int) PriceListModel::find($first->id())->priority, (int) PriceListModel::find($second->id())->priority]);
     }
 
     /** a scoped create does not collide with another UNSCOPED campaign at the same priority (the list is inserted with the signature of its FINAL scope set) */

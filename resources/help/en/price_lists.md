@@ -6,7 +6,7 @@ A campaign has a name, a percentage, an optional start and end (in the shop time
 
 A price list is **never deleted**: you switch it off with the "Active" switch or from the "Actions" menu. The two system lists ("Regular Prices" and "Manual Sale") are your regular and manual sale prices from the product form: they show in the list as "System" and are not changed from here.
 
-Two campaigns with exactly the same scope cannot exist at the same time. If two different campaigns affect the same product, **only one** applies (the newest): discounts are not added up.
+Any number of campaigns may have the same scope, for example one after another on all products. If several campaigns affect the same product, **only one** applies (the newest): discounts are not added up.
 
 ## The scope of a campaign {#action-price-list-scope}
 

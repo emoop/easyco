@@ -29,7 +29,7 @@ final class PriceList
         private string $name,
         private readonly PriceListMode $mode,
         private ?int $percentageBasisPoints,
-        private readonly int $priority,
+        private int $priority,
         private ?DateTimeImmutable $validFrom,
         private ?DateTimeImmutable $validUntil,
         private PriceListStatus $status,
@@ -318,6 +318,30 @@ final class PriceList
         $this->validFrom = $validFrom;
         $this->validUntil = $validUntil;
         $this->replacesManualSale = $replacesManualSale;
+    }
+
+    /**
+     * P6b.1: moves a merchant's percent-off CAMPAIGN to another priority inside the campaign band 1…999 (always below «Manual Sale» = 1000). Only the writer calls it, to keep several campaigns with the same scope
+     * apart (UNIQUE(priority, scope_signature)). A system list and a non-campaign are refused; nothing changes when the check fails.
+     *
+     * @throws CannotModifySystemPriceListException
+     * @throws InvalidArgumentException
+     */
+    public function moveToPriority(int $priority): void
+    {
+        if ($this->isSystem) {
+            throw CannotModifySystemPriceListException::cannotRename($this->id ?? '(unassigned)');
+        }
+
+        if ($this->mode !== PriceListMode::PERCENTAGE_OFF_REGULAR) {
+            throw new InvalidArgumentException('Only a PERCENTAGE_OFF_REGULAR campaign can be moved to another priority.');
+        }
+
+        if ($priority < 1 || $priority > 999) {
+            throw new InvalidArgumentException('A campaign priority must be inside the band 1…999.');
+        }
+
+        $this->priority = $priority;
     }
 
     /**

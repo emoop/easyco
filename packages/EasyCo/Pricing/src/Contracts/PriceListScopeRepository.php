@@ -17,9 +17,11 @@ interface PriceListScopeRepository
      * P6b: makes the list's scope rows EXACTLY $scopes in one transaction: the rows that are not wanted are deleted, the missing ones inserted, and the signature is recalculated ONCE at the end — so no intermediate
      * set (e.g. «no scope» between detaching the old rows and attaching the new ones) can collide with another list's UNIQUE(priority, scope_signature).
      *
+     * P6b.1: with $priority the list's priority is changed in the SAME update as the signature (a move to a free priority cannot collide half-way).
+     *
      * @param PriceListScope[] $scopes the wanted rows (the already attached ones are kept)
      */
-    public function replaceForPriceList(string $priceListId, array $scopes): void;
+    public function replaceForPriceList(string $priceListId, array $scopes, ?int $priority = null): void;
 
     public function detach(string $scopeId): void;
 

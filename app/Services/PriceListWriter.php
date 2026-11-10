@@ -15,6 +15,7 @@ use EasyCo\Pricing\Enums\PriceListMode;
 use EasyCo\Pricing\Enums\PriceListScopeType;
 use EasyCo\Pricing\PriceList;
 use EasyCo\Pricing\PriceListScope;
+use EasyCo\Pricing\PriceListSignature;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -26,9 +27,10 @@ use Throwable;
  * setActive() here, which checks the typed text, builds or changes the DOMAIN entity (PriceList::create() / updateCampaign()), saves it AND its scope rows through the repositories in ONE transaction, writes the audit
  * entries in the same transaction and, only after the commit, queues the sort-price refresh and fires the hooks.
  *
- *  - ONLY percent-off campaigns are made here (FIXED_ITEMS lists and the two system lists are never touched: a system list is refused). Every campaign gets the same fixed priority band, BELOW «Manual Sale» (1000):
- *    there is no priority field. Two campaigns that match the same product are decided by the resolver (equal priority: the newest list wins), and two lists with the IDENTICAL scope set at the same priority are
- *    refused by the database (UNIQUE(priority, scope_signature)) — shown as an error on the scope.
+ *  - ONLY percent-off campaigns are made here (FIXED_ITEMS lists and the two system lists are never touched: a system list is refused). Every campaign lives in the campaign band 1…999, BELOW «Manual Sale» (1000);
+ *    there is no priority field — the WRITER picks it (P6b.1): the lowest number ≥ 500 that is free for the campaign's FINAL scope signature (the first campaign on a scope gets 500, the next one on the same scope 501…),
+ *    else the highest free number below 500, else the scope error (band full). Any number of campaigns may share a scope. Two campaigns that match the same product are decided by the resolver
+ *    (priority DESC, id DESC: the newest list wins). The unique index UNIQUE(priority, scope_signature) stays the last guard against a race: one retry with a fresh read, then the scope error.
  *  - SORT PRICES (P6a): while the writer saves, the model-event triggers are MUTED (SortPriceTriggers::muted()): the list row is saved before its scope rows, so a trigger would queue the «unscoped list → every
  *    product» pass in the middle of a create. Instead ONE explicit refresh is queued after the commit: the products the old scopes touched UNITED with the products the new scopes touch (every product only when a
  *    side has no scope).
@@ -70,28 +72,36 @@ final class PriceListWriter
             throw new PriceListInvalidException($errors);
         }
 
-        try {
-            $list = PriceList::create(
-                name: $input['name'],
-                mode: PriceListMode::PERCENTAGE_OFF_REGULAR,
-                priority: self::CAMPAIGN_PRIORITY,
-                validFrom: $input['validFrom'],
-                validUntil: $input['validUntil'],
-                percentageBasisPoints: $input['basisPoints'],
-                replacesManualSale: $input['replaces'],
-            );
-        } catch (InvalidArgumentException $exception) {
-            throw new PriceListInvalidException(['name' => [$exception->getMessage()]]);
-        }
+        // the scope entities take their ids once: every attempt gets its own
+        $scopeRows = static fn (): array => array_map(static fn (array $scope): PriceListScope => new PriceListScope(null, '', $scope['kind'], $scope['reference']), $scopes);
+        $signature = PriceListSignature::forScopes($scopeRows())->value();
+        $list = null;
 
-        if (($data['is_active'] ?? true) === false) {
-            $list->deactivate();
-        }
+        // every attempt builds a FRESH entity: the priority is read inside the transaction (a retry after a lost race reads it again)
+        $this->transactionally(function () use (&$list, $input, $data, $scopeRows, $signature): void {
+            $priority = $this->freePriority($signature, null) ?? throw new PriceListInvalidException(['scopes' => [__('price_lists.errors.scope_band_full')]]);
 
-        $this->transactionally(function () use ($list, $scopes): void {
-            SortPriceTriggers::muted(function () use ($list, $scopes): void {
+            try {
+                $list = PriceList::create(
+                    name: $input['name'],
+                    mode: PriceListMode::PERCENTAGE_OFF_REGULAR,
+                    priority: $priority,
+                    validFrom: $input['validFrom'],
+                    validUntil: $input['validUntil'],
+                    percentageBasisPoints: $input['basisPoints'],
+                    replacesManualSale: $input['replaces'],
+                );
+            } catch (InvalidArgumentException $exception) {
+                throw new PriceListInvalidException(['name' => [$exception->getMessage()]]);
+            }
+
+            if (($data['is_active'] ?? true) === false) {
+                $list->deactivate();
+            }
+
+            SortPriceTriggers::muted(function () use ($list, $scopeRows): void {
                 // the list and its scope rows in ONE insert with the FINAL signature (a list saved first would take the universal one and collide with another universal list at this priority)
-                $this->lists->saveWithScopes($list, array_map(static fn (array $scope): PriceListScope => new PriceListScope(null, '', $scope['kind'], $scope['reference']), $scopes));
+                $this->lists->saveWithScopes($list, $scopeRows());
             });
 
             $this->audit->logCreated(self::ENTITY, (string) $list->id());
@@ -140,10 +150,22 @@ final class PriceListWriter
             return $list;
         }
 
-        $this->transactionally(function () use ($list, $oldRows, $newRows, $before, $after): void {
-            SortPriceTriggers::muted(function () use ($list, $oldRows, $newRows): void {
+        $originalPriority = $list->priority();
+        $target = $originalPriority;
+        $scopesChanged = $before['scopes'] !== $after['scopes'];
+        $newSignature = PriceListSignature::forScopes(array_map(static fn (array $row): PriceListScope => new PriceListScope(null, '', PriceListScopeType::from($row[0]), $row[1]), $newRows))->value();
+
+        $this->transactionally(function () use ($list, $newRows, $before, $after, $originalPriority, &$target, $scopesChanged, $newSignature): void {
+            // the priority only moves when the scope changed AND (current priority, new signature) is taken by another list; then the list goes to a free priority by the same rule as a new one
+            $target = $originalPriority;
+
+            if ($scopesChanged && $this->isTaken($newSignature, $originalPriority, (string) $list->id())) {
+                $target = $this->freePriority($newSignature, (string) $list->id()) ?? throw new PriceListInvalidException(['scopes' => [__('price_lists.errors.scope_band_full')]]);
+            }
+
+            SortPriceTriggers::muted(function () use ($list, $newRows, $originalPriority, $target): void {
                 $this->lists->save($list);
-                $this->scopes->replaceForPriceList((string) $list->id(), array_map(static fn (array $row): PriceListScope => new PriceListScope(null, (string) $list->id(), PriceListScopeType::from($row[0]), $row[1]), $newRows));
+                $this->scopes->replaceForPriceList((string) $list->id(), array_map(static fn (array $row): PriceListScope => new PriceListScope(null, (string) $list->id(), PriceListScopeType::from($row[0]), $row[1]), $newRows), $target === $originalPriority ? null : $target);
             });
 
             foreach ($after as $field => $new) {
@@ -152,6 +174,10 @@ final class PriceListWriter
                 }
             }
         });
+
+        if ($target !== $originalPriority) {
+            $list->moveToPriority($target);
+        }
 
         $this->queueRefresh($oldRows, $newRows);
         $this->fireContained('pricing.price_list.updated', $list, $before);
@@ -366,24 +392,58 @@ final class PriceListWriter
     // ---- the transaction, the refresh, the hooks -----------------------------------------------------------------------
 
     /**
-     * ONE transaction. The unique index UNIQUE(priority, scope_signature) refuses two lists with the identical scope set at the same priority: SQLSTATE 23000 + the driver code (MySQL 1062, SQLite 19), never a
-     * message match (CLAUDE.md rule 3) — shown as an error on the scope.
+     * ONE transaction. The unique index UNIQUE(priority, scope_signature) is the last guard behind the free-priority choice: when two admins save at the same moment and it still refuses (SQLSTATE 23000 + the driver
+     * code, MySQL 1062 / SQLite 19, never a message match — CLAUDE.md rule 3), the whole write is retried ONCE (the closure reads the free priority again); a second refusal is the scope error.
      *
      * @throws PriceListInvalidException
      */
     private function transactionally(callable $write): void
     {
-        try {
-            DB::transaction($write);
-        } catch (QueryException $exception) {
-            $info = $exception->errorInfo ?? [];
+        for ($attempt = 1; ; $attempt++) {
+            try {
+                DB::transaction($write);
 
-            if (($info[0] ?? null) === '23000' && in_array((int) ($info[1] ?? 0), [1062, 19], true)) {
-                throw new PriceListInvalidException(['scopes' => [__('price_lists.errors.scope_taken')]]);
+                return;
+            } catch (QueryException $exception) {
+                $info = $exception->errorInfo ?? [];
+
+                if (($info[0] ?? null) !== '23000' || ! in_array((int) ($info[1] ?? 0), [1062, 19], true)) {
+                    throw $exception;
+                }
+
+                if ($attempt >= 2) {
+                    throw new PriceListInvalidException(['scopes' => [__('price_lists.errors.scope_band_full')]]);
+                }
             }
-
-            throw $exception;
         }
+    }
+
+    /** Is the pair (priority, signature) used by ANOTHER list (active or not: the unique index does not care)? */
+    private function isTaken(string $signature, int $priority, ?string $exceptId): bool
+    {
+        return DB::table('pricing_price_lists')->where('scope_signature', $signature)->where('priority', $priority)->when($exceptId !== null, fn ($query) => $query->where('id', '!=', $exceptId))->exists();
+    }
+
+    /**
+     * The campaign priority for a scope signature: the lowest number ≥ 500 that no other list uses with this signature, else the highest free number below 500; null when the whole band 1…999 is used.
+     */
+    private function freePriority(string $signature, ?string $exceptId): ?int
+    {
+        $used = DB::table('pricing_price_lists')->where('scope_signature', $signature)->whereBetween('priority', [1, 999])->when($exceptId !== null, fn ($query) => $query->where('id', '!=', $exceptId))->pluck('priority')->map(fn ($p): int => (int) $p)->flip()->all();
+
+        for ($priority = self::CAMPAIGN_PRIORITY; $priority <= 999; $priority++) {
+            if (! isset($used[$priority])) {
+                return $priority;
+            }
+        }
+
+        for ($priority = self::CAMPAIGN_PRIORITY - 1; $priority >= 1; $priority--) {
+            if (! isset($used[$priority])) {
+                return $priority;
+            }
+        }
+
+        return null;
     }
 
     /**

@@ -105,7 +105,7 @@ return [
         'until_not_after_from' => 'The end must be after the start.',
         'scope_invalid' => 'A choice in the scope is not valid.',
         'confirm_all_products' => 'With no scope the campaign applies to all products: confirm it or add a scope.',
-        'scope_taken' => 'There is already a campaign with the same scope (two campaigns with an identical scope cannot exist). Change the scope or edit the other campaign.',
+        'scope_band_full' => 'There are already too many campaigns for this scope (the priority band is full). Change the scope of one of the old campaigns and try again.',
     ],
 
 ];

@@ -34,7 +34,7 @@ class PriceListConsistencyTest extends TestCase
     }
 
     /** @return array{card: ?int, page: ?int, cart: ?int, stored: ?int} */
-    private function prices(): array
+    private function prices(bool $refresh = true): array
     {
         $this->app->forgetScopedInstances();
         $reader = app(CatalogReader::class);
@@ -45,7 +45,9 @@ class PriceListConsistencyTest extends TestCase
         $this->postJson('/api/cart/lines', ['variation_id' => '101', 'quantity' => 1])->assertStatus(201);
         $cart = $this->getJson('/api/cart')->assertOk()->json('lines.0.unit_price.minor');
 
-        app(ProductSortPriceRefresher::class)->refresh([1]);
+        if ($refresh) {
+            app(ProductSortPriceRefresher::class)->refresh([1]);
+        }
         $stored = DB::table('catalog_products')->where('id', 1)->value('price_from_minor');
 
         return ['card' => $card, 'page' => $page, 'cart' => $cart, 'stored' => $stored === null ? null : (int) $stored];
@@ -109,5 +111,60 @@ class PriceListConsistencyTest extends TestCase
         Artisan::call('prices:refresh-boundaries');
 
         $this->assertSame(7000, $stored(), 'the boundary command refreshed the product: the campaign is effective');
+    }
+
+    private function shopTime(CarbonImmutable $at): string
+    {
+        return $at->setTimezone(app(\App\Settings\StoreTimezone::class)->zone())->format('Y-m-d H:i');
+    }
+
+    private function boundary(CarbonImmutable $now): void
+    {
+        Cache::forever('prices.boundaries.last_processed', $now->subSeconds(60)->toIso8601String());
+        Artisan::call('prices:refresh-boundaries');
+    }
+
+    /** ★ P6b.1 expiry: −30% replacing the Manual Sale price (regular 100, manual 85) with a valid_until: 70 € everywhere before it, 85 € (the unchanged Manual Sale price) after it — the stored sort price after the boundary command */
+    public function test_after_valid_until_the_manual_sale_price_is_back_everywhere(): void
+    {
+        $now = CarbonImmutable::now();
+        $list = app(PriceListWriter::class)->create(['name' => 'Ends soon', 'percentage' => '30', 'is_active' => true, 'replaces_manual_sale' => true, 'confirm_all_products' => true, 'scopes' => [], 'valid_until' => $this->shopTime($now->addMinutes(2))]);
+
+        $this->assertSame(['card' => 7000, 'page' => 7000, 'cart' => 7000, 'stored' => 7000], $this->prices(false), 'before valid_until');
+
+        // the end passes (the resolver reads the real clock, so the end is moved behind «now»)
+        DB::table('pricing_price_lists')->where('id', $list->id())->update(['valid_until' => $now->subSeconds(20)]);
+        $afterResolver = $this->prices(false);
+        $this->assertSame([8500, 8500, 8500], [$afterResolver['card'], $afterResolver['page'], $afterResolver['cart']], 'the resolver: the Manual Sale price');
+        $this->assertSame(7000, $afterResolver['stored'], 'the stored sort price is still the old one until the boundary command runs');
+
+        $this->boundary($now);
+
+        $this->assertSame(['card' => 8500, 'page' => 8500, 'cart' => 8500, 'stored' => 8500], $this->prices(false), 'after the boundary command');
+    }
+
+    /** ★ the same with the campaign switched off through the writer */
+    public function test_switching_the_campaign_off_brings_the_manual_sale_price_back_everywhere(): void
+    {
+        $id = $this->campaign('30', true);
+        $this->assertSame(['card' => 7000, 'page' => 7000, 'cart' => 7000, 'stored' => 7000], $this->prices(false));
+
+        app(PriceListWriter::class)->setActive($id, false);
+
+        $this->assertSame(['card' => 8500, 'page' => 8500, 'cart' => 8500, 'stored' => 8500], $this->prices(false));
+    }
+
+    /** ★ the mirror: a campaign that starts later changes nothing (card, page, cart, stored) until its start passes */
+    public function test_a_later_start_changes_nothing_until_it_starts(): void
+    {
+        $now = CarbonImmutable::now();
+        $list = app(PriceListWriter::class)->create(['name' => 'Starts soon', 'percentage' => '30', 'is_active' => true, 'replaces_manual_sale' => true, 'confirm_all_products' => true, 'scopes' => [], 'valid_from' => $this->shopTime($now->addMinutes(2))]);
+
+        $this->assertSame(['card' => 8500, 'page' => 8500, 'cart' => 8500, 'stored' => 8500], $this->prices(false), 'before valid_from');
+
+        DB::table('pricing_price_lists')->where('id', $list->id())->update(['valid_from' => $now->subSeconds(20)]);
+        $this->boundary($now);
+
+        $this->assertSame(['card' => 7000, 'page' => 7000, 'cart' => 7000, 'stored' => 7000], $this->prices(false), 'after the start');
     }
 }
