@@ -28,12 +28,13 @@ final class PriceList
         private ?string $id,
         private string $name,
         private readonly PriceListMode $mode,
-        private readonly ?int $percentageBasisPoints,
+        private ?int $percentageBasisPoints,
         private readonly int $priority,
-        private readonly ?DateTimeImmutable $validFrom,
-        private readonly ?DateTimeImmutable $validUntil,
+        private ?DateTimeImmutable $validFrom,
+        private ?DateTimeImmutable $validUntil,
         private PriceListStatus $status,
         private readonly bool $isSystem,
+        private bool $replacesManualSale = false,
     ) {
         self::assertValidName($name);
         self::assertPercentageBasisPointsMatchesMode($mode, $percentageBasisPoints);
@@ -104,6 +105,7 @@ final class PriceList
         ?DateTimeImmutable $validFrom = null,
         ?DateTimeImmutable $validUntil = null,
         ?int $percentageBasisPoints = null,
+        bool $replacesManualSale = false,
     ): self {
         return new self(
             id: null,
@@ -115,6 +117,7 @@ final class PriceList
             validUntil: $validUntil,
             status: PriceListStatus::ACTIVE,
             isSystem: false,
+            replacesManualSale: $replacesManualSale,
         );
     }
 
@@ -170,6 +173,7 @@ final class PriceList
         ?int $percentageBasisPoints,
         PriceListStatus $status,
         bool $isSystem,
+        bool $replacesManualSale = false,
     ): self {
         return new self(
             id: $id,
@@ -181,6 +185,7 @@ final class PriceList
             validUntil: $validUntil,
             status: $status,
             isSystem: $isSystem,
+            replacesManualSale: $replacesManualSale,
         );
     }
 
@@ -238,6 +243,12 @@ final class PriceList
         return $this->status === PriceListStatus::ACTIVE;
     }
 
+    /** P6b: a percent-off campaign that gives the customer the LOWER of its price and a Manual Sale price (OFF: the Manual Sale price is kept). */
+    public function replacesManualSale(): bool
+    {
+        return $this->replacesManualSale;
+    }
+
     public function isSystem(): bool
     {
         return $this->isSystem;
@@ -279,6 +290,34 @@ final class PriceList
 
         self::assertValidName($newName);
         $this->name = $newName;
+    }
+
+    /**
+     * P6b: the ONE way to change a merchant's percent-off CAMPAIGN after it was created: its name, its discount, its dates and the «replaces the Manual Sale price» switch. The mode and the priority never change; a system
+     * list can never be changed. Re-runs the constructor's invariants and changes NOTHING when one fails (the new values are checked first, then assigned).
+     *
+     * @throws CannotModifySystemPriceListException
+     * @throws InvalidArgumentException
+     */
+    public function updateCampaign(string $name, int $percentageBasisPoints, ?DateTimeImmutable $validFrom, ?DateTimeImmutable $validUntil, bool $replacesManualSale): void
+    {
+        if ($this->isSystem) {
+            throw CannotModifySystemPriceListException::cannotRename($this->id ?? '(unassigned)');
+        }
+
+        if ($this->mode !== PriceListMode::PERCENTAGE_OFF_REGULAR) {
+            throw new InvalidArgumentException('Only a PERCENTAGE_OFF_REGULAR campaign can be updated with updateCampaign().');
+        }
+
+        self::assertValidName($name);
+        self::assertPercentageBasisPointsMatchesMode($this->mode, $percentageBasisPoints);
+        self::assertValidTimeWindow($validFrom, $validUntil);
+
+        $this->name = $name;
+        $this->percentageBasisPoints = $percentageBasisPoints;
+        $this->validFrom = $validFrom;
+        $this->validUntil = $validUntil;
+        $this->replacesManualSale = $replacesManualSale;
     }
 
     /**

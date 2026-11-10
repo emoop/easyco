@@ -28,27 +28,73 @@ use Illuminate\Support\Facades\DB;
  */
 final class SortPriceTriggers
 {
+    /** How many writers are inside muted(): while > 0 the model events below queue nothing. */
+    private static int $muted = 0;
+
+    /**
+     * P6b: runs $write with the model-event triggers MUTED. A writer that saves a price list AND its scope rows in one transaction (PriceListWriter) must not let the first save queue the «unscoped list → every
+     * product» pass in the middle of the write (the list row is saved before its scope rows); it mutes the triggers for its own saves and queues ONE explicit refresh after the commit instead. Nothing else mutes.
+     *
+     * @template T
+     * @param callable(): T $write
+     * @return T
+     */
+    public static function muted(callable $write): mixed
+    {
+        self::$muted++;
+
+        try {
+            return $write();
+        } finally {
+            self::$muted--;
+        }
+    }
+
     public static function register(): void
     {
         $dispatcher = static fn (): SortPriceRefreshDispatcher => app(SortPriceRefreshDispatcher::class);
 
-        ProductModel::saved(static fn (ProductModel $product) => $dispatcher()->product($product->id));
+        // EVERY handler returns void on purpose: Laravel stops the remaining listeners of a model event when one of them returns `false`, and other listeners (the menus, the filters) listen to the same events.
+        $product = static function (callable $productId) use ($dispatcher): callable {
+            return static function ($model) use ($productId, $dispatcher): void {
+                if (self::$muted === 0) {
+                    $dispatcher()->product($productId($model));
+                }
+            };
+        };
+
+        ProductModel::saved($product(static fn (ProductModel $model) => $model->id));
 
         foreach (['saved', 'deleted'] as $event) {
-            VariationModel::{$event}(static fn (VariationModel $variation) => $dispatcher()->product($variation->product_id));
-            ProductTagModel::{$event}(static fn (ProductTagModel $row) => $dispatcher()->product($row->product_id));
-            ProductCategoryModel::{$event}(static fn (ProductCategoryModel $row) => $dispatcher()->product($row->product_id));
+            VariationModel::{$event}($product(static fn (VariationModel $model) => $model->product_id));
+            ProductTagModel::{$event}($product(static fn (ProductTagModel $model) => $model->product_id));
+            ProductCategoryModel::{$event}($product(static fn (ProductCategoryModel $model) => $model->product_id));
 
             PriceListItemModel::{$event}(static function (PriceListItemModel $item) use ($dispatcher): void {
+                if (self::$muted !== 0) {
+                    return;
+                }
+
                 $productId = $item->target_type === 'product'
                     ? $item->target_id
                     : DB::table('catalog_variations')->where('id', $item->target_id)->value('product_id');
 
-                $productId === null || $dispatcher()->product($productId);
+                if ($productId !== null) {
+                    $dispatcher()->product($productId);
+                }
             });
 
-            PriceListModel::{$event}(static fn (PriceListModel $list) => $dispatcher()->priceList((string) $list->id));
-            PriceListScopeModel::{$event}(static fn (PriceListScopeModel $scope) => $dispatcher()->priceList((string) $scope->price_list_id, (string) $scope->id));
+            PriceListModel::{$event}(static function (PriceListModel $list) use ($dispatcher): void {
+                if (self::$muted === 0) {
+                    $dispatcher()->priceList((string) $list->id);
+                }
+            });
+
+            PriceListScopeModel::{$event}(static function (PriceListScopeModel $scope) use ($dispatcher): void {
+                if (self::$muted === 0) {
+                    $dispatcher()->priceListScopeChanged((string) $scope->price_list_id, (string) $scope->id, (string) $scope->scope_type, (string) $scope->scope_reference_id);
+                }
+            });
         }
     }
 }

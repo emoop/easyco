@@ -15,5 +15,6 @@ return [
         'pages' => 'Страници',
         'appearance' => 'Облик и хедър',
         'promotions' => 'Промокодове',
+        'price_lists' => 'Ценови листове',
     ],
 ];

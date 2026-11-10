@@ -45,6 +45,46 @@ final class EloquentPriceListScopeRepository implements PriceListScopeRepository
         });
     }
 
+    public function replaceForPriceList(string $priceListId, array $scopes): void
+    {
+        DB::transaction(function () use ($priceListId, $scopes): void {
+            $wanted = [];
+
+            foreach ($scopes as $scope) {
+                $wanted[$scope->scopeType()->value.'|'.$scope->scopeReferenceId()] = $scope;
+            }
+
+            $kept = [];
+
+            foreach (PriceListScopeModel::where('price_list_id', $priceListId)->get() as $row) {
+                $key = $row->scope_type.'|'.$row->scope_reference_id;
+
+                if (isset($wanted[$key]) && ! isset($kept[$key])) {
+                    $kept[$key] = true;
+
+                    continue;
+                }
+
+                $row->delete();
+            }
+
+            foreach ($wanted as $key => $scope) {
+                if (isset($kept[$key])) {
+                    continue;
+                }
+
+                $row = new PriceListScopeModel([
+                    'price_list_id' => $priceListId,
+                    'scope_type' => $scope->scopeType()->value,
+                    'scope_reference_id' => $scope->scopeReferenceId(),
+                ]);
+                $row->save();
+            }
+
+            $this->recalculateSignature($priceListId);
+        });
+    }
+
     public function detach(string $scopeId): void
     {
         DB::transaction(function () use ($scopeId): void {

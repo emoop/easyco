@@ -269,4 +269,25 @@ class PriceSortTriggersTest extends TestCase
 
         $this->assertSame(10000, $this->stored('p1'));
     }
+    /** ★ the triggers never stop the OTHER listeners of a model event (Laravel stops the rest when one returns `false`: the menus listen to the same events), muted or not */
+    public function test_the_triggers_do_not_stop_other_listeners_of_the_same_event(): void
+    {
+        $this->makeProduct(1, ['slug' => 'priced', 'price' => '50.00', 'stock' => 1]);
+        $ran = [];
+        \EasyCo\Catalog\Persistence\Eloquent\ProductModel::saved(function () use (&$ran): void {
+            $ran[] = 'later listener';
+        });
+        $products = app(\EasyCo\Catalog\Contracts\ProductRepository::class);
+
+        $product = $products->findById('1');
+        $product->setCatalogVisibility(\EasyCo\Catalog\Enums\CatalogVisibility::HIDDEN);
+        $products->save($product);
+        \App\Services\PriceSort\SortPriceTriggers::muted(function () use ($products): void {
+            $product = $products->findById('1');
+            $product->setCatalogVisibility(\EasyCo\Catalog\Enums\CatalogVisibility::VISIBLE);
+            $products->save($product);
+        });
+
+        $this->assertSame(['later listener', 'later listener'], $ran, 'a listener registered after the triggers still runs, while the triggers are active AND while they are muted');
+    }
 }

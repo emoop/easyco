@@ -109,7 +109,9 @@ final class EloquentPriceRangeResolver implements PriceRangeResolver
 
         $results = [];
         foreach ($contextsForAt as $priceableId => $context) {
-            $quote = $this->engine->buildQuote($regularList, $winningListByPriceableId[$priceableId], $context);
+            // P6b: the percent-off campaign below the «Manual Sale» list (null for any other winner): pure in-memory matching, no query
+            $campaign = $this->engine->findCampaignBelowManualSale($candidates, $winningListByPriceableId[$priceableId], $context);
+            $quote = $this->engine->buildQuote($regularList, $winningListByPriceableId[$priceableId], $context, $campaign);
 
             if ($quote !== null) {
                 $results[$priceableId] = $quote;

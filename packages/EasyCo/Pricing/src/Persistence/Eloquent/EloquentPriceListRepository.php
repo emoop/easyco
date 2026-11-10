@@ -44,6 +44,7 @@ final class EloquentPriceListRepository implements PriceListRepository
         $model->valid_until = $priceList->validUntil();
         $model->status = $priceList->status()->value;
         $model->is_system = $priceList->isSystem();
+        $model->replaces_manual_sale = $priceList->replacesManualSale();
 
         if ($isNew) {
             $model->scope_signature = PriceListSignature::forUniversalScope()->value();
@@ -54,6 +55,42 @@ final class EloquentPriceListRepository implements PriceListRepository
         if ($isNew) {
             $priceList->assignId((string) $model->id);
         }
+    }
+
+    public function saveWithScopes(PriceList $priceList, array $scopes): void
+    {
+        if ($priceList->id() !== null) {
+            throw new \LogicException('saveWithScopes() inserts a NEW price list; $priceList already has an id.');
+        }
+
+        \Illuminate\Support\Facades\DB::transaction(function () use ($priceList, $scopes): void {
+            $model = new PriceListModel();
+            $model->name = $priceList->name();
+            $model->mode = $priceList->mode()->value;
+            $model->percentage_basis_points = $priceList->percentageBasisPoints();
+            $model->priority = $priceList->priority();
+            $model->valid_from = $priceList->validFrom();
+            $model->valid_until = $priceList->validUntil();
+            $model->status = $priceList->status()->value;
+            $model->is_system = $priceList->isSystem();
+            $model->replaces_manual_sale = $priceList->replacesManualSale();
+            $model->scope_signature = PriceListSignature::forScopes($scopes)->value();
+            $model->save();
+
+            $priceList->assignId((string) $model->id);
+
+            foreach ($scopes as $scope) {
+                $row = new PriceListScopeModel([
+                    'price_list_id' => $model->id,
+                    'scope_type' => $scope->scopeType()->value,
+                    'scope_reference_id' => $scope->scopeReferenceId(),
+                ]);
+                $row->save();
+
+                $scope->assignPriceListId((string) $model->id);
+                $scope->assignId((string) $row->id);
+            }
+        });
     }
 
     public function findById(string $id): ?PriceList
@@ -112,6 +149,7 @@ final class EloquentPriceListRepository implements PriceListRepository
             percentageBasisPoints: $model->percentage_basis_points,
             status: PriceListStatus::from($model->status),
             isSystem: $model->is_system,
+            replacesManualSale: (bool) $model->replaces_manual_sale,
         );
     }
 }

@@ -74,7 +74,7 @@ final class EloquentPriceResolver implements PriceResolver
         $candidates = $this->engine->preloadForBatch($at);
         $winningList = $this->engine->findWinningList($candidates, $context);
 
-        $quote = $this->engine->buildQuote($regularList, $winningList, $context);
+        $quote = $this->engine->buildQuote($regularList, $winningList, $context, $this->engine->findCampaignBelowManualSale($candidates, $winningList, $context));
 
         if ($quote === null) {
             throw PriceNotConfiguredException::forPriceableId($context->priceableId);

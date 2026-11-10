@@ -8,6 +8,14 @@ interface PriceListRepository
 {
     public function save(PriceList $priceList): void;
 
+    /**
+     * P6b: inserts a NEW list TOGETHER with its scope rows, in one transaction, with the signature of the FINAL scope set computed before the insert. save() gives a new list the universal signature until its scopes
+     * are attached, which collides with another universal list at the same priority (UNIQUE(priority, scope_signature)) before the scopes could be attached; this does not.
+     *
+     * @param \EasyCo\Pricing\PriceListScope[] $scopes scopes not yet attached (their priceListId is assigned here)
+     */
+    public function saveWithScopes(PriceList $priceList, array $scopes): void;
+
     public function findById(string $id): ?PriceList;
 
     /**

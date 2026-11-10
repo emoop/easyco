@@ -29,12 +29,14 @@ class PriceListModel extends Model
         'status',
         'is_system',
         'scope_signature',
+        'replaces_manual_sale',
     ];
 
     protected $casts = [
         'valid_from' => 'datetime',
         'valid_until' => 'datetime',
         'is_system' => 'boolean',
+        'replaces_manual_sale' => 'boolean',
     ];
 
     public function scopes(): HasMany

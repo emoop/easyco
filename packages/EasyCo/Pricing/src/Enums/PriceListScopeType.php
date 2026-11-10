@@ -20,4 +20,6 @@ enum PriceListScopeType: string
     case CUSTOMER_GROUP = 'customer_group';
     case CHANNEL = 'channel';
     case PRODUCT = 'product';
+    /** P6b: a product's season (an entity of its own, `catalog_products.season_id`). */
+    case SEASON = 'season';
 }

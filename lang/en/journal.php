@@ -10,6 +10,7 @@ return [
     // A readable entity name where the journal knows one; other types are shown as stored.
     'entities' => [
         'promotion' => 'Promo code',
+        'price_list' => 'Price list',
     ],
 
     'columns' => [

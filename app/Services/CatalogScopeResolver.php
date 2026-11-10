@@ -112,7 +112,8 @@ class CatalogScopeResolver
         // contract (a real, failing query-count test caught it: 26
         // queries for 5 products vs. 86 for 25, not equal), so it is not
         // used.
-        $productNamesById = ProductModel::whereIn('id', $productIds)->pluck('name', 'id')->all();
+        $productRows = ProductModel::whereIn('id', $productIds)->get(['id', 'name', 'season_id'])->keyBy('id');
+        $productNamesById = $productRows->map(fn ($row) => $row->name)->all();
 
         $categoryIdsByProductId = $this->groupByProductId(
             $this->productCategories->findByProductIds($productIds),
@@ -152,6 +153,12 @@ class CatalogScopeResolver
             // this always matches matchingScopeReferenceIds' string[]
             // contract regardless of what the underlying storage driver
             // happened to hand back.
+            // P6b: the product's season (an entity of its own) is a scope input of price lists, from the SAME products read as the names
+            $seasonId = $productRows[$productId]->season_id ?? null;
+            if ($seasonId !== null) {
+                $matchingScopeReferenceIds['season'] = [(string) $seasonId];
+            }
+
             $attributeValueIds = array_map(strval(...), array_values($variation->attributeAssignments()));
             if ($attributeValueIds !== []) {
                 $matchingScopeReferenceIds['attribute_value'] = $attributeValueIds;

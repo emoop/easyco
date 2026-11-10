@@ -85,7 +85,10 @@ final class PriceListResolutionEngine
         return null;
     }
 
-    /** Zero scopes = universal (always matches). Otherwise AND logic, §4.1. */
+    /**
+     * Zero scopes = universal (always matches). Otherwise (P6b, like the storefront filters): AND between the scope KINDS, OR inside one kind — «brand X AND season S» needs both; «tag A, tag B AND brand X»
+     * is (A or B) and X; two BRAND rows alone match either brand. A list with at most ONE row per kind behaves exactly as when every row was AND-ed (§4.1).
+     */
     private function scopeMatches(CandidateLists $candidates, PriceList $list, PriceContext $context): bool
     {
         $scopes = $candidates->scopesByPriceListId[$list->id()] ?? [];
@@ -94,24 +97,30 @@ final class PriceListResolutionEngine
             return true;
         }
 
+        $matchedKinds = [];
+        $kinds = [];
+
         foreach ($scopes as $scope) {
+            $kind = $scope->scopeType()->value;
+            $kinds[$kind] = true;
             $matches = match ($scope->scopeType()) {
                 PriceListScopeType::CUSTOMER_GROUP => $scope->scopeReferenceId() === $context->customerGroupId,
                 PriceListScopeType::CHANNEL => $scope->scopeReferenceId() === $context->channelId,
                 PriceListScopeType::PRODUCT => $scope->scopeReferenceId() === $context->productId,
-                PriceListScopeType::BRAND, PriceListScopeType::CATEGORY, PriceListScopeType::TAG, PriceListScopeType::ATTRIBUTE_VALUE => in_array(
+                PriceListScopeType::BRAND, PriceListScopeType::CATEGORY, PriceListScopeType::TAG, PriceListScopeType::ATTRIBUTE_VALUE, PriceListScopeType::SEASON => in_array(
                     $scope->scopeReferenceId(),
                     $context->matchingScopeReferenceIds[$scope->scopeType()->value] ?? [],
                     true
                 ),
             };
 
-            if (! $matches) {
-                return false;
+            if ($matches) {
+                $matchedKinds[$kind] = true;
             }
         }
 
-        return true;
+        // every kind that has a row must have matched at least one of its rows
+        return count($matchedKinds) === count($kinds);
     }
 
     /**
@@ -137,6 +146,42 @@ final class PriceListResolutionEngine
     }
 
     /**
+     * P6b: when the winning list is the system «Manual Sale» list, the first percent-off CAMPAIGN below it that matches the context (the candidates are ordered priority DESC, id DESC: equal priorities are
+     * decided by the newest list, deterministically). Null for any other winner. A campaign is never a system list.
+     */
+    public function findCampaignBelowManualSale(CandidateLists $candidates, ?PriceList $winner, PriceContext $context): ?PriceList
+    {
+        if ($winner === null || ! self::isManualSale($winner)) {
+            return null;
+        }
+
+        $seenWinner = false;
+
+        foreach ($candidates->lists as $candidate) {
+            if (! $seenWinner) {
+                $seenWinner = $candidate->id() === $winner->id();
+
+                continue;
+            }
+
+            if ($candidate->isSystem() || $candidate->mode() !== PriceListMode::PERCENTAGE_OFF_REGULAR) {
+                continue;
+            }
+
+            if ($this->scopeMatches($candidates, $candidate, $context)) {
+                return $candidate;
+            }
+        }
+
+        return null;
+    }
+
+    private static function isManualSale(PriceList $list): bool
+    {
+        return $list->isSystem() && $list->mode() === PriceListMode::FIXED_ITEMS && $list->name() === 'Manual Sale';
+    }
+
+    /**
      * §4.6 steps 3-5, complete: the regular item's own fallback+tier
      * lookup, then the final-price computation (percentage-off against
      * "Regular Prices" specifically, or the winning list's own fixed
@@ -146,7 +191,7 @@ final class PriceListResolutionEngine
      * means (EloquentPriceResolver throws PriceNotConfiguredException;
      * EloquentPriceRangeResolver omits the target, per D3).
      */
-    public function buildQuote(PriceList $regularList, ?PriceList $winningList, PriceContext $context): ?PriceQuote
+    public function buildQuote(PriceList $regularList, ?PriceList $winningList, PriceContext $context, ?PriceList $campaignBelowManualSale = null): ?PriceQuote
     {
         $regular = $this->cachedItemPrice($regularList, $context);
 
@@ -160,6 +205,25 @@ final class PriceListResolutionEngine
 
         if ($winningList->mode() === PriceListMode::PERCENTAGE_OFF_REGULAR) {
             return new PriceQuote(regular: $regular, final: $this->applyPercentageOff($regular, $winningList->percentageBasisPoints()));
+        }
+
+        // P6b: the system «Manual Sale» list is the one list that does NOT swallow a product it has no price for: a variation WITHOUT a Manual Sale price falls through to the campaign below it (the first
+        // percent-off campaign that matches; else the regular price, as always). A variation WITH a Manual Sale price keeps it — unless that campaign «replaces the Manual Sale price»: then the customer
+        // gets the LOWER of the two (never a higher price than the Manual Sale one).
+        if (self::isManualSale($winningList)) {
+            $manual = $this->cachedItemPrice($winningList, $context);
+
+            if ($campaignBelowManualSale === null) {
+                return new PriceQuote(regular: $regular, final: $manual ?? $regular);
+            }
+
+            $campaign = $this->applyPercentageOff($regular, $campaignBelowManualSale->percentageBasisPoints());
+
+            if ($manual === null) {
+                return new PriceQuote(regular: $regular, final: $campaign);
+            }
+
+            return new PriceQuote(regular: $regular, final: $campaignBelowManualSale->replacesManualSale() && $campaign->gross()->minorValue() < $manual->gross()->minorValue() ? $campaign : $manual);
         }
 
         // FIXED_ITEMS: winning by priority/scope, but no item row for this

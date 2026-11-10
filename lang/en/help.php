@@ -15,5 +15,6 @@ return [
         'pages' => 'Pages',
         'appearance' => 'Appearance and header',
         'promotions' => 'Promo codes',
+        'price_lists' => 'Price lists',
     ],
 ];
