@@ -69,17 +69,17 @@ class DribniFiveDesignTest extends TestCase
     {
         $menu = $this->menu($this->screen()->html());
 
-        $expected = ['topbar', 'header', 'footer', 'checkout', '|', 'home', 'page', 'content', 'catalog', 'sidebar', '|', 'product', 'sections', 'summary', 'below'];
+        $expected = ['topbar', 'header', 'footer', 'checkout', '|', 'home', 'page', 'badges', 'content', 'catalog', 'sidebar', '|', 'product', 'sections', 'summary', 'below'];
         $labels = array_map(static fn (string $key): string => $key === '|' ? '|' : (string) __('design.zones.'.$key), $expected);
 
         $this->assertSame($labels, $menu, 'the order of the groups, and the two dividers');
-        $this->assertCount(13, array_filter($menu, static fn (string $item): bool => $item !== '|'), 'every zone is listed once');
+        $this->assertCount(14, array_filter($menu, static fn (string $item): bool => $item !== '|'), 'every zone is listed once');
     }
 
     /** the zone keys and the way a zone opens are unchanged: the order of the menu is not the order of ZONES */
     public function test_the_menu_order_does_not_change_the_zones(): void
     {
-        $this->assertSame(['topbar', 'header', 'footer', 'checkout', 'page', 'product', 'below', 'sections', 'catalog', 'summary', 'home', 'sidebar', 'content'], array_keys(DesignScreen::ZONES));
+        $this->assertSame(['topbar', 'header', 'footer', 'checkout', 'page', 'product', 'below', 'sections', 'catalog', 'summary', 'home', 'sidebar', 'content', 'badges'], array_keys(DesignScreen::ZONES));
     }
 
     /** ★ «Акордеон»: its properties have an info icon with the text about the «Секции на продукта» zone */

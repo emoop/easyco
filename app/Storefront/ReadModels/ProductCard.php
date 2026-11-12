@@ -10,7 +10,7 @@ final readonly class ProductCard
 {
     /**
      * @param array{name: string, slug: string}|null $brand
-     * @param list<Badge>                            $badges always empty in S1
+     * @param list<Badge>                            $badges empty until a badge is switched on (P7-1)
      */
     public function __construct(
         public string $id,
@@ -24,6 +24,12 @@ final readonly class ProductCard
         public bool $inStock,
         public ?ImageSet $secondImage = null,
     ) {
+    }
+
+    /** P7-1: the badges of one position (`top` | `bottom`), in print order. @return list<Badge> */
+    public function badgesAt(string $placement): array
+    {
+        return array_values(array_filter($this->badges, static fn (Badge $badge): bool => $badge->placement === $placement));
     }
 
     /**

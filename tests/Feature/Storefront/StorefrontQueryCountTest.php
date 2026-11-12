@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Storefront;
 
+use App\Storefront\Appearance\StorefrontAppearance;
 use App\Storefront\Reader\CatalogReader;
 use App\Storefront\ReadModels\ListingQuery;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -97,6 +98,9 @@ class StorefrontQueryCountTest extends TestCase
     public function test_the_listing_query_count_is_within_budget_and_the_same_for_5_and_24_products(): void
     {
         $this->catalogOf24();
+        // P7-1: `cards()` reads the badge set from the appearance (one cached payload). In a real request the layout has ALREADY read it, so the cold read is no cost of the listing; this reader-only test has no layout,
+        // so it warms the appearance the way a request does. Without it the first measured call would pay the one cold read of the whole payload.
+        app(StorefrontAppearance::class)->data();
         $query = ListingQuery::fromRequestArray(['per_page' => '24']);
 
         $countFor24 = $this->queries(fn () => app(CatalogReader::class)->listing($query));
@@ -118,6 +122,9 @@ class StorefrontQueryCountTest extends TestCase
     public function test_a_category_listing_stays_within_budget_and_adds_only_the_category_structure(): void
     {
         $this->catalogOf24();
+        // P7-1: `cards()` reads the badge set from the appearance (one cached payload). In a real request the layout has ALREADY read it, so the cold read is no cost of the listing; this reader-only test has no layout,
+        // so it warms the appearance the way a request does. Without it the first measured call would pay the one cold read of the whole payload.
+        app(StorefrontAppearance::class)->data();
         $plain = ListingQuery::fromRequestArray([]);
         $scoped = ListingQuery::fromRequestArray(['category' => '1']);
 

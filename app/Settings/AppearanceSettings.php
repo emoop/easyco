@@ -53,6 +53,11 @@ final class AppearanceSettings
 
     public const SIDEBAR_FILTERS_DRAFT_KEY = 'design.sidebar.filters.draft';
 
+    /** P7-1: «Значки» — the COMPILED badge set (only the enabled rows; the key does not exist while no badge is on): read with the rest of the appearance, and its draft (the working copy). */
+    public const BADGES_KEY = 'design.badges.global';
+
+    public const BADGES_DRAFT_KEY = 'design.badges.global.draft';
+
     public const BANNER_DRAFT_KEY = 'banner.draft';
 
     public const CHECKOUT_HEADER_DRAFT_KEY = 'design.checkout_header.global.draft';
@@ -172,6 +177,7 @@ final class AppearanceSettings
         self::DESIGN_COMPILED_KEY,
         self::CATALOG_DESIGN_KEY,
         self::SIDEBAR_FILTERS_KEY,
+        self::BADGES_KEY,
         self::PAGE_DESIGN_KEY,
         self::BANNER_ENABLED,
         self::BANNER_TEXT,

@@ -45,6 +45,12 @@ final class StorefrontAppearance
     /** CD-1a.1: the validated «Каталог» values of the admin's signed preview (the working copy), set for ONE request by the preview controller; null on every public request. @var array<string, mixed>|null */
     private ?array $catalogOverride = null;
 
+    /** P7-1: the working copy of «Значки» (the ENABLED rows by kind) for ONE signed preview request; null on every public request. @var array<string, array<string, mixed>>|null */
+    private ?array $badgesOverride = null;
+
+    /** @var array<string, array<string, mixed>>|null the published enabled rows, memoised for the request */
+    private ?array $badgeRows = null;
+
     /** P1: the working copy of «Сайдбар» for ONE signed preview request: {filters, kinds}. */
     private ?array $sidebarOverride = null;
 
@@ -110,7 +116,7 @@ final class StorefrontAppearance
 
         $cached = Cache::get(self::CACHE_KEY);
 
-        if (is_array($cached) && array_key_exists('theme', $cached) && array_key_exists('compiled', $cached) && array_key_exists('header', $cached) && array_key_exists('menus', $cached) && array_key_exists('locations', $cached) && array_key_exists('footer', $cached) && array_key_exists('design', $cached) && array_key_exists('page', $cached) && array_key_exists('catalog', $cached) && array_key_exists('sidebar', $cached) && is_array($cached['banner'] ?? null)) {
+        if (is_array($cached) && array_key_exists('theme', $cached) && array_key_exists('compiled', $cached) && array_key_exists('header', $cached) && array_key_exists('menus', $cached) && array_key_exists('locations', $cached) && array_key_exists('footer', $cached) && array_key_exists('design', $cached) && array_key_exists('page', $cached) && array_key_exists('catalog', $cached) && array_key_exists('sidebar', $cached) && array_key_exists('badges', $cached) && is_array($cached['banner'] ?? null)) {
             return $this->data = $cached;
         }
 
@@ -129,6 +135,7 @@ final class StorefrontAppearance
         $this->contentDoc = null;
         $this->belowDoc = null;
         $this->sectionsDoc = null;
+        $this->badgeRows = null;
         $this->data = $this->rebuild();
     }
 
@@ -165,6 +172,8 @@ final class StorefrontAppearance
             'catalog' => is_string($raw[AppearanceSettings::CATALOG_DESIGN_KEY] ?? null) ? $raw[AppearanceSettings::CATALOG_DESIGN_KEY] : null,
             // P1: the published «Сайдбар» JSON (the filters' order and switches; cleaned again when read: sidebarFilters)
             'sidebar' => is_string($raw[AppearanceSettings::SIDEBAR_FILTERS_KEY] ?? null) ? $raw[AppearanceSettings::SIDEBAR_FILTERS_KEY] : null,
+            // P7-1: the published, COMPILED «Значки» set (only the enabled rows; null while no badge is on); validated again when read: badgeSet
+            'badges' => is_string($raw[AppearanceSettings::BADGES_KEY] ?? null) ? $raw[AppearanceSettings::BADGES_KEY] : null,
             // GAP-1: the published «Страници и карти» JSON (validated again when read: catalogGapX); the card grid's horizontal gap reaches the image `sizes` from here, with no query of its own
             'page' => is_string($raw[AppearanceSettings::PAGE_DESIGN_KEY] ?? null) ? $raw[AppearanceSettings::PAGE_DESIGN_KEY] : null,
         ];
@@ -690,6 +699,29 @@ final class StorefrontAppearance
     }
 
     /** P1: the signed preview of «Сайдбар»: the validated working copy for THIS request only. @param array{filters: list<array{key: string, show: bool}>, kinds: array<string, string>} $values */
+    /**
+     * P7-1: the ENABLED badge rows by kind (BadgeSet::fromJson of the compiled copy in the ONE cached payload: NO query; a copy that does not validate is []), memoised. [] = no badge: the card prints today's HTML and
+     * `cards()` skips the resolver altogether.
+     *
+     * @return array<string, array<string, mixed>>
+     */
+    public function badgeSet(): array
+    {
+        return $this->badgesOverride ?? ($this->badgeRows ??= \App\Storefront\Badges\BadgeSet::fromJson($this->data()['badges'] ?? null));
+    }
+
+    /** P7-1: the working copy of «Значки» (a validated `{badges: [...]}`) as the preview shows it, for THIS request only. */
+    public function previewBadges(array $working): void
+    {
+        $rows = [];
+
+        foreach ($working['badges'] ?? [] as $row) {
+            ($row['enabled'] ?? false) === true && $rows[(string) $row['kind']] = $row;
+        }
+
+        $this->badgesOverride = $rows;
+    }
+
     public function previewSidebar(array $values): void
     {
         $this->sidebarOverride = $values;

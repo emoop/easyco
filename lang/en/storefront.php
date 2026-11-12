@@ -21,6 +21,7 @@ return [
     'no_products' => 'There are no products here yet.',
     'in_stock' => 'In stock',
     'out_of_stock' => 'Out of stock',
+    'badges' => ['sale' => 'Sale', 'new' => 'New', 'low_stock' => 'Last items'],
     'price_from_to' => ':from – :to',
     'regular_price' => 'Regular price',
     'brand' => 'Brand',

@@ -21,6 +21,7 @@ return [
     'no_products' => 'Тук все още няма продукти.',
     'in_stock' => 'В наличност',
     'out_of_stock' => 'Изчерпан',
+    'badges' => ['sale' => 'Промо', 'new' => 'Нови', 'low_stock' => 'Последни бройки'],
     'price_from_to' => ':from – :to',
     'regular_price' => 'Редовна цена',
     'brand' => 'Марка',

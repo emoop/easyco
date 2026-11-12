@@ -8,7 +8,7 @@
             <h2 class="ds-h">{{ __('design.zones_title') }}</h2>
             <ul>
                 {{-- DRIBNI-5: the order of the groups; a divider (a closed class, the menu's own grey line) between the groups --}}
-                @foreach (['topbar', 'header', 'footer', 'checkout', '|', 'home', 'page', 'content', 'catalog', 'sidebar', '|', 'product', 'sections', 'summary', 'below'] as $zone)
+                @foreach (['topbar', 'header', 'footer', 'checkout', '|', 'home', 'page', 'badges', 'content', 'catalog', 'sidebar', '|', 'product', 'sections', 'summary', 'below'] as $zone)
                     @if ($zone === '|')
                         <li class="ds-zone-divider" role="presentation" aria-hidden="true"></li>
                         @continue

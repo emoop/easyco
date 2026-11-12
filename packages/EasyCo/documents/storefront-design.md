@@ -437,6 +437,8 @@ The merchant picks ONE home block type (setting `storefront.home.block` = `none|
 
 ### 8.3 Product card extras (decision 4) — one `BadgeResolver`
 
+> **SUPERSEDED by `badges-research.md` (P7-0, 2026-11-12) and its «Owner decisions» / «As built (P7-1)» sections.** The table `storefront_badges`, the `custom-1..3` styles, the setting keys below and the `scope_type` list are NOT built and will not be; the badge set is a «Дизайн» zone («Значки») stored as a compiled JSON setting. Kept below for history only.
+
 The card gets an **ordered** `badges[]` (sorted by `priority` then type), each `{type, label, placement, style, priority}`; the template renders by `placement` (`image_top` = upper part of the image, `image_bottom`, `under_price`). `style` is a token (`new`, `sale`, `custom-1..3`, `promo`, `shipping`) mapped to Tailwind classes in ONE partial, so themes restyle in one place; there are no colour values in data. Each badge has visible text (never colour-only) and `aria-label` where the text is abbreviated.
 
 | Feature | Setting (default OFF) | Data | Automatic / manual | Read-model field |

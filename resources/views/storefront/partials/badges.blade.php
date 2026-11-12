@@ -1,0 +1,1 @@
+{{-- P7-1: one position of a card's badges (a closed class list: colour and shape are validated words; the text is escaped, never markup; no style, no script). --}}<ul class="sf-badges sf-badges--{{ $position }}">@foreach ($badges as $badge)<li class="sf-badge sf-badge--{{ $badge->style }} sf-badge--{{ $badge->shape }}">{{ $badge->label }}</li>@endforeach</ul>

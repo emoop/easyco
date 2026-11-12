@@ -33,7 +33,7 @@ class DesignScreenTest extends TestCase
 
         $this->assertSame(count(DesignScreen::ZONES), substr_count($html, "selectZone('"), 'one working zone button per zone of the screen');
         // HP-1: «Начална» (home) is the ninth zone of the screen; P1: «Сайдбар» is the tenth, in the place of its «следва» placeholder; P3: «Съдържание» is the eleventh; P4: «Под галерията» is the twelfth (right after «Продуктова страница»); P4b: «Секции на продукта» is the thirteenth (right after it)
-        $this->assertSame(13, count(DesignScreen::ZONES), 'the thirteen zones of the screen (topbar, header, footer, checkout, page, product, below, sections, catalog, summary, home, sidebar, content)');
+        $this->assertSame(14, count(DesignScreen::ZONES), 'the fourteen zones of the screen (topbar, header, footer, checkout, page, product, below, sections, catalog, summary, home, sidebar, content; P7-1: badges)');
     }
 
     use BuildsShippingZones;

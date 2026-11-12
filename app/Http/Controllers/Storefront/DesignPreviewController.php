@@ -43,7 +43,7 @@ final class DesignPreviewController extends Controller
     {
         $zone = $request->query('zone');
 
-        if (! URL::hasValidSignature($request) || ! in_array($zone, [CheckoutHeaderCatalog::ZONE, 'topbar', ProductSummaryCatalog::ZONE, PageDesign::PAGE, PageDesign::CATALOG, \App\Storefront\Home\HomeCatalog::ZONE, \App\Filament\Design\Zones\SidebarZone::KEY, \App\Filament\Design\Zones\ContentZone::KEY, \App\Filament\Design\Zones\BelowZone::KEY, \App\Filament\Design\Zones\SectionsZone::KEY], true)) {
+        if (! URL::hasValidSignature($request) || ! in_array($zone, [CheckoutHeaderCatalog::ZONE, 'topbar', ProductSummaryCatalog::ZONE, PageDesign::PAGE, PageDesign::CATALOG, \App\Storefront\Home\HomeCatalog::ZONE, \App\Filament\Design\Zones\SidebarZone::KEY, \App\Filament\Design\Zones\BadgesZone::KEY, \App\Filament\Design\Zones\ContentZone::KEY, \App\Filament\Design\Zones\BelowZone::KEY, \App\Filament\Design\Zones\SectionsZone::KEY], true)) {
             return NotFoundResponse::make();
         }
 
@@ -57,6 +57,10 @@ final class DesignPreviewController extends Controller
 
         if ($zone === \App\Filament\Design\Zones\SidebarZone::KEY) {
             return $this->sidebar($request, $reader, $appearance);
+        }
+
+        if ($zone === \App\Filament\Design\Zones\BadgesZone::KEY) {
+            return $this->badges($request, $reader, $appearance);
         }
 
         if ($zone === \App\Filament\Design\Zones\ContentZone::KEY) {
@@ -233,6 +237,23 @@ final class DesignPreviewController extends Controller
     {
         $appearance->previewSidebar(\App\Storefront\Sidebar\SidebarStore::draft() ?? \App\Storefront\Sidebar\SidebarStore::values());
 
+        return $this->firstCategory($request, $reader, $appearance);
+    }
+
+    /**
+     * P7-1: the same page with the working copy of «Значки» (the draft, else the published set) for THIS request only (StorefrontAppearance::previewBadges): the cards of the first shown category print the badges the
+     * merchant has just applied. A public request never gets here (no valid signature: the storefront's 404). `noindex`, `no-store`.
+     */
+    private function badges(Request $request, CatalogReader $reader, StorefrontAppearance $appearance): Response
+    {
+        $appearance->previewBadges(\App\Storefront\Badges\BadgeStore::draft() ?? \App\Storefront\Badges\BadgeStore::values());
+
+        return $this->firstCategory($request, $reader, $appearance);
+    }
+
+    /** The first shown category (the home page when the shop has none), for the previews of the zones that change the listing's look. */
+    private function firstCategory(Request $request, CatalogReader $reader, StorefrontAppearance $appearance): Response
+    {
         $seo = app(SeoMeta::class);
         $first = app(CategoryIndex::class)->tree()[0] ?? null;
         $view = $first !== null

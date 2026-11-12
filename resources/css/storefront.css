@@ -510,6 +510,60 @@
         @apply text-neutral-500;
     }
 
+    /* ---- badges (P7-1) --------------------------------------------------------------------------- */
+    /* «Значки»: thin, small, upper case and letter-spaced (the LK-1 look). The colour and the shape are two closed word lists (classes of the card's markup; no inline style, no script). TOP sits in the
+       upper-left corner of the picture frame (stacked, at most two), BOTTOM sits under the price. One line each: a long text is cut with an ellipsis (the full text stays in the HTML). */
+    .sf-badges {
+        @apply m-0 flex list-none gap-1 p-0;
+    }
+
+    .sf-badges--top {
+        @apply absolute left-2 top-2 z-10 flex-col items-start;
+        max-width: calc(100% - 1rem);
+        pointer-events: none;
+    }
+
+    .sf-card-footer > .sf-badges--bottom {
+        @apply px-3 pb-3 pt-0;
+        flex-wrap: nowrap;
+        overflow: hidden;
+    }
+
+    .sf-badges > li {
+        min-width: 0;
+        max-width: 100%;
+    }
+
+    .sf-badge {
+        --sf-badge-bg: #f5f5f5;
+        --sf-badge-fg: #404040;
+        --sf-badge-bd: #d4d4d4;
+        display: block;
+        overflow: hidden;
+        padding: 0.125rem 0.5rem;
+        border: 1px solid var(--sf-badge-bd);
+        background: var(--sf-badge-bg);
+        color: var(--sf-badge-fg);
+        font-size: 0.625rem;
+        font-weight: 500;
+        line-height: 1.4;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .sf-badge--red { --sf-badge-bg: #fff1f2; --sf-badge-fg: #9f1239; --sf-badge-bd: #fecdd3; }
+    .sf-badge--orange { --sf-badge-bg: #fff7ed; --sf-badge-fg: #9a3412; --sf-badge-bd: #fed7aa; }
+    .sf-badge--green { --sf-badge-bg: #f0fdf4; --sf-badge-fg: #166534; --sf-badge-bd: #bbf7d0; }
+    .sf-badge--blue { --sf-badge-bg: #eff6ff; --sf-badge-fg: #1e40af; --sf-badge-bd: #bfdbfe; }
+    .sf-badge--purple { --sf-badge-bg: #faf5ff; --sf-badge-fg: #6b21a8; --sf-badge-bd: #e9d5ff; }
+    .sf-badge--dark { --sf-badge-bg: #171717; --sf-badge-fg: #ffffff; --sf-badge-bd: #171717; }
+    .sf-badge--light { --sf-badge-bg: #ffffff; --sf-badge-fg: #171717; --sf-badge-bd: #d4d4d4; }
+    .sf-badge--square { border-radius: 0; }
+    .sf-badge--rounded { border-radius: 0.25rem; }
+    .sf-badge--pill { border-radius: 9999px; }
+
     /* ---- pagination ----------------------------------------------------------------------------- */
     .sf-pagination {
         @apply mt-8 flex flex-wrap items-center justify-center gap-2;

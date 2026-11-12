@@ -3,6 +3,10 @@
 namespace App\Storefront\Reader;
 
 use App\Services\CatalogScopeResolver;
+use App\Settings\StoreTimezone;
+use App\Storefront\Appearance\StorefrontAppearance;
+use App\Storefront\Badges\BadgeResolver;
+use App\Storefront\Badges\BadgeSet;
 use App\Storefront\Exceptions\ListingOptionNotAvailable;
 use App\Storefront\Filters\FilterConstraint;
 use App\Storefront\ReadModels\Breadcrumb;
@@ -335,7 +339,7 @@ final class CatalogReader
     {
         // P6c: a LIST (listed(): visible AND, while the shop hides sold-out products, available); the product page and the direct lookups keep products()
         $products = $this->visibility->listed(ProductModel::query())
-            ->select(['catalog_products.id', 'catalog_products.slug', 'catalog_products.name', 'catalog_products.brand_id'])
+            ->select(['catalog_products.id', 'catalog_products.slug', 'catalog_products.name', 'catalog_products.brand_id', 'catalog_products.created_at'])
             ->addSelect(['first_media_id' => self::firstImageIdSubquery(), 'second_media_id' => self::secondImageIdSubquery()])
             // CT-3: «is there a filterable attribute?» rides on the page query (one uncorrelated scalar subquery), so a shop with no filters pays no query of its own for them
             ->addSelect(['has_filters' => DB::table('catalog_attribute_definitions')->selectRaw('1')->where('is_filterable', true)->limit(1)])
@@ -629,6 +633,11 @@ final class CatalogReader
         $allVariationIds = array_merge([], ...array_values($variationIdsByProduct));
         $quotes = $this->quotesByVariation($allVariationIds);
 
+        // P7-1: the badges. [] (the default: nothing is switched on) = this block costs nothing and the card is today's card; a set is resolved from facts the card already has (the price block, the stock map, created_at)
+        $badgeSet = app(StorefrontAppearance::class)->badgeSet();
+        $store = $badgeSet === [] ? null : app(StoreTimezone::class);
+        $today = $store !== null && isset($badgeSet[BadgeSet::NEW]) ? $store->today() : '';
+
         $cards = [];
 
         foreach ($products as $product) {
@@ -638,6 +647,9 @@ final class CatalogReader
             $secondId = $product->getAttribute('second_media_id');
             $second = $secondId === null ? null : $assets->get($secondId);
 
+            $price = $this->productPrice($variationIdsByProduct[$id] ?? [], $quotes, $stock);
+            $created = $badgeSet === [] ? null : $product->getAttribute('created_at');
+
             $cards[] = new ProductCard(
                 id: $id,
                 slug: (string) $product->slug,
@@ -646,8 +658,14 @@ final class CatalogReader
                 brand: $this->brandOf($product),
                 image: $asset === null ? null : $this->images->build($asset, (string) $product->name, $sizes),
                 secondImage: $second === null ? null : $this->images->build($second, (string) $product->name, $sizes),
-                price: $this->productPrice($variationIdsByProduct[$id] ?? [], $quotes, $stock),
-                badges: [],
+                price: $price,
+                badges: $store === null ? [] : BadgeResolver::resolve(
+                    $badgeSet,
+                    $price,
+                    array_sum(array_map(fn (string $variationId): int => $stock[$variationId] ?? 0, $variationIdsByProduct[$id] ?? [])),
+                    $created instanceof \DateTimeInterface ? $store->dayOf(\DateTimeImmutable::createFromInterface($created)) : null,
+                    $today,
+                ),
                 inStock: array_filter(
                     array_map(fn (string $variationId): int => $stock[$variationId] ?? 0, $variationIdsByProduct[$id] ?? []),
                     fn (int $quantity): bool => $quantity > 0,

@@ -3,8 +3,8 @@
 namespace App\Storefront\ReadModels;
 
 /**
- * A card badge (storefront-design.md §2.4, §8.3). The class exists so the shape is fixed; NO resolver exists in S1:
- * every card carries `badges: []` until S10.
+ * A card badge. P7-1 (badges-research.md): `type` is the kind (`sale`, `new`, `low_stock`), `placement` is `top` | `bottom`, `style` a colour of the closed palette, `shape` square | rounded | pill; `label` is RAW text
+ * (escaped by the view). Every card carries `badges: []` until the merchant switches a badge on in «Дизайн» → «Значки».
  */
 final readonly class Badge
 {
@@ -14,10 +14,11 @@ final readonly class Badge
         public string $placement,
         public string $style,
         public int $priority,
+        public string $shape = 'square',
     ) {
     }
 
-    /** @return array{type: string, label: string, placement: string, style: string, priority: int} */
+    /** @return array{type: string, label: string, placement: string, style: string, priority: int, shape: string} */
     public function toArray(): array
     {
         return [
@@ -26,6 +27,7 @@ final readonly class Badge
             'placement' => $this->placement,
             'style' => $this->style,
             'priority' => $this->priority,
+            'shape' => $this->shape,
         ];
     }
 }
