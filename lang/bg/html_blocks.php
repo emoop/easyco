@@ -87,11 +87,12 @@ return [
     // HB-2: «Показвай, когато…» — the block is shown only for some products (right column of the product page)
     'conditions' => [
         'title' => 'Показвай, когато…',
-        'fields' => ['on_sale' => 'Промоция', 'seasons' => 'Сезон', 'brands' => 'Марка', 'categories' => 'Категории', 'tags' => 'Етикети', 'attributes' => 'Атрибути', 'attribute' => 'Атрибут', 'values' => 'Стойности'],
+        'fields' => ['collections' => 'Колекции', 'on_sale' => 'Промоция', 'seasons' => 'Сезон', 'brands' => 'Марка', 'categories' => 'Категории', 'tags' => 'Етикети', 'attributes' => 'Атрибути', 'attribute' => 'Атрибут', 'values' => 'Стойности'],
         'options' => ['all' => 'Всички', 'on_sale_yes' => 'Само промоционални', 'on_sale_no' => 'Само непромоционални'],
         'hints' => [
             'on_sale' => 'Промоционален е продукт със зачертана цена.',
             'seasons' => 'Сезонът на продукта е някой от избраните.',
+            'collections' => 'Продуктът е в някоя от избраните колекции.',
             'brands' => 'Марката на продукта е някоя от избраните.',
             'categories' => 'Някоя от избраните; подкатегориите се броят.',
             'tags' => 'Продуктът има някой от избраните етикети.',

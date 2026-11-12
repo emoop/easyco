@@ -225,7 +225,7 @@ final class ContentZone implements DesignZone
 
             return $control;
         };
-        $sources = array_combine([...HomeCatalog::PRODUCT_SOURCES, HomeCatalog::CURRENT_SOURCE], [...array_map(static fn (string $s): string => (string) __('design.home.products.sources.'.$s), HomeCatalog::PRODUCT_SOURCES), (string) __('design.content.sources.current')]);
+        $sources = array_combine([...HomeCatalog::offered(HomeCatalog::PRODUCT_SOURCES), HomeCatalog::CURRENT_SOURCE], [...array_map(static fn (string $s): string => (string) __('design.home.products.sources.'.$s), HomeCatalog::offered(HomeCatalog::PRODUCT_SOURCES)), (string) __('design.content.sources.current')]);
 
         return [
             Toggle::make('cloud')->label((string) __('design.content.fields.cloud'))->afterLabel($hint('cloud'))->default(false),

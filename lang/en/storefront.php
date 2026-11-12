@@ -261,5 +261,5 @@ return [
     'hero' => ['label' => 'Hero slider', 'pause' => 'Pause', 'play' => 'Play'],
 
     // P4c: the «Мета информация» section
-    'meta' => ['season' => 'Season:', 'tags' => 'Tags:'],
+    'meta' => ['season' => 'Season:', 'tags' => 'Tags:', 'collections' => 'Collections:'],
 ];

@@ -2,6 +2,7 @@
 
 namespace App\Storefront\Conditions;
 
+use App\Storefront\ReadModels\CatalogSubjectKind;
 use App\Storefront\ReadModels\PriceBlock;
 use App\Storefront\ReadModels\ProductPage;
 use Illuminate\Support\Facades\DB;
@@ -18,6 +19,9 @@ final class ProductContext
 
     /** @var list<int>|null */
     private ?array $tagIds = null;
+
+    /** @var list<int>|null */
+    private ?array $collectionIds = null;
 
     private int|false|null $seasonId = false;
 
@@ -78,6 +82,17 @@ final class ProductContext
     public function tagIds(): array
     {
         return $this->tagIds ??= DB::table('catalog_product_tags')->where('product_id', $this->productId)->pluck('tag_id')->map(static fn ($id): int => (int) $id)->all();
+    }
+
+    /**
+     * P6e-3: the product's collections. ONE read, only when a conditioned block asks (a page without one pays nothing). The switch rides INSIDE the statement (`CatalogSubjectKind::gated`): while the collections
+     * are OFF the read is EMPTY, so an `in_collection` condition is false and the block is hidden: no separate settings query.
+     *
+     * @return list<int>
+     */
+    public function collectionIds(): array
+    {
+        return $this->collectionIds ??= CatalogSubjectKind::COLLECTION->gated(DB::table('catalog_product_collections')->where('product_id', $this->productId))->pluck('collection_id')->map(static fn ($id): int => (int) $id)->all();
     }
 
     public function seasonId(): ?int

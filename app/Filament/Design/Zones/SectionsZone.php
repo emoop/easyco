@@ -5,6 +5,7 @@ namespace App\Filament\Design\Zones;
 use App\Filament\Design\InfoHint;
 use App\Filament\Resources\ProductResource;
 use App\Http\Controllers\Storefront\DesignPreviewController;
+use App\Storefront\ReadModels\CatalogSubjectKind;
 use App\Storefront\Sections\SectionSet;
 use App\Storefront\Sections\SectionStore;
 use Filament\Forms\Components\Hidden;
@@ -168,6 +169,10 @@ final class SectionsZone implements DesignZone
                 ->visible(static fn (Get $get): bool => $get('source') === 'meta'),
             Toggle::make('show_tags')->label((string) __('design.sections.show_tags'))->afterLabel($hint('show_tags'))->default(true)
                 ->visible(static fn (Get $get): bool => $get('source') === 'meta'),
+            // P6e-3: the collections line — offered only while the collections are ON; while OFF a Hidden field carries the stored choice through the form
+            Toggle::make('show_collections')->label((string) __('design.sections.show_collections'))->afterLabel($hint('show_collections'))->default(true)
+                ->visible(static fn (Get $get): bool => $get('source') === 'meta' && CatalogSubjectKind::collectionsEnabled()),
+            Hidden::make('show_collections')->visible(static fn (): bool => ! CatalogSubjectKind::collectionsEnabled()),
             // P4c: «HTML блокове» — an ordered list of up to 10 existing blocks (the picker of the HTML-block slots)
             Repeater::make('block_items')->label((string) __('design.sections.blocks'))->afterLabel($hint('blocks'))
                 ->maxItems(SectionSet::BLOCKS_MAX)->defaultItems(0)->reorderableWithButtons()->addActionLabel((string) __('design.sections.block_add'))->columnSpanFull()
@@ -189,6 +194,7 @@ final class SectionsZone implements DesignZone
                 'key' => $section['key'], 'title' => $section['title'], 'source' => $section['source'], 'text' => $section['text'],
                 'show_seasons' => $section['meta']['seasons'] ?? true,
                 'show_tags' => $section['meta']['tags'] ?? true,
+                'show_collections' => $section['meta']['collections'] ?? true,
                 'block_items' => array_map(static fn (int $id): array => ['block' => $id], $section['blocks'] ?? []),
             ];
         }
@@ -216,6 +222,9 @@ final class SectionsZone implements DesignZone
             // P4c: the settings of the two new sources go only with their own source
             if ($section['source'] === 'meta') {
                 $section['meta'] = ['seasons' => ($form['show_seasons'] ?? true) !== false, 'tags' => ($form['show_tags'] ?? true) !== false];
+
+                // P6e-3: written only when the form carries it (the toggle while ON, the Hidden copy while OFF), so a set that never knew the line is saved as it was
+                array_key_exists('show_collections', $form) && $section['meta']['collections'] = $form['show_collections'] !== false;
             }
 
             if ($section['source'] === 'blocks') {

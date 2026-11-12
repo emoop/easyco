@@ -23,7 +23,7 @@ final class SectionResolver
      * @param  array<string, string>  $texts  the product's texts by section key (SectionTexts::forProduct), `[]` when none were asked for
      * @param  string  $description  P4b.1: the product's description (the field the product already has, on the row the page loads: no query), already passed through DescriptionSanitizer; the text of a `description` section
      * @param  array<string, mixed>  $hidden  P4c: the sections switched off for THIS product (key => true), SectionTexts::forProduct
-     * @param  array{seasons: list<array{name: string, url: string}>, tags: list<array{name: string, url: string}>}|null  $meta  P4c: the product's season and tags (SectionMeta::forProduct), null = not read (no `meta` section)
+     * @param  array{seasons: list<array{name: string, url: string}>, tags: list<array{name: string, url: string}>, collections?: list<array{name: string, url: string}>}|null  $meta  P4c: the product's season and tags (SectionMeta::forProduct), null = not read (no `meta` section)
      * @param  ProductContext|null  $context  P4c: the product the page is for: the conditions of the blocks of a `blocks` section are checked against it
      * @return list<array{key: string, title: string, html: string}>
      */

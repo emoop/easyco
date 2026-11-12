@@ -31,6 +31,15 @@ final class HomeTilesRecompiler
         (($shown[$source][$id] ?? false) || ($source === 'brand' && ($shown['brands'] ?? false))) && $this->ask();
     }
 
+    /**
+     * P6e-3: the collections switch was saved. A compiled collection tile exists only while the switch is ON (HomeTiles reads the collection with the switch inside the statement), so a layout that holds a
+     * collection tile must be rebuilt in both directions: OFF drops the tile from the compiled copy, ON brings it back from the stored layout.
+     */
+    public function collectionsSwitch(): void
+    {
+        ! empty($this->shown()['collection']) && $this->ask();
+    }
+
     /** Which categories are shown changed (a product's visibility, its categories): recompile when a tile shows any category. */
     public function anyCategory(): void
     {

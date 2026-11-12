@@ -184,7 +184,7 @@ final class BelowZone implements DesignZone
                     ->options(array_combine(HomeCatalog::CONTENT_CAROUSEL_KINDS, array_map(static fn (string $k): string => (string) __('design.home.carousel.kinds.'.$k), HomeCatalog::CONTENT_CAROUSEL_KINDS)))
                     ->visible(static fn (Get $get): bool => ($get('../type') ?? 'carousel') === 'carousel'),
                 Select::make('source')->label((string) __('design.home.carousel.settings.source'))->afterLabel(InfoHint::make((string) __('design.home.carousel.hints.source'), 'below-carousel-source'))->native(false)->selectablePlaceholder(false)->live()->default('newest')
-                    ->options(array_combine(HomeCatalog::PRODUCT_SOURCES, array_map(static fn (string $s): string => (string) __('design.home.products.sources.'.$s), HomeCatalog::PRODUCT_SOURCES)))
+                    ->options(array_combine(HomeCatalog::offered(HomeCatalog::PRODUCT_SOURCES), array_map(static fn (string $s): string => (string) __('design.home.products.sources.'.$s), HomeCatalog::offered(HomeCatalog::PRODUCT_SOURCES))))
                     ->afterStateUpdated(static fn (Set $set) => $set('entity', null))
                     ->visible(static fn (Get $get): bool => ($get('../type') ?? 'carousel') === 'carousel' && $kind($get) === 'products'),
                 Select::make('entity')->label((string) __('design.home.carousel.settings.entity'))->afterLabel(InfoHint::make((string) __('design.home.carousel.hints.entity'), 'below-carousel-entity'))->native(false)->searchable()->live()->default(null)

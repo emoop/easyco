@@ -388,7 +388,7 @@ class ProductConditionsTest extends TestCase
     {
         $registry = ProductConditions::predicates();
 
-        $this->assertSame(['on_sale', 'in_category', 'has_tag', 'in_season', 'in_brand', 'has_attribute'], array_keys($registry), 'there is no is_new: the shop has no such concept');
+        $this->assertSame(['on_sale', 'in_category', 'has_tag', 'in_season', 'in_collection', 'in_brand', 'has_attribute'], array_keys($registry), 'there is no is_new: the shop has no such concept');
 
         foreach (['sale-dress' => true, 'plain-dress' => false] as $slug => $onSale) {
             $context = $this->context($slug);

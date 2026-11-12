@@ -32,17 +32,35 @@ final class HomeCatalog
     /** HP-3: the tiles of one «Плочки» section (a manual list), the sources a tile can show and the longest caption. */
     public const TILES_MAX = 12;
 
-    public const TILE_SOURCES = ['category', 'season', 'tag', 'brand', 'custom'];
+    public const TILE_SOURCES = ['category', 'season', 'tag', 'brand', 'collection', 'custom'];
 
     /** The sources whose public page exists: a category (/product-category/…) and, since P2, a season, a tag and a brand (/season/…, /product-tag/…, /brand/…): a tile of one needs no link of its own (a free tile does). */
-    public const SOURCES_WITH_PAGE = ['category', 'season', 'tag', 'brand'];
+    public const SOURCES_WITH_PAGE = ['category', 'season', 'tag', 'brand', 'collection'];
 
     public const TILE_LABEL_MAX = 60;
 
     /** HP-4: the sources of a «Продуктова решетка» (closed), the ones that need an item of their own, the counts, the sorts and the columns; the gap is the product grid's list (GAP-1). At most 2 such sections in a layout. */
-    public const PRODUCT_SOURCES = ['newest', 'featured', 'category', 'season', 'tag', 'brand'];
+    public const PRODUCT_SOURCES = ['newest', 'featured', 'category', 'season', 'tag', 'brand', 'collection'];
 
-    public const PRODUCT_SOURCES_WITH_ENTITY = ['category', 'season', 'tag', 'brand'];
+    public const PRODUCT_SOURCES_WITH_ENTITY = ['category', 'season', 'tag', 'brand', 'collection'];
+
+    /**
+     * P6e-3: the sources an EDITOR offers. `collection` (a product grid / carousel source and a tile source) is in the closed lists above so that a STORED one always validates (the data stays), but an editor offers it
+     * only while the collections are ON. Admin side only (one settings read, memoised); the storefront never calls it.
+     *
+     * @param  list<string>  $list
+     * @return list<string>
+     */
+    public static function offered(array $list): array
+    {
+        return \App\Storefront\ReadModels\CatalogSubjectKind::collectionsEnabled() ? $list : array_values(array_filter($list, static fn (string $source): bool => $source !== 'collection'));
+    }
+
+    /** An enum field of the schema with the options an editor offers (see offered()). @param  array<string, mixed>  $field @return array<string, mixed> */
+    public static function offeredField(array $field): array
+    {
+        return ['options' => self::offered($field['options'])] + $field;
+    }
 
     public const PRODUCT_COUNTS = ['4', '8', '12', '16', '20', '24'];
 

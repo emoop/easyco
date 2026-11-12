@@ -259,6 +259,7 @@ return [
         'sources' => ['description' => 'The product\'s description', 'global' => 'A general text for all products', 'product' => 'The product\'s text', 'product_or_global' => 'The product\'s text, else the general one', 'meta' => 'Meta information', 'blocks' => 'HTML blocks'],
         'show_seasons' => 'Show the seasons',
         'show_tags' => 'Show the tags',
+        'show_collections' => 'Show the collections',
         'blocks' => 'HTML blocks',
         'block' => 'Block',
         'block_add' => 'Add a block',
@@ -269,6 +270,7 @@ return [
             'text' => 'The text shown with a general source. The same editor as the product description.',
             'show_seasons' => 'The «Season:» line with a link to the product\'s season page. With no season the line is not shown.',
             'show_tags' => 'The «Tags:» line with links to the pages of the product\'s tags. With no tags the line is not shown.',
+            'show_collections' => 'The «Collections:» line with links to the pages of the product\'s collections. With none (or while the collections are OFF) the line is not shown.',
             'blocks' => 'Up to 10 HTML blocks, in order. Every block whose «Show when…» conditions hold for the product is shown; a block with no conditions is shown for every product. When none fits, the section is not shown.',
         ],
         'errors' => [
@@ -684,6 +686,7 @@ return [
                 'season' => 'Season',
                 'tag' => 'Tag',
                 'brand' => 'Brand',
+                'collection' => 'Collection',
                 'custom' => 'Free tile',
             ],
             'settings' => [
@@ -729,6 +732,7 @@ return [
                 'season' => 'Season',
                 'tag' => 'Tag',
                 'brand' => 'Brand',
+                'collection' => 'Collection',
             ],
             'counts' => ['4' => '4 products', '8' => '8 products', '12' => '12 products', '16' => '16 products', '20' => '20 products', '24' => '24 products'],
             'sorts' => ['newest' => 'Newest first', 'name_asc' => 'Name (A–Z)'],

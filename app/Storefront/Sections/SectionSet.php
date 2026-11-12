@@ -19,7 +19,7 @@ use Illuminate\Support\Str;
  * SAVE validates strictly (a missing key is generated, errors by path `sections.2.title`); READ never fails: a section that does not validate is dropped, more than MAX are cut, an unknown key is dropped.
  * Pure: no query, no setting.
  *
- * @phpstan-type Section array{key: string, title: string, source: string, text: string, meta?: array{seasons: bool, tags: bool}, blocks?: list<int>}
+ * @phpstan-type Section array{key: string, title: string, source: string, text: string, meta?: array{seasons: bool, tags: bool, collections?: bool}, blocks?: list<int>}
  * @phpstan-type Set array{sections: list<Section>}
  */
 final class SectionSet
@@ -236,13 +236,14 @@ final class SectionSet
         if ($source === 'meta') {
             $meta = $section['meta'] ?? ['seasons' => true, 'tags' => true];
 
-            if (! is_array($meta) || array_diff(array_keys($meta), ['seasons', 'tags']) !== [] || ! is_bool($meta['seasons'] ?? true) || ! is_bool($meta['tags'] ?? true)) {
+            if (! is_array($meta) || array_diff(array_keys($meta), ['seasons', 'tags', 'collections']) !== [] || ! is_bool($meta['seasons'] ?? true) || ! is_bool($meta['tags'] ?? true) || ! is_bool($meta['collections'] ?? true)) {
                 $fail($path.'.meta', 'bad_choice');
 
                 return null;
             }
 
-            $one['meta'] = ['seasons' => $meta['seasons'] ?? true, 'tags' => $meta['tags'] ?? true];
+            // P6e-3: `collections` is stored only when it was set (a missing one = shown, so every set stored before stays byte for byte the same)
+            $one['meta'] = ['seasons' => $meta['seasons'] ?? true, 'tags' => $meta['tags'] ?? true] + (array_key_exists('collections', $meta) ? ['collections' => $meta['collections']] : []);
         }
 
         if ($source === 'blocks') {

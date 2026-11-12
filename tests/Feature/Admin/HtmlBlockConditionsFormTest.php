@@ -246,4 +246,29 @@ class HtmlBlockConditionsFormTest extends TestCase
         Livewire::test(EditHtmlBlock::class, ['record' => $block->id])->assertForbidden();
         $this->assertSame(['on_sale' => true], $this->stored($block));
     }
+
+    // ---- P6e-3: the collections condition ---------------------------------------------------------------------------------------------------
+
+    public function test_the_collection_condition_is_offered_only_while_the_collections_are_on_and_a_stored_one_survives_a_save_while_off(): void
+    {
+        DB::table('catalog_collections')->insert(['id' => 1, 'name' => 'Wedding', 'slug' => 'wedding', 'created_at' => '2026-01-01 00:00:00', 'updated_at' => '2026-01-01 00:00:00']);
+        $settings = app(\App\Settings\Contracts\SiteSettingsRepository::class);
+
+        // OFF: the field is not in the form
+        Livewire::test(CreateHtmlBlock::class)->assertDontSee('Collections');
+
+        // ON: it is offered, stored and read back
+        $settings->set('catalog.collections_enabled', '1');
+        $this->app->forgetScopedInstances();
+        Livewire::test(CreateHtmlBlock::class)->assertSee('Collections');
+        $this->create(['collections' => [1]])->assertHasNoFormErrors();
+        $block = HtmlBlockModel::query()->firstOrFail();
+        $this->assertSame(['collections' => [1]], $this->stored($block));
+
+        // OFF again: the editor does not offer it, and SAVING the block keeps the stored condition (the data stays, ON restores it)
+        $settings->forget('catalog.collections_enabled');
+        $this->app->forgetScopedInstances();
+        Livewire::test(EditHtmlBlock::class, ['record' => $block->id])->assertDontSee('Collections')->fillForm(['title' => 'Renamed'])->call('save')->assertHasNoFormErrors();
+        $this->assertSame(['collections' => [1]], $this->stored($block->fresh()));
+    }
 }

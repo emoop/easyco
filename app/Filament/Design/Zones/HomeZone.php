@@ -442,7 +442,7 @@ final class HomeZone implements DesignZone, HasOneCell
                     ->schema([
                         Grid::make(['default' => 1])->schema([
                             Select::make('source')->label($label('source'))->afterLabel($hint('source'))->native(false)->default('category')->live()
-                                ->options(array_combine(HomeCatalog::TILE_SOURCES, array_map(static fn (string $s): string => (string) __('design.home.tiles.sources.'.$s), HomeCatalog::TILE_SOURCES)))
+                                ->options(array_combine(HomeCatalog::offered(HomeCatalog::TILE_SOURCES), array_map(static fn (string $s): string => (string) __('design.home.tiles.sources.'.$s), HomeCatalog::offered(HomeCatalog::TILE_SOURCES))))
                                 ->afterStateUpdated(static fn (Set $set) => $set('entity', null)),
                             Select::make('entity')->label($label('entity'))->afterLabel($hint('entity'))->native(false)->searchable()->live()
                                 ->options(fn (Get $get): array => self::tileEntities((string) $get('source')))
@@ -482,7 +482,7 @@ final class HomeZone implements DesignZone, HasOneCell
                 Grid::make(['default' => 1])->schema([
                     $control('show', $common['show'] + ['label' => 'design.home.settings.show']),
                     $control('spacing', $common['spacing'] + ['label' => 'design.home.settings.spacing']),
-                    $control('source', $schema['source'])->afterStateUpdated(static fn (Set $set) => $set('entity', null)),
+                    $control('source', HomeCatalog::offeredField($schema['source']))->afterStateUpdated(static fn (Set $set) => $set('entity', null)),
                     Select::make('entity')->label((string) __('design.home.products.settings.entity'))->afterLabel($hint('entity'))->native(false)->searchable()->live()
                         ->options(fn (Get $get): array => self::tileEntities((string) $get('source')))
                         ->visible(static fn (Get $get): bool => in_array((string) $get('source'), HomeCatalog::PRODUCT_SOURCES_WITH_ENTITY, true)),
@@ -533,7 +533,7 @@ final class HomeZone implements DesignZone, HasOneCell
                     $control('show', $common['show'] + ['label' => 'design.home.settings.show']),
                     $control('spacing', $common['spacing'] + ['label' => 'design.home.settings.spacing']),
                     $control('kind', $schema['kind']),
-                    $control('source', $schema['source'])->afterStateUpdated(static fn (Set $set) => $set('entity', null))->visible($products),
+                    $control('source', HomeCatalog::offeredField($schema['source']))->afterStateUpdated(static fn (Set $set) => $set('entity', null))->visible($products),
                     Select::make('entity')->label($label('entity'))->afterLabel($hint('entity'))->native(false)->searchable()->live()->columnSpanFull()
                         ->options(fn (Get $get): array => self::tileEntities((string) $get('source')))
                         ->visible(static fn (Get $get): bool => $products($get) && in_array((string) $get('source'), HomeCatalog::PRODUCT_SOURCES_WITH_ENTITY, true)),
@@ -777,7 +777,7 @@ final class HomeZone implements DesignZone, HasOneCell
             return $labels;
         }
 
-        $table = ['season' => 'catalog_seasons', 'tag' => 'catalog_tags', 'brand' => 'catalog_brands'][$source] ?? null;
+        $table = ['season' => 'catalog_seasons', 'tag' => 'catalog_tags', 'brand' => 'catalog_brands', 'collection' => 'catalog_collections'][$source] ?? null;
 
         return $table === null ? [] : DB::table($table)->orderBy('name')->pluck('name', 'id')->map(static fn ($name): string => (string) $name)->all();
     }
@@ -799,7 +799,7 @@ final class HomeZone implements DesignZone, HasOneCell
             return false;
         }
 
-        $own = ['category' => ['catalog_categories', 'picture_media_asset_id'], 'season' => ['catalog_seasons', 'picture_media_asset_id'], 'brand' => ['catalog_brands', 'logo_media_asset_id']][$source] ?? null;
+        $own = ['category' => ['catalog_categories', 'picture_media_asset_id'], 'season' => ['catalog_seasons', 'picture_media_asset_id'], 'collection' => ['catalog_collections', 'picture_media_asset_id'], 'brand' => ['catalog_brands', 'logo_media_asset_id']][$source] ?? null;
 
         return $own === null || DB::table($own[0])->where('id', $id)->value($own[1]) === null;
     }

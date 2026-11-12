@@ -406,7 +406,7 @@ final class CatalogReader
             'category' => [ListingScope::CATEGORY, []],
             'brand' => [ListingScope::BRAND, []],
             'tag' => [ListingScope::TAG, []],
-            // P6e-2: only the `current` source of a collection page's bottom slot reaches this arm (the home sources stay a closed list: P6e-3)
+            // P6e-2: the `current` source of a collection page's bottom slot; P6e-3: and the explicit `collection` source of a grid / carousel (gated below)
             'collection' => [ListingScope::COLLECTION, []],
             'season' => [ListingScope::ALL, ['season' => [$entity]]],
             default => [null, []],
@@ -422,6 +422,8 @@ final class CatalogReader
 
         $products = $this->listingProducts($query, $filters);
         $kind === 'featured' && $products->where('catalog_products.is_featured', true);
+        // P6e-3: the switch rides INSIDE this statement (no query of its own): while the collections are OFF a collection source finds nothing, so the grid / carousel prints nothing
+        $kind === 'collection' && CatalogSubjectKind::COLLECTION->gated($products);
         $exclude === null || $products->where('catalog_products.id', '!=', $exclude);
 
         return $this->cards($products->limit(max(1, min(24, $limit)))->get()->all(), $sizes);

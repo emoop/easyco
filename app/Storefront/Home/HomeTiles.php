@@ -6,6 +6,7 @@ use App\Content\HtmlBlocks\HtmlBlockBackground;
 use App\Content\HtmlBlocks\HtmlBlockPictures;
 use App\Storefront\Reader\CategoryIndex;
 use App\Storefront\Reader\ImageSetBuilder;
+use App\Storefront\ReadModels\CatalogSubjectKind;
 use App\Storefront\Url\StorefrontUrls;
 use EasyCo\Media\Persistence\Eloquent\MediaAssetModel;
 use Illuminate\Support\Facades\DB;
@@ -25,7 +26,7 @@ final class HomeTiles
      */
     public static function resolve(array $layout): array
     {
-        $wanted = ['category' => [], 'season' => [], 'tag' => [], 'brand' => []];
+        $wanted = ['category' => [], 'season' => [], 'tag' => [], 'brand' => [], 'collection' => []];
 
         foreach ($layout['sections'] as $section) {
             if ($section['type'] !== 'tiles') {
@@ -308,7 +309,7 @@ final class HomeTiles
      */
     private static function entities(array $ids): array
     {
-        $out = ['category' => [], 'season' => [], 'tag' => [], 'brand' => []];
+        $out = ['category' => [], 'season' => [], 'tag' => [], 'brand' => [], 'collection' => []];
 
         if ($ids['category'] !== []) {
             $index = app(CategoryIndex::class);
@@ -334,6 +335,14 @@ final class HomeTiles
         if ($ids['tag'] !== []) {
             foreach (DB::table('catalog_tags')->whereIn('id', $ids['tag'])->get(['id', 'name', 'slug']) as $row) {
                 $out['tag'][(int) $row->id] = ['name' => (string) $row->name, 'picture' => null, 'url' => app(StorefrontUrls::class)->tag((string) $row->slug)];
+            }
+        }
+
+        // P6e-3: the collections are COMPILED like the other entities. The switch rides inside the statement (`gated`): while OFF the read finds nothing, so the tile is not one ("an entity that is gone"); the stored
+        // tile stays in the layout and the compiled copy is rebuilt when the switch changes (HomeTilesRecompiler::collectionsSwitch), so ON again brings it back. No storefront query either way.
+        if ($ids['collection'] !== []) {
+            foreach (CatalogSubjectKind::COLLECTION->gated(DB::table('catalog_collections')->whereIn('id', $ids['collection']))->get(['id', 'name', 'slug', 'picture_media_asset_id']) as $row) {
+                $out['collection'][(int) $row->id] = ['name' => (string) $row->name, 'picture' => $row->picture_media_asset_id === null ? null : (int) $row->picture_media_asset_id, 'url' => app(StorefrontUrls::class)->collection((string) $row->slug)];
             }
         }
 
