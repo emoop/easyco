@@ -50,6 +50,7 @@ use RuntimeException;
  */
 class EditProduct extends EditRecord
 {
+    use SyncsProductCollections;
     use SyncsProductPhotos;
 
     /** «Виж в магазина» beside the title (ML-3 §4): the saved product's storefront page in a new tab. */
@@ -87,6 +88,9 @@ class EditProduct extends EditRecord
             fn ($t) => (string) $t->tagId(),
             app(ProductTagRepository::class)->findByProductId($productId)
         );
+
+        // P6e-1: the product's collections (only while the switch is ON: no query otherwise)
+        $data = $this->fillProductCollections($data, $productId);
 
         // findByIdWithVariations(), not findById(): universalVariation()
         // below needs the real $variations array loaded — findById()
@@ -301,6 +305,7 @@ class EditProduct extends EditRecord
 
         $this->syncCategories($product->id(), $data['categories'] ?? []);
         $this->syncTags($product->id(), $data['tags'] ?? []);
+        $this->syncProductCollections($product->id(), $data);
 
         // main_photo always sort_order 0, gallery_photos fill in after
         // — see mutateFormDataBeforeFill()'s own comment for why (no

@@ -71,6 +71,8 @@ return [
         'product_group_id' => 'Product group',
         'categories' => 'Categories',
         'tags' => 'Tags',
+        'collections' => 'Collections',
+        'collection' => 'Collection',
         'is_purchasable' => 'Purchasable',
         'is_visible' => 'Visible',
         'variation_active_locked_hint' => 'To take this variation off sale, use Visible, Purchasable, or archive it.',

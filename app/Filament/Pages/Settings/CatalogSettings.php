@@ -104,6 +104,8 @@ class CatalogSettings extends Page
             // "never visited this page yet", which must keep today's
             // exact behavior (every field shown), not silently hide one.
             'season_field_enabled' => $settings->get('catalog.season_field_enabled') !== '0',
+            // P6e-1: «Колекции» — OFF unless the stored value is the literal '1' (the opposite default)
+            'collections_enabled' => $settings->get('catalog.collections_enabled') === '1',
             'brand_field_enabled' => $settings->get('catalog.brand_field_enabled') !== '0',
             'tags_field_enabled' => $settings->get('catalog.tags_field_enabled') !== '0',
             'product_group_field_enabled' => $settings->get('catalog.product_group_field_enabled') !== '0',
@@ -122,6 +124,10 @@ class CatalogSettings extends Page
                     ->label(__('settings.catalog.season_enabled_label'))
                     ->helperText(__('settings.catalog.season_enabled_help'))
                     ->default(true),
+                Toggle::make('collections_enabled')
+                    ->label(__('settings.catalog.collections_enabled_label'))
+                    ->afterLabel(InfoHint::make(__('settings.catalog.collections_enabled_hint'), 'collections_enabled'))
+                    ->default(false),
                 Toggle::make('brand_field_enabled')
                     ->label(__('settings.catalog.brand_enabled_label'))
                     ->helperText(__('settings.catalog.brand_enabled_help'))
@@ -179,6 +185,7 @@ class CatalogSettings extends Page
         $settings->set(AppearanceSettings::HIDE_SOLD_OUT_KEY, $data['hide_sold_out'] ? '1' : '0');
 
         $settings->set('catalog.season_field_enabled', $data['season_field_enabled'] ? '1' : '0');
+        $settings->set('catalog.collections_enabled', ($data['collections_enabled'] ?? false) ? '1' : '0');
         $settings->set('catalog.brand_field_enabled', $data['brand_field_enabled'] ? '1' : '0');
         $settings->set('catalog.tags_field_enabled', $data['tags_field_enabled'] ? '1' : '0');
         $settings->set('catalog.product_group_field_enabled', $data['product_group_field_enabled'] ? '1' : '0');

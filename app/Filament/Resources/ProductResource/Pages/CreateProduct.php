@@ -62,6 +62,7 @@ use Illuminate\Support\Facades\DB;
  */
 class CreateProduct extends CreateRecord
 {
+    use SyncsProductCollections;
     use SyncsProductPhotos;
 
     protected static string $resource = ProductResource::class;
@@ -134,6 +135,8 @@ class CreateProduct extends CreateRecord
                 new ProductCategory(id: null, productId: $productId, categoryId: (string) $categoryId)
             );
         }
+
+        $this->syncProductCollections((string) $productId, $data, true);
 
         foreach ($data['tags'] ?? [] as $tagId) {
             app(ProductTagRepository::class)->save(

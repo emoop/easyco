@@ -193,6 +193,7 @@ use RuntimeException;
  */
 class EditVariableProduct extends EditRecord
 {
+    use SyncsProductCollections;
     use SyncsProductPhotos;
 
     /** «Виж в магазина» beside the title (ML-3 §4): the saved product's storefront page in a new tab. */
@@ -1945,6 +1946,9 @@ class EditVariableProduct extends EditRecord
             app(ProductTagRepository::class)->findByProductId($productId)
         );
 
+        // P6e-1: the product's collections (only while the switch is ON: no query otherwise)
+        $data = $this->fillProductCollections($data, $productId);
+
         $product = app(ProductRepository::class)->findByIdWithVariations($productId);
 
         $data['descriptive_attributes_picker'] = ProductResource::seedDescriptiveAttributesPickerRows($product);
@@ -2774,6 +2778,7 @@ class EditVariableProduct extends EditRecord
 
         $this->syncCategories($product->id(), $data['categories'] ?? []);
         $this->syncTags($product->id(), $data['tags'] ?? []);
+        $this->syncProductCollections($product->id(), $data);
 
         $this->syncProductPhotos($product->id(), $data);
 

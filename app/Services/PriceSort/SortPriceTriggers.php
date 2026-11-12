@@ -3,6 +3,7 @@
 namespace App\Services\PriceSort;
 
 use EasyCo\Catalog\Persistence\Eloquent\ProductCategoryModel;
+use EasyCo\Catalog\Persistence\Eloquent\ProductCollectionModel;
 use EasyCo\Catalog\Persistence\Eloquent\ProductModel;
 use EasyCo\Catalog\Persistence\Eloquent\ProductTagModel;
 use EasyCo\Catalog\Persistence\Eloquent\VariationModel;
@@ -17,7 +18,7 @@ use Illuminate\Support\Facades\DB;
  *
  *  - ProductModel saved: ANY product save (the admin's product form saves through the repository, so every admin save refreshes the product: its brand, season and status are on this row);
  *  - VariationModel saved / deleted: a variation added, removed, activated, deactivated or its attribute values changed;
- *  - ProductTagModel / ProductCategoryModel saved / deleted: tags and categories are scope inputs of price lists;
+ *  - ProductTagModel / ProductCategoryModel / ProductCollectionModel (P6e-1) saved / deleted: tags and categories are scope inputs of price lists, collections will be;
  *  - PriceListItemModel saved / deleted: a regular or sale price (product or variation level);
  *  - PriceListModel saved / deleted: a list created, edited (percentage, priority, mode, dates), activated, deactivated or deleted → the products the list can touch (ALL when it has no scope);
  *  - PriceListScopeModel saved / deleted: a scope attached or detached → the products the list's OTHER scopes touch (ALL when it has no other).
@@ -68,6 +69,8 @@ final class SortPriceTriggers
         foreach (['saved', 'deleted'] as $event) {
             VariationModel::{$event}($product(static fn (VariationModel $model) => $model->product_id));
             ProductTagModel::{$event}($product(static fn (ProductTagModel $model) => $model->product_id));
+            // P6e-1: a collection is not a price-list scope yet (P6e-3 makes it one); the trigger is registered now so the refresh needs no second look then
+            ProductCollectionModel::{$event}($product(static fn (ProductCollectionModel $model) => $model->product_id));
             ProductCategoryModel::{$event}($product(static fn (ProductCategoryModel $model) => $model->product_id));
 
             PriceListItemModel::{$event}(static function (PriceListItemModel $item) use ($dispatcher): void {

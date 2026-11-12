@@ -37,6 +37,7 @@ use EasyCo\Catalog\Enums\ProductType;
 use EasyCo\Catalog\Persistence\Eloquent\AttributeDefinitionModel;
 use EasyCo\Catalog\Persistence\Eloquent\AttributeValueModel;
 use EasyCo\Catalog\Persistence\Eloquent\BrandModel;
+use EasyCo\Catalog\Persistence\Eloquent\CollectionModel;
 use EasyCo\Catalog\Persistence\Eloquent\ProductGroupModel;
 use EasyCo\Catalog\Persistence\Eloquent\ProductModel;
 use EasyCo\Catalog\Persistence\Eloquent\SeasonModel;
@@ -339,24 +340,46 @@ class ProductResource extends Resource
      * visited CatalogSettings keeps today's exact behavior (every field
      * shown) rather than silently hiding anything.
      */
+    /**
+     * P6e-1: the Catalog switches of this screen are read together, with ONE `getMany` (the settings repository memoises every key it fetched): whichever helper is asked first pays the one query, the others
+     * none — adding the collections key to the four that were read one by one costs the products list nothing (it saves three queries).
+     *
+     * @return array<string, ?string>
+     */
+    private static function catalogSwitches(): array
+    {
+        return app(SiteSettingsRepository::class)->getMany([
+            'catalog.brand_field_enabled', 'catalog.season_field_enabled', 'catalog.tags_field_enabled', 'catalog.product_group_field_enabled', 'catalog.collections_enabled',
+        ]);
+    }
+
     public static function seasonFieldEnabled(): bool
     {
-        return app(SiteSettingsRepository::class)->get('catalog.season_field_enabled') !== '0';
+        return static::catalogSwitches()['catalog.season_field_enabled'] !== '0';
     }
 
     public static function brandFieldEnabled(): bool
     {
-        return app(SiteSettingsRepository::class)->get('catalog.brand_field_enabled') !== '0';
+        return static::catalogSwitches()['catalog.brand_field_enabled'] !== '0';
     }
 
     public static function tagsFieldEnabled(): bool
     {
-        return app(SiteSettingsRepository::class)->get('catalog.tags_field_enabled') !== '0';
+        return static::catalogSwitches()['catalog.tags_field_enabled'] !== '0';
     }
 
     public static function productGroupFieldEnabled(): bool
     {
-        return app(SiteSettingsRepository::class)->get('catalog.product_group_field_enabled') !== '0';
+        return static::catalogSwitches()['catalog.product_group_field_enabled'] !== '0';
+    }
+
+    /**
+     * P6e-1: «Колекции» are ON only when the key is the literal '1' — the OPPOSITE default of the season / tags switches (a missing key = OFF: a shop that never visited «Каталог» sees no collection anywhere).
+     * OFF hides the navigation item, the product field, the view entry, the list filter and the mass actions; the stored data stays.
+     */
+    public static function collectionsEnabled(): bool
+    {
+        return static::catalogSwitches()['catalog.collections_enabled'] === '1';
     }
 
     /**
@@ -558,6 +581,15 @@ class ProductResource extends Resource
                         ->hiddenLabel()
                         ->multiple()
                         ->options(fn (): array => TagModel::pluck('name', 'id')->all())
+                        ->searchable(),
+                ]),
+            Section::make(__('products.fields.collections'))
+                ->visible(fn (): bool => static::collectionsEnabled())
+                ->schema([
+                    Select::make('collections')
+                        ->hiddenLabel()
+                        ->multiple()
+                        ->options(fn (): array => CollectionModel::pluck('name', 'id')->all())
                         ->searchable(),
                 ]),
             Section::make(__('products.fields.season_id'))
@@ -1616,6 +1648,24 @@ class ProductResource extends Resource
                             fn (Builder $tagsQuery): Builder => $tagsQuery->where('catalog_tags.id', $data['value'])
                         );
                     }),
+                // P6e-1: the same many-to-many filter for «Колекции» (ProductModel::collections()); also the deep-link target of CollectionResource's products_count column. Only while the switch is ON.
+                SelectFilter::make('collections')
+                    ->label(__('products.fields.collection'))
+                    // LAZY options: the list is read only when the filter is searched or has a chosen value, so the products list renders with the SAME number of queries with the switch ON and OFF
+                    ->searchable()
+                    ->getSearchResultsUsing(fn (string $search): array => CollectionModel::where('name', 'like', '%'.$search.'%')->orderBy('name')->limit(50)->pluck('name', 'id')->all())
+                    ->getOptionLabelUsing(fn ($value): ?string => CollectionModel::find($value)?->name)
+                    ->visible(fn (): bool => static::collectionsEnabled())
+                    ->query(function (Builder $query, array $data): Builder {
+                        if (blank($data['value'] ?? null)) {
+                            return $query;
+                        }
+
+                        return $query->whereHas(
+                            'collections',
+                            fn (Builder $collectionsQuery): Builder => $collectionsQuery->where('catalog_collections.id', $data['value'])
+                        );
+                    }),
                 // Deep-link-only, driven entirely by AttributeDefinition
                 // Resource/AttributeValueResource's own descriptive_count
                 // column ->url() callbacks via Filament's real
@@ -1826,6 +1876,11 @@ class ProductResource extends Resource
                 ->label(__('products.fields.brand_id')),
             TextEntry::make('season.name')
                 ->label(__('products.fields.season_id')),
+            // P6e-1: the product's collections (many), only while the switch is ON
+            TextEntry::make('collections.name')
+                ->label(__('products.fields.collections'))
+                ->badge()
+                ->visible(fn (): bool => static::collectionsEnabled()),
             TextEntry::make('productGroup.name')
                 ->label(__('products.fields.product_group_id')),
             // regular_price/sale_price are now TWO DIMENSIONS OF THE
@@ -2805,6 +2860,8 @@ class ProductResource extends Resource
             static::massAction(ProductMassEditor::REMOVE_CATEGORY, 'heroicon-o-folder-minus', fn (): array => CategoryResource::hierarchicalOptions(), null),
             static::massAction(ProductMassEditor::ADD_TAG, 'heroicon-o-tag', fn (): array => TagModel::pluck('name', 'id')->all(), fn (): bool => static::tagsFieldEnabled()),
             static::massAction(ProductMassEditor::REMOVE_TAG, 'heroicon-o-minus-circle', fn (): array => TagModel::pluck('name', 'id')->all(), fn (): bool => static::tagsFieldEnabled()),
+            static::massAction(ProductMassEditor::ADD_COLLECTION, 'heroicon-o-rectangle-stack', fn (): array => CollectionModel::pluck('name', 'id')->all(), fn (): bool => static::collectionsEnabled()),
+            static::massAction(ProductMassEditor::REMOVE_COLLECTION, 'heroicon-o-minus-circle', fn (): array => CollectionModel::pluck('name', 'id')->all(), fn (): bool => static::collectionsEnabled()),
             static::massAction(ProductMassEditor::SET_SEASON, 'heroicon-o-sun', fn (): array => SeasonModel::pluck('name', 'id')->all(), fn (): bool => static::seasonFieldEnabled(), clearable: true),
             static::massAction(ProductMassEditor::SET_GROUP, 'heroicon-o-rectangle-group', fn (): array => ProductGroupModel::pluck('name', 'id')->all(), fn (): bool => static::productGroupFieldEnabled(), clearable: true),
             static::massResetAction(),

@@ -79,4 +79,10 @@ class ProductModel extends Model
     {
         return $this->belongsToMany(TagModel::class, 'catalog_product_tags', 'product_id', 'tag_id');
     }
+
+    /** P6e-1: the product's collections (many-to-many, like tags; read-side convenience, the pivot is written by ProductCollectionRepository). */
+    public function collections(): BelongsToMany
+    {
+        return $this->belongsToMany(CollectionModel::class, 'catalog_product_collections', 'product_id', 'collection_id');
+    }
 }

@@ -71,6 +71,8 @@ return [
         'product_group_id' => 'Артикулна група',
         'categories' => 'Категории',
         'tags' => 'Етикети',
+        'collections' => 'Колекции',
+        'collection' => 'Колекция',
         'is_purchasable' => 'Продаваем',
         'is_visible' => 'Видима',
         'variation_active_locked_hint' => 'За да свалите тази вариация от продажба, използвайте „Видима“, „Продаваем“ или я архивирайте.',

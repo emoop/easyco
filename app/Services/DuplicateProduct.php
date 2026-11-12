@@ -5,10 +5,12 @@ namespace App\Services;
 use EasyCo\Catalog\Contracts\AttributeDefinitionRepository;
 use EasyCo\Catalog\Contracts\ProductCategoryRepository;
 use EasyCo\Catalog\Contracts\ProductRepository;
+use EasyCo\Catalog\Contracts\ProductCollectionRepository;
 use EasyCo\Catalog\Contracts\ProductTagRepository;
 use EasyCo\Catalog\Enums\ProductType;
 use EasyCo\Catalog\Product;
 use EasyCo\Catalog\ProductCategory;
+use EasyCo\Catalog\ProductCollection;
 use EasyCo\Catalog\ProductTag;
 use EasyCo\Extensibility\Hook;
 use Illuminate\Support\Facades\DB;
@@ -54,6 +56,7 @@ final class DuplicateProduct
         private readonly ProductRepository $products,
         private readonly ProductCategoryRepository $productCategories,
         private readonly ProductTagRepository $productTags,
+        private readonly ProductCollectionRepository $productCollections,
         private readonly AttributeDefinitionRepository $attributeDefinitions,
     ) {}
 
@@ -108,6 +111,13 @@ final class DuplicateProduct
             foreach ($this->productTags->findByProductId($sourceProductId) as $pivot) {
                 $this->productTags->save(
                     new ProductTag(id: null, productId: $duplicateId, tagId: $pivot->tagId())
+                );
+            }
+
+            // P6e-1: the collections are copied like the tags (the rows stay whatever the switch says)
+            foreach ($this->productCollections->findByProductId($sourceProductId) as $pivot) {
+                $this->productCollections->save(
+                    new ProductCollection(id: null, productId: $duplicateId, collectionId: $pivot->collectionId())
                 );
             }
 

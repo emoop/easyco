@@ -16,6 +16,7 @@ return [
         'category' => 'Category “:name”',
         'attribute_value' => 'Value “:value” of attribute “:attribute”',
         'season' => 'Season “:name”',
+        'collection' => 'Collection “:name”',
         'html_block' => 'HTML block “:name” — picture :n',
         'html_block_card' => 'HTML block “:name” — picture with text',
         'html_block_background' => 'HTML block “:name” — background picture',

@@ -1008,6 +1008,10 @@ A second bulk group, «Масови действия», sits next to the status 
 - **Switches and permissions:** the season and tags actions are hidden (and refused by the service) when the Catalog settings switch the field off; the article group cannot be cleared while `catalog.product_group_required` is on. All actions need `product_manage`; the reset also needs `price_manage`; both are re-checked in `ProductResource::runMassEdit()`.
 - **The reset** deletes only the items of the system list «Manual Sale» (variation-level items of every variation of the selected products, soft-deleted ones included, and the product-level item) through `PriceListItemRepository::remove()`; regular prices and campaign items are never touched. By the owner's decision it writes no audit entry and has no restore.
 
+### 13.11 As built (P6e-1): «Колекции» (switched OFF by default)
+
+A collection (name, slug, ONE picture; many per product through `catalog_product_collections`) is administered by `CollectionResource` and assigned in the product form's sidebar, the list filter and the P6d mass actions. Everything is invisible while `catalog.collections_enabled` is not `'1'` (the opposite default of the season / tags switches). The five Catalog switches of the products screen are read by one `getMany` (`ProductResource::catalogSwitches()`). Details and the plan of the storefront waves: `collections-research.md`.
+
 ## §14. Orders (read-only)
 prerequisite for exercising cart → checkout → order end to end before
 any order-editing UI exists. Confirmed decisions:

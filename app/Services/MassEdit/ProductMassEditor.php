@@ -8,14 +8,17 @@ use App\Services\PriceSort\SortPriceRefreshDispatcher;
 use App\Services\PriceSort\SortPriceTriggers;
 use App\Settings\Contracts\SiteSettingsRepository;
 use EasyCo\Catalog\Contracts\ProductCategoryRepository;
+use EasyCo\Catalog\Contracts\ProductCollectionRepository;
 use EasyCo\Catalog\Contracts\ProductRepository;
 use EasyCo\Catalog\Contracts\ProductTagRepository;
 use EasyCo\Catalog\Persistence\Eloquent\CategoryModel;
+use EasyCo\Catalog\Persistence\Eloquent\CollectionModel;
 use EasyCo\Catalog\Persistence\Eloquent\ProductGroupModel;
 use EasyCo\Catalog\Persistence\Eloquent\ProductModel;
 use EasyCo\Catalog\Persistence\Eloquent\SeasonModel;
 use EasyCo\Catalog\Persistence\Eloquent\TagModel;
 use EasyCo\Catalog\ProductCategory;
+use EasyCo\Catalog\ProductCollection;
 use EasyCo\Catalog\ProductTag;
 use EasyCo\Pricing\Contracts\PriceListItemRepository;
 use EasyCo\Pricing\Contracts\PriceListRepository;
@@ -53,18 +56,23 @@ final class ProductMassEditor
 
     public const REMOVE_TAG = 'remove_tag';
 
+    public const ADD_COLLECTION = 'add_collection';
+
+    public const REMOVE_COLLECTION = 'remove_collection';
+
     public const SET_SEASON = 'set_season';
 
     public const SET_GROUP = 'set_group';
 
     public const RESET_MANUAL_PRICES = 'reset_manual_prices';
 
-    public const OPERATIONS = [self::ADD_CATEGORY, self::REMOVE_CATEGORY, self::ADD_TAG, self::REMOVE_TAG, self::SET_SEASON, self::SET_GROUP, self::RESET_MANUAL_PRICES];
+    public const OPERATIONS = [self::ADD_CATEGORY, self::REMOVE_CATEGORY, self::ADD_TAG, self::REMOVE_TAG, self::ADD_COLLECTION, self::REMOVE_COLLECTION, self::SET_SEASON, self::SET_GROUP, self::RESET_MANUAL_PRICES];
 
     public function __construct(
         private readonly ProductRepository $products,
         private readonly ProductCategoryRepository $categories,
         private readonly ProductTagRepository $tags,
+        private readonly ProductCollectionRepository $collections,
         private readonly PriceListRepository $lists,
         private readonly PriceListItemRepository $items,
         private readonly ActivityLogger $audit,
@@ -113,6 +121,7 @@ final class ProductMassEditor
         match ($operation) {
             self::ADD_CATEGORY, self::REMOVE_CATEGORY => $this->mustExist($value !== null && CategoryModel::query()->whereKey($value)->exists()),
             self::ADD_TAG, self::REMOVE_TAG => $this->mustBeOn('catalog.tags_field_enabled') ?? $this->mustExist($value !== null && TagModel::query()->whereKey($value)->exists()),
+            self::ADD_COLLECTION, self::REMOVE_COLLECTION => $this->collectionsMustBeOn() ?? $this->mustExist($value !== null && CollectionModel::query()->whereKey($value)->exists()),
             self::SET_SEASON => $this->mustBeOn('catalog.season_field_enabled') ?? $this->mustExist($value === null || SeasonModel::query()->whereKey($value)->exists()),
             self::SET_GROUP => $this->assertGroup($value),
             self::RESET_MANUAL_PRICES => null,
@@ -128,6 +137,14 @@ final class ProductMassEditor
     private function mustBeOn(string $switchKey): mixed
     {
         $this->settings->get($switchKey) !== '0' || throw new MassEditRefused('field_off');
+
+        return null;
+    }
+
+    /** P6e-1: the collections switch is ON only for the literal '1' (default OFF): the opposite of the season / tags switches. @return null always, so the caller can chain `??` */
+    private function collectionsMustBeOn(): mixed
+    {
+        $this->settings->get('catalog.collections_enabled') === '1' || throw new MassEditRefused('field_off');
 
         return null;
     }
@@ -169,6 +186,8 @@ final class ProductMassEditor
                     self::REMOVE_CATEGORY => $this->pivots($this->categories, 'categories', $value, $existing, false),
                     self::ADD_TAG => $this->pivots($this->tags, 'tags', $value, $existing, true),
                     self::REMOVE_TAG => $this->pivots($this->tags, 'tags', $value, $existing, false),
+                    self::ADD_COLLECTION => $this->pivots($this->collections, 'collections', $value, $existing, true),
+                    self::REMOVE_COLLECTION => $this->pivots($this->collections, 'collections', $value, $existing, false),
                     self::SET_SEASON => $this->aggregateField($existing, 'season_id', $value),
                     self::SET_GROUP => $this->aggregateField($existing, 'product_group_id', $value),
                     self::RESET_MANUAL_PRICES => $this->resetManualPrices($existing, $result),
@@ -179,7 +198,7 @@ final class ProductMassEditor
         $result->changed += count($changed);
         $result->unchanged += count($existing) - count($changed);
 
-        // a category, a tag, a season and a manual price are inputs of the stored sort price (price-list scopes, the Manual Sale list); the article group is not
+        // a category, a tag, a collection (P6e-3 makes it a price scope), a season and a manual price are inputs of the stored sort price (price-list scopes, the Manual Sale list); the article group is not
         if ($changed !== [] && $operation !== self::SET_GROUP) {
             $this->refresh->products($changed);
         }
@@ -190,29 +209,40 @@ final class ProductMassEditor
     /**
      * Adds or removes ONE category / tag of the given products: the diff against the stored pivots (one grouped read), the same repository calls and the same audit entries as EditProduct::syncCategories().
      *
-     * @param  ProductCategoryRepository|ProductTagRepository  $repository
+     * @param  ProductCategoryRepository|ProductTagRepository|ProductCollectionRepository  $repository
      * @param  list<string>  $productIds
      * @return list<string> the ids of the products that changed
      */
     private function pivots(object $repository, string $field, ?string $value, array $productIds, bool $add): array
     {
-        $isCategory = $repository instanceof ProductCategoryRepository;
         $hasPivot = [];
 
         foreach ($repository->findByProductIds($productIds) as $pivot) {
-            if (($isCategory ? $pivot->categoryId() : $pivot->tagId()) === (string) $value) {
+            if ((match ($field) {
+                'categories' => $pivot->categoryId(),
+                'collections' => $pivot->collectionId(),
+                default => $pivot->tagId(),
+            }) === (string) $value) {
                 $hasPivot[$pivot->productId()] = $pivot;
             }
         }
 
-        $name = $isCategory ? CategoryModel::query()->find($value)?->name : TagModel::query()->find($value)?->name;
+        $name = match ($field) {
+            'categories' => CategoryModel::query()->find($value)?->name,
+            'collections' => CollectionModel::query()->find($value)?->name,
+            default => TagModel::query()->find($value)?->name,
+        };
         $changed = [];
 
         foreach ($productIds as $productId) {
             $pivot = $hasPivot[$productId] ?? null;
 
             if ($add && $pivot === null) {
-                $repository->save($isCategory ? new ProductCategory(id: null, productId: $productId, categoryId: (string) $value) : new ProductTag(id: null, productId: $productId, tagId: (string) $value));
+                $repository->save(match ($field) {
+                    'categories' => new ProductCategory(id: null, productId: $productId, categoryId: (string) $value),
+                    'collections' => new ProductCollection(id: null, productId: $productId, collectionId: (string) $value),
+                    default => new ProductTag(id: null, productId: $productId, tagId: (string) $value),
+                });
                 $this->audit->logFieldChanged('product', $productId, $field, null, $name);
                 $changed[] = $productId;
             } elseif (! $add && $pivot !== null) {

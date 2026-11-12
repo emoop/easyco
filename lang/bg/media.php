@@ -16,6 +16,7 @@ return [
         'category' => 'Категория „:name“',
         'attribute_value' => 'Стойност „:value“ на атрибут „:attribute“',
         'season' => 'Сезон „:name“',
+        'collection' => 'Колекция „:name“',
         'html_block' => 'HTML блок „:name“ — снимка :n',
         'html_block_card' => 'HTML блок „:name“ — снимка с текст',
         'html_block_background' => 'HTML блок „:name“ — фонова снимка',
