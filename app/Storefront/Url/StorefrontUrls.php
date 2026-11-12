@@ -2,6 +2,8 @@
 
 namespace App\Storefront\Url;
 
+use App\Storefront\ReadModels\CatalogSubjectKind;
+
 /**
  * The ONE place a storefront URL is built from a slug or a path (storefront-design.md §5, storefront-frontend-design.md
  * §7): Blade, the sitemap and the API never concatenate one themselves.
@@ -30,20 +32,32 @@ final class StorefrontUrls
         return '/product-category/'.implode('/', array_map('rawurlencode', explode('/', $path)));
     }
 
+    /** P6e-2: the page of a subject (brand | season | tag | collection): the registry's prefix and the encoded slug. */
+    public function subject(CatalogSubjectKind $kind, string $slug): string
+    {
+        return $kind->urlPrefix().rawurlencode($slug);
+    }
+
     public function tag(string $slug): string
     {
-        return '/product-tag/'.rawurlencode($slug);
+        return $this->subject(CatalogSubjectKind::TAG, $slug);
     }
 
     public function brand(string $slug): string
     {
-        return '/brand/'.rawurlencode($slug);
+        return $this->subject(CatalogSubjectKind::BRAND, $slug);
     }
 
     /** P2: the season's page, `/season/{slug}` (the brand's and the tag's urls were here already: `/brand/`, `/product-tag/`, the tag following the category's `/product-category/` pattern). */
     public function season(string $slug): string
     {
-        return '/season/'.rawurlencode($slug);
+        return $this->subject(CatalogSubjectKind::SEASON, $slug);
+    }
+
+    /** P6e-2: the collection's page, `/collection/{slug}` (answers 404 while the collections switch is off). */
+    public function collection(string $slug): string
+    {
+        return $this->subject(CatalogSubjectKind::COLLECTION, $slug);
     }
 
     public function isValidSlug(string $slug): bool

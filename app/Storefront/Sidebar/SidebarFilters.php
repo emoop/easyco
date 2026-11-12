@@ -2,6 +2,8 @@
 
 namespace App\Storefront\Sidebar;
 
+use App\Storefront\ReadModels\CatalogSubjectKind;
+
 /**
  * P1: the «Сайдбар» zone of «Дизайн» — ONE ordered list of the shop's filters, each shown or hidden. The same list drives the side panel, the top filter bar, the chips and «Изчисти» (FilterCatalog::all()).
  *
@@ -15,7 +17,19 @@ namespace App\Storefront\Sidebar;
  */
 final class SidebarFilters
 {
-    public const BUILTIN = ['brand', 'season', 'tag'];
+    public const BUILTIN = CatalogSubjectKind::FILTER_KEYS;
+
+    /**
+     * P6e-2: the built-ins whose KIND (list / links / buttons) the working copy carries for this `$known` list. The collection takes part only while it is a known filter (its switch is on): while it is off the copy
+     * has no `collection` kind, so a save never writes a «Каталог» field for a feature that is off.
+     *
+     * @param  list<string>  $known
+     * @return list<string>
+     */
+    public static function kindKeys(array $known): array
+    {
+        return array_values(array_filter(self::BUILTIN, static fn (string $key): bool => $key !== 'collection' || in_array($key, $known, true)));
+    }
 
     /** P2: filters that are a plain on / off SWITCH (no values, no display kind): `featured`. Their DEFAULT (shown or hidden) is the filter catalog's, passed in as `$hidden`. */
     public const SWITCHES = ['featured'];
@@ -109,9 +123,9 @@ final class SidebarFilters
             $errors[$path] ??= (string) __('design.sidebar.errors.'.$code);
         };
         $rows = [];
-        $kinds = array_fill_keys(self::BUILTIN, 'list');
+        $kinds = array_fill_keys(self::kindKeys($known), 'list');
 
-        if (! is_array($value) || ! is_array($value['filters'] ?? null) || ! array_is_list($value['filters'])) {
+        if (! is_array($value)|| ! is_array($value['filters'] ?? null) || ! array_is_list($value['filters'])) {
             $fail('filters', 'bad_list');
             $value = ['filters' => []];
         }

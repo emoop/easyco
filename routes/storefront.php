@@ -14,6 +14,7 @@ use App\Http\Controllers\Storefront\ProductController;
 use App\Http\Controllers\Storefront\SubjectListingController;
 use App\Http\Middleware\LimitFilteredCategoryRequests;
 use App\Storefront\Orders\OrderReceivedHeaders;
+use App\Storefront\ReadModels\CatalogSubjectKind;
 use App\Storefront\Theme\ApplyStorefrontTheme;
 use App\Storefront\Support\SecurityHeaders;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
@@ -83,10 +84,11 @@ Route::middleware([SecurityHeaders::class, ApplyStorefrontTheme::class])
             ->where('path', '[\s\S]*')
             ->name('storefront.category');
 
-        // P2: the same listing page for a brand, a season and a tag. The slug is a single segment looked up in the database; the same limit for a filtered request as for a category.
-        Route::get('/brand/{slug}', [SubjectListingController::class, 'brand'])->middleware(LimitFilteredCategoryRequests::class)->where('slug', '[^/]+')->name('storefront.brand');
-        Route::get('/season/{slug}', [SubjectListingController::class, 'season'])->middleware(LimitFilteredCategoryRequests::class)->where('slug', '[^/]+')->name('storefront.season');
-        Route::get('/product-tag/{slug}', [SubjectListingController::class, 'tag'])->middleware(LimitFilteredCategoryRequests::class)->where('slug', '[^/]+')->name('storefront.tag');
+        // P2: the same listing page for a brand, a season and a tag (P6e-2: and a collection). The slug is a single segment looked up in the database; the same limit for a filtered request as for a category.
+        // P6e-2: one route per subject kind of the registry (prefix, controller method and route name are the kind's: /brand/, /season/, /product-tag/, /collection/); the collection answers 404 while its switch is off.
+        foreach (CatalogSubjectKind::cases() as $kind) {
+            Route::get($kind->urlPrefix().'{slug}', [SubjectListingController::class, $kind->value])->middleware(LimitFilteredCategoryRequests::class)->where('slug', '[^/]+')->name('storefront.'.$kind->value);
+        }
 
         // PC-2: the sizes of a listing page's cards, one cacheable GET for all of them (the browser asks on the first hover or when idle). Sessionless as the rest
         // of this group; the 60/min budget is the route's own inline throttle (the same way the login route has its own).

@@ -24,6 +24,8 @@ final class ContentStore
             'brands' => self::ids('catalog_brands'),
             'seasons' => self::ids('catalog_seasons'),
             'tags' => self::ids('catalog_tags'),
+            // P6e-2: the collections' own templates stay valid whatever the switch says (they come back when it is switched on)
+            'collections' => self::ids('catalog_collections'),
         ];
     }
 

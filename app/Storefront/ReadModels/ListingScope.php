@@ -9,4 +9,5 @@ enum ListingScope: string
     case BRAND = 'brand';
     case TAG = 'tag';
     case SEASON = 'season';
+    case COLLECTION = 'collection';
 }

@@ -19,7 +19,7 @@ final readonly class ListingQuery
     public const MAX_PRICE_MINOR = 99_999_999_999;
 
     /** Request keys that select a scope; fromRequestArray() accepts at most one of them. */
-    private const SCOPE_KEYS = ['category' => ListingScope::CATEGORY, 'brand' => ListingScope::BRAND, 'tag' => ListingScope::TAG, 'season' => ListingScope::SEASON];
+    private const SCOPE_KEYS = ['category' => ListingScope::CATEGORY] + CatalogSubjectKind::SCOPE_KEYS;
 
     private function __construct(
         public ListingScope $scope,

@@ -186,6 +186,8 @@ class CatalogSettings extends Page
 
         $settings->set('catalog.season_field_enabled', $data['season_field_enabled'] ? '1' : '0');
         $settings->set('catalog.collections_enabled', ($data['collections_enabled'] ?? false) ? '1' : '0');
+        // P6e-2: the storefront's filter list is cached WITH the collections only while the switch is on: forget it, so the new state shows at once
+        \App\Storefront\Filters\FilterCatalog::forget();
         $settings->set('catalog.brand_field_enabled', $data['brand_field_enabled'] ? '1' : '0');
         $settings->set('catalog.tags_field_enabled', $data['tags_field_enabled'] ? '1' : '0');
         $settings->set('catalog.product_group_field_enabled', $data['product_group_field_enabled'] ? '1' : '0');

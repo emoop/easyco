@@ -10,6 +10,8 @@ use App\Storefront\Content\ContentSet;
 use App\Storefront\Content\ContentStore;
 use App\Storefront\Content\ContentTemplate;
 use App\Storefront\Home\HomeCatalog;
+use App\Storefront\ReadModels\CatalogSubjectKind;
+use Illuminate\Support\Facades\DB;
 use Filament\Forms\Components\ColorPicker;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Repeater;
@@ -38,8 +40,16 @@ final class ContentZone implements DesignZone
 {
     public const KEY = 'content';
 
-    /** kind => the source a subject of that kind is looked up with (HomeZone::tileEntities) */
-    private const SOURCE_OF = ['categories' => 'category', 'brands' => 'brand', 'seasons' => 'season', 'tags' => 'tag'];
+    /**
+     * P6e-2: the kinds the editor OFFERS: every kind, except «Колекции» while the collections switch is off (the stored templates of collections stay in the working copy and the published set: they come back when
+     * the switch is on again).
+     *
+     * @return list<string>
+     */
+    public static function offeredKinds(): array
+    {
+        return array_values(array_filter(array_keys(ContentTemplate::KINDS), static fn (string $kind): bool => $kind !== 'collections' || CatalogSubjectKind::collectionsEnabled()));
+    }
 
     public function key(): string
     {
@@ -154,7 +164,7 @@ final class ContentZone implements DesignZone
             ColorPicker::make('cloud_bg')->label((string) __('design.content.cloud_bg'))->afterLabel(InfoHint::make((string) __('design.content.hints.cloud_bg'), 'content-cloud-bg'))->hex()->live(),
             ColorPicker::make('cloud_color')->label((string) __('design.content.cloud_color'))->afterLabel(InfoHint::make((string) __('design.content.hints.cloud_color'), 'content-cloud-color'))->hex()->live(),
             Select::make('kind')->label((string) __('design.content.kind'))->afterLabel(InfoHint::make((string) __('design.content.hints.kind'), 'content-kind'))->native(false)->selectablePlaceholder(false)->live()
-            ->options(array_combine(array_keys(ContentTemplate::KINDS), array_map(static fn (string $kind): string => (string) __('design.content.kinds.'.$kind), array_keys(ContentTemplate::KINDS))))];
+            ->options(array_combine(self::offeredKinds(), array_map(static fn (string $kind): string => (string) __('design.content.kinds.'.$kind), self::offeredKinds())))];
 
         foreach (array_keys(ContentTemplate::KINDS) as $kind) {
             $sections[] = Group::make([
@@ -253,7 +263,7 @@ final class ContentZone implements DesignZone
     public function propsState(array $tree, string $layout, ?array $selected): array
     {
         $set = is_array($tree['values'] ?? null) ? $tree['values'] : ContentSet::blank();
-        $state = ['kind' => in_array($tree['kind'] ?? null, array_keys(ContentTemplate::KINDS), true) ? $tree['kind'] : 'categories'] + ContentSet::style($set['style'] ?? null);
+        $state = ['kind' => in_array($tree['kind'] ?? null, self::offeredKinds(), true) ? $tree['kind'] : 'categories'] + ContentSet::style($set['style'] ?? null);
 
         foreach (array_keys(ContentTemplate::KINDS) as $kind) {
             $names = self::names($kind);
@@ -291,7 +301,7 @@ final class ContentZone implements DesignZone
         }
 
         $tree['values'] = $values;
-        $tree['kind'] = in_array($raw['kind'] ?? null, array_keys(ContentTemplate::KINDS), true) ? $raw['kind'] : 'categories';
+        $tree['kind'] = in_array($raw['kind'] ?? null, self::offeredKinds(), true) ? $raw['kind'] : 'categories';
 
         return $tree;
     }
@@ -364,7 +374,12 @@ final class ContentZone implements DesignZone
     /** The pages of a kind by name (a category as «Parent › Child»), closed to those that exist. @return array<int, string> */
     public static function names(string $kind): array
     {
-        return HomeZone::tileEntities(self::SOURCE_OF[$kind] ?? '');
+        // P6e-2: a subject kind's pages come from the registry's table (by name), the categories from the home zone's tree reader
+        $subject = CatalogSubjectKind::tryFrom((string) (ContentTemplate::KINDS[$kind] ?? null)?->value);
+
+        return $subject === null
+            ? ($kind === 'categories' ? HomeZone::tileEntities('category') : [])
+            : DB::table($subject->table())->orderBy('name')->pluck('name', 'id')->map(static fn ($name): string => (string) $name)->all();
     }
 
     /** The search of the «own settings» field: by name, at most 20. @return array<int, string> */

@@ -4,6 +4,7 @@ namespace App\Filament\Design\Zones;
 
 use App\Storefront\PageDesign\PageDesign;
 use App\Storefront\PageDesign\PageDesignStore;
+use App\Storefront\ReadModels\CatalogSubjectKind;
 use App\Http\Controllers\Storefront\DesignPreviewController;
 
 /**
@@ -13,7 +14,7 @@ use App\Http\Controllers\Storefront\DesignPreviewController;
 final class CatalogZone extends PageDesignZone
 {
     /** The «Каталог» fields that belong to the «Сайдбар» zone's form (the kind of the three built-in filters). */
-    private const SIDEBAR_KINDS = ['filterBrand', 'filterSeason', 'filterTag'];
+    private const SIDEBAR_KINDS = CatalogSubjectKind::CATALOG_FIELDS;
 
     protected function section(): string
     {

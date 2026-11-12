@@ -2,6 +2,7 @@
 
 namespace App\Storefront\Filters;
 
+use App\Storefront\ReadModels\CatalogSubjectKind;
 use App\Storefront\Visibility\StorefrontVisibility;
 use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Support\Facades\DB;
@@ -21,7 +22,7 @@ final class FilterConstraint
      * CT-4: the reserved keys of the built-in filters. A built-in is a fact of the PRODUCT (its brand, its season, its tags), so it narrows the products directly: no variation, no stock and no «same
      * variation» rule is involved; it is ANDed with the attribute filters.
      */
-    public const BUILTIN = ['brand', 'season', 'tag'];
+    public const BUILTIN = CatalogSubjectKind::FILTER_KEYS;
 
     /** P2: the switches (`featured`): in the constraint map like a built-in, but never a `filter[...]` key of the URL. */
     public const SWITCHES = ['featured'];
@@ -74,12 +75,10 @@ final class FilterConstraint
     public static function builtin($query, array $map, string $productTable = 'catalog_products'): void
     {
         foreach ($map as $kind => $ids) {
-            match ($kind) {
-                'brand' => $query->whereIn($productTable.'.brand_id', $ids),
-                'season' => $query->whereIn($productTable.'.season_id', $ids),
-                'featured' => $query->where($productTable.'.is_featured', true),
-                'tag' => $query->whereExists(DB::table('catalog_product_tags as pt')->selectRaw('1')->whereColumn('pt.product_id', $productTable.'.id')->whereIn('pt.tag_id', $ids)),
-            };
+            // P6e-2: a subject kind (brand | season | tag | collection) narrows through the registry; `featured` is a switch of the product itself
+            $kind === 'featured'
+                ? $query->where($productTable.'.is_featured', true)
+                : CatalogSubjectKind::from($kind)->constrainFilter($query, $ids, $productTable);
         }
     }
 

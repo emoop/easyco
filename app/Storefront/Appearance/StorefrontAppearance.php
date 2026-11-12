@@ -665,7 +665,7 @@ final class StorefrontAppearance
     /**
      * CT-4: how each built-in filter of the category page is shown (`off` | `list` | `links` | `buttons`), from the same PUBLISHED payload as the layout (no query); the signed preview carries the working copy.
      *
-     * @return array{brand: string, season: string, tag: string}
+     * @return array{brand: string, season: string, tag: string, collection: string}
      */
     public function catalogFilterKinds(): array
     {
@@ -675,7 +675,7 @@ final class StorefrontAppearance
 
         $values = $this->catalogOverride ?? PageDesign::catalogValues(is_string($this->data()['catalog'] ?? null) ? $this->data()['catalog'] : null);
 
-        return ['brand' => (string) $values['filterBrand'], 'season' => (string) $values['filterSeason'], 'tag' => (string) $values['filterTag']];
+        return ['brand' => (string) $values['filterBrand'], 'season' => (string) $values['filterSeason'], 'tag' => (string) $values['filterTag'], 'collection' => (string) $values['filterCollection']];
     }
 
     /**

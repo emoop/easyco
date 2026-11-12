@@ -6,6 +6,7 @@ use App\Services\ActivityLogger;
 use App\Settings\AppearanceSettings;
 use App\Settings\Contracts\SiteSettingsRepository;
 use App\Storefront\Filters\FilterCatalog;
+use App\Storefront\ReadModels\CatalogSubjectKind;
 use App\Storefront\PageDesign\PageDesign;
 use App\Storefront\PageDesign\PageDesignStore;
 
@@ -28,7 +29,13 @@ final class SidebarStore
     {
         $known = app(FilterCatalog::class)->knownKeys();
         $stored = PageDesignStore::values(PageDesign::CATALOG);
-        $raw = ['brand' => (string) $stored['filterBrand'], 'season' => (string) $stored['filterSeason'], 'tag' => (string) $stored['filterTag']];
+        // P6e-2: the kind of each built-in as «Каталог» holds it; the collection's only while it is a known filter (its switch is on)
+        $raw = [];
+
+        foreach (SidebarFilters::kindKeys($known) as $key) {
+            $raw[$key] = (string) $stored[CatalogSubjectKind::from($key)->catalogField()];
+        }
+
         $rows = SidebarFilters::rowsFromJson(app(SiteSettingsRepository::class)->get(AppearanceSettings::SIDEBAR_FILTERS_KEY));
 
         return [
@@ -91,17 +98,37 @@ final class SidebarStore
     public static function publish(array $clean): void
     {
         $settings = app(SiteSettingsRepository::class);
-        $settings->set(AppearanceSettings::SIDEBAR_FILTERS_KEY, (string) json_encode(['filters' => $clean['filters']], JSON_THROW_ON_ERROR));
+        // P6e-2: while the collections are OFF the copy has no «Колекция» row (it is not a known filter); the row the merchant stored while they were ON is carried over, so switching them on again restores it
+        $filters = $clean['filters'];
+        $kept = in_array('collection', array_column($filters, 'key'), true) ? null : self::storedRow('collection');
+        $kept === null || $filters[] = $kept;
+
+        $settings->set(AppearanceSettings::SIDEBAR_FILTERS_KEY, (string) json_encode(['filters' => $filters], JSON_THROW_ON_ERROR));
 
         $catalog = PageDesignStore::values(PageDesign::CATALOG);
-        $catalog['filterBrand'] = $clean['kinds']['brand'];
-        $catalog['filterSeason'] = $clean['kinds']['season'];
-        $catalog['filterTag'] = $clean['kinds']['tag'];
+
+        // (the kind of a built-in that is not in the copy — the collection while it is off — is left as stored)
+        foreach ($clean['kinds'] as $key => $kind) {
+            $catalog[CatalogSubjectKind::from($key)->catalogField()] = $kind;
+        }
+
         PageDesignStore::save(PageDesign::CATALOG, $catalog);
 
         $settings->forget(AppearanceSettings::SIDEBAR_FILTERS_DRAFT_KEY);
 
         self::log('published');
+    }
+
+    /** The PUBLISHED raw row of a built-in filter (`{key, show}`) when it is well formed, else null. @return array{key: string, show: bool}|null */
+    private static function storedRow(string $key): ?array
+    {
+        foreach (SidebarFilters::rowsFromJson(app(SiteSettingsRepository::class)->get(AppearanceSettings::SIDEBAR_FILTERS_KEY)) ?? [] as $row) {
+            if (is_array($row) && ($row['key'] ?? null) === $key) {
+                return ['key' => $key, 'show' => ($row['show'] ?? true) !== false];
+            }
+        }
+
+        return null;
     }
 
     private static function log(string $action): void

@@ -6,12 +6,14 @@ use InvalidArgumentException;
 use LogicException;
 
 /**
- * A merchant-managed product collection (e.g. "Spring/Summer 2026") — a
- * simple, standalone, non-Product-owned lookup entity, identical shape
- * to Brand (catalog-domain-design.md §3.13 — confirmed the domain
- * owner's own decision that Collection is exactly Brand's shape, nothing
- * more: no logo-equivalent field). Domain + persistence layer only for
- * now: not yet wired into Product's HTTP surface, no admin UI yet.
+ * A merchant-managed product collection (e.g. "Wedding") — a simple,
+ * standalone, non-Product-owned lookup entity of the Season's shape: a
+ * name, a slug and ONE picture (`pictureMediaAssetId`). Unlike the Season
+ * (one per product, a column) a product has MANY collections: the link is
+ * the pivot `catalog_product_collections` (ProductCollection), not a field
+ * of Product. Since P6e-1 it has an admin resource, since P6e-2 a public
+ * page `/collection/{slug}` — both only while the Catalog switch
+ * `catalog.collections_enabled` is on. See collections-research.md.
  */
 final class Collection
 {

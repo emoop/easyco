@@ -6,6 +6,7 @@ use App\Filament\Design\InfoHint;
 use App\Http\Controllers\Storefront\DesignPreviewController;
 use App\Storefront\Filters\FilterCatalog;
 use App\Storefront\PageDesign\PageDesign;
+use App\Storefront\ReadModels\CatalogSubjectKind;
 use App\Storefront\Sidebar\SidebarFilters;
 use App\Storefront\Sidebar\SidebarStore;
 use Filament\Forms\Components\Hidden;
@@ -208,10 +209,12 @@ final class SidebarZone implements DesignZone
     public function defaultTree(): array
     {
         $defaults = PageDesign::defaults(PageDesign::CATALOG);
+        $known = app(FilterCatalog::class)->knownKeys();
+        $kindKeys = SidebarFilters::kindKeys($known);
 
         return ['values' => [
-            'filters' => SidebarFilters::defaults(app(FilterCatalog::class)->knownKeys(), ['brand' => (string) $defaults['filterBrand'], 'season' => (string) $defaults['filterSeason'], 'tag' => (string) $defaults['filterTag']], app(FilterCatalog::class)->hiddenByDefault()),
-            'kinds' => array_fill_keys(SidebarFilters::BUILTIN, 'list'),
+            'filters' => SidebarFilters::defaults($known, array_combine($kindKeys, array_map(static fn (string $key): string => (string) $defaults[CatalogSubjectKind::from($key)->catalogField()], $kindKeys)), app(FilterCatalog::class)->hiddenByDefault()),
+            'kinds' => array_fill_keys($kindKeys, 'list'),
         ]];
     }
 

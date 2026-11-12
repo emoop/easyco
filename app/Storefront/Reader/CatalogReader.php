@@ -6,6 +6,7 @@ use App\Services\CatalogScopeResolver;
 use App\Storefront\Exceptions\ListingOptionNotAvailable;
 use App\Storefront\Filters\FilterConstraint;
 use App\Storefront\ReadModels\Breadcrumb;
+use App\Storefront\ReadModels\CatalogSubjectKind;
 use App\Storefront\ReadModels\CategoryNode;
 use App\Storefront\ReadModels\CategoryPage;
 use App\Storefront\ReadModels\GalleryItem;
@@ -233,28 +234,21 @@ final class CatalogReader
      */
     public function subject(ListingScope $scope, string $slug): ?CategoryPage
     {
-        $table = match ($scope) {
-            ListingScope::BRAND => 'catalog_brands',
-            ListingScope::SEASON => 'catalog_seasons',
-            ListingScope::TAG => 'catalog_tags',
-            default => null,
-        };
+        // P6e-2: the kind, its table and its url prefix come from the registry. A GATED kind (the collection) carries its switch INSIDE this one statement (`and exists (select 1 from site_settings …)`): while
+        // it is off the lookup finds nothing, so the page is the storefront's 404 at the cost of the ordinary missing-slug lookup
+        $kind = CatalogSubjectKind::fromScope($scope);
 
-        if ($table === null || ! $this->urls->isValidSlug($slug)) {
+        if ($kind === null || ! $this->urls->isValidSlug($slug)) {
             return null;
         }
 
-        $row = DB::table($table)->where('slug', $slug)->first(['id', 'name', 'slug']);
+        $row = $kind->gated(DB::table($kind->table())->where('slug', $slug))->first(['id', 'name', 'slug']);
 
         if ($row === null) {
             return null;
         }
 
-        $url = match ($scope) {
-            ListingScope::BRAND => $this->urls->brand((string) $row->slug),
-            ListingScope::SEASON => $this->urls->season((string) $row->slug),
-            default => $this->urls->tag((string) $row->slug),
-        };
+        $url = $this->urls->subject($kind, (string) $row->slug);
 
         return new CategoryPage(
             id: (string) $row->id,
@@ -263,7 +257,7 @@ final class CatalogReader
             path: (string) $row->slug,
             url: $url,
             productCount: 0,
-            breadcrumbs: [new Breadcrumb((string) __('storefront.crumb_'.$scope->value), ''), new Breadcrumb((string) $row->name, $url)],
+            breadcrumbs: [new Breadcrumb((string) __($kind->crumbKey()), ''), new Breadcrumb((string) $row->name, $url)],
             children: [],
         );
     }
@@ -289,12 +283,8 @@ final class CatalogReader
                 ->selectRaw('count(distinct catalog_product_categories.product_id) as n')
                 ->groupBy('catalog_product_categories.category_id');
 
-            match ($scope) {
-                ListingScope::BRAND => $pairs->where('catalog_products.brand_id', $id),
-                ListingScope::SEASON => $pairs->where('catalog_products.season_id', $id),
-                ListingScope::TAG => $pairs->whereIn('catalog_products.id', DB::table('catalog_product_tags')->where('tag_id', $id)->select('product_id')),
-                default => null,
-            };
+            // P6e-2: the same constraint the listing's scope uses (registry)
+            CatalogSubjectKind::fromScope($scope)?->constrainScope($pairs, $id);
 
             foreach ($pairs->get() as $pair) {
                 $category = $this->categories->row((int) $pair->category_id);
@@ -353,8 +343,9 @@ final class CatalogReader
 
         // CT-4: the same scalar-subquery trick for the built-in filters (brand / season / tag): a shop with only brands still shows its filters, and none of it costs a query of its own. Which of them are SWITCHED ON is
         // decided when the filter list is composed (FilterCatalog::all), not here: this query reads no appearance setting
-        foreach (['brand' => 'catalog_brands', 'season' => 'catalog_seasons', 'tag' => 'catalog_tags'] as $kind => $table) {
-            $products->addSelect(['has_'.$kind.'_filter' => DB::table($table)->selectRaw('1')->limit(1)]);
+        // P6e-2: the kinds come from the registry; the collection's scalar carries its switch inside the subselect (no query, nothing when off)
+        foreach (CatalogSubjectKind::filterOrder() as $kind) {
+            $products->addSelect(['has_'.$kind->value.'_filter' => $kind->hasAnySubselect()]);
         }
 
         $this->applyScope($products, $query);
@@ -415,6 +406,8 @@ final class CatalogReader
             'category' => [ListingScope::CATEGORY, []],
             'brand' => [ListingScope::BRAND, []],
             'tag' => [ListingScope::TAG, []],
+            // P6e-2: only the `current` source of a collection page's bottom slot reaches this arm (the home sources stay a closed list: P6e-3)
+            'collection' => [ListingScope::COLLECTION, []],
             'season' => [ListingScope::ALL, ['season' => [$entity]]],
             default => [null, []],
         };
@@ -466,7 +459,7 @@ final class CatalogReader
             return false;
         }
 
-        foreach (['has_filters', 'has_brand_filter', 'has_season_filter', 'has_tag_filter'] as $column) {
+        foreach (['has_filters', ...array_map(static fn (CatalogSubjectKind $kind): string => 'has_'.$kind->value.'_filter', CatalogSubjectKind::filterOrder())] as $column) {
             if ($first->getAttribute($column) !== null) {
                 return true;
             }
@@ -528,12 +521,8 @@ final class CatalogReader
         $this->applyScope($products, $query);
         FilterConstraint::apply($products, $filters, $kind);
 
-        $ids = match ($kind) {
-            'brand' => $products->whereNotNull('catalog_products.brand_id')->distinct()->pluck('catalog_products.brand_id'),
-            'season' => $products->whereNotNull('catalog_products.season_id')->distinct()->pluck('catalog_products.season_id'),
-            'tag' => $products->join('catalog_product_tags as pt', 'pt.product_id', '=', 'catalog_products.id')->distinct()->pluck('pt.tag_id'),
-            default => collect(),
-        };
+        // P6e-2: the facet of a subject kind is the registry's (a column's distinct ids, or the pivot's)
+        $ids = CatalogSubjectKind::tryFrom($kind)?->facetIds($products) ?? collect();
 
         return array_map('intval', $ids->all());
     }
@@ -547,12 +536,9 @@ final class CatalogReader
             $ids = $this->categories->isShown($id) ? $this->categories->selfAndDescendantIds($id) : [];
 
             $products->whereIn('catalog_products.id', DB::table('catalog_product_categories')->whereIn('category_id', $ids)->select('product_id'));
-        } elseif ($query->scope === ListingScope::BRAND) {
-            $products->where('catalog_products.brand_id', (int) $query->scopeId);
-        } elseif ($query->scope === ListingScope::TAG) {
-            $products->whereIn('catalog_products.id', DB::table('catalog_product_tags')->where('tag_id', (int) $query->scopeId)->select('product_id'));
-        } elseif ($query->scope === ListingScope::SEASON) {
-            $products->where('catalog_products.season_id', (int) $query->scopeId);
+        } else {
+            // P6e-2: brand | season | tag | collection (ALL: nothing)
+            CatalogSubjectKind::fromScope($query->scope)?->constrainScope($products, (int) $query->scopeId);
         }
     }
 

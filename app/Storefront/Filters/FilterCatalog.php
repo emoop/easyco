@@ -3,6 +3,7 @@
 namespace App\Storefront\Filters;
 
 use App\Storefront\Appearance\StorefrontAppearance;
+use App\Storefront\ReadModels\CatalogSubjectKind;
 use App\Storefront\Sidebar\SidebarFilters;
 use EasyCo\Catalog\Persistence\Eloquent\AttributeDefinitionModel;
 use EasyCo\Catalog\Persistence\Eloquent\AttributeValueModel;
@@ -29,17 +30,17 @@ use Illuminate\Support\Facades\DB;
  */
 final class FilterCatalog
 {
-    public const CACHE_KEY = 'storefront.filters.catalog.v2';
+    public const CACHE_KEY = 'storefront.filters.catalog.v3';
 
     public const TTL = 600;
 
     /**
      * P2: the filters that are HIDDEN until the merchant switches them on in «Сайдбар»: a list that does not mention one of them (a fresh shop, a list saved before the filter existed) gets it appended HIDDEN, every other
-     * missing filter is appended shown. The per-filter default lives here, not in the sidebar store.
+     * missing filter is appended shown. The per-filter default lives here, not in the sidebar store. P6e-2: «Колекция» is hidden too — a merchant who switches the collections on decides in «Сайдбар» whether the filter is shown (a shop that is already live keeps its sidebar).
      */
-    public const HIDDEN_BY_DEFAULT = ['featured'];
+    public const HIDDEN_BY_DEFAULT = ['featured', 'collection'];
 
-    /** @var array{attributes: list<array<string, mixed>>, builtin: array<string, list<array{id: int, label: string, colour: null}>>}|null memoised for the request */
+    /** @var array{attributes: list<array<string, mixed>>, builtin: array<string, list<array{id: int, label: string, colour: null}>>, collections_on: bool}|null memoised for the request */
     private ?array $data = null;
 
     /**
@@ -56,10 +57,11 @@ final class FilterCatalog
         $kinds = $appearance->catalogFilterKinds();
         $byKey = [];
 
-        foreach (SidebarFilters::BUILTIN as $kind) {
+        foreach (CatalogSubjectKind::filterOrder() as $subject) {
+            $kind = $subject->value;
             $values = $this->data['builtin'][$kind] ?? [];
 
-            $values === [] || $byKey[$kind] = ['id' => $kind, 'name' => (string) __('storefront.filter_'.$kind), 'display' => SidebarFilters::kindToPrint($kinds[$kind] ?? null), 'values' => $values];
+            $values === [] || $byKey[$kind] = ['id' => $kind, 'name' => (string) __($subject->filterNameKey()), 'display' => SidebarFilters::kindToPrint($kinds[$kind] ?? null), 'values' => $values];
         }
 
         foreach ($this->data['attributes'] as $attribute) {
@@ -97,6 +99,9 @@ final class FilterCatalog
         }
 
         $names['tag'] = (string) __('storefront.filter_tag');
+
+        // P6e-2: the collection is a known filter only while its switch is on (the cached data says so: see loadBuiltins)
+        ($this->data['collections_on'] ?? false) && $names['collection'] = (string) __('storefront.filter_collection');
         $names['featured'] = (string) __('storefront.filter_featured');
 
         return $names;
@@ -130,7 +135,7 @@ final class FilterCatalog
 
     private function load(): void
     {
-        $this->data ??= Cache::remember(self::CACHE_KEY, self::TTL, fn (): array => ['attributes' => $this->loadAttributes(), 'builtin' => $this->loadBuiltins()]);
+        $this->data ??= Cache::remember(self::CACHE_KEY, self::TTL, fn (): array => ['attributes' => $this->loadAttributes()] + $this->loadBuiltins());
     }
 
     public static function forget(): void
@@ -164,28 +169,40 @@ final class FilterCatalog
      * CT-4: ALL the brands, seasons and tags in ONE query (a UNION ALL of three small tables), each kind by name then id. They are not narrowed to those that have products here: which of them GIVE products is
      * the facet's job (one query per shown filter, per request).
      *
-     * @return array<string, list<array{id: int, label: string, colour: null}>>
+     * P6e-2: the collections ride in the same UNION, but ONLY while the Catalog switch is on (`exists (select 1 from site_settings …)` inside the member), plus one marker row `collections_on` that says the switch
+     * is on even when there is no collection yet. So a shop with the switch off reads exactly its brands, seasons and tags, and the cache is forgotten when the Catalog settings are saved.
+     *
+     * @return array{builtin: array<string, list<array{id: int, label: string, colour: null}>>, collections_on: bool}
      */
     private function loadBuiltins(): array
     {
         $union = DB::table('catalog_brands')->selectRaw("'brand' as kind, id, name");
         $union->unionAll(DB::table('catalog_seasons')->selectRaw("'season' as kind, id, name"));
         $union->unionAll(DB::table('catalog_tags')->selectRaw("'tag' as kind, id, name"));
+        $union->unionAll(CatalogSubjectKind::COLLECTION->gated(DB::table('catalog_collections')->selectRaw("'collection' as kind, id, name")));
+        $union->unionAll(CatalogSubjectKind::collectionsSwitchedOn("'collections_on' as kind, 0 as id, '' as name"));
 
         $rows = DB::query()->fromSub($union, 'b')->orderBy('name')->orderBy('id')->get(['kind', 'id', 'name']);
-        $out = ['brand' => [], 'season' => [], 'tag' => []];
+        $out = ['brand' => [], 'season' => [], 'tag' => [], 'collection' => []];
+        $on = false;
 
         foreach ($rows as $row) {
+            if ($row->kind === 'collections_on') {
+                $on = true;
+
+                continue;
+            }
+
             $out[(string) $row->kind][] = ['id' => (int) $row->id, 'label' => (string) $row->name, 'colour' => null];
         }
 
-        return $out;
+        return ['builtin' => $out, 'collections_on' => $on];
     }
 
     /** Registers the forgetting on every change of an attribute, a value, a brand, a season or a tag (called once, from the service provider). */
     public static function listen(): void
     {
-        foreach ([AttributeDefinitionModel::class, AttributeValueModel::class, BrandModel::class, SeasonModel::class, TagModel::class] as $model) {
+        foreach ([AttributeDefinitionModel::class, AttributeValueModel::class, BrandModel::class, SeasonModel::class, TagModel::class, \EasyCo\Catalog\Persistence\Eloquent\CollectionModel::class] as $model) {
             foreach (['saved', 'deleted'] as $event) {
                 $model::$event(static fn () => self::forget());
             }

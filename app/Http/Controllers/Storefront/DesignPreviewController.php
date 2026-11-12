@@ -13,6 +13,7 @@ use App\Storefront\CheckoutHeader\CheckoutHeaderDrafts;
 use App\Storefront\ProductSummary\ProductSummaryCatalog;
 use App\Storefront\ProductSummary\ProductSummaryCompiler;
 use App\Storefront\ProductSummary\ProductSummaryDrafts;
+use App\Storefront\ReadModels\CatalogSubjectKind;
 use App\Storefront\PageDesign\PageDesign;
 use App\Storefront\PageDesign\PageDesignStore;
 use App\Storefront\Reader\CatalogReader;
@@ -202,7 +203,7 @@ final class DesignPreviewController extends Controller
         $published = PageDesignStore::values($section);
         $values = PageDesignStore::draft($section) ?? $published;
         // P1: the kinds of the built-in filters are the «Сайдбар» zone's: this preview shows the published ones
-        $section === PageDesign::CATALOG && $values = array_replace($values, array_intersect_key($published, array_flip(['filterBrand', 'filterSeason', 'filterTag'])));
+        $section === PageDesign::CATALOG && $values = array_replace($values, array_intersect_key($published, array_flip(CatalogSubjectKind::CATALOG_FIELDS)));
         $css = $this->write(app(AppearanceCompiler::class)->css([], [], [], [], [], [], PageDesign::previewVars($section, $values, $published)));
 
         $section === PageDesign::CATALOG ? $appearance->previewCatalog($values, $css) : $appearance->previewStylesheet($css);

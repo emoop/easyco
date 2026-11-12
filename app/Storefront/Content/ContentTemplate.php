@@ -4,6 +4,7 @@ namespace App\Storefront\Content;
 
 use App\Storefront\Home\HomeCatalog;
 use App\Storefront\Home\HomeValidator;
+use App\Storefront\ReadModels\CatalogSubjectKind;
 use App\Storefront\ReadModels\ListingScope;
 
 /**
@@ -25,7 +26,7 @@ use App\Storefront\ReadModels\ListingScope;
 final class ContentTemplate
 {
     /** kind => the scope of its pages */
-    public const KINDS = ['categories' => ListingScope::CATEGORY, 'brands' => ListingScope::BRAND, 'seasons' => ListingScope::SEASON, 'tags' => ListingScope::TAG];
+    public const KINDS = ['categories' => ListingScope::CATEGORY] + CatalogSubjectKind::CONTENT_KINDS;
 
     /** The most own templates one kind holds (the storage is one JSON; the compiled copy is capped as a whole too). */
     public const MAX_OWN = 200;

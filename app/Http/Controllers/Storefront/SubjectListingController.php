@@ -13,7 +13,7 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 
 /**
- * P2: GET /brand/{slug}, /season/{slug}, /product-tag/{slug}: the category page for another SUBJECT. The slug is looked up in the database (never trusted, never printed raw); an unknown one is the storefront's
+ * P2: GET /brand/{slug}, /season/{slug}, /product-tag/{slug}, /collection/{slug} (P6e-2): the category page for another SUBJECT. The slug is looked up in the database (never trusted, never printed raw); an unknown one is the storefront's
  * one 404, a slug in another case is a 301 to the canonical one. Everything else is ListingPageRenderer's, the same as for a category.
  */
 final class SubjectListingController extends Controller
@@ -31,6 +31,12 @@ final class SubjectListingController extends Controller
     public function tag(Request $request, string $slug, CatalogReader $reader, ListingPageRenderer $renderer): View|RedirectResponse|Response
     {
         return $this->show($request, $slug, ListingScope::TAG, $reader, $renderer);
+    }
+
+    /** P6e-2: `/collection/{slug}`: the same page; the reader finds no collection while the Catalog switch is off, so that is the storefront's 404 (no query of its own). */
+    public function collection(Request $request, string $slug, CatalogReader $reader, ListingPageRenderer $renderer): View|RedirectResponse|Response
+    {
+        return $this->show($request, $slug, ListingScope::COLLECTION, $reader, $renderer);
     }
 
     private function show(Request $request, string $slug, ListingScope $scope, CatalogReader $reader, ListingPageRenderer $renderer): View|RedirectResponse|Response

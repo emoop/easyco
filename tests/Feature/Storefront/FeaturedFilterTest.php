@@ -148,7 +148,7 @@ class FeaturedFilterTest extends TestCase
 
     public function test_the_default_is_the_catalogs_not_the_stores(): void
     {
-        $this->assertSame(['featured'], app(FilterCatalog::class)->hiddenByDefault());
+        $this->assertSame(['featured', 'collection'], app(FilterCatalog::class)->hiddenByDefault());
         $this->assertSame([['key' => 'a', 'show' => true], ['key' => 'featured', 'show' => false]], SidebarFilters::defaults(['a', 'featured'], [], ['featured']));
         $this->assertSame([['key' => 'a', 'show' => true], ['key' => 'featured', 'show' => true]], SidebarFilters::defaults(['a', 'featured'], []), 'without the catalog\'s default the store shows everything');
     }
