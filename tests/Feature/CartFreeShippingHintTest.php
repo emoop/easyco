@@ -273,7 +273,7 @@ final class CartFreeShippingHintTest extends TestCase
             $counts['total']++;
             if (str_contains($query->sql, 'shipping_')) {
                 $counts['shipping']++;
-            } elseif (str_contains($query->sql, 'site_settings')) {
+            } elseif ((static function (string $sql): bool { while ($sql !== ($n = preg_replace('/\([^()]*\)/', '', $sql))) { $sql = $n; } return (bool) preg_match('/\bfrom\s+[`"]?site_settings\b/i', $sql); })($query->sql)) {
                 $counts['settings']++;
             }
         });

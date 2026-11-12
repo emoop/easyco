@@ -22,4 +22,6 @@ enum PriceListScopeType: string
     case PRODUCT = 'product';
     /** P6b: a product's season (an entity of its own, `catalog_products.season_id`). */
     case SEASON = 'season';
+    /** P6e-3b: a product's collections (many-to-many, the pivot `catalog_product_collections`); it matches only while the collections are switched ON. */
+    case COLLECTION = 'collection';
 }

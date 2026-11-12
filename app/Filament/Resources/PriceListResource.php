@@ -10,6 +10,7 @@ use App\Filament\Resources\PriceListResource\Pages\EditPriceList;
 use App\Filament\Resources\PriceListResource\Pages\ListPriceLists;
 use App\Filament\Support\HelpLink;
 use App\Services\CatalogScopeLookup;
+use App\Storefront\ReadModels\CatalogSubjectKind;
 use App\Services\Exceptions\PriceListInvalidException;
 use App\Services\PriceListAdminReader;
 use App\Services\PriceListWriter;
@@ -148,6 +149,9 @@ class PriceListResource extends Resource
                 ->searchable()
                 ->preload()
                 ->live()
+                // P6e-3b: the collection kind is offered only while the collections are ON; a STORED collection scope stays visible (and editable) while OFF, with a note
+                ->visible(static fn (Get $get): bool => $kind !== PriceListScopeType::COLLECTION || CatalogSubjectKind::collectionsEnabled() || (is_array($get('scope_collection')) && $get('scope_collection') !== []))
+                ->helperText(static fn (): ?string => $kind === PriceListScopeType::COLLECTION && ! CatalogSubjectKind::collectionsEnabled() ? (string) __('price_lists.hints.collection_off') : null)
                 ->options(fn (): array => app(CatalogScopeLookup::class)->search($kind, ''))
                 ->getSearchResultsUsing(fn (string $search): array => app(CatalogScopeLookup::class)->search($kind, $search))
                 ->getOptionLabelsUsing(fn (array $values): array => collect($values)->mapWithKeys(fn ($id): array => [(string) $id => (string) app(CatalogScopeLookup::class)->label($kind, (string) $id)])->all());

@@ -107,7 +107,7 @@ final class PriceListResolutionEngine
                 PriceListScopeType::CUSTOMER_GROUP => $scope->scopeReferenceId() === $context->customerGroupId,
                 PriceListScopeType::CHANNEL => $scope->scopeReferenceId() === $context->channelId,
                 PriceListScopeType::PRODUCT => $scope->scopeReferenceId() === $context->productId,
-                PriceListScopeType::BRAND, PriceListScopeType::CATEGORY, PriceListScopeType::TAG, PriceListScopeType::ATTRIBUTE_VALUE, PriceListScopeType::SEASON => in_array(
+                PriceListScopeType::BRAND, PriceListScopeType::CATEGORY, PriceListScopeType::TAG, PriceListScopeType::ATTRIBUTE_VALUE, PriceListScopeType::SEASON, PriceListScopeType::COLLECTION => in_array(
                     $scope->scopeReferenceId(),
                     $context->matchingScopeReferenceIds[$scope->scopeType()->value] ?? [],
                     true

@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Storefront\ReadModels\CatalogSubjectKind;
 use EasyCo\Pricing\Enums\PriceListScopeType;
 use EasyCo\Pricing\Persistence\Eloquent\PriceListScopeModel;
 use Illuminate\Support\Facades\DB;
@@ -58,12 +59,20 @@ final class PriceListAdminReader
             PriceListScopeType::CATEGORY => 'catalog_categories',
             PriceListScopeType::TAG => 'catalog_tags',
             PriceListScopeType::SEASON => 'catalog_seasons',
+            PriceListScopeType::COLLECTION => 'catalog_collections',
             PriceListScopeType::PRODUCT => 'catalog_products',
             default => null,
         };
 
         if ($table !== null) {
-            return DB::table($table)->whereIn('id', $ids)->pluck('name', 'id')->map(fn ($name): string => (string) $name)->mapWithKeys(fn ($name, $id): array => [(string) $id => $name])->all();
+            $names = DB::table($table)->whereIn('id', $ids)->pluck('name', 'id')->map(fn ($name): string => (string) $name)->mapWithKeys(fn ($name, $id): array => [(string) $id => $name])->all();
+
+            // P6e-3b: a collection scope while the collections are OFF never applies: shown as a switched-off feature (not an error), the list stays as stored
+            if ($type === PriceListScopeType::COLLECTION && ! CatalogSubjectKind::collectionsEnabled()) {
+                $names = array_map(static fn (string $name): string => $name.' ('.__('price_lists.table.feature_off').')', $names);
+            }
+
+            return $names;
         }
 
         if ($type === PriceListScopeType::ATTRIBUTE_VALUE) {

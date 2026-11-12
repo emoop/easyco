@@ -10,6 +10,8 @@ use EasyCo\Catalog\Persistence\Eloquent\ProductModel;
 use EasyCo\Catalog\ProductCategory;
 use EasyCo\Catalog\ProductTag;
 use EasyCo\Catalog\Variation;
+use App\Storefront\ReadModels\CatalogSubjectKind;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Assembles the Catalog data EasyCo\Pricing\Contracts\PriceContext needs
@@ -112,7 +114,10 @@ class CatalogScopeResolver
         // contract (a real, failing query-count test caught it: 26
         // queries for 5 products vs. 86 for 25, not equal), so it is not
         // used.
-        $productRows = ProductModel::whereIn('id', $productIds)->get(['id', 'name', 'season_id'])->keyBy('id');
+        // P6e-3b: the product's collection ids ride in THIS read as a correlated sub-select column (no query of their own, ever). The switch is inside the statement (`gated`): while the collections are OFF the column is
+        // NULL, so a COLLECTION scope never matches and its list never applies. `group_concat` exists on MySQL / MariaDB (the project's driver) and SQLite alike; MySQL cuts it at group_concat_max_len (1024 bytes ≈ 150 collections of one product).
+        $collectionIds = CatalogSubjectKind::COLLECTION->gated(DB::table('catalog_product_collections')->selectRaw('group_concat(collection_id)')->whereColumn('catalog_product_collections.product_id', 'catalog_products.id'));
+        $productRows = ProductModel::query()->select(['catalog_products.id', 'catalog_products.name', 'catalog_products.season_id'])->selectSub($collectionIds, 'collection_ids')->whereIn('catalog_products.id', $productIds)->get()->keyBy('id');
         $productNamesById = $productRows->map(fn ($row) => $row->name)->all();
 
         $categoryIdsByProductId = $this->groupByProductId(
@@ -157,6 +162,11 @@ class CatalogScopeResolver
             $seasonId = $productRows[$productId]->season_id ?? null;
             if ($seasonId !== null) {
                 $matchingScopeReferenceIds['season'] = [(string) $seasonId];
+            }
+
+            $collections = (string) ($productRows[$productId]->collection_ids ?? '');
+            if ($collections !== '') {
+                $matchingScopeReferenceIds['collection'] = explode(',', $collections);
             }
 
             $attributeValueIds = array_map(strval(...), array_values($variation->attributeAssignments()));

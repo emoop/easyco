@@ -62,7 +62,7 @@ final class SortPriceRefreshDispatcher
     }
 
     /**
-     * The products ONE scope row of a price list matches: brand, category, tag, SEASON, product or attribute value. A customer-group or channel scope never matches in the storefront (it has no customer
+     * The products ONE scope row of a price list matches: brand, category, tag, SEASON, COLLECTION (P6e-3b, the pivot; the switch is not asked: a refresh of a switched-off scope is harmless), product or attribute value. A customer-group or channel scope never matches in the storefront (it has no customer
      * group or channel), so it matches no product.
      *
      * @return list<string>
@@ -76,6 +76,7 @@ final class SortPriceRefreshDispatcher
             PriceListScopeType::SEASON => DB::table('catalog_products')->where('season_id', $referenceId)->pluck('id'),
             PriceListScopeType::CATEGORY => DB::table('catalog_product_categories')->where('category_id', $referenceId)->pluck('product_id'),
             PriceListScopeType::TAG => DB::table('catalog_product_tags')->where('tag_id', $referenceId)->pluck('product_id'),
+            PriceListScopeType::COLLECTION => DB::table('catalog_product_collections')->where('collection_id', $referenceId)->pluck('product_id'),
             PriceListScopeType::PRODUCT => DB::table('catalog_products')->where('id', $referenceId)->pluck('id'),
             PriceListScopeType::ATTRIBUTE_VALUE => DB::table('catalog_variation_attribute_values as vav')
                 ->join('catalog_variations as v', 'v.id', '=', 'vav.variation_id')

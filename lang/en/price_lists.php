@@ -23,12 +23,15 @@ return [
         'scope_category' => 'Category',
         'scope_tag' => 'Tag',
         'scope_season' => 'Season',
+        'scope_collection' => 'Collection',
         'scope_product' => 'Product',
         'scope_attribute_value' => 'Attribute value',
         'confirm_all_products' => 'I confirm it applies to all products',
     ],
 
     'hints' => [
+
+        'collection_off' => 'The collections are switched off: this campaign applies to no product until you switch them on again.',
         'name' => 'For you only, the customer does not see it. For example «Spring-26 collection».',
         'percentage' => 'How many percent are taken off the regular price, for example 30 or 12.5. From 0.01 to under 100.',
         'valid_from' => 'From when the campaign applies, in the shop time zone (to the minute). Empty means as soon as it is saved and active.',
@@ -65,11 +68,13 @@ return [
         'until_only' => 'until :until',
         'no_limit' => 'no end',
         'all_products' => 'All products',
+        'feature_off' => 'feature switched off',
         'scope_kind' => [
             'brand' => 'Brand',
             'category' => 'Category',
             'tag' => 'Tag',
             'season' => 'Season',
+            'collection' => 'Collection',
             'product' => 'Product',
             'attribute_value' => 'Attribute',
         ],

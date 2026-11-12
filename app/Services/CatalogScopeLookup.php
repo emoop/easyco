@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Storefront\ReadModels\CatalogSubjectKind;
 use EasyCo\Pricing\Enums\PriceListScopeType;
 use Illuminate\Support\Facades\DB;
 
@@ -20,6 +21,7 @@ final class CatalogScopeLookup
         PriceListScopeType::CATEGORY,
         PriceListScopeType::TAG,
         PriceListScopeType::SEASON,
+        PriceListScopeType::COLLECTION,
         PriceListScopeType::PRODUCT,
         PriceListScopeType::ATTRIBUTE_VALUE,
     ];
@@ -36,6 +38,8 @@ final class CatalogScopeLookup
             PriceListScopeType::CATEGORY => $this->named('catalog_categories', $like),
             PriceListScopeType::TAG => $this->named('catalog_tags', $like),
             PriceListScopeType::SEASON => $this->named('catalog_seasons', $like),
+            // P6e-3b: offered only while the collections are ON (a stored scope keeps its label: see label())
+            PriceListScopeType::COLLECTION => CatalogSubjectKind::collectionsEnabled() ? $this->named('catalog_collections', $like) : [],
             PriceListScopeType::PRODUCT => $this->products($like),
             PriceListScopeType::ATTRIBUTE_VALUE => $this->attributeValues($like),
             default => [],
@@ -50,6 +54,7 @@ final class CatalogScopeLookup
             PriceListScopeType::CATEGORY => DB::table('catalog_categories')->where('id', $id)->value('name'),
             PriceListScopeType::TAG => DB::table('catalog_tags')->where('id', $id)->value('name'),
             PriceListScopeType::SEASON => DB::table('catalog_seasons')->where('id', $id)->value('name'),
+            PriceListScopeType::COLLECTION => DB::table('catalog_collections')->where('id', $id)->value('name'),
             PriceListScopeType::PRODUCT => ($p = DB::table('catalog_products')->where('id', $id)->first(['name', 'base_sku'])) ? $p->name.' ('.$p->base_sku.')' : null,
             PriceListScopeType::ATTRIBUTE_VALUE => ($v = DB::table('catalog_attribute_values as v')
                 ->join('catalog_attribute_definitions as d', 'd.id', '=', 'v.attribute_definition_id')

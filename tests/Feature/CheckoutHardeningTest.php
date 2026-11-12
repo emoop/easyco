@@ -472,7 +472,7 @@ class CheckoutHardeningTest extends TestCase
         $counts = ['total' => 0, 'settings' => 0, 'payments' => 0];
         DB::listen(function ($query) use (&$counts): void {
             $counts['total']++;
-            if (str_contains($query->sql, 'site_settings')) {
+            if ((static function (string $sql): bool { while ($sql !== ($n = preg_replace('/\([^()]*\)/', '', $sql))) { $sql = $n; } return (bool) preg_match('/\bfrom\s+[`"]?site_settings\b/i', $sql); })($query->sql)) {
                 $counts['settings']++;
             }
             if (str_contains($query->sql, 'from `payments`') && str_starts_with(strtolower($query->sql), 'select')) {
