@@ -16,19 +16,25 @@ use EasyCo\Extensibility\Hook;
  *  catalog.measure.archived (Measure $measure)                   after an archive (a measure that was already archived fires nothing)
  *  catalog.measure.deleted  (array $snapshot)                    after a hard delete: {id, name, unit}
  *
- * No audit entry yet: the admin task (MEAS-3) adds the ActivityLogger lines together with its screens.
+ * AUDIT (MEAS-3): entity `measure`, written AFTER the repository saved and BEFORE the hook, only for a write that succeeded (a refusal writes nothing): create -> `created`; an update -> one `updated`
+ * entry per changed field (`name`, `unit`, `sort`, `is_active`) old -> new; delete -> `deleted` with a snapshot. A save that changes nothing writes no audit entry.
  */
 final class MeasureWriter
 {
-    public function __construct(private readonly MeasureRepository $measures)
+    public const ENTITY = 'measure';
+
+    public function __construct(private readonly MeasureRepository $measures, private readonly ActivityLogger $audit)
     {
     }
 
     public function save(Measure $measure): Measure
     {
         $created = $measure->id() === null;
+        $before = $created ? null : $this->measures->findById((string) $measure->id());
 
         $this->measures->save($measure);
+
+        $this->logChanges($before, $measure);
 
         Hook::fire('catalog.measure.saved', $measure, $created);
 
@@ -42,6 +48,7 @@ final class MeasureWriter
         if ($measure->isActive()) {
             $measure->archive();
             $this->measures->save($measure);
+            $this->audit->logFieldChanged(self::ENTITY, $id, 'is_active', '1', '0');
 
             Hook::fire('catalog.measure.archived', $measure);
         }
@@ -56,6 +63,7 @@ final class MeasureWriter
         if (! $measure->isActive()) {
             $measure->unarchive();
             $this->measures->save($measure);
+            $this->audit->logFieldChanged(self::ENTITY, $id, 'is_active', '0', '1');
 
             Hook::fire('catalog.measure.saved', $measure, false);
         }
@@ -70,8 +78,33 @@ final class MeasureWriter
         $snapshot = ['id' => $id, 'name' => $measure->name(), 'unit' => $measure->unit()->value];
 
         $this->measures->delete($id);
+        $this->audit->logDeleted(self::ENTITY, $id, $snapshot);
 
         Hook::fire('catalog.measure.deleted', $snapshot);
+    }
+
+    private function logChanges(?Measure $before, Measure $after): void
+    {
+        $id = (string) $after->id();
+
+        if ($before === null) {
+            $this->audit->logCreated(self::ENTITY, $id);
+
+            return;
+        }
+
+        $fields = [
+            'name' => [$before->name(), $after->name()],
+            'unit' => [$before->unit()->value, $after->unit()->value],
+            'sort' => [(string) $before->sort(), (string) $after->sort()],
+            'is_active' => [$before->isActive() ? '1' : '0', $after->isActive() ? '1' : '0'],
+        ];
+
+        foreach ($fields as $field => [$old, $new]) {
+            if ($old !== $new) {
+                $this->audit->logFieldChanged(self::ENTITY, $id, $field, $old, $new);
+            }
+        }
     }
 
     private function find(string $id): Measure

@@ -6,6 +6,7 @@ use App\Filament\Resources\AttributeDefinitionResource;
 use EasyCo\Catalog\Contracts\AttributeDefinitionRepository;
 use EasyCo\Catalog\Exceptions\InvalidAttributeFilterException;
 use EasyCo\Catalog\Persistence\Eloquent\AttributeDefinitionModel;
+use App\Services\ActivityLogger;
 use Filament\Resources\Pages\EditRecord;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Database\Eloquent\Model;
@@ -52,7 +53,15 @@ class EditAttributeDefinition extends EditRecord
             throw ValidationException::withMessages(['data.display_type' => __('attribute_definitions.errors.unknown_display_type')]);
         }
 
+        // MEAS-3: the size checkbox (hidden and false for a type without a closed list); the change is one audit entry, old -> new
+        $wasSize = $definition->isSize();
+        $definition->setSize(AttributeDefinitionResource::typeCanBeSize($definition->type()->value) && (bool) ($data['is_size'] ?? false));
+
         app(AttributeDefinitionRepository::class)->save($definition);
+
+        if ($wasSize !== $definition->isSize()) {
+            app(ActivityLogger::class)->logFieldChanged('attribute_definition', (string) $definition->id(), 'is_size', $wasSize ? '1' : '0', $definition->isSize() ? '1' : '0');
+        }
 
         return AttributeDefinitionModel::find($definition->id());
     }

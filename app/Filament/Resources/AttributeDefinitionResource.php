@@ -20,7 +20,11 @@ use EasyCo\Staff\Enums\Permission;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
+use App\Filament\Design\InfoHint;
+use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\Select;
+use Filament\Schemas\Components\Text;
+use Illuminate\Database\Eloquent\Model;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Infolists\Components\TextEntry;
@@ -119,6 +123,7 @@ class AttributeDefinitionResource extends Resource
                 ->label(__('attribute_definitions.fields.type'))
                 ->options(self::typeOptions())
                 ->required()
+                ->live()
                 // No mutator for `type` exists either — see this class's
                 // own docblock.
                 ->disabledOn('edit'),
@@ -139,7 +144,31 @@ class AttributeDefinitionResource extends Resource
                 ->helperText(__('attribute_definitions.fields.display_type_help'))
                 ->options(self::displayTypeOptions())
                 ->default(AttributeDisplayType::DROPDOWN->value),
+            // MEAS-3: the attribute whose values are the ROWS of a size table. Only a closed list (SELECT / MULTISELECT) can be one; for any other type the checkbox is hidden and saved as false.
+            Checkbox::make('is_size')
+                ->label(__('attribute_definitions.fields.is_size'))
+                ->afterLabel(InfoHint::make(__('attribute_definitions.fields.is_size_help'), 'is_size'))
+                ->live()
+                ->visible(fn (Get $get): bool => static::typeCanBeSize($get('type'))),
+            // a SOFT notice (not a block): the size resolver takes the first flagged attribute of a product
+            Text::make(__('attribute_definitions.fields.is_size_notice'))->color('warning')->size('sm')
+                ->visible(fn (Get $get, ?Model $record): bool => static::typeCanBeSize($get('type')) && (bool) $get('is_size') && static::otherSizeAttributeExists($record)),
         ]);
+    }
+
+    /** Only a closed list of values can be the size axis (the same two types a variation axis allows). */
+    public static function typeCanBeSize(mixed $type): bool
+    {
+        return in_array($type instanceof AttributeType ? $type->value : $type, [AttributeType::SELECT->value, AttributeType::MULTISELECT->value], true);
+    }
+
+    /** Is ANOTHER attribute (not this record) already flagged as the size? */
+    public static function otherSizeAttributeExists(?Model $record): bool
+    {
+        return AttributeDefinitionModel::query()
+            ->where('is_size', true)
+            ->when($record !== null, fn ($query) => $query->whereKeyNot($record->getKey()))
+            ->exists();
     }
 
     public static function table(Table $table): Table
