@@ -391,7 +391,7 @@ return [
         'kinds' => ['sale' => 'Sale', 'new' => 'New', 'low_stock' => 'Last items'],
         'fields' => ['enabled' => 'Show', 'text' => 'Text', 'mode' => 'Show as', 'days' => 'Days', 'max' => 'Up to how many items', 'position' => 'Place', 'colour' => 'Colour', 'opacity' => 'Background opacity', 'shape' => 'Shape', 'priority' => 'Order'],
         'options' => [
-            'position' => ['top' => 'Top, over the picture', 'bottom' => 'Bottom, under the price'],
+            'position' => ['top' => 'Top, over the picture', 'image_bottom' => 'Bottom, over the picture', 'bottom' => 'Under the price'],
             'colour' => ['red' => 'Red (white text)', 'orange' => 'Orange (black text)', 'blue' => 'Blue (white text)', 'green' => 'Green (white text)', 'black' => 'Black (white text)', 'grey' => 'Grey (black text)'],
             'shape' => ['square' => 'Square', 'rounded' => 'Rounded', 'pill' => 'Pill'],
             'mode' => ['word' => 'Word', 'percent' => 'Percent (−20%)'],
@@ -404,9 +404,9 @@ return [
             'sale_mode' => 'Word: your text. Percent: for example «−20%», worked out from the price shown and the struck-through regular price; not shown below 1%.',
             'new_days' => 'From 1 to 90 days since the product was created, in whole calendar days in the shop time zone.',
             'low_stock_max' => 'The badge is shown at a stock from 1 up to this number.',
-            'position' => 'At most two badges per place. When there are more, the first ones by «Order» are shown and the rest are not.',
+            'position' => 'At the top and under the price — at most two badges; at the bottom over the picture — one.',
             'priority' => 'From 1 to 99; the lower number comes first.',
-            'opacity' => 'How transparent the badge background is; the text always stays fully opaque. On a lighter picture choose 100%.',
+            'opacity' => 'How transparent the badge background is; the text always stays fully opaque. On a lighter picture choose 100%. 70% is only for black, orange and grey.',
         ],
         'errors' => [
             'bad_set' => 'The badge set is not valid.',
@@ -418,6 +418,7 @@ return [
             'bad_choice' => 'The value is not one of the allowed ones.',
             'out_of_range' => 'The number is out of the allowed range.',
             'bad_stock' => 'Choose a number from 1 to 6.',
+            'opacity_70' => '70% is only for black, orange and grey: with the other colours the text is hard to read.',
         ],
     ],
 

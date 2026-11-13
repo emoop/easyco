@@ -5,6 +5,7 @@ namespace Tests\Feature\Admin\Design;
 use App\Filament\Pages\Design\DesignScreen;
 use App\Settings\AppearanceSettings;
 use App\Settings\Contracts\SiteSettingsRepository;
+use App\Storefront\Badges\BadgeSet;
 use App\Storefront\Appearance\StorefrontAppearance;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Features\SupportAutoInjectedAssets\SupportAutoInjectedAssets;
@@ -131,6 +132,27 @@ class DesignBadgesZoneTest extends TestCase
             $screen->assertHasErrors([$error]);
             $this->assertNull(app(SiteSettingsRepository::class)->get(AppearanceSettings::BADGES_DRAFT_KEY), "{$field}={$value}");
         }
+    }
+
+    /** P7-1.2: the third position and 70 % are offered; red + 70 % is refused with its message and nothing is written; black + 70 % publishes */
+    public function test_image_bottom_and_opacity_70_are_offered_and_70_is_limited(): void
+    {
+        $this->assertSame(['top', 'image_bottom', 'bottom'], BadgeSet::POSITIONS);
+        $this->assertSame('Bottom, over the picture', __('design.badges.options.position.image_bottom'));
+
+        $html = $this->screen()->html();
+        $this->assertStringContainsString('Bottom, over the picture', $html);
+        $this->assertStringContainsString('70%', $html);
+
+        $screen = $this->screen()->set('props.sale_enabled', true)->set('props.sale_opacity', '70')->call('apply');
+        $screen->assertHasErrors(['props.sale_opacity']);
+        $this->assertStringContainsString('only for black, orange and grey', json_encode($screen->errors()->toArray(), JSON_UNESCAPED_UNICODE));
+        $this->assertNull(app(SiteSettingsRepository::class)->get(AppearanceSettings::BADGES_DRAFT_KEY));
+
+        $ok = $this->screen()->set('props.sale_enabled', true)->set('props.sale_colour', 'black')->set('props.sale_opacity', '70')->set('props.sale_position', 'image_bottom')->call('apply')->call('publish');
+        $ok->assertHasNoErrors();
+        $live = $this->stored(AppearanceSettings::BADGES_KEY);
+        $this->assertSame([70, 'image_bottom'], [$live['badges'][0]['opacity'], $live['badges'][0]['position']]);
     }
 
     public function test_the_defaults_button_puts_everything_off_into_the_working_copy(): void

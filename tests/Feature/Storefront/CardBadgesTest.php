@@ -314,6 +314,37 @@ class CardBadgesTest extends TestCase
         $this->assertCount(2, array_filter($badges, static fn (Badge $b): bool => $b->placement === 'bottom'));
     }
 
+    /** P7-1.2 ★ `image_bottom` holds ONE badge: of two enabled there, only the higher priority (then kind order) prints; top and bottom keep two */
+    public function test_image_bottom_holds_one_badge(): void
+    {
+        $this->assertSame(['top' => 2, 'image_bottom' => 1, 'bottom' => 2], BadgeSet::PER_POSITION);
+
+        $block = new PriceBlock(8000, 8000, 'EUR', 10000);
+        $row = static fn (string $kind, array $o): array => array_replace(BadgeSet::defaultRow($kind), ['enabled' => true, 'position' => 'image_bottom'], $o);
+        $set = [BadgeSet::SALE => $row(BadgeSet::SALE, ['priority' => 30]), BadgeSet::NEW => $row(BadgeSet::NEW, ['priority' => 20]), BadgeSet::LOW_STOCK => $row(BadgeSet::LOW_STOCK, ['position' => 'top'])];
+
+        $badges = BadgeResolver::resolve($set, $block, 2, '2026-03-15', '2026-03-15');
+
+        $this->assertSame(['image_bottom' => ['new'], 'top' => ['low_stock']], array_map(static fn (array $l): array => array_column(array_map(static fn (Badge $b): array => $b->toArray(), $l), 'type'), [
+            'image_bottom' => array_values(array_filter($badges, static fn (Badge $b): bool => $b->placement === 'image_bottom')),
+            'top' => array_values(array_filter($badges, static fn (Badge $b): bool => $b->placement === 'top')),
+        ]));
+    }
+
+    /** P7-1.2: 70 % is for black / orange / grey only; the same 70 with red / blue / green is refused (and a stored copy with it renders nothing) */
+    public function test_opacity_70_is_for_three_pairs_only(): void
+    {
+        foreach (BadgeSet::COLOURS as $colour) {
+            $errors = BadgeSet::validate(['badges' => [['kind' => 'sale', 'colour' => $colour, 'opacity' => 70]]])[1];
+
+            $this->assertSame(in_array($colour, ['black', 'orange', 'grey'], true) ? [] : ['sale.opacity'], array_keys($errors), $colour);
+        }
+
+        $this->assertSame(BadgeSet::validate(['badges' => [['kind' => 'sale', 'colour' => 'red', 'opacity' => 70]]])[1]['sale.opacity'], __('design.badges.errors.opacity_70'));
+        $this->assertSame([], BadgeSet::fromJson('{"badges":[{"kind":"sale","enabled":true,"text":"","position":"top","colour":"green","opacity":70,"shape":"square","priority":1,"mode":"word"}]}'), 'a stored red/blue/green at 70 renders nothing');
+        $this->assertArrayHasKey('sale', BadgeSet::fromJson('{"badges":[{"kind":"sale","enabled":true,"text":"","position":"top","colour":"black","opacity":70,"shape":"square","priority":1,"mode":"word"}]}'));
+    }
+
     // ================================================================ markup
 
     /** ★ the footer prints for a bottom badge even when the card has no price line and is in stock; the TOP row is inside the picture frame */
@@ -334,6 +365,14 @@ class CardBadgesTest extends TestCase
         // a top badge on a card with no picture: the placeholder is no longer aria-hidden (it holds a badge)
         $noImage = $this->renderCard(new ProductCard('9', 's', '/product/s', 'S', null, null, null, [$top], false));
         $this->assertStringContainsString('<div class="sf-card-image sf-image-placeholder"><ul class="sf-cbadges sf-cbadges--top">', $noImage);
+
+        // P7-1.2: the third position is INSIDE the picture frame, right after the top row; a placeholder holding only it is not aria-hidden
+        $ib = new Badge('new', 'Нови', 'image_bottom', 'black', 20, 'square', 70);
+        $both = $this->renderCard(new ProductCard('9', 's', '/product/s', 'S', null, $image, null, [$top, $ib], true));
+        $this->assertStringContainsString('</ul><ul class="sf-cbadges sf-cbadges--image-bottom"><li class="sf-cbadge sf-cbadge--black sf-cbadge--square sf-cbadge--o70">Нови</li></ul></div>', $both);
+        $this->assertLessThan(strpos($both, '</a>'), strpos($both, 'sf-cbadges--image-bottom'), 'inside the link, in the picture frame');
+        $this->assertStringNotContainsString('sf-card-footer', $both);
+        $this->assertStringContainsString('<div class="sf-card-image sf-image-placeholder"><ul class="sf-cbadges sf-cbadges--image-bottom">', $this->renderCard(new ProductCard('9', 's', '/product/s', 'S', null, null, null, [$ib], false)));
 
         // an empty position prints nothing: only the top badge, so no bottom row and no footer for a priced-less in-stock card
         $onlyTop = $this->renderCard(new ProductCard('9', 's', '/product/s', 'S', null, $image, null, [$top], true));

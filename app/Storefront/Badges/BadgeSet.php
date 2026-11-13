@@ -9,7 +9,7 @@ use App\Rules\PlainText;
  * «Последни бройки»); every one is OFF until the merchant switches it on. The row carries a `kind`, so P7-2 can add the kinds `free_shipping` and `custom` without changing the stored shape.
  *
  * A VALIDATED working copy is `{badges: list<Row>}` with ONE row for each built-in kind in the fixed order (SALE, NEW, LOW_STOCK):
- *   Row = {kind, enabled: bool, text: string (≤ 24, plain; '' = the built-in's default word), position: top|bottom, colour: one of the six contrast pairs, shape: square|rounded|pill, opacity: 100|90|80, priority: 1..99}
+ *   Row = {kind, enabled: bool, text: string (≤ 24, plain; '' = the built-in's default word), position: top|image_bottom|bottom, colour: one of the six contrast pairs, shape: square|rounded|pill, opacity: 100|90|80|70 (70 only for black / orange / grey), priority: 1..99}
  *         + sale: `mode` word|percent · new: `days` 1..90 · low_stock: `max` 1..6.
  * The PUBLISHED (compiled) copy keeps ONLY the enabled rows, and nothing at all (the key is forgotten) when none is enabled, so a shop that never used the zone prints today's HTML. The storefront reads it with
  * `fromJson()`, which is strict: a copy that does not validate renders NOTHING (never an error). Pure: no query, no clock, no markup.
@@ -27,7 +27,11 @@ final class BadgeSet
     /** The built-in kinds, in the fixed order of the zone (P7-2 appends its own kinds here). */
     public const KINDS = [self::SALE, self::NEW, self::LOW_STOCK];
 
-    public const POSITIONS = ['top', 'bottom'];
+    /** P7-1.2: `top` / `image_bottom` sit over the picture (upper-left / lower-left), `bottom` is under the price (what a stored `bottom` always meant). */
+    public const POSITIONS = ['top', 'image_bottom', 'bottom'];
+
+    /** P7-1.2: how many badges one position holds (the resolver keeps the first ones by priority, then kind order). */
+    public const PER_POSITION = ['top' => 2, 'image_bottom' => 1, 'bottom' => 2];
 
     /**
      * P7-1.1: the SIX ready contrast pairs (background + text), a closed list. Every pair passes WCAG AA (4.5:1) for the small text at 100 / 90 / 80 % of the background over white (BadgeContrastTest computes it); the very
@@ -48,15 +52,16 @@ final class BadgeSet
     public const LEGACY_COLOURS = ['dark' => 'black', 'light' => 'grey', 'neutral' => 'grey', 'purple' => 'blue'];
 
     /** The opacity of the BACKGROUND in percent (the text stays fully opaque). */
-    public const OPACITIES = [100, 90, 80];
+    public const OPACITIES = [100, 90, 80, 70];
+
+    /** P7-1.2: 70 % is allowed only for the pairs that still pass AA 4.5:1 at 70 % over white (black 7.07, orange 12.24, grey 16.1; red 3.96, blue 4.13, green 3.70 do not). */
+    public const OPACITY_70_PAIRS = ['black', 'orange', 'grey'];
 
     public const SHAPES = ['square', 'rounded', 'pill'];
 
     public const MODES = ['word', 'percent'];
 
     public const MAX_TEXT = 24;
-
-    public const MAX_PER_POSITION = 2;
 
     public const MIN_DAYS = 1;
 
@@ -196,6 +201,12 @@ final class BadgeSet
         $colour = $raw['colour'] ?? null;
         $row['colour'] = self::choice(is_string($colour) ? (self::LEGACY_COLOURS[$colour] ?? $colour) : $colour, self::COLOURS, $row['colour'], "{$kind}.colour", $errors);
         $row['opacity'] = self::opacity($raw['opacity'] ?? null, "{$kind}.opacity", $errors);
+
+        if (! isset($errors["{$kind}.opacity"]) && $row['opacity'] === 70 && ! in_array($row['colour'], self::OPACITY_70_PAIRS, true)) {
+            $errors["{$kind}.opacity"] = self::message('opacity_70');
+            $row['opacity'] = 100;
+        }
+
         $row['shape'] = self::choice($raw['shape'] ?? null, self::SHAPES, $row['shape'], "{$kind}.shape", $errors);
         $row['priority'] = self::whole($raw['priority'] ?? null, 1, 99, $row['priority'], "{$kind}.priority", $errors);
 

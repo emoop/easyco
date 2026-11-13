@@ -13,7 +13,7 @@ use App\Storefront\ReadModels\PriceBlock;
  *  - «Промо»        the price block is discounted (`regularFromMinor` set and above the final price): the word, or the percent `round((regular − final) / regular × 100)` half-up from the SAME block (none when < 1).
  *  - «Нови»         the product is at most `days` whole store-local calendar days old.
  *  - «Последни бройки»  the total stock of the shown variations is between 1 and N (0 = sold out: the «Изчерпан» label owns that state).
- * At most MAX_PER_POSITION badges per position, ordered by `priority` (lower first), then by kind order (built-ins before custom); the rest are dropped.
+ * At most BadgeSet::PER_POSITION badges per position, ordered by `priority` (lower first), then by kind order (built-ins before custom); the rest are dropped.
  */
 final class BadgeResolver
 {
@@ -38,11 +38,11 @@ final class BadgeResolver
 
         usort($found, static fn (array $a, array $b): int => [$a[1]->priority, $a[0]] <=> [$b[1]->priority, $b[0]]);
 
-        $count = ['top' => 0, 'bottom' => 0];
+        $count = array_fill_keys(BadgeSet::POSITIONS, 0);
         $out = [];
 
         foreach ($found as [, $badge]) {
-            if ($count[$badge->placement]++ < BadgeSet::MAX_PER_POSITION) {
+            if ($count[$badge->placement]++ < BadgeSet::PER_POSITION[$badge->placement]) {
                 $out[] = $badge;
             }
         }

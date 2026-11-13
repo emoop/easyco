@@ -50,10 +50,26 @@ class BadgeContrastTest extends TestCase
 
         foreach (BadgeSet::PAIRS as $key => $pair) {
             foreach (BadgeSet::OPACITIES as $opacity) {
+                if ($opacity === 70 && ! in_array($key, BadgeSet::OPACITY_70_PAIRS, true)) {
+                    continue; // the pair is not allowed at 70 (validate() refuses it)
+                }
+
                 $ratio = self::contrast(self::over(self::rgb($pair['bg']), $opacity), self::rgb($pair['fg']));
 
                 $this->assertGreaterThanOrEqual(4.5, $ratio, sprintf('%s at %d%%: %.2f:1', $key, $opacity, $ratio));
             }
+        }
+    }
+
+    /** P7-1.2: why 70 % is limited to three pairs: the other three fall below AA there */
+    public function test_red_blue_green_at_70_are_below_aa(): void
+    {
+        $this->assertSame(['black', 'orange', 'grey'], BadgeSet::OPACITY_70_PAIRS);
+
+        foreach (BadgeSet::COLOURS as $key) {
+            $ratio = self::contrast(self::over(self::rgb(BadgeSet::PAIRS[$key]['bg']), 70), self::rgb(BadgeSet::PAIRS[$key]['fg']));
+
+            in_array($key, BadgeSet::OPACITY_70_PAIRS, true) ? $this->assertGreaterThanOrEqual(4.5, $ratio, $key) : $this->assertLessThan(4.5, $ratio, $key.' at 70%: '.round($ratio, 2));
         }
     }
 
@@ -77,6 +93,7 @@ class BadgeContrastTest extends TestCase
 
         $this->assertStringContainsString('.sf-cbadge--o90 { --sf-cbadge-a: 0.9; }', $css);
         $this->assertStringContainsString('.sf-cbadge--o80 { --sf-cbadge-a: 0.8; }', $css);
+        $this->assertStringContainsString('.sf-cbadge--o70 { --sf-cbadge-a: 0.7; }', $css);
         $this->assertStringContainsString('background: rgb(var(--sf-cbadge-rgb) / var(--sf-cbadge-a));', $css, 'only the BACKGROUND takes the opacity');
         $this->assertMatchesRegularExpression('/\.sf-cbadge \{[^}]*color: var\(--sf-cbadge-fg\);/s', $css, 'the text colour is its own, fully opaque');
     }

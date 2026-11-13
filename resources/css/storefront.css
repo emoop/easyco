@@ -527,6 +527,14 @@
         pointer-events: none;
     }
 
+    .sf-cbadges--image-bottom {
+        @apply absolute z-10 flex-col items-start;
+        bottom: 0.625rem;
+        left: 0.625rem;
+        max-width: calc(100% - 1.25rem);
+        pointer-events: none;
+    }
+
     .sf-card-footer > .sf-cbadges--bottom {
         @apply px-3 pb-3 pt-0;
         flex-wrap: nowrap;
@@ -572,10 +580,23 @@
         .sf-card-footer > .sf-cbadges--bottom {
             padding-right: 0.25rem;
         }
+
+        .sf-cbadges--top {
+            top: 0.1rem;
+            left: 0.1rem;
+            max-width: calc(100% - 0.2rem);
+        }
+
+        .sf-cbadges--image-bottom {
+            bottom: 0.1rem;
+            left: 0.1rem;
+            max-width: calc(100% - 0.2rem);
+        }
     }
 
     .sf-cbadge--o90 { --sf-cbadge-a: 0.9; }
     .sf-cbadge--o80 { --sf-cbadge-a: 0.8; }
+    .sf-cbadge--o70 { --sf-cbadge-a: 0.7; }
     .sf-cbadge--square { border-radius: 0; }
     .sf-cbadge--rounded { border-radius: 0.25rem; }
     .sf-cbadge--pill { border-radius: 9999px; }

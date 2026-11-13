@@ -206,6 +206,35 @@ try {
         check(`${width}: «Последни бройки» is the orange pair (black on #f59e0b)`, shapes.bottom.bg === 'rgb(245, 158, 11)' && shapes.bottom.fg === 'rgb(0, 0, 0)', JSON.stringify(shapes.bottom));
         const sShapes = join(OUT, `p71-shapes-${width}.png`); shots.push(sShapes); await page.screenshot({ path: sShapes, fullPage: false });
 
+        // P7-1.2: the offsets of the picture-frame badges (10px desktop, 1.6px phone), the left edges of the stack, the third position «image_bottom» and black at 70 %
+        const offsets = async (cfg) => {
+            php(BADGES(true, cfg));
+            await page.goto(LIST, { waitUntil: 'networkidle' });
+            return page.evaluate((id1) => {
+                const card = document.querySelector(`[data-product-id="${id1}"]`);
+                const r = (el) => { const x = el.getBoundingClientRect(); return { l: x.left, t: x.top, r: x.right, b: x.bottom }; };
+                const frame = r(card.querySelector('.sf-card-image'));
+                const top = [...card.querySelectorAll('.sf-cbadges--top .sf-cbadge')].map(r);
+                const ib = [...card.querySelectorAll('.sf-card-image .sf-cbadges--image-bottom .sf-cbadge')];
+                const c = ib[0] ? getComputedStyle(ib[0]) : null;
+                return { frame, top, ib: ib.map(r), ibBg: c?.backgroundColor ?? null, ibFg: c?.color ?? null, ibCount: card.querySelectorAll('.sf-cbadges--image-bottom').length, under: !! card.querySelector('.sf-card-footer .sf-cbadges--bottom') };
+            }, String(world.ids[0]));
+        };
+        const want0 = width <= 480 ? 1.6 : 10;
+        const near = (v) => Math.abs(v - want0) <= 1.2;
+        // A: «Промо» + «Последни бройки» (max 6) both on top, «Нови» (black, 70 %) at the bottom of the picture
+        const A = await offsets({ 1: { position: 'image_bottom', opacity: 70 }, 2: { max: 6, position: 'top' } });
+        report[`p712-A-${width}`] = A;
+        check(`${width}: P7-1.2: two top badges: offset from the frame ≈ ${want0}px`, A.top.length === 2 && near(A.top[0].l - A.frame.l) && near(A.top[0].t - A.frame.t), JSON.stringify(A.top[0]) + ' frame ' + JSON.stringify(A.frame));
+        check(`${width}: P7-1.2: the second top badge has the first's left edge and sits under it`, A.top[1].l === A.top[0].l && A.top[1].t >= A.top[0].b - 1, JSON.stringify(A.top));
+        check(`${width}: P7-1.2: the image_bottom badge is at the bottom-left of the frame (≈ ${want0}px)`, A.ib.length === 1 && near(A.ib[0].l - A.frame.l) && near(A.frame.b - A.ib[0].b), JSON.stringify(A.ib) + ' frame ' + JSON.stringify(A.frame));
+        check(`${width}: P7-1.2: black at 70 % is rgba(17, 17, 17, 0.7) with opaque white text`, A.ibBg === 'rgba(17, 17, 17, 0.7)' && A.ibFg === 'rgb(255, 255, 255)', A.ibBg + ' ' + A.ibFg);
+        // B: one card with a top badge, an image_bottom badge and an under-price badge
+        const Bc = await offsets({ 1: { position: 'image_bottom', opacity: 70 }, 2: { max: 6 } });
+        report[`p712-B-${width}`] = Bc;
+        check(`${width}: P7-1.2: one card carries top, image_bottom and under-price badges`, Bc.top.length === 1 && Bc.ib.length === 1 && Bc.ibCount === 1 && Bc.under === true, JSON.stringify({ top: Bc.top.length, ib: Bc.ib.length, under: Bc.under }));
+        const s712 = join(OUT, `p712-${width}.png`); shots.push(s712); await (await page.locator(`[data-product-id="${world.ids[0]}"]`).first()).screenshot({ path: s712 });
+        await page.goto(LIST, { waitUntil: 'networkidle' });
         // all six pairs side by side, drawn with the very classes of the stylesheet (test-only DOM, the shop's pages never get it)
         const six = await page.evaluate(() => {
             const pairs = ['red', 'orange', 'blue', 'green', 'black', 'grey'];
