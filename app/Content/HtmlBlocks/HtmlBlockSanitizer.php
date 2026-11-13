@@ -8,7 +8,11 @@ use DOMElement;
 /**
  * The filter of an HTML block (MENU-2, menu-editor-v2-design.md 2): the description allow-list (same DOM walker, see DescriptionSanitizer) PLUS pictures.
  *
- *   added elements   img figure figcaption (br was already allowed)
+ *   added elements   img figure figcaption (br was already allowed); TBL-1: tfoot caption colgroup col (table thead tbody tr th td were already allowed, with NO attribute)
+ *   table cells      TBL-1: `th` / `td` keep `colspan` and `rowspan` (whole numbers 1..20; anything else is dropped) and `th` keeps `scope` (`row` | `col`); every other attribute of every table element
+ *                    (style, class, width, border, bgcolor, on*, ...) is removed. A table inside a cell is allowed (the walker nests any allowed element: nothing here forbids it).
+ *   print wrapper    TBL-1: `render()` wraps every OUTERMOST `<table>` in `<div class="sf-table-wrap">` (the box that scrolls on a phone). It is added when printed, never stored: `clean()` (the save) does not add it,
+ *                    and cleaning printed HTML again unwraps the unknown `div`, so `render()` stays idempotent.
  *   img              attributes `src`, `alt`, `width`, `height` only. `src` is our own `/storage/...` path or an https: address; width / height are whole
  *                    numbers from 1 to 4000; `alt` is cut at 200 characters. An `img` whose `src` is not acceptable is removed (a picture with no address is nothing).
  *   everything else  as DescriptionSanitizer: no style, class, id, on*, data-*, srcset; no iframe, script, svg, video, object; `javascript:` / `data:` links dropped.
@@ -29,7 +33,7 @@ class HtmlBlockSanitizer extends DescriptionSanitizer
         'p' => [], 'br' => [], 'strong' => [], 'em' => [], 'b' => [], 'i' => [],
         'ul' => [], 'ol' => [], 'li' => [], 'blockquote' => [],
         'h2' => [], 'h3' => [], 'h4' => [],
-        'table' => [], 'thead' => [], 'tbody' => [], 'tr' => [], 'th' => [], 'td' => [],
+        'table' => [], 'thead' => [], 'tbody' => [], 'tfoot' => [], 'tr' => [], 'th' => [], 'td' => [], 'caption' => [], 'colgroup' => [], 'col' => [],
         'a' => ['href'],
         'img' => ['src', 'alt', 'width', 'height'],
         'figure' => [], 'figcaption' => [],
@@ -55,13 +59,52 @@ class HtmlBlockSanitizer extends DescriptionSanitizer
         return static::renderInner($html);
     }
 
+    public const TABLE_WRAP = 'sf-table-wrap';
+
+    public const MAX_SPAN = 20;
+
     private static function renderInner(string $html): string
     {
-        return str_replace('<img ', '<img loading="lazy" decoding="async" ', static::clean($html));
+        return static::wrapTables(str_replace('<img ', '<img loading="lazy" decoding="async" ', static::clean($html)));
+    }
+
+    /**
+     * TBL-1: every OUTERMOST `<table>` of the CLEANED html goes into `<div class="sf-table-wrap">` (CSS: the box scrolls sideways on a phone, so the table never widens the page). The cleaned markup has the
+     * tags rebuilt by the DOM (lower case, no attribute on a table), so the tags are found by exact text; a table inside a cell is already inside the box of its parent.
+     */
+    private static function wrapTables(string $html): string
+    {
+        if (! str_contains($html, '<table>')) {
+            return $html;
+        }
+
+        $parts = preg_split('#(<table>|</table>)#', $html, -1, PREG_SPLIT_DELIM_CAPTURE | PREG_SPLIT_NO_EMPTY);
+        $out = '';
+        $depth = 0;
+
+        foreach ($parts as $part) {
+            if ($part === '<table>') {
+                $out .= $depth === 0 ? '<div class="'.self::TABLE_WRAP.'"><table>' : '<table>';
+                $depth++;
+            } elseif ($part === '</table>') {
+                $depth = max(0, $depth - 1);
+                $out .= $depth === 0 ? '</table></div>' : '</table>';
+            } else {
+                $out .= $part;
+            }
+        }
+
+        return $out;
     }
 
     protected static function filterAttributes(DOMElement $element, string $name): void
     {
+        if ($name === 'th' || $name === 'td') {
+            static::filterCell($element, $name);
+
+            return;
+        }
+
         if ($name !== 'img') {
             parent::filterAttributes($element, $name);
 
@@ -96,6 +139,34 @@ class HtmlBlockSanitizer extends DescriptionSanitizer
 
         foreach ($kept as $dimension => $value) {
             $element->setAttribute($dimension, $value);
+        }
+    }
+
+    /** TBL-1: a table cell keeps `colspan` / `rowspan` (1..MAX_SPAN) and, on a `th`, `scope` (row | col); nothing else. */
+    private static function filterCell(DOMElement $element, string $name): void
+    {
+        $kept = [];
+
+        foreach (['colspan', 'rowspan'] as $span) {
+            $value = trim((string) $element->getAttribute($span));
+
+            if (preg_match('/\A[0-9]{1,2}\z/', $value) === 1 && (int) $value >= 1 && (int) $value <= self::MAX_SPAN) {
+                $kept[$span] = (string) (int) $value;
+            }
+        }
+
+        $scope = strtolower(trim((string) $element->getAttribute('scope')));
+
+        if ($name === 'th' && in_array($scope, ['row', 'col'], true)) {
+            $kept['scope'] = $scope;
+        }
+
+        foreach (iterator_to_array($element->attributes) as $attribute) {
+            $element->removeAttribute($attribute->nodeName);
+        }
+
+        foreach ($kept as $attribute => $value) {
+            $element->setAttribute($attribute, $value);
         }
     }
 

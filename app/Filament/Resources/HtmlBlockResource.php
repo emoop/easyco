@@ -180,6 +180,8 @@ class HtmlBlockResource extends Resource
                     ['bold', 'italic', 'link'],
                     ['h2', 'h3', 'h4', 'paragraph'],
                     ['bulletList', 'orderedList'],
+                    // TBL-1: Filament's own table tools (insert, columns, rows, header row, merge / split, delete): a size table can be made, or pasted from a sheet; the sanitizer keeps only the table tags and colspan / rowspan / scope
+                    ['table', 'tableAddColumnBefore', 'tableAddColumnAfter', 'tableDeleteColumn', 'tableAddRowBefore', 'tableAddRowAfter', 'tableDeleteRow', 'tableToggleHeaderRow', 'tableMergeCells', 'tableSplitCell', 'tableDelete'],
                     [MediaImagePlugin::TOOL],
                     ['undo', 'redo'],
                 ])

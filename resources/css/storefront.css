@@ -2298,6 +2298,52 @@
         @apply bg-neutral-50 font-semibold;
     }
 
+    /* ---- TBL-1: a table in an HTML block (a size table). The wrapper `.sf-table-wrap` is added when the block is printed (HtmlBlockSanitizer::render), never stored. LK-1: 1px hairlines, the block's 14px text, header cells
+       weight 500 and left-aligned, no coloured background. The BOX scrolls sideways (the page never does); only when the table is wider than the box do two CSS-only helpers show: the first column of every row stays in
+       place (sticky, the page background and a hairline on its right) and a soft shadow on the right edge says there is more (the «scroll shadows» technique: the shadow scrolls with the box, a cover of the page background
+       scrolls with the content and hides it at the end). A table that fits looks plain. ---- */
+    .sf-table-wrap {
+        margin: 0.75rem 0;
+        max-width: 100%;
+        overflow-x: auto;
+        background:
+            linear-gradient(to left, var(--sf-bg, #fff) 30%, rgb(255 255 255 / 0)) right center / 2rem 100% no-repeat local,
+            linear-gradient(to left, rgb(0 0 0 / 0.16), rgb(0 0 0 / 0)) right center / 0.75rem 100% no-repeat scroll;
+    }
+
+    .sf-table-wrap > table {
+        width: 100%;
+        margin: 0;
+        border-collapse: collapse;
+        font-size: 0.875rem;
+        line-height: 1.5;
+    }
+
+    .sf-table-wrap :is(th, td) {
+        min-width: 4rem;
+        padding: 0.5rem 0.75rem;
+        border: 1px solid var(--color-neutral-200, #e5e5e5);
+        background: transparent;
+        text-align: left;
+        vertical-align: top;
+    }
+
+    .sf-table-wrap :is(th, thead td) {
+        font-weight: 500;
+    }
+
+    .sf-table-wrap :is(th, td) > p {
+        margin: 0;
+    }
+
+    .sf-table-wrap tr > :first-child {
+        position: sticky;
+        left: 0;
+        z-index: 1;
+        background: var(--sf-bg, #fff);
+        box-shadow: inset -1px 0 0 var(--color-neutral-200, #e5e5e5);
+    }
+
     /* ---- P4b: the product's sections: the accordion (right column) and the tabs (below the main area) --------------------------------------------------------------------------------------- */
     /* «Акордеон»: native <details>, independent, closed by default; a hairline between the rows, the title is the <summary> with a small chevron (CSS only) */
     .sf-psec-list {
