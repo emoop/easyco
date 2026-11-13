@@ -203,6 +203,8 @@ class AttributeColourTest extends TestCase
             return count(DB::getQueryLog());
         };
 
+        // warm-up: the cold first read of site_settings is not what this test measures
+        $this->reader()->product('shirt');
         $plain = $count();
         DB::table('catalog_attribute_definitions')->where('id', 1)->update(['display_type' => 'swatch']);
         DB::table('catalog_attribute_values')->where('id', 1003)->update(['colour' => '#2e7d32']);
