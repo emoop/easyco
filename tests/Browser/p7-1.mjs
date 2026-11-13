@@ -88,10 +88,12 @@ HomeDrafts::publish($h);
 echo 'ok';`;
 
 // the badge set, published the way the zone publishes it (BadgeStore): ON = the three built-ins, OFF = everything disabled (the key is forgotten)
-const BADGES = (on) => String.raw`
+// `over` (P7-1.1): rows by index merged over the ON set, e.g. {0: {shape: 'square', opacity: 80}}
+const BADGES = (on, over = {}) => String.raw`
 use App\Storefront\Badges\BadgeSet; use App\Storefront\Badges\BadgeStore;
 $w = BadgeSet::defaults();
 ${on ? "$w['badges'][0]['enabled'] = true; $w['badges'][0]['mode'] = 'percent'; $w['badges'][1]['enabled'] = true; $w['badges'][2]['enabled'] = true;" : ''}
+${Object.entries(over).map(([i, row]) => `$w['badges'][${i}] = array_replace($w['badges'][${i}], json_decode('${JSON.stringify(row)}', true));`).join(' ')}
 [$c, $e] = BadgeSet::validate($w);
 if ($e !== []) { throw new Exception(json_encode($e)); }
 BadgeStore::publish($c);
@@ -127,10 +129,10 @@ try {
         const card = document.querySelector(`${sc} [data-product-id="${pid}"]`);
         if (! card) return null;
         const texts = (selector) => [...card.querySelectorAll(selector + ' li')].map((li) => li.textContent.trim());
-        return { top: texts('.sf-badges--top'), bottom: texts('.sf-badges--bottom'), sold: !! card.querySelector('.sf-stock-out') };
+        return { top: texts('.sf-cbadges--top'), bottom: texts('.sf-cbadges--bottom'), sold: !! card.querySelector('.sf-stock-out') };
     }, [String(id), scope]);
     const cardHtml = async (page, id) => page.evaluate((pid) => document.querySelector(`[data-product-id="${pid}"]`)?.outerHTML ?? null, String(id));
-    const total = async (page) => page.evaluate(() => document.querySelectorAll('.sf-badges').length);
+    const total = async (page) => page.evaluate(() => document.querySelectorAll('.sf-cbadges').length);
 
     for (const width of [1440, 390]) {
         const ctx = await browser.newContext({ viewport: { width, height: 1400 }, ignoreHTTPSErrors: true, locale: 'bg-BG' });
@@ -164,24 +166,69 @@ try {
         const geo = await page.evaluate(([id1, id3]) => {
             const r = (el) => { const x = el.getBoundingClientRect(); return { l: x.left, t: x.top, r: x.right, b: x.bottom, h: x.height, w: x.width }; };
             const c1 = document.querySelector(`[data-product-id="${id1}"]`); const c3 = document.querySelector(`[data-product-id="${id3}"]`);
-            const frame = r(c1.querySelector('.sf-card-image')); const top = [...c1.querySelectorAll('.sf-badges--top .sf-badge')].map(r);
-            const price = r(c3.querySelector('.sf-price')); const bottom = r(c3.querySelector('.sf-badges--bottom .sf-badge'));
+            const frame = r(c1.querySelector('.sf-card-image')); const top = [...c1.querySelectorAll('.sf-cbadges--top .sf-cbadge')].map(r);
+            const price = r(c3.querySelector('.sf-price')); const bottom = r(c3.querySelector('.sf-cbadges--bottom .sf-cbadge'));
             const card = r(c3);
             return { frame, top, price, bottom, card };
         }, [String(world.ids[0]), String(world.ids[2])]);
         report[`geometry-${width}`] = geo;
         check(`${width}: ON: the top badges are in the upper-left corner of the picture frame`, geo.top.length === 2 && geo.top.every((t) => t.l - geo.frame.l <= 16 && t.t - geo.frame.t <= 40 && t.r <= geo.frame.r && t.b <= geo.frame.b), JSON.stringify(geo.top) + ' in ' + JSON.stringify(geo.frame));
         check(`${width}: ON: the two top badges are stacked (the second is under the first)`, geo.top[1].t >= geo.top[0].b - 1, JSON.stringify(geo.top));
-        check(`${width}: ON: every badge is one line`, [...geo.top, geo.bottom].every((x) => x.h <= 26), JSON.stringify([...geo.top, geo.bottom].map((x) => x.h)));
+        check(`${width}: ON: every badge is one line`, [...geo.top, geo.bottom].every((x) => x.h <= 28), JSON.stringify([...geo.top, geo.bottom].map((x) => x.h)));
         check(`${width}: ON: the bottom badge is under the price and inside the card`, geo.bottom.t >= geo.price.b - 1 && geo.bottom.r <= geo.card.r + 1, JSON.stringify(geo.bottom) + ' / price ' + JSON.stringify(geo.price));
+        check(`${width}: ON: no badge text is cut (the whole word fits on its one line)`, await page.evaluate(() => [...document.querySelectorAll('.sf-cbadge')].every((el) => el.scrollWidth <= el.clientWidth)), 'a badge is truncated by its ellipsis');
         check(`${width}: ON: no horizontal scroll on the listing`, await noHScroll(page));
         const sOn = join(OUT, `p71-listing-on-${width}.png`); shots.push(sOn); await page.screenshot({ path: sOn, fullPage: true });
+
+        // P7-1.1: the size (11px letters, 0.25rem 0.625rem padding), the default pairs and NO pill for the default shape (the menu's `.sf-badge` rule used to make every badge a pill)
+        const look = await page.evaluate((id1) => {
+            const cs = (el) => { const c = getComputedStyle(el); return { size: c.fontSize, pad: c.paddingTop + ' ' + c.paddingLeft, radius: c.borderTopLeftRadius, bg: c.backgroundColor, fg: c.color, transform: c.textTransform }; };
+            const lis = [...document.querySelector(`[data-product-id="${id1}"]`).querySelectorAll('.sf-cbadges--top .sf-cbadge')].map(cs);
+            return lis;
+        }, String(world.ids[0]));
+        report[`look-${width}`] = look;
+        check(`${width}: ON: the badge is 11px, padded 4px 10px (4px 8px on a phone), upper case`, look.every((x) => x.size === '11px' && (x.pad === '4px 10px' || (x.pad === '4px 8px' && width <= 480)) && x.transform === 'uppercase'), JSON.stringify(look[0]));
+        check(`${width}: ON: «−20%» is the default red pair (white on #be0f2c) and «Нови» the default black pair (white on #111)`, look[0].bg === 'rgb(190, 15, 44)' && look[0].fg === 'rgb(255, 255, 255)' && look[1].bg === 'rgb(17, 17, 17)' && look[1].fg === 'rgb(255, 255, 255)', JSON.stringify(look));
+        check(`${width}: ON: the default shape is square, not a pill`, look.every((x) => x.radius === '0px'), JSON.stringify(look.map((x) => x.radius)));
+
+        // the three shapes and the opacity, on the real badges: «Промо» square at 80%, «Нови» rounded, «Последни бройки» a pill
+        php(BADGES(true, { 0: { shape: 'square', opacity: 80 }, 1: { shape: 'rounded' }, 2: { shape: 'pill' } }));
+        await page.goto(LIST, { waitUntil: 'networkidle' });
+        const shapes = await page.evaluate(([id1, id3]) => {
+            const g = (el) => { const c = getComputedStyle(el); return { radius: c.borderTopLeftRadius, bg: c.backgroundColor, fg: c.color }; };
+            const top = [...document.querySelector(`[data-product-id="${id1}"]`).querySelectorAll('.sf-cbadges--top .sf-cbadge')].map(g);
+            const bottom = g(document.querySelector(`[data-product-id="${id3}"] .sf-cbadges--bottom .sf-cbadge`));
+            return { top, bottom };
+        }, [String(world.ids[0]), String(world.ids[2])]);
+        report[`shapes-${width}`] = shapes;
+        check(`${width}: the three shapes really differ: square 0px, rounded 4px, pill ≥ 9999px`, shapes.top[0].radius === '0px' && shapes.top[1].radius === '4px' && parseFloat(shapes.bottom.radius) >= 9999 || shapes.bottom.radius.includes('3.35544e+07'), JSON.stringify(shapes));
+        check(`${width}: opacity 80 paints only the BACKGROUND (rgba alpha 0.8, the text stays opaque white)`, shapes.top[0].bg === 'rgba(190, 15, 44, 0.8)' && shapes.top[0].fg === 'rgb(255, 255, 255)', JSON.stringify(shapes.top[0]));
+        check(`${width}: «Последни бройки» is the orange pair (black on #f59e0b)`, shapes.bottom.bg === 'rgb(245, 158, 11)' && shapes.bottom.fg === 'rgb(0, 0, 0)', JSON.stringify(shapes.bottom));
+        const sShapes = join(OUT, `p71-shapes-${width}.png`); shots.push(sShapes); await page.screenshot({ path: sShapes, fullPage: false });
+
+        // all six pairs side by side, drawn with the very classes of the stylesheet (test-only DOM, the shop's pages never get it)
+        const six = await page.evaluate(() => {
+            const pairs = ['red', 'orange', 'blue', 'green', 'black', 'grey'];
+            const ul = document.createElement('ul'); ul.className = 'sf-cbadges'; ul.id = 'p71-six'; ul.style.cssText = 'flex-wrap:wrap;padding:12px;background:#ffffff;gap:8px';
+            for (const c of pairs) { const li = document.createElement('li'); li.className = `sf-cbadge sf-cbadge--${c} sf-cbadge--pill sf-cbadge--o100`; li.textContent = c; ul.appendChild(li); }
+            const grey = document.createElement('ul'); grey.className = 'sf-cbadges'; grey.id = 'p71-six-b'; grey.style.cssText = 'flex-wrap:wrap;padding:12px;background:#ffffff;gap:8px';
+            for (const c of pairs) { const li = document.createElement('li'); li.className = `sf-cbadge sf-cbadge--${c} sf-cbadge--square sf-cbadge--o80`; li.textContent = c + ' 80'; grey.appendChild(li); }
+            const wrap = document.createElement('div'); wrap.id = 'p71-wrap'; wrap.append(ul, grey);
+            document.querySelector('main').prepend(wrap);
+            const out = {}; for (const li of ul.querySelectorAll('li')) { const c = getComputedStyle(li); out[li.textContent] = [c.backgroundColor, c.color]; }
+            return out;
+        });
+        report[`six-${width}`] = six;
+        const want = { red: ['rgb(190, 15, 44)', 'rgb(255, 255, 255)'], orange: ['rgb(245, 158, 11)', 'rgb(0, 0, 0)'], blue: ['rgb(30, 64, 175)', 'rgb(255, 255, 255)'], green: ['rgb(21, 97, 47)', 'rgb(255, 255, 255)'], black: ['rgb(17, 17, 17)', 'rgb(255, 255, 255)'], grey: ['rgb(229, 229, 229)', 'rgb(17, 17, 17)'] };
+        check(`${width}: the six pairs paint exactly their background and text colours`, Object.keys(want).every((k) => JSON.stringify(six[k]) === JSON.stringify(want[k])), JSON.stringify(six));
+        const sSix = join(OUT, `p71-six-${width}.png`); shots.push(sSix); await (await page.locator('#p71-wrap')).screenshot({ path: sSix });
+        php(BADGES(true));
 
         // ---- ON: the home page, the grid and the carousel
         await page.goto(BASE + '/', { waitUntil: 'networkidle' });
         const grid = await page.evaluate(() => { const sec = [...document.querySelectorAll('.sf-product-grid, .sf-home-grid, [class*="product-grid"]')][0]; return sec ? sec.className : null; });
         report[`grid-class-${width}`] = grid;
-        const all = await page.evaluate((id) => [...document.querySelectorAll(`[data-product-id="${id}"]`)].map((card) => ({ car: !! card.closest('.sf-car-card, .sf-carousel, [class*="sf-car-"]'), top: [...card.querySelectorAll('.sf-badges--top li')].map((li) => li.textContent.trim()) })), String(world.ids[0]));
+        const all = await page.evaluate((id) => [...document.querySelectorAll(`[data-product-id="${id}"]`)].map((card) => ({ car: !! card.closest('.sf-car-card, .sf-carousel, [class*="sf-car-"]'), top: [...card.querySelectorAll('.sf-cbadges--top li')].map((li) => li.textContent.trim()) })), String(world.ids[0]));
         report[`home-${width}`] = all;
         check(`${width}: ON: product 1 is on the home page in the grid and in the carousel, with the same badges`, all.length >= 2 && all.some((c) => c.car) && all.some((c) => ! c.car) && all.every((c) => JSON.stringify(c.top) === JSON.stringify(['−20%', 'Нови'])), JSON.stringify(all));
         check(`${width}: ON: no horizontal scroll on the home page`, await noHScroll(page));

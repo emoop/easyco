@@ -9,7 +9,7 @@ use App\Rules\PlainText;
  * «Последни бройки»); every one is OFF until the merchant switches it on. The row carries a `kind`, so P7-2 can add the kinds `free_shipping` and `custom` without changing the stored shape.
  *
  * A VALIDATED working copy is `{badges: list<Row>}` with ONE row for each built-in kind in the fixed order (SALE, NEW, LOW_STOCK):
- *   Row = {kind, enabled: bool, text: string (≤ 24, plain; '' = the built-in's default word), position: top|bottom, colour: <closed palette>, shape: square|rounded|pill, priority: 1..99}
+ *   Row = {kind, enabled: bool, text: string (≤ 24, plain; '' = the built-in's default word), position: top|bottom, colour: one of the six contrast pairs, shape: square|rounded|pill, opacity: 100|90|80, priority: 1..99}
  *         + sale: `mode` word|percent · new: `days` 1..90 · low_stock: `max` 1..6.
  * The PUBLISHED (compiled) copy keeps ONLY the enabled rows, and nothing at all (the key is forgotten) when none is enabled, so a shop that never used the zone prints today's HTML. The storefront reads it with
  * `fromJson()`, which is strict: a copy that does not validate renders NOTHING (never an error). Pure: no query, no clock, no markup.
@@ -29,7 +29,26 @@ final class BadgeSet
 
     public const POSITIONS = ['top', 'bottom'];
 
-    public const COLOURS = ['neutral', 'red', 'orange', 'green', 'blue', 'purple', 'dark', 'light'];
+    /**
+     * P7-1.1: the SIX ready contrast pairs (background + text), a closed list. Every pair passes WCAG AA (4.5:1) for the small text at 100 / 90 / 80 % of the background over white (BadgeContrastTest computes it); the very
+     * same values are the custom properties of `.sf-cbadge--{key}` in storefront.css (the same test compares them: one source of truth).
+     */
+    public const PAIRS = [
+        'red' => ['bg' => '#be0f2c', 'fg' => '#ffffff'],
+        'orange' => ['bg' => '#f59e0b', 'fg' => '#000000'],
+        'blue' => ['bg' => '#1e40af', 'fg' => '#ffffff'],
+        'green' => ['bg' => '#15612f', 'fg' => '#ffffff'],
+        'black' => ['bg' => '#111111', 'fg' => '#ffffff'],
+        'grey' => ['bg' => '#e5e5e5', 'fg' => '#111111'],
+    ];
+
+    public const COLOURS = ['red', 'orange', 'blue', 'green', 'black', 'grey'];
+
+    /** A colour token stored by the first version of the zone, read as its closest pair (the admin offers only the six). */
+    public const LEGACY_COLOURS = ['dark' => 'black', 'light' => 'grey', 'neutral' => 'grey', 'purple' => 'blue'];
+
+    /** The opacity of the BACKGROUND in percent (the text stays fully opaque). */
+    public const OPACITIES = [100, 90, 80];
 
     public const SHAPES = ['square', 'rounded', 'pill'];
 
@@ -48,11 +67,11 @@ final class BadgeSet
     /** The row a kind starts from: OFF, at its default position / colour / shape / priority and parameter. @return Row */
     public static function defaultRow(string $kind): array
     {
-        $row = ['kind' => $kind, 'enabled' => false, 'text' => '', 'position' => $kind === self::LOW_STOCK ? 'bottom' : 'top', 'shape' => 'square'];
+        $row = ['kind' => $kind, 'enabled' => false, 'text' => '', 'position' => $kind === self::LOW_STOCK ? 'bottom' : 'top', 'shape' => 'square', 'opacity' => 100];
 
         return match ($kind) {
             self::SALE => $row + ['colour' => 'red', 'priority' => 10, 'mode' => 'word'],
-            self::NEW => $row + ['colour' => 'dark', 'priority' => 20, 'days' => 14],
+            self::NEW => $row + ['colour' => 'black', 'priority' => 20, 'days' => 14],
             default => $row + ['colour' => 'orange', 'priority' => 30, 'max' => 3],
         };
     }
@@ -174,7 +193,9 @@ final class BadgeSet
         $row['enabled'] = self::bool($raw['enabled'] ?? false, "{$kind}.enabled", $errors);
         $row['text'] = self::text($raw['text'] ?? '', "{$kind}.text", $errors);
         $row['position'] = self::choice($raw['position'] ?? null, self::POSITIONS, $row['position'], "{$kind}.position", $errors);
-        $row['colour'] = self::choice($raw['colour'] ?? null, self::COLOURS, $row['colour'], "{$kind}.colour", $errors);
+        $colour = $raw['colour'] ?? null;
+        $row['colour'] = self::choice(is_string($colour) ? (self::LEGACY_COLOURS[$colour] ?? $colour) : $colour, self::COLOURS, $row['colour'], "{$kind}.colour", $errors);
+        $row['opacity'] = self::opacity($raw['opacity'] ?? null, "{$kind}.opacity", $errors);
         $row['shape'] = self::choice($raw['shape'] ?? null, self::SHAPES, $row['shape'], "{$kind}.shape", $errors);
         $row['priority'] = self::whole($raw['priority'] ?? null, 1, 99, $row['priority'], "{$kind}.priority", $errors);
 
@@ -263,6 +284,24 @@ final class BadgeSet
             $errors[$path] = self::message('out_of_range');
 
             return $default;
+        }
+
+        return $number;
+    }
+
+    /** The background opacity from the closed list 100 / 90 / 80 (a number or a numeric string); a missing value is 100. @param  array<string, string>  $errors */
+    private static function opacity(mixed $value, string $path, array &$errors): int
+    {
+        if ($value === null) {
+            return 100;
+        }
+
+        $number = self::number($value);
+
+        if ($number === null || ! in_array($number, self::OPACITIES, true)) {
+            $errors[$path] = self::message('bad_choice');
+
+            return 100;
         }
 
         return $number;

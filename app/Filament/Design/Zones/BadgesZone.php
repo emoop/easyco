@@ -24,7 +24,7 @@ final class BadgesZone implements DesignZone
     public const KEY = 'badges';
 
     /** The fields every badge has, in the order of the panel. */
-    private const COMMON = ['enabled', 'text', 'position', 'colour', 'shape', 'priority'];
+    private const COMMON = ['enabled', 'text', 'position', 'colour', 'opacity', 'shape', 'priority'];
 
     public function key(): string
     {
@@ -163,6 +163,8 @@ final class BadgesZone implements DesignZone
                 Select::make("{$kind}_position")->label((string) __('design.badges.fields.position'))->native(false)->selectablePlaceholder(false)->options($options('position', BadgeSet::POSITIONS))
                     ->afterLabel(InfoHint::make((string) __('design.badges.hints.position'), "{$kind}_position")),
                 Select::make("{$kind}_colour")->label((string) __('design.badges.fields.colour'))->native(false)->selectablePlaceholder(false)->options($options('colour', BadgeSet::COLOURS)),
+                Select::make("{$kind}_opacity")->label((string) __('design.badges.fields.opacity'))->native(false)->selectablePlaceholder(false)->options(array_combine(array_map('strval', BadgeSet::OPACITIES), array_map(static fn (int $o): string => $o.'%', BadgeSet::OPACITIES)))
+                    ->afterLabel(InfoHint::make((string) __('design.badges.hints.opacity'), "{$kind}_opacity")),
                 Select::make("{$kind}_shape")->label((string) __('design.badges.fields.shape'))->native(false)->selectablePlaceholder(false)->options($options('shape', BadgeSet::SHAPES)),
                 TextInput::make("{$kind}_priority")->label((string) __('design.badges.fields.priority'))->numeric()->minValue(1)->maxValue(99)
                     ->afterLabel(InfoHint::make((string) __('design.badges.hints.priority'), "{$kind}_priority")),
@@ -188,7 +190,7 @@ final class BadgesZone implements DesignZone
 
             foreach ([...self::COMMON, ...$this->extra($kind)] as $field) {
                 $value = $row[$field] ?? null;
-                $state["{$kind}_{$field}"] = is_int($value) && $field === 'max' ? (string) $value : $value;
+                $state["{$kind}_{$field}"] = is_int($value) && in_array($field, ['max', 'opacity'], true) ? (string) $value : $value;
             }
         }
 

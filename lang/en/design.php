@@ -389,10 +389,10 @@ return [
         'on' => 'on',
         'off' => 'off',
         'kinds' => ['sale' => 'Sale', 'new' => 'New', 'low_stock' => 'Last items'],
-        'fields' => ['enabled' => 'Show', 'text' => 'Text', 'mode' => 'Show as', 'days' => 'Days', 'max' => 'Up to how many items', 'position' => 'Place', 'colour' => 'Colour', 'shape' => 'Shape', 'priority' => 'Order'],
+        'fields' => ['enabled' => 'Show', 'text' => 'Text', 'mode' => 'Show as', 'days' => 'Days', 'max' => 'Up to how many items', 'position' => 'Place', 'colour' => 'Colour', 'opacity' => 'Background opacity', 'shape' => 'Shape', 'priority' => 'Order'],
         'options' => [
             'position' => ['top' => 'Top, over the picture', 'bottom' => 'Bottom, under the price'],
-            'colour' => ['neutral' => 'Neutral', 'red' => 'Red', 'orange' => 'Orange', 'green' => 'Green', 'blue' => 'Blue', 'purple' => 'Purple', 'dark' => 'Dark', 'light' => 'Light'],
+            'colour' => ['red' => 'Red (white text)', 'orange' => 'Orange (black text)', 'blue' => 'Blue (white text)', 'green' => 'Green (white text)', 'black' => 'Black (white text)', 'grey' => 'Grey (black text)'],
             'shape' => ['square' => 'Square', 'rounded' => 'Rounded', 'pill' => 'Pill'],
             'mode' => ['word' => 'Word', 'percent' => 'Percent (−20%)'],
         ],
@@ -406,6 +406,7 @@ return [
             'low_stock_max' => 'The badge is shown at a stock from 1 up to this number.',
             'position' => 'At most two badges per place. When there are more, the first ones by «Order» are shown and the rest are not.',
             'priority' => 'From 1 to 99; the lower number comes first.',
+            'opacity' => 'How transparent the badge background is; the text always stays fully opaque. On a lighter picture choose 100%.',
         ],
         'errors' => [
             'bad_set' => 'The badge set is not valid.',

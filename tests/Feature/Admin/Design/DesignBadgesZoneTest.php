@@ -69,7 +69,7 @@ class DesignBadgesZoneTest extends TestCase
     {
         $screen = $this->screen();
 
-        $screen->set('props.sale_enabled', true)->set('props.sale_mode', 'percent')->set('props.sale_colour', 'green')
+        $screen->set('props.sale_enabled', true)->set('props.sale_mode', 'percent')->set('props.sale_colour', 'green')->set('props.sale_opacity', '80')
             ->set('props.low_stock_enabled', true)->set('props.low_stock_max', '5')->set('props.low_stock_text', 'Only a few')
             ->call('apply')->assertHasNoErrors();
 
@@ -84,6 +84,7 @@ class DesignBadgesZoneTest extends TestCase
         $this->assertSame(['sale', 'low_stock'], array_column($live['badges'], 'kind'), 'only the enabled rows are compiled');
         $this->assertSame('percent', $live['badges'][0]['mode']);
         $this->assertSame('green', $live['badges'][0]['colour']);
+        $this->assertSame(80, $live['badges'][0]['opacity']);
         $this->assertSame(5, $live['badges'][1]['max']);
         $this->assertSame('Only a few', $live['badges'][1]['text']);
         $this->assertNull(app(SiteSettingsRepository::class)->get(AppearanceSettings::BADGES_DRAFT_KEY), 'the draft is forgotten');
@@ -117,6 +118,8 @@ class DesignBadgesZoneTest extends TestCase
         foreach ([
             ['sale_text', str_repeat('x', 25), 'props.sale_text'],
             ['sale_colour', '#ff0000', 'props.sale_colour'],
+            ['sale_colour', 'purple-ish', 'props.sale_colour'],
+            ['sale_opacity', '70', 'props.sale_opacity'],
             ['sale_shape', 'star', 'props.sale_shape'],
             ['sale_position', 'middle', 'props.sale_position'],
             ['sale_priority', '100', 'props.sale_priority'],

@@ -262,7 +262,7 @@ class CardBadgesTest extends TestCase
         $sold = collect($this->listed())->firstWhere('slug', 'product-3');
         $this->assertFalse($sold->inStock);
         $this->assertStringContainsString('Изчерпан', $this->renderCard($sold), 'the sold-out label stays');
-        $this->assertStringNotContainsString('sf-badges', $this->renderCard($sold));
+        $this->assertStringNotContainsString('sf-cbadges', $this->renderCard($sold));
     }
 
     /** ★ N comes from the closed list 1..6 */
@@ -326,18 +326,18 @@ class CardBadgesTest extends TestCase
         $card = new ProductCard('9', 's', '/product/s', 'S', null, $image, null, [$top, $bottom], true);
         $html = $this->renderCard($card);
 
-        $this->assertStringContainsString('<ul class="sf-badges sf-badges--top"><li class="sf-badge sf-badge--red sf-badge--pill">Промо</li></ul></div>', $html, 'inside .sf-card-image, right before its closing tag');
+        $this->assertStringContainsString('<ul class="sf-cbadges sf-cbadges--top"><li class="sf-cbadge sf-cbadge--red sf-cbadge--pill sf-cbadge--o100">Промо</li></ul></div>', $html, 'inside .sf-card-image, right before its closing tag');
         $this->assertStringContainsString('<div class="sf-card-footer">', $html, 'the footer prints for the bottom badge');
-        $this->assertStringContainsString('<ul class="sf-badges sf-badges--bottom"><li class="sf-badge sf-badge--orange sf-badge--square">Последни бройки</li></ul>', $html);
-        $this->assertLessThan(strpos($html, 'sf-badges--bottom'), strpos($html, '</a>'), 'the bottom row is under the link, in the footer');
+        $this->assertStringContainsString('<ul class="sf-cbadges sf-cbadges--bottom"><li class="sf-cbadge sf-cbadge--orange sf-cbadge--square sf-cbadge--o100">Последни бройки</li></ul>', $html);
+        $this->assertLessThan(strpos($html, 'sf-cbadges--bottom'), strpos($html, '</a>'), 'the bottom row is under the link, in the footer');
 
         // a top badge on a card with no picture: the placeholder is no longer aria-hidden (it holds a badge)
         $noImage = $this->renderCard(new ProductCard('9', 's', '/product/s', 'S', null, null, null, [$top], false));
-        $this->assertStringContainsString('<div class="sf-card-image sf-image-placeholder"><ul class="sf-badges sf-badges--top">', $noImage);
+        $this->assertStringContainsString('<div class="sf-card-image sf-image-placeholder"><ul class="sf-cbadges sf-cbadges--top">', $noImage);
 
         // an empty position prints nothing: only the top badge, so no bottom row and no footer for a priced-less in-stock card
         $onlyTop = $this->renderCard(new ProductCard('9', 's', '/product/s', 'S', null, $image, null, [$top], true));
-        $this->assertStringNotContainsString('sf-badges--bottom', $onlyTop);
+        $this->assertStringNotContainsString('sf-cbadges--bottom', $onlyTop);
         $this->assertStringNotContainsString('sf-card-footer', $onlyTop);
     }
 
@@ -364,6 +364,11 @@ class CardBadgesTest extends TestCase
             ['text', "line\nbreak", 'sale.text'],
             ['text', ['x'], 'sale.text'],
             ['colour', 'pink', 'sale.colour'],
+            ['colour', 'white', 'sale.colour'],
+            ['opacity', 70, 'sale.opacity'],
+            ['opacity', '95', 'sale.opacity'],
+            ['opacity', 0, 'sale.opacity'],
+            ['opacity', 'x', 'sale.opacity'],
             ['colour', '#ff0000', 'sale.colour'],
             ['shape', 'star', 'sale.shape'],
             ['position', 'middle', 'sale.position'],
@@ -391,6 +396,41 @@ class CardBadgesTest extends TestCase
         $this->assertSame([], BadgeSet::validate(['badges' => [['kind' => 'sale', 'text' => str_repeat('я', 24), 'priority' => '99']]])[1], '24 Cyrillic letters and a numeric string are fine');
     }
 
+    /** ★ the colours are the six contrast pairs; an old token of the first version is read as its closest pair, so a working copy saved before is not lost */
+    public function test_the_six_pairs_and_the_legacy_tokens(): void
+    {
+        $this->assertSame(['red', 'orange', 'blue', 'green', 'black', 'grey'], BadgeSet::COLOURS);
+        $this->assertSame(['red', 'black', 'orange'], array_column(BadgeSet::defaults()['badges'], 'colour'), 'the defaults');
+
+        foreach (['dark' => 'black', 'light' => 'grey', 'neutral' => 'grey', 'purple' => 'blue'] as $old => $new) {
+            [$clean, $errors] = BadgeSet::validate(['badges' => [['kind' => 'sale', 'colour' => $old]]]);
+
+            $this->assertSame([], $errors, $old);
+            $this->assertSame($new, $clean['badges'][0]['colour'], $old);
+        }
+
+        $this->assertSame(['red', 'orange', 'blue', 'green', 'black', 'grey'], array_keys(BadgeSet::PAIRS));
+
+        foreach ([100, 90, 80, '90', 90.0] as $opacity) {
+            $this->assertSame([], BadgeSet::validate(['badges' => [['kind' => 'sale', 'opacity' => $opacity]]])[1], json_encode($opacity));
+        }
+
+        $this->assertSame(100, BadgeSet::validate(['badges' => [['kind' => 'sale']]])[0]['badges'][0]['opacity'], 'a row without an opacity is 100');
+    }
+
+    /** the opacity reaches the markup as a closed class word, and only the first two steps print a class that changes anything */
+    public function test_the_opacity_is_a_class_of_the_card(): void
+    {
+        $this->makeProduct(1, ['price' => '100.00', 'sale' => '80.00', 'stock' => 2]);
+        $this->publish([BadgeSet::SALE => ['enabled' => true, 'opacity' => 80, 'shape' => 'rounded', 'colour' => 'blue']]);
+
+        $html = $this->renderCard($this->listed()[0]);
+
+        $this->assertStringContainsString('class="sf-cbadge sf-cbadge--blue sf-cbadge--rounded sf-cbadge--o80"', $html);
+        $this->assertStringNotContainsString('style=', $html);
+        $this->assertDoesNotMatchRegularExpression('/class="[^"]*\bsf-badge\b/', $html, 'the menu label\'s class is never used on a card');
+    }
+
     /** ★ a stored set that does not validate renders NOTHING (no error): the compiled key is read strictly */
     public function test_a_tampered_stored_set_renders_nothing(): void
     {
@@ -399,6 +439,7 @@ class CardBadgesTest extends TestCase
 
         foreach ([
             '{"badges":[{"kind":"sale","enabled":true,"text":"x","position":"top","colour":"#ff0000","shape":"pill","priority":1,"mode":"word"}]}',
+            '{"badges":[{"kind":"sale","enabled":true,"text":"x","position":"top","colour":"red","opacity":55,"shape":"pill","priority":1,"mode":"word"}]}',
             '{"badges":[{"kind":"sale","enabled":true,"text":"<script>","position":"top","colour":"red","shape":"pill","priority":1,"mode":"word"},{"kind":"evil","enabled":true}]}',
             'not json',
             '[]',

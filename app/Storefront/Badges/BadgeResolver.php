@@ -33,7 +33,7 @@ final class BadgeResolver
                 continue;
             }
 
-            $found[] = [$order, new Badge($kind, self::label($kind, $row, $price), (string) $row['position'], (string) $row['colour'], (int) $row['priority'], (string) $row['shape'])];
+            $found[] = [$order, new Badge($kind, self::label($kind, $row, $price), (string) $row['position'], (string) $row['colour'], (int) $row['priority'], (string) $row['shape'], (int) $row['opacity'])];
         }
 
         usort($found, static fn (array $a, array $b): int => [$a[1]->priority, $a[0]] <=> [$b[1]->priority, $b[0]]);

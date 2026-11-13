@@ -3,7 +3,7 @@
 namespace App\Storefront\ReadModels;
 
 /**
- * A card badge. P7-1 (badges-research.md): `type` is the kind (`sale`, `new`, `low_stock`), `placement` is `top` | `bottom`, `style` a colour of the closed palette, `shape` square | rounded | pill; `label` is RAW text
+ * A card badge. P7-1 (badges-research.md): `type` is the kind (`sale`, `new`, `low_stock`), `placement` is `top` | `bottom`, `style` a contrast pair of the closed list (red, orange, blue, green, black, grey), `shape` square | rounded | pill, `opacity` 100 | 90 | 80 (the background only); `label` is RAW text
  * (escaped by the view). Every card carries `badges: []` until the merchant switches a badge on in «Дизайн» → «Значки».
  */
 final readonly class Badge
@@ -15,10 +15,11 @@ final readonly class Badge
         public string $style,
         public int $priority,
         public string $shape = 'square',
+        public int $opacity = 100,
     ) {
     }
 
-    /** @return array{type: string, label: string, placement: string, style: string, priority: int, shape: string} */
+    /** @return array{type: string, label: string, placement: string, style: string, priority: int, shape: string, opacity: int} */
     public function toArray(): array
     {
         return [
@@ -28,6 +29,7 @@ final readonly class Badge
             'style' => $this->style,
             'priority' => $this->priority,
             'shape' => $this->shape,
+            'opacity' => $this->opacity,
         ];
     }
 }
