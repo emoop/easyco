@@ -8,6 +8,8 @@ use App\Storefront\Appearance\StorefrontAppearance;
 use App\Storefront\Badges\BadgeResolver;
 use App\Storefront\Badges\BadgeSet;
 use App\Storefront\Badges\CustomBadgeMatcher;
+use App\Storefront\Conditions\ProductConditions;
+use App\Storefront\Conditions\ProductContext;
 use App\Storefront\Exceptions\ListingOptionNotAvailable;
 use App\Storefront\Filters\FilterConstraint;
 use App\Storefront\ReadModels\Breadcrumb;
@@ -92,7 +94,7 @@ final class CatalogReader
 
         $product = $this->visibility->products(ProductModel::query())
             ->where('catalog_products.slug', $slug)
-            ->select(['id', 'type', 'name', 'slug', 'short_description', 'description', 'brand_id', 'base_sku'])
+            ->select(['id', 'type', 'name', 'slug', 'short_description', 'description', 'brand_id', 'base_sku', 'season_id', 'created_at'])
             ->with('brand:id,name,slug')
             ->first();
 
@@ -169,6 +171,11 @@ final class CatalogReader
         }
 
         $gallery = $this->gallery($productId, (string) $product->name);
+        $price = $this->productPrice($variationIds, $quotes, $stock);
+
+        // P7-3: the conditions context of the page is built HERE (from what the page already has), so the badges' custom conditions and the HTML blocks / sections share ONE instance; nothing is read until a predicate asks
+        $context = new ProductContext($productId, array_map('intval', $variationIds), $price, $product->brand_id === null ? null : (int) $product->brand_id);
+        $context->knowSeason($product->season_id === null ? null : (int) $product->season_id);
 
         return new ProductPage(
             id: (string) $productId,
@@ -181,15 +188,51 @@ final class CatalogReader
             brand: $this->brandOf($product),
             breadcrumbs: $this->productBreadcrumbs($productId, (string) $product->name, (string) $product->slug),
             images: $gallery['images'],
-            price: $this->productPrice($variationIds, $quotes, $stock),
+            price: $price,
             inStock: array_filter($stock, fn (int $quantity): bool => $quantity > 0) !== [],
             options: $options,
             variations: $views,
-            badges: [],
+            badges: $this->pageBadges($product, $price, $stock, $context),
             gallery: $gallery['items'],
             sku: $product->base_sku === null || trim((string) $product->base_sku) === '' ? null : (string) $product->base_sku,
             optionDisplay: $optionDisplay,
             brandId: $product->brand_id === null ? null : (int) $product->brand_id,
+            context: $context,
+        );
+    }
+
+    /**
+     * P7-3: the badges of the PRODUCT page: the same set, the same resolver and the same facts as the card's (the price block the page prints, the total stock of the shown variations, the store-local creation day, the cached
+     * free-shipping threshold against the page's LOWEST price) and, for a custom badge, the page's own conditions context. Decided for the product, never for a chosen variation. [] while nothing is switched on: no
+     * time zone, no cache and no condition is read.
+     *
+     * @param  array<string, int>  $stock  quantity by shown variation id
+     * @return list<\App\Storefront\ReadModels\Badge>
+     */
+    private function pageBadges(ProductModel $product, ?PriceBlock $price, array $stock, ProductContext $context): array
+    {
+        $badgeSet = app(StorefrontAppearance::class)->badgeSet();
+
+        if ($badgeSet === []) {
+            return [];
+        }
+
+        $store = app(StoreTimezone::class);
+        $created = $product->getAttribute('created_at');
+        $matches = [];
+
+        foreach ($badgeSet[BadgeSet::CUSTOM] ?? [] as $row) {
+            ProductConditions::matches($context, (array) $row['conditions']) && $matches[(string) $row['id']] = true;
+        }
+
+        return BadgeResolver::resolve(
+            $badgeSet,
+            $price,
+            array_sum($stock),
+            $created instanceof \DateTimeInterface ? $store->dayOf(\DateTimeImmutable::createFromInterface($created)) : null,
+            isset($badgeSet[BadgeSet::NEW]) ? $store->today() : '',
+            isset($badgeSet[BadgeSet::FREE_SHIPPING]) ? app(\App\Services\FreeShippingThreshold::class)->current() : null,
+            $matches,
         );
     }
 

@@ -385,7 +385,7 @@ return [
     ],
     'badges' => [
         'heading' => 'Badges',
-        'schema' => 'The small labels on a product card: «Sale», «New» and «Last items». All are off until you switch them on; a shop with no badge on shows its cards exactly as before. A card shows at most two badges at the top (over the picture) and two at the bottom (under the price).',
+        'schema' => 'The small labels on a product card: «Sale», «New» and «Last items». All are off until you switch them on; a shop with no badge on shows its cards exactly as before. A card shows at most two badges at the top (over the picture) and two at the bottom (under the price). The same badges, by the same rules, also appear on the product page: over the main picture and under the price.',
         'on' => 'on',
         'off' => 'off',
         'kinds' => ['sale' => 'Sale', 'new' => 'New', 'low_stock' => 'Last items', 'free_shipping' => 'Free shipping'],

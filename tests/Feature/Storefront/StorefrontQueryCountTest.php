@@ -161,6 +161,10 @@ class StorefrontQueryCountTest extends TestCase
 
         $this->makeImage(300, 101, 0);
 
+        // CatalogReader::product() now reads the appearance to see whether a badge is on; a real request has it warm already (StorefrontPageQueryCountTest proves the real counts), so this artificial
+        // reader-only test warms it, as the two listing tests already do since P7-1.1.
+        app(StorefrontAppearance::class)->data();
+
         $smallPage = null;
         $largePage = null;
         $countSmall = $this->queries(function () use (&$smallPage): void {

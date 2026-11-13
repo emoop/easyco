@@ -9,7 +9,7 @@
 <section class="sf-gallery {{ $settings->widthClass() }}" aria-label="{{ __('storefront.gallery') }}" data-sf-gallery
          @foreach ($settings->dataAttributes() as $name => $value) {{ $name }}="{{ $value }}" @endforeach>
     @if ($total === 0)
-        <div class="sf-gal-placeholder sf-image-placeholder" aria-hidden="true" role="presentation"></div>
+        <div class="sf-gal-placeholder sf-image-placeholder"@if ($product->badgesAt('top') === [] && $product->badgesAt('image_bottom') === []) aria-hidden="true" role="presentation"@endif>@if ($product->badgesAt('top') !== [])@include('storefront.partials.badges', ['badges' => $product->badgesAt('top'), 'position' => 'top', 'pdp' => true])@endif@if ($product->badgesAt('image_bottom') !== [])@include('storefront.partials.badges', ['badges' => $product->badgesAt('image_bottom'), 'position' => 'image_bottom', 'pdp' => true])@endif</div>
     @else
         <div class="sf-gal-layout">
             <div class="sf-gal-stage">
@@ -64,7 +64,8 @@
                         @endif
                     @endforeach
                 </div>
-                <button type="button" class="sf-gal-next" aria-label="{{ __('storefront.gallery_next') }}"><span aria-hidden="true">›</span></button>
+                <button type="button" class="sf-gal-next" aria-label="{{ __('storefront.gallery_next') }}"><span aria-hidden="true">›</span></button>@if ($product->badgesAt('top') !== [] || $product->badgesAt('image_bottom') !== [])<div class="sf-gal-badges">@if ($product->badgesAt('top') !== [])@include('storefront.partials.badges', ['badges' => $product->badgesAt('top'), 'position' => 'top', 'pdp' => true])@endif@if ($product->badgesAt('image_bottom') !== [])@include('storefront.partials.badges', ['badges' => $product->badgesAt('image_bottom'), 'position' => 'image_bottom', 'pdp' => true])@endif</div>@endif
+
             </div>
             <div class="sf-gal-thumbs">
                 @foreach ($items as $item)

@@ -24,7 +24,7 @@ final readonly class ProductPage
      * @param list<ImageSet>                                      $images
      * @param list<array{name: string, values: list<string>}>     $options
      * @param list<VariationView>                                 $variations
-     * @param list<Badge>                                         $badges always empty in S1
+     * @param list<Badge>                                         $badges P7-3: the badges of the PRODUCT (not of a chosen variation), [] while no badge is switched on
      * @param list<array{id?: int, name: string, displayType: string, colours: array<string, string|null>}> $optionDisplay
      * @param list<GalleryItem>                                   $gallery GL-1: the usable images AND videos in media order, for the gallery markup only (NOT in toArray(): the JSON contract is unchanged)
      */
@@ -49,7 +49,15 @@ final readonly class ProductPage
         public array $optionDisplay = [],
         /** P4c: the brand's id (the product row the reader already loaded): for the product conditions only, NOT in toArray() (the JSON contract is unchanged) */
         public ?int $brandId = null,
+        /** P7-3: the product's conditions context the reader already built (the badges' custom conditions used it): the page's HTML blocks and sections reuse the SAME instance, so nothing is read twice. NOT in toArray(). */
+        public ?\App\Storefront\Conditions\ProductContext $context = null,
     ) {
+    }
+
+    /** P7-3: the badges of one position (`top` | `image_bottom` | `bottom`), in print order: the same rule as the card's. @return list<Badge> */
+    public function badgesAt(string $placement): array
+    {
+        return array_values(array_filter($this->badges, static fn (Badge $badge): bool => $badge->placement === $placement));
     }
 
     /** @return array<string, mixed> */

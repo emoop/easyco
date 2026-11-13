@@ -62,7 +62,13 @@ final class ProductContext
 
     public static function fromPage(ProductPage $page): self
     {
-        return new self((int) $page->id, array_map(static fn ($variation): int => (int) $variation->id, $page->variations), $page->price, $page->brandId);
+        return $page->context ?? new self((int) $page->id, array_map(static fn ($variation): int => (int) $variation->id, $page->variations), $page->price, $page->brandId);
+    }
+
+    /** P7-3: the product's season, when the caller already read it with the product row (the lazy read is then skipped). */
+    public function knowSeason(?int $seasonId): void
+    {
+        $this->seasonId = $seasonId;
     }
 
     /** Forgets what is shared between contexts (tests, long-lived workers). */

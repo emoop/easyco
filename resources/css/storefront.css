@@ -542,6 +542,33 @@
         overflow: hidden;
     }
 
+    /* P7-3: the product page. TOP and IMAGE-BOTTOM sit over the MAIN picture: one overlay in the gallery stage (the frame of the visible picture in the thumbnail and phone modes), and in the desktop grid
+       the first cell (its width and ratio); the badges inside are the card's own rules (same insets, phone insets, no clicks caught). BOTTOM is a row after the price in the info column, wrapping like on a card. */
+    .sf-gal-badges {
+        @apply pointer-events-none absolute inset-0 z-10;
+    }
+
+    .sf-gal-placeholder {
+        @apply relative;
+    }
+
+    .sf-cbadges--pdp.sf-cbadges--bottom {
+        @apply mt-3;
+        flex-wrap: wrap;
+    }
+
+    @media (min-width: 64rem) {
+        .sf-gallery[data-gal-desktop='grid'] .sf-gal-badges {
+            inset: 0 auto auto 0;
+            width: calc((100% - var(--sf-gal-gap, 0.5rem)) / 2);
+            aspect-ratio: var(--sf-gal-ratio, 3 / 4);
+        }
+
+        .sf-gallery[data-gal-desktop='grid'] .sf-gal-stage:has(.sf-gal-item:only-child) .sf-gal-badges {
+            width: 100%;
+        }
+    }
+
     .sf-cbadges > li {
         min-width: 0;
         max-width: 100%;
