@@ -575,6 +575,7 @@
         .sf-cbadge {
             padding-inline: 0.5rem;
             letter-spacing: 0.04em;
+            
         }
 
         .sf-card-footer > .sf-cbadges--bottom {
@@ -592,6 +593,10 @@
             left: 0.1rem;
             max-width: calc(100% - 0.2rem);
         }
+
+        .sf-cbadges--image-bottom .sf-cbadge {
+            font-size: 0.5625rem; /* 9px */
+         }
     }
 
     .sf-cbadge--o90 { --sf-cbadge-a: 0.9; }
