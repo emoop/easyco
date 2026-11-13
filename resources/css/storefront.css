@@ -2396,6 +2396,37 @@
         font-size: 0.9375rem;
     }
 
+    /* ACC-1: the open and close of a section grow smoothly (0.25s ease-out, the chevron turns with the same timing). CSS only: the markup and the native <details> toggle, keyboard and aria are unchanged.
+       Only where `interpolate-size` and `::details-content` exist (a browser without them keeps the instant open and close), and `prefers-reduced-motion: reduce` keeps the instant change. */
+    @supports (interpolate-size: allow-keywords) and selector(details::details-content) {
+        .sf-psec {
+            interpolate-size: allow-keywords;
+        }
+
+        .sf-psec::details-content {
+            block-size: 0;
+            overflow: hidden;
+            transition:
+                block-size 250ms ease-out,
+                content-visibility 250ms allow-discrete;
+        }
+
+        .sf-psec[open]::details-content {
+            block-size: auto;
+        }
+
+        .sf-psec-title::after {
+            transition: transform 250ms ease-out;
+        }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .sf-psec::details-content,
+        .sf-psec-title::after {
+            transition: none;
+        }
+    }
+
     /* P4c: «Мета информация» (two lines: «Сезон:» / «Етикети:» with plain links) and the blocks of a «HTML блокове» section, one under another */
     .sf-psec-meta-label {
         font-weight: 600;
