@@ -73,6 +73,8 @@ class SaleLineModel extends Model
         'returned_by',
         'returned_by_name',
         'return_reason',
+        // MEAS-1: the variation's weight (grams) at the sale; NULL = unknown.
+        'unit_weight_grams',
     ];
 
     protected $casts = [

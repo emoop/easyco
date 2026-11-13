@@ -105,6 +105,8 @@ final class SaleLine
         private ?string $returnedBy = null,
         private ?string $returnedByName = null,
         private ?string $returnReason = null,
+        // MEAS-1: the variation's weight at the moment of the sale (grams, NULL = unknown). Append-only fact, set on a fresh SALE line.
+        private ?int $unitWeightGrams = null,
     ) {
         if ($clientId === '') {
             throw new InvalidArgumentException('SaleLine clientId must not be empty.');
@@ -396,6 +398,7 @@ final class SaleLine
         ?string $returnedBy = null,
         ?string $returnedByName = null,
         ?string $returnReason = null,
+        ?int $unitWeightGrams = null,
     ): self {
         return new self(
             id: $id,
@@ -427,6 +430,7 @@ final class SaleLine
             returnedBy: $returnedBy,
             returnedByName: $returnedByName,
             returnReason: $returnReason,
+            unitWeightGrams: $unitWeightGrams,
         );
     }
 
@@ -477,6 +481,7 @@ final class SaleLine
         ?Money $unitCost = null,
         ?string $originatingReservationLineId = null,
         ?string $originatingSaleLineId = null,
+        ?int $unitWeightGrams = null,
     ): self {
         self::assertProductNameAndSkuPresentForFreshSale($productName, $sku);
         self::assertSoldAttributesShape($soldAttributes);
@@ -516,6 +521,7 @@ final class SaleLine
             netPaidAmount: $netPaidAmount,
             soldAttributes: $soldAttributes,
             unitCost: $unitCost,
+            unitWeightGrams: $unitWeightGrams,
         );
     }
 
@@ -1285,6 +1291,12 @@ final class SaleLine
     public function unitCost(): ?Money
     {
         return $this->unitCost;
+    }
+
+    /** MEAS-1 — the variation's weight (grams) when this line was sold; NULL = unknown (never 0). Never shown on the storefront. */
+    public function unitWeightGrams(): ?int
+    {
+        return $this->unitWeightGrams;
     }
 
     /** §3.4 revised — set only on a REFUND line; NULL for every other type. */

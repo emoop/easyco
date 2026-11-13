@@ -26,6 +26,7 @@ return [
         'discount' => 'Discount',
         'shipping' => 'Shipping',
         'shipping_method' => 'Shipping method',
+        'parcel_weight' => 'Parcel weight',
         'delivery_address' => 'Address',
         'tracking_number' => 'Tracking number',
         'status' => 'Status',
@@ -681,6 +682,7 @@ return [
     'no' => 'No',
     'no_promotion' => 'No promotion applied.',
     'no_payment' => 'No payment record.',
+    'parcel_weight_value' => ':value kg',
     // §8.4 stage 7c-1 — the two states of the Payment section's settled
     // badge. The positive one is §4.1's own "money is held"; the negative one
     // states the money as NOT RECORDED, never "unpaid": §4.5 forbids a

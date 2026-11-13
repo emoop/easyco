@@ -6,6 +6,7 @@ use App\Filament\Resources\ProductResource;
 use App\Media\SyncsProductPhotos;
 use App\Services\ActivityLogger;
 use App\Services\ProductPricingAndStock;
+use App\Services\VariationWeightWriter;
 use EasyCo\Catalog\Contracts\ProductCategoryRepository;
 use EasyCo\Catalog\Contracts\ProductRepository;
 use EasyCo\Catalog\Contracts\ProductTagRepository;
@@ -114,6 +115,11 @@ class CreateProduct extends CreateRecord
         }
 
         $universal->setPurchasable((bool) ($data['is_purchasable'] ?? true));
+
+        // MEAS-1: the weight in whole grams, empty = unknown (no log row on create: logCreated() below covers the new product)
+        if (array_key_exists('weight_grams', $data)) {
+            $universal->setDimensions(VariationWeightWriter::normalize($data['weight_grams']), null, null, null);
+        }
 
         // Must run BEFORE save() below — setDescriptiveAttribute() is
         // purely in-memory (see this class's own "single save()" docblock).

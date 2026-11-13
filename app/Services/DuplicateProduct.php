@@ -88,6 +88,16 @@ final class DuplicateProduct
             $duplicate->assignProductGroup($source->productGroupId());
             $duplicate->changeDescription($source->description());
 
+            // MEAS-1: a SIMPLE duplicate is usually a sibling of the same garment, so the single variation's WEIGHT is copied (a physical fact,
+            // unlike the barcode); the dimensions are not. A VARIABLE duplicate has no variations (unchanged behaviour).
+            if ($source->type() === ProductType::SIMPLE) {
+                $sourceWeight = $this->products->findByIdWithVariations($sourceProductId)?->universalVariation()?->weightGrams();
+
+                if ($sourceWeight !== null) {
+                    $duplicate->universalVariation()?->setDimensions($sourceWeight, null, null, null);
+                }
+            }
+
             foreach ($source->descriptiveAttributes() as $definitionId => $value) {
                 $definition = $this->attributeDefinitions->findById((string) $definitionId);
 

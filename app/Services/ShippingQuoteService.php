@@ -251,19 +251,16 @@ final class ShippingQuoteService
         // 2. Shipping classes and weights of the priced lines: ONE query.
         $variations = $this->variations->findByIds(array_map(static fn ($line): string => $line->variationId(), $pricedLines));
         $rateLines = [];
-        $weight = 0;
-        $weightKnown = true;
+        $weightLines = [];
 
         foreach ($pricedLines as $line) {
             $variation = $variations[$line->variationId()] ?? null;
             $rateLines[] = new RateLine($variation?->shippingClass(), $line->quantity());
-
-            if ($variation?->weightGrams() === null) {
-                $weightKnown = false;
-            } else {
-                $weight += $variation->weightGrams() * $line->quantity();
-            }
+            $weightLines[] = [$variation?->weightGrams(), $line->quantity()];
         }
+
+        // The ONE all-or-nothing rule (MEAS-1: shared with order placement): one unknown weight makes the whole weight unknown.
+        $weight = ParcelWeight::sum($weightLines);
 
         return new QuoteContext(
             $cart,
@@ -271,7 +268,7 @@ final class ShippingQuoteService
             $currency,
             $pricing->goodsAfterDiscount()->minorValue(),
             $rateLines,
-            $weightKnown ? $weight : null,
+            $weight,
             $this->normalizers->forCurrentLocale(),
             $this->zones->allOrdered(),
         );

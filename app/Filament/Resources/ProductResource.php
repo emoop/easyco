@@ -62,6 +62,7 @@ use Filament\Actions\ActionGroup;
 use Filament\Actions\BulkAction;
 use Filament\Actions\BulkActionGroup;
 use App\Filament\Design\InfoHint;
+use App\Services\VariationWeightWriter;
 use App\Services\MassEdit\MassEditRefused;
 use App\Services\MassEdit\MassEditResult;
 use App\Services\MassEdit\MassEditSelection;
@@ -1034,9 +1035,29 @@ class ProductResource extends Resource
             // The optional shipping class (shipping stage 5b): stored on the single universal variation and written
             // by ShippingClassAssigner after the product is saved — see shippingClassSelect().
             static::shippingClassSelect('create'),
+            static::weightGramsInput(),
             Text::make(__('shipping.classes.assignment.required_fact'))->color('gray')->size('sm'),
             HelpLink::group(['class_assignment', 'class_required'], 'shipping'),
         ];
+    }
+
+    /**
+     * MEAS-1: the variation weight in WHOLE GRAMS (empty = unknown, never 0), the ONE field of the SIMPLE product form and of every variation row of
+     * a VARIABLE product. Never shown on the storefront - it is for the courier waybills. The write is VariationWeightWriter's (it goes through
+     * Variation::setDimensions()); a disabled field (no PRODUCT_MANAGE) is not submitted, so a missing key is "no change".
+     */
+    public static function weightGramsInput(string $name = 'weight_grams'): TextInput
+    {
+        return TextInput::make($name)
+            ->label(__('products.fields.weight_grams'))
+            ->afterLabel(InfoHint::make((string) __('products.fields.weight_grams_help'), $name))
+            ->numeric()
+            ->integer()
+            ->minValue(VariationWeightWriter::MIN)
+            ->maxValue(VariationWeightWriter::MAX)
+            ->step(1)
+            ->inputMode('numeric')
+            ->disabled(fn (): bool => ! static::staffCanForAction(Permission::PRODUCT_MANAGE));
     }
 
     /**

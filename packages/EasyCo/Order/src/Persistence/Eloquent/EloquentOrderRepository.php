@@ -62,6 +62,7 @@ final class EloquentOrderRepository implements OrderRepository
         $model->call_before_shipping = $order->callBeforeShipping();
         $model->marketing_consent = $order->marketingConsent();
         $model->marketing_consent_text = $order->marketingConsentText();
+        $model->parcel_weight_grams = $order->parcelWeightGrams();
         $model->edit_revision = $order->editRevision();
 
         // THE IDENTITY KEYS (cod-protection-design.md section 2): derived from the order's own contact and delivery facts by the ONE
@@ -161,6 +162,7 @@ final class EloquentOrderRepository implements OrderRepository
             callBeforeShipping: $model->call_before_shipping === null ? null : (bool) $model->call_before_shipping,
             marketingConsent: $model->marketing_consent === null ? null : (bool) $model->marketing_consent,
             marketingConsentText: $model->marketing_consent_text,
+            parcelWeightGrams: $model->parcel_weight_grams === null ? null : (int) $model->parcel_weight_grams,
         );
     }
 }

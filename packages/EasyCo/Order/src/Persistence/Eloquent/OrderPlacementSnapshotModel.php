@@ -63,6 +63,7 @@ class OrderPlacementSnapshotModel extends Model
         'call_before_shipping',
         'marketing_consent',
         'marketing_consent_text',
+        'parcel_weight_grams',
         'created_at',
     ];
 

@@ -2,7 +2,9 @@
 
 namespace App\Filament\Resources\ProductResource\Pages;
 
+use App\Filament\Design\InfoHint;
 use App\Filament\Resources\ProductResource;
+use App\Services\VariationWeightWriter;
 use App\Filament\Forms\Components\MediaPicker;
 use App\Media\SyncsProductPhotos;
 use App\Media\VariationPhotoSync;
@@ -1262,7 +1264,25 @@ class EditVariableProduct extends EditRecord
                     foreach (array_keys($get('existing_variations') ?? []) as $key) {
                         $set("existing_variations.{$key}.stock_quantity", $state);
                     }
-                })
+                }),
+            // MEAS-1: a convenience, never a stored product default - fills ONLY the rows that have no weight yet (what is typed in a row stays).
+            ProductResource::weightGramsInput('bulk_weight_grams')
+                ->label(__('products.wizard.variations.bulk_weight_grams'))
+                ->afterLabel(InfoHint::make((string) __('products.wizard.variations.bulk_weight_grams_help'), 'bulk_weight_grams'))
+                ->dehydrated(false)
+                ->visible(fn (Get $get): bool => (bool) $get('edit_all'))
+                ->live(onBlur: true)
+                ->afterStateUpdated(function ($state, Get $get, Set $set): void {
+                    if (! filled($state)) {
+                        return;
+                    }
+
+                    foreach (($get('existing_variations') ?? []) as $key => $row) {
+                        if (! filled($row['weight_grams'] ?? null)) {
+                            $set("existing_variations.{$key}.weight_grams", $state);
+                        }
+                    }
+                }),
             ]),
             // Section, not a bare Repeater — "Generate missing
             // variations" (generateMissingVariationsAction()'s own
@@ -1540,6 +1560,8 @@ class EditVariableProduct extends EditRecord
                         ->integer()
                         ->minValue(0)
                         ->disabled(fn (): bool => ! ProductResource::staffHasPermission(Permission::PRODUCT_MANAGE)),
+                    // MEAS-1: whole grams, empty = unknown (never shown on the storefront)
+                    ProductResource::weightGramsInput(),
                     TextInput::make('regular_price')
                         ->label(__('products.fields.regular_price'))
                         ->numeric()
@@ -2076,6 +2098,7 @@ class EditVariableProduct extends EditRecord
                 'is_visible' => $variation->isVisible(),
                 'cost' => $pricingAndStock->costDisplay($variation->id()),
                 'stock_quantity' => $pricingAndStock->stockQuantity($variation->id()),
+                'weight_grams' => $variation->weightGrams(),
                 'regular_price' => $pricingAndStock->regularPriceDisplay($variation->id()),
                 'sale_price' => $pricingAndStock->salePriceDisplay($variation->id()),
                 'shipping_class' => $classIds[(string) $variation->shippingClass()] ?? null,
@@ -3092,6 +3115,11 @@ class EditVariableProduct extends EditRecord
                 if ($variation->isVisible() !== $newIsVisible) {
                     $logger->logFieldChanged('product', $product->id(), "variation[{$variationId}].is_visible", $variation->isVisible() ? '1' : '0', $newIsVisible ? '1' : '0');
                     $variation->setVisible($newIsVisible);
+                }
+
+                // MEAS-1: the weight in whole grams (empty = unknown); a missing key means "no change". Same PRODUCT_MANAGE gate as the fields next to it.
+                if (array_key_exists('weight_grams', $row)) {
+                    app(VariationWeightWriter::class)->apply($variation, $row['weight_grams'], $logger, $product->id(), "variation[{$variationId}].weight_grams");
                 }
             }
         }

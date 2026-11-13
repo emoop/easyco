@@ -595,6 +595,8 @@ final class CheckoutOrchestrator
             shippingCourier: $selection->courier,
             shippingDeliveryType: $selection->deliveryType,
             shippingServiceCode: $selection->serviceCode,
+            // MEAS-1: all-or-nothing sum of the snapshotted line weights (the same rule as the quote), NULL when any line is unweighed.
+            parcelWeightGrams: ParcelWeight::sum(array_map(static fn ($l): array => [$l->unitWeightGrams(), $l->quantity()], $saleLines)),
         );
 
         // The method must be available for THIS order (checkout form v2, section 8.2): the API never trusts the page. Nothing is saved

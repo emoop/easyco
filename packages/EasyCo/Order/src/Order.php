@@ -128,6 +128,8 @@ final class Order
         private readonly ?bool $callBeforeShipping = null,
         private readonly ?bool $marketingConsent = null,
         private readonly ?string $marketingConsentText = null,
+        // MEAS-1: the parcel weight in grams at placement = the sum of the lines' snapshotted weights when EVERY line has one, else NULL (unknown, never 0). Create-time fact, never changed by an edit.
+        private readonly ?int $parcelWeightGrams = null,
     ) {
         self::assertTermsProof($termsAcceptedAt, $termsVersion);
         self::assertConsentText($marketingConsent, $marketingConsentText);
@@ -548,6 +550,7 @@ final class Order
         ?bool $callBeforeShipping = null,
         ?bool $marketingConsent = null,
         ?string $marketingConsentText = null,
+        ?int $parcelWeightGrams = null,
     ): self {
         self::assertCountryShape($country);
         self::assertNotEmpty('recipientLastName', $recipientLastName);
@@ -614,6 +617,7 @@ final class Order
             callBeforeShipping: $callBeforeShipping,
             marketingConsent: $marketingConsent,
             marketingConsentText: self::trimmedOrNull($marketingConsentText),
+            parcelWeightGrams: $parcelWeightGrams,
         );
     }
 
@@ -674,6 +678,7 @@ final class Order
         ?bool $callBeforeShipping = null,
         ?bool $marketingConsent = null,
         ?string $marketingConsentText = null,
+        ?int $parcelWeightGrams = null,
     ): self {
         return new self(
             id: $id,
@@ -719,6 +724,7 @@ final class Order
             callBeforeShipping: $callBeforeShipping,
             marketingConsent: $marketingConsent,
             marketingConsentText: $marketingConsentText,
+            parcelWeightGrams: $parcelWeightGrams,
         );
     }
 
@@ -1180,5 +1186,11 @@ final class Order
     public function marketingConsentText(): ?string
     {
         return $this->marketingConsentText;
+    }
+
+    /** MEAS-1 - the parcel weight in grams when the order was placed; NULL = unknown. Never shown on the storefront. */
+    public function parcelWeightGrams(): ?int
+    {
+        return $this->parcelWeightGrams;
     }
 }

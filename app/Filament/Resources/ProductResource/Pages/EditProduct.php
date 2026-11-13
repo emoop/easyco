@@ -7,6 +7,7 @@ use App\Media\SyncsProductPhotos;
 use App\Services\ActivityLogger;
 use App\Services\ProductStatusChanger;
 use App\Services\ProductPricingAndStock;
+use App\Services\VariationWeightWriter;
 use EasyCo\Catalog\Contracts\ProductCategoryRepository;
 use EasyCo\Catalog\Contracts\ProductRepository;
 use EasyCo\Catalog\Contracts\ProductTagRepository;
@@ -122,6 +123,7 @@ class EditProduct extends EditRecord
         $universal = $product->universalVariation();
         $data['is_purchasable'] = $universal->isPurchasable();
         $data['barcode'] = $universal->barcode();
+        $data['weight_grams'] = $universal->weightGrams();
 
         // Phase 2 — Price + Stock: regular_price/sale_price/cost read as
         // display decimal strings (null when unset — a missing
@@ -297,6 +299,11 @@ class EditProduct extends EditRecord
         if ($universal->isPurchasable() !== $newIsPurchasable) {
             $logger->logFieldChanged('product', $product->id(), 'is_purchasable', $universal->isPurchasable() ? '1' : '0', $newIsPurchasable ? '1' : '0');
             $universal->setPurchasable($newIsPurchasable);
+        }
+
+        // MEAS-1: the weight in whole grams (a disabled field - no PRODUCT_MANAGE - is not submitted: no key = no change)
+        if (array_key_exists('weight_grams', $data)) {
+            app(VariationWeightWriter::class)->apply($universal, $data['weight_grams'], $logger, $product->id(), 'weight_grams');
         }
 
         ProductResource::syncDescriptiveAttributesFromPickerRows($product, $data['descriptive_attributes_picker'] ?? [], $logger);

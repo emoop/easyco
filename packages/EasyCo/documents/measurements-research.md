@@ -130,3 +130,31 @@ Order: **MEAS-1 → MEAS-2 → MEAS-3 → MEAS-4 → MEAS-5.** MEAS-1 can also r
 3. **Default weight per product:** recommended «Тегло за всички варианти» as a convenience that writes into the variations without a weight (not a stored product default, so «unknown» stays unambiguous). Do you also want the same for a whole CATEGORY later (e.g. every T-shirt 200 g)?
 4. **Measure units list:** recommended `mm, cm, m, in, ft` (a unit cannot be changed once numbers exist). Anything else you need (e.g. a size label such as «EU 38» as a text column, which is not a number)?
 5. **When a measure is archived, do the numbers stop printing on the storefront?** Recommended yes (archive = «we no longer show this»); the numbers stay stored and come back if the measure is un-archived.
+
+## Owner decisions (2026-11-13)
+
+Answers to §I. They replace the "recommended" wording there.
+
+1. **Size axis** = a checkbox «Показател за размер» on the attribute definition (MEAS-2/3, not MEAS-1).
+2. **Weight in whole GRAMS** in the admin («350»), hint «1 кг = 1000 г». Storage, snapshots and the courier feed are grams.
+3. **«Тегло за всички варианти»** is a convenience that writes into the variations WITHOUT a weight; no stored product-level default. A category-level weight: not now.
+4. **Units** of the measures: `mm, cm, m, in, ft` (MEAS-2/3).
+5. **An archived measure stops printing** on the storefront (MEAS-3/5); its numbers stay stored.
+
+The weight is NEVER shown on the storefront. It is for the later courier integration (waybills priced by weight bands).
+
+## As built (MEAS-1): variation weight in the admin + weight snapshot at the sale
+
+**Admin (section A).**
+- One shared field, `ProductResource::weightGramsInput()` («Тегло (г)», whole number 1…100 000, empty = unknown/NULL, info icon `InfoHint` with bg + en text in `products.fields.weight_grams_help`). A disabled field (no `PRODUCT_MANAGE`) is not submitted, so a missing key means "no change".
+- Variable product: the field is in every row of the `existing_variations` Repeater (next to cost / stock); `updateVariationRows()` writes it inside the `PRODUCT_MANAGE` block. «Тегло за всички варианти» (`bulk_weight_grams`, visible with «Редактирай всички», not submitted) fills, on blur, ONLY the rows whose weight box is empty; what is typed in a row stays; the rows are then saved like any other value, so the log has one entry per variation changed.
+- Simple product: the same field after the shipping-class select (`priceStockTabComponents()`, shared by create and edit); `EditProduct` and `CreateProduct` write it to the universal variation.
+- ONE writer, `App\Services\VariationWeightWriter`: goes through the EXISTING `Variation::setDimensions($grams, $length, $width, $height)` keeping the three dimensions as they are (the frozen `Variation.php` is not edited), logs `weight_grams` (simple) / `variation[<id>].weight_grams` (variable) old → new through `ActivityLogger::logFieldChanged`, and re-validates the range and "whole digits only" so a tampered submission never reaches storage.
+- Duplicate: a SIMPLE duplicate copies the weight (not the dimensions); a variable duplicate has no variations (unchanged).
+- NOT done: the variable-product CREATION wizard has no per-variation price/stock grid with weight (its rows are sku / barcode / active / class only), so no weight column was added there; the edit page is enough, as the task allowed.
+
+**Snapshot at the sale (section B).** Three nullable unsigned integer columns, no index (nothing filters by them, so no identifier-length risk): `operational_sales_sale_lines.unit_weight_grams`, `orders.parcel_weight_grams`, `order_placement_snapshots.parcel_weight_grams` (one migration in OperationalSales, one in Order; idempotent). `SaleLine` (OperationalSales, not a frozen file) carries `unitWeightGrams` as an optional trailing constructor / `create()` / `reconstituteFromStorage()` argument (SALE lines only; the other factories and the refund / reversal lines leave it NULL), `Order` carries `parcelWeightGrams` the same way; the mapper / repository / models persist them. `SaleLineSnapshotBuilder` reads the weight from the SAME `VariationRepository::findByIds()` call the sold attributes already use (`VariationDisplayReader::soldSnapshotFor()`), so no statement is added. The order's parcel weight is `ParcelWeight::sum()` over the built sale lines: the ONE all-or-nothing rule (one unknown weight ⇒ NULL, never 0), now also used by `ShippingQuoteService::context()` (its behaviour and tests are unchanged). Existing orders stay NULL; nothing refuses a checkout for a missing weight. Admin order view: «Тегло на пратката: 1,32 кг» (or «—») in the «Плащане и доставка» block (`OrderResource::parcelWeightLabel()`).
+
+**Known limits (reported, not fixed).** A line ADDED or changed later through the order editor (`OrderLineEditor`) has NO weight snapshot and the order's `parcel_weight_grams` is not recomputed by an edit: it is the weight of the order as placed. A courier feed (MEAS-6) that needs the weight of an edited order must recompute from the lines, or a later task must extend the editor.
+
+**Tests.** `VariationWeightAdminTest`, `ParcelWeightSnapshotTest`, `Storefront/WeightNeverOnStorefrontTest`; the pinned `POST /api/checkout` count (62) is unchanged; browser: `tests/Browser/meas-1.mjs`.

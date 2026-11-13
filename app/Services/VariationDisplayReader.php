@@ -70,6 +70,33 @@ final class VariationDisplayReader
     }
 
     /**
+     * MEAS-1: soldAttributesFor() plus each variation's weight in grams (NULL = unknown), from the SAME findByIds() read — no extra
+     * query. What the checkout snapshot stores on a SaleLine.
+     *
+     * @param  list<string>  $variationIds
+     * @return array<string, array{attributes: list<array{definitionId: string, definitionCode: string, definitionName: string, valueId: string, value: string}>, weightGrams: ?int}> keyed by variationId — one entry for EVERY id asked for.
+     */
+    public function soldSnapshotFor(array $variationIds): array
+    {
+        if ($variationIds === []) {
+            return [];
+        }
+
+        $variationsById = $this->variationsById($variationIds);
+        $attributesByVariationId = $this->attributesFor($variationsById);
+
+        $snapshot = [];
+        foreach ($variationsById as $variationId => $variation) {
+            $snapshot[$variationId] = [
+                'attributes' => $attributesByVariationId[$variationId],
+                'weightGrams' => $variation->weightGrams(),
+            ];
+        }
+
+        return $snapshot;
+    }
+
+    /**
      * What the cart API returns per line: the product's name, the variation's own
      * SKU, and the attribute labels as an ordered name/value list ([] for a SIMPLE
      * product's universal variation).

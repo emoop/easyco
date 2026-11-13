@@ -905,6 +905,12 @@ class OrderResource extends Resource
                                 ->extraEntryWrapperAttributes(['style' => self::PAIR_STYLE])
                                 ->visible(fn (OrderModel $record): bool => filled($record->shipping_method_name))
                                 ->getStateUsing(fn (OrderModel $record): string => $record->shipping_method_name.' · '.static::formatOrderMoney($record, 'shipping_minor').static::shippingFactsSuffix($record)),
+                            // MEAS-1: the parcel weight snapshotted at placement (for the courier waybill); "—" when unknown (an older order, or a line with no weight).
+                            TextEntry::make('parcel_weight_grams')
+                                ->label(__('orders.fields.parcel_weight'))
+                                ->inlineLabel()
+                                ->extraEntryWrapperAttributes(['style' => self::PAIR_STYLE])
+                                ->getStateUsing(fn (OrderModel $record): string => static::parcelWeightLabel($record->parcel_weight_grams)),
                             TextEntry::make('tracking_number')
                                 ->label(__('orders.fields.tracking_number'))
                                 ->inlineLabel()
@@ -3050,6 +3056,19 @@ class OrderResource extends Resource
     private static function forOrder(OrderModel $record): OrderAdminOrderView
     {
         return app(OrderAdminReader::class)->forOrder((string) $record->id);
+    }
+
+    /** MEAS-1: "1,35 кг" from whole grams (decimal comma in bg, dot in en, trailing zeros trimmed); "—" when the weight is unknown. */
+    public static function parcelWeightLabel(mixed $grams): string
+    {
+        if ($grams === null || $grams === '') {
+            return '—';
+        }
+
+        $separator = app()->getLocale() === 'bg' ? ',' : '.';
+        $kilograms = rtrim(rtrim(number_format(((int) $grams) / 1000, 3, $separator, ''), '0'), $separator);
+
+        return __('orders.parcel_weight_value', ['value' => $kilograms]);
     }
 
     /**

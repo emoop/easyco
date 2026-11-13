@@ -83,7 +83,7 @@ class SaleLineSnapshotBuilder
         DateTimeImmutable $effectiveAt,
     ): array {
         $variationIds = array_map(static fn (array $line): string => $line['variationId'], $lines);
-        $soldAttributesByVariationId = $this->batchLoadSoldAttributes($variationIds);
+        $soldByVariationId = $this->displayReader->soldSnapshotFor($variationIds);
 
         return array_map(function (array $line) use (
             $transactionId,
@@ -91,7 +91,7 @@ class SaleLineSnapshotBuilder
             $status,
             $recordedAt,
             $effectiveAt,
-            $soldAttributesByVariationId,
+            $soldByVariationId,
         ): SaleLine {
             $quantity = $line['quantity'];
             $finalUnitPrice = $line['finalUnitPrice'];
@@ -118,7 +118,9 @@ class SaleLineSnapshotBuilder
             // requested variationId is present in this map (or throws) —
             // direct indexing, never `?? []`, per this class's own "no
             // silent fallbacks" rule.
-            $soldAttributes = $soldAttributesByVariationId[$line['variationId']];
+            // MEAS-1: the weight rides on the SAME findByIds() read (no extra query); NULL = unknown, never 0.
+            $soldAttributes = $soldByVariationId[$line['variationId']]['attributes'];
+            $unitWeightGrams = $soldByVariationId[$line['variationId']]['weightGrams'];
 
             return SaleLine::create(
                 transactionId: $transactionId,
@@ -139,25 +141,8 @@ class SaleLineSnapshotBuilder
                 netPaidAmount: $netPaidAmount,
                 soldAttributes: $soldAttributes,
                 unitCost: $unitCost,
+                unitWeightGrams: $unitWeightGrams,
             );
         }, $lines);
-    }
-
-    /**
-     * @param string[] $variationIds
-     * @return array<string, array<int, array{definitionId: string, definitionCode: string, definitionName: string, valueId: string, value: string}>> keyed by variationId — one entry for EVERY id in $variationIds, guaranteed by the throw below.
-     *
-     * @throws LogicException If findByIds() doesn't return one of the
-     *   requested ids.
-     */
-    private function batchLoadSoldAttributes(array $variationIds): array
-    {
-        // DELEGATED, not duplicated: the cart API needs the same labels for its
-        // own lines, so the batched walk lives in ONE place —
-        // VariationDisplayReader — and this class calls it. The four queries it
-        // costs and its throw-on-a-missing-variation-id behaviour are exactly what
-        // this method used to do inline; SaleLineSnapshotBuilderQueryCountTest
-        // proves the numbers are unchanged.
-        return $this->displayReader->soldAttributesFor($variationIds);
     }
 }

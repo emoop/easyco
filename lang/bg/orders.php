@@ -26,6 +26,7 @@ return [
         'discount' => 'Отстъпка',
         'shipping' => 'Доставка',
         'shipping_method' => 'Начин на доставка',
+        'parcel_weight' => 'Тегло на пратката',
         'delivery_address' => 'Адрес',
         'tracking_number' => 'Номер за проследяване',
         'status' => 'Статус',
@@ -669,6 +670,7 @@ return [
     'no' => 'Не',
     'no_promotion' => 'Няма приложена промоция.',
     'no_payment' => 'Няма запис за плащане.',
+    'parcel_weight_value' => ':value кг',
     // §8.4 stage 7c-1 — the two states of the Payment section's settled
     // badge (en/orders.php's own comment carries the full argument): the
     // positive one is §4.1's "money is held", the negative one states the money

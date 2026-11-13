@@ -60,6 +60,7 @@ final class SaleLineMapper
             returnedBy: $model->returned_by !== null ? (string) $model->returned_by : null,
             returnedByName: $model->returned_by_name,
             returnReason: $model->return_reason,
+            unitWeightGrams: $model->unit_weight_grams !== null ? (int) $model->unit_weight_grams : null,
         );
     }
 
@@ -104,6 +105,7 @@ final class SaleLineMapper
         $model->returned_by = $saleLine->returnedBy();
         $model->returned_by_name = $saleLine->returnedByName();
         $model->return_reason = $saleLine->returnReason();
+        $model->unit_weight_grams = $saleLine->unitWeightGrams();
     }
 
     /**

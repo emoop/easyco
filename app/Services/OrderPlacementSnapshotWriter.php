@@ -62,6 +62,7 @@ final class OrderPlacementSnapshotWriter
             'call_before_shipping' => $order->callBeforeShipping(),
             'marketing_consent' => $order->marketingConsent(),
             'marketing_consent_text' => $order->marketingConsentText(),
+            'parcel_weight_grams' => $order->parcelWeightGrams(),
             'created_at' => $placedAt,
         ];
     }
