@@ -8,6 +8,7 @@ use App\Settings\Contracts\SiteSettingsRepository;
 use App\Storefront\Badges\BadgeSet;
 use App\Storefront\Appearance\StorefrontAppearance;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Livewire\Features\SupportAutoInjectedAssets\SupportAutoInjectedAssets;
 use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
@@ -76,7 +77,7 @@ class DesignBadgesZoneTest extends TestCase
 
         $this->assertNull(app(SiteSettingsRepository::class)->get(AppearanceSettings::BADGES_KEY), 'the shop is not touched by «Apply»');
         $draft = $this->stored(AppearanceSettings::BADGES_DRAFT_KEY);
-        $this->assertSame(['sale', 'new', 'low_stock'], array_column($draft['badges'], 'kind'), 'the draft keeps every built-in row');
+        $this->assertSame(['sale', 'new', 'low_stock', 'free_shipping'], array_column($draft['badges'], 'kind'), 'the draft keeps every built-in row');
         $this->assertTrue($draft['badges'][0]['enabled']);
 
         $screen->call('publish')->assertHasNoErrors();
@@ -155,6 +156,91 @@ class DesignBadgesZoneTest extends TestCase
         $this->assertSame([70, 'image_bottom'], [$live['badges'][0]['opacity'], $live['badges'][0]['position']]);
     }
 
+    /** P7-2 ★ every badge is a section COLLAPSED by default; its header says the name, the state and, when on, the place; a field inside a collapsed section is still saved */
+    public function test_the_sections_are_collapsed_by_default_with_a_one_line_header(): void
+    {
+        $screen = $this->screen();
+        $html = $screen->html();
+
+        $this->assertGreaterThanOrEqual(5, substr_count($html, 'isCollapsed: true'), 'the four built-ins and the custom section start collapsed');
+        $this->assertStringContainsString('Sale · off', $html);
+        $this->assertStringContainsString('Free shipping · off', $html);
+        $this->assertStringContainsString('Additional badges', $html);
+
+        $html = $screen->set('props.sale_enabled', true)->set('props.sale_position', 'image_bottom')->html();
+        $this->assertStringContainsString('Sale · on · Bottom over the picture', $html, 'the header follows the switch and the place');
+
+        $html = $screen->set('props.new_enabled', true)->html();
+        $this->assertStringContainsString('New · on · Top', $html);
+        $this->assertStringContainsString('Free shipping · off', $html);
+    }
+
+    public function test_a_field_of_a_collapsed_section_is_saved(): void
+    {
+        $screen = $this->screen();
+        $this->assertStringContainsString('isCollapsed: true', $screen->html());
+
+        $screen->set('props.new_enabled', true)->set('props.new_days', '30')->set('props.free_shipping_enabled', true)->set('props.free_shipping_text', 'Free over the limit')->call('apply')->assertHasNoErrors();
+        $this->assertEquals(30, $this->stored(AppearanceSettings::BADGES_DRAFT_KEY)['badges'][1]['days'], 'the draft');
+
+        $screen->call('publish')->assertHasNoErrors();
+        $live = $this->stored(AppearanceSettings::BADGES_KEY);
+        $this->assertSame(['new', 'free_shipping'], array_column($live['badges'], 'kind'));
+        $this->assertSame('Free over the limit', $live['badges'][1]['text']);
+        $this->assertSame(['bottom', 'green', 40], [$live['badges'][1]['position'], $live['badges'][1]['colour'], $live['badges'][1]['priority']], '«Безплатна доставка» starts under the price, green, priority 40');
+    }
+
+    /** P7-2 ★ a custom badge: added with its condition, published, reopened with its id, removed */
+    public function test_a_custom_badge_is_added_published_reopened_and_removed(): void
+    {
+        DB::table('catalog_categories')->insert(['id' => 1, 'name' => 'Clothing', 'slug' => 'clothing', 'created_at' => now(), 'updated_at' => now()]);
+        $item = ['id' => 'abcdef1234', 'enabled' => true, 'text' => 'Summer', 'position' => 'image_bottom', 'colour' => 'blue', 'opacity' => '80', 'shape' => 'pill', 'priority' => '15',
+            'conditions' => ['on_sale' => 'all', 'categories' => ['1'], 'brands' => [], 'tags' => [], 'seasons' => [], 'collections' => []]];
+
+        $screen = $this->screen()->set('props.custom', ['k1' => $item])->call('apply')->assertHasNoErrors();
+        $draft = $this->stored(AppearanceSettings::BADGES_DRAFT_KEY);
+        $this->assertSame('custom', $draft['badges'][4]['kind']);
+        $this->assertSame('abcdef1234', $draft['badges'][4]['id']);
+        $this->assertSame(['categories' => [1]], $draft['badges'][4]['conditions']);
+
+        $screen->call('publish')->assertHasNoErrors();
+        $live = $this->stored(AppearanceSettings::BADGES_KEY);
+        $this->assertSame(['custom'], array_column($live['badges'], 'kind'), 'only the enabled rows');
+        $this->assertSame([80, 'image_bottom', 'pill'], [$live['badges'][0]['opacity'], $live['badges'][0]['position'], $live['badges'][0]['shape']]);
+        $this->assertSame('abcdef1234', array_values(app(StorefrontAppearance::class)->badgeSet()['custom'])[0]['id'], 'the storefront reads it');
+
+        $again = $this->screen();
+        $custom = array_values($again->get('props.custom'));
+        $this->assertSame(['abcdef1234', 'Summer', true, ['1']], [$custom[0]['id'], $custom[0]['text'], $custom[0]['enabled'], array_map('strval', $custom[0]['conditions']['categories'])], 'reopened with the same id');
+        $this->assertStringContainsString('Summer · on · Bottom over the picture', $again->html(), 'the item header');
+
+        $again->set('props.custom', [])->call('apply')->call('publish')->assertHasNoErrors();
+        $this->assertNull(app(SiteSettingsRepository::class)->get(AppearanceSettings::BADGES_KEY), 'removed: nothing is enabled any more, the key is forgotten');
+    }
+
+    /** P7-2 ★ a custom badge with no condition or no text is refused at its own row and nothing is written; the 13th is refused */
+    public function test_an_incomplete_custom_badge_is_refused(): void
+    {
+        DB::table('catalog_categories')->insert(['id' => 1, 'name' => 'Clothing', 'slug' => 'clothing', 'created_at' => now(), 'updated_at' => now()]);
+        $item = fn (array $o = []): array => $o + ['id' => 'abcdef1234', 'enabled' => true, 'text' => 'Summer', 'position' => 'top', 'colour' => 'blue', 'opacity' => '100', 'shape' => 'square', 'priority' => '50',
+            'conditions' => ['on_sale' => 'all', 'categories' => ['1'], 'brands' => [], 'tags' => [], 'seasons' => [], 'collections' => []]];
+
+        // the message sits at the item's own row (the screen turns the position into the key Filament gave the item)
+        $screen = $this->screen()->set('props.custom', ['k1' => $item(['conditions' => ['on_sale' => 'all', 'categories' => []]])])->call('apply');
+        $screen->assertHasErrors(['props.custom.'.array_key_first($screen->get('props.custom')).'.conditions.on_sale']);
+        $screen = $this->screen()->set('props.custom', ['k1' => $item(['text' => ''])])->call('apply');
+        $screen->assertHasErrors(['props.custom.'.array_key_first($screen->get('props.custom')).'.text']);
+        $this->assertNull(app(SiteSettingsRepository::class)->get(AppearanceSettings::BADGES_DRAFT_KEY), 'nothing is written');
+
+        $many = [];
+
+        for ($i = 1; $i <= 13; $i++) {
+            $many["k{$i}"] = $item(['id' => sprintf('abcdef%04d', $i), 'text' => "B{$i}"]);
+        }
+
+        $this->screen()->set('props.custom', $many)->call('apply')->assertHasErrors();
+        $this->assertNull(app(SiteSettingsRepository::class)->get(AppearanceSettings::BADGES_DRAFT_KEY));
+    }
     public function test_the_defaults_button_puts_everything_off_into_the_working_copy(): void
     {
         $screen = $this->screen();

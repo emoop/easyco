@@ -278,7 +278,7 @@ class HtmlBlockResource extends Resource
     }
 
     /** @return array<int, string> category id => «Parent › Child» (the whole tree: a few hundred rows at most) */
-    private static function categoryLabels(): array
+    public static function categoryLabels(): array
     {
         $rows = DB::table('catalog_categories')->orderBy('name')->get(['id', 'parent_id', 'name'])->keyBy('id');
         $labels = [];

@@ -41,6 +41,25 @@ final class ProductContext
     ) {
     }
 
+    /**
+     * P7-2: a context whose lazy facts are ALREADY known (the card badges read them for a whole listing page at once, then ask the very same predicates of ProductConditions per product): nothing is read afterwards. The
+     * attribute values are not prefilled; a condition that needs them is not offered to a badge.
+     *
+     * @param  list<int>  $categoryIds  with their ancestors
+     * @param  list<int>  $tagIds
+     * @param  list<int>  $collectionIds
+     */
+    public static function prefilled(int $productId, ?PriceBlock $price, ?int $brandId, array $categoryIds, array $tagIds, array $collectionIds, ?int $seasonId): self
+    {
+        $context = new self($productId, [], $price, $brandId);
+        $context->categoryIds = $categoryIds;
+        $context->tagIds = $tagIds;
+        $context->collectionIds = $collectionIds;
+        $context->seasonId = $seasonId;
+
+        return $context;
+    }
+
     public static function fromPage(ProductPage $page): self
     {
         return new self((int) $page->id, array_map(static fn ($variation): int => (int) $variation->id, $page->variations), $page->price, $page->brandId);
@@ -66,6 +85,13 @@ final class ProductContext
         }
 
         $own = DB::table('catalog_product_categories')->where('product_id', $this->productId)->pluck('category_id')->map(static fn ($id): int => (int) $id)->all();
+
+        return $this->categoryIds = self::withAncestors($own);
+    }
+
+    /** The categories AND all their ancestors (the tree is read once per request: every category, a few hundred rows at most). @param list<int> $own @return list<int> */
+    public static function withAncestors(array $own): array
+    {
         self::$parents ??= DB::table('catalog_categories')->pluck('parent_id', 'id')->map(static fn ($parent): ?int => $parent === null ? null : (int) $parent)->all();
         $all = [];
 
@@ -75,7 +101,7 @@ final class ProductContext
             }
         }
 
-        return $this->categoryIds = array_values($all);
+        return array_values($all);
     }
 
     /** @return list<int> */

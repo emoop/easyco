@@ -13,27 +13,37 @@ use App\Storefront\ReadModels\PriceBlock;
  *  - «Промо»        the price block is discounted (`regularFromMinor` set and above the final price): the word, or the percent `round((regular − final) / regular × 100)` half-up from the SAME block (none when < 1).
  *  - «Нови»         the product is at most `days` whole store-local calendar days old.
  *  - «Последни бройки»  the total stock of the shown variations is between 1 and N (0 = sold out: the «Изчерпан» label owns that state).
- * At most BadgeSet::PER_POSITION badges per position, ordered by `priority` (lower first), then by kind order (built-ins before custom); the rest are dropped.
+ *  - «Безплатна доставка»  the card's LOWEST price (the «от» price) is at or above the store's free-shipping threshold, in the same currency (P7-2: the threshold is passed in; null = no badge).
+ *  - custom           the product is in the pre-computed match set of that row's id (P7-2: CustomBadgeMatcher evaluated the conditions for the whole page; nothing is read here).
+ * At most BadgeSet::PER_POSITION badges per position, ALL kinds together, ordered by `priority` (lower first), then by kind order (the built-ins in their fixed order, then the custom rows in their stored order); the rest are dropped.
  */
 final class BadgeResolver
 {
     /**
      * @param  array<string, array<string, mixed>>  $set  the ENABLED rows by kind (BadgeSet::fromJson)
      * @param  string|null  $createdDay  the product's creation day, store-local `Y-m-d` (null = unknown: «Нови» is not shown)
+     * @param  array{minor: int, currency: string}|null  $freeShipping  the store's lowest free-shipping threshold (null = none: no badge)
+     * @param  array<string, true>  $customMatches  the ids of the custom rows whose condition this product meets
      * @return list<Badge>
      */
-    public static function resolve(array $set, ?PriceBlock $price, int $stockTotal, ?string $createdDay, string $today): array
+    public static function resolve(array $set, ?PriceBlock $price, int $stockTotal, ?string $createdDay, string $today, ?array $freeShipping = null, array $customMatches = []): array
     {
         $found = [];
 
         foreach (BadgeSet::KINDS as $order => $kind) {
             $row = $set[$kind] ?? null;
 
-            if ($row === null || ! self::applies($kind, $row, $price, $stockTotal, $createdDay, $today)) {
+            if ($row === null || ! self::applies($kind, $row, $price, $stockTotal, $createdDay, $today, $freeShipping)) {
                 continue;
             }
 
             $found[] = [$order, new Badge($kind, self::label($kind, $row, $price), (string) $row['position'], (string) $row['colour'], (int) $row['priority'], (string) $row['shape'], (int) $row['opacity'])];
+        }
+
+        foreach ($set[BadgeSet::CUSTOM] ?? [] as $i => $row) {
+            if (isset($customMatches[(string) $row['id']])) {
+                $found[] = [count(BadgeSet::KINDS) + $i, new Badge(BadgeSet::CUSTOM, (string) $row['text'], (string) $row['position'], (string) $row['colour'], (int) $row['priority'], (string) $row['shape'], (int) $row['opacity'])];
+            }
         }
 
         usort($found, static fn (array $a, array $b): int => [$a[1]->priority, $a[0]] <=> [$b[1]->priority, $b[0]]);
@@ -63,12 +73,13 @@ final class BadgeResolver
     }
 
     /** @param  array<string, mixed>  $row */
-    private static function applies(string $kind, array $row, ?PriceBlock $price, int $stockTotal, ?string $createdDay, string $today): bool
+    private static function applies(string $kind, array $row, ?PriceBlock $price, int $stockTotal, ?string $createdDay, string $today, ?array $freeShipping): bool
     {
         return match ($kind) {
             BadgeSet::SALE => $price !== null && $price->regularFromMinor !== null && $price->regularFromMinor > $price->fromMinor && ($row['mode'] !== 'percent' || self::percent($price) >= 1),
             BadgeSet::NEW => $createdDay !== null && StoreTimezone::daysBetween($createdDay, $today) <= (int) $row['days'],
             BadgeSet::LOW_STOCK => $stockTotal >= 1 && $stockTotal <= (int) $row['max'],
+            BadgeSet::FREE_SHIPPING => $freeShipping !== null && $price !== null && $price->currency === $freeShipping['currency'] && $price->fromMinor >= $freeShipping['minor'],
             default => false,
         };
     }

@@ -2,12 +2,7 @@
 
 namespace App\Services;
 
-use App\Settings\StoreCountry;
 use EasyCo\Cart\Cart;
-use EasyCo\Shipping\Contracts\ShippingMethodRepository;
-use EasyCo\Shipping\Contracts\ShippingZoneRepository;
-use EasyCo\Shipping\Matching\ZoneDestination;
-use EasyCo\Shipping\Matching\ZoneMatcher;
 use EasyCo\Shipping\Rating\RateLine;
 use EasyCo\Shipping\Rating\RateRequest;
 use EasyCo\Shipping\Rating\ShippingRateCalculator;
@@ -34,11 +29,7 @@ use EasyCo\Shipping\Rating\ShippingRateCalculator;
 final class CartFreeShippingHint
 {
     public function __construct(
-        private readonly StoreCountry $storeCountry,
-        private readonly SettlementNormalizerResolver $normalizers,
-        private readonly ShippingZoneRepository $zones,
-        private readonly ShippingMethodRepository $methods,
-        private readonly ZoneMatcher $zoneMatcher,
+        private readonly StoreBroadZoneMethods $broadZone,
         private readonly ShippingRateCalculator $calculator,
         private readonly FreeShippingHintReader $reader,
     ) {
@@ -50,23 +41,8 @@ final class CartFreeShippingHint
             return null;
         }
 
-        $country = $this->storeCountry->currentOrNull();
-
-        if ($country === null) {
-            return null;
-        }
-
-        $match = $this->zoneMatcher->match(
-            $this->zones->allOrdered(),
-            new ZoneDestination($country, null, null, false),
-            $this->normalizers->forCurrentLocale(),
-        );
-
-        if (! $match->isMatched()) {
-            return null;
-        }
-
-        $zoneMethods = $this->methods->forZone((string) $match->zone()->id(), activeOnly: true);
+        // P7-2: the zone and its active methods come from the one shared reader (StoreBroadZoneMethods), the card's free-shipping threshold reads the same
+        $zoneMethods = $this->broadZone->methods();
 
         if ($zoneMethods === []) {
             return null;

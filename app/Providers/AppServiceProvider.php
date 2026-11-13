@@ -134,6 +134,12 @@ class AppServiceProvider extends ServiceProvider
         // HP-3: the published home layout's tiles (names, links, pictures) are recompiled when what they show changes
         \App\Storefront\Home\HomeTilesListeners::register();
 
+        // P7-2: the card badge «Безплатна доставка» reads ONE cached threshold; it is recomputed when a shipping method or zone is saved (every write fires its hook after the commit; the store country has its own call in
+        // the locale settings). A reorder of the methods cannot change the lowest threshold; a reorder of the ZONES can change which zone matches first.
+        foreach (['shipping.method.created', 'shipping.method.updated', 'shipping.method.activated', 'shipping.method.deactivated', 'shipping.method.deleted', 'shipping.zone.created', 'shipping.zone.updated', 'shipping.zone.deleted', 'shipping.zone.reordered'] as $event) {
+            Hook::action($event, static fn () => app(\App\Services\FreeShippingThreshold::class)->refresh());
+        }
+
         Hook::action('order.placed', static fn (Order $order) => app(SendOrderConfirmation::class)->handle($order));
     }
 }

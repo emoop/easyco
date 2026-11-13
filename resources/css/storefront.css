@@ -537,7 +537,8 @@
 
     .sf-card-footer > .sf-cbadges--bottom {
         @apply px-3 pb-3 pt-0;
-        flex-wrap: nowrap;
+        /* P7-2: two long badges (e.g. «Последни бройки» + «Безплатна доставка») do not fit one row of a two-column phone card: the row wraps, each badge whole */
+        flex-wrap: wrap;
         overflow: hidden;
     }
 
@@ -580,6 +581,12 @@
 
         .sf-card-footer > .sf-cbadges--bottom {
             padding-right: 0.25rem;
+        }
+
+        /* a single long text («Безплатна доставка») may wrap onto a second line rather than be cut */
+        .sf-card-footer > .sf-cbadges--bottom .sf-cbadge {
+            overflow: visible;
+            white-space: normal;
         }
 
         .sf-cbadges--top {

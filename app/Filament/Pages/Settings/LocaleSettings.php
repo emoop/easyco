@@ -332,6 +332,9 @@ class LocaleSettings extends Page
         $settings->set('admin.activity_log_retention_months', (string) ($data['activity_log_retention_months'] ?? 12));
         $settings->set('site.currency_symbol_position', $data['currency_symbol_position'] ?? 'suffix_space');
 
+        // P7-2: the cached free-shipping threshold of the card badge depends on the store country (and the zone it matches)
+        app(\App\Services\FreeShippingThreshold::class)->refresh();
+
         Notification::make()
             ->title(__('settings.locale.saved_notification'))
             ->success()

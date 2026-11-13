@@ -2,7 +2,11 @@
 
 namespace Tests\Feature\Storefront;
 
+use App\Services\FreeShippingThreshold;
 use App\Services\PriceListWriter;
+use App\Services\ShippingMethodInput;
+use App\Services\ShippingMethodWriter;
+use App\Services\ShippingZoneWriter;
 use App\Settings\AppearanceSettings;
 use App\Settings\Contracts\SiteSettingsRepository;
 use App\Settings\StoreTimezone;
@@ -16,9 +20,16 @@ use App\Storefront\ReadModels\ListingQuery;
 use App\Storefront\ReadModels\PriceBlock;
 use App\Storefront\ReadModels\ProductCard;
 use App\Storefront\Reader\CatalogReader;
+use App\Storefront\Conditions\ProductContext;
+use App\Storefront\ReadModels\CatalogSubjectKind;
 use DateTimeImmutable;
+use EasyCo\Pricing\Money;
+use Illuminate\Cache\Events\CacheHit;
+use Illuminate\Cache\Events\CacheMissed;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Tests\TestCase;
 
 /**
@@ -40,6 +51,7 @@ class CardBadgesTest extends TestCase
         config(['filesystems.disks.public.url' => 'https://cdn.test/storage']);
         $this->seedPricing();
         app()->setLocale('bg');
+        ProductContext::forgetShared();
     }
 
     /** The five cards the pre-change HTML fixture was taken from (the view before P7-1). @return array<string, ProductCard> */
@@ -427,7 +439,8 @@ class CardBadgesTest extends TestCase
 
         $this->assertArrayHasKey('new.days', BadgeSet::validate(['badges' => [['kind' => 'new', 'days' => 91]]])[1]);
         $this->assertArrayHasKey('new.days', BadgeSet::validate(['badges' => [['kind' => 'new', 'days' => 0]]])[1]);
-        $this->assertArrayHasKey('badges', BadgeSet::validate(['badges' => [['kind' => 'free_shipping']]])[1], 'P7-2 kinds are not accepted yet');
+        $this->assertSame([], BadgeSet::validate(['badges' => [['kind' => 'free_shipping']]])[1], 'P7-2: «Безплатна доставка» is a built-in kind');
+        $this->assertArrayHasKey('badges', BadgeSet::validate(['badges' => [['kind' => 'something_else']]])[1], 'an unknown kind is refused');
         $this->assertArrayHasKey('sale', BadgeSet::validate(['badges' => [['kind' => 'sale'], ['kind' => 'sale']]])[1], 'a kind twice');
         $this->assertArrayHasKey('badges', BadgeSet::validate('x')[1]);
 
@@ -439,7 +452,7 @@ class CardBadgesTest extends TestCase
     public function test_the_six_pairs_and_the_legacy_tokens(): void
     {
         $this->assertSame(['red', 'orange', 'blue', 'green', 'black', 'grey'], BadgeSet::COLOURS);
-        $this->assertSame(['red', 'black', 'orange'], array_column(BadgeSet::defaults()['badges'], 'colour'), 'the defaults');
+        $this->assertSame(['red', 'black', 'orange', 'green'], array_column(BadgeSet::defaults()['badges'], 'colour'), 'the defaults (P7-2 adds «Безплатна доставка»: green, under the price)');
 
         foreach (['dark' => 'black', 'light' => 'grey', 'neutral' => 'grey', 'purple' => 'blue'] as $old => $new) {
             [$clean, $errors] = BadgeSet::validate(['badges' => [['kind' => 'sale', 'colour' => $old]]]);
@@ -597,5 +610,331 @@ class CardBadgesTest extends TestCase
         $on = [$count('/product-category/clothing'), $count('/')];
 
         $this->assertSame($off, $on);
+    }
+    // ================================================================ P7-2: «Безплатна доставка»
+
+    /** the store's shipping: the country, its broad zone and one flat method with a free-shipping threshold (the writers fire the hooks that refresh the cached threshold) */
+    private function shipping(?int $freeAbove, bool $freeMethod = false): void
+    {
+        app(SiteSettingsRepository::class)->set('site.country', 'BG');
+        $zone = (string) app(ShippingZoneWriter::class)->create('Bulgaria', ['BG'], [], [])->id();
+
+        if ($freeAbove !== null) {
+            app(ShippingMethodWriter::class)->create($zone, new ShippingMethodInput(name: 'Courier', kind: 'flat', price: Money::fromMinorUnits(500, 'EUR'), freeAbove: Money::fromMinorUnits($freeAbove, 'EUR')));
+        }
+
+        if ($freeMethod) {
+            app(ShippingMethodWriter::class)->create($zone, new ShippingMethodInput(name: 'Free', kind: 'free'));
+        }
+    }
+
+    private function freeShippingFixture(): void
+    {
+        $this->makeAttribute(1, 'Size', ['S', 'M']);
+        $this->makeProduct(1, ['price' => '10.00', 'stock' => 9]);
+        $this->makeProduct(2, ['price' => '15.00', 'stock' => 9]);
+        $this->makeProduct(3, ['price' => '20.00', 'stock' => 9]);
+        $this->makeProduct(4, ['type' => 'variable', 'variations' => [['attrs' => [1 => 'S'], 'price' => '10.00', 'stock' => 1], ['attrs' => [1 => 'M'], 'price' => '30.00', 'stock' => 1]]]);
+    }
+
+    /** ★ shown when the card's LOWEST price is at or above the threshold, so the promise is true for every variation */
+    public function test_free_shipping_shows_at_and_above_the_threshold_only(): void
+    {
+        $this->freeShippingFixture();
+        $this->shipping(1500);
+        $this->publish([BadgeSet::FREE_SHIPPING => ['enabled' => true]]);
+
+        $labels = $this->labels($this->listed());
+
+        $this->assertSame([], $labels['product-1'], '10.00 is below 15.00');
+        $this->assertSame(['Безплатна доставка'], $labels['product-2'], 'exactly at the threshold');
+        $this->assertSame(['Безплатна доставка'], $labels['product-3']);
+        $this->assertSame([], $labels['product-4'], 'a variable product by its LOWEST price (10.00), not its highest (30.00)');
+
+        $card = collect($this->listed())->firstWhere('slug', 'product-2');
+        $this->assertSame(['bottom', 'green', 40], [$card->badges[0]->placement, $card->badges[0]->style, $card->badges[0]->priority], 'under the price, green, priority 40');
+
+        $this->publish([BadgeSet::FREE_SHIPPING => ['enabled' => true, 'text' => 'Free ship']]);
+        $this->assertSame(['Free ship'], $this->labels($this->listed())['product-3'], 'the text is editable');
+    }
+
+    /** ★ not shown when shipping is free for everyone, when there is no threshold, or when the currencies differ */
+    public function test_free_shipping_is_not_shown_without_a_meaningful_threshold(): void
+    {
+        $this->freeShippingFixture();
+        $this->publish([BadgeSet::FREE_SHIPPING => ['enabled' => true]]);
+
+        $none = fn (): bool => array_filter($this->labels($this->listed())) === [];
+
+        $this->assertTrue($none(), 'no shipping configured: no threshold');
+
+        $this->shipping(1500, freeMethod: true);
+        $this->assertTrue($none(), 'an ACTIVE free method: shipping is free for everyone');
+
+        Cache::forever(FreeShippingThreshold::KEY, ['minor' => 1000, 'currency' => 'USD']);
+        $this->assertTrue($none(), 'a threshold in another currency than the card price');
+
+        Cache::forever(FreeShippingThreshold::KEY, ['minor' => 1000, 'currency' => 'EUR']);
+        $this->assertFalse($none(), 'the same cached value in the card currency does show (the check above was the currency)');
+    }
+
+    /** ★ OFF never reads the cache; ON reads it (one hit, warm: no statement) */
+    public function test_free_shipping_off_never_reads_the_cache(): void
+    {
+        $this->freeShippingFixture();
+        $this->shipping(1500);
+
+        $reads = [];
+        Event::listen([CacheHit::class, CacheMissed::class], function ($event) use (&$reads): void {
+            $event->key === FreeShippingThreshold::KEY && $reads[] = $event::class;
+        });
+
+        $this->publish([BadgeSet::SALE => ['enabled' => true], BadgeSet::NEW => ['enabled' => true]]);
+        $this->listed();
+        $this->assertSame([], $reads, 'a page with the free-shipping badge OFF does not touch the threshold');
+
+        $this->publish([BadgeSet::FREE_SHIPPING => ['enabled' => true]]);
+        $this->listed();
+        $this->assertSame([CacheHit::class], $reads, 'ON: one read of the cached value');
+
+        $this->assertSame($this->statementsOfSet([BadgeSet::SALE => ['enabled' => true]]), $this->statementsOfSet([BadgeSet::SALE => ['enabled' => true], BadgeSet::FREE_SHIPPING => ['enabled' => true]]), 'a WARM threshold costs no statement');
+    }
+
+    /** @param array<string, array<string, mixed>> $over @return int the statements of one listing with this set published (the appearance cache warmed first) */
+    private function statementsOfSet(array $over): int
+    {
+        $this->publish($over);
+        $this->queries(fn () => $this->listed());
+
+        return count($this->queries(function (): void {
+            app(StoreTimezone::class)->current();
+            $this->listed();
+        }));
+    }
+
+    // ================================================================ P7-2: custom badges
+
+    /** @return array<string, mixed> */
+    private function customRow(string $id, string $text, array $conditions, array $o = []): array
+    {
+        return array_replace(['kind' => 'custom', 'id' => $id, 'enabled' => true, 'text' => $text, 'position' => 'top', 'colour' => 'blue', 'opacity' => 100, 'shape' => 'square', 'priority' => 50, 'conditions' => $conditions], $o);
+    }
+
+    /** @param list<array<string, mixed>> $customRows */
+    private function publishCustom(array $customRows, array $over = []): void
+    {
+        $working = BadgeSet::defaults();
+
+        foreach ($working['badges'] as $i => $row) {
+            $working['badges'][$i] = array_replace($row, $over[$row['kind']] ?? []);
+        }
+
+        array_push($working['badges'], ...$customRows);
+        [$clean, $errors] = BadgeSet::validate($working);
+        $this->assertSame([], $errors, json_encode($errors, JSON_UNESCAPED_UNICODE));
+        BadgeStore::publish($clean);
+        $this->app->forgetScopedInstances();
+    }
+
+    private function customFixture(): void
+    {
+        $now = '2026-03-01 10:00:00';
+        $this->makeCategory(1, 'Clothing', 'clothing');
+        $this->makeCategory(2, 'Dresses', 'dresses', 1);
+        $this->makeCategory(3, 'Shoes', 'shoes');
+        $this->makeBrand(1, 'Acme', 'acme');
+        $this->makeBrand(2, 'Zed', 'zed');
+        $this->makeTag(1, 'Eco', 'eco');
+        DB::table('catalog_seasons')->insert(['id' => 1, 'name' => 'Summer', 'slug' => 'summer', 'created_at' => $now, 'updated_at' => $now]);
+        DB::table('catalog_collections')->insert(['id' => 1, 'name' => 'Beach', 'slug' => 'beach', 'created_at' => $now, 'updated_at' => $now]);
+
+        // 1: dress (child of Clothing), Acme, tag Eco, Summer, Beach, on sale · 2: shoes, Zed · 3: clothing, no brand, plain
+        $this->makeProduct(1, ['categories' => [2], 'brand' => 1, 'tags' => [1], 'price' => '100.00', 'sale' => '80.00', 'stock' => 9]);
+        $this->makeProduct(2, ['categories' => [3], 'brand' => 2, 'price' => '50.00', 'stock' => 9]);
+        $this->makeProduct(3, ['categories' => [1], 'price' => '50.00', 'stock' => 9]);
+        DB::table('catalog_products')->where('id', 1)->update(['season_id' => 1]);
+        DB::table('catalog_product_collections')->insert(['product_id' => 1, 'collection_id' => 1]);
+    }
+
+    /** ★ a custom badge shows on the products that meet its condition, one badge per condition kind */
+    public function test_a_custom_badge_follows_its_condition(): void
+    {
+        $this->customFixture();
+        app(SiteSettingsRepository::class)->set(CatalogSubjectKind::COLLECTIONS_SWITCH, '1');
+
+        $cases = [
+            'categories' => [['categories' => [1]], ['product-1', 'product-3']], // «Clothing» and its descendant «Dresses»
+            'categories (leaf)' => [['categories' => [3]], ['product-2']],
+            'tags' => [['tags' => [1]], ['product-1']],
+            'brands' => [['brands' => [2]], ['product-2']],
+            'seasons' => [['seasons' => [1]], ['product-1']],
+            'collections' => [['collections' => [1]], ['product-1']],
+            'on_sale' => [['on_sale' => true], ['product-1']],
+            'not on sale' => [['on_sale' => false], ['product-2', 'product-3']],
+            'two conditions (AND)' => [['categories' => [1], 'brands' => [1]], ['product-1']],
+        ];
+
+        foreach ($cases as $name => [$conditions, $expected]) {
+            $this->publishCustom([$this->customRow('aaaaaa0001', 'Special', $conditions)]);
+            $shown = array_keys(array_filter($this->labels($this->listed()), fn (array $l): bool => $l === ['Special']));
+            sort($shown);
+
+            $this->assertSame($expected, $shown, $name);
+        }
+    }
+
+    /** ★ while the collections are OFF a collections condition is false: the badge is hidden (the switch rides inside the statement) */
+    public function test_collections_off_hides_a_collections_badge(): void
+    {
+        $this->customFixture();
+        $this->publishCustom([$this->customRow('aaaaaa0001', 'Special', ['collections' => [1]])]);
+
+        $this->assertSame([], array_filter($this->labels($this->listed())), 'switch OFF');
+
+        app(SiteSettingsRepository::class)->set(CatalogSubjectKind::COLLECTIONS_SWITCH, '1');
+        $this->assertSame(['Special'], $this->labels($this->listed())['product-1'], 'switch ON');
+    }
+
+    /** ★ the position caps and the priority order apply to ALL kinds together; on a tie the built-ins come first, then the custom ones in their stored order */
+    public function test_all_kinds_share_the_caps_and_the_order(): void
+    {
+        $this->customFixture();
+        $this->makeProduct(9, ['categories' => [1], 'price' => '100.00', 'sale' => '80.00', 'stock' => 9, 'timeline' => '2026-03-02 10:00:00']);
+        $c = fn (string $id, string $text, int $priority): array => $this->customRow($id, $text, ['on_sale' => true], ['priority' => $priority]);
+
+        // top: «Промо» (10) + «Нови»? (20, off) + custom A (5) + custom B (10): A (5) and then the tie at 10 → the built-in «Промо» before B
+        $this->publishCustom([$c('aaaaaa0001', 'A', 5), $c('aaaaaa0002', 'B', 10), $c('aaaaaa0003', 'C', 10)], [BadgeSet::SALE => ['enabled' => true, 'priority' => 10]]);
+
+        $this->assertSame(['A', 'Промо'], $this->labels($this->listed())['product-9'], 'two at the top: priority 5, then the tie at 10 goes to the built-in; B and C are dropped');
+
+        $this->publishCustom([$c('aaaaaa0001', 'A', 10), $c('aaaaaa0002', 'B', 10), $c('aaaaaa0003', 'C', 10)]);
+        $this->assertSame(['A', 'B'], $this->labels($this->listed())['product-9'], 'equal priority: the stored order');
+
+        // one over the picture at the bottom: the cap is 1
+        $img = fn (string $id, string $text, int $priority): array => $this->customRow($id, $text, ['on_sale' => true], ['priority' => $priority, 'position' => 'image_bottom']);
+        $this->publishCustom([$img('aaaaaa0001', 'First', 20), $img('aaaaaa0002', 'Second', 10)]);
+        $card = collect($this->listed())->firstWhere('slug', 'product-9');
+        $this->assertSame(['Second'], array_map(static fn (Badge $b): string => $b->label, $card->badgesAt('image_bottom')), 'the cap of the third position is 1: the higher priority wins');
+    }
+
+    /** ★ the rules of the custom rows: a condition and a text are required, at most 12, the `attributes` rule is not offered, the id is stable and never repeated */
+    public function test_the_custom_rows_are_validated(): void
+    {
+        $this->customFixture();
+        $set = fn (array ...$rows): array => ['badges' => $rows];
+        $errors = fn (array $row): array => BadgeSet::validate($set($row))[1];
+
+        $this->assertSame([], $errors($this->customRow('aaaaaa0001', 'Ok', ['categories' => [1]])));
+        $this->assertArrayHasKey('custom.0.conditions', $errors($this->customRow('aaaaaa0001', 'No condition', [])), 'no condition: it would be on every card');
+        $this->assertArrayHasKey('custom.0.text', $errors($this->customRow('aaaaaa0001', '', ['categories' => [1]])), 'the text is required');
+        $this->assertArrayHasKey('custom.0.text', $errors($this->customRow('aaaaaa0001', str_repeat('x', 25), ['categories' => [1]])));
+        $this->assertArrayHasKey('custom.0.conditions', $errors($this->customRow('aaaaaa0001', 'Attr', ['attributes' => [['attribute' => 1, 'values' => [1]]]])), 'attribute rules are not offered');
+        $this->assertArrayHasKey('custom.0.conditions', $errors($this->customRow('aaaaaa0001', 'Unknown id', ['categories' => [999]])), 'the form checks that the category exists');
+        $this->assertArrayHasKey('custom.0.id', $errors($this->customRow('', 'No id', ['categories' => [1]])));
+        $this->assertArrayHasKey('custom.0.id', $errors($this->customRow('BAD ID!', 'Bad id', ['categories' => [1]])));
+        $this->assertArrayHasKey('custom.1.id', BadgeSet::validate($set($this->customRow('aaaaaa0001', 'A', ['categories' => [1]]), $this->customRow('aaaaaa0001', 'B', ['categories' => [1]])))[1], 'an id twice');
+
+        $rows = [];
+
+        for ($i = 0; $i < 13; $i++) {
+            $rows[] = $this->customRow(sprintf('aaaaaa%04d', $i), "B{$i}", ['categories' => [1]]);
+        }
+
+        $this->assertSame([], BadgeSet::validate($set(...array_slice($rows, 0, 12)))[1], '12 are fine');
+        $this->assertArrayHasKey('custom', BadgeSet::validate($set(...$rows))[1], 'the 13th is refused');
+    }
+
+    /** ★ the id survives a reorder, a draft and a publish; a published copy that does not validate renders nothing */
+    public function test_the_id_survives_reorder_and_a_tampered_copy_renders_nothing(): void
+    {
+        $this->customFixture();
+        $a = $this->customRow('aaaaaa0001', 'A', ['categories' => [1]], ['priority' => 30]);
+        $b = $this->customRow('bbbbbb0002', 'B', ['categories' => [3]], ['priority' => 20]);
+
+        foreach ([[$a, $b], [$b, $a]] as $order) {
+            [$clean] = BadgeSet::validate(['badges' => $order]);
+            $ids = array_column(array_slice($clean['badges'], 4), 'id');
+            $this->assertSame(array_column($order, 'id'), $ids, 'a stored order is kept; the id belongs to its row');
+            $this->assertEquals(['A' => 'aaaaaa0001', 'B' => 'bbbbbb0002'], array_column(array_slice($clean['badges'], 4), 'id', 'text'));
+        }
+
+        $this->publishCustom([$a, $b]);
+        $this->assertSame(['aaaaaa0001', 'bbbbbb0002'], array_column(BadgeSet::fromJson(app(SiteSettingsRepository::class)->get(AppearanceSettings::BADGES_KEY))['custom'], 'id'));
+        $this->makeProduct(7, ['categories' => [1, 3], 'price' => '50.00', 'stock' => 9]);
+        $this->assertSame(['B', 'A'], $this->labels($this->listed())['product-7'], 'priority 20 (B) before 30 (A) on the product that matches both');
+
+        $json = '{"badges":[{"kind":"custom","id":"aaaaaa0001","enabled":true,"text":"x","position":"top","colour":"blue","opacity":100,"shape":"square","priority":1,"conditions":{"attributes":[{"attribute":1,"values":[1]}]}}]}';
+        $this->assertSame([], BadgeSet::fromJson($json), 'a condition kind the badges do not offer: nothing renders');
+        $this->assertSame([], BadgeSet::fromJson(str_replace('"conditions":{"attributes":[{"attribute":1,"values":[1]}]}', '"conditions":{}', $json)), 'no condition: nothing renders');
+    }
+
+    /** ★ the text of a custom badge is escaped by the view, never markup */
+    public function test_a_custom_text_is_escaped(): void
+    {
+        $this->customFixture();
+        $this->publishCustom([$this->customRow('aaaaaa0001', '<b>Hot</b> & "new"', ['on_sale' => true])]);
+
+        $html = $this->renderCard(collect($this->listed())->firstWhere('slug', 'product-1'));
+
+        $this->assertStringContainsString('&lt;b&gt;Hot&lt;/b&gt; &amp; &quot;new&quot;', $html);
+        $this->assertStringNotContainsString('<b>Hot', $html);
+        $this->assertNoActiveContent($html, 'a card with a custom badge');
+    }
+
+    /** the signed preview shows the WORKING copy, custom rows included (the browser run found a 500 here: the custom rows must be a list under `custom`) */
+    public function test_the_preview_of_a_working_copy_carries_custom_rows(): void
+    {
+        $this->customFixture();
+        [$working] = BadgeSet::validate(['badges' => [$this->customRow('aaaaaa0001', 'Preview', ['on_sale' => true])]]);
+
+        app(StorefrontAppearance::class)->previewBadges($working);
+
+        $this->assertSame(['Preview'], $this->labels($this->listed())['product-1']);
+    }
+
+    // ================================================================ P7-2: statements
+
+    /**
+     * ★ a listing page: NO custom badge enabled = 0 added statements; custom badges using ALL the condition kinds add at most 5 (categories 2: the pivot and the tree, tags 1, collections 1; brand, season and «on sale» ride on
+     * data the page already has), and the number does not depend on the number of cards (3 and 12 cost the same)
+     */
+    public function test_custom_badges_cost_at_most_five_statements_whatever_the_number_of_cards(): void
+    {
+        $now = '2026-03-01 10:00:00';
+        $this->catalogOf24();
+        $this->makeBrand(1, 'Acme', 'acme');
+        $this->makeTag(1, 'Eco', 'eco');
+        DB::table('catalog_seasons')->insert(['id' => 1, 'name' => 'Summer', 'slug' => 'summer', 'created_at' => $now, 'updated_at' => $now]);
+        DB::table('catalog_collections')->insert(['id' => 1, 'name' => 'Beach', 'slug' => 'beach', 'created_at' => $now, 'updated_at' => $now]);
+        DB::table('catalog_product_tags')->insert(['product_id' => 1, 'tag_id' => 1]);
+
+        $all = [['aaaaaa0001', ['categories' => [1]]], ['aaaaaa0002', ['tags' => [1]]], ['aaaaaa0003', ['brands' => [1]]], ['aaaaaa0004', ['seasons' => [1]]], ['aaaaaa0005', ['collections' => [1]]], ['aaaaaa0006', ['on_sale' => true]]];
+
+        $off = $this->statementsOf([]);
+        $this->assertSame($off, $this->statementsOf($all, enabled: false), 'custom badges that are all switched off cost nothing');
+
+        $on24 = $this->statementsOf($all);
+        $this->assertGreaterThan(0, count(array_filter($this->labels($this->listed()))), 'the custom badges do print on this fixture');
+        $this->assertLessThanOrEqual(5, $on24 - $off, 'all five condition kinds together');
+        $this->assertGreaterThan(0, $on24 - $off);
+
+        DB::table('catalog_products')->where('id', '>', 3)->update(['catalog_visibility' => 'hidden']);
+        $this->assertSame($on24, $this->statementsOf($all), '3 cards cost what 24 cards cost');
+        $this->assertSame($off, $this->statementsOf([]), 'and OFF is the same for 3 cards');
+
+        fwrite(STDERR, "\n[query-count] P7-2 custom badges: OFF {$off}, five kinds on {$on24} (+".($on24 - $off).'), 3 cards = 24 cards'."\n");
+    }
+
+    /** @param list<array{0: string, 1: array<string, mixed>}> $custom @return int what ONE listing of these custom rows costs (the appearance cache warm, the shop time zone read before) */
+    private function statementsOf(array $custom, bool $enabled = true): int
+    {
+        $this->publishCustom(array_map(fn (array $c): array => $this->customRow($c[0], 'X', $c[1], ['enabled' => $enabled]), $custom));
+        $this->queries(fn () => $this->listed());
+        ProductContext::forgetShared();
+
+        return count($this->queries(function (): void {
+            app(StoreTimezone::class)->current();
+            $this->listed();
+        }));
     }
 }

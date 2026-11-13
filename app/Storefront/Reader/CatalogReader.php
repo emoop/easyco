@@ -7,6 +7,7 @@ use App\Settings\StoreTimezone;
 use App\Storefront\Appearance\StorefrontAppearance;
 use App\Storefront\Badges\BadgeResolver;
 use App\Storefront\Badges\BadgeSet;
+use App\Storefront\Badges\CustomBadgeMatcher;
 use App\Storefront\Exceptions\ListingOptionNotAvailable;
 use App\Storefront\Filters\FilterConstraint;
 use App\Storefront\ReadModels\Breadcrumb;
@@ -339,7 +340,7 @@ final class CatalogReader
     {
         // P6c: a LIST (listed(): visible AND, while the shop hides sold-out products, available); the product page and the direct lookups keep products()
         $products = $this->visibility->listed(ProductModel::query())
-            ->select(['catalog_products.id', 'catalog_products.slug', 'catalog_products.name', 'catalog_products.brand_id', 'catalog_products.created_at'])
+            ->select(['catalog_products.id', 'catalog_products.slug', 'catalog_products.name', 'catalog_products.brand_id', 'catalog_products.season_id', 'catalog_products.created_at'])
             ->addSelect(['first_media_id' => self::firstImageIdSubquery(), 'second_media_id' => self::secondImageIdSubquery()])
             // CT-3: «is there a filterable attribute?» rides on the page query (one uncorrelated scalar subquery), so a shop with no filters pays no query of its own for them
             ->addSelect(['has_filters' => DB::table('catalog_attribute_definitions')->selectRaw('1')->where('is_filterable', true)->limit(1)])
@@ -637,6 +638,25 @@ final class CatalogReader
         $badgeSet = app(StorefrontAppearance::class)->badgeSet();
         $store = $badgeSet === [] ? null : app(StoreTimezone::class);
         $today = $store !== null && isset($badgeSet[BadgeSet::NEW]) ? $store->today() : '';
+        // P7-2: «Безплатна доставка» reads the ONE cached threshold, and only when that badge is switched on (OFF never touches the cache)
+        $freeShipping = isset($badgeSet[BadgeSet::FREE_SHIPPING]) ? app(\App\Services\FreeShippingThreshold::class)->current() : null;
+        $prices = [];
+
+        foreach ($products as $product) {
+            $prices[(string) $product->id] = $this->productPrice($variationIdsByProduct[(string) $product->id] ?? [], $quotes, $stock);
+        }
+
+        // P7-2: the custom badges' conditions for ALL the products of the page together (CustomBadgeMatcher): nothing is read while no custom badge is enabled
+        $custom = [];
+
+        if ($badgeSet[BadgeSet::CUSTOM] ?? false) {
+            $custom = CustomBadgeMatcher::match($badgeSet[BadgeSet::CUSTOM], array_map(fn (ProductModel $p): array => [
+                'id' => (int) $p->id,
+                'brandId' => $p->brand_id === null ? null : (int) $p->brand_id,
+                'seasonId' => $p->getAttribute('season_id') === null ? null : (int) $p->getAttribute('season_id'),
+                'price' => $prices[(string) $p->id],
+            ], $products));
+        }
 
         $cards = [];
 
@@ -647,7 +667,7 @@ final class CatalogReader
             $secondId = $product->getAttribute('second_media_id');
             $second = $secondId === null ? null : $assets->get($secondId);
 
-            $price = $this->productPrice($variationIdsByProduct[$id] ?? [], $quotes, $stock);
+            $price = $prices[$id];
             $created = $badgeSet === [] ? null : $product->getAttribute('created_at');
 
             $cards[] = new ProductCard(
@@ -665,6 +685,8 @@ final class CatalogReader
                     array_sum(array_map(fn (string $variationId): int => $stock[$variationId] ?? 0, $variationIdsByProduct[$id] ?? [])),
                     $created instanceof \DateTimeInterface ? $store->dayOf(\DateTimeImmutable::createFromInterface($created)) : null,
                     $today,
+                    $freeShipping,
+                    $custom[(int) $product->id] ?? [],
                 ),
                 inStock: array_filter(
                     array_map(fn (string $variationId): int => $stock[$variationId] ?? 0, $variationIdsByProduct[$id] ?? []),

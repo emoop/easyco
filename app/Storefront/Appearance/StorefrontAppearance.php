@@ -716,7 +716,12 @@ final class StorefrontAppearance
         $rows = [];
 
         foreach ($working['badges'] ?? [] as $row) {
-            ($row['enabled'] ?? false) === true && $rows[(string) $row['kind']] = $row;
+            if (($row['enabled'] ?? false) !== true) {
+                continue;
+            }
+
+            // P7-2: the custom rows are a list under `custom`, the built-ins are by kind (the shape of BadgeSet::fromJson)
+            ($row['kind'] ?? null) === \App\Storefront\Badges\BadgeSet::CUSTOM ? $rows[\App\Storefront\Badges\BadgeSet::CUSTOM][] = $row : $rows[(string) $row['kind']] = $row;
         }
 
         $this->badgesOverride = $rows;
