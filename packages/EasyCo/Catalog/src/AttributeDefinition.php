@@ -34,6 +34,8 @@ final class AttributeDefinition
         private FilterDisplay $filterDisplay = FilterDisplay::LIST,
         // CT-3: how the values are shown on the product page and in the card. Any type may have any display.
         private AttributeDisplayType $displayType = AttributeDisplayType::DROPDOWN,
+        // MEAS-2: the attribute whose values are the rows of a product measurement grid (SizeAxisResolver). Nothing in the admin sets it yet (MEAS-3).
+        private bool $isSize = false,
     ) {
         if ($this->filterable) {
             $this->assertFilterableAllowed();
@@ -131,6 +133,16 @@ final class AttributeDefinition
     public function setDisplayType(string $value): void
     {
         $this->displayType = AttributeDisplayType::tryFrom($value) ?? throw InvalidAttributeFilterException::unknownDisplayType($value);
+    }
+
+    public function isSize(): bool
+    {
+        return $this->isSize;
+    }
+
+    public function setSize(bool $isSize): void
+    {
+        $this->isSize = $isSize;
     }
 
     private function assertFilterableAllowed(): void

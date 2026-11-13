@@ -21,9 +21,11 @@ class AttributeDefinitionModel extends Model
         'is_filterable',
         'filter_display',
         'display_type',
+        'is_size',
     ];
 
     protected $casts = [
         'is_filterable' => 'boolean',
+        'is_size' => 'boolean',
     ];
 }

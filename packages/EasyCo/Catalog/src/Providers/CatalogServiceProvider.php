@@ -32,6 +32,16 @@ use EasyCo\Catalog\Persistence\Eloquent\EloquentSeasonRepository;
 use EasyCo\Catalog\Persistence\Eloquent\EloquentSkuSequenceRepository;
 use EasyCo\Catalog\Persistence\Eloquent\EloquentTagRepository;
 use EasyCo\Catalog\Persistence\Eloquent\EloquentVariationRepository;
+use EasyCo\Catalog\Contracts\MeasureRepository;
+use EasyCo\Catalog\Contracts\MeasurementTemplateRepository;
+use EasyCo\Catalog\Contracts\MeasurementValueRepository;
+use EasyCo\Catalog\Contracts\ProductMeasurementTemplateRepository;
+use EasyCo\Catalog\Contracts\SizeAxisResolver;
+use EasyCo\Catalog\Persistence\Eloquent\EloquentMeasureRepository;
+use EasyCo\Catalog\Persistence\Eloquent\EloquentMeasurementTemplateRepository;
+use EasyCo\Catalog\Persistence\Eloquent\EloquentMeasurementValueRepository;
+use EasyCo\Catalog\Persistence\Eloquent\EloquentProductMeasurementTemplateRepository;
+use EasyCo\Catalog\Persistence\Eloquent\EloquentSizeAxisResolver;
 use Illuminate\Support\ServiceProvider;
 
 class CatalogServiceProvider extends ServiceProvider
@@ -53,6 +63,11 @@ class CatalogServiceProvider extends ServiceProvider
         $this->app->bind(ProductCollectionRepository::class, EloquentProductCollectionRepository::class);
         $this->app->bind(ProductGroupRepository::class, EloquentProductGroupRepository::class);
         $this->app->bind(ProductTemplateRepository::class, EloquentProductTemplateRepository::class);
+        $this->app->bind(MeasureRepository::class, EloquentMeasureRepository::class);
+        $this->app->bind(MeasurementTemplateRepository::class, EloquentMeasurementTemplateRepository::class);
+        $this->app->bind(ProductMeasurementTemplateRepository::class, EloquentProductMeasurementTemplateRepository::class);
+        $this->app->bind(MeasurementValueRepository::class, EloquentMeasurementValueRepository::class);
+        $this->app->bind(SizeAxisResolver::class, EloquentSizeAxisResolver::class);
     }
 
     public function boot(): void

@@ -32,6 +32,7 @@ final class EloquentAttributeDefinitionRepository implements AttributeDefinition
         $model->is_filterable = $definition->isFilterable();
         $model->filter_display = $definition->filterDisplay()->value;
         $model->display_type = $definition->displayType()->value;
+        $model->is_size = $definition->isSize();
         $model->save();
 
         if ($definition->id() === null) {
@@ -85,6 +86,7 @@ final class EloquentAttributeDefinitionRepository implements AttributeDefinition
             filterDisplay: FilterDisplay::from($model->filter_display),
             // CT-3: a stored value that is not one of the four (a hand edit, a future value) reads as the default, so the list never breaks.
             displayType: AttributeDisplayType::tryFrom((string) $model->display_type) ?? AttributeDisplayType::DROPDOWN,
+            isSize: (bool) $model->is_size,
         );
     }
 }
