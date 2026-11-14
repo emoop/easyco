@@ -46,6 +46,11 @@ const PASSWORD = 'MEAS3-' + Math.random().toString(36).slice(2, 12) + 'Aa1!';
 const ROLE = 'MEAS3 no catalog access';
 
 let maxLog = 0;
+// activity_log: only this run's own rows (id above the start maximum) and only the entity types the run creates; never with maxLog unread or 0 (that would match the whole log)
+const logCleanup = () => {
+    if (! (maxLog > 0)) { console.error('WARNING: activity_log not cleaned up: maxLog is ' + maxLog + ' (not read yet, or the log was empty at start); no rows deleted'); return ''; }
+    return `DB::table('activity_log')->where('id', '>', ${maxLog})->whereIn('entity_type', ['measure', 'measurement_template', 'attribute_definition'])->delete();`;
+};
 const CLEANUP = () => String.raw`
 use Illuminate\Support\Facades\DB;
 DB::statement('SET FOREIGN_KEY_CHECKS=0');
@@ -71,7 +76,7 @@ DB::table('catalog_attribute_values')->whereIn('attribute_definition_id', $def)-
 DB::table('catalog_attribute_definitions')->whereIn('id', $def)->delete();
 DB::table('staff')->whereIn('email', ['${EMAIL}', '${EMAIL_NO}'])->delete();
 DB::table('staff_roles')->where('name', '${ROLE}')->delete();
-DB::table('activity_log')->where('id', '>', ${maxLog})->whereIn('entity_type', ['measure', 'measurement_template', 'attribute_definition'])->delete();
+${logCleanup()}
 DB::statement('SET FOREIGN_KEY_CHECKS=1');
 echo 'cleaned';`;
 

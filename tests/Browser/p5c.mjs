@@ -51,6 +51,7 @@ const RESTORE = String.raw`
 use Illuminate\Support\Facades\DB;
 $bak = json_decode(file_get_contents(sys_get_temp_dir().'/p5c_backup.json'), true);
 foreach (['promotions', 'promotion_scopes', 'activity_log', 'site_settings'] as $t) {
+  if ($t === 'activity_log' && empty($bak[$t] ?? [])) { echo "WARNING: activity_log not restored: backup empty or not read\n"; continue; }
   foreach ($bak[$t] as $row) { if (! DB::table($t)->where('id', $row['id'])->exists()) { DB::table($t)->insert($row); } else { DB::table($t)->where('id', $row['id'])->update($row); } }
   DB::table($t)->whereNotIn('id', array_column($bak[$t], 'id'))->delete();
 }

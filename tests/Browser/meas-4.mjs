@@ -49,6 +49,11 @@ const EMAIL = 'meas4-audit@example.test';
 const PASSWORD = 'MEAS4-' + Math.random().toString(36).slice(2, 12) + 'Aa1!';
 
 let maxLog = 0;
+// activity_log: only this run's own rows (id above the start maximum) and only the entity types the run creates; never with maxLog unread or 0 (that would match the whole log)
+const logCleanup = () => {
+    if (! (maxLog > 0)) { console.error('WARNING: activity_log not cleaned up: maxLog is ' + maxLog + ' (not read yet, or the log was empty at start); no rows deleted'); return ''; }
+    return `DB::table('activity_log')->where('id', '>', ${maxLog})->whereIn('entity_type', ['product', 'measure', 'measurement_template', 'attribute_definition'])->delete();`;
+};
 const CLEANUP = () => String.raw`
 use Illuminate\Support\Facades\DB;
 DB::statement('SET FOREIGN_KEY_CHECKS=0');
@@ -81,7 +86,7 @@ $def = DB::table('catalog_attribute_definitions')->where('code', 'like', 'meas4-
 DB::table('catalog_attribute_values')->whereIn('attribute_definition_id', $def)->delete();
 DB::table('catalog_attribute_definitions')->whereIn('id', $def)->delete();
 DB::table('staff')->where('email', '${EMAIL}')->delete();
-DB::table('activity_log')->where('id', '>', ${maxLog})->delete();
+${logCleanup()}
 DB::statement('SET FOREIGN_KEY_CHECKS=1');
 echo 'cleaned';`;
 

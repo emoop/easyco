@@ -58,10 +58,14 @@ DB::table('staff')->where('email', '${EMAIL}')->delete();
 DB::table('jobs')->where('payload', 'like', '%RefreshProductSortPrices%')->delete();
 echo 'cleaned';`;
 
-const CLEAN_LOG = String.raw`
+// activity_log: only this run's own rows (id above the start maximum, all entity types); never with an unknown or 0 maximum (that would match the whole log)
+const CLEAN_LOG = (maxId) => {
+    if (! (maxId > 0)) { console.error('WARNING: activity_log not cleaned up: start maximum is ' + maxId + ' (unknown, or the log was empty at start); no rows deleted'); return null; }
+    return String.raw`
 use Illuminate\Support\Facades\DB;
-DB::table('activity_log')->where('id', '>', MAXLOG)->delete();
+DB::table('activity_log')->where('id', '>', ${maxId})->delete();
 echo 'ok';`;
+};
 
 const CREATE_STAFF = String.raw`
 use EasyCo\Staff\Contracts\PasswordHasher; use EasyCo\Staff\Contracts\RoleRepository; use EasyCo\Staff\Contracts\StaffRepository; use EasyCo\Staff\Seeders\StaffSystemRolesSeeder; use EasyCo\Staff\Staff;
@@ -107,7 +111,7 @@ let before = null; let created = false; let watchdog = null;
 try {
     before = JSON.parse(php(SUMS));
     created = true;
-    watchdog = setTimeout(() => { try { php(CLEANUP); php(CLEAN_LOG.replace('MAXLOG', String(before.maxlog))); } catch (e) { console.error('WATCHDOG cleanup failed ' + e); } console.error('WATCHDOG: the run took more than 14 minutes; the data was cleaned up'); process.exit(3); }, 14 * 60 * 1000);
+    watchdog = setTimeout(() => { try { php(CLEANUP); const cl = CLEAN_LOG(before ? before.maxlog : 0); if (cl) { php(cl); } } catch (e) { console.error('WATCHDOG cleanup failed ' + e); } console.error('WATCHDOG: the run took more than 14 minutes; the data was cleaned up'); process.exit(3); }, 14 * 60 * 1000);
     check('the throw-away staff member was created', php(CREATE_STAFF) === 'ok');
     check('the throw-away category, tag and two products were created', Object.keys(JSON.parse(php(SETUP))).length === 2);
     artisan(['prices:refresh-from']);
@@ -265,7 +269,8 @@ try {
     if (created) {
         try {
             php(CLEANUP);
-            php(CLEAN_LOG.replace('MAXLOG', String(before.maxlog)));
+            const cl = CLEAN_LOG(before.maxlog);
+            if (cl) { php(cl); }
             const after = JSON.parse(php(SUMS));
             for (const k of ['lists', 'scopes', 'items', 'products', 'variations', 'stock', 'tags', 'categories', 'pivots', 'log', 'settings', 'staff', 'jobs']) {
                 check(`${k}: back EXACTLY as before the run`, after[k] === before[k], `${before[k]} vs ${after[k]}`);
