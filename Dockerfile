@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 #
-# EasyCo image (DOCKER-1, deploy-docker.md). ONE image for app (php-fpm), queue and scheduler; a second, tiny target `web` (nginx + public/).
+# EasyCo image (DOCKER-1, deploy-docker.md). ONE image for app (php-fpm), queue and scheduler; a second, tiny target `web` (nginx + public/) and a `varnish` target (the VCL baked in).
 # Nothing here is specific to one site: everything site-specific arrives through environment variables.
 
 ARG PHP_VERSION=8.3
@@ -88,3 +88,7 @@ COPY docker/nginx/default.conf.template /etc/nginx/templates/default.conf.templa
 COPY --from=app /var/www/html/public /var/www/html/public
 # public/storage -> storage/app/public: the `storage` volume is mounted at /var/www/html/storage by docker-compose.yml.
 RUN rm -rf /var/www/html/public/storage && ln -sfn /var/www/html/storage/app/public /var/www/html/public/storage
+
+# ---- 5. varnish: the VCL baked in (no bind mount) ------------------------------------------------------------------------------
+FROM varnish:7.6 AS varnish
+COPY docker/varnish/default.vcl /etc/varnish/default.vcl

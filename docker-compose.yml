@@ -28,6 +28,9 @@ x-laravel-env: &laravel-env
 
   # The queue stays on the database driver (what the app uses today). Cache and locks: redis. Sessions: the database (survive a redis restart).
   QUEUE_CONNECTION: ${QUEUE_CONNECTION:-database}
+  # RULE: DB_QUEUE_RETRY_AFTER must be LONGER than the longest job timeout (DeleteUnusedMediaJob: 3600 s), or a running job is handed to a
+  # second worker. The worker's own --timeout (jobs without a $timeout) must stay below it.
+  DB_QUEUE_RETRY_AFTER: ${DB_QUEUE_RETRY_AFTER:-3700}
   CACHE_STORE: ${CACHE_STORE:-redis}
   SESSION_DRIVER: ${SESSION_DRIVER:-database}
   SESSION_DOMAIN: ${SESSION_DOMAIN:-null}
@@ -117,12 +120,14 @@ services:
       start_period: 30s
 
   varnish:
-    image: varnish:7.6
+    # The VCL is baked into the image (Dockerfile target `varnish`): no bind mount of repo files.
+    build:
+      context: .
+      target: varnish
+    image: easyco-varnish:${IMAGE_TAG:-latest}
     restart: unless-stopped
     environment:
       VARNISH_SIZE: ${VARNISH_SIZE:-128m}
-    volumes:
-      - ./docker/varnish/default.vcl:/etc/varnish/default.vcl:ro
     depends_on:
       web:
         condition: service_healthy
@@ -133,7 +138,7 @@ services:
     <<: *app-image
     restart: unless-stopped
     user: www-data
-    command: ["php", "artisan", "queue:work", "--tries=3", "--max-time=3600", "--sleep=3", "--timeout=90"]
+    command: ["php", "artisan", "queue:work", "--tries=3", "--max-time=3600", "--sleep=3", "--timeout=${QUEUE_WORKER_TIMEOUT:-90}"]
     environment:
       <<: *laravel-env
     volumes:
@@ -156,7 +161,7 @@ services:
         condition: service_healthy
 
   mysql:
-    image: mysql:8.0
+    image: mysql:8.4
     restart: unless-stopped
     command:
       - --character-set-server=utf8mb4
@@ -178,10 +183,11 @@ services:
       start_period: 40s
 
   redis:
-    image: redis:7-alpine
+    image: redis:7.4-alpine
     restart: unless-stopped
-    # Persistence off on purpose: it holds only cache and locks (sessions and the queue are in MySQL).
-    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "${REDIS_MAXMEMORY:-128mb}", "--maxmemory-policy", "allkeys-lru"]
+    # Persistence off on purpose: it holds only cache and locks (sessions and the queue are in MySQL), so a restart empties it and every "forever"
+    # key is recomputed on a miss. volatile-lru: under memory pressure only keys WITH a TTL are evicted, never a key stored without expiry.
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "${REDIS_MAXMEMORY:-128mb}", "--maxmemory-policy", "volatile-lru"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -191,7 +197,7 @@ services:
   # TEST ENVIRONMENTS ONLY: docker compose --profile staging up  (Coolify: set COMPOSE_PROFILES=staging).
   # The web UI (8025) is bound to 127.0.0.1 of the server: never on the internet; reach it through an SSH tunnel (deploy-docker.md).
   mailpit:
-    image: axllent/mailpit:latest
+    image: axllent/mailpit:v1.21.8
     profiles: ["staging"]
     restart: unless-stopped
     ports:

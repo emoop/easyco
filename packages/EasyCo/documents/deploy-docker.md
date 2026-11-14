@@ -30,6 +30,10 @@ All files are generic — nothing site-specific lives in the repo; everything co
 
 * `app`, `queue`, `scheduler` = **един образ** · **one image**. Само `app` пуска миграциите · Only `app` runs migrations.
 * Опашката остава на **database** драйвера (както е в приложението днес); кеш и ключалки — **redis**; сесии — **database**. · The queue stays on the **database** driver (as the app uses today); cache/locks — **redis**; sessions — **database**.
+* Redis без запис на диск: рестартът го изпразва; ключовете „завинаги" се смятат наново при липса, а при натиск на паметта (`volatile-lru`) се изхвърлят само ключове с TTL. · Redis has no persistence: a restart empties it; "forever" keys are recomputed on a miss, and under memory pressure (`volatile-lru`) only keys with a TTL are evicted.
+* MySQL **8.4** (LTS). Версиите на образите са закачени (redis 7.4, nginx 1.27, varnish 7.6, mailpit v1.21.8) — без `latest`; сменят се умишлено. · Image versions are pinned — changed on purpose.
+* Varnish VCL-ът е във собствен образ (`target: varnish`), без bind mount. · The VCL is baked into its own image.
+* **Правило за опашката · Queue rule:** `DB_QUEUE_RETRY_AFTER` (3700) > най-дългия timeout на задача (3600, `DeleteUnusedMediaJob`); `QUEUE_WORKER_TIMEOUT` (90) < `DB_QUEUE_RETRY_AFTER`. Нова по-дълга задача → вдигнете първото. · `DB_QUEUE_RETRY_AFTER` must exceed the longest job timeout; the worker `--timeout` must stay below it.
 * Томове · Volumes: `storage` (качени файлове, медия, логове · uploads, media, logs), `mysql`.
 * Varnish сега е **прозрачен** (минава всичко, нищо не кешира). Реалното кеширане е P8. · Varnish is **transparent** for now (passes everything, caches nothing). Real caching is P8.
 
