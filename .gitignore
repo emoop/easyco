@@ -49,3 +49,6 @@ Thumbs.db
 
 # local Claude Code settings and caches
 /.claude/
+
+# Docker / Coolify local env copy (DOCKER-1)
+.env.docker

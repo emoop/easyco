@@ -31,6 +31,9 @@ final class MailConfigurator
 {
     public const MAILER = 'easyco';
 
+    /** The Mailpit mailer of a test deployment (EASYCO_MAIL_SANDBOX): replaces whatever the admin chose. */
+    public const SANDBOX_MAILER = 'easyco-sandbox';
+
     /** @var list<string> */
     private array $revealed = [];
 
@@ -51,7 +54,19 @@ final class MailConfigurator
         $mailer = (string) config('mail.default');
         $chosen = $this->value('mail.transport');
 
-        if ($chosen !== null && $chosen !== MailTransports::ENV) {
+        if (config('easyco.mail_sandbox.enabled')) {
+            // EASYCO_MAIL_SANDBOX: every mail goes to the sandbox SMTP, whatever transport the admin configured (protects real customers on a
+            // test copy of real data). The stored settings, and the secrets among them, are not even read.
+            config(['mail.mailers.'.self::SANDBOX_MAILER => [
+                'transport' => 'smtp',
+                'host' => (string) config('easyco.mail_sandbox.host'),
+                'port' => (int) config('easyco.mail_sandbox.port'),
+                'username' => null,
+                'password' => null,
+                'timeout' => null,
+            ]]);
+            $mailer = self::SANDBOX_MAILER;
+        } elseif ($chosen !== null && $chosen !== MailTransports::ENV) {
             $transport = $this->transports->find($chosen)
                 ?? throw new MailConfigurationException('The selected mail transport is not available.');
 
@@ -66,7 +81,7 @@ final class MailConfigurator
             config(['mail.mailers.'.$mailer.'.timeout' => $timeout]);
         }
 
-        if ($mailer === self::MAILER || $timeout !== null) {
+        if ($mailer === self::MAILER || $mailer === self::SANDBOX_MAILER || $timeout !== null) {
             // The manager caches mailer instances for the life of the worker: drop it so a changed setting is used.
             Mail::purge($mailer);
         }

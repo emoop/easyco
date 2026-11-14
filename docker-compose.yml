@@ -1,0 +1,204 @@
+# EasyCo (DOCKER-1, packages/EasyCo/documents/deploy-docker.md)
+#
+#   outer proxy (Coolify / Traefik, TLS) -> varnish -> web (nginx) -> app (php-fpm)
+#                                            queue and scheduler: the same image as app
+#                                            mysql, redis; mailpit only with the `staging` profile
+#
+# Every site-specific value comes from environment variables (see .env.docker.example); nothing here is specific to one site.
+# Coolify: build pack "Docker Compose", this file, domain assigned to the `varnish` service (container port 80).
+# Locally / by hand:  docker compose --env-file .env.docker --profile staging up -d --build
+
+x-laravel-env: &laravel-env
+  APP_NAME: ${APP_NAME:-EasyCo}
+  APP_ENV: ${APP_ENV:-production}
+  APP_DEBUG: ${APP_DEBUG:-false}
+  APP_KEY: ${APP_KEY:-}
+  APP_URL: ${APP_URL:?set APP_URL to the public address, e.g. https://shop.example.com}
+  APP_LOCALE: ${APP_LOCALE:-bg}
+  APP_FALLBACK_LOCALE: ${APP_FALLBACK_LOCALE:-en}
+  LOG_CHANNEL: ${LOG_CHANNEL:-stderr}
+  LOG_LEVEL: ${LOG_LEVEL:-warning}
+
+  DB_CONNECTION: mysql
+  DB_HOST: mysql
+  DB_PORT: "3306"
+  DB_DATABASE: ${DB_DATABASE:-easyco}
+  DB_USERNAME: ${DB_USERNAME:-easyco}
+  DB_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD}
+
+  # The queue stays on the database driver (what the app uses today). Cache and locks: redis. Sessions: the database (survive a redis restart).
+  QUEUE_CONNECTION: ${QUEUE_CONNECTION:-database}
+  CACHE_STORE: ${CACHE_STORE:-redis}
+  SESSION_DRIVER: ${SESSION_DRIVER:-database}
+  SESSION_DOMAIN: ${SESSION_DOMAIN:-null}
+  SESSION_SECURE_COOKIE: ${SESSION_SECURE_COOKIE:-true}
+  REDIS_CLIENT: phpredis
+  REDIS_HOST: redis
+  REDIS_PORT: "6379"
+  REDIS_PASSWORD: "null"
+  CACHE_PREFIX: ${CACHE_PREFIX:-easyco}
+
+  # The proxies whose X-Forwarded-* headers Laravel believes: the Docker network ranges (NEVER a wildcard).
+  TRUSTED_PROXIES: ${TRUSTED_PROXIES:-10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}
+  SANCTUM_STATEFUL_DOMAINS: ${SANCTUM_STATEFUL_DOMAINS:-}
+
+  # The transport is chosen in the admin (Settings -> Mail); MAIL_* is only the fallback the app uses when the admin chose nothing.
+  MAIL_MAILER: ${MAIL_MAILER:-log}
+  MAIL_HOST: ${MAIL_HOST:-mailpit}
+  MAIL_PORT: ${MAIL_PORT:-1025}
+  MAIL_USERNAME: ${MAIL_USERNAME:-}
+  MAIL_PASSWORD: ${MAIL_PASSWORD:-}
+  MAIL_FROM_ADDRESS: ${MAIL_FROM_ADDRESS:-hello@example.com}
+  MAIL_FROM_NAME: ${MAIL_FROM_NAME:-EasyCo}
+
+  MEDIA_MAX_IMAGE_SIZE_KB: ${MEDIA_MAX_IMAGE_SIZE_KB:-10240}
+  MEDIA_MAX_VIDEO_SIZE_KB: ${MEDIA_MAX_VIDEO_SIZE_KB:-102400}
+
+  # Test / staging guards (config/easyco.php): all OFF unless set.
+  EASYCO_NOINDEX: ${EASYCO_NOINDEX:-false}
+  EASYCO_BASIC_AUTH_USER: ${EASYCO_BASIC_AUTH_USER:-}
+  EASYCO_BASIC_AUTH_PASSWORD: ${EASYCO_BASIC_AUTH_PASSWORD:-}
+  EASYCO_MAIL_SANDBOX: ${EASYCO_MAIL_SANDBOX:-false}
+  EASYCO_MAIL_SANDBOX_HOST: ${EASYCO_MAIL_SANDBOX_HOST:-mailpit}
+  EASYCO_MAIL_SANDBOX_PORT: ${EASYCO_MAIL_SANDBOX_PORT:-1025}
+
+  # php-fpm pool (defaults sized for a 4 GB server) and upload limits (keep >= MEDIA_MAX_VIDEO_SIZE_KB).
+  PHP_FPM_MAX_CHILDREN: ${PHP_FPM_MAX_CHILDREN:-8}
+  PHP_FPM_START_SERVERS: ${PHP_FPM_START_SERVERS:-2}
+  PHP_FPM_MIN_SPARE_SERVERS: ${PHP_FPM_MIN_SPARE_SERVERS:-2}
+  PHP_FPM_MAX_SPARE_SERVERS: ${PHP_FPM_MAX_SPARE_SERVERS:-4}
+  PHP_UPLOAD_MAX_FILESIZE: ${PHP_UPLOAD_MAX_FILESIZE:-128M}
+  PHP_POST_MAX_SIZE: ${PHP_POST_MAX_SIZE:-130M}
+
+x-app-image: &app-image
+  build:
+    context: .
+    target: app
+  image: easyco-app:${IMAGE_TAG:-latest}
+
+services:
+  app:
+    <<: *app-image
+    restart: unless-stopped
+    environment:
+      <<: *laravel-env
+    volumes:
+      - storage:/var/www/html/storage
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "SCRIPT_NAME=/ping SCRIPT_FILENAME=/ping REQUEST_METHOD=GET cgi-fcgi -bind -connect 127.0.0.1:9000 | grep -q pong"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 120s
+
+  web:
+    build:
+      context: .
+      target: web
+    image: easyco-web:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      NGINX_CLIENT_MAX_BODY_SIZE: ${NGINX_CLIENT_MAX_BODY_SIZE:-128m}
+    volumes:
+      - storage:/var/www/html/storage:ro
+    depends_on:
+      app:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/up || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  varnish:
+    image: varnish:7.6
+    restart: unless-stopped
+    environment:
+      VARNISH_SIZE: ${VARNISH_SIZE:-128m}
+    volumes:
+      - ./docker/varnish/default.vcl:/etc/varnish/default.vcl:ro
+    depends_on:
+      web:
+        condition: service_healthy
+    # No `ports:` — the outer proxy (Coolify) reaches this service by the domain assigned to it (container port 80).
+    # Locally, to look at it without a proxy: add   ports: ["8080:80"]   in a docker-compose.override.yml.
+
+  queue:
+    <<: *app-image
+    restart: unless-stopped
+    user: www-data
+    command: ["php", "artisan", "queue:work", "--tries=3", "--max-time=3600", "--sleep=3", "--timeout=90"]
+    environment:
+      <<: *laravel-env
+    volumes:
+      - storage:/var/www/html/storage
+    depends_on:
+      app:
+        condition: service_healthy
+
+  scheduler:
+    <<: *app-image
+    restart: unless-stopped
+    user: www-data
+    command: ["php", "artisan", "schedule:work"]
+    environment:
+      <<: *laravel-env
+    volumes:
+      - storage:/var/www/html/storage
+    depends_on:
+      app:
+        condition: service_healthy
+
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --innodb-buffer-pool-size=${MYSQL_INNODB_BUFFER_POOL_SIZE:-512M}
+      - --max-connections=${MYSQL_MAX_CONNECTIONS:-100}
+    environment:
+      MYSQL_DATABASE: ${DB_DATABASE:-easyco}
+      MYSQL_USER: ${DB_USERNAME:-easyco}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?set DB_ROOT_PASSWORD}
+    volumes:
+      - mysql:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # Persistence off on purpose: it holds only cache and locks (sessions and the queue are in MySQL).
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "${REDIS_MAXMEMORY:-128mb}", "--maxmemory-policy", "allkeys-lru"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # TEST ENVIRONMENTS ONLY: docker compose --profile staging up  (Coolify: set COMPOSE_PROFILES=staging).
+  # The web UI (8025) is bound to 127.0.0.1 of the server: never on the internet; reach it through an SSH tunnel (deploy-docker.md).
+  mailpit:
+    image: axllent/mailpit:latest
+    profiles: ["staging"]
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${MAILPIT_UI_PORT:-8025}:8025"
+    expose:
+      - "1025"
+
+volumes:
+  storage:
+  mysql:

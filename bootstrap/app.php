@@ -3,7 +3,9 @@
 use App\Http\Middleware\ApplyStoreLocale;
 use App\Http\Middleware\ApplyStoreTimezone;
 use App\Http\Middleware\EnsureStaffHasPermission;
+use App\Http\Middleware\NoIndexResponses;
 use App\Http\Middleware\PersistGuestCartToken;
+use App\Http\Middleware\SiteBasicAuth;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -65,6 +67,10 @@ return Application::configure(basePath: dirname(__DIR__))
             | Request::HEADER_X_FORWARDED_HOST
             | Request::HEADER_X_FORWARDED_PORT
             | Request::HEADER_X_FORWARDED_PROTO);
+
+        // Test / staging guards (config/easyco.php, deploy-docker.md): both are no-ops unless their EASYCO_* switch is set.
+        // Global, so they cover the storefront, the admin, Livewire and the API alike.
+        $middleware->append([SiteBasicAuth::class, NoIndexResponses::class]);
 
         // The merchant-surface permission-enforcement point —
         // staff-access-domain-design.md §1/§5. Used as

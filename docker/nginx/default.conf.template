@@ -1,0 +1,76 @@
+# EasyCo (DOCKER-1): nginx in front of php-fpm. This file is a TEMPLATE of the official nginx image: only environment variables that exist
+# (here NGINX_CLIENT_MAX_BODY_SIZE) are substituted at start; nginx's own $variables stay as they are. TLS ends at the outer proxy (Coolify);
+# this server speaks plain HTTP inside the Docker network.
+# The client IP / https scheme headers are NOT touched here: varnish sets X-Forwarded-For, the outer proxy sets X-Forwarded-Proto, and php-fpm
+# receives them unchanged (HTTP_X_FORWARDED_*). Laravel believes them only from TRUSTED_PROXIES.
+
+server {
+    listen 80;
+    server_name _;
+    root /var/www/html/public;
+    index index.php;
+    charset utf-8;
+    server_tokens off;
+
+    # At least the biggest allowed upload (MEDIA_MAX_VIDEO_SIZE_KB, config/services.php default 100 MB); keep PHP_UPLOAD_MAX_FILESIZE in step.
+    client_max_body_size ${NGINX_CLIENT_MAX_BODY_SIZE};
+
+    gzip on;
+    gzip_comp_level 5;
+    gzip_min_length 256;
+    gzip_vary on;
+    gzip_proxied any;
+    gzip_types text/plain text/css text/xml application/json application/javascript text/javascript application/xml image/svg+xml font/ttf;
+
+    # Dotfiles (.env, .git, ...) never; /.well-known stays open.
+    location ~ /\.(?!well-known) {
+        return 404;
+    }
+
+    # Uploaded files must never run as code, whatever their name.
+    location ~* ^/storage/.*\.(php|phtml|phar|php[0-9])($|/) {
+        return 404;
+    }
+
+    # robots.txt is answered by Laravel on purpose (EASYCO_NOINDEX): with the switch off the app serves public/robots.txt itself.
+    location = /robots.txt {
+        try_files /__through_the_app__ /index.php?$query_string;
+    }
+
+    # Fingerprinted Vite output: a year, immutable.
+    location ^~ /build/ {
+        access_log off;
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+        try_files $uri =404;
+    }
+
+    # Pictures, fonts, icons (public/ and public/storage): a month.
+    location ~* \.(?:jpe?g|png|gif|webp|avif|svg|ico|woff2?|ttf)$ {
+        access_log off;
+        expires 30d;
+        add_header Cache-Control "public";
+        try_files $uri =404;
+    }
+
+    location / {
+        try_files $uri $uri/ /index.php?$query_string;
+    }
+
+    # The only PHP entry point.
+    location ~ ^/index\.php(/|$) {
+        fastcgi_pass app:9000;
+        fastcgi_split_path_info ^(.+\.php)(/.*)$;
+        include fastcgi_params;
+        fastcgi_param SCRIPT_FILENAME $document_root/index.php;
+        fastcgi_param DOCUMENT_ROOT $document_root;
+        fastcgi_read_timeout 120s;
+        fastcgi_buffers 16 16k;
+        fastcgi_buffer_size 32k;
+    }
+
+    # Every other .php file: not found.
+    location ~ \.php$ {
+        return 404;
+    }
+}
