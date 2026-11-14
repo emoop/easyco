@@ -2345,9 +2345,20 @@
     }
 
     /* ---- MEAS-5: the «Таблица с размери» section. A `by_size` template is a table inside the TBL-1 wrapper above (`.sf-table-wrap`: the box scrolls, the first column is sticky); the numbers sit under their header, the
-       row header is the size. A `single` template is a definition list: «label · value» on two columns from the tablet up, stacked on a phone, LK-1 hairlines between the lines. No script. ---- */
+       row header is the size. A `single` template is a definition list: «label … value» on ONE line at every width (the label may wrap, the value stays on one line), dashed hairlines between the lines. No script. ---- */
     .sf-table-wrap > table.sf-meas :is(thead th:not(:first-child), td) {
         white-space: nowrap;
+    }
+
+    /* MEAS-5.1: the table text is smaller (0.675rem from the tablet up, 0.75rem on a phone: the phone base is the bigger one) */
+    .sf-table-wrap > table.sf-meas {
+        font-size: 0.75rem;
+    }
+
+    @media (min-width: 40rem) {
+        .sf-table-wrap > table.sf-meas {
+            font-size: 0.675rem;
+        }
     }
 
     .sf-meas-list {
@@ -2356,16 +2367,18 @@
         line-height: 1.5;
     }
 
+    /* MEAS-5.1: one line per measure at every width («label ……… value»); the label may wrap, the value does not */
     .sf-meas-list > div {
         display: flex;
-        flex-direction: column;
-        gap: 0.125rem;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 0.75rem;
         padding: 0.5rem 0;
-        border-bottom: 1px solid var(--color-neutral-200, #e5e5e5);
+        border-bottom: 1px dashed #ddd;
     }
 
     .sf-meas-list > div:first-child {
-        border-top: 1px solid var(--color-neutral-200, #e5e5e5);
+        border-top: 1px dashed #ddd;
     }
 
     .sf-meas-list dt {
@@ -2374,22 +2387,12 @@
 
     .sf-meas-list dd {
         margin: 0;
-    }
-
-    @media (min-width: 40rem) {
-        .sf-meas-list > div {
-            flex-direction: row;
-            justify-content: space-between;
-            gap: 1.5rem;
-        }
-
-        .sf-meas-list dd {
-            text-align: right;
-        }
+        white-space: nowrap;
+        text-align: right;
     }
 
     /* ---- P4b: the product's sections: the accordion (right column) and the tabs (below the main area) --------------------------------------------------------------------------------------- */
-    /* «Акордеон»: native <details>, independent, closed by default; a hairline between the rows, the title is the <summary> with a small chevron (CSS only) */
+    /* «Акордеон»: native <details>, independent, closed by default; a hairline between the rows, the title is the <summary> with a plus («+») when closed and a minus («−») when open (CSS only) */
     .sf-psec-list {
         margin-top: 1.5rem;
         border-top: 1px solid var(--sf-border, #d9d9d9);
@@ -2416,18 +2419,17 @@
         display: none;
     }
 
+    /* MEAS-5.1: the icon is a plus when closed and a minus (U+2212, not a hyphen) when open; no rotation, no transition on the icon */
     .sf-psec-title::after {
-        content: '';
+        content: '+';
         flex: none;
-        width: 0.4375rem;
-        height: 0.4375rem;
-        border-right: 1px solid currentColor;
-        border-bottom: 1px solid currentColor;
-        transform: translateY(-0.125rem) rotate(45deg);
+        font-size: 1rem;
+        font-weight: 400;
+        line-height: 1;
     }
 
     .sf-psec[open] > .sf-psec-title::after {
-        transform: translateY(0.125rem) rotate(-135deg);
+        content: '\2212';
     }
 
     .sf-psec-title:focus-visible {
@@ -2436,11 +2438,13 @@
     }
 
     .sf-psec-body {
+        padding-left: 5px;
+        padding-right: 5px;
         padding-bottom: 1rem;
         font-size: 0.9375rem;
     }
 
-    /* ACC-1: the open and close of a section grow smoothly (0.25s ease-out, the chevron turns with the same timing). CSS only: the markup and the native <details> toggle, keyboard and aria are unchanged.
+    /* ACC-1: the open and close of a section grow smoothly (0.25s ease-out). CSS only: the markup and the native <details> toggle, keyboard and aria are unchanged.
        Only where `interpolate-size` and `::details-content` exist (a browser without them keeps the instant open and close), and `prefers-reduced-motion: reduce` keeps the instant change. */
     @supports (interpolate-size: allow-keywords) and selector(details::details-content) {
         .sf-psec {
@@ -2458,15 +2462,10 @@
         .sf-psec[open]::details-content {
             block-size: auto;
         }
-
-        .sf-psec-title::after {
-            transition: transform 250ms ease-out;
-        }
     }
 
     @media (prefers-reduced-motion: reduce) {
-        .sf-psec::details-content,
-        .sf-psec-title::after {
+        .sf-psec::details-content {
             transition: none;
         }
     }

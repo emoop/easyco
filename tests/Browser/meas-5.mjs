@@ -48,7 +48,7 @@ let maxLog = 0;
 // activity_log: only this run's own rows (id above the start maximum) and only the entity types the run creates; never with maxLog unread or 0 (that would match the whole log)
 const logCleanup = () => {
     if (! (maxLog > 0)) { console.error('WARNING: activity_log not cleaned up: maxLog is ' + maxLog + ' (not read yet, or the log was empty at start); no rows deleted'); return ''; }
-    return `DB::table('activity_log')->where('id', '>', ${maxLog})->whereIn('entity_type', ['product', 'measure', 'measurement_template', 'attribute_definition'])->delete();`;
+    return `DB::table('activity_log')->where('id', '>', ${maxLog})->whereIn('entity_type', ['product', 'measure', 'measurement_template', 'attribute_definition', 'storefront_sections'])->delete();`;
 };
 const CLEANUP = () => String.raw`
 use Illuminate\Support\Facades\DB;
@@ -199,7 +199,8 @@ try {
     await shot(page, 'meas5-3-shirt-table-390');
     await open(page, world.phone);
     await opened(page);
-    check('390 px: the list stacks (label above value) and the page does not scroll sideways', await page.evaluate(() => { const row = document.querySelector('.sf-meas-list > div'); return getComputedStyle(row).flexDirection === 'column' && document.documentElement.scrollWidth <= window.innerWidth + 1; }));
+    // MEAS-5.1: one line per measure on a phone too (label and value side by side, the value never wraps); no sideways scroll
+    check('390 px: each measure is one line («label … value», not stacked) and the page does not scroll sideways', await page.evaluate(() => { const rows = [...document.querySelectorAll('.sf-meas-list > div')]; const oneLine = rows.length > 0 && rows.every((r) => { const dt = r.querySelector('dt').getBoundingClientRect(); const dd = r.querySelector('dd').getBoundingClientRect(); return getComputedStyle(r).flexDirection === 'row' && Math.abs(dt.top - dd.top) < 4 && dd.height < 30; }); return oneLine && document.documentElement.scrollWidth <= window.innerWidth + 1; }));
 
     await ctx.close();
     check('no console errors and no 5xx', consoleErrors.length === 0, consoleErrors.join(' | '));

@@ -109,6 +109,26 @@ for (const width of [1440, 390]) {
     await context.close();
 }
 
+// ---- 3. MEAS-5.1: the icon is «+» when the section is closed and «−» (U+2212, not a hyphen) when it is open; no rotation of the icon -------------------------------------------------------
+{
+    const { context, page } = await openPage(1440, 'no-preference');
+    const summary = page.locator('details.sf-psec > summary.sf-psec-title').nth(0);
+    const icon = () => summary.evaluate((s) => { const cs = getComputedStyle(s, '::after'); return { content: cs.content, transform: cs.transform }; });
+    check((await page.locator('details.sf-psec').count()) >= 1, 'icon: the product has an accordion section');
+
+    const closed = await icon();
+    check(closed.content === '"+"', `icon: closed shows a plus (${closed.content})`);
+    await summary.click();
+    await page.waitForTimeout(700);
+    const opened = await icon();
+    check(opened.content === '"−"', `icon: open shows a minus sign U+2212 (${opened.content})`);
+    check(closed.transform === 'none' && opened.transform === 'none', `icon: not rotated (${closed.transform} / ${opened.transform})`);
+    await summary.click();
+    await page.waitForTimeout(700);
+    check((await icon()).content === '"+"', 'icon: closed again shows the plus');
+    await context.close();
+}
+
 await browser.close();
 
 console.log(fails.length === 0 ? '\nALL CHECKS PASSED' : `\n${fails.length} CHECK(S) FAILED`);

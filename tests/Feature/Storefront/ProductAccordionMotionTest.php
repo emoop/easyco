@@ -6,7 +6,8 @@ use PHPUnit\Framework\TestCase;
 
 /**
  * ACC-1: the product page's accordion (native `<details class="sf-psec">`) opens and closes with a smooth growing height. CSS only: the open and close are animated where `interpolate-size` and
- * `::details-content` exist, the chevron turns with the same timing, and `prefers-reduced-motion: reduce` switches every transition off. The markup is not touched here (ProductSectionsTest covers it).
+ * `::details-content` exist, and `prefers-reduced-motion: reduce` switches that transition off. The icon is a plus when closed and a minus when open (MEAS-5.1), with no rotation and no transition.
+ * The markup is not touched here (ProductSectionsTest covers it).
  */
 class ProductAccordionMotionTest extends TestCase
 {
@@ -38,15 +39,19 @@ class ProductAccordionMotionTest extends TestCase
         $this->assertMatchesRegularExpression('/\.sf-psec\[open\]::details-content \{\s*block-size: auto;/', $block);
     }
 
-    public function test_the_chevron_turns_with_the_same_timing(): void
+    public function test_the_icon_is_a_plus_when_closed_and_a_minus_when_open(): void
     {
-        $this->assertMatchesRegularExpression('/\.sf-psec-title::after \{\s*transition: transform 250ms ease-out;/', $this->animationBlock());
+        $css = $this->css();
+
+        $this->assertMatchesRegularExpression('/\.sf-psec-title::after \{\s*content: \'\+\';/', $css, 'closed: a plus');
+        $this->assertMatchesRegularExpression('/\.sf-psec\[open\] > \.sf-psec-title::after \{\s*content: \'\\\\2212\';/', $css, 'open: a minus sign (U+2212, not a hyphen)');
+        $this->assertDoesNotMatchRegularExpression('/\.sf-psec-title::after \{[^}]*(transform|rotate|transition)/s', $css, 'the icon neither rotates nor animates');
     }
 
-    public function test_reduced_motion_switches_the_transitions_off(): void
+    public function test_reduced_motion_switches_the_height_transition_off(): void
     {
         $this->assertMatchesRegularExpression(
-            '/@media \(prefers-reduced-motion: reduce\) \{\s*\.sf-psec::details-content,\s*\.sf-psec-title::after \{\s*transition: none;\s*\}\s*\}/',
+            '/@media \(prefers-reduced-motion: reduce\) \{\s*\.sf-psec::details-content \{\s*transition: none;\s*\}\s*\}/',
             $this->css()
         );
     }
