@@ -471,9 +471,10 @@
         @apply m-0 flex flex-wrap items-baseline gap-2;
     }
 
-    /* the price / stock block: pinned to the bottom of every card, so price rows line up across a row */
+    /* the price / stock block: right under the name (FIX-CARDPRICE). Not pinned to the bottom: a card stretched by a neighbour's bottom badge keeps its price under the name; the extra height stays empty under it.
+       Prices still line up across a row because the name has a fixed height (one line, or two reserved lines with «2 реда»). */
     .sf-card-footer {
-        @apply mt-auto flex flex-col;
+        @apply flex flex-col;
     }
 
     .sf-card-footer > .sf-price {
