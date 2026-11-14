@@ -5,6 +5,7 @@ namespace EasyCo\Catalog\Persistence\Eloquent;
 use EasyCo\Catalog\Contracts\MeasurementValueRepository;
 use EasyCo\Catalog\Contracts\ProductMeasurementTemplateRepository;
 use EasyCo\Catalog\Contracts\SizeAxisResolver;
+use EasyCo\Catalog\Enums\MeasurementTemplateKind;
 use EasyCo\Catalog\Exceptions\InvalidMeasurementValueException;
 use EasyCo\Catalog\MeasurementNumber;
 use Illuminate\Support\Facades\DB;
@@ -26,10 +27,16 @@ final class EloquentMeasurementValueRepository implements MeasurementValueReposi
         $grid = [];
 
         foreach (DB::table('catalog_measurement_values')->where('product_id', $productId)->get(['size_value_id', 'measure_id', 'value_hundredths']) as $row) {
-            $grid[(string) $row->size_value_id][(string) $row->measure_id] = (int) $row->value_hundredths;
+            $grid[$this->rowKey($row->size_value_id)][(string) $row->measure_id] = (int) $row->value_hundredths;
         }
 
         return $grid;
+    }
+
+    /** A stored NULL size value is the product's one row. */
+    private function rowKey(mixed $sizeValueId): string
+    {
+        return $sizeValueId === null ? self::PRODUCT_ROW : (string) $sizeValueId;
     }
 
     public function saveForProduct(string $productId, array $rows): void
@@ -61,13 +68,17 @@ final class EloquentMeasurementValueRepository implements MeasurementValueReposi
             }
 
             $templateMeasures = DB::table('catalog_measurement_template_measures')->where('template_id', $templateId)->pluck('measure_id')->map(fn ($id) => (string) $id)->all();
-            $axisSizes = $this->axis->forProduct($productId);
+            $single = DB::table('catalog_measurement_templates')->where('id', $templateId)->value('kind') === MeasurementTemplateKind::SINGLE->value;
+            // the rows of the current grid: the product's one row, or the size values of its axis
+            $axisSizes = $single ? [self::PRODUCT_ROW] : $this->axis->forProduct($productId);
 
             // 1. validate everything first: on any refusal nothing is written
             foreach ($desired as $sizeKey => $cells) {
                 $sizeValueId = (string) $sizeKey;
                 if (! in_array($sizeValueId, $axisSizes, true)) {
-                    throw InvalidMeasurementValueException::sizeValueNotOnAxis($productId, $sizeValueId);
+                    throw $single
+                        ? InvalidMeasurementValueException::singleRowOnly($productId, $sizeValueId)
+                        : InvalidMeasurementValueException::sizeValueNotOnAxis($productId, $sizeValueId);
                 }
 
                 foreach ($cells as $measureKey => $hundredths) {
@@ -85,7 +96,7 @@ final class EloquentMeasurementValueRepository implements MeasurementValueReposi
             // 2. diff against the stored grid
             $existing = [];
             foreach (DB::table('catalog_measurement_values')->where('product_id', $productId)->get(['id', 'size_value_id', 'measure_id', 'value_hundredths']) as $row) {
-                $existing[(string) $row->size_value_id][(string) $row->measure_id] = ['id' => $row->id, 'value' => (int) $row->value_hundredths];
+                $existing[$this->rowKey($row->size_value_id)][(string) $row->measure_id] = ['id' => $row->id, 'value' => (int) $row->value_hundredths];
             }
 
             $now = now();
@@ -120,7 +131,7 @@ final class EloquentMeasurementValueRepository implements MeasurementValueReposi
                     if ($stored === null) {
                         $insert[] = [
                             'product_id' => $productId,
-                            'size_value_id' => $sizeValueId,
+                            'size_value_id' => $sizeValueId === self::PRODUCT_ROW ? null : $sizeValueId,
                             'measure_id' => $measureId,
                             'value_hundredths' => $hundredths,
                             'created_at' => $now,

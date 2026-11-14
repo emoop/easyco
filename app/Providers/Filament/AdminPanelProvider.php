@@ -52,6 +52,8 @@ class AdminPanelProvider extends PanelProvider
         FilamentAsset::register([
             Css::make('admin-product-media-gallery', asset('css/admin/product-media-gallery.css')),
             Css::make('admin-order-view', asset('css/admin/order-view.css')),
+            // MEAS-4: the grid of the product tab «Размери» (plain CSS, no build step)
+            Css::make('admin-measurement-grid', asset('css/admin/measurement-grid.css')),
         ]);
 
         // HINT-1 / HB-5.1: the info icon and its tooltip look the same on every admin page, so their stylesheet is loaded on every page (a Vite build, as the Design screen's; a render hook in the head)

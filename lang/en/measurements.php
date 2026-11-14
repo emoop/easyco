@@ -9,6 +9,13 @@ return [
         'm' => 'm',
         'in' => 'in',
         'ft' => 'ft',
+        'g' => 'g',
+        'kg' => 'kg',
+    ],
+
+    'kinds' => [
+        'by_size' => 'By size',
+        'single' => 'General measures',
     ],
 
     'status' => [
@@ -86,12 +93,15 @@ return [
         'archived_marker' => 'archived',
         'fields' => [
             'name' => 'Name',
+            'kind' => 'Kind',
             'sort' => 'Order',
             'measures' => 'Measures',
             'products' => 'Products',
             'status' => 'Status',
         ],
+        'kind_locked' => 'The kind cannot change because products that use this template have numbers entered.',
         'help' => [
+            'kind' => 'By size: the rows are the sizes of the product (S, M, L…). General measures: one row for the whole product, e.g. a phone, an oven, a bag.',
             'name' => 'For example «Tops» or «Trousers».',
             'sort' => 'A smaller number comes first in the list.',
             'measures' => 'The order here is the order of the columns in the size table. Each measure at most once; up to 20. A template with no measures is saved as a draft.',
@@ -132,6 +142,32 @@ return [
         ],
     ],
 
+    // MEAS-4: the product tab «Sizes»
+    'product_tab' => [
+        'title' => 'Sizes',
+        'template' => 'Size template',
+        'template_help' => 'The template decides the columns of the table. It is created in Catalog → Size templates.',
+        'open_templates' => 'Go to the size templates',
+        'no_table' => 'No size table',
+        'none_exist' => 'There are no size templates yet.',
+        'create_template' => 'Create a size template',
+        'none_single' => 'Simple products only use «General measures» templates, and there is none yet.',
+        'create_single_template' => 'Create a «General measures» template',
+        'switch_warning' => 'Numbers for measures that the new template does not have are not deleted — they are kept hidden and come back if you return to the old template.',
+        'fallback_before' => 'The rows are by «:axis» because none of the attributes of the product is marked as «Size measure».',
+        'fallback_link' => 'Open the attribute',
+        'no_measures' => 'This template has no measures yet.',
+        'no_rows' => 'This template is «By size» and the product has no sizes yet (variation axes).',
+        'archived_column' => '(archived — not shown on the site)',
+        'hidden_values' => '{1}There is 1 hidden value (from a previous template or size). It is kept.|[2,*]There are :count hidden values (from a previous template or size). They are kept.',
+        'copy_first_row' => 'Copy the first row to all',
+        'copied' => '{0}No empty cells to fill|{1}1 cell filled|[2,*]:count cells filled',
+        'audit_cells_changed' => ':count cells changed',
+        'notice' => [
+            'refused' => 'Sizes not saved',
+        ],
+    ],
+
     // Every refusal of the data layer (InvalidMeasurementValueException / MeasurementRefusedException `reason`) has a text here; a test makes sure no refusal ships untranslated.
     'refusals' => [
         'name_taken' => 'A record with this name already exists.',
@@ -147,6 +183,8 @@ return [
         'measure_not_in_template' => 'This measure is not in the product\'s template.',
         'no_template' => 'The product has no size template.',
         'size_value_not_on_axis' => 'This value is not a size of the product.',
+        'single_row_only' => 'A «General measures» template has only one row for the whole product.',
+        'kind_locked' => 'The kind cannot change because products that use this template have numbers entered.',
         'generic' => 'The action is not allowed.',
     ],
 

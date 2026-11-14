@@ -12,6 +12,7 @@ use App\Filament\Support\MeasurementRefusals;
 use App\Services\MeasurementTemplateWriter;
 use App\Services\MeasurementUsageReader;
 use BackedEnum;
+use EasyCo\Catalog\Enums\MeasurementTemplateKind;
 use EasyCo\Catalog\MeasurementTemplate;
 use EasyCo\Catalog\Persistence\Eloquent\MeasureModel;
 use EasyCo\Catalog\Persistence\Eloquent\MeasurementTemplateModel;
@@ -22,6 +23,7 @@ use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
+use Filament\Schemas\Components\Text;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\Filter;
@@ -114,6 +116,17 @@ class MeasurementTemplateResource extends Resource
                 ->afterLabel(InfoHint::make(__('measurements.template.help.name'), 'template_name'))
                 ->required()
                 ->maxLength(MeasurementTemplate::NAME_MAX_LENGTH),
+            Select::make('kind')
+                ->label(__('measurements.template.fields.kind'))
+                ->afterLabel(InfoHint::make(__('measurements.template.help.kind'), 'template_kind'))
+                ->options(static::kindOptions())
+                ->default(MeasurementTemplateKind::BY_SIZE->value)
+                ->required()
+                ->native(false)
+                // locked once a product that uses the template holds a number (decided when the page opened; the repository refuses a stale form as well)
+                ->disabled(fn ($livewire): bool => static::kindLocked($livewire)),
+            Text::make(__('measurements.template.kind_locked'))->color('warning')->size('sm')
+                ->visible(fn ($livewire): bool => static::kindLocked($livewire)),
             TextInput::make('sort')
                 ->label(__('measurements.template.fields.sort'))
                 ->afterLabel(InfoHint::make(__('measurements.template.help.sort'), 'template_sort'))
@@ -138,6 +151,23 @@ class MeasurementTemplateResource extends Resource
                 ->defaultItems(0)
                 ->reorderableWithButtons(),
         ]);
+    }
+
+    private static function kindLocked($livewire): bool
+    {
+        return $livewire instanceof EditMeasurementTemplate && $livewire->kindLocked;
+    }
+
+    /** @return array<string, string> */
+    public static function kindOptions(): array
+    {
+        $options = [];
+
+        foreach (MeasurementTemplateKind::cases() as $kind) {
+            $options[$kind->value] = __('measurements.kinds.'.$kind->value);
+        }
+
+        return $options;
     }
 
     /**
@@ -185,6 +215,11 @@ class MeasurementTemplateResource extends Resource
                     ->label(__('measurements.template.fields.name'))
                     ->weight('bold')
                     ->wrap(),
+                TextColumn::make('kind')
+                    ->label(__('measurements.template.fields.kind'))
+                    ->badge()
+                    ->formatStateUsing(fn ($state): string => __('measurements.kinds.'.($state ?: 'by_size')))
+                    ->color(fn ($state): string => $state === 'single' ? 'info' : 'gray'),
                 TextColumn::make('measures')
                     ->label(__('measurements.template.fields.measures'))
                     ->state(function (MeasurementTemplateModel $record, $livewire): string {

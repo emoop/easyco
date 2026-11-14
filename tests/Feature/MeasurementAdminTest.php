@@ -567,4 +567,110 @@ class MeasurementAdminTest extends TestCase
         }
         $this->assertNotNull(MeasurementTemplateModel::find($used->id()));
     }
+
+    // ================================================================ MEAS-4: the template KIND
+
+    public function test_the_kind_select_creates_a_single_template_shows_a_badge_and_the_two_examples_in_the_hint(): void
+    {
+        $this->admin();
+        $this->auditOn();
+        $thickness = $this->measure('Thickness', 'mm');
+
+        Livewire::test(CreateMeasurementTemplate::class)
+            ->assertFormSet(['kind' => 'by_size'])
+            ->assertSee(__('measurements.template.help.kind'))
+            ->fillForm(['name' => 'Phones', 'sort' => 1, 'kind' => 'single', 'measures' => $this->rows([$thickness->id()])])
+            ->call('create')->assertHasNoFormErrors();
+
+        $this->assertSame('single', MeasurementTemplateModel::where('name', 'Phones')->value('kind'));
+
+        $this->template('Tops', [$thickness]);
+        Livewire::test(ListMeasurementTemplates::class)
+            ->assertSee(__('measurements.kinds.single'))
+            ->assertSee(__('measurements.kinds.by_size'));
+    }
+
+    public function test_a_required_kind_cannot_be_empty_or_unknown(): void
+    {
+        $this->admin();
+
+        Livewire::test(CreateMeasurementTemplate::class)
+            ->fillForm(['name' => 'X', 'sort' => 1, 'kind' => null])
+            ->call('create')->assertHasFormErrors(['kind' => 'required']);
+
+        Livewire::test(CreateMeasurementTemplate::class)
+            ->fillForm(['name' => 'X', 'sort' => 1, 'kind' => 'nonsense'])
+            ->call('create')->assertHasFormErrors(['kind']);
+
+        $this->assertSame(0, MeasurementTemplateModel::count());
+    }
+
+    public function test_the_kind_changes_while_no_number_exists_and_is_audited(): void
+    {
+        $this->admin();
+        $this->auditOn();
+        $template = $this->template('Tops', [$this->measure('Chest')]);
+        $this->assignProduct($template);
+
+        Livewire::test(EditMeasurementTemplate::class, ['record' => $template->id()])
+            ->assertFormFieldIsEnabled('kind')
+            ->fillForm(['kind' => 'single'])
+            ->call('save')->assertHasNoFormErrors();
+
+        $this->assertSame('single', MeasurementTemplateModel::find($template->id())->kind);
+        $this->assertSame([['updated', 'kind', 'by_size', 'single']], $this->audit('measurement_template'));
+    }
+
+    public function test_the_kind_select_is_disabled_with_the_reason_when_a_product_holds_numbers_and_a_stale_form_is_refused(): void
+    {
+        $this->admin();
+        $this->auditOn();
+        $chest = $this->measure('Chest');
+        $template = $this->template('Tops', [$chest]);
+        $this->assignProduct($template);
+        $this->storeNumberFor($template, $chest);
+
+        Livewire::test(EditMeasurementTemplate::class, ['record' => $template->id()])
+            ->assertSee(__('measurements.template.kind_locked'))
+            ->assertFormFieldIsDisabled('kind');
+
+        // a form opened BEFORE the first number was stored: the repository refusal is a translated notice and nothing is saved
+        $free = $this->template('Dresses', [$chest]);
+        $this->assignProduct($free);
+        $page = Livewire::test(EditMeasurementTemplate::class, ['record' => $free->id()])->assertFormFieldIsEnabled('kind');
+        $this->storeNumberFor($free, $chest);
+
+        $page->fillForm(['kind' => 'single'])->call('save')->assertNotified(__('measurements.template.notice.refused'));
+
+        $this->assertSame('by_size', MeasurementTemplateModel::find($free->id())->kind);
+        $this->assertSame([], $this->audit('measurement_template'));
+    }
+
+    /** One stored number for a product that USES $template (the kind lock looks at products that use the template). */
+    private function storeNumberFor(MeasurementTemplate $template, Measure $measure): void
+    {
+        $productId = (string) DB::table('catalog_product_measurement_templates')->where('template_id', $template->id())->value('product_id');
+        $n = ++$this->counter;
+        $definition = new AttributeDefinition(id: null, code: 'ksize'.$n, name: 'Size'.$n, type: AttributeType::SELECT);
+        app(AttributeDefinitionRepository::class)->save($definition);
+        $value = new AttributeValue(id: null, attributeDefinitionId: $definition->id(), value: 'M', sortOrder: 0);
+        app(AttributeValueRepository::class)->save($value);
+
+        DB::table('catalog_measurement_values')->insert([
+            'product_id' => $productId, 'size_value_id' => $value->id(), 'measure_id' => $measure->id(), 'value_hundredths' => 9500, 'created_at' => now(), 'updated_at' => now(),
+        ]);
+    }
+
+    public function test_grams_and_kilograms_are_offered_by_the_measure_screen(): void
+    {
+        $this->admin();
+
+        Livewire::test(CreateMeasure::class)
+            ->fillForm(['name' => 'Weight', 'unit' => 'g', 'sort' => 1])->call('create')->assertHasNoFormErrors();
+        Livewire::test(CreateMeasure::class)
+            ->fillForm(['name' => 'Heavy', 'unit' => 'kg', 'sort' => 2])->call('create')->assertHasNoFormErrors();
+
+        $this->assertSame(['g', 'kg'], MeasureModel::orderBy('id')->pluck('unit')->all());
+        Livewire::test(ListMeasures::class)->assertSee(__('measurements.units.g'))->assertSee(__('measurements.units.kg'));
+    }
 }

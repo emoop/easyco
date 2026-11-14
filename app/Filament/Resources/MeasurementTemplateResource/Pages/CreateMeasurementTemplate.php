@@ -5,6 +5,7 @@ namespace App\Filament\Resources\MeasurementTemplateResource\Pages;
 use App\Filament\Resources\MeasurementTemplateResource;
 use App\Filament\Support\MeasurementRefusals;
 use App\Services\MeasurementTemplateWriter;
+use EasyCo\Catalog\Enums\MeasurementTemplateKind;
 use EasyCo\Catalog\MeasurementTemplate;
 use EasyCo\Catalog\Persistence\Eloquent\MeasurementTemplateModel;
 use Filament\Resources\Pages\CreateRecord;
@@ -21,7 +22,7 @@ class CreateMeasurementTemplate extends CreateRecord
         $ids = MeasurementTemplateResource::measureIds((array) ($data['measures'] ?? []));
 
         try {
-            $template = app(MeasurementTemplateWriter::class)->save(MeasurementTemplate::create((string) ($data['name'] ?? ''), $ids, (int) ($data['sort'] ?? 0)));
+            $template = app(MeasurementTemplateWriter::class)->save(MeasurementTemplate::create((string) ($data['name'] ?? ''), $ids, (int) ($data['sort'] ?? 0), MeasurementTemplateKind::tryFrom((string) ($data['kind'] ?? '')) ?? MeasurementTemplateKind::BY_SIZE));
         } catch (Throwable $exception) {
             if (! MeasurementRefusals::isRefusal($exception)) {
                 throw $exception;

@@ -30,6 +30,11 @@ final class MeasurementRefusedException extends RuntimeException
         return new self("Template \"{$templateId}\" is used by {$products} product(s): archive it instead of deleting it.", 'template_in_use');
     }
 
+    public static function kindLocked(string $templateId, int $products): self
+    {
+        return new self("The kind of template \"{$templateId}\" cannot change: {$products} product(s) that use it hold numbers.", 'kind_locked');
+    }
+
     public static function nameTaken(string $what, string $name): self
     {
         return new self("A {$what} named \"{$name}\" already exists.", 'name_taken');

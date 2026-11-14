@@ -40,6 +40,11 @@ final class InvalidMeasurementValueException extends InvalidArgumentException
         return new self("Size value \"{$sizeValueId}\" is not on the size axis of product \"{$productId}\".", 'size_value_not_on_axis');
     }
 
+    public static function singleRowOnly(string $productId, string $rowKey): self
+    {
+        return new self("Product \"{$productId}\" uses a single-row template: row \"{$rowKey}\" is not accepted, only the product's own row.", 'single_row_only');
+    }
+
     public static function unknownUnit(string $unit): self
     {
         return new self("Unknown measure unit \"{$unit}\".", 'unknown_unit');

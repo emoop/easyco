@@ -2,6 +2,7 @@
 
 namespace EasyCo\Catalog;
 
+use EasyCo\Catalog\Enums\MeasurementTemplateKind;
 use EasyCo\Catalog\Exceptions\InvalidMeasurementValueException;
 use LogicException;
 
@@ -29,6 +30,7 @@ final class MeasurementTemplate
         array $measureIds = [],
         private int $sort = 0,
         private bool $active = true,
+        private MeasurementTemplateKind $kind = MeasurementTemplateKind::BY_SIZE,
     ) {
         $this->name = self::cleanName($name);
         $this->measureIds = self::cleanMeasureIds($measureIds);
@@ -39,9 +41,9 @@ final class MeasurementTemplate
     }
 
     /** @param string[] $measureIds */
-    public static function create(string $name, array $measureIds = [], int $sort = 0): self
+    public static function create(string $name, array $measureIds = [], int $sort = 0, MeasurementTemplateKind $kind = MeasurementTemplateKind::BY_SIZE): self
     {
-        return new self(null, $name, $measureIds, $sort, true);
+        return new self(null, $name, $measureIds, $sort, true, $kind);
     }
 
     private static function cleanName(string $name): string
@@ -129,6 +131,17 @@ final class MeasurementTemplate
         }
 
         $this->sort = $sort;
+    }
+
+    public function kind(): MeasurementTemplateKind
+    {
+        return $this->kind;
+    }
+
+    /** Whether the kind may change once products hold numbers is the repository's rule (`kind_locked`); this class cannot see the numbers. */
+    public function changeKind(MeasurementTemplateKind $kind): void
+    {
+        $this->kind = $kind;
     }
 
     public function isActive(): bool

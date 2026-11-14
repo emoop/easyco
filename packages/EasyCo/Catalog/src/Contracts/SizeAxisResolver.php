@@ -16,6 +16,14 @@ interface SizeAxisResolver
      */
     public function forProduct(string $productId): array;
 
+    /**
+     * The axis that supplies the rows, with its names (MEAS-4: the grid's row labels, the axis name in the header and the «fallback axis» hint) in TWO statements (ONE for a product without an axis).
+     * `values` is [value id => value text] in the same order as forProduct(); null when the product has no variation axis.
+     *
+     * @return array{definition_id: string, name: string, is_size: bool, values: array<string, string>}|null
+     */
+    public function axisWithValues(string $productId): ?array;
+
     /** The attribute definition id of the axis that supplies the rows, or null when there is none. Same statements as forProduct(). */
     public function axisDefinitionIdFor(string $productId): ?string;
 }

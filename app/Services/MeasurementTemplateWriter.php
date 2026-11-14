@@ -16,7 +16,7 @@ use EasyCo\Extensibility\Hook;
  *  catalog.measurement_template.deleted  (array $snapshot)                                 {id, name, measure_ids}; only a template no product uses
  *
  * AUDIT (MEAS-3): entity `measurement_template`, after the repository saved and before the hook, only for a write that succeeded: create -> `created`; an update -> one `updated` entry per changed field
- * (`name`, `sort`, `measures` as the ordered id list `3,1,7`, `is_active`) old -> new; delete -> `deleted` with a snapshot. A save that changes nothing writes no audit entry.
+ * (`name`, `kind`, `sort`, `measures` as the ordered id list `3,1,7`, `is_active`) old -> new; delete -> `deleted` with a snapshot. A save that changes nothing writes no audit entry.
  */
 final class MeasurementTemplateWriter
 {
@@ -94,6 +94,7 @@ final class MeasurementTemplateWriter
 
         $fields = [
             'name' => [$before->name(), $after->name()],
+            'kind' => [$before->kind()->value, $after->kind()->value],
             'sort' => [(string) $before->sort(), (string) $after->sort()],
             'measures' => [implode(',', $before->measureIds()), implode(',', $after->measureIds())],
             'is_active' => [$before->isActive() ? '1' : '0', $after->isActive() ? '1' : '0'],

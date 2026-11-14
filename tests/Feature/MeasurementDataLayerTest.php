@@ -566,7 +566,7 @@ class MeasurementDataLayerTest extends TestCase
     {
         $this->assertSame(['id', 'name', 'unit', 'sort', 'is_active', 'created_at', 'updated_at'], \Schema::getColumnListing('catalog_measures'));
         $this->assertSame(['product_id', 'template_id', 'created_at', 'updated_at'], \Schema::getColumnListing('catalog_product_measurement_templates'));
-        $this->assertSame(['id', 'product_id', 'size_value_id', 'measure_id', 'value_hundredths', 'created_at', 'updated_at'], \Schema::getColumnListing('catalog_measurement_values'));
+        $this->assertSame(['id', 'product_id', 'size_value_id', 'measure_id', 'value_hundredths', 'created_at', 'updated_at', 'row_slot'], \Schema::getColumnListing('catalog_measurement_values'));
         $this->assertFalse(\Schema::hasColumn('catalog_products', 'measurement_template_id'), 'the assignment is a separate table (Product.php is frozen)');
     }
 

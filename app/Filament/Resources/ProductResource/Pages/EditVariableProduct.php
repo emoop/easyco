@@ -461,6 +461,8 @@ class EditVariableProduct extends EditRecord
                                         ->schema($this->existingVariationsComponents()),
                                     // P4b: the texts of the product for the «Секции на продукта» (hidden when no section takes one); the wizard is not changed: the texts are added after the creation
                                     ProductResource::sectionTextsTab()->id('information'),
+                                    // MEAS-4: «Размери» (all of its logic lives in Measurements\MeasurementsTab and ProductMeasurementsPanel)
+                                    \App\Filament\Resources\ProductResource\Measurements\MeasurementsTab::make(false),
                                 ]),
                         ]),
                     Group::make()
@@ -1958,6 +1960,9 @@ class EditVariableProduct extends EditRecord
         // P4b: the texts of the «Информация» tab (section key => html): ONE query, and none when no section takes a product text
         $data = array_merge($data, \App\Storefront\Sections\SectionTexts::switchKeys() === [] ? ['section_texts' => [], 'section_shown' => []] : \App\Storefront\Sections\SectionTexts::forForm((int) $productId));
 
+        // MEAS-4: the template and the numbers of the «Размери» tab
+        $data = array_merge($data, app(\App\Filament\Resources\ProductResource\Measurements\ProductMeasurementsPanel::class)->load($this, $productId));
+
         $data['categories'] = array_map(
             fn ($c) => (string) $c->categoryId(),
             app(ProductCategoryRepository::class)->findByProductId($productId)
@@ -2187,7 +2192,18 @@ class EditVariableProduct extends EditRecord
             }
         }
 
+        // MEAS-4: after the product's own save succeeded: the template and the numbers of the «Размери» tab (a refusal is a red notice; the product stays saved)
+        $this->refreshMeasurements(app(\App\Filament\Resources\ProductResource\Measurements\ProductMeasurementsPanel::class)->saveFromPage($this, (string) $record->getKey(), false, $data));
+
         return $saved;
+    }
+
+    /** MEAS-4: puts the refreshed state of the «Размери» tab (what was really stored) back into the form. */
+    private function refreshMeasurements(?array $state): void
+    {
+        if ($state !== null) {
+            $this->data = array_merge($this->data ?? [], $state);
+        }
     }
 
     /**

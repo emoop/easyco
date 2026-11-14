@@ -3,6 +3,7 @@
 namespace EasyCo\Catalog\Persistence\Eloquent;
 
 use EasyCo\Catalog\Contracts\MeasurementTemplateRepository;
+use EasyCo\Catalog\Enums\MeasurementTemplateKind;
 use EasyCo\Catalog\Exceptions\InvalidMeasurementValueException;
 use EasyCo\Catalog\Exceptions\MeasurementRefusedException;
 use EasyCo\Catalog\MeasurementTemplate;
@@ -25,6 +26,20 @@ final class EloquentMeasurementTemplateRepository implements MeasurementTemplate
             $model->name = $template->name();
             $model->sort = $template->sort();
             $model->is_active = $template->isActive();
+
+            // the kind is locked once any product that uses this template holds a number (the rows would change meaning under the numbers)
+            if ($template->id() !== null && $model->kind !== $template->kind()->value) {
+                $holding = DB::table('catalog_product_measurement_templates as pt')
+                    ->where('pt.template_id', $model->id)
+                    ->whereExists(fn ($q) => $q->select(DB::raw(1))->from('catalog_measurement_values as v')->whereColumn('v.product_id', 'pt.product_id'))
+                    ->count();
+
+                if ($holding > 0) {
+                    throw MeasurementRefusedException::kindLocked((string) $model->id, $holding);
+                }
+            }
+
+            $model->kind = $template->kind()->value;
 
             try {
                 $model->save();
@@ -143,6 +158,7 @@ final class EloquentMeasurementTemplateRepository implements MeasurementTemplate
             measureIds: $measureIds,
             sort: (int) $model->sort,
             active: (bool) $model->is_active,
+            kind: MeasurementTemplateKind::tryFrom((string) $model->kind) ?? MeasurementTemplateKind::BY_SIZE,
         );
     }
 }

@@ -1,0 +1,46 @@
+/* MEAS-4: the measurements grid of the product tab «Размери» (resources/views/filament/forms/components/measurement-grid.blade.php). Compact like the rest of the admin. The table scrolls INSIDE its own box with a
+   sticky first column (the TBL-1 idea), so the page itself never scrolls sideways, also at 390 px. */
+.meas { min-width: 0; max-width: 100%; font-size: 0.8125rem; }
+
+.meas-note { margin: 0 0 0.5rem; color: var(--gray-600); }
+.meas-fallback { padding: 0.4rem 0.6rem; border-radius: 0.375rem; background: var(--warning-50, #fffbeb); color: var(--gray-800); }
+.meas-fallback a { text-decoration: underline; }
+.meas-hidden { margin: 0.5rem 0 0; color: var(--gray-500); font-size: 0.75rem; }
+.meas-archived { display: block; font-weight: 400; font-size: 0.6875rem; color: var(--gray-500); }
+.meas-archived-col { opacity: 0.7; }
+
+.meas-scroll { overflow-x: auto; max-width: 100%; border: 1px solid var(--gray-200); border-radius: 0.5rem; }
+.meas-table { border-collapse: separate; border-spacing: 0; width: max-content; min-width: 100%; }
+.meas-table th, .meas-table td { padding: 0.35rem 0.5rem; border-bottom: 1px solid var(--gray-100); vertical-align: top; text-align: left; }
+.meas-table thead th { font-weight: 600; white-space: nowrap; background: var(--gray-50); border-bottom: 1px solid var(--gray-200); }
+.meas-table tbody tr:last-child th, .meas-table tbody tr:last-child td { border-bottom: 0; }
+.meas-table tbody th { font-weight: 500; white-space: nowrap; }
+.meas-sticky { position: sticky; left: 0; z-index: 1; background: #fff; box-shadow: 1px 0 0 var(--gray-200); }
+.meas-table thead .meas-sticky { background: var(--gray-50); z-index: 2; }
+
+.meas-input { width: 6rem; padding: 0.3rem 0.45rem; border: 1px solid var(--gray-300); border-radius: 0.375rem; background: #fff; color: inherit; font: inherit; }
+.meas-input:focus { outline: 2px solid var(--primary-500, #f59e0b); outline-offset: 0; border-color: transparent; }
+.meas-input:disabled { background: var(--gray-100); }
+.meas-input-error { border-color: var(--danger-600, #dc2626); }
+.meas-error { display: block; max-width: 11rem; margin-top: 0.15rem; font-size: 0.6875rem; line-height: 1.25; color: var(--danger-600, #dc2626); white-space: normal; }
+
+.meas-single { display: grid; gap: 0.5rem; max-width: 28rem; }
+.meas-single-row { display: grid; grid-template-columns: minmax(0, 1fr) 6.5rem 3rem; align-items: start; gap: 0.5rem; }
+.meas-single-label { padding-top: 0.35rem; font-weight: 500; }
+.meas-unit { padding-top: 0.35rem; color: var(--gray-600); }
+.meas-single-row .meas-error { grid-column: 2 / -1; max-width: none; }
+
+.dark .meas-scroll { border-color: var(--gray-700); }
+.dark .meas-table th, .dark .meas-table td { border-bottom-color: var(--gray-800); }
+.dark .meas-table thead th { background: var(--gray-800); border-bottom-color: var(--gray-700); }
+.dark .meas-sticky { background: var(--gray-900); box-shadow: 1px 0 0 var(--gray-700); }
+.dark .meas-table thead .meas-sticky { background: var(--gray-800); }
+.dark .meas-input { background: var(--gray-900); border-color: var(--gray-600); }
+.dark .meas-input:disabled { background: var(--gray-800); }
+.dark .meas-note, .dark .meas-unit { color: var(--gray-400); }
+.dark .meas-fallback { background: rgba(245, 158, 11, 0.12); color: var(--gray-200); }
+
+@media (max-width: 40rem) {
+    .meas-single-row { grid-template-columns: minmax(0, 1fr) 5.5rem 2.5rem; }
+    .meas-input { width: 5.5rem; }
+}

@@ -309,6 +309,8 @@ class ProductResource extends Resource
                                         ->schema(static::priceStockTabComponents()),
                                     // P4b: the texts of the product for the sections of «Дизайн» → «Секции на продукта» (hidden when no section takes a product text)
                                     static::sectionTextsTab(),
+                                    // MEAS-4: «Размери» (edit page only; a simple product is offered the «Общи размери» templates)
+                                    \App\Filament\Resources\ProductResource\Measurements\MeasurementsTab::make(true),
                                 ]),
                         ]),
                     Group::make()

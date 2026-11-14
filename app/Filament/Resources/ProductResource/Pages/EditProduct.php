@@ -103,6 +103,9 @@ class EditProduct extends EditRecord
 
         $data['descriptive_attributes_picker'] = ProductResource::seedDescriptiveAttributesPickerRows($product);
 
+        // MEAS-4: the template and the numbers of the «Размери» tab
+        $data = array_merge($data, app(\App\Filament\Resources\ProductResource\Measurements\ProductMeasurementsPanel::class)->load($this, $productId));
+
         // findByProductId() returns every attached pivot regardless of
         // the underlying MediaAsset's type, ordered by sort_order asc.
         // ProductMedia's own class docblock: "NO is_primary field...
@@ -157,6 +160,10 @@ class EditProduct extends EditRecord
 
         // After the commit: ShippingClassAssigner is its own write (one audit entry, hook after commit).
         ProductResource::applyShippingClass('product', (string) $record->id, $data['shipping_class'] ?? null, $storedCode);
+
+        // MEAS-4: after the product's own save succeeded: the template and the numbers of the «Размери» tab (a refusal is a red notice; the product stays saved)
+        $state = app(\App\Filament\Resources\ProductResource\Measurements\ProductMeasurementsPanel::class)->saveFromPage($this, (string) $record->getKey(), true, $data);
+        $state === null || $this->data = array_merge($this->data ?? [], $state);
 
         return $saved;
     }

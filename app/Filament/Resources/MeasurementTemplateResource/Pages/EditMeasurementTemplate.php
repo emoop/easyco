@@ -19,6 +19,19 @@ class EditMeasurementTemplate extends EditRecord
 {
     protected static string $resource = MeasurementTemplateResource::class;
 
+    /** Decided when the page OPENS: a product that uses this template holds a number, so the kind cannot change (the repository still refuses a stale form). */
+    public bool $kindLocked = false;
+
+    public function mount(int | string $record): void
+    {
+        parent::mount($record);
+
+        $this->kindLocked = \Illuminate\Support\Facades\DB::table('catalog_product_measurement_templates as pt')
+            ->where('pt.template_id', $this->getRecord()->getKey())
+            ->whereExists(fn ($q) => $q->select(\Illuminate\Support\Facades\DB::raw(1))->from('catalog_measurement_values as v')->whereColumn('v.product_id', 'pt.product_id'))
+            ->exists();
+    }
+
     /** @return string[] the template's stored measure ids, in order */
     public function ownMeasureIds(): array
     {
@@ -48,6 +61,12 @@ class EditMeasurementTemplate extends EditRecord
 
             if ((string) ($data['name'] ?? $template->name()) !== $template->name()) {
                 $template->rename((string) $data['name']);
+                $changed = true;
+            }
+
+            // a disabled field is not submitted: a missing `kind` means "no change"
+            if (isset($data['kind']) && (string) $data['kind'] !== $template->kind()->value) {
+                $template->changeKind(\EasyCo\Catalog\Enums\MeasurementTemplateKind::from((string) $data['kind']));
                 $changed = true;
             }
 

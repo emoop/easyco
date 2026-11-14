@@ -112,10 +112,10 @@ class MeasurementNumberTest extends TestCase
 
     public function test_the_unit_list_is_closed(): void
     {
-        $this->assertSame(['mm', 'cm', 'm', 'in', 'ft'], MeasureUnit::codes());
+        $this->assertSame(['mm', 'cm', 'm', 'in', 'ft', 'g', 'kg'], MeasureUnit::codes());
         $this->assertSame(MeasureUnit::FT, Measure::create('Length', 'ft')->unit());
 
-        foreach (['km', 'g', 'CM', '', 'cm '] as $unit) {
+        foreach (['km', 'lb', 'CM', '', 'cm ', 'G'] as $unit) {
             try {
                 Measure::create('Length', $unit);
                 $this->fail("unit {$unit} should be refused");

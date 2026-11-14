@@ -16,6 +16,7 @@ class MeasurementTemplateModel extends Model
         'name',
         'sort',
         'is_active',
+        'kind',
     ];
 
     protected $casts = [
