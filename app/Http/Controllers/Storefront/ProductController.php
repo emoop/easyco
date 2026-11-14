@@ -61,7 +61,9 @@ final class ProductController extends Controller
         // P4c: ONE read of the product's texts AND its «Показвай на този продукт» switches whenever the page prints sections; one read of its season and tags only when a `meta` section is defined
         $rows = $usesSections ? \App\Storefront\Sections\SectionTexts::rowsForProduct((int) $product->id) : ['texts' => [], 'hidden' => []];
         $meta = $usesSections && \App\Storefront\Sections\SectionMeta::isUsed($definitions) ? \App\Storefront\Sections\SectionMeta::forProduct((int) $product->id, app(\App\Storefront\Url\StorefrontUrls::class)) : null;
-        $sections = $usesSections ? \App\Storefront\Sections\SectionResolver::resolve($definitions, $rows['texts'], $description, $rows['hidden'], $meta, $context) : [];
+        // MEAS-5: the product's measurements are read only when a published section has the `measurements` source AND the merchant has not switched it off for this product
+        $measurements = $usesSections && \App\Storefront\Sections\SectionMeasurements::isUsed($definitions, $rows['hidden']) ? app(\App\Storefront\Sections\SectionMeasurements::class)->html((string) $product->id, $product->name) : null;
+        $sections = $usesSections ? \App\Storefront\Sections\SectionResolver::resolve($definitions, $rows['texts'], $description, $rows['hidden'], $meta, $context, $measurements) : [];
 
         return view('storefront.product', [
             'product' => $product,

@@ -39,6 +39,16 @@ final class EloquentMeasurementValueRepository implements MeasurementValueReposi
         return $sizeValueId === null ? self::PRODUCT_ROW : (string) $sizeValueId;
     }
 
+    public function copyProduct(string $fromProductId, string $toProductId): int
+    {
+        $now = now();
+
+        return DB::table('catalog_measurement_values')->insertOrIgnoreUsing(
+            ['product_id', 'size_value_id', 'measure_id', 'value_hundredths', 'created_at', 'updated_at'],
+            DB::table('catalog_measurement_values')->where('product_id', $fromProductId)->selectRaw('?, size_value_id, measure_id, value_hundredths, ?, ?', [$toProductId, $now, $now]),
+        );
+    }
+
     public function saveForProduct(string $productId, array $rows): void
     {
         DB::transaction(function () use ($productId, $rows): void {

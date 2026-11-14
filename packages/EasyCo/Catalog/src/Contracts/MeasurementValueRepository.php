@@ -31,4 +31,10 @@ interface MeasurementValueRepository
      * @throws InvalidMeasurementValueException  `no_template`, `measure_not_in_template`, `size_value_not_on_axis`, `single_row_only`, `out_of_range`
      */
     public function saveForProduct(string $productId, array $rows): void;
+
+    /**
+     * Copy EVERY stored number of one product to another (MEAS-5, a product duplicate) in ONE insert-select statement, whatever the number of cells. The values are keyed by global attribute value ids and measures,
+     * so they stay valid for the copy; no per-cell validation (the source data was already valid). A cell the target already has is left alone. Returns the number of cells copied.
+     */
+    public function copyProduct(string $fromProductId, string $toProductId): int;
 }

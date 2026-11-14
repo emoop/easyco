@@ -2344,6 +2344,50 @@
         box-shadow: inset -1px 0 0 var(--color-neutral-200, #e5e5e5);
     }
 
+    /* ---- MEAS-5: the «Таблица с размери» section. A `by_size` template is a table inside the TBL-1 wrapper above (`.sf-table-wrap`: the box scrolls, the first column is sticky); the numbers sit under their header, the
+       row header is the size. A `single` template is a definition list: «label · value» on two columns from the tablet up, stacked on a phone, LK-1 hairlines between the lines. No script. ---- */
+    .sf-table-wrap > table.sf-meas :is(thead th:not(:first-child), td) {
+        white-space: nowrap;
+    }
+
+    .sf-meas-list {
+        margin: 0.75rem 0;
+        font-size: 0.875rem;
+        line-height: 1.5;
+    }
+
+    .sf-meas-list > div {
+        display: flex;
+        flex-direction: column;
+        gap: 0.125rem;
+        padding: 0.5rem 0;
+        border-bottom: 1px solid var(--color-neutral-200, #e5e5e5);
+    }
+
+    .sf-meas-list > div:first-child {
+        border-top: 1px solid var(--color-neutral-200, #e5e5e5);
+    }
+
+    .sf-meas-list dt {
+        font-weight: 500;
+    }
+
+    .sf-meas-list dd {
+        margin: 0;
+    }
+
+    @media (min-width: 40rem) {
+        .sf-meas-list > div {
+            flex-direction: row;
+            justify-content: space-between;
+            gap: 1.5rem;
+        }
+
+        .sf-meas-list dd {
+            text-align: right;
+        }
+    }
+
     /* ---- P4b: the product's sections: the accordion (right column) and the tabs (below the main area) --------------------------------------------------------------------------------------- */
     /* «Акордеон»: native <details>, independent, closed by default; a hairline between the rows, the title is the <summary> with a small chevron (CSS only) */
     .sf-psec-list {

@@ -31,7 +31,7 @@ final class SectionSet
     /** The longest general text of a section (characters of HTML). */
     public const TEXT_MAX = 20_000;
 
-    public const SOURCES = ['description', 'global', 'product', 'product_or_global', 'meta', 'blocks'];
+    public const SOURCES = ['description', 'global', 'product', 'product_or_global', 'meta', 'blocks', 'measurements'];
 
     /** P4c: the most HTML blocks one `blocks` section holds. */
     public const BLOCKS_MAX = 10;

@@ -58,11 +58,12 @@ final class DuplicateProduct
         private readonly ProductTagRepository $productTags,
         private readonly ProductCollectionRepository $productCollections,
         private readonly AttributeDefinitionRepository $attributeDefinitions,
+        private readonly ProductMeasurementsWriter $measurements,
     ) {}
 
     public function duplicate(string $sourceProductId): Product
     {
-        return DB::transaction(function () use ($sourceProductId): Product {
+        $duplicate = DB::transaction(function () use ($sourceProductId): Product {
             $source = $this->products->findById($sourceProductId);
 
             if ($source === null) {
@@ -133,5 +134,10 @@ final class DuplicateProduct
 
             return $duplicate;
         });
+
+        // MEAS-5: the specs (template + numbers) follow the product; after the commit, because the writer fires its hook (supersedes the MEAS-2 «nothing is copied» decision)
+        $this->measurements->copyFromProduct($sourceProductId, (string) $duplicate->id(), (string) ($this->products->findById($sourceProductId)?->baseSku() ?: $sourceProductId));
+
+        return $duplicate;
     }
 }

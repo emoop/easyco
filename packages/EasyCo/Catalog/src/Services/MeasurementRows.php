@@ -25,4 +25,21 @@ final class MeasurementRows
             ? [MeasurementValueRepository::PRODUCT_ROW]
             : $this->axis->forProduct($productId);
     }
+
+    /**
+     * The same rows with their texts (MEAS-5: the storefront prints the size names and the axis name). `single`: the one product row (no label, no axis, 0 statements). `by_size`: the axis' values in the same order as
+     * forProduct(), 2 statements (1 for a simple product, which has no rows).
+     *
+     * @return array{axis: string|null, rows: array<string, string>} row key => label
+     */
+    public function labelledForProduct(string $productId, MeasurementTemplateKind $kind): array
+    {
+        if ($kind === MeasurementTemplateKind::SINGLE) {
+            return ['axis' => null, 'rows' => [MeasurementValueRepository::PRODUCT_ROW => '']];
+        }
+
+        $axis = $this->axis->axisWithValues($productId);
+
+        return $axis === null ? ['axis' => null, 'rows' => []] : ['axis' => $axis['name'], 'rows' => $axis['values']];
+    }
 }

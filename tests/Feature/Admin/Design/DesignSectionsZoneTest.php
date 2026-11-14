@@ -206,4 +206,23 @@ class DesignSectionsZoneTest extends TestCase
             $this->assertSame($before, app(SiteSettingsRepository::class)->get(AppearanceSettings::SECTIONS_PUBLISHED_KEY));
         }
     }
+
+    /** MEAS-5: «Таблица с размери» is a source of the panel, it publishes with the plain shape (no text, no extra keys), picking it names a blank section «Sizes», and its hint says what it shows */
+    public function test_the_measurements_source_in_the_panel(): void
+    {
+        $screen = $this->screen();
+        $this->assertSame('Size table', __('design.sections.sources.measurements'));
+        $this->assertSame('Таблица с размери', __('design.sections.sources.measurements', [], 'bg'));
+        $this->assertStringContainsString('the «Sizes» tab of the product', __('design.sections.hints.source'), 'the InfoHint of the source select');
+        $this->assertStringContainsString('„Размери“ на продукта', __('design.sections.hints.source', [], 'bg'));
+        $this->assertSame('Размери', __('design.sections.measurements_title', [], 'bg'));
+
+        $screen->set('props.sections', [
+            'm' => ['key' => self::KEY, 'title' => 'Sizes', 'source' => 'measurements', 'text' => '<p>ignored</p>', 'show_seasons' => true, 'show_tags' => true, 'block_items' => []],
+        ])->call('apply')->call('publish')->assertHasNoErrors();
+
+        $published = $this->stored(AppearanceSettings::SECTIONS_PUBLISHED_KEY)['sections'];
+        $this->assertSame(['key', 'title', 'source', 'text'], array_keys($published[0]));
+        $this->assertSame(['measurements', ''], [$published[0]['source'], $published[0]['text']], 'it takes no text');
+    }
 }

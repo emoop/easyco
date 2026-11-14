@@ -161,6 +161,10 @@ final class SectionsZone implements DesignZone
             Hidden::make('key')->default(static fn (): string => (string) Str::uuid()),
             TextInput::make('title')->label((string) __('design.sections.title'))->afterLabel($hint('title'))->maxLength(SectionSet::TITLE_MAX)->live(onBlur: true)->default(''),
             Select::make('source')->label((string) __('design.sections.source'))->afterLabel($hint('source'))->native(false)->selectablePlaceholder(false)->live()->default('product_or_global')
+                // MEAS-5: picking «Таблица с размери» names a blank section «Размери»
+                ->afterStateUpdated(static function (?string $state, Get $get, \Filament\Schemas\Components\Utilities\Set $set): void {
+                    $state === 'measurements' && trim((string) $get('title')) === '' && $set('title', (string) __('design.sections.measurements_title'));
+                })
                 ->options(array_combine(SectionSet::SOURCES, array_map(static fn (string $s): string => (string) __('design.sections.sources.'.$s), SectionSet::SOURCES))),
             RichEditor::make('text')->label((string) __('design.sections.text'))->afterLabel($hint('text'))->toolbarButtons(ProductResource::RICH_TEXT_TOOLBAR)->live(onBlur: true)->columnSpanFull()
                 ->visible(static fn (Get $get): bool => SectionSet::usesGlobalText((string) $get('source'))),

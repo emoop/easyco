@@ -16,7 +16,8 @@ use Livewire\Features\SupportAutoInjectedAssets\SupportAutoInjectedAssets;
 use Tests\TestCase;
 
 /**
- * MEAS-2: nothing reads the measurement tables yet (the storefront section is MEAS-5). A product that HAS a template and stored numbers prints exactly what it printed without them: no measure name,
+ * MEAS-2 / MEAS-5: while NO published section uses the `measurements` source (the OFF case, which this test keeps: no such section is published here), nothing reads the measurement tables and the page is what it was.
+ * MEAS-5 added the source; its ON behaviour is ProductMeasurementsSectionTest. The assertions below are unchanged. A product that HAS a template and stored numbers prints exactly what it printed without them: no measure name,
  * no number, no measurement markup, in the page, the home page or the read models' JSON contract.
  */
 class MeasurementsNotOnStorefrontTest extends TestCase

@@ -25,9 +25,10 @@ final class SectionResolver
      * @param  array<string, mixed>  $hidden  P4c: the sections switched off for THIS product (key => true), SectionTexts::forProduct
      * @param  array{seasons: list<array{name: string, url: string}>, tags: list<array{name: string, url: string}>, collections?: list<array{name: string, url: string}>}|null  $meta  P4c: the product's season and tags (SectionMeta::forProduct), null = not read (no `meta` section)
      * @param  ProductContext|null  $context  P4c: the product the page is for: the conditions of the blocks of a `blocks` section are checked against it
+     * @param  string|null  $measurements  MEAS-5: the HTML of the `measurements` source (SectionMeasurements::html); '' / null = nothing to print or not read (no `measurements` section)
      * @return list<array{key: string, title: string, html: string}>
      */
-    public static function resolve(?array $definitions, array $texts, string $description = '', array $hidden = [], ?array $meta = null, ?ProductContext $context = null): array
+    public static function resolve(?array $definitions, array $texts, string $description = '', array $hidden = [], ?array $meta = null, ?ProductContext $context = null, ?string $measurements = null): array
     {
         $out = [];
 
@@ -44,11 +45,12 @@ final class SectionResolver
                 'product' => $own,
                 'meta' => $meta === null ? '' : SectionMeta::html($section['meta'] ?? ['seasons' => true, 'tags' => true], $meta),
                 'blocks' => self::blocks($section['blocks'] ?? [], $context),
+                'measurements' => $measurements ?? '',
                 default => self::isEmpty($own) ? $section['html'] : $own,
             };
 
             // a `blocks` / `meta` section is printed when it HAS content (a block may be only a picture: no text to test)
-            $empty = in_array($section['source'], ['blocks', 'meta'], true) ? $html === '' : self::isEmpty($html);
+            $empty = in_array($section['source'], ['blocks', 'meta', 'measurements'], true) ? $html === '' : self::isEmpty($html);
 
             $empty || $out[] = ['key' => $section['key'], 'title' => $section['title'], 'html' => $html];
         }

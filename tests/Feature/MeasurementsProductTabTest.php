@@ -711,6 +711,11 @@ class MeasurementsProductTabTest extends TestCase
             {
                 throw InvalidMeasurementValueException::sizeValueNotOnAxis($productId, '999');
             }
+
+            public function copyProduct(string $fromProductId, string $toProductId): int
+            {
+                return $this->inner->copyProduct($fromProductId, $toProductId);
+            }
         });
 
         $page->set('data.name', 'Saved name')

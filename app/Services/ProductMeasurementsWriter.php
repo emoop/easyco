@@ -73,6 +73,27 @@ final class ProductMeasurementsWriter
         Hook::fire('catalog.product.measurements.saved', $productId);
     }
 
+    /**
+     * A product DUPLICATE keeps the specs of its source (MEAS-5; supersedes the MEAS-2 «nothing is copied» decision): the template assignment and EVERY stored number, through ONE insert-select (the statements do not
+     * depend on the number of cells). The source data was already valid, so nothing is validated per cell. ONE audit entry (field `measurements`, «копирани от <source>») and ONE hook; a source with no template and
+     * no numbers copies nothing and writes nothing. A `by_size` copy onto a variable duplicate (which starts with no axes) simply stays hidden until the duplicate declares the same sizes.
+     */
+    public function copyFromProduct(string $fromProductId, string $toProductId, string $sourceLabel): void
+    {
+        $templateId = $this->assignments->templateIdFor($fromProductId);
+        $copied = $this->values->copyProduct($fromProductId, $toProductId);
+
+        if ($templateId === null && $copied === 0) {
+            return;
+        }
+
+        $templateId === null || $this->assignments->assign($toProductId, $templateId);
+
+        $this->audit->logFieldChanged(self::ENTITY, $toProductId, 'measurements', null, __('measurements.product_tab.audit_copied', ['source' => $sourceLabel]));
+
+        Hook::fire('catalog.product.measurements.saved', $toProductId);
+    }
+
     private function templateName(?string $templateId): ?string
     {
         return $templateId === null ? null : $this->templates->findById($templateId)?->name();

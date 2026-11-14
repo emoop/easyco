@@ -259,7 +259,8 @@ return [
         'title' => 'Title',
         'source' => 'Source of the text',
         'text' => 'General text',
-        'sources' => ['description' => 'The product\'s description', 'global' => 'A general text for all products', 'product' => 'The product\'s text', 'product_or_global' => 'The product\'s text, else the general one', 'meta' => 'Meta information', 'blocks' => 'HTML blocks'],
+        'sources' => ['description' => 'The product\'s description', 'global' => 'A general text for all products', 'product' => 'The product\'s text', 'product_or_global' => 'The product\'s text, else the general one', 'meta' => 'Meta information', 'blocks' => 'HTML blocks', 'measurements' => 'Size table'],
+        'measurements_title' => 'Sizes',
         'show_seasons' => 'Show the seasons',
         'show_tags' => 'Show the tags',
         'show_collections' => 'Show the collections',
@@ -269,7 +270,7 @@ return [
         'hints' => [
             'list' => 'Up to 8 sections, ordered with the arrows. Renaming or moving a section does not lose the products\' texts. A section with no text for the product is not shown.',
             'title' => 'The title of the section, up to 60 characters.',
-            'source' => 'Where the content comes from: meta information (season and tags), HTML blocks by conditions, the product\'s description, general for all products, only from the product (the «Information» tab), or from the product and, when it is empty, the general one.',
+            'source' => 'Where the content comes from: meta information (season and tags), HTML blocks by conditions, the product\'s description, general for all products, only from the product (the «Information» tab), or from the product and, when it is empty, the general one. Shows the size table or the general measures of the product (Catalog → Size templates, the «Sizes» tab of the product). A product without numbers does not show the section.',
             'text' => 'The text shown with a general source. The same editor as the product description.',
             'show_seasons' => 'The «Season:» line with a link to the product\'s season page. With no season the line is not shown.',
             'show_tags' => 'The «Tags:» line with links to the pages of the product\'s tags. With no tags the line is not shown.',

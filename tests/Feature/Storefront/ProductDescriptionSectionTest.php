@@ -158,7 +158,7 @@ class ProductDescriptionSectionTest extends TestCase
     /** ★ the closed list of sources: exactly these four, a bad value is refused and dropped on read; stored data stays valid */
     public function test_the_source_list_is_closed(): void
     {
-        $this->assertEqualsCanonicalizing(['description', 'global', 'product', 'product_or_global', 'meta', 'blocks'], SectionSet::SOURCES);
+        $this->assertEqualsCanonicalizing(['description', 'global', 'product', 'product_or_global', 'meta', 'blocks', 'measurements'], SectionSet::SOURCES);
 
         [, $errors] = SectionSet::validate(['sections' => [['title' => 'T', 'source' => 'html_block']]]);
         $this->assertNotSame([], $errors);

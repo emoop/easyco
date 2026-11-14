@@ -142,8 +142,14 @@ return [
         ],
     ],
 
+    // MEAS-5: the table on the product page
+    'storefront' => [
+        'caption' => 'Size table: :name',
+    ],
+
     // MEAS-4: the product tab «Sizes»
     'product_tab' => [
+
         'title' => 'Sizes',
         'template' => 'Size template',
         'template_help' => 'The template decides the columns of the table. It is created in Catalog → Size templates.',
@@ -163,6 +169,7 @@ return [
         'copy_first_row' => 'Copy the first row to all',
         'copied' => '{0}No empty cells to fill|{1}1 cell filled|[2,*]:count cells filled',
         'audit_cells_changed' => ':count cells changed',
+        'audit_copied' => 'copied from :source',
         'notice' => [
             'refused' => 'Sizes not saved',
         ],
