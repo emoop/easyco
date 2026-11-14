@@ -3,6 +3,7 @@
 namespace App\Storefront\Header;
 
 use App\Storefront\Appearance\StorefrontAppearance;
+use App\Storefront\Search\SearchFeature;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\View;
 
@@ -31,7 +32,7 @@ final class HeaderView
             $type = $element['type'];
             $route = HeaderCatalog::FEATURE_ROUTES[$type] ?? null;
 
-            if (($route !== null && ! Route::has($route)) || ! isset($catalog[$type]) || ! View::exists($catalog[$type]['view'])) {
+            if (($route !== null && ! ($type === 'search' ? SearchFeature::enabled() : Route::has($route))) || ! isset($catalog[$type]) || ! View::exists($catalog[$type]['view'])) {
                 return null;
             }
 
@@ -54,6 +55,7 @@ final class HeaderView
         };
 
         $searchRow = false;
+        $searchPlaceholder = '';
         $toggle = false;
 
         foreach (['desktop', 'mobile'] as $name) {
@@ -70,6 +72,7 @@ final class HeaderView
                 foreach ($visible as $elements) {
                     foreach ($elements as $element) {
                         $searchRow = $searchRow || ($element['type'] === 'search' && ($element['settings']['mode'] ?? '') === 'icon_row');
+                        $element['type'] === 'search' && $searchPlaceholder === '' && $searchPlaceholder = (string) ($element['settings']['placeholder'] ?? '');
                         $toggle = $toggle || $element['type'] === 'menu_toggle';
                     }
                 }
@@ -83,10 +86,13 @@ final class HeaderView
             ...array_values(array_filter($drawerElements, static fn (array $element): bool => $element['type'] === 'menu')),
             ...array_values(array_filter($drawerElements, static fn (array $element): bool => $element['type'] !== 'menu')),
         ];
-        $layout['mobile']['drawer_search'] = Route::has('storefront.search');
+        // SRCH-1: the phone drawer's search row (SearchFeature::drawerRow: the switch in the builder, stored only when on)
+        $layout['mobile']['drawer_search'] = SearchFeature::drawerRow($layout['mobile']['drawer_search'] ?? false);
         $layout['mobile']['drawer_rows'] = array_values(array_filter(['wishlist', 'account'], static fn (string $type): bool => Route::has(HeaderCatalog::FEATURE_ROUTES[$type])));
         $layout['needs_drawer'] = $toggle && ($layout['mobile']['drawer'] !== [] || $layout['mobile']['drawer_rows'] !== []);
         $layout['needs_search_row'] = $searchRow;
+        // SRCH-1: the placeholder the shared search row and the drawer's field print (the first search element that sets one; empty = the language's default)
+        $layout['search_placeholder'] = $searchPlaceholder;
 
         return $layout;
     }

@@ -369,6 +369,22 @@ class DesignScreenTest extends TestCase
         $screen->call('setDevice', 'mobile')->call('selectLayout')->assertSet('props.drawer_side', 'left')->assertSet('props.drawer_upper', true);
     }
 
+    /** SRCH-1: «Търсене в менюто на телефона» is a switch of the phone layout, off by default, stored only when on */
+    public function test_the_phone_drawer_search_switch_is_off_by_default_and_stored_only_when_on(): void
+    {
+        $this->actingAsStaff('Administrator');
+        $screen = $this->screen();
+        $screen->call('setDevice', 'mobile')->call('selectLayout')->assertSet('props.drawer_search', false);
+        $this->assertStringContainsString('Search in the phone menu', $screen->html());
+        $this->assertArrayNotHasKey('drawer_search', $screen->get('tree')['mobile']['props'] ?? []);
+
+        $screen->set('props.drawer_search', true)->call('selectRow', 'h-m-main')->call('selectLayout');
+        $this->assertTrue($screen->get('tree')['mobile']['props']['drawer_search']);
+
+        $screen->call('selectLayout')->set('props.drawer_search', false)->call('selectRow', 'h-m-main')->call('selectLayout');
+        $this->assertArrayNotHasKey('drawer_search', $screen->get('tree')['mobile']['props']);
+    }
+
     public function test_changing_the_selection_keeps_the_values_of_the_panel(): void
     {
         $this->actingAsStaff('Administrator');

@@ -121,7 +121,7 @@ final class HeaderValidator
     /** @param  array<string, mixed>  $m */
     private function mobile(array $m): array
     {
-        $this->unknownKeys($m, ['sticky', 'rows', 'drawer', 'drawer_side', 'drawer_upper'], 'mobile');
+        $this->unknownKeys($m, ['sticky', 'rows', 'drawer', 'drawer_side', 'drawer_upper', 'drawer_search'], 'mobile');
         $rows = $this->rows($m['rows'] ?? [], 'mobile');
         $side = $m['drawer_side'] ?? 'left';
 
@@ -154,7 +154,9 @@ final class HeaderValidator
 
         $this->limitOnce(['rows' => $rows], 'mobile', HeaderCatalog::ONCE_PER_LAYOUT);
 
-        return ['sticky' => $this->bool($m['sticky'] ?? true, 'mobile.sticky'), 'rows' => $rows, 'drawer' => $drawer, 'drawer_side' => $side, 'drawer_upper' => $this->bool($m['drawer_upper'] ?? true, 'mobile.drawer_upper')];
+        return ['sticky' => $this->bool($m['sticky'] ?? true, 'mobile.sticky'), 'rows' => $rows, 'drawer' => $drawer, 'drawer_side' => $side, 'drawer_upper' => $this->bool($m['drawer_upper'] ?? true, 'mobile.drawer_upper')]
+            // SRCH-1: kept ONLY when on (absent = off), so every stored layout that never had the switch validates to exactly what it did before
+            + ($this->bool($m['drawer_search'] ?? false, 'mobile.drawer_search') ? ['drawer_search' => true] : []);
     }
 
     /**
@@ -299,6 +301,11 @@ final class HeaderValidator
 
             // LG-1: a picture field that is empty (= its default) is NOT stored and emits nothing: a layout without a logo picture is byte for byte what it was
             if ($value === null && ($field['kind'] ?? null) === 'media') {
+                continue;
+            }
+
+            // SRCH-1: a text field marked `omit_empty` (the search placeholder) is not stored when empty either: a layout that never set it is byte for byte what it was
+            if ($value === '' && ($field['omit_empty'] ?? false) === true) {
                 continue;
             }
 

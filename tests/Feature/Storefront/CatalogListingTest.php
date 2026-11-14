@@ -236,7 +236,7 @@ class CatalogListingTest extends TestCase
 
         $this->assertStringContainsString("@include('storefront.partials.filters'", $view, 'the filters form (CD-1b) is one partial for every placement');
         $this->assertStringContainsString("@include('storefront.partials.pagination'", $view);
-        $this->assertSame(1, preg_match_all('#Route::get\(\s*\'/(?!brand/\{|season/\{|product-tag/\{)[^\']*\'.*(listing|tag|brand|search|season)#i', (string) file_get_contents(base_path('routes/storefront.php'))) + 1, 'no route for another listing was added (P2: the brand, season and tag pages are the same listing page for another subject, see SubjectListingController)');
+        $this->assertSame(1, preg_match_all('#Route::get\(\s*\'/(?!brand/\{|season/\{|product-tag/\{|search\')[^\']*\'.*(listing|tag|brand|search|season)#i', (string) file_get_contents(base_path('routes/storefront.php'))) + 1, 'no route for another listing was added (P2: the brand, season and tag pages are the same listing page for another subject, see SubjectListingController)');
 
         $html = $this->get('/product-category/clothing')->assertOk()->getContent();
         $this->assertSame(1, substr_count($html, 'class="sf-listing sf-category sf-cat-layout-full sf-cat-side-left"'));

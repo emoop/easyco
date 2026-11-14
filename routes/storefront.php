@@ -11,8 +11,10 @@ use App\Http\Controllers\Storefront\HomeController;
 use App\Http\Controllers\Storefront\OrderReceivedController;
 use App\Http\Controllers\Storefront\PageController;
 use App\Http\Controllers\Storefront\ProductController;
+use App\Http\Controllers\Storefront\SearchController;
 use App\Http\Controllers\Storefront\SubjectListingController;
 use App\Http\Middleware\LimitFilteredCategoryRequests;
+use App\Http\Middleware\LimitSearchRequests;
 use App\Storefront\Orders\OrderReceivedHeaders;
 use App\Storefront\ReadModels\CatalogSubjectKind;
 use App\Storefront\Theme\ApplyStorefrontTheme;
@@ -53,6 +55,9 @@ Route::middleware([SecurityHeaders::class, ApplyStorefrontTheme::class])
         Route::get('/product/{slug}', [ProductController::class, 'show'])
             ->where('slug', '[\s\S]*')
             ->name('storefront.product');
+
+        // SRCH-1: the results page (search.md). A request with a `q` is limited per IP; while the feature is off the controller answers the storefront's 404.
+        Route::get('/search', [SearchController::class, 'show'])->middleware(LimitSearchRequests::class)->name('storefront.search.results');
 
         // A server shell filled by the browser from GET /api/cart (S3). `private, no-store`, noindex.
         Route::get('/cart', [CartPageController::class, 'show'])->name('storefront.cart');

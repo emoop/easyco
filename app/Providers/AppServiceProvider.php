@@ -23,6 +23,9 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        // SRCH-1: the storefront search depends on the interface; this is the one line to change to plug in another engine (search.md).
+        $this->app->bind(\App\Storefront\Search\ProductSearch::class, \App\Storefront\Search\DatabaseProductSearch::class);
+
         // Shipping stage 5g-2a: where a pickup point's kind comes from. A client CLAIM today; the courier stage rebinds this to a
         // record-derived source (shipping-domain-design.md 9.3.7).
         $this->app->bind(\App\Services\PickupKindSource::class, \App\Services\ClientClaimedPickupKindSource::class);

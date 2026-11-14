@@ -296,6 +296,11 @@ document.addEventListener('click', function (event) {
 
     var search = target.closest('[data-sf-search-toggle]');
 
+    // SRCH-1: a click outside the open search row (and not on its own icon) closes it and gives the focus back to the icon
+    if (! search && searchRow && ! searchRow.hasAttribute('hidden') && ! searchRow.contains(target)) {
+        toggleSearch(openedBy);
+    }
+
     if (search) {
         toggleSearch(search);
 

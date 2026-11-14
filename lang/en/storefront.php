@@ -88,6 +88,13 @@ return [
     'search' => 'Search',
     'search_placeholder' => 'What are you looking for?',
     'search_submit' => 'Search',
+    // SRCH-1: the results page
+    'search_title' => 'Results for “:query”',
+    'search_title_empty' => 'Search',
+    'search_sort_relevance' => 'Most relevant',
+    'search_hint_empty' => 'Type a word to search for.',
+    'search_hint_short' => 'Type at least :min characters.',
+    'search_none' => 'No results for “:query”. Check the spelling or try a more general word.',
     'account' => 'Account',
     'wishlist' => 'Wishlist',
 

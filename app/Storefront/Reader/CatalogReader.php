@@ -374,6 +374,29 @@ final class CatalogReader
     }
 
     /**
+     * SRCH-1: the cards for the ids a search engine returned (IN THEIR ORDER), through the SAME query and card read as a listing: visibility is checked again (an index may be stale, so a hidden
+     * id is dropped), and the badges, prices, images and sold-out rules are the category page's. A fixed number of statements whatever the number of ids.
+     *
+     * @param  list<int>  $ids
+     * @return list<ProductCard>
+     */
+    public function cardsForIds(array $ids, ?string $cardSizes = null): array
+    {
+        if ($ids === []) {
+            return [];
+        }
+
+        $rows = $this->listingProducts(ListingQuery::create(), [])->whereIn('catalog_products.id', $ids)->get()->keyBy('id');
+        $ordered = [];
+
+        foreach ($ids as $id) {
+            isset($rows[$id]) && $ordered[] = $rows[$id];
+        }
+
+        return $this->cards($ordered, $cardSizes ?? ImageSetBuilder::SIZES_CARD);
+    }
+
+    /**
      * The query of a listing, shared by listing() and homeProducts(): the visible products with the card's columns (the two photos, the filter flags), the scope, the visitor's filters and the sort. No page, no
      * limit and no count: the caller adds what it needs.
      *

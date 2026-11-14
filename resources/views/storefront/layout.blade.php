@@ -13,7 +13,7 @@
         <link rel="canonical" href="{{ $seo['canonical'] }}">
     @endif
     @if (($seo['canonical'] ?? null) === null || ($seo['noindex'] ?? false))
-        <meta name="robots" content="noindex">
+        <meta name="robots" content="{{ $seo['robots'] ?? 'noindex' }}">
     @endif
     @if ((file_exists(public_path('hot')) || file_exists(public_path('build/manifest.json'))) && ! app()->runningUnitTests())
         @vite(['resources/css/storefront.css', 'resources/js/storefront.js'])

@@ -18,6 +18,10 @@
             @if ($perPageHidden !== null)
                 <input type="hidden" name="per_page" value="{{ $perPageHidden }}">
             @endif
+            @if (($searchQuery ?? null) !== null)
+                {{-- SRCH-1: the results page keeps its query when the sort is chosen --}}
+                <input type="hidden" name="q" value="{{ $searchQuery }}">
+            @endif
             <div class="sf-fdrawer-body">
                 <p class="sf-fcount">{{ __('storefront.products_total', ['count' => $total]) }}</p>
                 @if (count($sorts ?? []) >= 2)

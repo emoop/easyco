@@ -283,6 +283,7 @@ final class HeaderZone implements DesignZone
             if ($layout === 'mobile') {
                 $components[] = Select::make('drawer_side')->label(__('header.fields.drawer_side'))->native(false)->options(['left' => __('header.options.left'), 'right' => __('header.options.right')]);
                 $components[] = Toggle::make('drawer_upper')->label(__('header.fields.drawer_upper'));
+                $components[] = Toggle::make('drawer_search')->label(__('header.fields.drawer_search'))->helperText(__('header.fields.drawer_search_hint'));
             }
 
             return [Section::make(__('design.props.layout', ['device' => __('design.devices.'.$layout)]))->schema($components)];
@@ -338,7 +339,7 @@ final class HeaderZone implements DesignZone
         if ($selected['kind'] === 'layout') {
             $props = $current['props'] ?? [];
 
-            return ['sticky' => (bool) ($props['sticky'] ?? false)] + ($layout === 'mobile' ? ['drawer_side' => $props['drawer_side'] ?? 'left', 'drawer_upper' => (bool) ($props['drawer_upper'] ?? true)] : []);
+            return ['sticky' => (bool) ($props['sticky'] ?? false)] + ($layout === 'mobile' ? ['drawer_side' => $props['drawer_side'] ?? 'left', 'drawer_upper' => (bool) ($props['drawer_upper'] ?? true), 'drawer_search' => (bool) ($props['drawer_search'] ?? false)] : []);
         }
 
         return [];
@@ -385,6 +386,12 @@ final class HeaderZone implements DesignZone
             if ($layout === 'mobile') {
                 $current['props']['drawer_side'] = is_string($raw['drawer_side'] ?? null) ? $raw['drawer_side'] : 'left';
                 $current['props']['drawer_upper'] = (bool) ($raw['drawer_upper'] ?? true);
+                // SRCH-1: stored only when on (absent = off)
+                if (! empty($raw['drawer_search'])) {
+                    $current['props']['drawer_search'] = true;
+                } else {
+                    unset($current['props']['drawer_search']);
+                }
             }
         }
 

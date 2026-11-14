@@ -58,7 +58,8 @@ final class HeaderCatalog
                 'style' => ['kind' => 'enum', 'options' => ['links', 'dropdown', 'mega'], 'offer' => ['links', 'dropdown'], 'default' => 'links', 'label' => 'header.settings.menu_style'],
             ],
             'menu_toggle' => ['label_visible' => ['kind' => 'bool', 'default' => false]],
-            'search' => ['mode' => ['kind' => 'enum', 'options' => ['icon_row', 'field'], 'default' => 'icon_row']],
+            // SRCH-1: `placeholder` = the text in the empty field (empty = the language's default); `icon_row` = an icon that opens the field in a row under the header, `field` = the field itself in the row
+            'search' => ['mode' => ['kind' => 'enum', 'options' => ['icon_row', 'field'], 'default' => 'icon_row'], 'placeholder' => ['kind' => 'text', 'max' => 60, 'default' => '', 'omit_empty' => true]],
             'account' => ['style' => $styles],
             'wishlist' => ['style' => $styles, 'show_count' => ['kind' => 'bool', 'default' => false]],
             // DS-2c: the cart's own colours (null = inherit today's): the icon and label, the count badge's background and its number
@@ -175,6 +176,11 @@ final class HeaderCatalog
         foreach ((self::all()[$type]['schema'] ?? []) as $name => $field) {
             // LG-1: an empty picture field is not stored (the logo's `image`): it is not a default, it is absent
             if (($field['kind'] ?? null) === 'media' && ($field['default'] ?? null) === null) {
+                continue;
+            }
+
+            // SRCH-1: an empty `omit_empty` text (the search placeholder) is absent too
+            if (($field['omit_empty'] ?? false) === true && ($field['default'] ?? '') === '') {
                 continue;
             }
 

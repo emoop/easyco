@@ -54,6 +54,8 @@ x-laravel-env: &laravel-env
   MAIL_FROM_ADDRESS: ${MAIL_FROM_ADDRESS:-hello@example.com}
   MAIL_FROM_NAME: ${MAIL_FROM_NAME:-EasyCo}
 
+  # SRCH-1: storefront search (search.md), off unless set
+  STOREFRONT_SEARCH: ${STOREFRONT_SEARCH:-false}
   MEDIA_MAX_IMAGE_SIZE_KB: ${MEDIA_MAX_IMAGE_SIZE_KB:-10240}
   MEDIA_MAX_VIDEO_SIZE_KB: ${MEDIA_MAX_VIDEO_SIZE_KB:-102400}
 

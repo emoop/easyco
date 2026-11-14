@@ -4617,6 +4617,29 @@ html.js .sf-hdr .sf-menu-toggle {
     background: var(--sf-header-bg, #fff);
 }
 
+/* SRCH-1: with the script, the open row is a panel laid over the page right under the header (the header is its positioning context): opening it does not move the content. Without the script it stays a plain block. */
+html.js .sf-hdr .sf-search-row {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    left: 0;
+    z-index: 40;
+    box-shadow: 0 8px 16px rgb(0 0 0 / 8%);
+}
+
+/* SRCH-1: the field on the results page, above the grid */
+.sf-search-page-form {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    max-width: 32rem;
+    margin-block: 0 1.25rem;
+}
+
+.sf-search-message {
+    margin-block: 1.5rem;
+}
+
 .sf-search-row-inner,
 .sf-search-field {
     display: flex;

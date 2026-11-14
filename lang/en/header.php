@@ -16,6 +16,8 @@ return [
         'drawer' => 'Phone menu (drawer)',
         'drawer_side' => 'Which side it opens from',
         'drawer_upper' => 'Main items in capitals',
+        'drawer_search' => 'Search in the phone menu',
+        'drawer_search_hint' => 'A search field at the very top of the menu (works when search is switched on for the shop).',
     ],
 
     'elements' => [
@@ -40,6 +42,7 @@ return [
         'style' => 'Style',
         'label_visible' => 'Show a label next to the icon',
         'mode' => 'Kind',
+        'placeholder' => 'Text in the empty field (up to 60 characters)',
         'color' => 'Icon and label colour',
         'badge_bg' => 'Count badge background',
         'badge_fg' => 'Count badge number colour',

@@ -49,7 +49,7 @@ final class HeaderAdapter
             }
 
             if ($variant === 'mobile') {
-                $props += ['drawer_side' => $layout['drawer_side'], 'drawer_upper' => $layout['drawer_upper']];
+                $props += ['drawer_side' => $layout['drawer_side'], 'drawer_upper' => $layout['drawer_upper']] + (! empty($layout['drawer_search']) ? ['drawer_search' => true] : []);
                 $rows[] = Tree::row(self::DRAWER_ROW, [], [Tree::cell(self::DRAWER_CELL, [], self::nodes($layout['drawer'], self::DRAWER_CELL))]);
             }
 
@@ -100,7 +100,7 @@ final class HeaderAdapter
             $stored = ['sticky' => $layout['props']['sticky'], 'rows' => $rows];
 
             if ($variant === 'mobile') {
-                $stored += ['drawer' => $drawer, 'drawer_side' => $layout['props']['drawer_side'], 'drawer_upper' => $layout['props']['drawer_upper']];
+                $stored += ['drawer' => $drawer, 'drawer_side' => $layout['props']['drawer_side'], 'drawer_upper' => $layout['props']['drawer_upper']] + (! empty($layout['props']['drawer_search']) ? ['drawer_search' => true] : []);
             }
 
             $out[$variant] = $stored;

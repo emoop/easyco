@@ -88,6 +88,13 @@ return [
     'search' => 'Търсене',
     'search_placeholder' => 'Какво търсите?',
     'search_submit' => 'Търси',
+    // SRCH-1: the results page
+    'search_title' => 'Резултати за „:query“',
+    'search_title_empty' => 'Търсене',
+    'search_sort_relevance' => 'Най-подходящи',
+    'search_hint_empty' => 'Въведете дума за търсене.',
+    'search_hint_short' => 'Въведете поне :min символа.',
+    'search_none' => 'Няма резултати за „:query“. Проверете изписването или опитайте с по-обща дума.',
     'account' => 'Профил',
     'wishlist' => 'Любими',
 

@@ -1,7 +1,7 @@
 @if ($settings['mode'] === 'field')
-    <form class="sf-search-field" role="search" method="get" action="{{ route('storefront.search', [], false) }}">
+    <form class="sf-search-field" role="search" method="get" action="{{ \App\Storefront\Search\SearchFeature::path() }}">
         <label class="sf-sr-only" for="sf-search-{{ $uid }}">{{ __('storefront.search') }}</label>
-        <input class="sf-search-input" id="sf-search-{{ $uid }}" name="q" type="search" maxlength="100" placeholder="{{ __('storefront.search_placeholder') }}" autocomplete="off">
+        <input class="sf-search-input" id="sf-search-{{ $uid }}" name="q" type="search" maxlength="100" placeholder="{{ ($settings['placeholder'] ?? '') !== '' ? $settings['placeholder'] : __('storefront.search_placeholder') }}" autocomplete="off">
         <button class="sf-search-submit" type="submit">{{ __('storefront.search_submit') }}</button>
     </form>
 @else
