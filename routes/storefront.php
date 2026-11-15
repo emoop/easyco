@@ -12,6 +12,8 @@ use App\Http\Controllers\Storefront\OrderReceivedController;
 use App\Http\Controllers\Storefront\PageController;
 use App\Http\Controllers\Storefront\ProductController;
 use App\Http\Controllers\Storefront\SearchController;
+use App\Http\Controllers\Storefront\SitemapController;
+use App\Http\Controllers\Storefront\SubjectIndexController;
 use App\Http\Controllers\Storefront\SubjectListingController;
 use App\Http\Middleware\LimitFilteredCategoryRequests;
 use App\Http\Middleware\LimitSearchRequests;
@@ -95,12 +97,30 @@ Route::middleware([SecurityHeaders::class, ApplyStorefrontTheme::class])
             Route::get($kind->urlPrefix().'{slug}', [SubjectListingController::class, $kind->value])->middleware(LimitFilteredCategoryRequests::class)->where('slug', '[^/]+')->name('storefront.'.$kind->value);
         }
 
+        // SEO-1.1: the index pages /brand and /collection (no slug: the literal path, so `{slug}` above never takes them). Brand: always on; collection: 404 while its switch is off.
+        Route::get('/brand', [SubjectIndexController::class, 'brands'])->name('storefront.brand.index');
+        Route::get('/collection', [SubjectIndexController::class, 'collections'])->name('storefront.collection.index');
+
         // PC-2: the sizes of a listing page's cards, one cacheable GET for all of them (the browser asks on the first hover or when idle). Sessionless as the rest
         // of this group; the 60/min budget is the route's own inline throttle (the same way the login route has its own).
         Route::get('/storefront/card-sizes', [CardSizesController::class, 'show'])
             ->middleware('throttle:60,1')
             ->name('storefront.card-sizes');
     });
+
+/*
+| SEO-1: the sitemap (seo.md). Sessionless like the storefront; the controller answers 404 while easyco.noindex is on or for a chunk past the last.
+*/
+Route::withoutMiddleware($withoutSession)->group(function (): void {
+    Route::get('/sitemap.xml', [SitemapController::class, 'index'])->name('seo.sitemap');
+    Route::get('/sitemap/pages.xml', [SitemapController::class, 'pages'])->name('seo.sitemap.pages');
+    Route::get('/sitemap/categories.xml', [SitemapController::class, 'categories'])->name('seo.sitemap.categories');
+    Route::get('/sitemap/brands.xml', [SitemapController::class, 'brands'])->name('seo.sitemap.brands');
+    Route::get('/sitemap/seasons.xml', [SitemapController::class, 'seasons'])->name('seo.sitemap.seasons');
+    Route::get('/sitemap/collections.xml', [SitemapController::class, 'collections'])->name('seo.sitemap.collections');
+    Route::get('/sitemap/tags.xml', [SitemapController::class, 'tags'])->name('seo.sitemap.tags');
+    Route::get('/sitemap/products-{n}.xml', [SitemapController::class, 'products'])->where('n', '[1-9][0-9]{0,6}')->name('seo.sitemap.products');
+});
 
 /*
 | The order-received page (C1, owner decision D1): reached only through the signed, temporary url the checkout returns. Its

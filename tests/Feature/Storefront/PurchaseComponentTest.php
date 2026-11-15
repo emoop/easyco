@@ -360,7 +360,7 @@ class PurchaseComponentTest extends TestCase
 
         $this->assertSame([], $response->headers->getCookies(), 'no cookie, no session');
         $this->assertDoesNotMatchRegularExpression('/\sstyle\s*=/i', $html);
-        $this->assertDoesNotMatchRegularExpression('/<script(?![^>]*\bsrc=)[^>]*>/i', $html);
+        $this->assertDoesNotMatchRegularExpression('/<script(?![^>]*\bsrc=)(?![^>]*application\/ld\+json)[^>]*>/i', $html);
         $this->assertDoesNotMatchRegularExpression('/\son[a-z]+\s*=/i', $html);
     }
 }

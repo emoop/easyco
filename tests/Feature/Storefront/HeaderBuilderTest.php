@@ -294,7 +294,7 @@ class HeaderBuilderTest extends TestCase
         $html = $this->get('/')->assertOk()->getContent();
 
         $this->assertStringNotContainsString('alert(', $html);
-        $this->assertDoesNotMatchRegularExpression('/<script/i', $html);
+        $this->assertDoesNotMatchRegularExpression('/<script(?![^>]*application\/ld\+json)/i', $html);
     }
 
     // ---- heights ----------------------------------------------------------------------------------------------------------------------

@@ -316,7 +316,7 @@ class HomeSectionsTest extends TestCase
         $html = $this->home();
 
         $this->assertDoesNotMatchRegularExpression('/\sstyle\s*=/i', $html);
-        $this->assertDoesNotMatchRegularExpression('/<script(?![^>]*\ssrc=)[^>]*>/i', $html);
+        $this->assertDoesNotMatchRegularExpression('/<script(?![^>]*\ssrc=)(?![^>]*application\/ld\+json)[^>]*>/i', $html);
         $this->assertSame($html, $this->home());
     }
 }

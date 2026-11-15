@@ -149,7 +149,7 @@ class CategoryLayoutTest extends TestCase
         $this->assertStringNotContainsString('sf-fclear', $html, 'nothing is selected: no «Clear» in the drawer');
         $this->assertSame(1, substr_count($html, 'data-sf-fdrawer>'));
         $this->assertDoesNotMatchRegularExpression('/\sstyle=/i', $html);
-        $this->assertDoesNotMatchRegularExpression('/<script(?![^>]*\ssrc=)[^>]*>/i', $html);
+        $this->assertDoesNotMatchRegularExpression('/<script(?![^>]*\ssrc=)(?![^>]*application\/ld\+json)[^>]*>/i', $html);
 
         $clear = $this->visit('/product-category/clothing?per_page=12&filter[1]=1001')->getContent();
         $this->assertStringContainsString('class="sf-fclear" href="/product-category/clothing?per_page=12"', $clear, '«Clear» keeps only a non-default size');

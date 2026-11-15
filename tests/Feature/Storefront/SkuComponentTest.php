@@ -163,7 +163,7 @@ class SkuComponentTest extends TestCase
         $html = $this->page('/product/shirt');
 
         $this->assertDoesNotMatchRegularExpression('/\sstyle\s*=/i', $html);
-        $this->assertDoesNotMatchRegularExpression('/<script(?![^>]*\ssrc=)[^>]*>/i', $html);
+        $this->assertDoesNotMatchRegularExpression('/<script(?![^>]*\ssrc=)(?![^>]*application\/ld\+json)[^>]*>/i', $html);
     }
 
     public function test_the_same_page_for_every_visitor(): void

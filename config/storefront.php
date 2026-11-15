@@ -2,6 +2,11 @@
 
 return [
 
+    // SEO-1 (seo.md): the sitemap's product files hold this many products each; every file is cached for one hour.
+    'sitemap' => [
+        'chunk' => (int) env('STOREFRONT_SITEMAP_CHUNK', 5000),
+    ],
+
     'search' => [
         // SRCH-1: storefront search (search.md). OFF by default: a shop that has not switched it on prints exactly the HTML it printed before and /search is the storefront's 404.
         // Switch on with STOREFRONT_SEARCH=true; the header's search element and the phone drawer's search row (its own switch in «Дизайн») then follow.

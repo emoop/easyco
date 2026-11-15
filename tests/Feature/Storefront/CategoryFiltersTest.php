@@ -395,7 +395,7 @@ class CategoryFiltersTest extends TestCase
         // list: a visible square mark
         $this->assertMatchesRegularExpression('#<ul class="sf-filter-values sf-fvalues-list">.*?<label class="sf-fv sf-fv-list">\s*<input class="sf-fv-input" type="checkbox" name="filter\[3\]\[\]" value="3001"\s*>\s*<span class="sf-fv-mark"></span>\s*<span class="sf-fv-text">Cotton</span>#s', $html);
         $this->assertDoesNotMatchRegularExpression('/\sstyle=/i', $html);
-        $this->assertDoesNotMatchRegularExpression('/<script(?![^>]*\ssrc=)[^>]*>/i', $html);
+        $this->assertDoesNotMatchRegularExpression('/<script(?![^>]*\ssrc=)(?![^>]*application\/ld\+json)[^>]*>/i', $html);
     }
 
     public function test_a_chosen_value_is_checked_the_bar_link_removes_it_and_the_links_are_the_canonical_url(): void
@@ -492,7 +492,8 @@ class CategoryFiltersTest extends TestCase
 
     public function test_robots_txt_blocks_the_back_office_and_the_filter_urls_and_nothing_a_shopper_needs(): void
     {
-        $lines = array_map('trim', file(public_path('robots.txt')));
+        // SEO-1: the rules are App\Storefront\Seo\RobotsTxt (there is no public/robots.txt)
+        $lines = array_map('trim', explode("\n", trim(\App\Storefront\Seo\RobotsTxt::body())));
 
         foreach (['User-agent: *', 'Disallow: /admin/', 'Disallow: /api/', 'Disallow: /design-preview', 'Disallow: /cart', 'Disallow: /checkout', 'Disallow: /*filter[', 'Disallow: /*filter%5B'] as $line) {
             $this->assertContains($line, $lines);
@@ -506,7 +507,7 @@ class CategoryFiltersTest extends TestCase
             }
         }
 
-        $this->assertFalse(collect($lines)->contains(fn (string $line): bool => str_starts_with($line, 'Sitemap:')), 'no sitemap route exists, so no Sitemap line');
+        $this->assertStringStartsWith('Sitemap: ', end($lines), 'SEO-1: the sitemap exists now, its address is the last line');
     }
 
     // ---- the cost -------------------------------------------------------------------------------------------------------------------------------------

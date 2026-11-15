@@ -134,7 +134,7 @@ class CategorySideWidthTest extends TestCase
         $html = $this->visit('/product-category/clothing')->assertOk()->getContent();
 
         $this->assertDoesNotMatchRegularExpression('/\sstyle\s*=/i', $html);
-        $this->assertDoesNotMatchRegularExpression('/<script(?![^>]*\ssrc=)[^>]*>/i', $html);
+        $this->assertDoesNotMatchRegularExpression('/<script(?![^>]*\ssrc=)(?![^>]*application\/ld\+json)[^>]*>/i', $html);
         $this->assertSame($html, $this->visit('/product-category/clothing')->getContent());
     }
 }

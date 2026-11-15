@@ -244,7 +244,7 @@ class CategoryBarTest extends TestCase
         $html = $first->getContent();
 
         $this->assertDoesNotMatchRegularExpression('/\sstyle=/i', $html);
-        $this->assertDoesNotMatchRegularExpression('/<script(?![^>]*\ssrc=)[^>]*>/i', $html);
+        $this->assertDoesNotMatchRegularExpression('/<script(?![^>]*\ssrc=)(?![^>]*application\/ld\+json)[^>]*>/i', $html);
         $this->assertSame([], $first->headers->getCookies(), 'no cookie');
         $this->assertSame($html, $this->withHeaders(['Cookie' => 'visitor=1', 'User-Agent' => 'other'])->visit($url)->getContent(), 'identical for every visitor');
     }

@@ -259,7 +259,7 @@ class ProductSummaryRenderTest extends TestCase
 
         $this->assertSame([], $response->headers->getCookies(), 'no cookie is set');
         $this->assertStringNotContainsString(' style=', $html);
-        $this->assertSame(0, preg_match('/<script(?![^>]*\bsrc=)[^>]*>/i', $html), 'no inline script');
+        $this->assertSame(0, preg_match('/<script(?![^>]*\bsrc=)(?![^>]*application\/ld\+json)[^>]*>/i', $html), 'no inline script');
     }
 
     // ---- the admin's preview --------------------------------------------------------------------------------------------------------------

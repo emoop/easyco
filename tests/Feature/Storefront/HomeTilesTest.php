@@ -293,7 +293,7 @@ class HomeTilesTest extends TestCase
         }
 
         $this->assertStringNotContainsString(' style=', $page);
-        $this->assertDoesNotMatchRegularExpression('#<script(?![^>]*\bsrc=)[^>]*>#i', $page);
+        $this->assertDoesNotMatchRegularExpression('#<script(?![^>]*\bsrc=)(?![^>]*application/ld\+json)[^>]*>#i', $page);
 
         $this->flushSession();
         $second = $this->withHeader('Cookie', 'x=1')->get('/')->assertOk()->getContent();

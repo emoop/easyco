@@ -214,7 +214,7 @@ class HtmlBlockConditionsPrintingTest extends TestCase
 
             $this->assertSame([], $response->headers->getCookies(), $slug.': no cookie is set');
             $this->assertStringNotContainsString(' style=', $html, $slug);
-            $this->assertSame(0, preg_match('/<script(?![^>]*\bsrc=)[^>]*>/i', $html), $slug.': no inline script');
+            $this->assertSame(0, preg_match('/<script(?![^>]*\bsrc=)(?![^>]*application\/ld\+json)[^>]*>/i', $html), $slug.': no inline script');
         }
     }
 

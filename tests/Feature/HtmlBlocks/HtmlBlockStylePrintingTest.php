@@ -300,7 +300,7 @@ class HtmlBlockStylePrintingTest extends TestCase
 
             $this->assertSame([], $response->headers->getCookies(), $url.': no cookie is set');
             $this->assertStringNotContainsString(' style=', $html, $url);
-            $this->assertSame(0, preg_match('/<script(?![^>]*\bsrc=)[^>]*>/i', $html), $url.': no inline script');
+            $this->assertSame(0, preg_match('/<script(?![^>]*\bsrc=)(?![^>]*application\/ld\+json)[^>]*>/i', $html), $url.': no inline script');
         }
     }
 }

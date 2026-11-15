@@ -32,7 +32,7 @@ server {
         return 404;
     }
 
-    # robots.txt is answered by Laravel on purpose (EASYCO_NOINDEX): with the switch off the app serves public/robots.txt itself.
+    # robots.txt is answered by Laravel on purpose (RobotsTxt in app/Storefront/Seo; there is no static file): rules, Sitemap line and the EASYCO_NOINDEX answer.
     location = /robots.txt {
         try_files /__through_the_app__ /index.php?$query_string;
     }

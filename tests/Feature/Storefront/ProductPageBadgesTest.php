@@ -299,7 +299,9 @@ class ProductPageBadgesTest extends TestCase
         $html = $this->page('summer-dress');
 
         $this->assertStringContainsString('Zzbadge', $html);
-        $this->assertStringNotContainsString('application/ld+json', $html);
+        // SEO-1: the page has a JSON-LD block now; the badge text must not be in it
+        $this->assertSame(1, preg_match('#<script type="application/ld\+json">(.*?)</script>#s', $html, $ldBlock));
+        $this->assertStringNotContainsString('Zzbadge', $ldBlock[1]);
         $this->assertSame(1, preg_match('#<meta name="description" content="([^"]*)"#', $html, $m));
         $this->assertStringNotContainsString('Zzbadge', $m[1]);
         $this->assertStringNotContainsString('Zzbadge', (string) preg_replace('#<ul class="sf-cbadges.*?</ul>#s', '', $html), 'it appears only in the badge list');

@@ -42,6 +42,11 @@ trait AssertsSafeHtml
                 continue;
             }
 
+            // SEO-1: the ONE script a storefront page may carry inline is the structured data: `type="application/ld+json"` whose text is valid JSON (the layout encodes it with the JSON_HEX_* flags).
+            if ($name === 'script' && $this->isTheStructuredData($element)) {
+                continue;
+            }
+
             if (in_array($name, ['script', 'iframe', 'frame', 'object', 'embed', 'svg', 'math', 'form', 'style', 'base', 'applet'], true)) {
                 $problems[] = "<{$name}> element";
             }
@@ -65,6 +70,16 @@ trait AssertsSafeHtml
         }
 
         $this->assertSame([], $problems, "active content in the page {$context}");
+    }
+
+    /** SEO-1: exactly `<script type="application/ld+json">` with no other attribute and a body that decodes as JSON (an array), nothing else. */
+    private function isTheStructuredData(DOMElement $script): bool
+    {
+        if ($script->attributes->length !== 1 || strtolower($script->getAttribute('type')) !== 'application/ld+json') {
+            return false;
+        }
+
+        return is_array(json_decode($script->textContent, true));
     }
 
     /** A payment mark of the footer: class `sf-pay-icon`, aria-hidden, only shape / text children with presentation attributes (no style, href, event handler). */

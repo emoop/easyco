@@ -430,7 +430,7 @@ class HtmlBlockCardTest extends TestCase
         $this->flushSession();
         $second = $this->withHeader('Cookie', 'x=1')->get('/')->assertOk()->getContent();
         $this->assertSame(preg_replace('/csrf-token" content="[^"]*"/', '', $first), preg_replace('/csrf-token" content="[^"]*"/', '', $second));
-        $this->assertDoesNotMatchRegularExpression('#<script(?![^>]*\bsrc=)[^>]*>#i', $first, 'no inline script');
+        $this->assertDoesNotMatchRegularExpression('#<script(?![^>]*\bsrc=)(?![^>]*application/ld\+json)[^>]*>#i', $first, 'no inline script');
     }
 
     // ---- ★ the picture and the ready event ------------------------------------------------------------------------------------------------

@@ -6443,3 +6443,93 @@ html:not(.js) .sf-bar-item:focus-within > .sf-sub {
     }
 }
 /* ===== end of HP-6 hero slider ======================================================================================================================================================= */
+
+/* ===== SEO-1.1: the index pages /brand and /collection (tiles, letter bar) ==========================================
+   Plain CSS on the storefront tokens; no inline style anywhere (the tiles and the letter bar are classes only). */
+.sf-subjects-lead {
+    margin-block: 0 1.25rem;
+    color: var(--sf-pdp-muted, #737373);
+}
+
+.sf-letters ul {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem 0.5rem;
+    margin: 0 0 2rem;
+    padding: 0;
+    list-style: none;
+}
+
+.sf-letters a {
+    display: inline-block;
+    min-width: 2.25rem;
+    padding: 0.25rem 0.5rem;
+    border: 1px solid var(--sf-border, #e5e5e5);
+    text-align: center;
+    text-decoration: none;
+    color: inherit;
+}
+
+.sf-subject-group {
+    margin-block: 0 2.5rem;
+}
+
+.sf-subject-letter {
+    margin: 0 0 0.75rem;
+    padding-bottom: 0.25rem;
+    border-bottom: 1px solid var(--sf-border, #e5e5e5);
+    font-size: 1.25rem;
+}
+
+.sf-subject-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+@media (min-width: 40rem) {
+    .sf-subject-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+}
+
+@media (min-width: 64rem) {
+    .sf-subject-grid {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+}
+
+.sf-subject-tile {
+    display: block;
+    color: inherit;
+    text-decoration: none;
+}
+
+.sf-subject-pic {
+    display: block;
+    position: relative;
+    aspect-ratio: 4 / 3;
+    overflow: hidden;
+    border: 1px solid var(--sf-border, #e5e5e5);
+    background: #fff;
+}
+
+.sf-subject-pic .sf-image {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+.sf-subject-name {
+    display: block;
+    margin-top: 0.5rem;
+    font-weight: 500;
+}
+
+.sf-subject-tile:hover .sf-subject-name,
+.sf-subject-tile:focus-visible .sf-subject-name {
+    text-decoration: underline;
+}

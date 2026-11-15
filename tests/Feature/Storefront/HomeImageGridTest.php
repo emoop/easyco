@@ -213,7 +213,7 @@ class HomeImageGridTest extends TestCase
         $second = $this->withHeader('Cookie', 'x=1')->get('/')->assertOk()->getContent();
 
         $this->assertStringNotContainsString(' style=', $first);
-        $this->assertDoesNotMatchRegularExpression('#<script(?![^>]*\bsrc=)[^>]*>#i', $first);
+        $this->assertDoesNotMatchRegularExpression('#<script(?![^>]*\bsrc=)(?![^>]*application/ld\+json)[^>]*>#i', $first);
         $this->assertSame(preg_replace('/csrf-token" content="[^"]*"/', '', $first), preg_replace('/csrf-token" content="[^"]*"/', '', $second));
     }
 

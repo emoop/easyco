@@ -11,6 +11,13 @@ return [
     'crumb_season' => 'Seasons',
     'crumb_tag' => 'Tags',
     'crumb_collection' => 'Collections',
+    // SEO-1.1: the index pages /brand and /collection
+    'index_brand_title' => 'Brands',
+    'index_brand_lead' => 'All brands with products in the shop.',
+    'index_collection_title' => 'Collections',
+    'index_collection_lead' => 'All collections with products in the shop.',
+    'index_letters' => 'Alphabetical index',
+    'index_other' => 'Other',
     'newest_products' => 'Newest products',
     'products_in_category' => 'Products',
     'menu_main' => 'Menu',

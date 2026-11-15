@@ -275,7 +275,7 @@ class CategoryBuiltinFiltersTest extends TestCase
         $html = $this->visit('/product-category/clothing?filter[tag]=1')->assertOk()->getContent();
 
         $this->assertDoesNotMatchRegularExpression('/\sstyle\s*=/i', $html);
-        $this->assertDoesNotMatchRegularExpression('/<script(?![^>]*\ssrc=)[^>]*>/i', $html);
+        $this->assertDoesNotMatchRegularExpression('/<script(?![^>]*\ssrc=)(?![^>]*application\/ld\+json)[^>]*>/i', $html);
         $this->assertSame($html, $this->visit('/product-category/clothing?filter[tag]=1')->getContent());
     }
 

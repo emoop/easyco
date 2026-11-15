@@ -28,7 +28,8 @@ class TestEnvironmentGuardsTest extends TestCase
         $this->assertSame('noindex, nofollow', $robots->headers->get('X-Robots-Tag'));
     }
 
-    public function test_noindex_off_changes_nothing_and_robots_is_the_file_byte_for_byte(): void
+    // SEO-1: public/robots.txt is gone; with the switch off /robots.txt is the rules of RobotsTxt
+    public function test_noindex_off_changes_nothing_and_robots_is_the_rules_of_robots_txt(): void
     {
         config(['easyco.noindex' => false]);
 
@@ -36,7 +37,7 @@ class TestEnvironmentGuardsTest extends TestCase
 
         $robots = $this->get('/robots.txt');
         $robots->assertOk();
-        $this->assertSame(file_get_contents(public_path('robots.txt')), $robots->getContent());
+        $this->assertSame(\App\Storefront\Seo\RobotsTxt::body(), $robots->getContent());
         $this->assertNull($robots->headers->get('X-Robots-Tag'));
     }
 

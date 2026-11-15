@@ -11,6 +11,13 @@ return [
     'crumb_season' => 'Сезони',
     'crumb_tag' => 'Етикети',
     'crumb_collection' => 'Колекции',
+    // SEO-1.1: the index pages /brand and /collection
+    'index_brand_title' => 'Марки',
+    'index_brand_lead' => 'Всички марки, с продукти в магазина.',
+    'index_collection_title' => 'Колекции',
+    'index_collection_lead' => 'Всички колекции, с продукти в магазина.',
+    'index_letters' => 'Азбучен указател',
+    'index_other' => 'Други',
     'newest_products' => 'Най-нови продукти',
     'products_in_category' => 'Продукти',
     'menu_main' => 'Меню',

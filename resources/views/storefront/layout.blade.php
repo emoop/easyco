@@ -15,6 +15,7 @@
     @if (($seo['canonical'] ?? null) === null || ($seo['noindex'] ?? false))
         <meta name="robots" content="{{ $seo['robots'] ?? 'noindex' }}">
     @endif
+@php /* SEO-1: share cards and JSON-LD, see App\Storefront\Seo\SeoHead */ echo \App\Storefront\Seo\SeoHead::render($seo); @endphp
     @if ((file_exists(public_path('hot')) || file_exists(public_path('build/manifest.json'))) && ! app()->runningUnitTests())
         @vite(['resources/css/storefront.css', 'resources/js/storefront.js'])
     @endif

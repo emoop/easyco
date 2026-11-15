@@ -346,6 +346,43 @@ final class CatalogReader
         return array_map(static fn (array $row): array => ['name' => $row['name'], 'url' => $row['url']], array_slice($rows, 0, max(0, $max)));
     }
 
+    // ================================================================== sitemap (SEO-1)
+
+    /** SEO-1: how many products the sitemap lists: the visible ones (the rule of the product PAGE, so a sold-out product stays listed). One statement. */
+    public function sitemapProductCount(): int
+    {
+        return $this->visibility->products(ProductModel::query())->count();
+    }
+
+    /**
+     * SEO-1: one chunk of the sitemap's products by id: the canonical path, `updated_at` and the main picture's largest stored size (an absolute url), in TWO statements whatever the chunk size
+     * (the product page with its first usable image id as a sub-select, then the assets of that chunk).
+     *
+     * @return list<array{url: string, updated_at: mixed, image: ?string}>
+     */
+    public function sitemapProducts(int $offset, int $limit): array
+    {
+        $products = $this->visibility->products(ProductModel::query())
+            ->select(['catalog_products.id', 'catalog_products.slug', 'catalog_products.updated_at'])
+            ->addSelect(['first_media_id' => self::firstImageIdSubquery()])
+            ->orderBy('catalog_products.id')
+            ->offset($offset)
+            ->limit($limit)
+            ->get();
+
+        $mediaIds = $products->pluck('first_media_id')->filter()->unique()->values()->all();
+        $assets = $mediaIds === [] ? collect() : MediaAssetModel::query()->whereIn('id', $mediaIds)->get()->keyBy('id');
+        $rows = [];
+
+        foreach ($products as $product) {
+            $asset = $assets[$product->getAttribute('first_media_id')] ?? null;
+            $set = $asset === null ? null : $this->images->build($asset, '', '');
+
+            $rows[] = ['url' => $this->urls->product((string) $product->slug), 'updated_at' => $product->updated_at, 'image' => $set === null ? null : \App\Storefront\Seo\SeoImage::largest($set)];
+        }
+
+        return $rows;
+    }
     // ================================================================== listing
 
     /**
@@ -619,7 +656,7 @@ final class CatalogReader
      * The first customer-usable image of each product, as a correlated subquery INSIDE the page query (the same shape
      * as the sandbox's), but returning the media id so the page's assets can be loaded in ONE query afterwards.
      */
-    private static function firstImageIdSubquery(): QueryBuilder
+    public static function firstImageIdSubquery(): QueryBuilder
     {
         return self::usableImageIdSubquery(0);
     }

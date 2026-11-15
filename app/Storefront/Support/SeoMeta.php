@@ -5,6 +5,8 @@ namespace App\Storefront\Support;
 use App\Storefront\ReadModels\CategoryPage;
 use App\Storefront\ReadModels\ListingPage;
 use App\Storefront\ReadModels\ProductPage;
+use App\Storefront\Seo\SeoImage;
+use App\Storefront\Seo\StructuredData;
 
 /**
  * The `seo` variable of every storefront view: ['title', 'description', 'canonical'] (plain text, ESCAPED by the view).
@@ -21,13 +23,24 @@ final class SeoMeta
 {
     public const DESCRIPTION_LENGTH = 160;
 
-    /** @return array{title: string, description: string, canonical: ?string} */
+    /** @return array{title: string, description: string, canonical: ?string, og: array, ld: ?string} */
     public function forProduct(ProductPage $product): array
     {
+        $description = $this->plain($product->shortDescription ?? $product->description ?? '');
+        $canonical = $this->absolute($product->url);
+        $pictures = $this->pictures($product);
+        $main = $pictures === [] ? null : SeoImage::closest($pictures[0]);
+        $price = $product->price === null ? null : [
+            'amount' => \EasyCo\Pricing\Money::fromMinorUnits($product->price->fromMinor, $product->price->currency)->decimalValue(),
+            'currency' => $product->price->currency,
+        ];
+
         return [
             'title' => $this->title($product->name),
-            'description' => $this->plain($product->shortDescription ?? $product->description ?? ''),
-            'canonical' => $this->absolute($product->url),
+            'description' => $description,
+            'canonical' => $canonical,
+            'og' => $this->og('product', $product->name, $description, $canonical, $main, $main === null ? null : $pictures[0]->alt, $price),
+            'ld' => StructuredData::encode(StructuredData::product($product, $canonical, $description, array_map(SeoImage::largest(...), $pictures))),
         ];
     }
 
@@ -39,17 +52,54 @@ final class SeoMeta
             return ['title' => $this->title($category->name), 'description' => '', 'canonical' => $this->absolute($category->url), 'noindex' => true];
         }
 
+        $canonical = $this->absolute($category->url.($listing->page > 1 ? '?page='.$listing->page : ''));
+
         return [
             'title' => $this->title($category->name),
             'description' => '',
-            'canonical' => $this->absolute($category->url.($listing->page > 1 ? '?page='.$listing->page : '')),
+            'canonical' => $canonical,
+            'og' => $this->og('website', $category->name, '', $canonical),
+            'ld' => StructuredData::encode(StructuredData::category($category->breadcrumbs)),
+        ];
+    }
+
+    /**
+     * SEO-1.1: an index page (`/brand`, `/collection`). The canonical is the bare path on the shop's address (never a query string). Under `easyco.noindex` the page
+     * has no canonical and no share or structured data: only the noindex robots tag, as the test server asks.
+     *
+     * @param  list<\App\Storefront\ReadModels\Breadcrumb>  $crumbs  the trail; its last step is the page itself (no link)
+     * @return array{title: string, description: string, canonical: ?string, noindex?: bool, og?: array, ld?: ?string}
+     */
+    public function forSubjectIndex(string $name, string $description, string $path, array $crumbs): array
+    {
+        if (config('easyco.noindex')) {
+            return ['title' => $this->title($name), 'description' => '', 'canonical' => null, 'noindex' => true];
+        }
+
+        $canonical = $this->absolute($path);
+        $plain = $this->plain($description);
+
+        return [
+            'title' => $this->title($name),
+            'description' => $plain,
+            'canonical' => $canonical,
+            'og' => $this->og('website', $name, $plain, $canonical),
+            'ld' => StructuredData::encode(StructuredData::category($crumbs)),
         ];
     }
 
     /** @return array{title: string, description: string, canonical: ?string} */
     public function forHome(string $homeUrl): array
     {
-        return ['title' => $this->shopName(), 'description' => '', 'canonical' => $this->absolute($homeUrl)];
+        $canonical = $this->absolute($homeUrl);
+
+        return [
+            'title' => $this->shopName(),
+            'description' => '',
+            'canonical' => $canonical,
+            'og' => $this->og('website', $this->shopName(), '', $canonical),
+            'ld' => StructuredData::encode(StructuredData::home($canonical)),
+        ];
     }
 
     /** @return array{title: string, description: string, canonical: ?string} */
@@ -67,12 +117,65 @@ final class SeoMeta
      */
     public function forPage(\App\Content\Models\PageModel $page, bool $preview = false): array
     {
+        $description = $page->meta_description !== null && trim($page->meta_description) !== '' ? $page->meta_description : $this->plain($page->body);
+        $canonical = $preview ? null : $this->absolute(\App\Storefront\Pages\PageReader::urlFor($page->slug));
+        $indexable = $canonical !== null && ! $page->noindex;
+
         return [
             'title' => $this->title($page->meta_title !== null && trim($page->meta_title) !== '' ? $page->meta_title : $page->title),
-            'description' => $page->meta_description !== null && trim($page->meta_description) !== '' ? $page->meta_description : $this->plain($page->body),
-            'canonical' => $preview ? null : $this->absolute(\App\Storefront\Pages\PageReader::urlFor($page->slug)),
+            'description' => $description,
+            'canonical' => $canonical,
             'noindex' => $page->noindex || $preview,
-        ];
+        ] + ($indexable ? ['og' => $this->og('website', $page->title, $description, $canonical)] : []);
+    }
+
+    /**
+     * SEO-1: the Open Graph and Twitter tags of an indexable page, as `property` (og:*, product:*) and `name` (twitter:*) maps; the layout prints them only when the page has a canonical and is not noindex.
+     * The description is left out when empty; the image block only with an image; the twitter card is the large one only with an image.
+     *
+     * @param  array{url: string, width: int, height: int}|null  $image
+     * @param  array{amount: string, currency: string}|null  $price
+     * @return array{property: array<string, string>, name: array<string, string>}
+     */
+    private function og(string $type, string $title, string $description, string $canonical, ?array $image = null, ?string $alt = null, ?array $price = null): array
+    {
+        $property = ['og:type' => $type, 'og:title' => $title];
+        $description !== '' && $property['og:description'] = $description;
+        $property += ['og:url' => $canonical, 'og:site_name' => $this->shopName()];
+
+        $locale = ['bg' => 'bg_BG', 'en' => 'en_US', 'de' => 'de_DE', 'fr' => 'fr_FR', 'es' => 'es_ES', 'it' => 'it_IT', 'ro' => 'ro_RO', 'el' => 'el_GR', 'tr' => 'tr_TR', 'pl' => 'pl_PL'][app()->getLocale()] ?? null;
+        $locale !== null && $property['og:locale'] = $locale;
+
+        if ($image !== null) {
+            $property += ['og:image' => $image['url'], 'og:image:width' => (string) $image['width'], 'og:image:height' => (string) $image['height']];
+            $alt !== null && $alt !== '' && $property['og:image:alt'] = $alt;
+        }
+
+        if ($price !== null) {
+            $property += ['product:price:amount' => $price['amount'], 'product:price:currency' => $price['currency']];
+        }
+
+        $name = ['twitter:card' => $image === null ? 'summary' : 'summary_large_image', 'twitter:title' => $title];
+        $description !== '' && $name['twitter:description'] = $description;
+        $image !== null && $name['twitter:image'] = $image['url'];
+
+        return ['property' => $property, 'name' => $name];
+    }
+
+    /**
+     * The product's pictures for the cards and the JSON-LD: the gallery's images in order (a video is skipped), else the page's own image list.
+     *
+     * @return list<\App\Storefront\ReadModels\ImageSet>
+     */
+    private function pictures(ProductPage $product): array
+    {
+        $sets = [];
+
+        foreach ($product->gallery as $item) {
+            $item->isImage() && $item->image !== null && $sets[] = $item->image;
+        }
+
+        return $sets !== [] ? $sets : array_values($product->images);
     }
 
     public function plain(string $html): string

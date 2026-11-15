@@ -471,7 +471,7 @@ class StorefrontAppearanceTest extends TestCase
             $html = $this->get($url)->assertOk()->getContent();
 
             $this->assertDoesNotMatchRegularExpression('/<style[\s>]/i', $html, "{$url}: no inline <style>");
-            $this->assertDoesNotMatchRegularExpression('/<script/i', $html, "{$url}: no inline <script>");
+            $this->assertDoesNotMatchRegularExpression('/<script(?![^>]*application\/ld\+json)/i', $html, "{$url}: no inline <script>");
             $this->assertDoesNotMatchRegularExpression('/\sstyle\s*=/i', $html, "{$url}: no style attribute");
             // (the checkout is a form by nature: AssertsSafeHtml refuses <form>, so the page is judged by the three checks above)
             if ($url !== '/checkout') {
