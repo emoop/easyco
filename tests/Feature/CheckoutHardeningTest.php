@@ -213,6 +213,7 @@ class CheckoutHardeningTest extends TestCase
     public function test_a_throwing_order_placed_listener_gives_the_same_201_the_order_intact_and_the_payment_recorded(): void
     {
         Log::spy();
+        app()->forgetInstance(\EasyCo\Extensibility\HookRegistry::class); // rebuilt after the spy, so the registry's logger is the spy
         Hook::action('order.placed', function (): void {
             throw new RuntimeException('a merchant listener broke: secret detail');
         });
@@ -228,9 +229,11 @@ class CheckoutHardeningTest extends TestCase
         $this->assertNotNull(DB::table('payments')->sole()->attempted_at, 'the attempt was recorded as before');
         $this->assertNotNull(DB::table('carts')->where('id', $this->cartId)->value('order_id'));
 
-        Log::shouldHaveReceived('error')->withArgs(fn (string $message, array $context): bool => $message === 'checkout.order_placed_listener_failed'
-            && $context['exception'] === RuntimeException::class
-            && ! str_contains(json_encode($context), 'secret detail'))->once();
+        // P8a: HookRegistry now contains the listener first, so the registry's line is the one logged (the orchestrator's own try/catch is redundant).
+        // The registry log keeps the exception message (server-side log only, owner decision): the old "message absent from the log context" assertion is gone.
+        Log::shouldHaveReceived('error')->withArgs(fn (string $message, array $context): bool => $context['hook'] === 'order.placed'
+            && $context['kind'] === 'action'
+            && $context['exception'] === RuntimeException::class)->once();
         $this->assertStringNotContainsString('secret detail', $response->getContent());
     }
 

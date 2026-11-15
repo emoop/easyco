@@ -5,6 +5,7 @@ namespace App\Services;
 use EasyCo\Pricing\DefaultCurrency;
 use EasyCo\Shipping\Enums\ShippingMethodKind;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 
 /**
  * P7-2: the ONE number behind the card badge «Безплатна доставка»: the LOWEST free-shipping threshold (`free_above_minor`) of the active local methods of the store country's broad zone (StoreBroadZoneMethods: the very zone the
@@ -14,7 +15,7 @@ use Illuminate\Support\Facades\Cache;
  *  - The value is CACHED WITHOUT EXPIRY (`Cache::forever`) and refreshed when a shipping method, a zone or the store country / currency is saved (the `shipping.*` hooks and the locale settings call `refresh()`), so a page
  *    reads it with no query. The cache is read only by a page that has the badge switched on; a cold cache (nothing stored yet, or `cache:clear`) computes it once and stores it.
  *
- * Never throws: whatever goes wrong is «no threshold».
+ * Never throws: whatever goes wrong is «no threshold»; a failing cache store is logged (warning) and the computed value is still returned.
  */
 final class FreeShippingThreshold
 {
@@ -41,7 +42,12 @@ final class FreeShippingThreshold
             $value = null;
         }
 
-        Cache::forever(self::KEY, ['minor' => $value['minor'] ?? null, 'currency' => $value['currency'] ?? null]);
+        try {
+            Cache::forever(self::KEY, ['minor' => $value['minor'] ?? null, 'currency' => $value['currency'] ?? null]);
+        } catch (\Throwable $exception) {
+            // a cache failure must never break a shipping write or a settings save
+            Log::warning('FreeShippingThreshold could not store the threshold.', ['exception' => $exception::class, 'message' => $exception->getMessage()]);
+        }
 
         return $value;
     }

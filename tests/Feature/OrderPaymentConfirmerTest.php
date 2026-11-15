@@ -539,10 +539,10 @@ class OrderPaymentConfirmerTest extends TestCase
     }
 
     /**
-     * §8.3 item 4's policy, end to end: the extension layer's failure is the
-     * operator's to see, and it does not undo the merchant's fact.
+     * §8.3 item 4's policy, end to end: the extension layer's failure is logged,
+     * never thrown at the caller, and it does not undo the merchant's fact.
      */
-    public function test_a_listener_that_throws_after_the_commit_propagates_while_the_confirmation_stays_recorded(): void
+    public function test_a_listener_that_throws_after_the_commit_is_contained_and_the_confirmation_stays_recorded(): void
     {
         $orderId = $this->orderId();
         $payment = $this->savedAnsweredPending($orderId);
@@ -551,12 +551,8 @@ class OrderPaymentConfirmerTest extends TestCase
             throw new RuntimeException('the listener exploded');
         });
 
-        try {
-            $this->confirmer()->confirm($payment->id(), new DateTimeImmutable('2026-09-28 12:15:00'));
-            $this->fail('HookRegistry never swallows a listener exception (extensibility-design-and-hooks.md §4).');
-        } catch (RuntimeException $exception) {
-            $this->assertSame('the listener exploded', $exception->getMessage());
-        }
+        // P8a: HookRegistry contains a failing action listener (extensibility-design-and-hooks.md §4)
+        $this->confirmer()->confirm($payment->id(), new DateTimeImmutable('2026-09-28 12:15:00'));
 
         $this->assertSame('2026-09-28 12:15:00', $this->paymentRow($payment->id())->confirmed_at);
         $this->assertSame(1, DB::table('order_events')->count());

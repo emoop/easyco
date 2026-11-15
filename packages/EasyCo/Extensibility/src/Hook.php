@@ -12,6 +12,9 @@ namespace EasyCo\Extensibility;
  * This is the ONLY class in this package that touches Laravel: every
  * method resolves EasyCo\Extensibility\HookRegistry as a singleton from
  * the container via the global app() helper, then delegates.
+ *
+ * Error rule: fire() CONTAINS a failing listener (logged, the next one runs, the caller never sees it); apply() does NOT
+ * (a failing filter fails the write that needs its value). See HookRegistry::doAction() / applyFilters().
  */
 final class Hook
 {

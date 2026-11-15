@@ -366,12 +366,8 @@ class ShippingZoneWriterTest extends TestCase
             throw new \RuntimeException('a listener failed');
         });
 
-        try {
-            $this->writer()->create('Durable', ['BG'], [], []);
-            $this->fail('the listener\'s error surfaces');
-        } catch (\RuntimeException $exception) {
-            $this->assertSame('a listener failed', $exception->getMessage());
-        }
+        // P8a: contained by HookRegistry, the call returns normally
+        $this->writer()->create('Durable', ['BG'], [], []);
 
         $this->assertSame(1, $this->zoneCount(), 'the write is already durable — the hook fires after the commit');
     }

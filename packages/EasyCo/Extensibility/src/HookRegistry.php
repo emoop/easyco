@@ -19,6 +19,14 @@ namespace EasyCo\Extensibility;
  */
 final class HookRegistry
 {
+    /**
+     * @param \Psr\Log\LoggerInterface|null $logger where a failed action listener is reported (Laravel's container autowires its logger);
+     *                                               without one the failure goes to error_log(). PSR-3 only: this package stays framework-agnostic.
+     */
+    public function __construct(private readonly ?\Psr\Log\LoggerInterface $logger = null)
+    {
+    }
+
     /** @var array<string, array<int, callable[]>> hook => priority => callbacks (insertion order within a priority) */
     private array $actions = [];
 
@@ -41,14 +49,20 @@ final class HookRegistry
      * and in registration order among callbacks sharing the same priority.
      * Every callback receives the same $args.
      *
-     * If any callback throws, the exception propagates immediately and any
-     * remaining callbacks for this call do not run — this method never
-     * catches, logs, or swallows an exception from a listener.
+     * CONTAINMENT (actions only): every listener runs inside its own try/catch. A listener that throws is logged at `error` level
+     * (hook name, a description of the listener, exception class, message, file:line — NEVER the hook arguments, they can hold customer
+     * or order data) and the next listener still runs; the caller never sees the exception. An action means "something happened,
+     * react": the fact is already committed, so a failing reaction must not break or undo it. Same rule for every hook, in every
+     * environment. Order and priority are unchanged.
      */
     public function doAction(string $hook, mixed ...$args): void
     {
         foreach ($this->orderedCallbacks($this->actions, $hook) as $callback) {
-            $callback(...$args);
+            try {
+                $callback(...$args);
+            } catch (\Throwable $e) {
+                $this->reportFailure($hook, $callback, $e);
+            }
         }
     }
 
@@ -59,9 +73,12 @@ final class HookRegistry
      * never part of the chain, only $value is. Returns $value unchanged if
      * no filters are registered for $hook.
      *
-     * If any callback throws, the exception propagates immediately; $value
-     * is never silently rolled back to whatever it was before the throwing
-     * callback ran — there is no fallback behavior here.
+     * FILTERS ARE NOT CONTAINED, on purpose: a filter produces a value the core
+     * write depends on (the built-in slug / SKU generators are themselves
+     * filters), so a failing filter must fail that write loudly and roll it back.
+     * If any callback throws, the exception propagates immediately; $value is
+     * never silently rolled back to what it was before the throwing callback —
+     * there is no fallback behavior here.
      */
     public function applyFilters(string $hook, mixed $value, mixed ...$context): mixed
     {
@@ -120,5 +137,53 @@ final class HookRegistry
         }
 
         return $ordered;
+    }
+
+    /** Logs a failed action listener. Context deliberately holds no hook arguments. */
+    private function reportFailure(string $hook, callable $callback, \Throwable $e): void
+    {
+        $context = [
+            'hook' => $hook,
+            'listener' => self::describe($callback),
+            'kind' => 'action',
+            'exception' => $e::class,
+            'message' => $e->getMessage(),
+            'at' => $e->getFile().':'.$e->getLine(),
+        ];
+
+        try {
+            if ($this->logger !== null) {
+                $this->logger->error('Hook listener failed; the core write stands.', $context);
+
+                return;
+            }
+
+            error_log('Hook listener failed; the core write stands. '.json_encode($context));
+        } catch (\Throwable) {
+            // reporting must never break the caller either
+        }
+    }
+
+    private static function describe(callable $callback): string
+    {
+        try {
+            if ($callback instanceof \Closure) {
+                $r = new \ReflectionFunction($callback);
+
+                return 'Closure@'.$r->getFileName().':'.$r->getStartLine();
+            }
+
+            if (is_array($callback)) {
+                return (is_object($callback[0]) ? $callback[0]::class : (string) $callback[0]).'::'.$callback[1];
+            }
+
+            if (is_object($callback)) {
+                return $callback::class;
+            }
+
+            return (string) $callback;
+        } catch (\Throwable) {
+            return 'unknown';
+        }
     }
 }

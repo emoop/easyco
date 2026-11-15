@@ -88,7 +88,7 @@ final class HookRegistryTest extends TestCase
         ], $calls);
     }
 
-    public function test_an_exception_from_one_action_propagates_and_stops_subsequent_callbacks(): void
+    public function test_an_exception_from_one_action_is_contained_and_later_callbacks_still_run(): void
     {
         $calls = [];
         $this->hooks->addAction('order.created', function () use (&$calls) {
@@ -101,14 +101,9 @@ final class HookRegistryTest extends TestCase
             $calls[] = 'third';
         }, priority: 30);
 
-        try {
-            $this->hooks->doAction('order.created');
-            $this->fail('Expected RuntimeException was not thrown.');
-        } catch (RuntimeException $e) {
-            $this->assertSame('listener blew up', $e->getMessage());
-        }
+        $this->hooks->doAction('order.created'); // P8a: no exception reaches the caller
 
-        $this->assertSame(['first'], $calls, 'the callback registered after the throwing one must never run');
+        $this->assertSame(['first', 'third'], $calls, 'the callback after the throwing one still runs');
     }
 
     public function test_an_exception_from_one_filter_propagates_immediately_without_falling_back(): void

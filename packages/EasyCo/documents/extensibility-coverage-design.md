@@ -65,7 +65,7 @@ separate `Hook::listen()`. Both delegate to `HookRegistry::addAction()`/
 removal beyond `HookRegistry::clear()` (removes everything for a hook, or
 everything), no introspection beyond `hasListeners()`, no queued dispatch —
 `extensibility-design-and-hooks.md` §5 is accurate as written. Listener
-exceptions propagate uncaught, proven by `HookRegistryTest` — also accurate.
+exceptions: action listeners are contained and logged, filters propagate (P8a; `extensibility-design-and-hooks.md` §4).
 
 ### 0.2 Every production `Hook::` call site and every listener registration
 
@@ -570,17 +570,15 @@ scoped only to admin-UI rendering.** The registry wraps each individual
 extension closure's invocation in its own `try`/`catch`, logs to a dedicated
 `extensions` channel, and renders a small "an installed extension failed to
 render this section: `<extension id>`" placeholder in its place — never
-silently swallowed, never blocking the rest of the page. The justification
-for deviating from extensibility §4's blanket uncaught-propagation policy:
-an admin page is a single Livewire component serving a human waiting on it
-*right now* — one broken third-party section must not take the whole
-Order/Product view down for a staff member who needs the rest of the page to
-do their job. **This exception is scoped strictly to admin-UI rendering
-extension points.** Every domain hook (`order.placed`, `order.cancelled`,
-etc.) keeps propagating uncaught exactly as designed — that failure means a
-business fact was not reliably communicated to an app-layer caller, never a
-human staring at a screen, and needs to surface synchronously. Flagged in
-§8's open questions as the owner's call, not assumed settled.
+silently swallowed, never blocking the rest of the page. This exception is
+scoped strictly to admin-UI rendering extension points.
+
+**Update (P8a):** the "blanket uncaught-propagation policy" of extensibility §4 is
+no longer the rule for domain hooks. Domain ACTION hooks (`order.placed`,
+`order.cancelled`, `shipping.*`, …) are now contained and logged by
+`HookRegistry::doAction()`, because they fire after the commit and a failing
+reaction must not break the committed write. Domain FILTERS still propagate
+(their value feeds the write). See `extensibility-design-and-hooks.md` §4.
 
 ### Translation
 

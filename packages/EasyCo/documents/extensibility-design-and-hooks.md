@@ -102,9 +102,12 @@ app/ layer code only                  ← controllers, listeners, other service 
 
 ## 4. Error-handling policy
 
-**Decision:** an exception thrown by any action or filter callback propagates immediately and is never caught, logged, or swallowed by `HookRegistry`. For an action, every callback after the throwing one for that `doAction()` call simply does not run. For a filter, the same — and critically, `applyFilters()` does **not** fall back to the pre-exception value; the caller gets the exception, not a partially-filtered (or unfiltered) result silently passed through as if nothing happened.
+**Decision (P8a, owner 2026-11):** ACTIONS are contained, FILTERS are not.
 
-**Why this is the only acceptable behavior, not just the simplest one:** a hook system that swallows listener exceptions turns a bug in a third-party or merchant-specific listener into silent, undebuggable data corruption elsewhere in the system — e.g. a `catalog.product.base_sku` filter that throws would, under a swallow-and-continue policy, let the *original, unfiltered* `base_sku` through with no indication anything went wrong. Propagating means the failure surfaces exactly where it happened, with its real stack trace, the moment it happens — consistent with how the rest of EasyCo's domain layer treats invariant violations (see e.g. `catalog-domain-design.md`'s `LogicException`/`InvalidArgumentException` usage: fail loudly and immediately, never degrade silently). This is proven directly in `HookRegistryTest` (`test_an_exception_from_one_action_propagates_and_stops_subsequent_callbacks`, `test_an_exception_from_one_filter_propagates_immediately_without_falling_back`).
+- **Actions** (`doAction()`, so `Hook::fire()`): every listener runs in its own `try/catch(\Throwable)`. A failing listener is logged at `error` level (hook name, a description of the listener, exception class, message, file:line — never the hook arguments, which can hold customer or order data) and the next listener still runs; the caller never sees the exception. Same in every environment, for every hook. An action means "something happened, react": the fact is already committed (hooks fire after commit), so a failing reaction must not break or undo it. Order and priority are unchanged.
+- **Filters** (`applyFilters()`, so `Hook::apply()`): unchanged — an exception propagates immediately and there is no fallback to the pre-exception value. A filter produces a value the core write depends on (the built-in slug / base-SKU / variation-SKU generators are themselves filters; an unfiltered `''` is invalid), so a failing filter must fail that write loudly and roll it back, not let an unfiltered value through silently.
+
+Proven in `HookRegistryTest` (`test_an_exception_from_one_action_is_contained_and_later_callbacks_still_run`, `test_an_exception_from_one_filter_propagates_immediately_without_falling_back`) and `tests/Feature/Hooks/HookContainmentTest.php`.
 
 ---
 

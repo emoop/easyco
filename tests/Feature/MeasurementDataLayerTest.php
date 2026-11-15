@@ -805,20 +805,12 @@ class MeasurementDataLayerTest extends TestCase
             throw new RuntimeException('listener blew up');
         });
 
-        try {
-            app(MeasureWriter::class)->save(Measure::create('Persisted', 'cm'));
-            $this->fail('the listener exception propagates, like every existing writer');
-        } catch (RuntimeException $e) {
-            $this->assertSame('listener blew up', $e->getMessage());
-        }
+        // P8a: a failing action listener is contained (logged), the write returns normally
+        app(MeasureWriter::class)->save(Measure::create('Persisted', 'cm'));
         $this->assertSame(1, DB::table('catalog_measures')->where('name', 'Persisted')->count(), 'the write is committed');
 
         $g = $this->gridProduct();
-        try {
-            app(ProductMeasurementsWriter::class)->saveGrid($g['product'], [$g['sizes'][0] => [$g['measures'][0] => 5000]]);
-            $this->fail('expected the listener exception');
-        } catch (RuntimeException) {
-        }
+        app(ProductMeasurementsWriter::class)->saveGrid($g['product'], [$g['sizes'][0] => [$g['measures'][0] => 5000]]);
         $this->assertSame([$g['sizes'][0] => [$g['measures'][0] => 5000]], $this->values()->forProduct($g['product']));
     }
 }

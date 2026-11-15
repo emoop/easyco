@@ -470,12 +470,8 @@ class ShippingMethodWriterTest extends TestCase
             throw new \RuntimeException('a listener failed');
         });
 
-        try {
-            $this->writer()->create($this->zoneId, $this->input(['name' => 'Durable']));
-            $this->fail('the listener\'s error surfaces');
-        } catch (\RuntimeException $exception) {
-            $this->assertSame('a listener failed', $exception->getMessage());
-        }
+        // P8a: contained by HookRegistry, the call returns normally
+        $this->writer()->create($this->zoneId, $this->input(['name' => 'Durable']));
 
         $this->assertSame(1, $this->methodCount(), 'the write is already durable — the hook fires after the commit');
     }
