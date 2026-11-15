@@ -192,6 +192,7 @@
     /* ---- breadcrumbs ---------------------------------------------------------------------------- */
     .sf-breadcrumbs {
         @apply mb-4 text-sm text-neutral-500;
+        font-size: 0.7rem;
     }
 
     .sf-breadcrumbs-list {
@@ -6532,4 +6533,26 @@ html:not(.js) .sf-bar-item:focus-within > .sf-sub {
 .sf-subject-tile:hover .sf-subject-name,
 .sf-subject-tile:focus-visible .sf-subject-name {
     text-decoration: underline;
+}
+
+/* ===== HTML block headings: h2, h3, h4 inside an HTML block ===================================================
+   The sizes are in em, so they follow the block's own text size («Малък», «Нормален», «Голям», «Заглавие»). The containers are the
+   places that print an HTML block's HTML (home section, footer, mega menu, product summary) and a styled block (`.sf-hb`). Preflight
+   resets h2–h4 to the surrounding size; these rules put them back as headings. */
+:is(.sf-hp-html, .sf-ft-html, .sf-mega-html, .sf-summary-html, .sf-hb) :is(h2, h3, h4) {
+    font-weight: 600;
+    line-height: 1.25;
+    margin: 0.75em 0 0.4em;
+}
+
+:is(.sf-hp-html, .sf-ft-html, .sf-mega-html, .sf-summary-html, .sf-hb) h2 {
+    font-size: 1.5em;
+}
+
+:is(.sf-hp-html, .sf-ft-html, .sf-mega-html, .sf-summary-html, .sf-hb) h3 {
+    font-size: 1.25em;
+}
+
+:is(.sf-hp-html, .sf-ft-html, .sf-mega-html, .sf-summary-html, .sf-hb) h4 {
+    font-size: 1.125em;
 }

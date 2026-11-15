@@ -70,7 +70,7 @@ return [
             'bg_size' => ['cover' => 'Fill', 'contain' => 'Fit whole'], 'bg_position' => ['center' => 'Center', 'top' => 'Top', 'bottom' => 'Bottom', 'left' => 'Left', 'right' => 'Right'], 'overlay' => ['0' => 'No darkening', '20' => 'Light', '40' => 'Medium', '60' => 'Strong'], 'min_height' => ['0' => 'None', '160' => 'Low', '240' => 'Medium', '320' => 'High', '400' => 'Very high'], 'valign' => ['top' => 'Top', 'center' => 'Middle', 'bottom' => 'Bottom'],
             'width_mode' => ['auto' => 'As wide as the content', 'full' => 'Full width', 'fixed' => 'Fixed'],
             'align' => ['left' => 'Left', 'center' => 'Centre', 'right' => 'Right'],
-            'size' => ['small' => 'Small', 'normal' => 'Normal', 'large' => 'Large'],
+            'size' => ['small' => 'Small', 'normal' => 'Normal', 'large' => 'Large', 'title' => 'Heading'],
         ],
         'errors' => [
             'bad_style' => 'Invalid style.',

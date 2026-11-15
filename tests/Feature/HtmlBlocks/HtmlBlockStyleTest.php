@@ -70,6 +70,7 @@ class HtmlBlockStyleTest extends TestCase
         $out['align: centre'] = [['align' => 'center'], null];
         $out['size: a value that does not exist'] = [['size' => 'huge'], 'size'];
         $out['size: large'] = [['size' => 'large'], null];
+        $out['size: heading (Заглавие)'] = [['size' => 'title'], null];
         $out['an unknown key'] = [['bg' => '#2e7d32', 'font_family' => 'x'], 'style'];
 
         return $out;
@@ -157,6 +158,7 @@ class HtmlBlockStyleTest extends TestCase
             'align: left is the default' => [['align' => 'left'], ''],
             'size: small' => [['size' => 'small'], ".sf-hb-5{{$tail};font-size:0.875rem}"],
             'size: large' => [['size' => 'large'], ".sf-hb-5{{$tail};font-size:1.25rem}"],
+            'size: heading is 26px' => [['size' => 'title'], ".sf-hb-5{{$tail};font-size:26px}"],
             'size: normal is the default' => [['size' => 'normal'], ''],
             'all together' => [
                 ['bg' => '#2e7d32', 'color' => '#ffffff', 'pad_v' => 6, 'pad_h' => 10, 'border_w' => 2, 'border_color' => '#112233', 'radius' => 4, 'width_mode' => 'fixed', 'width_px' => 280, 'align' => 'center', 'size' => 'large'],

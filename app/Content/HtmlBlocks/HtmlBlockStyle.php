@@ -26,7 +26,7 @@ final class HtmlBlockStyle
 
     public const ALIGNS = ['left', 'center', 'right'];
 
-    public const SIZES = ['small', 'normal', 'large'];
+    public const SIZES = ['small', 'normal', 'large', 'title'];
 
     public const PAD_MAX = 64;
 
@@ -60,7 +60,7 @@ final class HtmlBlockStyle
         'bg_image' => null, 'bg_size' => 'cover', 'bg_position' => 'center', 'overlay' => 0, 'min_height' => 0, 'valign' => 'top',
     ];
 
-    private const FONT_SIZES = ['small' => '0.875rem', 'large' => '1.25rem'];
+    private const FONT_SIZES = ['small' => '0.875rem', 'large' => '1.25rem', 'title' => '26px'];
 
     /** The class a styled block's wrapper carries, and the one the token stylesheet's rule is for. */
     public static function className(int $id): string
@@ -328,7 +328,7 @@ final class HtmlBlockStyle
             'margin-left:auto',
             'margin-right:auto',
             'text-align:(?:center|right)',
-            'font-size:(?:0\.875|1\.25)rem',
+            'font-size:(?:0\.875rem|1\.25rem|26px)',
             // HB-4: the background picture: ONLY an address of our own storage (HtmlBlockBackground::URL_PATH, the very pattern the resolver uses) with an optional black veil of exactly 20, 40 or 60 percent
             '(?:background-image:(?:linear-gradient\(rgba\(0,0,0,\.2\),rgba\(0,0,0,\.2\)\),|linear-gradient\(rgba\(0,0,0,\.4\),rgba\(0,0,0,\.4\)\),|linear-gradient\(rgba\(0,0,0,\.6\),rgba\(0,0,0,\.6\)\),)?url\('.HtmlBlockBackground::URL_PATH.'\))',
             'background-size:(?:cover|contain)',
