@@ -17,6 +17,7 @@ use App\Http\Controllers\Storefront\SubjectIndexController;
 use App\Http\Controllers\Storefront\SubjectListingController;
 use App\Http\Middleware\LimitFilteredCategoryRequests;
 use App\Http\Middleware\LimitSearchRequests;
+use App\Storefront\Cache\StorefrontCacheHeaders;
 use App\Storefront\Orders\OrderReceivedHeaders;
 use App\Storefront\ReadModels\CatalogSubjectKind;
 use App\Storefront\Theme\ApplyStorefrontTheme;
@@ -49,7 +50,7 @@ $withoutSession = [
     PreventRequestForgery::class,
 ];
 
-Route::middleware([SecurityHeaders::class, ApplyStorefrontTheme::class])
+Route::middleware([SecurityHeaders::class, ApplyStorefrontTheme::class, StorefrontCacheHeaders::class])
     ->withoutMiddleware($withoutSession)
     ->group(function (): void {
         Route::get('/', [HomeController::class, 'index'])->name('storefront.home');
@@ -111,7 +112,9 @@ Route::middleware([SecurityHeaders::class, ApplyStorefrontTheme::class])
 /*
 | SEO-1: the sitemap (seo.md). Sessionless like the storefront; the controller answers 404 while easyco.noindex is on or for a chunk past the last.
 */
-Route::withoutMiddleware($withoutSession)->group(function (): void {
+// P8b: robots.txt is sessionless too (no cookie) and cacheable; StorefrontCacheHeaders decides per route name which responses the page cache may keep.
+Route::withoutMiddleware($withoutSession)->middleware(StorefrontCacheHeaders::class)->group(function (): void {
+    Route::get('/robots.txt', fn () => response(\App\Storefront\Seo\RobotsTxt::body(), 200, ['Content-Type' => 'text/plain; charset=UTF-8']))->name('seo.robots');
     Route::get('/sitemap.xml', [SitemapController::class, 'index'])->name('seo.sitemap');
     Route::get('/sitemap/pages.xml', [SitemapController::class, 'pages'])->name('seo.sitemap.pages');
     Route::get('/sitemap/categories.xml', [SitemapController::class, 'categories'])->name('seo.sitemap.categories');

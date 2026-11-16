@@ -104,6 +104,11 @@ final class CatalogReader
 
         $productId = (int) $product->id;
 
+        // P8b: the keys of the product page: the product, its brand and season (printed on the page)
+        $keys = app(\App\Storefront\Cache\SurrogateKeys::class)->product($productId);
+        $product->brand_id === null || $keys->brand((int) $product->brand_id);
+        $product->season_id === null || $keys->season((int) $product->season_id);
+
         $variations = $this->visibility->variations(VariationModel::query())
             ->where('catalog_variations.product_id', $productId)
             ->orderBy('catalog_variations.sort_order')
@@ -716,6 +721,8 @@ final class CatalogReader
         }
 
         $productIds = array_map(fn (ProductModel $p): string => (string) $p->id, $products);
+        // P8b: every card rendered on this page puts its product's key on it (pure PHP over the rows already loaded)
+        app(\App\Storefront\Cache\SurrogateKeys::class)->add(...array_map(static fn (string $id): string => 'p'.$id, $productIds));
         $mediaIds = array_values(array_unique(array_filter(array_merge(
             array_map(fn (ProductModel $p) => $p->getAttribute('first_media_id'), $products),
             array_map(fn (ProductModel $p) => $p->getAttribute('second_media_id'), $products),
@@ -898,6 +905,10 @@ final class CatalogReader
         }
 
         $crumbs = $best === null ? [] : $this->categories->breadcrumbs($best);
+        // P8b: the categories of the breadcrumb (their names are on the page)
+        if ($best !== null) {
+            app(\App\Storefront\Cache\SurrogateKeys::class)->add(...array_map(static fn (int $id): string => 'c'.$id, [...$this->categories->ancestorIds($best), $best]));
+        }
         $crumbs[] = new Breadcrumb($name, $this->urls->product($slug));
 
         return $crumbs;

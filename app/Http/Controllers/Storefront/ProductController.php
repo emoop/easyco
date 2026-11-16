@@ -37,6 +37,9 @@ final class ProductController extends Controller
 {
     public function show(string $slug, CatalogReader $reader, SeoMeta $seo, SiteSettingsRepository $settings, StorefrontAppearance $appearance): View|RedirectResponse|Response
     {
+        // P8b: the slots of this page share one badge memo
+        app(\App\Storefront\Badges\BadgeMatchMemo::class)->begin();
+
         $product = $reader->product($slug);
 
         if ($product === null) {

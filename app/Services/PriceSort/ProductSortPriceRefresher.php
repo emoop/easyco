@@ -106,6 +106,9 @@ final class ProductSortPriceRefresher
 
         DB::update("UPDATE catalog_products SET price_from_minor = CASE id {$cases}END, is_available = CASE id {$cases}END WHERE id IN ({$in})", $bindings);
 
+        // P8b: the products whose stored price / availability really changed (a price list that started or ended, a stock that crossed zero): the product rule
+        app(\App\Storefront\Cache\CachePurgeCollector::class)->addProducts(array_keys($changes));
+
         return count($changes);
     }
 

@@ -40,6 +40,9 @@ final class CategoryController extends Controller
             return NotFoundResponse::make();
         }
 
+        // P8b: the category and its ancestors (a listing shows its descendants' products; the breadcrumb prints the ancestors' names)
+        app(\App\Storefront\Cache\SurrogateKeys::class)->add(...array_map(static fn (int $id): string => 'c'.$id, [...app(\App\Storefront\Reader\CategoryIndex::class)->ancestorIds((int) $category->id), (int) $category->id]));
+
         return $renderer->render($request, $category, ListingScope::CATEGORY, trim($path, '/') !== $category->path);
     }
 }

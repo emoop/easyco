@@ -26,6 +26,10 @@ final class HomeController extends Controller
     public function index(CatalogReader $reader, SeoMeta $seo, ?StorefrontAppearance $appearance = null): View
     {
         $appearance ??= app(StorefrontAppearance::class);
+        // P8b: the key of the home page (its product grids add their own `p{id}` through the reader)
+        app(\App\Storefront\Cache\SurrogateKeys::class)->add('home');
+        // P8b: the sections of this page share one badge memo
+        app(\App\Storefront\Badges\BadgeMatchMemo::class)->begin();
         // HP-1: a PUBLISHED home layout (from the cached appearance read: no query of its own) takes the page over: its sections (the page's <h1>, the shop's name, is kept for search engines and screen
         // readers). Nothing published (or a layout that does not validate): the category tiles and the newest products.
         $sections = $appearance->homeSections();

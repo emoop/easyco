@@ -44,12 +44,14 @@ final class SectionMeta
             return $out;
         }
 
-        $seasons = DB::table('catalog_products')->join('catalog_seasons', 'catalog_seasons.id', '=', 'catalog_products.season_id')->where('catalog_products.id', $productId)->selectRaw("'season' as kind, catalog_seasons.name as name, catalog_seasons.slug as slug");
-        $tags = DB::table('catalog_product_tags')->join('catalog_tags', 'catalog_tags.id', '=', 'catalog_product_tags.tag_id')->where('catalog_product_tags.product_id', $productId)->selectRaw("'tag' as kind, catalog_tags.name as name, catalog_tags.slug as slug");
+        $seasons = DB::table('catalog_products')->join('catalog_seasons', 'catalog_seasons.id', '=', 'catalog_products.season_id')->where('catalog_products.id', $productId)->selectRaw("'season' as kind, catalog_seasons.name as name, catalog_seasons.slug as slug, catalog_seasons.id as id");
+        $tags = DB::table('catalog_product_tags')->join('catalog_tags', 'catalog_tags.id', '=', 'catalog_product_tags.tag_id')->where('catalog_product_tags.product_id', $productId)->selectRaw("'tag' as kind, catalog_tags.name as name, catalog_tags.slug as slug, catalog_tags.id as id");
 
-        $collections = CatalogSubjectKind::COLLECTION->gated(DB::table('catalog_product_collections')->join('catalog_collections', 'catalog_collections.id', '=', 'catalog_product_collections.collection_id')->where('catalog_product_collections.product_id', $productId)->selectRaw("'collection' as kind, catalog_collections.name as name, catalog_collections.slug as slug"));
+        $collections = CatalogSubjectKind::COLLECTION->gated(DB::table('catalog_product_collections')->join('catalog_collections', 'catalog_collections.id', '=', 'catalog_product_collections.collection_id')->where('catalog_product_collections.product_id', $productId)->selectRaw("'collection' as kind, catalog_collections.name as name, catalog_collections.slug as slug, catalog_collections.id as id"));
 
         foreach ($seasons->unionAll($tags)->unionAll($collections)->get() as $row) {
+            // P8b: the page prints this subject's name: its key (no query: the id rides on the same statement)
+            app(\App\Storefront\Cache\SurrogateKeys::class)->add(match ($row->kind) { 'season' => 's', 'collection' => 'col', default => 't' }.$row->id);
             $link = ['name' => (string) $row->name, 'url' => match ($row->kind) {
                 'season' => $urls->season((string) $row->slug),
                 'collection' => $urls->collection((string) $row->slug),

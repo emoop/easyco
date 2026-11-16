@@ -58,6 +58,8 @@ final class HomeDrafts
         $settings = app(SiteSettingsRepository::class);
         app(HomeCompiler::class)->publish($layout, $settings);
         $settings->forget(AppearanceSettings::HOME_DRAFT_KEY);
+        // P8b: the published home layout (it is not part of the cached appearance payload, so refresh() does not purge for it)
+        app(\App\Storefront\Cache\CachePurgeCollector::class)->add('all');
         self::log('published');
     }
 

@@ -205,6 +205,9 @@ final class CatalogDeletion
             // carry restrictOnDelete() FKs that would block step 5 outright.
             $this->deleteVariationConfigurationRows($variationId);
 
+            // P8b: raw `DB::table` deletes above bypass model events: the product rule for the variation's product
+            app(\App\Storefront\Cache\CachePurgeCollector::class)->addProducts([$owned->productId()]);
+
             // §3.19.4 step 5 — the catalog row itself, which then cascades
             // its own children (catalog_variation_attribute_values,
             // catalog_variation_media). forceDelete, inside the repository.
@@ -342,6 +345,14 @@ final class CatalogDeletion
 
             // §3.19.4 steps 5-6 — the catalog rows, repository-owned and in
             // that one order (the variations' restrict FK forbids the reverse).
+            // P8b: the product rule (the raw deletes above bypass model events)
+            // the subjects are read BEFORE the pivot rows go (the product's categories, tags, collections; its brand and season come from the aggregate)
+            $collector = app(\App\Storefront\Cache\CachePurgeCollector::class);
+            $collector->addProducts([$productId]);
+            $collector->addSubjectsOf([$productId]);
+            $product->brandId() === null || $collector->add('b'.$product->brandId());
+            $product->seasonId() === null || $collector->add('s'.$product->seasonId());
+
             $this->products->delete($product);
         }, attempts: 3);
     }

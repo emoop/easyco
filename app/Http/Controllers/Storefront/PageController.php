@@ -46,6 +46,9 @@ final class PageController extends Controller
             return redirect()->to(PageReader::urlFor($page->slug), 301);
         }
 
+        // P8b: the page's key
+        app(\App\Storefront\Cache\SurrogateKeys::class)->page($page->id);
+
         return $this->render($page, $reader, $seo, preview: false);
     }
 

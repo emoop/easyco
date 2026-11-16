@@ -169,7 +169,7 @@ class SubjectSitemapTest extends TestCase
         $this->assertNotContains('https://shop.test/brand', $this->locs('/sitemap/pages.xml'));
 
         $this->product(1, ['brand' => 1]);
-        Cache::forget('storefront.sitemap.pages');
+        Cache::flush(); // P8b: the sitemap cache keys carry a version, so the test empties the cache instead of naming one key
         $this->assertContains('https://shop.test/brand', $this->locs('/sitemap/pages.xml'));
     }
 

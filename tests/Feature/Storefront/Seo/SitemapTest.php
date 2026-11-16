@@ -203,10 +203,12 @@ class SitemapTest extends TestCase
         }
     }
 
-    public function test_every_file_is_cached_for_one_hour(): void
+    public function test_every_file_is_cached_for_one_day(): void
     {
         config(['storefront.sitemap.chunk' => 50]);
         $this->product(1);
+        // P8b: the setup's own writes collected a purge that a real request would have flushed already; start clean so the cached file is not versioned away
+        app(\App\Storefront\Cache\CachePurgeCollector::class)->reset();
         $first = $this->get('/sitemap/products-1.xml')->getContent();
 
         DB::table('catalog_products')->where('id', 1)->update(['status' => 'draft']);
@@ -214,7 +216,8 @@ class SitemapTest extends TestCase
 
         Cache::flush();
         $this->get('/sitemap/products-1.xml')->assertNotFound();
-        $this->assertSame(3600, \App\Storefront\Seo\Sitemap::TTL_SECONDS);
+        // P8b: 24 h (was 1 h): the sitemap caches follow the `sitemap` / `all` purges through a version key, so a change shows at once
+        $this->assertSame(86400, \App\Storefront\Seo\Sitemap::TTL_SECONDS);
     }
 
     public function test_the_number_of_statements_does_not_grow_with_the_rows(): void

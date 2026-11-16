@@ -141,6 +141,8 @@ final class FilterCatalog
     public static function forget(): void
     {
         Cache::forget(self::CACHE_KEY);
+        // P8b: the filters of every listing page changed
+        app(\App\Storefront\Cache\CachePurgeCollector::class)->add('all');
     }
 
     /** @return list<array<string, mixed>> */

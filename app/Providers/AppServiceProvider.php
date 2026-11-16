@@ -23,6 +23,11 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        // P8b: the page-cache purger (`null` by default: nothing is queued; `varnish` from P8c).
+        $this->app->singleton(\App\Storefront\Cache\CachePurger::class, static fn (): \App\Storefront\Cache\CachePurger => config('cache_purge.purger') === 'varnish'
+            ? new \App\Storefront\Cache\VarnishPurger((string) config('cache_purge.url'), (int) config('cache_purge.timeout', 3))
+            : new \App\Storefront\Cache\NullPurger);
+
         // SRCH-1: the storefront search depends on the interface; this is the one line to change to plug in another engine (search.md).
         $this->app->bind(\App\Storefront\Search\ProductSearch::class, \App\Storefront\Search\DatabaseProductSearch::class);
 
@@ -114,6 +119,9 @@ class AppServiceProvider extends ServiceProvider
         // The named API rate limiters, in their one central place.
         ApiRateLimits::register();
 
+        // P8b: the purge map of the page cache (what a change purges: storefront-cache-contract.md)
+        \App\Storefront\Cache\CachePurgeListeners::register();
+
         // CT-3: the shop's filters are cached; an attribute or a value that is saved or deleted forgets them.
         \App\Storefront\Filters\FilterCatalog::listen();
 
@@ -140,7 +148,11 @@ class AppServiceProvider extends ServiceProvider
         // P7-2: the card badge «Безплатна доставка» reads ONE cached threshold; it is recomputed when a shipping method or zone is saved (every write fires its hook after the commit; the store country has its own call in
         // the locale settings). A reorder of the methods cannot change the lowest threshold; a reorder of the ZONES can change which zone matches first.
         foreach (['shipping.method.created', 'shipping.method.updated', 'shipping.method.activated', 'shipping.method.deactivated', 'shipping.method.deleted', 'shipping.zone.created', 'shipping.zone.updated', 'shipping.zone.deleted', 'shipping.zone.reordered'] as $event) {
-            Hook::action($event, static fn () => app(\App\Services\FreeShippingThreshold::class)->refresh());
+            Hook::action($event, static function (): void {
+                app(\App\Services\FreeShippingThreshold::class)->refresh();
+                // P8b: the card badge «Безплатна доставка» changes on every page that shows it (a write path: never inside refresh(), which a page view can reach)
+                app(\App\Storefront\Cache\CachePurgeCollector::class)->add('all');
+            });
         }
 
         Hook::action('order.placed', static fn (Order $order) => app(SendOrderConfirmation::class)->handle($order));

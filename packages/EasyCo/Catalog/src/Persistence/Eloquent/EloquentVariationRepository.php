@@ -7,6 +7,7 @@ use EasyCo\Catalog\Enums\VariationStatus;
 use EasyCo\Catalog\Enums\VariationType;
 use EasyCo\Catalog\Variation;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 
 /**
  * Read-focused repository for the hot commerce lookup paths that don't need
@@ -135,7 +136,9 @@ final class EloquentVariationRepository implements VariationRepository
             return;
         }
 
-        DB::transaction(function () use ($productId, $orderedVariationIds): void {
+        $wrote = false;
+
+        DB::transaction(function () use ($productId, $orderedVariationIds, &$wrote): void {
             $ownedIds = VariationModel::where('product_id', $productId)
                 ->whereIn('id', $orderedVariationIds)
                 ->pluck('id')
@@ -165,8 +168,12 @@ final class EloquentVariationRepository implements VariationRepository
                 }
 
                 VariationModel::where('id', $variationId)->update(['sort_order' => $sortOrder]);
+                $wrote = true;
             }
         });
+
+        // P8b: a bulk `update` fires no model event; the app layer listens to this plain event (the page cache of the product)
+        ($wrote ?? false) && Event::dispatch('catalog.variation.order_changed', [$productId]);
     }
 
     private function toDomainVariation(VariationModel $model, ?array $attributeAssignments = null): Variation

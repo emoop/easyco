@@ -109,6 +109,20 @@ final class ProductMassEditor
         return new MassEditResult(queued: $selection->count());
     }
 
+    /** P8b: the subject key of what the operation changed (the pivots' model events fire too; this is the chunk-level guarantee). @param list<string> $existing @param list<int|string> $oldSeasons */
+    private function collectSubject(string $operation, ?string $value, array $existing, array $oldSeasons): void
+    {
+        $collector = app(\App\Storefront\Cache\CachePurgeCollector::class);
+
+        match ($operation) {
+            self::ADD_CATEGORY, self::REMOVE_CATEGORY => $value === null || $collector->addCategories([$value]),
+            self::ADD_TAG, self::REMOVE_TAG => $value === null || $collector->add('t'.$value),
+            self::ADD_COLLECTION, self::REMOVE_COLLECTION => $value === null || $collector->add('col'.$value),
+            self::SET_SEASON => $collector->add(...array_map(static fn ($id): string => 's'.$id, array_filter([...$oldSeasons, $value]))),
+            default => null,
+        };
+    }
+
     /**
      * @throws MassEditRefused
      */
@@ -178,6 +192,8 @@ final class ProductMassEditor
         }
 
         $changed = [];
+        // the seasons the products leave (a season page's pagination shifts): one read, only for this operation
+        $oldSeasons = $operation === self::SET_SEASON ? ProductModel::query()->whereIn('id', $existing)->pluck('season_id')->filter()->all() : [];
 
         DB::transaction(function () use ($operation, $value, $existing, $result, &$changed): void {
             SortPriceTriggers::muted(function () use ($operation, $value, $existing, $result, &$changed): void {
@@ -194,6 +210,10 @@ final class ProductMassEditor
                 };
             });
         });
+
+        // P8b: ONE collection per chunk (the model-event triggers are muted above for the sort price; the page cache needs the chunk's products, and the subjects the operation touched)
+        app(\App\Storefront\Cache\CachePurgeCollector::class)->addProducts($changed);
+        $this->collectSubject($operation, $value, $existing, $oldSeasons);
 
         $result->changed += count($changed);
         $result->unchanged += count($existing) - count($changed);

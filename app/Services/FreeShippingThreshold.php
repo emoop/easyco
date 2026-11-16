@@ -33,7 +33,7 @@ final class FreeShippingThreshold
         return is_array($stored) && array_key_exists('minor', $stored) ? self::shape($stored) : $this->refresh();
     }
 
-    /** Recomputes the threshold from the shipping data and stores it. @return array{minor: int, currency: string}|null */
+    /** Recomputes the threshold from the shipping data and stores it. P8b: NO purge in here (`current()` calls it on a cold cache, i.e. on a page view): the WRITE paths collect `all` (the shipping hooks in AppServiceProvider, LocaleSettings). @return array{minor: int, currency: string}|null */
     public function refresh(): ?array
     {
         try {

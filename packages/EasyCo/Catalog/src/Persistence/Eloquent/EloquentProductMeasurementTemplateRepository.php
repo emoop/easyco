@@ -5,6 +5,7 @@ namespace EasyCo\Catalog\Persistence\Eloquent;
 use EasyCo\Catalog\Contracts\ProductMeasurementTemplateRepository;
 use EasyCo\Catalog\Exceptions\InvalidMeasurementValueException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 
 /**
  * Product <-> measurement template on catalog_product_measurement_templates (product_id is the primary key, so one template per product is a real constraint). Plain query-builder access: the row
@@ -45,10 +46,14 @@ final class EloquentProductMeasurementTemplateRepository implements ProductMeasu
                 ]);
             }
         });
+
+        // P8b: raw `DB::table` writes fire no model event; the app layer listens to this plain event (the page cache of the product)
+        Event::dispatch('catalog.product.measurement_template_changed', [$productId]);
     }
 
     public function clear(string $productId): void
     {
         DB::table('catalog_product_measurement_templates')->where('product_id', $productId)->delete();
+        Event::dispatch('catalog.product.measurement_template_changed', [$productId]);
     }
 }

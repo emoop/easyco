@@ -26,6 +26,8 @@ final class StockRefreshingRepository implements StockLevelRepository
     public function save(StockLevel $stockLevel): void
     {
         $this->inner->save($stockLevel);
+        // P8b: the product's page shows its stock (`p{id}` only; the product rule follows from the refresh when the price / availability changes)
+        app(\App\Storefront\Cache\CachePurgeCollector::class)->addVariations([$stockLevel->variationId()]);
         $this->refreshProductOf($stockLevel->variationId());
     }
 
@@ -39,8 +41,11 @@ final class StockRefreshingRepository implements StockLevelRepository
         $before = $this->inner->findByVariationId($variationId)->quantity();
 
         $this->inner->decrease($variationId, $amount);
+        app(\App\Storefront\Cache\CachePurgeCollector::class)->addVariations([$variationId]);
 
         if ($before - $amount <= 0) {
+            // P8b: the variation just became unavailable: the whole product rule (listings, home, sitemap)
+            app(\App\Storefront\Cache\CachePurgeCollector::class)->addVariationProducts([$variationId]);
             $this->refreshProductOf($variationId);
         }
     }
@@ -50,8 +55,10 @@ final class StockRefreshingRepository implements StockLevelRepository
         $before = $this->inner->findByVariationId($variationId)->quantity();
 
         $this->inner->increase($variationId, $amount);
+        app(\App\Storefront\Cache\CachePurgeCollector::class)->addVariations([$variationId]);
 
         if ($before <= 0) {
+            app(\App\Storefront\Cache\CachePurgeCollector::class)->addVariationProducts([$variationId]);
             $this->refreshProductOf($variationId);
         }
     }

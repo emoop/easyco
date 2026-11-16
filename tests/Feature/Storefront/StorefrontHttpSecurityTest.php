@@ -98,7 +98,7 @@ class StorefrontHttpSecurityTest extends TestCase
         }
     }
 
-    public function test_every_storefront_response_has_the_security_headers_and_no_caching_headers(): void
+    public function test_every_storefront_response_has_the_security_headers_and_the_p8b_caching_rule(): void
     {
         foreach ([...$this->pageUrls(), '/product/Summer-Dress', '/product-category/wrong/dresses', '/product/hidden'] as $url) {
             $response = $this->get($url);
@@ -107,9 +107,16 @@ class StorefrontHttpSecurityTest extends TestCase
             $this->assertSame('strict-origin-when-cross-origin', $response->headers->get('Referrer-Policy'), $url);
 
             $cacheControl = (string) $response->headers->get('Cache-Control');
-            $this->assertStringNotContainsString('public', $cacheControl, $url);
-            $this->assertStringNotContainsString('s-maxage', $cacheControl, $url);
-            $this->assertStringNotContainsString('max-age=', str_replace('s-maxage', '', $cacheControl), $url);
+
+            if (in_array($response->getStatusCode(), [200, 301], true) && ! str_contains($cacheControl, 'no-store')) {
+                // P8b: a cacheable page (200, or the slug-case 301) now says so (StorefrontCacheHeaders); the pass pages (/cart: private, no-store) and a 404 still have no caching header
+                $this->assertSame('max-age=0, public, s-maxage=604800', $cacheControl, $url);
+            } else {
+                $this->assertStringNotContainsString('public', $cacheControl, $url);
+                $this->assertStringNotContainsString('s-maxage', $cacheControl, $url);
+                $this->assertStringNotContainsString('max-age=', str_replace('s-maxage', '', $cacheControl), $url);
+            }
+
             $this->assertFalse($response->headers->has('ETag'), $url);
             $this->assertFalse($response->headers->has('Last-Modified'), $url);
             $this->assertFalse($response->headers->has('Expires'), $url);

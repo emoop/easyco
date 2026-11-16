@@ -106,6 +106,8 @@ final class EloquentSiteSettingsRepository implements SiteSettingsRepository
         // Written through, not invalidated: the new value IS the truth for the
         // rest of this request, so a later get() needs no query at all.
         $this->memo[$key] = $value;
+
+        self::purge($key);
     }
 
     public function forget(string $key): void
@@ -116,5 +118,40 @@ final class EloquentSiteSettingsRepository implements SiteSettingsRepository
         // re-read on the next get() is both simpler to reason about and the
         // honest description of what just happened.
         unset($this->memo[$key]);
+
+        self::purge($key);
+    }
+
+    /**
+     * P8b: KEYS (or key prefixes) a visitor never sees on a cacheable page: writing them purges NOTHING. Every other key purges `all`. A short list on purpose: a new
+     * key is purged until someone proves it invisible. (The call sites outside the admin screens: `media.html_block_import` by the `html-blocks:import` command,
+     * `content.drafts_seeded` by ContentDraftsSeeder; no order, job, price refresh, counter or scheduled command writes this table.)
+     *
+     * @var array<string, string> prefix or fragment => why it is invisible
+     */
+    public const INVISIBLE = [
+        'mail.' => 'the mail transport / sender: only the mails use it',
+        '.draft' => 'a draft layout: only the admin preview reads it',
+        'media.html_block_import' => 'the import command bookkeeping map',
+        'content.drafts_seeded' => 'the seeder marker "already seeded"',
+        'invoice.' => 'invoice rules: the checkout and the admin only',
+        'privacy.' => 'order-context privacy (consent mode, IP retention): never printed on a page',
+        'admin.' => 'the activity-log switches: admin only',
+        'payment.bank_transfer.' => 'bank details: printed on the order-received page and in mails, which are never cached',
+    ];
+
+    /**
+     * A storefront-visible setting changed (catalog settings, the collections switch, locale / country, the free-shipping inputs, every design key): the page cache of
+     * the whole shop. The write already happened; the collector only collects (flushed once per request).
+     */
+    private static function purge(string $key): void
+    {
+        foreach (array_keys(self::INVISIBLE) as $invisible) {
+            if (str_starts_with($key, $invisible) || ($invisible[0] === '.' && str_contains($key, $invisible))) {
+                return;
+            }
+        }
+
+        app(\App\Storefront\Cache\CachePurgeCollector::class)->add('all');
     }
 }

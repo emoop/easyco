@@ -26,7 +26,8 @@ use Illuminate\Support\Facades\DB;
  */
 final class Sitemap
 {
-    public const TTL_SECONDS = 3600;
+    /** P8b: 24 h. The sitemap caches follow the `sitemap` / `all` purges through the version in their key (CacheVersion), so a change shows at once, not after the TTL. */
+    public const TTL_SECONDS = 86400;
 
     public const CHUNK = 5000;
 
@@ -40,6 +41,12 @@ final class Sitemap
     ) {
     }
 
+    /** P8b: the version suffix of every sitemap cache key (moves when a `sitemap` or `all` purge was collected). */
+    private static function version(): string
+    {
+        return '.v'.\App\Storefront\Cache\CacheVersion::get(\App\Storefront\Cache\CacheVersion::SITEMAP).'-'.\App\Storefront\Cache\CacheVersion::get(\App\Storefront\Cache\CacheVersion::ALL);
+    }
+
     public static function chunkSize(): int
     {
         return max(1, (int) config('storefront.sitemap.chunk', self::CHUNK));
@@ -47,7 +54,7 @@ final class Sitemap
 
     public function index(): string
     {
-        return Cache::remember('storefront.sitemap.index.'.self::chunkSize(), self::TTL_SECONDS, function (): string {
+        return Cache::remember('storefront.sitemap.index.'.self::chunkSize().self::version(), self::TTL_SECONDS, function (): string {
             $entries = [
                 ['loc' => $this->absolute('/sitemap/pages.xml'), 'lastmod' => $this->date(PageModel::query()->where('status', PageModel::PUBLISHED)->where('noindex', false)->max('updated_at'))],
                 ['loc' => $this->absolute('/sitemap/categories.xml'), 'lastmod' => $this->date(DB::table('catalog_categories')->max('updated_at'))],
@@ -80,7 +87,7 @@ final class Sitemap
 
     public function pages(): string
     {
-        return Cache::remember('storefront.sitemap.pages', self::TTL_SECONDS, function (): string {
+        return Cache::remember('storefront.sitemap.pages'.self::version(), self::TTL_SECONDS, function (): string {
             $xml = $this->url($this->absolute('/'), null);
 
             $pages = PageModel::query()->where('status', PageModel::PUBLISHED)->where('noindex', false)->orderBy('id')->get(['id', 'slug', 'updated_at']);
@@ -106,7 +113,7 @@ final class Sitemap
      */
     public function subject(CatalogSubjectKind $kind): ?string
     {
-        $xml = Cache::remember('storefront.sitemap.'.$kind->value.'s', self::TTL_SECONDS, function () use ($kind): ?string {
+        $xml = Cache::remember('storefront.sitemap.'.$kind->value.'s'.self::version(), self::TTL_SECONDS, function () use ($kind): ?string {
             $rows = $this->subjects->rows($kind);
 
             if ($rows === []) {
@@ -127,7 +134,7 @@ final class Sitemap
 
     public function categories(): string
     {
-        return Cache::remember('storefront.sitemap.categories', self::TTL_SECONDS, function (): string {
+        return Cache::remember('storefront.sitemap.categories'.self::version(), self::TTL_SECONDS, function (): string {
             $nodes = [];
             $walk = function (array $level) use (&$nodes, &$walk): void {
                 foreach ($level as $node) {
@@ -153,7 +160,7 @@ final class Sitemap
     public function products(int $n): ?string
     {
         $size = self::chunkSize();
-        $key = 'storefront.sitemap.products.'.$size.'.'.$n;
+        $key = 'storefront.sitemap.products.'.$size.'.'.$n.self::version();
         $cached = Cache::get($key);
 
         if (is_string($cached)) {

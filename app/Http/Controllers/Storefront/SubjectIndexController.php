@@ -36,6 +36,9 @@ final class SubjectIndexController extends Controller
             return NotFoundResponse::make();
         }
 
+        // P8b: the index page's key
+        app(\App\Storefront\Cache\SurrogateKeys::class)->add($kind === CatalogSubjectKind::BRAND ? 'idx-brand' : 'idx-collection');
+
         $title = (string) __('storefront.index_'.$kind->value.'_title');
         $lead = (string) __('storefront.index_'.$kind->value.'_lead');
         // the trail's last step is the page itself: printed without a link, and without an `item` url in the JSON-LD

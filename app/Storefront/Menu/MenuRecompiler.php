@@ -94,5 +94,7 @@ final class MenuRecompiler
         $this->holds = [];
         $this->runs++;
         app(MenuCompiler::class)->compileAndStore();
+        // P8b: every compile of the menus changes the header / footer of every page
+        app(\App\Storefront\Cache\CachePurgeCollector::class)->add('all');
     }
 }

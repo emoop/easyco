@@ -10,12 +10,12 @@ use Illuminate\Support\Facades\RateLimiter;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * CT-3: a category request WITH a filter is the one a crawler multiplies (every combination is a page), so it alone is limited: LIMIT per client IP per DECAY seconds, through the cache store (no session,
+ * CT-3 / P8b: a category request WITH a `filter` or `featured` parameter is the one a crawler multiplies (every combination is a page), so it alone is limited: LIMIT per client IP per DECAY seconds, through the cache store (no session,
  * no cookie). A request without a `filter` parameter (a category, a product, the cart, the home page) never touches this limit. Over it: 429 with `Retry-After`, `noindex`, `no-store`, a plain page;
  * the first refusal of an IP in a minute is logged once (IP, how many, the path without its query: no value from the URL reaches the log).
  *
- * The IP is `$request->ip()` as the application's own TrustProxies configuration resolves it (config/trustedproxy.php); `X-Forwarded-For` is never read here. Behind Varnish or nginx the trusted
- * proxy list must be that proxy's address only (127.0.0.1), or every visitor shares one limit.
+ * The IP is `$request->ip()` as the application's own TrustProxies configuration resolves it (config/trustedproxy.php, env TRUSTED_PROXIES); `X-Forwarded-For` is never read here.
+ * Behind the stack's proxies (the outer proxy and the page cache) `TRUSTED_PROXIES` must name the stack's proxy NETWORK, so that every visitor gets their own limit and not the proxy's; the final value is set on the server in P8c.
  */
 final class LimitFilteredCategoryRequests
 {
@@ -26,7 +26,7 @@ final class LimitFilteredCategoryRequests
 
     public function handle(Request $request, Closure $next): Response
     {
-        if (! $request->query->has('filter')) {
+        if (! $request->query->has('filter') && ! $request->query->has('featured')) {
             return $next($request);
         }
 

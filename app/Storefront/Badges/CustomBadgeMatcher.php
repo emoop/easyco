@@ -29,6 +29,41 @@ final class CustomBadgeMatcher
             return [];
         }
 
+        // P8b: per-request memo: only the products not seen yet (for THIS set of rows) are queried; several sections of one page repeat no statement
+        $memo = app(BadgeMatchMemo::class);
+
+        if (! $memo->active) {
+            return self::compute($rows, $products);
+        }
+
+        $hash = md5(serialize($rows));
+        $unseen = array_values(array_filter($products, static fn (array $p): bool => ! isset($memo->seen[$hash][$p['id']])));
+
+        if ($unseen !== []) {
+            $computed = self::compute($rows, $unseen);
+
+            foreach ($unseen as $product) {
+                $memo->seen[$hash][$product['id']] = $computed[$product['id']] ?? [];
+            }
+        }
+
+        $out = [];
+
+        foreach ($products as $product) {
+            ($memo->seen[$hash][$product['id']] ?? []) === [] || $out[$product['id']] = $memo->seen[$hash][$product['id']];
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $rows
+     * @param  list<array{id: int, brandId: ?int, seasonId: ?int, price: ?PriceBlock}>  $products
+     * @return array<int, array<string, true>>
+     */
+    private static function compute(array $rows, array $products): array
+    {
+
         $used = [];
 
         foreach ($rows as $row) {

@@ -334,6 +334,7 @@ class LocaleSettings extends Page
 
         // P7-2: the cached free-shipping threshold of the card badge depends on the store country (and the zone it matches)
         app(\App\Services\FreeShippingThreshold::class)->refresh();
+        app(\App\Storefront\Cache\CachePurgeCollector::class)->add('all');
 
         Notification::make()
             ->title(__('settings.locale.saved_notification'))

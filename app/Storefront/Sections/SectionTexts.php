@@ -86,6 +86,8 @@ final class SectionTexts
      */
     public static function save(int $productId, array $texts, array $keys, array $shown = [], array $switchKeys = []): void
     {
+        // P8b: the product's sections are printed on its page (raw `DB::table` writes below: no model event)
+        app(\App\Storefront\Cache\CachePurgeCollector::class)->add('p'.$productId);
         $keys = array_values(array_filter(array_unique($keys), [SectionSet::class, 'isKey']));
         $keys = array_values(array_filter($keys, static fn (string $key): bool => array_key_exists($key, $texts)));
         $switchKeys = array_values(array_filter(array_unique($switchKeys), [SectionSet::class, 'isKey']));

@@ -41,6 +41,10 @@ x-laravel-env: &laravel-env
   REDIS_PASSWORD: "null"
   CACHE_PREFIX: ${CACHE_PREFIX:-easyco}
 
+  # P8b: the page-cache purge. `null` sends nothing; P8c switches the stack to `varnish` (the internal address of the varnish service).
+  CACHE_PURGER: ${CACHE_PURGER:-null}
+  CACHE_PURGE_URL: ${CACHE_PURGE_URL:-http://varnish}
+
   # The proxies whose X-Forwarded-* headers Laravel believes: the Docker network ranges (NEVER a wildcard).
   TRUSTED_PROXIES: ${TRUSTED_PROXIES:-10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}
   SANCTUM_STATEFUL_DOMAINS: ${SANCTUM_STATEFUL_DOMAINS:-}

@@ -126,6 +126,8 @@ final class StorefrontAppearance
     /** Reads the settings (ONE query) and REPLACES the cache entry: what the admin save calls after a successful save. */
     public function refresh(): void
     {
+        // P8b: an appearance-affecting publish / save: every page changes
+        app(\App\Storefront\Cache\CachePurgeCollector::class)->add('all');
         $this->checkoutHeader = false;
         $this->headerLayout = null;
         $this->menus = null;

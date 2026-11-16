@@ -47,6 +47,15 @@ final class SubjectListingController extends Controller
             return NotFoundResponse::make();
         }
 
+        // P8b: the subject's key
+        app(\App\Storefront\Cache\SurrogateKeys::class)->add(match ($scope) {
+            ListingScope::BRAND => 'b',
+            ListingScope::SEASON => 's',
+            ListingScope::TAG => 't',
+            ListingScope::COLLECTION => 'col',
+            default => 'c',
+        }.$subject->id);
+
         return $renderer->render($request, $subject, $scope, $slug !== $subject->slug);
     }
 }

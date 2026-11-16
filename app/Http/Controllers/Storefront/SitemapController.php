@@ -61,6 +61,9 @@ final class SitemapController extends Controller
             return NotFoundResponse::make();
         }
 
+        // P8b: the sitemap pages carry the `sitemap` key (every catalog change purges it)
+        app(\App\Storefront\Cache\SurrogateKeys::class)->add('sitemap');
+
         return response($xml, 200, ['Content-Type' => 'application/xml; charset=UTF-8']);
     }
 }

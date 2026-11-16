@@ -46,6 +46,8 @@ final class ListingPageRenderer
     {
         $reader = $this->reader;
         $pagination = $this->pagination;
+        // P8b: the listing and the page template's carousels share one badge memo
+        app(\App\Storefront\Badges\BadgeMatchMemo::class)->begin();
 
         // CD-1a: the PUBLISHED «Каталог» size is the default of `per_page` (one cached read, no query)
         $perPage = $this->appearance->catalogPerPage();
