@@ -6556,3 +6556,13 @@ html:not(.js) .sf-bar-item:focus-within > .sf-sub {
 :is(.sf-hp-html, .sf-ft-html, .sf-mega-html, .sf-summary-html, .sf-hb) h4 {
     font-size: 1.125em;
 }
+
+/* ===== P8d: the honeypot field. Off-screen (NOT display:none: a bot that skips hidden fields would skip it), no size, never focusable by a person ===== */
+.sf-hpot {
+    position: absolute;
+    left: -10000px;
+    top: auto;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+}

@@ -1,0 +1,2 @@
+{{-- P8d: the honeypot. A human never sees or reaches it (off-screen, not display:none; out of the tab order; hidden from screen readers; no label); a bot that fills every field fills it. The script sends it with the other fields. --}}
+<div class="sf-hpot" aria-hidden="true"><input type="text" name="{{ config('security.honeypot.field') }}" value="" tabindex="-1" autocomplete="off" data-sf-hp></div>

@@ -1327,6 +1327,13 @@ function initCheckout(root) {
             body.invoice = invoicePayload();
         }
 
+        // P8d: the honeypot travels with the other fields (always empty for a person); the server decides what a filled one means.
+        var trap = form.querySelector('[data-sf-hp]');
+
+        if (trap && trap.value !== '') {
+            body[trap.name] = trap.value;
+        }
+
         // The note is sent as typed (the server trims it); an empty one is omitted.
         var note = form.elements.customer_note.value;
 

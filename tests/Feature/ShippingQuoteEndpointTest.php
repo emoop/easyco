@@ -347,7 +347,9 @@ class ShippingQuoteEndpointTest extends TestCase
                 $definitions[] = $file->getFilename();
             }
         }
-        $this->assertSame(['ApiRateLimits.php'], $definitions, 'RateLimiter::for() appears in exactly one place');
+        // P8d: the API limiters stay in ApiRateLimits; the two non-API ones (livewire, csp-report) are in SecurityLimiters
+        sort($definitions);
+        $this->assertSame(['ApiRateLimits.php', 'SecurityLimiters.php'], $definitions, 'RateLimiter::for() appears only in the API registry and the security registry');
     }
 
     public function test_the_limit_is_per_cart_so_another_visitor_behind_the_same_ip_is_not_throttled(): void

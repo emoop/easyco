@@ -39,3 +39,6 @@ Schedule::command('order-blocks:prune')->daily();
 Schedule::command('prices:refresh-boundaries')->everyMinute()->withoutOverlapping();
 Schedule::command('prices:refresh-from')->everyMinute()->withoutOverlapping()
     ->when(static fn (): bool => (new DateTimeImmutable('now', app(App\Settings\StoreTimezone::class)->zone()))->format('H:i') === '03:30');
+
+// P8d: the bot-challenge mode is pushed to the cache layer every minute (Varnish forgets it on a restart). The null switch does nothing until P8c.
+Schedule::command('security:push-bot-challenge')->everyMinute()->withoutOverlapping();

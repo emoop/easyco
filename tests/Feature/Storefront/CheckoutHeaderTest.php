@@ -409,7 +409,8 @@ class CheckoutHeaderTest extends TestCase
         $this->assertSame('noindex', $response->headers->get('X-Robots-Tag'));
         $this->assertStringContainsString('no-store', (string) $response->headers->get('Cache-Control'));
         $this->assertStringContainsString('private', (string) $response->headers->get('Cache-Control'));
-        $this->assertNull($response->headers->get('X-Frame-Options'));
+        // P8d: SAMEORIGIN keeps the admin (same origin) able to frame the preview
+        $this->assertSame('SAMEORIGIN', $response->headers->get('X-Frame-Options'));
 
         preg_match('#href="(/storage/appearance/design-preview-[0-9a-f]{12}\.css)"#', $html, $m);
         $this->assertNotEmpty($m, 'the preview links its own small stylesheet');

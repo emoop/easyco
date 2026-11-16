@@ -47,6 +47,9 @@ class AccountRegistrationController extends Controller
      */
     public function store(Request $request): JsonResponse
     {
+        // P8d: the honeypot (the storefront has no registration form yet: a form that is added later renders `storefront.partials.honeypot`)
+        \App\Security\Honeypot::check($request, 'registration', 'email');
+
         $validated = $request->validate([
             'email' => 'required|email|max:254',
             'password' => 'required|min:8|max:255|confirmed',

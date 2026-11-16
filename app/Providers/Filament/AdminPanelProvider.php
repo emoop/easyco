@@ -73,7 +73,7 @@ class AdminPanelProvider extends PanelProvider
             // StaffModel, not a `web`-guard User, the identity Filament's
             // own login page resolves against.
             ->authGuard('staff')
-            ->login()
+            ->login(\App\Filament\Pages\Auth\AdminLogin::class)
             ->colors([
                 'primary' => Color::Amber,
             ])

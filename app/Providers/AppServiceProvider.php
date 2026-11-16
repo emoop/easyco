@@ -28,6 +28,9 @@ class AppServiceProvider extends ServiceProvider
             ? new \App\Storefront\Cache\VarnishPurger((string) config('cache_purge.url'), (int) config('cache_purge.timeout', 3))
             : new \App\Storefront\Cache\NullPurger);
 
+        // P8d: the edge's bot-challenge switch (a null switch until the Varnish one of P8c)
+        $this->app->bind(\App\Security\BotChallenge\BotChallengeSwitch::class, \App\Security\BotChallenge\NullBotChallengeSwitch::class);
+
         // SRCH-1: the storefront search depends on the interface; this is the one line to change to plug in another engine (search.md).
         $this->app->bind(\App\Storefront\Search\ProductSearch::class, \App\Storefront\Search\DatabaseProductSearch::class);
 
@@ -118,6 +121,9 @@ class AppServiceProvider extends ServiceProvider
     {
         // The named API rate limiters, in their one central place.
         ApiRateLimits::register();
+
+        // P8d: the `livewire` and `csp-report` limiters, and the Livewire update throttle
+        \App\Security\SecurityLimiters::register();
 
         // P8b: the purge map of the page cache (what a change purges: storefront-cache-contract.md)
         \App\Storefront\Cache\CachePurgeListeners::register();

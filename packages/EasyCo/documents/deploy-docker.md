@@ -201,3 +201,18 @@ docker run --rm -v "$VOL":/data -v /var/backups/easyco:/backup alpine sh -c 'cd 
 | `TRUSTED_PROXIES` | Докер мрежите (по подразбиране `10/8, 172.16/12, 192.168/16`); никога `*`. |
 | Качвания · Uploads | nginx `NGINX_CLIENT_MAX_BODY_SIZE`, PHP `PHP_UPLOAD_MAX_FILESIZE`/`PHP_POST_MAX_SIZE` ≥ `MEDIA_MAX_VIDEO_SIZE_KB` (100 MB по подразбиране). |
 | Ресурси · Resources (4 GB) | `PHP_FPM_MAX_CHILDREN=8`, `MYSQL_INNODB_BUFFER_POOL_SIZE=512M`, `VARNISH_SIZE=128m`, `REDIS_MAXMEMORY=128mb`. |
+
+---
+
+## Приложение: защита от ботове и режим на сигурност (P8d) · Appendix: bot protection and the security mode (P8d)
+
+| Променлива · Variable / команда · command | Ефект · Effect |
+|---|---|
+| `SECURITY_MODE=log\|block` (по подразбиране · default **`log`**) | Единственият превключвател на всяко **ново блокиращо** правило на приложението (заключване на админ входа, honeypot полетата). В `log` правилото само записва какво **би** блокирало; в `block` блокира. Старите лимити (филтри, търсене, API, собственият лимит на Filament) **не** зависят от него. · The ONE switch of every new blocking rule of the app (admin-login lockout, honeypots). `log` only logs what it WOULD block; `block` blocks. The older limiters do not depend on it. |
+| **Безопасен режим · Safe mode** | Ако правило пречи на истински потребители: `SECURITY_MODE=log` в Coolify → redeploy (или `php artisan config:clear` + рестарт на `app`). Нищо друго не се пипа. · If a rule gets in real users' way: set `SECURITY_MODE=log` in Coolify and redeploy (or `config:clear` + restart `app`). Nothing else to touch. |
+| `php artisan security:bot-challenge off\|filters\|misses` | Записва «Усилена защита от ботове» (същата настройка като полето в админа: Настройки → Сигурност, само собственик) и я праща към кеш слоя веднага. · Stores the same setting as the admin field (Settings → Security, owner only) and pushes it to the cache layer at once. |
+| `security:push-bot-challenge` (планиран · scheduled, всяка минута · every minute) | Праща записаната стойност към кеш слоя (Varnish я забравя при рестарт). Днес е **празна операция** (`NullBotChallengeSwitch`); истинската връзка идва с P8c. · Pushes the stored value to the cache layer. Today a no-op (`NullBotChallengeSwitch`); the real Varnish switch arrives in P8c. |
+| `/__ec/trap` | Капан URL: логва IP + user agent, отговаря със страницата 404, не се кешира, `Disallow` в robots.txt. Баненето е работа на CrowdSec (P8c чете access log-а). · Trap URL: logged, answered with the 404, never cached, `Disallow`ed in robots.txt. Banning is CrowdSec's job (P8c reads the access log). |
+| `POST /csp-report` | Получава CSP доклади (report-only), най-много 1 ред в лога на (директива, хост) за минута; нищо не се записва в базата. · Receives report-only CSP reports; one log line per (directive, host) per minute; nothing is stored in the database. |
+
+**Какво добавя P8c · What P8c adds:** Varnish VCL (истинският превключвател на проверката за бот, `X-Forwarded-Proto`/HSTS), Anubis, Traefik/CrowdSec правилата (HSTS е в Traefik, не в приложението). · the Varnish VCL (the real bot-challenge switch), Anubis, the Traefik / CrowdSec rules (HSTS lives at Traefik, not in the app).

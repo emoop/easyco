@@ -20,6 +20,7 @@ final class RobotsTxt
         'Disallow: /*filter[',
         'Disallow: /*filter%5B',
         'Disallow: /search',
+        'Disallow: /__ec/',
     ];
 
     public static function body(): string

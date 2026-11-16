@@ -53,8 +53,8 @@ Product rule = `p{id}` + every subject key of the product (categories with ances
 | Category (save, delete) | `c{id}` (+ ancestors) + `sitemap` + `home` + **`all`** (the name is in the sidebar filters, the menus and the tiles of every page) | `CategoryModel` events |
 | Brand (save, delete) | `b{id}` + `idx-brand` + `sitemap` + `home` + `all` | `BrandModel` events |
 | Season / tag (save, delete) | `s{id}` / `t{id}` + `sitemap` + `home` + `all` | model events |
-| Collection (save, delete) | `col{id}` + `idx-collection` + `sitemap` + `home` + `all` |
-| Measure / measurement template (saved, archived, deleted) | `all` (the names are printed in the size tables) | hooks `catalog.measure.*`, `catalog.measurement_template.*` | `CollectionModel` events |
+| Collection (save, delete) | `col{id}` + `idx-collection` + `sitemap` + `home` + `all` | `CollectionModel` events |
+| Measure / measurement template (saved, archived, deleted) | `all` (the names are printed in the size tables) | hooks `catalog.measure.*`, `catalog.measurement_template.*` |
 | Info page save / delete | `pg{id}` + `sitemap` + `all` | `PageModel` events |
 | Any «Дизайн» publish, header, footer, topbar, appearance tokens | `all` | `StorefrontAppearance::refresh()`; `HomeDrafts::publish` (the home layout is not in the cached payload) |
 | Menus (every compile) | `all` | `MenuRecompiler::now()` |

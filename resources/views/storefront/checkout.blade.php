@@ -29,6 +29,7 @@
             </aside>
 
             <form class="sf-checkout-form" id="sf-checkout-form" data-sf-checkout-form>
+                @include('storefront.partials.honeypot')
                 {{-- Every required field's label ends with the asterisk (rendered here for the always-required ones; the script toggles it, from the same state as `required`, for the fields whose requirement changes). --}}
                 {{-- The express-checkout slot (one-click wallets), filled by extensions through the `storefront.checkout.express` filter: nothing is rendered while it is empty. --}}
                 @if ($expressPartials !== [])

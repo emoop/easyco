@@ -136,6 +136,7 @@ final class EloquentSiteSettingsRepository implements SiteSettingsRepository
         'content.drafts_seeded' => 'the seeder marker "already seeded"',
         'invoice.' => 'invoice rules: the checkout and the admin only',
         'privacy.' => 'order-context privacy (consent mode, IP retention): never printed on a page',
+        'security.' => 'the bot-challenge switch: it is pushed to the edge, never printed on a page',
         'admin.' => 'the activity-log switches: admin only',
         'payment.bank_transfer.' => 'bank details: printed on the order-received page and in mails, which are never cached',
     ];

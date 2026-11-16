@@ -172,6 +172,38 @@ class PurgeMapTest extends TestCase
         $this->assertHasKeys(['col1', 'idx-collection', 'sitemap', 'home', 'all'], $keys, 'collection');
     }
 
+    /**
+     * ★ P8b review: ONE assertion per subject kind, isolated from every other listener. FilterCatalog's own listener also collects `all` for a brand, season, tag and
+     * collection, so the model's listeners are cleared and ONLY the purge map is registered again: `all` can then come from the purge listener of that kind alone.
+     *
+     * @return array<string, array{class-string, string}>
+     */
+    public static function subjectKinds(): array
+    {
+        return [
+            'category' => [CategoryModel::class, 'c1'],
+            'brand' => [BrandModel::class, 'b1'],
+            'season' => [SeasonModel::class, 's1'],
+            'tag' => [TagModel::class, 't1'],
+            'collection' => [CollectionModel::class, 'col1'],
+        ];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('subjectKinds')]
+    public function test_every_subject_kind_purges_all_through_its_own_listener(string $model, string $own): void
+    {
+        foreach (['saved', 'deleted'] as $event) {
+            \Illuminate\Support\Facades\Event::forget("eloquent.{$event}: {$model}");
+        }
+
+        \App\Storefront\Cache\CachePurgeListeners::register();
+
+        $keys = $this->purged(fn () => $model::query()->firstOrFail()->update(['name' => 'Renamed']));
+
+        $this->assertContains($own, $keys, 'the own key');
+        $this->assertContains('all', $keys, 'all, from the purge listener of this kind: ['.implode(' ', $keys).']');
+    }
+
     public function test_an_info_page_publish_and_delete_purge_the_page_the_sitemap_and_all(): void
     {
         $id = (int) DB::table('pages')->where('slug', 'about')->value('id');

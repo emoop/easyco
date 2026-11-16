@@ -3,6 +3,7 @@
 use App\Http\Controllers\Storefront\CardSizesController;
 use App\Http\Controllers\Storefront\CartPageController;
 use App\Http\Controllers\Storefront\CategoryController;
+use App\Http\Controllers\Storefront\CspReportController;
 use App\Http\Controllers\Storefront\CheckoutPageController;
 use App\Http\Controllers\Storefront\DesignPreviewController;
 use App\Http\Controllers\Storefront\FooterPreviewController;
@@ -15,6 +16,7 @@ use App\Http\Controllers\Storefront\SearchController;
 use App\Http\Controllers\Storefront\SitemapController;
 use App\Http\Controllers\Storefront\SubjectIndexController;
 use App\Http\Controllers\Storefront\SubjectListingController;
+use App\Http\Controllers\Storefront\TrapController;
 use App\Http\Middleware\LimitFilteredCategoryRequests;
 use App\Http\Middleware\LimitSearchRequests;
 use App\Storefront\Cache\StorefrontCacheHeaders;
@@ -54,6 +56,9 @@ Route::middleware([SecurityHeaders::class, ApplyStorefrontTheme::class, Storefro
     ->withoutMiddleware($withoutSession)
     ->group(function (): void {
         Route::get('/', [HomeController::class, 'index'])->name('storefront.home');
+
+        // P8d: the trap URL (logged, answered with the storefront 404, never cacheable, `Disallow`ed in robots.txt)
+        Route::get('/__ec/trap', [TrapController::class, 'show'])->name('storefront.trap');
 
         Route::get('/product/{slug}', [ProductController::class, 'show'])
             ->where('slug', '[\s\S]*')
@@ -131,10 +136,18 @@ Route::withoutMiddleware($withoutSession)->middleware(StorefrontCacheHeaders::cl
 | overwrite; OrderReceivedHeaders sets the rest of the storefront's headers too. Same cookie-free pipeline. The signature is
 | checked in the controller (a failure is the storefront's own 404, not the framework's 403).
 */
-Route::middleware([OrderReceivedHeaders::class, ApplyStorefrontTheme::class])
+// P8d: SecurityHeaders is listed AFTER OrderReceivedHeaders: the outer class writes last, so Referrer-Policy: no-referrer stays, and the page gets the frame / permissions / CSP headers too
+Route::middleware([OrderReceivedHeaders::class, SecurityHeaders::class, ApplyStorefrontTheme::class])
     ->withoutMiddleware($withoutSession)
     ->group(function (): void {
         Route::get('/order/received/{orderNumber}', [OrderReceivedController::class, 'show'])
             ->where('orderNumber', '[\s\S]*')
             ->name('storefront.order.received');
     });
+
+/*
+| P8d: the CSP violation reports (sessionless, no CSRF, never cacheable; answers 204). 30 per minute per IP; the controller refuses a body over 8 KB (413).
+*/
+Route::withoutMiddleware($withoutSession)->group(function (): void {
+    Route::post('/csp-report', [CspReportController::class, 'store'])->middleware('throttle:csp-report')->name('csp-report');
+});

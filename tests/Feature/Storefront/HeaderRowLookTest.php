@@ -228,7 +228,8 @@ class HeaderRowLookTest extends TestCase
         $home = $this->get('/')->assertOk();
 
         foreach ([$preview, $home] as $response) {
-            $this->assertNull($response->headers->get('X-Frame-Options'));
+            // P8d: SAMEORIGIN: the admin is the same origin, so it can still frame the preview; only another site cannot
+            $this->assertSame('SAMEORIGIN', $response->headers->get('X-Frame-Options'));
             $this->assertStringNotContainsString('frame-ancestors', (string) $response->headers->get('Content-Security-Policy'));
         }
 

@@ -121,6 +121,9 @@ class CheckoutController extends Controller
             $request->merge(['invoice' => array_merge($request->input('invoice'), ['country' => KnownCountryCode::normalize($request->input('invoice')['country'])])]);
         }
 
+        // P8d: the honeypot (a filled field: `log` mode logs and goes on, `block` mode answers the form's own generic validation error and writes nothing)
+        \App\Security\Honeypot::check($request, 'checkout', 'email');
+
         $terms = $this->formSettings->termsRequired();
 
         $validated = $request->validate($this->validationRules() + $this->choiceRules($terms) + $this->invoiceRules(), [

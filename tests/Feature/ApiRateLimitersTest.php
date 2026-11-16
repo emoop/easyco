@@ -402,7 +402,8 @@ class ApiRateLimitersTest extends TestCase
         $registry = app(LimiterRegistry::class);
         $limiters = (new ReflectionClass($registry))->getProperty('limiters');
 
-        return array_keys($limiters->getValue($registry));
+        // P8d: `livewire` and `csp-report` are not API limiters: they live in App\Security\SecurityLimiters
+        return array_values(array_diff(array_keys($limiters->getValue($registry)), ['livewire', 'csp-report']));
     }
 
     private function storeLocale(string $locale): void

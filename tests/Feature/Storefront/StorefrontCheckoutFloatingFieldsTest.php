@@ -98,6 +98,11 @@ class StorefrontCheckoutFloatingFieldsTest extends TestCase
         $loose = [];
 
         foreach ($xpath->query('//form//input[@type="text" or @type="email" or @type="tel"]') as $input) {
+            // P8d: the honeypot is off-screen and never seen: it is not a floating field
+            if ($input->getAttribute('name') === 'ec_hp') {
+                continue;
+            }
+
             if ($xpath->query('ancestor::*['.$this->hasClass('sf-float').']', $input)->length === 0) {
                 $loose[] = $input->getAttribute('name');
             }

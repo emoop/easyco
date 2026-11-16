@@ -13,7 +13,7 @@ class RobotsTxtTest extends TestCase
         $this->assertFileDoesNotExist(public_path('robots.txt'));
     }
 
-    public function test_the_rules_are_the_old_ones_plus_search_and_the_sitemap_line_last(): void
+    public function test_the_rules_are_the_old_ones_plus_search_the_trap_path_and_the_sitemap_line_last(): void
     {
         config(['easyco.noindex' => false, 'app.url' => 'https://shop.test/']);
 
@@ -22,7 +22,7 @@ class RobotsTxtTest extends TestCase
         $this->assertStringStartsWith('text/plain', (string) $response->headers->get('Content-Type'));
 
         $this->assertSame(
-            "User-agent: *\nDisallow: /admin/\nDisallow: /api/\nDisallow: /design-preview\nDisallow: /cart\nDisallow: /checkout\nDisallow: /*filter[\nDisallow: /*filter%5B\nDisallow: /search\nSitemap: https://shop.test/sitemap.xml\n",
+            "User-agent: *\nDisallow: /admin/\nDisallow: /api/\nDisallow: /design-preview\nDisallow: /cart\nDisallow: /checkout\nDisallow: /*filter[\nDisallow: /*filter%5B\nDisallow: /search\nDisallow: /__ec/\nSitemap: https://shop.test/sitemap.xml\n",
             $response->getContent(),
         );
         $this->assertSame(RobotsTxt::body(), $response->getContent());
