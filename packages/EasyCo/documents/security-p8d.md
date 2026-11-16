@@ -40,3 +40,7 @@ app(\App\Security\Csp\CspSources::class)->allow('script-src', 'https://js.exampl
 ```
 
 Only `script-src`, `style-src`, `img-src`, `font-src`, `connect-src`, `frame-src`, `media-src` and only an `https://host[:port]` origin are accepted; anything else throws at registration. The media/storage host is added to `img-src` automatically when it is not the site's own host. Watch the `CSP report-only violation.` log lines before the policy is ever enforced.
+
+## P8d.1
+
+Every unknown address answers the storefront's own 404 on the same URL (`Route::fallback` in the storefront group: no session, no cookie, `SecurityHeaders`, the theme, never cacheable); `api/...` answers JSON `{"message":"Not Found"}` and `admin...` / `livewire...` a plain 404. The login alarm mails only when the email belongs to a staff account and at most `security.alarm.max_mails_per_hour` (3) times an hour in total; everything else is only logged (`mailed: false`), and it still never blocks.

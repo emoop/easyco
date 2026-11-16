@@ -45,6 +45,9 @@ x-laravel-env: &laravel-env
   CACHE_PURGER: ${CACHE_PURGER:-null}
   CACHE_PURGE_URL: ${CACHE_PURGE_URL:-http://varnish}
 
+  # P8d: log = the new blocking rules only LOG what they would block (default, safe mode); block = they block.
+  SECURITY_MODE: ${SECURITY_MODE:-log}
+
   # The proxies whose X-Forwarded-* headers Laravel believes: the Docker network ranges (NEVER a wildcard).
   TRUSTED_PROXIES: ${TRUSTED_PROXIES:-10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}
   SANCTUM_STATEFUL_DOMAINS: ${SANCTUM_STATEFUL_DOMAINS:-}

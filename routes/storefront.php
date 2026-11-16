@@ -21,12 +21,14 @@ use App\Http\Middleware\LimitFilteredCategoryRequests;
 use App\Http\Middleware\LimitSearchRequests;
 use App\Storefront\Cache\StorefrontCacheHeaders;
 use App\Storefront\Orders\OrderReceivedHeaders;
+use App\Storefront\Support\NotFoundResponse;
 use App\Storefront\ReadModels\CatalogSubjectKind;
 use App\Storefront\Theme\ApplyStorefrontTheme;
 use App\Storefront\Support\SecurityHeaders;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
+use Illuminate\Http\Request;
 use Illuminate\Session\Middleware\StartSession;
 use Illuminate\Support\Facades\Route;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
@@ -112,6 +114,22 @@ Route::middleware([SecurityHeaders::class, ApplyStorefrontTheme::class, Storefro
         Route::get('/storefront/card-sizes', [CardSizesController::class, 'show'])
             ->middleware('throttle:60,1')
             ->name('storefront.card-sizes');
+
+        // P8d.1: EVERY unknown address answers the storefront's own 404 on the same URL (never a redirect), through this group (no session, no cookie, SecurityHeaders, the theme).
+        // Exceptions: `api/...` is JSON, `admin...` and `livewire...` are a plain 404 (never the storefront page inside the admin). StorefrontCacheHeaders refuses non-200/301: never cacheable.
+        Route::fallback(static function (Request $request) {
+            $path = ltrim($request->path(), '/');
+
+            if ($path === 'api' || str_starts_with($path, 'api/')) {
+                return response()->json(['message' => 'Not Found'], 404);
+            }
+
+            if (preg_match('#^(admin|livewire)([-/]|$)#', $path) === 1) {
+                abort(404);
+            }
+
+            return NotFoundResponse::make();
+        })->name('storefront.fallback');
     });
 
 /*

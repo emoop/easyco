@@ -38,9 +38,28 @@ final class AdminLoginAlarm
             return;
         }
 
-        Log::warning('Many failed admin logins for one account.', ['email_hash' => $hash, 'failures' => $count, 'window_seconds' => $window]);
+        // a mail ONLY for an email that belongs to a staff account (one query, on this path only) and at most `max_mails_per_hour` per hour in total; the rest is only logged
+        $mail = $this->isStaff($email) && $this->underTheCap();
 
-        $this->mail($hash, $count);
+        Log::warning('Many failed admin logins for one account.', ['email_hash' => $hash, 'failures' => $count, 'window_seconds' => $window, 'mailed' => $mail]);
+
+        $mail && $this->mail($hash, $count);
+    }
+
+    private function isStaff(string $email): bool
+    {
+        try {
+            return app(\EasyCo\Staff\Contracts\StaffRepository::class)->findByEmail(AdminLoginLockout::normalise($email)) !== null;
+        } catch (Throwable) {
+            return false;
+        }
+    }
+
+    private function underTheCap(): bool
+    {
+        Cache::add('security.alarm.mails.hour', 0, 3600);
+
+        return (int) Cache::increment('security.alarm.mails.hour') <= (int) config('security.alarm.max_mails_per_hour', 3);
     }
 
     private function mail(string $hash, int $count): void

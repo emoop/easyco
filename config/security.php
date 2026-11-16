@@ -23,6 +23,8 @@ return [
         'failures' => 20,
         'window' => 3600,
         'mail_every' => 3600,
+        // at most this many alarm mails per hour in TOTAL (all accounts); the rest is only logged
+        'max_mails_per_hour' => 3,
     ],
 
     'honeypot' => [
