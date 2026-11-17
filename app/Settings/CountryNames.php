@@ -33,8 +33,8 @@ final class CountryNames
 {
     public const BUNDLE = 'ICUDATA-region';
 
-    /** CLDR region codes that are not countries: excluded from the list. */
-    private const NOT_A_COUNTRY = ['AC', 'CP', 'DG', 'EA', 'EU', 'EZ', 'IC', 'QO', 'TA', 'UN', 'XA', 'XB', 'ZZ'];
+    /** CLDR region codes that are not countries: excluded from the list. CQ is Sark: newer ICU/CLDR (Linux) lists it as a region, it is not an ISO 3166-1 assigned code. */
+    private const NOT_A_COUNTRY = ['AC', 'CP', 'CQ', 'DG', 'EA', 'EU', 'EZ', 'IC', 'QO', 'TA', 'UN', 'XA', 'XB', 'ZZ'];
 
     /** @var array<string, array<string, string>> */
     private static array $cache = [];

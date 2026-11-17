@@ -89,6 +89,10 @@ jobs:
       - name: Write this shard's PHPUnit config
         run: php scripts/ci/shard.php --shard=${{ matrix.shard }}
 
+      # SandboxTestEnvironmentTest removes DB_DATABASE from the process on purpose and expects .env.testing to name the test database
+      - name: Test database name for .env.testing
+        run: echo "DB_DATABASE=easyco_testing" > .env.testing
+
       - name: PHPUnit
         run: vendor/bin/phpunit --configuration phpunit.shard.xml --colors=never --log-junit junit-shard-${{ matrix.shard }}.xml
 
