@@ -6566,3 +6566,67 @@ html:not(.js) .sf-bar-item:focus-within > .sf-sub {
     height: 1px;
     overflow: hidden;
 }
+
+/* ===== NF-1: the 404 page («Дизайн» → «Страница 404»). Closed classes only; the colours, radius and weights are the shop's own CSS variables. The bottom block is the home page's own sections (sf-hp-*). ===== */
+.sf-nf {
+    margin-inline: auto;
+    max-width: 72rem;
+    padding-block: 3rem 4rem;
+    text-align: center;
+}
+
+.sf-nf-title {
+    font-size: 1.875rem;
+    line-height: 1.2;
+    letter-spacing: -0.01em;
+    color: var(--sf-text, oklch(20.5% 0 none));
+    font-weight: var(--sf-heading-weight, 700);
+}
+
+.sf-nf-text {
+    margin: 1rem auto 0;
+    max-width: 36rem;
+    color: var(--sf-muted, oklch(55.6% 0 none));
+}
+
+.sf-nf-search {
+    margin: 1.5rem auto 0;
+    max-width: 28rem;
+}
+
+.sf-nf-bottom {
+    margin-top: 2.5rem;
+    text-align: left;
+}
+
+.sf-nf-button-row {
+    margin-top: 2.5rem;
+}
+
+.sf-nf-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.75rem 1.25rem;
+    font-weight: 600;
+    text-decoration: none;
+    background-color: var(--sf-btn-bg, var(--sf-primary, oklch(20.5% 0 none)));
+    color: var(--sf-btn-text, var(--sf-on-primary, #fff));
+    box-shadow: inset 0 0 0 var(--sf-btn-bw, 0) var(--sf-primary, oklch(20.5% 0 none));
+    border-radius: var(--sf-r-btn, 0.375rem);
+}
+
+@media (max-width: 40rem) {
+    .sf-nf {
+        padding-block: 2rem 3rem;
+    }
+
+    .sf-nf-button-row {
+        margin-top: 2rem;
+    }
+
+    .sf-nf-button {
+        display: flex;
+        width: 100%;
+    }
+}

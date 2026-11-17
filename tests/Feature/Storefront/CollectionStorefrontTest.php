@@ -549,6 +549,8 @@ class CollectionStorefrontTest extends TestCase
         $this->assertLessThanOrEqual($tag + 1, $collection);
 
         $this->switchCollections('0');
+        // NF-1: the first 404 of a cold cache builds the 404 page's cached fragment once (the category tiles); the pin compares WARM 404s
+        $this->queryCount('/season/nope', 404);
         $off = $this->queryCount('/collection/wedding', 404);
         $missing = $this->queryCount('/season/nope', 404);
         fwrite(STDERR, "[query-count] OFF 404: collection {$off}, missing season slug {$missing}\n");

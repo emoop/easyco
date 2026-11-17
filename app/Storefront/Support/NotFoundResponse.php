@@ -2,6 +2,9 @@
 
 namespace App\Storefront\Support;
 
+use App\Storefront\Appearance\StorefrontAppearance;
+use App\Storefront\NotFound\NotFoundFragment;
+use App\Storefront\Search\SearchFeature;
 use Illuminate\Http\Response;
 
 /**
@@ -14,9 +17,16 @@ final class NotFoundResponse
 {
     public static function make(): Response
     {
+        // NF-1: the content is «Дизайн» → «Страница 404» (the published set rides in the cached appearance payload: no query). The bottom block is a cached fragment; the admin's signed preview never uses the cache.
+        $appearance = app(StorefrontAppearance::class);
+        $set = $appearance->notFound();
+
         return response()->view('storefront.404', [
             'seo' => app(SeoMeta::class)->forNotFound(__('storefront.not_found_title')),
             'categories' => [],
+            'nf' => $set,
+            'nfSearch' => $set['search'] && SearchFeature::enabled(),
+            'nfBottom' => NotFoundFragment::html($set, ! $appearance->notFoundIsPreview()),
         ], 404);
     }
 }

@@ -79,6 +79,7 @@ return [
     'not_found_heading' => 'This page does not exist',
     'not_found_text' => 'The page you are looking for is not available.',
     'back_home' => 'Back to the shop',
+    'not_found_button' => 'Go to the home page',
 
     // Stage S3: cart, header count, home.
     'cart_title' => 'Your cart',

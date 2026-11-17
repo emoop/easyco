@@ -43,7 +43,7 @@ final class DesignPreviewController extends Controller
     {
         $zone = $request->query('zone');
 
-        if (! URL::hasValidSignature($request) || ! in_array($zone, [CheckoutHeaderCatalog::ZONE, 'topbar', ProductSummaryCatalog::ZONE, PageDesign::PAGE, PageDesign::CATALOG, \App\Storefront\Home\HomeCatalog::ZONE, \App\Filament\Design\Zones\SidebarZone::KEY, \App\Filament\Design\Zones\BadgesZone::KEY, \App\Filament\Design\Zones\ContentZone::KEY, \App\Filament\Design\Zones\BelowZone::KEY, \App\Filament\Design\Zones\SectionsZone::KEY], true)) {
+        if (! URL::hasValidSignature($request) || ! in_array($zone, [CheckoutHeaderCatalog::ZONE, 'topbar', ProductSummaryCatalog::ZONE, PageDesign::PAGE, PageDesign::CATALOG, \App\Storefront\Home\HomeCatalog::ZONE, \App\Filament\Design\Zones\SidebarZone::KEY, \App\Filament\Design\Zones\BadgesZone::KEY, \App\Filament\Design\Zones\ContentZone::KEY, \App\Filament\Design\Zones\NotFoundZone::KEY, \App\Filament\Design\Zones\BelowZone::KEY, \App\Filament\Design\Zones\SectionsZone::KEY], true)) {
             return NotFoundResponse::make();
         }
 
@@ -65,6 +65,10 @@ final class DesignPreviewController extends Controller
 
         if ($zone === \App\Filament\Design\Zones\ContentZone::KEY) {
             return $this->content($request, $reader, $appearance);
+        }
+
+        if ($zone === \App\Filament\Design\Zones\NotFoundZone::KEY) {
+            return $this->notFound($appearance);
         }
 
         if ($zone === \App\Filament\Design\Zones\BelowZone::KEY) {
@@ -138,6 +142,19 @@ final class DesignPreviewController extends Controller
      * (StorefrontAppearance::previewProductSummary). The storefront itself reads the published layout only. An empty shop has no product to show: the storefront's own 404 (the panel says so under the
      * preview). `noindex`, `no-store`.
      */
+    /**
+     * NF-1: the storefront's 404 page with the working copy of «Страница 404» (the draft, else the published set) for THIS request only (StorefrontAppearance::previewNotFound; its fragment is not cached). A public
+     * request never gets here (no valid signature: the storefront's 404). Status 404 like the page itself, `noindex`, `no-store`.
+     */
+    private function notFound(StorefrontAppearance $appearance): Response
+    {
+        $appearance->previewNotFound(\App\Storefront\NotFound\NotFoundCompiler::compiled(\App\Storefront\NotFound\NotFoundStore::startingValues()));
+
+        return NotFoundResponse::make()
+            ->header('X-Robots-Tag', 'noindex')
+            ->header('Cache-Control', 'private, no-store');
+    }
+
     /**
      * P4: the first product the shop shows, with the working copy of the slots below its main area (the draft, else the published set) for THIS request only (StorefrontAppearance::previewBelow). A public request
      * never gets here (no valid signature: the storefront's 404). `noindex`, `no-store`.

@@ -136,6 +136,7 @@ final class StorefrontAppearance
         $this->homePrepared = false;
         $this->contentDoc = null;
         $this->belowDoc = null;
+        $this->notFoundDoc = null;
         $this->sectionsDoc = null;
         $this->badgeRows = null;
         $this->data = $this->rebuild();
@@ -478,6 +479,36 @@ final class StorefrontAppearance
         $this->belowDoc ??= $this->belowOverride ?? \App\Storefront\Below\BelowCompiler::published($this->data()['design'] ?? null) ?? false;
 
         return $this->belowDoc === false ? null : $this->belowDoc;
+    }
+
+    /** @var array<string, mixed>|null NF-1: the content of the 404 page of this request */
+    private ?array $notFoundDoc = null;
+
+    /** @var array<string, mixed>|null */
+    private ?array $notFoundOverride = null;
+
+    /**
+     * NF-1: the content of the storefront 404 page («Страница 404»), from the one cached payload (no query, the set validated again on every read); the defaults when nothing is published. During a signed preview,
+     * the working copy.
+     *
+     * @return array{title: string, text: string, search: bool, bottom: string, tiles: string, products: array<string, mixed>, block: int|null, button: bool}
+     */
+    public function notFound(): array
+    {
+        return $this->notFoundDoc ??= $this->notFoundOverride ?? \App\Storefront\NotFound\NotFoundCompiler::published($this->data()['design'] ?? null);
+    }
+
+    /** Is this request the admin's signed preview of the 404 page (its fragment is never cached)? */
+    public function notFoundIsPreview(): bool
+    {
+        return $this->notFoundOverride !== null;
+    }
+
+    /** For ONE request (NF-1, the admin's signed preview): show this set instead of the published one. Never called on a public request. @param array<string, mixed> $set */
+    public function previewNotFound(array $set): void
+    {
+        $this->notFoundOverride = $set;
+        $this->notFoundDoc = null;
     }
 
     /** @var list<array<string, string>>|false|null P4b: the product sections' definitions of this request (false = none published) */

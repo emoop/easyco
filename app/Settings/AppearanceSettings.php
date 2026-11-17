@@ -82,6 +82,11 @@ final class AppearanceSettings
 
     public const BELOW_DRAFT_KEY = 'design.below.draft';
 
+    /** NF-1: the content of the storefront 404 page («Страница 404»): the published set (the admin's source; the storefront reads the compiled copy in the design document) and the draft. */
+    public const NOTFOUND_PUBLISHED_KEY = 'design.notfound.published';
+
+    public const NOTFOUND_DRAFT_KEY = 'design.notfound.draft';
+
     /** P4b: the sections of the product page («Секции на продукта»): the published set (the admin's source; the storefront reads the compiled copy in the design document) and the draft. */
     public const SECTIONS_PUBLISHED_KEY = 'design.sections.published';
 
