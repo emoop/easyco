@@ -46,6 +46,8 @@ class HtmlSanitizerTest extends TestCase
             'html comment with script' => ['<!-- <script>alert(1)</script> --><p>x</p>'],
             'conditional comment' => ['<!--[if IE]><script>alert(1)</script><![endif]-->'],
             'cdata' => ['<![CDATA[<script>alert(1)</script>]]>'],
+            'cdata upper/lower mix' => ['<![cDaTa[<img src=x onerror=alert(1)>]]>'],
+            'cdata unterminated' => ['<p>ok</p><![CDATA[<script>alert(1)</script>'],
             'protocol relative link' => ['<a href="//evil.example/x">x</a>'],
             'nested broken tags' => ['<scr<script>ipt>alert(1)</scr</script>ipt>'],
             'double encoded entity' => ['<a href="&amp;#106;avascript:alert(1)">x</a>'],
@@ -77,6 +79,14 @@ class HtmlSanitizerTest extends TestCase
         foreach ($links[1] as $href) {
             $this->assertMatchesRegularExpression('#^(https:|mailto:)#i', html_entity_decode($href), "href '{$href}' survived in: {$clean}");
         }
+    }
+
+    public function test_an_unterminated_cdata_section_keeps_what_came_before_it(): void
+    {
+        $clean = $this->clean('<p>ok</p><![CDATA[<script>alert(1)</script>');
+
+        $this->assertStringContainsString('ok', $clean);
+        $this->assertStringNotContainsString('script', strtolower($clean));
     }
 
     public function test_a_sanitised_output_is_unchanged_by_a_second_pass(): void

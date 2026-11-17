@@ -51,6 +51,10 @@ final class HtmlSanitizer
             return '';
         }
 
+        // CDATA sections go first, contents included (an unterminated one takes the rest of the input): libxml2 versions
+        // disagree on how they parse in HTML, so no parser is left to decide.
+        $html = (string) preg_replace('/<!\[CDATA\[.*?(?:\]\]>|\z)/is', '', $html);
+
         $previous = libxml_use_internal_errors(true);
 
         try {
