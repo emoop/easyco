@@ -1,0 +1,102 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# a newer push to the same ref cancels the older run
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  phpunit:
+    name: PHPUnit (shard ${{ matrix.shard }}/4)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          # throw-away database of this job only: nothing here is a secret
+          MYSQL_ROOT_PASSWORD: ci-root
+          MYSQL_DATABASE: easyco_testing
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -pci-root"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+
+    env:
+      APP_ENV: testing
+      DB_CONNECTION: mysql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3306
+      DB_DATABASE: easyco_testing
+      DB_USERNAME: root
+      DB_PASSWORD: ci-root
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: bcmath, ctype, curl, dom, exif, fileinfo, gd, intl, mbstring, pdo_mysql, pdo_sqlite, sodium, sqlite3, xml, xsl, zip
+          coverage: none
+
+      # node: a few tests run the storefront / menu scripts under node (they skip without it)
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Composer cache directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: composer-${{ hashFiles('composer.lock') }}
+          restore-keys: composer-
+
+      - name: Install dependencies
+        run: composer install --no-interaction --no-progress --prefer-dist
+
+      # a throw-away key for this job (never stored, never printed)
+      - name: App key
+        run: echo "APP_KEY=base64:$(openssl rand -base64 32)" >> "$GITHUB_ENV"
+
+      - name: Shards are exactly the full list
+        run: php scripts/ci/shard.php --verify
+
+      - name: Write this shard's PHPUnit config
+        run: php scripts/ci/shard.php --shard=${{ matrix.shard }}
+
+      - name: PHPUnit
+        run: vendor/bin/phpunit --configuration phpunit.shard.xml --colors=never --log-junit junit-shard-${{ matrix.shard }}.xml
+
+      - name: Summary
+        if: always()
+        run: php scripts/ci/summary.php junit-shard-${{ matrix.shard }}.xml "Shard ${{ matrix.shard }}/4" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: JUnit XML
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit-shard-${{ matrix.shard }}
+          path: junit-shard-${{ matrix.shard }}.xml
+          retention-days: 7
+          if-no-files-found: ignore
