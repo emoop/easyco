@@ -18,6 +18,19 @@ final class MailTemplates
 {
     public const ORDER_CONFIRMATION = 'order.confirmation';
 
+    // ACC-1: the customer-account mails (AccountMails). Texts in resources/mail/{locale}/; a link is a code-built block, never merchant markup.
+    public const ACCOUNT_VERIFY = 'account.verify';
+
+    public const ACCOUNT_ALREADY_REGISTERED = 'account.already_registered';
+
+    public const ACCOUNT_PASSWORD_RESET = 'account.password_reset';
+
+    public const ACCOUNT_PASSWORD_CHANGED = 'account.password_changed';
+
+    public const ACCOUNT_EMAIL_CONFIRM = 'account.email_confirm';
+
+    public const ACCOUNT_EMAIL_NOTICE = 'account.email_notice';
+
     /** @var array<string, array{category: string, sender: string, queue: string, scalars: list<string>, blocks: list<string>}> */
     private const DEFINITIONS = [
         self::ORDER_CONFIRMATION => [
@@ -27,6 +40,12 @@ final class MailTemplates
             'scalars' => ['shop_name', 'customer_name', 'customer_first_name', 'order_number', 'order_date', 'order_total', 'payment_method_label', 'support_email'],
             'blocks' => ['order_lines', 'order_totals', 'delivery_summary', 'payment_instructions'],
         ],
+        self::ACCOUNT_VERIFY => ['category' => 'transactional', 'sender' => 'transactional', 'queue' => 'mail-transactional', 'scalars' => ['shop_name'], 'blocks' => ['action_link']],
+        self::ACCOUNT_ALREADY_REGISTERED => ['category' => 'transactional', 'sender' => 'transactional', 'queue' => 'mail-transactional', 'scalars' => ['shop_name'], 'blocks' => ['login_link', 'reset_link']],
+        self::ACCOUNT_PASSWORD_RESET => ['category' => 'transactional', 'sender' => 'transactional', 'queue' => 'mail-transactional', 'scalars' => ['shop_name'], 'blocks' => ['action_link']],
+        self::ACCOUNT_PASSWORD_CHANGED => ['category' => 'transactional', 'sender' => 'transactional', 'queue' => 'mail-transactional', 'scalars' => ['shop_name'], 'blocks' => ['reset_link']],
+        self::ACCOUNT_EMAIL_CONFIRM => ['category' => 'transactional', 'sender' => 'transactional', 'queue' => 'mail-transactional', 'scalars' => ['shop_name'], 'blocks' => ['action_link']],
+        self::ACCOUNT_EMAIL_NOTICE => ['category' => 'transactional', 'sender' => 'transactional', 'queue' => 'mail-transactional', 'scalars' => ['shop_name'], 'blocks' => []],
     ];
 
     public function has(string $key): bool

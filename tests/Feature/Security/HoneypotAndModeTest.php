@@ -92,7 +92,8 @@ class HoneypotAndModeTest extends TestCase
         config(['security.mode' => 'block']);
 
         $this->postJson('/api/checkout', $this->checkoutBody(['ec_hp' => '']))->assertStatus(201);
-        $this->postJson('/api/account/register', $this->registrationBody(['ec_hp' => '']))->assertStatus(201);
+        // ACC-1: registration answers 202 (was 201)
+        $this->postJson('/api/account/register', $this->registrationBody(['ec_hp' => '']))->assertStatus(202);
 
         $this->assertSame(1, OrderModel::query()->count());
         $this->assertSame(1, AccountModel::query()->count());
@@ -106,7 +107,7 @@ class HoneypotAndModeTest extends TestCase
         $this->postJson('/api/checkout', $this->checkoutBody(['ec_hp' => 'http://spam']))->assertStatus(201);
         Log::shouldHaveReceived('warning')->withArgs(fn (string $m): bool => str_contains($m, 'honeypot_checkout'))->once();
 
-        $this->postJson('/api/account/register', $this->registrationBody(['ec_hp' => 'x']))->assertStatus(201);
+        $this->postJson('/api/account/register', $this->registrationBody(['ec_hp' => 'x']))->assertStatus(202);
         Log::shouldHaveReceived('warning')->withArgs(fn (string $m): bool => str_contains($m, 'honeypot_registration'))->once();
 
         $this->assertSame(1, OrderModel::query()->count());

@@ -2555,28 +2555,6 @@
         outline-offset: 2px;
     }
 
-    /* ---- 404 ------------------------------------------------------------------------------------ */
-    .sf-404 {
-        @apply mx-auto max-w-lg py-20 text-center;
-    }
-
-    .sf-404 h1 {
-        @apply text-3xl tracking-tight text-neutral-900;
-        font-weight: var(--sf-heading-weight, 700);
-    }
-
-    .sf-404 p {
-        @apply mt-4 text-neutral-600;
-    }
-
-    .sf-404 a {
-        @apply mt-2 inline-flex items-center px-5 py-3 font-semibold no-underline;
-        background-color: var(--sf-btn-bg, var(--sf-primary, oklch(20.5% 0 none)));
-        color: var(--sf-btn-text, var(--sf-on-primary, #fff));
-        box-shadow: inset 0 0 0 var(--sf-btn-bw, 0) var(--sf-primary, oklch(20.5% 0 none));
-        border-radius: var(--sf-r-btn, var(--radius-md));
-    }
-
     /* ---- footer --------------------------------------------------------------------------------- */
     .sf-footer {
         @apply mt-12 border-t border-neutral-200;

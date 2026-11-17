@@ -11,6 +11,7 @@ return [
         'slug' => 'Slug',
         'parent_id' => 'Parent category',
         'products_count' => 'Products',
+        'header_block' => 'Block on top',
     ],
 
     'header_block' => 'Block on top',

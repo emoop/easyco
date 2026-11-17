@@ -52,3 +52,5 @@ Thumbs.db
 
 # Docker / Coolify local env copy (DOCKER-1)
 .env.docker
+
+/phpunit.shard.xml

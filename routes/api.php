@@ -1,8 +1,11 @@
 <?php
 
 use App\Http\ApiRateLimits;
+use App\Http\Controllers\Api\AccountEmailController;
+use App\Http\Controllers\Api\AccountPasswordController;
 use App\Http\Controllers\Api\AccountRegistrationController;
 use App\Http\Controllers\Api\AccountSessionController;
+use App\Http\Controllers\Api\AccountVerificationController;
 use App\Http\Controllers\Api\AddressController;
 use App\Http\Controllers\Api\AttributeDefinitionController;
 use App\Http\Controllers\Api\AttributeValueController;
@@ -23,6 +26,7 @@ use App\Http\Controllers\Api\TagController;
 use App\Http\Controllers\Api\VariableProductController;
 use App\Http\Controllers\Api\VariationController;
 use App\Http\Controllers\Api\VariationMediaController;
+use App\Http\Middleware\EnsureAccountSessionIsCurrent;
 use Illuminate\Support\Facades\Route;
 
 // The public WRITE endpoints of the storefront carry a named limiter from
@@ -37,9 +41,26 @@ Route::post('/account/register', [AccountRegistrationController::class, 'store']
 Route::post('/account/login', [AccountSessionController::class, 'store'])
     ->middleware(['cart.cookie:passive', 'throttle:6,1']);
 
-Route::middleware('auth:customer')->group(function () {
+// ACC-1: the public account endpoints. None of them says whether an address has an account (account-security.md): the same answer, inside a Timebox.
+Route::post('/account/verify', [AccountVerificationController::class, 'verify'])
+    ->middleware('throttle:'.ApiRateLimits::ACCOUNT_TOKEN);
+Route::post('/account/verify/resend', [AccountVerificationController::class, 'resend'])
+    ->middleware('throttle:'.ApiRateLimits::VERIFY_RESEND);
+Route::post('/account/password/forgot', [AccountPasswordController::class, 'forgot'])
+    ->middleware('throttle:'.ApiRateLimits::PASSWORD_FORGOT);
+Route::post('/account/password/reset', [AccountPasswordController::class, 'reset'])
+    ->middleware('throttle:'.ApiRateLimits::ACCOUNT_TOKEN);
+Route::post('/account/email/confirm', [AccountEmailController::class, 'confirm'])
+    ->middleware('throttle:'.ApiRateLimits::ACCOUNT_TOKEN);
+
+// ACC-1: EnsureAccountSessionIsCurrent logs a session out when the account's session version moved (a password reset / change, an email change).
+Route::middleware(['auth:customer', EnsureAccountSessionIsCurrent::class])->group(function () {
     Route::post('/account/logout', [AccountSessionController::class, 'destroy']);
     Route::get('/account/me', [AccountSessionController::class, 'show']);
+    Route::put('/account/password', [AccountPasswordController::class, 'change'])
+        ->middleware('throttle:'.ApiRateLimits::ACCOUNT_TOKEN);
+    Route::post('/account/email', [AccountEmailController::class, 'store'])
+        ->middleware('throttle:'.ApiRateLimits::EMAIL_CHANGE);
     Route::get('/addresses', [AddressController::class, 'index']);
     Route::put('/addresses/{addressId}', [AddressController::class, 'update'])
         ->middleware('throttle:'.ApiRateLimits::ADDRESS);

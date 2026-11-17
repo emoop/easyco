@@ -33,6 +33,9 @@ Schedule::command('privacy:anonymise-order-ips')->daily();
 // Daily, like the other prune commands: a cheap no-op when nothing has aged out; only counts are logged.
 Schedule::command('order-blocks:prune')->daily();
 
+// ACC-1: an account that never verified its email within 7 days (and has no order) is deleted; a cheap no-op when nothing has aged out, only the count is logged.
+Schedule::command('accounts:prune-unverified')->daily();
+
 // P6a: the stored sort price of the products (`catalog_products.price_from_minor`). EVERY MINUTE a cheap check (ONE query: does an active price list start or end in the window since the last run?) refreshes only the
 // products such a list can touch; once a night, at 03:30 SHOP time, the whole catalog is recomputed in chunks (the safety net, writes only what changed). The shop's time is read when the schedule RUNS (the `when()`
 // closure), never when this file loads, so no artisan command pays a settings query at boot.

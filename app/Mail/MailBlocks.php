@@ -22,6 +22,15 @@ final class MailBlocks
     }
 
     /**
+     * ACC-1: a link as a paragraph plus the address in plain text under it (a mail client that shows no links, or the dev shop on http, still gets it).
+     * The final sanitizer keeps only https: / mailto: hrefs.
+     */
+    public static function link(string $url, string $label, string $locale): string
+    {
+        return '<p><a href="'.self::e($url).'">'.self::e($label).'</a></p><p>'.self::e(self::t('mail.account.copy_link', $locale)).' '.self::e($url).'</p>';
+    }
+
+    /**
      * @param  list<array{name: string, sku: ?string, attributes: string, quantity: int, unit: ?string, total: string}>  $lines
      */
     public static function orderLines(array $lines, string $locale): string

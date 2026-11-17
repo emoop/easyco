@@ -23,31 +23,29 @@ class AccountRegistrationControllerTest extends TestCase
         $this->withHeader('Referer', 'http://localhost/');
     }
 
-    public function test_happy_path_registration_returns_201_and_establishes_a_session(): void
+    /** ACC-1 (decision 1): registration answers 202 and creates an UNVERIFIED account; it no longer logs in (was 201 + a session) */
+    public function test_happy_path_registration_returns_202_creates_an_unverified_account_and_does_not_log_in(): void
     {
         $response = $this->postJson('/api/account/register', [
             'email' => 'user@example.com',
-            'password' => 'password123',
-            'password_confirmation' => 'password123',
+            'password' => 'plum-cart-7731',
+            'password_confirmation' => 'plum-cart-7731',
         ]);
 
-        $response->assertStatus(201);
-        $response->assertJsonPath('email', 'user@example.com');
+        $response->assertStatus(202);
+        $response->assertJsonMissingPath('email');
         $this->assertSame(1, AccountModel::count());
+        $this->assertNull(AccountModel::first()->email_verified_at);
 
-        // The actual point of "log the new account in immediately" —
-        // a follow-up request with no separate login call succeeds.
-        $me = $this->getJson('/api/account/me');
-        $me->assertStatus(200);
-        $me->assertJsonPath('email', 'user@example.com');
+        $this->getJson('/api/account/me')->assertStatus(401);
     }
 
     public function test_registered_account_never_exposes_the_password_hash(): void
     {
         $response = $this->postJson('/api/account/register', [
             'email' => 'user@example.com',
-            'password' => 'password123',
-            'password_confirmation' => 'password123',
+            'password' => 'plum-cart-7731',
+            'password_confirmation' => 'plum-cart-7731',
         ]);
 
         $response->assertJsonMissing(['password']);
@@ -55,22 +53,24 @@ class AccountRegistrationControllerTest extends TestCase
         $response->assertJsonMissing(['password_hash']);
     }
 
-    public function test_duplicate_email_returns_422_and_creates_no_duplicate_row(): void
+    /** ACC-1 (decision 1): a taken address is no longer a 422 that names it; it is the same 202 and no second row (was 422) */
+    public function test_duplicate_email_returns_the_same_202_and_creates_no_duplicate_row(): void
     {
         $first = $this->postJson('/api/account/register', [
             'email' => 'user@example.com',
-            'password' => 'password123',
-            'password_confirmation' => 'password123',
+            'password' => 'plum-cart-7731',
+            'password_confirmation' => 'plum-cart-7731',
         ]);
-        $first->assertStatus(201);
+        $first->assertStatus(202);
 
         $second = $this->postJson('/api/account/register', [
             'email' => 'USER@EXAMPLE.COM',
-            'password' => 'password123',
-            'password_confirmation' => 'password123',
+            'password' => 'plum-cart-7731',
+            'password_confirmation' => 'plum-cart-7731',
         ]);
 
-        $second->assertStatus(422);
+        $second->assertStatus(202);
+        $this->assertSame($first->getContent(), $second->getContent());
         $this->assertSame(1, AccountModel::count());
     }
 
@@ -78,8 +78,8 @@ class AccountRegistrationControllerTest extends TestCase
     {
         $response = $this->postJson('/api/account/register', [
             'email' => 'not-an-email',
-            'password' => 'password123',
-            'password_confirmation' => 'password123',
+            'password' => 'plum-cart-7731',
+            'password_confirmation' => 'plum-cart-7731',
         ]);
 
         $response->assertStatus(422);
@@ -102,7 +102,7 @@ class AccountRegistrationControllerTest extends TestCase
     {
         $response = $this->postJson('/api/account/register', [
             'email' => 'user@example.com',
-            'password' => 'password123',
+            'password' => 'plum-cart-7731',
             'password_confirmation' => 'somethingelse',
         ]);
 
@@ -114,7 +114,7 @@ class AccountRegistrationControllerTest extends TestCase
     {
         $response = $this->postJson('/api/account/register', [
             'email' => 'user@example.com',
-            'password' => 'password123',
+            'password' => 'plum-cart-7731',
         ]);
 
         $response->assertStatus(422);
@@ -176,12 +176,12 @@ class AccountRegistrationControllerTest extends TestCase
 
         $response = $this->postJson('/api/account/register', [
             'email' => $email,
-            'password' => 'password123',
-            'password_confirmation' => 'password123',
+            'password' => 'plum-cart-7731',
+            'password_confirmation' => 'plum-cart-7731',
         ]);
 
-        $response->assertStatus(201);
-        $response->assertJsonPath('email', $email);
+        // ACC-1: 202 (was 201 + the email in the body)
+        $response->assertStatus(202);
 
         $this->assertSame(1, AccountModel::count());
         $this->assertSame($email, AccountModel::first()->email);
@@ -198,8 +198,8 @@ class AccountRegistrationControllerTest extends TestCase
 
         $response = $this->postJson('/api/account/register', [
             'email' => $email,
-            'password' => 'password123',
-            'password_confirmation' => 'password123',
+            'password' => 'plum-cart-7731',
+            'password_confirmation' => 'plum-cart-7731',
         ]);
 
         $response->assertStatus(422);
@@ -230,8 +230,8 @@ class AccountRegistrationControllerTest extends TestCase
 
         $response = $this->postJson('/api/account/register', [
             'email' => $email,
-            'password' => 'password123',
-            'password_confirmation' => 'password123',
+            'password' => 'plum-cart-7731',
+            'password_confirmation' => 'plum-cart-7731',
         ]);
 
         $response->assertStatus(422);
@@ -241,9 +241,10 @@ class AccountRegistrationControllerTest extends TestCase
         $this->assertSame(0, AccountModel::count());
     }
 
-    public function test_a_255_character_password_is_accepted_and_a_256_character_one_is_a_422_field_error(): void
+    /** ACC-1 (decision 9): the password ceiling is 72 BYTES (bcrypt), no longer 255 characters */
+    public function test_a_72_byte_password_is_accepted_and_a_73_byte_one_is_a_422_field_error(): void
     {
-        $atLimit = str_repeat('p', 255);
+        $atLimit = str_repeat('k7', 36);
 
         $accepted = $this->postJson('/api/account/register', [
             'email' => 'first@example.com',
@@ -251,10 +252,10 @@ class AccountRegistrationControllerTest extends TestCase
             'password_confirmation' => $atLimit,
         ]);
 
-        $accepted->assertStatus(201);
+        $accepted->assertStatus(202);
         $this->assertSame(1, AccountModel::count());
 
-        $overLimit = str_repeat('p', 256);
+        $overLimit = str_repeat('k7', 36).'x';
 
         $refused = $this->postJson('/api/account/register', [
             'email' => 'second@example.com',

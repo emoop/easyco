@@ -26,6 +26,9 @@ class AccountSessionControllerTest extends TestCase
     {
         $account = Account::register($email, app(PasswordHasher::class)->hash($password));
         app(AccountRepository::class)->save($account);
+
+        // ACC-1: login needs a VERIFIED account (an unverified one is a 403 `email_unverified`, tested in AccountSecurityLoginTest)
+        \EasyCo\Account\Persistence\Eloquent\AccountModel::whereKey($account->id())->update(['email_verified_at' => now()]);
     }
 
     public function test_login_happy_path_returns_200_and_establishes_a_session(): void
@@ -55,7 +58,8 @@ class AccountSessionControllerTest extends TestCase
         ]);
 
         $response->assertStatus(401);
-        $response->assertJsonPath('message', 'Invalid credentials.');
+        // ACC-1 (decision 3): the generic 401 text is the shop's «invalid email or password» (was 'Invalid credentials.')
+        $response->assertJsonPath('message', 'Invalid email or password.');
     }
 
     public function test_nonexistent_email_returns_401_with_the_identical_generic_message_as_wrong_password(): void
@@ -78,7 +82,7 @@ class AccountSessionControllerTest extends TestCase
         // The actual point of the anti-enumeration decision: identical
         // response bodies, not just "both are 401".
         $this->assertSame($wrongPassword->json(), $nonexistentEmail->json());
-        $this->assertSame('Invalid credentials.', $nonexistentEmail->json('message'));
+        $this->assertSame('Invalid email or password.', $nonexistentEmail->json('message'));
     }
 
     public function test_logout_happy_path_clears_the_session(): void
@@ -173,10 +177,11 @@ class AccountSessionControllerTest extends TestCase
      * the password. Both reach the credential check and are accepted, so
      * `max:255` is not refusing a legitimate long value.
      */
-    public function test_a_254_character_email_and_a_255_character_password_log_in(): void
+    public function test_a_254_character_email_and_a_72_byte_password_log_in(): void
     {
         $email = $this->emailOfLength(254);
-        $password = str_repeat('p', 255);
+        // ACC-1: 72 bytes is the password ceiling (bcrypt); the login field keeps its own 255 width limit (next test)
+        $password = str_repeat('k7', 36);
 
         $this->registerAccount($email, $password);
 

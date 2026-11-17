@@ -88,6 +88,15 @@ final class ApiRateLimits
 
     public const CART_WRITE = 'cart-write';
 
+    // ACC-1: the account endpoints (per IP alone): asking for a reset link, resending a verification, asking for an email change, and the endpoints that spend a one-time token / password guess
+    public const PASSWORD_FORGOT = 'password-forgot';
+
+    public const VERIFY_RESEND = 'verify-resend';
+
+    public const EMAIL_CHANGE = 'email-change';
+
+    public const ACCOUNT_TOKEN = 'account-token';
+
     public const DEFAULT_PER_MINUTE = 30;
 
     /**
@@ -105,10 +114,14 @@ final class ApiRateLimits
         self::ADDRESS => 'rate_limit.too_many_requests',
         self::PROMOTION => 'rate_limit.too_many_requests',
         self::CART_WRITE => 'rate_limit.too_many_requests',
+        self::PASSWORD_FORGOT => 'rate_limit.too_many_requests',
+        self::VERIFY_RESEND => 'rate_limit.too_many_requests',
+        self::EMAIL_CHANGE => 'rate_limit.too_many_requests',
+        self::ACCOUNT_TOKEN => 'rate_limit.too_many_requests',
     ];
 
     /** The limiters keyed by the IP alone — see this class's own docblock, "TWO KEY SHAPES". */
-    private const KEYED_BY_IP_ALONE = [self::REGISTRATION, self::CHECKOUT, self::ADDRESS, self::PROMOTION];
+    private const KEYED_BY_IP_ALONE = [self::REGISTRATION, self::CHECKOUT, self::ADDRESS, self::PROMOTION, self::PASSWORD_FORGOT, self::VERIFY_RESEND, self::EMAIL_CHANGE, self::ACCOUNT_TOKEN];
 
     public static function register(): void
     {

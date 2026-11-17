@@ -185,6 +185,15 @@ return [
         'worker_hint' => 'If emails wait for a long time, the background worker is not running or does not serve the mail queues. See the help page.',
     ],
 
+    // ACC-1: the labels of the links in the customer-account mails
+    'account' => [
+        'copy_link' => 'If the link does not work, copy this address into your browser:',
+        'verify' => 'Confirm your email',
+        'login' => 'Log in to your account',
+        'reset' => 'Set a new password',
+        'email_confirm' => 'Confirm the new email',
+    ],
+
     'validation' => [
         'address' => 'Enter a single valid email address, without names, commas or line breaks.',
         'name_plain' => 'Use plain text only, without line breaks or invisible control characters.',

@@ -163,4 +163,10 @@ return [
 
     'password_timeout' => env('AUTH_PASSWORD_TIMEOUT', 10800),
 
+    /*
+    | ACC-1: the time (microseconds) every answer of an account endpoint that could tell whether an email has an account takes at least (Timebox): register, login,
+    | forgot, resend, email change. Must stay above the longest honest path (one password hash + the queue push); raise it if BCRYPT_ROUNDS goes up.
+    */
+    'account_timebox_duration' => (int) env('ACCOUNT_TIMEBOX_US', 500000),
+
 ];

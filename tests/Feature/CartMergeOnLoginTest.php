@@ -86,6 +86,9 @@ class CartMergeOnLoginTest extends TestCase
         $account = Account::register($email, app(PasswordHasher::class)->hash($password));
         app(AccountRepository::class)->save($account);
 
+        // ACC-1: login needs a VERIFIED account
+        \EasyCo\Account\Persistence\Eloquent\AccountModel::whereKey($account->id())->update(['email_verified_at' => now()]);
+
         return $account->id();
     }
 

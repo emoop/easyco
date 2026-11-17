@@ -60,7 +60,7 @@ class ApiRateLimitersTest extends TestCase
      *
      * This array IS the expectation the assertions below read, so a limiter added to
      * ApiRateLimits and forgotten here fails
-     * test_the_registry_holds_exactly_the_six_limiters_this_file_tests — which is the
+     * test_the_registry_holds_exactly_the_limiters_this_file_tests — which is the
      * point of writing it down twice.
      *
      * @var array<string, array{config: string, key: string, refusal: string, routes: list<array{0: string, 1: string}>, inside: array{0: string, 1: string, 2: array<string, mixed>, 3: int}}>
@@ -137,6 +137,41 @@ class ApiRateLimitersTest extends TestCase
             // A variation that does not exist: the controller's own validation answers 422, and the request is counted.
             'inside' => ['POST', 'api/cart/lines', ['variation_id' => '999999999', 'quantity' => 1], 422],
         ],
+
+        // ACC-1: the account endpoints, each per IP alone (the per-EMAIL hourly budgets are in the controllers and tested in AccountSecurityTest)
+        ApiRateLimits::PASSWORD_FORGOT => [
+            'config' => 'ratelimits.'.ApiRateLimits::PASSWORD_FORGOT,
+            'key' => self::KEYED_BY_IP_ALONE,
+            'refusal' => 'rate_limit.too_many_requests',
+            'routes' => [['POST', 'api/account/password/forgot']],
+            'inside' => ['POST', 'api/account/password/forgot', [], 422],
+        ],
+
+        ApiRateLimits::VERIFY_RESEND => [
+            'config' => 'ratelimits.'.ApiRateLimits::VERIFY_RESEND,
+            'key' => self::KEYED_BY_IP_ALONE,
+            'refusal' => 'rate_limit.too_many_requests',
+            'routes' => [['POST', 'api/account/verify/resend']],
+            'inside' => ['POST', 'api/account/verify/resend', [], 422],
+        ],
+
+        // inside auth:customer (Authenticate outranks the throttle: an unauthenticated request is a 401 that is not counted): send() logs a customer in for this route
+        ApiRateLimits::EMAIL_CHANGE => [
+            'config' => 'ratelimits.'.ApiRateLimits::EMAIL_CHANGE,
+            'key' => self::KEYED_BY_IP_ALONE,
+            'refusal' => 'rate_limit.too_many_requests',
+            'routes' => [['POST', 'api/account/email']],
+            'inside' => ['POST', 'api/account/email', [], 422],
+        ],
+
+        // the submits that spend a one-time secret or a password guess: verify, reset, confirm the new email, change the password (PUT, logged in)
+        ApiRateLimits::ACCOUNT_TOKEN => [
+            'config' => 'ratelimits.'.ApiRateLimits::ACCOUNT_TOKEN,
+            'key' => self::KEYED_BY_IP_ALONE,
+            'refusal' => 'rate_limit.too_many_requests',
+            'routes' => [['POST', 'api/account/verify'], ['POST', 'api/account/password/reset'], ['POST', 'api/account/email/confirm'], ['PUT', 'api/account/password']],
+            'inside' => ['POST', 'api/account/password/reset', [], 422],
+        ],
     ];
 
     protected function setUp(): void
@@ -182,7 +217,7 @@ class ApiRateLimitersTest extends TestCase
         );
     }
 
-    public function test_the_registry_holds_exactly_the_six_limiters_this_file_tests(): void
+    public function test_the_registry_holds_exactly_the_limiters_this_file_tests(): void
     {
         $expected = array_keys(self::LIMITERS);
         sort($expected);
@@ -193,7 +228,7 @@ class ApiRateLimitersTest extends TestCase
         $this->assertSame(
             $expected,
             $registered,
-            'ApiRateLimits::register() defines exactly these six named limiters, and nothing else in the application defines one',
+            'ApiRateLimits::register() defines exactly these named limiters, and nothing else in the application defines one',
         );
     }
 
@@ -376,6 +411,11 @@ class ApiRateLimitersTest extends TestCase
 
     private function send(string $method, string $uri, array $body): TestResponse
     {
+        if ($uri === 'api/account/email') {
+            // ACC-1: the one limited route that needs a logged-in customer to be counted at all
+            $this->actingAs(\EasyCo\Account\Persistence\Eloquent\AccountModel::query()->first() ?? $this->makeCustomer(), 'customer');
+        }
+
         return $method === 'PUT' ? $this->putJson($uri, $body) : $this->postJson($uri, $body);
     }
 
@@ -404,6 +444,14 @@ class ApiRateLimitersTest extends TestCase
 
         // P8d: `livewire` and `csp-report` are not API limiters: they live in App\Security\SecurityLimiters
         return array_values(array_diff(array_keys($limiters->getValue($registry)), ['livewire', 'csp-report']));
+    }
+
+    private function makeCustomer(): \EasyCo\Account\Persistence\Eloquent\AccountModel
+    {
+        $account = new \EasyCo\Account\Persistence\Eloquent\AccountModel(['email' => 'limits@example.com', 'password' => 'x']);
+        $account->save();
+
+        return $account;
     }
 
     private function storeLocale(string $locale): void

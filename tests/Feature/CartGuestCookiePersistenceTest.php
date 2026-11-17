@@ -256,6 +256,8 @@ final class CartGuestCookiePersistenceTest extends TestCase
     {
         $account = Account::register($email, app(PasswordHasher::class)->hash($password));
         app(AccountRepository::class)->save($account);
+        // ACC-1: login needs a VERIFIED account
+        \EasyCo\Account\Persistence\Eloquent\AccountModel::whereKey($account->id())->update(['email_verified_at' => now()]);
     }
 
     public function test_after_login_the_guest_cart_merges_into_the_account_and_the_cookie_is_deleted(): void

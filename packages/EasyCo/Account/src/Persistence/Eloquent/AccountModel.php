@@ -24,4 +24,10 @@ class AccountModel extends Model implements AuthenticatableContract
     protected $fillable = ['email', 'password'];
 
     protected $hidden = ['password', 'remember_token'];
+
+    /** ACC-1: `email_verified_at` (NULL = unverified) and `session_version` are set by the app layer only (forceFill), never mass-assigned. */
+    protected function casts(): array
+    {
+        return ['email_verified_at' => 'datetime', 'session_version' => 'integer'];
+    }
 }

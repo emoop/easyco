@@ -11,6 +11,7 @@ return [
         'slug' => 'Слъг',
         'parent_id' => 'Родителска категория',
         'products_count' => 'Продукти',
+        'header_block' => 'Блок отгоре',
     ],
 
     'header_block' => 'Блок отгоре',

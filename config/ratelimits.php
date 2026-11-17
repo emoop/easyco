@@ -37,5 +37,12 @@ return [
     // 30 a minute, ONE shared budget: a shopper makes a handful of line writes a minute, so 30 never touches a person and
     // still caps a script (the key is IP + the session's cart token, see App\Http\ApiRateLimits).
     'cart-write' => (int) env('RATE_LIMIT_CART_WRITE', 30),
+
+    // ACC-1: the account endpoints, each per IP alone. Asking for a reset link / a new verification / an email change: five a minute is a person with typos;
+    // the per-EMAIL budget (3 an hour) is in the controllers. `account-token`: verify, reset, confirm-email and change-password submits (one-time secrets and password guesses): ten a minute.
+    'password-forgot' => (int) env('RATE_LIMIT_PASSWORD_FORGOT', 5),
+    'verify-resend' => (int) env('RATE_LIMIT_VERIFY_RESEND', 5),
+    'email-change' => (int) env('RATE_LIMIT_EMAIL_CHANGE', 5),
+    'account-token' => (int) env('RATE_LIMIT_ACCOUNT_TOKEN', 10),
 ];
 
