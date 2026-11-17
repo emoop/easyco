@@ -5,8 +5,9 @@ The whole PHPUnit suite runs automatically on GitHub, split into 4 parallel shar
 
 ## 1. Какво се пуска · What runs
 
+* Преди тестовете CI строи фронтенда · Before the tests CI builds the front-end: `npm ci && npm run build` (`public/build` не е в git · is not in git; `@vite` иска манифеста · needs the manifest).
 * Кога · When: всеки `git push` към `main`, всеки pull request, и ръчно (**Actions → Tests → Run workflow**). По-нов push към същия клон спира по-старото пускане. · every push to `main`, every pull request, and manually; a newer push to the same ref cancels the older run.
-* Файл · File: `.github/workflows/tests.yml`. 4 задачи (`shard 1…4`), всяка на `ubuntu-latest` с MySQL 8.4 контейнер (базата `easyco_testing`, само за тази задача), PHP 8.3, Node 20 (няколко теста пускат скриптове под node). · 4 jobs, each with a MySQL 8.4 service container, PHP 8.3 and Node 20.
+* Файл · File: `.github/workflows/tests.yml`. 4 задачи (`shard 1…4`), всяка на `ubuntu-24.04` с MySQL 8.4 контейнер (базата `easyco_testing`, само за тази задача), PHP 8.3, Node 24 (няколко теста пускат скриптове под node). · 4 jobs, each on `ubuntu-24.04` with a MySQL 8.4 service container, PHP 8.3 and Node 24.
 * Разделянето е по **тестов файл** · Sharding is by test **file**: `scripts/ci/shard.php` взима всички `*Test.php` от тестовите пакети на `phpunit.xml`, сортира ги и шард *k* получава файловете с `i % 4 == k-1`. `--verify` проверява, че 4-те шарда са точно целият списък, всеки файл веднъж (пуска се първо във всеки шард). · takes every `*Test.php` of the `phpunit.xml` testsuites, sorts, shard *k* gets files with `i % 4 == k-1`; `--verify` proves the shards are exactly the full list.
 * Не се пуска · Not in CI: браузърните скриптове `tests/Browser/*.mjs`, всичко, което иска Laragon или снимките на собственика. · the Playwright scripts and anything needing Laragon or the owner's photos.
 * Без тайни · No secrets: паролата на базата и `APP_KEY` са еднократни за задачата; логовете са публични. · the DB password and `APP_KEY` are throw-away values of the job; logs are public.

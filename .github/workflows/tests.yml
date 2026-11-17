@@ -17,7 +17,7 @@ permissions:
 jobs:
   phpunit:
     name: PHPUnit (shard ${{ matrix.shard }}/4)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 40
     strategy:
       fail-fast: false
@@ -60,7 +60,11 @@ jobs:
       # node: a few tests run the storefront / menu scripts under node (they skip without it)
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
+
+      # the views load CSS/JS through @vite: public/build is not in git, so CI builds it (same as the owner's PC)
+      - name: Build front-end assets
+        run: npm ci && npm run build
 
       - name: Composer cache directory
         id: composer-cache
