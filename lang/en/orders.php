@@ -699,6 +699,14 @@ return [
         'superseded' => 'Superseded',
     ],
     'not_available' => '—',
+
+    // ORD-PC: what the admin delivery block adds from the postcode / settlement data (admin only; never on the storefront, the mail or the API)
+    'geo' => [
+        'derived_suffix' => '(from the settlement)',
+        'possible_regions' => 'Possible regions: :list',
+        'other_settlement' => 'The code belongs to another settlement: :list',
+        'typed_region' => 'The customer typed the region: :region',
+    ],
     'guest' => 'Guest',
     'promotion_redeemed_yes' => 'redeemed',
     'promotion_redeemed_no' => 'not redeemed',

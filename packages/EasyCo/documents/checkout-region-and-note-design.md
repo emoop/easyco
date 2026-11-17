@@ -156,3 +156,21 @@ This is a design: no code, migration or test was written or run. Not verified: w
 ### Interim state
 
 The storefront form has no region and no note inputs until C1b, so the API accepts them and the page does not send them; the order-received page shows the note as lines of the destination block; the shipping quote and the cart hint are unchanged; the personal-data routine does not exist yet.
+
+
+## ORD-PC — the postcode line, the region from the postcode, the admin delivery block (built)
+
+**The line.** A street-address order prints «<city> <postcode>» (for example «Харманли 6450»; the postcode tells apart the many settlements that share a name) on the order-received page (`OrderReceivedReader::destination()`), in the confirmation mail (`OrderConfirmationContent`), in the customer order API (it reuses the received-page reader) and in the admin delivery block (`OrderResource::deliveryAddressHtml()`). An order without a postcode prints the city alone, as before.
+
+**Office / locker orders have no postcode.** Checkout refuses `postal_code` for a pick-up point and the Order domain requires it to be null, so none is stored and none is ever shown or invented. The postcode of an office will come with the courier integrations (Speedy / Econt office data).
+
+**The region, admin only.** `App\Support\OrderDeliveryGeo` (used only by the admin block):
+- street address, country BG, a 4-digit postcode: the region of the postcode on its own line under «city postcode» (a postcode shared by two regions is settled by the city; otherwise «Възможни области: A, B»); a muted note «Кодът е на друго населено място: <settlements of the code>» when the city is not one of the code's settlements; a muted note «Клиентът е написал област: <typed>» when the region the customer typed (the RN-1 field) differs from the derived one. Unknown code or another country: no line.
+- office / locker: the region derived from the stored SETTLEMENT NAME alone: one region → «Хасково (по населеното място)»; several → one muted line «Възможни области: A, B, C» (at most 5, then «…»); none → no line.
+- Names are compared after trim, case, dropping «гр.» / «с.», and the Bulgarian streamlined transliteration («Харманли» = «Harmanli»). The region names are the 28 oblasti of `App\Support\BgRegions`, keyed by the GeoNames admin1 code (`SOF` София-град and `SFO` София област are different regions). Never on the storefront page, the mail or the API (tests assert it).
+
+**The data.** `resources/data/bg-postcodes.php` (about 220 KB, 4359 postcodes, loaded lazily and kept per process by `App\Support\BgPostcodes`: no query, no network at runtime). Built by `php scripts/data/build-bg-postcodes.php [BG.zip]` from the GeoNames postal-code file for Bulgaria (https://download.geonames.org/export/zip/BG.zip). Attribution: **GeoNames postal codes, https://www.geonames.org, licensed under CC BY 4.0** (also in the data file's header). The file's own region NAMES are not used (they contain errors, e.g. a Stara Zagora code under the name «Смолян»); only its admin1 CODE is. To rebuild: download BG.zip, run the script with its path, run the tests.
+
+**The «Съвпада с профил» card** is collapsed by default (Filament's own collapse); a muted line under its title says «Има съвпадения» / «Няма съвпадения»; its content is unchanged (`OrderMatchesCard`).
+
+**Type on the order page.** One step larger small text on this page only: `ViewOrder` carries the class `ord-view` and a page-scoped rule that sets `--text-xs: .875rem` and `--text-sm: 1rem` (and their line heights) for that page's content, which moves every `text-xs` → `text-sm` and `text-sm` → `text-base`, utility class and component rule alike; the few inline sizes (`OrderResource`, `OrderMatchesCard`) were raised by the same 0.125rem in code.

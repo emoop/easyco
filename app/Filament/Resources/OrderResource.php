@@ -15,6 +15,7 @@ use App\Enums\OrderBlockType;
 use App\Filament\Support\HelpLink;
 use App\Filament\Support\OrderBlockActions;
 use App\Filament\Support\OrderMatchesCard;
+use App\Support\OrderDeliveryGeo;
 use App\Services\Exceptions\MoneyOnlyRefundRefusedException;
 use App\Services\Exceptions\OperationKeyReusedException;
 use App\Services\Exceptions\PaymentReceiptRefusedException;
@@ -847,7 +848,11 @@ class OrderResource extends Resource
                         ->columns(1),
                     // «Съвпадения» (cod-protection-design.md 5): earlier and later orders that share the phone, the email or the delivery address/office,
                     // and the possible (name-only) matches, greyed. ORDER_VIEW; computed when the page opens; the IP is not a matching key.
+                    // ORD-PC: collapsed by default (Filament's own collapse, no JS); the muted line under the title says whether anything matches; the content is unchanged.
                     Section::make(__('blocks.matches.section'))
+                        ->description(fn (OrderModel $record): string => OrderMatchesCard::summaryLine($record))
+                        ->collapsible()
+                        ->collapsed()
                         ->compact()
                         ->schema([
                             TextEntry::make('matches_card')
@@ -1140,7 +1145,7 @@ class OrderResource extends Resource
     }
 
     /** The muted style of the page's SECONDARY level of text (labels' companions: dates, references, SKU, unit prices). */
-    private const SECONDARY_ENTRY_STYLE = 'font-size: 0.6875rem';
+    private const SECONDARY_ENTRY_STYLE = 'font-size: 0.8125rem';
 
     /**
      * A "label: value" pair of a sidebar card is a WRAPPING flex row (not Filament's fixed 1/3 + 2/3 grid): a long label can
@@ -1148,7 +1153,7 @@ class OrderResource extends Resource
      */
     private const PAIR_STYLE = 'display: flex; flex-wrap: wrap; column-gap: 0.75rem; row-gap: 0.125rem; overflow-wrap: anywhere';
 
-    private const SECONDARY_HTML_STYLE = 'font-size: 0.6875rem; opacity: 0.65';
+    private const SECONDARY_HTML_STYLE = 'font-size: 0.8125rem; opacity: 0.65';
 
     /**
      * ONE place decides which text is SECONDARY on this page (smaller and muted) and which is primary (names, amounts,
@@ -1179,7 +1184,7 @@ class OrderResource extends Resource
         $text = e(PhoneNumbers::formatForDisplay($stored, $homeCountry));
 
         if (PhoneNumbers::parse($stored, null)?->isFixedLine === true) {
-            $text .= ' <span style="display: inline-block; padding: 0 0.4rem; border-radius: 0.375rem; font-size: 0.7rem; background: rgba(120, 120, 120, 0.18);" data-phone-fixed-line>'.e(__('orders.fields.phone_fixed_line')).'</span>';
+            $text .= ' <span style="display: inline-block; padding: 0 0.4rem; border-radius: 0.375rem; font-size: 0.825rem; background: rgba(120, 120, 120, 0.18);" data-phone-fixed-line>'.e(__('orders.fields.phone_fixed_line')).'</span>';
         }
 
         return new HtmlString($text);
@@ -1333,33 +1338,51 @@ class OrderResource extends Resource
         ]));
     }
 
-    /** The street address, or the pickup point, with every part the order stores. */
+    /**
+     * The delivery block (the street address, or the pickup point, with every part the order stores). Lines are escaped here (the entry prints HTML so a note can be muted). ORD-PC: «city postcode» for a street address, and the geo lines of
+     * App\Support\OrderDeliveryGeo — the region derived from the postcode (street address) or from the settlement (office / locker: NO postcode is stored for those and
+     * none is ever invented), plus two muted notes. ADMIN ONLY: the storefront page, the mail and the API never read this.
+     */
     private static function deliveryAddressHtml(OrderModel $record): string
     {
         $na = __('orders.not_available');
-        $lines = $record->delivery_type === OrderDeliveryType::STREET_ADDRESS->value
-            ? [
-                $record->address_line_1 ?? $na,
-                $record->address_line_2,
-                trim(($record->postal_code ?? '').' '.($record->city ?? $na)),
-                // The region (checkout RN-1), between the city and the country, only when the order stored one.
-                filled($record->region) ? $record->region : null,
-                $record->country ?? $na,
-            ]
-            : [
-                __('orders.fields.carrier_code').': '.($record->carrier_code ?? $na),
-                // The courier's id of the point: only when the order has one (a DESCRIBED point, typed by the customer, has none).
-                filled($record->pickup_point_reference) ? __('orders.fields.pickup_point_reference').': '.$record->pickup_point_reference : null,
-                // The office as the customer saw it (stage 4f display snapshot), only when the order stored it.
-                filled($record->pickup_point_name) ? __('orders.fields.pickup_point_name').': '.$record->pickup_point_name : null,
-                filled($record->pickup_point_address) ? __('orders.fields.pickup_point_address').': '.$record->pickup_point_address : null,
-                // The KIND that priced the order (stage 5g-2a), display only: the order editor never changes it (an edit does not re-price shipping).
-                __('orders.fields.pickup_point_kind').': '.__('orders.pickup_kind.'.(filled($record->pickup_point_kind) ? $record->pickup_point_kind : 'not_stated')),
-                $record->settlement ?? $na,
-                $record->country ?? $na,
-            ];
+        $muted = 'style="'.self::SECONDARY_HTML_STYLE.'"';
+        $text = static fn (?string $line): ?string => $line === null || $line === '' ? null : e($line);
+        $locale = app()->getLocale();
 
-        return implode('<br>', array_map(static fn (string $line): string => e($line), array_filter($lines, static fn (?string $line): bool => $line !== null && $line !== '')));
+        if ($record->delivery_type === OrderDeliveryType::STREET_ADDRESS->value) {
+            $geo = OrderDeliveryGeo::forStreet($record->country, $record->city, $record->postal_code, $record->region, $locale);
+
+            $lines = [
+                $text($record->address_line_1 ?? $na),
+                $text($record->address_line_2),
+                // «city postcode» (the postcode tells apart the settlements that share a name)
+                $text(trim(($record->city ?? $na).' '.($record->postal_code ?? ''))),
+                // the derived region on its own line; the typed region (RN-1) stays as the line when nothing could be derived
+                $geo['region'] !== null ? e($geo['region']) : ($geo['possible'] !== null ? '<span '.$muted.'>'.e(__('orders.geo.possible_regions', ['list' => $geo['possible']])).'</span>' : $text(filled($record->region) ? $record->region : null)),
+                ...array_map(static fn (string $note): string => '<span '.$muted.'>'.e($note).'</span>', $geo['notes']),
+                $text($record->country ?? $na),
+            ];
+        } else {
+            $geo = OrderDeliveryGeo::forPickup($record->country, $record->settlement);
+
+            $lines = [
+                $text(__('orders.fields.carrier_code').': '.($record->carrier_code ?? $na)),
+                // The courier's id of the point: only when the order has one (a DESCRIBED point, typed by the customer, has none).
+                filled($record->pickup_point_reference) ? $text(__('orders.fields.pickup_point_reference').': '.$record->pickup_point_reference) : null,
+                // The office as the customer saw it (stage 4f display snapshot), only when the order stored it.
+                filled($record->pickup_point_name) ? $text(__('orders.fields.pickup_point_name').': '.$record->pickup_point_name) : null,
+                filled($record->pickup_point_address) ? $text(__('orders.fields.pickup_point_address').': '.$record->pickup_point_address) : null,
+                // The KIND that priced the order (stage 5g-2a), display only: the order editor never changes it (an edit does not re-price shipping).
+                $text(__('orders.fields.pickup_point_kind').': '.__('orders.pickup_kind.'.(filled($record->pickup_point_kind) ? $record->pickup_point_kind : 'not_stated'))),
+                // the settlement as stored — no postcode (the courier integrations will bring the office's later)
+                $text($record->settlement ?? $na),
+                $geo['region'] !== null ? e($geo['region']).' <span '.$muted.'>'.e(__('orders.geo.derived_suffix')).'</span>' : ($geo['possible'] !== null ? '<span '.$muted.'>'.e(__('orders.geo.possible_regions', ['list' => $geo['possible']])).'</span>' : null),
+                $text($record->country ?? $na),
+            ];
+        }
+
+        return implode('<br>', array_filter($lines, static fn (?string $line): bool => $line !== null && $line !== ''));
     }
 
     /** One line as a BLOCK: thumbnail, name (a link to the product's edit page), muted details, the total on the right. */

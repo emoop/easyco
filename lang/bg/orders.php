@@ -685,6 +685,14 @@ return [
         'superseded' => 'Заменено',
     ],
     'not_available' => '—',
+
+    // ORD-PC: what the admin delivery block adds from the postcode / settlement data (admin only; never on the storefront, the mail or the API)
+    'geo' => [
+        'derived_suffix' => '(по населеното място)',
+        'possible_regions' => 'Възможни области: :list',
+        'other_settlement' => 'Кодът е на друго населено място: :list',
+        'typed_region' => 'Клиентът е написал област: :region',
+    ],
     'guest' => 'Гост',
     'promotion_redeemed_yes' => 'използван',
     'promotion_redeemed_no' => 'неизползван',

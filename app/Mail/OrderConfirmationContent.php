@@ -193,7 +193,8 @@ final class OrderConfirmationContent
             $address = array_filter([
                 $order->addressLine1(),
                 $order->addressLine2(),
-                trim(($order->postalCode() ?? '').' '.($order->city() ?? '')),
+                // ORD-PC: «city postcode»
+                trim(($order->city() ?? '').' '.($order->postalCode() ?? '')),
                 // The region (checkout RN-1), after the postal code and city; nothing at all when the order has none.
                 $order->region(),
                 $countryName,

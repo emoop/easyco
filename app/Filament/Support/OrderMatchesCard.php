@@ -22,12 +22,29 @@ final class OrderMatchesCard
 
     private const GREY = 'opacity: 0.55';
 
+    /** @var \WeakMap<OrderModel, array<string, mixed>>|null the reader's answer per MODEL INSTANCE: the collapsed header and the card body share ONE read (the page's query count is pinned) */
+    private static ?\WeakMap $read = null;
+
+    /** @return array<string, mixed> */
+    private static function matches(OrderModel $record): array
+    {
+        self::$read ??= new \WeakMap();
+
+        return self::$read[$record] ??= app(OrderMatchReader::class)->forOrder($record);
+    }
+
+    /** the muted line under the collapsed card's title: whether anything matches (a name-only possibility counts) */
+    public static function summaryLine(OrderModel $record): string
+    {
+        return (string) __(self::matches($record)['orders'] === [] ? 'blocks.matches.no_matches' : 'blocks.matches.has_matches');
+    }
+
     public static function html(OrderModel $record): string
     {
-        $matches = app(OrderMatchReader::class)->forOrder($record);
+        $matches = self::matches($record);
 
         // «Помощ: как работи →» closes the card, with or without matches.
-        $help = '<p style="font-size: 0.75rem">'.HelpLink::html('order_matches').'</p>';
+        $help = '<p style="font-size: 0.875rem">'.HelpLink::html('order_matches').'</p>';
 
         if ($matches['orders'] === []) {
             return '<p>'.e(__('blocks.matches.none')).'</p>'.$help;
@@ -65,10 +82,10 @@ final class OrderMatchesCard
             $html .= '<li style="margin-bottom: 0.35rem;'.($match['weak'] ? ' '.self::GREY.';' : '').'">'
                 .$link.' · '.e($date).' · '.e($match['name']).' · '
                 .'<span'.($stands ? ' style="'.self::RED.'"' : '').'>'.e($status).'</span>'
-                .'<br><span style="font-size: 0.75rem">'.e($keys).'</span>'
+                .'<br><span style="font-size: 0.875rem">'.e($keys).'</span>'
                 .'</li>';
         }
 
-        return $html.'</ul><p style="font-size: 0.75rem; opacity: 0.65">'.e(__('blocks.matches.more_than', ['limit' => OrderMatchReader::LIMIT])).'</p>'.$help;
+        return $html.'</ul><p style="font-size: 0.875rem; opacity: 0.65">'.e(__('blocks.matches.more_than', ['limit' => OrderMatchReader::LIMIT])).'</p>'.$help;
     }
 }

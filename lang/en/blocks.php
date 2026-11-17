@@ -81,6 +81,8 @@ return [
     // The "Matches" card on the order view (design section 5).
     'matches' => [
         'section' => 'Matches',
+        'has_matches' => 'There are matches',
+        'no_matches' => 'No matches',
         'none' => 'No other order shares the phone, the email or the delivery address or office.',
         'summary' => '{1} Matches :count other order (:refused cancelled or refunded)|[0,*] Matches :count other orders (:refused cancelled or refunded)',
         'weak_summary' => '{1} :count more with the same name only|[0,*] :count more with the same name only',

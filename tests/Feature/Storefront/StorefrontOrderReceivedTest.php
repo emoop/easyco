@@ -128,7 +128,7 @@ class StorefrontOrderReceivedTest extends TestCase
         $this->assertStringContainsString('40.00 €', $html, 'the order total');
         $this->assertStringContainsString('Free delivery', $html);
         $this->assertStringContainsString('Vitosha Blvd 1', $html);
-        $this->assertStringContainsString('1000 Sofia', $html);
+        $this->assertStringContainsString('Sofia 1000', $html); // ORD-PC: «city postcode» (was «postcode city»)
         $this->assertStringContainsString('Cash on delivery', $html);
     }
 
@@ -386,7 +386,7 @@ class StorefrontOrderReceivedTest extends TestCase
 
         $html = $this->get($url)->assertOk()->getContent();
 
-        $this->assertMatchesRegularExpression('/1000 Sofia<\/span>\s*<span class="sf-received-destination-line">Sofia-city<\/span>\s*<span class="sf-received-destination-line">Bulgaria<\/span>/', $html);
+        $this->assertMatchesRegularExpression('/Sofia 1000<\/span>\s*<span class="sf-received-destination-line">Sofia-city<\/span>\s*<span class="sf-received-destination-line">Bulgaria<\/span>/', $html);
     }
 
     public function test_the_note_is_its_own_escaped_block_with_its_line_breaks_kept_by_css(): void

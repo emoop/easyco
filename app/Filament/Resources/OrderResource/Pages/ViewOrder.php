@@ -4,6 +4,9 @@ namespace App\Filament\Resources\OrderResource\Pages;
 
 use App\Filament\Resources\OrderResource;
 use Filament\Resources\Pages\ViewRecord;
+use Filament\Support\Facades\FilamentView;
+use Filament\View\PanelsRenderHook;
+use Illuminate\Support\HtmlString;
 
 /**
  * ViewRecord::authorizeAccess() already correctly calls
@@ -25,6 +28,34 @@ use Filament\Resources\Pages\ViewRecord;
 class ViewOrder extends ViewRecord
 {
     protected static string $resource = OrderResource::class;
+
+    /** the page's own scope class: the type rule below applies to this page only */
+    public function getPageClasses(): array
+    {
+        return ['ord-view'];
+    }
+
+    /**
+     * ORD-PC: ONE STEP LARGER SMALL TEXT, on this page only. Filament's small sizes are the theme variables `--text-xs` and `--text-sm` (every `text-xs` / `text-sm`
+     * utility AND every component rule that sets a small size reads them); a variable set on `.ord-view` changes them for the page's content and nowhere else:
+     * text-xs (0.75rem) -> text-sm (0.875rem), text-sm (0.875rem) -> text-base (1rem), the line heights of the same step. Text that is already base or larger is untouched.
+     * The few inline sizes of this page (OrderResource, OrderMatchesCard) were raised by the same 0.125rem in code. Registered once per request, for this page's scope only.
+     */
+    public function boot(): void
+    {
+        // once per application instance (a request), never process-wide: a long-lived process or a test process builds a fresh application each time
+        if (app()->bound('order-view.type-step')) {
+            return;
+        }
+
+        app()->instance('order-view.type-step', true);
+
+        FilamentView::registerRenderHook(
+            PanelsRenderHook::PAGE_START,
+            static fn (): HtmlString => new HtmlString('<style>.fi-page.ord-view{--text-xs:.875rem;--text-xs--line-height:calc(1.25 / .875);--text-sm:1rem;--text-sm--line-height:1.5}</style>'),
+            scopes: static::class,
+        );
+    }
 
     protected function getHeaderActions(): array
     {

@@ -195,9 +195,9 @@ class OrderViewPolishTest extends TestCase
         $html = $this->html($order['orderId']);
 
         // The subtitle (secondary) carries the muted style and the gray colour class...
-        $this->assertMatchesRegularExpression('/<div class="fi-in-text-item[^"]*fi-color-gray[^"]*"[^>]*font-size: 0\.6875rem[^>]*>\s*[^<]*· IP/s', $html);
+        $this->assertMatchesRegularExpression('/<div class="fi-in-text-item[^"]*fi-color-gray[^"]*"[^>]*font-size: 0\.8125rem[^>]*>\s*[^<]*· IP/s', $html); // ORD-PC: the small sizes of this page are one step larger (0.6875rem -> 0.8125rem)
         // ...the item details are muted too...
-        $this->assertStringContainsString('font-size: 0.6875rem; opacity: 0.65', $html);
+        $this->assertStringContainsString('font-size: 0.8125rem; opacity: 0.65', $html);
         // ...while the customer's name (primary) has no such style.
         preg_match('#<div class="fi-in-text-item[^"]*"([^>]*)>\s*Ivan Ivanov#s', $html, $name);
         $this->assertNotEmpty($name, 'the customer name entry');
