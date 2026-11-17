@@ -187,6 +187,39 @@ class OrderContextAdminTest extends TestCase
 
     // ---- the Invoice section (section 11.4) ----------------------------------------------------------------------------------------
 
+    /** ORD-PC.2: the billing address is «city postcode» like the delivery address; without a postcode it is the city alone, with no stray space or comma */
+    public function test_the_billing_address_reads_city_postcode_and_the_city_alone_without_a_postcode(): void
+    {
+        $order = $this->place([
+            'recipient_type' => 'company', 'legal_name' => 'Acme OOD', 'tax_id' => '123456789',
+            'country' => 'BG', 'city' => 'Sofia', 'postal_code' => '1000', 'address_line_1' => '1 Main St', 'email' => 'accountant@example.com',
+        ]);
+        $this->actingAsStaff('Administrator');
+
+        // the admin order view: the invoice block's billing line (the view memoises per order inside one process, so it is read ONCE here)
+        $html = $this->page($order);
+        $this->assertMatchesRegularExpression('/>\s*1 Main St, Sofia 1000, BG\s*</', $html);
+        $this->assertDoesNotMatchRegularExpression('/1000 Sofia/', $html, 'the old «postcode city» order is gone');
+
+        // the reader itself (the code that builds the line), with and without a postcode
+        $reader = app(\App\Services\OrderContextReader::class);
+        $record = \EasyCo\Order\Persistence\Eloquent\OrderModel::findOrFail($order);
+        $this->assertSame('1 Main St, Sofia 1000, BG', $reader->forRecord($record)->invoiceBillingAddress);
+
+        // the invoice table keeps the postcode NOT NULL: «no postcode» is the empty string
+        DB::table('order_invoice_details')->where('order_id', $order)->update(['postal_code' => '']);
+        // the reader memoises per order for the life of ONE request (it is a singleton): a fresh instance stands for the next request
+        app()->forgetInstance(\App\Services\OrderContextReader::class);
+        $line = app(\App\Services\OrderContextReader::class)->forRecord(\EasyCo\Order\Persistence\Eloquent\OrderModel::findOrFail($order))->invoiceBillingAddress;
+
+        $this->assertSame('1 Main St, Sofia, BG', $line, 'the city alone: no stray space, no stray comma');
+
+        // no city either: the line is just the street and the country
+        DB::table('order_invoice_details')->where('order_id', $order)->update(['city' => '']);
+        app()->forgetInstance(\App\Services\OrderContextReader::class);
+        $this->assertSame('1 Main St, BG', app(\App\Services\OrderContextReader::class)->forRecord(\EasyCo\Order\Persistence\Eloquent\OrderModel::findOrFail($order))->invoiceBillingAddress);
+    }
+
     public function test_the_invoice_section_shows_the_request_with_the_configured_label_and_the_rule_version(): void
     {
         $settings = app(SiteSettingsRepository::class);
@@ -202,7 +235,7 @@ class OrderContextAdminTest extends TestCase
         $html = $this->page($order);
         $invoice = $this->section($html, __('orders.sections.invoice'), __('orders.sections.origin'));
 
-        foreach (['Acme OOD', '123456789', 'BG123456789', 'Ivan Ivanov', 'accountant@example.com', '1 Main St, 1000 Sofia, BG', 'Company'] as $value) {
+        foreach (['Acme OOD', '123456789', 'BG123456789', 'Ivan Ivanov', 'accountant@example.com', '1 Main St, Sofia 1000, BG', 'Company'] as $value) {
             $this->assertStringContainsString($value, $invoice);
         }
         foreach (['ЕИК / Булстат', 'ДДС номер', 'МОЛ'] as $label) {

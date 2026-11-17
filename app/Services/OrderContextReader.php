@@ -167,7 +167,8 @@ class OrderContextReader
     private function invoiceFields(OrderInvoiceDetailsModel $row): array
     {
         $rule = app(InvoiceSettings::class)->ruleFor((string) $row->country);
-        $lines = array_filter([$row->address_line_1, $row->address_line_2, trim($row->postal_code.' '.$row->city), $row->country], static fn ($part): bool => filled($part));
+        // ORD-PC.2: «city postcode», like the delivery address everywhere else (a blank part drops out: no stray space or comma)
+        $lines = array_filter([$row->address_line_1, $row->address_line_2, trim(($row->city ?? '').' '.($row->postal_code ?? '')), $row->country], static fn ($part): bool => filled($part));
 
         return [
             'invoiceRequested' => true,
