@@ -77,7 +77,8 @@ class RegionNoteDisplayTest extends TestCase
 
         $mail = $this->mail();
 
-        $this->assertMatchesRegularExpression('/1000 Sofia<br>\s*Sofia-city<br>\s*Bulgaria/', $mail['html']);
+        $this->assertMatchesRegularExpression('/Sofia 1000<br>\s*Sofia-city<br>\s*Bulgaria/', $mail['html']);
+        $this->assertStringNotContainsString('София-град', $mail['html'], 'the region derived from the postcode is admin-only');
         $this->assertStringContainsString('Your note', $mail['html']);
         $this->assertStringContainsString('Leave at the door.<br>', $mail['html']);
         $this->assertStringContainsString('Thank you!', $mail['html']);
@@ -93,7 +94,8 @@ class RegionNoteDisplayTest extends TestCase
 
         $this->assertStringNotContainsString('Your note', $mail['html']);
         $this->assertStringNotContainsString('Your note', $mail['text']);
-        $this->assertMatchesRegularExpression('/1000 Sofia<br>\s*Bulgaria/', $mail['html'], 'the city line is followed straight by the country, as it always was');
+        $this->assertMatchesRegularExpression('/Sofia 1000<br>\s*Bulgaria/', $mail['html'], 'the city line is followed straight by the country, as it always was');
+        $this->assertStringNotContainsString('София-град', $mail['html'], 'the region derived from the postcode is admin-only');
     }
 
     public function test_a_script_in_the_note_or_the_region_is_text_in_the_mail(): void
@@ -116,7 +118,8 @@ class RegionNoteDisplayTest extends TestCase
 
         $html = $this->get($response->json('confirmation_url'))->assertOk()->getContent();
 
-        $this->assertMatchesRegularExpression('/1000 Sofia<\/span>\s*<span class="sf-received-destination-line">Sofia-city<\/span>\s*<span class="sf-received-destination-line">Bulgaria/', $html);
+        $this->assertMatchesRegularExpression('/Sofia 1000<\/span>\s*<span class="sf-received-destination-line">Sofia-city<\/span>\s*<span class="sf-received-destination-line">Bulgaria/', $html);
+        $this->assertStringNotContainsString('София-град', $html, 'the region derived from the postcode is admin-only');
         $this->assertStringContainsString('Your note: Line one', $html);
         $this->assertStringContainsString('Line &lt;i&gt;two&lt;/i&gt;', $html);
         $this->assertStringNotContainsString('<script', $html);
@@ -130,7 +133,8 @@ class RegionNoteDisplayTest extends TestCase
         $html = $this->get($response->json('confirmation_url'))->assertOk()->getContent();
 
         $this->assertStringNotContainsString('Your note', $html);
-        $this->assertMatchesRegularExpression('/1000 Sofia<\/span>\s*<span class="sf-received-destination-line">Bulgaria/', $html);
+        $this->assertMatchesRegularExpression('/Sofia 1000<\/span>\s*<span class="sf-received-destination-line">Bulgaria/', $html);
+        $this->assertStringNotContainsString('София-град', $html, 'the region derived from the postcode is admin-only');
     }
 
     public function test_the_received_page_and_the_mail_are_in_the_store_language(): void
@@ -153,7 +157,8 @@ class RegionNoteDisplayTest extends TestCase
 
         $html = Livewire::test(ViewOrder::class, ['record' => $orderId])->html();
 
-        $this->assertMatchesRegularExpression('/1000 Sofia<br \/>Sofia-city<br \/>BG/', $html);
+        // ORD-PC: «city postcode», then the region DERIVED from the postcode, then the region the customer typed as a muted note (it differs from the derived one), then the country
+        $this->assertMatchesRegularExpression('/Sofia 1000<br \/>София-град<br \/><span [^>]*>The customer typed the region: Sofia-city<\/span><br \/>BG/', $html);
         $this->assertStringContainsString('Customer note', $html);
         $this->assertStringContainsString('Line one<br />', $html, 'the line breaks are kept (nl2br of the escaped text)');
         $this->assertStringContainsString('Line &lt;b&gt;two&lt;/b&gt; &lt;script&gt;alert(1)&lt;/script&gt;', $html);
@@ -170,7 +175,10 @@ class RegionNoteDisplayTest extends TestCase
         $html = Livewire::test(ViewOrder::class, ['record' => $orderId])->html();
 
         $this->assertStringNotContainsString('Customer note', $html);
-        $this->assertMatchesRegularExpression('/1000 Sofia<br \/>BG/', $html);
+        // no typed region, no note: «city postcode», the derived region, the country (a Latin «Sofia» is the settlement of 1000, so no «another settlement» note)
+        $this->assertMatchesRegularExpression('/Sofia 1000<br \/>София-град<br \/>BG/', $html);
+        $this->assertStringNotContainsString('The code belongs to another settlement', $html);
+        $this->assertStringNotContainsString('The customer typed the region', $html);
     }
 
     // ---- the admin editor ------------------------------------------------------------------------------------------------------------------

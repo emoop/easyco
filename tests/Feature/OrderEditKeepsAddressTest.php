@@ -94,8 +94,8 @@ class OrderEditKeepsAddressTest extends TestCase
         return $id;
     }
 
-    /** a real order, placed through the real checkout, with the full street address of the owner's example */
-    private function place(): Order
+    /** a real order, placed through the real checkout: the full street address of the owner's example, or ($office) an OFFICE order in Харманли — no postcode, no region, no street */
+    private function place(bool $office = false): Order
     {
         $this->variationId ??= $this->variation();
         $cart = Cart::forGuest((string) Str::uuid(), new DateTimeImmutable('+10 days'));
@@ -110,14 +110,18 @@ class OrderEditKeepsAddressTest extends TestCase
             accountId: null,
             guestCartToken: app(CartRepository::class)->findById($cart->id())?->sessionToken(),
             addressId: null,
-            deliveryType: AddressDeliveryType::STREET_ADDRESS,
+            deliveryType: $office ? AddressDeliveryType::PICKUP_POINT : AddressDeliveryType::STREET_ADDRESS,
             country: 'BG',
-            city: 'Харманли',
-            postalCode: '6450',
-            addressLine1: 'ул. Васил Левски 52',
-            addressLine2: 'вх. Б',
-            region: 'Хасково',
-            shippingMethodId: $this->shippingMethodId(), quoteHandle: $this->lostShippingHandle(), expectedShippingMinor: 0,
+            city: $office ? null : 'Харманли',
+            postalCode: $office ? null : '6450',
+            addressLine1: $office ? null : 'ул. Васил Левски 52',
+            addressLine2: $office ? null : 'вх. Б',
+            region: $office ? null : 'Хасково',
+            carrierCode: $office ? 'speedy' : null,
+            settlement: $office ? 'Харманли' : null,
+            pickupPointAddress: $office ? 'Ул. Васил Левски 52' : null,
+            pickupPointKind: $office ? 'office' : null,
+            shippingMethodId: $this->shippingMethodId($office), quoteHandle: $this->lostShippingHandle(), expectedShippingMinor: 0,
         ), new DateTimeImmutable('2026-09-29 12:00:00'))->order();
     }
 
@@ -273,5 +277,82 @@ class OrderEditKeepsAddressTest extends TestCase
         }
 
         $this->assertSame('Харманли', $row->settlement);
+    }
+
+    /** the names of the fields the mounted edit dialog's delivery section builds (hidden ones included), with whether each is visible for the current state */
+    private function deliveryFields(Testable $component): array
+    {
+        $found = [];
+
+        $instance = $component->instance();
+        // the mounted action's schema is a protected accessor of the page: read it the way the page itself does
+        $schema = \Closure::bind(fn () => $this->getMountedActionSchema(), $instance, $instance::class)();
+
+        foreach ($schema->getFlatFields(withHidden: true) as $field) {
+            $path = method_exists($field, 'getStatePath') ? (string) $field->getStatePath(isAbsolute: false) : '';
+
+            if (str_starts_with($path, 'delivery.')) {
+                $found[substr($path, 9)] = $field->isVisible();
+            }
+        }
+
+        return $found;
+    }
+
+    /** a street order with a stored region: the dialog HAS the region field, prefilled; submitted unchanged, the region and the postal code stay */
+    public function test_the_edit_dialog_of_a_street_order_has_the_region_field_prefilled_and_saves_it_unchanged(): void
+    {
+        $order = $this->place();
+        $component = $this->mount($order);
+
+        $fields = $this->deliveryFields($component);
+        $this->assertArrayHasKey('region', $fields, 'the region field is in the dialog');
+        $this->assertTrue($fields['region'], 'and it is shown for a street address');
+        $this->assertArrayHasKey('postal_code', $fields);
+        $this->assertTrue($fields['postal_code']);
+        $this->assertSame('Хасково', $this->seeded($component)['delivery']['region'], 'prefilled');
+        $this->assertSame('6450', $this->seeded($component)['delivery']['postal_code'], 'prefilled');
+
+        $before = $this->address($order->id());
+        $component->fillForm(['delivery' => $this->seeded($component)['delivery']])->callMountedAction();
+
+        $row = $this->row($order->id());
+        $this->assertSame('Хасково', $row->region);
+        $this->assertSame('6450', $row->postal_code);
+        $this->assertSame($before, $this->address($order->id()), 'nothing else moved either');
+        $this->assertSame(0, (int) $row->edit_revision, 'an unchanged submit is «nothing to change», not an edit');
+    }
+
+    /** an office order (the owner's): no region field in the dialog; a submit keeps region NULL and the admin still derives the region from the settlement */
+    public function test_the_edit_dialog_of_an_office_order_has_no_region_field_and_the_admin_still_derives_the_region(): void
+    {
+        $order = $this->place(office: true);
+
+        $row = $this->row($order->id());
+        $this->assertSame('pickup_point', $row->delivery_type);
+        $this->assertNull($row->region);
+        $this->assertNull($row->postal_code);
+
+        $component = $this->mount($order);
+        $fields = $this->deliveryFields($component);
+        $this->assertArrayHasKey('region', $fields, 'the field exists in the form definition...');
+        $this->assertFalse($fields['region'], '...and is NOT shown for an office');
+        $this->assertFalse($fields['postal_code']);
+        $this->assertNull($this->seeded($component)['delivery']['region'] ?? null);
+
+        $before = $this->address($order->id());
+        $lines = $this->seeded($component)['lines'];
+        $lines[array_key_first($lines)]['discount'] = '1.00';
+        $component->fillForm(['lines' => $lines, 'delivery' => $this->seeded($component)['delivery']])->callMountedAction();
+
+        $row = $this->row($order->id());
+        $this->assertSame(1, (int) $row->edit_revision, 'the edit happened');
+        $this->assertNull($row->region, 'the region stays null');
+        $this->assertNull($row->postal_code, 'and no postcode appears');
+        $this->assertSame($before, $this->address($order->id()));
+
+        $html = (new \ReflectionMethod(OrderResource::class, 'deliveryAddressHtml'))->invoke(null, \EasyCo\Order\Persistence\Eloquent\OrderModel::find($order->id()));
+        $lines = array_map(static fn (string $line): string => trim(strip_tags($line)), explode('<br>', $html));
+        $this->assertContains('Хасково (по населеното място)', $lines, 'the admin still shows the region derived from the settlement');
     }
 }

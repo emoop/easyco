@@ -8,7 +8,7 @@ namespace App\Support;
  * no query, no network. Region NAMES come from BgRegions (28 oblasti, keyed by the GeoNames admin1 code), never from the file.
  *
  * The same normalisation decides every name comparison: trimmed, lower-cased, a leading «гр.» / «с.» / «град» / «село» dropped, Bulgarian STREAMLINED transliteration to
- * Latin (so «Харманли» = «Harmanli»), everything but letters and digits removed.
+ * Latin (so «Харманли» = «Harmanli», and a word-final «ия» is «ia»: «София» = «Sofia»), everything but letters and digits removed.
  */
 final class BgPostcodes
 {
@@ -28,6 +28,8 @@ final class BgPostcodes
     {
         $name = mb_strtolower(trim($name));
         $name = (string) preg_replace('/^(гр\.|гр\s|с\.|град\s|село\s)\s*/u', '', $name);
+        // the streamlined system's one context rule: «ия» at the END of a word is «ia» (София = Sofia, Мария = Maria), everywhere else «iya»
+        $name = (string) preg_replace('/ия(?=[\s\-]|$)/u', 'ia', $name);
         $name = strtr($name, self::LATIN);
 
         return (string) preg_replace('/[^a-z0-9]+/', '', $name);

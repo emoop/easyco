@@ -75,6 +75,12 @@ class OrderPostcodeRegionTest extends TestCase
         $this->assertSame(BgPostcodes::normalise('Харманли'), BgPostcodes::normalise('  ХАРМАНЛИ '));
         $this->assertSame(BgPostcodes::normalise('Харманли'), BgPostcodes::normalise('гр. Харманли'));
         $this->assertSame(BgPostcodes::normalise('Лясково'), BgPostcodes::normalise('с. Lyaskovo'));
+        // a word-final «ия» is «ia» in the streamlined system (the shop's customers write «Sofia», not «Sofiya»)
+        $this->assertSame(BgPostcodes::normalise('София'), BgPostcodes::normalise('Sofia'));
+        $this->assertSame(BgPostcodes::normalise('Мария'), BgPostcodes::normalise('Maria'));
+        $this->assertSame(BgPostcodes::normalise('Дия'), BgPostcodes::normalise('Dia'));
+        // ...and only at the end of a word: in the middle it stays «iya»
+        $this->assertNotSame(BgPostcodes::normalise('Лиян'), BgPostcodes::normalise('Lian'));
         $this->assertNotSame(BgPostcodes::normalise('Харманли'), BgPostcodes::normalise('София'));
     }
 
