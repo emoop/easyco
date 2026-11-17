@@ -98,7 +98,7 @@ class CartController extends Controller
         }
 
         $cart = $this->currentOrNewCart($request);
-        $cart->refreshExpiry($this->expiryFor($cart));
+        $this->touchExpiry($cart);
 
         $currency = DefaultCurrency::get();
         $scope = $this->catalogScopeResolver->forVariation($variationId);
@@ -168,7 +168,7 @@ class CartController extends Controller
         }
 
         $cart->updateLineQuantity($variationId, $validated['quantity']);
-        $cart->refreshExpiry($this->expiryFor($cart));
+        $this->touchExpiry($cart);
         $this->carts->save($cart);
 
         return response()->json($this->serializeCart($cart));
@@ -185,7 +185,7 @@ class CartController extends Controller
         }
 
         $cart->removeLine($variationId);
-        $cart->refreshExpiry($this->expiryFor($cart));
+        $this->touchExpiry($cart);
         $this->carts->save($cart);
 
         return response()->json(null, 204);
@@ -223,7 +223,7 @@ class CartController extends Controller
         }
 
         $cart->applyPromotionCode($validated['code']);
-        $cart->refreshExpiry($this->expiryFor($cart));
+        $this->touchExpiry($cart);
         $this->carts->save($cart);
 
         return response()->json($this->serializeCart($cart));
@@ -243,7 +243,7 @@ class CartController extends Controller
         }
 
         $cart->clearPromotionCode();
-        $cart->refreshExpiry($this->expiryFor($cart));
+        $this->touchExpiry($cart);
         $this->carts->save($cart);
 
         return response()->json($this->serializeCart($cart));
@@ -307,6 +307,23 @@ class CartController extends Controller
         return $this->expiry($cart->accountId() !== null);
     }
 
+    /** A write slides the expiry forward only when that gains at least this many seconds. */
+    private const EXPIRY_SLIDE_MIN_SECONDS = 60;
+
+    /**
+     * The sliding expiry of the cart (every write pushes it out again), moved only when it GAINS at least a minute. The new expiry is "now + N days" at one-second
+     * resolution, so without this a write one second after the previous one changed the stored value and rewrote the `carts` row (an extra UPDATE) while a write in
+     * the same second did not: the cost of a write depended on the wall-clock second. A cart that is written to every few seconds keeps its row untouched and its
+     * life is at most a minute shorter than "10 / 30 days after the last write", which no rule of cart-domain-design.md §9 can tell apart.
+     */
+    private function touchExpiry(Cart $cart): void
+    {
+        $new = $this->expiryFor($cart);
+
+        if ($new->getTimestamp() - $cart->expiresAt()->getTimestamp() >= self::EXPIRY_SLIDE_MIN_SECONDS) {
+            $cart->refreshExpiry($new);
+        }
+    }
     /** 30 days for account carts, 10 for guest carts — cart-domain-design.md §9. */
     private function expiry(bool $isAccountCart): DateTimeImmutable
     {
