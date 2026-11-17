@@ -30,6 +30,10 @@ return [
         'current_wrong' => 'The current password is not correct.',
     ],
 
+    'orders' => [
+        'not_found' => 'Order not found.',
+    ],
+
     'email' => [
         'accepted' => 'We sent a confirmation link to the new address. The email changes only after it is confirmed.',
         'confirm_invalid' => 'The link is invalid or has expired.',

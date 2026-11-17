@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Mail\AccountMails;
+use App\Services\GuestOrderAttacher;
 use EasyCo\Account\Contracts\PasswordHasher;
 use EasyCo\Account\Persistence\Eloquent\AccountModel;
 use EasyCo\Account\Security\AccountSessionVersion;
@@ -33,6 +34,7 @@ class AccountPasswordController extends Controller
     public function __construct(
         private readonly AccountMails $mails,
         private readonly PasswordHasher $passwordHasher,
+        private readonly GuestOrderAttacher $attacher,
     ) {
     }
 
@@ -78,6 +80,8 @@ class AccountPasswordController extends Controller
             return response()->json(['message' => $this->says('password.reset_invalid')], 422);
         }
 
+        $firstVerification = $account->email_verified_at === null;
+
         $account->forceFill([
             'password' => $this->passwordHasher->hash($data['password']),
             'email_verified_at' => $account->email_verified_at ?? now(),
@@ -86,6 +90,12 @@ class AccountPasswordController extends Controller
         AccountSessionVersion::bump($account);
         $this->mails->passwordChanged($account->email);
         Hook::fire('account.password_changed', (string) $account->getKey());
+
+        if ($firstVerification) {
+            // ACC-2: the reset proved the mailbox (the same trigger as the verify link)
+            Hook::fire('account.verified', (string) $account->getKey());
+            $this->attacher->attach($account);
+        }
 
         return response()->json(['message' => $this->says('password.reset_done')]);
     }

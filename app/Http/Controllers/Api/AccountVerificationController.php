@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Mail\AccountMails;
+use App\Services\GuestOrderAttacher;
 use EasyCo\Account\Persistence\Eloquent\AccountModel;
 use EasyCo\Account\Security\SignedLink;
 use EasyCo\Extensibility\Hook;
@@ -23,6 +24,7 @@ class AccountVerificationController extends Controller
 
     public function __construct(
         private readonly AccountMails $mails,
+        private readonly GuestOrderAttacher $attacher,
     ) {
     }
 
@@ -44,6 +46,9 @@ class AccountVerificationController extends Controller
             $account->forceFill(['email_verified_at' => now()])->save();
 
             Hook::fire('account.verified', (string) $account->getKey());
+
+            // ACC-2: the mailbox is proven: the guest orders of this address become hers (never throws; a failure is retried by the next trigger / the command)
+            $this->attacher->attach($account);
         }
 
         return response()->json(['message' => $this->says('verify.done')]);

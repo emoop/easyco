@@ -2,6 +2,7 @@
 
 use App\Http\ApiRateLimits;
 use App\Http\Controllers\Api\AccountEmailController;
+use App\Http\Controllers\Api\AccountOrderController;
 use App\Http\Controllers\Api\AccountPasswordController;
 use App\Http\Controllers\Api\AccountRegistrationController;
 use App\Http\Controllers\Api\AccountSessionController;
@@ -37,9 +38,9 @@ use Illuminate\Support\Facades\Route;
 // its older inline `throttle:6,1` on purpose: it predates the convention, and
 // replacing it is a separate decision about credential-stuffing budgets.
 Route::post('/account/register', [AccountRegistrationController::class, 'store'])
-    ->middleware(['cart.cookie:passive', 'throttle:'.ApiRateLimits::REGISTRATION]);
+    ->middleware([EnsureAccountSessionIsCurrent::class.':soft', 'cart.cookie:passive', 'throttle:'.ApiRateLimits::REGISTRATION]);
 Route::post('/account/login', [AccountSessionController::class, 'store'])
-    ->middleware(['cart.cookie:passive', 'throttle:6,1']);
+    ->middleware([EnsureAccountSessionIsCurrent::class.':soft', 'cart.cookie:passive', 'throttle:6,1']);
 
 // ACC-1: the public account endpoints. None of them says whether an address has an account (account-security.md): the same answer, inside a Timebox.
 Route::post('/account/verify', [AccountVerificationController::class, 'verify'])
@@ -53,10 +54,18 @@ Route::post('/account/password/reset', [AccountPasswordController::class, 'reset
 Route::post('/account/email/confirm', [AccountEmailController::class, 'confirm'])
     ->middleware('throttle:'.ApiRateLimits::ACCOUNT_TOKEN);
 
-// ACC-1: EnsureAccountSessionIsCurrent logs a session out when the account's session version moved (a password reset / change, an email change).
+// ACC-1: EnsureAccountSessionIsCurrent logs a session out when the account's session version moved (a password reset / change, an email change): strict here (a 401).
+// ACC-2: every route OUTSIDE this group that reads the customer guard (register/login, the public address write, the cart, checkout, the shipping quote) carries the SOFT mode
+// (`:soft`, always FIRST: cart.cookie and the limiters read the guard): a stale session is logged out and the request goes on as a GUEST.
 Route::middleware(['auth:customer', EnsureAccountSessionIsCurrent::class])->group(function () {
     Route::post('/account/logout', [AccountSessionController::class, 'destroy']);
     Route::get('/account/me', [AccountSessionController::class, 'show']);
+    // ACC-2: the customer's own orders
+    Route::get('/account/orders', [AccountOrderController::class, 'index'])
+        ->middleware('throttle:'.ApiRateLimits::ACCOUNT_READ);
+    Route::get('/account/orders/{number}', [AccountOrderController::class, 'show'])
+        ->where('number', '[0-9]+')
+        ->middleware('throttle:'.ApiRateLimits::ACCOUNT_READ);
     Route::put('/account/password', [AccountPasswordController::class, 'change'])
         ->middleware('throttle:'.ApiRateLimits::ACCOUNT_TOKEN);
     Route::post('/account/email', [AccountEmailController::class, 'store'])
@@ -67,32 +76,32 @@ Route::middleware(['auth:customer', EnsureAccountSessionIsCurrent::class])->grou
 });
 
 Route::post('/addresses', [AddressController::class, 'store'])
-    ->middleware('throttle:'.ApiRateLimits::ADDRESS);
+    ->middleware([EnsureAccountSessionIsCurrent::class.':soft', 'throttle:'.ApiRateLimits::ADDRESS]);
 
 // `cart.cookie` (PersistGuestCartToken) restores a guest's cart token from the long-lived cart cookie; it comes BEFORE any
 // throttle, whose key reads that token.
 Route::get('/cart', [CartController::class, 'index'])
-    ->middleware('cart.cookie:read');
+    ->middleware([EnsureAccountSessionIsCurrent::class.':soft', 'cart.cookie:read']);
 Route::post('/cart/lines', [CartController::class, 'store'])
-    ->middleware(['cart.cookie:write', 'throttle:'.ApiRateLimits::CART_WRITE]);
+    ->middleware([EnsureAccountSessionIsCurrent::class.':soft', 'cart.cookie:write', 'throttle:'.ApiRateLimits::CART_WRITE]);
 Route::patch('/cart/lines/{variationId}', [CartController::class, 'update'])
-    ->middleware(['cart.cookie:write', 'throttle:'.ApiRateLimits::CART_WRITE]);
+    ->middleware([EnsureAccountSessionIsCurrent::class.':soft', 'cart.cookie:write', 'throttle:'.ApiRateLimits::CART_WRITE]);
 Route::delete('/cart/lines/{variationId}', [CartController::class, 'destroy'])
-    ->middleware(['cart.cookie:write', 'throttle:'.ApiRateLimits::CART_WRITE]);
+    ->middleware([EnsureAccountSessionIsCurrent::class.':soft', 'cart.cookie:write', 'throttle:'.ApiRateLimits::CART_WRITE]);
 Route::put('/cart/promotion', [CartController::class, 'applyPromotion'])
-    ->middleware(['cart.cookie:write', 'throttle:'.ApiRateLimits::PROMOTION]);
+    ->middleware([EnsureAccountSessionIsCurrent::class.':soft', 'cart.cookie:write', 'throttle:'.ApiRateLimits::PROMOTION]);
 Route::delete('/cart/promotion', [CartController::class, 'removePromotion'])
-    ->middleware('cart.cookie:write');
+    ->middleware([EnsureAccountSessionIsCurrent::class.':soft', 'cart.cookie:write']);
 
 // Checkout is available to guests AND logged-in customers, so it must
 // NOT go inside the auth:customer group above.
 Route::post('/checkout', [CheckoutController::class, 'store'])
-    ->middleware(['cart.cookie:passive', 'throttle:'.ApiRateLimits::CHECKOUT]);
+    ->middleware([EnsureAccountSessionIsCurrent::class.':soft', 'cart.cookie:passive', 'throttle:'.ApiRateLimits::CHECKOUT]);
 
 // The shipping quote is public too (guests choose delivery before they have an
 // account), and throttled by the central named limiter (App\Http\ApiRateLimits).
 Route::post('/shipping/quote', [ShippingQuoteController::class, 'store'])
-    ->middleware(['cart.cookie:passive', 'throttle:'.ApiRateLimits::SHIPPING_QUOTE]);
+    ->middleware([EnsureAccountSessionIsCurrent::class.':soft', 'cart.cookie:passive', 'throttle:'.ApiRateLimits::SHIPPING_QUOTE]);
 
 // ─────────────────────────────────────────────────────────────────
 // Merchant surface — everything below requires auth:staff plus a

@@ -164,6 +164,16 @@ class ApiRateLimitersTest extends TestCase
             'inside' => ['POST', 'api/account/email', [], 422],
         ],
 
+        // ACC-2: GET /api/account/orders and /{number}, inside auth:customer: keyed by IP + the logged-in account (send() logs a customer in); the visitor key has no account: `none`
+        ApiRateLimits::ACCOUNT_READ => [
+            'config' => 'ratelimits.'.ApiRateLimits::ACCOUNT_READ,
+            'key' => self::KEYED_BY_IP_AND_CART,
+            'refusal' => 'rate_limit.too_many_requests',
+            // a GET route is also a HEAD route
+            'routes' => [['GET', 'api/account/orders'], ['HEAD', 'api/account/orders'], ['GET', 'api/account/orders/{number}'], ['HEAD', 'api/account/orders/{number}']],
+            'inside' => ['GET', 'api/account/orders', [], 200],
+        ],
+
         // the submits that spend a one-time secret or a password guess: verify, reset, confirm the new email, change the password (PUT, logged in)
         ApiRateLimits::ACCOUNT_TOKEN => [
             'config' => 'ratelimits.'.ApiRateLimits::ACCOUNT_TOKEN,
@@ -411,12 +421,16 @@ class ApiRateLimitersTest extends TestCase
 
     private function send(string $method, string $uri, array $body): TestResponse
     {
-        if ($uri === 'api/account/email') {
+        if ($uri === 'api/account/email' || $uri === 'api/account/orders') {
             // ACC-1: the one limited route that needs a logged-in customer to be counted at all
             $this->actingAs(\EasyCo\Account\Persistence\Eloquent\AccountModel::query()->first() ?? $this->makeCustomer(), 'customer');
         }
 
-        return $method === 'PUT' ? $this->putJson($uri, $body) : $this->postJson($uri, $body);
+        return match ($method) {
+            'PUT' => $this->putJson($uri, $body),
+            'GET' => $this->getJson($uri),
+            default => $this->postJson($uri, $body),
+        };
     }
 
     /** The limit ApiRateLimits hands the middleware for a bare request. */

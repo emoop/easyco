@@ -49,6 +49,9 @@ class MerchantRoutesRequirePermissionTest extends TestCase
         'POST api/account/password/forgot',
         'POST api/account/password/reset',
         'PUT api/account/password',
+        // ACC-2: the customer's own orders
+        'GET api/account/orders',
+        'GET api/account/orders/{number}',
         'POST api/account/email',
         'POST api/account/email/confirm',
         'GET api/addresses',

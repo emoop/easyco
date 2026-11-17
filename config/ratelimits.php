@@ -44,5 +44,8 @@ return [
     'verify-resend' => (int) env('RATE_LIMIT_VERIFY_RESEND', 5),
     'email-change' => (int) env('RATE_LIMIT_EMAIL_CHANGE', 5),
     'account-token' => (int) env('RATE_LIMIT_ACCOUNT_TOKEN', 10),
+
+    // ACC-2: GET /api/account/orders and /api/account/orders/{number}: a customer browsing her orders; 60 a minute per IP + account.
+    'account-read' => (int) env('RATE_LIMIT_ACCOUNT_READ', 60),
 ];
 

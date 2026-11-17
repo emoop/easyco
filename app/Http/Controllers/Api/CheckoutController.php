@@ -362,6 +362,11 @@ class CheckoutController extends Controller
     /** The 201: the order, its payment as the database holds it, and the "needs attention" sentence when the payment step failed. */
     private function placedResponse(CheckoutResult $result): JsonResponse
     {
+        // ACC-2: a GUEST order placed with the email of a VERIFIED account is attached to it (the same rule and code as the verification trigger; never throws)
+        if (! $result->isAlreadyPlaced() && $result->order()->accountId() === null) {
+            app(\App\Services\GuestOrderAttacher::class)->afterGuestPlacement($result->order()->email());
+        }
+
         $body = [
             'order' => $this->orderToArray($result->order()),
             'shipping' => $this->shippingToArray($result->order()),

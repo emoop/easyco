@@ -97,6 +97,9 @@ final class ApiRateLimits
 
     public const ACCOUNT_TOKEN = 'account-token';
 
+    // ACC-2: the two read endpoints of the customer's own orders; keyed by IP + the logged-in account (the cart-identity half of the key IS the account here)
+    public const ACCOUNT_READ = 'account-read';
+
     public const DEFAULT_PER_MINUTE = 30;
 
     /**
@@ -118,6 +121,7 @@ final class ApiRateLimits
         self::VERIFY_RESEND => 'rate_limit.too_many_requests',
         self::EMAIL_CHANGE => 'rate_limit.too_many_requests',
         self::ACCOUNT_TOKEN => 'rate_limit.too_many_requests',
+        self::ACCOUNT_READ => 'rate_limit.too_many_requests',
     ];
 
     /** The limiters keyed by the IP alone — see this class's own docblock, "TWO KEY SHAPES". */

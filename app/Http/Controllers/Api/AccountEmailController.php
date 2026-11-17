@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Mail\AccountMails;
+use App\Services\GuestOrderAttacher;
 use EasyCo\Account\Persistence\Eloquent\AccountModel;
 use EasyCo\Account\Security\AccountSessionVersion;
 use EasyCo\Account\Security\SignedLink;
@@ -31,6 +32,7 @@ class AccountEmailController extends Controller
 
     public function __construct(
         private readonly AccountMails $mails,
+        private readonly GuestOrderAttacher $attacher,
     ) {
     }
 
@@ -106,6 +108,9 @@ class AccountEmailController extends Controller
         AccountSessionVersion::bump($account, $current instanceof AccountModel && $current->is($account) && $request->hasSession() ? $request->session() : null);
 
         Hook::fire('account.email_changed', (string) $account->getKey());
+
+        // ACC-2: the NEW address is proven: its guest orders become hers (the old address's guest orders stay where they are)
+        $this->attacher->attach($account);
 
         return response()->json(['message' => $this->says('email.confirmed')]);
     }
