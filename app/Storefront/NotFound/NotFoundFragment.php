@@ -43,7 +43,7 @@ final class NotFoundFragment
             return self::render($set);
         }
 
-        $shown = ['bottom' => $set['bottom'], 'tiles' => $set['tiles'], 'products' => $set['products'], 'block' => $set['block']];
+        $shown = ['bottom' => $set['bottom'], 'tiles' => $set['tiles'], 'categories' => $set['categories'], 'products' => $set['products'], 'block' => $set['block']];
         $key = 'storefront.notfound.fragment.v'.CacheVersion::get('all').'-'.CacheVersion::get('sitemap').'.'.substr(sha1((string) json_encode($shown)), 0, 16);
 
         try {
@@ -77,7 +77,9 @@ final class NotFoundFragment
      */
     private static function tiles(array $set): ?array
     {
-        $ids = array_map(static fn ($node): int => (int) $node->id, app(CategoryIndex::class)->tree());
+        // NF-1.1: the chosen categories (in the order chosen; a category without a picture or without a visible product is skipped by HomeTiles::resolve); nothing chosen = the top-level ones, as before
+        $chosen = $set['categories'] ?? [];
+        $ids = $chosen !== [] ? $chosen : array_map(static fn ($node): int => (int) $node->id, app(CategoryIndex::class)->tree());
 
         if ($ids === []) {
             return null;
@@ -85,9 +87,24 @@ final class NotFoundFragment
 
         $settings = ['columns' => self::COLUMNS[$set['tiles']] ?? '4', 'columns_phone' => '2', 'tiles' => array_map(static fn (int $id): array => ['source' => 'category', 'entity' => $id, 'label' => '', 'picture' => null, 'link' => null], $ids)] + HomeCatalog::defaultsFor('tiles');
         $layout = ['spacing' => HomeCatalog::DEFAULT_SPACING, 'sections' => [['type' => 'tiles', 'settings' => $settings]]];
-        $list = array_slice(HomeTiles::resolve($layout)['tiles']['0'] ?? [], 0, (int) $set['tiles']);
+        // with a choice every chosen category may be shown (up to the maximum); without one the count of the panel applies
+        $limit = $chosen !== [] ? NotFoundSet::CATEGORIES_MAX : (int) $set['tiles'];
+        $list = array_slice(HomeTiles::resolve($layout)['tiles']['0'] ?? [], 0, $limit);
 
-        return HomeView::prepare(['layout' => $layout, 'blocks' => [], 'tiles' => ['0' => $list], 'carousels' => []]);
+        if ($list === []) {
+            return null;
+        }
+
+        // NF-1.1: the columns follow the tiles actually SHOWN: 1–4 → that many, 5–6 → 3, 7–12 → 4 (the phone keeps 2)
+        $shown = count($list);
+        $columns = $shown <= 4 ? (string) $shown : ($shown <= 6 ? '3' : '4');
+        $html = HomeView::prepare(['layout' => $layout, 'blocks' => [], 'tiles' => ['0' => $list], 'carousels' => []]);
+
+        if ($html !== null) {
+            $html['items'][0]['tiles']['class'] = (string) preg_replace('/sf-hp-tc-\d+/', 'sf-hp-tc-'.$columns, (string) $html['items'][0]['tiles']['class']).' sf-nf-tiles';
+        }
+
+        return $html;
     }
 
     /**

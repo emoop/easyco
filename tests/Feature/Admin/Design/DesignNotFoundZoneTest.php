@@ -78,7 +78,8 @@ class DesignNotFoundZoneTest extends TestCase
         $zone = new \App\Filament\Design\Zones\NotFoundZone;
         $names = array_map(static fn ($component): string => (string) (method_exists($component, 'getName') ? $component->getName() : $component->getStatePath(false)), $zone->propsComponents([], '', null));
 
-        $this->assertSame(['title', 'text', 'search', 'bottom', 'tiles', 'products', 'block', 'button'], $names);
+        // NF-1.1: «Категории» right after «Съдържание отдолу»
+        $this->assertSame(['title', 'text', 'search', 'bottom', 'categories', 'tiles', 'products', 'block', 'button'], $names);
 
         $html = $this->screen()->html();
         $this->assertStringContainsString('Title', $html);

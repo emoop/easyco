@@ -32,6 +32,9 @@ final class NotFoundSet
 
     public const DEFAULT_TILES = '8';
 
+    /** NF-1.1: the most categories the owner can choose for the tiles (an empty list = the top-level categories, as before). */
+    public const CATEGORIES_MAX = 12;
+
     /** The settings of the product grid the 404 holds: the home page product grid's schema, without the two every section has. */
     public static function productKeys(): array
     {
@@ -53,6 +56,7 @@ final class NotFoundSet
             'search' => true,
             'bottom' => self::DEFAULT_BOTTOM,
             'tiles' => self::DEFAULT_TILES,
+            'categories' => [],
             'products' => self::productDefaults(),
             'block' => null,
             'button' => true,
@@ -129,6 +133,19 @@ final class NotFoundSet
             $set['tiles'] = $tiles;
         }
 
+        // NF-1.1: the chosen categories: a list of ids, no duplicates, at most CATEGORIES_MAX; that they exist (and show) is the page's question, not the save's
+        $categories = $value['categories'] ?? [];
+
+        if (! is_array($categories) || ! array_is_list($categories) || array_filter($categories, static fn (mixed $id): bool => ! is_int($id) || $id < 1) !== []) {
+            $fail('categories', 'bad_categories');
+        } elseif (count(array_unique($categories)) !== count($categories)) {
+            $fail('categories', 'duplicate_categories');
+        } elseif (count($categories) > self::CATEGORIES_MAX) {
+            $fail('categories', 'too_many_categories', ['max' => self::CATEGORIES_MAX]);
+        } else {
+            $set['categories'] = $categories;
+        }
+
         if (array_key_exists('products', $value)) {
             [$products, $problems] = self::products($value['products']);
 
@@ -186,6 +203,17 @@ final class NotFoundSet
 
         $tiles = is_int($stored['tiles'] ?? null) ? (string) $stored['tiles'] : ($stored['tiles'] ?? null);
         is_string($tiles) && in_array($tiles, self::TILE_COUNTS, true) && $set['tiles'] = $tiles;
+
+        // NF-1.1: a bad list is an empty list; a bad id, a duplicate or a list past the maximum is dropped (the rest is kept, the first CATEGORIES_MAX)
+        if (is_array($stored['categories'] ?? null) && array_is_list($stored['categories'])) {
+            $ids = [];
+
+            foreach ($stored['categories'] as $id) {
+                is_int($id) && $id > 0 && ! in_array($id, $ids, true) && $ids[] = $id;
+            }
+
+            $set['categories'] = array_slice($ids, 0, self::CATEGORIES_MAX);
+        }
 
         if (array_key_exists('products', $stored)) {
             [$products, $problems] = self::products($stored['products']);

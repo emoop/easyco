@@ -6630,3 +6630,26 @@ html:not(.js) .sf-bar-item:focus-within > .sf-sub {
         width: 100%;
     }
 }
+
+/* NF-1.1: a tile row that is not full is centred (the 404's own tiles only; the home page's tiles are unchanged). The row is a flex row: each tile takes the width of
+   one column of the grid it would have had (its column count is the sf-hp-tc-N of the row), so a row of 2 in 4 columns sits in the middle. */
+.sf-nf-tiles {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+.sf-nf-tiles > li {
+    width: calc((100% - (var(--sf-nf-gap, 1rem)) * 3) / 4);
+}
+
+.sf-nf-tiles.sf-hp-tc-1 > li { width: 100%; }
+.sf-nf-tiles.sf-hp-tc-2 > li { width: calc((100% - var(--sf-nf-gap, 1rem)) / 2); }
+.sf-nf-tiles.sf-hp-tc-3 > li { width: calc((100% - (var(--sf-nf-gap, 1rem)) * 2) / 3); }
+.sf-nf-tiles.sf-hp-tc-4 > li { width: calc((100% - (var(--sf-nf-gap, 1rem)) * 3) / 4); }
+
+@media (max-width: 40rem) {
+    .sf-nf-tiles > li {
+        width: calc((100% - var(--sf-nf-gap, 1rem)) / 2);
+    }
+}

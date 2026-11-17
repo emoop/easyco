@@ -5,6 +5,7 @@ namespace App\Filament\Design\Zones;
 use App\Content\HtmlBlocks\HtmlBlockModel;
 use App\Filament\Design\FieldForms;
 use App\Filament\Design\InfoHint;
+use App\Filament\Resources\CategoryResource;
 use App\Http\Controllers\Storefront\DesignPreviewController;
 use App\Storefront\Home\HomeCatalog;
 use App\Storefront\NotFound\NotFoundSet;
@@ -152,9 +153,15 @@ final class NotFoundZone implements DesignZone
             Toggle::make('search')->label((string) __('design.notfound.fields.search'))->afterLabel($hint('search'))->default(true),
             Select::make('bottom')->label((string) __('design.notfound.fields.bottom'))->afterLabel($hint('bottom'))->native(false)->selectablePlaceholder(false)->live()->default(NotFoundSet::DEFAULT_BOTTOM)
                 ->options(array_combine(NotFoundSet::BOTTOMS, array_map(static fn (string $b): string => (string) __('design.notfound.bottoms.'.$b), NotFoundSet::BOTTOMS))),
+            // NF-1.1: the SAME category picker as the product edit form (ProductResource::sidebarComponents: a multiple Select over CategoryResource::hierarchicalOptions(), tree order, searchable);
+            // it cannot filter by picture without changing that form, so it offers every category, and the page skips those without a picture or a visible product.
+            Select::make('categories')->label((string) __('design.notfound.fields.categories'))->afterLabel($hint('categories'))->native(false)->multiple()->searchable()->maxItems(NotFoundSet::CATEGORIES_MAX)->default([])
+                ->options(static fn (): array => CategoryResource::hierarchicalOptions())
+                ->visible(static fn (Get $get): bool => $bottom($get) === 'tiles'),
+            // «Брой плочки» only while no category is chosen (an empty list = the top-level categories with this count)
             Select::make('tiles')->label((string) __('design.notfound.fields.tiles'))->afterLabel($hint('tiles'))->native(false)->selectablePlaceholder(false)->default(NotFoundSet::DEFAULT_TILES)
                 ->options(array_combine(NotFoundSet::TILE_COUNTS, NotFoundSet::TILE_COUNTS))
-                ->visible(static fn (Get $get): bool => $bottom($get) === 'tiles'),
+                ->visible(static fn (Get $get): bool => $bottom($get) === 'tiles' && ($get('categories') ?? []) === []),
             Group::make([
                 Select::make('source')->label((string) __('design.home.products.settings.source'))->afterLabel(InfoHint::make((string) __('design.home.products.hints.source'), 'notfound-products-source'))->native(false)->selectablePlaceholder(false)->live()->default('newest')
                     ->options(array_combine(HomeCatalog::offered(HomeCatalog::PRODUCT_SOURCES), array_map(static fn (string $s): string => (string) __('design.home.products.sources.'.$s), HomeCatalog::offered(HomeCatalog::PRODUCT_SOURCES))))
@@ -186,6 +193,7 @@ final class NotFoundZone implements DesignZone
             'search' => $set['search'],
             'bottom' => $set['bottom'],
             'tiles' => $set['tiles'],
+            'categories' => $set['categories'],
             'products' => ['source' => (string) $products['source'], 'entity' => $products['entity'] ?? null, 'count' => (string) $products['count'], 'sort' => (string) $products['sort']],
             'block' => $set['block'],
             'button' => $set['button'],
@@ -204,6 +212,7 @@ final class NotFoundZone implements DesignZone
             'search' => (bool) ($raw['search'] ?? false),
             'bottom' => $raw['bottom'] ?? NotFoundSet::DEFAULT_BOTTOM,
             'tiles' => is_int($raw['tiles'] ?? null) ? (string) $raw['tiles'] : ($raw['tiles'] ?? NotFoundSet::DEFAULT_TILES),
+            'categories' => is_array($raw['categories'] ?? null) ? array_values(array_map(static fn (mixed $id): mixed => FieldValues::id($id), $raw['categories'])) : [],
             'products' => [
                 'source' => $products['source'] ?? 'newest',
                 'entity' => FieldValues::id($products['entity'] ?? null),
