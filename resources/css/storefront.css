@@ -6631,3 +6631,88 @@ html:not(.js) .sf-bar-item:focus-within > .sf-sub {
         width: calc((100% - var(--sf-nf-gap, 1rem)) / 2);
     }
 }
+
+/* ===== ACC-3a: the account pages (login, register, forgot / reset password, verify, email confirm, /account) =============== */
+/* One centred column of at most ~420px (26rem), the checkout's own field, error and button look (.sf-field, .sf-float, .sf-field-error, .sf-place-order). Works at 320px. */
+@layer components {
+    .sf-account {
+        @apply mx-auto w-full max-w-[26rem];
+    }
+
+    .sf-account-title {
+        @apply mb-4 mt-2;
+    }
+
+    .sf-account-form {
+        @apply space-y-4;
+    }
+
+    .sf-account-intro,
+    .sf-account-greeting {
+        @apply mb-4 text-sm text-neutral-600;
+    }
+
+    .sf-account-greeting {
+        @apply text-base text-neutral-900;
+    }
+
+    .sf-account-status,
+    .sf-account-notice {
+        @apply mb-4 rounded-lg border p-3 text-sm font-medium;
+    }
+
+    .sf-account-status[data-state='info'],
+    .sf-account-status[data-state='success'],
+    .sf-account-notice {
+        @apply border-neutral-200 bg-white text-neutral-900;
+    }
+
+    .sf-account-status[data-state='error'] {
+        @apply border-red-300 bg-red-50 text-red-900;
+    }
+
+    .sf-account .sf-field input[type='password'] {
+        @apply h-[3.25rem] w-full rounded-lg border border-neutral-300 bg-white px-3 text-base text-neutral-900;
+    }
+
+    .sf-account .sf-field input[type='password']:focus-visible,
+    .sf-account .sf-field input[type='email']:focus-visible {
+        outline: 2px solid #0369a1;
+        outline-offset: 0;
+        border-color: #0369a1;
+    }
+
+    .sf-account .sf-field input[type='password'][aria-invalid='true'] {
+        @apply border-red-700 bg-red-50;
+    }
+
+    /* the show / hide button sits INSIDE the field, on the right, 44px tall target */
+    .sf-account-password > input {
+        padding-right: 5.5rem;
+    }
+
+    .sf-account-toggle {
+        @apply absolute right-1 top-0 z-[2] inline-flex h-[3.25rem] min-w-[3rem] items-center justify-center px-3 text-sm font-medium text-neutral-600;
+    }
+
+    .sf-account-toggle:focus-visible {
+        outline: 2px solid #0369a1;
+        outline-offset: -2px;
+    }
+
+    .sf-account-remember {
+        @apply mt-1;
+    }
+
+    .sf-account-links {
+        @apply mt-5 flex flex-col gap-2 text-sm;
+    }
+
+    .sf-account-resend {
+        @apply mt-4;
+    }
+
+    .sf-account-secondary {
+        @apply inline-flex min-h-[2.75rem] w-full items-center justify-center rounded-lg border border-neutral-300 bg-white px-4 text-sm font-semibold text-neutral-900;
+    }
+}

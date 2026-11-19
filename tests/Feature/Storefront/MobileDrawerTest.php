@@ -50,6 +50,25 @@ class MobileDrawerTest extends TestCase
         app('router')->getRoutes()->refreshNameLookups();
     }
 
+    /**
+     * ACC-3a: the app now registers the real `storefront.account` route. A test that is about the state WITHOUT an account route removes it from the
+     * route table first (its assertions are unchanged).
+     *
+     * @param  list<string>  $names
+     */
+    private function withoutRoutes(array $names): void
+    {
+        $kept = new \Illuminate\Routing\RouteCollection();
+
+        foreach (app('router')->getRoutes() as $route) {
+            if (! in_array($route->getName(), $names, true)) {
+                $kept->add($route);
+            }
+        }
+
+        app('router')->setRoutes($kept);
+    }
+
     /** @param  (callable(array<string, mixed>): array<string, mixed>)|null  $change */
     private function drawer(?callable $change = null): string
     {
@@ -80,6 +99,7 @@ class MobileDrawerTest extends TestCase
 
     public function test_without_a_search_route_the_top_bar_shows_the_title_and_without_account_routes_there_are_no_account_rows(): void
     {
+        $this->withoutRoutes(['storefront.account']);
         $html = $this->drawer();
 
         $this->assertStringContainsString('<p class="sf-drawer-title" id="sf-drawer-title">Menu</p>', $html);

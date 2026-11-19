@@ -298,7 +298,10 @@ class StorefrontOrderReceivedTest extends TestCase
         $this->assertStringContainsString('<p class="sf-received-email">We sent a confirmation to guest@example.com.</p>', $html);
         $this->assertStringNotContainsString('Keep this page address', $html);
         $this->assertStringNotContainsString('only way to see this order again', $html);
-        $this->assertDoesNotMatchRegularExpression('/account|sign in|log in/i', $html, 'the page is cookie-free: it cannot know who is logged in, so it says nothing about an account');
+        // ACC-3a: the shop's header now has the person icon (a link to /account, the same for every visitor), so the check reads the page's OWN content, <main>
+        $main = (string) substr($html, (int) strpos($html, '<main'), (int) strpos($html, '</main>') - (int) strpos($html, '<main'));
+        $this->assertNotSame('', $main, 'the page has a <main>');
+        $this->assertDoesNotMatchRegularExpression('/account|sign in|log in/i', $main, 'the page is cookie-free: it cannot know who is logged in, so it says nothing about an account');
     }
 
     public function test_the_confirmation_sentence_is_translated(): void

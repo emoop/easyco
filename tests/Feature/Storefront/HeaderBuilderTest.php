@@ -468,6 +468,17 @@ class HeaderBuilderTest extends TestCase
 
     public function test_search_account_and_wishlist_are_stored_but_print_nothing_until_their_routes_exist(): void
     {
+        // ACC-3a: the app now registers the real `storefront.account` route; this test is about the state WITHOUT it (its assertions are unchanged)
+        $kept = new \Illuminate\Routing\RouteCollection();
+
+        foreach (app('router')->getRoutes() as $route) {
+            if ($route->getName() !== 'storefront.account') {
+                $kept->add($route);
+            }
+        }
+
+        app('router')->setRoutes($kept);
+
         $layout = $this->layout(function (array $l): array {
             $l['desktop']['rows']['top'] = ['enabled' => true, 'height' => 36, 'left' => [['type' => 'wishlist', 'settings' => ['style' => 'icon', 'show_count' => true]]], 'center' => [], 'right' => []];
 

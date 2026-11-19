@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Storefront\AccountPageController;
 use App\Http\Controllers\Storefront\CardSizesController;
 use App\Http\Controllers\Storefront\CartPageController;
 use App\Http\Controllers\Storefront\CategoryController;
@@ -17,8 +18,10 @@ use App\Http\Controllers\Storefront\SitemapController;
 use App\Http\Controllers\Storefront\SubjectIndexController;
 use App\Http\Controllers\Storefront\SubjectListingController;
 use App\Http\Controllers\Storefront\TrapController;
+use App\Http\Middleware\EnsureAccountSessionIsCurrent;
 use App\Http\Middleware\LimitFilteredCategoryRequests;
 use App\Http\Middleware\LimitSearchRequests;
+use App\Storefront\Account\AccountPageHeaders;
 use App\Storefront\Cache\StorefrontCacheHeaders;
 use App\Storefront\Orders\OrderReceivedHeaders;
 use App\Storefront\Support\NotFoundResponse;
@@ -161,6 +164,34 @@ Route::middleware([OrderReceivedHeaders::class, SecurityHeaders::class, ApplySto
         Route::get('/order/received/{orderNumber}', [OrderReceivedController::class, 'show'])
             ->where('orderNumber', '[\s\S]*')
             ->name('storefront.order.received');
+    });
+
+/*
+| ACC-3a: the account pages (storefront-account.js drives them on the stateful account API). Never cacheable, noindex. The paths are the ones the account
+| MAILS already link to (App\Mail\AccountMails): /account/verify, /account/reset, /account/forgot, /account/email/confirm, /account/login.
+| The token pages (reset, verify, email confirm) add `Referrer-Policy: no-referrer`: AccountPageHeaders is listed BEFORE SecurityHeaders so its policy is written last.
+| Cookie-free like the rest of the storefront, EXCEPT `/account` itself (below): it must know who is signed in.
+*/
+Route::middleware([AccountPageHeaders::class, SecurityHeaders::class, ApplyStorefrontTheme::class])
+    ->withoutMiddleware($withoutSession)
+    ->group(function (): void {
+        Route::get('/account/login', [AccountPageController::class, 'login'])->name('storefront.account.login');
+        Route::get('/account/register', [AccountPageController::class, 'register'])->name('storefront.account.register');
+        Route::get('/account/forgot', [AccountPageController::class, 'forgot'])->name('storefront.account.forgot');
+    });
+
+Route::middleware([AccountPageHeaders::class.':no-referrer', SecurityHeaders::class, ApplyStorefrontTheme::class])
+    ->withoutMiddleware($withoutSession)
+    ->group(function (): void {
+        Route::get('/account/reset', [AccountPageController::class, 'reset'])->name('storefront.account.reset');
+        Route::get('/account/verify', [AccountPageController::class, 'verify'])->name('storefront.account.verify');
+        Route::get('/account/email/confirm', [AccountPageController::class, 'emailConfirm'])->name('storefront.account.email-confirm');
+    });
+
+// `/account`: the web group's session stays (a guest is redirected to the login, a customer is greeted); the soft check first: a stale session is a guest.
+Route::middleware([EnsureAccountSessionIsCurrent::class.':soft', AccountPageHeaders::class, SecurityHeaders::class, ApplyStorefrontTheme::class])
+    ->group(function (): void {
+        Route::get('/account', [AccountPageController::class, 'home'])->name('storefront.account');
     });
 
 /*
