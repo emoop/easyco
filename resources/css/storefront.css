@@ -6716,3 +6716,148 @@ html:not(.js) .sf-bar-item:focus-within > .sf-sub {
         @apply inline-flex min-h-[2.75rem] w-full items-center justify-center rounded-lg border border-neutral-300 bg-white px-4 text-sm font-semibold text-neutral-900;
     }
 }
+
+/* ===== ACC-3b-1: the account area (menu, dashboard tiles, orders table / cards, order detail) ============================== */
+/* Desktop (≥ 48rem): the menu on the left, the page on the right. Phone: the menu is a list at the top, the page below. The orders list is ONE markup: a table, and one card per order at ≤ 40rem (CSS only). */
+@layer components {
+    .sf-account-area {
+        @apply mx-auto w-full max-w-5xl;
+    }
+
+    .sf-acc-layout {
+        @apply mt-4 grid gap-6;
+    }
+
+    @media (min-width: 48rem) {
+        .sf-acc-layout {
+            grid-template-columns: 14rem minmax(0, 1fr);
+        }
+    }
+
+    .sf-acc-menu-list {
+        @apply divide-y divide-neutral-200 overflow-hidden rounded-lg border border-neutral-200 bg-white;
+    }
+
+    .sf-acc-menu-link {
+        @apply flex min-h-[2.75rem] w-full items-center px-4 text-left text-sm font-medium text-neutral-800;
+    }
+
+    .sf-acc-menu-link[aria-current='page'] {
+        @apply bg-neutral-100 font-semibold text-neutral-900;
+        box-shadow: inset 3px 0 0 var(--sf-primary, oklch(20.5% 0 none));
+    }
+
+    .sf-acc-menu-link:focus-visible,
+    .sf-acc-tile-link:focus-visible,
+    .sf-acc-order-link:focus-visible,
+    .sf-acc-pager-link:focus-visible {
+        outline: 2px solid #0369a1;
+        outline-offset: -2px;
+    }
+
+    .sf-acc-tiles {
+        @apply mt-4 grid grid-cols-2 gap-3;
+    }
+
+    @media (min-width: 40rem) {
+        .sf-acc-tiles {
+            @apply grid-cols-4;
+        }
+    }
+
+    .sf-acc-tile > form {
+        @apply h-full;
+    }
+
+    .sf-acc-tile-link {
+        @apply flex h-full min-h-[6.5rem] w-full flex-col items-center justify-center gap-2 rounded-lg border border-neutral-200 bg-white p-3 text-center text-sm font-semibold text-neutral-900;
+    }
+
+    .sf-acc-tile-icon {
+        @apply text-neutral-700;
+    }
+
+    .sf-acc-orders {
+        @apply w-full border-collapse text-left text-sm;
+    }
+
+    .sf-acc-orders thead th {
+        @apply border-b border-neutral-300 px-3 py-2 font-semibold text-neutral-600;
+    }
+
+    .sf-acc-order > * {
+        @apply border-b border-neutral-200 px-3 py-3 align-middle;
+    }
+
+    .sf-acc-order-number {
+        @apply font-semibold text-neutral-900;
+    }
+
+    .sf-acc-order-count {
+        @apply text-neutral-600;
+    }
+
+    .sf-acc-order-link {
+        @apply inline-flex min-h-[2.75rem] items-center justify-center rounded-lg border border-neutral-300 bg-white px-4 text-sm font-semibold text-neutral-900;
+    }
+
+    @media (max-width: 40rem) {
+        .sf-acc-orders,
+        .sf-acc-orders tbody {
+            @apply block;
+        }
+
+        /* the column headings stay for assistive technology, off screen */
+        .sf-acc-orders thead {
+            @apply sr-only;
+        }
+
+        .sf-acc-order {
+            @apply mb-3 grid grid-cols-2 gap-x-3 gap-y-1 rounded-lg border border-neutral-200 bg-white p-3;
+        }
+
+        .sf-acc-order > * {
+            @apply border-0 p-0;
+        }
+
+        .sf-acc-order-date {
+            @apply text-right text-neutral-600;
+        }
+
+        .sf-acc-order-total {
+            @apply text-right;
+        }
+
+        .sf-acc-order-view {
+            @apply col-span-2 mt-2;
+        }
+
+        .sf-acc-order-link {
+            @apply w-full;
+        }
+    }
+
+    .sf-acc-pager {
+        @apply mt-4 flex items-center justify-between gap-3 text-sm;
+    }
+
+    .sf-acc-pager-link {
+        @apply inline-flex min-h-[2.75rem] items-center rounded-lg border border-neutral-300 bg-white px-4 font-semibold text-neutral-900;
+    }
+
+    .sf-acc-pager-page {
+        @apply text-neutral-600;
+    }
+
+    .sf-acc-empty {
+        @apply mx-auto max-w-[26rem] py-8 text-center;
+    }
+
+    .sf-acc-empty-title {
+        @apply mb-4 text-lg font-semibold text-neutral-900;
+    }
+
+    .sf-acc-back {
+        @apply mt-6 text-sm;
+    }
+}

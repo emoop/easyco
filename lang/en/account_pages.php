@@ -42,6 +42,33 @@ return [
     'notice_password_reset' => 'The password was changed. Sign in with the new password.',
 
     'home_greeting' => 'Hello, :email',
+    // ACC-3b-1: the account area (menu, dashboard, orders, order detail, the two placeholders)
+    'menu_label' => 'Account menu',
+    'menu_dashboard' => 'Dashboard',
+    'menu_orders' => 'Orders',
+    'menu_addresses' => 'Addresses',
+    'menu_details' => 'Details',
+    'home_intro' => 'Follow your orders and manage your profile from here.',
+    'orders_title' => 'Orders',
+    'addresses_title' => 'Addresses',
+    'details_title' => 'Details',
+    'order_title' => 'Order no. :number',
+    'soon' => 'Coming soon',
+    'col_order' => 'Order',
+    'col_date' => 'Date',
+    'col_status' => 'Status',
+    'col_total' => 'Total',
+    'view_order' => 'View',
+    'orders_for_items' => '{1} for :count item|[0,*] for :count items',
+    'orders_empty' => 'You have no orders yet',
+    'orders_empty_link' => 'Go to the shop',
+    'pager_label' => 'Order pages',
+    'pager_newer' => 'Newer',
+    'pager_older' => 'Older',
+    'pager_page' => 'Page :page of :last',
+    'back_to_orders' => '← All orders',
+    'order_tracking' => 'Tracking',
+
     'logout' => 'Sign out',
 
     'js' => [

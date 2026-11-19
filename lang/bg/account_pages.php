@@ -42,6 +42,33 @@ return [
     'notice_password_reset' => 'Паролата е сменена. Влез с новата парола.',
 
     'home_greeting' => 'Здравей, :email',
+    // ACC-3b-1: the account area (menu, dashboard, orders, order detail, the two placeholders)
+    'menu_label' => 'Меню на профила',
+    'menu_dashboard' => 'Табло',
+    'menu_orders' => 'Поръчки',
+    'menu_addresses' => 'Адреси',
+    'menu_details' => 'Данни',
+    'home_intro' => 'Оттук следиш поръчките си и управляваш профила си.',
+    'orders_title' => 'Поръчки',
+    'addresses_title' => 'Адреси',
+    'details_title' => 'Данни',
+    'order_title' => 'Поръчка № :number',
+    'soon' => 'Скоро',
+    'col_order' => 'Поръчка',
+    'col_date' => 'Дата',
+    'col_status' => 'Статус',
+    'col_total' => 'Общо',
+    'view_order' => 'Преглед',
+    'orders_for_items' => '{1} за :count продукт|[0,*] за :count продукта',
+    'orders_empty' => 'Още нямаш поръчки',
+    'orders_empty_link' => 'Към магазина',
+    'pager_label' => 'Страници с поръчки',
+    'pager_newer' => 'По-нови',
+    'pager_older' => 'По-стари',
+    'pager_page' => 'Страница :page от :last',
+    'back_to_orders' => '← Всички поръчки',
+    'order_tracking' => 'Проследяване',
+
     'logout' => 'Изход',
 
     'js' => [

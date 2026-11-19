@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Storefront\AccountAreaController;
 use App\Http\Controllers\Storefront\AccountPageController;
 use App\Http\Controllers\Storefront\CardSizesController;
 use App\Http\Controllers\Storefront\CartPageController;
@@ -188,10 +189,15 @@ Route::middleware([AccountPageHeaders::class.':no-referrer', SecurityHeaders::cl
         Route::get('/account/email/confirm', [AccountPageController::class, 'emailConfirm'])->name('storefront.account.email-confirm');
     });
 
-// `/account`: the web group's session stays (a guest is redirected to the login, a customer is greeted); the soft check first: a stale session is a guest.
+// `/account` and the account area (ACC-3b-1: dashboard, orders, one order, the two placeholders): the web group's session stays (a guest is redirected to the login with this page
+// as the way back); the soft check first: a stale session is a guest. Never cacheable.
 Route::middleware([EnsureAccountSessionIsCurrent::class.':soft', AccountPageHeaders::class, SecurityHeaders::class, ApplyStorefrontTheme::class])
     ->group(function (): void {
-        Route::get('/account', [AccountPageController::class, 'home'])->name('storefront.account');
+        Route::get('/account', [AccountAreaController::class, 'dashboard'])->name('storefront.account');
+        Route::get('/account/orders', [AccountAreaController::class, 'orders'])->name('storefront.account.orders');
+        Route::get('/account/orders/{number}', [AccountAreaController::class, 'order'])->name('storefront.account.order');
+        Route::get('/account/addresses', [AccountAreaController::class, 'addresses'])->name('storefront.account.addresses');
+        Route::get('/account/details', [AccountAreaController::class, 'details'])->name('storefront.account.details');
     });
 
 /*

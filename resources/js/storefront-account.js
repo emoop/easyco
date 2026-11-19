@@ -436,21 +436,23 @@ function start(root) {
         });
     }
 
-    // ---- /account (the ACC-3a placeholder): sign out -----------------------------------------------------------------------------------------------------------------
+    // ---- the account area (ACC-3a placeholder, ACC-3b-1 pages): sign out, from the menu AND from the dashboard tile (every form binds the same handler) ---------------------
     if (page === 'home') {
-        onSubmit(root.querySelector('[data-sf-account-logout-form]'), async function () {
-            var result = await call('POST', '/api/account/logout');
+        root.querySelectorAll('[data-sf-account-logout-form]').forEach(function (logoutForm) {
+            onSubmit(logoutForm, async function () {
+                var result = await call('POST', '/api/account/logout');
 
-            // 204 = signed out; 401 = the session was already gone: either way the visitor is a guest now
-            if (result !== null && (result.status === 204 || result.status === 401)) {
-                window.location.assign(loginUrl);
+                // 204 = signed out; 401 = the session was already gone: either way the visitor is a guest now
+                if (result !== null && (result.status === 204 || result.status === 401)) {
+                    window.location.assign(loginUrl);
 
-                return true;
-            }
+                    return true;
+                }
 
-            say(t('generic_error'), 'error');
+                say(t('generic_error'), 'error');
 
-            return false;
+                return false;
+            });
         });
     }
 }
