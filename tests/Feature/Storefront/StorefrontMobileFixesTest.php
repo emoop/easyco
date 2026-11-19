@@ -154,7 +154,7 @@ class StorefrontMobileFixesTest extends TestCase
         preg_match('/<button class="sf-menu-toggle".*?<\/button>/s', $html, $button);
         $this->assertSame('Menu', trim(strip_tags($button[0])), 'the only text is the hidden accessible name (D3: the menu is no longer only categories)');
         $this->assertStringNotContainsString('aria-label', $button[0], 'no label duplicating the name');
-        $this->assertSame(4, substr_count($html, '<svg'), 'D2: the hamburger, the two bags (desktop and phone) and the drawer close icon, nothing else');
+        $this->assertSame(6, substr_count($html, '<svg'), 'D2 + ACC-3a: the hamburger, the two bags (desktop and phone), the drawer close icon and the account icon (desktop header + drawer row), nothing else');
         $this->assertNoActiveContent($html, 'layout');
     }
 

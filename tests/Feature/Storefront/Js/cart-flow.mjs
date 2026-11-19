@@ -220,7 +220,10 @@ globalThis.fetch = async (path, init = {}) => {
         result = { status: 200, data: currentCart() };
     }
 
-    return { status: result.status, json: async () => result.data };
+    // ACC-3a.1: a scripted answer with a header (the 429 of the account API); every other answer has NO headers object, as before
+    if (path === '/api/test-throttled') result = { status: 429, data: null, headers: { 'Retry-After': '120' } };
+
+    return { status: result.status, json: async () => result.data, ...(result.headers ? { headers: { get: (name) => result.headers[name] ?? null } } : {}) };
 };
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 40));
@@ -413,6 +416,21 @@ const scenarios = {
         assert.equal(gets().length, 2, 'asked again');
         assert.equal(byClass('sf-cart-line').length, 1, 'the cart is shown without a page reload');
         assert.equal(q('[data-sf-cart-status]').textContent, '', 'the message is cleared');
+    },
+
+    // ACC-3a.1: api() hands the Retry-After header on (retryAfter), and a response without headers is retryAfter null and the cart still works.
+    async api_returns_retry_after_and_survives_a_response_without_headers() {
+        await open([line(7, 1)]);
+        const { api } = await import(new URL('../../../../resources/js/storefront-cart.js', import.meta.url));
+
+        const throttled = await api('GET', '/api/test-throttled');
+        assert.equal(throttled.status, 429);
+        assert.equal(throttled.retryAfter, '120', 'the header value');
+
+        const plain = await api('GET', '/api/cart');
+        assert.equal(plain.status, 200);
+        assert.equal(plain.retryAfter, null, 'no headers object: null, no throw');
+        assert.equal(byClass('sf-cart-line').length, 1, 'the cart page itself rendered through the same api()');
     },
 };
 

@@ -101,7 +101,7 @@ async function api(method, path, body) {
         }
 
         // retryAfter: the 429's Retry-After header in seconds (null when absent), for the account pages' "try again in N min"
-        return { status: response.status, data: data, retryAfter: response.headers.get('Retry-After') };
+        return { status: response.status, data: data, retryAfter: response.headers && typeof response.headers.get === 'function' ? response.headers.get('Retry-After') : null };
     }
 
     var result = await attempt();

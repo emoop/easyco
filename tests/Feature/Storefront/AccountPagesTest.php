@@ -72,7 +72,7 @@ class AccountPagesTest extends TestCase
     // ---- markup rules ----------------------------------------------------------------------------------------------------------
 
     #[DataProvider('pages')]
-    public function test_no_inline_script_no_style_attribute_and_no_resource_from_another_host(string $url): void
+    public function test_no_inline_script_no_style_attribute_and_no_resource_from_another_host(string $url, bool $tokenPage): void
     {
         $html = (string) $this->get($url)->assertOk()->getContent();
 

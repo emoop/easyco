@@ -32,7 +32,7 @@ class StorefrontCartFlowTest extends TestCase
         $names = [
             'empty_state_without_cookie', 'cart_with_lines_has_the_summary_the_stepper_and_an_enabled_checkout_link', 'a_promotion_shows_its_discount_row',
             'plus_sends_one_patch', 'typing_a_quantity_sends_one_patch', 'minus_at_one_sends_nothing', 'minus_above_one_steps_down',
-            'an_invalid_quantity_is_put_back', 'in_flight_disables_the_controls', 'a_failure_offers_a_retry',
+            'an_invalid_quantity_is_put_back', 'in_flight_disables_the_controls', 'a_failure_offers_a_retry', 'api_returns_retry_after_and_survives_a_response_without_headers',
         ];
 
         return array_combine($names, array_map(fn (string $name): array => [$name], $names));
