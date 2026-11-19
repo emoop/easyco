@@ -32,6 +32,12 @@ abstract class TestCase extends BaseTestCase
     {
         parent::setUp();
 
+        // Livewire keeps "a component was rendered, inject my assets into the next html response" in statics (SupportAutoInjectedAssets::$hasRenderedAComponentThisRequest,
+        // FrontendAssets' rendered flags). In production the process ends with the request; in a test run the state outlives the test, so a storefront page of a LATER test
+        // carried `<!-- Livewire Styles --><style>` and livewire.min.js (CI shards put admin Livewire tests before the account page tests). Livewire's own reset (its
+        // `flush-state` event, the one Octane runs between requests) clears all of it: the order of the test files can never change a page.
+        app('livewire')->flushState();
+
         Storage::fake('public');
         Storage::fake('local');
         Storage::fake((string) config('services.media.default_disk', 'public'));
