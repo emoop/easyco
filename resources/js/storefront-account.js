@@ -7,6 +7,7 @@
 // Nothing here says whether an email has an account: register, forgot and resend show ONE answer whatever the API said (the API itself answers the same).
 // Everything that comes from the API is put on the page with textContent, never as markup.
 import { api } from './storefront-cart.js';
+import { regionModeFor } from './storefront-checkout.js';
 
 var root = document.querySelector('[data-sf-account]');
 
@@ -454,5 +455,221 @@ function start(root) {
                 return false;
             });
         });
+
+        accountArea();
+    }
+
+    // ---- ACC-3b-2: the address book, the address form and the details page. The pages are server-rendered; every write goes to the EXISTING API and comes back to a page with ?notice=<key> ----
+    function addressesUrl() {
+        return i18n.getAttribute('data-addresses-url') || '/account/addresses';
+    }
+
+    function detailsUrl() {
+        return i18n.getAttribute('data-details-url') || '/account/details';
+    }
+
+    /** after a write: the page to show, with the closed-list notice the server turns into a message (no client-side re-rendering) */
+    function go(url, notice) {
+        window.location.assign(notice ? url + '?notice=' + notice : url);
+    }
+
+    /** 401 = the session is gone (another device changed the password, a sign-out): the login is the only place left; true = handled */
+    function sessionEnded(result) {
+        if (result !== null && result.status === 401) {
+            window.location.assign(loginUrl);
+
+            return true;
+        }
+
+        return false;
+    }
+
+    function accountArea() {
+        // -- the cards: «Направи основен» and the one-step inline «Изтрий» (first click asks, the second sends) --
+        root.querySelectorAll('[data-sf-address]').forEach(function (card) {
+            var id = card.getAttribute('data-address-id');
+            var actions = card.querySelector('[data-sf-address-actions]');
+            var confirmBox = card.querySelector('[data-sf-address-confirm]');
+            var makeDefault = card.querySelector('[data-sf-address-default]');
+            var del = card.querySelector('[data-sf-address-delete]');
+            var yes = card.querySelector('[data-sf-address-delete-yes]');
+            var no = card.querySelector('[data-sf-address-delete-no]');
+
+            function cardBusy(on) {
+                working = on;
+                card.querySelectorAll('button').forEach(function (button) {
+                    button.disabled = on;
+                });
+            }
+
+            async function send(method, path, okStatus, notice) {
+                if (working) {
+                    return;
+                }
+
+                clearStatus();
+                cardBusy(true);
+                var result = await call(method, path);
+
+                if (result !== null && result.status === okStatus) {
+                    go(addressesUrl(), notice);
+
+                    return;
+                }
+
+                if (result !== null && result.status === 404) {
+                    go(addressesUrl(), '');   // it is gone already: the list says the truth
+
+                    return;
+                }
+
+                cardBusy(false);
+
+                if (! sessionEnded(result)) {
+                    common(card, result) || say(t('generic_error'), 'error');
+                }
+            }
+
+            del.addEventListener('click', function () {
+                actions.hidden = true;
+                confirmBox.hidden = false;
+                yes.focus();
+            });
+
+            no.addEventListener('click', function () {
+                confirmBox.hidden = true;
+                actions.hidden = false;
+                del.focus();
+            });
+
+            yes.addEventListener('click', function () {
+                send('DELETE', '/api/addresses/' + encodeURIComponent(id), 204, 'address-deleted');
+            });
+
+            if (makeDefault) {
+                makeDefault.addEventListener('click', function () {
+                    send('POST', '/api/addresses/' + encodeURIComponent(id) + '/default', 200, 'address-default');
+                });
+            }
+        });
+
+        // -- the street-address form (new / edit): the checkout's region rule follows the country; the server's 422 goes under each field --
+        var addressForm = root.querySelector('[data-sf-account-address-form]');
+
+        if (addressForm) {
+            var policy = { default: 'optional', countries: {} };
+
+            try {
+                policy = JSON.parse(addressForm.getAttribute('data-region-policy') || '') || policy;
+            } catch (error) {
+                // an unreadable policy is the default one: optional
+            }
+
+            var regionBox = addressForm.querySelector('[data-sf-region-field]');
+            var regionInput = addressForm.querySelector('[name="region"]');
+            var applyRegion = function () {
+                var mode = regionModeFor(policy, value(addressForm, 'country'));
+
+                regionBox.hidden = mode === 'hidden';
+                regionInput.required = mode === 'required';
+
+                if (mode === 'required') {
+                    regionInput.setAttribute('aria-required', 'true');
+                } else {
+                    regionInput.removeAttribute('aria-required');
+                }
+
+                if (mode === 'hidden') {
+                    regionInput.value = '';
+                }
+            };
+
+            addressForm.querySelector('[name="country"]').addEventListener('change', applyRegion);
+            applyRegion();
+
+            onSubmit(addressForm, async function () {
+                var id = addressForm.getAttribute('data-address-id') || '';
+                var orNull = function (name) {
+                    var text = value(addressForm, name).trim();
+
+                    return text === '' ? null : text;
+                };
+                var body = {
+                    delivery_type: 'street_address',
+                    recipient_first_name: value(addressForm, 'recipient_first_name').trim(),
+                    recipient_last_name: value(addressForm, 'recipient_last_name').trim(),
+                    phone: value(addressForm, 'phone').trim(),
+                    country: value(addressForm, 'country'),
+                    city: value(addressForm, 'city').trim(),
+                    postal_code: orNull('postal_code'),
+                    address_line_1: value(addressForm, 'address_line_1').trim(),
+                    address_line_2: orNull('address_line_2'),
+                    region: regionBox.hidden ? null : orNull('region'),
+                };
+                var result = await call(id === '' ? 'POST' : 'PUT', id === '' ? '/api/addresses' : '/api/addresses/' + encodeURIComponent(id), body);
+
+                if (result !== null && (result.status === 201 || result.status === 200)) {
+                    go(addressesUrl(), 'address-saved');
+
+                    return true;
+                }
+
+                if (! sessionEnded(result)) {
+                    common(addressForm, result) || say(t('generic_error'), 'error');
+                }
+
+                return false;
+            });
+        }
+
+        // -- details: the email (a REQUEST: the current password, then a mail to the new address) --
+        var emailForm = root.querySelector('[data-sf-account-email-form]');
+
+        if (emailForm) {
+            onSubmit(emailForm, async function () {
+                var result = await call('POST', '/api/account/email', { email: value(emailForm, 'email').trim(), current_password: value(emailForm, 'current_password') });
+
+                if (result !== null && result.status === 202) {
+                    go(detailsUrl(), 'email-sent');
+
+                    return true;
+                }
+
+                if (! sessionEnded(result)) {
+                    common(emailForm, result) || say(t('generic_error'), 'error');
+                }
+
+                return false;
+            });
+        }
+
+        // -- details: the password. The API keeps THIS browser signed in (and signs the others out), so success is the details page with a notice --
+        var passwordForm = root.querySelector('[data-sf-account-password-form]');
+
+        if (passwordForm) {
+            onSubmit(passwordForm, async function () {
+                var password = value(passwordForm, 'password');
+
+                if (password !== value(passwordForm, 'password_confirmation')) {
+                    fieldError(passwordForm, 'password_confirmation', t('password_mismatch'));
+
+                    return false;
+                }
+
+                var result = await call('PUT', '/api/account/password', { current_password: value(passwordForm, 'current_password'), password: password, password_confirmation: password });
+
+                if (result !== null && result.status === 200) {
+                    go(detailsUrl(), 'password-changed');
+
+                    return true;
+                }
+
+                if (! sessionEnded(result)) {
+                    common(passwordForm, result) || say(t('generic_error'), 'error');
+                }
+
+                return false;
+            });
+        }
     }
 }

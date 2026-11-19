@@ -6671,18 +6671,22 @@ html:not(.js) .sf-bar-item:focus-within > .sf-sub {
         @apply border-red-300 bg-red-50 text-red-900;
     }
 
-    .sf-account .sf-field input[type='password'] {
+    .sf-account .sf-field input[type='password'],
+    .sf-account-area .sf-field input[type='password'] {
         @apply h-[3.25rem] w-full rounded-lg border border-neutral-300 bg-white px-3 text-base text-neutral-900;
     }
 
     .sf-account .sf-field input[type='password']:focus-visible,
-    .sf-account .sf-field input[type='email']:focus-visible {
+    .sf-account .sf-field input[type='email']:focus-visible,
+    .sf-account-area .sf-field input[type='password']:focus-visible,
+    .sf-account-area .sf-field input[type='email']:focus-visible {
         outline: 2px solid #0369a1;
         outline-offset: 0;
         border-color: #0369a1;
     }
 
-    .sf-account .sf-field input[type='password'][aria-invalid='true'] {
+    .sf-account .sf-field input[type='password'][aria-invalid='true'],
+    .sf-account-area .sf-field input[type='password'][aria-invalid='true'] {
         @apply border-red-700 bg-red-50;
     }
 
@@ -6859,5 +6863,116 @@ html:not(.js) .sf-bar-item:focus-within > .sf-sub {
 
     .sf-acc-back {
         @apply mt-6 text-sm;
+    }
+}
+
+/* ===== ACC-3b-2: the address book, the address form and the details page ======================================================== */
+@layer components {
+    .sf-acc-addresses {
+        @apply grid gap-3;
+    }
+
+    @media (min-width: 40rem) {
+        .sf-acc-addresses {
+            @apply grid-cols-2;
+        }
+    }
+
+    .sf-acc-address {
+        @apply flex flex-col gap-1 rounded-lg border border-neutral-200 bg-white p-4 text-sm text-neutral-800;
+    }
+
+    .sf-acc-address-head {
+        @apply flex items-start justify-between gap-2;
+    }
+
+    .sf-acc-address-name {
+        @apply text-base font-semibold text-neutral-900;
+    }
+
+    .sf-acc-badge {
+        @apply shrink-0 rounded-full bg-neutral-900 px-2 py-0.5 text-xs font-semibold text-white;
+    }
+
+    .sf-acc-address-phone {
+        @apply text-neutral-600;
+    }
+
+    .sf-acc-address-lines {
+        @apply mt-1 not-italic;
+    }
+
+    .sf-acc-address-line {
+        @apply block;
+    }
+
+    .sf-acc-address-kind {
+        @apply font-medium;
+    }
+
+    .sf-acc-address-actions {
+        @apply mt-3 flex flex-wrap items-center gap-2;
+    }
+
+    .sf-acc-address-actions[hidden] {
+        display: none;
+    }
+
+    .sf-acc-address-question {
+        @apply w-full font-medium text-neutral-900;
+    }
+
+    .sf-acc-btn {
+        @apply inline-flex min-h-[2.75rem] items-center justify-center rounded-lg border border-neutral-300 bg-white px-4 text-sm font-semibold text-neutral-900;
+    }
+
+    .sf-acc-btn-danger {
+        @apply border-red-300 text-red-800;
+    }
+
+    .sf-acc-btn:disabled {
+        @apply opacity-60;
+    }
+
+    .sf-acc-btn:focus-visible,
+    .sf-acc-cancel:focus-visible {
+        outline: 2px solid #0369a1;
+        outline-offset: 2px;
+    }
+
+    .sf-acc-add {
+        @apply mt-4;
+    }
+
+    .sf-acc-add-button {
+        @apply w-auto;
+    }
+
+    .sf-acc-full {
+        @apply mt-4;
+    }
+
+    .sf-acc-address-form {
+        @apply max-w-[32rem];
+    }
+
+    .sf-acc-form-actions {
+        @apply flex flex-wrap items-center gap-4;
+    }
+
+    .sf-acc-form-actions .sf-place-order {
+        @apply w-auto;
+    }
+
+    .sf-acc-cancel {
+        @apply inline-flex min-h-[2.75rem] items-center text-sm font-medium underline;
+    }
+
+    .sf-acc-block {
+        @apply mb-8 max-w-[26rem];
+    }
+
+    .sf-acc-current {
+        @apply mb-3 text-sm text-neutral-700;
     }
 }

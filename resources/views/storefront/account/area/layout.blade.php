@@ -8,6 +8,9 @@
         'orders' => isset($number)
             ? [new \App\Storefront\ReadModels\Breadcrumb($profile, route('storefront.account', [], false)), new \App\Storefront\ReadModels\Breadcrumb((string) __('account_pages.orders_title'), route('storefront.account.orders', [], false)), new \App\Storefront\ReadModels\Breadcrumb('№ '.$number, '')]
             : [new \App\Storefront\ReadModels\Breadcrumb($profile, route('storefront.account', [], false)), new \App\Storefront\ReadModels\Breadcrumb((string) __('account_pages.orders_title'), '')],
+        'addresses' => isset($formPage)
+            ? [new \App\Storefront\ReadModels\Breadcrumb($profile, route('storefront.account', [], false)), new \App\Storefront\ReadModels\Breadcrumb((string) __('account_pages.addresses_title'), route('storefront.account.addresses', [], false)), new \App\Storefront\ReadModels\Breadcrumb($title, '')]
+            : [new \App\Storefront\ReadModels\Breadcrumb($profile, route('storefront.account', [], false)), new \App\Storefront\ReadModels\Breadcrumb($title, '')],
         default => [new \App\Storefront\ReadModels\Breadcrumb($profile, route('storefront.account', [], false)), new \App\Storefront\ReadModels\Breadcrumb($title, '')],
     };
 @endphp
@@ -18,6 +21,9 @@
         <div class="sf-acc-layout">
             @include('storefront.account.partials.menu', ['current' => $current])
             <div class="sf-acc-main">
+                @if (($notice ?? null) !== null)
+                    <p class="sf-account-notice" role="status">{{ $notice }}</p>
+                @endif
                 @yield('account')
             </div>
         </div>

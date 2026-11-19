@@ -8,7 +8,9 @@
      @endforeach
      data-login-url="{{ route('storefront.account.login', [], false) }}"
      data-forgot-url="{{ route('storefront.account.forgot', [], false) }}"
-     data-account-url="{{ route('storefront.account', [], false) }}"></div>
+     data-account-url="{{ route('storefront.account', [], false) }}"
+     data-addresses-url="{{ route('storefront.account.addresses', [], false) }}"
+     data-details-url="{{ route('storefront.account.details', [], false) }}"></div>
 <noscript>
     <p class="sf-account-notice">{{ __('account_pages.noscript') }}</p>
 </noscript>

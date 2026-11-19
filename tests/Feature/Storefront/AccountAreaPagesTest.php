@@ -168,12 +168,12 @@ class AccountAreaPagesTest extends TestCase
         $this->assertSame(2, substr_count($html, 'data-sf-account-logout-form'), 'the menu and the tile each sign out');
     }
 
-    public function test_addresses_and_details_are_a_title_and_coming_soon(): void
+    public function test_addresses_and_details_have_their_title_and_are_no_longer_the_coming_soon_placeholder(): void
     {
         $this->me();
 
-        $this->get('/account/addresses')->assertOk()->assertSee('<h1 class="sf-title">'.__('account_pages.addresses_title').'</h1>', false)->assertSee(__('account_pages.soon'));
-        $this->get('/account/details')->assertOk()->assertSee('<h1 class="sf-title">'.__('account_pages.details_title').'</h1>', false)->assertSee(__('account_pages.soon'));
+        $this->get('/account/addresses')->assertOk()->assertSee('<h1 class="sf-title">'.__('account_pages.addresses_title').'</h1>', false)->assertDontSee(__('account_pages.soon'));
+        $this->get('/account/details')->assertOk()->assertSee('<h1 class="sf-title">'.__('account_pages.details_title').'</h1>', false)->assertDontSee(__('account_pages.soon'));
     }
 
     // ---- orders list -------------------------------------------------------------------------------------------------------------

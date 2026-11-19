@@ -197,6 +197,8 @@ Route::middleware([EnsureAccountSessionIsCurrent::class.':soft', AccountPageHead
         Route::get('/account/orders', [AccountAreaController::class, 'orders'])->name('storefront.account.orders');
         Route::get('/account/orders/{number}', [AccountAreaController::class, 'order'])->name('storefront.account.order');
         Route::get('/account/addresses', [AccountAreaController::class, 'addresses'])->name('storefront.account.addresses');
+        Route::get('/account/addresses/new', [AccountAreaController::class, 'newAddress'])->name('storefront.account.address.new');
+        Route::get('/account/addresses/{id}/edit', [AccountAreaController::class, 'editAddress'])->name('storefront.account.address.edit');
         Route::get('/account/details', [AccountAreaController::class, 'details'])->name('storefront.account.details');
     });
 
