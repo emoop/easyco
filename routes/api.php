@@ -72,7 +72,12 @@ Route::middleware(['auth:customer', EnsureAccountSessionIsCurrent::class])->grou
         ->middleware('throttle:'.ApiRateLimits::EMAIL_CHANGE);
     Route::get('/addresses', [AddressController::class, 'index']);
     Route::put('/addresses/{addressId}', [AddressController::class, 'update'])
-        ->middleware('throttle:'.ApiRateLimits::ADDRESS);
+        ->middleware(['throttle:'.ApiRateLimits::ADDRESS, 'throttle:'.ApiRateLimits::ACCOUNT_ADDRESS]);
+    // ACC-2b: delete and default address; the IP-keyed `address` limiter stays on the public/PUT routes, these answer to the per-account one
+    Route::delete('/addresses/{addressId}', [AddressController::class, 'destroy'])
+        ->middleware('throttle:'.ApiRateLimits::ACCOUNT_ADDRESS);
+    Route::post('/addresses/{addressId}/default', [AddressController::class, 'setDefault'])
+        ->middleware('throttle:'.ApiRateLimits::ACCOUNT_ADDRESS);
 });
 
 Route::post('/addresses', [AddressController::class, 'store'])

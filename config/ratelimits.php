@@ -47,5 +47,8 @@ return [
 
     // ACC-2: GET /api/account/orders and /api/account/orders/{number}: a customer browsing her orders; 60 a minute per IP + account.
     'account-read' => (int) env('RATE_LIMIT_ACCOUNT_READ', 60),
+
+    // ACC-2b: PUT/DELETE /api/addresses/{id} and POST /api/addresses/{id}/default: a customer tidying her address book; 30 a minute per IP + account.
+    'account-address' => (int) env('RATE_LIMIT_ACCOUNT_ADDRESS', 30),
 ];
 

@@ -33,6 +33,9 @@ use Illuminate\Support\Facades\Log;
  */
 class AddressResolver
 {
+    /** ACC-2b: the most saved addresses one account may hold. POST /api/addresses refuses the 21st (422); checkout never refuses, it just stops saving. */
+    public const SAVED_LIMIT = 20;
+
     public function __construct(
         private readonly AddressRepository $addresses,
     ) {
@@ -106,8 +109,47 @@ class AddressResolver
             region: $region,
         );
 
+        // ACC-2b (guests are untouched: no lookup, no extra query): a logged-in customer's typed address is reused when she already
+        // has the same one (bumping its updated_at), and is NOT saved at all once she holds SAVED_LIMIT of them: checkout never fails
+        // on the book, the order carries its own snapshot and address_id stays null. ONE select serves both questions.
+        if ($accountId !== null) {
+            $saved = $this->addresses->findByAccountId($accountId);
+
+            foreach ($saved as $existing) {
+                if ($this->sameAddress($existing, $address)) {
+                    $this->addresses->touchOwned((string) $existing->id(), $accountId);
+
+                    return $existing;
+                }
+            }
+
+            if (count($saved) >= self::SAVED_LIMIT) {
+                return $address;
+            }
+        }
+
         $this->addresses->save($address);
 
         return $address;
+    }
+
+    /** Equal after trim, case and collapsed spaces on every field a customer types, the recipient and the phone included. */
+    private function sameAddress(Address $a, Address $b): bool
+    {
+        return $this->fingerprint($a) === $this->fingerprint($b);
+    }
+
+    /** @return list<string> */
+    private function fingerprint(Address $address): array
+    {
+        return array_map(
+            static fn (?string $value): string => mb_strtolower(trim((string) preg_replace('/\s+/u', ' ', (string) $value))),
+            [
+                $address->deliveryType()->value, $address->country(), $address->city(), $address->postalCode(), $address->addressLine1(),
+                $address->addressLine2(), $address->region(), $address->carrierCode(), $address->pickupPointReference(), $address->settlement(),
+                $address->pickupPointName(), $address->pickupPointAddress(), $address->pickupPointKind(),
+                $address->recipientFirstName(), $address->recipientLastName(), $address->phone(),
+            ],
+        );
     }
 }

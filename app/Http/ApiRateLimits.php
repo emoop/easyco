@@ -100,6 +100,9 @@ final class ApiRateLimits
     // ACC-2: the two read endpoints of the customer's own orders; keyed by IP + the logged-in account (the cart-identity half of the key IS the account here)
     public const ACCOUNT_READ = 'account-read';
 
+    // ACC-2b: PUT / DELETE /api/addresses/{addressId} and POST .../default: a customer managing her address book; IP + the logged-in account
+    public const ACCOUNT_ADDRESS = 'account-address';
+
     public const DEFAULT_PER_MINUTE = 30;
 
     /**
@@ -122,6 +125,7 @@ final class ApiRateLimits
         self::EMAIL_CHANGE => 'rate_limit.too_many_requests',
         self::ACCOUNT_TOKEN => 'rate_limit.too_many_requests',
         self::ACCOUNT_READ => 'rate_limit.too_many_requests',
+        self::ACCOUNT_ADDRESS => 'rate_limit.too_many_requests',
     ];
 
     /** The limiters keyed by the IP alone — see this class's own docblock, "TWO KEY SHAPES". */

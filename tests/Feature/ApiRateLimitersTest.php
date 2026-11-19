@@ -174,6 +174,15 @@ class ApiRateLimitersTest extends TestCase
             'inside' => ['GET', 'api/account/orders', [], 200],
         ],
 
+        // ACC-2b: PUT / DELETE /api/addresses/{addressId} and POST .../default, inside auth:customer: IP + the logged-in account (send() logs a customer in); an unknown id answers 404 after the limiter has counted
+        ApiRateLimits::ACCOUNT_ADDRESS => [
+            'config' => 'ratelimits.'.ApiRateLimits::ACCOUNT_ADDRESS,
+            'key' => self::KEYED_BY_IP_AND_CART,
+            'refusal' => 'rate_limit.too_many_requests',
+            'routes' => [['PUT', 'api/addresses/{addressId}'], ['DELETE', 'api/addresses/{addressId}'], ['POST', 'api/addresses/{addressId}/default']],
+            'inside' => ['POST', 'api/addresses/999999/default', [], 404],
+        ],
+
         // the submits that spend a one-time secret or a password guess: verify, reset, confirm the new email, change the password (PUT, logged in)
         ApiRateLimits::ACCOUNT_TOKEN => [
             'config' => 'ratelimits.'.ApiRateLimits::ACCOUNT_TOKEN,
@@ -421,7 +430,7 @@ class ApiRateLimitersTest extends TestCase
 
     private function send(string $method, string $uri, array $body): TestResponse
     {
-        if ($uri === 'api/account/email' || $uri === 'api/account/orders') {
+        if (in_array($uri, ['api/account/email', 'api/account/orders', 'api/addresses/999999/default'], true)) {
             // ACC-1: the one limited route that needs a logged-in customer to be counted at all
             $this->actingAs(\EasyCo\Account\Persistence\Eloquent\AccountModel::query()->first() ?? $this->makeCustomer(), 'customer');
         }

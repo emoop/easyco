@@ -30,6 +30,10 @@ return [
         'current_wrong' => 'The current password is not correct.',
     ],
 
+    'addresses' => [
+        'limit' => 'Your address book is full: at most :max saved addresses. Delete one first.',
+    ],
+
     'orders' => [
         'not_found' => 'Order not found.',
     ],

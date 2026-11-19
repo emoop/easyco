@@ -3,10 +3,12 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Services\AddressResolver;
 use App\Services\PickupKindSource;
 use App\Settings\CheckoutFormSettings;
 use App\Settings\CheckoutRegionPolicy;
 use App\Settings\RegionMode;
+use App\Settings\StoreLocale;
 use Illuminate\Validation\ValidationException;
 use App\Rules\KnownCountryCode;
 use App\Rules\PlainText;
@@ -17,6 +19,7 @@ use EasyCo\Address\Contracts\AddressRepository;
 use EasyCo\Address\Enums\AddressDeliveryType;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Auth;
 
 /**
@@ -53,12 +56,19 @@ class AddressController extends Controller
     {
         $validated = $this->validatedInput($request);
 
+        // ACC-2b: at most SAVED_LIMIT saved addresses per account. Only here: checkout never refuses, it just stops saving.
+        $accountId = $this->currentAccountId();
+
+        if ($accountId !== null && count($this->addresses->findByAccountId($accountId)) >= AddressResolver::SAVED_LIMIT) {
+            throw ValidationException::withMessages(['address_limit' => __('account.addresses.limit', ['max' => AddressResolver::SAVED_LIMIT], app(StoreLocale::class)->current())]);
+        }
+
         $address = Address::create(
             deliveryType: AddressDeliveryType::from($validated['delivery_type']),
             recipientFirstName: $validated['recipient_first_name'],
             recipientLastName: $validated['recipient_last_name'],
             phone: $validated['phone'],
-            accountId: $this->currentAccountId(),
+            accountId: $accountId,
             country: $validated['country'] ?? null,
             city: $validated['city'] ?? null,
             postalCode: $validated['postal_code'] ?? null,
@@ -82,8 +92,10 @@ class AddressController extends Controller
     {
         $accountId = (string) Auth::guard('customer')->id();
 
+        $defaultId = $this->addresses->defaultAddressId($accountId);
+
         $items = array_map(
-            fn (Address $address) => $this->toArray($address),
+            fn (Address $address) => $this->toArray($address) + ['is_default' => $address->id() === $defaultId],
             $this->addresses->findByAccountId($accountId)
         );
 
@@ -124,6 +136,33 @@ class AddressController extends Controller
         $this->addresses->save($address);
 
         return response()->json($this->toArray($address));
+    }
+
+    /** ACC-2b: DELETE /api/addresses/{addressId}: only the owner's; another account's and an unknown id are the same 404. 204, no body. */
+    public function destroy(string $addressId): Response|JsonResponse
+    {
+        if (! $this->addresses->deleteOwned($addressId, (string) Auth::guard('customer')->id())) {
+            return $this->notFound($addressId);
+        }
+
+        return response()->noContent();
+    }
+
+    /** ACC-2b: POST /api/addresses/{addressId}/default: idempotent; the same 404 rule. Answers the address (with is_default). */
+    public function setDefault(string $addressId): JsonResponse
+    {
+        $accountId = (string) Auth::guard('customer')->id();
+
+        if (! $this->addresses->setDefault($addressId, $accountId)) {
+            return $this->notFound($addressId);
+        }
+
+        return response()->json($this->toArray($this->addresses->findById($addressId)) + ['is_default' => true]);
+    }
+
+    private function notFound(string $addressId): JsonResponse
+    {
+        return response()->json(['message' => "No address \"{$addressId}\" found."], 404);
     }
 
     /**
