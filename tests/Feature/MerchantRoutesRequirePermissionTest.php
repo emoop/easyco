@@ -57,6 +57,9 @@ class MerchantRoutesRequirePermissionTest extends TestCase
         'GET api/addresses',
         'POST api/addresses',
         'PUT api/addresses/{addressId}',
+        // ACC-2b: delete and default address: customer routes (auth:customer asserted in test_the_address_book_routes_require_the_customer_guard)
+        'DELETE api/addresses/{addressId}',
+        'POST api/addresses/{addressId}/default',
         'GET api/cart',
         'POST api/cart/lines',
         'PATCH api/cart/lines/{variationId}',
@@ -109,6 +112,31 @@ class MerchantRoutesRequirePermissionTest extends TestCase
             'These routes are missing auth:staff and/or a declared staff.can:* permission: '
                 .implode(', ', $failures)
         );
+    }
+
+    /**
+     * ACC-2b: the allowlist above only EXCLUDES a route from the staff check, it does not say what protects it. These two customer routes
+     * (like the PUT beside them) are inside auth:customer: assert it, so removing the guard from either fails here.
+     */
+    public function test_the_address_book_routes_require_the_customer_guard(): void
+    {
+        $wanted = ['DELETE api/addresses/{addressId}', 'POST api/addresses/{addressId}/default'];
+        $found = [];
+
+        foreach (Route::getRoutes() as $route) {
+            foreach ($route->methods() as $method) {
+                $key = "{$method} {$route->uri()}";
+
+                if (in_array($key, $wanted, true)) {
+                    $found[] = $key;
+                    $this->assertContains('auth:customer', $route->gatherMiddleware(), "{$key} must sit inside auth:customer");
+                }
+            }
+        }
+
+        sort($found);
+        sort($wanted);
+        $this->assertSame($wanted, $found);
     }
 
     /**
