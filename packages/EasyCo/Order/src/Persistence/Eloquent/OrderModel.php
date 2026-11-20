@@ -61,6 +61,7 @@ class OrderModel extends Model
         'marketing_consent',
         'marketing_consent_text',
         'parcel_weight_grams',
+        'recipient_email',
     ];
 
     protected $casts = [

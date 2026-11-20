@@ -210,6 +210,16 @@ final class CheckoutOrchestrator
             throw $this->asCurrencyMismatch($e);
         }
 
+        // ACC-3c: a SAVED pick-up point belongs to ONE courier. The method chosen for it must be that courier's (the checkout script offers a saved point only
+        // for the courier and kind it was chosen with; this is the same rule on the server, where the page is never trusted). The kind needs no line of its own:
+        // the destination built from the saved address carries its stored kind, which the pricing hash and the method's scope already hold (shipping_pickup_mismatch
+        // for an office-only method and a locker, shipping_price_changed / shipping_quote_expired for a handle quoted for another kind).
+        // A method that names no courier (a local pick-up method) serves any saved point; a typed point is not judged here: it carries no stored courier to disagree with.
+        if ($savedAddress !== null && $selection->courier !== null && $savedAddress->deliveryType() === \EasyCo\Address\Enums\AddressDeliveryType::PICKUP_POINT && $savedAddress->carrierCode() !== null
+            && mb_strtolower(trim($savedAddress->carrierCode())) !== mb_strtolower(trim($selection->courier))) {
+            throw ShippingRefusal::because(ShippingRefusalReason::PICKUP_MISMATCH, 'The saved pick-up point belongs to another courier than the chosen shipping method.');
+        }
+
         try {
             $result = DB::transaction(fn () => $this->placeWithinTransaction($input, $placedAt, $selection, $destination, $region, $customerNote));
         } catch (CartClaimLostException) {
@@ -557,6 +567,7 @@ final class CheckoutOrchestrator
             clientId: $client->id(),
             transactionId: $transaction->id(),
             email: $input->email,
+            recipientEmail: $input->recipientEmail,
             currency: $currency,
             subtotal: $subtotal,
             discount: $discount,

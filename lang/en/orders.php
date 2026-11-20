@@ -38,6 +38,7 @@ return [
         'city' => 'City',
         'region' => 'Region',
         'customer_note' => 'Customer note',
+        'recipient_email' => 'Delivery notifications (email)',
         'postal_code' => 'Postal code',
         'address_line_1' => 'Address',
         'address_line_2' => 'Address (line 2)',

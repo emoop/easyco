@@ -227,6 +227,7 @@ return [
     'received_pickup_point' => 'Офис или автомат',
     'received_payment' => 'Плащане',
     'received_note' => 'Вашата бележка',
+    'received_delivery_notice' => 'Известия за доставката',
     'received_greeting' => 'Здравейте, :name',
     'received_kind_office' => 'Офис',
     'received_kind_locker' => 'Автомат',
@@ -266,6 +267,22 @@ return [
         'ck_terms_required' => 'Моля, приемете правилата и условията, за да направите поръчката.',
         'ck_terms_reload' => 'Презаредете страницата, за да видите актуалните правила.',
         'ck_summary_hide' => 'Скрий поръчката',
+    ],
+
+    // ACC-3c: the texts of the logged-in checkout. A group of its own, NOT js_checkout: that group is written into the data attributes of EVERY storefront page.
+    'checkout_account' => [
+        'have_account' => 'Имате профил?',
+        'login' => 'Вход',
+        'order_as' => 'Поръчвате като',
+        'not_you' => 'Не сте вие?',
+        'logout' => 'Изход',
+        'send_other' => 'Изпращам до друг човек',
+        'recipient_email' => 'Имейл на получателя (по избор)',
+        'saved_title' => 'Запазени адреси',
+        'saved_more' => 'Още адреси (:count)',
+        'saved_new' => 'Нов адрес',
+        'saved_change' => 'Промени',
+        'session_expired' => 'Сесията изтече — влезте отново или поръчайте като гост',
     ],
 
     // DS-2b: the simplified header of the cart and the checkout

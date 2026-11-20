@@ -126,6 +126,7 @@ final class AccountOrderReader
             ],
             'tracking' => filled($row->tracking_number) ? ['number' => (string) $row->tracking_number, 'courier' => filled($row->shipping_courier) ? (string) $row->shipping_courier : null] : null,
             'note' => $shown['note'],
+            'delivery_notice_email' => $shown['delivery_notice_email'],
         ];
     }
 

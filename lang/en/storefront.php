@@ -227,6 +227,7 @@ return [
     'received_pickup_point' => 'Pick-up point',
     'received_payment' => 'Payment',
     'received_note' => 'Your note',
+    'received_delivery_notice' => 'Delivery notifications',
     'received_greeting' => 'Hello, :name',
     'received_kind_office' => 'Office',
     'received_kind_locker' => 'Locker',
@@ -266,6 +267,22 @@ return [
         'ck_terms_required' => 'Please accept the terms and conditions to place the order.',
         'ck_terms_reload' => 'Reload the page to see the current terms.',
         'ck_summary_hide' => 'Hide order',
+    ],
+
+    // ACC-3c: the texts of the logged-in checkout. A group of its own, NOT js_checkout: that group is written into the data attributes of EVERY storefront page.
+    'checkout_account' => [
+        'have_account' => 'Have an account?',
+        'login' => 'Log in',
+        'order_as' => 'Ordering as',
+        'not_you' => 'Not you?',
+        'logout' => 'Log out',
+        'send_other' => 'I am sending this to someone else',
+        'recipient_email' => 'Recipient email (optional)',
+        'saved_title' => 'Saved addresses',
+        'saved_more' => 'More addresses (:count)',
+        'saved_new' => 'New address',
+        'saved_change' => 'Change',
+        'session_expired' => 'Your session has expired. Log in again or order as a guest',
     ],
 
     // DS-2b: the simplified header of the cart and the checkout

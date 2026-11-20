@@ -55,6 +55,7 @@ final class OrderReceivedReader
      *   subtotal: string, discount: ?array{code: ?string, amount: string}, total: string,
      *   destination: array{kind: string, pickup_kind: ?string, lines: list<string>},
      *   note: ?string,
+     *   delivery_notice_email: ?string,
      *   payment: array{method: string, bank: ?array{rows: list<array{0: string, 1: string}>, deadline_days: ?int, instructions: ?string}, cash_on_delivery_due: ?string}
      * }|null
      */
@@ -92,6 +93,8 @@ final class OrderReceivedReader
             'total' => $this->money($order->total()),
             'destination' => $this->destination($order, $locale),
             'note' => $this->customerNote($order),
+            // ACC-3c: where the delivery mails ALSO go (the buyer always gets them); NULL when none. The page is personal and private, never cacheable.
+            'delivery_notice_email' => $order->recipientEmail(),
             'payment' => [
                 'method' => $method,
                 'bank' => $method === 'bank_transfer' && ! $needsAttention ? $this->bank($order) : null,

@@ -88,6 +88,8 @@ final class OrderTransitionsTest extends TestCase
         'pickupPointName', 'pickupPointAddress', 'pickupPointKind', 'region', 'customerNote',
         // C1d-B: what the customer ticked (create-time facts, read-only): none touches $status.
         'termsAcceptedAt', 'termsVersion', 'confirmationRequested', 'callBeforeShipping', 'marketingConsent', 'marketingConsentText',
+        // MEAS-1 (the parcel weight) and ACC-3c (the optional delivery-mails recipient): create-time facts, read-only: none touches $status.
+        'parcelWeightGrams', 'recipientEmail',
         'create', 'reconstituteFromStorage',
         // order-editing-design.md §2, stage 2 — the two edit mutators.
         // Neither changes $status (§2's own "status itself is untouched by

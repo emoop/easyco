@@ -76,6 +76,8 @@ final class CheckoutInput
         // Both NULL for a caller with no request / no invoice; the attribution row is written either way.
         public readonly ?CheckoutRequestFacts $requestFacts = null,
         public readonly ?CheckoutInvoiceRequest $invoice = null,
+        // ACC-3c: the optional delivery-mails-only address (already trimmed, lower-cased and validated by the HTTP layer; Order::create makes it NULL when it equals the buyer).
+        public readonly ?string $recipientEmail = null,
     ) {
     }
 }

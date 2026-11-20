@@ -38,7 +38,7 @@ class StorefrontCheckoutScriptTest extends TestCase
         $seen = array_unique(array_map(fn (array $c) => $c[1].' '.$c[2], $calls));
         sort($seen);
 
-        $this->assertSame(['GET /api/cart', 'POST /api/checkout', 'POST /api/shipping/quote'], $seen);
+        $this->assertSame(['GET /api/account/me', 'GET /api/addresses', 'GET /api/cart', 'POST /api/account/logout', 'POST /api/checkout', 'POST /api/shipping/quote'], $seen);
         $this->assertStringNotContainsString('sanctum', $this->script(), 'the CSRF cookie handling lives in storefront-cart.js, once');
     }
 

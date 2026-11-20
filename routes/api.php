@@ -27,6 +27,7 @@ use App\Http\Controllers\Api\TagController;
 use App\Http\Controllers\Api\VariableProductController;
 use App\Http\Controllers\Api\VariationController;
 use App\Http\Controllers\Api\VariationMediaController;
+use App\Http\Middleware\AccountApiNoStore;
 use App\Http\Middleware\EnsureAccountSessionIsCurrent;
 use Illuminate\Support\Facades\Route;
 
@@ -57,7 +58,7 @@ Route::post('/account/email/confirm', [AccountEmailController::class, 'confirm']
 // ACC-1: EnsureAccountSessionIsCurrent logs a session out when the account's session version moved (a password reset / change, an email change): strict here (a 401).
 // ACC-2: every route OUTSIDE this group that reads the customer guard (register/login, the public address write, the cart, checkout, the shipping quote) carries the SOFT mode
 // (`:soft`, always FIRST: cart.cookie and the limiters read the guard): a stale session is logged out and the request goes on as a GUEST.
-Route::middleware(['auth:customer', EnsureAccountSessionIsCurrent::class])->group(function () {
+Route::middleware(['auth:customer', EnsureAccountSessionIsCurrent::class, AccountApiNoStore::class])->group(function () {
     Route::post('/account/logout', [AccountSessionController::class, 'destroy']);
     Route::get('/account/me', [AccountSessionController::class, 'show']);
     // ACC-2: the customer's own orders

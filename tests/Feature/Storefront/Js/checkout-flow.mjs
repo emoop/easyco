@@ -179,6 +179,22 @@ let promoReply = null;     // a scripted refusal of PUT/DELETE /api/cart/promoti
 let promoDelay = 0;
 let promoValid = true;
 let checkoutResponse = { status: 201, data: { confirmation_url: 'http://shop.test/order/received/5?expires=1&signature=abc' } };
+// ACC-3c: who is signed in, and the account's saved addresses (the API's own shape; `is_default` marks the default).
+const signedIn = scenario.startsWith('acct_');
+let sessionEnded = false;
+const reloads = [];
+const addr = (id, extra) => ({ id: String(id), account_id: '7', delivery_type: 'street_address', recipient_first_name: 'Иван', recipient_last_name: 'Иванов', phone: '+359888111111', country: 'BG', city: 'Sofia', postal_code: '1000', address_line_1: `Street ${id}`, address_line_2: null, carrier_code: null, pickup_point_reference: null, settlement: null, pickup_point_name: null, pickup_point_address: null, pickup_point_kind: null, region: null, is_default: false, ...extra });
+const point = (id, carrier, kind, where) => addr(id, { delivery_type: 'pickup_point', city: null, postal_code: null, address_line_1: null, carrier_code: carrier, pickup_point_kind: kind, settlement: 'Sofia', pickup_point_address: where });
+// a refusal that leaves the form usable (a field error), for scenarios that press the button more than once
+const REFUSED = { status: 422, data: { message: 'x', errors: { customer_note: ['x'] } } };
+const savedAddresses = [
+    addr(1, { is_default: true }),
+    addr(2, { recipient_first_name: 'Мария', recipient_last_name: 'Иванова', phone: '+359888222222', city: 'Plovdiv', postal_code: '4000' }),
+    addr(3), addr(4),
+    point(11, 'Еконт', 'office', 'Econt Center 1'),
+    point(12, 'Спиди', 'office', 'Speedy Office 2'),
+    point(13, 'Еконт', 'locker', 'Econt Locker 3'),
+].slice(0, scenario.includes('without_a_saved_point') ? 4 : 7);
 
 globalThis.document = {
     cookie: 'easyco_has_cart=1; XSRF-TOKEN=tok',
@@ -193,7 +209,7 @@ globalThis.window = {
     innerHeight: 800,
     pageYOffset: 0,
     addEventListener: (type, fn) => { (windowListeners[type] ||= []).push(fn); },
-    location: { href: 'http://shop.test/checkout', origin: 'http://shop.test', replace: (u) => replaced.push(u) },
+    location: { href: 'http://shop.test/checkout', origin: 'http://shop.test', replace: (u) => replaced.push(u), reload: () => reloads.push(1) },
     setTimeout: (fn) => setTimeout(fn, 0),
     clearTimeout,
 };
@@ -272,6 +288,10 @@ globalThis.fetch = async (path, init = {}) => {
     }
     if (method_ === 'POST' && path === '/api/shipping/quote') result = { status: 200, data: quoteAll(body) };
     if (method_ === 'POST' && path === '/api/checkout') result = checkoutResponse;
+    // ACC-3c: the account endpoints. A scenario named `acct_*` is a signed-in customer (until `sessionEnded`); every other scenario is a guest (401).
+    if (method_ === 'GET' && path === '/api/account/me') result = signedIn && ! sessionEnded ? { status: 200, data: { id: '7', email: 'me@example.com' } } : { status: 401, data: { message: 'Unauthenticated.' } };
+    if (method_ === 'GET' && path === '/api/addresses') result = signedIn && ! sessionEnded ? { status: 200, data: { data: savedAddresses } } : { status: 401, data: { message: 'Unauthenticated.' } };
+    if (method_ === 'POST' && path === '/api/account/logout') result = { status: 204, data: null };
 
     return { status: result.status, json: async () => result.data };
 };
@@ -1656,6 +1676,322 @@ const scenarios = {
     async promo_input_has_the_floating_placeholder() {
         assert.equal(promoInput().attrs.placeholder, ' ');
         assert.equal(promoForm().querySelector('label').textContent, T('promo_label'), 'the visible floating label is the promo text');
+    },
+
+
+    // ------------------------------------------------------------------------------------------------------------------------------------ ACC-3c
+    // The page is the same for everyone; who is signed in comes from GET /api/account/me after load. A scenario named `acct_*` is a signed-in customer.
+
+    async guest_sees_the_login_hint_and_keeps_the_email_field() {
+        checkoutResponse = REFUSED;
+        assert.equal(q('[data-sf-login-hint]').hidden, false);
+        assert.equal(q('[data-sf-login-link]').attrs.href, '/account/login?redirect=/checkout');
+        assert.equal(q('[data-sf-order-as]').hidden, true);
+        assert.equal(q('[data-sf-email-field]').hidden, false);
+        assert.equal(form.elements.email.required, true);
+        assert.equal(q('[data-sf-saved]').hidden, true);
+        assert.equal(calls.some((c) => c.path === '/api/addresses'), false, 'a guest never asks for addresses');
+        assert.equal(q('[data-sf-recipient-field]').hidden, true);
+
+        // the recipient field opens and closes; closing clears it; open and filled it travels
+        q('[data-sf-recipient-toggle]').dispatch('click');
+        assert.equal(q('[data-sf-recipient-field]').hidden, false);
+        assert.equal(q('[data-sf-recipient-toggle]').attrs['aria-expanded'], 'true');
+        set('recipient_email', 'friend@example.com');
+        await typeInto('city', 'Sofia');
+        choose(courierRows()[2].radio);
+        fillContact();
+        await submit();
+        assert.equal(lastCheckout().body.email, 'a@example.com');
+        assert.equal(lastCheckout().body.recipient_email, 'friend@example.com');
+
+        q('[data-sf-recipient-toggle]').dispatch('click');
+        assert.equal(q('[data-sf-recipient-field]').hidden, true);
+        assert.equal(form.elements.recipient_email.value, '', 'hiding it again clears it');
+        await submit();
+        assert.equal(checkoutPosts().length, 2);
+        assert.equal('recipient_email' in lastCheckout().body, false);
+    },
+
+    async acct_default_address_is_preselected_and_goes_out_as_its_id() {
+        assert.equal(q('[data-sf-order-as]').hidden, false);
+        assert.match(q('[data-sf-order-as]').textContent, /me@example\.com/);
+        assert.equal(q('[data-sf-login-hint]').hidden, true);
+        assert.equal(q('[data-sf-email-field]').hidden, true);
+        assert.equal(form.elements.email.required, false, 'a hidden empty required field would block the form');
+        assert.equal(q('label[for="sf-email"]').querySelector('[data-sf-marker]'), null, 'and carries no asterisk');
+
+        const rows = rowsOf(q('[data-sf-saved-list]'));
+        assert.equal(q('[data-sf-saved]').hidden, false);
+        assert.equal(rows.length, 4, 'the first three of four streets, and «Нов адрес»');
+        assert.match(rows[0].text, /^Иван Иванов · Street 1 · Sofia 1000/);
+        assert.equal(rows[0].radio.checked, true, 'the default is preselected');
+        assert.equal(q('[data-sf-saved-more]').hidden, false);
+        assert.equal(q('[data-sf-saved-more]').textContent, q('[data-sf-saved]').attrs['data-text-more'].replace(':count', '1'));
+        assert.equal(form.attrs['data-sf-saved-mode'], 'saved', 'the fields are hidden');
+        assert.equal(form.elements.recipient_first_name.value, 'Иван');
+        assert.equal(form.elements.phone.value, '+359888111111');
+        assert.equal(form.elements.city.value, 'Sofia');
+        assert.equal(quotePosts().at(-1).body.settlement, 'Sofia', 'the default place is what was quoted');
+
+        choose(courierRows()[2].radio);
+        await submit();
+
+        const body = lastCheckout().body;
+        assert.equal(body.address_id, '1');
+        for (const gone of ['email', 'delivery_type', 'country', 'city', 'postal_code', 'address_line_1', 'address_line_2', 'settlement', 'carrier_code', 'pickup_point_kind']) {
+            assert.equal(gone in body, false, `${gone} is not sent with address_id`);
+        }
+        assert.equal(body.recipient_first_name, 'Иван');
+        assert.equal(body.phone, '+359888111111');
+        assert.ok(body.shipping_method_id && body.quote_handle, 'the delivery choice travels as before');
+    },
+
+    async acct_more_addresses_reveals_the_rest() {
+        assert.equal(rowsOf(q('[data-sf-saved-list]')).length, 4);
+        q('[data-sf-saved-more]').dispatch('click');
+        assert.equal(rowsOf(q('[data-sf-saved-list]')).length, 5);
+        assert.equal(q('[data-sf-saved-more]').hidden, true);
+    },
+
+    async acct_switching_to_the_second_address_fills_and_requotes() {
+        const quotes = quotePosts().length;
+        rowsOf(q('[data-sf-saved-list]'))[1].radio.dispatch('click');
+        await flush();
+
+        assert.equal(form.elements.recipient_first_name.value, 'Мария');
+        assert.equal(form.elements.city.value, 'Plovdiv');
+        assert.ok(quotePosts().length > quotes);
+        assert.equal(quotePosts().at(-1).body.settlement, 'Plovdiv');
+
+        choose(courierRows()[2].radio);
+        await submit();
+        assert.equal(lastCheckout().body.address_id, '2');
+    },
+
+    async acct_change_sends_the_full_fields_and_never_the_id() {
+        checkoutResponse = REFUSED;
+        q('[data-sf-saved-list]').querySelector('button').dispatch('click');
+        assert.equal('data-sf-saved-mode' in form.attrs, false, '«Промени» shows the fields');
+        assert.equal(form.elements.address_line_1.value, 'Street 1', 'copied into the editable fields');
+        set('address_line_1', 'New 9');
+        choose(courierRows()[2].radio);
+        await submit();
+
+        let body = lastCheckout().body;
+        assert.equal('address_id' in body, false);
+        assert.equal(body.delivery_type, 'street_address');
+        assert.equal(body.address_line_1, 'New 9');
+        assert.equal(body.city, 'Sofia');
+        assert.equal('email' in body, false, 'the account email is the server\'s');
+
+        // «Промени» without changing anything is still the full fields: the server's dedupe reuses the record
+        await submit();
+        assert.equal(checkoutPosts().length, 2);
+        assert.equal('address_id' in lastCheckout().body, false);
+        assert.equal(lastCheckout().body.address_line_1, 'New 9');
+    },
+
+    async acct_editing_the_name_or_phone_of_a_chosen_address_sends_the_full_fields() {
+        choose(courierRows()[2].radio);
+        set('phone', '+359888999999');
+        await submit();
+
+        const body = lastCheckout().body;
+        assert.equal('address_id' in body, false, 'the phone is part of the address: changed, so a new record may be needed');
+        assert.equal(body.phone, '+359888999999');
+        assert.equal(body.address_line_1, 'Street 1');
+        assert.equal(body.delivery_type, 'street_address');
+    },
+
+    async acct_new_address_for_another_person_with_a_recipient_email() {
+        rowsOf(q('[data-sf-saved-list]')).at(-1).radio.dispatch('click');
+        await flush();
+
+        assert.equal('data-sf-saved-mode' in form.attrs, false);
+        assert.equal(form.elements.recipient_first_name.value, 'Иван', 'the person comes from the default address');
+        assert.equal(form.elements.recipient_last_name.value, 'Иванов');
+        assert.equal(form.elements.phone.value, '+359888111111');
+        assert.equal(form.elements.city.value, '', 'the address itself starts empty');
+        assert.equal(form.elements.address_line_1.value, '');
+
+        set('recipient_first_name', 'Мама');
+        set('recipient_last_name', 'Петрова');
+        q('[data-sf-recipient-toggle]').dispatch('click');
+        set('recipient_email', 'Mum@Example.com');
+        await typeInto('city', 'Varna');
+        choose(courierRows()[2].radio);
+        set('address_line_1', 'Sea 1');
+        await submit();
+
+        const body = lastCheckout().body;
+        assert.equal('address_id' in body, false);
+        assert.equal(body.recipient_first_name, 'Мама');
+        assert.equal(body.city, 'Varna');
+        assert.equal(body.address_line_1, 'Sea 1');
+        assert.equal(body.recipient_email, 'Mum@Example.com');
+        assert.equal('email' in body, false);
+    },
+
+    // Only the saved points of the SAME courier and kind; switching courier and kind any number of times keeps working.
+    async acct_office_offers_only_saved_points_of_the_same_courier_and_kind() {
+        const list = () => rowsOf(q('[data-sf-saved-list]')).map((r) => r.text.replace(/ Промени$/, ''));
+        const checked = () => rowsOf(q('[data-sf-saved-list]')).filter((r) => r.radio.checked).map((r) => r.text);
+
+        choose(courierRows()[0].radio);
+        chooseKind('4:office');
+        assert.equal(list().length, 2, 'one Econt office point and «Нов адрес»');
+        assert.match(list()[0], /Econt Center 1/);
+        assert.equal(checked().length, 1);
+        assert.equal(form.elements.pickup_point_address.value, 'Econt Center 1');
+        assert.equal(form.attrs['data-sf-saved-mode'], 'saved');
+
+        choose(courierRows()[1].radio);
+        assert.equal(list().length, 2);
+        assert.match(list()[0], /Speedy Office 2/, 'the other courier: its own point');
+        assert.equal(form.elements.pickup_point_address.value, 'Speedy Office 2');
+
+        choose(courierRows()[0].radio);
+        assert.match(list()[0], /Econt Center 1/);
+        chooseKind('5:locker');
+        assert.match(list()[0], /Econt Locker 3/, 'another kind of the same courier');
+        assert.equal(list().length, 2);
+
+        chooseKind('1:address');
+        assert.equal(list().length, 4, 'back to the street addresses');
+        assert.match(list()[0], /Street 1/);
+        assert.equal(form.elements.address_line_1.value, 'Street 1');
+        assert.equal(form.elements.pickup_point_address.value, '');
+
+        chooseKind('4:office');
+        assert.match(list()[0], /Econt Center 1/);
+
+        await submit();
+        const body = lastCheckout().body;
+        assert.equal(body.address_id, '11', 'the saved point goes out as its id');
+        assert.equal('carrier_code' in body, false);
+        assert.equal('pickup_point_kind' in body, false);
+        assert.equal(body.shipping_method_id, '4');
+    },
+
+    async acct_office_without_a_saved_point_is_the_usual_single_field() {
+        choose(courierRows()[0].radio);
+        chooseKind('4:office');
+
+        assert.equal(q('[data-sf-saved]').hidden, true, 'nothing saved fits this courier and kind');
+        assert.equal('data-sf-saved-mode' in form.attrs, false);
+        assert.equal(q('[data-sf-pickup-fields]').hidden, false);
+
+        fillPoint('E-1');
+        await submit();
+
+        const body = lastCheckout().body;
+        assert.equal('address_id' in body, false);
+        assert.equal(body.delivery_type, 'pickup_point');
+        assert.equal(body.carrier_code, 'Еконт');
+        assert.equal(body.pickup_point_kind, 'office');
+        assert.equal(body.pickup_point_address, 'E-1 Main St');
+        assert.equal('email' in body, false);
+
+        // and switching back to a kind that has saved rows brings them back
+        chooseKind('1:address');
+        assert.equal(q('[data-sf-saved]').hidden, false);
+    },
+
+    async acct_an_ended_session_keeps_the_form_and_asks_for_the_email() {
+        choose(courierRows()[2].radio);
+        set('customer_note', 'Please call');
+        form.elements.customer_note.dispatch('input');
+        sessionEnded = true;
+        checkoutResponse = { status: 422, data: { message: 'x', errors: { email: ['The email field is required.'] } } };
+        await submit();
+
+        assert.equal('email' in lastCheckout().body, false, 'it was sent as a signed-in order');
+        assert.equal(q('[data-sf-email-field]').hidden, false, 'the email field is back');
+        assert.equal(form.elements.email.required, true);
+        assert.equal(q('[data-sf-order-as]').hidden, true);
+        assert.equal(q('[data-sf-login-hint]').hidden, false);
+        assert.equal(q('[data-sf-saved]').hidden, true);
+        assert.match(q('[data-sf-error-summary]').textContent, new RegExp(q('[data-sf-saved]').attrs['data-text-expired']));
+        assert.equal(form.elements.customer_note.value, 'Please call', 'everything else the customer entered is kept');
+        assert.equal(form.elements.recipient_first_name.value, 'Иван');
+        assert.equal(form.elements.city.value, 'Sofia');
+
+        // as a guest the order goes out with the typed email and the full address
+        set('email', 'guest@example.com');
+        checkoutResponse = { status: 201, data: { confirmation_url: 'http://shop.test/order/received/5?expires=1&signature=abc' } };
+        await submit();
+
+        const body = lastCheckout().body;
+        assert.equal(body.email, 'guest@example.com');
+        assert.equal('address_id' in body, false);
+        assert.equal(body.city, 'Sofia');
+        assert.equal(body.address_line_1, 'Street 1');
+    },
+
+    async acct_a_401_or_419_is_the_same_expired_session() {
+        choose(courierRows()[2].radio);
+        sessionEnded = true;
+        checkoutResponse = { status: 401, data: { message: 'Unauthenticated.' } };
+        await submit();
+
+        assert.equal(q('[data-sf-email-field]').hidden, false);
+        assert.match(q('[data-sf-error-summary]').textContent, new RegExp(q('[data-sf-saved]').attrs['data-text-expired']));
+    },
+
+    // A 422 on a field that «saved» mode hides: the fields show (it is «Промени» now) and the error stands beside its field; any other error leaves the saved choice alone.
+    async acct_a_422_on_a_hidden_field_switches_to_edit_and_shows_the_error() {
+        choose(courierRows()[2].radio);
+
+        checkoutResponse = { status: 422, data: { message: 'x', errors: { customer_note: ['Too long'] } } };
+        await submit();
+        assert.equal(form.attrs['data-sf-saved-mode'], 'saved', 'an error on a visible field keeps the saved choice');
+
+        set('phone', '+359888999999');
+        checkoutResponse = { status: 422, data: { message: 'x', errors: { city: ['The city is not valid.'] } } };
+        await submit();
+
+        assert.equal('data-sf-saved-mode' in form.attrs, false, 'the hidden fields are shown');
+        assert.equal(form.elements.city.value, 'Sofia', 'with what they held');
+        const holder = q('[data-sf-error-for="city"]');
+        assert.equal(holder.hidden, false);
+        assert.equal(holder.textContent, 'The city is not valid.');
+        assert.equal(rowsOf(q('[data-sf-saved-list]'))[0].text.includes(q('[data-sf-saved]').attrs['data-text-change']), false, 'no «Промени» button: it is already open');
+
+        // the street field of a saved street address, and the pick-up field of a saved point, are in the same set
+        set('address_line_1', 'Fixed 5');
+        checkoutResponse = { status: 201, data: { confirmation_url: 'http://shop.test/order/received/5?expires=1&signature=abc' } };
+        await submit();
+        assert.equal('address_id' in lastCheckout().body, false);
+        assert.equal(lastCheckout().body.address_line_1, 'Fixed 5');
+    },
+
+    // Nothing saved fits the courier and kind for a moment (the usual field is shown): when a choice that fits comes back and the customer typed nothing,
+    // the saved row is taken again, its fields filled; once they typed, it is theirs and nothing is overwritten.
+    async acct_a_kind_without_saved_points_does_not_lose_the_saved_row_for_good_without_a_saved_point() {
+        choose(courierRows()[0].radio);
+        chooseKind('4:office');
+        assert.equal(q('[data-sf-saved]').hidden, true);
+        assert.equal('data-sf-saved-mode' in form.attrs, false);
+
+        chooseKind('1:address');
+        assert.equal(form.attrs['data-sf-saved-mode'], 'saved', 'the saved street is chosen again');
+        assert.equal(form.elements.address_line_1.value, 'Street 1');
+        assert.equal(rowsOf(q('[data-sf-saved-list]'))[0].radio.checked, true);
+
+        // typed: theirs
+        chooseKind('4:office');
+        fillPoint('E-7');
+        chooseKind('1:address');
+        assert.equal('data-sf-saved-mode' in form.attrs, false, 'what the customer typed is not replaced behind their back');
+    },
+
+    async acct_logout_posts_and_reloads_the_page() {
+        q('[data-sf-logout]').dispatch('click');
+        await flush();
+
+        assert.equal(calls.some((c) => c.method === 'POST' && c.path === '/api/account/logout'), true);
+        assert.equal(reloads.length, 1);
     },
 
 };

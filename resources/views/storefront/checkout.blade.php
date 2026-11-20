@@ -45,10 +45,20 @@
 
                 <fieldset class="sf-fieldset">
                     <legend class="sf-legend">{{ __('storefront.checkout_contact') }}</legend>
-                    <div class="sf-field sf-float">
-                        <label for="sf-email">{{ __('storefront.checkout_email') }} <span class="sf-required" aria-hidden="true">*</span></label>
+                    {{-- ACC-3c: this block is the SAME for a guest and a signed-in customer (the page is cookie-free and cacheable); the script learns who is signed in from the API after load and toggles these with `hidden`. --}}
+                    <p class="sf-login-hint" data-sf-login-hint>{{ __('storefront.checkout_account.have_account') }} <a href="/account/login?redirect=/checkout" data-sf-login-link>{{ __('storefront.checkout_account.login') }}</a></p>
+                    <p class="sf-order-as" data-sf-order-as hidden>{{ __('storefront.checkout_account.order_as') }} <strong data-sf-order-as-email></strong> · {{ __('storefront.checkout_account.not_you') }} <button class="sf-link-button" type="button" data-sf-logout>{{ __('storefront.checkout_account.logout') }}</button></p>
+                    <div class="sf-field sf-float" data-sf-email-field>
+                        <label for="sf-email">{{ __('storefront.checkout_email') }} <span class="sf-required" data-sf-marker="true" aria-hidden="true">*</span></label>
                         <input id="sf-email" name="email" type="email" autocomplete="email" inputmode="email" required aria-required="true" maxlength="255" placeholder=" ">
                         <p class="sf-field-error" id="sf-err-email" data-sf-error-for="email" hidden></p>
+                    </div>
+                    {{-- ACC-3c: "sending to someone else": an optional second address that gets only the delivery mails. Hiding the field again clears it. --}}
+                    <p class="sf-recipient-toggle"><button class="sf-link-button" type="button" aria-expanded="false" aria-controls="sf-recipient-field" data-sf-recipient-toggle>{{ __('storefront.checkout_account.send_other') }}</button></p>
+                    <div class="sf-field sf-float" id="sf-recipient-field" data-sf-recipient-field hidden>
+                        <label for="sf-recipient-email">{{ __('storefront.checkout_account.recipient_email') }}</label>
+                        <input id="sf-recipient-email" name="recipient_email" type="email" autocomplete="off" inputmode="email" maxlength="254" placeholder=" ">
+                        <p class="sf-field-error" id="sf-err-recipient_email" data-sf-error-for="recipient_email" hidden></p>
                     </div>
                     {{-- First and last name, side by side from a tablet up, stacked on a phone (checkout form v2, D1). --}}
                     <div class="sf-field-row">
@@ -85,6 +95,12 @@
 
                 <fieldset class="sf-fieldset">
                     <legend class="sf-legend">{{ __('storefront.checkout_delivery') }}</legend>
+                    {{-- ACC-3c: the signed-in customer's saved addresses (radio rows, filled by the script from GET /api/addresses); empty and hidden for a guest. --}}
+                    <div class="sf-saved" data-sf-saved data-text-more="{{ __('storefront.checkout_account.saved_more') }}" data-text-new="{{ __('storefront.checkout_account.saved_new') }}" data-text-change="{{ __('storefront.checkout_account.saved_change') }}" data-text-expired="{{ __('storefront.checkout_account.session_expired') }}" hidden>
+                        <p class="sf-delivery-step-title" id="sf-saved-title">{{ __('storefront.checkout_account.saved_title') }}</p>
+                        <div class="sf-choice-stack" role="radiogroup" aria-labelledby="sf-saved-title" data-sf-saved-list></div>
+                        <p class="sf-saved-more"><button class="sf-link-button" type="button" data-sf-saved-more hidden></button></p>
+                    </div>
                     <div class="sf-field sf-float sf-float-up">
                         <label for="sf-country">{{ __('storefront.checkout_country') }} <span class="sf-required" aria-hidden="true">*</span></label>
                         <select id="sf-country" name="country" autocomplete="country" required aria-required="true">

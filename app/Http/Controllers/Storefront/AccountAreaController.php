@@ -284,6 +284,7 @@ final class AccountAreaController extends Controller
             'total' => $order['totals']['total'],
             'destination' => ['kind' => $order['delivery']['kind'], 'pickup_kind' => $order['delivery']['pickup_kind'], 'lines' => $order['delivery']['lines']],
             'note' => $order['note'],
+            'delivery_notice_email' => $order['delivery_notice_email'],
             'payment' => [
                 'method' => $order['payment']['method'],
                 'bank' => $order['payment']['bank'],

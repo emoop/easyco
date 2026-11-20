@@ -603,6 +603,476 @@ function initCheckout(root) {
         }
     }
 
+    // ------------------------------------------------------------------ ACC-3c: the account, the saved addresses, the other recipient
+    //
+    // The page itself is the SAME for a guest and a signed-in customer (cookie-free, cacheable). Who is signed in, and the saved addresses, are learned
+    // here from the account API AFTER load; a guest (401) keeps the plain form. Everything the API says is validated again and written with textContent.
+
+    var account = null;        // {email} while signed in (GET /api/account/me), else null
+    var saved = [];            // the account's addresses, cleaned: closed lists, strings only
+    var savedMode = 'new';     // 'saved' = a saved row is chosen and shown without its fields | 'edit' = «Промени» (fields shown) | 'new' = typed
+    var savedId = null;
+    var savedAuto = false;     // «new» only because nothing saved fit the courier and kind for a moment (not the customer's choice): a saved row is taken again when one fits
+    var savedPending = false;  // the first choice (the default address) has not been made yet
+    var savedExpanded = false; // «Още адреси (N)» was pressed
+    var savedSignature = '';
+    var loginHint = root.querySelector('[data-sf-login-hint]');
+    var orderAs = root.querySelector('[data-sf-order-as]');
+    var orderAsEmail = root.querySelector('[data-sf-order-as-email]');
+    var logoutButton = root.querySelector('[data-sf-logout]');
+    var emailField = root.querySelector('[data-sf-email-field]');
+    var recipientToggle = root.querySelector('[data-sf-recipient-toggle]');
+    var recipientField = root.querySelector('[data-sf-recipient-field]');
+    var savedBox = root.querySelector('[data-sf-saved]');
+    var savedList = root.querySelector('[data-sf-saved-list]');
+    var savedMore = root.querySelector('[data-sf-saved-more]');
+    var SAVED_SHOWN = 3;
+    var SAVED_TEXT_FIELDS = ['recipient_first_name', 'recipient_last_name', 'phone', 'country', 'city', 'postal_code', 'address_line_1', 'address_line_2', 'carrier_code', 'settlement', 'pickup_point_address', 'region'];
+
+    /** The checkout-only texts travel as data attributes of the saved-address box (NOT in the i18n block every storefront page carries). */
+    function savedText(name) {
+        return savedBox.getAttribute('data-text-' + name) || '';
+    }
+
+    function sameText(a, b) {
+        return String(a === null || a === undefined ? '' : a).trim().toLowerCase() === String(b === null || b === undefined ? '' : b).trim().toLowerCase();
+    }
+
+    /** One address of the API, validated: an id of digits, one of the two delivery types, strings or null, a closed pick-up kind. Anything else is dropped. */
+    function cleanRow(raw) {
+        if (! raw || typeof raw !== 'object' || ! /^[0-9]{1,19}$/.test(String(raw.id))) {
+            return null;
+        }
+
+        if (raw.delivery_type !== 'street_address' && raw.delivery_type !== 'pickup_point') {
+            return null;
+        }
+
+        var row = { id: String(raw.id), delivery_type: raw.delivery_type, is_default: raw.is_default === true };
+
+        SAVED_TEXT_FIELDS.forEach(function (name) {
+            row[name] = typeof raw[name] === 'string' ? raw[name].slice(0, 255) : null;
+        });
+        row.pickup_point_kind = raw.pickup_point_kind === 'office' || raw.pickup_point_kind === 'locker' ? raw.pickup_point_kind : null;
+
+        return row;
+    }
+
+    function isPickupRow(row) {
+        return row.delivery_type === 'pickup_point';
+    }
+
+    /** One line: name · street (or the office) · city postcode. */
+    function rowText(row) {
+        var name = [row.recipient_first_name, row.recipient_last_name].filter(Boolean).join(' ');
+        var where = isPickupRow(row) ? row.pickup_point_address : row.address_line_1;
+        var place = [isPickupRow(row) ? row.settlement : row.city, row.postal_code].filter(Boolean).join(' ');
+
+        return [name, where, place].filter(Boolean).join(' · ');
+    }
+
+    function defaultRow() {
+        for (var i = 0; i < saved.length; i += 1) {
+            if (saved[i].is_default) {
+                return saved[i];
+            }
+        }
+
+        return saved.length > 0 ? saved[0] : null;
+    }
+
+    /** The saved addresses the chosen delivery can use: street addresses before (or without) an office or locker; for one, only the points of the SAME courier and kind. */
+    function eligibleSaved() {
+        var kind = deliveryKind();
+        var rows = saved.filter(function (row) {
+            if (kind === null || kind === 'address') {
+                return ! isPickupRow(row);
+            }
+
+            return isPickupRow(row) && sameText(row.carrier_code, selection.carrier) && row.pickup_point_kind === kind;
+        });
+
+        // the default first, the others in the order the API gave them
+        return rows.filter(function (row) { return row.is_default; }).concat(rows.filter(function (row) { return ! row.is_default; }));
+    }
+
+    function setValue(name, value) {
+        var node = form.elements[name];
+
+        if (! node) {
+            return;
+        }
+
+        if (node.tagName === 'SELECT') {
+            var known = Array.prototype.some.call(node.options, function (option) { return option.value === value; });
+
+            if (known) {
+                node.value = value;
+            }
+
+            return;
+        }
+
+        node.value = value === null || value === undefined ? '' : value;
+    }
+
+    function fillFromRow(row) {
+        setValue('recipient_first_name', row.recipient_first_name);
+        setValue('recipient_last_name', row.recipient_last_name);
+        setValue('phone', row.phone);
+        setValue('country', row.country);
+
+        if (isPickupRow(row)) {
+            setValue('city', row.settlement);
+            setValue('postal_code', '');
+            setValue('address_line_1', '');
+            setValue('address_line_2', '');
+            setValue('region', '');
+            setValue('pickup_point_address', row.pickup_point_address);
+        } else {
+            setValue('city', row.city);
+            setValue('postal_code', row.postal_code);
+            setValue('address_line_1', row.address_line_1);
+            setValue('address_line_2', row.address_line_2);
+            setValue('region', row.region);
+            setValue('pickup_point_address', '');
+        }
+
+        applyRegionMode();
+        followDeliveryCountry();
+    }
+
+    /** «Нов адрес»: the name and the phone come from the default address (always editable); the address itself starts empty. */
+    function prefillPerson() {
+        var row = defaultRow();
+
+        if (row !== null) {
+            setValue('recipient_first_name', row.recipient_first_name);
+            setValue('recipient_last_name', row.recipient_last_name);
+            setValue('phone', row.phone);
+        }
+    }
+
+    function clearAddressFields() {
+        ['city', 'postal_code', 'address_line_1', 'address_line_2', 'region', 'pickup_point_address'].forEach(function (name) {
+            setValue(name, '');
+            clearFieldError(name);
+        });
+    }
+
+    function applySavedMode() {
+        if (savedMode === 'saved') {
+            form.setAttribute('data-sf-saved-mode', 'saved');
+        } else {
+            form.removeAttribute('data-sf-saved-mode');
+        }
+    }
+
+    function chooseSaved(row, mode, quoteAgain) {
+        savedId = row.id;
+        savedMode = mode;
+        fillFromRow(row);
+        applySavedMode();
+        savedSignature = '';
+        renderSaved(eligibleSaved());
+
+        if (quoteAgain) {
+            scheduleQuote(true);
+        }
+    }
+
+    function chooseNew(quoteAgain) {
+        savedAuto = false;
+        savedId = null;
+        savedMode = 'new';
+        prefillPerson();
+        clearAddressFields();
+        applySavedMode();
+        savedSignature = '';
+        renderSaved(eligibleSaved());
+
+        if (quoteAgain) {
+            scheduleQuote(true);
+        }
+    }
+
+    /** Called whenever the delivery choice changes (toggleDestination): re-filters the list and keeps the form consistent. */
+    function refreshSaved() {
+        if (account === null) {
+            return;
+        }
+
+        var rows = eligibleSaved();
+        var current = rows.filter(function (row) { return row.id === savedId; })[0];
+
+        if (savedPending) {
+            savedPending = false;
+
+            if (rows.length > 0) {
+                chooseSaved(rows[0], 'saved', false);
+
+                return;
+            }
+
+            prefillPerson();
+        } else if (savedMode === 'saved' && current === undefined) {
+            if (rows.length > 0) {
+                chooseSaved(rows[0], 'saved', true);
+
+                return;
+            }
+
+            // nothing saved fits this courier and kind: the usual field, with what was typed or filled kept; a later choice that fits brings the saved rows back
+            savedId = null;
+            savedMode = 'new';
+            savedAuto = true;
+            applySavedMode();
+        } else if (savedMode === 'new' && savedAuto && rows.length > 0) {
+            savedAuto = false;
+            chooseSaved(rows[0], 'saved', true);
+
+            return;
+        } else if (savedMode === 'edit' && current === undefined) {
+            savedId = null;
+            savedMode = 'new';
+            applySavedMode();
+        }
+
+        renderSaved(rows);
+    }
+
+    function renderSaved(rows) {
+        var selectedIndex = rows.map(function (row) { return row.id; }).indexOf(savedId);
+
+        if (selectedIndex >= SAVED_SHOWN) {
+            savedExpanded = true;
+        }
+
+        var signature = [account === null ? 'x' : 'a', savedMode, savedId, savedExpanded ? 1 : 0, rows.map(function (row) { return row.id; }).join(',')].join('|');
+
+        if (signature === savedSignature) {
+            return;
+        }
+
+        savedSignature = signature;
+        clear(savedList);
+
+        if (account === null || rows.length === 0) {
+            savedBox.hidden = true;
+            savedMore.hidden = true;
+
+            return;
+        }
+
+        savedBox.hidden = false;
+
+        var shown = savedExpanded ? rows : rows.slice(0, SAVED_SHOWN);
+
+        shown.forEach(function (row) {
+            var selected = row.id === savedId && savedMode !== 'new';
+            var wrap = el('div', 'sf-saved-row');
+            var label = el('label', 'sf-choice');
+            var radio = el('input');
+
+            radio.setAttribute('type', 'radio');
+            radio.setAttribute('name', 'saved_address');
+            radio.setAttribute('value', row.id);
+            radio.checked = selected;
+            radio.addEventListener('click', function () {
+                chooseSaved(row, 'saved', true);
+            });
+            label.appendChild(radio);
+            label.appendChild(el('span', 'sf-saved-row-text', ' ' + rowText(row)));
+
+            if (selected && savedMode === 'saved') {
+                var edit = el('button', 'sf-link-button', savedText('change'));
+
+                edit.setAttribute('type', 'button');
+                edit.addEventListener('click', function (event) {
+                    event.preventDefault();
+                    savedMode = 'edit';
+                    applySavedMode();
+                    savedSignature = '';
+                    renderSaved(eligibleSaved());
+                });
+                label.appendChild(edit);
+            }
+
+            wrap.appendChild(label);
+            savedList.appendChild(wrap);
+        });
+
+        var newLabel = el('label', 'sf-choice');
+        var newRadio = el('input');
+
+        newRadio.setAttribute('type', 'radio');
+        newRadio.setAttribute('name', 'saved_address');
+        newRadio.setAttribute('value', 'new');
+        newRadio.checked = savedMode === 'new';
+        newRadio.addEventListener('click', function () {
+            chooseNew(true);
+        });
+        newLabel.appendChild(newRadio);
+        newLabel.appendChild(el('span', 'sf-saved-row-text', ' ' + savedText('new')));
+        savedList.appendChild(newLabel);
+
+        if (! savedExpanded && rows.length > SAVED_SHOWN) {
+            savedMore.hidden = false;
+            savedMore.textContent = savedText('more').replace(':count', String(rows.length - SAVED_SHOWN));
+        } else {
+            savedMore.hidden = true;
+        }
+    }
+
+    /** The saved row the form still shows UNCHANGED (names, phone and every address field), or null: then the full fields go out and the server's dedupe decides. */
+    function unchangedSavedRow() {
+        if (account === null || savedMode !== 'saved' || savedId === null || selection === null) {
+            return null;
+        }
+
+        var row = saved.filter(function (candidate) { return candidate.id === savedId; })[0];
+
+        if (row === undefined || eligibleSaved().indexOf(row) === -1) {
+            return null;
+        }
+
+        var same = fieldValue('recipient_first_name') === (row.recipient_first_name || '')
+            && fieldValue('recipient_last_name') === (row.recipient_last_name || '')
+            && fieldValue('phone') === (row.phone || '')
+            && fieldValue('country') === (row.country || '');
+
+        if (isPickupRow(row)) {
+            return same && fieldValue('city') === (row.settlement || '') && fieldValue('pickup_point_address') === (row.pickup_point_address || '') ? row : null;
+        }
+
+        same = same && fieldValue('city') === (row.city || '') && fieldValue('postal_code') === (row.postal_code || '')
+            && fieldValue('address_line_1') === (row.address_line_1 || '') && fieldValue('address_line_2') === (row.address_line_2 || '');
+
+        if (regionMode() !== 'hidden') {
+            same = same && fieldValue('region') === (row.region || '');
+        }
+
+        return same ? row : null;
+    }
+
+    /** Signed in: no email field («Поръчвате като …»); a guest: the field and «Имате профил? Вход». */
+    function applyAccount() {
+        var signed = account !== null;
+        var email = form.elements.email;
+
+        setRequired('email', ! signed);
+        loginHint.hidden = signed;
+        orderAs.hidden = ! signed;
+        emailField.hidden = signed;
+
+        if (signed) {
+            orderAsEmail.textContent = account.email;
+            email.value = '';
+            clearFieldError('email');
+        }
+    }
+
+    async function loadAccount() {
+        try {
+            var me = await api('GET', '/api/account/me');
+
+            if (me.status !== 200 || ! me.data || typeof me.data.email !== 'string' || me.data.email === '') {
+                return;
+            }
+
+            account = { email: me.data.email };
+
+            var list = await api('GET', '/api/addresses');
+
+            saved = list.status === 200 && list.data && Array.isArray(list.data.data) ? list.data.data.map(cleanRow).filter(function (row) { return row !== null; }) : [];
+            savedPending = true;
+        } catch (e) {
+            account = null;
+            saved = [];
+            savedPending = false;
+        }
+
+        applyAccount();
+        refreshSaved();
+    }
+
+    /** The session ended while the customer was filling the form: back to the guest form, EVERYTHING else they typed kept. */
+    function sessionExpired() {
+        account = null;
+        saved = [];
+        savedId = null;
+        savedPending = false;
+        savedMode = 'new';
+        applySavedMode();
+        savedSignature = '';
+        renderSaved([]);
+        applyAccount();
+        showSummary([{ field: 'email', text: savedText('expired') }]);
+    }
+
+    // ACC-3c: the fields a chosen saved address hides. A 422 that names one of them (the typed fields went out, e.g. after the name or phone was changed)
+    // switches to «Промени»: the fields show and the error stands beside its field.
+    var HIDDEN_BY_SAVED = ['country', 'city', 'postal_code', 'address_line_1', 'address_line_2', 'region', 'pickup_point_address'];
+
+    function revealFieldsWithErrors(errors) {
+        if (savedMode !== 'saved') {
+            return;
+        }
+
+        var hit = Object.keys(errors).some(function (name) {
+            return HIDDEN_BY_SAVED.indexOf(FIELD_ALIAS[name] || inputNameFor(name)) !== -1;
+        });
+
+        if (hit) {
+            savedMode = 'edit';
+            applySavedMode();
+            savedSignature = '';
+            renderSaved(eligibleSaved());
+        }
+    }
+
+    function sessionLost(result) {
+        return result.status === 401 || result.status === 419 || (result.status === 422 && result.data && result.data.errors && typeof result.data.errors === 'object' && result.data.errors.email !== undefined);
+    }
+
+    function toggleRecipient() {
+        var open = recipientField.hidden;
+
+        recipientField.hidden = ! open;
+        recipientToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+
+        if (! open) {
+            form.elements.recipient_email.value = '';
+            clearFieldError('recipient_email');
+        } else {
+            form.elements.recipient_email.focus();
+        }
+    }
+
+    // what the customer types themselves is theirs: the saved choice is no longer taken again behind their back
+    ['recipient_first_name', 'recipient_last_name', 'phone'].concat(HIDDEN_BY_SAVED).forEach(function (name) {
+        form.elements[name].addEventListener('input', function () {
+            savedAuto = false;
+        });
+    });
+    recipientToggle.addEventListener('click', toggleRecipient);
+    savedMore.addEventListener('click', function () {
+        savedExpanded = true;
+        savedSignature = '';
+        renderSaved(eligibleSaved());
+    });
+    logoutButton.addEventListener('click', async function () {
+        logoutButton.disabled = true;
+
+        try {
+            await api('POST', '/api/account/logout');
+        } catch (e) {
+            // the reload below shows whatever the session really is
+        }
+
+        window.location.reload();
+    });
+
     // ------------------------------------------------------------------------------------ region and note
 
     function regionMode() {
@@ -809,6 +1279,7 @@ function initCheckout(root) {
 
         applyRegionMode();
         applyInvoice();
+        refreshSaved();
     }
 
     /** A pick-up point belongs to ONE courier and kind: when either changes, what was typed for it is dropped. */
@@ -1268,7 +1739,6 @@ function initCheckout(root) {
         var pickup = isPickupKind(selection.kind);
         var body = {
             cart_id: cartId,
-            email: fieldValue('email'),
             recipient_first_name: fieldValue('recipient_first_name'),
             recipient_last_name: fieldValue('recipient_last_name'),
             phone: fieldValue('phone'),
@@ -1306,6 +1776,27 @@ function initCheckout(root) {
                     body[name] = fieldValue(name);
                 }
             });
+        }
+
+        // ACC-3c: a signed-in customer sends no email (the server takes the account's own); a guest sends the typed one.
+        if (account === null) {
+            body.email = fieldValue('email');
+        }
+
+        // The optional second recipient of the DELIVERY mails: only while its field is open and filled.
+        if (! recipientField.hidden && fieldValue('recipient_email') !== '') {
+            body.recipient_email = fieldValue('recipient_email');
+        }
+
+        // ACC-3c: a saved address that is still shown UNCHANGED goes out as its id (the server reuses the record). «Промени», «Нов адрес» or any edit
+        // sends the full fields, as before, and the server's dedupe decides between reuse and a new record. The two never travel together.
+        var unchanged = unchangedSavedRow();
+
+        if (unchanged !== null) {
+            ['delivery_type', 'country', 'city', 'postal_code', 'address_line_1', 'address_line_2', 'region', 'settlement', 'carrier_code', 'pickup_point_kind', 'pickup_point_address'].forEach(function (name) {
+                delete body[name];
+            });
+            body.address_id = unchanged.id;
         }
 
         // The optional choices and the consent (checkout form v2, section 6): ONLY when the box is on the page, i.e. when the merchant shows
@@ -1442,7 +1933,11 @@ function initCheckout(root) {
         try {
             var result = await api('POST', '/api/checkout', payload());
 
-            if (result.status === 201 && result.data) {
+            if (account !== null && sessionLost(result)) {
+                // ACC-3c: the session ended between loading the page and pressing the button: guest form back, nothing else cleared.
+                setStatus('');
+                sessionExpired();
+            } else if (result.status === 201 && result.data) {
                 var target = confirmationTarget(result.data.confirmation_url);
 
                 if (target !== null) {
@@ -1456,6 +1951,7 @@ function initCheckout(root) {
                 showSummary([{ field: null, text: t('generic_error') }]);
             } else if (result.status === 422 && result.data && result.data.errors && typeof result.data.errors === 'object') {
                 setStatus('');
+                revealFieldsWithErrors(result.data.errors);
                 showSummary(fieldErrors(result.data.errors));
             } else if (result.status === 422 || result.status === 409 || result.status === 404) {
                 setStatus('');
@@ -1620,12 +2116,14 @@ function initCheckout(root) {
 
     scheduleSummaryFit();
 
-    loadCart().then(function (ready) {
+    // The cart and the account (who is signed in, the saved addresses) load together; the first quote waits for both, so a default address
+    // that fills the place is the place that is quoted.
+    Promise.all([loadCart(), loadAccount()]).then(function (results) {
         if (loading) {
             loading.hidden = true;
         }
 
-        if (ready) {
+        if (results[0]) {
             scheduleQuote(true);
         }
     });

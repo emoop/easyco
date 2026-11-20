@@ -124,6 +124,20 @@ class CheckoutController extends Controller
         // P8d: the honeypot (a filled field: `log` mode logs and goes on, `block` mode answers the form's own generic validation error and writes nothing)
         \App\Security\Honeypot::check($request, 'checkout', 'email');
 
+        // ACC-3c: a logged-in customer's order email is ALWAYS the account's own, taken here on the server: whatever `email` the request
+        // carries is overwritten (never trusted). A request that arrives as a guest keeps what it sent (or lacks it: the usual 422).
+        $account = Auth::guard('customer')->user();
+
+        if ($account !== null) {
+            $request->merge(['email' => (string) $account->email]);
+        }
+
+        // ACC-3c: the optional delivery-mails recipient: trimmed and lower-cased here (a blank one is none); the rules below judge the rest.
+        if (is_string($request->input('recipient_email'))) {
+            $recipient = mb_strtolower(trim($request->input('recipient_email')));
+            $request->merge(['recipient_email' => $recipient === '' ? null : $recipient]);
+        }
+
         $terms = $this->formSettings->termsRequired();
 
         $validated = $request->validate($this->validationRules() + $this->choiceRules($terms) + $this->invoiceRules(), [
@@ -232,6 +246,7 @@ class CheckoutController extends Controller
             // deployment names its proxies, config/trustedproxy.php), and the validated invoice.
             requestFacts: new CheckoutRequestFacts($request->ip(), $request->userAgent()),
             invoice: $invoice,
+            recipientEmail: $validated['recipient_email'] ?? null,
         );
 
         // Each refusal is caught by type and answered with a stable `reason` and a FIXED,
@@ -496,6 +511,8 @@ class CheckoutController extends Controller
             // instead of a lookup of it.
             'cart_id' => 'required|string|max:255',
             'email' => 'required|email|max:255',
+            // ACC-3c: optional, RFC email, at most 254 characters (the column), plain text; equal to the buyer's address it is stored as NULL by the order itself.
+            'recipient_email' => ['nullable', 'string', 'email', 'max:254', new PlainText()],
             // The recipient's name is TWO fields (checkout form v2, section 2.4). A client that still sends `recipient_name` alone gets
             // the two `required` errors: the old field is not in the rules.
             'recipient_first_name' => ['required', 'string', 'max:100', new PlainText()],

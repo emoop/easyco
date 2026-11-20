@@ -42,6 +42,10 @@
                 <span class="sf-received-destination-line">{{ $part }}</span>
             @endforeach
         </address>
+        @if (($order['delivery_notice_email'] ?? null) !== null)
+            {{-- ACC-3c: the second address that also receives the delivery mails (escaped text; this body is only ever shown on a private, no-store page). --}}
+            <p class="sf-received-delivery-notice">{{ __('storefront.received_delivery_notice') }}: {{ $order['delivery_notice_email'] }}</p>
+        @endif
         @if ($order['note'] !== null)
             {{-- The customer's note: escaped text, its line breaks kept by CSS (white-space: pre-line), never <br> or markup. --}}
             <p class="sf-received-note">{{ __('storefront.received_note') }}: {{ $order['note'] }}</p>

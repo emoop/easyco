@@ -130,6 +130,9 @@ final class Order
         private readonly ?string $marketingConsentText = null,
         // MEAS-1: the parcel weight in grams at placement = the sum of the lines' snapshotted weights when EVERY line has one, else NULL (unknown, never 0). Create-time fact, never changed by an edit.
         private readonly ?int $parcelWeightGrams = null,
+        // ACC-3c: an optional second address that receives ONLY the delivery mails (shipped, waybill/tracking), in addition to the buyer.
+        // Stored on the order alone, never in the address book. Normalised (trimmed, lower-cased) and NULL when it equals the buyer's.
+        private readonly ?string $recipientEmail = null,
     ) {
         self::assertTermsProof($termsAcceptedAt, $termsVersion);
         self::assertConsentText($marketingConsent, $marketingConsentText);
@@ -551,6 +554,7 @@ final class Order
         ?bool $marketingConsent = null,
         ?string $marketingConsentText = null,
         ?int $parcelWeightGrams = null,
+        ?string $recipientEmail = null,
     ): self {
         self::assertCountryShape($country);
         self::assertNotEmpty('recipientLastName', $recipientLastName);
@@ -618,6 +622,7 @@ final class Order
             marketingConsent: $marketingConsent,
             marketingConsentText: self::trimmedOrNull($marketingConsentText),
             parcelWeightGrams: $parcelWeightGrams,
+            recipientEmail: self::normalizedRecipientEmail($recipientEmail, $email),
         );
     }
 
@@ -679,6 +684,7 @@ final class Order
         ?bool $marketingConsent = null,
         ?string $marketingConsentText = null,
         ?int $parcelWeightGrams = null,
+        ?string $recipientEmail = null,
     ): self {
         return new self(
             id: $id,
@@ -725,6 +731,7 @@ final class Order
             marketingConsent: $marketingConsent,
             marketingConsentText: $marketingConsentText,
             parcelWeightGrams: $parcelWeightGrams,
+            recipientEmail: $recipientEmail,
         );
     }
 
@@ -760,6 +767,20 @@ final class Order
     public function email(): string
     {
         return $this->email;
+    }
+
+    /** ACC-3c: the optional delivery-mails-only address; NULL when none (or when it was the buyer's own). */
+    public function recipientEmail(): ?string
+    {
+        return $this->recipientEmail;
+    }
+
+    /** Trimmed and lower-cased; blank, or equal to the buyer's address (any case), is no recipient at all. */
+    private static function normalizedRecipientEmail(?string $recipientEmail, string $buyerEmail): ?string
+    {
+        $value = $recipientEmail === null ? '' : mb_strtolower(trim($recipientEmail));
+
+        return $value === '' || $value === mb_strtolower(trim($buyerEmail)) ? null : $value;
     }
 
     public function currency(): Currency

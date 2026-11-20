@@ -883,6 +883,12 @@ class OrderResource extends Resource
                                 ->hiddenLabel()
                                 ->html()
                                 ->getStateUsing(fn (OrderModel $record): string => static::deliveryAddressHtml($record)),
+                            // ACC-3c: the second address that ALSO receives the delivery mails ("Изпращам до друг човек"); only when there is one. Plain text, escaped by the entry.
+                            static::divider()->visible(fn (OrderModel $record): bool => filled($record->recipient_email)),
+                            TextEntry::make('recipient_email')
+                                ->label(__('orders.fields.recipient_email'))
+                                ->copyable()
+                                ->visible(fn (OrderModel $record): bool => filled($record->recipient_email)),
                             // The customer's own note to the order (checkout RN-1), its own block under the address: customer input, so escaped
                             // (e() then nl2br: the line breaks they typed are kept); only when there is one.
                             static::divider()->visible(fn (OrderModel $record): bool => filled($record->customer_note)),

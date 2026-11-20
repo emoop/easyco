@@ -3034,6 +3034,41 @@
         @apply rounded-md border border-neutral-200 p-3;
     }
 
+    /* ACC-3c: the logged-in checkout: «Имате профил?», «Поръчвате като», «Изпращам до друг човек» and the saved-address rows. */
+    .sf-link-button {
+        @apply cursor-pointer border-0 bg-transparent p-0 text-sm text-sky-800 underline;
+    }
+
+    .sf-login-hint,
+    .sf-order-as {
+        @apply mb-3 text-sm text-neutral-700;
+    }
+
+    .sf-recipient-toggle,
+    .sf-saved-more {
+        @apply mb-3 mt-1;
+    }
+
+    .sf-saved {
+        @apply mb-4;
+    }
+
+    .sf-saved .sf-choice {
+        @apply flex flex-wrap items-center;
+    }
+
+    .sf-saved-row-text {
+        @apply min-w-0 flex-1 break-words;
+    }
+
+    /* A saved address is chosen: its fields stay in the form (the script reads them) but are not shown. */
+    .sf-checkout-form[data-sf-saved-mode="saved"] .sf-fieldset:has(> .sf-saved) > .sf-field:has(#sf-country),
+    .sf-checkout-form[data-sf-saved-mode="saved"] .sf-fieldset:has(> .sf-saved) > .sf-place-row,
+    .sf-checkout-form[data-sf-saved-mode="saved"] .sf-fieldset:has(> .sf-saved) > [data-sf-address-fields],
+    .sf-checkout-form[data-sf-saved-mode="saved"] .sf-fieldset:has(> .sf-saved) > [data-sf-pickup-fields] {
+        display: none;
+    }
+
     .sf-shipping-hint {
         @apply mt-3 rounded-md bg-sky-50 p-3 text-sm text-sky-900;
     }
