@@ -495,6 +495,7 @@ final class SaleLineTest extends TestCase
             'netPaidAmount',
             'soldAttributes',
             'unitCost',
+            'unitWeightGrams',
             'quantityReturned',
             'defaultRefundAmount',
             'actualRefundAmount',

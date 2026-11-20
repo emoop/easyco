@@ -14,6 +14,12 @@
  * The list = every *Test.php under the directories of phpunit.xml's testsuites (the same rule PHPUnit uses), sorted by path.
  * Shard k (1-based) takes the files whose index i satisfies i % shards == k - 1.
  */
+// CI-2: the two functions below are also called by tests/Unit/Ci/ShardCoverageTest.php, which includes this file: only a run of the script itself goes on to the command line part.
+// (function declarations are hoisted, so they exist even though this return comes first)
+if (! isset($argv[0]) || realpath($argv[0]) !== realpath(__FILE__)) {
+    return;
+}
+
 $root = dirname(__DIR__, 2);
 $options = getopt('', ['verify', 'list', 'shard:', 'shards:', 'limit:', 'config:']);
 $shards = max(1, (int) ($options['shards'] ?? 4));
@@ -25,12 +31,15 @@ function suiteFiles(string $root): array
     $files = [];
     foreach ($xml->testsuites->testsuite as $suite) {
         foreach ($suite->directory as $directory) {
-            $path = $root.'/'.trim((string) $directory, '/');
+            $pattern = $root.'/'.trim((string) $directory, '/');
             $suffix = (string) ($directory['suffix'] ?? 'Test.php');
-            $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($path, FilesystemIterator::SKIP_DOTS));
-            foreach ($iterator as $file) {
-                if ($file->isFile() && str_ends_with($file->getFilename(), $suffix)) {
-                    $files[] = str_replace('\\', '/', substr($file->getPathname(), strlen($root) + 1));
+            // a directory may be a glob (packages/EasyCo/*/tests), the way PHPUnit reads it
+            foreach (glob($pattern, GLOB_ONLYDIR) ?: [] as $path) {
+                $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($path, FilesystemIterator::SKIP_DOTS));
+                foreach ($iterator as $file) {
+                    if ($file->isFile() && str_ends_with($file->getFilename(), $suffix)) {
+                        $files[] = str_replace('\\', '/', substr($file->getPathname(), strlen($root) + 1));
+                    }
                 }
             }
         }
