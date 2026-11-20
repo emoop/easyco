@@ -45,3 +45,18 @@ Schedule::command('prices:refresh-from')->everyMinute()->withoutOverlapping()
 
 // P8d: the bot-challenge mode is pushed to the cache layer every minute (Varnish forgets it on a restart). The null switch does nothing until P8c.
 Schedule::command('security:push-bot-challenge')->everyMinute()->withoutOverlapping();
+
+// ACC-4a (acc-4-gdpr-design.md section 5): the privacy housekeeping, daily and staggered, each a cheap no-op when nothing has aged out (only counts are logged).
+// - the clear email/phone of a forget log row live 30 days (D6), then only the hashes stay;
+// - a request that waited more than 24 h for its confirmation expires;
+// - mail_log.to_email is a clear address: rows older than `privacy.mail_log_retention_days` (default 365) are deleted;
+// - cart:prune (it was safe to schedule since shipping stage 4h, it only never was): unclaimed carts past their expiry, a claimed cart is never deleted;
+// - an unused password reset token (a hash + an email, no foreign key) is deleted after its own 60 minutes;
+// - failed jobs keep their payload (an email, a link): 720 hours, then gone.
+// Session GC needs nothing here: SESSION_DRIVER=database with config/session.php `lottery` [2, 100] collects garbage on the requests that start a session.
+Schedule::command('privacy:expire-clear-view')->dailyAt('02:10');
+Schedule::command('privacy:expire-requests')->dailyAt('02:20');
+Schedule::command('mail:prune-log')->dailyAt('02:30');
+Schedule::command('cart:prune')->dailyAt('02:40');
+Schedule::command('accounts:prune-reset-tokens')->dailyAt('02:50');
+Schedule::command('queue:prune-failed --hours=720')->dailyAt('03:00');

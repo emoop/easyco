@@ -22,6 +22,19 @@ if [ -z "${APP_KEY:-}" ]; then
     exit 2
 fi
 
+# 1b. PRIVACY_HASH_KEY (ACC-4a). The keyed hash of the forget log and the suppression list; NOT the APP_KEY, so an APP_KEY rotation cannot break it.
+#     Same arrangement as APP_KEY: printed once, put into the environment by the operator, then redeploy and run this script again.
+if [ -z "${PRIVACY_HASH_KEY:-}" ]; then
+    PKEY="$(as_app php -r 'echo bin2hex(random_bytes(32));')"
+    echo
+    echo "PRIVACY_HASH_KEY is empty. Put this value into the environment of the application (Coolify -> Environment Variables), then REDEPLOY and run this script again:"
+    echo
+    echo "    PRIVACY_HASH_KEY=${PKEY}"
+    echo
+    echo "NEVER change it after go-live, and back it up together with .env: a lost or changed key makes every existing suppression (every person who was forgotten) unmatchable."
+    exit 2
+fi
+
 # 2. Database (the entrypoint already migrates at every start; this is a safety net).
 as_app php artisan migrate --force
 

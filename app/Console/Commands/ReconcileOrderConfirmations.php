@@ -16,6 +16,9 @@ use Illuminate\Support\Facades\DB;
  * any status — is left alone; so are cancelled and refunded orders. Scheduled every 10 minutes (routes/console.php).
  *
  * Two reads per run (candidates, then the existing keys), at most 200 orders; the rest wait for the next run.
+ *
+ * WINDOW_HOURS must stay far shorter than the shortest mail log retention (PrivacySettings::MIN_MAIL_LOG_RETENTION_DAYS, 30 days): mail:prune-log deletes
+ * the idempotency rows, and an order outside this window can then never get a second confirmation.
  */
 class ReconcileOrderConfirmations extends Command
 {

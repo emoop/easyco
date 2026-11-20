@@ -56,6 +56,12 @@ class AccountMails
         $this->queue(MailTemplates::ACCOUNT_EMAIL_NOTICE, $oldEmail, []);
     }
 
+    /** ACC-4a: the confirmation that the person was forgotten (no link: nothing to click). */
+    public function privacyErased(string $email): void
+    {
+        $this->queue(MailTemplates::PRIVACY_ERASED, $email, []);
+    }
+
     /** @param  array<string, scalar>  $query */
     private function url(string $path, array $query = []): string
     {

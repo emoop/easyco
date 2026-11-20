@@ -31,6 +31,9 @@ final class MailTemplates
 
     public const ACCOUNT_EMAIL_NOTICE = 'account.email_notice';
 
+    // ACC-4a: the confirmation after a person was forgotten (acc-4-gdpr-design.md section 4). An account-type mail: SendAccountMailJob, never mail_log.
+    public const PRIVACY_ERASED = 'privacy.erased';
+
     /** @var array<string, array{category: string, sender: string, queue: string, scalars: list<string>, blocks: list<string>}> */
     private const DEFINITIONS = [
         self::ORDER_CONFIRMATION => [
@@ -46,6 +49,7 @@ final class MailTemplates
         self::ACCOUNT_PASSWORD_CHANGED => ['category' => 'transactional', 'sender' => 'transactional', 'queue' => 'mail-transactional', 'scalars' => ['shop_name'], 'blocks' => ['reset_link']],
         self::ACCOUNT_EMAIL_CONFIRM => ['category' => 'transactional', 'sender' => 'transactional', 'queue' => 'mail-transactional', 'scalars' => ['shop_name'], 'blocks' => ['action_link']],
         self::ACCOUNT_EMAIL_NOTICE => ['category' => 'transactional', 'sender' => 'transactional', 'queue' => 'mail-transactional', 'scalars' => ['shop_name'], 'blocks' => []],
+        self::PRIVACY_ERASED => ['category' => 'transactional', 'sender' => 'transactional', 'queue' => 'mail-transactional', 'scalars' => ['shop_name'], 'blocks' => []],
     ];
 
     public function has(string $key): bool
