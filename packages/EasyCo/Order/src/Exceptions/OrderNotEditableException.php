@@ -31,6 +31,7 @@ final class OrderNotEditableException extends RuntimeException
         string $message,
         private readonly OrderStatus $status,
         private readonly bool $becauseOfSettledPayment = false,
+        private readonly bool $becauseAnonymised = false,
     ) {
         parent::__construct($message);
     }
@@ -61,6 +62,27 @@ final class OrderNotEditableException extends RuntimeException
         );
     }
 
+
+    /** ACC-4b: an anonymised order is never edited again (its personal data is gone for good). The stable reason is `order_anonymised`. */
+    public static function becauseAnonymised(OrderStatus $status): self
+    {
+        return new self(
+            'Order cannot be edited: its personal data was anonymised after the retention period (reason: order_anonymised).',
+            $status,
+            becauseAnonymised: true,
+        );
+    }
+
+    public function isBecauseAnonymised(): bool
+    {
+        return $this->becauseAnonymised;
+    }
+
+    /** The stable machine reason of the refusal for the anonymised case (null for the other two). */
+    public function reason(): ?string
+    {
+        return $this->becauseAnonymised ? 'order_anonymised' : null;
+    }
     /** True when the refusal is E3's settled-payment gate rather than the status rule. */
     public function isBecauseOfSettledPayment(): bool
     {

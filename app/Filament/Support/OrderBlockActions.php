@@ -24,7 +24,8 @@ use InvalidArgumentException;
  * EVERY ONE of them needs ORDER_MANAGE (visible AND re-checked when mounted: Filament evaluates ->visible() again at click time), and the IP one
  * additionally needs the address itself, which only OrderContextReader::fullClientAddress() gives, and only to ORDER_MANAGE: a viewer without that
  * permission is never even asked for it. The modal says plainly that only cash on delivery is stopped. Every action goes through
- * OrderBlockService (one writer; the activity-log row with the MASKED value is its job).
+ * OrderBlockService (one writer; the activity-log row with the MASKED value is its job). An ANONYMISED order shows none of them (ACC-4b) and refuses
+ * the call on the server.
  */
 final class OrderBlockActions
 {
@@ -50,12 +51,13 @@ final class OrderBlockActions
             ->modalSubmitActionLabel(__('blocks.actions.block'))
             // «Помощ: как работи →» (new tab): the section that explains what a block stops and what the customer sees.
             ->schema([...self::durationFields(), HelpLink::component('block_identifier')])
-            ->visible(fn (OrderModel $record): bool => self::mayManage() && self::hasValue($record, $type) && app(OrderBlockLookup::class)->blockFor($record, $type) === null)
+            ->visible(fn (OrderModel $record): bool => self::mayManage() && ! self::anonymised($record) && self::hasValue($record, $type) && app(OrderBlockLookup::class)->blockFor($record, $type) === null)
             ->action(function (OrderModel $record, array $data) use ($type): void {
                 $value = self::valueOf($record, $type);
 
                 try {
-                    if ($value === null) {
+                    // an anonymised order holds placeholders, never an identifier: refused on the server even when the action is called directly (ACC-4b)
+                    if ($value === null || self::anonymised($record)) {
                         throw new InvalidArgumentException('no value');
                     }
 
@@ -84,11 +86,11 @@ final class OrderBlockActions
             ->modalHeading(__('blocks.actions.unblock_heading', ['type' => mb_strtolower(__('blocks.type_options.'.$type->value))]))
             ->modalDescription(__('blocks.actions.unblock_description', ['type' => mb_strtolower(__('blocks.type_options.'.$type->value))]))
             ->modalContent(HelpLink::html('block_identifier'))
-            ->visible(fn (OrderModel $record): bool => self::mayManage() && app(OrderBlockLookup::class)->blockFor($record, $type) !== null)
+            ->visible(fn (OrderModel $record): bool => self::mayManage() && ! self::anonymised($record) && app(OrderBlockLookup::class)->blockFor($record, $type) !== null)
             ->action(function (OrderModel $record) use ($type): void {
                 $block = app(OrderBlockLookup::class)->blockFor($record, $type);
 
-                if ($block !== null) {
+                if ($block !== null && ! self::anonymised($record)) {
                     app(OrderBlockService::class)->revoke($block);
                 }
 
@@ -149,6 +151,12 @@ final class OrderBlockActions
             self::CUSTOM => (int) ($data['custom_days'] ?? OrderBlockService::DEFAULT_DAYS),
             default => (int) $data['duration'],
         };
+    }
+
+    /** An anonymised order (ACC-4b) carries placeholders instead of the phone, the email and the address: nothing to block, nothing to unblock. */
+    private static function anonymised(OrderModel $record): bool
+    {
+        return $record->anonymised_at !== null;
     }
 
     /** Is there something to block? A short phone has no key; the IP needs the address, which only ORDER_MANAGE may read. */

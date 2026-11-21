@@ -60,3 +60,8 @@ Schedule::command('mail:prune-log')->dailyAt('02:30');
 Schedule::command('cart:prune')->dailyAt('02:40');
 Schedule::command('accounts:prune-reset-tokens')->dailyAt('02:50');
 Schedule::command('queue:prune-failed --hours=720')->dailyAt('03:00');
+
+// ACC-4b (acc-4-gdpr-design.md D1, D8): the personal data of a finished order past the retention period (`privacy.order_retention_years`, default 10) is
+// anonymised. Daily, after the other privacy housekeeping; a cheap no-op when nothing has aged out; `withoutOverlapping` because a big backlog is worked
+// off 500 orders per run, one transaction each; only counts are logged.
+Schedule::command('privacy:anonymise-orders')->dailyAt('03:10')->withoutOverlapping();

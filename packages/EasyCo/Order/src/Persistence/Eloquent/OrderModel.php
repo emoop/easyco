@@ -62,11 +62,13 @@ class OrderModel extends Model
         'marketing_consent_text',
         'parcel_weight_grams',
         'recipient_email',
+        'anonymised_at',
     ];
 
     protected $casts = [
         'placed_at' => 'immutable_datetime',
         'terms_accepted_at' => 'immutable_datetime',
+        'anonymised_at' => 'immutable_datetime',
         'confirmation_requested' => 'boolean',
         'call_before_shipping' => 'boolean',
         'marketing_consent' => 'boolean',

@@ -175,6 +175,12 @@ final class OrderEditor
             throw new InvalidArgumentException("OrderEditor: order \"{$orderId}\" does not exist.");
         }
 
+        // 0. ACC-4b: an anonymised order is never edited again (acc-4-gdpr-design.md D8). First of all: its refusal is the stable reason
+        // `order_anonymised`, whatever the revision or the status says.
+        if ($order->isAnonymised()) {
+            throw OrderNotEditableException::becauseAnonymised($order->status());
+        }
+
         // 1. The stale-form check comes before every other guard (§5 step 3).
         if ($order->editRevision() !== $expectedRevision) {
             throw new StaleOrderEditException($orderId, $expectedRevision, $order->editRevision());

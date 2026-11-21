@@ -49,23 +49,41 @@ use LogicException;
  * currency/non-negative assertions as create(), as a real integrity
  * check on what came out of the database, not a rubber stamp.
  *
- * MOSTLY IMMUTABLE — only two fields ever change after construction: `id`,
+ * MOSTLY IMMUTABLE — only these ever change after construction: `id`,
  * once, through the one-time assignId(); and `status`, through the five
  * named mutators below (confirm/ship/deliver/cancel/refund — one per legal
  * move), each guarded by OrderStatus's own transition matrix and nothing
- * else. Every other field is frozen: no setter, no reconstitute-and-resave.
+ * else. (Stage 2 added the two one-shot edit methods reviseTotals() and
+ * reviseDelivery(); ACC-4b added the third documented exception, below.)
+ * Every other field is frozen: no setter, no reconstitute-and-resave.
+ *
+ * THE RETENTION EXCEPTION (ACC-4b, acc-4-gdpr-design.md D8): anonymise() is the
+ * one-way erasure of the PERSONAL fields of a finished order once the
+ * merchant's retention period has ended (see the method). It is lawful erasure
+ * of data whose period is over, not a rewrite of history: amounts, lines,
+ * statuses, dates and the number never change.
+ *
  * Why status is the one mutable business fact, what a transition
  * deliberately does NOT write, and what the app layer wraps around it are
  * order-lifecycle-design.md §3 and §5.1.
  */
 final class Order
 {
+    /** ACC-4b: what a NOT NULL personal text column holds after the anonymisation (a name, a phone, a pick-up point description). */
+    public const ANONYMISED = 'Анонимизиран';
+
+    /** ACC-4b: the email of an anonymised order (the column is NOT NULL); `.invalid` can never be delivered, and the identity keys are NULL. */
+    public const ANONYMISED_EMAIL = 'anonymised@invalid';
+
+    /** ACC-4b: the statuses a retention anonymisation may reach: a finished order. A placed, confirmed or shipped order is still being worked on. */
+    public const ANONYMISABLE_STATUSES = [OrderStatus::DELIVERED, OrderStatus::CANCELLED, OrderStatus::REFUNDED];
+
     private function __construct(
         private ?string $id,
         private readonly string $clientId,
         private readonly ?string $accountId,
         private readonly string $transactionId,
-        private readonly string $email,
+        private string $email,
         private readonly Currency $currency,
         // NOT readonly (stage 2) — reviseTotals() changes these four
         // together, one-shot, never partially (order-editing-design.md §2).
@@ -118,7 +136,7 @@ final class Order
         // The REGION of a street address (checkout RN-1), changed with the delivery like the city; and the customer's ORDER NOTE:
         // the customer's own words, written ONCE at placement and never changed by any method (a plain, readonly value).
         private ?string $region = null,
-        private readonly ?string $customerNote = null,
+        private ?string $customerNote = null,
         // WHAT THE CUSTOMER TICKED (checkout form v2, C1d-B; order-context-design.md 2.3 / 9): create-time facts, readonly, written on the row
         // that is inserted (never a second UPDATE, 9.6). NULL = not asked / placed before the field existed. The terms proof is the placement
         // instant and the version the page displayed (both or neither); the consent sentence is exactly what the customer ticked.
@@ -132,7 +150,9 @@ final class Order
         private readonly ?int $parcelWeightGrams = null,
         // ACC-3c: an optional second address that receives ONLY the delivery mails (shipped, waybill/tracking), in addition to the buyer.
         // Stored on the order alone, never in the address book. Normalised (trimmed, lower-cased) and NULL when it equals the buyer's.
-        private readonly ?string $recipientEmail = null,
+        private ?string $recipientEmail = null,
+        // ACC-4b (acc-4-gdpr-design.md D8): when the personal data of this order was anonymised after the retention period; NULL = never. One-way.
+        private ?DateTimeImmutable $anonymisedAt = null,
     ) {
         self::assertTermsProof($termsAcceptedAt, $termsVersion);
         self::assertConsentText($marketingConsent, $marketingConsentText);
@@ -155,7 +175,8 @@ final class Order
         self::assertAccountIdNotEmptyString($accountId);
         self::assertSameCurrency($currency, $subtotal, $discount, $shipping, $total);
         self::assertDiscountDoesNotExceedSubtotal($subtotal, $discount, $total);
-        self::assertFieldsMatchDeliveryType(
+        // ACC-4b: an ANONYMISED order has deliberately lost the street, the settlement and the like; the delivery-type shape rules describe a live order.
+        $anonymisedAt === null && self::assertFieldsMatchDeliveryType(
             deliveryType: $deliveryType,
             country: $country,
             city: $city,
@@ -685,6 +706,7 @@ final class Order
         ?string $marketingConsentText = null,
         ?int $parcelWeightGrams = null,
         ?string $recipientEmail = null,
+        ?DateTimeImmutable $anonymisedAt = null,
     ): self {
         return new self(
             id: $id,
@@ -732,6 +754,7 @@ final class Order
             marketingConsentText: $marketingConsentText,
             parcelWeightGrams: $parcelWeightGrams,
             recipientEmail: $recipientEmail,
+            anonymisedAt: $anonymisedAt,
         );
     }
 
@@ -773,6 +796,67 @@ final class Order
     public function recipientEmail(): ?string
     {
         return $this->recipientEmail;
+    }
+
+    /** ACC-4b: when the personal data of this order was anonymised (NULL = never). */
+    public function anonymisedAt(): ?DateTimeImmutable
+    {
+        return $this->anonymisedAt;
+    }
+
+    public function isAnonymised(): bool
+    {
+        return $this->anonymisedAt !== null;
+    }
+
+    /**
+     * ACC-4b (acc-4-gdpr-design.md D8): the SECOND mutation an order allows after assignId() (and the first one that touches a fact the customer gave),
+     * the same kind of narrow, documented exception as the one-time assignment of an owned structural reference (CLAUDE.md rules 4 and 7).
+     *
+     *  - PERSONAL FIELDS ONLY: the recipient's name, the email, the phone, the street, the postcode, the region, the settlement, the pick-up point's
+     *    reference, name and address, the customer's note and the second recipient email. `country`, `city`, the courier and the pick-up KIND stay:
+     *    they are statistics and identify nobody without the rest. Amounts, lines, statuses, dates, the number, shipping, the payment method and the
+     *    consent BOOLEAN never change.
+     *  - ONLY AFTER THE RETENTION PERIOD: the caller names the cutoff (the app layer computes it from the merchant's setting) and an order placed at or
+     *    after it is refused. Only a FINISHED order (delivered, cancelled, refunded) may be anonymised.
+     *  - ONE-WAY: the original values are not kept anywhere, and a second call is refused (LogicException), never silently repeated.
+     *  - A NOT NULL column gets the placeholder, a nullable one NULL. A pick-up order keeps ONE non-blank description (the placeholder in the address),
+     *    because the database requires a pick-up point to be identified or described (ord_pickup_ident_check).
+     *
+     * Persisting it is EloquentOrderRepository::save(), which also clears the four identity keys of an anonymised order and the database holds
+     * (ord_anon_status_check); the NULL identity keys are the repository's rule, pinned by the tests (a CHECK over those columns would block the rollback of the migration that adds them).
+     *
+     * @throws LogicException already anonymised, not finished, or placed at or after the cutoff
+     */
+    public function anonymise(DateTimeImmutable $at, DateTimeImmutable $cutoff): void
+    {
+        if ($this->anonymisedAt !== null) {
+            throw new LogicException('Order is already anonymised; anonymise() is a one-way, one-time operation.');
+        }
+
+        if (! in_array($this->status, self::ANONYMISABLE_STATUSES, true)) {
+            throw new LogicException("Order cannot be anonymised while its status is \"{$this->status->value}\": only a finished order (delivered, cancelled, refunded).");
+        }
+
+        if ($this->placedAt >= $cutoff) {
+            throw new LogicException('Order cannot be anonymised: its retention period has not ended.');
+        }
+
+        $this->email = self::ANONYMISED_EMAIL;
+        $this->recipientFirstName = self::ANONYMISED;
+        $this->recipientLastName = self::ANONYMISED;
+        $this->phone = self::ANONYMISED;
+        $this->postalCode = null;
+        $this->addressLine1 = null;
+        $this->addressLine2 = null;
+        $this->region = null;
+        $this->settlement = null;
+        $this->pickupPointReference = null;
+        $this->pickupPointName = null;
+        $this->pickupPointAddress = $this->deliveryType === OrderDeliveryType::PICKUP_POINT ? self::ANONYMISED : null;
+        $this->customerNote = null;
+        $this->recipientEmail = null;
+        $this->anonymisedAt = $at;
     }
 
     /** Trimmed and lower-cased; blank, or equal to the buyer's address (any case), is no recipient at all. */
@@ -929,6 +1013,10 @@ final class Order
      */
     private function assertEditable(): void
     {
+        if ($this->anonymisedAt !== null) {
+            throw OrderNotEditableException::becauseAnonymised($this->status);
+        }
+
         if (! in_array($this->status, [OrderStatus::PLACED, OrderStatus::CONFIRMED], true)) {
             throw OrderNotEditableException::because($this->status);
         }

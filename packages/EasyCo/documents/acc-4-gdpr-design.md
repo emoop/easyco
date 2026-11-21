@@ -115,6 +115,16 @@ Amounts, lines and statuses never change. This is lawful erasure of data whose p
   - Amounts, lines, statuses, dates, number and `marketing_consent` (boolean only) stay.
   - Idempotent; chunked; `anonymised_at` column on orders.
 
+**What ACC-4b turned out different (implementation notes).**
+- `Order::anonymise(DateTimeImmutable $at, DateTimeImmutable $cutoff)` lives on the aggregate (D8). It needed `email`, `customerNote` and `recipientEmail` to lose `readonly`, a trailing `anonymisedAt`, and the delivery-shape invariants (a street order needs a street, a pick-up point a settlement) are NOT applied to an anonymised order (it has deliberately lost them). The identity keys are NULL on every save of an anonymised order and the database holds it (`ord_anon_status_check`; the NULL keys are the repository's rule, pinned by tests).
+- **«Finished»** is `delivered`, `cancelled`, `refunded` (`Order::ANONYMISABLE_STATUSES`). `OrderStatus::isTerminal()` is only cancelled/refunded (a delivered order can still be refunded), which would skip nearly every order; a placed, confirmed or shipped order is skipped and counted.
+- **«Open money matter»** is read from the ONE place the code has for it: the tagged `NeedsAttentionSource`s (owed refund, receipt mismatch, payment step unfinished), through `App\Privacy\OpenMoneyOrders`.
+- **Placeholders:** `Анонимизиран` for the NOT NULL names, phone and (pick-up) description, `anonymised@invalid` for the NOT NULL emails. A pick-up row keeps ONE non-blank description (the database requires it).
+- **Also cleared** (not in the first list): the attribution's `first_landing_page_url` and `click_id_value` (an ad click id is an identifier); the invoice city/postcode/street (the country stays). **Stays:** `country`, `city`, `referrer_host`, UTM, device, counts, staff names.
+- **Refund free text (ACC-4b follow-up).** The earlier text said: «Not touched, flagged: `payment_refunds.paid_out_note` / `cancelled_reason` / `deduction_reason` / `paid_out_reference` (staff free text)». It is now cleared: `paid_out_note` and `paid_out_reference` → NULL; `cancelled_reason` → the placeholder `Анонимизиран` where `pay_refunds_cancel_check` needs a text (the refund is cancelled), else NULL; `deduction_reason` → the placeholder where `pay_refunds_deduction_check` needs one (`deduction_minor <> 0`), else NULL (the owner's «NULL» is impossible there: the database refuses a deduction without a reason).
+- **The admin block buttons (ACC-4b follow-up).** An anonymised order shows no «Блокирай» / «Отблокирай» for the email, the phone and the IP (it holds placeholders, never an identifier), and the action itself refuses on the server (`OrderBlockActions::anonymised()`; Filament does not mount a hidden action). No extra query: it reads the column already loaded.
+- **Not touched, flagged:** `operational_sales_clients.name` (the client row made from the first order's recipient name; a leftover, owner-confirmed), `order_blocks` (D7). See the ACC-4b report.
+
 ## 5. Housekeeping (scheduled, daily)
 - `privacy:expire-clear-view` — nulls `email`/`phone` in `privacy_requests` past `clear_until`.
 - `privacy:expire-requests` — `awaiting_confirmation` older than 24 h → `expired`, email nulled.

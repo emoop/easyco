@@ -2,6 +2,7 @@
 
 namespace EasyCo\Order\Persistence\Eloquent;
 
+use DateTimeImmutable;
 use EasyCo\Order\Contracts\OrderRepository;
 use EasyCo\Order\Enums\OrderDeliveryType;
 use EasyCo\Order\Enums\OrderStatus;
@@ -64,22 +65,29 @@ final class EloquentOrderRepository implements OrderRepository
         $model->marketing_consent_text = $order->marketingConsentText();
         $model->parcel_weight_grams = $order->parcelWeightGrams();
         $model->recipient_email = $order->recipientEmail();
+        $model->anonymised_at = $order->anonymisedAt();
         $model->edit_revision = $order->editRevision();
 
         // THE IDENTITY KEYS (cod-protection-design.md section 2): derived from the order's own contact and delivery facts by the ONE
         // normaliser, written in the SAME insert as the order (no query of their own) and recomputed by every save, so an edit of the phone,
         // the name or the delivery place (OrderEditor) refreshes them by itself.
-        $model->phone_key = IdentityKeys::phone($order->phone());
-        $model->email_key = IdentityKeys::email($order->email());
-        $model->name_key = IdentityKeys::name($order->recipientFirstName(), $order->recipientLastName());
-        $model->place_key = IdentityKeys::place(
-            $order->deliveryType() === OrderDeliveryType::PICKUP_POINT,
-            $order->country(),
-            $order->city(),
-            $order->addressLine1(),
-            $order->carrierCode(),
-            $order->pickupPointAddress(),
-        );
+        // ACC-4b: an ANONYMISED order has NO identity keys (they are the email, the phone, the name and the place in a lookup form): the four stay NULL
+        // on every later save too (a status change, a tracking number); the tests pin it (no CHECK: it would block rolling back the migration that adds the keys).
+        if ($order->isAnonymised()) {
+            $model->phone_key = $model->email_key = $model->name_key = $model->place_key = null;
+        } else {
+            $model->phone_key = IdentityKeys::phone($order->phone());
+            $model->email_key = IdentityKeys::email($order->email());
+            $model->name_key = IdentityKeys::name($order->recipientFirstName(), $order->recipientLastName());
+            $model->place_key = IdentityKeys::place(
+                $order->deliveryType() === OrderDeliveryType::PICKUP_POINT,
+                $order->country(),
+                $order->city(),
+                $order->addressLine1(),
+                $order->carrierCode(),
+                $order->pickupPointAddress(),
+            );
+        }
 
         $model->save();
 
@@ -165,6 +173,7 @@ final class EloquentOrderRepository implements OrderRepository
             marketingConsentText: $model->marketing_consent_text,
             parcelWeightGrams: $model->parcel_weight_grams === null ? null : (int) $model->parcel_weight_grams,
             recipientEmail: $model->recipient_email,
+            anonymisedAt: $model->anonymised_at === null ? null : DateTimeImmutable::createFromInterface($model->anonymised_at),
         );
     }
 }

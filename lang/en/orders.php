@@ -82,6 +82,9 @@ return [
         'staff_name' => 'By',
     ],
 
+    // ACC-4b: the small badge on an order whose personal data was anonymised after the retention period.
+    'anonymised_badge' => 'Anonymised on :date',
+
     'sections' => [
         'summary' => 'Summary',
         'client' => 'Client & contact',
@@ -146,6 +149,7 @@ return [
         'payment_receipt_recorded' => 'Bank transfer received',
         'payment_receipt_corrected' => 'Bank transfer record corrected',
         'payment_mismatch_accepted' => 'Different transfer amount accepted',
+        'anonymised' => 'Order anonymised',
     ],
 
     // Order context (order-context-design.md 2.1.1, stage C2-A): one label per case of the seven enums, pinned by OrderContextEnumLabelsTest.
@@ -660,6 +664,7 @@ return [
         'edit_nothing_to_change' => 'Nothing was changed, so there is nothing to save.',
         'edit_stale_body' => 'Order :id was changed by someone else after this form was opened (revision :expected, now :actual). Nothing was saved - close this and open Edit order again.',
         'edit_not_editable_status_body' => 'Order :id can no longer be edited: it is :status, and editing is only possible while an order is placed or confirmed.',
+        'edit_not_editable_anonymised_body' => 'Order :id was anonymised after the retention period and cannot be edited.',
         'edit_not_editable_payment_body' => 'Order :id can no longer be edited: a payment for it has already settled. Use cancel or return instead.',
         'edit_promotion_invalid_body' => 'The promotion code ":code" cannot be applied to this order: :reason. Nothing was saved - change the quantities, or remove the code, and try again.',
     ],

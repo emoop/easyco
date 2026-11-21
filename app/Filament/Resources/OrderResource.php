@@ -794,6 +794,15 @@ class OrderResource extends Resource
                     Section::make(__('orders.sections.client'))
                         ->compact()
                         ->schema([
+                            // ACC-4b (acc-4-gdpr-design.md D8): a small badge on an order whose personal data was anonymised after the retention period.
+                            // Visible only then, so an ordinary order pays nothing for it (the page's query count is pinned).
+                            TextEntry::make('anonymised_badge')
+                                ->hiddenLabel()
+                                ->badge()
+                                ->color('gray')
+                                ->icon('heroicon-o-shield-check')
+                                ->visible(fn (OrderModel $record): bool => $record->anonymised_at !== null)
+                                ->getStateUsing(fn (OrderModel $record): string => (string) __('orders.anonymised_badge', ['date' => $record->anonymised_at->setTimezone(app(\App\Settings\StoreTimezone::class)->zone())->format('d.m.Y')])),
                             TextEntry::make('client_name')
                                 ->label(__('orders.fields.client_name'))
                                 ->inlineLabel()
@@ -3014,12 +3023,14 @@ class OrderResource extends Resource
             // captured (use cancel/return) versus a status that no longer allows it.
             Notification::make()
                 ->title(__('orders.actions.refused_title'))
-                ->body($e->isBecauseOfSettledPayment()
-                    ? __('orders.actions.edit_not_editable_payment_body', ['id' => $record->id])
-                    : __('orders.actions.edit_not_editable_status_body', [
-                        'id' => $record->id,
-                        'status' => static::optionLabel('status', $e->status()->value),
-                    ]))
+                ->body($e->isBecauseAnonymised()
+                    ? __('orders.actions.edit_not_editable_anonymised_body', ['id' => $record->id])
+                    : ($e->isBecauseOfSettledPayment()
+                        ? __('orders.actions.edit_not_editable_payment_body', ['id' => $record->id])
+                        : __('orders.actions.edit_not_editable_status_body', [
+                            'id' => $record->id,
+                            'status' => static::optionLabel('status', $e->status()->value),
+                        ])))
                 ->danger()
                 ->send();
 

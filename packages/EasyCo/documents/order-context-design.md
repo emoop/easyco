@@ -88,7 +88,11 @@ the difference is written here rather than smoothed over.
 
 3. **`orders` is immutable and its history is FK-protected.** All 23 constructor
    parameters are `private readonly` and the only post-construction mutation is
-   `assignId()` (`order-lifecycle-design.md` §0 item 3). `client_id` and
+   `assignId()` (`order-lifecycle-design.md` §0 item 3), **except `assignId()` and the
+   retention anonymisation (`Order::anonymise()`, acc-4-gdpr-design.md D8: personal fields only, after the
+   retention period, one-way)**. (Since stage 2 the order also has the one-shot edit methods `reviseTotals()` and
+   `reviseDelivery()`, and `status` moves through its five named mutators; the 23-parameter count and the
+   `readonly` list above describe the original shape. ACC-4b made `email`, `customerNote` and `recipientEmail` non-readonly for `anonymise()`.) `client_id` and
    `transaction_id` are `restrictOnDelete()`, `account_id` and `address_id` are
    `nullOnDelete()`
    (`packages/EasyCo/Order/database/migrations/2026_09_06_000001_create_orders_table.php:57-88`).

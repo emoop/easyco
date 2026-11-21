@@ -90,6 +90,8 @@ final class OrderTransitionsTest extends TestCase
         'termsAcceptedAt', 'termsVersion', 'confirmationRequested', 'callBeforeShipping', 'marketingConsent', 'marketingConsentText',
         // MEAS-1 (the parcel weight) and ACC-3c (the optional delivery-mails recipient): create-time facts, read-only: none touches $status.
         'parcelWeightGrams', 'recipientEmail',
+        // ACC-4b (acc-4-gdpr-design.md D8): the retention anonymisation and its read-only accessors.
+        'anonymise', 'anonymisedAt', 'isAnonymised',
         'create', 'reconstituteFromStorage',
         // order-editing-design.md §2, stage 2 — the two edit mutators.
         // Neither changes $status (§2's own "status itself is untouched by

@@ -60,6 +60,20 @@ packages/EasyCo/documents/{domain}-domain-design.md before working in it.
    Variation lifecycle and operational-sales-domain-design.md §3.2
    (SaleLine immutability - a correction is always a NEW row referencing
    the old one, never an in-place rewrite).
+   **The one exception (ACC-4b, acc-4-gdpr-design.md D8): the retention
+   anonymisation of an order.** `Order::anonymise()` is the second
+   allowed mutation of an order after `assignId()`, a narrow, documented
+   exception of the same kind as rule 7's: PERSONAL fields only (name,
+   email, phone, street, postcode, region, settlement, pick-up point
+   description, customer note, second recipient email, plus the
+   copies of them in the placement snapshot, the invoice details, the
+   attribution and the free-text reasons); ONLY after the merchant's
+   retention period (`privacy.order_retention_years`, default 10) and
+   only for a FINISHED order (delivered, cancelled, refunded); ONE-WAY;
+   recorded in the order history («анонимизирана на …»). Amounts, lines,
+   statuses, dates, the number, shipping and the payment method never
+   change. It is lawful erasure of data whose period has ended, not a
+   rewrite of history; nothing else may rewrite an order in place.
 
 5. **MySQL/MariaDB identifiers have a 64-char limit.** Laravel's
    auto-generated names can exceed it, especially on long table names

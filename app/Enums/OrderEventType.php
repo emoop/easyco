@@ -71,4 +71,6 @@ enum OrderEventType: string
     case PAYMENT_RECEIPT_RECORDED = 'payment_receipt_recorded';
     case PAYMENT_RECEIPT_CORRECTED = 'payment_receipt_corrected';
     case PAYMENT_MISMATCH_ACCEPTED = 'payment_mismatch_accepted';
+    // ACC-4b (acc-4-gdpr-design.md D8): the personal data of the order was anonymised after the retention period. Carries no reason, no status change.
+    case ANONYMISED = 'anonymised';
 }

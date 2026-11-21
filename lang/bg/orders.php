@@ -80,6 +80,9 @@ return [
         'staff_name' => 'От (служител)',
     ],
 
+    // ACC-4b: the small badge on an order whose personal data was anonymised after the retention period.
+    'anonymised_badge' => 'Анонимизирана на :date',
+
     'sections' => [
         'summary' => 'Обобщение',
         'client' => 'Клиент и контакт',
@@ -145,6 +148,7 @@ return [
         'payment_receipt_recorded' => 'Получен е банков превод',
         'payment_receipt_corrected' => 'Коригиран е запис на банков превод',
         'payment_mismatch_accepted' => 'Приета е различна сума на превода',
+        'anonymised' => 'Поръчката е анонимизирана',
     ],
 
     // Order context (order-context-design.md 2.1.1, stage C2-A): one label per case of the seven enums, pinned by OrderContextEnumLabelsTest.
@@ -648,6 +652,7 @@ return [
         'edit_nothing_to_change' => 'Нищо не е променено, затова няма какво да се запази.',
         'edit_stale_body' => 'Поръчка :id е променена от някой друг, след като тази форма е била отворена (ревизия :expected, сега :actual). Нищо не е записано - затворете и отворете „Редактиране на поръчката“ отново.',
         'edit_not_editable_status_body' => 'Поръчка :id вече не може да се редактира: тя е :status, а редактиране е възможно само докато поръчката е получена или потвърдена.',
+        'edit_not_editable_anonymised_body' => 'Поръчка :id е анонимизирана след срока за съхранение и не може да се редактира.',
         'edit_not_editable_payment_body' => 'Поръчка :id вече не може да се редактира: плащане по нея вече е получено. Използвайте отказ или връщане.',
         'edit_promotion_invalid_body' => 'Промо кодът „:code“ не може да се приложи към тази поръчка: :reason. Нищо не е записано - променете количествата или премахнете кода и опитайте отново.',
     ],
