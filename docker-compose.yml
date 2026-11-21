@@ -13,6 +13,9 @@ x-laravel-env: &laravel-env
   APP_ENV: ${APP_ENV:-production}
   APP_DEBUG: ${APP_DEBUG:-false}
   APP_KEY: ${APP_KEY:-}
+  # ACC-4a: the key of the privacy hashes (forget log, suppression list). No default on purpose: empty = privacy requests are refused with a clear
+  # error (PrivacyNotConfigured), the entrypoint warns at every start and `php artisan about` shows it. NEVER change it after go-live.
+  PRIVACY_HASH_KEY: ${PRIVACY_HASH_KEY:-}
   APP_URL: ${APP_URL:?set APP_URL to the public address, e.g. https://shop.example.com}
   APP_LOCALE: ${APP_LOCALE:-bg}
   APP_FALLBACK_LOCALE: ${APP_FALLBACK_LOCALE:-en}

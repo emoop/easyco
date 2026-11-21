@@ -122,6 +122,11 @@ class AppServiceProvider extends ServiceProvider
         // The named API rate limiters, in their one central place.
         ApiRateLimits::register();
 
+        // DEP-1: `php artisan about` says whether the privacy hash key is set (it never takes the site down: only privacy requests need it)
+        \Illuminate\Foundation\Console\AboutCommand::add('Privacy', static fn (): array => [
+            'Hash key' => filled(config('privacy.hash_key')) ? '<fg=green;options=bold>SET</>' : (app()->environment(['local', 'testing']) ? 'not set (development key)' : '<fg=red;options=bold>MISSING: privacy requests are refused</>'),
+        ]);
+
         // P8d: the `livewire` and `csp-report` limiters, and the Livewire update throttle
         \App\Security\SecurityLimiters::register();
 

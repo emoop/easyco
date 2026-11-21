@@ -41,32 +41,24 @@ All files are generic — nothing site-specific lives in the repo; everything co
 
 ## 2. Подготовка на сървъра · Server preparation (Ubuntu 24.04)
 
-Като root на новия сървър · As root on the fresh server:
+Като root на новия сървър · As root on the fresh server (`<sudo-user>` = вашият sudo потребител, напр. `deploy`; името е произволно · your sudo user, e.g. `deploy`; any name works):
 
 ```bash
-adduser deploy && usermod -aG sudo deploy
-rsync --archive --chown=deploy:deploy ~/.ssh /home/deploy      # копира вашия SSH ключ · copies your SSH key
+adduser <sudo-user> && usermod -aG sudo <sudo-user>
+rsync --archive --chown=<sudo-user>:<sudo-user> ~/.ssh /home/<sudo-user>      # копира вашия SSH ключ · copies your SSH key
 ```
 
-От друг терминал проверете, че `ssh deploy@SERVER` работи, **после** · In another terminal confirm `ssh deploy@SERVER` works, **then**:
+От друг терминал проверете, че `ssh <sudo-user>@SERVER` работи, **после** укрепете sshd (виж „sshd" по-долу; **не** с голо `PermitRootLogin no`). · In another terminal confirm `ssh <sudo-user>@SERVER` works, **then** harden sshd (see "sshd" below; **not** with a bare `PermitRootLogin no`).
+
+Часова зона и swap · Timezone and swap (8 GB машина · an 8 GB machine: swap 4G):
 
 ```bash
-sudo sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
-sudo sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config
-sudo systemctl restart ssh
+sudo timedatectl set-timezone UTC
+sudo fallocate -l 4G /swapfile && sudo chmod 600 /swapfile
+sudo mkswap /swapfile && sudo swapon /swapfile
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+echo 'vm.swappiness=10' | sudo tee /etc/sysctl.d/99-swappiness.conf && sudo sysctl --system
 ```
-
-Защитна стена · Firewall (`ufw`):
-
-```bash
-sudo ufw default deny incoming && sudo ufw default allow outgoing
-sudo ufw allow 22/tcp && sudo ufw allow 80/tcp && sudo ufw allow 443/tcp
-# Таблото на Coolify (порт 8000) — само от вашето IP, или го затворете след настройката:
-sudo ufw allow from ВАШЕТО.IP to any port 8000 proto tcp
-sudo ufw enable
-```
-
-Coolify ползва и други портове (напр. за терминала и реалното време) — вижте официалната документация за защитната стена преди да затворите всичко. · Coolify uses other ports too (e.g. terminal / realtime) — read the official firewall notes in its docs before closing everything.
 
 Автоматични актуализации за сигурност · Automatic security updates:
 
@@ -75,43 +67,89 @@ sudo apt update && sudo apt install -y unattended-upgrades
 sudo dpkg-reconfigure -plow unattended-upgrades
 ```
 
-Swap 2 GB:
+### Защитна стена · Firewall
+
+**Външната защитна стена на доставчика е задължителна.** Портовете, публикувани от Docker, **заобикалят `ufw`** (Docker пише директно правила в `iptables`), така че правило в `ufw` не ги затваря. Политика във външната стена: **входящи само TCP 22, 80, 443; всичко друго се отхвърля.** · **The provider's external firewall is required.** Docker-published ports **bypass `ufw`** (Docker writes its own `iptables` rules), so a `ufw` rule does not close them. Policy at the external firewall: **allow incoming TCP 22/80/443 only, drop everything else.**
+
+Напр. `coolify-proxy` публикува и **8080** (таблото на Traefik); само външната стена го държи затворено. · E.g. `coolify-proxy` also publishes **8080** (the Traefik dashboard); only the external firewall keeps it closed.
+
+`ufw` на хоста остава като втори слой за самия хост (не за контейнерите) · `ufw` stays as a second layer for the host itself (not for containers):
 
 ```bash
-sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile
-sudo mkswap /swapfile && sudo swapon /swapfile
-echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+sudo ufw default deny incoming && sudo ufw default allow outgoing
+sudo ufw allow 22/tcp && sudo ufw allow 80/tcp && sudo ufw allow 443/tcp
+sudo ufw enable
 ```
+
+**Няма правило за порт 8000**: таблото на Coolify никога не е публично (раздел 3). · **No rule for port 8000**: the Coolify dashboard is never public (section 3).
+
+### sshd
+
+`PermitRootLogin no` **чупи Coolify**: той управлява `localhost` през SSH като root от Docker мрежата си. Затова drop-in `/etc/ssh/sshd_config.d/00-easyco.conf` (`00-`, за да се чете първи; първата стойност печели · `00-` so it is read first: the first value wins):
+
+```
+PermitRootLogin no
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PubkeyAuthentication yes
+AllowUsers <sudo-user> root@127.0.0.1 root@10.0.0.0/8 root@172.16.0.0/12 root@192.168.0.0/16
+
+Match Address 127.0.0.1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+    PermitRootLogin prohibit-password
+```
+
+`PermitRootLogin no` breaks Coolify, which manages localhost over SSH as root from its Docker network. The `Match` block lets root in with a key from the local / Docker ranges only; `AllowUsers` lists who may log in at all.
+
+```bash
+sudo sshd -t && sudo systemctl restart ssh      # проверка на синтаксиса, после рестарт · syntax check, then restart
+ssh root@SERVER                                 # ОТВЪН трябва да откаже · from OUTSIDE it must be denied
+```
+
+Не затваряйте текущата сесия, докато нов вход като `<sudo-user>` не работи от друг терминал. · Keep your current session open until a new login as `<sudo-user>` works from another terminal.
+
 
 ---
 
 ## 3. Coolify
 
-1. **Инсталация · Install** — само с официалната команда от документацията · only with the official command from the docs: <https://coolify.io/docs/get-started/installation>
-2. Първи вход · First login: отворете таблото (`http://SERVER-IP:8000`), създайте администратор веднага — първият, който го отвори, го взима. · open the dashboard, create the admin account immediately — whoever opens it first owns it.
-3. **Нов ресурс · New resource** → публично GitHub репо (адресът на репото) → build pack **Docker Compose**, файл `docker-compose.yml`.
-4. **Променливи · Environment variables** — от `.env.docker.example`: задължителни `APP_URL`, `DB_PASSWORD`, `DB_ROOT_PASSWORD`; препоръчително и `APP_KEY` (виж раздел 5). За тест сървър: `COMPOSE_PROFILES=staging`, `EASYCO_NOINDEX=true`, `EASYCO_MAIL_SANDBOX=true`, `EASYCO_BASIC_AUTH_USER/PASSWORD`, `SESSION_DOMAIN=dev.raf.bg`, `SESSION_SECURE_COOKIE=true`. · Required: `APP_URL`, `DB_PASSWORD`, `DB_ROOT_PASSWORD`; `APP_KEY` recommended (section 5). For a test server set the staging switches shown above.
-5. **Домейн · Domain**: на услугата **`varnish`** задайте `https://dev.raf.bg` (контейнерният порт е 80; ако Coolify иска порт в полето, пишете `https://dev.raf.bg:80`). Нищо друго не получава домейн. · Assign `https://dev.raf.bg` to the **`varnish`** service (container port 80; if Coolify asks for the port in the field, `https://dev.raf.bg:80`). No other service gets a domain.
-6. HTTPS (Let's Encrypt) — Coolify го издава сам, когато DNS сочи към сървъра (раздел 4). · Coolify issues it itself once DNS points to the server.
-7. Автоматичен deploy при push — включете в настройките на ресурса (webhook на GitHub / GitHub App според версията). · Enable auto-deploy in the resource settings (GitHub webhook / GitHub App, depending on the Coolify version).
+1. **Инсталация · Install**: само с официалната команда от документацията · only with the official command from the docs: <https://coolify.io/docs/get-started/installation>
+2. **Архив на `/data/coolify/source/.env`** (собственият `APP_KEY` на Coolify) **извън сървъра, веднага след инсталацията**: без него Coolify не може да чете запазените си тайни след преинсталация. · **Back up `/data/coolify/source/.env`** (Coolify's own `APP_KEY`) **off the server right after install**: without it Coolify cannot read its stored secrets after a reinstall.
+3. **Таблото на Coolify никога не е публично** (порт 8000 не се отваря никъде). Достъп само през SSH тунел · **The dashboard is never public.** Reach it only through an SSH tunnel:
+
+   ```bash
+   ssh -L 8000:localhost:8000 -L 6001:localhost:6001 -L 6002:localhost:6002 <sudo-user>@SERVER
+   # после · then open http://localhost:8000
+   ```
+
+   Без 6001/6002 таблото показва „Cannot connect to real-time service". · Without 6001/6002 the dashboard shows "Cannot connect to real-time service".
+4. **Първият администратор** се създава в първите **10 минути** след инсталацията; първият, който отвори страницата, я взима. Ако ги изпуснете: `sudo docker restart coolify`. · **Create the first admin within 10 minutes** of the install; whoever opens it first owns it. If you miss that: `sudo docker restart coolify`.
+5. **Достъп до репото · Repository access:** ресурс **„Private Repository (with Deploy Key)"**, build pack **Docker Compose**, файл `/docker-compose.yml`.
+   * Генерирайте **ED25519** ключ в Coolify → Keys & Tokens; добавете го в GitHub → repo Settings → Deploy keys, **само за четене (read-only)**. · Generate an **ED25519** key in Coolify → Keys & Tokens; add it in GitHub → repo Settings → Deploy keys, **read-only**.
+   * Защо не GitHub App: callback-ът и webhook-овете му изискват таблото да е публично достъпно, а нашето не е. · Why not the GitHub App: its callback and webhooks need the dashboard to be publicly reachable, and ours is not.
+   * **Последица · Consequence:** няма автоматичен deploy при push; deploy-вате с бутона **Deploy / Redeploy**. · no auto-deploy on push; deploy with the **Deploy / Redeploy** button.
+   * Когато Smart Scan предложи да импортира `.env.example`: **не**; той е за локална разработка. · When Smart Scan offers to import `.env.example`: **don't**; that file is for local development.
+6. **Променливи · Environment variables**: от `.env.docker.example`. Coolify показва всяка `${VAR}` от compose файла. Задължителни · Required: `APP_URL`, `DB_PASSWORD`, `DB_ROOT_PASSWORD`, **`PRIVACY_HASH_KEY`** (раздел 5); препоръчително · recommended: `APP_KEY` (раздел 5). За тест сървър · For a test server: `EASYCO_NOINDEX=true`, `EASYCO_MAIL_SANDBOX=true`, `EASYCO_BASIC_AUTH_USER/PASSWORD`, `SESSION_DOMAIN=<your-domain>`, `SESSION_SECURE_COOKIE=true`. **`COMPOSE_PROFILES=staging` се добавя на ръка**: не е `${}` препратка, затова Coolify не я показва. · **`COMPOSE_PROFILES=staging` is added by hand**: it is not a `${}` reference, so Coolify does not list it.
+7. **Домейн · Domain**: на услугата **`varnish`** задайте `https://<your-domain>` (контейнерният порт е 80; ако Coolify иска порт в полето, `https://<your-domain>:80`). Нищо друго не получава домейн. · Assign `https://<your-domain>` to the **`varnish`** service (container port 80; if Coolify asks for the port in the field, `https://<your-domain>:80`). No other service gets a domain.
+8. HTTPS (Let's Encrypt): Coolify го издава сам, когато DNS сочи към сървъра (раздел 4). · Coolify issues it itself once DNS points to the server.
+9. **Изходяща поща · Outgoing mail:** някои доставчици (netcup по подразбиране) **блокират изходящи 25/465/587**. Продукционният SMTP изисква махане на блокадата, или доставчик на поща през HTTPS API. · Some providers (netcup by default) **drop outgoing 25/465/587**. Production SMTP needs that block removed, or an HTTPS-API mail provider.
 
 Mailpit UI не е в интернет: слуша само на `127.0.0.1:8025` на сървъра · The Mailpit UI is not on the internet: it listens on the server's `127.0.0.1:8025` only:
 
 ```bash
-ssh -L 8025:127.0.0.1:8025 deploy@SERVER      # после http://localhost:8025 · then open http://localhost:8025
+ssh -L 8025:127.0.0.1:8025 <sudo-user>@SERVER      # после http://localhost:8025 · then open http://localhost:8025
 ```
 
 ---
 
 ## 4. DNS
 
-В DNS панела на доставчика, който държи зоната на `raf.bg`, добавете запис · At the provider that hosts the `raf.bg` zone add:
+В DNS панела на доставчика, който държи зоната на домейна ви, добавете запис · At the provider that hosts your domain zone add:
 
 | Type | Name | Value |
 |------|------|-------|
 | A | `dev` | IPv4 на сървъра · the server's IPv4 |
 
-Проверка · Check (от Windows / from any machine): `nslookup dev.raf.bg` — трябва да върне IP-то на сървъра · must return the server's IP (propagation can take minutes).
+Проверка · Check (от Windows / from any machine): `nslookup <your-domain>` — трябва да върне IP-то на сървъра · must return the server's IP (propagation can take minutes).
 
 ---
 
@@ -131,12 +169,12 @@ easyco-install          # = docker/install.sh
 
 Скриптът · The script: (1) ако `APP_KEY` е празен — печата ключ и спира (сложете го в Coolify, redeploy, пуснете пак) · if `APP_KEY` is empty it prints one and stops; (2) `migrate --force`; (3) сийдъри · seeders: `PricingSystemListsSeeder`, `StaffSystemRolesSeeder`, `ContentDraftsSeeder` (**не** `DatabaseSeeder` — той прави демо потребител · it creates a demo user); (4) `php artisan staff:create-administrator` — пита име / e-mail / парола, без стойности по подразбиране · prompts, no defaults.
 
-**`PRIVACY_HASH_KEY` (ACC-4a) · ключ за поверителността.** Втора променлива, от същия вид като `APP_KEY`: ако е празна, `easyco-install` печата стойност (64 hex знака) и спира; сложете я в Coolify, redeploy, пуснете скрипта пак · A second variable like `APP_KEY`: if empty, `easyco-install` prints a value (64 hex characters) and stops; put it into Coolify, redeploy, run the script again. Ключът пази хешовете на дневника на забравените и списъка за потискане · It keys the hashes of the forget log and the suppression list. **Никога не го сменяйте след пускане в продукция и го архивирайте заедно с `.env`** · **never change it after go-live and back it up together with `.env`**: загубен или сменен ключ прави всички съществуващи потискания неразпознаваеми · a lost or changed key makes every existing suppression unmatchable. Без ключ (извън local/testing) заявките за забравяне се отказват с ясна грешка · Without it (outside local/testing) forget requests are refused with a clear error.
+**`PRIVACY_HASH_KEY` (ACC-4a) · ключ за поверителността: задължителна в продукция · required in production.** Подава се на `app`, `queue` и `scheduler` през `docker-compose.yml`. Ако е празна, стекът **стартира**, но `app` печата предупреждение при всеки старт, `php artisan about` показва `MISSING`, а заявките за забравяне се отказват · It reaches `app`, `queue` and `scheduler` through `docker-compose.yml`. If empty the stack **still starts**, but `app` logs a warning at every start, `php artisan about` shows `MISSING`, and forget requests are refused. Генериране · Generate: `php -r 'echo bin2hex(random_bytes(32));'` (или · or `openssl rand -hex 32`). Втора променлива, от същия вид като `APP_KEY`: ако е празна, `easyco-install` печата стойност (64 hex знака) и спира; сложете я в Coolify, redeploy, пуснете скрипта пак · A second variable like `APP_KEY`: if empty, `easyco-install` prints a value (64 hex characters) and stops; put it into Coolify, redeploy, run the script again. Ключът пази хешовете на дневника на забравените и списъка за потискане · It keys the hashes of the forget log and the suppression list. **Никога не го сменяйте след пускане в продукция и го архивирайте заедно с `.env`** · **never change it after go-live and back it up together with `.env`**: загубен или сменен ключ прави всички съществуващи потискания неразпознаваеми · a lost or changed key makes every existing suppression unmatchable. Без ключ (извън local/testing) заявките за забравяне се отказват с ясна грешка · Without it (outside local/testing) forget requests are refused with a clear error.
 
 **Проверки · Checks** (browser, зад site password ако е зададена · behind the site password if set):
 - `/up` → 200 · начална страница · home · страница на продукт · product page · количка · cart · `/admin/login` → 200, вход · login.
 - Тестова поръчка → писмото е в Mailpit (през SSH тунела) · a test order → the mail is in Mailpit (through the tunnel).
-- `curl -sI https://dev.raf.bg/` → `X-Robots-Tag: noindex, nofollow`; `curl https://dev.raf.bg/robots.txt` → `Disallow: /`.
+- `curl -sI https://<your-domain>/` → `X-Robots-Tag: noindex, nofollow`; `curl https://<your-domain>/robots.txt` → `Disallow: /`.
 
 ---
 

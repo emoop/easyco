@@ -21,6 +21,12 @@ envsubst < /usr/local/etc/php-fpm.d/www.conf.template > /usr/local/etc/php-fpm.d
 mkdir -p storage/app/public storage/framework/cache/data storage/framework/sessions storage/framework/views storage/logs bootstrap/cache
 chown -R www-data:www-data storage bootstrap/cache
 
+# ---- PRIVACY_HASH_KEY (ACC-4a): warn at every start, never stop the site (only privacy requests are refused without it) ---------------
+case "${APP_ENV:-production}" in
+    local|testing) ;;
+    *) [ -n "${PRIVACY_HASH_KEY:-}" ] || log "WARNING: PRIVACY_HASH_KEY is empty: privacy (forget) requests are refused until it is set. 'easyco-install' prints a value; NEVER change it after go-live." ;;
+esac
+
 # ---- no APP_KEY yet: first install. Start php-fpm so `easyco-install` can run inside this container, but touch nothing else --------------
 if [ -z "${APP_KEY:-}" ]; then
     log "WARNING: APP_KEY is empty. Skipping migrate / optimize. Run 'easyco-install' inside this container (it prints a key),"
