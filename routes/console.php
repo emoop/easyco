@@ -1,5 +1,7 @@
 <?php
 
+use App\Jobs\QueueHeartbeat;
+use App\Settings\StoreTimezone;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -41,7 +43,7 @@ Schedule::command('accounts:prune-unverified')->daily();
 // closure), never when this file loads, so no artisan command pays a settings query at boot.
 Schedule::command('prices:refresh-boundaries')->everyMinute()->withoutOverlapping();
 Schedule::command('prices:refresh-from')->everyMinute()->withoutOverlapping()
-    ->when(static fn (): bool => (new DateTimeImmutable('now', app(App\Settings\StoreTimezone::class)->zone()))->format('H:i') === '03:30');
+    ->when(static fn (): bool => (new DateTimeImmutable('now', app(StoreTimezone::class)->zone()))->format('H:i') === '03:30');
 
 // P8d: the bot-challenge mode is pushed to the cache layer every minute (Varnish forgets it on a restart). The null switch does nothing until P8c.
 Schedule::command('security:push-bot-challenge')->everyMinute()->withoutOverlapping();
@@ -60,6 +62,11 @@ Schedule::command('mail:prune-log')->dailyAt('02:30');
 Schedule::command('cart:prune')->dailyAt('02:40');
 Schedule::command('accounts:prune-reset-tokens')->dailyAt('02:50');
 Schedule::command('queue:prune-failed --hours=720')->dailyAt('03:00');
+
+// DEP-2: the heartbeats the Docker healthchecks of `scheduler` and `queue` read (docker-compose.yml). Every minute the scheduler touches a file under
+// storage/framework/ (no log line); every two minutes it dispatches a job the queue worker touches another file with. A healthcheck is then a `find -mmin`.
+Schedule::call(static fn () => touch(storage_path('framework/scheduler-heartbeat')))->everyMinute()->name('scheduler-heartbeat');
+Schedule::job(new QueueHeartbeat)->everyTwoMinutes()->name('queue-heartbeat');
 
 // ACC-4b (acc-4-gdpr-design.md D1, D8): the personal data of a finished order past the retention period (`privacy.order_retention_years`, default 10) is
 // anonymised. Daily, after the other privacy housekeeping; a cheap no-op when nothing has aged out; `withoutOverlapping` because a big backlog is worked

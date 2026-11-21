@@ -158,6 +158,15 @@ services:
     depends_on:
       app:
         condition: service_healthy
+    # DEP-2: the image's HEALTHCHECK probes php-fpm, which does not run here. This one proves jobs run end to end: the scheduler dispatches App\Jobs\QueueHeartbeat
+    # every 2 minutes, the worker touches the file; healthy while it is younger than 6 minutes. (A queue backlog longer than that shows as unhealthy: it is behind.)
+    # start_period covers the scheduler's first dispatch.
+    healthcheck:
+      test: ["CMD-SHELL", "find /var/www/html/storage/framework/queue-heartbeat -mmin -6 2>/dev/null | grep -q ."]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 300s
 
   scheduler:
     <<: *app-image
@@ -171,6 +180,14 @@ services:
     depends_on:
       app:
         condition: service_healthy
+    # DEP-2: a scheduled task (`scheduler-heartbeat`, routes/console.php) touches a file every minute; healthy while it is younger than 3 minutes, so a scheduler
+    # that stopped ticking is caught, not only a dead process. No artisan boot in the check. start_period covers the first minute.
+    healthcheck:
+      test: ["CMD-SHELL", "find /var/www/html/storage/framework/scheduler-heartbeat -mmin -3 2>/dev/null | grep -q ."]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 120s
 
   mysql:
     image: mysql:8.4
