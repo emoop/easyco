@@ -201,4 +201,13 @@ sub vcl_synth {
     if (resp.status == 405) {
         set resp.http.Allow = "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS";
     }
+
+    # OUR answer is the last word: without a `return` the BUILTIN vcl_synth would run after this one and replace Retry-After (with 5) and the body (with its HTML page).
+    # A short plain-text line: the status and the reason. (The status goes through a header only to become a string.)
+    set resp.http.X-EC-Status = resp.status;
+    set resp.http.Content-Type = "text/plain; charset=utf-8";
+    synthetic(resp.http.X-EC-Status + " " + resp.reason);
+    unset resp.http.X-EC-Status;
+
+    return (deliver);
 }
