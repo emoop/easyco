@@ -41,12 +41,12 @@ sub vcl_recv {
         return (synth(405, "Method Not Allowed"));
     }
 
-    # ---- 2. size limits (varnishd's own caps stay: http_req_hdr_len 8k per header, http_req_size 32k) ------------------------------------------------------
-    if (req.url ~ "^.{4097,}") {
+    # ---- 2. size limits: a URL longer than VARNISH_MAX_URL (4096) and a Cookie header longer than VARNISH_MAX_COOKIE (6144) are refused (varnishd's own caps stay: http_req_hdr_len 8k per header, http_req_size 32k) ------------------------------------------------------
+    if (req.url ~ "^.{@@URL_OVER@@,}") {
         return (synth(414, "URI Too Long"));
     }
 
-    if (req.http.Cookie ~ "^.{6145,}") {
+    if (req.http.Cookie ~ "^.{@@COOKIE_OVER@@,}") {
         return (synth(431, "Request Header Fields Too Large"));
     }
 

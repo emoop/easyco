@@ -8,6 +8,7 @@
 # The defaults are CONSERVATIVE PLACEHOLDERS, not measured numbers: nobody has measured what php-fpm of the production server can do yet. They are tuned in P8e.
 #   per IP, per WINDOW seconds:  filtered listings 60, search 20, card-sizes (cache MISSES only) 30
 #   GLOBAL (all IPs together), per WINDOW seconds:  filtered listings 300, search 120
+#   size limits: a URL over VARNISH_MAX_URL (4096) characters is 414, a Cookie header over VARNISH_MAX_COOKIE (6144) is 431 (the tests render small ones)
 set -eu
 
 tpl_dir="${1:?usage: render-vcl.sh <template-dir> <out-dir>}"
@@ -19,6 +20,8 @@ out_dir="${2:?usage: render-vcl.sh <template-dir> <out-dir>}"
 : "${VARNISH_LIMIT_IP_CARDSIZES:=30}"
 : "${VARNISH_LIMIT_GLOBAL_FILTER:=300}"
 : "${VARNISH_LIMIT_GLOBAL_SEARCH:=120}"
+: "${VARNISH_MAX_URL:=4096}"
+: "${VARNISH_MAX_COOKIE:=6144}"
 
 check() {
     case "$2" in
@@ -40,6 +43,16 @@ check VARNISH_LIMIT_IP_CARDSIZES "$VARNISH_LIMIT_IP_CARDSIZES"
 check VARNISH_LIMIT_GLOBAL_FILTER "$VARNISH_LIMIT_GLOBAL_FILTER"
 check VARNISH_LIMIT_GLOBAL_SEARCH "$VARNISH_LIMIT_GLOBAL_SEARCH"
 
+# the VCL regex is `^.{N,}` with N = the limit + 1; a regex repeat count must stay under 65535
+check VARNISH_MAX_URL "$VARNISH_MAX_URL"
+check VARNISH_MAX_COOKIE "$VARNISH_MAX_COOKIE"
+if [ "$VARNISH_MAX_URL" -gt 60000 ] || [ "$VARNISH_MAX_COOKIE" -gt 60000 ]; then
+    echo "render-vcl: VARNISH_MAX_URL and VARNISH_MAX_COOKIE must be at most 60000" >&2
+    exit 1
+fi
+url_over=$((VARNISH_MAX_URL + 1))
+cookie_over=$((VARNISH_MAX_COOKIE + 1))
+
 mkdir -p "$out_dir"
 sed \
     -e "s/@@WINDOW@@/$VARNISH_LIMIT_WINDOW/g" \
@@ -47,7 +60,7 @@ sed \
     -e "s/@@LIMIT_IP_SEARCH@@/$VARNISH_LIMIT_IP_SEARCH/g" \
     -e "s/@@LIMIT_IP_CARDSIZES@@/$VARNISH_LIMIT_IP_CARDSIZES/g" \
     -e "s/@@LIMIT_GLOBAL_FILTER@@/$VARNISH_LIMIT_GLOBAL_FILTER/g" \
-    -e "s/@@LIMIT_GLOBAL_SEARCH@@/$VARNISH_LIMIT_GLOBAL_SEARCH/g" \
+    -e "s/@@LIMIT_GLOBAL_SEARCH@@/$VARNISH_LIMIT_GLOBAL_SEARCH/g"     -e "s/@@URL_OVER@@/$url_over/g"     -e "s/@@COOKIE_OVER@@/$cookie_over/g" \
     "$tpl_dir/rules.vcl.tpl" > "$out_dir/rules.vcl"
 
 # a placeholder that is left would be a VCL syntax error at start: say so here, clearly (the explanatory comment in the template mentions `@@NAME@@` once, which is not a placeholder)
