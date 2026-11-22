@@ -54,7 +54,7 @@ client c1 {
     expect resp.http.X-Cache == "HIT"
 } -run
 
-# from the stack itself: localhost, no X-Forwarded-For, the xkey-softpurge header (exactly what VarnishPurger sends)
+# from the stack itself: localhost, no X-Forwarded-For of its own (Varnish adds ONE entry, so the header has exactly one), the xkey-softpurge header (exactly what VarnishPurger sends)
 client c2 {
     txreq -req PURGE -url "/" -hdr "xkey-softpurge: p1"
     rxresp
@@ -136,6 +136,11 @@ client c9 {
     rxresp
     expect resp.status == 403
     expect resp.http.X-Cache == "MISS"
+
+    # a chain as the outer proxy makes it (the proxy's entry for the real client): refused
+    txreq -req PURGE -url "/" -hdr "xkey-softpurge: p1" -hdr "X-Forwarded-For: 203.0.113.7, 172.18.0.5"
+    rxresp
+    expect resp.status == 403
 
     # allowed source but no key
     txreq -req PURGE -url "/"

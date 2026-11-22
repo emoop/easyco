@@ -21,8 +21,9 @@ sub vcl_recv {
     # ---- 1. methods ---------------------------------------------------------------------------------------------------------------------------------
     if (req.method == "PURGE") {
         # The ACL alone is NOT enough: the outer proxy (Coolify) is on an internal network too, so a request from the internet arrives from an "internal" address.
-        # A purge sent from inside the stack carries no X-Forwarded-For; one that came through the outer proxy always does. Checked BEFORE our own X-Forwarded-For below.
-        if (!client.ip ~ purge || req.http.X-Forwarded-For) {
+        # Varnish itself ADDS the client's address to X-Forwarded-For before vcl_recv runs, so a purge sent from inside the stack (the app container) arrives with exactly ONE entry
+        # (Varnish's own). A request that came through the outer proxy has at least TWO (the proxy's own entry for the real client, then Varnish's). More than one entry = refused.
+        if (!client.ip ~ purge || req.http.X-Forwarded-For ~ ",") {
             return (synth(403, "Forbidden"));
         }
 
@@ -51,13 +52,15 @@ sub vcl_recv {
     }
 
     # ---- 3. the client's address ---------------------------------------------------------------------------------------------------------------------
-    # `var ip` = the REAL client, for the per-IP limits. The outer proxy (Coolify / Traefik) APPENDS the address it saw to X-Forwarded-For, so the RIGHT-most entry is the one
-    # our own proxy wrote; everything to its left was supplied by the client (or earlier hops) and can be anything, so it is never used. This is only true while the outer proxy is
-    # the ONLY way in (the compose file publishes no port of this service): a client that could reach varnish directly could write the right-most entry itself.
+    # `var ip` = the REAL client, for the per-IP limits. Varnish's core has ALREADY appended the address it was called from (the outer proxy, Coolify / Traefik) to X-Forwarded-For, so
+    # the RIGHT-most entry is the proxy and the entry just LEFT of it is the address the PROXY saw and appended itself: that is the client. Everything further left was supplied by the
+    # client (or earlier hops) and can be anything, so it is never used. With ONE entry (a request made inside the stack, or the tests) the only entry is client.ip. This holds only while
+    # the outer proxy is the ONLY way in (the compose file publishes no port of this service): a client that could reach varnish directly could write that entry itself.
+    # X-Forwarded-For is NOT appended here (Varnish did it): doing it again would make "a, b, b".
     if (req.http.X-Forwarded-For) {
-        var.set("ip", regsub(req.http.X-Forwarded-For, "^.*[, ]([^, ]+)$", "\1"));
-        set req.http.X-Forwarded-For = req.http.X-Forwarded-For + ", " + client.ip;
+        var.set("ip", regsub(req.http.X-Forwarded-For, "^(?:.*,)?\s*([^,\s]+)\s*,\s*[^,\s]+$", "\1"));
     } else {
+        # (Varnish always adds it; this is only a safety net)
         set req.http.X-Forwarded-For = client.ip;
         var.set("ip", req.http.X-Forwarded-For);
     }

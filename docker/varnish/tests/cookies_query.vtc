@@ -1,7 +1,7 @@
 varnishtest "P8c-1: cookies are removed on cacheable pages only; the query keeps page/per_page/sort/featured/ids, marketing and unknown parameters are removed from the key and the backend request"
 
 server s1 {
-    # 1: utm_*, fbclid, foo and the Cookie are gone; the order is normalised; the client's X-Forwarded-For gets our address appended
+    # 1: utm_*, fbclid, foo and the Cookie are gone; the order is normalised; the client's X-Forwarded-For gets Varnish's own entry (added once by the core, never twice)
     rxreq
     expect req.url == "/product/a?page=2&sort=price"
     expect req.http.Cookie == <undef>

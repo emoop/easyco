@@ -1,4 +1,4 @@
-varnishtest "P8c-1: the per-IP limit on filtered listings and search (LOW test limits: 2 per IP). The IP is the RIGHT-most X-Forwarded-For entry, the one our own proxy appended; what the client wrote to its left is ignored"
+varnishtest "P8c-1: the per-IP limit on filtered listings and search (LOW test limits: 2 per IP). The IP is the X-Forwarded-For entry just LEFT of the one Varnish itself adds (the address the outer proxy appended); what the client wrote further left is ignored"
 
 server s1 {
     rxreq
@@ -35,7 +35,7 @@ client c1 {
     expect resp.status == 200
 } -run
 
-# search: the same IP behind three DIFFERENT left-most entries is one IP (the right-most is the proxy's); a client cannot get a fresh allowance by writing another address
+# search: the same IP behind three DIFFERENT left-most entries is one IP (the entry the proxy appended, left of Varnish's own); a client cannot get a fresh allowance by writing another address
 client c2 {
     txreq -url "/search?q=x" -hdr "X-Forwarded-For: 1.1.1.1, 203.0.113.11"
     rxresp
