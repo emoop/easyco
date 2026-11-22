@@ -132,7 +132,7 @@ jobs:
       - name: Compile the rendered VCL
         run: >-
           docker run --rm --add-host web:127.0.0.1 --entrypoint sh easyco-varnish:ci
-          -c 'easyco-render-vcl /etc/varnish /tmp && cp /etc/varnish/default.vcl /tmp/ && varnishd -C -p vcl_path=/tmp -f /tmp/default.vcl > /dev/null'
+          -c 'mkdir -p /tmp/vcl && easyco-render-vcl /etc/varnish /tmp/vcl && cp /etc/varnish/default.vcl /tmp/vcl/ && varnishd -C -p vcl_path=/tmp/vcl -f /tmp/vcl/default.vcl > /dev/null'
 
       - name: varnishtest
         run: >-

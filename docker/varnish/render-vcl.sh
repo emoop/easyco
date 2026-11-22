@@ -53,6 +53,9 @@ fi
 url_over=$((VARNISH_MAX_URL + 1))
 cookie_over=$((VARNISH_MAX_COOKIE + 1))
 
+# only a directory THIS script creates is touched (never a pre-existing one: /tmp, or /etc/varnish in the container, which the caller owns or may not own)
+created=0
+[ -d "$out_dir" ] || created=1
 mkdir -p "$out_dir"
 sed \
     -e "s/@@WINDOW@@/$VARNISH_LIMIT_WINDOW/g" \
@@ -63,8 +66,8 @@ sed \
     -e "s/@@LIMIT_GLOBAL_SEARCH@@/$VARNISH_LIMIT_GLOBAL_SEARCH/g"     -e "s/@@URL_OVER@@/$url_over/g"     -e "s/@@COOKIE_OVER@@/$cookie_over/g" \
     "$tpl_dir/rules.vcl.tpl" > "$out_dir/rules.vcl"
 
-# readable by the user that compiles it (varnishd runs as `varnish`, whoever rendered the file)
-chmod 0755 "$out_dir"
+# readable by the user that compiles it (varnishd runs as `varnish`, whoever rendered the file): the file, and the directory only when we made it
+[ "$created" -eq 1 ] && chmod 0755 "$out_dir"
 chmod 0644 "$out_dir/rules.vcl"
 
 # a placeholder that is left would be a VCL syntax error at start: say so here, clearly (the explanatory comment in the template mentions `@@NAME@@` once, which is not a placeholder)
