@@ -12,6 +12,8 @@ set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
+# mktemp makes the directory 0700 (owned by whoever runs this, root in the CI container), but varnishd compiles the VCL as the unprivileged `varnish` user: it must be able to read it
+chmod 0755 "$work"
 
 "$here/render-vcl.sh" "$here" "$work/default"
 
@@ -24,6 +26,9 @@ VARNISH_LIMIT_GLOBAL_SEARCH=4 \
 VARNISH_MAX_URL=100 \
 VARNISH_MAX_COOKIE=120 \
     "$here/render-vcl.sh" "$here" "$work/low"
+
+# the rendered directories and files readable by everybody (render-vcl.sh sets them too; this is the belt for the braces)
+chmod -R a+rX "$work"
 
 exec varnishtest -j 4 \
     -D "vcldir=$work/default" \

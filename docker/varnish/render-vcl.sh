@@ -63,6 +63,10 @@ sed \
     -e "s/@@LIMIT_GLOBAL_SEARCH@@/$VARNISH_LIMIT_GLOBAL_SEARCH/g"     -e "s/@@URL_OVER@@/$url_over/g"     -e "s/@@COOKIE_OVER@@/$cookie_over/g" \
     "$tpl_dir/rules.vcl.tpl" > "$out_dir/rules.vcl"
 
+# readable by the user that compiles it (varnishd runs as `varnish`, whoever rendered the file)
+chmod 0755 "$out_dir"
+chmod 0644 "$out_dir/rules.vcl"
+
 # a placeholder that is left would be a VCL syntax error at start: say so here, clearly (the explanatory comment in the template mentions `@@NAME@@` once, which is not a placeholder)
 if grep -E '@@[A-Z_]+@@' "$out_dir/rules.vcl" | grep -v 'the @@NAME@@' > /dev/null; then
     echo "render-vcl: a placeholder was not replaced in $out_dir/rules.vcl" >&2
