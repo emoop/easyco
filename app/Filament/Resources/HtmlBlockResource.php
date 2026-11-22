@@ -219,6 +219,8 @@ class HtmlBlockResource extends Resource
                 Grid::make(['default' => 1, 'lg' => 2])->extraAttributes(['class' => 'fi-hb-compact'])->schema([
                     Group::make([
                         MediaPicker::make('card.picture')->label($label('picture'))->afterLabel(InfoHint::make($hint('picture'), 'card-picture'))->plainImagesOnly()->live(),
+                        MediaPicker::make('card.phone_picture')->label($label('phone_picture'))->afterLabel(InfoHint::make($hint('phone_picture'), 'card-phone-picture'))->plainImagesOnly()->live(),
+                        $choice('phone_ratio', HtmlBlockCard::PHONE_RATIOS),
                         $input('title', HtmlBlockCard::TITLE_MAX),
                         $input('subtitle', HtmlBlockCard::SUBTITLE_MAX),
                         Textarea::make('card.text')->label($label('text'))->afterLabel(InfoHint::make($hint('text'), 'card-text'))->rows(3)->maxLength(HtmlBlockCard::TEXT_MAX)->live(onBlur: true)->default(''),
@@ -260,6 +262,10 @@ class HtmlBlockResource extends Resource
 
         if (! isset($errors['picture']) && $clean['picture'] !== null && ! HtmlBlockBackground::isPicture($clean['picture'])) {
             $errors['picture'] = (string) __('html_blocks.card.errors.bad_picture');
+        }
+
+        if (! isset($errors['phone_picture']) && $clean['phone_picture'] !== null && ! HtmlBlockBackground::isPicture($clean['phone_picture'])) {
+            $errors['phone_picture'] = (string) __('html_blocks.card.errors.bad_picture');
         }
 
         if ($errors === [] && HtmlBlockCard::capReached($recordId)) {

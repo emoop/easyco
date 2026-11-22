@@ -170,6 +170,8 @@ return [
             'border_color' => 'Border colour',
             'border_custom' => 'Custom border colour',
             'radius' => 'Rounded corners',
+            'phone_picture' => 'Picture for phones (optional)',
+            'phone_ratio' => 'Phone proportion',
         ],
         'hints' => [
             'picture' => 'A picture of the library (PNG, JPEG or WebP). Required. It is cropped to fill the block.',
@@ -189,8 +191,17 @@ return [
             'border_color' => 'Dark, light, the site’s accent colour or a custom one.',
             'border_custom' => 'A colour like #rrggbb.',
             'radius' => 'The border and the corners clip the picture and the veil.',
+            'phone_picture' => 'If empty, phones use the main picture. Same rules as the main picture.',
+            'phone_ratio' => 'Default: as on desktop (lower on a small screen). Any other proportion: on phones the block is the full width × that proportion.',
         ],
         'options' => [
+            'phone_ratio' => [
+                'as_desktop' => 'As on desktop',
+                '1:1' => '1:1 (square)',
+                '4:5' => '4:5',
+                '3:4' => '3:4',
+                '2:3' => '2:3',
+            ],
             'title_size' => [
                 's' => 'S — 18 px',
                 'm' => 'M — 24 px',

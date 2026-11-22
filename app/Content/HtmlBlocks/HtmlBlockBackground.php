@@ -28,10 +28,12 @@ final class HtmlBlockBackground
     /**
      * The addresses of pictures by id (ONE query for all). Only the usable ones are in the result.
      *
+     * HB-M1: with `$minWidth` the SMALLEST rendition at least that wide is taken (the largest when none is): a phone picture does not need the 1600 px file.
+     *
      * @param  list<int>  $ids
      * @return array<int, string> id => `/storage/…` path
      */
-    public static function urls(array $ids): array
+    public static function urls(array $ids, ?int $minWidth = null): array
     {
         $ids = array_values(array_unique(array_filter(array_map('intval', $ids), static fn (int $id): bool => $id > 0)));
 
@@ -47,7 +49,17 @@ final class HtmlBlockBackground
             $set = $images->build($asset, '', '');
             // the renditions are ordered by width: the last one is the largest (a banner is wide)
             $renditions = $set !== null ? $set->srcset : [];
-            $source = $renditions !== [] ? (string) $renditions[array_key_last($renditions)]['url'] : $storage->url((string) $asset->disk, (string) $asset->path);
+            $chosen = $renditions === [] ? null : $renditions[array_key_last($renditions)];
+
+            foreach ($minWidth === null ? [] : $renditions as $rendition) {
+                if ($rendition['width'] >= $minWidth) {
+                    $chosen = $rendition;
+
+                    break;
+                }
+            }
+
+            $source = $chosen !== null ? (string) $chosen['url'] : $storage->url((string) $asset->disk, (string) $asset->path);
             $path = preg_match('#^https?://[^/]+(/storage/.*)$#i', $source, $m) === 1 ? $m[1] : $source;
 
             self::isLibraryPath($path) && $out[(int) $asset->id] = $path;

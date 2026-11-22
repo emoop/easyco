@@ -342,6 +342,14 @@ final class HtmlBlockStyle
             'justify-content:(?:center|flex-end)',
         ]).')';
 
+        // HB-M1: the phone rule of a picture card (below 48rem): the phone picture's address (the same closed pattern) and/or the ratio, in this order, nothing else
+        $ratio = 'aspect-ratio:(?:1 / 1|4 / 5|3 / 4|2 / 3);min-height:0;background-size:cover';
+        $phone = '@media \(max-width:47\.99rem\)\{\.sf-hb-[1-9][0-9]{0,9}\.sf-pc\{(?:background-image:url\('.HtmlBlockBackground::URL_PATH.'\)(?:;'.$ratio.')?|'.$ratio.')\}\}';
+
+        if (preg_match('~\A'.$phone.'\z~', $rule) === 1) {
+            return true;
+        }
+
         // `~` is the delimiter: the picture's address has slashes in it
         return preg_match('~\A\.sf-hb-[1-9][0-9]{0,9}\{'.$declaration.'(?:;'.$declaration.')*\}\z~', $rule) === 1;
     }

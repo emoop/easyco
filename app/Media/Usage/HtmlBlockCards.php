@@ -5,7 +5,7 @@ namespace App\Media\Usage;
 use App\Filament\Resources\HtmlBlockResource;
 use Illuminate\Database\Eloquent\Builder;
 
-/** `html_blocks.card.picture` (HB-5): the picture of a «Снимка с текст» block, a media id inside the card's JSON. ONE read of the styled blocks, scanned in PHP (a shop has dozens). */
+/** `html_blocks.card.picture` (HB-5) and `html_blocks.card.phone_picture` (HB-M1): the pictures of a «Снимка с текст» block, media ids inside the card's JSON (one use per id: both the same = one use). ONE read of the styled blocks, scanned in PHP (a shop has dozens). */
 final class HtmlBlockCards implements MediaUsageProvider
 {
     /** @var list<array{block: int, title: string, id: int}>|null */
@@ -56,10 +56,15 @@ final class HtmlBlockCards implements MediaUsageProvider
 
         foreach ($this->blocks->all() as $block) {
             $card = ($block->kind ?? 'text') === 'card' && is_string($block->card ?? null) ? json_decode($block->card, true) : null;
-            $id = is_array($card) ? ($card['picture'] ?? null) : null;
+            $seen = [];
 
-            if (is_int($id) || (is_string($id) && ctype_digit($id))) {
-                $found[] = ['block' => (int) $block->id, 'title' => (string) $block->title, 'id' => (int) $id];
+            foreach (['picture', 'phone_picture'] as $key) {
+                $id = is_array($card) ? ($card[$key] ?? null) : null;
+
+                if ((is_int($id) || (is_string($id) && ctype_digit($id))) && ! isset($seen[(int) $id])) {
+                    $seen[(int) $id] = true;
+                    $found[] = ['block' => (int) $block->id, 'title' => (string) $block->title, 'id' => (int) $id];
+                }
             }
         }
 

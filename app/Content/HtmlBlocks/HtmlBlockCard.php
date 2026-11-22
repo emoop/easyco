@@ -49,11 +49,21 @@ final class HtmlBlockCard
 
     public const RADII = [0, 8, 16, 24];
 
+    /** HB-M1: the phone's proportion (width:height) of the box below 48rem; `as_desktop` = today's rule (the height clamp), nothing extra is printed. */
+    public const PHONE_RATIOS = ['as_desktop', '1:1', '4:5', '3:4', '2:3'];
+
+    /** The home grid's breakpoint (`.sf-hp-grid` is hidden and the phone list shown from 48rem): the phone rules apply below it. */
+    public const PHONE_MEDIA = '(max-width:47.99rem)';
+
+    /** HB-M1: a phone picture needs no more than this many px of width (the smallest rendition at least this wide is used). */
+    public const PHONE_PICTURE_MIN_WIDTH = 800;
+
     /** @var array<string, mixed> every key with its default */
     public const DEFAULTS = [
         'picture' => null, 'title' => '', 'subtitle' => '', 'text' => '', 'link' => '', 'alt' => '',
         'title_size' => 'l', 'halign' => 'center', 'valign' => 'middle', 'overlay' => 'medium', 'height' => 320,
         'text_color' => 'light', 'text_custom' => null, 'border_w' => 0, 'border_color' => 'dark', 'border_custom' => null, 'radius' => 0,
+        'phone_picture' => null, 'phone_ratio' => 'as_desktop',
     ];
 
     /** The keys whose value is one whole number out of a closed list. */
@@ -62,7 +72,7 @@ final class HtmlBlockCard
     /** The keys whose value is one string out of a closed list. */
     private const STRING_LISTS = [
         'title_size' => self::TITLE_SIZES, 'halign' => self::HALIGNS, 'valign' => self::VALIGNS, 'overlay' => self::OVERLAYS,
-        'text_color' => self::TEXT_COLORS, 'border_color' => self::BORDER_COLORS,
+        'text_color' => self::TEXT_COLORS, 'border_color' => self::BORDER_COLORS, 'phone_ratio' => self::PHONE_RATIOS,
     ];
 
     /**
@@ -100,6 +110,15 @@ final class HtmlBlockCard
             $fail('picture', $empty($picture) ? 'picture_required' : 'bad_picture');
         } else {
             $clean['picture'] = $id;
+        }
+
+        // HB-M1: the optional phone picture, the same shape as the picture (that it is an image of the library is checked by the form, and again when the stylesheet is built)
+        $phone = $card['phone_picture'] ?? null;
+
+        if (! $empty($phone)) {
+            $phoneId = is_int($phone) ? $phone : (is_string($phone) && preg_match('/\A[1-9][0-9]{0,17}\z/', $phone) === 1 ? (int) $phone : null);
+
+            $phoneId === null || $phoneId < 1 ? $fail('phone_picture', 'bad_picture') : $clean['phone_picture'] = $phoneId;
         }
 
         foreach (['title' => self::TITLE_MAX, 'subtitle' => self::SUBTITLE_MAX, 'text' => self::TEXT_MAX, 'alt' => self::ALT_MAX] as $key => $max) {
@@ -270,6 +289,29 @@ final class HtmlBlockCard
     }
 
     /**
+     * HB-M1: the phone rule of a card, below 48rem only: `.sf-hb-{id}.sf-pc` (two classes, so it beats the height class `.sf-pc-ht-N` whatever the order) with the phone picture (when it has an address)
+     * and, for a ratio other than `as_desktop`, `aspect-ratio`, `min-height:0` (the clamp must not win) and `background-size:cover`. '' when the card has neither (today's output, unchanged).
+     * Closed template, re-checked by HtmlBlockStyle::isValidRule().
+     */
+    public static function phoneCss(int $id, mixed $stored, ?string $phoneUrl): string
+    {
+        $card = self::active($stored);
+
+        if ($card === null) {
+            return '';
+        }
+
+        $d = [];
+        $phoneUrl !== null && HtmlBlockBackground::isLibraryPath($phoneUrl) && $d[] = 'background-image:url('.$phoneUrl.')';
+
+        if ($card['phone_ratio'] !== 'as_desktop') {
+            array_push($d, 'aspect-ratio:'.str_replace(':', ' / ', $card['phone_ratio']), 'min-height:0', 'background-size:cover');
+        }
+
+        return $d === [] ? '' : '@media '.self::PHONE_MEDIA.'{.'.HtmlBlockStyle::className($id).'.sf-pc{'.implode(';', $d).'}}';
+    }
+
+    /**
      * The rules of the cards for the token stylesheet: those with a valid card whose picture has an address, ordered by id, at most MAX_CARDS.
      *
      * @return list<string>
@@ -288,12 +330,20 @@ final class HtmlBlockCard
         }
 
         $urls = HtmlBlockBackground::urls(array_values(array_column($cards, 'picture')));
+        $phoneUrls = HtmlBlockBackground::urls(array_values(array_filter(array_column($cards, 'phone_picture'))), self::PHONE_PICTURE_MIN_WIDTH);
         $rules = [];
 
         foreach ($cards as $id => $card) {
             $rule = self::css($id, $card, $urls[$card['picture']] ?? null);
 
-            $rule !== '' && $rules[] = $rule;
+            if ($rule === '') {
+                continue;
+            }
+
+            $rules[] = $rule;
+            $phone = self::phoneCss($id, $card, $card['phone_picture'] === null ? null : ($phoneUrls[$card['phone_picture']] ?? null));
+
+            $phone !== '' && $rules[] = $phone;
         }
 
         return $rules;
