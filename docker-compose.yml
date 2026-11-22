@@ -148,6 +148,9 @@ services:
       VARNISH_LIMIT_IP_CARDSIZES: ${VARNISH_LIMIT_IP_CARDSIZES:-30}
       VARNISH_LIMIT_GLOBAL_FILTER: ${VARNISH_LIMIT_GLOBAL_FILTER:-300}
       VARNISH_LIMIT_GLOBAL_SEARCH: ${VARNISH_LIMIT_GLOBAL_SEARCH:-120}
+      # a URL over VARNISH_MAX_URL characters is a 414, a Cookie header over VARNISH_MAX_COOKIE a 431
+      VARNISH_MAX_URL: ${VARNISH_MAX_URL:-4096}
+      VARNISH_MAX_COOKIE: ${VARNISH_MAX_COOKIE:-6144}
     depends_on:
       web:
         condition: service_healthy
@@ -158,7 +161,9 @@ services:
     <<: *app-image
     restart: unless-stopped
     user: www-data
-    command: ["php", "artisan", "queue:work", "--tries=3", "--max-time=3600", "--sleep=3", "--timeout=${QUEUE_WORKER_TIMEOUT:-90}"]
+    # --queue is REQUIRED: customer-account and order mails are queued on `mail-transactional` (marketing: `mail-marketing`); a worker without it serves only `default` and those mails wait
+    # unsent forever (production-requirements.md). The order is the priority: a campaign never delays an order confirmation.
+    command: ["php", "artisan", "queue:work", "--queue=mail-transactional,default,mail-marketing", "--tries=3", "--max-time=3600", "--sleep=3", "--timeout=${QUEUE_WORKER_TIMEOUT:-90}"]
     environment:
       <<: *laravel-env
     volumes:
