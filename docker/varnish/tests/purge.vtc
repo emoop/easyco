@@ -106,6 +106,7 @@ client c6 {
 
 varnish v1 -cliok "backend.set_health health sick"
 
+# sick: the soft-purged object is served as STALE (a HIT, grace) and Varnish starts ONE background fetch, which stores the fresh page (c-v2)
 client c7 {
     txreq -url "/product/c"
     rxresp
@@ -114,20 +115,26 @@ client c7 {
     expect resp.http.X-Cache == "HIT"
 } -run
 
+# no race: the background fetch is the last request s1 serves; wait until it has answered, and a moment more for Varnish to store the object
+server s1 -wait
+delay 0.5
+
 varnish v1 -cliok "backend.set_health health auto"
 
+# healthy again: the background fetch has ALREADY refreshed the object, so this is a HIT with the new body (not a MISS)
 client c8 {
     txreq -url "/product/c"
     rxresp
     expect resp.body == "c-v2"
-    expect resp.http.X-Cache == "MISS"
+    expect resp.http.X-Cache == "HIT"
     txreq -url "/product/c"
     rxresp
     expect resp.body == "c-v2"
     expect resp.http.X-Cache == "HIT"
 } -run
 
-server s1 -wait
+# NOTE: «healthy + soft-purged => the next request is a MISS with the fresh body, no stale copy» is its OWN sequence above: c2 purges p1 with the backend healthy and NO stale request in
+# between, and c3 gets a MISS with a-v2 (c5 does the same for p2 / b-v2).
 
 # the refusals do not need a backend
 client c9 {
