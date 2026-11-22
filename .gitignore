@@ -54,3 +54,6 @@ Thumbs.db
 .env.docker
 
 /phpunit.shard.xml
+
+# review diffs in the project root (made by hand, never committed)
+/*.diff

@@ -108,3 +108,58 @@ jobs:
           path: junit-shard-${{ matrix.shard }}.xml
           retention-days: 7
           if-no-files-found: ignore
+
+  # P8c-1: the Varnish VCL. The .vtc files run in the VERY image the stack uses (Dockerfile target `varnish`), so a vmod missing from the image fails here, not on the server.
+  # Required: a red run fails the workflow like a PHPUnit shard does.
+  varnish:
+    name: Varnish VCL (varnishtest)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the varnish image
+        run: docker build --target varnish --tag easyco-varnish:ci .
+
+      - name: Vmods the VCL imports are in the image
+        run: |
+          for vmod in std var xkey vsthrottle; do
+            docker run --rm --entrypoint ls easyco-varnish:ci "/usr/lib/varnish/vmods/libvmod_${vmod}.so"
+          done
+
+      # the VCL is rendered from the template exactly as the container does at start, then compiled by varnishd itself
+      - name: Compile the rendered VCL
+        run: >-
+          docker run --rm --add-host web:127.0.0.1 --entrypoint sh easyco-varnish:ci
+          -c 'easyco-render-vcl /etc/varnish /tmp && cp /etc/varnish/default.vcl /tmp/ && varnishd -C -p vcl_path=/tmp -f /tmp/default.vcl > /dev/null'
+
+      - name: varnishtest
+        run: >-
+          docker run --rm --user root --entrypoint /work/run-tests.sh
+          --volume "$PWD/docker/varnish:/work:ro" easyco-varnish:ci
+
+      # 1. NO backend (192.0.2.1 is a documentation address nothing answers; NOT 127.0.0.1, that would be varnish itself): the container starts with the rendered VCL and answers. The fetch fails,
+      #    so a 503 that carries OUR X-Cache header proves the rules run. (`default` has no probe, so the 503 is the real connection failure, not a decision of the probe.)
+      - name: Container smoke test (no backend)
+        run: |
+          docker run -d --name vsmoke --add-host web:192.0.2.1 -p 8081:80 easyco-varnish:ci
+          for i in $(seq 1 20); do curl -s -o /dev/null --max-time 30 http://127.0.0.1:8081/ && break; sleep 1; done
+          curl -si --max-time 30 http://127.0.0.1:8081/ | tee /dev/stderr | grep -i '^x-cache: MISS'
+          docker logs vsmoke
+          docker rm -f vsmoke
+
+      # 2. A REAL backend that answers GET /up with 200 (and nothing else): the `health` backend of default.vcl (the probe) must stay HEALTHY. It starts healthy (.initial), so the check waits for the
+      #    whole probe window (5 probes x 5 s) and looks again: a probe that is wrong (path, Host) would have turned it sick by then (which only allows old copies; it never refuses a request).
+      - name: Container smoke test (the health probe)
+        run: |
+          docker network create vnet
+          docker run -d --name web --network vnet python:3.12-alpine sh -c 'mkdir /s && echo ok > /s/up && echo home > /s/index.html && cd /s && exec python -m http.server 80'
+          docker run -d --name vprobe --network vnet -p 8082:80 easyco-varnish:ci
+          sleep 40
+          # two rows: `default` (no probe, fetches everything) and `health` (the probe, never fetches). It is the `health` row that must say healthy.
+          docker exec vprobe varnishadm backend.list | tee /dev/stderr | grep -E '\.health[[:space:]]' | grep -i 'healthy'
+          curl -si --max-time 10 http://127.0.0.1:8082/up | tee /dev/stderr | head -1 | grep ' 200 '
+          curl -si --max-time 10 http://127.0.0.1:8082/ | tee /dev/stderr | grep -i '^x-cache: MISS'
+          docker logs vprobe
+          docker rm -f vprobe web

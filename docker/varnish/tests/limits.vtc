@@ -1,0 +1,36 @@
+varnishtest "P8c-1: request size limits: a URL over 4096 characters is 414, a Cookie header over 6144 characters is 431; an ordinary request is untouched"
+
+server s1 {
+    rxreq
+    expect req.url == "/product/a"
+    txresp -hdr "Cache-Control: public, max-age=0, s-maxage=100" -hdr "xkey: all" -body "a"
+} -start
+
+varnish v1 -vcl+backend {
+    # the backend the rules ask `std.healthy()` about (production: default.vcl, with the probe). No probe here: a test sets its health by hand (backend.set_health health sick|auto).
+    backend health {
+        .host = "${s1_addr}";
+        .port = "${s1_port}";
+    }
+
+    include "${vcldir}/rules.vcl";
+} -start
+
+client c1 {
+    txreq -url "/product/${longurl}"
+    rxresp
+    expect resp.status == 414
+    expect resp.http.X-Cache == "MISS"
+
+    txreq -url "/product/a" -hdr "Cookie: ${longcookie}"
+    rxresp
+    expect resp.status == 431
+    expect resp.http.X-Cache == "MISS"
+
+    txreq -url "/product/a"
+    rxresp
+    expect resp.status == 200
+    expect resp.body == "a"
+} -run
+
+server s1 -wait

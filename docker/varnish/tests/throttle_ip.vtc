@@ -1,0 +1,52 @@
+varnishtest "P8c-1: the per-IP limit on filtered listings and search (LOW test limits: 2 per IP). The IP is the RIGHT-most X-Forwarded-For entry, the one our own proxy appended; what the client wrote to its left is ignored"
+
+server s1 {
+    rxreq
+    txresp -hdr "Cache-Control: private, no-store" -body "x"
+} -repeat 5 -start
+
+varnish v1 -vcl+backend {
+    # the backend the rules ask `std.healthy()` about (production: default.vcl, with the probe). No probe here: a test sets its health by hand (backend.set_health health sick|auto).
+    backend health {
+        .host = "${s1_addr}";
+        .port = "${s1_port}";
+    }
+
+    include "${vcllow}/rules.vcl";
+} -start
+
+# filtered listings: IP A gets 2, the third is 429 (with Retry-After); IP B is not affected
+client c1 {
+    txreq -url "/product-category/x?filter[a]=1" -hdr "X-Forwarded-For: 203.0.113.9"
+    rxresp
+    expect resp.status == 200
+    txreq -url "/product-category/x?filter[a]=2" -hdr "X-Forwarded-For: 203.0.113.9"
+    rxresp
+    expect resp.status == 200
+
+    txreq -url "/product-category/x?filter[a]=3" -hdr "X-Forwarded-For: 203.0.113.9"
+    rxresp
+    expect resp.status == 429
+    expect resp.http.Retry-After == "60"
+    expect resp.http.X-Cache == "MISS"
+
+    txreq -url "/product-category/x?filter[a]=1" -hdr "X-Forwarded-For: 203.0.113.10"
+    rxresp
+    expect resp.status == 200
+} -run
+
+# search: the same IP behind three DIFFERENT left-most entries is one IP (the right-most is the proxy's); a client cannot get a fresh allowance by writing another address
+client c2 {
+    txreq -url "/search?q=x" -hdr "X-Forwarded-For: 1.1.1.1, 203.0.113.11"
+    rxresp
+    expect resp.status == 200
+    txreq -url "/search?q=x" -hdr "X-Forwarded-For: 2.2.2.2, 203.0.113.11"
+    rxresp
+    expect resp.status == 200
+    txreq -url "/search?q=x" -hdr "X-Forwarded-For: 3.3.3.3, 203.0.113.11"
+    rxresp
+    expect resp.status == 429
+    expect resp.http.Retry-After == "60"
+} -run
+
+server s1 -wait

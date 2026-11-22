@@ -90,5 +90,15 @@ COPY --from=app /var/www/html/public /var/www/html/public
 RUN rm -rf /var/www/html/public/storage && ln -sfn /var/www/html/storage/app/public /var/www/html/public/storage
 
 # ---- 5. varnish: the VCL baked in (no bind mount) ------------------------------------------------------------------------------
+# P8c-1: default.vcl (the backend) + rules.vcl.tpl (the rules). The entrypoint RENDERS the rules at container start (the limits come from VARNISH_LIMIT_* variables, render-vcl.sh checks
+# them) and then starts varnish through the official image's own entrypoint. /etc/varnish is made writable for the `varnish` user only so that the rendering can write rules.vcl.
+# The official image ships the vmods the rules import (std, var, xkey, vsthrottle): the CI job `varnish` checks that on every run.
 FROM varnish:7.6 AS varnish
-COPY docker/varnish/default.vcl /etc/varnish/default.vcl
+USER root
+COPY docker/varnish/default.vcl docker/varnish/rules.vcl.tpl /etc/varnish/
+COPY docker/varnish/render-vcl.sh /usr/local/bin/easyco-render-vcl
+COPY docker/varnish/entrypoint.sh /usr/local/bin/easyco-varnish-entrypoint
+RUN chmod 0755 /usr/local/bin/easyco-render-vcl /usr/local/bin/easyco-varnish-entrypoint && chown varnish:varnish /etc/varnish /etc/varnish/default.vcl /etc/varnish/rules.vcl.tpl
+USER varnish
+ENV VARNISH_SIZE=512m
+ENTRYPOINT ["/usr/local/bin/easyco-varnish-entrypoint"]

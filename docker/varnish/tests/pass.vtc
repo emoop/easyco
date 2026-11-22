@@ -1,0 +1,229 @@
+varnishtest "P8c-1: the pass classes (private paths, previews, search, filters, non-GET): every request reaches the backend, nothing is ever a HIT, even when the backend wrongly says s-maxage"
+
+server s1 {
+    rxreq
+    txresp -hdr "Cache-Control: public, max-age=0, s-maxage=100" -hdr "xkey: all" -body "x"
+} -repeat 52 -start
+
+varnish v1 -vcl+backend {
+    # the backend the rules ask `std.healthy()` about (production: default.vcl, with the probe). No probe here: a test sets its health by hand (backend.set_health health sick|auto).
+    backend health {
+        .host = "${s1_addr}";
+        .port = "${s1_port}";
+    }
+
+    include "${vcldir}/rules.vcl";
+} -start
+
+client c1 {
+    txreq -url "/admin"
+    rxresp
+    expect resp.status == 200
+    expect resp.http.X-Cache == "MISS"
+    txreq -url "/admin"
+    rxresp
+    expect resp.status == 200
+    expect resp.http.X-Cache == "MISS"
+    txreq -url "/admin/login"
+    rxresp
+    expect resp.status == 200
+    expect resp.http.X-Cache == "MISS"
+    txreq -url "/admin/login"
+    rxresp
+    expect resp.status == 200
+    expect resp.http.X-Cache == "MISS"
+    txreq -url "/livewire/update"
+    rxresp
+    expect resp.status == 200
+    expect resp.http.X-Cache == "MISS"
+    txreq -url "/livewire/update"
+    rxresp
+    expect resp.status == 200
+    expect resp.http.X-Cache == "MISS"
+    txreq -url "/api/products"
+    rxresp
+    expect resp.status == 200
+    expect resp.http.X-Cache == "MISS"
+    txreq -url "/api/products"
+    rxresp
+    expect resp.status == 200
+    expect resp.http.X-Cache == "MISS"
+    txreq -url "/cart"
+    rxresp
+    expect resp.status == 200
+    expect resp.http.X-Cache == "MISS"
+    txreq -url "/cart"
+    rxresp
+    expect resp.status == 200
+    expect resp.http.X-Cache == "MISS"
+    txreq -url "/checkout"
+    rxresp
+    expect resp.status == 200
+    expect resp.http.X-Cache == "MISS"
+    txreq -url "/checkout"
+    rxresp
+    expect resp.status == 200
+    expect resp.http.X-Cache == "MISS"
+    txreq -url "/order/received/1"
+    rxresp
+    expect resp.status == 200
+    expect resp.http.X-Cache == "MISS"
+    txreq -url "/order/received/1"
+    rxresp
+    expect resp.status == 200
+    expect resp.http.X-Cache == "MISS"
+    txreq -url "/account/login"
+    rxresp
+    expect resp.status == 200
+    expect resp.http.X-Cache == "MISS"
+    txreq -url "/account/login"
+    rxresp
+    expect resp.status == 200
+    expect resp.http.X-Cache == "MISS"
+    txreq -url "/_sandbox/cart"
+    rxresp
+    expect resp.status == 200
+    expect resp.http.X-Cache == "MISS"
+    txreq -url "/_sandbox/cart"
+    rxresp
+    expect resp.status == 200
+    expect resp.http.X-Cache == "MISS"
+    txreq -url "/csp-report"
+    rxresp
+    expect resp.status == 200
+    expect resp.http.X-Cache == "MISS"
+    txreq -url "/csp-report"
+    rxresp
+    expect resp.status == 200
+    expect resp.http.X-Cache == "MISS"
+    txreq -url "/up"
+    rxresp
+    expect resp.status == 200
+    expect resp.http.X-Cache == "MISS"
+    txreq -url "/up"
+    rxresp
+    expect resp.status == 200
+    expect resp.http.X-Cache == "MISS"
+    txreq -url "/__ec/trap"
+    rxresp
+    expect resp.status == 200
+    expect resp.http.X-Cache == "MISS"
+    txreq -url "/__ec/trap"
+    rxresp
+    expect resp.status == 200
+    expect resp.http.X-Cache == "MISS"
+    txreq -url "/design-preview?zone=home"
+    rxresp
+    expect resp.status == 200
+    expect resp.http.X-Cache == "MISS"
+    txreq -url "/design-preview?zone=home"
+    rxresp
+    expect resp.status == 200
+    expect resp.http.X-Cache == "MISS"
+    txreq -url "/info/x?signature=abc&expires=1"
+    rxresp
+    expect resp.status == 200
+    expect resp.http.X-Cache == "MISS"
+    txreq -url "/info/x?signature=abc&expires=1"
+    rxresp
+    expect resp.status == 200
+    expect resp.http.X-Cache == "MISS"
+    txreq -url "/header-preview?signature=abc"
+    rxresp
+    expect resp.status == 200
+    expect resp.http.X-Cache == "MISS"
+    txreq -url "/header-preview?signature=abc"
+    rxresp
+    expect resp.status == 200
+    expect resp.http.X-Cache == "MISS"
+    txreq -url "/info-preview/3?signature=abc"
+    rxresp
+    expect resp.status == 200
+    expect resp.http.X-Cache == "MISS"
+    txreq -url "/info-preview/3?signature=abc"
+    rxresp
+    expect resp.status == 200
+    expect resp.http.X-Cache == "MISS"
+    txreq -url "/search?q=a"
+    rxresp
+    expect resp.status == 200
+    expect resp.http.X-Cache == "MISS"
+    txreq -url "/search?q=a"
+    rxresp
+    expect resp.status == 200
+    expect resp.http.X-Cache == "MISS"
+    txreq -url "/search"
+    rxresp
+    expect resp.status == 200
+    expect resp.http.X-Cache == "MISS"
+    txreq -url "/search"
+    rxresp
+    expect resp.status == 200
+    expect resp.http.X-Cache == "MISS"
+    txreq -url "/product-category/x?filter%5Bb%5D=1"
+    rxresp
+    expect resp.status == 200
+    expect resp.http.X-Cache == "MISS"
+    txreq -url "/product-category/x?filter%5Bb%5D=1"
+    rxresp
+    expect resp.status == 200
+    expect resp.http.X-Cache == "MISS"
+    txreq -url "/product-category/x?filter[a]=1"
+    rxresp
+    expect resp.status == 200
+    expect resp.http.X-Cache == "MISS"
+    txreq -url "/product-category/x?filter[a]=1"
+    rxresp
+    expect resp.status == 200
+    expect resp.http.X-Cache == "MISS"
+    txreq -url "/product-category/x?q=a"
+    rxresp
+    expect resp.status == 200
+    expect resp.http.X-Cache == "MISS"
+    txreq -url "/product-category/x?q=a"
+    rxresp
+    expect resp.status == 200
+    expect resp.http.X-Cache == "MISS"
+    txreq -url "/product-category/x?filter=1"
+    rxresp
+    expect resp.status == 200
+    expect resp.http.X-Cache == "MISS"
+    txreq -url "/product-category/x?filter=1"
+    rxresp
+    expect resp.status == 200
+    expect resp.http.X-Cache == "MISS"
+    txreq -req POST -url "/product/a"
+    rxresp
+    expect resp.status == 200
+    expect resp.http.X-Cache == "MISS"
+    txreq -req POST -url "/product/a"
+    rxresp
+    expect resp.status == 200
+    expect resp.http.X-Cache == "MISS"
+    txreq -req PUT -url "/product/a"
+    rxresp
+    expect resp.status == 200
+    expect resp.http.X-Cache == "MISS"
+    txreq -req PUT -url "/product/a"
+    rxresp
+    expect resp.status == 200
+    expect resp.http.X-Cache == "MISS"
+    txreq -req DELETE -url "/product/a"
+    rxresp
+    expect resp.status == 200
+    expect resp.http.X-Cache == "MISS"
+    txreq -req DELETE -url "/product/a"
+    rxresp
+    expect resp.status == 200
+    expect resp.http.X-Cache == "MISS"
+    txreq -req OPTIONS -url "/product/a"
+    rxresp
+    expect resp.status == 200
+    expect resp.http.X-Cache == "MISS"
+    txreq -req OPTIONS -url "/product/a"
+    rxresp
+    expect resp.status == 200
+    expect resp.http.X-Cache == "MISS"
+} -run
+
+server s1 -wait

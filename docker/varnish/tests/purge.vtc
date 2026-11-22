@@ -1,0 +1,156 @@
+varnishtest "P8c-1: xkey SOFT purge (the NEXT request is fresh while the backend is healthy; the old copy only while it is sick), the PURGE rules (ACL source, no X-Forwarded-For, header required), BAN and unknown methods refused"
+
+server s1 {
+    rxreq
+    expect req.url == "/product/a"
+    txresp -hdr "Cache-Control: public, max-age=0, s-maxage=3600" -hdr "xkey: all p1" -body "a-v1"
+
+    rxreq
+    expect req.url == "/product/b"
+    txresp -hdr "Cache-Control: public, max-age=0, s-maxage=3600" -hdr "xkey: all p2" -body "b-v1"
+
+    # the fetch of the NEXT request after the first purge (tag p1)
+    rxreq
+    expect req.url == "/product/a"
+    txresp -hdr "Cache-Control: public, max-age=0, s-maxage=3600" -hdr "xkey: all p1" -body "a-v2"
+
+    # the fetch of the next request after the second purge (a list of keys, p2 among them)
+    rxreq
+    expect req.url == "/product/b"
+    txresp -hdr "Cache-Control: public, max-age=0, s-maxage=3600" -hdr "xkey: all p2" -body "b-v2"
+
+    # the sick-backend case: /product/c is cached, purged, served stale while the backend is sick, fetched fresh once it is healthy again
+    rxreq
+    expect req.url == "/product/c"
+    txresp -hdr "Cache-Control: public, max-age=0, s-maxage=3600" -hdr "xkey: all p3" -body "c-v1"
+
+    rxreq
+    expect req.url == "/product/c"
+    txresp -hdr "Cache-Control: public, max-age=0, s-maxage=3600" -hdr "xkey: all p3" -body "c-v2"
+} -start
+
+varnish v1 -vcl+backend {
+    # the backend the rules ask `std.healthy()` about (production: default.vcl, with the probe). No probe here: a test sets its health by hand (backend.set_health health sick|auto).
+    backend health {
+        .host = "${s1_addr}";
+        .port = "${s1_port}";
+    }
+
+    include "${vcldir}/rules.vcl";
+} -start
+
+client c1 {
+    txreq -url "/product/a"
+    rxresp
+    expect resp.body == "a-v1"
+    expect resp.http.X-Cache == "MISS"
+    txreq -url "/product/b"
+    rxresp
+    expect resp.body == "b-v1"
+    expect resp.http.X-Cache == "MISS"
+    txreq -url "/product/a"
+    rxresp
+    expect resp.body == "a-v1"
+    expect resp.http.X-Cache == "HIT"
+} -run
+
+# from the stack itself: localhost, no X-Forwarded-For, the xkey-softpurge header (exactly what VarnishPurger sends)
+client c2 {
+    txreq -req PURGE -url "/" -hdr "xkey-softpurge: p1"
+    rxresp
+    expect resp.status == 200
+    expect resp.http.X-Cache == "MISS"
+} -run
+
+# the backend is healthy: the NEXT request is the fresh page (no stale copy, no second load), then it is a HIT; tag p2 is untouched
+client c3 {
+    txreq -url "/product/a"
+    rxresp
+    expect resp.body == "a-v2"
+    expect resp.http.X-Cache == "MISS"
+    txreq -url "/product/a"
+    rxresp
+    expect resp.body == "a-v2"
+    expect resp.http.X-Cache == "HIT"
+    txreq -url "/product/b"
+    rxresp
+    expect resp.body == "b-v1"
+    expect resp.http.X-Cache == "HIT"
+} -run
+
+# several keys in one header; a key nobody has is not an error
+client c5 {
+    txreq -req PURGE -url "/" -hdr "xkey-softpurge: nobody p2 other"
+    rxresp
+    expect resp.status == 200
+    txreq -url "/product/b"
+    rxresp
+    expect resp.body == "b-v2"
+    expect resp.http.X-Cache == "MISS"
+    txreq -url "/product/b"
+    rxresp
+    expect resp.body == "b-v2"
+    expect resp.http.X-Cache == "HIT"
+} -run
+
+# the `health` backend (the probe) is SICK: the old copy (grace) is served after a purge; healthy again: the next request is fresh
+client c6 {
+    txreq -url "/product/c"
+    rxresp
+    expect resp.body == "c-v1"
+    expect resp.http.X-Cache == "MISS"
+    txreq -req PURGE -url "/" -hdr "xkey-softpurge: p3"
+    rxresp
+    expect resp.status == 200
+} -run
+
+varnish v1 -cliok "backend.set_health health sick"
+
+client c7 {
+    txreq -url "/product/c"
+    rxresp
+    expect resp.status == 200
+    expect resp.body == "c-v1"
+    expect resp.http.X-Cache == "HIT"
+} -run
+
+varnish v1 -cliok "backend.set_health health auto"
+
+client c8 {
+    txreq -url "/product/c"
+    rxresp
+    expect resp.body == "c-v2"
+    expect resp.http.X-Cache == "MISS"
+    txreq -url "/product/c"
+    rxresp
+    expect resp.body == "c-v2"
+    expect resp.http.X-Cache == "HIT"
+} -run
+
+server s1 -wait
+
+# the refusals do not need a backend
+client c9 {
+    # came through the outer proxy (X-Forwarded-For present): refused although the address is «internal»
+    txreq -req PURGE -url "/" -hdr "xkey-softpurge: p1" -hdr "X-Forwarded-For: 203.0.113.7"
+    rxresp
+    expect resp.status == 403
+    expect resp.http.X-Cache == "MISS"
+
+    # allowed source but no key
+    txreq -req PURGE -url "/"
+    rxresp
+    expect resp.status == 400
+
+    # BAN is not implemented, and neither is anything else we do not know
+    txreq -req BAN -url "/" -hdr "ban-url: .*"
+    rxresp
+    expect resp.status == 405
+    expect resp.http.Allow ~ "GET"
+    txreq -req TRACE -url "/"
+    rxresp
+    expect resp.status == 405
+    txreq -req FOO -url "/"
+    rxresp
+    expect resp.status == 405
+} -run
