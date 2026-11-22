@@ -52,7 +52,7 @@ final class MenuRecompiler
             return $items->whereNotNull('html_block_id')->exists()
                 || str_contains((string) $settings->get(\App\Settings\AppearanceSettings::FOOTER_PUBLISHED_KEY), '"html_block"')
                 || str_contains((string) $settings->get(\App\Settings\AppearanceSettings::SUMMARY_PUBLISHED_KEY), '"html_block"')
-                || str_contains((string) $settings->get(\App\Settings\AppearanceSettings::HOME_PUBLISHED_KEY), '"html_block"')
+                || $this->homeShowsBlocks((string) $settings->get(\App\Settings\AppearanceSettings::HOME_PUBLISHED_KEY))
                 // P3: a listing-page template's block (the top / bottom block and a bottom carousel's blocks are `html_block` / `blocks` of its JSON)
                 || str_contains((string) $settings->get(\App\Settings\AppearanceSettings::CONTENT_PUBLISHED_KEY), '"html_block"')
                 || str_contains((string) $settings->get(\App\Settings\AppearanceSettings::CONTENT_PUBLISHED_KEY), '"top"')
@@ -64,6 +64,24 @@ final class MenuRecompiler
         }
 
         return $items->where('type', $type)->exists();
+    }
+
+    /**
+     * BUG-1: does the published home layout show any HTML block? Asked of the sections themselves (HomeCatalog::blockIds: an `html_block` section's block, the cells and phone list of an image grid, the blocks of
+     * a blocks carousel, the slides of a hero), never by looking for a word in the JSON: only an `html_block` section has the text `"html_block"`, so a home that shows its blocks through a grid, a carousel or a
+     * hero was never rebuilt when a block was saved.
+     */
+    private function homeShowsBlocks(string $json): bool
+    {
+        $layout = json_decode($json, true);
+
+        foreach (is_array($layout) && is_array($layout['sections'] ?? null) ? $layout['sections'] : [] as $section) {
+            if (is_array($section) && is_string($section['type'] ?? null) && is_array($section['settings'] ?? null) && \App\Storefront\Home\HomeCatalog::blockIds($section) !== []) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /** Forgets what was looked up about the types the shop holds (the footer's publish changes the answer for `html`). */
