@@ -1,0 +1,85 @@
+varnishtest "P8c-1: the GLOBAL cap on filtered listings and on search (LOW test limits: 4 for all IPs together, 2 per IP). Many IPs share it; a cached page is not affected"
+
+server s1 {
+    rxreq
+    txresp -hdr "Cache-Control: public, max-age=0, s-maxage=100" -hdr "xkey: all" -body "cached"
+    rxreq
+    txresp -hdr "Cache-Control: private, no-store" -body "x"
+    rxreq
+    txresp -hdr "Cache-Control: private, no-store" -body "x"
+    rxreq
+    txresp -hdr "Cache-Control: private, no-store" -body "x"
+    rxreq
+    txresp -hdr "Cache-Control: private, no-store" -body "x"
+    rxreq
+    txresp -hdr "Cache-Control: private, no-store" -body "x"
+    rxreq
+    txresp -hdr "Cache-Control: private, no-store" -body "x"
+    rxreq
+    txresp -hdr "Cache-Control: private, no-store" -body "x"
+    rxreq
+    txresp -hdr "Cache-Control: private, no-store" -body "x"
+} -start
+
+varnish v1 -vcl+backend {
+    # the backend the rules ask `std.healthy()` about (production: default.vcl, with the probe). No probe here: a test sets its health by hand (backend.set_health health sick|auto).
+    backend health {
+        .host = "${s1_addr}";
+        .port = "${s1_port}";
+    }
+
+    include "${vcllow}/rules.vcl";
+} -start
+
+client c1 {
+    # a cacheable page, fetched once
+    txreq -url "/product/a"
+    rxresp
+    expect resp.status == 200
+    expect resp.http.X-Cache == "MISS"
+
+    # five filtered requests from five DIFFERENT IPs: the first four reach the backend, the fifth is over the global cap
+    txreq -url "/product-category/x?filter[a]=1" -hdr "X-Forwarded-For: 198.51.100.1"
+    rxresp
+    expect resp.status == 200
+    txreq -url "/product-category/x?filter[a]=1" -hdr "X-Forwarded-For: 198.51.100.2"
+    rxresp
+    expect resp.status == 200
+    txreq -url "/product-category/x?filter[a]=1" -hdr "X-Forwarded-For: 198.51.100.3"
+    rxresp
+    expect resp.status == 200
+    txreq -url "/product-category/x?filter[a]=1" -hdr "X-Forwarded-For: 198.51.100.4"
+    rxresp
+    expect resp.status == 200
+    txreq -url "/product-category/x?filter[a]=1" -hdr "X-Forwarded-For: 198.51.100.5"
+    rxresp
+    expect resp.status == 429
+    expect resp.http.Retry-After == "60"
+    expect resp.http.X-Cache == "MISS"
+
+    # the same for search (its own counter)
+    txreq -url "/search?q=a" -hdr "X-Forwarded-For: 198.51.100.1"
+    rxresp
+    expect resp.status == 200
+    txreq -url "/search?q=a" -hdr "X-Forwarded-For: 198.51.100.2"
+    rxresp
+    expect resp.status == 200
+    txreq -url "/search?q=a" -hdr "X-Forwarded-For: 198.51.100.3"
+    rxresp
+    expect resp.status == 200
+    txreq -url "/search?q=a" -hdr "X-Forwarded-For: 198.51.100.4"
+    rxresp
+    expect resp.status == 200
+    txreq -url "/search?q=a" -hdr "X-Forwarded-For: 198.51.100.5"
+    rxresp
+    expect resp.status == 429
+
+    # both caps are spent, and the cached page is still served
+    txreq -url "/product/a" -hdr "X-Forwarded-For: 198.51.100.6"
+    rxresp
+    expect resp.status == 200
+    expect resp.body == "cached"
+    expect resp.http.X-Cache == "HIT"
+} -run
+
+server s1 -wait

@@ -35,7 +35,7 @@ All files are generic — nothing site-specific lives in the repo; everything co
 * Varnish VCL-ът е във собствен образ (`target: varnish`), без bind mount. · The VCL is baked into its own image.
 * **Правило за опашката · Queue rule:** `DB_QUEUE_RETRY_AFTER` (3700) > най-дългия timeout на задача (3600, `DeleteUnusedMediaJob`); `QUEUE_WORKER_TIMEOUT` (90) < `DB_QUEUE_RETRY_AFTER`. Нова по-дълга задача → вдигнете първото. · `DB_QUEUE_RETRY_AFTER` must exceed the longest job timeout; the worker `--timeout` must stay below it.
 * Томове · Volumes: `storage` (качени файлове, медия, логове · uploads, media, logs), `mysql`.
-* Varnish сега е **прозрачен** (минава всичко, нищо не кешира). Реалното кеширане е P8. · Varnish is **transparent** for now (passes everything, caches nothing). Real caching is P8.
+* Varnish **кешира страниците на магазина** (P8c-1): правилата са в `docker/varnish/rules.vcl.tpl`, виж «Кеш на страниците» в края. **Не го пускайте на сървър, докато `CACHE_PURGER` е `null`**: страница, която е променена в админа, би се виждала стара до 7 дни. · Varnish **caches the storefront pages** (P8c-1): the rules are in `docker/varnish/rules.vcl.tpl`, see «Page cache» at the end. **Do not deploy it to a server while `CACHE_PURGER` is `null`**: a page edited in the admin would show the old copy for up to 7 days.
 
 ---
 
@@ -262,7 +262,7 @@ docker run --rm -v "$VOL":/data -v /var/backups/easyco:/backup alpine sh -c 'cd 
 | `EASYCO_MAIL_SANDBOX=true` | Всяко писмо отива към Mailpit, **каквото и да е избрано в админа** (`MailConfigurator::apply`, едно място). |
 | `TRUSTED_PROXIES` | Докер мрежите (по подразбиране `10/8, 172.16/12, 192.168/16`); никога `*`. |
 | Качвания · Uploads | nginx `NGINX_CLIENT_MAX_BODY_SIZE`, PHP `PHP_UPLOAD_MAX_FILESIZE`/`PHP_POST_MAX_SIZE` ≥ `MEDIA_MAX_VIDEO_SIZE_KB` (100 MB по подразбиране). |
-| Ресурси · Resources (4 GB) | `PHP_FPM_MAX_CHILDREN=8`, `MYSQL_INNODB_BUFFER_POOL_SIZE=512M`, `VARNISH_SIZE=128m`, `REDIS_MAXMEMORY=128mb`. |
+| Ресурси · Resources (4 GB) | `PHP_FPM_MAX_CHILDREN=8`, `MYSQL_INNODB_BUFFER_POOL_SIZE=512M`, `VARNISH_SIZE=512m` (кешът е в паметта; сървър с 8 GB · the cache lives in memory; an 8 GB server), `REDIS_MAXMEMORY=128mb`. |
 
 ---
 
@@ -278,3 +278,37 @@ docker run --rm -v "$VOL":/data -v /var/backups/easyco:/backup alpine sh -c 'cd 
 | `POST /csp-report` | Получава CSP доклади (report-only), най-много 1 ред в лога на (директива, хост) за минута; нищо не се записва в базата. · Receives report-only CSP reports; one log line per (directive, host) per minute; nothing is stored in the database. |
 
 **Какво добавя P8c · What P8c adds:** Varnish VCL (истинският превключвател на проверката за бот, `X-Forwarded-Proto`/HSTS), Anubis, Traefik/CrowdSec правилата (HSTS е в Traefik, не в приложението). · the Varnish VCL (the real bot-challenge switch), Anubis, the Traefik / CrowdSec rules (HSTS lives at Traefik, not in the app).
+
+---
+
+## Приложение: кеш на страниците (Varnish, P8c-1) · Appendix: the page cache (Varnish, P8c-1)
+
+**Какво се кешира · What is cached.** Само `GET`/`HEAD` отговори **200 или 301**, които приложението е маркирало с `Cache-Control: public, max-age=0, s-maxage=…` и `xkey` (договорът е в `storefront-cache-contract.md`): начална, продукт, категория, марка, сезон, таг, колекция, инфо страници, `robots.txt`, sitemap-овете и `/storefront/card-sizes` (60 s). Срок 7 дни (от `s-maxage`), още 1 ден «grace». Никога: 404, 401, отговор със `Set-Cookie`, филтрирани списъци, търсене, `/admin`, `/livewire`, `/api`, `/cart`, `/checkout`, `/order`, `/account`, прегледите. · Only `GET`/`HEAD` answers **200 or 301** that the app marked with `s-maxage` and `xkey`; TTL 7 days, then 1 day of grace. Never a 404, a 401, an answer with `Set-Cookie`, filtered listings, search, the admin, Livewire, the API, cart, checkout, orders, account, previews.
+
+**Какво прави Varnish с заявката · What it does to a request.** Маха бисквитките на кешируемите страници; в адреса оставя само `page`, `per_page`, `sort`, `featured`, `ids` (`utm_*`, `gclid`, `fbclid`, `msclkid` и непознатите се махат от ключа и от заявката към приложението; браузърът си пази пълния адрес). URL над 4096 знака → 414, `Cookie` над 6144 → 431. · Strips cookies on cacheable pages; keeps only the five query names; URL over 4096 → 414, Cookie over 6144 → 431.
+
+### Включване на изчистването (purge) · Switching purging on
+
+1. **Преди** (или заедно с) деплоя на този образ: в Coolify задайте **`CACHE_PURGER=varnish`** (`CACHE_PURGE_URL` само ако не е `http://varnish`, а той е верният за този compose файл). Без това Varnish държи променена страница до 7 дни. · **Before** (or together with) deploying this image set `CACHE_PURGER=varnish` in Coolify.
+2. Redeploy на **целия** стек: променливата трябва да стигне до `app`, `queue` и `scheduler` (изчистването се изпраща от опашката). След деплоя `php artisan queue:restart` не е нужен (нов контейнер = нов процес), но ако само сте сменили променливата и рестартирате ръчно, рестартирайте и `queue`. · Redeploy the WHOLE stack: the variable must reach `app`, `queue` and `scheduler` (purges are sent by the queue worker).
+3. Изчистването е **меко (soft)**, а старо копие се показва **само докато приложението не отговаря**: докато `app` е здраво, **следващото зареждане след промяна показва промяната**. Ако `app` не отговаря (проба `GET /up` върху отделен backend `health`), Varnish връща последното копие до 1 ден, за да не падне магазинът; проверката никога не отказва заявка. · Purging is **soft**, and an old copy is shown **only while the app does not answer**: with a healthy `app` the **next load after an edit shows the change**; during an outage Varnish serves the last copy for up to 1 day.
+
+### Проверка · How to check
+
+* `curl -sI https://<домейн>/ | grep -i -E 'x-cache|age'` — `X-Cache: MISS` (първо зареждане), после `X-Cache: HIT` и `Age: <секунди>`. `X-Cache` има на **всеки** отговор (и 429/414/405); `HIT` = от кеша (и остаряло копие, докато се опреснява), `MISS` = от приложението или не се кешира. `Age` е на колко секунди е копието. · `X-Cache` is on EVERY answer; `Age` = how old the copy is.
+* Промяна на продукт в админа → презаредете страницата му: **следващото зареждане** показва промяната (`X-Cache: MISS`, `Age: 0`), после `HIT`. Ако след минута е още старо — изчистването не работи: `CACHE_PURGER` не е `varnish` или опашката не работи (`php artisan queue:failed`, таблица `jobs`); или Varnish смята `app` за болно (следващата точка). · Edit a product → reload: the NEXT load shows it.
+* **Здраве на приложението · App health:** `docker compose exec varnish varnishadm backend.list` (в Coolify: терминал на услугата `varnish`) показва два реда: `default` (без проверка, през него минава **всяка** заявка) и **`health`** (проверката `GET /up` на всеки 5 s; през него не минава нищо). Редът `health` трябва да каже **`healthy`**. `sick` значи само «приложението не отговаря»: тогава е позволено старо копие на кеширана страница (до 1 ден); **никога не значи 503** — `/cart`, `/checkout`, `/admin` и всяка заявка извън кеша си отиват към приложението както винаги (при претоварване са бавни, не отказани). Ако `health` е `sick`, а сайтът работи, проверката е сбъркана: сайтът не страда, но след промяна може да се види старо копие до 1 ден; пишете ми. · Two rows: `default` (no probe, ALL fetches) and `health` (the probe, never used to fetch). `health` must say `healthy`. `sick` only means «the app is not answering», which allows an old copy of a cached page (up to 1 day); it NEVER means a 503: cart, checkout, admin and every cache miss still go to the app (slow under load, never refused by Varnish).
+* Филтриран списък, търсене, `/cart`: винаги `MISS`. · Filtered listing, search, `/cart`: always `MISS`.
+* Ограниченията (429 + `Retry-After`) се настройват с `VARNISH_LIMIT_*` (виж `.env.docker.example`; стойностите са **предпазливи заместители**, настройват се в P8e). Невалидна стойност (не цяло число ≥ 1) спира контейнера със съобщение в лога. · Limits are placeholders, tuned in P8e; a bad value stops the container with a clear log line.
+
+### Аварийно изчистване на всичко · Emergency: flush everything
+
+**Няма artisan команда за това** (P8b няма такава). Кешът е в паметта: **рестартът на услугата `varnish`** (Coolify → Restart на `varnish`, или `docker compose restart varnish`) го изпразва напълно. Следващите заявки са `MISS`, докато кешът се напълни; приложението поема натоварването, затова не го правете в най-натоварения час. · There is no artisan command for this. The cache is in memory: restarting the `varnish` service empties it.
+
+### Сайт с парола (staging) · Site password (staging)
+
+`EASYCO_BASIC_AUTH_*` продължава да работи: хедърът `Authorization` е част от ключа в кеша, така че страница, показана на човек с паролата, не се връща на човек без нея (той получава 401 от приложението; 401 не се кешира). · The `Authorization` header is part of the cache key.
+
+### Реалният IP на клиента · The client's real IP
+
+Varnish сам дописва адреса, от който е извикан (външния proxy), в `X-Forwarded-For`, преди да тръгнат правилата. Ограниченията по IP четат записа **вляво от последния** (онзи, който външният proxy, Coolify/Traefik, е дописал: реалния клиент); при един-единствен запис (заявка отвътре) това е адресът на извикващия. Всичко още по-вляво идва от клиента и не се ползва. Същото правило пази `PURGE`: той минава само от вътрешна мрежа **и** само с един запис в `X-Forwarded-For`; през външния proxy записите са поне два → 403. Вярно е само докато единственият път към `varnish` е през този proxy (compose файлът не публикува порт): не добавяйте `ports:` на `varnish` на сървъра. · Varnish itself appends the address it was called from (the outer proxy) to `X-Forwarded-For` before the rules run. The per-IP limits read the entry just LEFT of the right-most one (what Coolify/Traefik appended: the real client); with a single entry (a request from inside the stack) it is the caller. Everything further left is client-supplied and never used. The same rule guards `PURGE`: internal network AND exactly one `X-Forwarded-For` entry; through the outer proxy there are at least two, so 403. True only while the outer proxy is the only way in: do not publish a port of `varnish` on the server.

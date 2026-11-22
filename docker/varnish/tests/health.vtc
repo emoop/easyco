@@ -1,0 +1,49 @@
+varnishtest "P8c-1: a SICK health probe never blocks traffic. Only the use of an OLD copy depends on it; every fetch (a pass path, a cache miss) still goes to the app"
+
+server s1 {
+    rxreq
+    expect req.url == "/cart"
+    txresp -hdr "Cache-Control: private, no-store" -body "cart"
+
+    rxreq
+    expect req.url == "/admin"
+    txresp -hdr "Cache-Control: private, no-store" -body "admin"
+
+    rxreq
+    expect req.url == "/product/new"
+    txresp -hdr "Cache-Control: public, max-age=0, s-maxage=100" -hdr "xkey: all p9" -body "new-page"
+} -start
+
+varnish v1 -vcl+backend {
+    # the backend the rules ask `std.healthy()` about (production: default.vcl, with the probe). No probe here: a test sets its health by hand (backend.set_health health sick|auto).
+    backend health {
+        .host = "${s1_addr}";
+        .port = "${s1_port}";
+    }
+
+    include "${vcldir}/rules.vcl";
+} -start
+
+varnish v1 -cliok "backend.set_health health sick"
+
+client c1 {
+    txreq -url "/cart"
+    rxresp
+    expect resp.status == 200
+    expect resp.body == "cart"
+    expect resp.http.X-Cache == "MISS"
+
+    txreq -url "/admin"
+    rxresp
+    expect resp.status == 200
+    expect resp.body == "admin"
+
+    # a page that is not in the cache: fetched, not refused
+    txreq -url "/product/new"
+    rxresp
+    expect resp.status == 200
+    expect resp.body == "new-page"
+    expect resp.http.X-Cache == "MISS"
+} -run
+
+server s1 -wait

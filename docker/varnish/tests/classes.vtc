@@ -1,0 +1,117 @@
+varnishtest "P8c-1: what is cached (200/301 with s-maxage), what is not (404, Set-Cookie, no s-maxage), X-Cache, the headers that are stripped"
+
+server s1 {
+    # /product/a: cacheable, fetched once
+    rxreq
+    expect req.url == "/product/a"
+    txresp -hdr "Cache-Control: public, max-age=0, s-maxage=100" -hdr "xkey: all p1" -hdr "Via: 1.1 backend" -body "page-a"
+
+    # /missing: a 404 even WITH s-maxage is never cached: both requests reach the backend
+    rxreq
+    expect req.url == "/missing"
+    txresp -status 404 -hdr "Cache-Control: public, max-age=0, s-maxage=100" -body "nf"
+    rxreq
+    expect req.url == "/missing"
+    txresp -status 404 -hdr "Cache-Control: public, max-age=0, s-maxage=100" -body "nf"
+
+    # /cookie: s-maxage but a Set-Cookie: never cached
+    rxreq
+    expect req.url == "/cookie"
+    txresp -hdr "Cache-Control: public, max-age=0, s-maxage=100" -hdr "Set-Cookie: a=b" -body "c"
+    rxreq
+    expect req.url == "/cookie"
+    txresp -hdr "Cache-Control: public, max-age=0, s-maxage=100" -hdr "Set-Cookie: a=b" -body "c"
+
+    # /plain: no s-maxage (private, no-store): never cached
+    rxreq
+    expect req.url == "/plain"
+    txresp -hdr "Cache-Control: private, no-store" -body "p"
+    rxreq
+    expect req.url == "/plain"
+    txresp -hdr "Cache-Control: private, no-store" -body "p"
+
+    # /zero: s-maxage=0 is «do not cache», it must not be kept in grace either
+    rxreq
+    expect req.url == "/zero"
+    txresp -hdr "Cache-Control: public, max-age=0, s-maxage=0" -body "z"
+    rxreq
+    expect req.url == "/zero"
+    txresp -hdr "Cache-Control: public, max-age=0, s-maxage=0" -body "z"
+
+    # /old: a 301 with s-maxage IS cached
+    rxreq
+    expect req.url == "/old"
+    txresp -status 301 -hdr "Location: /new" -hdr "Cache-Control: public, max-age=0, s-maxage=100" -hdr "xkey: all"
+} -start
+
+varnish v1 -vcl+backend {
+    # the backend the rules ask `std.healthy()` about (production: default.vcl, with the probe). No probe here: a test sets its health by hand (backend.set_health health sick|auto).
+    backend health {
+        .host = "${s1_addr}";
+        .port = "${s1_port}";
+    }
+
+    include "${vcldir}/rules.vcl";
+} -start
+
+client c1 {
+    txreq -url "/product/a"
+    rxresp
+    expect resp.status == 200
+    expect resp.body == "page-a"
+    expect resp.http.X-Cache == "MISS"
+    # the cache layer's own headers never reach the visitor; Age stays
+    expect resp.http.xkey == <undef>
+    expect resp.http.Via == <undef>
+    expect resp.http.X-Varnish == <undef>
+
+    txreq -url "/product/a"
+    rxresp
+    expect resp.status == 200
+    expect resp.body == "page-a"
+    expect resp.http.X-Cache == "HIT"
+    expect resp.http.Age ~ "^[0-9]+$"
+    expect resp.http.xkey == <undef>
+    expect resp.http.X-Varnish == <undef>
+
+    txreq -url "/missing"
+    rxresp
+    expect resp.status == 404
+    expect resp.http.X-Cache == "MISS"
+    txreq -url "/missing"
+    rxresp
+    expect resp.status == 404
+    expect resp.http.X-Cache == "MISS"
+
+    txreq -url "/cookie"
+    rxresp
+    expect resp.http.X-Cache == "MISS"
+    txreq -url "/cookie"
+    rxresp
+    expect resp.http.X-Cache == "MISS"
+
+    txreq -url "/plain"
+    rxresp
+    expect resp.http.X-Cache == "MISS"
+    txreq -url "/plain"
+    rxresp
+    expect resp.http.X-Cache == "MISS"
+
+    txreq -url "/zero"
+    rxresp
+    expect resp.http.X-Cache == "MISS"
+    txreq -url "/zero"
+    rxresp
+    expect resp.http.X-Cache == "MISS"
+
+    txreq -url "/old"
+    rxresp
+    expect resp.status == 301
+    expect resp.http.X-Cache == "MISS"
+    txreq -url "/old"
+    rxresp
+    expect resp.status == 301
+    expect resp.http.X-Cache == "HIT"
+} -run
+
+server s1 -wait

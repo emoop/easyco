@@ -1,0 +1,78 @@
+varnishtest "P8c-1: cookies are removed on cacheable pages only; the query keeps page/per_page/sort/featured/ids, marketing and unknown parameters are removed from the key and the backend request"
+
+server s1 {
+    # 1: utm_*, fbclid, foo and the Cookie are gone; the order is normalised; the client's X-Forwarded-For gets Varnish's own entry (added once by the core, never twice)
+    rxreq
+    expect req.url == "/product/a?page=2&sort=price"
+    expect req.http.Cookie == <undef>
+    expect req.http.X-Forwarded-For == "9.9.9.9, 127.0.0.1"
+    txresp -hdr "Cache-Control: public, max-age=0, s-maxage=100" -hdr "xkey: all" -body "a"
+
+    # 2: only marketing parameters: no query at all
+    rxreq
+    expect req.url == "/"
+    txresp -hdr "Cache-Control: public, max-age=0, s-maxage=100" -hdr "xkey: all" -body "home"
+
+    # 3: the five allowed names, sorted
+    rxreq
+    expect req.url == "/product-category/x?featured=1&ids=1,2&per_page=24"
+    txresp -hdr "Cache-Control: public, max-age=0, s-maxage=100" -hdr "xkey: all" -body "cat"
+
+    # 4: a pass class keeps its cookie and its WHOLE query (marketing parameters included)
+    rxreq
+    expect req.url == "/admin?x=1&utm_source=q"
+    expect req.http.Cookie == "a=b"
+    txresp -hdr "Cache-Control: private, no-store" -body "admin"
+
+    # 5: a filtered listing is a pass class too: query and cookie untouched
+    rxreq
+    expect req.url == "/product-category/x?filter[a]=1&utm_source=z"
+    expect req.http.Cookie == "a=b"
+    txresp -hdr "Cache-Control: private, no-store" -body "filtered"
+} -start
+
+varnish v1 -vcl+backend {
+    # the backend the rules ask `std.healthy()` about (production: default.vcl, with the probe). No probe here: a test sets its health by hand (backend.set_health health sick|auto).
+    backend health {
+        .host = "${s1_addr}";
+        .port = "${s1_port}";
+    }
+
+    include "${vcldir}/rules.vcl";
+} -start
+
+client c1 {
+    txreq -url "/product/a?utm_source=x&sort=price&fbclid=abc&page=2&foo=1" -hdr "Cookie: a=b" -hdr "X-Forwarded-For: 9.9.9.9"
+    rxresp
+    expect resp.status == 200
+    expect resp.http.X-Cache == "MISS"
+
+    # the same page asked in another order, with other marketing parameters, with no cookie: ONE object
+    txreq -url "/product/a?page=2&sort=price"
+    rxresp
+    expect resp.http.X-Cache == "HIT"
+    txreq -url "/product/a?sort=price&page=2&gclid=1&msclkid=2&utm_medium=m"
+    rxresp
+    expect resp.http.X-Cache == "HIT"
+
+    txreq -url "/?utm_campaign=z&gclid=1&msclkid=2"
+    rxresp
+    expect resp.http.X-Cache == "MISS"
+    txreq -url "/"
+    rxresp
+    expect resp.http.X-Cache == "HIT"
+
+    txreq -url "/product-category/x?ids=1,2&utm_source=a&featured=1&per_page=24&bogus"
+    rxresp
+    expect resp.http.X-Cache == "MISS"
+
+    txreq -url "/admin?x=1&utm_source=q" -hdr "Cookie: a=b"
+    rxresp
+    expect resp.http.X-Cache == "MISS"
+
+    txreq -url "/product-category/x?filter[a]=1&utm_source=z" -hdr "Cookie: a=b"
+    rxresp
+    expect resp.http.X-Cache == "MISS"
+} -run
+
+server s1 -wait

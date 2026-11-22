@@ -1,0 +1,49 @@
+varnishtest "P8c-1: card-sizes is cached as the app says (60 s) and only its cache MISSES are limited per IP (LOW test limit: 2)"
+
+server s1 {
+    rxreq
+    expect req.url == "/storefront/card-sizes?ids=1"
+    txresp -hdr "Content-Type: application/json" -hdr "Cache-Control: public, max-age=60, s-maxage=60" -body "{}"
+    rxreq
+    expect req.url == "/storefront/card-sizes?ids=2"
+    txresp -hdr "Content-Type: application/json" -hdr "Cache-Control: public, max-age=60, s-maxage=60" -body "{}"
+} -start
+
+varnish v1 -vcl+backend {
+    # the backend the rules ask `std.healthy()` about (production: default.vcl, with the probe). No probe here: a test sets its health by hand (backend.set_health health sick|auto).
+    backend health {
+        .host = "${s1_addr}";
+        .port = "${s1_port}";
+    }
+
+    include "${vcllow}/rules.vcl";
+} -start
+
+client c1 {
+    txreq -url "/storefront/card-sizes?ids=1"
+    rxresp
+    expect resp.status == 200
+    expect resp.http.X-Cache == "MISS"
+    txreq -url "/storefront/card-sizes?ids=2"
+    rxresp
+    expect resp.status == 200
+    expect resp.http.X-Cache == "MISS"
+
+    # a third MISS from the same IP is over the limit
+    txreq -url "/storefront/card-sizes?ids=3"
+    rxresp
+    expect resp.status == 429
+    expect resp.http.Retry-After == "60"
+
+    # a HIT is not counted: asking for a cached one is fine, again and again
+    txreq -url "/storefront/card-sizes?ids=1"
+    rxresp
+    expect resp.status == 200
+    expect resp.http.X-Cache == "HIT"
+    txreq -url "/storefront/card-sizes?ids=1"
+    rxresp
+    expect resp.status == 200
+    expect resp.http.X-Cache == "HIT"
+} -run
+
+server s1 -wait

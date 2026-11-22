@@ -1,0 +1,49 @@
+varnishtest "P8c-1: a URL over VARNISH_MAX_URL is 414, a Cookie header over VARNISH_MAX_COOKIE is 431; an ordinary request is untouched (the LOW test rendering: URL 100, Cookie 120; production 4096 / 6144)"
+
+server s1 {
+    rxreq
+    expect req.url == "/product/a"
+    txresp -hdr "Cache-Control: public, max-age=0, s-maxage=100" -hdr "xkey: all" -body "a"
+
+    # exactly at the limits is allowed: a 100-character URL and a 120-character Cookie header
+    rxreq
+    expect req.http.Cookie == <undef>
+    txresp -hdr "Cache-Control: private, no-store" -body "edge"
+} -start
+
+varnish v1 -vcl+backend {
+    # the backend the rules ask `std.healthy()` about (production: default.vcl, with the probe). No probe here: a test sets its health by hand (backend.set_health health sick|auto).
+    backend health {
+        .host = "${s1_addr}";
+        .port = "${s1_port}";
+    }
+
+    include "${vcllow}/rules.vcl";
+} -start
+
+client c1 {
+    # 109 characters: over 100
+    txreq -url "/product/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    rxresp
+    expect resp.status == 414
+    expect resp.http.X-Cache == "MISS"
+
+    # a Cookie header of 130 characters: over 120
+    txreq -url "/product/a" -hdr "Cookie: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    rxresp
+    expect resp.status == 431
+    expect resp.http.X-Cache == "MISS"
+
+    txreq -url "/product/a"
+    rxresp
+    expect resp.status == 200
+    expect resp.body == "a"
+
+    # the URL is 100 characters, the Cookie header (name and value) 120: both allowed (the cookie is removed on the way to the app)
+    txreq -url "/product/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" -hdr "Cookie: c=dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    rxresp
+    expect resp.status == 200
+    expect resp.body == "edge"
+} -run
+
+server s1 -wait

@@ -1,0 +1,79 @@
+varnishtest "P8c-1: staging basic auth. A page the app answered 200 to a request WITH the site password must never be served to one without it (or with a wrong one); 401 is never cached"
+
+# Authorization: Basic Zm9vOmJhcg==   = foo:bar   (the right one)
+# Authorization: Basic d3Jvbmc6d3Jvbmc= = wrong:wrong
+
+server s1 {
+    # 1: the right password: the app answers 200 and marks it cacheable
+    rxreq
+    expect req.http.Authorization == "Basic Zm9vOmJhcg=="
+    txresp -hdr "Cache-Control: public, max-age=0, s-maxage=100" -hdr "xkey: all" -body "secret-page"
+
+    # 2: NO password: it MUST reach the app (a miss), which answers 401
+    rxreq
+    expect req.http.Authorization == <undef>
+    txresp -status 401 -hdr "WWW-Authenticate: Basic realm=Restricted" -hdr "Cache-Control: no-store" -body "Authentication required."
+
+    # 3: a WRONG password: it MUST reach the app too
+    rxreq
+    expect req.http.Authorization == "Basic d3Jvbmc6d3Jvbmc="
+    txresp -status 401 -hdr "WWW-Authenticate: Basic realm=Restricted" -hdr "Cache-Control: no-store" -body "Authentication required."
+
+    # 4: no password again: the 401 was not cached, the app is asked again
+    rxreq
+    expect req.http.Authorization == <undef>
+    txresp -status 401 -hdr "WWW-Authenticate: Basic realm=Restricted" -hdr "Cache-Control: no-store" -body "Authentication required."
+} -start
+
+varnish v1 -vcl+backend {
+    # the backend the rules ask `std.healthy()` about (production: default.vcl, with the probe). No probe here: a test sets its health by hand (backend.set_health health sick|auto).
+    backend health {
+        .host = "${s1_addr}";
+        .port = "${s1_port}";
+    }
+
+    include "${vcldir}/rules.vcl";
+} -start
+
+client c1 {
+    txreq -url "/product/a" -hdr "Authorization: Basic Zm9vOmJhcg=="
+    rxresp
+    expect resp.status == 200
+    expect resp.body == "secret-page"
+    expect resp.http.X-Cache == "MISS"
+
+    # the right password again: served from the cache
+    txreq -url "/product/a" -hdr "Authorization: Basic Zm9vOmJhcg=="
+    rxresp
+    expect resp.status == 200
+    expect resp.http.X-Cache == "HIT"
+
+    # no password: NOT the cached page
+    txreq -url "/product/a"
+    rxresp
+    expect resp.status == 401
+    expect resp.body == "Authentication required."
+    expect resp.http.X-Cache == "MISS"
+    expect resp.http.WWW-Authenticate ~ "Basic"
+
+    # a wrong password: NOT the cached page
+    txreq -url "/product/a" -hdr "Authorization: Basic d3Jvbmc6d3Jvbmc="
+    rxresp
+    expect resp.status == 401
+    expect resp.http.X-Cache == "MISS"
+
+    # no password once more: the 401 was not kept
+    txreq -url "/product/a"
+    rxresp
+    expect resp.status == 401
+    expect resp.http.X-Cache == "MISS"
+
+    # and the right password is still a HIT (the 401s did not touch it)
+    txreq -url "/product/a" -hdr "Authorization: Basic Zm9vOmJhcg=="
+    rxresp
+    expect resp.status == 200
+    expect resp.body == "secret-page"
+    expect resp.http.X-Cache == "HIT"
+} -run
+
+server s1 -wait
