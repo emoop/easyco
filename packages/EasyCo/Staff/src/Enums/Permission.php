@@ -73,4 +73,6 @@ enum Permission: string
     case STAFF_MANAGE = 'staff_manage';
     /** configuration of the AI-facing functionality */
     case AI_MANAGE = 'ai_manage';
+    /** personal-data requests: download a customer's data export, and (ACC-4e) forget a customer; Administrator only (acc-4-gdpr-design.md §7) */
+    case PRIVACY_MANAGE = 'privacy_manage';
 }

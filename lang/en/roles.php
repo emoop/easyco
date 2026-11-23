@@ -54,6 +54,7 @@ return [
         'settings_manage' => 'Manage settings',
         'staff_manage' => 'Manage staff',
         'ai_manage' => 'Manage AI functionality',
+        'privacy_manage' => 'Handle personal-data requests (customer data export, forget a customer)',
     ],
 
 ];

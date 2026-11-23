@@ -244,6 +244,8 @@ docker run --rm -v "$VOL":/data -v /var/backups/easyco:/backup alpine sh -c 'cd 
 * **Логове · Logs:** Coolify → ресурс → услуга → Logs; или `docker logs -f <контейнер>`. Приложението логва към stderr (`LOG_CHANNEL=stderr`). · Coolify → service → Logs, or `docker logs -f <container>`; the app logs to stderr.
 * **Artisan:** в Terminal на `app` · in the `app` Terminal: `php artisan about`, `php artisan queue:failed`, …
 * **Връщане назад · Rollback:** Coolify → Deployments → наново deploy на предишния commit (или `git revert` + push). Миграциите вървят само напред: ако deploy-ът е пуснал миграция, първо върнете базата от копие. · redeploy the previous commit from Coolify's deployment list (or `git revert` + push). Migrations only go forward: if the bad deploy ran a migration, restore the database from a backup first.
+* **Изтегляне на лични данни (ACC-4c) · Personal-data exports:** ZIP файловете са в `storage/app/private/privacy-exports/`, т.е. в тома `storage` (не са публично достъпни) и се трият след 7 дни от `privacy:prune-exports`. · The ZIPs live in `storage/app/private/privacy-exports/`, i.e. in the `storage` volume (never web-reachable), and `privacy:prune-exports` deletes them after 7 days.
+* За ops · For ops: `php artisan privacy:export <email> [--sync]` стартира износ (опашка `default`; `--sync` го прави веднага) и печата номера на заявката и статуса. · starts an export (queue `default`; `--sync` builds it now) and prints the request id and status. Сваля се само от админа, `/admin/privacy/exports/{uuid}`, право `privacy_manage`. · Only admin downloads it, permission `privacy_manage`.
 
 ---
 

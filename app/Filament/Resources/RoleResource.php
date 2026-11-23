@@ -258,7 +258,7 @@ class RoleResource extends Resource
             'Content' => [Permission::CONTENT_MANAGE],
             'Marketing' => [Permission::PROMOTION_MANAGE],
             'Reporting' => [Permission::REPORT_VIEW],
-            'System' => [Permission::SETTINGS_MANAGE, Permission::STAFF_MANAGE, Permission::AI_MANAGE],
+            'System' => [Permission::SETTINGS_MANAGE, Permission::STAFF_MANAGE, Permission::AI_MANAGE, Permission::PRIVACY_MANAGE],
         ];
     }
 
