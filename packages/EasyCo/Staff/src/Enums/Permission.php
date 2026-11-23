@@ -75,4 +75,6 @@ enum Permission: string
     case AI_MANAGE = 'ai_manage';
     /** personal-data requests: download a customer's data export, and (ACC-4e) forget a customer; Administrator only (acc-4-gdpr-design.md §7) */
     case PRIVACY_MANAGE = 'privacy_manage';
+    /** ACC-4e-1: the admin «Клиенти» list and customer page, and the customer's staff note; Administrator only by default (acc-4-gdpr-design.md §7) */
+    case CUSTOMER_VIEW = 'customer_view';
 }

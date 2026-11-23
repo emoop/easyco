@@ -157,6 +157,30 @@ final class OrderBlockService
             ->get();
     }
 
+    /**
+     * ACC-4e-1: THE ACTIVE BLOCKS of one PERSON (the admin customer page): the email block and the phone blocks of every phone key, in ONE query whatever the number of phones.
+     * The read side of the same table the order view reads; nothing is written here.
+     *
+     * @param  list<string>  $phoneKeys
+     * @return Collection<int, OrderBlockModel>
+     */
+    public function activeForPerson(?string $emailKey, array $phoneKeys, ?CarbonInterface $now = null): Collection
+    {
+        $phoneKeys = array_values(array_unique($phoneKeys));
+
+        if ($emailKey === null && $phoneKeys === []) {
+            return new Collection();
+        }
+
+        return OrderBlockModel::query()
+            ->active($now ?? Date::now())
+            ->where(function ($query) use ($emailKey, $phoneKeys): void {
+                $emailKey !== null && $query->orWhere(fn ($inner) => $inner->where('type', OrderBlockType::EMAIL->value)->where('value_key', $emailKey));
+                $phoneKeys !== [] && $query->orWhere(fn ($inner) => $inner->where('type', OrderBlockType::PHONE->value)->whereIn('value_key', $phoneKeys));
+            })
+            ->get();
+    }
+
     /** Deletes the rows that ended more than PRUNE_AFTER_DAYS ago (revoked, or expired); permanent and recent ones stay. */
     public function prune(?CarbonInterface $now = null): int
     {

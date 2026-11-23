@@ -46,6 +46,7 @@ class StaffSystemRolesSeeder extends Seeder
             Permission::STAFF_MANAGE,
             Permission::AI_MANAGE,
             Permission::PRIVACY_MANAGE,
+            Permission::CUSTOMER_VIEW,
         ]);
 
         $this->seedIfMissing($roleRepository, 'Manager', [

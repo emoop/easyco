@@ -128,10 +128,7 @@ final class PrivacyExportBuilder
 
                 foreach ($chunk as $order) {
                     $orders[] = $this->order($order, $lines[$order->transaction_id] ?? [], $invoices[$order->id] ?? null, $attributions[$order->id] ?? null, $methods[$order->id] ?? null, $events[$order->id] ?? collect());
-                    $consents[] = $this->clean([
-                        'order' => (string) $order->id, 'placed_at' => $this->date($order->placed_at), 'marketing_consent' => (bool) $order->marketing_consent,
-                        'marketing_consent_text' => $order->marketing_consent_text, 'terms_accepted_at' => $this->date($order->terms_accepted_at), 'terms_version' => $order->terms_version,
-                    ]);
+                    $consents[] = OrderConsents::row($order);
                 }
             }, 'id');
 

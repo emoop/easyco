@@ -19,6 +19,19 @@ final class SignedLink
         return $token === null ? $params : $params + ['token' => $token];
     }
 
+    /**
+     * ACC-4e-1: the same parameters with an EXACT expiry (unix seconds) instead of a lifetime from now: a link that must never outlive the record it belongs to
+     * (a resent privacy-confirmation link ends when its request ends). `params()` is unchanged.
+     *
+     * @return array{id: string, expires: int, signature: string, token?: string}
+     */
+    public static function paramsUntil(string $purpose, string $id, int $expires, ?string $token = null): array
+    {
+        $params = ['id' => $id, 'expires' => $expires, 'signature' => self::sign($purpose, $id, $expires, $token ?? '')];
+
+        return $token === null ? $params : $params + ['token' => $token];
+    }
+
     public static function valid(string $purpose, string $id, mixed $expires, mixed $signature, string $token = ''): bool
     {
         if (! is_string($signature) || ! (is_int($expires) || (is_string($expires) && ctype_digit($expires)))) {

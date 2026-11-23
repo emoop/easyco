@@ -11,6 +11,9 @@ use InvalidArgumentException;
  * the `privacy_requests` row (`kind = export`, `source = admin`, `status = processing`, the email in clear + its keyed hash, the staff member) and queues BuildPrivacyExportJob AFTER the commit.
  * No mail and no customer link: the staff member downloads the ZIP and sends it.
  *
+ * A CONFIRMED export request of this email (the person pressed the link of «Поискай потвърждение», ACC-4d) is built ON, not duplicated (ACC-4e-1): one conditional update
+ * `confirmed` → `processing` (`WHERE status = 'confirmed'`), so two clicks run the build once; the second finds nothing to move and dispatches nothing. Otherwise a new row, as before.
+ *
  * Without PRIVACY_HASH_KEY (outside local and testing) it refuses BEFORE anything is written (PrivacyNotConfigured), exactly like the erase: never a silent fallback.
  */
 final class PrivacyExportRequester
@@ -30,6 +33,25 @@ final class PrivacyExportRequester
     {
         $emailKey = IdentityKeys::email($email) ?? throw new InvalidArgumentException('An email is required.');
         $emailHash = (string) $this->hash->email($emailKey);
+
+        $confirmed = PrivacyRequestModel::query()
+            ->where('kind', PrivacyRequestModel::KIND_EXPORT)
+            ->where('email_hash', $emailHash)
+            ->where('status', PrivacyRequestModel::STATUS_CONFIRMED)
+            ->orderByDesc('id')
+            ->first();
+
+        if ($confirmed !== null) {
+            // the ONE transition; `confirmed_at` (the person's own confirmation) and `staff_*` (who asked for it) stay as they are
+            $moved = PrivacyRequestModel::query()
+                ->whereKey($confirmed->getKey())
+                ->where('status', PrivacyRequestModel::STATUS_CONFIRMED)
+                ->update(['status' => PrivacyRequestModel::STATUS_PROCESSING, 'updated_at' => now()]);
+
+            $queue && $moved === 1 && BuildPrivacyExportJob::dispatch((int) $confirmed->getKey());
+
+            return $confirmed->fresh();
+        }
 
         $request = PrivacyRequestModel::query()->create([
             'kind' => PrivacyRequestModel::KIND_EXPORT,

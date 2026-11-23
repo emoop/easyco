@@ -3181,7 +3181,7 @@ class OrderResource extends Resource
      * 'danger'; REFUNDED is 'warning' (money moved back out, distinct from
      * a plain cancellation).
      */
-    private static function statusColor(string $state): string
+    public static function statusColor(string $state): string
     {
         return match (OrderStatus::from($state)) {
             OrderStatus::PLACED, OrderStatus::CONFIRMED, OrderStatus::SHIPPED => 'gray',
