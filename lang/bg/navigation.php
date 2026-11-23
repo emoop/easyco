@@ -13,6 +13,7 @@ return [
         'marketing' => 'Маркетинг',
         'sales' => 'Продажби',
         'admin' => 'Админ',
+        'privacy' => 'Поверителност',
     ],
 
     // The panel top bar's own actions, rendered by

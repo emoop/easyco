@@ -123,6 +123,40 @@ final class CustomerPageReader
     }
 
     /**
+     * ACC-4e-2: what the «Забрави» dialog tells the staff member BEFORE they press the button. Read when the dialog opens, never with the page. `$d` is read()'s answer (its blocks and requests are reused).
+     *
+     * @param  array<string, mixed>  $d
+     * @return array{years: int, block: ?array{forever: bool, until: ?Carbon}, open_orders: list<int>, open_more: int, forgotten_at: ?Carbon, linked_at: ?Carbon}
+     */
+    public function forgetSummary(CustomerIdentity $who, array $d): array
+    {
+        $finished = array_map(static fn ($status): string => $status->value, \EasyCo\Order\Order::ANONYMISABLE_STATUSES);
+        $open = DB::table('orders')->where('email_key', $who->emailKey)->whereNotIn('status', $finished)->orderBy('id')->limit(200)->pluck('id')->map(static fn ($id): int => (int) $id)->all();
+
+        $blocks = array_filter(array_merge([$d['blocks']['email']], array_map(static fn (array $phone): ?array => $phone['block'], $d['blocks']['phones'])));
+        $block = null;
+
+        if ($blocks !== []) {
+            $forever = array_filter($blocks, static fn (array $b): bool => $b['forever']) !== [];
+            $latest = collect($blocks)->pluck('until')->filter()->max();
+            $block = ['forever' => $forever, 'until' => $forever ? null : $latest];
+        }
+
+        $requests = $d['requests'];
+        $done = $requests->first(static fn (PrivacyRequestModel $row): bool => $row->kind === PrivacyRequestModel::KIND_ERASE && $row->status === PrivacyRequestModel::STATUS_DONE);
+        $confirmed = $requests->first(static fn (PrivacyRequestModel $row): bool => $row->kind === PrivacyRequestModel::KIND_ERASE && $row->status === PrivacyRequestModel::STATUS_CONFIRMED);
+
+        return [
+            'years' => app(\App\Privacy\PrivacySettings::class)->orderRetentionYears(),
+            'block' => $block,
+            'open_orders' => array_slice($open, 0, 5),
+            'open_more' => max(0, count($open) - 5),
+            'forgotten_at' => $done?->completed_at,
+            'linked_at' => $confirmed?->confirmed_at,
+        ];
+    }
+
+    /**
      * Every phone of the person, deduplicated by the KEY the blocks use (OrderBlockService::keyFor): the phones of the account's addresses and of the orders with this email key, in ONE query.
      * A phone with no usable key is shown (key null) and cannot be blocked.
      *

@@ -27,9 +27,15 @@ final class OrderRetention
     /** The cutoff now (or at `$now`, for a test that travels): an order placed STRICTLY BEFORE it is past its retention period. */
     public function cutoff(?DateTimeImmutable $now = null): DateTimeImmutable
     {
+        return $this->cutoffForYears($this->settings->orderRetentionYears(), $now);
+    }
+
+    /** ACC-4e-2: the same cutoff for a GIVEN retention (the settings page asks what a LOWER value would catch). The one place the date rule lives. */
+    public function cutoffForYears(int $years, ?DateTimeImmutable $now = null): DateTimeImmutable
+    {
         $local = ($now ?? Date::now()->toDateTimeImmutable())->setTimezone($this->timezone->zone());
         $startOfYear = $local->setDate((int) $local->format('Y'), 1, 1)->setTime(0, 0, 0);
 
-        return $startOfYear->modify('-'.$this->settings->orderRetentionYears().' years')->setTimezone(new DateTimeZone('UTC'));
+        return $startOfYear->modify('-'.$years.' years')->setTimezone(new DateTimeZone('UTC'));
     }
 }

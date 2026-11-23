@@ -425,6 +425,7 @@ class PrivacyEraserTest extends TestCase
     {
         $this->accountWithOrder();
         $first = $this->erase();
+        $this->travel(PrivacyEraser::DOUBLE_SUBMIT_SECONDS + 1)->seconds(); // ACC-4e-2: inside the window the second would be a double submit and write nothing (see PrivacyEraserReuseTest)
         $second = $this->erase('Me@Example.com');
 
         $this->assertNotSame($first->getKey(), $second->getKey(), 'two log rows: both requests were honoured');
@@ -465,6 +466,7 @@ class PrivacyEraserTest extends TestCase
         $this->assertFalse($list->isSuppressed('me@example.com'));
         $this->assertTrue($list->isSuppressed(null, '+359888111111'), 'the phone is a separate suppression');
         $this->assertFalse($list->lift('me@example.com', 'again'), 'nothing active is left to lift');
+        $this->travel(PrivacyEraser::DOUBLE_SUBMIT_SECONDS + 1)->seconds(); // ACC-4e-2: a DELIBERATE later erase, not a double submit
         $this->assertSame(1, DB::table('privacy_suppressions')->where('kind', 'email')->whereNotNull('lifted_at')->count(), 'the row stays, lifted');
 
         $this->erase();
