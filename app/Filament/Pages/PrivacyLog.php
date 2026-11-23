@@ -56,6 +56,16 @@ class PrivacyLog extends Page implements HasTable
     /** @var list<array{key: string, label: string}>|null */
     private ?array $stepsCache = null;
 
+
+    /** The full page title as the browser tooltip: a long label is cut with an ellipsis by the sidebar (the link keeps its text as its accessible name). */
+    public static function getNavigationItems(): array
+    {
+        return array_map(
+            static fn (\Filament\Navigation\NavigationItem $item): \Filament\Navigation\NavigationItem => $item->extraAttributes(['title' => __('privacy_admin.log.title')]),
+            parent::getNavigationItems(),
+        );
+    }
+
     public static function getNavigationGroup(): NavigationGroup
     {
         return NavigationGroup::PRIVACY;

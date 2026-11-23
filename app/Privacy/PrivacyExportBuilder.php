@@ -57,6 +57,15 @@ final class PrivacyExportBuilder
         'terms_version' => 'Версия на условията', 'default' => 'Основен адрес',
     ];
 
+    /** HTML ONLY: the key of a value that is a code -> the admin's own label group (lang/bg/orders.php); the JSON keeps the raw codes. */
+    private const CODE_LABELS = [
+        'status' => 'status_options', 'from' => 'status_options', 'to' => 'status_options', 'payment_method' => 'payment_method_options',
+        'delivery_type' => 'delivery_type_options', 'type' => 'event_type_options', 'recipient_type' => 'invoice_recipient_options',
+    ];
+
+    /** HTML ONLY: the keys that hold an ISO date, shown as `2026-09-28 06:13 UTC`. */
+    private const DATE_KEYS = ['created_at', 'email_verified_at', 'placed_at', 'requested_at', 'at', 'anonymised_at'];
+
     /** @param int $chunk the order chunk size (the constant by default; a test passes a small one to cross the boundary) */
     public function __construct(
         private readonly int $chunk = self::CHUNK,
@@ -201,7 +210,7 @@ final class PrivacyExportBuilder
             ->groupBy('transaction_id')->map(fn ($group): array => $group->all())->all();
     }
 
-    /** @return array<string, string>|null the sold attributes as «name => value» when they are a flat JSON object */
+    /** @return list<array{name: string, value: string}>|null the sold attributes as a list of «name, value» (no ids, no codes), in the stored order */
     private function attributes(mixed $json): ?array
     {
         $decoded = is_string($json) ? json_decode($json, true) : $json;
@@ -210,13 +219,24 @@ final class PrivacyExportBuilder
             return null;
         }
 
-        $flat = [];
+        $list = [];
 
-        foreach ($decoded as $name => $value) {
-            $flat[(string) $name] = is_scalar($value) ? (string) $value : json_encode($value, JSON_UNESCAPED_UNICODE);
+        foreach ($decoded as $key => $entry) {
+            if (is_array($entry)) {
+                $name = $entry['definitionName'] ?? null;
+                $value = $entry['value'] ?? null;
+            } else {
+                // an older flat object: «name => value»
+                $name = is_string($key) ? $key : null;
+                $value = $entry;
+            }
+
+            if (is_scalar($name) && is_scalar($value) && (string) $value !== '') {
+                $list[] = ['name' => (string) $name, 'value' => (string) $value];
+            }
         }
 
-        return $flat;
+        return $list === [] ? null : $list;
     }
 
     // ---- the filter -------------------------------------------------------------------------------------------------------------
@@ -309,10 +329,56 @@ final class PrivacyExportBuilder
                 continue;
             }
 
-            $html .= '<dt>'.$this->e(self::LABELS[$key] ?? (string) $key).'</dt><dd>'.$this->node($item).'</dd>';
+            $html .= '<dt>'.$this->e(self::LABELS[$key] ?? (string) $key).'</dt><dd>'.($key === 'attributes' && $this->isVariantList($item) ? $this->variantLines($item) : $this->node($this->readable((string) $key, $item))).'</dd>';
         }
 
         return $html.'</dl>';
+    }
+
+    /** HTML ONLY: a code becomes the admin's Bulgarian label (the shop locale does not matter; an unknown code stays as it is), an ISO date becomes `Y-m-d H:i UTC`. */
+    private function readable(string $key, mixed $value): mixed
+    {
+        if (! is_string($value) || $value === '') {
+            return $value;
+        }
+
+        if (isset(self::CODE_LABELS[$key])) {
+            $path = 'orders.'.self::CODE_LABELS[$key].'.'.$value;
+            $label = __($path, [], 'bg');
+
+            return is_string($label) && $label !== $path ? $label : $value;
+        }
+
+        if (in_array($key, self::DATE_KEYS, true)) {
+            try {
+                return Carbon::parse($value)->utc()->format('Y-m-d H:i').' UTC';
+            } catch (Throwable) {
+                return $value;
+            }
+        }
+
+        return $value;
+    }
+
+    private function isVariantList(mixed $value): bool
+    {
+        if (! is_array($value) || ! array_is_list($value)) {
+            return false;
+        }
+
+        foreach ($value as $entry) {
+            if (! is_array($entry) || ! isset($entry['name'], $entry['value']) || ! is_scalar($entry['name']) || ! is_scalar($entry['value'])) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /** @param list<array{name: string, value: string}> $variants one line per variant: `Name: Value` */
+    private function variantLines(array $variants): string
+    {
+        return implode('<br>', array_map(fn (array $v): string => $this->e($v['name'].': '.$v['value']), $variants));
     }
 
     private function e(string $value): string
