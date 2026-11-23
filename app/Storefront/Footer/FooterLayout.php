@@ -43,7 +43,7 @@ final class FooterLayout
             ],
             'lower' => [
                 'enabled' => true, 'padding' => 'compact', 'bg' => null, 'text' => null, 'align' => 'center',
-                'text_template' => '© '.self::YEAR_TOKEN.' '.config('app.name'),
+                'text_template' => '© '.self::YEAR_TOKEN.' '.\App\Settings\ShopName::current(),
             ],
         ];
     }

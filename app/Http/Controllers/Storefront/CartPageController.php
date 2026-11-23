@@ -35,7 +35,7 @@ final class CartPageController extends Controller
             ->view('storefront.cart', [
                 'categories' => $reader->categoryTree(),
                 'seo' => [
-                    'title' => __('storefront.cart_title').' — '.config('app.name'),
+                    'title' => __('storefront.cart_title').' — '.\App\Settings\ShopName::current(),
                     'description' => '',
                     'canonical' => null,
                 ],

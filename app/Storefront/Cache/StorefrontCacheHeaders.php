@@ -28,7 +28,7 @@ final class StorefrontCacheHeaders
         'storefront.home', 'storefront.product', 'storefront.category',
         'storefront.brand.index', 'storefront.brand', 'storefront.season', 'storefront.tag',
         'storefront.collection.index', 'storefront.collection', 'storefront.page',
-        'seo.robots', 'seo.sitemap', 'seo.sitemap.pages', 'seo.sitemap.categories', 'seo.sitemap.brands', 'seo.sitemap.seasons',
+        'seo.robots', 'seo.favicon', 'seo.sitemap', 'seo.sitemap.pages', 'seo.sitemap.categories', 'seo.sitemap.brands', 'seo.sitemap.seasons',
         'seo.sitemap.collections', 'seo.sitemap.tags', 'seo.sitemap.products',
     ];
 

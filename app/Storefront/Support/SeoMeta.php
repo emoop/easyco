@@ -11,7 +11,7 @@ use App\Storefront\Seo\StructuredData;
 /**
  * The `seo` variable of every storefront view: ['title', 'description', 'canonical'] (plain text, ESCAPED by the view).
  *
- *  - title        "{name} — {shop name}"; the shop name is config('app.name') (no site setting holds one yet)
+ *  - title        "{name} — {shop name}"; the shop name is ShopName::current() (the «Лого» tab's name, else APP_NAME)
  *  - description  the short description (falling back to the description) with tags removed, entities decoded,
  *                 whitespace collapsed, at most 160 characters; "" when there is none (the view omits the tag)
  *  - canonical    ABSOLUTE url: config('app.url') + the url carried by the read model (never built here); a listing
@@ -198,7 +198,7 @@ final class SeoMeta
 
     private function shopName(): string
     {
-        return (string) config('app.name');
+        return (string) \App\Settings\ShopName::current();
     }
 
     private function absolute(string $path): string

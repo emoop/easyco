@@ -142,12 +142,14 @@ class AdminPanelProvider extends PanelProvider
             ->authMiddleware([
                 Authenticate::class,
             ])
-            ->favicon(asset('favicon.svg'))
-            ->brandLogo(asset('images/logo.svg'))
+            // LOGO-1: the site icon, the logos and the shop name of the «Лого» tab, read from the CACHED appearance payload (AdminLogo: no query of its own); today's static files when nothing is set
+            ->favicon(fn (): string => \App\Settings\AdminLogo::favicon())
+            ->brandName(fn (): string => \App\Settings\AdminLogo::name())
+            ->brandLogo(fn (): string => \App\Settings\AdminLogo::light())
             // The mark's light variant, for the panel's own dark mode: Filament
             // renders THIS one whenever the panel is dark. Same 596x150 viewBox as
             // logo.svg, so the one logo height serves both.
-            ->darkModeBrandLogo(asset('images/easyco-logo-white.svg'))
+            ->darkModeBrandLogo(fn (): string => \App\Settings\AdminLogo::dark())
             // Narrower than Filament's own 20rem default, plus
             // desktop collapse-to-icon-only with expand-on-demand —
             // both real, direct fluent Panel methods (confirmed

@@ -3,8 +3,9 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    {{-- The same favicon the admin panel shows (AdminPanelProvider), so a storefront tab is recognisable too. --}}
-    <link rel="icon" href="{{ asset('favicon.svg') }}">
+    {{-- LOGO-1: the site icon of the «Лого» tab (the same one the admin panel shows): the PNG 32, /favicon.ico and the iOS touch icon. With none set: the static SVG tag, byte for byte as before. --}}
+    @if (($appearance['siteIcon'] ?? null) !== null)<link rel="icon" type="image/png" sizes="32x32" href="{{ $appearance['siteIcon']['png32']['url'] }}"><link rel="icon" href="/favicon.ico" sizes="any"><link rel="apple-touch-icon" href="{{ $appearance['siteIcon']['png180']['url'] }}">@else<link rel="icon" href="{{ asset('favicon.svg') }}">@endif
+
     <title>{{ $seo['title'] }}</title>
     @if (($seo['description'] ?? '') !== '')
         <meta name="description" content="{{ $seo['description'] }}">

@@ -77,7 +77,7 @@ final class CheckoutPageController extends Controller
             ->view('storefront.checkout', [
                 'categories' => $reader->categoryTree(),
                 'seo' => [
-                    'title' => __('storefront.checkout_title').' — '.config('app.name'),
+                    'title' => __('storefront.checkout_title').' — '.\App\Settings\ShopName::current(),
                     'description' => '',
                     'canonical' => null,
                 ],

@@ -42,6 +42,9 @@ final class StorefrontAppearance
 
     private ?string $previewCss = null;
 
+    /** LOGO-1: the `site` part read WITHOUT building the payload (see peekedSite()). @var array<string, mixed>|null */
+    private ?array $peeked = null;
+
     /** CD-1a.1: the validated «Каталог» values of the admin's signed preview (the working copy), set for ONE request by the preview controller; null on every public request. @var array<string, mixed>|null */
     private ?array $catalogOverride = null;
 
@@ -116,7 +119,7 @@ final class StorefrontAppearance
 
         $cached = Cache::get(self::CACHE_KEY);
 
-        if (is_array($cached) && array_key_exists('theme', $cached) && array_key_exists('compiled', $cached) && array_key_exists('header', $cached) && array_key_exists('menus', $cached) && array_key_exists('locations', $cached) && array_key_exists('footer', $cached) && array_key_exists('design', $cached) && array_key_exists('page', $cached) && array_key_exists('catalog', $cached) && array_key_exists('sidebar', $cached) && array_key_exists('badges', $cached) && array_key_exists('cookies', $cached) && is_array($cached['banner'] ?? null)) {
+        if (is_array($cached) && array_key_exists('theme', $cached) && array_key_exists('compiled', $cached) && array_key_exists('header', $cached) && array_key_exists('menus', $cached) && array_key_exists('locations', $cached) && array_key_exists('footer', $cached) && array_key_exists('design', $cached) && array_key_exists('page', $cached) && array_key_exists('catalog', $cached) && array_key_exists('sidebar', $cached) && array_key_exists('badges', $cached) && array_key_exists('cookies', $cached) && array_key_exists('site', $cached) && is_array($cached['banner'] ?? null)) {
             return $this->data = $cached;
         }
 
@@ -181,6 +184,8 @@ final class StorefrontAppearance
             'page' => is_string($raw[AppearanceSettings::PAGE_DESIGN_KEY] ?? null) ? $raw[AppearanceSettings::PAGE_DESIGN_KEY] : null,
             // CC-1: the cookie banner (null while it is off): the settings, the texts of every shop language and the policy link; the colour rides on the token stylesheet
             'cookies' => \App\Settings\CookieSettings::payload($raw),
+            // LOGO-1: the shop's name and the generated icon / logos (validated here and again by the readers); null = today's static files and APP_NAME
+            'site' => \App\Settings\SiteLogo::payload($raw),
         ];
     }
 
@@ -820,6 +825,45 @@ final class StorefrontAppearance
         return (bool) $this->forLayout()['cookieMenuLink'];
     }
 
+    /** LOGO-1: THE shop name: the merchant's `site.name`, else APP_NAME exactly as before (ShopName is the caller everyone uses). */
+    public function shopName(): string
+    {
+        // validated again on every read, like the logo: a tampered cache entry falls back to APP_NAME
+        $name = \App\Settings\SiteLogo::cleanName(($this->data !== null ? $this->data['site'] ?? null : $this->peekedSite())['name'] ?? null);
+
+        return $name ?? (string) config('app.name');
+    }
+
+    /**
+     * The `site` part WITHOUT building the payload: a caller that only wants the name (a mail, a default text built while a layout is validated) must never write the cache entry (a refused publish
+     * replaces none). A valid cache entry is read as it is; a missing or old one costs the ONE setting, never a rebuild. Memoised for the request.
+     *
+     * @return array{name: ?string, logo: ?array<string, mixed>}
+     */
+    private function peekedSite(): array
+    {
+        if ($this->peeked !== null) {
+            return $this->peeked;
+        }
+
+        $cached = Cache::get(self::CACHE_KEY);
+
+        return $this->peeked = is_array($cached) && is_array($cached['site'] ?? null)
+            ? $cached['site']
+            : ['name' => $this->settings->get(\App\Settings\SiteLogo::NAME), 'logo' => null];
+    }
+
+    /**
+     * LOGO-1: what the «Лого» tab generated ({icon, main, dark}: each null or validated), or null when nothing is set or the stored value is damaged.
+     *
+     * @return array{icon: ?array<string, mixed>, main: ?array<string, mixed>, dark: ?array<string, mixed>}|null
+     */
+    public function siteLogo(): ?array
+    {
+        // validated again on EVERY read: a tampered cache entry is ignored, never printed
+        return \App\Settings\SiteLogo::parseCompiled(json_encode($this->data()['site']['logo'] ?? null));
+    }
+
     /**
      * CC-1: the cookie banner for the page's language, or null while it is off. The texts of the page's language (per key: stored, else the shipped default: never empty).
      *
@@ -863,6 +907,8 @@ final class StorefrontAppearance
             'previewCss' => $this->previewCss,
             // CC-1: the banner of the shop's language (null = off): identical for every visitor, the cookie is never read here
             'cookies' => $this->cookies(),
+            // LOGO-1: the site icon's three files (null = the static SVG tag, byte for byte as before)
+            'siteIcon' => $this->siteLogo()['icon'] ?? null,
             // DS-2b: the simplified header of the cart, the checkout and the order-received page; `forced` = the Design screen's preview, which is not one of those routes
             'checkoutHeader' => $this->checkoutHeader(),
             'checkoutHeaderForced' => $this->checkoutHeaderOverride !== false,

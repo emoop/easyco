@@ -57,7 +57,7 @@ final class StructuredData
     /** @return array<string, mixed> */
     public static function home(string $homeUrl): array
     {
-        $name = (string) config('app.name');
+        $name = (string) \App\Settings\ShopName::current();
         $site = ['@type' => 'WebSite', 'name' => $name, 'url' => $homeUrl];
 
         if (SearchFeature::enabled()) {

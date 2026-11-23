@@ -37,6 +37,12 @@ server {
         try_files /__through_the_app__ /index.php?$query_string;
     }
 
+    # LOGO-1: favicon.ico is answered by Laravel too (the site icon of the «Лого» tab: sessionless, a real .ico, a bare 404 while none is set); there is no static file. It MUST come before the
+    # image-extension rule below, whose `try_files ... =404` would answer for it and never reach the app.
+    location = /favicon.ico {
+        try_files /__through_the_app__ /index.php?$query_string;
+    }
+
     # Fingerprinted Vite output: a year, immutable.
     location ^~ /build/ {
         access_log off;

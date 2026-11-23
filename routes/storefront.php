@@ -145,6 +145,8 @@ Route::middleware([SecurityHeaders::class, ApplyStorefrontTheme::class, Storefro
 // P8b: robots.txt is sessionless too (no cookie) and cacheable; StorefrontCacheHeaders decides per route name which responses the page cache may keep.
 Route::withoutMiddleware($withoutSession)->middleware(StorefrontCacheHeaders::class)->group(function (): void {
     Route::get('/robots.txt', fn () => response(\App\Storefront\Seo\RobotsTxt::body(), 200, ['Content-Type' => 'text/plain; charset=UTF-8']))->name('seo.robots');
+    // LOGO-1: the site icon as a real favicon.ico: sessionless, cacheable with an icon, a bare 404 without (the old empty public/favicon.ico shadowed no route and answered 200 with no body)
+    Route::get('/favicon.ico', \App\Http\Controllers\Storefront\FaviconController::class)->name('seo.favicon');
     Route::get('/sitemap.xml', [SitemapController::class, 'index'])->name('seo.sitemap');
     Route::get('/sitemap/pages.xml', [SitemapController::class, 'pages'])->name('seo.sitemap.pages');
     Route::get('/sitemap/categories.xml', [SitemapController::class, 'categories'])->name('seo.sitemap.categories');
