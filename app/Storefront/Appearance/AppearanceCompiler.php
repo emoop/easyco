@@ -50,7 +50,7 @@ final class AppearanceCompiler
      * @param  list<string>  $blockRules  HB-1: the rules of the styled HTML blocks (`.sf-hb-{id}{...}`, HtmlBlockStyle::css), each checked again here against the closed template
      * @throws InvalidArgumentException a value that is not valid for its key
      */
-    public function css(array $overrides, array $metrics = [], array $badgeColors = [], array $footerVars = [], array $headerColors = [], array $checkoutVars = [], array $pageVars = [], array $blockRules = [], array $buyVars = [], array $cloudVars = []): ?string
+    public function css(array $overrides, array $metrics = [], array $badgeColors = [], array $footerVars = [], array $headerColors = [], array $checkoutVars = [], array $pageVars = [], array $blockRules = [], array $buyVars = [], array $cloudVars = [], array $cookieVars = []): ?string
     {
         $effective = $this->effective($overrides);
         $defaults = AppearanceSettings::defaults();
@@ -180,6 +180,15 @@ final class AppearanceCompiler
             $vars[] = "{$variable}: {$value};";
         }
 
+        // CC-1: the cookie banner's button colour and its COMPUTED text colour, a CLOSED list of two hex values (written only while the banner is on and the colour is not the default)
+        foreach ($cookieVars as $variable => $value) {
+            if (! \App\Settings\CookieSettings::isValidVar((string) $variable, $value)) {
+                throw new InvalidArgumentException('A cookie banner variable is not valid.');
+            }
+
+            $vars[] = "{$variable}: {$value};";
+        }
+
         // HB-1: a rule of a styled HTML block, a CLOSED template re-checked as a whole (an invalid one is refused, like the other closed lists); nothing is written when no block is styled
         foreach ($blockRules as $rule) {
             if (! is_string($rule) || ! HtmlBlockStyle::isValidRule($rule)) {
@@ -229,7 +238,7 @@ final class AppearanceCompiler
      */
     public function compile(array $overrides, ?string $previousHash = null, ?array $metrics = null): ?array
     {
-        $css = $this->css($overrides, $metrics ?? $this->publishedMetrics(), $this->storedBadgeColors(), $this->publishedFooterVars(), $this->publishedHeaderColors(), $this->publishedCheckoutVars(), PageDesign::storedVars(app(SiteSettingsRepository::class)), HtmlBlockStyle::storedRules(), PurchaseStyle::storedVars(app(SiteSettingsRepository::class)), ContentSet::storedVars(app(SiteSettingsRepository::class)));
+        $css = $this->css($overrides, $metrics ?? $this->publishedMetrics(), $this->storedBadgeColors(), $this->publishedFooterVars(), $this->publishedHeaderColors(), $this->publishedCheckoutVars(), PageDesign::storedVars(app(SiteSettingsRepository::class)), HtmlBlockStyle::storedRules(), PurchaseStyle::storedVars(app(SiteSettingsRepository::class)), ContentSet::storedVars(app(SiteSettingsRepository::class)), \App\Settings\CookieSettings::vars(app(SiteSettingsRepository::class)->getMany([\App\Settings\CookieSettings::ENABLED, \App\Settings\CookieSettings::COLOR])));
 
         if ($css === null) {
             $this->prune(null, $previousHash);

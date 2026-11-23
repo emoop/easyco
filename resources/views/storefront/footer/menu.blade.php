@@ -5,7 +5,7 @@
     @endif
     <ul class="sf-ft-list">
         @foreach ($data['items'] as $item)
-            <li><a href="{{ $item['url'] }}"@if ($item['new_tab']) target="_blank" rel="noopener"@endif>{{ $item['label'] }}@include('storefront.partials.menu-badge', ['badge' => $item['badge']])</a></li>
+            <li><a href="{{ $item['url'] }}"{!! empty($item['consent']) ? '' : ' data-consent-open' !!}@if ($item['new_tab']) target="_blank" rel="noopener"@endif>{{ $item['label'] }}@include('storefront.partials.menu-badge', ['badge' => $item['badge']])</a></li>
         @endforeach
     </ul>
 </nav>

@@ -16,7 +16,7 @@
                     <ul class="sf-footer-list">
                         @foreach ($appearance['footerMenu'] as $footerLink)
                             @if ($footerLink['type'] === 'link')
-                                <li><a href="{{ $footerLink['url'] }}"@if ($footerLink['new_tab']) target="_blank" rel="noopener"@endif>{{ $footerLink['label'] }}</a></li>
+                                <li><a href="{{ $footerLink['url'] }}"{!! empty($footerLink['consent']) ? '' : ' data-consent-open' !!}@if ($footerLink['new_tab']) target="_blank" rel="noopener"@endif>{{ $footerLink['label'] }}</a></li>
                             @endif
                         @endforeach
                     </ul>

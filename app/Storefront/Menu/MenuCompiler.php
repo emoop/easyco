@@ -62,7 +62,11 @@ class MenuCompiler
 
             /** @var array<int, string> */
             public array $blocks = [];
+
+            /** CC-1: is the cookie banner on? (a `consent` item exists only while it is) */
+            public bool $cookies = false;
         };
+        $context->cookies = app(\App\Settings\Contracts\SiteSettingsRepository::class)->get(\App\Settings\CookieSettings::ENABLED) === '1';
         // Fresh readers: the compile may run at the END of a request that has already loaded (and changed) the catalog.
         $context->categories = new CategoryIndex($this->visibility, $this->urls);
         $context->pages = PageModel::query()->where('status', PageModel::PUBLISHED)->get(['id', 'slug', 'title'])->keyBy('id')->all();
@@ -212,6 +216,11 @@ class MenuCompiler
     /** @return array<string, mixed>|null */
     private function link(array $item, object $context, string $kind): ?array
     {
+        if ($item['type'] === 'consent') {
+            // CC-1: a placeholder; the label and the address are decided when the page is read (CookieMenuLink): the banner's own text and the policy page's URL
+            return $context->cookies ? ['type' => 'link', 'label' => (string) __('cookies.footer_link'), 'url' => '/', 'new_tab' => false, 'submenu' => 'none', 'badge' => null, 'html' => null, 'children' => [], 'consent' => true] : null;
+        }
+
         if ($item['type'] === 'link') {
             $label = (string) $item['label'];
             $url = (string) $item['url'];

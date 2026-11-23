@@ -6,7 +6,7 @@
         <li class="sf-acc-item">
             @if ($node['children'] !== [])
                 <div class="sf-acc-row">
-                    <a class="sf-acc-link" href="{{ $node['url'] }}"@if ($node['new_tab']) target="_blank" rel="noopener"@endif>{{ $node['label'] }}@include('storefront.partials.menu-badge', ['badge' => $node['badge']])</a>
+                    <a class="sf-acc-link" href="{{ $node['url'] }}"{!! empty($node['consent']) ? '' : ' data-consent-open' !!}@if ($node['new_tab']) target="_blank" rel="noopener"@endif>{{ $node['label'] }}@include('storefront.partials.menu-badge', ['badge' => $node['badge']])</a>
                     <button class="sf-acc-toggle" type="button" aria-expanded="false" aria-controls="sf-acc-{{ $uid }}-{{ $index }}" data-sf-acc-toggle>
                         <span class="sf-sr-only">{{ __('storefront.subcategories') }}: {{ $node['label'] }}</span>
                     </button>
@@ -28,7 +28,7 @@
                     @endif
                 </div>
             @else
-                <a class="sf-acc-link" href="{{ $node['url'] }}"@if ($node['new_tab']) target="_blank" rel="noopener"@endif>{{ $node['label'] }}@include('storefront.partials.menu-badge', ['badge' => $node['badge']])</a>
+                <a class="sf-acc-link" href="{{ $node['url'] }}"{!! empty($node['consent']) ? '' : ' data-consent-open' !!}@if ($node['new_tab']) target="_blank" rel="noopener"@endif>{{ $node['label'] }}@include('storefront.partials.menu-badge', ['badge' => $node['badge']])</a>
             @endif
         </li>
     @endforeach

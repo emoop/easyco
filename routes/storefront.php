@@ -95,6 +95,8 @@ Route::middleware([SecurityHeaders::class, ApplyStorefrontTheme::class, Storefro
         Route::get('/header-preview', [HeaderPreviewController::class, 'show'])->name('storefront.header.preview');
         // The footer builder's preview (FT-1): the home page with the DRAFT footer, the same kind of signed url.
         Route::get('/footer-preview', [FooterPreviewController::class, 'show'])->name('storefront.footer.preview');
+        // CC-1: the cookie banner's static preview in the admin (the draft values, no script, no cookie): the same kind of signed url.
+        Route::get('/cookie-preview', [\App\Http\Controllers\Storefront\CookiePreviewController::class, 'show'])->name('storefront.cookies.preview');
         // The Design screen's preview of a zone that has no route of its own (DS-2b: the simplified checkout header on the cart page): the same kind of signed url.
         Route::get('/design-preview', [DesignPreviewController::class, 'show'])->name('storefront.design.preview');
 

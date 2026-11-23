@@ -7011,3 +7011,288 @@ html:not(.js) .sf-bar-item:focus-within > .sf-sub {
         @apply mb-3 text-sm text-neutral-700;
     }
 }
+
+/* ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ * CC-1 (cookie-consent.md): the cookie / ads consent banner. Boutique look: 1px lines, black and white, dialog radius 6px, buttons radius 4px, the storefront's own heading and body fonts.
+ * The two choice buttons are ONE class (`.sf-cc-btn`): the same size, colour, font and weight by construction. The merchant's ONE colour arrives as `--sf-cc-btn` (and the COMPUTED
+ * `--sf-cc-btn-text`) in the token stylesheet; the fallback is the default #111111 on white. No inline style anywhere.
+ * ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
+.sf-cc,
+.sf-cc-bar {
+    --cc-btn: var(--sf-cc-btn, #111111);
+    --cc-btn-text: var(--sf-cc-btn-text, #ffffff);
+}
+
+/* `hidden` wins over the display of a layer or a button by SPECIFICITY (three classes), never by !important (storefront.css keeps its sections free of it) */
+.sf-cc .sf-cc-dialog [hidden],
+.sf-cc[hidden],
+.sf-cc-bar[hidden] {
+    display: none;
+}
+
+html.sf-cc-lock {
+    overflow-y: hidden;
+}
+
+.sf-cc {
+    position: fixed;
+    z-index: 1000;
+    font-family: var(--sf-font-body, inherit);
+    color: #171717;
+}
+
+.sf-cc-center {
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    background: rgba(17, 17, 17, 0.55);
+}
+
+.sf-cc-bottom {
+    inset-inline: 0;
+    bottom: 24px;
+    display: flex;
+    justify-content: center;
+    padding-inline: 16px;
+    pointer-events: none;
+}
+
+.sf-cc-dialog {
+    box-sizing: border-box;
+    width: 100%;
+    max-height: calc(100dvh - 32px);
+    overflow-y: auto;
+    background: #ffffff;
+    border: 1px solid var(--sf-border, #d9d9d9);
+    border-radius: 6px;
+    padding: 32px;
+    pointer-events: auto;
+}
+
+.sf-cc-center .sf-cc-dialog {
+    max-width: 520px;
+}
+
+.sf-cc-bottom .sf-cc-dialog {
+    max-width: 920px;
+    padding: 24px;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.14);
+}
+
+.sf-cc-dialog:focus {
+    outline: none;
+}
+
+.sf-cc-title {
+    margin: 0 0 12px;
+    font-family: var(--sf-font-heading, inherit);
+    font-size: 1.25rem;
+    font-weight: 600;
+    line-height: 1.3;
+}
+
+.sf-cc-text,
+.sf-cc-cat-text {
+    margin: 0;
+    font-size: 0.9rem;
+    line-height: 1.55;
+    color: #404040;
+}
+
+.sf-cc-policy {
+    color: #171717;
+    text-decoration: underline;
+}
+
+.sf-cc-actions {
+    display: flex;
+    gap: 12px;
+    margin-top: 24px;
+}
+
+.sf-cc-btn {
+    box-sizing: border-box;
+    flex: 1 1 0;
+    min-height: 48px;
+    padding: 0 16px;
+    border: 1px solid var(--cc-btn);
+    border-radius: 4px;
+    background: var(--cc-btn);
+    color: var(--cc-btn-text);
+    font: inherit;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    line-height: 1.2;
+    cursor: pointer;
+}
+
+.sf-cc-btn:hover {
+    opacity: 0.88;
+}
+
+.sf-cc-btn-full {
+    display: block;
+    width: 100%;
+    margin-top: 12px;
+}
+
+.sf-cc-btn:focus-visible,
+.sf-cc-link:focus-visible,
+.sf-cc-back:focus-visible,
+.sf-cc-switch:focus-visible,
+.sf-cc-policy:focus-visible,
+.sf-cc-reopen:focus-visible {
+    outline: 3px solid var(--cc-btn);
+    outline-offset: 2px;
+}
+
+.sf-cc-link,
+.sf-cc-back,
+.sf-cc-reopen {
+    padding: 8px 4px;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    font-size: 0.875rem;
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+.sf-cc-link {
+    display: block;
+    margin: 8px auto 0;
+}
+
+.sf-cc-back {
+    margin: -8px 0 8px -4px;
+    text-decoration: none;
+}
+
+.sf-cc-cats {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.sf-cc-cat {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 16px 0;
+    border-top: 1px solid var(--sf-border, #d9d9d9);
+}
+
+.sf-cc-cat-title {
+    margin: 0 0 4px;
+    font-size: 0.95rem;
+    font-weight: 600;
+}
+
+.sf-cc-always {
+    flex: none;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: #404040;
+    white-space: nowrap;
+}
+
+.sf-cc-switch {
+    position: relative;
+    flex: none;
+    width: 44px;
+    height: 24px;
+    padding: 0;
+    border: 1px solid #737373;
+    border-radius: 12px;
+    background: #e5e5e5;
+    cursor: pointer;
+}
+
+.sf-cc-switch::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #ffffff;
+    border: 1px solid #737373;
+    box-sizing: border-box;
+    transition: transform 0.15s;
+}
+
+.sf-cc-switch[aria-checked='true'] {
+    border-color: var(--cc-btn);
+    background: var(--cc-btn);
+}
+
+.sf-cc-switch[aria-checked='true']::after {
+    transform: translateX(20px);
+    border-color: var(--cc-btn);
+}
+
+/* the bottom card: the text on the left, the two buttons stacked on the right (210px), «Настройки» under them */
+@media (min-width: 641px) {
+    .sf-cc-bottom .sf-cc-layer-summary {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 210px;
+        gap: 24px;
+        align-items: center;
+    }
+
+    .sf-cc-bottom .sf-cc-layer-summary .sf-cc-actions {
+        flex-direction: column;
+        margin-top: 0;
+    }
+
+    .sf-cc-bottom .sf-cc-layer-summary .sf-cc-btn {
+        flex: none;
+    }
+}
+
+/* a phone: 16px side margin, the buttons stacked and full width, the dialog scrolls inside itself */
+@media (max-width: 640px) {
+    .sf-cc-dialog,
+    .sf-cc-bottom .sf-cc-dialog {
+        padding: 24px 20px;
+    }
+
+    .sf-cc-actions {
+        flex-direction: column;
+    }
+
+    .sf-cc-btn {
+        flex: none;
+        width: 100%;
+    }
+
+    .sf-cc-bottom {
+        bottom: 16px;
+    }
+}
+
+/* the footer's bottom bar link: the look of the footer's lower line (same tokens), small, left-aligned */
+.sf-cc-bar {
+    background-color: var(--sf-ftl-bg, var(--sf-footer-bg, #fff));
+    color: var(--sf-ftl-text, var(--sf-footer-text, #737373));
+}
+
+.sf-cc-bar-inner {
+    padding: 0 var(--sf-page-pad) 0.75rem;
+    font-size: 0.875rem;
+    text-align: center;
+}
+
+.sf-cc-reopen {
+    padding: 4px 0;
+    text-decoration: none;
+}
+
+.sf-cc-reopen:hover {
+    text-decoration: underline;
+}

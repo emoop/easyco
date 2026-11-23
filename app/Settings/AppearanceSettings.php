@@ -174,6 +174,8 @@ final class AppearanceSettings
 
     /** Every key the appearance reader fetches in its ONE `getMany` (D2 adds `header.compiled` here). */
     public const READ_KEYS = [
+        // CC-1: the cookie banner's settings ride on the same one read (CookieSettings::readKeys())
+        ...\App\Settings\CookieSettings::READ_KEYS_LIST,
         self::COMPILED_KEY,
         self::THEME_KEY,
         self::HEADER_COMPILED_KEY,

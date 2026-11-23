@@ -43,11 +43,12 @@ final class MenuValidator
 
     /** The types allowed under each kind of parent. */
     private const ALLOWED = [
-        'root' => ['link', 'category', 'page', 'product'],
-        'dropdown' => ['link', 'category', 'page', 'product'],
-        'nested' => ['link', 'category', 'page', 'product'],
+        // CC-1: `consent` («Настройки за бисквитки») is a plain link: it may stand wherever a link may, never as a column and never with children
+        'root' => ['link', 'category', 'page', 'product', 'consent'],
+        'dropdown' => ['link', 'category', 'page', 'product', 'consent'],
+        'nested' => ['link', 'category', 'page', 'product', 'consent'],
         'mega' => ['column'],
-        'column' => ['link', 'category', 'page', 'product'],
+        'column' => ['link', 'category', 'page', 'product', 'consent'],
     ];
 
     /** @var array<string, string> */
@@ -138,20 +139,27 @@ final class MenuValidator
             return null;
         }
 
-        $submenu = $this->submenu($raw['submenu'] ?? 'none', $kind, $path);
+        $consent = $type === 'consent';
+        $submenu = $consent ? 'none' : $this->submenu($raw['submenu'] ?? 'none', $kind, $path);
         $item = [
             'type' => $type,
-            'label' => $this->label($raw['label'] ?? null, $type === 'link', $path, $type === 'column' ? self::MAX_HEADING : 120),
-            'url' => $this->url($raw['url'] ?? null, $type === 'link', $type === 'link', $path),
+            // CC-1: a `consent` item has NO label and NO url of the merchant's: the text is the banner's own «footer link» text and the address is the policy page's, both resolved when the page is read
+            'label' => $consent ? null : $this->label($raw['label'] ?? null, $type === 'link', $path, $type === 'column' ? self::MAX_HEADING : 120),
+            'url' => $consent ? null : $this->url($raw['url'] ?? null, $type === 'link', $type === 'link', $path),
             'target_id' => $this->target($raw['target_id'] ?? null, $type, $path),
             'submenu' => $submenu,
             'html_block_id' => $this->block($raw['html_block_id'] ?? null, $kind, $submenu, $path),
             'mega_columns' => $this->megaColumns($raw['mega_columns'] ?? null, $kind, $submenu, $path),
             'badge_text' => $this->plain($raw['badge_text'] ?? null, 16, "{$path}.badge_text", 'badge_long'),
             'badge_color' => $this->color($raw['badge_color'] ?? null, $path),
-            'new_tab' => $this->bool($raw['new_tab'] ?? false, "{$path}.new_tab"),
+            'new_tab' => $consent ? false : $this->bool($raw['new_tab'] ?? false, "{$path}.new_tab"),
             'visible' => $this->bool($raw['visible'] ?? true, "{$path}.visible"),
         ];
+
+        if ($consent) {
+            $item['badge_text'] = null;
+            $item['badge_color'] = null;
+        }
 
         if ($item['badge_text'] === null) {
             $item['badge_color'] = null; // a colour with no text is nothing
