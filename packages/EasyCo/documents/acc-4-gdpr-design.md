@@ -1,6 +1,6 @@
 # ACC-4 — GDPR: export, «forget me», retention, admin «Клиенти» (design, owner decisions 2026-11-20)
 
-Status: owner decisions D1–D8 taken; D2 revised 2026-11-21 (requests only through the merchant). Technical design §3–§9 written after the read-only inventory ACC-4-0 (commit `1818ab1`). ACC-4a–4d are merged; §10 (2026-11-23) holds the decisions after the ACC-4d review and the ACC-4e UI review.
+Status: owner decisions D1–D8 taken; D2 revised 2026-11-21 (requests only through the merchant). Technical design §3–§9 written after the read-only inventory ACC-4-0 (commit `1818ab1`). ACC-4a–4d and ACC-4e-1 are merged (ACC-4e-2 is next); §10 (2026-11-23) holds the decisions after the ACC-4d review and the ACC-4e UI review.
 
 ## 1. Owner decisions — do not re-open
 
@@ -155,7 +155,7 @@ Amounts, lines and statuses never change. This is lawful erasure of data whose p
 3. **ACC-4c** — export builder, queued job, ZIP on the private disk, staff-only download (no customer link), `privacy:prune-exports`. Sonnet.
 4. **ACC-4d** — DONE (merged 2026-11-23): the confirmation request (service + `privacy.confirm` mail + no-store confirmation page + 7-day expiry), `privacy:ask-confirmation`, and the migration relaxing `prq_reason_check` (see §10). Sonnet.
 5. **ACC-4e** — admin «Клиенти», customer page, log, tile, settings page, permissions, the COD-block card. UI agreed 2026-11-23. Split in two prompts (the destructive part gets its own review):
-   - **ACC-4e-1** — `CUSTOMER_VIEW`, the «Клиенти» list, the customer page (data, addresses, orders, consents, note, requests, lists filter, COD-block card), «Изтегли данните» (reuses a confirmed export row), «Поискай потвърждение» (+ one open request per email and kind, «Изпрати отново», shop-default mail locale). Customer URL key is the id of the latest order or the account (`o-{id}` / `a-{id}`), never the email. No «Забрави» yet.
+   - **ACC-4e-1** — DONE (merged 2026-11-23). `CUSTOMER_VIEW`, the «Клиенти» list, the customer page (data, addresses, orders, consents, note, requests, lists filter, COD-block card), «Изтегли данните» (reuses a confirmed export row), «Поискай потвърждение» (+ one open request per email and kind, «Изпрати отново», shop-default mail locale). Customer URL key is the id of the latest order or the account (`o-{id}` / `a-{id}`), never the email. No «Забрави» yet.
    - **ACC-4e-2** — «Забрави» (dialog, `PrivacyEraser` reuses a confirmed erase row), «Поверителност → Дневник», manual-step checkboxes, «Табло» tile, privacy settings page, shop-owner settings keys. Sonnet.
 
 CI runs the full suite on each push; locally only targeted tests.

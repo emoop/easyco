@@ -12,12 +12,18 @@ use App\Models\OrderBlockModel;
 use App\Privacy\Persistence\CustomerNoteModel;
 use App\Privacy\Persistence\PrivacyRequestModel;
 use App\Privacy\PrivacyConfirmationRequester;
+use App\Privacy\PrivacyEraser;
 use App\Privacy\PrivacyExportRequester;
 use App\Privacy\PrivacyHash;
 use App\Privacy\PrivacyMailNotQueued;
 use App\Privacy\PrivacyNotConfigured;
 use App\Privacy\PrivacyRequestAlreadyOpen;
+use App\Privacy\PrivacySource;
 use App\Privacy\StaffActor;
+use App\Filament\Design\InfoHint;
+use Filament\Forms\Components\Textarea;
+use Illuminate\Contracts\Cache\LockTimeoutException;
+use Illuminate\Validation\ValidationException;
 use App\Services\OrderBlockService;
 use App\Services\PanelStaffActor;
 use EasyCo\Staff\Enums\Permission;
@@ -166,7 +172,7 @@ class CustomerPage extends Page
     /** @return array<int, Action> */
     protected function getHeaderActions(): array
     {
-        return [$this->exportAction(), $this->confirmationAction()];
+        return [$this->exportAction(), $this->confirmationAction(), $this->forgetAction()];
     }
 
     public function exportAction(): Action
@@ -246,6 +252,79 @@ class CustomerPage extends Page
                 $this->data = null;
                 Notification::make()->title(__('customers.confirm.sent'))->success()->send();
             });
+    }
+
+    /**
+     * «Забрави» (ACC-4e-2, acc-4-gdpr-design.md section 4 and 10): PRIVACY_MANAGE (Administrator only by default), checked again on the server. The dialog says what goes and what stays and asks a REQUIRED reason
+     * (3 to 500 characters of plain text); the erase itself is PrivacyEraser::erase(), which takes the confirmed erase request of this email as its log row when there is one. This action repeats no erase logic.
+     */
+    public function forgetAction(): Action
+    {
+        return Action::make('forget')
+            ->label(__('privacy_admin.forget.action'))
+            ->icon('heroicon-o-trash')
+            ->color('danger')
+            ->visible(fn (): bool => static::mayPrivacy() && $this->data()['privacy_ready'])
+            ->modalHeading(fn (): string => (string) __('privacy_admin.forget.heading', ['name' => $this->getTitle()]))
+            ->modalWidth('lg')
+            ->modalContent(fn (): \Illuminate\Contracts\View\View => view('filament.customers.forget-summary', ['s' => app(CustomerPageReader::class)->forgetSummary($this->identity() ?? abort(404), $this->data())]))
+            ->schema([
+                Textarea::make('reason')
+                    ->label(__('privacy_admin.forget.reason'))
+                    ->afterLabel(InfoHint::make(__('privacy_admin.forget.reason_hint'), 'forget-reason'))
+                    ->rows(3)
+                    ->required()
+                    ->rules([static fn (): \Closure => static function (string $attribute, mixed $value, \Closure $fail): void {
+                        self::cleanReason((string) $value) === null && $fail(__('privacy_admin.forget.reason_invalid'));
+                    }]),
+            ])
+            ->modalSubmitActionLabel(__('privacy_admin.forget.submit'))
+            ->modalCancelActionLabel(__('privacy_admin.forget.cancel'))
+            ->action(function (array $data): void {
+                abort_unless(static::mayPrivacy(), 403);
+
+                $reason = self::cleanReason((string) ($data['reason'] ?? ''));
+                $emailKey = $this->identity()?->emailKey ?? abort(404);
+
+                if ($reason === null) {
+                    Notification::make()->title(__('privacy_admin.forget.reason_invalid'))->danger()->send();
+
+                    return;
+                }
+
+                try {
+                    app(PrivacyEraser::class)->erase($emailKey, PrivacySource::ADMIN, $this->staff(), $reason);
+                } catch (ValidationException|InvalidArgumentException|PrivacyNotConfigured|LockTimeoutException) {
+                    Notification::make()->title(__('privacy_admin.forget.failed'))->danger()->send();
+
+                    return;
+                }
+
+                Notification::make()->title(__('privacy_admin.forget.done'))->success()->send();
+
+                // an account-only person has nothing left to show once the account is gone: back to the list; anyone with an order keeps their page (now «Забравен», no account, no note)
+                if (str_starts_with($this->key, 'a-')) {
+                    $this->redirect(Customers::getUrl());
+
+                    return;
+                }
+
+                $this->identity = null;
+                $this->data = null;
+                $this->noteBody = '';
+            });
+    }
+
+    /** The reason as it is kept: whitespace (newlines too) collapsed to single spaces, 3 to 500 characters, no control or bidi characters; null when it is none of that. */
+    public static function cleanReason(string $reason): ?string
+    {
+        $reason = trim((string) preg_replace('/\s+/u', ' ', $reason));
+
+        if (mb_strlen($reason) < 3 || mb_strlen($reason) > 500 || preg_match('/[\p{Cc}\p{Cf}]/u', $reason) === 1) {
+            return null;
+        }
+
+        return $reason;
     }
 
     /** «Изпрати отново»: a NEW signed link for the SAME row. The row must be one of THIS person's (re-read here, the id comes from the client). */

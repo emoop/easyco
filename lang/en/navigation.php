@@ -13,6 +13,7 @@ return [
         'design' => 'Design',
         'sales' => 'Sales',
         'admin' => 'Admin',
+        'privacy' => 'Privacy',
     ],
 
     // The panel top bar's own actions, rendered by

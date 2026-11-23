@@ -40,6 +40,8 @@ enum NavigationGroup implements Collapsible, HasLabel
     case CONTENT;
     case DESIGN;
     case ADMIN;
+    // ACC-4e-2: «Поверителност» (the forget log). LAST on purpose: NavigationGroupingTest and the Menus / Promotion tests pin the positions of the groups before it.
+    case PRIVACY;
 
     public function getLabel(): string
     {
@@ -51,6 +53,7 @@ enum NavigationGroup implements Collapsible, HasLabel
             self::DESIGN => __('navigation.groups.design'),
             self::SALES => __('navigation.groups.sales'),
             self::ADMIN => __('navigation.groups.admin'),
+            self::PRIVACY => __('navigation.groups.privacy'),
         };
     }
 

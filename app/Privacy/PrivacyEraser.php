@@ -12,6 +12,7 @@ use App\Enums\OrderBlockType;
 use EasyCo\Account\Persistence\Eloquent\AccountModel;
 use EasyCo\Extensibility\Hook;
 use EasyCo\Order\IdentityKeys;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
@@ -39,12 +40,21 @@ use LogicException;
  *
  * Honoured always: an email with no data at all still gets its `done` row and its suppression. Idempotent: a second erase of the same email finds nothing
  * to delete, writes another log row and keeps the one suppression per hash (UNIQUE key, insert-or-ignore).
+ *
+ * ACC-4e-2 (acc-4-gdpr-design.md section 10): ONE REQUEST, ONE ROW. A `confirmed` ERASE request of this email (the person pressed the link, ACC-4d) is taken as the forget-log row: one conditional
+ * update `WHERE id = ? AND status = 'confirmed'` that sets `processing`, the reason and the staff member in the SAME statement (so `prq_reason_check` holds); `confirmed_at` stays. Zero rows updated
+ * (another click took it) means no confirmed row: a new row, as before. An `export`, `awaiting_confirmation` or `expired` row is never taken. If anything after it fails, the transaction puts the row back to `confirmed`.
+ * NO DOUBLE RUN: the whole erase runs under a short `Cache::lock()` per email hash (it works on the file, database and Redis stores); inside it, a person already erased by a `done` row of the last
+ * DOUBLE_SUBMIT_SECONDS with nothing left to erase (no account, no note, no order since) gets that row back and nothing is written. A later deliberate erase writes a new row.
  * Without PRIVACY_HASH_KEY (outside local and testing) it refuses BEFORE anything is written (PrivacyNotConfigured).
  */
 final class PrivacyEraser
 {
     /** What a masked account-mail row holds instead of the address (`.invalid` can never be delivered). */
     public const MASKED_ADDRESS = 'erased@invalid';
+
+    /** A second erase of the same, already erased, person inside this many seconds writes nothing (a double submit). */
+    public const DOUBLE_SUBMIT_SECONDS = 60;
 
     public function __construct(
         private readonly PrivacyHash $hash,
@@ -72,14 +82,75 @@ final class PrivacyEraser
         $reason = $this->checkedReason($source, $staff, $reason);
         $emailHash = (string) $this->hash->email($emailKey);
 
-        [$request, $phones] = DB::transaction(fn (): array => $this->eraseInTransaction($emailKey, $emailHash, $source, $staff, $reason));
+        return Cache::lock('privacy-erase:'.substr($emailHash, 0, 24), 15)->block(8, function () use ($emailKey, $emailHash, $source, $staff, $reason): PrivacyRequestModel {
+            $again = $this->justErased($emailKey, $emailHash);
 
-        // AFTER the commit: the lists and audiences, then the final mail. Neither can undo what is done.
-        Hook::fire('customer.erased', new ErasedCustomer((int) $request->getKey(), $emailKey, $phones));
-        $this->log->addAction((int) $request->getKey(), PrivacyActions::HOOK_CUSTOMER_ERASED);
-        $this->mails->privacyErased($emailKey);
+            if ($again !== null) {
+                return $again;
+            }
 
-        return $request->newQuery()->findOrFail($request->getKey());
+            [$request, $phones] = DB::transaction(fn (): array => $this->eraseInTransaction($emailKey, $emailHash, $source, $staff, $reason));
+
+            // AFTER the commit: the lists and audiences, then the final mail. Neither can undo what is done.
+            Hook::fire('customer.erased', new ErasedCustomer((int) $request->getKey(), $emailKey, $phones));
+            $this->log->addAction((int) $request->getKey(), PrivacyActions::HOOK_CUSTOMER_ERASED);
+            $this->mails->privacyErased($emailKey);
+
+            return $request->newQuery()->findOrFail($request->getKey());
+        });
+    }
+
+    /** The `done` row of the last DOUBLE_SUBMIT_SECONDS when nothing is left to erase and nothing came back since; else null. */
+    private function justErased(string $emailKey, string $emailHash): ?PrivacyRequestModel
+    {
+        $row = PrivacyRequestModel::query()
+            ->where('kind', PrivacyRequestModel::KIND_ERASE)
+            ->where('email_hash', $emailHash)
+            ->where('status', PrivacyRequestModel::STATUS_DONE)
+            ->where('completed_at', '>', now()->subSeconds(self::DOUBLE_SUBMIT_SECONDS))
+            ->orderByDesc('id')
+            ->first();
+
+        if ($row === null) {
+            return null;
+        }
+
+        $somethingLeft = AccountModel::withTrashed()->where('email', $emailKey)->exists()
+            || CustomerNoteModel::query()->where('email_key', $emailKey)->exists()
+            || DB::table('orders')->where('email_key', $emailKey)->where('placed_at', '>', $row->completed_at)->exists();
+
+        return $somethingLeft ? null : $row;
+    }
+
+    /** The confirmed ERASE row of this email, moved to `processing` with the reason and the staff member in ONE conditional statement; null when there is none or another click was first. */
+    private function takeConfirmed(string $emailHash, ?StaffActor $staff, ?string $reason, ?int $accountId, ?string $firstPhone, ?string $firstPhoneHash): ?PrivacyRequestModel
+    {
+        $confirmed = PrivacyRequestModel::query()
+            ->where('kind', PrivacyRequestModel::KIND_ERASE)
+            ->where('email_hash', $emailHash)
+            ->where('status', PrivacyRequestModel::STATUS_CONFIRMED)
+            ->orderByDesc('id')
+            ->first(['id']);
+
+        if ($confirmed === null) {
+            return null;
+        }
+
+        $moved = PrivacyRequestModel::query()
+            ->whereKey($confirmed->getKey())
+            ->where('status', PrivacyRequestModel::STATUS_CONFIRMED)
+            ->update([
+                'status' => PrivacyRequestModel::STATUS_PROCESSING,
+                'reason' => $reason,
+                'staff_id' => $staff?->id,
+                'staff_name' => $staff === null ? null : mb_substr($staff->name, 0, 255),
+                'account_id' => $accountId,
+                'phone' => $firstPhone,
+                'phone_hash' => $firstPhoneHash,
+                'updated_at' => now(),
+            ]);
+
+        return $moved === 1 ? PrivacyRequestModel::query()->findOrFail($confirmed->getKey()) : null;
     }
 
     /** @return array{0: PrivacyRequestModel, 1: list<string>} the log row and the collected phones */
@@ -102,20 +173,24 @@ final class PrivacyEraser
 
         $firstPhone = $phones[0] ?? null;
 
-        $request = PrivacyRequestModel::query()->create([
-            'kind' => PrivacyRequestModel::KIND_ERASE,
-            'source' => $source->value,
-            'status' => PrivacyRequestModel::STATUS_PROCESSING,
-            'email' => $emailKey,
-            'email_hash' => $emailHash,
-            'phone' => $firstPhone,
-            'phone_hash' => $firstPhone === null ? null : ($phoneHashes[$firstPhone] ?? null),
-            'account_id' => $account?->getKey(),
-            'reason' => $reason,
-            'staff_id' => $staff?->id,
-            'staff_name' => $staff === null ? null : mb_substr($staff->name, 0, 255),
-            'confirmed_at' => $now,
-        ]);
+        $firstPhoneHash = $firstPhone === null ? null : ($phoneHashes[$firstPhone] ?? null);
+
+        // section 10: a confirmed erase request of this email IS the log row; otherwise a new one
+        $request = $this->takeConfirmed($emailHash, $staff, $reason, $account === null ? null : (int) $account->getKey(), $firstPhone, $firstPhoneHash)
+            ?? PrivacyRequestModel::query()->create([
+                'kind' => PrivacyRequestModel::KIND_ERASE,
+                'source' => $source->value,
+                'status' => PrivacyRequestModel::STATUS_PROCESSING,
+                'email' => $emailKey,
+                'email_hash' => $emailHash,
+                'phone' => $firstPhone,
+                'phone_hash' => $firstPhoneHash,
+                'account_id' => $account?->getKey(),
+                'reason' => $reason,
+                'staff_id' => $staff?->id,
+                'staff_name' => $staff === null ? null : mb_substr($staff->name, 0, 255),
+                'confirmed_at' => $now,
+            ]);
 
         // 2. the account and what hangs on it
         $tokens = DB::table('account_password_reset_tokens')->where('email', $emailKey)->delete();
