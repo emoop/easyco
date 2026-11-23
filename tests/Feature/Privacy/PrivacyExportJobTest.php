@@ -228,6 +228,30 @@ class PrivacyExportJobTest extends TestCase
         $this->assertSame($before, [PrivacyRequestModel::query()->orderBy('id')->get()->toJson(), Storage::disk('local')->files(BuildPrivacyExportJob::DIRECTORY)]);
     }
 
+    public function test_prune_handles_more_expired_rows_than_one_chunk_without_skipping_any(): void
+    {
+        $expired = [];
+
+        for ($i = 0; $i < 7; $i++) {
+            $expired[] = $this->doneExport(now()->subMinute()->toDateTimeString());
+        }
+
+        $valid = $this->doneExport(now()->addDay()->toDateTimeString());
+
+        // chunks of 2 over 7 expired rows: the rows leave the filter while the loop runs (export_path becomes NULL)
+        $this->artisan('privacy:prune-exports', ['--chunk' => 2])->expectsOutputToContain('Expired 7 export(s); removed 0 orphan file(s).')->assertSuccessful();
+
+        foreach ($expired as $row) {
+            $this->assertSame('expired', $row->fresh()->status);
+            $this->assertNull($row->fresh()->export_path);
+            $this->assertFalse(Storage::disk('local')->exists($row->export_path), 'the file of request '.$row->getKey().' is gone');
+        }
+
+        $this->assertSame('done', $valid->fresh()->status);
+        $this->assertTrue(Storage::disk('local')->exists($valid->export_path));
+        $this->artisan('privacy:prune-exports', ['--chunk' => 2])->expectsOutputToContain('Expired 0 export(s)')->assertSuccessful();
+    }
+
     public function test_prune_removes_an_orphan_older_than_eight_days_and_keeps_a_young_one_and_a_referenced_one(): void
     {
         $disk = Storage::disk('local');

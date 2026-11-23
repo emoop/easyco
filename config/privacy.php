@@ -14,4 +14,7 @@ return [
     'hash_key' => env('PRIVACY_HASH_KEY'),
 
     'clear_view_days' => 30,
+
+    // ACC-4d: POST /account/privacy/confirm (the identity-confirmation page), per IP and minute. A person presses one button once.
+    'confirm_per_minute' => (int) env('RATE_LIMIT_PRIVACY_CONFIRM', 10),
 ];

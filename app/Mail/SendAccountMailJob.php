@@ -33,7 +33,16 @@ final class SendAccountMailJob implements ShouldBeEncrypted, ShouldQueue
     public array $backoff = [30, 120, 600, 1800];
 
     /**
+     * ACC-4d: extra plain-text values of the template (`privacy.confirm`: request_type, valid_days). NOT a promoted/readonly property on purpose: a job queued BEFORE this
+     * property existed unserialises with the default `[]` (a promoted property would stay uninitialised and fail).
+     *
+     * @var array<string, string>
+     */
+    public array $scalars = [];
+
+    /**
      * @param  array<string, array{url: string, label: string}>  $links  block name => the absolute URL and the `mail.account.*` label key
+     * @param  array<string, string>  $scalars  more plain-text values for the template (the shop name is always added)
      */
     public function __construct(
         public readonly string $templateKey,
@@ -41,7 +50,9 @@ final class SendAccountMailJob implements ShouldBeEncrypted, ShouldQueue
         public readonly string $locale,
         public readonly array $links = [],
         string $queue = 'mail-transactional',
+        array $scalars = [],
     ) {
+        $this->scalars = $scalars;
         $this->onQueue($queue);
     }
 
@@ -63,7 +74,7 @@ final class SendAccountMailJob implements ShouldBeEncrypted, ShouldQueue
                 $blocks[$name] = MailBlocks::link($link['url'], (string) __('mail.account.'.$link['label'], [], $this->locale), $this->locale);
             }
 
-            $rendered = $renderer->render($definition, $this->locale, ['shop_name' => MailHeader::clean((string) config('app.name'), 80)], $blocks);
+            $rendered = $renderer->render($definition, $this->locale, ['shop_name' => MailHeader::clean((string) config('app.name'), 80)] + $this->scalars, $blocks);
             $sender = $configurator->apply($definition->sender);
 
             Mail::mailer($sender->mailer)->to($recipient)->send(new RenderedMailable($rendered, $sender));

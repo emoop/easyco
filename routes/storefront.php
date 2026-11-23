@@ -13,6 +13,7 @@ use App\Http\Controllers\Storefront\HeaderPreviewController;
 use App\Http\Controllers\Storefront\HomeController;
 use App\Http\Controllers\Storefront\OrderReceivedController;
 use App\Http\Controllers\Storefront\PageController;
+use App\Http\Controllers\Storefront\PrivacyConfirmController;
 use App\Http\Controllers\Storefront\ProductController;
 use App\Http\Controllers\Storefront\SearchController;
 use App\Http\Controllers\Storefront\SitemapController;
@@ -187,6 +188,11 @@ Route::middleware([AccountPageHeaders::class.':no-referrer', SecurityHeaders::cl
         Route::get('/account/reset', [AccountPageController::class, 'reset'])->name('storefront.account.reset');
         Route::get('/account/verify', [AccountPageController::class, 'verify'])->name('storefront.account.verify');
         Route::get('/account/email/confirm', [AccountPageController::class, 'emailConfirm'])->name('storefront.account.email-confirm');
+
+        // ACC-4d: the identity confirmation of a privacy request (the link of the `privacy.confirm` mail). Under /account/, a prefix the page cache never keeps. GET writes nothing;
+        // POST (no session, no CSRF: the signed link is the capability) is limited per IP. See PrivacyConfirmController.
+        Route::get('/account/privacy/confirm', [PrivacyConfirmController::class, 'show'])->name('storefront.privacy.confirm');
+        Route::post('/account/privacy/confirm', [PrivacyConfirmController::class, 'confirm'])->middleware('throttle:privacy-confirm')->name('storefront.privacy.confirm.store');
     });
 
 // `/account` and the account area (ACC-3b-1: dashboard, orders, one order, the two placeholders): the web group's session stays (a guest is redirected to the login with this page

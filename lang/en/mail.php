@@ -192,6 +192,13 @@ return [
         'login' => 'Log in to your account',
         'reset' => 'Set a new password',
         'email_confirm' => 'Confirm the new email',
+        'privacy_confirm' => 'I confirm this request is mine',
+    ],
+
+    // ACC-4d: the request type named in the privacy.confirm mail
+    'privacy_confirm' => [
+        'export' => 'a copy of your personal data',
+        'erase' => 'the deletion of your personal data',
     ],
 
     'validation' => [

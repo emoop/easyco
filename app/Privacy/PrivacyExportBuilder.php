@@ -57,6 +57,12 @@ final class PrivacyExportBuilder
         'terms_version' => 'Версия на условията', 'default' => 'Основен адрес',
     ];
 
+    /** @param int $chunk the order chunk size (the constant by default; a test passes a small one to cross the boundary) */
+    public function __construct(
+        private readonly int $chunk = self::CHUNK,
+    ) {
+    }
+
     /**
      * @return array{html: string, json: string}
      *
@@ -111,7 +117,7 @@ final class PrivacyExportBuilder
                 $query->where('email_key', $emailKey);
                 $accountId !== null && $query->orWhere('account_id', $accountId);
             })
-            ->chunkById(self::CHUNK, function ($chunk) use (&$orders, &$consents): void {
+            ->chunkById(max(1, $this->chunk), function ($chunk) use (&$orders, &$consents): void {
                 $ids = $chunk->pluck('id')->all();
                 $lines = $this->linesOf($chunk->pluck('transaction_id')->all());
                 $invoices = DB::table('order_invoice_details')->whereIn('order_id', $ids)->get()->keyBy('order_id');
