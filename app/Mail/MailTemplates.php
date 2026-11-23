@@ -34,6 +34,9 @@ final class MailTemplates
     // ACC-4a: the confirmation after a person was forgotten (acc-4-gdpr-design.md section 4). An account-type mail: SendAccountMailJob, never mail_log.
     public const PRIVACY_ERASED = 'privacy.erased';
 
+    // ACC-4d: the identity-confirmation request (acc-4-gdpr-design.md section 6): a signed link, valid PrivacyConfirmationRequester::VALID_DAYS days.
+    public const PRIVACY_CONFIRM = 'privacy.confirm';
+
     /** @var array<string, array{category: string, sender: string, queue: string, scalars: list<string>, blocks: list<string>}> */
     private const DEFINITIONS = [
         self::ORDER_CONFIRMATION => [
@@ -50,6 +53,7 @@ final class MailTemplates
         self::ACCOUNT_EMAIL_CONFIRM => ['category' => 'transactional', 'sender' => 'transactional', 'queue' => 'mail-transactional', 'scalars' => ['shop_name'], 'blocks' => ['action_link']],
         self::ACCOUNT_EMAIL_NOTICE => ['category' => 'transactional', 'sender' => 'transactional', 'queue' => 'mail-transactional', 'scalars' => ['shop_name'], 'blocks' => []],
         self::PRIVACY_ERASED => ['category' => 'transactional', 'sender' => 'transactional', 'queue' => 'mail-transactional', 'scalars' => ['shop_name'], 'blocks' => []],
+        self::PRIVACY_CONFIRM => ['category' => 'transactional', 'sender' => 'transactional', 'queue' => 'mail-transactional', 'scalars' => ['shop_name', 'request_type', 'valid_days'], 'blocks' => ['action_link']],
     ];
 
     public function has(string $key): bool

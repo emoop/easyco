@@ -465,8 +465,8 @@ class ApiRateLimitersTest extends TestCase
         $registry = app(LimiterRegistry::class);
         $limiters = (new ReflectionClass($registry))->getProperty('limiters');
 
-        // P8d: `livewire` and `csp-report` are not API limiters: they live in App\Security\SecurityLimiters
-        return array_values(array_diff(array_keys($limiters->getValue($registry)), ['livewire', 'csp-report']));
+        // P8d: `livewire` and `csp-report` are not API limiters: they live in App\Security\SecurityLimiters. ACC-4d: nor is `privacy-confirm` (an HTML storefront form, a no-store HTML 429), same place
+        return array_values(array_diff(array_keys($limiters->getValue($registry)), ['livewire', 'csp-report', 'privacy-confirm']));
     }
 
     private function makeCustomer(): \EasyCo\Account\Persistence\Eloquent\AccountModel

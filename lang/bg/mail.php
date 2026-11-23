@@ -192,6 +192,13 @@ return [
         'login' => 'Вход в акаунта',
         'reset' => 'Задайте нова парола',
         'email_confirm' => 'Потвърдете новия имейл',
+        'privacy_confirm' => 'Потвърждавам, че искането е мое',
+    ],
+
+    // ACC-4d: the request type named in the privacy.confirm mail («искане за …»)
+    'privacy_confirm' => [
+        'export' => 'получаване на копие на личните ви данни',
+        'erase' => 'изтриване на личните ви данни',
     ],
 
     'validation' => [

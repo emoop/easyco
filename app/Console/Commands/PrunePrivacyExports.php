@@ -16,7 +16,7 @@ class PrunePrivacyExports extends Command
 {
     public const ORPHAN_DAYS = 8;
 
-    protected $signature = 'privacy:prune-exports';
+    protected $signature = 'privacy:prune-exports {--chunk=100 : rows read per round (a test makes it small)}';
 
     protected $description = 'Delete expired personal-data export files (and orphan ZIPs) from the private disk';
 
@@ -29,11 +29,13 @@ class PrunePrivacyExports extends Command
             ->where('kind', PrivacyRequestModel::KIND_EXPORT)
             ->whereNotNull('export_path')
             ->where('export_expires_at', '<', now())
-            ->orderBy('id')
-            ->each(function (PrivacyRequestModel $request) use ($disk, &$expired): void {
-                $disk->delete((string) $request->export_path);
-                $request->update(['export_path' => null, 'status' => PrivacyRequestModel::STATUS_EXPIRED]);
-                $expired++;
+            // chunkById pages by id, not by OFFSET: the rows leave the filter (export_path becomes NULL) while the loop runs, and an offset-based each() would skip rows after the first chunk
+            ->chunkById(max(1, (int) $this->option('chunk')), function ($chunk) use ($disk, &$expired): void {
+                foreach ($chunk as $request) {
+                    $disk->delete((string) $request->export_path);
+                    $request->update(['export_path' => null, 'status' => PrivacyRequestModel::STATUS_EXPIRED]);
+                    $expired++;
+                }
             });
 
         $referenced = array_flip(PrivacyRequestModel::query()->whereNotNull('export_path')->pluck('export_path')->all());

@@ -16,6 +16,7 @@ use Illuminate\Support\Facades\Route;
  *    itself, during ITS boot, and a second «custom» update route on the same path would never be matched, so the stock route is left alone and the group does the job (it
  *    also works with a cached route table).
  *  - `csp-report`: POST /csp-report, 30 per minute per IP.
+ *  - `privacy-confirm` (ACC-4d): POST /account/privacy/confirm, `privacy.confirm_per_minute` (10) per IP; the refusal is a no-store HTML 429.
  */
 final class SecurityLimiters
 {
@@ -28,6 +29,15 @@ final class SecurityLimiters
         });
 
         RateLimiter::for('csp-report', static fn (Request $request): Limit => Limit::perMinute((int) config('security.csp_report.per_minute', 30))->by('ip:'.$request->ip()));
+
+        // ACC-4d: POST /account/privacy/confirm, per IP; the refusal is a small no-store HTML page (the route answers a browser form, not the API)
+        RateLimiter::for('privacy-confirm', static fn (Request $request): Limit => Limit::perMinute((int) config('privacy.confirm_per_minute', 10))
+            ->by('privacy-confirm|'.$request->ip())
+            ->response(static fn (Request $request, array $headers) => response(
+                '<!DOCTYPE html><html lang="'.str_replace('_', '-', app()->getLocale()).'"><head><meta charset="utf-8"><meta name="robots" content="noindex"><title>'.e(__('storefront.too_many_title')).'</title></head><body><p>'.e(__('storefront.too_many_text')).'</p></body></html>',
+                429,
+                $headers + ['Cache-Control' => 'no-store, private', 'X-Robots-Tag' => 'noindex', 'Content-Type' => 'text/html; charset=UTF-8'],
+            )));
 
         Route::pushMiddlewareToGroup('web', ThrottleLivewireUpdates::class);
     }

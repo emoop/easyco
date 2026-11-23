@@ -62,17 +62,44 @@ class AccountMails
         $this->queue(MailTemplates::PRIVACY_ERASED, $email, []);
     }
 
+    /**
+     * ACC-4d: asks the person to confirm that a privacy request is theirs. `$link` is the absolute storefront url with the signed parameters (see privacyConfirmUrl);
+     * `$kind` is `export` or `erase`; the request type is written in the mail's own language. No data of the person but the address.
+     */
+    public function privacyConfirmation(string $email, string $kind, string $link, int $validDays): void
+    {
+        $locale = $this->locale->current();
+
+        $this->queue(MailTemplates::PRIVACY_CONFIRM, $email, ['action_link' => ['url' => $link, 'label' => 'privacy_confirm']], [
+            'request_type' => (string) __('mail.privacy_confirm.'.$kind, [], $locale),
+            'valid_days' => (string) $validDays,
+        ]);
+    }
+
+    /**
+     * The absolute url of the confirmation page. It lives under /account/..., a prefix the page cache (Varnish) never keeps.
+     *
+     * @param  array<string, scalar>  $query
+     */
+    public function privacyConfirmUrl(array $query): string
+    {
+        return $this->url('/account/privacy/confirm', $query);
+    }
+
     /** @param  array<string, scalar>  $query */
     private function url(string $path, array $query = []): string
     {
         return rtrim((string) config('app.url'), '/').$path.($query === [] ? '' : '?'.http_build_query($query, '', '&', PHP_QUERY_RFC3986));
     }
 
-    /** @param  array<string, array{url: string, label: string}>  $links */
-    private function queue(string $template, string $email, array $links): void
+    /**
+     * @param  array<string, array{url: string, label: string}>  $links
+     * @param  array<string, string>  $scalars
+     */
+    private function queue(string $template, string $email, array $links, array $scalars = []): void
     {
         try {
-            SendAccountMailJob::dispatch($template, $email, $this->locale->current(), $links);
+            SendAccountMailJob::dispatch($template, $email, $this->locale->current(), $links, 'mail-transactional', $scalars);
         } catch (Throwable $e) {
             Log::error('mail.account_dispatch_failed', ['template' => $template, 'exception' => $e::class]);
         }

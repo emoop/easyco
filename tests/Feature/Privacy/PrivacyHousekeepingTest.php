@@ -56,13 +56,14 @@ class PrivacyHousekeepingTest extends TestCase
 
     // ---- 10: expire requests ----------------------------------------------------------------------------------------------------
 
-    public function test_a_request_waiting_more_than_24_hours_expires_and_loses_its_email(): void
+    // ACC-4d: 7 days (was 24 hours), the same constant as the confirmation link; both edges
+    public function test_a_request_waiting_more_than_7_days_expires_and_loses_its_email_and_one_at_6_days_23_hours_does_not(): void
     {
         $old = $this->request(['kind' => 'export', 'status' => 'awaiting_confirmation']);
         $fresh = $this->request(['kind' => 'export', 'status' => 'awaiting_confirmation']);
         $doneOld = $this->request();
-        PrivacyRequestModel::query()->whereKey([$old->getKey(), $doneOld->getKey()])->update(['created_at' => now()->subHours(25)]);
-        PrivacyRequestModel::query()->whereKey($fresh->getKey())->update(['created_at' => now()->subHours(23)]);
+        PrivacyRequestModel::query()->whereKey([$old->getKey(), $doneOld->getKey()])->update(['created_at' => now()->subDays(7)->subHour()]);
+        PrivacyRequestModel::query()->whereKey($fresh->getKey())->update(['created_at' => now()->subDays(6)->subHours(23)]);
 
         $this->artisan('privacy:expire-requests')->assertSuccessful();
 

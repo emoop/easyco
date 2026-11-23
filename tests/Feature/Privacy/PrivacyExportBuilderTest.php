@@ -124,6 +124,23 @@ class PrivacyExportBuilderTest extends TestCase
         $this->assertArrayNotHasKey('attribution', $order);
     }
 
+    public function test_the_orders_cross_the_chunk_boundary_each_exactly_once_in_order(): void
+    {
+        $ids = [];
+
+        for ($i = 0; $i < 5; $i++) {
+            $ids[] = $this->order('me@example.com');
+        }
+
+        // chunk 2 with 5 orders = chunks of 2, 2, 1: a boundary crossed twice (the default chunk of 100 never crosses one here)
+        $builder = new PrivacyExportBuilder(2);
+        $orders = $this->decoded($builder->build('me@example.com'))['sections']['orders']['data'];
+
+        $this->assertSame($ids, array_column($orders, 'number'), 'all five, once each, in id order');
+        $this->assertSame($this->decoded(app(PrivacyExportBuilder::class)->build('me@example.com'))['sections']['orders']['data'], $orders, 'the chunk size changes nothing in the result');
+        $this->assertSame(PrivacyExportBuilder::CHUNK, 100);
+    }
+
     public function test_staff_notes_event_reasons_staff_names_and_block_reasons_never_appear(): void
     {
         $id = $this->order();
