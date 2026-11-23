@@ -280,7 +280,7 @@ class MediaUsageRegistryTest extends TestCase
 
         $registry = new MediaUsageRegistry;
 
-        $this->assertCount(12, $registry->providers(), 'only the twelve built-in providers remain (P6e-1 added CollectionPictures, ML-2 added HtmlBlockBody, CT-1 added CategoryPictures and AttributeValuePictures, CT-1.1 added SeasonPictures, HB-4 added HtmlBlockBackgrounds, HB-5 added HtmlBlockCards)');
+        $this->assertCount(14, $registry->providers(), 'only the fourteen built-in providers remain (LOGO-1 added SiteIconUsage and SiteLogoUsage; P6e-1 added CollectionPictures, ML-2 added HtmlBlockBody, CT-1 added CategoryPictures and AttributeValuePictures, CT-1.1 added SeasonPictures, HB-4 added HtmlBlockBackgrounds, HB-5 added HtmlBlockCards)');
         $this->assertSame([], $registry->counts([$picture]));
         (new MediaUsageRegistry)->providers();
 

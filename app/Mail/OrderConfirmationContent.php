@@ -78,7 +78,7 @@ final class OrderConfirmationContent
 
     private function shopName(): string
     {
-        return MailHeader::clean((string) config('app.name'), 80);
+        return MailHeader::clean((string) \App\Settings\ShopName::current(), 80);
     }
 
     private function supportEmail(): string

@@ -12,8 +12,8 @@
             <span class="sf-chdr-back-label">{{ $label }}</span>
         </a>
         <a class="sf-logo sf-chdr-logo" href="{{ route('storefront.home', [], false) }}">
-            @if (isset($values['logo']))<img src="{{ $values['logo']['url'] }}" alt="{{ config('app.name') }}" width="{{ (int) $values['logo']['width'] }}" height="{{ (int) $values['logo']['height'] }}" decoding="async">
-@else<img src="{{ asset('images/logo.svg') }}" alt="{{ config('app.name') }}" width="596" height="150">
+            @if (isset($values['logo']))<img src="{{ $values['logo']['url'] }}" alt="{{ \App\Settings\ShopName::current() }}" width="{{ (int) $values['logo']['width'] }}" height="{{ (int) $values['logo']['height'] }}" decoding="async">
+@else<img src="{{ asset('images/logo.svg') }}" alt="{{ \App\Settings\ShopName::current() }}" width="596" height="150">
 @endif
         </a>
         <div class="sf-chdr-phone">

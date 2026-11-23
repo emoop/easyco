@@ -384,6 +384,7 @@ class MediaLibraryPageTest extends TestCase
         $big = $this->queriesOfThePage();
 
         $this->assertSame($small, $big, "3 cards: {$small} queries, 48 cards with usages: {$big}");
-        $this->assertLessThanOrEqual(10, $big, 'and not many: the list, its count, one per usage provider and the page frame');
+        // 11: LOGO-1's two providers (SiteIconUsage, SiteLogoUsage) share ONE `getMany` through the settings memo: +1
+        $this->assertLessThanOrEqual(11, $big, 'and not many: the list, its count, one per usage provider and the page frame');
     }
 }

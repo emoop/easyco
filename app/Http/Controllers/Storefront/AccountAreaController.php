@@ -305,7 +305,7 @@ final class AccountAreaController extends Controller
             'title' => $title,
             'categories' => $reader->categoryTree(),
             'seo' => [
-                'title' => $title.' — '.config('app.name'),
+                'title' => $title.' — '.\App\Settings\ShopName::current(),
                 'description' => '',
                 'canonical' => null,
             ],

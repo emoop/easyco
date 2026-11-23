@@ -91,7 +91,7 @@ final class PrivacyConfirmController extends Controller
             'kind' => $kind,
             'heading' => $heading,
             'categories' => $reader->categoryTree(),
-            'seo' => ['title' => $heading.' — '.config('app.name'), 'description' => '', 'canonical' => null],
+            'seo' => ['title' => $heading.' — '.\App\Settings\ShopName::current(), 'description' => '', 'canonical' => null],
         ], $state === 'invalid' ? 404 : 200);
     }
 }

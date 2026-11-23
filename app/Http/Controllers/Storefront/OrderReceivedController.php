@@ -42,7 +42,7 @@ final class OrderReceivedController extends Controller
             'order' => $order,
             'categories' => [],
             'seo' => [
-                'title' => __('storefront.received_title').' — '.config('app.name'),
+                'title' => __('storefront.received_title').' — '.\App\Settings\ShopName::current(),
                 'description' => '',
                 'canonical' => null,
             ],

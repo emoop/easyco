@@ -7,7 +7,7 @@
     <footer class="sf-footer">
         <div class="sf-footer-inner">
             <div class="sf-footer-brand">
-                <span class="sf-footer-name">{{ config('app.name') }}</span>
+                <span class="sf-footer-name">{{ \App\Settings\ShopName::current() }}</span>
                 <a class="sf-footer-home" href="{{ route('storefront.home', [], false) }}">{{ __('storefront.home') }}</a>
             </div>
             {{-- The `footer` menu (D3): flat links, compiled (published pages and shown categories only), labels escaped. --}}

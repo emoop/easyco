@@ -176,6 +176,8 @@ final class AppearanceSettings
     public const READ_KEYS = [
         // CC-1: the cookie banner's settings ride on the same one read (CookieSettings::readKeys())
         ...\App\Settings\CookieSettings::READ_KEYS_LIST,
+        // LOGO-1: the shop name and what the «Лого» tab generated ride on the same one read
+        ...\App\Settings\SiteLogo::READ_KEYS_LIST,
         self::COMPILED_KEY,
         self::THEME_KEY,
         self::HEADER_COMPILED_KEY,

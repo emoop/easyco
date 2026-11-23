@@ -198,7 +198,34 @@ final class TemplateRenderer
 
         return '<!doctype html><html lang="'.$lang.'"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>'.$title.'</title></head>'
             .'<body style="margin:0;padding:16px;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.5;color:#222222;">'
+            .$this->logoHeader()
             .'<div style="max-width:640px;margin:0 auto;">'.$body.'</div></body></html>';
+    }
+
+    /**
+     * LOGO-1 (site-logo.md): the shop's logo as the header of EVERY mail (all template keys go through wrap()). Code, never the merchant's template: HtmlSanitizer keeps `img` out on purpose. A PNG (mail clients
+     * do not show SVG), an ABSOLUTE public URL built from APP_URL, `width` / `height` attributes, shown at most 200 px wide, `alt` = the shop name. With no `logo.main` (or no absolute APP_URL) it is
+     * an EMPTY string: the mail is byte for byte what it was; EasyCo's own logo is never put into a shop's mails.
+     */
+    private function logoHeader(): string
+    {
+        try {
+            $logo = app(\App\Storefront\Appearance\StorefrontAppearance::class)->siteLogo()['main']['png'] ?? null;
+        } catch (\Throwable) {
+            $logo = null;
+        }
+
+        $origin = rtrim((string) config('app.url'), '/');
+
+        if (! is_array($logo) || preg_match('#^https?://#i', $origin) !== 1) {
+            return '';
+        }
+
+        $width = min(200, (int) $logo['w']);
+        $height = max(1, (int) round((int) $logo['h'] * $width / (int) $logo['w']));
+        $escape = static fn (string $value): string => htmlspecialchars($value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+
+        return '<div style="max-width:640px;margin:0 auto 16px;"><img src="'.$escape($origin.$logo['url']).'" alt="'.$escape(\App\Settings\ShopName::current()).'" width="'.$width.'" height="'.$height.'" style="display:block;border:0;max-width:100%;height:auto;"></div>';
     }
 
     /**

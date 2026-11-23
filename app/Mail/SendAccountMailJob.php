@@ -74,7 +74,7 @@ final class SendAccountMailJob implements ShouldBeEncrypted, ShouldQueue
                 $blocks[$name] = MailBlocks::link($link['url'], (string) __('mail.account.'.$link['label'], [], $this->locale), $this->locale);
             }
 
-            $rendered = $renderer->render($definition, $this->locale, ['shop_name' => MailHeader::clean((string) config('app.name'), 80)] + $this->scalars, $blocks);
+            $rendered = $renderer->render($definition, $this->locale, ['shop_name' => MailHeader::clean((string) \App\Settings\ShopName::current(), 80)] + $this->scalars, $blocks);
             $sender = $configurator->apply($definition->sender);
 
             Mail::mailer($sender->mailer)->to($recipient)->send(new RenderedMailable($rendered, $sender));

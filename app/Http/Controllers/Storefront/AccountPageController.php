@@ -59,7 +59,7 @@ final class AccountPageController extends Controller
         return response()->view('storefront.account.'.$view, $data + [
             'categories' => $reader->categoryTree(),
             'seo' => [
-                'title' => __('account_pages.'.$titleKey).' — '.config('app.name'),
+                'title' => __('account_pages.'.$titleKey).' — '.\App\Settings\ShopName::current(),
                 'description' => '',
                 'canonical' => null,
             ],

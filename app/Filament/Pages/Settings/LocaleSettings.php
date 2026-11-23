@@ -15,7 +15,15 @@ use DateTimeZone;
 use EasyCo\Staff\Enums\Permission;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Select;
+use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
+use App\Filament\Design\InfoHint;
+use App\Filament\Forms\Components\MediaPicker;
+use App\Settings\SiteLogo;
+use App\Settings\SiteLogoWriter;
+use App\Storefront\Header\AppearanceRecompiler;
+use Filament\Schemas\Components\View;
+use Illuminate\Validation\ValidationException;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Schemas\Components\Actions;
@@ -161,7 +169,7 @@ class LocaleSettings extends Page
             'activity_log_enabled' => $activityLogEnabled,
             'activity_log_retention_months' => $activityLogRetentionMonths,
             'currency_symbol_position' => $currencySymbolPosition,
-        ]);
+        ] + app(SiteLogoWriter::class)->current());
     }
 
     public function form(Schema $schema): Schema
@@ -276,6 +284,39 @@ class LocaleSettings extends Page
                                     ->default('suffix_space')
                                     ->required(),
                             ]),
+                        // LOGO-1 (site-logo.md): the shop's name, the site icon and the logos (the header logo stays a component in «Дизайн»)
+                        Tab::make(__('logo_admin.tab'))
+                            ->schema([
+                                TextInput::make('site_name')
+                                    ->label(__('logo_admin.fields.name'))
+                                    ->afterLabel(InfoHint::make(__('logo_admin.hints.name'), 'site_name'))
+                                    ->maxLength(SiteLogo::NAME_MAX)
+                                    ->live(onBlur: true)
+                                    ->columnSpanFull(),
+                                MediaPicker::make('site_icon')
+                                    ->label(__('logo_admin.fields.icon'))
+                                    ->afterLabel(InfoHint::make(__('logo_admin.hints.icon'), 'site_icon'))
+                                    ->mimeTypes(SiteLogo::MIMES)
+                                    ->emptyText(__('logo_admin.empty_icon'))
+                                    ->checkerBackground()
+                                    ->columnSpanFull(),
+                                MediaPicker::make('logo_main')
+                                    ->label(__('logo_admin.fields.main'))
+                                    ->afterLabel(InfoHint::make(__('logo_admin.hints.main'), 'logo_main'))
+                                    ->mimeTypes(SiteLogo::MIMES)
+                                    ->emptyText(__('logo_admin.empty_logo'))
+                                    ->checkerBackground()
+                                    ->columnSpanFull(),
+                                MediaPicker::make('logo_dark')
+                                    ->label(__('logo_admin.fields.dark'))
+                                    ->afterLabel(InfoHint::make(__('logo_admin.hints.dark'), 'logo_dark'))
+                                    ->mimeTypes(SiteLogo::MIMES)
+                                    ->emptyText(__('logo_admin.empty_logo'))
+                                    ->checkerBackground()
+                                    ->columnSpanFull(),
+                                View::make('filament.settings.logo-preview')->columnSpanFull(),
+                                View::make('filament.settings.logo-header-link')->columnSpanFull(),
+                            ]),
                     ]),
             ])
             ->statePath('data');
@@ -286,6 +327,27 @@ class LocaleSettings extends Page
         return $schema->components([
             $this->getFormContentComponent(),
         ]);
+    }
+
+    /**
+     * LOGO-1: what the tab's static preview shows: the chosen pictures' ORIGINALS (web images: PNG / WebP) straight from the form's state, so a choice is visible before it is saved.
+     *
+     * @return array{name: string, icon: ?string, logo: ?string}
+     */
+    public function logoPreview(): array
+    {
+        $url = static function (mixed $id): ?string {
+            if (! filled($id)) {
+                return null;
+            }
+
+            $row = \EasyCo\Media\Persistence\Eloquent\MediaAssetModel::query()->find((int) $id);
+
+            return $row === null || ! in_array((string) $row->mime, SiteLogo::MIMES, true) ? null : app(\EasyCo\Media\Contracts\MediaStorageAdapter::class)->url((string) $row->disk, (string) $row->path);
+        };
+        $name = SiteLogo::cleanName($this->data['site_name'] ?? null);
+
+        return ['name' => $name ?? \App\Settings\ShopName::current(), 'icon' => $url($this->data['site_icon'] ?? null), 'logo' => $url($this->data['logo_main'] ?? null)];
     }
 
     protected function getFormContentComponent(): Component
@@ -304,7 +366,25 @@ class LocaleSettings extends Page
 
     public function save(): void
     {
+        // LOGO-1: the save is a public Livewire method: the permission is checked HERE too (SETTINGS_MANAGE), not only on open
+        abort_unless(static::canAccess(), 403);
+
         $data = $this->form->getState();
+
+        // LOGO-1: ALL logo validation happens before anything is written (a refusal opens the «Лого» tab and shows the error there); the generation runs only for a picture that changed
+        $writer = app(SiteLogoWriter::class);
+
+        try {
+            $plan = $writer->prepare($data);
+        } catch (ValidationException $e) {
+            $this->failFields($e->errors());
+        }
+
+        try {
+            $logoChanged = $writer->commit($plan);
+        } catch (\RuntimeException) {
+            $this->failFields(['data.site_icon' => __('logo_admin.errors.write')]);
+        }
 
         // activity_log_retention_months is a REAL, confirmed gap found
         // while testing: a component hidden by ->visible() is simply
@@ -335,6 +415,9 @@ class LocaleSettings extends Page
         // P7-2: the cached free-shipping threshold of the card badge depends on the store country (and the zone it matches)
         app(\App\Services\FreeShippingThreshold::class)->refresh();
         app(\App\Storefront\Cache\CachePurgeCollector::class)->add('all');
+
+        // LOGO-1: a changed name, icon or logo: the SAME refresh as a «Дизайн» publish (the payload, the token stylesheet, ONE purge). An unrelated save does none of it.
+        $logoChanged && app(AppearanceRecompiler::class)->run($settings);
 
         Notification::make()
             ->title(__('settings.locale.saved_notification'))

@@ -87,7 +87,7 @@ final class SearchController extends Controller
             'listing' => $listing,
             'pagination' => $pagination->build($base, $listing, $perPage, $keep($sort)),
             'categories' => $reader->categoryTree(),
-            'seo' => ['title' => $title.' — '.config('app.name'), 'description' => '', 'canonical' => null, 'noindex' => true, 'robots' => 'noindex, follow'],
+            'seo' => ['title' => $title.' — '.\App\Settings\ShopName::current(), 'description' => '', 'canonical' => null, 'noindex' => true, 'robots' => 'noindex, follow'],
             'sorts' => $sorts,
             // no filters here, so no side panel: the grid always takes the full width (the shop's «Каталог» columns, gap and page size still apply)
             'layout' => 'full',
