@@ -67,25 +67,42 @@ class SiteLogoTabTest extends TestCase
 
     // ---- the permission --------------------------------------------------------------------------------------------------------
 
-    /** ★ SETTINGS_MANAGE on open, and again in the public save() */
+    /**
+     * ★ SETTINGS_MANAGE on open, and again in the public save().
+     *
+     * The test judges the EFFECT, never a thrown exception: when the whole Livewire request is refused (Filament's own access check runs before save()), the harness shows it as an EXCEPTION with
+     * APP_DEBUG on (a developer's .env) and as a 4xx RESPONSE with it off (CI has no .env: the LOGO-1 CI failure), so "it threw" is not a fact about the permission. The second layer, save()'s own
+     * `abort_unless`, is asserted by calling it directly, which does not go through the harness at all.
+     */
     public function test_the_save_needs_settings_manage(): void
     {
         $this->actingAsCustomRole([Permission::CUSTOMER_VIEW]);
         $this->get(LocaleSettings::getUrl())->assertForbidden();
 
-        $page = $this->page();
-        $this->actingAsCustomRole([Permission::CUSTOMER_VIEW]);
-
-        $threw = false;
+        $icon = $this->icon();
+        $page = $this->page(); // mounted as the Administrator
+        $this->actingAsCustomRole([Permission::CUSTOMER_VIEW]); // then the user loses the permission
+        $this->assertFalse(LocaleSettings::canAccess());
 
         try {
-            $page->fillForm(['site_name' => 'Hacked'])->call('save');
+            $page->fillForm(['site_name' => 'Hacked', 'locale' => 'en', 'site_icon' => $icon->id])->call('save');
         } catch (\Throwable) {
-            $threw = true;
+            // APP_DEBUG on: the refusal is an exception; off: a 4xx response. Either way, only the effect matters
         }
 
-        $this->assertTrue($threw, 'a user without SETTINGS_MANAGE cannot save');
-        $this->assertNull($this->settings()->get(SiteLogo::NAME));
+        $this->assertNull($this->settings()->get(SiteLogo::NAME), 'the name was not written');
+        $this->assertNull($this->settings()->get(SiteLogo::ICON), 'the icon was not written');
+        $this->assertNull($this->settings()->get(SiteLogo::COMPILED));
+        $this->assertSame('bg', $this->settings()->get('site.locale'), 'nothing else of the page was saved either');
+        $this->assertSame([], $this->generatedFiles(), 'no file was generated');
+
+        // the second layer: save() itself refuses a user without SETTINGS_MANAGE (a direct call: no harness, no APP_DEBUG)
+        try {
+            (new LocaleSettings)->save();
+            $this->fail('save() ran for a user without SETTINGS_MANAGE');
+        } catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) {
+            $this->assertSame(403, $e->getStatusCode());
+        }
     }
 
     // ---- what is accepted -------------------------------------------------------------------------------------------------------
