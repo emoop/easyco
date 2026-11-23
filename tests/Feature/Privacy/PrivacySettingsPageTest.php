@@ -82,10 +82,10 @@ class PrivacySettingsPageTest extends TestCase
         $this->assertSame(10, $this->settings()->orderRetentionYears());
     }
 
-    public function test_the_item_sits_in_the_settings_area(): void
+    public function test_the_item_sits_in_the_privacy_group_after_the_log(): void
     {
-        $this->assertSame(\App\Filament\NavigationGroup::ADMIN, PrivacySettingsPage::getNavigationGroup());
-        $this->assertSame(37, PrivacySettingsPage::getNavigationSort());
+        $this->assertSame(\App\Filament\NavigationGroup::PRIVACY, PrivacySettingsPage::getNavigationGroup());
+        $this->assertSame(20, PrivacySettingsPage::getNavigationSort());
     }
 
     // ---- the values -----------------------------------------------------------------------------------------------------------------

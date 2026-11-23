@@ -24,7 +24,7 @@ use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
 /**
- * ACC-4e-2 (acc-4-gdpr-design.md section 7): «Поверителност: настройки». `/admin/privacy-settings`, in the settings area (the «Админ» group, after «Сигурност»), PRIVACY_MANAGE: checked on open, on every
+ * ACC-4e-2 (acc-4-gdpr-design.md section 7): «Поверителност: настройки». `/admin/privacy-settings`, in the «Поверителност» group (second, after the forget log), PRIVACY_MANAGE: checked on open, on every
  * Livewire request and again in the save. The three settings are the ones the commands read: `privacy.order_retention_years` (OrderAnonymiser through OrderRetention), `privacy.mail_log_retention_days`
  * (`mail:prune-log`) and `privacy.manual_steps`: all through PrivacySettings, the one reader and writer.
  *
@@ -56,15 +56,25 @@ class PrivacySettingsPage extends Page
         return __('privacy_admin.settings.navigation_label');
     }
 
-    public static function getNavigationGroup(): NavigationGroup
+
+    /** The full page title as the browser tooltip: a long label is cut with an ellipsis by the sidebar (the link keeps its text as its accessible name). */
+    public static function getNavigationItems(): array
     {
-        return NavigationGroup::ADMIN;
+        return array_map(
+            static fn (\Filament\Navigation\NavigationItem $item): \Filament\Navigation\NavigationItem => $item->extraAttributes(['title' => __('privacy_admin.settings.title')]),
+            parent::getNavigationItems(),
+        );
     }
 
-    /** After «Сигурност» (35), before the activity log (40). */
+    public static function getNavigationGroup(): NavigationGroup
+    {
+        return NavigationGroup::PRIVACY;
+    }
+
+    /** Second in the «Поверителност» group, after the forget log (10). */
     public static function getNavigationSort(): ?int
     {
-        return 37;
+        return 20;
     }
 
     protected static function accessPermission(): ?Permission

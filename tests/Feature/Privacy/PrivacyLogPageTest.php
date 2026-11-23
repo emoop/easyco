@@ -82,7 +82,7 @@ class PrivacyLogPageTest extends TestCase
     public function test_the_item_sits_in_the_privacy_group(): void
     {
         $this->assertSame(\App\Filament\NavigationGroup::PRIVACY, PrivacyLog::getNavigationGroup());
-        $this->assertSame('Поверителност', \App\Filament\NavigationGroup::PRIVACY->getLabel() === 'Privacy' ? __('navigation.groups.privacy', [], 'bg') : '');
+        $this->assertSame(__('navigation.groups.privacy'), \App\Filament\NavigationGroup::PRIVACY->getLabel());
     }
 
     // ---- the rows ------------------------------------------------------------------------------------------------------------------
