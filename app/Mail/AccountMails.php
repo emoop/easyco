@@ -65,15 +65,18 @@ class AccountMails
     /**
      * ACC-4d: asks the person to confirm that a privacy request is theirs. `$link` is the absolute storefront url with the signed parameters (see privacyConfirmUrl);
      * `$kind` is `export` or `erase`; the request type is written in the mail's own language. No data of the person but the address.
+     * `$locale` is the language of the mail (ACC-4e-1: the caller passes the SHOP's default locale, never the admin's own); null = the store locale.
+     *
+     * @return bool false when the mail could not be queued (the caller must say so)
      */
-    public function privacyConfirmation(string $email, string $kind, string $link, int $validDays): void
+    public function privacyConfirmation(string $email, string $kind, string $link, int $validDays, ?string $locale = null): bool
     {
-        $locale = $this->locale->current();
+        $locale ??= $this->locale->current();
 
-        $this->queue(MailTemplates::PRIVACY_CONFIRM, $email, ['action_link' => ['url' => $link, 'label' => 'privacy_confirm']], [
+        return $this->queue(MailTemplates::PRIVACY_CONFIRM, $email, ['action_link' => ['url' => $link, 'label' => 'privacy_confirm']], [
             'request_type' => (string) __('mail.privacy_confirm.'.$kind, [], $locale),
             'valid_days' => (string) $validDays,
-        ]);
+        ], $locale);
     }
 
     /**
@@ -96,12 +99,16 @@ class AccountMails
      * @param  array<string, array{url: string, label: string}>  $links
      * @param  array<string, string>  $scalars
      */
-    private function queue(string $template, string $email, array $links, array $scalars = []): void
+    private function queue(string $template, string $email, array $links, array $scalars = [], ?string $locale = null): bool
     {
         try {
-            SendAccountMailJob::dispatch($template, $email, $this->locale->current(), $links, 'mail-transactional', $scalars);
+            SendAccountMailJob::dispatch($template, $email, $locale ?? $this->locale->current(), $links, 'mail-transactional', $scalars);
+
+            return true;
         } catch (Throwable $e) {
             Log::error('mail.account_dispatch_failed', ['template' => $template, 'exception' => $e::class]);
+
+            return false;
         }
     }
 }

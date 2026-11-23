@@ -61,9 +61,10 @@ class OrderStatusColorTest extends TestCase
     {
         $source = file_get_contents((new \ReflectionClass(OrderResource::class))->getFileName());
 
+        // whatever its visibility (ACC-4e-1 made it public for the customer page): what is protected is the COUNT of implementations, not the keyword
         $this->assertSame(
             1,
-            substr_count($source, 'private static function statusColor('),
+            preg_match_all('/\b(?:public|protected|private)\s+(?:static\s+)?function\s+statusColor\s*\(/', $source),
             'exactly one statusColor() implementation must exist.'
         );
 

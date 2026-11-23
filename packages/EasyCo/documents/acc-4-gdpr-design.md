@@ -1,6 +1,6 @@
 # ACC-4 — GDPR: export, «forget me», retention, admin «Клиенти» (design, owner decisions 2026-11-20)
 
-Status: owner decisions D1–D8 taken; D2 revised 2026-11-21 (requests only through the merchant). Technical design §3–§9 written after the read-only inventory ACC-4-0 (commit `1818ab1`).
+Status: owner decisions D1–D8 taken; D2 revised 2026-11-21 (requests only through the merchant). Technical design §3–§9 written after the read-only inventory ACC-4-0 (commit `1818ab1`). ACC-4a–4d are merged; §10 (2026-11-23) holds the decisions after the ACC-4d review and the ACC-4e UI review.
 
 ## 1. Owner decisions — do not re-open
 
@@ -39,7 +39,7 @@ Status: owner decisions D1–D8 taken; D2 revised 2026-11-21 (requests only thro
 - UI is shown to the owner before the coder prompt.
 
 **D6. Forget log and suppression list.**
-- **Log entry fields:** date, source (site / admin), staff member, reason, automatic actions (lists/audiences removed from), manual-step checkboxes (e.g. «махнат от аудиторията във Facebook»).
+- **Log entry fields:** date, source (always admin since D2; no «Източник» column in the log UI, owner 2026-11-23), staff member, reason, automatic actions (lists/audiences removed from), manual-step checkboxes (e.g. «махнат от аудиторията във Facebook»).
 - **Email and phone are visible in clear for 30 days**, then only a keyed hash remains. The lookup «was there a forget request for this email?» keeps working through the hash.
 - **Suppression:** the hash blocks adding the person to any list or audience. A later explicit double-opt-in signup is new consent and lifts the block. A new order without the newsletter tick adds them nowhere.
 - **Admin «Табло» tile:** «Заявка за забравяне» with the remaining clear-view days.
@@ -118,7 +118,7 @@ Amounts, lines and statuses never change. This is lawful erasure of data whose p
 
 ## 5. Housekeeping (scheduled, daily)
 - `privacy:expire-clear-view` — nulls `email`/`phone` in `privacy_requests` past `clear_until`.
-- `privacy:expire-requests` — `awaiting_confirmation` older than 24 h → `expired`, email nulled. **ACC-4d changes this to 7 days**, so the person has time to click the merchant's confirmation link.
+- `privacy:expire-requests` — `awaiting_confirmation` older than 7 days → `expired`, email nulled. **Done in ACC-4d**: one constant, `PrivacyConfirmationRequester::VALID_DAYS`, is both the life of the confirmation link and of the request.
 - `privacy:prune-exports` (ACC-4c) — deletes expired ZIPs, sets status `expired`.
 - `privacy:anonymise-orders` (ACC-4b).
 - `mail:prune-log` — deletes `mail_log` rows older than `privacy.mail_log_retention_days` (default 365, 30..3650).
@@ -143,18 +143,20 @@ Amounts, lines and statuses never change. This is lawful erasure of data whose p
   - one row per `email_key` from `orders`, plus accounts without orders;
   - columns per D5; search by name, email, phone; paginated;
   - EXPLAIN in the report, tested at 20 000 orders.
-- **Customer page:** data, addresses (account), orders (link), consents, lists (filter `privacy.customer.lists`), staff note, buttons «Изтегли данните» (ZIP download for the staff member), «Поискай потвърждение» (§6) and «Забрави» (confirmation + required reason). When a confirmed request exists, its state is shown next to the buttons.
+- **Customer page:** data, addresses (account), orders (link), consents, lists (filter `privacy.customer.lists`), staff note, buttons «Изтегли данните» (ZIP download for the staff member), «Поискай потвърждение» (§6) and «Забрави» (confirmation + required reason). When a confirmed request exists, its state is shown next to the buttons. The page also carries the card «Наложен платеж» (§10).
 - **«Поверителност → Дневник»:** the erase requests, a lookup by email (hash), manual-step checkboxes. The list of manual steps is set in Settings (free labels, closed by the merchant).
 - **«Табло» tile:** open erase requests whose clear view is still on and whose manual steps are not all done, with the fewest remaining days.
 - **Settings:** `privacy.order_retention_years`, `privacy.mail_log_retention_days`, the manual-step labels.
-- **UI:** shown to the owner before ACC-4e.
+- **UI:** agreed with the owner 2026-11-23 (five screens: clients list, customer page, the two dialogs, log, tile + settings). Decisions of that review are in §10.
 
 ## 8. Packages (one prompt at a time)
 1. **ACC-4a** — tables, `PrivacyHash`, `SuppressionList`, `PrivacyEraser`, `customer.erased` hook (+ hooks doc), the `privacy.erased` mail, housekeeping of §5 except the anonymiser and export pruning, settings keys. No UI. Sonnet.
 2. **ACC-4b** — `Order::anonymise()` + `privacy:anonymise-orders`. Sonnet.
 3. **ACC-4c** — export builder, queued job, ZIP on the private disk, staff-only download (no customer link), `privacy:prune-exports`. Sonnet.
-4. **ACC-4d** — the confirmation request (service + `privacy.confirm` mail + no-store confirmation page + 7-day expiry). Small; can be merged into ACC-4e if that keeps one prompt manageable. Sonnet.
-5. **ACC-4e** — admin «Клиенти», customer page, log, tile, settings page, permissions. UI agreed first. Sonnet.
+4. **ACC-4d** — DONE (merged 2026-11-23): the confirmation request (service + `privacy.confirm` mail + no-store confirmation page + 7-day expiry), `privacy:ask-confirmation`, and the migration relaxing `prq_reason_check` (see §10). Sonnet.
+5. **ACC-4e** — admin «Клиенти», customer page, log, tile, settings page, permissions, the COD-block card. UI agreed 2026-11-23. Split in two prompts (the destructive part gets its own review):
+   - **ACC-4e-1** — `CUSTOMER_VIEW`, the «Клиенти» list, the customer page (data, addresses, orders, consents, note, requests, lists filter, COD-block card), «Изтегли данните» (reuses a confirmed export row), «Поискай потвърждение» (+ one open request per email and kind, «Изпрати отново», shop-default mail locale). Customer URL key is the id of the latest order or the account (`o-{id}` / `a-{id}`), never the email. No «Забрави» yet.
+   - **ACC-4e-2** — «Забрави» (dialog, `PrivacyEraser` reuses a confirmed erase row), «Поверителност → Дневник», manual-step checkboxes, «Табло» tile, privacy settings page, shop-owner settings keys. Sonnet.
 
 CI runs the full suite on each push; locally only targeted tests.
 
@@ -162,3 +164,11 @@ CI runs the full suite on each push; locally only targeted tests.
 - `order_attributions` keeps UA/visitor_id/UTM until retention. A shorter period like the IP's is a later decision.
 - Verified 2026-11-20: `operational_sales_clients.account_id` is `nullOnDelete`; session GC lottery `[2, 100]` is active.
 - Until ACC-5 brings lists, `customer.erased` has no listeners; the manual steps in the log are the real effect. Intended.
+
+## 10. Decisions after the ACC-4d review and the ACC-4e UI review (owner 2026-11-23)
+- **`prq_reason_check` relaxed (ACC-4d, migration `…000002`).** A confirmation request is an admin `erase` row without a reason (the reason is given at «Забрави»). The CHECK now exempts `awaiting_confirmation`, `confirmed` and `expired`; a forget-log row (`processing`, `done`, `failed`) still needs its reason.
+- **One open request per email and kind.** While a request for that email and kind is `awaiting_confirmation`, the merchant gets no second row: the dialog shows when the mail was sent and a button «Изпрати отново». A resend mails a NEW signed link for the SAME row; the link never outlives the row (its `expires` is the row's `created_at` + `VALID_DAYS`, never later). After the row has expired, a new request makes a new row.
+- **«Забрави» closes the confirmed request.** If a `confirmed` erase request exists for the email, `PrivacyEraser` takes THAT row as the forget-log row (`confirmed` → `processing` → `done`, reason written in the same statement as the status change); otherwise it creates a new row as today. One request, one row. The same rule for «Изтегли данните»: a `confirmed` export row is the row the export job builds on. The transition is a conditional update (`WHERE status = 'confirmed'`), so two clicks do not run twice.
+- **Mail language:** the shop's default locale, not the staff member's current locale.
+- **Manual steps start empty:** the list is set in Settings; the log shows no checkboxes until the merchant adds a label.
+- **COD-block card on the customer page (owner request 2026-11-23).** Card «Наложен платеж»: for the email and for every phone of the customer (account addresses + orders with this `email_key`) it shows whether an active block exists (until when, reason, source order) with «Блокирай» (confirmation, required reason, 180 days or permanent) and «Махни». It reuses the EXISTING block service of the order view (same permission, same list, same rules; no second implementation). No IP here (IPs belong to an order and live 30 days). A block stays after «Забрави» (D7).
