@@ -72,3 +72,6 @@ Schedule::job(new QueueHeartbeat)->everyTwoMinutes()->name('queue-heartbeat');
 // anonymised. Daily, after the other privacy housekeeping; a cheap no-op when nothing has aged out; `withoutOverlapping` because a big backlog is worked
 // off 500 orders per run, one transaction each; only counts are logged.
 Schedule::command('privacy:anonymise-orders')->dailyAt('03:10')->withoutOverlapping();
+
+// ACC-4c (acc-4-gdpr-design.md §5): a personal-data export file lives 7 days; the expired ones (and orphan ZIPs older than 8 days) are deleted from the private disk. Idempotent, a cheap no-op.
+Schedule::command('privacy:prune-exports')->dailyAt('03:20');

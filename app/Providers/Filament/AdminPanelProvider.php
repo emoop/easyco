@@ -4,6 +4,7 @@ namespace App\Providers\Filament;
 
 use App\Filament\NavigationGroup;
 use App\Http\Controllers\Admin\DesignRedirectController;
+use App\Http\Controllers\Admin\PrivacyExportDownloadController;
 use App\Http\Middleware\ApplyStoreLocale;
 use App\Http\Middleware\ApplyStoreTimezone;
 use Filament\Http\Middleware\Authenticate;
@@ -99,6 +100,8 @@ class AdminPanelProvider extends PanelProvider
                 Route::get('header-settings', [DesignRedirectController::class, 'header'])->name('redirect.header');
                 Route::get('footer', [DesignRedirectController::class, 'footer'])->name('redirect.footer');
                 Route::get('storefront-settings', [DesignRedirectController::class, 'home'])->name('redirect.home');
+                // ACC-4c: the staff-only download of a personal-data export (acc-4-gdpr-design.md §7): login (this group) + `privacy_manage`; no customer link exists
+                Route::get('privacy/exports/{uuid}', PrivacyExportDownloadController::class)->middleware('staff.can:privacy_manage')->name('privacy.exports.download');
             })
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\Filament\Widgets')
             ->widgets([

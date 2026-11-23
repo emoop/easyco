@@ -1,6 +1,6 @@
 # ACC-4 — GDPR: export, «forget me», retention, admin «Клиенти» (design, owner decisions 2026-11-20)
 
-Status: owner decisions D1–D8 taken. Technical design §3–§9 written after the read-only inventory ACC-4-0 (commit `1818ab1`).
+Status: owner decisions D1–D8 taken; D2 revised 2026-11-21 (requests only through the merchant). Technical design §3–§9 written after the read-only inventory ACC-4-0 (commit `1818ab1`).
 
 ## 1. Owner decisions — do not re-open
 
@@ -11,20 +11,21 @@ Status: owner decisions D1–D8 taken. Technical design §3–§9 written after 
 - «Forget me» removes the person **immediately** from every mail list and ad audience.
 - A **log of forget requests** («дневник на забравените») lets the merchant look people up and tick manual removals from external lists.
 
-**D2. Who can request.**
-Both paths:
-- Storefront page «Моите лични данни». The guest enters an email and gets a confirmation link by mail, then chooses «Изтегли данните ми» or «Забрави ме». Same answer whether the email exists or not; rate limit + honeypot.
-- Admin «Клиенти» buttons for requests that arrive by phone or Messenger.
+**D2. Who can request — REVISED 2026-11-21 (owner, after research): only through the merchant.**
+- **No public page and no self-service buttons** (no «Моите лични данни», no «Изтрий профила» / «Изтегли данните ми» in «Данни»): a visible button provokes the action.
+- The customer writes to the email named in the privacy policy, saying what they want. The merchant acts from admin «Клиенти» («Изтегли данните», «Забрави»), within the legal month.
+- **Identity check when in doubt:** when the request comes from an address other than the one in the orders, the merchant presses «Поискай потвърждение». The system mails a signed link to the email on record; the person confirms on a no-store page (POST, no state change on GET); the request shows «Потвърдено», and the merchant then acts. This is the same model as WordPress/WooCommerce.
+- **The same model as Shopify and WooCommerce:** the merchant acts from the admin, orders stay, personal data is removed at retention.
+- A narrower request («stop the mails», «remove one address») is not «Забрави»: it is an unsubscribe (ACC-5) or an edit.
+- The privacy-policy text must name the contact email for requests. That is the merchant's content, not code.
 
 **D3. Export.**
 - A ZIP with a readable HTML page and a machine-readable JSON.
 - Content: profile, addresses, orders (lines, amounts, delivery, statuses), consents with dates, list/audience memberships, IP addresses while still kept.
 - **Staff notes are NOT exported.** They are deleted on «forget me».
-- The file is built in the background and sent as a signed link, valid 7 days. After that it is deleted from the server.
-- Logged-in customers start it from «Данни» with their password; guests start it via the confirmation link.
+- **Revised by D2:** only the merchant starts it, from admin. The file is built in the background. The staff member downloads it and sends it to the customer. The file is deleted from the server after 7 days.
 
-**D4. Account deletion.**
-- Password + confirmation link by mail, valid 1 hour.
+**D4. Account deletion.** **Revised by D2:** there is no self-service deletion; the merchant runs «Забрави», which deletes the account too. The password + 1-hour mail link flow below is dropped. What a deletion does stays as written:
 - Everything happens at the click: account, addresses, consents, carts and sessions are deleted; orders are unlinked; the person leaves all lists; a log entry is written.
 - A final confirmation mail is sent.
 - With an unfinished order the deletion is allowed. A warning says the order continues and its mails still come.
@@ -103,7 +104,7 @@ Amounts, lines and statuses never change. This is lawful erasure of data whose p
   - account, addresses, orders (lines, totals, delivery, statuses, invoice details, recipient_email, attribution IP/UA while kept), consents (order `marketing_consent` + text + date);
   - sections added by modules through the filter `privacy.export.sections`.
 
-  No staff notes, order event reasons, staff names or block reasons. ZIP on the `local` disk `privacy-exports/{uuid}.zip`, built by a queued job. The mail carries a temporary signed route valid 7 days; download also checks `export_expires_at`.
+  No staff notes, order event reasons, staff names or block reasons. ZIP on the `local` disk `privacy-exports/{uuid}.zip`, built by a queued job. **(D2 revised: no mail and no customer link; the staff member downloads it from admin. Download checks `export_expires_at`.)**
 - **`OrderAnonymiser`** — the domain method `Order::anonymise()` in the Order package (Order.php is not frozen) plus an app-layer command.
   - For orders placed before 1 January of (placement year + 1 + N years), N = `privacy.order_retention_years` (default 10, 1..30):
     - names → «Анонимизиран», phone/email/address/postcode/region/pickup/settlement/customer_note/recipient_email → NULL or a placeholder where NOT NULL;
@@ -115,19 +116,9 @@ Amounts, lines and statuses never change. This is lawful erasure of data whose p
   - Amounts, lines, statuses, dates, number and `marketing_consent` (boolean only) stay.
   - Idempotent; chunked; `anonymised_at` column on orders.
 
-**What ACC-4b turned out different (implementation notes).**
-- `Order::anonymise(DateTimeImmutable $at, DateTimeImmutable $cutoff)` lives on the aggregate (D8). It needed `email`, `customerNote` and `recipientEmail` to lose `readonly`, a trailing `anonymisedAt`, and the delivery-shape invariants (a street order needs a street, a pick-up point a settlement) are NOT applied to an anonymised order (it has deliberately lost them). The identity keys are NULL on every save of an anonymised order and the database holds it (`ord_anon_status_check`; the NULL keys are the repository's rule, pinned by tests).
-- **«Finished»** is `delivered`, `cancelled`, `refunded` (`Order::ANONYMISABLE_STATUSES`). `OrderStatus::isTerminal()` is only cancelled/refunded (a delivered order can still be refunded), which would skip nearly every order; a placed, confirmed or shipped order is skipped and counted.
-- **«Open money matter»** is read from the ONE place the code has for it: the tagged `NeedsAttentionSource`s (owed refund, receipt mismatch, payment step unfinished), through `App\Privacy\OpenMoneyOrders`.
-- **Placeholders:** `Анонимизиран` for the NOT NULL names, phone and (pick-up) description, `anonymised@invalid` for the NOT NULL emails. A pick-up row keeps ONE non-blank description (the database requires it).
-- **Also cleared** (not in the first list): the attribution's `first_landing_page_url` and `click_id_value` (an ad click id is an identifier); the invoice city/postcode/street (the country stays). **Stays:** `country`, `city`, `referrer_host`, UTM, device, counts, staff names.
-- **Refund free text (ACC-4b follow-up).** The earlier text said: «Not touched, flagged: `payment_refunds.paid_out_note` / `cancelled_reason` / `deduction_reason` / `paid_out_reference` (staff free text)». It is now cleared: `paid_out_note` and `paid_out_reference` → NULL; `cancelled_reason` → the placeholder `Анонимизиран` where `pay_refunds_cancel_check` needs a text (the refund is cancelled), else NULL; `deduction_reason` → the placeholder where `pay_refunds_deduction_check` needs one (`deduction_minor <> 0`), else NULL (the owner's «NULL» is impossible there: the database refuses a deduction without a reason).
-- **The admin block buttons (ACC-4b follow-up).** An anonymised order shows no «Блокирай» / «Отблокирай» for the email, the phone and the IP (it holds placeholders, never an identifier), and the action itself refuses on the server (`OrderBlockActions::anonymised()`; Filament does not mount a hidden action). No extra query: it reads the column already loaded.
-- **Not touched, flagged:** `operational_sales_clients.name` (the client row made from the first order's recipient name; a leftover, owner-confirmed), `order_blocks` (D7). See the ACC-4b report.
-
 ## 5. Housekeeping (scheduled, daily)
 - `privacy:expire-clear-view` — nulls `email`/`phone` in `privacy_requests` past `clear_until`.
-- `privacy:expire-requests` — `awaiting_confirmation` older than 24 h → `expired`, email nulled.
+- `privacy:expire-requests` — `awaiting_confirmation` older than 24 h → `expired`, email nulled. **ACC-4d changes this to 7 days**, so the person has time to click the merchant's confirmation link.
 - `privacy:prune-exports` (ACC-4c) — deletes expired ZIPs, sets status `expired`.
 - `privacy:anonymise-orders` (ACC-4b).
 - `mail:prune-log` — deletes `mail_log` rows older than `privacy.mail_log_retention_days` (default 365, 30..3650).
@@ -136,16 +127,15 @@ Amounts, lines and statuses never change. This is lawful erasure of data whose p
 - `queue:prune-failed --hours=720`.
 - Session GC: confirm `session.lottery` is active (database driver); otherwise schedule a prune.
 
-## 6. Storefront
-- **`/privacy` «Моите лични данни»** (cacheable page, form posts to the API):
-  - email field + honeypot + limiter `PRIVACY_REQUEST` (per IP and per email hash);
-  - always the same answer;
-  - the mail carries a `SignedLink` (purpose `privacy-confirm`, 24 h).
-  - The link opens a no-store page with two buttons. No state change on GET; POST does it. «Забрави ме» needs a second explicit confirmation.
-  - When nothing is stored for the email, the mail says so (only the mailbox owner sees it).
-- **«Данни»** gets «Изтегли данните ми» (password → queued export → mail) and «Изтрий профила» (password → mail link 1 h → confirmation page → POST → `PrivacyEraser`, source `account`, then logout).
-  - The warning about unfinished orders is shown on the confirmation page.
-- New mail templates: `privacy.confirm`, `privacy.export_ready`, `account.delete_confirm` (ACC-4d); `privacy.erased` (ACC-4a).
+## 6. Storefront (revised 2026-11-21 by D2: confirmation only)
+- **No public request page and no buttons in «Данни».**
+- **The only storefront piece is the identity-confirmation page.**
+  - The merchant presses «Поискай потвърждение» in admin. This creates a `privacy_requests` row (`awaiting_confirmation`, kind = what the person asked for) and mails `privacy.confirm` to the email on record.
+  - The mail carries a `SignedLink` (purpose `privacy-confirm`, valid 7 days).
+  - The link opens a no-store page: «Потвърдете, че искането е ваше» with one button. GET changes nothing. POST sets `confirmed` + `confirmed_at`.
+  - Nothing is erased or exported by the click. The merchant acts after seeing «Потвърдено».
+  - Limiter on the POST; the same page for an expired or invalid link.
+- **Mail templates:** `privacy.confirm` (ACC-4d); `privacy.erased` (ACC-4a). `privacy.export_ready` and `account.delete_confirm` are dropped.
 
 ## 7. Admin
 - **Permissions:** `CUSTOMER_VIEW` (list + page) and `PRIVACY_MANAGE` (export, forget, log, manual steps). `PRIVACY_MANAGE` goes to Administrator only by default.
@@ -153,7 +143,7 @@ Amounts, lines and statuses never change. This is lawful erasure of data whose p
   - one row per `email_key` from `orders`, plus accounts without orders;
   - columns per D5; search by name, email, phone; paginated;
   - EXPLAIN in the report, tested at 20 000 orders.
-- **Customer page:** data, addresses (account), orders (link), consents, lists (filter `privacy.customer.lists`), staff note, buttons «Изтегли данните» (ZIP download for the staff member) and «Забрави» (confirmation + required reason).
+- **Customer page:** data, addresses (account), orders (link), consents, lists (filter `privacy.customer.lists`), staff note, buttons «Изтегли данните» (ZIP download for the staff member), «Поискай потвърждение» (§6) and «Забрави» (confirmation + required reason). When a confirmed request exists, its state is shown next to the buttons.
 - **«Поверителност → Дневник»:** the erase requests, a lookup by email (hash), manual-step checkboxes. The list of manual steps is set in Settings (free labels, closed by the merchant).
 - **«Табло» tile:** open erase requests whose clear view is still on and whose manual steps are not all done, with the fewest remaining days.
 - **Settings:** `privacy.order_retention_years`, `privacy.mail_log_retention_days`, the manual-step labels.
@@ -162,8 +152,8 @@ Amounts, lines and statuses never change. This is lawful erasure of data whose p
 ## 8. Packages (one prompt at a time)
 1. **ACC-4a** — tables, `PrivacyHash`, `SuppressionList`, `PrivacyEraser`, `customer.erased` hook (+ hooks doc), the `privacy.erased` mail, housekeeping of §5 except the anonymiser and export pruning, settings keys. No UI. Sonnet.
 2. **ACC-4b** — `Order::anonymise()` + `privacy:anonymise-orders`. Sonnet.
-3. **ACC-4c** — export builder, job, ZIP, signed download, `privacy:prune-exports`. Sonnet.
-4. **ACC-4d** — storefront `/privacy` and «Данни» (export + account deletion), mails. Sonnet.
+3. **ACC-4c** — export builder, queued job, ZIP on the private disk, staff-only download (no customer link), `privacy:prune-exports`. Sonnet.
+4. **ACC-4d** — the confirmation request (service + `privacy.confirm` mail + no-store confirmation page + 7-day expiry). Small; can be merged into ACC-4e if that keeps one prompt manageable. Sonnet.
 5. **ACC-4e** — admin «Клиенти», customer page, log, tile, settings page, permissions. UI agreed first. Sonnet.
 
 CI runs the full suite on each push; locally only targeted tests.
