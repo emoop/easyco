@@ -23,6 +23,7 @@
         .me-danger { color: #dc2626; border-color: #dc2626; }
         .me-link { background: none; border: 0; padding: 0; color: #2563eb; cursor: pointer; text-decoration: underline; }
         .me-panel-head { display: flex; width: 100%; justify-content: space-between; padding: 0.6rem 1rem; background: none; border: 0; border-top: 1px solid rgba(128, 128, 128, 0.3); color: inherit; font-weight: 600; cursor: pointer; text-align: left; }
+        .me-hint { margin: 0 0 0.5rem; font-size: 0.8125rem; opacity: 0.75; white-space: normal; overflow-wrap: anywhere; }
         .me-list-scroll { max-height: 15rem; overflow-y: auto; margin: 0.5rem 0; }
         .me-check { display: flex; gap: 0.4rem; align-items: baseline; padding: 0.15rem 0; }
         .me-tabs { display: flex; gap: 0.75rem; margin-bottom: 0.4rem; }
@@ -143,6 +144,13 @@
                     <div class="me-field"><label for="me-link-text">{{ __('menus.editor.link_text') }}</label><input id="me-link-text" type="text" x-model="linkText" maxlength="120"></div>
                     <button type="button" class="me-btn" x-on:click="addLink()">{{ __('menus.editor.add') }}</button>
                 </div>
+
+                {{-- CC-1: a special link that opens the cookie banner: nothing to type --}}
+                <button type="button" class="me-panel-head" x-on:click="togglePanel('consent')" :aria-expanded="panel === 'consent'">{{ __('menus.editor.panel_consent') }} <span x-text="panel === 'consent' ? '▾' : '▸'"></span></button>
+                <div class="me-body" x-show="panel === 'consent'">
+                    <p class="me-hint">{{ __('menus.editor.consent_hint') }}</p>
+                    <button type="button" class="me-btn" x-on:click="addConsent()">{{ __('menus.editor.add') }}</button>
+                </div>
             </div>
 
             {{-- ---- the structure (right) ---- --}}
@@ -196,7 +204,8 @@
                                 <div class="me-err" style="padding: 0 0.75rem" x-show="item.type === 'column' && fieldError(item, '_item')" x-text="fieldError(item, '_item')"></div>
 
                                 <div class="me-card-body" x-show="open[item.uid] && item.type !== 'column'">
-                                    <div class="me-field">
+                                    <p class="me-hint" x-show="item.type === 'consent'">{{ __('menus.editor.consent_hint') }}</p>
+                                    <div class="me-field" x-show="item.type !== 'consent'">
                                         <label :for="'lab-' + item.uid">{{ __('menus.editor.f_label') }}</label>
                                         <input :id="'lab-' + item.uid" type="text" x-model="item.label" maxlength="120" :placeholder="item.target_name || ''">
                                         <div class="me-err" x-show="fieldError(item, 'label') && item.type !== 'column'" x-text="fieldError(item, 'label')"></div>
@@ -211,9 +220,9 @@
                                     </template>
                                     <div class="me-err" x-show="fieldError(item, 'target_id')" x-text="fieldError(item, 'target_id')"></div>
 
-                                    <label class="me-check"><input type="checkbox" x-model="item.new_tab"> {{ __('menus.editor.f_new_tab') }}</label>
+                                    <label class="me-check" x-show="item.type !== 'consent'"><input type="checkbox" x-model="item.new_tab"> {{ __('menus.editor.f_new_tab') }}</label>
 
-                                    <div class="me-two">
+                                    <div class="me-two" x-show="item.type !== 'consent'">
                                         <div class="me-field">
                                             <label :for="'bt-' + item.uid">{{ __('menus.editor.f_badge') }}</label>
                                             <input :id="'bt-' + item.uid" type="text" x-model="item.badge_text" maxlength="16" placeholder="Sale">
@@ -233,7 +242,7 @@
                                         </div>
                                     </div>
 
-                                    <template x-if="item.depth === 0">
+                                    <template x-if="item.depth === 0 && item.type !== 'consent'">
                                         <div class="me-field">
                                             <label :for="'sm-' + item.uid">{{ __('menus.editor.f_submenu') }}</label>
                                             <select :id="'sm-' + item.uid" x-on:change="changeSubmenu(item, $event)">

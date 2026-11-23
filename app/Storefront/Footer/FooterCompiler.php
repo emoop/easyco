@@ -104,7 +104,8 @@ final class FooterCompiler
                 continue;
             }
 
-            $out[] = ['type' => 'link', 'label' => $item['label'], 'url' => $item['url'], 'new_tab' => $item['new_tab'], 'submenu' => 'none', 'badge' => $item['badge'], 'html' => null, 'children' => []];
+            // CC-1: the `consent` flag («Настройки за бисквитки») is kept: the footer prints it as the other menus do, resolved when the page is read
+            $out[] = ['type' => 'link', 'label' => $item['label'], 'url' => $item['url'], 'new_tab' => $item['new_tab'], 'submenu' => 'none', 'badge' => $item['badge'], 'html' => null, 'children' => []] + (($item['consent'] ?? false) === true ? ['consent' => true] : []);
         }
 
         return $out;

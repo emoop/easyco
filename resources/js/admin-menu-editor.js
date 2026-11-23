@@ -386,6 +386,12 @@ function menuEditor(state) {
             this.linkText = '';
         },
 
+        /** CC-1: «Настройки за бисквитки»: a special link with nothing typed (its text and address are the cookie banner's, resolved when the page is read) */
+        addConsent() {
+            this.message = '';
+            this.add([{ type: 'consent' }]);
+        },
+
         flashItems(uids) {
             uids.forEach((uid) => {
                 this.flash[uid] = true;
@@ -403,10 +409,18 @@ function menuEditor(state) {
         // ---- the cards ----------------------------------------------------------------------------------------------------------------
 
         title(item, index) {
+            if (item.type === 'consent') {
+                return this.t.types.consent;
+            }
+
             return item.type === 'column' ? (item.label && item.label.trim()) || this.columnName(index) : core.displayName(item);
         },
 
         isPlaceholderTitle(item) {
+            if (item.type === 'consent') {
+                return false;
+            }
+
             return item.type === 'column' ? !(item.label && item.label.trim()) : !(item.label && item.label.trim());
         },
 

@@ -158,7 +158,10 @@ final class CompiledMenus
         // The block is cleaned AGAIN on every read: a hand-edited row or cache entry cannot print a script, a style or an event handler.
         $html = $html === null || $item['submenu'] !== 'mega' ? null : HtmlBlockSanitizer::render($html);
 
-        return ['type' => 'link', 'label' => $item['label'], 'url' => $item['url'], 'new_tab' => $item['new_tab'], 'submenu' => $item['submenu'], 'badge' => $badge, 'html' => $html === '' ? null : $html, 'children' => $children];
+        // CC-1: the `consent` flag (a «Настройки за бисквитки» item) is kept as a strict boolean and only when true
+        $consent = (($item['consent'] ?? false) === true) ? ['consent' => true] : [];
+
+        return ['type' => 'link', 'label' => $item['label'], 'url' => $item['url'], 'new_tab' => $item['new_tab'], 'submenu' => $item['submenu'], 'badge' => $badge, 'html' => $html === '' ? null : $html, 'children' => $children] + $consent;
     }
 
     /** @return array<string, mixed>|null a column of a mega item: an optional heading and its links */

@@ -116,7 +116,7 @@ final class StorefrontAppearance
 
         $cached = Cache::get(self::CACHE_KEY);
 
-        if (is_array($cached) && array_key_exists('theme', $cached) && array_key_exists('compiled', $cached) && array_key_exists('header', $cached) && array_key_exists('menus', $cached) && array_key_exists('locations', $cached) && array_key_exists('footer', $cached) && array_key_exists('design', $cached) && array_key_exists('page', $cached) && array_key_exists('catalog', $cached) && array_key_exists('sidebar', $cached) && array_key_exists('badges', $cached) && is_array($cached['banner'] ?? null)) {
+        if (is_array($cached) && array_key_exists('theme', $cached) && array_key_exists('compiled', $cached) && array_key_exists('header', $cached) && array_key_exists('menus', $cached) && array_key_exists('locations', $cached) && array_key_exists('footer', $cached) && array_key_exists('design', $cached) && array_key_exists('page', $cached) && array_key_exists('catalog', $cached) && array_key_exists('sidebar', $cached) && array_key_exists('badges', $cached) && array_key_exists('cookies', $cached) && is_array($cached['banner'] ?? null)) {
             return $this->data = $cached;
         }
 
@@ -179,6 +179,8 @@ final class StorefrontAppearance
             'badges' => is_string($raw[AppearanceSettings::BADGES_KEY] ?? null) ? $raw[AppearanceSettings::BADGES_KEY] : null,
             // GAP-1: the published «Страници и карти» JSON (validated again when read: catalogGapX); the card grid's horizontal gap reaches the image `sizes` from here, with no query of its own
             'page' => is_string($raw[AppearanceSettings::PAGE_DESIGN_KEY] ?? null) ? $raw[AppearanceSettings::PAGE_DESIGN_KEY] : null,
+            // CC-1: the cookie banner (null while it is off): the settings, the texts of every shop language and the policy link; the colour rides on the token stylesheet
+            'cookies' => \App\Settings\CookieSettings::payload($raw),
         ];
     }
 
@@ -339,7 +341,8 @@ final class StorefrontAppearance
      */
     public function menus(): array
     {
-        return $this->menus ??= CompiledMenus::read($this->data()['menus']);
+        // CC-1: a `consent` item is resolved here (the banner's text, the policy page's URL; dropped while the banner is off)
+        return $this->menus ??= \App\Storefront\Cookies\CookieMenuLink::apply(CompiledMenus::read($this->data()['menus']), $this->cookies());
     }
 
     /** One compiled menu by key ([] when there is none). @return list<array<string, mixed>> */
@@ -398,7 +401,7 @@ final class StorefrontAppearance
             }
         }
 
-        return $this->footerPrepared = FooterView::prepare($validation->layout, CompiledMenus::read($stored['menus']), $blocks);
+        return $this->footerPrepared = FooterView::prepare($validation->layout, \App\Storefront\Cookies\CookieMenuLink::apply(CompiledMenus::read($stored['menus']), $this->cookies()), $blocks);
     }
 
     /**
@@ -811,6 +814,31 @@ final class StorefrontAppearance
         return ['text' => $banner['text'], 'url' => $banner['url'], 'label' => $banner['label']];
     }
 
+    /** CC-1: is a «Настройки за бисквитки» item shown in the header, the drawer or the footer (what a guest sees)? The same scan the layout uses; no query of its own. */
+    public function cookieMenuLinkShown(): bool
+    {
+        return (bool) $this->forLayout()['cookieMenuLink'];
+    }
+
+    /**
+     * CC-1: the cookie banner for the page's language, or null while it is off. The texts of the page's language (per key: stored, else the shipped default: never empty).
+     *
+     * @return array<string, mixed>|null
+     */
+    public function cookies(): ?array
+    {
+        $payload = $this->data()['cookies'] ?? null;
+
+        if (! is_array($payload)) {
+            return null;
+        }
+
+        $locale = app()->getLocale();
+        $payload['texts'] = $payload['texts'][$locale] ?? \App\Settings\CookieSettings::resolveTexts([], $locale);
+
+        return $payload;
+    }
+
     /**
      * What the layout needs: the token stylesheet's URL, the font to preload (the body font's latin file only) and the banner.
      *
@@ -819,15 +847,22 @@ final class StorefrontAppearance
     public function forLayout(): array
     {
         $compiled = $this->compiled();
+        $header = HeaderView::prepare($this->header(), $this->menuAt('header'), $this->menuAt('drawer') ?: $this->menuAt('header'));
+        $footerMenu = $this->menuAt('footer');
+        $footer = $this->footer();
 
         return [
             'tokensUrl' => $compiled === null ? null : '/storage/'.\App\Storefront\Appearance\AppearanceCompiler::DIRECTORY.'/tokens-'.$compiled['hash'].'.css',
             'preloadFont' => $compiled === null || $compiled['body'] === null ? null : '/fonts/storefront/'.$compiled['body'].'/'.($compiled['preload'] ?? $compiled['body'].'-latin-wght-normal.woff2'),
             'banner' => $this->banner(),
-            'header' => HeaderView::prepare($this->header(), $this->menuAt('header'), $this->menuAt('drawer') ?: $this->menuAt('header')),
-            'footerMenu' => $this->menuAt('footer'),
-            'footer' => $this->footer(),
+            'header' => $header,
+            'footerMenu' => $footerMenu,
+            'footer' => $footer,
+            // CC-1: does what the layout is about to print (the header with its drawer, the footer: its blocks, or the old footer's menu) hold a «Настройки за бисквитки» item? No: the fallback strip is printed.
+            'cookieMenuLink' => \App\Storefront\Cookies\CookieMenuLink::present([$header, $footer ?? $footerMenu]),
             'previewCss' => $this->previewCss,
+            // CC-1: the banner of the shop's language (null = off): identical for every visitor, the cookie is never read here
+            'cookies' => $this->cookies(),
             // DS-2b: the simplified header of the cart, the checkout and the order-received page; `forced` = the Design screen's preview, which is not one of those routes
             'checkoutHeader' => $this->checkoutHeader(),
             'checkoutHeaderForced' => $this->checkoutHeaderOverride !== false,

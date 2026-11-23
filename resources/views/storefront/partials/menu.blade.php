@@ -4,7 +4,7 @@
     @foreach ($nodes as $node)
         @if ($node['type'] === 'link')
             <li class="sf-menu-item">
-                <a class="sf-menu-link" href="{{ $node['url'] }}"@if ($node['new_tab']) target="_blank" rel="noopener"@endif>{{ $node['label'] }}@include('storefront.partials.menu-badge', ['badge' => $node['badge']])</a>
+                <a class="sf-menu-link" href="{{ $node['url'] }}"{!! empty($node['consent']) ? '' : ' data-consent-open' !!}@if ($node['new_tab']) target="_blank" rel="noopener"@endif>{{ $node['label'] }}@include('storefront.partials.menu-badge', ['badge' => $node['badge']])</a>
                 @if ($node['children'] !== [])
                     @include('storefront.partials.menu', ['nodes' => $node['children']])
                 @endif
