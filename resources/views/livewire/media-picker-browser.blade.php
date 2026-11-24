@@ -58,7 +58,7 @@
                                     @elseif ($thumb !== null)
                                         <img src="{{ $thumb }}" alt="{{ $row->alt_text }}" loading="lazy" decoding="async" width="150" height="150">
                                     @else
-                                        <span class="mp-wait" role="status" aria-live="polite"><span class="mu-spin" aria-hidden="true"></span>{{ __('media.library.state.processing') }}</span>
+                                        <span class="mp-wait" @if (\App\Media\ProcessingWindow::waiting($row)) role="status" aria-live="polite" @endif>@if (\App\Media\ProcessingWindow::waiting($row))<span class="mu-spin" aria-hidden="true"></span>@endif{{ __('media.library.state.processing') }}</span>
                                     @endif
                                     @if ($minWidth !== null && ($row->width === null || $row->height === null))
                                         <span class="mp-note">{{ __('media.picker.unknown_size') }}</span>
@@ -88,7 +88,7 @@
                                 <img src="{{ $currentPreview }}" alt="{{ $current->alt_text }}" decoding="async">
                             @else
                                 {{-- MEDIA-UP-1: a picture that FAILED (or whose file is gone) says so; only a real «обработва се» keeps the waiting text --}}
-                                <span class="mp-wait" role="status" aria-live="polite">@unless (in_array($currentState, ['failed', 'missing'], true))<span class="mu-spin" aria-hidden="true"></span>@endunless{{ __('media.library.state.'.(in_array($currentState, ['failed', 'missing'], true) ? $currentState : 'processing')) }}</span>
+                                <span class="mp-wait" role="status" aria-live="polite">@if ($currentWaiting)<span class="mu-spin" aria-hidden="true"></span>@endif{{ __('media.library.state.'.(in_array($currentState, ['failed', 'missing'], true) ? $currentState : 'processing')) }}</span>
                             @endif
                         </div>
                         <p class="mp-name">{{ $current->original_name ?: basename((string) $current->path) }}</p>

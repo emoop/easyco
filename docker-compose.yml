@@ -163,7 +163,7 @@ services:
     user: www-data
     # --queue is REQUIRED: customer-account and order mails are queued on `mail-transactional` (marketing: `mail-marketing`); a worker without it serves only `default` and those mails wait
     # unsent forever (production-requirements.md). The order is the priority: a campaign never delays an order confirmation.
-    command: ["php", "artisan", "queue:work", "--queue=mail-transactional,default,mail-marketing", "--tries=3", "--max-time=3600", "--sleep=3", "--timeout=${QUEUE_WORKER_TIMEOUT:-90}"]
+    command: ["php", "artisan", "queue:work", "--queue=mail-transactional,default,mail-marketing", "--tries=3", "--max-time=3600", "--sleep=1", "--timeout=${QUEUE_WORKER_TIMEOUT:-90}"]
     environment:
       <<: *laravel-env
     volumes:

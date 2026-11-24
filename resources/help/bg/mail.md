@@ -74,6 +74,6 @@ SMTP е стандартният начин, по който една прогр
 
 Процесът трябва да се стартира с изброени пощенските опашки, в този ред (първата се обслужва първа):
 
-`php artisan queue:work database --queue=mail-transactional,default,mail-marketing --sleep=3 --tries=3 --max-time=3600`
+`php artisan queue:work database --queue=mail-transactional,default,mail-marketing --sleep=1 --tries=3 --max-time=3600`
 
 Без частта `--queue` процесът обслужва само основната опашка и имейлите за поръчки чакат безкрайно. След всяко обновяване на магазина изпълнете `php artisan queue:restart`, за да зареди процесът новия код. Това може да направи администраторът на сървъра или поддръжката на хостинга.
