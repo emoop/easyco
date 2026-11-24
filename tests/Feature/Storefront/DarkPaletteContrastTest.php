@@ -74,6 +74,19 @@ class DarkPaletteContrastTest extends TestCase
         }
     }
 
+    public function test_a_status_text_is_readable_on_the_page_and_on_the_cards_too(): void
+    {
+        // a status text is also used WITHOUT its box (a line under a cart row, a promo badge): on the page, the card and the lighter card step
+        $palette = $this->palette();
+
+        foreach (['error', 'warn', 'info', 'ok'] as $family) {
+            foreach (['--sf-bg', '--sf-surface', '--sf-surface-2'] as $surface) {
+                $ratio = Contrast::ratio($this->colour($palette, "--sf-status-{$family}-text"), $this->colour($palette, $surface));
+                $this->assertGreaterThanOrEqual(Contrast::TEXT_MIN, $ratio, "the {$family} text on {$surface} is {$ratio}:1");
+            }
+        }
+    }
+
     public function test_the_text_pinned_for_a_light_element_is_readable_on_that_light_element(): void
     {
         // the size strip over a card picture (white at 90% over the light frame) and, later, the gallery arrow: a white or very light ground in dark mode too
