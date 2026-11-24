@@ -1,6 +1,11 @@
 {{-- The modal of the media picker (ML-2): app/Livewire/MediaPickerBrowser.php. Two tabs, one search, one toggle, a grid of squares, a narrow column for the selected picture, a bottom bar with
      «Отказ» and «Избери». Every control is a real <button> or <input>; every printed value is escaped. --}}
 <div class="mp">
+    {{-- MEDIA-UP-1: while a listed picture still waits for the queue (and was uploaded minutes ago, not hours) the modal asks for a new render every 3 s; `.visible`: only while the modal is on screen. --}}
+    @if ($waiting)
+        <div wire:poll.visible.3s class="mp-poll" aria-hidden="true"></div>
+    @endif
+
     <div class="mp-tabs" role="tablist">
         <button type="button" role="tab" id="mp-tab-library" aria-selected="{{ $tab === 'library' ? 'true' : 'false' }}" class="mp-tab @if ($tab === 'library') mp-tab-on @endif" wire:click="showTab('library')">{{ __('media.picker.tab_library') }}</button>
         <button type="button" role="tab" id="mp-tab-upload" aria-selected="{{ $tab === 'upload' ? 'true' : 'false' }}" class="mp-tab @if ($tab === 'upload') mp-tab-on @endif" wire:click="showTab('upload')">{{ __('media.picker.tab_upload') }}</button>
@@ -82,7 +87,8 @@
                             @elseif ($currentPreview !== null)
                                 <img src="{{ $currentPreview }}" alt="{{ $current->alt_text }}" decoding="async">
                             @else
-                                <span class="mp-wait">{{ __('media.library.state.processing') }}</span>
+                                {{-- MEDIA-UP-1: a picture that FAILED (or whose file is gone) says so; only a real «обработва се» keeps the waiting text --}}
+                                <span class="mp-wait">{{ __('media.library.state.'.(in_array($currentState, ['failed', 'missing'], true) ? $currentState : 'processing')) }}</span>
                             @endif
                         </div>
                         <p class="mp-name">{{ $current->original_name ?: basename((string) $current->path) }}</p>
