@@ -1,6 +1,6 @@
-# Storefront dark mode (DM-1: the foundation, DM-2a: the neutral scale and the shell, DM-2b: the catalogue)
+# Storefront dark mode (DM-1: the foundation, DM-2a: the neutral scale and the shell, DM-2b: the catalogue, DM-2c: the product page)
 
-Status: **DM-1, DM-2a and DM-2b are done, behind a dev flag. The shell (header, menus, drawer, footer, banner, the base form controls), the neutral scale and the catalogue (cards, filters, sort, pagination, category tiles, the listing cloud) are migrated; the product page, the cart / checkout and the account area are NOT yet**, so with the switch on those pages still show white cards (with now light text on them) until DM-2c..e. Background and the full inventory: `dark-mode-inventory.md`.
+Status: **DM-1, DM-2a, DM-2b and DM-2c are done, behind a dev flag. The shell, the neutral scale, the catalogue and the product page (gallery, selects, swatches, description, tables, the lightbox) are migrated; the cart / checkout / order-received and the account area are NOT yet**, so with the switch on those pages still show white cards (with now light text on them) until DM-2d and DM-2e. Background and the full inventory: `dark-mode-inventory.md`.
 
 ## What the merchant gets
 
@@ -77,9 +77,24 @@ New tokens and their light fallbacks: `--sf-surface #ffffff`, `--sf-surface-2 #f
 - **Chevrons**: the sort dropdown and the bar controls draw their arrow with borders in `currentColor`, so they follow the text; there is no data-URI chevron in the catalogue (the one at the «no image» placeholder is a mid-grey picture on the always-light frame). Nothing to change.
 - **New tokens (3):** `--sf-on-light`, `--sf-on-light-muted` (the text on something that keeps a light ground), `--sf-swatch-edge`.
 
+## DM-2c: the product page
+
+**Light mode is unchanged** (the same proof as DM-2a/2b on the built stylesheet: 2013 rules compared, none changed). Re-pointed colours keep the old literal as the fallback; nothing in light mode defines the new tokens (the compiler emits only the 13 base tokens and the zone variables), so the fallback is always what applies.
+
+- **The gallery arrow disc** keeps its white (`dm-keeps-white`); its glyph is pinned with `var(--sf-on-light, var(--color-neutral-900))` (before: `text-neutral-900`, the merchant's text colour, which is white in dark). The **play triangle** of a video thumbnail drew with `--sf-text` on the always-light frame (white on light grey in dark): it uses `var(--sf-on-light, var(--sf-text, …))`; found in 2c, not in the table.
+- **Selects** (`.sf-variation-select`, `.sf-picker-select`): `bg-surface`. They have NO data-URI chevron (only the checkout / account `select` has, done in 2a): the native arrow follows `color-scheme: dark`, and the base layer gives the text its colour.
+- **Swatches.** The swatch dot's inner edge uses `--sf-swatch-edge` (the same classification as the catalogue's colour circle). The ring around a SELECTED swatch (`0 0 0 3px var(--sf-bg, #fafafa)`) already was the page background token, so it follows the page: nothing to do. The diagonal cross over an unavailable swatch (`#737373`) is mid-grey on a half-transparent swatch: kept.
+- **«Pick a value» error** (`.sf-picker.is-missing`): `var(--sf-error, #b91c1c)` (the hard-coded error red; the token's light fallback is the very same value). The `--sf-status-*` tokens are for boxes; this is a text and an outline colour.
+- **Text links** in the description / accordion / tabs: new token `--sf-link` (light: Tailwind `sky-700` as before; dark `#38bdf8`, 9:1 on black; `sky-700` is 2.9:1). The cart's links (`sky-800`, 2d) will use it with their own fallback.
+- **The inverted pill `bg-neutral-900 text-white`** is NOT on the product page: it is `.sf-acc-badge` (the account area's «default» pill, row `2e`), so it is left for DM-2e. Findings for it: in dark `bg-neutral-900` is the text token (white) and `text-white` stays white = white on white; it needs a fill/text pair of its own. The only other white-on-black pairs are the lightbox controls: fixed literals (`bg-black/60`, `text-white`), readable on the scrim and on the picture in both modes, so they were kept.
+- **The lightbox**: the scrim `rgb(0 0 0 / .88)` is already dark in both modes; `--sf-overlay` would be LIGHTER in dark (`.7`) and `::backdrop` does not inherit custom properties in every browser, so it is kept. The white focus ring is on the dark scrim in both modes. The picture is never put on a dark frame.
+- **Description tables and the measurements list**: dark-only rules (unlayered, at the end of the file): the scroll shadow of `.sf-table-wrap` is drawn light (a black shadow is invisible on black); the dashed hairlines of `.sf-meas-list` (`#ddd`) take `--sf-border`. The sticky first column already follows `--sf-bg`.
+- **No shadow** on the product page needed removing: the gallery disc keeps its small shadow (it floats over a picture); no sticky bar, popover or zoom panel carries a colour of its own.
+- **New token (1):** `--sf-link`. `--sf-on-light`, `--sf-on-light-muted` and `--sf-swatch-edge` (from 2b) are reused.
+
 ## Areas
 
-Where every raw colour of `storefront.css` belongs (the hits of inventory A1/A2: `bg-white`, literal white backgrounds, the unmapped neutral steps, the hard-coded focus / error colours, drop shadows, scrims, status utilities, other raw hex without a variable fallback). `Line` is the line in the current file. A rule shared by several areas is put in **2a**. **Rows: 2a 18, 2b 39, 2c 20, 2d 80, 2e 24, left for DM-4 17.** A row marked "done" is finished. The scale remap (the neutral steps) is done everywhere and flips by itself, so for the other areas such a row needs only a look; what remains there are the white cards, the status boxes, the error rings and the scrims.
+Where every raw colour of `storefront.css` belongs (the hits of inventory A1/A2: `bg-white`, literal white backgrounds, the unmapped neutral steps, the hard-coded focus / error colours, drop shadows, scrims, status utilities, other raw hex without a variable fallback). `Line` is the line in the current file. A rule shared by several areas is put in **2a**. **Rows: 2a 18, 2b 39, 2c 21, 2d 80, 2e 24, left for DM-4 17.** A row marked "done" is finished. The scale remap (the neutral steps) is done everywhere and flips by itself, so for the other areas such a row needs only a look; what remains there are the white cards, the status boxes, the error rings and the scrims.
 
 | Area | Selector | Line | What it is | Needs | Status |
 |---|---|---|---|---|---|
@@ -137,25 +152,26 @@ Where every raw colour of `storefront.css` belongs (the hits of inventory A1/A2:
 | 2b | `.sf-category-tile-link:hover, .sf-category-tile-link:focus-v` | 3762 | category tile | dark: no hover shadow (the 1px border stays) | done (dark-only rule) |
 | 2b | `.sf-subject-pic` | 6638 | subject (brand) picture frame | **keeps white** (a picture frame, no text on it) | done (kept white) |
 | 2c | `.sf-gal-placeholder` | 1751 | «no image» gallery frame | **frame**: `bg-image-frame` (same light value in dark) | done (frame) |
-| 2c | `.sf-gal-next` | 1795 | gallery arrow disc | **keeps white** (a disc/strip over a light picture); its text must be pinned dark when it is migrated | → 2c |
+| 2c | `.sf-gal-next` | 1795 | gallery arrow disc | **keeps white** (a disc over the picture); the glyph is pinned dark: `--sf-on-light` (old value as the light fallback) | done (kept white) |
 | 2c | `.sf-gal-thumb` | 1804 | gallery thumbnail frame | **frame**: `bg-image-frame` (same light value in dark) | done (frame) |
-| 2c | `.sf-lightbox::backdrop` | 1951 | picture lightbox | `--sf-overlay` (or a scrim of its own) | → 2c |
-| 2c | `.sf-lightbox-close, .sf-lightbox-prev, .sf-lightbox-next` | 1967 | picture lightbox | `--sf-overlay` (or a scrim of its own) | → 2c |
-| 2c | `.sf-lightbox-count` | 1988 | picture lightbox | `--sf-overlay` (or a scrim of its own) | → 2c |
-| 2c | `.sf-lightbox :focus-visible` | 1992 | picture lightbox | `var(--sf-surface, #fff)` (or keep white) | → 2c |
-| 2c | `.sf-variation-label` | 2118 | variation select/label | scale remap (done in 2a, flips by itself) | → 2c |
-| 2c | `.sf-variation-select` | 2122 | variation select/label | `bg-surface`; scale remap (done in 2a, flips by itself) | → 2c |
-| 2c | `.sf-add-to-cart:disabled` | 2134 | disabled buy button | none (border token; #262626 in dark) | → 2c |
-| 2c | `.sf-picker-select` | 2194 | variation select | `bg-surface` | → 2c |
-| 2c | `.sf-swatch-dot` | 2205 | swatch | `--sf-overlay` (or a scrim of its own) | → 2c |
-| 2c | `.sf-swatch[aria-disabled='true']::after` | 2260 | swatch | token or keep | → 2c |
-| 2c | `.sf-picker.is-missing .sf-picker-label` | 2265 | «pick a value» error | `--sf-focus` / `--sf-error` | → 2c |
-| 2c | `.sf-picker.is-missing .sf-picker-values` | 2269 | «pick a value» error | `--sf-focus` / `--sf-error` | → 2c |
-| 2c | `:is(.sf-description, .sf-psec-body, .sf-ptab-panel) :where(p` | 2371 | product description text | scale remap (done in 2a, flips by itself) | → 2c |
-| 2c | `:is(.sf-description, .sf-psec-body, .sf-ptab-panel) :where(a` | 2395 | product description text | `--sf-status-*` tokens | → 2c |
-| 2c | `.sf-table-wrap` | 2420 | description table | `--sf-overlay` (or a scrim of its own) | → 2c |
-| 2c | `.sf-meas-list > div` | 2486 | measurements list | token or keep | → 2c |
-| 2c | `.sf-meas-list > div:first-child` | 2490 | measurements list | token or keep | → 2c |
+| 2c | `.sf-lightbox::backdrop` | 1951 | picture lightbox | **kept as is**: already a dark scrim in both modes (`.88`); `--sf-overlay` is lighter in dark (`.7`) and `::backdrop` does not inherit custom properties everywhere | done (kept) |
+| 2c | `.sf-lightbox-close, .sf-lightbox-prev, .sf-lightbox-next` | 1967 | picture lightbox | **kept as is**: `bg-black/60` + `text-white` are fixed literals, readable on the scrim and on the picture in both modes | done (kept) |
+| 2c | `.sf-lightbox-count` | 1988 | picture lightbox | **kept as is**: `bg-black/60` + `text-white` are fixed literals, readable on the scrim and on the picture in both modes | done (kept) |
+| 2c | `.sf-lightbox :focus-visible` | 1992 | picture lightbox | **kept as is**: a white ring on a dark scrim in both modes | done (kept) |
+| 2c | `.sf-variation-label` | 2118 | variation select/label | scale remap (done in 2a, flips by itself) | done (scale remap) |
+| 2c | `.sf-variation-select` | 2122 | variation select/label | `bg-surface`; scale remap; the native arrow follows `color-scheme: dark` (no data-URI here) | done |
+| 2c | `.sf-add-to-cart:disabled` | 2134 | disabled buy button | none (`bg-neutral-200` is the border token `#262626`, its text the muted token: readable) | done (looked at) |
+| 2c | `.sf-picker-select` | 2194 | variation select | `bg-surface`; the native arrow follows `color-scheme: dark` | done |
+| 2c | `.sf-swatch-dot` | 2205 | swatch | the swatch edge: `--sf-swatch-edge` | done |
+| 2c | `.sf-swatch[aria-disabled='true']::after` | 2260 | swatch | **kept as is**: a mid-grey cross (`#737373`) over a half-transparent swatch, visible on any colour | done (kept) |
+| 2c | `.sf-picker.is-missing .sf-picker-label` | 2265 | «pick a value» error | `--sf-error` (its light fallback is the same `#b91c1c`) | done |
+| 2c | `.sf-picker.is-missing .sf-picker-values` | 2269 | «pick a value» error | `--sf-error` (its light fallback is the same `#b91c1c`) | done |
+| 2c | `:is(.sf-description, .sf-psec-body, .sf-ptab-panel) :where(p` | 2371 | product description text | scale remap (done in 2a, flips by itself) | done (scale remap) |
+| 2c | `:is(.sf-description, .sf-psec-body, .sf-ptab-panel) :where(a` | 2395 | product description text | `--sf-link` (light fallback: Tailwind `sky-700`, as before) | done |
+| 2c | `.sf-table-wrap` | 2420 | description table | dark-only rule: the scroll shadow is drawn light (a black one is invisible on black) | done (dark-only rule) |
+| 2c | `.sf-meas-list > div` | 2486 | measurements list | dark-only rule: the dashed hairline takes `--sf-border` | done (dark-only rule) |
+| 2c | `.sf-meas-list > div:first-child` | 2490 | measurements list | dark-only rule: the dashed hairline takes `--sf-border` | done (dark-only rule) |
+| 2c | `.sf-gal-thumb[data-gal-kind='video']::after` | 1832 | the play triangle on a video thumbnail | the triangle follows `--sf-text` (white in dark) on the always-light frame = invisible: now `var(--sf-on-light, var(--sf-text, …))` | done (found in 2c) |
 | 2d | `.sf-cart-status` | 2747 | cart status line | scale remap (done in 2a, flips by itself) | → 2d |
 | 2d | `.sf-cart-status-link` | 2753 | cart status line | `--sf-status-*` tokens | → 2d |
 | 2d | `.sf-cart-noscript` | 2770 | no-JS notice | `--sf-status-*` tokens | → 2d |
@@ -282,7 +298,7 @@ Where every raw colour of `storefront.css` belongs (the hits of inventory A1/A2:
 | DM-4 | `.sf-cc-switch::after` | 7330 | cookie banner / dialog (DM-4) | allow-listed in the ratchet until DM-4 | DM-4 |
 | DM-4 | `.sf-cc-switch::after` | 7331 | cookie banner / dialog (DM-4) | allow-listed in the ratchet until DM-4 | DM-4 |
 
-Notes for the next steps: the `.sf-card-sizes` strip and the `.sf-gal-next` disc keep white (above). The status boxes (`bg-red-50 text-red-900 …`) go to the `--sf-status-*` tokens in **2d** (they also appear in 2c: `.sf-picker.is-missing`, and in 2e: `.sf-account-status`). The select chevron of the variation / picker selects (2c) and of the sort dropdown (2b) is the same data-URI as the shell's: draw it light in dark mode. The gallery arrow disc (2c) reuses `--sf-on-light*` and `--sf-swatch-edge` (the swatch dot of the product page). The hero / HTML-block colour classes (`.sf-pc-*`), the cookie dialog and the menu badges' own colour pairs are DM-4.
+Notes for the next steps: the `.sf-card-sizes` strip and the `.sf-gal-next` disc keep white (above). The status boxes (`bg-red-50 text-red-900 …`) go to the `--sf-status-*` tokens in **2d** (they also appear in 2c: `.sf-picker.is-missing`, and in 2e: `.sf-account-status`). The select chevron of the variation / picker selects (2c) and of the sort dropdown (2b) is the same data-URI as the shell's: draw it light in dark mode. The hero / HTML-block colour classes (`.sf-pc-*`), the cookie dialog and the menu badges' own colour pairs are DM-4.
 
 ## Cache
 
@@ -290,7 +306,7 @@ Notes for the next steps: the `.sf-card-sizes` strip and the `.sf-gal-next` disc
 
 ## Still missing
 
-- **DM-2c..e** (DM-2a and DM-2b are done: the scale, the base, the shell and the catalogue) — move the remaining raw colours onto the tokens, area by area, using the Areas table: 2c the product page (summary, selects, buy button, the `bg-neutral-900 text-white` pill, the lightbox), 2d cart + checkout + order-received (status boxes, error and focus rings), 2e the account area. Then remove the dev flag.
+- **DM-2d..e** (DM-2a, 2b and 2c are done: the scale, the base, the shell, the catalogue and the product page) — 2d cart + checkout + order-received (the white cards, the status boxes onto `--sf-status-*`, the error and focus rings, the scrims, the cart text links onto `--sf-link`), 2e the account area (with the `bg-neutral-900 text-white` pill). Then remove the dev flag.
 - **DM-3** — assets: `logo.dark` printed by the storefront, the image-frame rule, payment icons, badges.
 - **DM-4** — merchant-colour components: HTML blocks, hero text colours, header/footer rows, the cookie banner dialog, admin warnings for clashes.
 - **DM-5** — third-party surfaces (none exist today).

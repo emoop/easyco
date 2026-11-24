@@ -42,7 +42,7 @@ class DarkPaletteContrastTest extends TestCase
     {
         $palette = $this->palette();
         $surfaces = ['--sf-bg', '--sf-surface', '--sf-surface-2'];
-        $texts = ['--sf-text', '--sf-muted', '--sf-n500', '--sf-n700', '--sf-n800', '--sf-accent', '--sf-error'];
+        $texts = ['--sf-text', '--sf-muted', '--sf-n500', '--sf-n700', '--sf-n800', '--sf-accent', '--sf-error', '--sf-link'];
 
         foreach ($surfaces as $surface) {
             foreach ($texts as $text) {
