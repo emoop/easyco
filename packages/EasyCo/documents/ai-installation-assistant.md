@@ -45,7 +45,7 @@ Your job is to walk the person through **installation** (composer install, envir
      - **Linux production:** use Supervisor — the standard, Laravel-documented way to keep `php artisan queue:work` running and auto-restarted. (NSSM has no role here; it's Windows-only.) A minimal config looks like:
        ```
        [program:easyco-queue-worker]
-       command=php /path/to/artisan queue:work database --queue=mail-transactional,default,mail-marketing --sleep=3 --tries=3 --max-time=3600
+       command=php /path/to/artisan queue:work database --queue=mail-transactional,default,mail-marketing --sleep=1 --tries=3 --max-time=3600
        autostart=true
        autorestart=true
        numprocs=1

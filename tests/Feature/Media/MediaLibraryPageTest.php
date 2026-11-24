@@ -4,6 +4,7 @@ namespace Tests\Feature\Media;
 
 use App\Filament\Resources\MediaResource;
 use App\Filament\Resources\MediaResource\Pages\ListMedia;
+use App\Media\ProcessingWindow;
 use App\Content\HtmlBlocks\HtmlBlockModel;
 use EasyCo\Catalog\Contracts\ProductRepository;
 use EasyCo\Catalog\Persistence\Eloquent\BrandModel;
@@ -382,6 +383,26 @@ class MediaLibraryPageTest extends TestCase
 
         $this->asset(['processing_status' => 'failed', 'variants' => null]);
         $this->assertSame(1, substr_count(Livewire::test(ListMedia::class)->html(), 'class="mu-spin"'), 'a failed card has no ring: only the processing one');
+    }
+
+    public function test_the_page_stops_polling_for_a_row_that_has_waited_longer_than_the_window_but_still_polls_for_a_fresh_one(): void
+    {
+        $this->actingAsStaff('Administrator');
+        $stuck = $this->asset(['processing_status' => 'pending', 'variants' => null]);
+
+        $this->assertTrue(Livewire::test(ListMedia::class)->instance()->somethingIsProcessing());
+
+        $this->travel(ProcessingWindow::MINUTES + 1)->minutes();
+        $html = (string) preg_replace('/<!--.*?-->/s', '', Livewire::test(ListMedia::class)->html());
+
+        $this->assertFalse(Livewire::test(ListMedia::class)->instance()->somethingIsProcessing(), 'stuck for more than the window: the page does not poll for ever');
+        $this->assertStringNotContainsString('wire:poll', $html);
+        $this->assertStringNotContainsString('mu-spin', $html, 'no ring after the window, like the picker');
+        $this->assertStringContainsString('Обработва се', $html, 'the card still says what it is');
+
+        $this->asset(['processing_status' => 'pending', 'variants' => null]);
+        $this->assertStringContainsString('wire:poll.2s', Livewire::test(ListMedia::class)->html(), 'a fresh waiting row makes it poll again');
+        $this->assertNotNull($stuck->fresh());
     }
 
     public function test_right_after_an_upload_the_page_polls_while_the_new_picture_waits_for_the_queue_and_stops_when_it_is_done(): void

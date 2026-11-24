@@ -74,6 +74,6 @@ Order emails are not sent while the customer waits. They are put in a queue and 
 
 The worker must be started with the mail queues listed, in this order (the first is served first):
 
-`php artisan queue:work database --queue=mail-transactional,default,mail-marketing --sleep=3 --tries=3 --max-time=3600`
+`php artisan queue:work database --queue=mail-transactional,default,mail-marketing --sleep=1 --tries=3 --max-time=3600`
 
 Without the `--queue` part the worker serves only the default queue and order emails wait forever. After every update of the shop, run `php artisan queue:restart` so the worker loads the new code. Your server administrator or hosting support can do this.

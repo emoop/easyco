@@ -13,7 +13,9 @@
         @elseif ($state === 'video')
             <x-filament::icon icon="heroicon-o-film" class="ml-icon" />
         @else
-            <span class="ml-state" @if ($state === 'processing') role="status" aria-live="polite" @endif>@if ($state === 'processing')<span class="mu-spin" aria-hidden="true"></span>@endif{{ __('media.library.state.'.$state) }}</span>
+            {{-- MEDIA-UP-3: the ring and the live region only while the picture is inside the processing window (a row stuck for longer keeps the plain text, like the picker's tile) --}}
+            @php($turning = $state === 'processing' && \App\Media\ProcessingWindow::waiting($asset))
+            <span class="ml-state" @if ($turning) role="status" aria-live="polite" @endif>@if ($turning)<span class="mu-spin" aria-hidden="true"></span>@endif{{ __('media.library.state.'.$state) }}</span>
         @endif
     </div>
     <div class="ml-meta">

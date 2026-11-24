@@ -10,12 +10,24 @@
     $multiple = $isMultiple();
     $isVideo = $isVideo();
     $removeLabel = __($isVideo ? 'media.picker.remove_video' : 'media.picker.remove_image');
+    // MEDIA-UP-3: a picture that still waits for the queue (inside ProcessingWindow) turns a ring; a failed or missing one says so, with no ring. The ids that wait go to the watcher below.
+    $waiting = fn ($asset): bool => $asset !== null && \App\Media\ProcessingWindow::waiting($asset);
+    $waitLabel = function ($asset): string {
+        if ($asset === null) {
+            return __('media.picker.missing');
+        }
+
+        $state = \App\Filament\Resources\MediaResource::stateOf($asset);
+
+        return __('media.library.state.'.(in_array($state, ['failed', 'missing'], true) ? $state : 'processing'));
+    };
+    $waitingIds = array_values(array_filter($ids, fn ($id): bool => $waiting($assets[$id] ?? null)));
 @endphp
 @once
     @vite('resources/css/media-picker.css')
 @endonce
 <x-dynamic-component :component="$getFieldWrapperView()" :field="$field">
-    <div class="mpf" x-data>
+    <div class="mpf" x-data x-on:media-field-settled.window="if ($event.detail.field === @js($statePath)) $wire.$refresh()">
         @if ($ids === [])
             <div class="mpf-empty">
                 <span class="mpf-none">{{ $getEmptyText() ?? __($multiple ? 'media.picker.none_many' : ($isVideo ? 'media.picker.none_video' : 'media.picker.none')) }}</span>
@@ -34,7 +46,7 @@
                     @elseif ($thumb !== null)
                         <img src="{{ $thumb }}" alt="{{ $asset->alt_text }}" decoding="async">
                     @else
-                        <span class="mpf-wait">{{ $asset === null ? __('media.picker.missing') : __('media.library.state.processing') }}</span>
+                        <span class="mpf-wait" @if ($waiting($asset)) role="status" aria-live="polite" @endif>@if ($waiting($asset))<span class="mu-spin" aria-hidden="true"></span>@endif{{ $waitLabel($asset) }}</span>
                     @endif
                 </div>
                 <span class="mpf-actions">
@@ -57,7 +69,7 @@
                             @if ($thumb !== null)
                                 <img src="{{ $thumb }}" alt="{{ $asset->alt_text }}" width="64" height="64" decoding="async" draggable="false">
                             @else
-                                <span class="mpf-wait">{{ $asset === null ? __('media.picker.missing') : __('media.library.state.processing') }}</span>
+                                <span class="mpf-wait" @if ($waiting($asset)) role="status" aria-live="polite" @endif>@if ($waiting($asset))<span class="mu-spin" aria-hidden="true"></span>@endif{{ $waitLabel($asset) }}</span>
                             @endif
                         </div>
                         <button type="button" class="mpf-x" aria-label="{{ $removeLabel }}" title="{{ __('media.picker.hint') }}" x-on:click="$wire.set(@js($statePath), @js(array_values(array_diff($ids, [$id]))))">×</button>
@@ -71,6 +83,11 @@
                 @endforeach
             </div>
             <span class="mpf-actions">{{ $getAction('pick') }}</span>
+        @endif
+
+        {{-- MEDIA-UP-3: only while a picture of this field waits: its own tiny Livewire component polls (never the page's form) and tells the page ONCE, with one refresh, that nothing waits any more --}}
+        @if ($waitingIds !== [])
+            @livewire(\App\Livewire\MediaFieldWatcher::class, ['field' => $statePath, 'ids' => $waitingIds], key('mfw-'.$statePath))
         @endif
     </div>
 </x-dynamic-component>

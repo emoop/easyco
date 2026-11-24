@@ -12,9 +12,11 @@ use App\Filament\Resources\BrandResource\Pages\CreateBrand;
 use App\Filament\Resources\BrandResource\Pages\EditBrand;
 use App\Filament\Resources\HtmlBlockResource\Pages\CreateHtmlBlock;
 use App\Filament\Resources\HtmlBlockResource\Pages\EditHtmlBlock;
+use App\Livewire\MediaFieldWatcher;
 use App\Media\DeleteOutcome;
 use App\Media\MediaDeleter;
 use App\Media\MediaFilters;
+use App\Media\ProcessingWindow;
 use App\Media\Usage\HtmlBlockBody;
 use App\Media\Usage\MediaUsageRegistry;
 use App\Settings\AppearanceSettings;
@@ -143,6 +145,90 @@ class MediaPickerFieldsTest extends TestCase
 
         $this->assertSame('pick', $component->instance()->mountedActions[0]['name'] ?? null);
         $this->assertStringContainsString('logo_media_asset_id', (string) ($component->instance()->mountedActions[0]['context']['schemaComponent'] ?? ''));
+    }
+
+    // ---- MEDIA-UP-3: a picture the queue has not finished ------------------------------------------------------------------------
+
+    private function brandWithLogo(array $logo): BrandModel
+    {
+        return BrandModel::query()->create(['name' => 'Nike', 'slug' => 'nike', 'logo_media_asset_id' => $this->asset($logo)->id]);
+    }
+
+    public function test_a_field_that_shows_a_waiting_picture_turns_a_ring_and_has_a_watcher_of_its_own_and_stops_when_it_is_ready(): void
+    {
+        $this->actingAsStaff('Administrator');
+        $brand = $this->brandWithLogo(['processing_status' => 'pending', 'variants' => null]);
+
+        $component = Livewire::test(EditBrand::class, ['record' => $brand->id]);
+        $html = $component->html();
+
+        $this->assertStringContainsString('<span class="mu-spin" aria-hidden="true"></span>Обработва се', preg_replace('/<!--.*?-->/s', '', $html));
+        $this->assertSame(1, substr_count($html, 'wire:poll'), 'ONE poll on the whole page: the watcher\'s, never the form\'s');
+        $this->assertStringContainsString('wire:poll.visible.2s="check"', $html);
+        $this->assertStringContainsString("x-on:media-field-settled.window=\"if (\$event.detail.field === 'data.logo_media_asset_id') \$wire.\$refresh()\"", html_entity_decode($html), 'the field answers its own watcher only');
+
+        MediaAssetModel::query()->where('processing_status', 'pending')->update(['processing_status' => 'ready', 'variants' => json_encode([['tier' => 'medium', 'width' => 900, 'height' => 600, 'quality' => 80, 'path' => 'uploads/2026/10/done-medium.webp'], ['tier' => 'thumbnail', 'width' => 400, 'height' => 300, 'quality' => 80, 'path' => 'uploads/2026/10/done-thumbnail.webp']])]);
+        $html = $component->call('$refresh')->html();
+
+        $this->assertStringNotContainsString('wire:poll', $html, 'nothing waits: no watcher');
+        $this->assertStringNotContainsString('mu-spin', $html);
+        $this->assertStringContainsString('done-medium.webp', $html, 'the picture is there');
+    }
+
+    public function test_a_field_picture_that_waits_longer_than_the_window_or_failed_has_no_watcher_and_no_ring(): void
+    {
+        $this->actingAsStaff('Administrator');
+        $stuck = $this->brandWithLogo(['processing_status' => 'pending', 'variants' => null]);
+
+        $this->travel(ProcessingWindow::MINUTES + 1)->minutes();
+        $html = Livewire::test(EditBrand::class, ['record' => $stuck->id])->html();
+
+        $this->assertStringNotContainsString('wire:poll', $html, 'stuck for more than the window: no poll for ever');
+        $this->assertStringNotContainsString('mu-spin', $html);
+        $this->assertStringContainsString('Обработва се', $html, 'it still says what it is');
+
+        $failed = BrandModel::query()->create(['name' => 'Puma', 'slug' => 'puma', 'logo_media_asset_id' => $this->asset(['processing_status' => 'failed', 'variants' => null])->id]);
+        $html = Livewire::test(EditBrand::class, ['record' => $failed->id])->html();
+
+        $this->assertStringContainsString('Грешка при обработка', $html);
+        $this->assertStringNotContainsString('mu-spin', $html);
+        $this->assertStringNotContainsString('wire:poll', $html);
+    }
+
+    public function test_the_watcher_polls_only_its_own_component_and_tells_the_page_once_when_nothing_waits_any_more(): void
+    {
+        $this->actingAsStaff('Administrator');
+        $row = $this->asset(['processing_status' => 'pending', 'variants' => null]);
+
+        $watcher = Livewire::test(MediaFieldWatcher::class, ['field' => 'data.logo_media_asset_id', 'ids' => [$row->id]]);
+        $this->assertStringContainsString('wire:poll.visible.2s="check"', $watcher->html());
+        $watcher->assertNotDispatched('media-field-settled');
+
+        $watcher->call('check')->assertNotDispatched('media-field-settled');
+
+        $row->update(['processing_status' => 'ready']);
+        $watcher->call('check')->assertDispatched('media-field-settled', field: 'data.logo_media_asset_id');
+        $this->assertStringNotContainsString('wire:poll', $watcher->html(), 'settled: it stops polling');
+    }
+
+    public function test_text_typed_in_another_field_is_still_there_when_the_page_refreshes_after_the_watcher_settles(): void
+    {
+        // the poll belongs to the watcher: it never sends the page anything. The ONE refresh of the page after it settles is the same render a click causes: unsaved input must survive it.
+        $this->actingAsStaff('Administrator');
+        $brand = $this->brandWithLogo(['processing_status' => 'pending', 'variants' => null]);
+
+        $page = Livewire::test(EditBrand::class, ['record' => $brand->id])->set('data.name', 'Typed, not saved');
+        $watcher = Livewire::test(MediaFieldWatcher::class, ['field' => 'data.logo_media_asset_id', 'ids' => [(int) $brand->logo_media_asset_id]]);
+
+        $watcher->call('check');
+        $this->assertSame('Typed, not saved', $page->get('data.name'), 'polling the watcher does not touch the page');
+
+        MediaAssetModel::query()->update(['processing_status' => 'ready', 'variants' => json_encode([['tier' => 'medium', 'width' => 900, 'height' => 600, 'quality' => 80, 'path' => 'uploads/2026/10/done-medium.webp'], ['tier' => 'thumbnail', 'width' => 400, 'height' => 300, 'quality' => 80, 'path' => 'uploads/2026/10/done-thumbnail.webp']])]);
+        $watcher->call('check')->assertDispatched('media-field-settled');
+        $html = $page->call('$refresh')->html();
+
+        $this->assertSame('Typed, not saved', $page->get('data.name'), 'the refresh keeps the unsaved text');
+        $this->assertStringContainsString('done-medium.webp', $html);
     }
 
     // ---- HTML block pictures -----------------------------------------------------------------------------------------------------

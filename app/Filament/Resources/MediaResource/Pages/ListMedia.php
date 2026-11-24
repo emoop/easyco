@@ -7,6 +7,7 @@ use App\Media\BulkDeleteRun;
 use App\Media\DeleteUnusedMediaJob;
 use App\Media\MediaFilters;
 use App\Media\MediaUploader;
+use App\Media\ProcessingWindow;
 use App\Media\Usage\MediaUsageRegistry;
 use Filament\Actions\Action;
 use Filament\Forms\Components\FileUpload;
@@ -71,7 +72,8 @@ class ListMedia extends ListRecords
         $records = $this->getTableRecords();
         $items = $records instanceof Collection ? $records : collect($records->items());
 
-        return $items->contains(fn ($record): bool => in_array($record->processing_status, ['pending', 'processing'], true) && $record->missing_at === null);
+        // MEDIA-UP-3: only a row uploaded within ProcessingWindow::MINUTES counts: one stuck for longer must not keep the page polling for ever
+        return $items->contains(fn ($record): bool => ProcessingWindow::waiting($record));
     }
 
     // ---- the delete-all run ------------------------------------------------------------------------------------------------------

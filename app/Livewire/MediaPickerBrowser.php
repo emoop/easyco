@@ -7,6 +7,7 @@ use App\Media\MediaAltText;
 use App\Media\MediaFilters;
 use App\Media\MediaPickerAccess;
 use App\Media\MediaUploader;
+use App\Media\ProcessingWindow;
 use App\Rules\MediaAssetId;
 use EasyCo\Media\Contracts\MediaStorageAdapter;
 use EasyCo\Media\Persistence\Eloquent\MediaAssetModel;
@@ -36,7 +37,7 @@ class MediaPickerBrowser extends Component
     public const MAX_LIMIT = 480;
 
     /** MEDIA-UP-1: how long after its upload a picture still «обработва се» makes the modal poll (the queue finishes in seconds; a row stuck for longer, a stopped worker, must not poll for ever). */
-    public const POLL_WINDOW_MINUTES = 5;
+    public const POLL_WINDOW_MINUTES = ProcessingWindow::MINUTES;
 
     /** The state path of the field that opened the modal; the event names it, so only that field listens. */
     #[Locked]
@@ -115,10 +116,7 @@ class MediaPickerBrowser extends Component
     /** MEDIA-UP-1: does this picture still wait for the queue (`pending` / `processing`, file not missing) AND was it uploaded less than POLL_WINDOW_MINUTES ago? Reads the row already loaded: no query. */
     private function isWaiting(MediaAssetModel $row): bool
     {
-        return in_array($row->processing_status, ['pending', 'processing'], true)
-            && $row->missing_at === null
-            && $row->created_at !== null
-            && $row->created_at->gt(now()->subMinutes(self::POLL_WINDOW_MINUTES));
+        return ProcessingWindow::waiting($row);
     }
 
     /** The rows the merchant may pick: images that are ready (with their sizes) or still processing, never a missing or failed one; in video mode the ready videos. */
@@ -285,6 +283,7 @@ class MediaPickerBrowser extends Component
         return view('livewire.media-picker-browser', [
             'waiting' => $rows->contains(fn (MediaAssetModel $row): bool => $this->isWaiting($row)) || ($current !== null && $this->isWaiting($current)),
             'currentState' => $current === null ? null : MediaResource::stateOf($current),
+            'currentWaiting' => $current !== null && ProcessingWindow::waiting($current),
             'rows' => $rows,
             'hasMore' => $hasMore,
             'current' => $current,

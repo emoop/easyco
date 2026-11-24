@@ -305,7 +305,7 @@ class MediaPickerBrowserTest extends TestCase
         $html = (string) preg_replace('/<!--.*?-->/s', '', $this->browser()->call('toggle', $pending->id)->html()); // Livewire's own block markers out
 
         $this->assertSame(2, substr_count($html, 'class="mu-spin"'), 'one in the tile, one in the preview column');
-        $this->assertSame(2, preg_match_all('/<span class="mp-wait" role="status" aria-live="polite"><span class="mu-spin" aria-hidden="true"><\/span>Обработва се<\/span>/', $html), 'the text stays beside the ring');
+        $this->assertSame(2, preg_match_all('/<span class="mp-wait"\s+role="status" aria-live="polite"\s*><span class="mu-spin" aria-hidden="true"><\/span>Обработва се<\/span>/', $html), 'the text stays beside the ring');
     }
 
     public function test_a_failed_picture_has_no_spinner(): void
@@ -344,6 +344,7 @@ class MediaPickerBrowserTest extends TestCase
 
         $this->assertFalse($component->viewData('waiting'));
         $this->assertStringNotContainsString('wire:poll', $component->html(), 'a row stuck for 6 minutes (a stopped worker) must not poll for ever');
+        $this->assertStringNotContainsString('mu-spin', $component->html(), 'and its tile no longer turns a ring: a ring that turns for ever would lie');
         $this->assertStringContainsString('Обработва се', $component->html(), 'its tile still says what it is');
     }
 
