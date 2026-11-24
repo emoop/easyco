@@ -74,6 +74,19 @@ class DarkPaletteContrastTest extends TestCase
         }
     }
 
+    public function test_the_text_pinned_for_a_light_element_is_readable_on_that_light_element(): void
+    {
+        // the size strip over a card picture (white at 90% over the light frame) and, later, the gallery arrow: a white or very light ground in dark mode too
+        $palette = $this->palette();
+
+        foreach (['--sf-on-light', '--sf-on-light-muted'] as $text) {
+            foreach (['#ffffff', '#f5f5f5'] as $ground) {
+                $ratio = Contrast::ratio($this->colour($palette, $text), $ground);
+                $this->assertGreaterThanOrEqual(Contrast::TEXT_MIN, $ratio, "{$text} on {$ground} is {$ratio}:1");
+            }
+        }
+    }
+
     public function test_the_focus_ring_and_the_strong_border_stand_out_from_the_black_page(): void
     {
         $palette = $this->palette();
