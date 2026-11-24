@@ -103,11 +103,11 @@ class DribniFiveStorefrontTest extends TestCase
     {
         $css = (string) file_get_contents(base_path('resources/css/storefront.css'));
 
-        $this->assertMatchesRegularExpression('/\.sf-cloud-site \.sf-bv-chip \{\s*background: var\(--sf-cloud-bg, #fff\);\s*color: var\(--sf-cloud-color, var\(--sf-pdp-text\)\);\s*\}/', $css);
-        $this->assertMatchesRegularExpression('/\.sf-cloud-pill \.sf-subcategory > a \{\s*background-color: var\(--sf-cloud-bg, var\(--color-white\)\);\s*color: var\(--sf-cloud-color, var\(--color-neutral-700\)\);\s*\}/', $css);
+        $this->assertMatchesRegularExpression('/\.sf-cloud-site \.sf-bv-chip \{\s*background: var\(--sf-cloud-bg, var\(--sf-surface, #fff\)\);\s*color: var\(--sf-cloud-color, var\(--sf-pdp-text\)\);\s*\}/', $css);
+        $this->assertMatchesRegularExpression('/\.sf-cloud-pill \.sf-subcategory > a \{\s*background-color: var\(--sf-cloud-bg, var\(--sf-surface, var\(--color-white\)\)\);\s*color: var\(--sf-cloud-color, var\(--color-neutral-700\)\);\s*\}/', $css);
         // DRIBNI-6: on hover and keyboard focus the two colours swap places (the DRIBNI-5 hover that kept the background is gone)
-        $this->assertMatchesRegularExpression('/\.sf-cloud-site \.sf-bv-chip:hover,\s*\.sf-cloud-site \.sf-bv-chip:focus-visible \{\s*background: var\(--sf-cloud-color, var\(--sf-pdp-text\)\);\s*color: var\(--sf-cloud-bg, #fff\);\s*\}/', $css);
-        $this->assertMatchesRegularExpression('/\.sf-cloud-pill \.sf-subcategory > a:hover,\s*\.sf-cloud-pill \.sf-subcategory > a:focus-visible \{\s*background-color: var\(--sf-cloud-color, var\(--color-neutral-700\)\);\s*color: var\(--sf-cloud-bg, var\(--color-white\)\);\s*\}/', $css);
+        $this->assertMatchesRegularExpression('/\.sf-cloud-site \.sf-bv-chip:hover,\s*\.sf-cloud-site \.sf-bv-chip:focus-visible \{\s*background: var\(--sf-cloud-color, var\(--sf-pdp-text\)\);\s*color: var\(--sf-cloud-bg, var\(--sf-surface, #fff\)\);\s*\}/', $css);
+        $this->assertMatchesRegularExpression('/\.sf-cloud-pill \.sf-subcategory > a:hover,\s*\.sf-cloud-pill \.sf-subcategory > a:focus-visible \{\s*background-color: var\(--sf-cloud-color, var\(--color-neutral-700\)\);\s*color: var\(--sf-cloud-bg, var\(--sf-surface, var\(--color-white\)\)\);\s*\}/', $css);
         $this->assertDoesNotMatchRegularExpression('/\.sf-bv-chip:hover \{[^}]*background/', $css, 'the swap is never on the chip shared with the filters');
     }
 

@@ -88,6 +88,10 @@ html[data-theme='dark'] {
     --sf-header-line: #262626;
     --sf-field-text: var(--sf-text);
     --sf-image-frame: oklch(97% 0 none);
+    /* DM-2b: the text on something that keeps a LIGHT background (the card's size strip, later the gallery arrow): dark, whatever the page is. The edge of a colour swatch: light on black. */
+    --sf-on-light: #171717;
+    --sf-on-light-muted: #6b6b6b;
+    --sf-swatch-edge: rgb(255 255 255 / 0.28);
     --sf-header-bg: var(--sf-bg);
     --sf-header-text: var(--sf-text);
     --sf-footer-bg: #000000;
@@ -291,7 +295,7 @@ html[data-theme='dark'] {
     }
 
     .sf-empty {
-        @apply rounded-lg border border-dashed border-neutral-300 bg-white p-8 text-center text-neutral-500;
+        @apply rounded-lg border border-dashed border-neutral-300 bg-surface p-8 text-center text-neutral-500;
     }
 }
 
@@ -345,7 +349,7 @@ html[data-theme='dark'] {
     }
 
     .sf-subcategory > a {
-        @apply inline-flex items-center rounded-full border border-neutral-200 bg-white px-3 py-1.5 text-sm text-neutral-700 no-underline hover:border-neutral-300 hover:bg-neutral-100;
+        @apply inline-flex items-center rounded-full border border-neutral-200 bg-surface px-3 py-1.5 text-sm text-neutral-700 no-underline hover:border-neutral-300 hover:bg-neutral-100;
     }
 
     /* ---- product grid: 2 / 3 / 4 ---------------------------------------------------------------- */
@@ -365,7 +369,7 @@ html[data-theme='dark'] {
 
     /* ---- card ----------------------------------------------------------------------------------- */
     .sf-card {
-        @apply flex flex-col overflow-hidden border-neutral-200 bg-white transition hover:shadow-md;
+        @apply flex flex-col overflow-hidden border-neutral-200 bg-surface transition hover:shadow-md;
         border-style: solid;
         border-width: var(--sf-card-border-width);
         border-radius: var(--sf-card-radius);
@@ -442,11 +446,13 @@ html[data-theme='dark'] {
     }
 
     .sf-card-sizes li {
-        @apply whitespace-nowrap text-neutral-900;
+        @apply whitespace-nowrap;
+        color: var(--sf-on-light, var(--color-neutral-900));
     }
 
     .sf-card-sizes li.is-sold-out {
-        @apply text-neutral-400 line-through;
+        @apply line-through;
+        color: var(--sf-on-light-muted, var(--color-neutral-400));
     }
 
     @media (hover: hover) and (pointer: fine) {
@@ -612,7 +618,7 @@ html[data-theme='dark'] {
     }
 
     .sf-stock-in {
-        @apply text-emerald-700;
+        color: var(--sf-status-ok-text, var(--color-emerald-700));
     }
 
     .sf-stock-out {
@@ -873,7 +879,7 @@ html[data-theme='dark'] {
     }
 
     .sf-sortdd-list {
-        @apply absolute m-0 list-none bg-white;
+        @apply absolute m-0 list-none bg-surface;
         right: 0;
         top: 100%;
         z-index: 30;
@@ -953,7 +959,7 @@ html[data-theme='dark'] {
     }
 
     .sf-bctl-panel {
-        @apply absolute bg-white;
+        @apply absolute bg-surface;
         box-sizing: border-box;
         left: 0;
         top: 100%;
@@ -1029,7 +1035,7 @@ html[data-theme='dark'] {
         /* the shop's hairline token is very light: the box needs the muted text colour to be seen */
         border: 1px solid var(--sf-pdp-muted);
         border-radius: 3px;
-        background: #fff;
+        background: var(--sf-surface, #fff);
     }
 
     .sf-bv-list.sf-bv-on::before {
@@ -1044,7 +1050,7 @@ html[data-theme='dark'] {
         top: 50%;
         width: 0.3125rem;
         height: 0.625rem;
-        border: solid #fff;
+        border: solid var(--sf-surface, #fff);
         border-width: 0 2px 2px 0;
         transform: translateY(-65%) rotate(45deg);
     }
@@ -1063,7 +1069,7 @@ html[data-theme='dark'] {
     }
 
     .sf-bv-dot.sf-bv-on {
-        box-shadow: 0 0 0 3px #fff, 0 0 0 4px var(--sf-pdp-text);
+        box-shadow: 0 0 0 3px var(--sf-surface, #fff), 0 0 0 4px var(--sf-pdp-text);
     }
 
     @media (min-width: 56.25rem) {
@@ -1181,7 +1187,7 @@ html[data-theme='dark'] {
         height: 1.25rem;
         border: 1px solid var(--sf-pdp-muted);
         border-radius: 3px;
-        background: #fff;
+        background: var(--sf-surface, #fff);
     }
 
     .sf-fv-mark-round {
@@ -1191,7 +1197,7 @@ html[data-theme='dark'] {
     .sf-fv-input:checked + .sf-fv-mark {
         border-color: var(--sf-pdp-text);
         background: var(--sf-pdp-text);
-        box-shadow: inset 0 0 0 4px #fff;
+        box-shadow: inset 0 0 0 4px var(--sf-surface, #fff);
     }
 
     .sf-fv-link {
@@ -1217,11 +1223,11 @@ html[data-theme='dark'] {
         @apply block rounded-full;
         width: 1.75rem;
         height: 1.75rem;
-        box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.12);
+        box-shadow: inset 0 0 0 1px var(--sf-swatch-edge, rgb(0 0 0 / 0.12));
     }
 
     .sf-fv-input:checked + .sf-fv-circle {
-        box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.12), 0 0 0 3px #fff, 0 0 0 4px var(--sf-pdp-text);
+        box-shadow: inset 0 0 0 1px var(--sf-swatch-edge, rgb(0 0 0 / 0.12)), 0 0 0 3px var(--sf-surface, #fff), 0 0 0 4px var(--sf-pdp-text);
     }
 
     .sf-fv-input:focus-visible + .sf-fv-mark,
@@ -1244,7 +1250,7 @@ html[data-theme='dark'] {
         flex: 1 1 auto;
         border: 1px solid var(--sf-pdp-text);
         border-radius: 0;
-        background: #fff;
+        background: var(--sf-surface, #fff);
         color: var(--sf-pdp-text);
     }
 
@@ -1342,7 +1348,7 @@ html[data-theme='dark'] {
         .sf-fdrawer-overlay {
             @apply absolute block;
             inset: 0;
-            background: rgba(0, 0, 0, 0.45);
+            background: var(--sf-overlay, rgba(0, 0, 0, 0.45));
             opacity: 0;
             transition: opacity 200ms ease;
         }
@@ -1352,7 +1358,7 @@ html[data-theme='dark'] {
         }
 
         .sf-fdrawer-panel {
-            @apply absolute flex flex-col bg-white;
+            @apply absolute flex flex-col bg-surface;
             --sf-ffoot: 4.5625rem;
             top: 0;
             bottom: 0;
@@ -1448,7 +1454,7 @@ html[data-theme='dark'] {
 
         /* level 2: the open filter is laid over the drawer (above the foot); its summary is the header: a back arrow on the left, the name in the middle */
         .sf-fgroup[open] {
-            @apply absolute overflow-y-auto bg-white;
+            @apply absolute overflow-y-auto bg-surface;
             inset: 0 0 var(--sf-ffoot) 0;
             z-index: 3;
             border-bottom: 0;
@@ -1461,7 +1467,7 @@ html[data-theme='dark'] {
             justify-content: center;
             padding: 0 3.5rem;
             border-bottom: 1px solid var(--sf-pdp-line);
-            background: #fff;
+            background: var(--sf-surface, #fff);
         }
 
         .sf-fgroup[open] > .sf-fgroup-summary > .sf-fgroup-current,
@@ -1524,7 +1530,7 @@ html[data-theme='dark'] {
             padding: 0.75rem 1rem;
             gap: 1rem;
             border-top: 1px solid var(--sf-pdp-line);
-            background: #fff;
+            background: var(--sf-surface, #fff);
             z-index: 4;
         }
 
@@ -1614,7 +1620,7 @@ html[data-theme='dark'] {
         font-size: 0.8125rem;
         font-family: var(--sf-font-body, inherit);
         color: var(--sf-pdp-text);
-        background: #fff;
+        background: var(--sf-surface, #fff);
         border: 1px solid var(--sf-pdp-muted);
         border-radius: var(--sf-card-radius);
     }
@@ -1642,12 +1648,12 @@ html[data-theme='dark'] {
     /* DRIBNI-5: the listing cloud's colours («Съдържание» → Цвят на фона / на текста на бутоните). The two variables exist only when the merchant set a colour (the token stylesheet);
        the fallbacks are the chip's colours as they always were (site: #fff and the text colour; rounded: the white and the neutral-700 of the tailwind link). Hover keeps the colour of the background. */
     .sf-cloud-site .sf-bv-chip {
-        background: var(--sf-cloud-bg, #fff);
+        background: var(--sf-cloud-bg, var(--sf-surface, #fff));
         color: var(--sf-cloud-color, var(--sf-pdp-text));
     }
 
     .sf-cloud-pill .sf-subcategory > a {
-        background-color: var(--sf-cloud-bg, var(--color-white));
+        background-color: var(--sf-cloud-bg, var(--sf-surface, var(--color-white)));
         color: var(--sf-cloud-color, var(--color-neutral-700));
     }
 
@@ -1656,13 +1662,13 @@ html[data-theme='dark'] {
     .sf-cloud-site .sf-bv-chip:hover,
     .sf-cloud-site .sf-bv-chip:focus-visible {
         background: var(--sf-cloud-color, var(--sf-pdp-text));
-        color: var(--sf-cloud-bg, #fff);
+        color: var(--sf-cloud-bg, var(--sf-surface, #fff));
     }
 
     .sf-cloud-pill .sf-subcategory > a:hover,
     .sf-cloud-pill .sf-subcategory > a:focus-visible {
         background-color: var(--sf-cloud-color, var(--color-neutral-700));
-        color: var(--sf-cloud-bg, var(--color-white));
+        color: var(--sf-cloud-bg, var(--sf-surface, var(--color-white)));
     }
 
     /* ===== end of CD-1c filters ======================================================================================================================================================= */
@@ -2960,7 +2966,7 @@ html[data-theme='dark'] {
     }
 
     .sf-category-tile-link {
-        @apply flex h-full flex-col justify-between rounded-lg border border-neutral-200 bg-white p-4 no-underline hover:border-neutral-400;
+        @apply flex h-full flex-col justify-between rounded-lg border border-neutral-200 bg-surface p-4 no-underline hover:border-neutral-400;
     }
 
     .sf-category-tile-name {
@@ -6225,7 +6231,7 @@ html:not(.js) .sf-bar-item:focus-within > .sf-sub {
     transform: translateY(-50%);
     border: 0;
     border-radius: 50%;
-    background-color: color-mix(in oklab, var(--color-white) 90%, transparent);
+    background-color: color-mix(in oklab, var(--color-white) 90%, transparent); /* dm-keeps-white: a disc over pictures; its glyph is pinned dark below */
     background-clip: content-box;
     box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
     color: oklch(20.5% 0 none);
@@ -7422,4 +7428,23 @@ html[data-theme='dark'] .sf-drawer-panel {
 
 html[data-theme='dark'] :is(.sf-field select, .sf-kind-select) {
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%23a3a3a3' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 8l5 5 5-5'/%3E%3C/svg%3E");
+}
+
+/*
+ * DM-2b: the catalogue's dark-mode-only rules (they match nothing in light mode; UNLAYERED, like the shell's above). A shadow does not show on black: the product card's hover shadow and the category
+ * tile's go (both keep their 1px border); the filter drawer, which slides in over the page, gets a 1px edge on a phone.
+ */
+html[data-theme='dark'] .sf-card:hover {
+    box-shadow: none;
+}
+
+html[data-theme='dark'] .sf-category-tile-link:hover,
+html[data-theme='dark'] .sf-category-tile-link:focus-visible {
+    box-shadow: none;
+}
+
+@media (max-width: 63.999rem) {
+    html[data-theme='dark'] .sf-fdrawer-panel {
+        box-shadow: 0 0 0 1px var(--sf-border);
+    }
 }

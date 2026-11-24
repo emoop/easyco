@@ -1,6 +1,6 @@
-# Storefront dark mode (DM-1: the foundation, DM-2a: the neutral scale and the shell)
+# Storefront dark mode (DM-1: the foundation, DM-2a: the neutral scale and the shell, DM-2b: the catalogue)
 
-Status: **DM-1 and DM-2a are done, behind a dev flag. The shell (header, menus, drawer, footer, banner, the base form controls) and the neutral scale are migrated; the catalogue, the product page, the cart / checkout and the account area are NOT yet**, so with the switch on those pages still show white cards (with now light text on them) until DM-2b..e. Background and the full inventory: `dark-mode-inventory.md`.
+Status: **DM-1, DM-2a and DM-2b are done, behind a dev flag. The shell (header, menus, drawer, footer, banner, the base form controls), the neutral scale and the catalogue (cards, filters, sort, pagination, category tiles, the listing cloud) are migrated; the product page, the cart / checkout and the account area are NOT yet**, so with the switch on those pages still show white cards (with now light text on them) until DM-2c..e. Background and the full inventory: `dark-mode-inventory.md`.
 
 ## What the merchant gets
 
@@ -61,9 +61,25 @@ New tokens and their light fallbacks: `--sf-surface #ffffff`, `--sf-surface-2 #f
 
 **Guards.** `DarkModeRatchetTest`: the count of raw-white backgrounds may not grow (lower it in every DM-2 step; it must reach the allow-list: the cookie dialog until DM-4, and the `dm-keeps-white` lines). `DarkPaletteContrastTest`: every text token ≥ 4.5:1 on the page and on the cards, the status / footer / banner / button pairs, and the focus ring and the strong border ≥ 3:1, all computed with `Contrast::ratio` from the shipped values.
 
+## DM-2b: the catalogue
+
+**Light mode is unchanged** (the same proof as DM-2a, on the built stylesheet: 2012 rules compared, none changed in effect; the two differences the comparison prints are artefacts, see the report: a shorthand's overridden width and an empty media block left by dropping a dark-only rule).
+
+- **White cards and panels** (`bg-white` -> `bg-surface`): the product card, the subcategory chip, the empty state, the category tile, the sort dropdown list, the bar panel, the filter drawer panel and the open filter group. **Literal `#fff` fills** -> `var(--sf-surface, #fff)`: the checkbox/radio ground (`.sf-bv-list::before`, `.sf-fv-mark`), the chips, the outline «Filter» button, the filter group summary and the drawer foot. The scrim of the filter drawer -> `var(--sf-overlay, rgba(0, 0, 0, 0.45))`. The stock-in text -> `var(--sf-status-ok-text, <emerald-700>)`.
+- **Classification of the white that is a mark or a ring** (`#fff` is not always a surface):
+  - the CHECK MARK of a ticked list filter (`.sf-bv-list.sf-bv-on::after`) sits on a box that is filled with the TEXT colour (white in dark): the mark must be the page's own colour, so `var(--sf-surface, #fff)` (dark `#111111` on a white box). It is not `--sf-on-primary`: the box is not primary-coloured.
+  - the radio/checkbox INNER RING of a ticked value (`.sf-fv-input:checked + .sf-fv-mark`, `inset 0 0 0 4px`): the same box, the same reason: `--sf-surface`.
+  - the GAP RING between a colour swatch and its outer ring (`.sf-bv-dot.sf-bv-on`, `.sf-fv-input:checked + .sf-fv-circle`): it sits on the panel's surface, so `--sf-surface` (the gap shows the card, as in light it shows the white panel).
+  - the swatch's own EDGE (`inset 0 0 0 1px rgb(0 0 0 / 0.12)`, a dark hairline that keeps a white swatch visible on white): a dark hairline is invisible on black, so it is a token: `--sf-swatch-edge` (light fallback = the old rgba; dark `rgb(255 255 255 / 0.28)`).
+- **Kept white (`dm-keeps-white`)**: the size strip over a card picture, the carousel arrow disc (moved here from DM-4), the subject picture frame. The strip's text is PINNED dark: `li` uses `var(--sf-on-light, var(--color-neutral-900))` and the sold-out size `var(--sf-on-light-muted, var(--color-neutral-400))`, so light is the old value (the merchant's text colour) and dark is `#171717` / `#6b6b6b` (both ≥ 4.5:1 on white and on `#f5f5f5`, `DarkPaletteContrastTest`). The carousel arrow's glyph already is a literal dark (`oklch(20.5% 0 none)`), so nothing to pin; the gallery arrow (2c) will reuse the two `--sf-on-light*` tokens.
+- **The listing cloud** (found in 2b, not in the table): a chip colour the merchant did NOT set fell back to a literal white while its text follows the page (white in dark) = invisible text. The unset fallbacks now go through `--sf-surface` (light value unchanged); a colour the merchant set is untouched.
+- **Shadows**: the card hover shadow and the category tile's hover shadow are removed in dark by dark-only unlayered rules (both keep their 1px border); the filter drawer gets a 1px edge below 64rem (the breakpoint where it slides in). The sort list and the bar panel already have a `--sf-pdp-line` border and no shadow.
+- **Chevrons**: the sort dropdown and the bar controls draw their arrow with borders in `currentColor`, so they follow the text; there is no data-URI chevron in the catalogue (the one at the «no image» placeholder is a mid-grey picture on the always-light frame). Nothing to change.
+- **New tokens (3):** `--sf-on-light`, `--sf-on-light-muted` (the text on something that keeps a light ground), `--sf-swatch-edge`.
+
 ## Areas
 
-Where every raw colour of `storefront.css` belongs (the hits of inventory A1/A2: `bg-white`, literal white backgrounds, the unmapped neutral steps, the hard-coded focus / error colours, drop shadows, scrims, status utilities, other raw hex without a variable fallback). `Line` is the line in the current file. A rule shared by several areas is put in **2a**. **Rows: 2a 18, 2b 35, 2c 20, 2d 80, 2e 24, left for DM-4 18.** A row marked "done" is finished. The scale remap (the neutral steps) is done everywhere and flips by itself, so for the other areas such a row needs only a look; what remains there are the white cards, the status boxes, the error rings and the scrims.
+Where every raw colour of `storefront.css` belongs (the hits of inventory A1/A2: `bg-white`, literal white backgrounds, the unmapped neutral steps, the hard-coded focus / error colours, drop shadows, scrims, status utilities, other raw hex without a variable fallback). `Line` is the line in the current file. A rule shared by several areas is put in **2a**. **Rows: 2a 18, 2b 39, 2c 20, 2d 80, 2e 24, left for DM-4 17.** A row marked "done" is finished. The scale remap (the neutral steps) is done everywhere and flips by itself, so for the other areas such a row needs only a look; what remains there are the white cards, the status boxes, the error rings and the scrims.
 
 | Area | Selector | Line | What it is | Needs | Status |
 |---|---|---|---|---|---|
@@ -85,41 +101,41 @@ Where every raw colour of `storefront.css` belongs (the hits of inventory A1/A2:
 | 2a | `.sf-sub-dropdown .sf-menu .sf-menu` | 5311 | nested dropdown | dark: no shadow; the 1px border stays | done (dark-only rule) |
 | 2a | `.sf-ft-input` | 5586 | footer newsletter input | `var(--sf-surface, #fff)` (or keep white) | done |
 | 2a | `.sf-ft-input` | 5587 | footer newsletter input | `--sf-field-text` (new; the `#171717` ink) | done |
-| 2b | `.sf-empty` | 294 | empty-state box | `bg-surface`; scale remap (done in 2a, flips by itself) | → 2b |
-| 2b | `.sf-breadcrumbs` | 301 | breadcrumb trail | scale remap (done in 2a, flips by itself) | → 2b |
-| 2b | `.sf-breadcrumb + .sf-breadcrumb::before` | 315 | breadcrumb trail | scale remap (done in 2a, flips by itself) | → 2b |
-| 2b | `.sf-subcategory > a` | 348 | subcategory chip | `bg-surface`; scale remap (done in 2a, flips by itself) | → 2b |
-| 2b | `.sf-card` | 368 | product card | `bg-surface`; dark: no shadow; the 1px border stays | → 2b |
+| 2b | `.sf-empty` | 294 | empty-state box | `bg-surface`; scale remap | done |
+| 2b | `.sf-breadcrumbs` | 301 | breadcrumb trail | scale remap (done in 2a, flips by itself) | done (scale remap) |
+| 2b | `.sf-breadcrumb + .sf-breadcrumb::before` | 315 | breadcrumb trail | scale remap (done in 2a, flips by itself) | done (scale remap) |
+| 2b | `.sf-subcategory > a` | 348 | subcategory chip | `bg-surface`; scale remap | done |
+| 2b | `.sf-card` | 368 | product card | `bg-surface`; dark: no hover shadow (the 1px border stays) | done (dark-only rule) |
 | 2b | `.sf-card-image` | 383 | card picture frame | **frame**: `bg-image-frame` (same light value in dark) | done (frame) |
-| 2b | `.sf-card-image > .sf-card-sizes` | 439 | size strip over a card picture | **keeps white** (a disc/strip over a light picture); its text must be pinned dark when it is migrated | → 2b |
-| 2b | `.sf-card-sizes li.is-sold-out` | 449 | sold-out size | scale remap (done in 2a, flips by itself) | → 2b |
-| 2b | `.sf-price-regular` | 593 | price | scale remap (done in 2a, flips by itself) | → 2b |
-| 2b | `.sf-stock-in` | 615 | stock text | `--sf-status-*` tokens | → 2b |
-| 2b | `.sf-stock-out` | 619 | stock text | scale remap (done in 2a, flips by itself) | → 2b |
-| 2b | `.sf-pagination-status` | 758 | pagination | scale remap (done in 2a, flips by itself) | → 2b |
-| 2b | `.sf-pagination-page > a, .sf-pagination-page > span` | 767 | pagination | scale remap (done in 2a, flips by itself) | → 2b |
-| 2b | `.sf-sortdd-list` | 876 | sort dropdown | `bg-surface` | → 2b |
-| 2b | `.sf-bctl-panel` | 956 | sort/filter bar panel | `bg-surface` | → 2b |
-| 2b | `.sf-bv-list::before` | 1032 | filter chip / dot | `var(--sf-surface, #fff)` (or keep white) | → 2b |
-| 2b | `.sf-bv-list.sf-bv-on::after` | 1047 | filter chip / dot | `var(--sf-surface, #fff)` (or keep white) | → 2b |
-| 2b | `.sf-bv-dot.sf-bv-on` | 1066 | filter chip / dot | `var(--sf-surface, #fff)` (or keep white) | → 2b |
-| 2b | `.sf-fv-mark` | 1184 | filter value mark / swatch | `var(--sf-surface, #fff)` (or keep white) | → 2b |
-| 2b | `.sf-fv-input:checked + .sf-fv-mark` | 1194 | filter value mark / swatch | `var(--sf-surface, #fff)` (or keep white) | → 2b |
-| 2b | `.sf-fv-circle` | 1220 | filter value mark / swatch | `--sf-overlay` (or a scrim of its own) | → 2b |
-| 2b | `.sf-fv-input:checked + .sf-fv-circle` | 1224 | filter value mark / swatch | `var(--sf-surface, #fff)` (or keep white); `--sf-overlay` (or a scrim of its own) | → 2b |
-| 2b | `.sf-fbtn-outline` | 1247 | «Filter» button | `var(--sf-surface, #fff)` (or keep white) | → 2b |
-| 2b | `.sf-fdrawer-overlay` | 1345 | filter drawer scrim | `--sf-overlay` (or a scrim of its own) | → 2b |
-| 2b | `.sf-fdrawer-panel` | 1355 | filter drawer | `bg-surface` | → 2b |
-| 2b | `.sf-fgroup[open]` | 1451 | filter group dropdown | `bg-surface` | → 2b |
-| 2b | `.sf-fgroup[open] > .sf-fgroup-summary` | 1464 | filter group dropdown | `var(--sf-surface, #fff)` (or keep white) | → 2b |
-| 2b | `.sf-fdrawer-foot` | 1527 | filter drawer foot | `var(--sf-surface, #fff)` (or keep white) | → 2b |
-| 2b | `.sf-bv-chip, .sf-fv-chip .sf-fv-text` | 1617 | filter chip / dot | `var(--sf-surface, #fff)` (or keep white) | → 2b |
-| 2b | `.sf-pagination-ellipsis` | 1671 | pagination | scale remap (done in 2a, flips by itself) | → 2b |
-| 2b | `.sf-pagination-prev, .sf-pagination-next` | 1684 | pagination | scale remap (done in 2a, flips by itself) | → 2b |
-| 2b | `.sf-intro-text` | 2947 | category intro text | scale remap (done in 2a, flips by itself) | → 2b |
-| 2b | `.sf-category-tile-link` | 2963 | category tile | `bg-surface`; scale remap (done in 2a, flips by itself) | → 2b |
-| 2b | `.sf-category-tile-link:hover, .sf-category-tile-link:focus-v` | 3762 | category tile | dark: no shadow; the 1px border stays | → 2b |
-| 2b | `.sf-subject-pic` | 6638 | subject (brand) picture frame | **keeps white** (a disc/strip over a light picture); its text must be pinned dark when it is migrated | → 2b |
+| 2b | `.sf-card-image > .sf-card-sizes` | 439 | size strip over a card picture | **keeps white**; its text pinned dark: `--sf-on-light` (old value as the light fallback) | done (kept white) |
+| 2b | `.sf-card-sizes li.is-sold-out` | 449 | sold-out size | text pinned: `--sf-on-light-muted` (old value as the light fallback) | done |
+| 2b | `.sf-price-regular` | 593 | price | scale remap (done in 2a, flips by itself) | done (scale remap) |
+| 2b | `.sf-stock-in` | 615 | stock text | `--sf-status-ok-text` (old `emerald-700` as the fallback) | done |
+| 2b | `.sf-stock-out` | 619 | stock text | scale remap (done in 2a, flips by itself) | done (scale remap) |
+| 2b | `.sf-pagination-status` | 758 | pagination | scale remap (done in 2a, flips by itself) | done (scale remap) |
+| 2b | `.sf-pagination-page > a, .sf-pagination-page > span` | 767 | pagination | scale remap (done in 2a, flips by itself) | done (scale remap) |
+| 2b | `.sf-sortdd-list` | 876 | sort dropdown | `bg-surface` | done |
+| 2b | `.sf-bctl-panel` | 956 | sort/filter bar panel | `bg-surface` | done |
+| 2b | `.sf-bv-list::before` | 1032 | filter chip / dot | checkbox/radio ground and its mark/ring: `--sf-surface` (the mark sits on a text-coloured box; see below) | done |
+| 2b | `.sf-bv-list.sf-bv-on::after` | 1047 | filter chip / dot | checkbox/radio ground and its mark/ring: `--sf-surface` (the mark sits on a text-coloured box; see below) | done |
+| 2b | `.sf-bv-dot.sf-bv-on` | 1066 | filter chip / dot | checkbox/radio ground and its mark/ring: `--sf-surface` (the mark sits on a text-coloured box; see below) | done |
+| 2b | `.sf-fv-mark` | 1184 | filter value mark / swatch | checkbox/radio ground and its mark/ring: `--sf-surface` (the mark sits on a text-coloured box; see below) | done |
+| 2b | `.sf-fv-input:checked + .sf-fv-mark` | 1194 | filter value mark / swatch | checkbox/radio ground and its mark/ring: `--sf-surface` (the mark sits on a text-coloured box; see below) | done |
+| 2b | `.sf-fv-circle` | 1220 | filter value mark / swatch | the swatch edge `--sf-swatch-edge` (light on black); the selected ring `--sf-surface` | done |
+| 2b | `.sf-fv-input:checked + .sf-fv-circle` | 1224 | filter value mark / swatch | the swatch edge `--sf-swatch-edge` (light on black); the selected ring `--sf-surface` | done |
+| 2b | `.sf-fbtn-outline` | 1247 | «Filter» button | `var(--sf-surface, #fff)` (or keep white) | done |
+| 2b | `.sf-fdrawer-overlay` | 1345 | filter drawer scrim | `--sf-overlay` (or a scrim of its own) | done |
+| 2b | `.sf-fdrawer-panel` | 1355 | filter drawer | `bg-surface`; dark: a 1px edge on a phone | done |
+| 2b | `.sf-fgroup[open]` | 1451 | filter group dropdown | `bg-surface` | done |
+| 2b | `.sf-fgroup[open] > .sf-fgroup-summary` | 1464 | filter group dropdown | `var(--sf-surface, #fff)` (or keep white) | done |
+| 2b | `.sf-fdrawer-foot` | 1527 | filter drawer foot | `var(--sf-surface, #fff)` (or keep white) | done |
+| 2b | `.sf-bv-chip, .sf-fv-chip .sf-fv-text` | 1617 | filter chip / dot | checkbox/radio ground and its mark/ring: `--sf-surface` (the mark sits on a text-coloured box; see below) | done |
+| 2b | `.sf-pagination-ellipsis` | 1671 | pagination | scale remap (done in 2a, flips by itself) | done (scale remap) |
+| 2b | `.sf-pagination-prev, .sf-pagination-next` | 1684 | pagination | scale remap (done in 2a, flips by itself) | done (scale remap) |
+| 2b | `.sf-intro-text` | 2947 | category intro text | scale remap (done in 2a, flips by itself) | done (scale remap) |
+| 2b | `.sf-category-tile-link` | 2963 | category tile | `bg-surface`; scale remap | done |
+| 2b | `.sf-category-tile-link:hover, .sf-category-tile-link:focus-v` | 3762 | category tile | dark: no hover shadow (the 1px border stays) | done (dark-only rule) |
+| 2b | `.sf-subject-pic` | 6638 | subject (brand) picture frame | **keeps white** (a picture frame, no text on it) | done (kept white) |
 | 2c | `.sf-gal-placeholder` | 1751 | «no image» gallery frame | **frame**: `bg-image-frame` (same light value in dark) | done (frame) |
 | 2c | `.sf-gal-next` | 1795 | gallery arrow disc | **keeps white** (a disc/strip over a light picture); its text must be pinned dark when it is migrated | → 2c |
 | 2c | `.sf-gal-thumb` | 1804 | gallery thumbnail frame | **frame**: `bg-image-frame` (same light value in dark) | done (frame) |
@@ -250,7 +266,10 @@ Where every raw colour of `storefront.css` belongs (the hits of inventory A1/A2:
 | DM-4 | `.sf-pc-o-strong::before` | 5890 | HTML-block hero colour class (DM-4) | `--sf-overlay` (or a scrim of its own) | DM-4 |
 | DM-4 | `.sf-pc-bc-light` | 5939 | HTML-block hero colour class (DM-4) | `var(--sf-surface, #fff)` (or keep white) | DM-4 |
 | DM-4 | `.sf-pc-c-light` | 5946 | HTML-block hero colour class (DM-4) | `var(--sf-surface, #fff)` (or keep white) | DM-4 |
-| DM-4 | `.sf-car-arrow` | 6230 | carousel arrow disc | **keeps white** (a disc/strip over a light picture); its text must be pinned dark when it is migrated | DM-4 |
+| 2b | `.sf-car-arrow` | 6230 | carousel arrow disc | **keeps white** (a disc over pictures); its glyph is already pinned dark (`oklch(20.5% 0 none)`); marked `dm-keeps-white` | done (kept white) |
+| 2b | `.sf-cloud-site .sf-bv-chip` | 1646 | listing cloud chip (a merchant zone colour) | unset: `var(--sf-cloud-bg, var(--sf-surface, #fff))`; a colour the merchant set is untouched | done (found in 2b) |
+| 2b | `.sf-cloud-pill .sf-subcategory > a` | 1651 | listing cloud pill (a merchant zone colour) | unset: `var(--sf-cloud-bg, var(--sf-surface, var(--color-white)))` | done (found in 2b) |
+| 2b | `.sf-cloud-site .sf-bv-chip:hover` / `.sf-cloud-pill … :hover` | 1660 | the cloud's colour swap on hover | the swap's second colour follows the same fallbacks | done (found in 2b) |
 | DM-4 | `.sf-cc` | 7148 | cookie banner / dialog (DM-4) | allow-listed in the ratchet until DM-4 | DM-4 |
 | DM-4 | `.sf-cc-center` | 7157 | cookie banner / dialog (DM-4) | allow-listed in the ratchet until DM-4 | DM-4 |
 | DM-4 | `.sf-cc-dialog` | 7174 | cookie banner / dialog (DM-4) | allow-listed in the ratchet until DM-4 | DM-4 |
@@ -263,7 +282,7 @@ Where every raw colour of `storefront.css` belongs (the hits of inventory A1/A2:
 | DM-4 | `.sf-cc-switch::after` | 7330 | cookie banner / dialog (DM-4) | allow-listed in the ratchet until DM-4 | DM-4 |
 | DM-4 | `.sf-cc-switch::after` | 7331 | cookie banner / dialog (DM-4) | allow-listed in the ratchet until DM-4 | DM-4 |
 
-Notes for the next steps: the `.sf-card-sizes` strip and the `.sf-gal-next` disc keep white (above). The status boxes (`bg-red-50 text-red-900 …`) go to the `--sf-status-*` tokens in **2d** (they also appear in 2c: `.sf-picker.is-missing`, and in 2e: `.sf-account-status`). The select chevron of the variation / picker selects (2c) and of the sort dropdown (2b) is the same data-URI as the shell's: draw it light in dark mode. The hero / HTML-block colour classes (`.sf-pc-*`), the cookie dialog and the menu badges' own colour pairs are DM-4.
+Notes for the next steps: the `.sf-card-sizes` strip and the `.sf-gal-next` disc keep white (above). The status boxes (`bg-red-50 text-red-900 …`) go to the `--sf-status-*` tokens in **2d** (they also appear in 2c: `.sf-picker.is-missing`, and in 2e: `.sf-account-status`). The select chevron of the variation / picker selects (2c) and of the sort dropdown (2b) is the same data-URI as the shell's: draw it light in dark mode. The gallery arrow disc (2c) reuses `--sf-on-light*` and `--sf-swatch-edge` (the swatch dot of the product page). The hero / HTML-block colour classes (`.sf-pc-*`), the cookie dialog and the menu badges' own colour pairs are DM-4.
 
 ## Cache
 
@@ -271,7 +290,7 @@ Notes for the next steps: the `.sf-card-sizes` strip and the `.sf-gal-next` disc
 
 ## Still missing
 
-- **DM-2b..e** (DM-2a is done: the scale, the base and the shell) — move the remaining raw colours onto the tokens, area by area, using the Areas table: 2b the catalogue (cards, filters, sort, pagination, badges; lower the ratchet), 2c the product page (summary, selects, buy button, the `bg-neutral-900 text-white` pill, the lightbox), 2d cart + checkout + order-received (status boxes, error and focus rings), 2e the account area. Then remove the dev flag.
+- **DM-2c..e** (DM-2a and DM-2b are done: the scale, the base, the shell and the catalogue) — move the remaining raw colours onto the tokens, area by area, using the Areas table: 2c the product page (summary, selects, buy button, the `bg-neutral-900 text-white` pill, the lightbox), 2d cart + checkout + order-received (status boxes, error and focus rings), 2e the account area. Then remove the dev flag.
 - **DM-3** — assets: `logo.dark` printed by the storefront, the image-frame rule, payment icons, badges.
 - **DM-4** — merchant-colour components: HTML blocks, hero text colours, header/footer rows, the cookie banner dialog, admin warnings for clashes.
 - **DM-5** — third-party surfaces (none exist today).
