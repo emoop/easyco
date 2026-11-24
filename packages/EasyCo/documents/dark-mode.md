@@ -1,6 +1,6 @@
-# Storefront dark mode (DM-1: the foundation, DM-2a: the neutral scale and the shell, DM-2b: the catalogue, DM-2c: the product page, DM-2d-1: the cart)
+# Storefront dark mode (DM-1: the foundation, DM-2a: the neutral scale and the shell, DM-2b: the catalogue, DM-2c: the product page, DM-2d-1: the cart, DM-2d-2: the checkout)
 
-Status: **DM-1, DM-2a, DM-2b, DM-2c and DM-2d-1 are done, behind a dev flag. The shell, the neutral scale, the catalogue, the product page and the cart are migrated; the checkout / order-received (DM-2d-2) and the account area (DM-2e) are NOT yet**, so with the switch on those pages still show white cards (with now light text on them). Background and the full inventory: `dark-mode-inventory.md`.
+Status: **DM-1, DM-2a, DM-2b, DM-2c, DM-2d-1 and DM-2d-2 are done, behind a dev flag. The shell, the neutral scale, the catalogue, the product page, the cart, the checkout and the order-received page are migrated; only the account area (DM-2e) is NOT yet**, so with the switch on, the account pages still show white cards (with now light text on them). Then the dev flag goes.
 
 ## What the merchant gets
 
@@ -117,9 +117,33 @@ No status token was missing: the families have bg, text and border for all four 
 - **Shadows and scrims:** the cart has none (the sticky bar and the summary card carry a 1px `--sf-border` line), so no dark-only rule was needed.
 - **No new token.**
 
+## DM-2d-2: the checkout and «order received»
+
+**Light mode is unchanged** (the same proof as before on the built stylesheet: 2013 rules compared; the one difference is explained below). Every re-pointed colour keeps the old literal as its fallback; no token used here is defined in light mode (grep of `app/`, `resources/views`, `resources/js`, `packages/`, `config/`), so the fallback always applies. The status-box technique of DM-2d-1 was reused as is.
+
+| Selector | Family | Parts |
+|---|---|---|
+| `.sf-error-summary` | error | bg, border, text (exact steps: `red-50/300/900`) |
+| `.sf-field input[aria-invalid]`, `.sf-field select[aria-invalid]`, `.sf-note-field textarea[aria-invalid]` | error | ground `--sf-status-error-bg` (`red-50`), border `var(--sf-error, red-700)` (the old border was `red-700`, not the family's `red-300`) |
+| `.sf-field-error` | error | text (`red-800` fallback) |
+| `.sf-required` | error | `var(--sf-error, red-700)` |
+| `.sf-note-counter[data-state='warning']` | warn | text (`amber-800` fallback) |
+| `.sf-shipping-hint` | info | bg, text (the same as the cart's hint) |
+| `.sf-link-button` | (link) | `--sf-link`, fallback `sky-800` |
+
+No status token was missing.
+
+- **Rings:** the checkout controls' focus ring and border are `var(--sf-focus, #0369a1)`; the invalid-field focus ring `var(--sf-error, #b91c1c)`; the error summary's focus ring `var(--sf-error, #991b1b)`. (The account area's identical `#0369a1` rings are 2e.)
+- **Floating labels (checkout only):** the lifted label in the autofill rules is `var(--sf-n500, #737373)` (the same as the shared rule done in 2d-1), the delivery caption `var(--sf-n800, #262626)`, the invalid label `var(--sf-error, #b91c1c)`. The label sits on the field: the card's ground, or the error box's ground when the field is invalid; both pairs are tested (`DarkPaletteContrastTest`). The dark-only autofill rule for controls (2a) paints the card's surface under the label, so the label colour follows.
+- **White cards:** the fieldset sections, the invoice copy, the express box, the note textarea, the order summary and its toggle, the received facts and lines, the bank-details box. Their text is the scale (remapped in 2a). The disabled place-order button was looked at: `bg-neutral-200` is `#262626` in dark and its text the muted token (readable).
+- **Gradients (all of them, found by grepping `gradient(` in the stylesheet):** (1) the summary's fade, `linear-gradient(to bottom, transparent, #fff)`: FIXED, it ends in `var(--sf-surface, #fff)` (otherwise a white bar in dark); (2) the scroll-cover of a description table, `var(--sf-bg, #fff)`: already follows the page; (3) the same table's scroll shadow: drawn light in dark by the 2c rule; (4) the cross over an unavailable swatch, a mid-grey line: kept. No `mask` or `fade` rule exists, and no other gradient ends in white.
+- **The one explained difference in the light proof:** with a `var()` inside it, the minifier no longer rewrites `linear-gradient(to bottom, transparent, X)` into `linear-gradient(#0000, X)`: the same gradient (`to bottom` is the default, `transparent` is `#0000`), written differently.
+- **Shadows and scrims:** none in the checkout / received page, so no dark-only rule was needed. The payment icons (white plates) and the checkout header (`--sf-chdr-*`) are untouched.
+- **No new token.**
+
 ## Areas
 
-Where every raw colour of `storefront.css` belongs (the hits of inventory A1/A2: `bg-white`, literal white backgrounds, the unmapped neutral steps, the hard-coded focus / error colours, drop shadows, scrims, status utilities, other raw hex without a variable fallback). `Line` is the line in the current file. A rule shared by several areas is put in **2a**. **Rows: 2a 18, 2b 39, 2c 21, 2d 80 (38 done in 2d-1, 42 left for 2d-2), 2e 24, left for DM-4 17.** A row marked "done" is finished. The scale remap (the neutral steps) is done everywhere and flips by itself, so for the other areas such a row needs only a look; what remains there are the white cards, the status boxes, the error rings and the scrims.
+Where every raw colour of `storefront.css` belongs (the hits of inventory A1/A2: `bg-white`, literal white backgrounds, the unmapped neutral steps, the hard-coded focus / error colours, drop shadows, scrims, status utilities, other raw hex without a variable fallback). `Line` is the line in the current file. A rule shared by several areas is put in **2a**. **Rows: 2a 18, 2b 39, 2c 21, 2d 80 (all done: 2d-1 and 2d-2), 2e 24, left for DM-4 17.** A row marked "done" is finished. The scale remap (the neutral steps) is done everywhere and flips by itself, so for the other areas such a row needs only a look; what remains there are the white cards, the status boxes, the error rings and the scrims.
 
 | Area | Selector | Line | What it is | Needs | Status |
 |---|---|---|---|---|---|
@@ -220,52 +244,52 @@ Where every raw colour of `storefront.css` belongs (the hits of inventory A1/A2:
 | 2d | `.sf-cart-empty` | 2938 | empty cart | `bg-surface`; scale remap (done in 2a, flips by itself) | done (2d-1) |
 | 2d | `.sf-cart-line-img` | 2993 | cart-line picture frame | **frame**: `bg-image-frame` (same light value in dark) | done (2d-1) |
 | 2d | `.sf-cart-line-link` | 2997 | cart line | scale remap (done in 2a, flips by itself) | done (2d-1) |
-| 2d | `.sf-fieldset` | 3028 | checkout section card | `bg-surface` | → 2d |
-| 2d | `.sf-checkout-form input[type='text']:focus-visible, .sf-chec` | 3072 | checkbox label | `--sf-focus` / `--sf-error` | → 2d |
-| 2d | `.sf-checkout-form input[type='text']:focus-visible, .sf-chec` | 3074 | checkbox label | `--sf-focus` / `--sf-error` | → 2d |
-| 2d | `.sf-field input[aria-invalid='true'], .sf-field select[aria-` | 3079 | invalid control | `--sf-status-*` tokens | → 2d |
-| 2d | `.sf-checkout-form [aria-invalid='true']:focus-visible` | 3083 | checkbox label | `--sf-focus` / `--sf-error` | → 2d |
-| 2d | `.sf-checkout-form [aria-invalid='true']:focus-visible` | 3084 | checkbox label | `--sf-focus` / `--sf-error` | → 2d |
-| 2d | `.sf-field-error` | 3092 | field error text | `--sf-status-*` tokens | → 2d |
-| 2d | `.sf-error-summary` | 3108 | form error summary | `--sf-status-*` tokens | → 2d |
-| 2d | `.sf-error-summary:focus` | 3112 | form error summary | `--sf-focus` / `--sf-error`; token or keep | → 2d |
-| 2d | `.sf-delivery-step-title` | 3133 | delivery step title | scale remap (done in 2a, flips by itself) | → 2d |
-| 2d | `.sf-link-button` | 3146 | link-looking button | `--sf-status-*` tokens | → 2d |
-| 2d | `.sf-login-hint, .sf-order-as` | 3151 | login hint | scale remap (done in 2a, flips by itself) | → 2d |
-| 2d | `.sf-shipping-hint` | 3180 | shipping hint | `--sf-status-*` tokens | → 2d |
-| 2d | `.sf-required` | 3191 | required star | `--sf-status-*` tokens | → 2d |
+| 2d | `.sf-fieldset` | 3028 | checkout section card | `bg-surface` | done (2d-2) |
+| 2d | `.sf-checkout-form input[type='text']:focus-visible, .sf-chec` | 3072 | checkbox label | the focus ring and border: `var(--sf-focus, #0369a1)` | done (2d-2) |
+| 2d | `.sf-checkout-form input[type='text']:focus-visible, .sf-chec` | 3074 | checkbox label | the focus ring and border: `var(--sf-focus, #0369a1)` | done (2d-2) |
+| 2d | `.sf-field input[aria-invalid='true'], .sf-field select[aria-` | 3079 | invalid control | **error** family: border `var(--sf-error, red-700)`, ground `--sf-status-error-bg` (old `red-50`) | done (2d-2) |
+| 2d | `.sf-checkout-form [aria-invalid='true']:focus-visible` | 3083 | checkbox label | the error ring: `var(--sf-error, #b91c1c)` | done (2d-2) |
+| 2d | `.sf-checkout-form [aria-invalid='true']:focus-visible` | 3084 | checkbox label | the error ring: `var(--sf-error, #b91c1c)` | done (2d-2) |
+| 2d | `.sf-field-error` | 3092 | field error text | the **error** text (`red-800` fallback) | done (2d-2) |
+| 2d | `.sf-error-summary` | 3108 | form error summary | the **error** family (bg, border, text; exact steps) | done (2d-2) |
+| 2d | `.sf-error-summary:focus` | 3112 | form error summary | the ring: `var(--sf-error, #991b1b)` | done (2d-2) |
+| 2d | `.sf-delivery-step-title` | 3133 | delivery step title | scale remap (done in 2a, flips by itself) | done (2d-2) |
+| 2d | `.sf-link-button` | 3146 | link-looking button | `--sf-link` (fallback `sky-800`) | done (2d-2) |
+| 2d | `.sf-login-hint, .sf-order-as` | 3151 | login hint | scale remap (done in 2a, flips by itself) | done (2d-2) |
+| 2d | `.sf-shipping-hint` | 3180 | shipping hint | the **info** family (bg, text), like the cart's hint | done (2d-2) |
+| 2d | `.sf-required` | 3191 | required star | `var(--sf-error, red-700)` | done (2d-2) |
 | 2d | `.sf-float:has(> :focus) > label, .sf-float:has(> input:not(:` | 3262 | floating label | the lifted label `#737373` -> `var(--sf-n500, #737373)` (shared: the compact promo of the cart); the other `.sf-float` rules are checkout only | done (2d-1) |
-| 2d | `.sf-float:has(> :autofill) > label` | 3267 | floating label | token or keep | → 2d |
-| 2d | `.sf-float:has(> :-webkit-autofill) > label` | 3272 | floating label | token or keep | → 2d |
-| 2d | `.sf-float-up:not(:has(> select:not([hidden]))) > label` | 3283 | floating label | token or keep | → 2d |
-| 2d | `.sf-float:has(> [aria-invalid='true']) > label` | 3292 | floating label | `--sf-focus` / `--sf-error` | → 2d |
-| 2d | `.sf-check label` | 3313 | checkbox label | scale remap (done in 2a, flips by itself) | → 2d |
-| 2d | `.sf-invoice-type-title` | 3335 | invoice option | scale remap (done in 2a, flips by itself) | → 2d |
-| 2d | `.sf-invoice-type-option` | 3343 | invoice option | scale remap (done in 2a, flips by itself) | → 2d |
-| 2d | `.sf-invoice-copy` | 3347 | invoice option | `bg-surface`; scale remap (done in 2a, flips by itself) | → 2d |
-| 2d | `.sf-express` | 3351 | express checkout box | `bg-surface` | → 2d |
-| 2d | `.sf-express-divider` | 3356 | express checkout box | scale remap (done in 2a, flips by itself) | → 2d |
-| 2d | `.sf-express-divider::before, .sf-express-divider::after` | 3362 | express checkout box | scale remap (done in 2a, flips by itself) | → 2d |
+| 2d | `.sf-float:has(> :autofill) > label` | 3267 | floating label | the lifted label `var(--sf-n500, #737373)` | done (2d-2) |
+| 2d | `.sf-float:has(> :-webkit-autofill) > label` | 3272 | floating label | the lifted label `var(--sf-n500, #737373)` | done (2d-2) |
+| 2d | `.sf-float-up:not(:has(> select:not([hidden]))) > label` | 3283 | floating label | the caption `var(--sf-n800, #262626)` | done (2d-2) |
+| 2d | `.sf-float:has(> [aria-invalid='true']) > label` | 3292 | floating label | the invalid label `var(--sf-error, #b91c1c)` | done (2d-2) |
+| 2d | `.sf-check label` | 3313 | checkbox label | scale remap (done in 2a, flips by itself) | done (2d-2) |
+| 2d | `.sf-invoice-type-title` | 3335 | invoice option | scale remap (done in 2a, flips by itself) | done (2d-2) |
+| 2d | `.sf-invoice-type-option` | 3343 | invoice option | scale remap (done in 2a, flips by itself) | done (2d-2) |
+| 2d | `.sf-invoice-copy` | 3347 | invoice option | `bg-surface`; scale remap (done in 2a, flips by itself) | done (2d-2) |
+| 2d | `.sf-express` | 3351 | express checkout box | `bg-surface` | done (2d-2) |
+| 2d | `.sf-express-divider` | 3356 | express checkout box | scale remap (done in 2a, flips by itself) | done (2d-2) |
+| 2d | `.sf-express-divider::before, .sf-express-divider::after` | 3362 | express checkout box | scale remap (done in 2a, flips by itself) | done (2d-2) |
 | 2d | `.sf-promo-compact-label` | 3396 | compact promo form | `bg-surface`; scale remap; shared by the cart page and the checkout summary | done (2d-1) |
 | 2d | `.sf-promo-compact-input` | 3404 | compact promo form | `bg-surface`; scale remap; shared by the cart page and the checkout summary | done (2d-1) |
 | 2d | `.sf-promo-compact-field:focus-within` | 3413 | compact promo form | `--sf-focus`; the compact promo is used by the cart page AND the checkout summary | done (2d-1) |
-| 2d | `.sf-note-field textarea` | 3427 | order-note field | `bg-surface`; scale remap (done in 2a, flips by itself) | → 2d |
-| 2d | `.sf-note-field textarea[aria-invalid='true']` | 3431 | order-note field | `--sf-status-*` tokens | → 2d |
-| 2d | `.sf-note-counter[data-state='warning']` | 3439 | order-note field | `--sf-status-*` tokens | → 2d |
+| 2d | `.sf-note-field textarea` | 3427 | order-note field | `bg-surface`; scale remap (done in 2a, flips by itself) | done (2d-2) |
+| 2d | `.sf-note-field textarea[aria-invalid='true']` | 3431 | order-note field | **error** family: border `--sf-error`, ground `--sf-status-error-bg` | done (2d-2) |
+| 2d | `.sf-note-counter[data-state='warning']` | 3439 | order-note field | the **warn** text (`amber-800` fallback) | done (2d-2) |
 | 2d | `.sf-cart-status[data-state='price-changed']` | 3443 | cart status line | the **warn** family (bg + text); the cart status line is shared by the cart, the checkout and the product summary | done (2d-1) |
-| 2d | `.sf-place-order:disabled` | 3459 | disabled place-order button | none (border token; #262626 in dark) | → 2d |
-| 2d | `.sf-checkout-summary` | 3468 | checkbox label | `bg-surface` | → 2d |
-| 2d | `.sf-summary-toggle` | 3477 | summary toggle | `bg-surface` | → 2d |
-| 2d | `.sf-summary-toggle-sep` | 3485 | summary toggle | scale remap (done in 2a, flips by itself) | → 2d |
+| 2d | `.sf-place-order:disabled` | 3459 | disabled place-order button | none (`bg-neutral-200` is the border token `#262626`, its text the muted token: readable); looked at | done (2d-2) |
+| 2d | `.sf-checkout-summary` | 3468 | checkbox label | `bg-surface` | done (2d-2) |
+| 2d | `.sf-summary-toggle` | 3477 | summary toggle | `bg-surface` | done (2d-2) |
+| 2d | `.sf-summary-toggle-sep` | 3485 | summary toggle | scale remap (done in 2a, flips by itself) | done (2d-2) |
 | 2d | `.sf-summary-line-image img` | 3503 | summary-line picture frame | **frame**: `bg-image-frame` (same light value in dark) | done (frame) |
-| 2d | `.sf-received-facts` | 3528 | order-received box | `bg-surface` | → 2d |
-| 2d | `.sf-received-lines` | 3544 | order-received box | `bg-surface` | → 2d |
-| 2d | `.sf-received-destination` | 3572 | order-received box | scale remap (done in 2a, flips by itself) | → 2d |
-| 2d | `.sf-received-note` | 3584 | order-received box | scale remap (done in 2a, flips by itself) | → 2d |
-| 2d | `.sf-bank-details` | 3589 | bank-transfer instructions | `bg-surface` | → 2d |
-| 2d | `.sf-bank-deadline` | 3609 | bank-transfer instructions | scale remap (done in 2a, flips by itself) | → 2d |
-| 2d | `.sf-bank-instructions` | 3613 | bank-transfer instructions | scale remap (done in 2a, flips by itself) | → 2d |
-| 2d | `.sf-cod-note, .sf-received-email` | 3618 | cash-on-delivery note | scale remap (done in 2a, flips by itself) | → 2d |
+| 2d | `.sf-received-facts` | 3528 | order-received box | `bg-surface` | done (2d-2) |
+| 2d | `.sf-received-lines` | 3544 | order-received box | `bg-surface` | done (2d-2) |
+| 2d | `.sf-received-destination` | 3572 | order-received box | scale remap (done in 2a, flips by itself) | done (2d-2) |
+| 2d | `.sf-received-note` | 3584 | order-received box | scale remap (done in 2a, flips by itself) | done (2d-2) |
+| 2d | `.sf-bank-details` | 3589 | bank-transfer instructions | `bg-surface` | done (2d-2) |
+| 2d | `.sf-bank-deadline` | 3609 | bank-transfer instructions | scale remap (done in 2a, flips by itself) | done (2d-2) |
+| 2d | `.sf-bank-instructions` | 3613 | bank-transfer instructions | scale remap (done in 2a, flips by itself) | done (2d-2) |
+| 2d | `.sf-cod-note, .sf-received-email` | 3618 | cash-on-delivery note | scale remap (done in 2a, flips by itself) | done (2d-2) |
 | 2d | `.sf-cart-stepper` | 3867 | quantity stepper | stepper: `--sf-border-strong` (border), `--sf-surface` (ground), `--sf-surface-2` (hover) | done (2d-1) |
 | 2d | `.sf-cart-stepper` | 3869 | quantity stepper | stepper: `--sf-border-strong` (border), `--sf-surface` (ground), `--sf-surface-2` (hover) | done (2d-1) |
 | 2d | `.sf-cart-step` | 3893 | quantity stepper | stepper: `--sf-border-strong` (border), `--sf-surface` (ground), `--sf-surface-2` (hover) | done (2d-1) |
@@ -276,7 +300,7 @@ Where every raw colour of `storefront.css` belongs (the hits of inventory A1/A2:
 | 2d | `.sf-cart-empty-categories a` | 4095 | empty cart | `--sf-surface` ground; the greys `#404040` / `#262626` / `#a3a3a3` use `--sf-n700` / `--sf-n800` / `--sf-n500` with the OLD literal as the fallback | done (2d-1) |
 | 2d | `.sf-cart-empty-categories a` | 4097 | empty cart | `--sf-surface` ground; the greys `#404040` / `#262626` / `#a3a3a3` use `--sf-n700` / `--sf-n800` / `--sf-n500` with the OLD literal as the fallback | done (2d-1) |
 | 2d | `.sf-cart-empty-categories a:hover` | 4102 | empty cart | `--sf-surface` ground; the greys `#404040` / `#262626` / `#a3a3a3` use `--sf-n700` / `--sf-n800` / `--sf-n500` with the OLD literal as the fallback | done (2d-1) |
-| 2d | `.sf-checkout-summary[data-open='false'] .sf-summary-lines::a` | 4275 | checkbox label | `var(--sf-surface, #fff)` (or keep white) | → 2d |
+| 2d | `.sf-checkout-summary[data-open='false'] .sf-summary-lines::a` | 4275 | checkbox label | the fade ends in the card: `linear-gradient(to bottom, transparent, var(--sf-surface, #fff))` | done (2d-2) |
 | 2e | `.sf-account-status[data-state='info'], .sf-account-status[da` | 6809 | status box | `bg-surface` | → 2e |
 | 2e | `.sf-account-status[data-state='error']` | 6813 | status box | `--sf-status-*` tokens | → 2e |
 | 2e | `.sf-account .sf-field input[type='password'], .sf-account-ar` | 6818 | account password/e-mail control | `bg-surface`; scale remap (done in 2a, flips by itself) | → 2e |
@@ -331,7 +355,7 @@ Notes for the next steps: the `.sf-card-sizes` strip and the `.sf-gal-next` disc
 
 ## Still missing
 
-- **DM-2d-2** (checkout + order-received: the fieldset cards, the field error / focus rings, the status boxes, the floating-label rules that are checkout only, the invoice / express / note / bank / received cards, the order summary and its fade) and **DM-2e** (the account area, with the `bg-neutral-900 text-white` pill). Then remove the dev flag.
+- **DM-2e** (the account area, with the `bg-neutral-900 text-white` pill `.sf-acc-badge`: it needs a fill / text pair of its own, white on white in dark). Then remove the dev flag.
 - **DM-3** — assets: `logo.dark` printed by the storefront, the image-frame rule, payment icons, badges.
 - **DM-4** — merchant-colour components: HTML blocks, hero text colours, header/footer rows, the cookie banner dialog, admin warnings for clashes.
 - **DM-5** — third-party surfaces (none exist today).
