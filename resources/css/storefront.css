@@ -6825,30 +6825,31 @@ html:not(.js) .sf-bar-item:focus-within > .sf-sub {
     .sf-account-status[data-state='info'],
     .sf-account-status[data-state='success'],
     .sf-account-notice {
-        @apply border-neutral-200 bg-white text-neutral-900;
+        @apply border-neutral-200 bg-surface text-neutral-900;
     }
 
     .sf-account-status[data-state='error'] {
-        @apply border-red-300 bg-red-50 text-red-900;
+        @apply border-status-error-border bg-status-error-bg text-status-error-text;
     }
 
     .sf-account .sf-field input[type='password'],
     .sf-account-area .sf-field input[type='password'] {
-        @apply h-[3.25rem] w-full rounded-lg border border-neutral-300 bg-white px-3 text-base text-neutral-900;
+        @apply h-[3.25rem] w-full rounded-lg border border-neutral-300 bg-surface px-3 text-base text-neutral-900;
     }
 
     .sf-account .sf-field input[type='password']:focus-visible,
     .sf-account .sf-field input[type='email']:focus-visible,
     .sf-account-area .sf-field input[type='password']:focus-visible,
     .sf-account-area .sf-field input[type='email']:focus-visible {
-        outline: 2px solid #0369a1;
+        outline: 2px solid var(--sf-focus, #0369a1);
         outline-offset: 0;
-        border-color: #0369a1;
+        border-color: var(--sf-focus, #0369a1);
     }
 
     .sf-account .sf-field input[type='password'][aria-invalid='true'],
     .sf-account-area .sf-field input[type='password'][aria-invalid='true'] {
-        @apply border-red-700 bg-red-50;
+        border-color: var(--sf-error, var(--color-red-700));
+        background-color: var(--sf-status-error-bg, var(--color-red-50));
     }
 
     /* the show / hide button sits INSIDE the field, on the right, 44px tall target */
@@ -6861,7 +6862,7 @@ html:not(.js) .sf-bar-item:focus-within > .sf-sub {
     }
 
     .sf-account-toggle:focus-visible {
-        outline: 2px solid #0369a1;
+        outline: 2px solid var(--sf-focus, #0369a1);
         outline-offset: -2px;
     }
 
@@ -6878,7 +6879,7 @@ html:not(.js) .sf-bar-item:focus-within > .sf-sub {
     }
 
     .sf-account-secondary {
-        @apply inline-flex min-h-[2.75rem] w-full items-center justify-center rounded-lg border border-neutral-300 bg-white px-4 text-sm font-semibold text-neutral-900;
+        @apply inline-flex min-h-[2.75rem] w-full items-center justify-center rounded-lg border border-neutral-300 bg-surface px-4 text-sm font-semibold text-neutral-900;
     }
 }
 
@@ -6900,7 +6901,7 @@ html:not(.js) .sf-bar-item:focus-within > .sf-sub {
     }
 
     .sf-acc-menu-list {
-        @apply divide-y divide-neutral-200 overflow-hidden rounded-lg border border-neutral-200 bg-white;
+        @apply divide-y divide-neutral-200 overflow-hidden rounded-lg border border-neutral-200 bg-surface;
     }
 
     .sf-acc-menu-link {
@@ -6916,7 +6917,7 @@ html:not(.js) .sf-bar-item:focus-within > .sf-sub {
     .sf-acc-tile-link:focus-visible,
     .sf-acc-order-link:focus-visible,
     .sf-acc-pager-link:focus-visible {
-        outline: 2px solid #0369a1;
+        outline: 2px solid var(--sf-focus, #0369a1);
         outline-offset: -2px;
     }
 
@@ -6935,7 +6936,7 @@ html:not(.js) .sf-bar-item:focus-within > .sf-sub {
     }
 
     .sf-acc-tile-link {
-        @apply flex h-full min-h-[6.5rem] w-full flex-col items-center justify-center gap-2 rounded-lg border border-neutral-200 bg-white p-3 text-center text-sm font-semibold text-neutral-900;
+        @apply flex h-full min-h-[6.5rem] w-full flex-col items-center justify-center gap-2 rounded-lg border border-neutral-200 bg-surface p-3 text-center text-sm font-semibold text-neutral-900;
     }
 
     .sf-acc-tile-icon {
@@ -6963,7 +6964,7 @@ html:not(.js) .sf-bar-item:focus-within > .sf-sub {
     }
 
     .sf-acc-order-link {
-        @apply inline-flex min-h-[2.75rem] items-center justify-center rounded-lg border border-neutral-300 bg-white px-4 text-sm font-semibold text-neutral-900;
+        @apply inline-flex min-h-[2.75rem] items-center justify-center rounded-lg border border-neutral-300 bg-surface px-4 text-sm font-semibold text-neutral-900;
     }
 
     @media (max-width: 40rem) {
@@ -6978,7 +6979,7 @@ html:not(.js) .sf-bar-item:focus-within > .sf-sub {
         }
 
         .sf-acc-order {
-            @apply mb-3 grid grid-cols-2 gap-x-3 gap-y-1 rounded-lg border border-neutral-200 bg-white p-3;
+            @apply mb-3 grid grid-cols-2 gap-x-3 gap-y-1 rounded-lg border border-neutral-200 bg-surface p-3;
         }
 
         .sf-acc-order > * {
@@ -7007,7 +7008,7 @@ html:not(.js) .sf-bar-item:focus-within > .sf-sub {
     }
 
     .sf-acc-pager-link {
-        @apply inline-flex min-h-[2.75rem] items-center rounded-lg border border-neutral-300 bg-white px-4 font-semibold text-neutral-900;
+        @apply inline-flex min-h-[2.75rem] items-center rounded-lg border border-neutral-300 bg-surface px-4 font-semibold text-neutral-900;
     }
 
     .sf-acc-pager-page {
@@ -7040,7 +7041,7 @@ html:not(.js) .sf-bar-item:focus-within > .sf-sub {
     }
 
     .sf-acc-address {
-        @apply flex flex-col gap-1 rounded-lg border border-neutral-200 bg-white p-4 text-sm text-neutral-800;
+        @apply flex flex-col gap-1 rounded-lg border border-neutral-200 bg-surface p-4 text-sm text-neutral-800;
     }
 
     .sf-acc-address-head {
@@ -7084,11 +7085,12 @@ html:not(.js) .sf-bar-item:focus-within > .sf-sub {
     }
 
     .sf-acc-btn {
-        @apply inline-flex min-h-[2.75rem] items-center justify-center rounded-lg border border-neutral-300 bg-white px-4 text-sm font-semibold text-neutral-900;
+        @apply inline-flex min-h-[2.75rem] items-center justify-center rounded-lg border border-neutral-300 bg-surface px-4 text-sm font-semibold text-neutral-900;
     }
 
     .sf-acc-btn-danger {
-        @apply border-red-300 text-red-800;
+        border-color: var(--sf-status-error-border, var(--color-red-300));
+        color: var(--sf-status-error-text, var(--color-red-800));
     }
 
     .sf-acc-btn:disabled {
@@ -7097,7 +7099,7 @@ html:not(.js) .sf-bar-item:focus-within > .sf-sub {
 
     .sf-acc-btn:focus-visible,
     .sf-acc-cancel:focus-visible {
-        outline: 2px solid #0369a1;
+        outline: 2px solid var(--sf-focus, #0369a1);
         outline-offset: 2px;
     }
 
@@ -7478,4 +7480,19 @@ html[data-theme='dark'] .sf-meas-list > div {
 
 html[data-theme='dark'] .sf-meas-list > div:first-child {
     border-top-color: var(--sf-border);
+}
+
+/*
+ * DM-2e: the account area's dark-mode-only rules (they match nothing in light mode; UNLAYERED, like the others above). The «по подразбиране» pill is `bg-neutral-900 text-white`: in dark `neutral-900` is the
+ * TEXT token (white) and `text-white` stays white, so it would be white on white. It becomes the inverse: the text colour as its fill, the page colour as its text. A dark-only rule, NOT a change of the light
+ * declaration: `--sf-bg` can be a merchant colour in light mode, and the light pill keeps its `#fff` label. The destructive button keeps its red family: in dark its border takes the (light red) text colour, the family's border
+ * (`#7f1d1d`) being too dark to see on a card.
+ */
+html[data-theme='dark'] .sf-acc-badge {
+    background-color: var(--sf-text);
+    color: var(--sf-bg);
+}
+
+html[data-theme='dark'] .sf-acc-btn-danger {
+    border-color: var(--sf-status-error-text);
 }
