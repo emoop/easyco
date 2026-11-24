@@ -1,0 +1,30 @@
+/* MEDIA-UP-2: the small ring that turns next to «Обработва се» (a picture the queue has not finished). CSS only, `currentColor`, so it follows the text in the admin's light and dark theme. The text stays
+   (the ring is aria-hidden; the wait element is a `role="status"`). Shared by the media picker (`media-picker.css`) and the «Медия» page (`media-library.css`): each one @imports this file. */
+
+.mu-spin {
+    display: inline-block;
+    width: 1rem;
+    height: 1rem;
+    margin-inline-end: 0.375rem;
+    box-sizing: border-box;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    border-radius: 9999px;
+    vertical-align: -0.2em;
+    animation: mu-spin 0.8s linear infinite;
+}
+
+@keyframes mu-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* reduced motion: no rotation, a static (closed, softer) ring */
+@media (prefers-reduced-motion: reduce) {
+    .mu-spin {
+        border-right-color: currentColor;
+        opacity: 0.55;
+        animation: none;
+    }
+}

@@ -14,7 +14,7 @@
                 @endif
             </div>
         @elseif ($this->somethingIsProcessing())
-            <div wire:poll.3s class="ml-poll" aria-hidden="true"></div>
+            <div wire:poll.2s class="ml-poll" aria-hidden="true"></div>
         @endif
 
         {{ $this->content }}

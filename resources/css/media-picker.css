@@ -1,6 +1,8 @@
 /* The media picker (ML-2): the field in a form (`.mpf`) and the modal (`.mp`). Plain CSS on Filament's own variables (--primary-*, --gray-*) and its `.dark` class. Compact like «Медия» and
    «Дизайн»: 13px base, 12px small. Every control is a real button or input; 44px targets on touch screens. */
 
+@import './media-spinner.css';
+
 .mpf,
 .mp {
     --mp-fs: 13px;
