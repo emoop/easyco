@@ -13,7 +13,10 @@ use EasyCo\Media\Persistence\Eloquent\MediaAssetModel;
 use EasyCo\Media\Persistence\Eloquent\ProductMediaModel;
 use EasyCo\Staff\Enums\Permission;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\Concerns\BuildsShippingZones;
@@ -365,6 +368,32 @@ class MediaLibraryPageTest extends TestCase
         DB::disableQueryLog();
 
         return $count;
+    }
+
+    public function test_right_after_an_upload_the_page_polls_while_the_new_picture_waits_for_the_queue_and_stops_when_it_is_done(): void
+    {
+        // MEDIA-UP-1: the upload action returns the new row as `pending` (the queue is off), and the very same response must carry the poll that will show it done
+        Queue::fake();
+        Storage::fake('public');
+        $this->actingAsStaff('Administrator');
+        $png = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==');
+
+        $component = Livewire::test(ListMedia::class);
+        $this->assertStringNotContainsString('wire:poll', $component->html(), 'nothing waits yet: no poll');
+
+        $component->callAction('upload', ['files' => [UploadedFile::fake()->createWithContent('new.png', (string) $png)]]);
+
+        $row = MediaAssetModel::query()->where('original_name', 'new.png')->first();
+        $this->assertNotNull($row, 'the file was stored through the action');
+        $this->assertSame('pending', $row->processing_status);
+        $this->assertTrue($component->instance()->somethingIsProcessing());
+        $this->assertStringContainsString('wire:poll', $component->html(), 'the response that closes the upload carries the poll');
+        $this->assertStringContainsString('Обработва се', $component->html());
+
+        $row->update(['processing_status' => 'ready', 'variants' => [['tier' => 'thumbnail', 'width' => 400, 'height' => 300, 'quality' => 80, 'path' => 'uploads/2026/10/up-thumbnail.webp']]]);
+        $component->call('$refresh');
+
+        $this->assertStringNotContainsString('wire:poll', $component->html(), 'done: the poll goes');
     }
 
     public function test_the_page_makes_a_fixed_number_of_queries_however_many_cards_and_usages_there_are(): void

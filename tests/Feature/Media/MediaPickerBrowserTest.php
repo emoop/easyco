@@ -268,6 +268,87 @@ class MediaPickerBrowserTest extends TestCase
         $this->assertStringContainsString('aria-pressed="true"', $component->html());
     }
 
+    /** MEDIA-UP-1: the variants a finished picture has (the same shape as `asset()` builds). @return list<array<string, mixed>> */
+    private function variantsOf(string $uuid): array
+    {
+        return array_map(fn (string $tier): array => ['tier' => $tier, 'width' => 100, 'height' => 100, 'quality' => 80, 'path' => "uploads/2026/10/{$uuid}-{$tier}.webp"], ['thumbnail', 'medium', 'large']);
+    }
+
+    public function test_the_picker_polls_only_while_a_listed_picture_is_still_processing(): void
+    {
+        Queue::fake();
+        $this->actingAsStaff('Administrator');
+
+        $component = $this->browser(['tab' => 'upload'])->set('files', [UploadedFile::fake()->createWithContent('new.png', $this->png())]);
+        $row = MediaAssetModel::query()->where('original_name', 'new.png')->firstOrFail();
+
+        $this->assertSame('pending', $row->processing_status);
+        $this->assertTrue($component->viewData('waiting'));
+        $this->assertStringContainsString('wire:poll.visible.3s', $component->html(), 'the modal asks for a new render while the picture waits');
+        $this->assertStringContainsString('Обработва се', $component->html());
+
+        // the queue finished (nothing in the browser told the component): the next render, the poll's, shows the picture and the poll is gone
+        $row->update(['processing_status' => 'ready', 'variants' => $this->variantsOf('done')]);
+        $component->call('$refresh');
+
+        $this->assertFalse($component->viewData('waiting'));
+        $this->assertStringNotContainsString('wire:poll', $component->html());
+        $this->assertStringNotContainsString('Обработва се', $component->html());
+        $this->assertStringContainsString('done-thumbnail.webp', $component->html(), 'the thumbnail is there');
+    }
+
+    public function test_the_picker_stops_polling_for_a_picture_that_has_been_processing_for_too_long(): void
+    {
+        $this->actingAsStaff('Administrator');
+        $this->asset(['processing_status' => 'pending', 'variants' => null]);
+
+        $component = $this->browser();
+        $this->assertStringContainsString('wire:poll', $component->html(), 'a fresh pending picture polls');
+
+        $this->travel(MediaPickerBrowser::POLL_WINDOW_MINUTES + 1)->minutes();
+        $component->call('$refresh');
+
+        $this->assertFalse($component->viewData('waiting'));
+        $this->assertStringNotContainsString('wire:poll', $component->html(), 'a row stuck for 6 minutes (a stopped worker) must not poll for ever');
+        $this->assertStringContainsString('Обработва се', $component->html(), 'its tile still says what it is');
+    }
+
+    public function test_the_waiting_flag_costs_no_query_of_its_own(): void
+    {
+        $this->actingAsStaff('Administrator');
+        $this->asset();
+        $this->asset(['processing_status' => 'pending', 'variants' => null]);
+        $component = $this->browser();
+
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+        $component->call('$refresh');
+        $with = count(DB::getQueryLog());
+        DB::disableQueryLog();
+
+        MediaAssetModel::query()->where('processing_status', 'pending')->update(['processing_status' => 'ready', 'variants' => json_encode($this->variantsOf('x'))]);
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+        $component->call('$refresh');
+        $without = count(DB::getQueryLog());
+        DB::disableQueryLog();
+
+        $this->assertStringNotContainsString('wire:poll', $component->html());
+        $this->assertSame($with, $without, 'the flag is read from the rows already loaded: the same statements with or without a waiting picture');
+    }
+
+    public function test_the_selected_picture_that_failed_says_so_instead_of_processing(): void
+    {
+        $this->actingAsStaff('Administrator');
+        $failed = $this->asset(['processing_status' => 'failed', 'variants' => null]);
+
+        $component = $this->browser()->set('selected', [$failed->id]);
+
+        $this->assertStringContainsString('Грешка при обработка', $component->html());
+        $this->assertStringNotContainsString('Обработва се', $component->html());
+        $this->assertFalse($component->viewData('waiting'), 'a failed picture is not waiting');
+    }
+
     public function test_the_upload_tab_shows_the_refused_files_by_name_with_the_reason(): void
     {
         $this->actingAsStaff('Administrator');
