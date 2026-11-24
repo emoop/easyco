@@ -1,9 +1,9 @@
 {{-- The modal of the media picker (ML-2): app/Livewire/MediaPickerBrowser.php. Two tabs, one search, one toggle, a grid of squares, a narrow column for the selected picture, a bottom bar with
      «Отказ» and «Избери». Every control is a real <button> or <input>; every printed value is escaped. --}}
 <div class="mp">
-    {{-- MEDIA-UP-1: while a listed picture still waits for the queue (and was uploaded minutes ago, not hours) the modal asks for a new render every 3 s; `.visible`: only while the modal is on screen. --}}
+    {{-- MEDIA-UP-1: while a listed picture still waits for the queue (and was uploaded minutes ago, not hours) the modal asks for a new render every 2 s; `.visible`: only while the modal is on screen. --}}
     @if ($waiting)
-        <div wire:poll.visible.3s class="mp-poll" aria-hidden="true"></div>
+        <div wire:poll.visible.2s class="mp-poll" aria-hidden="true"></div>
     @endif
 
     <div class="mp-tabs" role="tablist">
@@ -58,7 +58,7 @@
                                     @elseif ($thumb !== null)
                                         <img src="{{ $thumb }}" alt="{{ $row->alt_text }}" loading="lazy" decoding="async" width="150" height="150">
                                     @else
-                                        <span class="mp-wait">{{ __('media.library.state.processing') }}</span>
+                                        <span class="mp-wait" role="status" aria-live="polite"><span class="mu-spin" aria-hidden="true"></span>{{ __('media.library.state.processing') }}</span>
                                     @endif
                                     @if ($minWidth !== null && ($row->width === null || $row->height === null))
                                         <span class="mp-note">{{ __('media.picker.unknown_size') }}</span>
@@ -88,7 +88,7 @@
                                 <img src="{{ $currentPreview }}" alt="{{ $current->alt_text }}" decoding="async">
                             @else
                                 {{-- MEDIA-UP-1: a picture that FAILED (or whose file is gone) says so; only a real «обработва се» keeps the waiting text --}}
-                                <span class="mp-wait">{{ __('media.library.state.'.(in_array($currentState, ['failed', 'missing'], true) ? $currentState : 'processing')) }}</span>
+                                <span class="mp-wait" role="status" aria-live="polite">@unless (in_array($currentState, ['failed', 'missing'], true))<span class="mu-spin" aria-hidden="true"></span>@endunless{{ __('media.library.state.'.(in_array($currentState, ['failed', 'missing'], true) ? $currentState : 'processing')) }}</span>
                             @endif
                         </div>
                         <p class="mp-name">{{ $current->original_name ?: basename((string) $current->path) }}</p>

@@ -162,7 +162,7 @@ class MediaUploadAndSweepTest extends TestCase
         MediaAssetModel::query()->create(['type' => 'image', 'disk' => 'public', 'path' => 'uploads/b.jpg', 'processing_status' => 'pending', 'variants' => []]);
 
         $html = Livewire::test(ListMedia::class)->html();
-        $this->assertStringContainsString('wire:poll.3s', $html);
+        $this->assertStringContainsString('wire:poll.2s', $html);
         $this->assertStringContainsString('Обработва се', $html);
     }
 

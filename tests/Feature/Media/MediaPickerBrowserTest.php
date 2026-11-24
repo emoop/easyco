@@ -284,7 +284,7 @@ class MediaPickerBrowserTest extends TestCase
 
         $this->assertSame('pending', $row->processing_status);
         $this->assertTrue($component->viewData('waiting'));
-        $this->assertStringContainsString('wire:poll.visible.3s', $component->html(), 'the modal asks for a new render while the picture waits');
+        $this->assertStringContainsString('wire:poll.visible.2s', $component->html(), 'the modal asks for a new render while the picture waits');
         $this->assertStringContainsString('Обработва се', $component->html());
 
         // the queue finished (nothing in the browser told the component): the next render, the poll's, shows the picture and the poll is gone
@@ -295,6 +295,40 @@ class MediaPickerBrowserTest extends TestCase
         $this->assertStringNotContainsString('wire:poll', $component->html());
         $this->assertStringNotContainsString('Обработва се', $component->html());
         $this->assertStringContainsString('done-thumbnail.webp', $component->html(), 'the thumbnail is there');
+    }
+
+    public function test_a_processing_picture_shows_a_spinner_next_to_the_text_in_the_tile_and_in_the_preview_column(): void
+    {
+        $this->actingAsStaff('Administrator');
+        $pending = $this->asset(['processing_status' => 'pending', 'variants' => null]);
+
+        $html = (string) preg_replace('/<!--.*?-->/s', '', $this->browser()->call('toggle', $pending->id)->html()); // Livewire's own block markers out
+
+        $this->assertSame(2, substr_count($html, 'class="mu-spin"'), 'one in the tile, one in the preview column');
+        $this->assertSame(2, preg_match_all('/<span class="mp-wait" role="status" aria-live="polite"><span class="mu-spin" aria-hidden="true"><\/span>Обработва се<\/span>/', $html), 'the text stays beside the ring');
+    }
+
+    public function test_a_failed_picture_has_no_spinner(): void
+    {
+        $this->actingAsStaff('Administrator');
+        $failed = $this->asset(['processing_status' => 'failed', 'variants' => null]);
+
+        $html = $this->browser()->set('selected', [$failed->id])->html();
+
+        $this->assertStringNotContainsString('mu-spin', $html);
+        $this->assertStringContainsString('Грешка при обработка', $html);
+    }
+
+    public function test_the_spinner_css_stops_turning_for_reduced_motion_and_both_media_stylesheets_share_it(): void
+    {
+        $spinner = (string) file_get_contents(resource_path('css/media-spinner.css'));
+
+        $this->assertMatchesRegularExpression('/@media \(prefers-reduced-motion: reduce\) \{\s*\.mu-spin \{[^}]*animation: none;/', $spinner);
+        $this->assertMatchesRegularExpression('/\.mu-spin \{[^}]*animation: mu-spin /', $spinner);
+
+        foreach (['media-picker.css', 'media-library.css'] as $file) {
+            $this->assertStringContainsString("@import './media-spinner.css';", (string) file_get_contents(resource_path('css/'.$file)), $file);
+        }
     }
 
     public function test_the_picker_stops_polling_for_a_picture_that_has_been_processing_for_too_long(): void

@@ -370,6 +370,20 @@ class MediaLibraryPageTest extends TestCase
         return $count;
     }
 
+    public function test_a_processing_card_shows_a_spinner_beside_the_text_and_the_others_do_not(): void
+    {
+        $this->actingAsStaff('Administrator');
+        $this->asset(['processing_status' => 'pending', 'variants' => null]);
+
+        $html = (string) preg_replace('/<!--.*?-->/s', '', Livewire::test(ListMedia::class)->html()); // Livewire's own block markers out
+
+        $this->assertSame(1, preg_match_all('/<span class="ml-state"\s+role="status" aria-live="polite"\s*><span class="mu-spin" aria-hidden="true"><\/span>Обработва се<\/span>/', $html));
+        $this->assertSame(1, substr_count($html, 'class="mu-spin"'));
+
+        $this->asset(['processing_status' => 'failed', 'variants' => null]);
+        $this->assertSame(1, substr_count(Livewire::test(ListMedia::class)->html(), 'class="mu-spin"'), 'a failed card has no ring: only the processing one');
+    }
+
     public function test_right_after_an_upload_the_page_polls_while_the_new_picture_waits_for_the_queue_and_stops_when_it_is_done(): void
     {
         // MEDIA-UP-1: the upload action returns the new row as `pending` (the queue is off), and the very same response must carry the poll that will show it done

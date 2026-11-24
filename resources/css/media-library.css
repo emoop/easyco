@@ -1,6 +1,8 @@
 /* «Медия» (ML-1a): compact cards for the library grid. Plain CSS on Filament's own variables (--primary-*, --gray-*) and its `.dark` class; loaded by the list page only, everything under `.ml`
    (the details slide-over is rendered inside the page root too, so `.ml-details` is scoped by its own prefix). The scale is the one of the «Дизайн» screen: 13px base, 12px / 11px small. */
 
+@import './media-spinner.css';
+
 .ml {
     --ml-fs-base: 13px;
     --ml-fs-small: 12px;

@@ -13,7 +13,7 @@
         @elseif ($state === 'video')
             <x-filament::icon icon="heroicon-o-film" class="ml-icon" />
         @else
-            <span class="ml-state">{{ __('media.library.state.'.$state) }}</span>
+            <span class="ml-state" @if ($state === 'processing') role="status" aria-live="polite" @endif>@if ($state === 'processing')<span class="mu-spin" aria-hidden="true"></span>@endif{{ __('media.library.state.'.$state) }}</span>
         @endif
     </div>
     <div class="ml-meta">
