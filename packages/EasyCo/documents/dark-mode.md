@@ -1,6 +1,6 @@
-# Storefront dark mode (DM-1: the foundation, DM-2a: the neutral scale and the shell, DM-2b: the catalogue, DM-2c: the product page, DM-2d-1: the cart, DM-2d-2: the checkout)
+# Storefront dark mode (DM-1: the foundation, DM-2a: the neutral scale and the shell, DM-2b: the catalogue, DM-2c: the product page, DM-2d-1: the cart, DM-2d-2: the checkout, DM-2e: the account area)
 
-Status: **DM-1, DM-2a, DM-2b, DM-2c, DM-2d-1 and DM-2d-2 are done, behind a dev flag. The shell, the neutral scale, the catalogue, the product page, the cart, the checkout and the order-received page are migrated; only the account area (DM-2e) is NOT yet**, so with the switch on, the account pages still show white cards (with now light text on them). Then the dev flag goes.
+Status: **DM-1, DM-2a, DM-2b, DM-2c, DM-2d-1, DM-2d-2 and DM-2e are done, behind a dev flag: every storefront page area (the shell, the catalogue, the product page, the cart, the checkout and order received, the account area) is migrated.** What remains: a browser pass in both modes, removing the dev flag, DM-3 (assets: the dark logo, payment icons, badges) and DM-4 (merchant-colour components, the cookie dialog). Background and the full inventory: `dark-mode-inventory.md`.
 
 ## What the merchant gets
 
@@ -141,9 +141,27 @@ No status token was missing.
 - **Shadows and scrims:** none in the checkout / received page, so no dark-only rule was needed. The payment icons (white plates) and the checkout header (`--sf-chdr-*`) are untouched.
 - **No new token.**
 
+## DM-2e: the account area
+
+**Light mode is unchanged** (the same proof as before on the built stylesheet: 2013 rules compared, none changed). Every re-pointed colour keeps the old literal as its fallback; none of the tokens used here is defined in light mode (grep of `app/`, `resources/views`, `resources/js`, `packages/`, `config/`), so the fallback always applies. **This was the last page-area step: every storefront page area is migrated.**
+
+| Selector | Family | Parts |
+|---|---|---|
+| `.sf-account-status[data-state='error']` | error | bg, border, text (exact steps `red-50/300/900`) |
+| `.sf-account .sf-field input[type='password'][aria-invalid]` | error | ground `--sf-status-error-bg`, border `var(--sf-error, red-700)` |
+| `.sf-acc-btn-danger` | error | text `--sf-status-error-text` (`red-800` fallback), border `--sf-status-error-border` (`red-300` fallback); in dark the border takes the text colour (dark-only rule) |
+| `.sf-account-status[data-state='info']` and `[data-state='success']`, `.sf-account-notice` | (none) | a plain card: `bg-surface` + the neutral border and text, as before |
+
+- **White cards and fills:** the notice and the info line, the password control, the secondary button, the menu list, the tiles, the order link, the order cards, the pager link, the address cards and the buttons: `bg-surface`. The current item of the menu (`bg-neutral-100`) becomes `--sf-surface-2` on the card by the scale (looked at: readable). The disabled button (`opacity-60`) and the hover states keep working (no colour of their own).
+- **Rings:** the password / e-mail controls' ring and border, the show / hide toggle, the menu / tile / order / pager links, the buttons and the cancel link: `var(--sf-focus, #0369a1)`; the invalid password control: `var(--sf-error, red-700)`.
+- **The pill `.sf-acc-badge`** (`bg-neutral-900 text-white`, «по подразбиране»): in dark `neutral-900` is the TEXT token (white) and `text-white` stays white = white on white. Fixed with a **dark-only unlayered rule**, `background-color: var(--sf-text); color: var(--sf-bg)` (a white pill with a page-coloured label, 21:1 and 3:1 against its card, tested). The light declaration was NOT touched: `--sf-bg` can be a merchant colour in light mode, and the light pill must keep its `#fff` label.
+- **Scale-only rows** (`.sf-acc-menu-link`, `.sf-acc-tile-icon`, `.sf-acc-orders thead th`, `.sf-acc-current`): looked at. The icon sits on a tile (a card), the table heading on the page, the menu link on the menu card: every ground flips with the text, so nothing needed fixing.
+- **Shadows / scrims:** the account area has none.
+- **No new token. No new row was found** (the scan of the account area shows only the scale rows, the pill and the cookie dialog, which is DM-4).
+
 ## Areas
 
-Where every raw colour of `storefront.css` belongs (the hits of inventory A1/A2: `bg-white`, literal white backgrounds, the unmapped neutral steps, the hard-coded focus / error colours, drop shadows, scrims, status utilities, other raw hex without a variable fallback). `Line` is the line in the current file. A rule shared by several areas is put in **2a**. **Rows: 2a 18, 2b 39, 2c 21, 2d 80 (all done: 2d-1 and 2d-2), 2e 24, left for DM-4 17.** A row marked "done" is finished. The scale remap (the neutral steps) is done everywhere and flips by itself, so for the other areas such a row needs only a look; what remains there are the white cards, the status boxes, the error rings and the scrims.
+Where every raw colour of `storefront.css` belongs (the hits of inventory A1/A2: `bg-white`, literal white backgrounds, the unmapped neutral steps, the hard-coded focus / error colours, drop shadows, scrims, status utilities, other raw hex without a variable fallback). `Line` is the line in the current file. A rule shared by several areas is put in **2a**. **Rows: 2a 18, 2b 39, 2c 21, 2d 80 (all done: 2d-1 and 2d-2), 2e 24 (all done), left for DM-4 17.** A row marked "done" is finished. The scale remap (the neutral steps) is done everywhere and flips by itself, so for the other areas such a row needs only a look; what remains there are the white cards, the status boxes, the error rings and the scrims.
 
 | Area | Selector | Line | What it is | Needs | Status |
 |---|---|---|---|---|---|
@@ -301,30 +319,30 @@ Where every raw colour of `storefront.css` belongs (the hits of inventory A1/A2:
 | 2d | `.sf-cart-empty-categories a` | 4097 | empty cart | `--sf-surface` ground; the greys `#404040` / `#262626` / `#a3a3a3` use `--sf-n700` / `--sf-n800` / `--sf-n500` with the OLD literal as the fallback | done (2d-1) |
 | 2d | `.sf-cart-empty-categories a:hover` | 4102 | empty cart | `--sf-surface` ground; the greys `#404040` / `#262626` / `#a3a3a3` use `--sf-n700` / `--sf-n800` / `--sf-n500` with the OLD literal as the fallback | done (2d-1) |
 | 2d | `.sf-checkout-summary[data-open='false'] .sf-summary-lines::a` | 4275 | checkbox label | the fade ends in the card: `linear-gradient(to bottom, transparent, var(--sf-surface, #fff))` | done (2d-2) |
-| 2e | `.sf-account-status[data-state='info'], .sf-account-status[da` | 6809 | status box | `bg-surface` | → 2e |
-| 2e | `.sf-account-status[data-state='error']` | 6813 | status box | `--sf-status-*` tokens | → 2e |
-| 2e | `.sf-account .sf-field input[type='password'], .sf-account-ar` | 6818 | account password/e-mail control | `bg-surface`; scale remap (done in 2a, flips by itself) | → 2e |
-| 2e | `.sf-account .sf-field input[type='password']:focus-visible, ` | 6825 | account password/e-mail control | `--sf-focus` / `--sf-error` | → 2e |
-| 2e | `.sf-account .sf-field input[type='password']:focus-visible, ` | 6827 | account password/e-mail control | `--sf-focus` / `--sf-error` | → 2e |
-| 2e | `.sf-account .sf-field input[type='password'][aria-invalid='t` | 6832 | account password/e-mail control | `--sf-status-*` tokens | → 2e |
-| 2e | `.sf-account-toggle:focus-visible` | 6845 | show/hide password toggle | `--sf-focus` / `--sf-error` | → 2e |
-| 2e | `.sf-account-secondary` | 6862 | secondary button | `bg-surface`; scale remap (done in 2a, flips by itself) | → 2e |
-| 2e | `.sf-acc-menu-list` | 6884 | account menu list | `bg-surface` | → 2e |
-| 2e | `.sf-acc-menu-link` | 6888 | account menu link | scale remap (done in 2a, flips by itself) | → 2e |
-| 2e | `.sf-acc-menu-link[aria-current='page']` | 6892 | account menu link | scale remap (done in 2a, flips by itself) | → 2e |
-| 2e | `.sf-acc-menu-link:focus-visible, .sf-acc-tile-link:focus-vis` | 6900 | account menu link | `--sf-focus` / `--sf-error` | → 2e |
-| 2e | `.sf-acc-tile-link` | 6919 | dashboard tile | `bg-surface` | → 2e |
-| 2e | `.sf-acc-tile-icon` | 6923 | dashboard tile | scale remap (done in 2a, flips by itself) | → 2e |
-| 2e | `.sf-acc-orders thead th` | 6931 | orders table head | scale remap (done in 2a, flips by itself) | → 2e |
-| 2e | `.sf-acc-order-link` | 6947 | order link button | `bg-surface`; scale remap (done in 2a, flips by itself) | → 2e |
-| 2e | `.sf-acc-order` | 6962 | an order card | `bg-surface` | → 2e |
-| 2e | `.sf-acc-pager-link` | 6991 | account pager link | `bg-surface`; scale remap (done in 2a, flips by itself) | → 2e |
-| 2e | `.sf-acc-address` | 7024 | a saved address card | `bg-surface`; scale remap (done in 2a, flips by itself) | → 2e |
-| 2e | `.sf-acc-badge` | 7036 | the «default» pill | own token (the pill: white text on a dark pill) | → 2e |
-| 2e | `.sf-acc-btn` | 7068 | an account button | `bg-surface`; scale remap (done in 2a, flips by itself) | → 2e |
-| 2e | `.sf-acc-btn-danger` | 7072 | an account button | `--sf-status-*` tokens | → 2e |
-| 2e | `.sf-acc-btn:focus-visible, .sf-acc-cancel:focus-visible` | 7081 | an account button | `--sf-focus` / `--sf-error` | → 2e |
-| 2e | `.sf-acc-current` | 7118 | current-value line | scale remap (done in 2a, flips by itself) | → 2e |
+| 2e | `.sf-account-status[data-state='info'], .sf-account-status[da` | 6809 | status box | `bg-surface` (the notice and the info / success lines are a plain card, not the info family) | done (2e) |
+| 2e | `.sf-account-status[data-state='error']` | 6813 | status box | the **error** family (bg, border, text; exact steps `red-50/300/900`) | done (2e) |
+| 2e | `.sf-account .sf-field input[type='password'], .sf-account-ar` | 6818 | account password/e-mail control | `bg-surface`; scale remap | done (2e) |
+| 2e | `.sf-account .sf-field input[type='password']:focus-visible, ` | 6825 | account password/e-mail control | the focus ring and border: `var(--sf-focus, #0369a1)` | done (2e) |
+| 2e | `.sf-account .sf-field input[type='password']:focus-visible, ` | 6827 | account password/e-mail control | the focus ring and border: `var(--sf-focus, #0369a1)` | done (2e) |
+| 2e | `.sf-account .sf-field input[type='password'][aria-invalid='t` | 6832 | account password/e-mail control | **error** family: border `var(--sf-error, red-700)`, ground `--sf-status-error-bg` | done (2e) |
+| 2e | `.sf-account-toggle:focus-visible` | 6845 | show/hide password toggle | the focus ring: `var(--sf-focus, #0369a1)` | done (2e) |
+| 2e | `.sf-account-secondary` | 6862 | secondary button | `bg-surface`; scale remap | done (2e) |
+| 2e | `.sf-acc-menu-list` | 6884 | account menu list | `bg-surface`; scale remap | done (2e) |
+| 2e | `.sf-acc-menu-link` | 6888 | account menu link | scale remap (done in 2a, flips by itself) | done (2e) |
+| 2e | `.sf-acc-menu-link[aria-current='page']` | 6892 | account menu link | scale remap (the current item is `--sf-surface-2` on the card; looked at) | done (2e) |
+| 2e | `.sf-acc-menu-link:focus-visible, .sf-acc-tile-link:focus-vis` | 6900 | account menu link | the focus ring: `var(--sf-focus, #0369a1)` | done (2e) |
+| 2e | `.sf-acc-tile-link` | 6919 | dashboard tile | `bg-surface`; scale remap | done (2e) |
+| 2e | `.sf-acc-tile-icon` | 6923 | dashboard tile | scale remap (looked at: the ground is the card or the page, both flip) | done (2e) |
+| 2e | `.sf-acc-orders thead th` | 6931 | orders table head | scale remap (looked at: the ground is the card or the page, both flip) | done (2e) |
+| 2e | `.sf-acc-order-link` | 6947 | order link button | `bg-surface`; scale remap | done (2e) |
+| 2e | `.sf-acc-order` | 6962 | an order card | `bg-surface`; scale remap | done (2e) |
+| 2e | `.sf-acc-pager-link` | 6991 | account pager link | `bg-surface`; scale remap | done (2e) |
+| 2e | `.sf-acc-address` | 7024 | a saved address card | `bg-surface`; scale remap | done (2e) |
+| 2e | `.sf-acc-badge` | 7036 | the «default» pill | **dark-only rule** (fill = the text colour, label = the page colour); the light declaration is untouched | done (2e) |
+| 2e | `.sf-acc-btn` | 7068 | an account button | `bg-surface`; scale remap | done (2e) |
+| 2e | `.sf-acc-btn-danger` | 7072 | an account button | the **error** family (border and text, `red-300` / `red-800` fallbacks); dark-only: the border takes the text colour (the family border is too dark to see) | done (2e) |
+| 2e | `.sf-acc-btn:focus-visible, .sf-acc-cancel:focus-visible` | 7081 | an account button | the focus ring: `var(--sf-focus, #0369a1)` | done (2e) |
+| 2e | `.sf-acc-current` | 7118 | current-value line | scale remap (looked at: the ground is the card or the page, both flip) | done (2e) |
 | DM-4 | `.sf-badge-dark` | 5357 | menu badge default colour pair | token or keep | DM-4 |
 | DM-4 | `.sf-badge-grey` | 5362 | menu badge default colour pair | token or keep | DM-4 |
 | DM-4 | `.sf-pc-o-medium::before` | 5889 | HTML-block hero colour class (DM-4) | `--sf-overlay` (or a scrim of its own) | DM-4 |
@@ -355,7 +373,7 @@ Notes for the next steps: the `.sf-card-sizes` strip and the `.sf-gal-next` disc
 
 ## Still missing
 
-- **DM-2e** (the account area, with the `bg-neutral-900 text-white` pill `.sf-acc-badge`: it needs a fill / text pair of its own, white on white in dark). Then remove the dev flag.
+- **The browser pass** in both modes (the list of states to look at is in the DM-2e report), then **removing the dev flag** `STOREFRONT_DARK_MODE`.
 - **DM-3** — assets: `logo.dark` printed by the storefront, the image-frame rule, payment icons, badges.
 - **DM-4** — merchant-colour components: HTML blocks, hero text colours, header/footer rows, the cookie banner dialog, admin warnings for clashes.
 - **DM-5** — third-party surfaces (none exist today).

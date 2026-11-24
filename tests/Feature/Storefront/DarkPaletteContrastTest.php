@@ -110,6 +110,24 @@ class DarkPaletteContrastTest extends TestCase
         }
     }
 
+    public function test_the_account_pill_and_the_destructive_button_are_readable_and_stand_out(): void
+    {
+        // the pill is the inverse: the text colour as its fill, the page colour as its label (a dark-only rule); the destructive button keeps its red text and its border takes that same colour
+        $palette = $this->palette();
+
+        $pill = Contrast::ratio($this->colour($palette, '--sf-bg'), $this->colour($palette, '--sf-text'));
+        $this->assertGreaterThanOrEqual(Contrast::TEXT_MIN, $pill, "the pill's label on its fill is {$pill}:1");
+
+        foreach (['--sf-surface', '--sf-surface-2'] as $ground) {
+            $label = Contrast::ratio($this->colour($palette, '--sf-status-error-text'), $this->colour($palette, $ground));
+            $this->assertGreaterThanOrEqual(Contrast::TEXT_MIN, $label, "the destructive label on {$ground} is {$label}:1");
+        }
+
+        // the pill stands out from the card it sits on (3:1)
+        $edge = Contrast::ratio($this->colour($palette, '--sf-text'), $this->colour($palette, '--sf-surface'));
+        $this->assertGreaterThanOrEqual(Contrast::COMPONENT_MIN, $edge, "the pill against the card is {$edge}:1");
+    }
+
     public function test_the_text_pinned_for_a_light_element_is_readable_on_that_light_element(): void
     {
         // the size strip over a card picture (white at 90% over the light frame) and, later, the gallery arrow: a white or very light ground in dark mode too
