@@ -92,6 +92,8 @@ html[data-theme='dark'] {
     --sf-on-light: #171717;
     --sf-on-light-muted: #6b6b6b;
     --sf-swatch-edge: rgb(255 255 255 / 0.28);
+    /* DM-2c: the colour of a text link (light: Tailwind's sky-700 / sky-800 as before; sky-700 is 2.9:1 on black). */
+    --sf-link: #38bdf8;
     --sf-header-bg: var(--sf-bg);
     --sf-header-text: var(--sf-text);
     --sf-footer-bg: #000000;
@@ -1798,7 +1800,8 @@ html[data-theme='dark'] {
     }
 
     .sf-gal-next {
-        @apply absolute right-2 top-1/2 z-10 hidden h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border-0 bg-white/90 text-2xl leading-none text-neutral-900 shadow; /* dm-keeps-white: a disc over the light picture frame; its text must be pinned dark in DM-2c */
+        @apply absolute right-2 top-1/2 z-10 hidden h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border-0 bg-white/90 text-2xl leading-none shadow; /* dm-keeps-white: a disc over the light picture frame; its glyph is pinned dark (--sf-on-light) */
+        color: var(--sf-on-light, var(--color-neutral-900));
     }
 
     .sf-gal-thumbs {
@@ -1830,7 +1833,7 @@ html[data-theme='dark'] {
         left: 50%;
         border-style: solid;
         border-width: 0.5rem 0 0.5rem 0.85rem;
-        border-color: transparent transparent transparent var(--sf-text, oklch(20.5% 0 none));
+        border-color: transparent transparent transparent var(--sf-on-light, var(--sf-text, oklch(20.5% 0 none)));
         transform: translate(-35%, -50%);
     }
 
@@ -2125,7 +2128,7 @@ html[data-theme='dark'] {
     }
 
     .sf-variation-select {
-        @apply w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm;
+        @apply w-full rounded-md border border-neutral-300 bg-surface px-3 py-2 text-sm;
     }
 
     .sf-add-to-cart {
@@ -2197,7 +2200,7 @@ html[data-theme='dark'] {
     }
 
     .sf-picker-select {
-        @apply w-full border bg-white px-3 py-2 text-sm;
+        @apply w-full border bg-surface px-3 py-2 text-sm;
         border-color: var(--sf-pdp-line);
         border-radius: 0;
     }
@@ -2208,7 +2211,7 @@ html[data-theme='dark'] {
 
     .sf-swatch-dot {
         @apply block h-full w-full rounded-full;
-        box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.12);
+        box-shadow: inset 0 0 0 1px var(--sf-swatch-edge, rgb(0 0 0 / 0.12));
     }
 
     .sf-size {
@@ -2268,11 +2271,11 @@ html[data-theme='dark'] {
 
     /* the button was pressed before a choice: the first group that is missing one is outlined */
     .sf-picker.is-missing .sf-picker-label {
-        color: #b91c1c;
+        color: var(--sf-error, #b91c1c);
     }
 
     .sf-picker.is-missing .sf-picker-values {
-        outline: 2px solid #b91c1c;
+        outline: 2px solid var(--sf-error, #b91c1c);
         outline-offset: 4px;
         border-radius: 0.375rem;
     }
@@ -2398,7 +2401,8 @@ html[data-theme='dark'] {
     }
 
     :is(.sf-description, .sf-psec-body, .sf-ptab-panel) :where(a) {
-        @apply font-medium text-sky-700 underline;
+        @apply font-medium underline;
+        color: var(--sf-link, var(--color-sky-700));
     }
 
     :is(.sf-description, .sf-psec-body, .sf-ptab-panel) :where(table) {
@@ -7447,4 +7451,22 @@ html[data-theme='dark'] .sf-category-tile-link:focus-visible {
     html[data-theme='dark'] .sf-fdrawer-panel {
         box-shadow: 0 0 0 1px var(--sf-border);
     }
+}
+
+/*
+ * DM-2c: the product page's dark-mode-only rules (they match nothing in light mode; UNLAYERED, like the shell's and the catalogue's above). The scroll shadow of a description table is a black shadow, invisible on
+ * black: it is drawn light (the same two gradients, only the shadow's colour changes); the dashed hairlines of a measurements list (#ddd) become the border colour.
+ */
+html[data-theme='dark'] .sf-table-wrap {
+    background:
+        linear-gradient(to left, var(--sf-bg, #fff) 30%, rgb(255 255 255 / 0)) right center / 2rem 100% no-repeat local,
+        linear-gradient(to left, rgb(255 255 255 / 0.16), rgb(255 255 255 / 0)) right center / 0.75rem 100% no-repeat scroll;
+}
+
+html[data-theme='dark'] .sf-meas-list > div {
+    border-bottom-color: var(--sf-border);
+}
+
+html[data-theme='dark'] .sf-meas-list > div:first-child {
+    border-top-color: var(--sf-border);
 }
