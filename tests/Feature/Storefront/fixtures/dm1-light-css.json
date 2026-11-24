@@ -1,0 +1,63 @@
+{
+    "empty": {
+        "overrides": [],
+        "zones": [],
+        "css": null
+    },
+    "primary": {
+        "overrides": {
+            "appearance.color.primary": "#123456"
+        },
+        "zones": [],
+        "css": ":root {\n    --sf-primary: #123456;\n    --sf-primary-hover: #3c5874;\n}\n"
+    },
+    "all_colors": {
+        "overrides": {
+            "appearance.color.background": "#101010",
+            "appearance.color.text": "#fefefe",
+            "appearance.color.muted": "#aaaaaa",
+            "appearance.color.primary": "#f97316",
+            "appearance.color.on_primary": "#000000",
+            "appearance.color.accent": "#ff0000",
+            "appearance.color.border": "#333333",
+            "appearance.color.header_bg": "#111111",
+            "appearance.color.header_text": "#eeeeee",
+            "appearance.color.footer_bg": "#222222",
+            "appearance.color.footer_text": "#dddddd",
+            "banner.color.text": "#ffffff",
+            "banner.color.bg": "#000000"
+        },
+        "zones": [],
+        "css": ":root {\n    --sf-bg: #101010;\n    --sf-text: #fefefe;\n    --sf-muted: #aaaaaa;\n    --sf-primary: #f97316;\n    --sf-primary-hover: #fa8c3f;\n    --sf-on-primary: #000000;\n    --sf-accent: #ff0000;\n    --sf-border: #333333;\n    --sf-header-bg: #111111;\n    --sf-header-text: #eeeeee;\n    --sf-footer-bg: #222222;\n    --sf-footer-text: #dddddd;\n    --sf-banner-bg: #000000;\n}\n"
+    },
+    "fonts_radius_outline": {
+        "overrides": {
+            "appearance.font.body": "inter",
+            "appearance.font.heading": "lora",
+            "appearance.radius": "lg",
+            "appearance.button": "outline",
+            "appearance.color.primary": "#0f766e"
+        },
+        "zones": [],
+        "css": ":root {\n    --sf-primary: #0f766e;\n    --sf-primary-hover: #398e88;\n    --sf-font-body: 'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;\n    --sf-font-heading: 'Lora Variable', Georgia, 'Times New Roman', serif;\n    --sf-r-sm: 9px;\n    --sf-r-md: 12px;\n    --sf-r-lg: 18px;\n    --sf-btn-bg: transparent;\n    --sf-btn-text: var(--sf-primary, #171717);\n    --sf-btn-bw: 2px;\n}\n@font-face {\n    font-family: 'Inter Variable';\n    font-style: normal;\n    font-display: swap;\n    font-weight: 100 900;\n    src: url(/fonts/storefront/inter/inter-latin-wght-normal.woff2) format('woff2-variations');\n    unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF;\n}\n@font-face {\n    font-family: 'Inter Variable';\n    font-style: normal;\n    font-display: swap;\n    font-weight: 100 900;\n    src: url(/fonts/storefront/inter/inter-cyrillic-wght-normal.woff2) format('woff2-variations');\n    unicode-range: U+0460-052F,U+1C80-1C8A,U+20B4,U+2DE0-2DFF,U+A640-A69F,U+FE2E-FE2F;\n}\n@font-face {\n    font-family: 'Lora Variable';\n    font-style: normal;\n    font-display: swap;\n    font-weight: 100 900;\n    src: url(/fonts/storefront/lora/lora-latin-wght-normal.woff2) format('woff2-variations');\n    unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF;\n}\n@font-face {\n    font-family: 'Lora Variable';\n    font-style: normal;\n    font-display: swap;\n    font-weight: 100 900;\n    src: url(/fonts/storefront/lora/lora-cyrillic-wght-normal.woff2) format('woff2-variations');\n    unicode-range: U+0460-052F,U+1C80-1C8A,U+20B4,U+2DE0-2DFF,U+A640-A69F,U+FE2E-FE2F;\n}\n"
+    },
+    "zones": {
+        "overrides": {
+            "appearance.radius": "pill"
+        },
+        "zones": {
+            "footer": {
+                "--sf-ftu-bg": "#abcdef",
+                "--sf-ftu-bw": "2px"
+            },
+            "buy": {
+                "--sf-buy-bg": "#112233",
+                "--sf-buy-color": "#ffffff"
+            },
+            "header": {
+                "--sf-hdr-d-main-bg": "#445566"
+            }
+        },
+        "css": ":root {\n    --sf-r-btn: 9999px;\n    --sf-ftu-bg: #abcdef;\n    --sf-ftu-bw: 2px;\n    --sf-hdr-d-main-bg: #445566;\n    --sf-buy-bg: #112233;\n    --sf-buy-color: #ffffff;\n}\n"
+    }
+}

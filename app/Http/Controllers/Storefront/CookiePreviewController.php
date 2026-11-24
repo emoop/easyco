@@ -58,6 +58,7 @@ final class CookiePreviewController extends Controller
             'cc' => $cc,
             'layer' => $layer,
             'tokensUrl' => $appearance->forLayout()['tokensUrl'],
+            'mode' => $appearance->mode(),
             'previewCss' => $this->stylesheet($draft['color'] ?? null),
             'locale' => $locale,
         ])->header('X-Robots-Tag', 'noindex')->header('Cache-Control', 'private, no-store');

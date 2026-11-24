@@ -126,6 +126,16 @@ final class AppearanceSettings
 
     public const BUTTON = 'appearance.button';
 
+    /** DM-1: the storefront's mode, `light` (default; a missing or invalid stored value means light) or `dark`. Site-wide, a merchant switch, never a visitor choice. */
+    public const MODE = 'appearance.mode';
+
+    /** DM-1: the dark mode's button colour (`#rrggbb`, default orange). Used ONLY in dark mode, never the merchant's light `appearance.color.primary`. */
+    public const DARK_BUTTON = 'appearance.dark.button';
+
+    public const MODES = ['light', 'dark'];
+
+    public const DEFAULT_DARK_BUTTON = '#f97316';
+
     public const BANNER_TEXT_MAX = 160;
 
     public const BANNER_LABEL_MAX = 40;
@@ -180,6 +190,8 @@ final class AppearanceSettings
         ...\App\Settings\SiteLogo::READ_KEYS_LIST,
         self::COMPILED_KEY,
         self::THEME_KEY,
+        // DM-1: the mode rides on the same one read (the dark button colour lives in the compiled stylesheet, not in the payload)
+        self::MODE,
         self::HEADER_COMPILED_KEY,
         self::MENUS_COMPILED_KEY,
         self::FOOTER_COMPILED_KEY,
@@ -210,7 +222,7 @@ final class AppearanceSettings
             $defaults[$key] = $default;
         }
 
-        return $defaults + [self::FONT_BODY => 'system', self::FONT_HEADING => 'same', self::RADIUS => 'md', self::BUTTON => 'solid'];
+        return $defaults + [self::FONT_BODY => 'system', self::FONT_HEADING => 'same', self::RADIUS => 'md', self::BUTTON => 'solid', self::MODE => 'light', self::DARK_BUTTON => self::DEFAULT_DARK_BUTTON];
     }
 
     /** Is this a valid value for the setting key (a colour, or an entry of a closed list)? */
@@ -227,8 +239,30 @@ final class AppearanceSettings
             self::FONT_HEADING => is_string($value) && ($value === 'same' || array_key_exists($value, self::FONTS)),
             self::RADIUS => is_string($value) && array_key_exists($value, self::RADII),
             self::BUTTON => is_string($value) && in_array($value, self::BUTTONS, true),
+            self::MODE => is_string($value) && in_array($value, self::MODES, true),
+            self::DARK_BUTTON => self::isHex($value),
             default => false,
         };
+    }
+
+    /** DM-1: is the dark-mode dev flag on (`storefront.dark_mode`, env STOREFRONT_DARK_MODE)? Removed together with the flag once DM-2 is done. */
+    public static function darkModeAvailable(): bool
+    {
+        return config('storefront.dark_mode') === true;
+    }
+
+    /**
+     * DM-1: the stored mode value, validated: `dark` only for the exact value `dark`; anything else (missing, invalid) is `light`. Does NOT look at the flag (see effectiveMode()).
+     */
+    public static function storedMode(mixed $value): string
+    {
+        return $value === 'dark' ? 'dark' : 'light';
+    }
+
+    /** DM-1: the mode the storefront really shows: the stored one, and only while the dev flag is on. A stored `dark` has no effect with the flag off. */
+    public static function effectiveMode(mixed $stored): string
+    {
+        return self::darkModeAvailable() && self::storedMode($stored) === 'dark' ? 'dark' : 'light';
     }
 
     /**

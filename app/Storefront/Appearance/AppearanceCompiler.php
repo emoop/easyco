@@ -11,6 +11,7 @@ use App\Storefront\Header\HeaderLayout;
 use App\Storefront\Header\HeaderValidator;
 use App\Storefront\PageDesign\PageDesign;
 use App\Storefront\Content\ContentSet;
+use App\Storefront\Cookies\Contrast;
 use App\Storefront\ProductSummary\PurchaseStyle;
 use Illuminate\Support\Facades\Storage;
 use InvalidArgumentException;
@@ -56,8 +57,12 @@ final class AppearanceCompiler
         $defaults = AppearanceSettings::defaults();
         $vars = [];
 
+        // DM-1: in dark mode (the stored mode AND the dev flag) the 13 base colour tokens of the merchant are NOT emitted: the dark palette of storefront.css replaces them. Their light values stay stored
+        // and are compiled again when the mode goes back to light. Everything else (fonts, radius, button style, every zone list) is compiled exactly as in light mode.
+        $dark = AppearanceSettings::effectiveMode($effective[AppearanceSettings::MODE]) === 'dark';
+
         foreach (AppearanceSettings::COLORS as [$key, $variable]) {
-            if ($effective[$key] !== $defaults[$key]) {
+            if (! $dark && $effective[$key] !== $defaults[$key]) {
                 $vars[] = "{$variable}: ".strtolower($effective[$key]).';';
 
                 if ($key === 'appearance.color.primary') {
@@ -201,13 +206,37 @@ final class AppearanceCompiler
         $faces = $this->fontFaces($this->fontKeys($effective));
         $badges = $this->badgeClasses($badgeColors);
 
-        if ($vars === [] && $faces === '' && $badges === '' && $blocks === '') {
+        $darkBlock = $dark ? $this->darkButtonBlock($effective[AppearanceSettings::DARK_BUTTON]) : '';
+
+        if ($vars === [] && $darkBlock === '' && $faces === '' && $badges === '' && $blocks === '') {
             return null;
         }
 
         $css = $vars === [] ? '' : ":root {\n    ".implode("\n    ", $vars)."\n}\n";
 
-        return $css.$badges.$blocks.$faces;
+        return $css.$darkBlock.$badges.$blocks.$faces;
+    }
+
+    /**
+     * DM-1: the dark mode's button colour, written ONLY when it differs from the shipped default (the default and its computed text and hover are already in storefront.css, so a dark shop works with
+     * no token file). The text colour is COMPUTED (Contrast::bestText), never typed, and the hover is the light primary's own computation. A colour that fails the contrast rules (button vs the dark page
+     * 3:1, text vs button 4.5:1) is dropped like any invalid value: the shipped default stays. The selector `html[data-theme='dark']` outweighs the light `:root`.
+     */
+    private function darkButtonBlock(string $color): string
+    {
+        $color = strtolower($color);
+
+        if ($color === AppearanceSettings::DEFAULT_DARK_BUTTON) {
+            return '';
+        }
+
+        $check = Contrast::darkButton($color);
+
+        if (! $check['ok']) {
+            return '';
+        }
+
+        return "html[data-theme='dark'] {\n    --sf-primary: {$color};\n    --sf-on-primary: {$check['textColour']};\n    --sf-primary-hover: ".$this->towardsWhite($color, self::HOVER_MIX).";\n}\n";
     }
 
     /**

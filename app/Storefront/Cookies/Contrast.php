@@ -14,6 +14,12 @@ final class Contrast
 
     public const DIALOG_BACKGROUND = '#ffffff';
 
+    /** DM-1: the least contrast of a UI component (a button) against the page behind it (WCAG 2.x non-text contrast). */
+    public const COMPONENT_MIN = 3.0;
+
+    /** DM-1: the dark mode's page background (the `--sf-bg` of `html[data-theme='dark']`). */
+    public const DARK_BACKGROUND = '#000000';
+
     public static function isHex(mixed $value): bool
     {
         return is_string($value) && preg_match('/^#[0-9a-f]{6}$/D', $value) === 1;
@@ -45,5 +51,25 @@ final class Contrast
         $black = self::ratio('#000000', $background);
 
         return $white >= $black ? ['color' => '#ffffff', 'ratio' => $white] : ['color' => '#000000', 'ratio' => $black];
+    }
+
+    /**
+     * DM-1: the ONE check of the dark mode's button colour, used by the admin form and by the compiler path. The button must reach COMPONENT_MIN against the dark page, and the COMPUTED text colour
+     * (white or black, whichever contrasts more; never typed) must reach TEXT_MIN against the button. `reason` is null when ok, else `format`, `button` or `text`.
+     *
+     * @return array{ok: bool, reason: ?string, textColour: ?string, buttonRatio: ?float, textRatio: ?float}
+     */
+    public static function darkButton(mixed $color): array
+    {
+        if (! is_string($color) || ! self::isHex(strtolower($color))) {
+            return ['ok' => false, 'reason' => 'format', 'textColour' => null, 'buttonRatio' => null, 'textRatio' => null];
+        }
+
+        $color = strtolower($color);
+        $buttonRatio = self::ratio($color, self::DARK_BACKGROUND);
+        $best = self::bestText($color);
+        $reason = $buttonRatio < self::COMPONENT_MIN ? 'button' : ($best['ratio'] < self::TEXT_MIN ? 'text' : null);
+
+        return ['ok' => $reason === null, 'reason' => $reason, 'textColour' => $best['color'], 'buttonRatio' => $buttonRatio, 'textRatio' => $best['ratio']];
     }
 }
