@@ -16,9 +16,17 @@
 @theme {
     --font-sans: var(--sf-font-body, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif);
     --color-neutral-50: var(--sf-bg, oklch(98.5% 0 none));
+    --color-neutral-100: var(--sf-surface-2, oklch(97% 0 none));
     --color-neutral-200: var(--sf-border, oklch(92.2% 0 none));
+    --color-neutral-300: var(--sf-border-strong, oklch(87% 0 none));
+    --color-neutral-400: var(--sf-n400, oklch(70.8% 0 none));
+    --color-neutral-500: var(--sf-n500, oklch(55.6% 0 none));
     --color-neutral-600: var(--sf-muted, oklch(43.9% 0 none));
+    --color-neutral-700: var(--sf-n700, oklch(37.1% 0 none));
+    --color-neutral-800: var(--sf-n800, oklch(26.9% 0 none));
     --color-neutral-900: var(--sf-text, oklch(20.5% 0 none));
+    /* DM-2a: the frame behind a product / category / gallery / cart-line picture and the «no image» tile. The SAME value in light and in dark mode (a light frame: decision Q4). */
+    --color-image-frame: var(--sf-image-frame, oklch(97% 0 none));
     --radius-md: var(--sf-r-sm, 0.375rem);
     --radius-lg: var(--sf-r-md, 0.5rem);
     --radius-xl: var(--sf-r-lg, 0.75rem);
@@ -56,7 +64,7 @@
  * no token file. UNLAYERED on purpose: `html[data-theme]` (0,1,1) outweighs the compiled `:root` (0,1,0) whatever the order or the cascade layer, so even a token stylesheet compiled for light mode cannot
  * repaint the page. Cards sit one step above the page (#111) with a thin border (shadows do not show on black). `--sf-primary` is the dark BUTTON colour (default orange); the merchant's own dark
  * button colour is compiled after this file as `html[data-theme='dark'] { --sf-primary … }`. The hover is what the compiler computes for the same colour (towardsWhite 0.1767).
- * Until DM-2 the page is NOT presentable in this mode (white cards with white text): the switch is behind the STOREFRONT_DARK_MODE dev flag.
+ * The shell is migrated (DM-2a); the other areas still are not (white cards with white text until DM-2b..e): the switch is behind the STOREFRONT_DARK_MODE dev flag.
  */
 html[data-theme='dark'] {
     color-scheme: dark;
@@ -66,12 +74,20 @@ html[data-theme='dark'] {
     --sf-text: #ffffff;
     --sf-muted: #a3a3a3;
     --sf-border: #262626;
-    --sf-border-strong: #404040;
+    --sf-border-strong: #666666;
     --sf-focus: #38bdf8;
     --sf-error: #f87171;
     --sf-accent: #f87171;
     --sf-overlay: rgb(0 0 0 / 0.7);
     --sf-shadow: transparent;
+    /* DM-2a: the rest of the neutral scale (see @theme), the header's hairline, the ink of a field, the picture frame (the SAME value as in light mode: decision Q4). */
+    --sf-n400: #808080;
+    --sf-n500: #a3a3a3;
+    --sf-n700: #d4d4d4;
+    --sf-n800: #e5e5e5;
+    --sf-header-line: #262626;
+    --sf-field-text: var(--sf-text);
+    --sf-image-frame: oklch(97% 0 none);
     --sf-header-bg: var(--sf-bg);
     --sf-header-text: var(--sf-text);
     --sf-footer-bg: #000000;
@@ -129,8 +145,28 @@ html[data-theme='dark'] {
     }
 
     :focus-visible {
-        outline: 2px solid #0369a1;
+        outline: 2px solid var(--sf-focus, #0369a1);
         outline-offset: 2px;
+    }
+
+    /* DM-2a: DARK MODE ONLY (nothing here matches in light, so light stays byte-identical). The base look of a text control: the surface, the text, the strong border, a muted placeholder, and an
+       autofill that does not paint a pale fill with dark text. In the BASE layer, so any component rule that sets its own look still wins. */
+    html[data-theme='dark'] :is(input:not([type='checkbox'], [type='radio'], [type='range'], [type='file'], [type='submit'], [type='button'], [type='reset'], [type='image'], [type='hidden'], [type='color']), select, textarea) {
+        background-color: var(--sf-surface);
+        color: var(--sf-text);
+        border-color: var(--sf-border-strong);
+    }
+
+    html[data-theme='dark'] :is(input, textarea)::placeholder {
+        color: var(--sf-muted);
+        opacity: 1;
+    }
+
+    html[data-theme='dark'] :is(input, textarea, select):-webkit-autofill {
+        -webkit-text-fill-color: var(--sf-text);
+        caret-color: var(--sf-text);
+        box-shadow: inset 0 0 0 100rem var(--sf-surface);
+        transition: background-color 9999s ease-out 0s;
     }
 
     /* Tailwind v4 gives buttons `cursor: default`: every clickable control on the storefront says so with a pointer. A disabled button
@@ -153,7 +189,7 @@ html[data-theme='dark'] {
         @apply z-30 border-b border-neutral-200;
         background-color: var(--sf-header-bg, #fff);
         color: var(--sf-header-text, currentcolor);
-        border-color:#dbdbdb;
+        border-color: var(--sf-header-line, #dbdbdb);
     }
 
     /* Three columns — the menu toggle left, the mark in the MIDDLE, the cart right — so the mark stays centred
@@ -344,7 +380,7 @@ html[data-theme='dark'] {
     }
 
     .sf-card-image {
-        @apply relative w-full overflow-hidden bg-neutral-100;
+        @apply relative w-full overflow-hidden bg-image-frame;
         aspect-ratio: var(--sf-card-ratio, 3 / 4);
         border-radius: var(--sf-card-radius);
     }
@@ -400,7 +436,7 @@ html[data-theme='dark'] {
     /* PC-2: the sizes of the card, one line at the bottom of the photo (about 12% of it at most). Pointer-less: a click goes to the product. Desktop: shown while the
        card is hovered or focused. Touch: slides up from the bottom once the script has filled it (.is-ready). */
     .sf-card-image > .sf-card-sizes {
-        @apply pointer-events-none absolute inset-x-0 bottom-0 z-10 m-0 flex list-none flex-nowrap gap-1 overflow-hidden bg-white/90 px-2 py-1 text-xs leading-5;
+        @apply pointer-events-none absolute inset-x-0 bottom-0 z-10 m-0 flex list-none flex-nowrap gap-1 overflow-hidden bg-white/90 px-2 py-1 text-xs leading-5; /* dm-keeps-white: a strip over the light picture frame; its text must be pinned dark in DM-2b */
         opacity: 0;
         transition: opacity var(--sf-card-fade-time) ease;
     }
@@ -1712,7 +1748,7 @@ html[data-theme='dark'] {
     }
 
     .sf-gal-placeholder {
-        @apply overflow-hidden rounded-lg border border-neutral-200 bg-neutral-100;
+        @apply overflow-hidden rounded-lg border border-neutral-200 bg-image-frame;
         aspect-ratio: 4 / 3;
     }
 
@@ -1756,7 +1792,7 @@ html[data-theme='dark'] {
     }
 
     .sf-gal-next {
-        @apply absolute right-2 top-1/2 z-10 hidden h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border-0 bg-white/90 text-2xl leading-none text-neutral-900 shadow;
+        @apply absolute right-2 top-1/2 z-10 hidden h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border-0 bg-white/90 text-2xl leading-none text-neutral-900 shadow; /* dm-keeps-white: a disc over the light picture frame; its text must be pinned dark in DM-2c */
     }
 
     .sf-gal-thumbs {
@@ -1765,7 +1801,7 @@ html[data-theme='dark'] {
     }
 
     .sf-gal-thumb {
-        @apply relative m-0 shrink-0 overflow-hidden border border-neutral-200 bg-neutral-100 p-0;
+        @apply relative m-0 shrink-0 overflow-hidden border border-neutral-200 bg-image-frame p-0;
         border-radius: var(--sf-gal-radius, 0.25rem);
         width: 4.5rem;
         aspect-ratio: 3 / 4;
@@ -2680,7 +2716,7 @@ html[data-theme='dark'] {
     }
 
     .sf-nav > .sf-nav-inner > .sf-menu > .sf-menu-item > .sf-menu {
-        @apply absolute left-0 top-full z-40 ml-0 hidden min-w-48 rounded-md border border-neutral-200 bg-white p-2 shadow-lg;
+        @apply absolute left-0 top-full z-40 ml-0 hidden min-w-48 rounded-md border border-neutral-200 bg-surface p-2 shadow-lg;
     }
 
     .sf-nav > .sf-nav-inner > .sf-menu > .sf-menu-item:hover > .sf-menu,
@@ -2954,7 +2990,7 @@ html[data-theme='dark'] {
     }
 
     .sf-cart-line-img {
-        @apply h-20 w-20 rounded-md border border-neutral-200 bg-neutral-100 object-cover;
+        @apply h-20 w-20 rounded-md border border-neutral-200 bg-image-frame object-cover;
     }
 
     .sf-cart-line-link {
@@ -3015,7 +3051,7 @@ html[data-theme='dark'] {
     .sf-field input[type='tel'],
     .sf-field select,
     .sf-kind-select {
-        @apply h-[3.25rem] w-full rounded-lg border border-neutral-300 bg-white px-3 text-base text-neutral-900;
+        @apply h-[3.25rem] w-full rounded-lg border border-neutral-300 bg-surface px-3 text-base text-neutral-900;
     }
 
     .sf-field select,
@@ -3464,7 +3500,7 @@ html[data-theme='dark'] {
     }
 
     .sf-summary-line-image img {
-        @apply h-14 w-14 rounded-md border border-neutral-200 bg-neutral-100 object-cover;
+        @apply h-14 w-14 rounded-md border border-neutral-200 bg-image-frame object-cover;
     }
 
     .sf-summary-line-info {
@@ -4655,7 +4691,7 @@ html[data-theme='dark'] {
     list-style: none;
     border: 1px solid var(--sf-border, #e5e5e5);
     border-radius: var(--radius-md);
-    background: #fff;
+    background: var(--sf-surface, #fff);
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
 }
 
@@ -4745,7 +4781,7 @@ html.js .sf-hdr .sf-search-row {
     padding: 0 0.75rem;
     border: 1px solid var(--sf-border, #d4d4d4);
     border-radius: var(--radius-lg);
-    background: #fff;
+    background: var(--sf-surface, #fff);
     font-size: 1rem;
 }
 
@@ -4779,7 +4815,7 @@ html.sf-locked {
 .sf-drawer-overlay {
     position: absolute;
     inset: 0;
-    background: rgba(0, 0, 0, 0.45);
+    background: var(--sf-overlay, rgba(0, 0, 0, 0.45));
     opacity: 0;
     transition: opacity 200ms ease;
 }
@@ -4796,7 +4832,7 @@ html.sf-locked {
     flex-direction: column;
     width: min(85vw, 22rem);
     overflow-y: auto;
-    background: #fff;
+    background: var(--sf-surface, #fff);
     color: var(--sf-text, #171717);
     transition: transform 200ms ease;
 }
@@ -4843,7 +4879,7 @@ html.sf-locked {
     padding: 0 2.75rem 0 0.75rem;
     border: 1px solid var(--sf-border, #d4d4d4);
     border-radius: var(--radius-lg);
-    background: #fff;
+    background: var(--sf-surface, #fff);
     font-size: 1rem;
 }
 
@@ -5124,7 +5160,7 @@ html.js .sf-bar {
     padding: 0.5rem;
     border: 1px solid var(--sf-border, #e5e5e5);
     border-radius: var(--radius-md);
-    background: #fff;
+    background: var(--sf-surface, #fff);
     color: var(--sf-text, #171717);
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
 }
@@ -5271,7 +5307,7 @@ html:not(.js) .sf-bar-item:focus-within > .sf-sub {
     padding: 0.5rem;
     border: 1px solid var(--sf-border, #e5e5e5);
     border-radius: var(--radius-md);
-    background: #fff;
+    background: var(--sf-surface, #fff);
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
 }
 
@@ -5547,8 +5583,8 @@ html:not(.js) .sf-bar-item:focus-within > .sf-sub {
     padding: 0 0.75rem;
     border: 1px solid var(--sf-border, #d4d4d4);
     border-radius: var(--radius-lg);
-    background: #fff;
-    color: #171717;
+    background: var(--sf-surface, #fff);
+    color: var(--sf-field-text, #171717);
     font-size: 1rem;
 }
 
@@ -6599,7 +6635,7 @@ html:not(.js) .sf-bar-item:focus-within > .sf-sub {
     aspect-ratio: 4 / 3;
     overflow: hidden;
     border: 1px solid var(--sf-border, #e5e5e5);
-    background: #fff;
+    background: #fff; /* dm-keeps-white: a picture frame (decision Q4) */
 }
 
 .sf-subject-pic .sf-image {
@@ -7366,4 +7402,24 @@ html.sf-cc-lock {
 
 .sf-cc-reopen:hover {
     text-decoration: underline;
+}
+
+/*
+ * DM-2a: the shell's dark-mode-only rules (they match nothing in light mode; UNLAYERED, because the rules they override further up are, and a layered rule would lose to those). A shadow does not show on black, so the panels that carry one lose it (every one of them already has its own 1px
+ * `--sf-border` line, or gets one here); the mobile drawer has no border of its own, so it gets a 1px edge; the native chevron of a select is drawn in a light grey.
+ */
+html[data-theme='dark'] :is(.sf-nav > .sf-nav-inner > .sf-menu > .sf-menu-item > .sf-menu, .sf-hdr-menu-panel, .sf-sub, .sf-sub-dropdown .sf-menu .sf-menu) {
+    box-shadow: none;
+}
+
+html[data-theme='dark'] .sf-hdr .sf-search-row {
+    box-shadow: none;
+}
+
+html[data-theme='dark'] .sf-drawer-panel {
+    box-shadow: 0 0 0 1px var(--sf-border);
+}
+
+html[data-theme='dark'] :is(.sf-field select, .sf-kind-select) {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%23a3a3a3' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 8l5 5 5-5'/%3E%3C/svg%3E");
 }
