@@ -39,6 +39,7 @@ final class OrderConfirmationContent
         private readonly SiteSettingsRepository $settings,
         private readonly MailTemplates $templates,
         private readonly TemplateRenderer $renderer,
+        private readonly MailThumbnails $thumbnails,
     ) {
     }
 
@@ -66,14 +67,45 @@ final class OrderConfirmationContent
             'support_email' => $this->supportEmail(),
         ];
 
+        [$lines, $headCell, $inline] = $this->withPictures($this->lines($order));
+
         $blocks = [
-            'order_lines' => MailBlocks::orderLines($this->lines($order), $locale),
+            'order_lines' => MailBlocks::orderLines($lines, $locale, $headCell),
             'order_totals' => $this->totals($order, $locale),
             'delivery_summary' => $this->delivery($order, $locale),
             'payment_instructions' => $this->paymentBlock($order, $payment, $locale),
         ];
 
-        return $this->renderer->render($this->templates->get(MailTemplates::ORDER_CONFIRMATION), $locale, $scalars, $blocks);
+        return $this->renderer->render($this->templates->get(MailTemplates::ORDER_CONFIRMATION), $locale, $scalars, $blocks, $inline);
+    }
+
+    /**
+     * MAIL-2: the product pictures of the lines (MailThumbnails: JPEG, made now if not yet, never throws). When at least one line has a picture the items table gets a picture column: a MARKER in each
+     * cell now, the finished cell (an empty one of the same width for a line without a picture) put in after the sanitiser. With no picture at all there is no column and the table is what it always was.
+     * The markers carry a random part, so no customer text can ever equal one.
+     *
+     * @param  list<array<string, mixed>>  $lines
+     * @return array{0: list<array<string, mixed>>, 1: ?string, 2: array<string, string>} the lines with their `cell` marker, the heading marker, marker => finished cell
+     */
+    private function withPictures(array $lines): array
+    {
+        $thumbs = $this->thumbnails->forVariations(array_values(array_filter(array_map(static fn (array $line): ?string => $line['variation_id'], $lines), static fn (?string $id): bool => $id !== null && $id !== '')));
+
+        if ($thumbs === []) {
+            return [$lines, null, []];
+        }
+
+        $nonce = bin2hex(random_bytes(8));
+        $head = 'mt'.$nonce.'h';
+        $inline = [$head => MailBlocks::thumbCell(null, '', 'th')];
+
+        foreach ($lines as $i => $line) {
+            $marker = 'mt'.$nonce.'r'.$i;
+            $lines[$i]['cell'] = $marker;
+            $inline[$marker] = MailBlocks::thumbCell($thumbs[(string) $line['variation_id']] ?? null, (string) $line['name']);
+        }
+
+        return [$lines, $head, $inline];
     }
 
     private function shopName(): string
@@ -96,7 +128,7 @@ final class OrderConfirmationContent
     /**
      * The order's sale lines as the checkout response shows them: the SALE lines that still stand.
      *
-     * @return list<array{name: string, sku: ?string, attributes: string, quantity: int, unit: ?string, total: string}>
+     * @return list<array{name: string, sku: ?string, attributes: string, quantity: int, unit: ?string, total: string, variation_id: ?string}>
      */
     private function lines(Order $order): array
     {
@@ -112,6 +144,7 @@ final class OrderConfirmationContent
             $unit = $line->finalUnitPrice();
 
             $lines[] = [
+                'variation_id' => $line->priceableId(),
                 'name' => MailHeader::clean((string) $line->productName(), 255),
                 'sku' => $line->sku() === null ? null : MailHeader::clean($line->sku(), 80),
                 'attributes' => $this->attributes($line),

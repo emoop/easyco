@@ -64,16 +64,15 @@ final class CartLineEnricher
             ->get(['id', 'slug', 'name', 'status', 'catalog_visibility', 'deleted_at'])
             ->keyBy(fn (ProductModel $p): string => (string) $p->id);
 
-        // 3. + 4. first image of each variation, first image of each product
-        $variationImages = $this->firstImages('catalog_variation_media', 'variation_id', $variationIds);
-        $productImages = $this->firstImages('catalog_product_media', 'product_id', $productIds);
+        // 3. + 4. the picture of each variation: its own first image, else its product's first
+        $assets = $this->imageAssets($variationIds, $productIdOf)['assets'];
 
         $result = [];
 
         foreach ($variationIds as $variationId) {
             $productId = $productIdOf[$variationId] ?? null;
             $product = $productId === null ? null : $products->get($productId);
-            $asset = $variationImages[$variationId] ?? ($productId === null ? null : ($productImages[$productId] ?? null));
+            $asset = $assets[$variationId] ?? null;
 
             $result[$variationId] = [
                 'product_url' => $product !== null && $this->visibility->isProductVisible($product) ? $this->urls->product((string) $product->slug) : null,
@@ -82,6 +81,31 @@ final class CartLineEnricher
         }
 
         return $result;
+    }
+
+    /**
+     * THE rule of "which picture shows a variation": its own first ready image, else its product's first (the cart, and the order confirmation mail, MAIL-2). TWO reads (the variations' images, the products'),
+     * plus the variation -> product read when `$productIdOf` is not given.
+     *
+     * @param  list<string>  $variationIds
+     * @param  array<string, string>|null  $productIdOf  variation id => product id, when the caller has read it already
+     * @return array{assets: array<string, MediaAssetModel>, products: array<string, string>} the asset of each variation that HAS one, and every variation's product id
+     */
+    public function imageAssets(array $variationIds, ?array $productIdOf = null): array
+    {
+        $variationIds = array_values(array_unique(array_map('strval', $variationIds)));
+        $productIdOf ??= $variationIds === [] ? [] : VariationModel::withTrashed()->whereIn('id', $variationIds)->pluck('product_id', 'id')->map(fn ($id): string => (string) $id)->all();
+        $variationImages = $this->firstImages('catalog_variation_media', 'variation_id', $variationIds);
+        $productImages = $this->firstImages('catalog_product_media', 'product_id', array_values(array_unique($productIdOf)));
+        $assets = [];
+
+        foreach ($variationIds as $variationId) {
+            $productId = $productIdOf[$variationId] ?? null;
+            $asset = $variationImages[$variationId] ?? ($productId === null ? null : ($productImages[$productId] ?? null));
+            $asset === null || $assets[$variationId] = $asset;
+        }
+
+        return ['assets' => $assets, 'products' => $productIdOf];
     }
 
     /**
