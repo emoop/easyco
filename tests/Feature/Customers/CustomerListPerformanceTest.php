@@ -65,6 +65,20 @@ class CustomerListPerformanceTest extends TestCase
         foreach (array_chunk($accounts, 500) as $chunk) {
             DB::table('accounts')->insert($chunk);
         }
+
+        // BUG-2: every account has a default saved address (the source of the name and phone of an account with no order)
+        $addresses = [];
+
+        foreach (DB::table('accounts')->orderBy('id')->pluck('id') as $accountId) {
+            $addresses[] = [
+                'account_id' => $accountId, 'delivery_type' => 'street_address', 'recipient_first_name' => 'Addr'.$accountId, 'recipient_last_name' => 'Saved', 'phone' => '+3598'.str_pad((string) (50_000_000 + $accountId), 8, '0', STR_PAD_LEFT),
+                'country' => 'BG', 'city' => 'Sofia', 'postal_code' => '1000', 'address_line_1' => 'Vitosha 1', 'default_marker' => 1, 'created_at' => now(), 'updated_at' => now(),
+            ];
+        }
+
+        foreach (array_chunk($addresses, 500) as $chunk) {
+            DB::table('addresses')->insert($chunk);
+        }
     }
 
     private int $queryCount = 0;

@@ -69,6 +69,9 @@ final class CustomerPageReader
         $latest = $recent->first();
         $currency = $latest->currency ?? null;
 
+        // BUG-2: the name and the phone by the one rule (CustomerContact): the preferred saved address (the list above is ordered default first), else the latest order
+        $contact = CustomerContact::resolve($addresses->first(), $latest);
+
         $privacyReady = true;
         $requests = collect();
 
@@ -86,9 +89,9 @@ final class CustomerPageReader
 
         return [
             'person' => [
-                'name' => $latest === null ? null : (trim($latest->recipient_first_name.' '.$latest->recipient_last_name) ?: null),
+                'name' => $contact['name'],
                 'email' => $latest->email ?? $emailKey,
-                'phone' => $latest->phone ?? ($phones[0]['display'] ?? null),
+                'phone' => $contact['phone'] ?? ($phones[0]['display'] ?? null),
                 'has_account' => $account !== null,
                 'account_since' => $account?->created_at,
             ],

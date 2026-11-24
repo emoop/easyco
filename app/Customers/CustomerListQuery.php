@@ -19,9 +19,10 @@ use Illuminate\Support\Facades\DB;
  *  - TOTAL SPENT: the orders list defines no revenue, so this is the sum of `total_minor` of the orders that still count: every status EXCEPT `cancelled` and `refunded` (the shop has no
  *    «failed» order status; a refunded order gave the money back). The currency shown is the latest order's (a shop has one currency; a person who ordered in two would show a mixed sum:
  *    reported, not solved here).
- *  - `has_account`: an account (not soft-deleted) with that email exists. An account has no name column: a person who has only an account shows «—» for the name.
+ *  - `has_account`: an account (not soft-deleted) with that email exists. An account has no name or phone column: the NAME and the PHONE are the account's preferred saved address, else the latest order
+ *    (CustomerContact, BUG-2); a person with neither shows «—».
  *
- * SEARCH is ONE box: the email (substring), the name (every word, through `orders.name_key`) and the phone (reduced by the same normaliser as `orders.phone_key`, plus the digits as a part); a hit on any order of a person gives that
+ * SEARCH is ONE box: the email (substring), the name (every word, through `orders.name_key`, and the account's saved addresses) and the phone (reduced by the same normaliser as `orders.phone_key`, plus the digits as a part, in orders and saved addresses); a hit on any order of a person gives that
  * person ONCE (the answer is a set of email keys, never a join). `%`, `_` and `\` are escaped.
  */
 final class CustomerListQuery
@@ -59,16 +60,19 @@ final class CustomerListQuery
             ->groupBy('email_key')
             ->selectRaw("email_key, COUNT(*) AS orders_count, SUM(CASE WHEN status IN ({$marks}) THEN 0 ELSE total_minor END) AS spent_minor, MAX(id) AS last_id", $notSpent);
 
+        // name and phone: the account's preferred address, else the latest order (CustomerContact, BUG-2)
         $people = DB::query()
             ->fromSub($aggregate, 'g')
             ->join('orders AS o', 'o.id', '=', 'g.last_id')
-            ->leftJoin('accounts AS acc', fn ($join) => $join->on('acc.email', '=', 'g.email_key')->whereNull('acc.deleted_at'))
-            ->selectRaw("CONCAT('o-', o.id) AS row_key, g.email_key AS email_key, NULLIF(TRIM(CONCAT_WS(' ', o.recipient_first_name, o.recipient_last_name)), '') AS name, o.email AS email, o.phone AS phone, g.orders_count AS orders_count, g.spent_minor AS spent_minor, o.currency AS currency, o.placed_at AS last_order_at, (acc.id IS NOT NULL) AS has_account");
+            ->leftJoin('accounts AS acc', fn ($join) => $join->on('acc.email', '=', 'g.email_key')->whereNull('acc.deleted_at'));
+        CustomerContact::joinPreferredAddress($people, 'acc.id')
+            ->selectRaw("CONCAT('o-', o.id) AS row_key, g.email_key AS email_key, ".CustomerContact::nameSql('o').' AS name, o.email AS email, '.CustomerContact::phoneSql('o').' AS phone, g.orders_count AS orders_count, g.spent_minor AS spent_minor, o.currency AS currency, o.placed_at AS last_order_at, (acc.id IS NOT NULL) AS has_account');
 
         $accountsOnly = DB::table('accounts AS a')
             ->whereNull('a.deleted_at')
-            ->whereNotExists(fn ($sub) => $sub->selectRaw('1')->from('orders AS x')->whereColumn('x.email_key', 'a.email'))
-            ->selectRaw("CONCAT('a-', a.id), a.email, NULL, a.email, NULL, 0, 0, NULL, NULL, 1");
+            ->whereNotExists(fn ($sub) => $sub->selectRaw('1')->from('orders AS x')->whereColumn('x.email_key', 'a.email'));
+        CustomerContact::joinPreferredAddress($accountsOnly, 'a.id')
+            ->selectRaw("CONCAT('a-', a.id), a.email, ".CustomerContact::nameSql(null).', a.email, '.CustomerContact::phoneSql(null).', 0, 0, NULL, NULL, 1');
 
         return $people->unionAll($accountsOnly);
     }
@@ -103,6 +107,15 @@ final class CustomerListQuery
                         $sub->where('name_key', 'like', '%'.self::escapeLike($word).'%');
                     }
                 });
+
+                // BUG-2: the name of the account's saved addresses too (an account with no order has no order name to find)
+                $where->orWhereIn('customers.email_key', function ($sub) use ($words): void {
+                    $sub->select('s.email')->from('accounts AS s')->join('addresses AS sa', 'sa.account_id', '=', 's.id')->whereNull('s.deleted_at');
+
+                    foreach ($words as $word) {
+                        $sub->whereRaw("LOWER(CONCAT_WS(' ', sa.recipient_first_name, sa.recipient_last_name)) LIKE ?", ['%'.self::escapeLike($word).'%']);
+                    }
+                });
             }
 
             if ($phoneSearch) {
@@ -117,6 +130,14 @@ final class CustomerListQuery
                     $sub->select('email_key')->from('orders')->whereNotNull('email_key')->where(function ($match) use ($keys, $digits): void {
                         $keys !== [] && $match->whereIn('phone_key', $keys);
                         $match->orWhere('phone_key', 'like', '%'.$digits.'%');
+                    });
+                });
+
+                // BUG-2: the phone of the account's saved addresses (stored as E.164, like `phone_key`)
+                $where->orWhereIn('customers.email_key', function ($sub) use ($keys, $digits): void {
+                    $sub->select('s.email')->from('accounts AS s')->join('addresses AS sa', 'sa.account_id', '=', 's.id')->whereNull('s.deleted_at')->where(function ($match) use ($keys, $digits): void {
+                        $keys !== [] && $match->whereIn('sa.phone', $keys);
+                        $match->orWhere('sa.phone', 'like', '%'.$digits.'%');
                     });
                 });
             }
