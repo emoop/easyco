@@ -38,16 +38,18 @@ final class TemplateRenderer
     /**
      * @param  array<string, string>  $scalars  plain-text values
      * @param  array<string, string>  $blocks  block name => HTML built by code (empty string = block omitted)
+     * @param  array<string, string>  $inline  MAIL-2: marker => HTML built by code. A block prints a MARKER as the whole content of a `td`/`th`; after the sanitiser (which drops `img`, `style` and the cell width on purpose)
+     *                                         the marker's cell is replaced by this HTML. The plain-text part is made from the sanitised HTML with the markers removed, so it never changes.
      *
      * @throws TemplateException The shipped default itself cannot be rendered.
      */
-    public function render(MailTemplateDefinition $definition, string $locale, array $scalars, array $blocks): RenderedMail
+    public function render(MailTemplateDefinition $definition, string $locale, array $scalars, array $blocks, array $inline = []): RenderedMail
     {
         $override = $this->overrides->find($definition->key, $locale);
 
         if ($override !== null) {
             try {
-                return $this->renderSource($definition, $override['subject'], $override['body'], $locale, $scalars, $blocks);
+                return $this->renderSource($definition, $override['subject'], $override['body'], $locale, $scalars, $blocks, $inline);
             } catch (Throwable $e) {
                 Log::warning('mail.template_override_failed', [
                     'template' => $definition->key,
@@ -60,7 +62,7 @@ final class TemplateRenderer
 
         [$subject, $body] = $this->shipped($definition->key, $locale);
 
-        return $this->renderSource($definition, $subject, $body, $locale, $scalars, $blocks);
+        return $this->renderSource($definition, $subject, $body, $locale, $scalars, $blocks, $inline);
     }
 
     /**
@@ -87,8 +89,9 @@ final class TemplateRenderer
     /**
      * @param  array<string, string>  $scalars
      * @param  array<string, string>  $blocks
+     * @param  array<string, string>  $inline
      */
-    private function renderSource(MailTemplateDefinition $definition, string $subject, string $body, string $locale, array $scalars, array $blocks): RenderedMail
+    private function renderSource(MailTemplateDefinition $definition, string $subject, string $body, string $locale, array $scalars, array $blocks, array $inline = []): RenderedMail
     {
         if (mb_strlen($subject) > self::MAX_SUBJECT || mb_strlen($body) > self::MAX_BODY) {
             throw new TemplateException('Template is too long.');
@@ -126,7 +129,18 @@ final class TemplateRenderer
 
         $clean = HtmlSanitizer::clean($html, (string) config('app.url'));
 
-        return new RenderedMail($renderedSubject, $this->wrap($clean, $renderedSubject, $locale), HtmlToText::convert($clean));
+        if ($inline === []) {
+            return new RenderedMail($renderedSubject, $this->wrap($clean, $renderedSubject, $locale), HtmlToText::convert($clean));
+        }
+
+        // MAIL-2: the text from the sanitised HTML with the markers taken out (an empty cell adds nothing to a row); the HTML with each marker's cell replaced by the finished one
+        $text = HtmlToText::convert(strtr($clean, array_fill_keys(array_keys($inline), '')));
+
+        foreach ($inline as $marker => $cell) {
+            $clean = (string) preg_replace_callback('#<(td|th)\b[^>]*>'.preg_quote((string) $marker, '#').'</\1>#', static fn (): string => $cell, $clean);
+        }
+
+        return new RenderedMail($renderedSubject, $this->wrap($clean, $renderedSubject, $locale), $text);
     }
 
     /** @throws TemplateException */

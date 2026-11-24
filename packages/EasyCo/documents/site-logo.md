@@ -61,6 +61,20 @@ A save that changes the name, an icon or a logo runs the SAME refresh as a «Д�
 
 `SiteIconUsage` and `SiteLogoUsage` are registered in `MediaUsageRegistry` the way the header logo (`DesignZones`) and the product-brand logo are. A picture used as the site icon, the logo or the dark logo cannot be deleted from «Медия»: the delete button is disabled, the details say where it is used («Настройки → Лого — иконата на сайта», «… лого (имейли и админ)», «… тъмно лого на админа», linking to the tab) and `MediaDeleter` answers «Файлът се използва и не може да бъде изтрит.» if asked anyway. **When a picture is replaced**, the old one is no longer used and can be deleted (its generated files are already gone).
 
+## Product pictures in the order-confirmation mail (MAIL-2)
+
+The items table of the order-confirmation mail (`order.confirmation`, the only template with the `order_lines` block) has a small picture of each ordered product. The block is built in CODE (`OrderConfirmationContent`, `MailBlocks::orderLines`); the merchant's template editor is not involved and `HtmlSanitizer` still has no `img`.
+
+- **JPEG, never WebP.** The media library makes WebP variants only, and Outlook desktop and other clients do not show WebP (or SVG). `App\Mail\MailThumbnails` makes its own JPEG with GD from the stored ORIGINAL: transparency flattened onto white, quality 82, never upscaled, proportions kept (no crop). The file is at most **144 x 192 px**; the mail shows it at half of that (**72 x 96 px**, sharp on 2x screens).
+- **Which picture:** the ordered variation's own first ready image, else its product's first (`CartLineEnricher::imageAssets`, the one rule the cart uses). A line with no picture, or whose picture cannot be made, prints an EMPTY cell of the same width, so the rows stay aligned. When NO line has a picture the table has no picture column at all (the mail is what it always was).
+- **Lazy, once, kept.** The first mail that needs a picture writes `storage/app/public/mail-thumbs/{asset id}-{12 hex}.jpg` (public disk, no symlink of ours: `storage:link` serves it at `/storage/mail-thumbs/...`); the URL is absolute (`APP_URL` + path), no query string. The 12 hex are a hash of what identifies the original (id, path, size, type, dimensions) and of the generator's version, so a replaced original or a new size/quality gives a NEW file. It happens when the mail is BUILT, which is inside the queued `SendMailJob`, never in the checkout request.
+- **Not pruned.** Customers open old mails for years, so the files are never removed by age. `media:sweep-files` only looks in `uploads/`. There is no hook on `MediaDeleter` for them: deleting a media asset removes its original and variants by path (`DeleteMediaFilesJob`) and leaves its thumbnails, so old mails keep their picture. If a file is removed by hand, old mails show the product name (`alt`) instead, and a mail built later makes the file again while the original still exists.
+- **Never stops a mail.** A missing or unreadable file, a source over 16 MP / 25 MB, a type GD cannot read or write, a failed write: caught, ONE warning `mail.thumbnail_failed` (with the product id), the row prints without a picture.
+- **Markup:** table cells, `<img src width height alt border="0" style="display:block;border:0;">`, escaped `alt` = the product name, no CSS background, `<picture>`, `srcset`, WebP, SVG, data URI or lazy loading. The cells are put in AFTER the sanitiser (a block prints a marker as the whole content of a `td`/`th`; `TemplateRenderer` replaces it), and the plain-text part is made with the markers removed, so it does not change. Nothing tracks: first-party files only.
+- **A resend** of an old order mail builds the mail again: the file is reused, and the picture shown is the product's CURRENT one (the sale line stores no image).
+
+Check by hand: `tests/Browser/mail-2.mjs`.
+
 ## Out of scope (not built)
 
 Contact data (phone, email, address, hours; it stays in the footer block), a site-wide `og:image`, `theme-color`, a web manifest, an Organization `logo` in JSON-LD, the admin login page's own design, invoices (none exist), error pages, the installer, the VCL.

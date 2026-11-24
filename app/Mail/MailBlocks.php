@@ -31,9 +31,11 @@ final class MailBlocks
     }
 
     /**
-     * @param  list<array{name: string, sku: ?string, attributes: string, quantity: int, unit: ?string, total: string}>  $lines
+     * @param  list<array{name: string, sku: ?string, attributes: string, quantity: int, unit: ?string, total: string, cell?: string}>  $lines
+     * @param  ?string  $headCell  MAIL-2: when set, the table has a FIRST column for the product picture. `$headCell` and each line's `cell` are the MARKERS of that column's cells: the sanitiser would drop
+     *                             an `img` and the cell's width, so the finished cells are put in AFTER it (TemplateRenderer, `$inline`). Null = no picture column: the table is exactly what it always was.
      */
-    public static function orderLines(array $lines, string $locale): string
+    public static function orderLines(array $lines, string $locale, ?string $headCell = null): string
     {
         $rows = '';
 
@@ -48,18 +50,34 @@ final class MailBlocks
                 $detail[] = self::e($line['attributes']);
             }
 
-            $rows .= '<tr><td>'.self::e($line['name']).($detail === [] ? '' : '<br>'.implode('<br>', $detail)).'</td>'
+            $rows .= '<tr>'.($headCell === null ? '' : '<td valign="top">'.($line['cell'] ?? '').'</td>').'<td>'.self::e($line['name']).($detail === [] ? '' : '<br>'.implode('<br>', $detail)).'</td>'
                 .'<td align="right">'.$line['quantity'].'</td>'
                 .'<td align="right">'.self::e($line['unit'] ?? '—').'</td>'
                 .'<td align="right">'.self::e($line['total']).'</td></tr>';
         }
 
         return '<table width="100%" border="0" cellpadding="6" cellspacing="0" role="presentation"><thead><tr>'
+            .($headCell === null ? '' : '<th valign="top">'.$headCell.'</th>')
             .'<th align="left">'.self::e(self::t('mail.order.lines.product', $locale)).'</th>'
             .'<th align="right">'.self::e(self::t('mail.order.lines.quantity', $locale)).'</th>'
             .'<th align="right">'.self::e(self::t('mail.order.lines.unit_price', $locale)).'</th>'
             .'<th align="right">'.self::e(self::t('mail.order.lines.line_total', $locale)).'</th>'
             .'</tr></thead><tbody>'.$rows.'</tbody></table>';
+    }
+
+    /**
+     * MAIL-2: one cell of the picture column, finished (it is put in AFTER the sanitiser, see orderLines()): table-based, an absolute URL, `width` and `height` attributes (the SHOWN size), the
+     * escaped `alt`, `border="0"` and `display:block;border:0;`. No picture = an empty cell of the same width, so the rows stay aligned. `$tag` is `td`, or `th` for the heading.
+     *
+     * @param  ?array{url: string, width: int, height: int}  $thumb
+     */
+    public static function thumbCell(?array $thumb, string $alt, string $tag = 'td'): string
+    {
+        $inner = $thumb === null || $tag === 'th'
+            ? ''
+            : '<img src="'.self::e($thumb['url']).'" width="'.$thumb['width'].'" height="'.$thumb['height'].'" alt="'.self::e($alt).'" border="0" style="display:block;border:0;">';
+
+        return '<'.$tag.' width="72" valign="top" style="width:72px;">'.$inner.'</'.$tag.'>';
     }
 
     /**
