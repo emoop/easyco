@@ -87,6 +87,29 @@ class DarkPaletteContrastTest extends TestCase
         }
     }
 
+    public function test_the_checkout_labels_the_required_star_and_the_error_ring_are_readable_on_a_field(): void
+    {
+        // a floating label sits ON the field: the card's ground, or the error box's ground when the field is invalid; the star and the error text sit on the card
+        $palette = $this->palette();
+        $pairs = [
+            ['--sf-n500', '--sf-surface'], ['--sf-n500', '--sf-status-error-bg'], ['--sf-n800', '--sf-surface'],
+            ['--sf-muted', '--sf-surface'], ['--sf-muted', '--sf-status-error-bg'],
+            ['--sf-error', '--sf-surface'], ['--sf-error', '--sf-status-error-bg'],
+            ['--sf-link', '--sf-surface'], ['--sf-status-warn-text', '--sf-surface'],
+        ];
+
+        foreach ($pairs as [$text, $ground]) {
+            $ratio = Contrast::ratio($this->colour($palette, $text), $this->colour($palette, $ground));
+            $this->assertGreaterThanOrEqual(Contrast::TEXT_MIN, $ratio, "{$text} on {$ground} is {$ratio}:1");
+        }
+
+        // the focus ring and the error ring are drawn on the card and must stand out from it (3:1)
+        foreach (['--sf-focus', '--sf-error'] as $ring) {
+            $ratio = Contrast::ratio($this->colour($palette, $ring), $this->colour($palette, '--sf-surface'));
+            $this->assertGreaterThanOrEqual(Contrast::COMPONENT_MIN, $ratio, "{$ring} on --sf-surface is {$ratio}:1");
+        }
+    }
+
     public function test_the_text_pinned_for_a_light_element_is_readable_on_that_light_element(): void
     {
         // the size strip over a card picture (white at 90% over the light frame) and, later, the gallery arrow: a white or very light ground in dark mode too

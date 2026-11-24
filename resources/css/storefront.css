@@ -3038,7 +3038,7 @@ html[data-theme='dark'] {
 
     /* C1e: a section is a white card; its legend is the card's heading INSIDE it (a floated legend does not sit on the border). */
     .sf-fieldset {
-        @apply min-w-0 rounded-xl border border-neutral-200 bg-white p-5 sm:p-6;
+        @apply min-w-0 rounded-xl border border-neutral-200 bg-surface p-5 sm:p-6;
     }
 
     .sf-legend {
@@ -3082,19 +3082,20 @@ html[data-theme='dark'] {
     .sf-checkout-form input[type='tel']:focus-visible,
     .sf-checkout-form select:focus-visible,
     .sf-checkout-form textarea:focus-visible {
-        outline: 2px solid #0369a1;
+        outline: 2px solid var(--sf-focus, #0369a1);
         outline-offset: 0;
-        border-color: #0369a1;
+        border-color: var(--sf-focus, #0369a1);
     }
 
     .sf-field input[aria-invalid='true'],
     .sf-field select[aria-invalid='true'] {
-        @apply border-red-700 bg-red-50;
+        border-color: var(--sf-error, var(--color-red-700));
+        background-color: var(--sf-status-error-bg, var(--color-red-50));
     }
 
     .sf-checkout-form [aria-invalid='true']:focus-visible {
-        outline-color: #b91c1c;
-        border-color: #b91c1c;
+        outline-color: var(--sf-error, #b91c1c);
+        border-color: var(--sf-error, #b91c1c);
     }
 
     .sf-field-note {
@@ -3102,7 +3103,8 @@ html[data-theme='dark'] {
     }
 
     .sf-field-error {
-        @apply mt-1 text-sm font-medium text-red-800;
+        @apply mt-1 text-sm font-medium;
+        color: var(--sf-status-error-text, var(--color-red-800));
     }
 
     .sf-choice-row {
@@ -3118,11 +3120,11 @@ html[data-theme='dark'] {
     }
 
     .sf-error-summary {
-        @apply mb-4 rounded-lg border border-red-300 bg-red-50 p-4 text-sm text-red-900;
+        @apply mb-4 rounded-lg border border-status-error-border bg-status-error-bg p-4 text-sm text-status-error-text;
     }
 
     .sf-error-summary:focus {
-        outline: 2px solid #991b1b;
+        outline: 2px solid var(--sf-error, #991b1b);
         outline-offset: 2px;
     }
 
@@ -3156,7 +3158,8 @@ html[data-theme='dark'] {
 
     /* ACC-3c: the logged-in checkout: «Имате профил?», «Поръчвате като», «Изпращам до друг човек» and the saved-address rows. */
     .sf-link-button {
-        @apply cursor-pointer border-0 bg-transparent p-0 text-sm text-sky-800 underline;
+        @apply cursor-pointer border-0 bg-transparent p-0 text-sm underline;
+        color: var(--sf-link, var(--color-sky-800));
     }
 
     .sf-login-hint,
@@ -3190,7 +3193,7 @@ html[data-theme='dark'] {
     }
 
     .sf-shipping-hint {
-        @apply mt-3 rounded-md bg-sky-50 p-3 text-sm text-sky-900;
+        @apply mt-3 rounded-md bg-status-info-bg p-3 text-sm text-status-info-text;
     }
 
     /* C1b: the kind of the chosen courier (a native select, or one line of text), the region marker, the note counter, the price notice. */
@@ -3201,7 +3204,8 @@ html[data-theme='dark'] {
 
     /* C1d-A: the required marker, the first/last name row, the one pick-up field's help line, the checkout's compact promo box. */
     .sf-required {
-        @apply ml-0.5 font-semibold text-red-700;
+        @apply ml-0.5 font-semibold;
+        color: var(--sf-error, var(--color-red-700));
     }
 
     .sf-required-note {
@@ -3277,12 +3281,12 @@ html[data-theme='dark'] {
         }
 
         .sf-float:has(> :autofill) > label {
-            color: #737373;
+            color: var(--sf-n500, #737373);
             transform: translateY(0.45rem) scale(0.75);
         }
 
         .sf-float:has(> :-webkit-autofill) > label {
-            color: #737373;
+            color: var(--sf-n500, #737373);
             transform: translateY(0.45rem) scale(0.75);
         }
 
@@ -3293,7 +3297,7 @@ html[data-theme='dark'] {
             overflow: visible;
             font-size: 0.875rem;
             font-weight: 500;
-            color: #262626;
+            color: var(--sf-n800, #262626);
             white-space: normal;
             pointer-events: auto;
             transform: none;
@@ -3302,7 +3306,7 @@ html[data-theme='dark'] {
 
         /* An invalid control: its label takes the error colour with the border. */
         .sf-float:has(> [aria-invalid='true']) > label {
-            color: #b91c1c;
+            color: var(--sf-error, #b91c1c);
         }
 
         @media (prefers-reduced-motion: reduce) {
@@ -3357,11 +3361,11 @@ html[data-theme='dark'] {
     }
 
     .sf-invoice-copy {
-        @apply mb-3 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-900;
+        @apply mb-3 rounded-lg border border-neutral-300 bg-surface px-3 py-2 text-sm font-medium text-neutral-900;
     }
 
     .sf-express {
-        @apply mb-4 rounded-xl border border-neutral-200 bg-white p-5;
+        @apply mb-4 rounded-xl border border-neutral-200 bg-surface p-5;
     }
 
     /* C1e: «ИЛИ» between the express slot and the Contact card: a line on each side of the word. */
@@ -3437,11 +3441,12 @@ html[data-theme='dark'] {
     }
 
     .sf-note-field textarea {
-        @apply w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-base;
+        @apply w-full rounded-lg border border-neutral-300 bg-surface px-3 py-2 text-base;
     }
 
     .sf-note-field textarea[aria-invalid='true'] {
-        @apply border-red-700 bg-red-50;
+        border-color: var(--sf-error, var(--color-red-700));
+        background-color: var(--sf-status-error-bg, var(--color-red-50));
     }
 
     .sf-note-counter {
@@ -3449,7 +3454,8 @@ html[data-theme='dark'] {
     }
 
     .sf-note-counter[data-state='warning'] {
-        @apply font-semibold text-amber-800;
+        @apply font-semibold;
+        color: var(--sf-status-warn-text, var(--color-amber-800));
     }
 
     .sf-cart-status[data-state='price-changed'] {
@@ -3478,7 +3484,7 @@ html[data-theme='dark'] {
 
     /* C1e: the summary shares the cards' radius, padding and heading size (no layout change). */
     .sf-checkout-summary {
-        @apply rounded-xl border border-neutral-200 bg-white p-5 sm:p-6;
+        @apply rounded-xl border border-neutral-200 bg-surface p-5 sm:p-6;
     }
 
     .sf-checkout-summary .sf-section-title {
@@ -3487,7 +3493,7 @@ html[data-theme='dark'] {
 
     /* Below 1024px the summary is collapsed behind the bar until the customer opens it. */
     .sf-summary-toggle {
-        @apply flex w-full items-center justify-between gap-2 rounded-lg border border-neutral-200 bg-white px-4 py-3 text-sm font-medium text-neutral-900;
+        @apply flex w-full items-center justify-between gap-2 rounded-lg border border-neutral-200 bg-surface px-4 py-3 text-sm font-medium text-neutral-900;
     }
 
     .sf-summary-toggle-label {
@@ -3538,7 +3544,7 @@ html[data-theme='dark'] {
 
     /* ---- order received -------------------------------------------------------------------------- */
     .sf-received-facts {
-        @apply my-4 grid grid-cols-2 gap-4 rounded-lg border border-neutral-200 bg-white p-4;
+        @apply my-4 grid grid-cols-2 gap-4 rounded-lg border border-neutral-200 bg-surface p-4;
     }
 
     .sf-received-fact dt {
@@ -3554,7 +3560,7 @@ html[data-theme='dark'] {
     }
 
     .sf-received-lines {
-        @apply divide-y divide-neutral-200 rounded-lg border border-neutral-200 bg-white;
+        @apply divide-y divide-neutral-200 rounded-lg border border-neutral-200 bg-surface;
     }
 
     .sf-received-line {
@@ -3599,7 +3605,7 @@ html[data-theme='dark'] {
     }
 
     .sf-bank-details {
-        @apply mt-4 rounded-lg border border-neutral-200 bg-white p-4;
+        @apply mt-4 rounded-lg border border-neutral-200 bg-surface p-4;
     }
 
     .sf-bank-rows {
@@ -4285,7 +4291,7 @@ html[data-theme='dark'] {
             bottom: 0;
             left: 0;
             height: 3rem;
-            background: linear-gradient(to bottom, transparent, #fff);
+            background: linear-gradient(to bottom, transparent, var(--sf-surface, #fff));
             pointer-events: none;
         }
 

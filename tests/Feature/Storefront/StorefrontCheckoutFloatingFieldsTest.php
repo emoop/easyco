@@ -243,7 +243,7 @@ class StorefrontCheckoutFloatingFieldsTest extends TestCase
         $css = $this->css();
         $supports = $this->block($css, '@supports selector(:has(*))');
 
-        $this->assertMatchesRegularExpression("/\\.sf-float:has\\(> \\[aria-invalid='true'\\]\\) > label \\{\\s*color: #b91c1c;/", $supports, 'the label');
+        $this->assertMatchesRegularExpression("/\\.sf-float:has\\(> \\[aria-invalid='true'\\]\\) > label \\{\\s*color: var\\(--sf-error, #b91c1c\\);/", $supports, 'the label');
         $this->assertStringContainsString(".sf-field input[aria-invalid='true'],\n    .sf-field select[aria-invalid='true'] {", $css, 'the border (and the field background)');
         $this->assertStringContainsString("[aria-invalid='true']:focus-visible", $css, 'an invalid field keeps the error colour while focused');
     }
@@ -258,16 +258,16 @@ class StorefrontCheckoutFloatingFieldsTest extends TestCase
         $this->assertStringContainsString('min-h-[3.25rem] w-full', $css, 'the Place-order button');
 
         $focus = $this->block($css, ".sf-checkout-form input[type='text']:focus-visible");
-        $this->assertStringContainsString('outline: 2px solid #0369a1;', $focus);
+        $this->assertStringContainsString('outline: 2px solid var(--sf-focus, #0369a1);', $focus);
         $this->assertStringContainsString('outline-offset: 0;', $focus);
-        $this->assertStringContainsString('border-color: #0369a1;', $focus);
+        $this->assertStringContainsString('border-color: var(--sf-focus, #0369a1);', $focus);
     }
 
     public function test_the_sections_are_cards_with_their_legend_inside(): void
     {
         $css = $this->css();
 
-        $this->assertStringContainsString('@apply min-w-0 rounded-xl border border-neutral-200 bg-white p-5 sm:p-6;', $css);
+        $this->assertStringContainsString('@apply min-w-0 rounded-xl border border-neutral-200 bg-surface p-5 sm:p-6;', $css);
         $this->assertStringContainsString('@apply float-left mb-3 w-full p-0 text-lg font-semibold text-neutral-900;', $css, 'a floated legend sits inside the card, not on its border');
         $this->assertMatchesRegularExpression('/\.sf-legend \+ \* \{\s*clear: both;/', $css);
         $this->assertStringContainsString('.sf-place-row:has(> [hidden]) {', $css, 'the place takes the whole row when the postal code is hidden');

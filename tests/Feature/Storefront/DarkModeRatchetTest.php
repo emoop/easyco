@@ -12,8 +12,8 @@ use Tests\TestCase;
  */
 class DarkModeRatchetTest extends TestCase
 {
-    /** Lower this in every DM-2 step; it must reach 0 (the allow-list only). Measured after DM-2d-1 (DM-2c: 31, DM-2b: 33, DM-2a: 47). */
-    private const MAX_RAW_WHITE_BACKGROUNDS = 19;
+    /** Lower this in every DM-2 step; it must reach 0 (the allow-list only). Measured after DM-2d-2 (DM-2d-1: 19, DM-2c: 31, DM-2b: 33, DM-2a: 47). */
+    private const MAX_RAW_WHITE_BACKGROUNDS = 10;
 
     /** @return list<string> "line: text" of every raw-white background outside the allow-list */
     private function rawWhiteBackgrounds(): array

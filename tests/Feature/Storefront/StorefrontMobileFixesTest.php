@@ -106,7 +106,7 @@ class StorefrontMobileFixesTest extends TestCase
         $css = $this->css();
 
         $this->assertMatchesRegularExpression("/\\.sf-checkout-summary\\[data-open='false'\\] \\.sf-summary-lines \\{[^}]*max-height: 4\\.5rem;[^}]*overflow: hidden;/s", $css);
-        $this->assertMatchesRegularExpression("/\\.sf-summary-lines::after \\{[^}]*height: 3rem;[^}]*linear-gradient\\(to bottom, transparent, #fff\\);[^}]*pointer-events: none;/s", $css, 'an overlay, not a mask or a blur');
+        $this->assertMatchesRegularExpression("/\\.sf-summary-lines::after \\{[^}]*height: 3rem;[^}]*linear-gradient\\(to bottom, transparent, var\\(--sf-surface, #fff\\)\\);[^}]*pointer-events: none;/s", $css, 'an overlay, not a mask or a blur');
         $this->assertStringNotContainsString('mask-image', $css);
         $this->assertDoesNotMatchRegularExpression('/\bblur\(/', $css);
         $this->assertMatchesRegularExpression("/\\.sf-checkout-summary\\[data-open='false'\\] > :not\\(\\.sf-summary-lines\\) \\{\\s*display: none;/", $css, 'title, promo, error and totals are hidden');
