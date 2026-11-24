@@ -1,5 +1,7 @@
 # DM-0 — Storefront dark mode: inventory and plan
 
+> DM-1 done: see `dark-mode.md`.
+
 Read-only inventory. Nothing in the code, CSS, Blade, settings or tests was changed. Counts come from `grep`/`rg` over the checkout at the time of writing (branch `mail-2`, on top of `main` with LOGO-1). Anything not confirmed in the code is marked `UNVERIFIED`. Line numbers are of `resources/css/storefront.css` unless a file is named.
 
 Decisions already taken by the owner: one merchant switch (like the admin has); no visitor toggle, no `prefers-color-scheme`; black background, white main text, greyer secondary text; menus/logos recoloured, not redesigned; merchant-selectable button colour (default orange, white also wanted) with a COMPUTED text colour (`Contrast`: button vs background >= 3:1, text vs button >= 4.5:1); a dark logo may come later; mail and admin are out of scope.

@@ -5,6 +5,8 @@ namespace App\Storefront\Appearance;
 use App\Services\ActivityLogger;
 use App\Settings\AppearanceSettings as Appearance;
 use App\Settings\Contracts\SiteSettingsRepository;
+use App\Storefront\Cookies\Contrast;
+use InvalidArgumentException;
 
 /**
  * What the «Облик» page stores, in one place (DS-2b): the colours, the fonts, the corners, the button style and the top banner. The «Облик» page and the «Дизайн» screen's «Топбанер» zone both call
@@ -38,6 +40,11 @@ final class AppearanceWriter
             $state[$field] = Appearance::isValid($key, $value) ? $value : $defaults[$key];
         }
 
+        // DM-1: the dark mode's two values (the mode, and the button colour of dark mode; an invalid stored value is light / the default)
+        $state['dark_mode'] = Appearance::storedMode($stored[Appearance::MODE] ?? null) === 'dark';
+        $darkButton = $stored[Appearance::DARK_BUTTON] ?? null;
+        $state['dark_button'] = Appearance::isHex($darkButton) ? strtolower($darkButton) : Appearance::DEFAULT_DARK_BUTTON;
+
         return $state + [
             'banner_enabled' => ($stored[Appearance::BANNER_ENABLED] ?? null) === '1',
             'banner_text' => $stored[Appearance::BANNER_TEXT] ?? '',
@@ -63,6 +70,20 @@ final class AppearanceWriter
         // back here so that the stylesheet still holds them, and the banner's own values are not written at all (see the `$ownsBanner` guard below).
         $ownsBanner = array_key_exists('banner_enabled', $data);
 
+        // DM-1: the dark mode's values are edited on the «Облик» page only, and only while the dev flag shows its fields. A save that does not carry them (the flag off, the «Дизайн» screen's
+        // «Топбанер» zone) keeps them as stored. A button colour that IS carried and changed must pass the contrast rules (Contrast::darkButton): nothing at all is written otherwise.
+        $carried = array_key_exists('dark_button', $data);
+
+        if (! $carried || ! array_key_exists('dark_mode', $data)) {
+            $data = array_replace(array_intersect_key(self::current(), array_flip(['dark_mode', 'dark_button'])), $data);
+        }
+
+        $darkButton = strtolower((string) ($data['dark_button'] ?? ''));
+
+        if ($carried && $darkButton !== self::current()['dark_button'] && ! Contrast::darkButton($darkButton)['ok']) {
+            throw new InvalidArgumentException('The dark mode button colour is not valid.');
+        }
+
         if (! $ownsBanner) {
             $data = array_replace($data, array_intersect_key(self::current(), array_flip(['c_banner_text', 'c_banner_bg'])));
         }
@@ -78,6 +99,9 @@ final class AppearanceWriter
         foreach (['font_body' => Appearance::FONT_BODY, 'font_heading' => Appearance::FONT_HEADING, 'radius' => Appearance::RADIUS, 'button' => Appearance::BUTTON] as $field => $key) {
             $overrides[$key] = (string) ($data[$field] ?? $defaults[$key]);
         }
+
+        $overrides[Appearance::MODE] = ! empty($data['dark_mode']) ? 'dark' : 'light';
+        $overrides[Appearance::DARK_BUTTON] = Appearance::isHex($darkButton) ? $darkButton : Appearance::DEFAULT_DARK_BUTTON;
 
         $overrides = array_filter($overrides, static fn (string $value, string $key): bool => $value !== $defaults[$key], ARRAY_FILTER_USE_BOTH);
 
@@ -137,6 +161,7 @@ final class AppearanceWriter
         $sections = [
             'colors' => array_map(static fn (array $color): string => $color[0], array_values(Appearance::COLORS)),
             'fonts' => [Appearance::FONT_BODY, Appearance::FONT_HEADING, Appearance::RADIUS, Appearance::BUTTON],
+            'dark_mode' => [Appearance::MODE, Appearance::DARK_BUTTON],
             'banner' => [Appearance::BANNER_ENABLED, Appearance::BANNER_TEXT, Appearance::BANNER_URL, Appearance::BANNER_LINK_LABEL, Appearance::BANNER_STARTS_AT, Appearance::BANNER_ENDS_AT],
         ];
         $logger = app(ActivityLogger::class);

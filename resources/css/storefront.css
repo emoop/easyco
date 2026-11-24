@@ -24,6 +24,77 @@
     --radius-xl: var(--sf-r-lg, 0.75rem);
 }
 
+/*
+ * DM-1 (dark-mode.md): the dark mode's NEW tokens. Their LIGHT fallbacks are today's values, so the storefront renders as it always did; NO selector below uses them yet (DM-2 moves the raw colours onto
+ * them: `bg-white`, `#fff` fills, the unmapped neutral steps, the status pastels, the hard-coded focus and error colours, the scrims and the shadows). `static`: they are printed even though nothing uses them
+ * yet. A token the merchant never overrides has no `--sf-*` variable at all in light mode, only this fallback.
+ */
+@theme static {
+    --color-surface: var(--sf-surface, #ffffff);
+    --color-surface-2: var(--sf-surface-2, #f5f5f5);
+    --color-border-strong: var(--sf-border-strong, #d4d4d4);
+    --color-focus: var(--sf-focus, #0369a1);
+    --color-error: var(--sf-error, #b91c1c);
+    --color-overlay: var(--sf-overlay, rgb(0 0 0 / 0.45));
+    --color-shadow: var(--sf-shadow, rgb(0 0 0 / 0.12));
+    --color-status-error-bg: var(--sf-status-error-bg, oklch(97.1% 0.013 17.38));
+    --color-status-error-text: var(--sf-status-error-text, oklch(39.6% 0.141 25.723));
+    --color-status-error-border: var(--sf-status-error-border, oklch(80.8% 0.114 19.571));
+    --color-status-warn-bg: var(--sf-status-warn-bg, oklch(98.7% 0.022 95.277));
+    --color-status-warn-text: var(--sf-status-warn-text, oklch(41.4% 0.112 45.904));
+    --color-status-warn-border: var(--sf-status-warn-border, oklch(87.9% 0.169 91.605));
+    --color-status-info-bg: var(--sf-status-info-bg, oklch(97.7% 0.013 236.62));
+    --color-status-info-text: var(--sf-status-info-text, oklch(39.1% 0.09 240.876));
+    --color-status-info-border: var(--sf-status-info-border, oklch(82.8% 0.111 230.318));
+    --color-status-ok-bg: var(--sf-status-ok-bg, oklch(98.2% 0.018 155.826));
+    --color-status-ok-text: var(--sf-status-ok-text, oklch(44.8% 0.119 151.328));
+    --color-status-ok-border: var(--sf-status-ok-border, oklch(92.5% 0.084 155.995));
+}
+
+/*
+ * DM-1: the DARK palette, switched by the server-rendered `data-theme="dark"` on <html> (the merchant's site-wide switch; no visitor choice, no script, no media query). Shipped HERE, so dark mode works with
+ * no token file. UNLAYERED on purpose: `html[data-theme]` (0,1,1) outweighs the compiled `:root` (0,1,0) whatever the order or the cascade layer, so even a token stylesheet compiled for light mode cannot
+ * repaint the page. Cards sit one step above the page (#111) with a thin border (shadows do not show on black). `--sf-primary` is the dark BUTTON colour (default orange); the merchant's own dark
+ * button colour is compiled after this file as `html[data-theme='dark'] { --sf-primary … }`. The hover is what the compiler computes for the same colour (towardsWhite 0.1767).
+ * Until DM-2 the page is NOT presentable in this mode (white cards with white text): the switch is behind the STOREFRONT_DARK_MODE dev flag.
+ */
+html[data-theme='dark'] {
+    color-scheme: dark;
+    --sf-bg: #000000;
+    --sf-surface: #111111;
+    --sf-surface-2: #1a1a1a;
+    --sf-text: #ffffff;
+    --sf-muted: #a3a3a3;
+    --sf-border: #262626;
+    --sf-border-strong: #404040;
+    --sf-focus: #38bdf8;
+    --sf-error: #f87171;
+    --sf-accent: #f87171;
+    --sf-overlay: rgb(0 0 0 / 0.7);
+    --sf-shadow: transparent;
+    --sf-header-bg: var(--sf-bg);
+    --sf-header-text: var(--sf-text);
+    --sf-footer-bg: #000000;
+    --sf-footer-text: #a3a3a3;
+    --sf-banner-bg: #262626;
+    --sf-banner-text: #ffffff;
+    --sf-status-error-bg: #2a0f0f;
+    --sf-status-error-text: #fca5a5;
+    --sf-status-error-border: #7f1d1d;
+    --sf-status-warn-bg: #2a1c05;
+    --sf-status-warn-text: #fcd34d;
+    --sf-status-warn-border: #78350f;
+    --sf-status-info-bg: #0a1f2e;
+    --sf-status-info-text: #7dd3fc;
+    --sf-status-info-border: #0c4a6e;
+    --sf-status-ok-bg: #0a2414;
+    --sf-status-ok-text: #86efac;
+    --sf-status-ok-border: #14532d;
+    --sf-primary: #f97316;
+    --sf-on-primary: #000000;
+    --sf-primary-hover: #fa8c3f;
+}
+
 @layer base {
     /* GL-1.2: the one page side padding of every storefront container (header, nav, banner, main, footer, checkout header). */
     :root {

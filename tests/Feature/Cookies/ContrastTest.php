@@ -71,4 +71,63 @@ class ContrastTest extends TestCase
             $this->assertFalse(Contrast::isHex($bad), var_export($bad, true));
         }
     }
+
+    // ---- DM-1: the dark mode's button colour ----------------------------------------------------------------------------------------------
+
+    /** @return array<string, array{0: string}> */
+    public static function goodDarkButtons(): array
+    {
+        return ['the default orange' => ['#f97316'], 'white' => ['#ffffff'], 'a light blue' => ['#3b82f6'], 'upper case' => ['#F97316']];
+    }
+
+    #[DataProvider('goodDarkButtons')]
+    public function test_a_dark_button_colour_passes_both_rules_with_ratios_the_code_computes(string $color): void
+    {
+        $check = Contrast::darkButton($color);
+        $lower = strtolower($color);
+
+        $this->assertTrue($check['ok']);
+        $this->assertNull($check['reason']);
+        $this->assertSame(Contrast::ratio($lower, Contrast::DARK_BACKGROUND), $check['buttonRatio']);
+        $this->assertSame(Contrast::bestText($lower)['ratio'], $check['textRatio']);
+        $this->assertSame(Contrast::bestText($lower)['color'], $check['textColour']);
+        $this->assertGreaterThanOrEqual(Contrast::COMPONENT_MIN, $check['buttonRatio']);
+        $this->assertGreaterThanOrEqual(Contrast::TEXT_MIN, $check['textRatio']);
+    }
+
+    public function test_the_text_on_orange_is_black_and_on_white_it_is_black_too(): void
+    {
+        $this->assertSame('#000000', Contrast::darkButton('#f97316')['textColour']);
+        $this->assertSame('#000000', Contrast::darkButton('#ffffff')['textColour']);
+    }
+
+    public function test_a_dark_grey_button_is_refused_because_it_does_not_stand_out_from_the_black_page(): void
+    {
+        $check = Contrast::darkButton('#333333');
+
+        $this->assertFalse($check['ok']);
+        $this->assertSame('button', $check['reason']);
+        $this->assertLessThan(Contrast::COMPONENT_MIN, $check['buttonRatio']);
+        $this->assertSame(Contrast::ratio('#333333', Contrast::DARK_BACKGROUND), $check['buttonRatio']);
+        $this->assertFalse(Contrast::darkButton('#000000')['ok']);
+    }
+
+    public function test_a_value_that_is_not_a_hex_colour_is_refused_as_a_format_error(): void
+    {
+        foreach (['orange', '#fff', '#gggggg', '', null, 12, '#f97316; x'] as $bad) {
+            $check = Contrast::darkButton($bad);
+
+            $this->assertFalse($check['ok'], json_encode($bad));
+            $this->assertSame('format', $check['reason']);
+            $this->assertNull($check['textColour']);
+        }
+    }
+
+    public function test_the_new_constants_have_their_own_names_and_the_cookie_dialogs_are_untouched(): void
+    {
+        $this->assertSame(3.0, Contrast::COMPONENT_MIN);
+        $this->assertSame('#000000', Contrast::DARK_BACKGROUND);
+        $this->assertSame('#ffffff', Contrast::DIALOG_BACKGROUND);
+        $this->assertSame(3.0, Contrast::AGAINST_DIALOG_MIN);
+    }
 }

@@ -20,7 +20,9 @@
     "appearance.font.body": "system",
     "appearance.font.heading": "same",
     "appearance.radius": "md",
-    "appearance.button": "solid"
+    "appearance.button": "solid",
+    "appearance.mode": "light",
+    "appearance.dark.button": "#f97316"
   },
   "header": {
     "rows": ["top", "main", "bottom"],

@@ -9,6 +9,8 @@ use App\Filament\Support\HelpLink;
 use App\Settings\AppearanceSettings as Appearance;
 use App\Settings\Contracts\SiteSettingsRepository;
 use App\Storefront\Appearance\AppearanceWriter;
+use App\Storefront\Appearance\StorefrontAppearance;
+use App\Storefront\Cookies\Contrast;
 use BackedEnum;
 use Closure;
 use EasyCo\Staff\Enums\Permission;
@@ -26,6 +28,7 @@ use Filament\Schemas\Components\Form;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Text;
 use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Illuminate\Support\HtmlString;
 
@@ -114,6 +117,77 @@ class AppearanceSettings extends Page
                 && Appearance::contrastRatio((string) $get('c_'.$text), (string) $get('c_'.$background)) < Appearance::MIN_CONTRAST);
     }
 
+    /**
+     * DM-1: the message for a refused dark-mode button colour, or null when it is fine. ONE rule (Contrast::darkButton) for the live message, the field's validation and the writer.
+     */
+    private static function darkButtonProblem(mixed $value): ?string
+    {
+        $check = Contrast::darkButton($value);
+
+        return match ($check['reason']) {
+            null => null,
+            'format' => __('appearance.errors.dark_button_format'),
+            'button' => __('appearance.errors.dark_button', ['ratio' => number_format((float) $check['buttonRatio'], 2), 'min' => Contrast::COMPONENT_MIN]),
+            default => __('appearance.errors.dark_button_text', ['ratio' => number_format((float) $check['textRatio'], 2), 'min' => Contrast::TEXT_MIN]),
+        };
+    }
+
+    /** DM-1: the «Тъмен режим» section. Hidden while the dev flag is off: a hidden component is not part of the saved state, so nothing of it is ever written. */
+    private static function darkSection(): Section
+    {
+        return Section::make(__('appearance.dark.section'))
+            ->description(__('appearance.dark.section_help'))
+            ->visible(static fn (): bool => Appearance::darkModeAvailable())
+            ->schema([
+                Toggle::make('dark_mode')
+                    ->label(__('appearance.dark.mode'))
+                    ->helperText(__('appearance.dark.mode_help'))
+                    ->live(),
+                Text::make(__('appearance.dark.no_logo'))
+                    ->color('warning')
+                    ->size('sm')
+                    ->visible(static fn (Get $get): bool => $get('dark_mode') === true && (app(StorefrontAppearance::class)->siteLogo()['dark'] ?? null) === null),
+                ColorPicker::make('dark_button')
+                    ->label(__('appearance.dark.button'))
+                    ->helperText(__('appearance.dark.button_help'))
+                    ->hex()
+                    ->required()
+                    ->live(debounce: 400)
+                    ->rule(static fn (): Closure => static function (string $attribute, mixed $value, Closure $fail): void {
+                        ($problem = static::darkButtonProblem($value)) === null || $fail($problem);
+                    }),
+                Actions::make([
+                    Action::make('dark_preset_orange')
+                        ->label(__('appearance.dark.preset_orange'))
+                        ->color('gray')
+                        ->action(static fn (Set $set) => $set('dark_button', Appearance::DEFAULT_DARK_BUTTON)),
+                    Action::make('dark_preset_white')
+                        ->label(__('appearance.dark.preset_white'))
+                        ->color('gray')
+                        ->action(static fn (Set $set) => $set('dark_button', '#ffffff')),
+                ])->key('dark-presets'),
+                Text::make(static function (Get $get): string {
+                    $check = Contrast::darkButton($get('dark_button'));
+
+                    if ($check['reason'] === 'format') {
+                        return (string) static::darkButtonProblem($get('dark_button'));
+                    }
+
+                    $summary = __('appearance.dark.summary', [
+                        'text' => __($check['textColour'] === '#ffffff' ? 'appearance.dark.text_white' : 'appearance.dark.text_black'),
+                        'button' => number_format((float) $check['buttonRatio'], 2),
+                        'button_min' => Contrast::COMPONENT_MIN,
+                        'text_ratio' => number_format((float) $check['textRatio'], 2),
+                        'text_min' => Contrast::TEXT_MIN,
+                    ]);
+
+                    return $check['ok'] ? $summary : static::darkButtonProblem($get('dark_button')).' '.$summary;
+                })
+                    ->color(static fn (Get $get): string => Contrast::darkButton($get('dark_button'))['ok'] ? 'gray' : 'danger')
+                    ->size('sm'),
+            ]);
+    }
+
     public function form(Schema $schema): Schema
     {
         return $schema
@@ -165,6 +239,7 @@ class AppearanceSettings extends Page
                             ->native(false),
                     ])
                     ->columns(2),
+                static::darkSection(),
                 // OB-1: the top banner is edited in the «Дизайн» screen only; this line says where it is (the same muted style as the other hints)
                 Text::make(new HtmlString('<a href="'.e(DesignScreen::getUrl(['zone' => 'topbar'])).'">'.e(__('appearance.banner_moved')).'</a>'))->color('gray')->size('sm'),
             ])

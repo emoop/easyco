@@ -16,4 +16,9 @@ return [
         'limit' => (int) env('STOREFRONT_SEARCH_LIMIT', 30),
         'decay_seconds' => (int) env('STOREFRONT_SEARCH_DECAY', 60),
     ],
+
+    // DM-1 (dark-mode.md): the storefront's dark mode, behind a DEV FLAG. OFF by default: «Облик» shows no «Тъмен режим» fields and the storefront is LIGHT whatever is stored.
+    // Dark mode is a foundation only until DM-2 moves the raw colours of the selectors onto tokens (white cards with white text); switch on with STOREFRONT_DARK_MODE=true on dev.
+    // REMOVE this flag (and its checks) once DM-2 is done. After flipping it, save «Облик» once so the token stylesheet is compiled for the new state.
+    'dark_mode' => filter_var(env('STOREFRONT_DARK_MODE', false), FILTER_VALIDATE_BOOLEAN),
 ];

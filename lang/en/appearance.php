@@ -63,7 +63,26 @@ return [
         'outline' => 'Outline only',
     ],
 
+    // DM-1: «Dark mode» (dark-mode.md). Shown only while the STOREFRONT_DARK_MODE flag is on.
+    'dark' => [
+        'section' => 'Dark mode',
+        'section_help' => 'Black page, white text. The switch is site-wide, for every visitor. Your light colours are kept and come back when you switch it off.',
+        'mode' => 'Dark mode of the site',
+        'mode_help' => 'For all visitors. The colours of zones you set in «Design» (header, footer, buy button, …) stay exactly as you set them.',
+        'button' => 'Button colour (dark mode)',
+        'button_help' => 'Dark mode only; it is not the light «Primary colour». The text colour inside the buttons is computed automatically.',
+        'preset_orange' => 'Orange',
+        'preset_white' => 'White',
+        'summary' => 'Text on the button: :text. Button / black page contrast: :button:1 (at least :button_min:1 needed). Text / button contrast: :text_ratio:1 (at least :text_min:1 needed).',
+        'no_logo' => 'No dark logo is uploaded — the logo may not be visible on the black background.',
+        'text_white' => 'white',
+        'text_black' => 'black',
+    ],
+
     'errors' => [
+        'dark_button_format' => 'The button colour must look like #RRGGBB.',
+        'dark_button' => 'This colour is not visible enough on the black page (:ratio:1, at least :min:1 needed). Pick a lighter colour.',
+        'dark_button_text' => 'The text on the button would not be readable (:ratio:1, at least :min:1 needed). Pick another colour.',
         'color' => 'The colour must look like #RRGGBB.',
         'url' => 'Enter a path in the shop (starts with "/") or an address with https://.',
         'ends_before_starts' => 'The end date must be after the start date.',

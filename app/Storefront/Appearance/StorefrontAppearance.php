@@ -119,7 +119,7 @@ final class StorefrontAppearance
 
         $cached = Cache::get(self::CACHE_KEY);
 
-        if (is_array($cached) && array_key_exists('theme', $cached) && array_key_exists('compiled', $cached) && array_key_exists('header', $cached) && array_key_exists('menus', $cached) && array_key_exists('locations', $cached) && array_key_exists('footer', $cached) && array_key_exists('design', $cached) && array_key_exists('page', $cached) && array_key_exists('catalog', $cached) && array_key_exists('sidebar', $cached) && array_key_exists('badges', $cached) && array_key_exists('cookies', $cached) && array_key_exists('site', $cached) && is_array($cached['banner'] ?? null)) {
+        if (is_array($cached) && array_key_exists('theme', $cached) && array_key_exists('compiled', $cached) && array_key_exists('header', $cached) && array_key_exists('menus', $cached) && array_key_exists('locations', $cached) && array_key_exists('footer', $cached) && array_key_exists('design', $cached) && array_key_exists('page', $cached) && array_key_exists('catalog', $cached) && array_key_exists('sidebar', $cached) && array_key_exists('badges', $cached) && array_key_exists('cookies', $cached) && array_key_exists('site', $cached) && array_key_exists('mode', $cached) && is_array($cached['banner'] ?? null)) {
             return $this->data = $cached;
         }
 
@@ -186,6 +186,8 @@ final class StorefrontAppearance
             'cookies' => \App\Settings\CookieSettings::payload($raw),
             // LOGO-1: the shop's name and the generated icon / logos (validated here and again by the readers); null = today's static files and APP_NAME
             'site' => \App\Settings\SiteLogo::payload($raw),
+            // DM-1: the STORED mode, validated (`light` | `dark`; anything else is light). The dev flag is applied when it is READ (mode()), never here: this entry lives in the cache across deploys
+            'mode' => \App\Settings\AppearanceSettings::storedMode($raw[\App\Settings\AppearanceSettings::MODE] ?? null),
         ];
     }
 
@@ -778,6 +780,14 @@ final class StorefrontAppearance
         return $this->data()['theme'];
     }
 
+    /**
+     * DM-1: `dark` or null (light). Dark only while the stored mode is `dark` AND the dev flag `storefront.dark_mode` is on; one value for every visitor (no cookie, no request data), from the cached payload (no query).
+     */
+    public function mode(): ?string
+    {
+        return \App\Settings\AppearanceSettings::effectiveMode($this->data()['mode'] ?? null) === 'dark' ? 'dark' : null;
+    }
+
     /** @return array{hash: string, fonts: list<string>, body: ?string}|null */
     public function compiled(): ?array
     {
@@ -909,6 +919,8 @@ final class StorefrontAppearance
             'cookies' => $this->cookies(),
             // LOGO-1: the site icon's three files (null = the static SVG tag, byte for byte as before)
             'siteIcon' => $this->siteLogo()['icon'] ?? null,
+            // DM-1: `dark` prints data-theme="dark" on <html>; null (light, or the dev flag off) prints nothing
+            'mode' => $this->mode(),
             // DS-2b: the simplified header of the cart, the checkout and the order-received page; `forced` = the Design screen's preview, which is not one of those routes
             'checkoutHeader' => $this->checkoutHeader(),
             'checkoutHeaderForced' => $this->checkoutHeaderOverride !== false,
