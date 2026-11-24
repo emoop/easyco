@@ -1,6 +1,6 @@
-# Storefront dark mode (DM-1: the foundation, DM-2a: the neutral scale and the shell, DM-2b: the catalogue, DM-2c: the product page)
+# Storefront dark mode (DM-1: the foundation, DM-2a: the neutral scale and the shell, DM-2b: the catalogue, DM-2c: the product page, DM-2d-1: the cart)
 
-Status: **DM-1, DM-2a, DM-2b and DM-2c are done, behind a dev flag. The shell, the neutral scale, the catalogue and the product page (gallery, selects, swatches, description, tables, the lightbox) are migrated; the cart / checkout / order-received and the account area are NOT yet**, so with the switch on those pages still show white cards (with now light text on them) until DM-2d and DM-2e. Background and the full inventory: `dark-mode-inventory.md`.
+Status: **DM-1, DM-2a, DM-2b, DM-2c and DM-2d-1 are done, behind a dev flag. The shell, the neutral scale, the catalogue, the product page and the cart are migrated; the checkout / order-received (DM-2d-2) and the account area (DM-2e) are NOT yet**, so with the switch on those pages still show white cards (with now light text on them). Background and the full inventory: `dark-mode-inventory.md`.
 
 ## What the merchant gets
 
@@ -92,9 +92,34 @@ New tokens and their light fallbacks: `--sf-surface #ffffff`, `--sf-surface-2 #f
 - **No shadow** on the product page needed removing: the gallery disc keeps its small shadow (it floats over a picture); no sticky bar, popover or zoom panel carries a colour of its own.
 - **New token (1):** `--sf-link`. `--sf-on-light`, `--sf-on-light-muted` and `--sf-swatch-edge` (from 2b) are reused.
 
+## DM-2d-1: the cart
+
+**Light mode is unchanged** (the same proof as before on the built stylesheet: 2013 rules compared, none changed). Every re-pointed colour keeps the old literal as its fallback; none of the tokens used here (`--sf-surface`, `--sf-surface-2`, `--sf-border-strong`, `--sf-focus`, `--sf-link`, `--sf-status-*`, `--sf-n500/n700/n800`) is defined by the compiler, a view or a script in light mode (grep of `app/`, `resources/views`, `resources/js`, `packages/`, `config/`), so the fallback always applies.
+
+**The status-box technique** (DM-2d-2 and DM-2e reuse it): use the DM-1 utilities `border-status-<family>-border bg-status-<family>-bg text-status-<family>-text` when the OLD box used exactly the family's Tailwind steps (`red-50/900/300`, `amber-50/900/300`, `sky-50/900/300`, `green-50/800/200`: their light fallbacks ARE those values). When the old text used another step (e.g. `red-800`, `amber-800`), write the colour out with the old step as the fallback: `color: var(--sf-status-error-text, var(--color-red-800))`. A status TEXT used without its box is also tested on the page and on the cards (`DarkPaletteContrastTest`). A text link uses `--sf-link` with its own old step as the fallback (`sky-800` in the cart).
+
+| Selector | Family | Parts |
+|---|---|---|
+| `.sf-cart-noscript` | warn | bg, border, text |
+| `.sf-cart-status[data-state='price-changed']` | warn | bg, text |
+| `.sf-cart-line-note` | warn | text (`amber-900`) |
+| `.sf-promo-list-hint` | warn | text (`amber-800` fallback) |
+| `.sf-cart-shipping-hint` | info | bg, text |
+| `.sf-cart-line-unavailable`, `.sf-cart-promo-invalid` | error | text (`red-800` fallback) |
+| `.sf-cart-promo-applied`, `.sf-promo-list-badge` | ok | text |
+| `.sf-cart-status-link` | (link) | `--sf-link`, fallback `sky-800` |
+
+No status token was missing: the families have bg, text and border for all four meanings. The cart uses no status border except the notice's.
+
+- **White cards and fills:** the cart lines box, the promo box, a promo-list item, the totals card, the empty cart, the quantity and promo inputs (`bg-surface`); the stepper, its buttons, the summary card, the sticky bar and the empty cart's category links (`var(--sf-surface, #fff)`; the stepper's hover `#f5f5f5` is `--sf-surface-2`, its border `#d4d4d4` is `--sf-border-strong`). The empty cart's greys (`#404040`, `#262626`, `#a3a3a3`) use the scale tokens with the OLD literal as the fallback: `var(--sf-n700, #404040)`, `var(--sf-n800, #262626)`, `var(--sf-n500, #a3a3a3)` (a scale token used with a literal fallback; the fallback is per use, the dark value is the scale's).
+- **Shared with the checkout (done here):** the compact promo box (it is rendered by the cart page's summary AND the checkout's: `.sf-promo-compact-input`, its focus ring, the lifted floating label), the cart status line and the no-JS notice (cart + checkout + product summary), the totals card (cart + checkout + order body). The OTHER `.sf-float` label rules (autofill, the delivery kind, the invalid label) are checkout only and stay for 2d-2.
+- **Focus and error rings:** the compact promo's ring is `--sf-focus`. The cart has no hard-coded error ring.
+- **Shadows and scrims:** the cart has none (the sticky bar and the summary card carry a 1px `--sf-border` line), so no dark-only rule was needed.
+- **No new token.**
+
 ## Areas
 
-Where every raw colour of `storefront.css` belongs (the hits of inventory A1/A2: `bg-white`, literal white backgrounds, the unmapped neutral steps, the hard-coded focus / error colours, drop shadows, scrims, status utilities, other raw hex without a variable fallback). `Line` is the line in the current file. A rule shared by several areas is put in **2a**. **Rows: 2a 18, 2b 39, 2c 21, 2d 80, 2e 24, left for DM-4 17.** A row marked "done" is finished. The scale remap (the neutral steps) is done everywhere and flips by itself, so for the other areas such a row needs only a look; what remains there are the white cards, the status boxes, the error rings and the scrims.
+Where every raw colour of `storefront.css` belongs (the hits of inventory A1/A2: `bg-white`, literal white backgrounds, the unmapped neutral steps, the hard-coded focus / error colours, drop shadows, scrims, status utilities, other raw hex without a variable fallback). `Line` is the line in the current file. A rule shared by several areas is put in **2a**. **Rows: 2a 18, 2b 39, 2c 21, 2d 80 (38 done in 2d-1, 42 left for 2d-2), 2e 24, left for DM-4 17.** A row marked "done" is finished. The scale remap (the neutral steps) is done everywhere and flips by itself, so for the other areas such a row needs only a look; what remains there are the white cards, the status boxes, the error rings and the scrims.
 
 | Area | Selector | Line | What it is | Needs | Status |
 |---|---|---|---|---|---|
@@ -172,29 +197,29 @@ Where every raw colour of `storefront.css` belongs (the hits of inventory A1/A2:
 | 2c | `.sf-meas-list > div` | 2486 | measurements list | dark-only rule: the dashed hairline takes `--sf-border` | done (dark-only rule) |
 | 2c | `.sf-meas-list > div:first-child` | 2490 | measurements list | dark-only rule: the dashed hairline takes `--sf-border` | done (dark-only rule) |
 | 2c | `.sf-gal-thumb[data-gal-kind='video']::after` | 1832 | the play triangle on a video thumbnail | the triangle follows `--sf-text` (white in dark) on the always-light frame = invisible: now `var(--sf-on-light, var(--sf-text, …))` | done (found in 2c) |
-| 2d | `.sf-cart-status` | 2747 | cart status line | scale remap (done in 2a, flips by itself) | → 2d |
-| 2d | `.sf-cart-status-link` | 2753 | cart status line | `--sf-status-*` tokens | → 2d |
-| 2d | `.sf-cart-noscript` | 2770 | no-JS notice | `--sf-status-*` tokens | → 2d |
-| 2d | `.sf-cart-lines` | 2774 | cart lines box | `bg-surface` | → 2d |
-| 2d | `.sf-cart-line-unavailable` | 2795 | cart line | `--sf-status-*` tokens | → 2d |
-| 2d | `.sf-cart-line-note` | 2799 | cart line | `--sf-status-*` tokens | → 2d |
-| 2d | `.sf-cart-qty, .sf-cart-promo-input` | 2812 | cart quantity input | `bg-surface`; scale remap (done in 2a, flips by itself) | → 2d |
-| 2d | `.sf-cart-remove, .sf-cart-promo-remove` | 2825 | remove button | scale remap (done in 2a, flips by itself) | → 2d |
-| 2d | `.sf-cart-promo` | 2829 | cart promo box | `bg-surface` | → 2d |
-| 2d | `.sf-cart-promo-applied` | 2845 | cart promo box | `--sf-status-*` tokens | → 2d |
-| 2d | `.sf-promo-list-summary` | 2854 | promo list | scale remap (done in 2a, flips by itself) | → 2d |
-| 2d | `.sf-promo-list-item` | 2862 | promo list | `bg-surface` | → 2d |
-| 2d | `.sf-promo-list-text` | 2874 | promo list | scale remap (done in 2a, flips by itself) | → 2d |
-| 2d | `.sf-promo-list-hint` | 2878 | promo list | `--sf-status-*` tokens | → 2d |
-| 2d | `.sf-promo-list-unavailable .sf-promo-list-code, .sf-promo-li` | 2883 | promo list | scale remap (done in 2a, flips by itself) | → 2d |
-| 2d | `.sf-promo-list-badge` | 2894 | promo list | `--sf-status-*` tokens | → 2d |
-| 2d | `.sf-cart-promo-invalid` | 2898 | cart promo box | `--sf-status-*` tokens | → 2d |
-| 2d | `.sf-cart-totals` | 2902 | cart totals box | `bg-surface` | → 2d |
-| 2d | `.sf-cart-shipping-hint` | 2914 | shipping hint | `--sf-status-*` tokens | → 2d |
-| 2d | `.sf-cart-checkout:disabled` | 2926 | disabled checkout button | none (border token; #262626 in dark) | → 2d |
-| 2d | `.sf-cart-empty` | 2938 | empty cart | `bg-surface`; scale remap (done in 2a, flips by itself) | → 2d |
-| 2d | `.sf-cart-line-img` | 2993 | cart-line picture frame | **frame**: `bg-image-frame` (same light value in dark) | done (frame) |
-| 2d | `.sf-cart-line-link` | 2997 | cart line | scale remap (done in 2a, flips by itself) | → 2d |
+| 2d | `.sf-cart-status` | 2747 | cart status line | scale remap (done in 2a, flips by itself) | done (2d-1) |
+| 2d | `.sf-cart-status-link` | 2753 | cart status line | `--sf-link` (light fallback `sky-800`, as before) | done (2d-1) |
+| 2d | `.sf-cart-noscript` | 2770 | no-JS notice | the **warn** family (box: bg + border + text); shared with the checkout | done (2d-1) |
+| 2d | `.sf-cart-lines` | 2774 | cart lines box | `bg-surface`; scale remap | done (2d-1) |
+| 2d | `.sf-cart-line-unavailable` | 2795 | cart line | the **error** text (`red-800` as the fallback) | done (2d-1) |
+| 2d | `.sf-cart-line-note` | 2799 | cart line | the **warn** text (`amber-900`) | done (2d-1) |
+| 2d | `.sf-cart-qty, .sf-cart-promo-input` | 2812 | cart quantity input | `bg-surface`; scale remap | done (2d-1) |
+| 2d | `.sf-cart-remove, .sf-cart-promo-remove` | 2825 | remove button | scale remap (done in 2a, flips by itself) | done (2d-1) |
+| 2d | `.sf-cart-promo` | 2829 | cart promo box | `bg-surface` | done (2d-1) |
+| 2d | `.sf-cart-promo-applied` | 2845 | cart promo box | the **ok** text (`green-800`) | done (2d-1) |
+| 2d | `.sf-promo-list-summary` | 2854 | promo list | scale remap (done in 2a, flips by itself) | done (2d-1) |
+| 2d | `.sf-promo-list-item` | 2862 | promo list | `bg-surface`; scale remap | done (2d-1) |
+| 2d | `.sf-promo-list-text` | 2874 | promo list | scale remap (done in 2a, flips by itself) | done (2d-1) |
+| 2d | `.sf-promo-list-hint` | 2878 | promo list | the **warn** text (`amber-800` as the fallback) | done (2d-1) |
+| 2d | `.sf-promo-list-unavailable .sf-promo-list-code, .sf-promo-li` | 2883 | promo list | scale remap (done in 2a, flips by itself) | done (2d-1) |
+| 2d | `.sf-promo-list-badge` | 2894 | promo list | the **ok** text (`green-800`) | done (2d-1) |
+| 2d | `.sf-cart-promo-invalid` | 2898 | cart promo box | the **error** text (`red-800` as the fallback) | done (2d-1) |
+| 2d | `.sf-cart-totals` | 2902 | cart totals box | `bg-surface`; scale remap | done (2d-1) |
+| 2d | `.sf-cart-shipping-hint` | 2914 | shipping hint | the **info** family (bg + text) | done (2d-1) |
+| 2d | `.sf-cart-checkout:disabled` | 2926 | disabled checkout button | none (border token; #262626 in dark) | done (2d-1) |
+| 2d | `.sf-cart-empty` | 2938 | empty cart | `bg-surface`; scale remap (done in 2a, flips by itself) | done (2d-1) |
+| 2d | `.sf-cart-line-img` | 2993 | cart-line picture frame | **frame**: `bg-image-frame` (same light value in dark) | done (2d-1) |
+| 2d | `.sf-cart-line-link` | 2997 | cart line | scale remap (done in 2a, flips by itself) | done (2d-1) |
 | 2d | `.sf-fieldset` | 3028 | checkout section card | `bg-surface` | → 2d |
 | 2d | `.sf-checkout-form input[type='text']:focus-visible, .sf-chec` | 3072 | checkbox label | `--sf-focus` / `--sf-error` | → 2d |
 | 2d | `.sf-checkout-form input[type='text']:focus-visible, .sf-chec` | 3074 | checkbox label | `--sf-focus` / `--sf-error` | → 2d |
@@ -209,7 +234,7 @@ Where every raw colour of `storefront.css` belongs (the hits of inventory A1/A2:
 | 2d | `.sf-login-hint, .sf-order-as` | 3151 | login hint | scale remap (done in 2a, flips by itself) | → 2d |
 | 2d | `.sf-shipping-hint` | 3180 | shipping hint | `--sf-status-*` tokens | → 2d |
 | 2d | `.sf-required` | 3191 | required star | `--sf-status-*` tokens | → 2d |
-| 2d | `.sf-float:has(> :focus) > label, .sf-float:has(> input:not(:` | 3262 | floating label | token or keep | → 2d |
+| 2d | `.sf-float:has(> :focus) > label, .sf-float:has(> input:not(:` | 3262 | floating label | the lifted label `#737373` -> `var(--sf-n500, #737373)` (shared: the compact promo of the cart); the other `.sf-float` rules are checkout only | done (2d-1) |
 | 2d | `.sf-float:has(> :autofill) > label` | 3267 | floating label | token or keep | → 2d |
 | 2d | `.sf-float:has(> :-webkit-autofill) > label` | 3272 | floating label | token or keep | → 2d |
 | 2d | `.sf-float-up:not(:has(> select:not([hidden]))) > label` | 3283 | floating label | token or keep | → 2d |
@@ -221,13 +246,13 @@ Where every raw colour of `storefront.css` belongs (the hits of inventory A1/A2:
 | 2d | `.sf-express` | 3351 | express checkout box | `bg-surface` | → 2d |
 | 2d | `.sf-express-divider` | 3356 | express checkout box | scale remap (done in 2a, flips by itself) | → 2d |
 | 2d | `.sf-express-divider::before, .sf-express-divider::after` | 3362 | express checkout box | scale remap (done in 2a, flips by itself) | → 2d |
-| 2d | `.sf-promo-compact-label` | 3396 | compact promo form | scale remap (done in 2a, flips by itself) | → 2d |
-| 2d | `.sf-promo-compact-input` | 3404 | compact promo form | `bg-surface`; scale remap (done in 2a, flips by itself) | → 2d |
-| 2d | `.sf-promo-compact-field:focus-within` | 3413 | compact promo form | `--sf-focus` / `--sf-error` | → 2d |
+| 2d | `.sf-promo-compact-label` | 3396 | compact promo form | `bg-surface`; scale remap; shared by the cart page and the checkout summary | done (2d-1) |
+| 2d | `.sf-promo-compact-input` | 3404 | compact promo form | `bg-surface`; scale remap; shared by the cart page and the checkout summary | done (2d-1) |
+| 2d | `.sf-promo-compact-field:focus-within` | 3413 | compact promo form | `--sf-focus`; the compact promo is used by the cart page AND the checkout summary | done (2d-1) |
 | 2d | `.sf-note-field textarea` | 3427 | order-note field | `bg-surface`; scale remap (done in 2a, flips by itself) | → 2d |
 | 2d | `.sf-note-field textarea[aria-invalid='true']` | 3431 | order-note field | `--sf-status-*` tokens | → 2d |
 | 2d | `.sf-note-counter[data-state='warning']` | 3439 | order-note field | `--sf-status-*` tokens | → 2d |
-| 2d | `.sf-cart-status[data-state='price-changed']` | 3443 | cart status line | `--sf-status-*` tokens | → 2d |
+| 2d | `.sf-cart-status[data-state='price-changed']` | 3443 | cart status line | the **warn** family (bg + text); the cart status line is shared by the cart, the checkout and the product summary | done (2d-1) |
 | 2d | `.sf-place-order:disabled` | 3459 | disabled place-order button | none (border token; #262626 in dark) | → 2d |
 | 2d | `.sf-checkout-summary` | 3468 | checkbox label | `bg-surface` | → 2d |
 | 2d | `.sf-summary-toggle` | 3477 | summary toggle | `bg-surface` | → 2d |
@@ -241,16 +266,16 @@ Where every raw colour of `storefront.css` belongs (the hits of inventory A1/A2:
 | 2d | `.sf-bank-deadline` | 3609 | bank-transfer instructions | scale remap (done in 2a, flips by itself) | → 2d |
 | 2d | `.sf-bank-instructions` | 3613 | bank-transfer instructions | scale remap (done in 2a, flips by itself) | → 2d |
 | 2d | `.sf-cod-note, .sf-received-email` | 3618 | cash-on-delivery note | scale remap (done in 2a, flips by itself) | → 2d |
-| 2d | `.sf-cart-stepper` | 3867 | quantity stepper | token or keep | → 2d |
-| 2d | `.sf-cart-stepper` | 3869 | quantity stepper | `var(--sf-surface, #fff)` (or keep white) | → 2d |
-| 2d | `.sf-cart-step` | 3893 | quantity stepper | `var(--sf-surface, #fff)` (or keep white) | → 2d |
-| 2d | `.sf-cart-step:hover:not(:disabled)` | 3900 | quantity stepper | token or keep | → 2d |
-| 2d | `.sf-cart-summary` | 3924 | cart summary panel | `var(--sf-surface, #fff)` (or keep white) | → 2d |
-| 2d | `.sf-cart-bar` | 3990 | cart sticky bottom bar | `var(--sf-surface, #fff)` (or keep white) | → 2d |
-| 2d | `.sf-cart-empty-categories-title` | 4074 | empty cart | token or keep | → 2d |
-| 2d | `.sf-cart-empty-categories a` | 4095 | empty cart | `var(--sf-surface, #fff)` (or keep white) | → 2d |
-| 2d | `.sf-cart-empty-categories a` | 4097 | empty cart | token or keep | → 2d |
-| 2d | `.sf-cart-empty-categories a:hover` | 4102 | empty cart | token or keep | → 2d |
+| 2d | `.sf-cart-stepper` | 3867 | quantity stepper | stepper: `--sf-border-strong` (border), `--sf-surface` (ground), `--sf-surface-2` (hover) | done (2d-1) |
+| 2d | `.sf-cart-stepper` | 3869 | quantity stepper | stepper: `--sf-border-strong` (border), `--sf-surface` (ground), `--sf-surface-2` (hover) | done (2d-1) |
+| 2d | `.sf-cart-step` | 3893 | quantity stepper | stepper: `--sf-border-strong` (border), `--sf-surface` (ground), `--sf-surface-2` (hover) | done (2d-1) |
+| 2d | `.sf-cart-step:hover:not(:disabled)` | 3900 | quantity stepper | stepper: `--sf-border-strong` (border), `--sf-surface` (ground), `--sf-surface-2` (hover) | done (2d-1) |
+| 2d | `.sf-cart-summary` | 3924 | cart summary panel | `var(--sf-surface, #fff)` | done (2d-1) |
+| 2d | `.sf-cart-bar` | 3990 | cart sticky bottom bar | `var(--sf-surface, #fff)` | done (2d-1) |
+| 2d | `.sf-cart-empty-categories-title` | 4074 | empty cart | `--sf-surface` ground; the greys `#404040` / `#262626` / `#a3a3a3` use `--sf-n700` / `--sf-n800` / `--sf-n500` with the OLD literal as the fallback | done (2d-1) |
+| 2d | `.sf-cart-empty-categories a` | 4095 | empty cart | `--sf-surface` ground; the greys `#404040` / `#262626` / `#a3a3a3` use `--sf-n700` / `--sf-n800` / `--sf-n500` with the OLD literal as the fallback | done (2d-1) |
+| 2d | `.sf-cart-empty-categories a` | 4097 | empty cart | `--sf-surface` ground; the greys `#404040` / `#262626` / `#a3a3a3` use `--sf-n700` / `--sf-n800` / `--sf-n500` with the OLD literal as the fallback | done (2d-1) |
+| 2d | `.sf-cart-empty-categories a:hover` | 4102 | empty cart | `--sf-surface` ground; the greys `#404040` / `#262626` / `#a3a3a3` use `--sf-n700` / `--sf-n800` / `--sf-n500` with the OLD literal as the fallback | done (2d-1) |
 | 2d | `.sf-checkout-summary[data-open='false'] .sf-summary-lines::a` | 4275 | checkbox label | `var(--sf-surface, #fff)` (or keep white) | → 2d |
 | 2e | `.sf-account-status[data-state='info'], .sf-account-status[da` | 6809 | status box | `bg-surface` | → 2e |
 | 2e | `.sf-account-status[data-state='error']` | 6813 | status box | `--sf-status-*` tokens | → 2e |
@@ -298,7 +323,7 @@ Where every raw colour of `storefront.css` belongs (the hits of inventory A1/A2:
 | DM-4 | `.sf-cc-switch::after` | 7330 | cookie banner / dialog (DM-4) | allow-listed in the ratchet until DM-4 | DM-4 |
 | DM-4 | `.sf-cc-switch::after` | 7331 | cookie banner / dialog (DM-4) | allow-listed in the ratchet until DM-4 | DM-4 |
 
-Notes for the next steps: the `.sf-card-sizes` strip and the `.sf-gal-next` disc keep white (above). The status boxes (`bg-red-50 text-red-900 …`) go to the `--sf-status-*` tokens in **2d** (they also appear in 2c: `.sf-picker.is-missing`, and in 2e: `.sf-account-status`). The select chevron of the variation / picker selects (2c) and of the sort dropdown (2b) is the same data-URI as the shell's: draw it light in dark mode. The hero / HTML-block colour classes (`.sf-pc-*`), the cookie dialog and the menu badges' own colour pairs are DM-4.
+Notes for the next steps: the `.sf-card-sizes` strip and the `.sf-gal-next` disc keep white (above). The status boxes (`bg-red-50 text-red-900 …`) go to the `--sf-status-*` tokens (the technique is under «DM-2d-1»; the checkout ones are 2d-2, the account ones 2e). The variation / picker selects (2c) have NO data-URI chevron: they use the browser's native arrow, which follows `color-scheme: dark`; the sort dropdown (2b) and the filter bar draw their arrow with borders in `currentColor`. Only the checkout / account `select` (`.sf-field select`, `.sf-kind-select`) has a drawn chevron, already light in dark mode since 2a. The hero / HTML-block colour classes (`.sf-pc-*`), the cookie dialog and the menu badges' own colour pairs are DM-4.
 
 ## Cache
 
@@ -306,7 +331,7 @@ Notes for the next steps: the `.sf-card-sizes` strip and the `.sf-gal-next` disc
 
 ## Still missing
 
-- **DM-2d..e** (DM-2a, 2b and 2c are done: the scale, the base, the shell, the catalogue and the product page) — 2d cart + checkout + order-received (the white cards, the status boxes onto `--sf-status-*`, the error and focus rings, the scrims, the cart text links onto `--sf-link`), 2e the account area (with the `bg-neutral-900 text-white` pill). Then remove the dev flag.
+- **DM-2d-2** (checkout + order-received: the fieldset cards, the field error / focus rings, the status boxes, the floating-label rules that are checkout only, the invoice / express / note / bank / received cards, the order summary and its fade) and **DM-2e** (the account area, with the `bg-neutral-900 text-white` pill). Then remove the dev flag.
 - **DM-3** — assets: `logo.dark` printed by the storefront, the image-frame rule, payment icons, badges.
 - **DM-4** — merchant-colour components: HTML blocks, hero text colours, header/footer rows, the cookie banner dialog, admin warnings for clashes.
 - **DM-5** — third-party surfaces (none exist today).
