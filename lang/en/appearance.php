@@ -63,7 +63,7 @@ return [
         'outline' => 'Outline only',
     ],
 
-    // DM-1: «Dark mode» (dark-mode.md). Shown only while the STOREFRONT_DARK_MODE flag is on.
+    // DM-1: «Dark mode» (dark-mode.md). Always shown (CC-2: the STOREFRONT_DARK_MODE flag is gone).
     'dark' => [
         'section' => 'Dark mode',
         'section_help' => 'Black page, white text. The switch is site-wide, for every visitor. Your light colours are kept and come back when you switch it off.',

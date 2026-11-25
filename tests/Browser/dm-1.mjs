@@ -2,7 +2,7 @@
 //
 // !! In DARK mode WHITE CARDS WITH WHITE TEXT ARE EXPECTED until DM-2 (no selector is migrated in DM-1: cards, dropdowns, the cart, the checkout still paint `bg-white` / `#fff`). What this run checks is
 // !! the FOUNDATION: `data-theme="dark"` on <html>, the page background black, the text white, the dark button colour, `color-scheme: dark`, and that LIGHT mode is unchanged. Look at the screenshots
-// !! knowing that. The switch is behind the dev flag: the site (and this script's PHP) must run with STOREFRONT_DARK_MODE=true.
+// !! knowing that.
 //
 // It stores the mode through the real AppearanceWriter (the same code «Облик» saves with), takes the pages in mode OFF then ON, and puts the stored mode and button colour BACK at the end (also on failure).
 //
@@ -44,13 +44,12 @@ if ($action === 'dark') { App\\Storefront\\Appearance\\AppearanceWriter::save(ar
 elseif ($action === 'light') { App\\Storefront\\Appearance\\AppearanceWriter::save(array_replace($current, ['dark_mode' => false])); }
 elseif ($action === 'restore') { App\\Storefront\\Appearance\\AppearanceWriter::save(array_replace($current, ['dark_mode' => $argv[2] === '1', 'dark_button' => $argv[3]])); }
 $after = App\\Storefront\\Appearance\\AppearanceWriter::current();
-echo json_encode(['flag' => (bool) config('storefront.dark_mode'), 'dark_mode' => $after['dark_mode'], 'dark_button' => $after['dark_button']]);
+echo json_encode(['dark_mode' => $after['dark_mode'], 'dark_button' => $after['dark_button']]);
 `);
 
 const php = (...args) => JSON.parse(execFileSync(PHP, [script, ...args], { cwd: ROOT, encoding: 'utf8' }).trim().split('\n').pop());
 
 const original = php('show');
-check('the dev flag STOREFRONT_DARK_MODE is on (in the CLI environment)', original.flag === true, JSON.stringify(original));
 
 const { chromium } = createRequire(join(process.env.PLAYWRIGHT_DIR, 'x.js'))('playwright');
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM || undefined, args: ['--ignore-certificate-errors'] });

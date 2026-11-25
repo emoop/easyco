@@ -57,9 +57,9 @@ final class AppearanceCompiler
         $defaults = AppearanceSettings::defaults();
         $vars = [];
 
-        // DM-1: in dark mode (the stored mode AND the dev flag) the 13 base colour tokens of the merchant are NOT emitted: the dark palette of storefront.css replaces them. Their light values stay stored
+        // DM-1: in dark mode (the stored mode) the 13 base colour tokens of the merchant are NOT emitted: the dark palette of storefront.css replaces them. Their light values stay stored
         // and are compiled again when the mode goes back to light. Everything else (fonts, radius, button style, every zone list) is compiled exactly as in light mode.
-        $dark = AppearanceSettings::effectiveMode($effective[AppearanceSettings::MODE]) === 'dark';
+        $dark = AppearanceSettings::storedMode($effective[AppearanceSettings::MODE]) === 'dark';
 
         foreach (AppearanceSettings::COLORS as [$key, $variable]) {
             if (! $dark && $effective[$key] !== $defaults[$key]) {

@@ -22,9 +22,9 @@ use Livewire\Features\SupportAutoInjectedAssets\SupportAutoInjectedAssets;
 use Tests\TestCase;
 
 /**
- * DM-1 (dark-mode.md): the foundation of the storefront's dark mode. The settings, the dev flag, the payload, the `data-theme` attribute, the compiler rule (which colours win) and the contrast rules. NO selector
+ * DM-1 (dark-mode.md): the foundation of the storefront's dark mode. The settings, the payload, the `data-theme` attribute, the compiler rule (which colours win) and the contrast rules. NO selector
  * is migrated in DM-1: what these tests pin is that LIGHT mode is byte-identical to what it was (fixtures/dm1-light-css.json was taken from the code BEFORE the change) and that dark mode is switched by
- * the merchant alone, site-wide, for everyone, only while the dev flag is on.
+ * the merchant alone, site-wide, for everyone (CC-2: the dev flag is gone; the stored mode IS the mode).
  */
 class DarkModeTest extends TestCase
 {
@@ -44,11 +44,6 @@ class DarkModeTest extends TestCase
     private function settings(): SiteSettingsRepository
     {
         return app(SiteSettingsRepository::class);
-    }
-
-    private function flag(bool $on): void
-    {
-        config(['storefront.dark_mode' => $on]);
     }
 
     private function css(array $overrides): ?string
@@ -76,26 +71,20 @@ class DarkModeTest extends TestCase
 
     // ---- LIGHT mode is byte-identical --------------------------------------------------------------------------------------------------
 
-    public function test_light_mode_output_is_byte_identical_to_the_snapshot_taken_before_the_change_with_the_flag_on_or_off(): void
+    public function test_light_mode_output_is_byte_identical_to_the_snapshot_taken_before_the_change(): void
     {
         $fixtures = $this->fixtures();
         $this->assertCount(5, $fixtures);
 
-        foreach ([false, true] as $flag) {
-            $this->flag($flag);
-
-            foreach ($fixtures as $name => $sample) {
-                $this->assertSame($sample['css'], $this->cssOf($sample), "{$name}, flag ".json_encode($flag));
-                // an explicit `light`, and a dark button colour that is set but unused, change nothing
-                $this->assertSame($sample['css'], $this->cssOf($sample, [AppearanceSettings::MODE => 'light', AppearanceSettings::DARK_BUTTON => '#ffffff']), "{$name} explicit light, flag ".json_encode($flag));
-            }
+        foreach ($fixtures as $name => $sample) {
+            $this->assertSame($sample['css'], $this->cssOf($sample), $name);
+            // an explicit `light`, and a dark button colour that is set but unused, change nothing
+            $this->assertSame($sample['css'], $this->cssOf($sample, [AppearanceSettings::MODE => 'light', AppearanceSettings::DARK_BUTTON => '#ffffff']), "{$name} explicit light");
         }
     }
 
     public function test_an_untouched_light_shop_compiles_to_nothing(): void
     {
-        $this->flag(true);
-
         $this->assertNull($this->css([]));
         $this->assertNull($this->css([AppearanceSettings::MODE => 'light']));
         $this->assertNull($this->css([AppearanceSettings::DARK_BUTTON => '#ffffff']), 'a button colour alone is nothing while the mode is light');
@@ -106,7 +95,6 @@ class DarkModeTest extends TestCase
 
     public function test_in_dark_mode_the_13_base_tokens_are_never_emitted_but_fonts_radius_and_every_zone_list_are_as_before(): void
     {
-        $this->flag(true);
         $sample = $this->fixtures()['all_colors'];
         $light = (string) $this->cssOf($sample);
         $this->assertNotNull($light);
@@ -144,8 +132,6 @@ class DarkModeTest extends TestCase
 
     public function test_the_dark_button_override_is_written_only_when_it_differs_from_the_default_with_the_computed_text_and_hover(): void
     {
-        $this->flag(true);
-
         $this->assertNull($this->css($this->darkSet()), 'dark with the default button and nothing else: the dark palette is in storefront.css, no stylesheet');
         $this->assertNull($this->css($this->darkSet([AppearanceSettings::DARK_BUTTON => AppearanceSettings::DEFAULT_DARK_BUTTON])));
 
@@ -163,8 +149,6 @@ class DarkModeTest extends TestCase
 
     public function test_a_dark_button_colour_that_fails_the_contrast_rules_or_is_not_a_colour_is_dropped(): void
     {
-        $this->flag(true);
-
         $this->assertNull($this->css($this->darkSet([AppearanceSettings::DARK_BUTTON => '#333333'])), 'a dark grey fails 3:1 against the black page: dropped, the default stays');
 
         // the stored path (the recompiler) drops a value that is not a colour instead of failing the whole stylesheet
@@ -177,17 +161,8 @@ class DarkModeTest extends TestCase
         $this->css($this->darkSet([AppearanceSettings::DARK_BUTTON => 'orange']));
     }
 
-    public function test_a_stored_dark_mode_has_no_effect_on_the_stylesheet_while_the_flag_is_off(): void
-    {
-        $this->flag(false);
-        $sample = $this->fixtures()['all_colors'];
-
-        $this->assertSame($sample['css'], $this->cssOf($sample, $this->darkSet([AppearanceSettings::DARK_BUTTON => '#ffffff'])));
-    }
-
     public function test_a_flip_of_the_mode_or_of_the_button_colour_makes_a_new_stylesheet_name(): void
     {
-        $this->flag(true);
         $fonts = [AppearanceSettings::FONT_BODY => 'inter'];
 
         $light = app(AppearanceCompiler::class)->compile($fonts)['hash'];
@@ -250,19 +225,15 @@ class DarkModeTest extends TestCase
         }
     }
 
-    public function test_the_layout_gets_dark_only_for_a_stored_dark_with_the_flag_on(): void
+    public function test_the_layout_gets_dark_for_a_stored_dark_and_light_for_a_missing_or_invalid_value(): void
     {
+        $this->assertNull(app(StorefrontAppearance::class)->forLayout()['mode'], 'nothing stored is light');
+
         $this->settings()->set(AppearanceSettings::MODE, 'dark');
         app(StorefrontAppearance::class)->refresh();
-
-        $this->flag(true);
         $this->assertSame('dark', app(StorefrontAppearance::class)->forLayout()['mode']);
         $this->assertSame('dark', app(StorefrontAppearance::class)->mode());
 
-        $this->flag(false);
-        $this->assertNull(app(StorefrontAppearance::class)->forLayout()['mode'], 'a stored dark has zero effect while the flag is off, even from a payload cached while it was on');
-
-        $this->flag(true);
         $this->settings()->set(AppearanceSettings::MODE, 'blue');
         app(StorefrontAppearance::class)->refresh();
         $this->assertNull(app(StorefrontAppearance::class)->forLayout()['mode'], 'an invalid stored value is light');
@@ -270,7 +241,6 @@ class DarkModeTest extends TestCase
 
     public function test_an_old_cached_payload_without_a_mode_is_rebuilt(): void
     {
-        $this->flag(true);
         app(StorefrontAppearance::class)->refresh();
         $old = Cache::get(StorefrontAppearance::CACHE_KEY);
         $this->assertArrayHasKey('mode', $old);
@@ -292,31 +262,26 @@ class DarkModeTest extends TestCase
         $this->app->forgetScopedInstances();
     }
 
-    public function test_the_html_tag_is_exactly_what_it_was_when_light_or_the_flag_is_off_and_dark_only_when_both_are_on(): void
+    public function test_the_html_tag_is_exactly_what_it_was_in_light_and_carries_data_theme_only_in_dark(): void
     {
-        $this->flag(true);
+        $light = $this->get('/')->assertOk()->getContent();
+        $this->assertMatchesRegularExpression('#^<!DOCTYPE html>\s*<html lang="[a-z-]+">\n#', (string) $light, 'byte for byte today\'s tag');
+        $this->assertStringNotContainsString('data-theme', (string) $light);
+
         $this->storeDark();
-
-        $this->flag(false);
-        $off = $this->get('/')->assertOk()->getContent();
-        $this->assertMatchesRegularExpression('#^<!DOCTYPE html>\s*<html lang="[a-z-]+">\n#', (string) $off, 'byte for byte today\'s tag');
-        $this->assertStringNotContainsString('data-theme', (string) $off);
-
-        $this->flag(true);
         $on = $this->get('/')->assertOk()->getContent();
         $this->assertMatchesRegularExpression('#<html lang="[a-z-]+" data-theme="dark">\n#', (string) $on);
         $this->assertSame(1, substr_count((string) $on, 'data-theme="dark"'));
 
         AppearanceWriter::save(array_replace(AppearanceWriter::current(), ['dark_mode' => false]));
         $this->app->forgetScopedInstances();
-        $light = $this->get('/')->assertOk()->getContent();
-        $this->assertMatchesRegularExpression('#<html lang="[a-z-]+">\n#', (string) $light);
-        $this->assertStringNotContainsString('data-theme', (string) $light);
+        $back = $this->get('/')->assertOk()->getContent();
+        $this->assertMatchesRegularExpression('#<html lang="[a-z-]+">\n#', (string) $back);
+        $this->assertStringNotContainsString('data-theme', (string) $back);
     }
 
     public function test_the_page_is_identical_for_two_visitors_and_sets_no_cookie(): void
     {
-        $this->flag(true);
         $this->storeDark();
 
         $first = $this->get('/', ['Cookie' => 'easyco_consent=x'])->assertOk();
@@ -331,28 +296,17 @@ class DarkModeTest extends TestCase
     public function test_the_cookie_preview_follows_the_same_rule(): void
     {
         $url = CookiePreviewController::previewUrl(['position' => 'bottom', 'view' => 'summary', 'color' => '#1d4ed8', 'page' => null, 'layer' => 'summary', 'texts' => ['bg' => ['title' => 'T']]]);
-        $this->storeDarkWithFlag();
-
-        $this->flag(false);
         $this->assertDoesNotMatchRegularExpression('#data-theme#', (string) $this->get($url)->assertOk()->getContent());
         $this->assertMatchesRegularExpression('#<html lang="[a-z]+">#', (string) $this->get($url)->getContent());
 
-        $this->flag(true);
-        $this->app->forgetScopedInstances();
-        $this->assertMatchesRegularExpression('#<html lang="[a-z]+" data-theme="dark">#', (string) $this->get($url)->assertOk()->getContent());
-    }
-
-    private function storeDarkWithFlag(): void
-    {
-        $this->flag(true);
         $this->storeDark();
+        $this->assertMatchesRegularExpression('#<html lang="[a-z]+" data-theme="dark">#', (string) $this->get($url)->assertOk()->getContent());
     }
 
     // ---- the cache ---------------------------------------------------------------------------------------------------------------------------
 
     public function test_a_flip_of_the_mode_and_a_change_of_the_button_colour_each_collect_all(): void
     {
-        $this->flag(true);
 
         foreach ([['dark_mode' => true], ['dark_button' => '#ffffff'], ['dark_mode' => false]] as $change) {
             $purger = new RecordingPurger;
@@ -382,7 +336,6 @@ class DarkModeTest extends TestCase
 
     public function test_the_writer_stores_the_two_values_only_when_they_differ_and_forgets_them_back_to_the_defaults(): void
     {
-        $this->flag(true);
 
         AppearanceWriter::save(array_replace(AppearanceWriter::current(), ['dark_mode' => true, 'dark_button' => '#FFFFFF']));
         $this->assertSame('dark', $this->settings()->get(AppearanceSettings::MODE));
@@ -397,7 +350,6 @@ class DarkModeTest extends TestCase
 
     public function test_a_save_that_does_not_carry_the_dark_values_keeps_them_as_stored(): void
     {
-        $this->flag(true);
         AppearanceWriter::save(array_replace(AppearanceWriter::current(), ['dark_mode' => true, 'dark_button' => '#ffffff']));
 
         $data = AppearanceWriter::current();
@@ -405,14 +357,13 @@ class DarkModeTest extends TestCase
         $data['c_primary'] = '#123456';
         AppearanceWriter::save($data);
 
-        $this->assertSame('dark', $this->settings()->get(AppearanceSettings::MODE), 'the flag off hides the fields: a save of the other fields must not reset the mode');
+        $this->assertSame('dark', $this->settings()->get(AppearanceSettings::MODE), 'a save that does not carry the dark fields (the «Дизайн» screen\'s «Топбанер» zone) must not reset the mode');
         $this->assertSame('#ffffff', $this->settings()->get(AppearanceSettings::DARK_BUTTON));
         $this->assertSame('#123456', $this->settings()->get('appearance.color.primary'), 'and the light colour is stored untouched while dark mode is on');
     }
 
     public function test_the_merchants_light_colours_stay_stored_while_dark_and_come_back_in_the_stylesheet_when_light_again(): void
     {
-        $this->flag(true);
         AppearanceWriter::save(array_replace(AppearanceWriter::current(), ['c_primary' => '#123456', 'dark_mode' => true]));
         $this->assertSame('#123456', $this->settings()->get('appearance.color.primary'));
         $this->assertNull($this->settings()->get(AppearanceSettings::COMPILED_KEY), 'dark: nothing to compile');
@@ -424,7 +375,6 @@ class DarkModeTest extends TestCase
 
     public function test_the_writer_refuses_a_button_colour_that_fails_the_contrast_rules_and_writes_nothing(): void
     {
-        $this->flag(true);
         $before = AppearanceWriter::current();
 
         try {

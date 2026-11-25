@@ -64,7 +64,7 @@
  * no token file. UNLAYERED on purpose: `html[data-theme]` (0,1,1) outweighs the compiled `:root` (0,1,0) whatever the order or the cascade layer, so even a token stylesheet compiled for light mode cannot
  * repaint the page. Cards sit one step above the page (#111) with a thin border (shadows do not show on black). `--sf-primary` is the dark BUTTON colour (default orange); the merchant's own dark
  * button colour is compiled after this file as `html[data-theme='dark'] { --sf-primary … }`. The hover is what the compiler computes for the same colour (towardsWhite 0.1767).
- * The shell is migrated (DM-2a); the other areas still are not (white cards with white text until DM-2b..e): the switch is behind the STOREFRONT_DARK_MODE dev flag.
+ * Every storefront page area is migrated (DM-2a..e); the mode is the merchant's stored switch in «Облик» (the dev flag is gone, CC-2).
  */
 html[data-theme='dark'] {
     color-scheme: dark;
@@ -7166,7 +7166,7 @@ html.sf-cc-lock {
     position: fixed;
     z-index: 1000;
     font-family: var(--sf-font-body, inherit);
-    color: #171717;
+    color: var(--sf-field-text, #171717);
 }
 
 .sf-cc-center {
@@ -7175,7 +7175,7 @@ html.sf-cc-lock {
     align-items: center;
     justify-content: center;
     padding: 16px;
-    background: rgba(17, 17, 17, 0.55);
+    background: var(--sf-overlay, rgba(17, 17, 17, 0.55));
 }
 
 .sf-cc-bottom {
@@ -7192,11 +7192,12 @@ html.sf-cc-lock {
     width: 100%;
     max-height: calc(100dvh - 32px);
     overflow-y: auto;
-    background: #ffffff;
+    background: var(--sf-surface, #ffffff);
     border: 1px solid var(--sf-border, #d9d9d9);
     border-radius: 6px;
     padding: 32px;
     pointer-events: auto;
+    position: relative;
 }
 
 .sf-cc-center .sf-cc-dialog {
@@ -7215,6 +7216,7 @@ html.sf-cc-lock {
 
 .sf-cc-title {
     margin: 0 0 12px;
+    padding-inline-end: 32px;
     font-family: var(--sf-font-heading, inherit);
     font-size: 1.25rem;
     font-weight: 600;
@@ -7226,11 +7228,11 @@ html.sf-cc-lock {
     margin: 0;
     font-size: 0.9rem;
     line-height: 1.55;
-    color: #404040;
+    color: var(--sf-n700, #404040);
 }
 
 .sf-cc-policy {
-    color: #171717;
+    color: var(--sf-field-text, #171717);
     text-decoration: underline;
 }
 
@@ -7266,8 +7268,43 @@ html.sf-cc-lock {
     margin-top: 12px;
 }
 
+.sf-cc-layer-summary .sf-cc-btn {
+    padding: 0 8px;
+    font-size: 0.875rem;
+}
+
+/* CC-2: «×»: a real button, a 44px target in the corner of the dialog; it closes WITHOUT a choice */
+.sf-cc-close {
+    position: absolute;
+    top: 4px;
+    inset-inline-end: 4px;
+    z-index: 1;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    font-size: 1.75rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.sf-cc-close:hover {
+    opacity: 0.7;
+}
+
+/* the one short line of the thin bar: shown only in the bar (the normal dialog has the title and the text) */
+.sf-cc-short {
+    display: none;
+    margin: 0;
+    font-size: 0.875rem;
+    line-height: 1.4;
+}
+
 .sf-cc-btn:focus-visible,
-.sf-cc-link:focus-visible,
+.sf-cc-close:focus-visible,
 .sf-cc-back:focus-visible,
 .sf-cc-switch:focus-visible,
 .sf-cc-policy:focus-visible,
@@ -7276,7 +7313,6 @@ html.sf-cc-lock {
     outline-offset: 2px;
 }
 
-.sf-cc-link,
 .sf-cc-back,
 .sf-cc-reopen {
     padding: 8px 4px;
@@ -7287,11 +7323,6 @@ html.sf-cc-lock {
     font-size: 0.875rem;
     text-decoration: underline;
     cursor: pointer;
-}
-
-.sf-cc-link {
-    display: block;
-    margin: 8px auto 0;
 }
 
 .sf-cc-back {
@@ -7324,7 +7355,7 @@ html.sf-cc-lock {
     flex: none;
     font-size: 0.8125rem;
     font-weight: 600;
-    color: #404040;
+    color: var(--sf-n700, #404040);
     white-space: nowrap;
 }
 
@@ -7334,9 +7365,9 @@ html.sf-cc-lock {
     width: 44px;
     height: 24px;
     padding: 0;
-    border: 1px solid #737373;
+    border: 1px solid var(--sf-n500, #737373);
     border-radius: 12px;
-    background: #e5e5e5;
+    background: var(--sf-surface-2, #e5e5e5);
     cursor: pointer;
 }
 
@@ -7348,8 +7379,8 @@ html.sf-cc-lock {
     width: 18px;
     height: 18px;
     border-radius: 50%;
-    background: #ffffff;
-    border: 1px solid #737373;
+    background: var(--sf-n800, #ffffff);
+    border: 1px solid var(--sf-n500, #737373);
     box-sizing: border-box;
     transition: transform 0.15s;
 }
@@ -7364,7 +7395,7 @@ html.sf-cc-lock {
     border-color: var(--cc-btn);
 }
 
-/* the bottom card: the text on the left, the two buttons stacked on the right (210px), «Настройки» under them */
+/* the bottom card: the text on the left, the three buttons stacked on the right (210px) */
 @media (min-width: 641px) {
     .sf-cc-bottom .sf-cc-layer-summary {
         display: grid;
@@ -7402,6 +7433,67 @@ html.sf-cc-lock {
     .sf-cc-bottom {
         bottom: 16px;
     }
+}
+
+/* CC-2: on the policy page a visitor with no choice sees a THIN bar fixed at the bottom instead of a dialog over the text: not modal, the page stays usable, and keeps the bar's height as bottom padding */
+.sf-cc.sf-cc-is-bar {
+    inset: auto 0 0 0;
+    display: block;
+    padding: 0;
+    background: none;
+    pointer-events: none;
+}
+
+.sf-cc-is-bar .sf-cc-dialog {
+    max-width: none;
+    max-height: none;
+    padding: 10px var(--sf-page-pad, 16px);
+    border-width: 1px 0 0;
+    border-radius: 0;
+    box-shadow: none;
+    pointer-events: auto;
+}
+
+.sf-cc-is-bar .sf-cc-title,
+.sf-cc-is-bar .sf-cc-text {
+    display: none;
+}
+
+.sf-cc-is-bar .sf-cc-short {
+    display: block;
+}
+
+.sf-cc-is-bar .sf-cc-layer-summary {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 16px;
+    padding-inline-end: 44px;
+}
+
+.sf-cc-is-bar .sf-cc-copy {
+    flex: 1 1 16rem;
+}
+
+.sf-cc-is-bar .sf-cc-actions {
+    flex: 0 1 auto;
+    margin-top: 0;
+    gap: 8px;
+}
+
+.sf-cc-is-bar .sf-cc-btn {
+    flex: none;
+    width: auto;
+    min-height: 44px;
+    padding: 0 14px;
+}
+
+.sf-cc-is-bar .sf-cc-close {
+    top: 0;
+}
+
+html.sf-cc-has-bar body {
+    padding-bottom: var(--sf-cc-bar-h, 0);
 }
 
 /* the footer's bottom bar link: the look of the footer's lower line (same tokens), small, left-aligned */
@@ -7495,4 +7587,23 @@ html[data-theme='dark'] .sf-acc-badge {
 
 html[data-theme='dark'] .sf-acc-btn-danger {
     border-color: var(--sf-status-error-text);
+}
+
+/*
+ * CC-2: the cookie dialog's dark-mode-only rules (they match nothing in light mode; UNLAYERED like the others). The three buttons keep ONE look: with no colour set by the merchant their ground is the text
+ * colour and their label the page colour (white on black, equal on all three); a colour the merchant set (`--sf-cc-btn`) stays as set. The bottom card's shadow does not show on black (it has its own border).
+ * The switch's knob, when ON, takes the button's label colour so it stands out from the track whatever the track is.
+ */
+html[data-theme='dark'] .sf-cc,
+html[data-theme='dark'] .sf-cc-bar {
+    --cc-btn: var(--sf-cc-btn, var(--sf-text));
+    --cc-btn-text: var(--sf-cc-btn-text, var(--sf-bg));
+}
+
+html[data-theme='dark'] .sf-cc-bottom .sf-cc-dialog {
+    box-shadow: none;
+}
+
+html[data-theme='dark'] .sf-cc-switch[aria-checked='true']::after {
+    background: var(--cc-btn-text);
 }

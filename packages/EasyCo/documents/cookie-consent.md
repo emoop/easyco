@@ -6,7 +6,7 @@ There are no optional cookies or scripts on the storefront today. The banner exi
 
 ## The invariant
 
-**Before a choice, and after «Само необходими», nothing optional is set or loaded.** `storefront-consent.js` only reads and writes its own cookie. It loads no script, no pixel, no font, no third-party request. A module that wants to load something optional MUST ask the API (`EasyCoConsent.has('ads')`) or listen for `easyco:consent`, and stay silent while the answer is no. Tested: `CookieBannerRenderTest` (no third-party address in the markup, nothing inline), `tests/Browser/cc-1.mjs` (no third-party request and no cookie other than the necessary ones before a choice).
+**Before a choice, after «Отказвам» and after «×», nothing optional is set or loaded.** `storefront-consent.js` only reads and writes its own cookie. It loads no script, no pixel, no font, no third-party request. A module that wants to load something optional MUST ask the API (`EasyCoConsent.has('ads')`) or listen for `easyco:consent`, and stay silent while the answer is no. Tested: `CookieBannerRenderTest` (no third-party address in the markup, nothing inline), `tests/Browser/cc-1.mjs` (no third-party request and no cookie other than the necessary ones before a choice).
 
 ## The cookie
 
@@ -15,7 +15,7 @@ There are no optional cookies or scripts on the storefront today. The banner exi
 | Name | `easyco_consent` |
 | Value | `v=<text_version>&ads=<0\|1>&t=<unix seconds>` |
 | Attributes | `Path=/`, `SameSite=Lax`, `Secure` on https, **not** HttpOnly (JS reads it), `Max-Age` = `cookies.validity_months` × 30 days. First-party only. |
-| Written | **only on a click**: «Приемам всички» → `ads=1`; «Само необходими» → `ads=0`; «Запази избора» → the switch state |
+| Written | **only on a click**: «Приемам всички» → `ads=1`; «Отказвам» → `ads=0` (the same save as «Настройки → Запази избора» with every switch off); «Запази избора» → the switch state |
 | Read as «no choice yet» | none, a damaged value (`ads` not 0/1, `t` not digits), or another `v` than the shop's current `text_version`. The banner shows and `ads` is **not** granted. |
 
 `text_version` is bumped **by the server only** (`CookieSettings::save`), when any text (any language) or the picked policy page changes. It is NOT bumped for position, colour, view, validity or the on/off switch. The bump re-asks every visitor.
@@ -40,9 +40,10 @@ No script loader and no pixel are in this package; only the API.
 
 ## The look and the behaviour (decisions taken)
 
-- **Equal buttons.** «Приемам всички» and «Само необходими» are one CSS class (`.sf-cc-btn`): same size, colour, font, weight. There is no «accent» option. The merchant picks ONE colour for both buttons, the switch's ON state and the focus ring. The text colour inside the buttons is **computed** (white or black, whichever contrasts more), never typed.
+- **Equal buttons (CC-2: three).** The first layer has THREE buttons of ONE CSS class (`.sf-cc-btn`): «Приемам всички», «Отказвам», «Настройки»: same size, colour, font, weight. «Отказвам» replaces the old «Само необходими» (text key `reject`; the key `necessary_only` is gone). There is no «accent» option. The merchant picks ONE colour for both buttons, the switch's ON state and the focus ring. The text colour inside the buttons is **computed** (white or black, whichever contrasts more), never typed.
 - **Nothing is pre-ticked.** The ads switch is OFF until chosen (or shows the stored state when reopened).
-- **No close button and no Escape.** Closing without a choice is not consent. One click on either equal button dismisses it.
+- **A close button «×» and Escape (CC-2).** A real `<button>` (accessible name = the text key `close`, a 44 px target) in the corner of the dialog; Escape (while the focus is inside the banner) does the same. It closes WITHOUT a choice: nothing is saved, no storage is written, no optional cookie is set. With no saved choice the banner is back on the NEXT page load, on every page, until the visitor chooses; with a saved choice it never opens by itself.
+- **The policy page (CC-2).** On the page the banner links to (the picked policy page) a visitor with no choice does not get a dialog over the text: the script shows a thin NON-modal bar fixed at the bottom (the short text `bar_text`, the same three buttons and the «×»; no focus trap, no scroll lock, the page stays usable) and gives the page the bar's height as bottom padding. The server only prints the marker `data-policy-page="1"` on the banner root of THAT URL (the same for every visitor; the cookie is still never read), and the script picks the layout from it. «Настройки» in the bar opens the normal dialog.
 - **Withdrawing is as easy as giving.** A link «Настройки за бисквитки» reopens the banner at layer 2, with the current choice and no «← Назад». The MAIN way is a menu item (below); the fixed strip is only the fallback.
 
 ### The menu item «Настройки за бисквитки» and the fallback strip (owner decision 2026-11-23)

@@ -128,6 +128,28 @@ class DarkPaletteContrastTest extends TestCase
         $this->assertGreaterThanOrEqual(Contrast::COMPONENT_MIN, $edge, "the pill against the card is {$edge}:1");
     }
 
+    public function test_the_cookie_dialog_its_three_equal_buttons_and_its_switch_are_readable(): void
+    {
+        // the dialog's ground is the card; its text is the ink and the scale; the three buttons are ONE class: the text colour as the ground, the page colour as the label (a merchant colour stays as set)
+        $palette = $this->palette();
+
+        foreach (['--sf-field-text', '--sf-n700', '--sf-muted'] as $text) {
+            $ratio = Contrast::ratio($this->colour($palette, $text), $this->colour($palette, '--sf-surface'));
+            $this->assertGreaterThanOrEqual(Contrast::TEXT_MIN, $ratio, "{$text} on the dialog is {$ratio}:1");
+        }
+
+        $label = Contrast::ratio($this->colour($palette, '--sf-bg'), $this->colour($palette, '--sf-text'));
+        $this->assertGreaterThanOrEqual(Contrast::TEXT_MIN, $label, "a button's label on its ground is {$label}:1");
+
+        $button = Contrast::ratio($this->colour($palette, '--sf-text'), $this->colour($palette, '--sf-surface'));
+        $this->assertGreaterThanOrEqual(Contrast::COMPONENT_MIN, $button, "a button against the dialog is {$button}:1");
+
+        // the switch: its border against the dialog, its knob against the (off) track, and the ON knob (the button's label colour) against the ON track (the button's ground)
+        $this->assertGreaterThanOrEqual(Contrast::COMPONENT_MIN, Contrast::ratio($this->colour($palette, '--sf-n500'), $this->colour($palette, '--sf-surface')), 'the switch border');
+        $this->assertGreaterThanOrEqual(Contrast::COMPONENT_MIN, Contrast::ratio($this->colour($palette, '--sf-n800'), $this->colour($palette, '--sf-surface-2')), 'the off knob on its track');
+        $this->assertGreaterThanOrEqual(Contrast::COMPONENT_MIN, Contrast::ratio($this->colour($palette, '--sf-bg'), $this->colour($palette, '--sf-text')), 'the on knob on its track');
+    }
+
     public function test_the_text_pinned_for_a_light_element_is_readable_on_that_light_element(): void
     {
         // the size strip over a card picture (white at 90% over the light frame) and, later, the gallery arrow: a white or very light ground in dark mode too

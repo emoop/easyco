@@ -1,16 +1,16 @@
 # Storefront dark mode (DM-1: the foundation, DM-2a: the neutral scale and the shell, DM-2b: the catalogue, DM-2c: the product page, DM-2d-1: the cart, DM-2d-2: the checkout, DM-2e: the account area)
 
-Status: **DM-1, DM-2a, DM-2b, DM-2c, DM-2d-1, DM-2d-2 and DM-2e are done, behind a dev flag: every storefront page area (the shell, the catalogue, the product page, the cart, the checkout and order received, the account area) is migrated.** What remains: a browser pass in both modes, removing the dev flag, DM-3 (assets: the dark logo, payment icons, badges) and DM-4 (merchant-colour components, the cookie dialog). Background and the full inventory: `dark-mode-inventory.md`.
+Status: **Dark mode is live: no dev flag (removed in CC-2). Every storefront page area (the shell, the catalogue, the product page, the cart, the checkout and order received, the account area) and the cookie dialog are migrated.** What remains: a browser pass in both modes, DM-3 (assets: the dark logo, payment icons, badges) and DM-4 (merchant-colour components: HTML blocks, hero text, header / footer rows, admin warnings for clashes). Background and the full inventory: `dark-mode-inventory.md`.
 
 ## What the merchant gets
 
-One site-wide switch in «Облик» → «Тъмен режим» (only while the dev flag is on): a toggle «Тъмен режим на сайта» and a colour for the buttons in dark mode (a free picker, two presets «Оранжево» `#f97316` and «Бяло» `#ffffff`). No visitor toggle, no cookie, no `prefers-color-scheme`, no JavaScript.
+One site-wide switch in «Облик» → «Тъмен режим» : a toggle «Тъмен режим на сайта» and a colour for the buttons in dark mode (a free picker, two presets «Оранжево» `#f97316` and «Бяло» `#ffffff`). No visitor toggle, no cookie, no `prefers-color-scheme`, no JavaScript.
 
 ## The mechanism
 
 | Piece | Where | Rule |
 |---|---|---|
-| Dev flag | `config('storefront.dark_mode')` ← env `STOREFRONT_DARK_MODE` (default `false`, `.env.example`) | Off: the «Облик» section is not in the form, `StorefrontAppearance::mode()` is `null` and the compiler ignores the mode, **whatever is stored**. A stored `dark` has zero effect. The flag is applied when the value is READ (the cached payload lives across deploys), never when it is built. **Remove the flag once DM-2 is done.** After flipping it, save «Облик» once: the token stylesheet is compiled for the state it was saved in. |
+| Switch | `appearance.mode` (CC-2: the dev flag `STOREFRONT_DARK_MODE` is gone; the «Облик» section is always shown and the stored mode IS the mode shown) | `AppearanceSettings::storedMode()`: `dark` only for the exact value `dark`, a missing or invalid value = `light`. Delete the `STOREFRONT_DARK_MODE` variable from Coolify / Laragon `.env` (harmless if left). |
 | Settings | `appearance.mode` (`light` \| `dark`, a missing or invalid value = `light`), `appearance.dark.button` (`#rrggbb`, default `#f97316`, a missing or invalid value = the default). `AppearanceSettings::MODE`, `DARK_BUTTON`, `defaults()`, `isValid()`, `READ_KEYS` (`MODE`; the colour lives in the compiled stylesheet) | Only a value that differs from its default is stored (`AppearanceWriter::save()`, like every token). Storefront-visible settings, so a write collects the surrogate key `all` (`EloquentSiteSettingsRepository::set`, and `StorefrontAppearance::refresh()`). |
 | Payload | `StorefrontAppearance::build()` → `mode` (the validated STORED mode, from the same one `getMany`, no new query); `mode()` and `forLayout()['mode']` → `'dark'` or `null` | `mode` is in the `array_key_exists` chain of `data()`, so a cache entry from before DM-1 is not trusted and is rebuilt. The value is the same for every visitor: no request data, no cookie. |
 | Attribute | `storefront/layout.blade.php`: `<html lang="…" data-theme="dark">` only when dark; `storefront/cookie-preview.blade.php` the same | Light: the tag is byte-identical to before. Every storefront page and every Design-screen preview (header, footer, design, page) extends the layout through the `storefront.layout` view composer, so they get the attribute for free; the cookie preview has its own `<html>` and gets it from `CookiePreviewController`. The sandbox layout (`color-scheme: light` fixed) is out of scope. |
@@ -159,9 +159,18 @@ No status token was missing.
 - **Shadows / scrims:** the account area has none.
 - **No new token. No new row was found** (the scan of the account area shows only the scale rows, the pill and the cookie dialog, which is DM-4).
 
+## CC-2: the cookie dialog (was DM-4) and the end of the dev flag
+
+**Light mode is unchanged by the re-pointing** (the same proof as before, taken BEFORE the new buttons / bar CSS was added: 2013 rules compared, none changed). The rules that CC-2 adds to light mode on purpose are listed in `cookie-consent.md` (the «×», the three equal buttons, the thin bar).
+
+- **Dark tokens:** the dialog's ground `var(--sf-surface, #ffffff)`, its scrim `var(--sf-overlay, rgba(17, 17, 17, 0.55))`, its ink `var(--sf-field-text, #171717)` (also the policy link), the greys `var(--sf-n700, #404040)`, the switch's border `var(--sf-n500, #737373)`, track `var(--sf-surface-2, #e5e5e5)` and knob `var(--sf-n800, #ffffff)`. The ratchet's allow-list no longer holds `.sf-cc*`: the ceiling stays 0 and only the `dm-keeps-white` lines are exempt.
+- **Dark-only rules** (unlayered, end of the file): with no merchant colour the three buttons are the text colour with the page colour as their label (equal, 21:1); `--sf-cc-btn` and `--sf-cc-btn-text`, when set, win (the merchant's colour stays as set; a clash warning is still DM-4's). The bottom card loses its shadow (it has its border). The switch's ON knob takes the button's label colour, so it stands out from the track whatever the track is.
+- **Tested** (`DarkPaletteContrastTest`): the dialog's ink and greys on the card ≥ 4.5:1, a button's label on its ground, a button against the card ≥ 3:1, the switch border / knob / ON knob ≥ 3:1.
+- **The dev flag is gone:** `config('storefront.dark_mode')`, `.env.example`, `AppearanceSettings::darkModeAvailable()` / `effectiveMode()`; `StorefrontAppearance::mode()`, the compiler and the layouts read the stored mode. The tests that pinned «flag off hides the section / forces light» were rewritten to the new rule (the section is always there; a stored `dark` renders dark; a missing or invalid value renders light).
+
 ## Areas
 
-Where every raw colour of `storefront.css` belongs (the hits of inventory A1/A2: `bg-white`, literal white backgrounds, the unmapped neutral steps, the hard-coded focus / error colours, drop shadows, scrims, status utilities, other raw hex without a variable fallback). `Line` is the line in the current file. A rule shared by several areas is put in **2a**. **Rows: 2a 18, 2b 39, 2c 21, 2d 80 (all done: 2d-1 and 2d-2), 2e 24 (all done), left for DM-4 17.** A row marked "done" is finished. The scale remap (the neutral steps) is done everywhere and flips by itself, so for the other areas such a row needs only a look; what remains there are the white cards, the status boxes, the error rings and the scrims.
+Where every raw colour of `storefront.css` belongs (the hits of inventory A1/A2: `bg-white`, literal white backgrounds, the unmapped neutral steps, the hard-coded focus / error colours, drop shadows, scrims, status utilities, other raw hex without a variable fallback). `Line` is the line in the current file. A rule shared by several areas is put in **2a**. **Rows: 2a 18, 2b 39, 2c 21, 2d 80 (all done: 2d-1 and 2d-2), 2e 24 (all done), left for DM-4 6 (the cookie dialog's 11 rows are done in CC-2).** A row marked "done" is finished. The scale remap (the neutral steps) is done everywhere and flips by itself, so for the other areas such a row needs only a look; what remains there are the white cards, the status boxes, the error rings and the scrims.
 
 | Area | Selector | Line | What it is | Needs | Status |
 |---|---|---|---|---|---|
@@ -353,17 +362,17 @@ Where every raw colour of `storefront.css` belongs (the hits of inventory A1/A2:
 | 2b | `.sf-cloud-site .sf-bv-chip` | 1646 | listing cloud chip (a merchant zone colour) | unset: `var(--sf-cloud-bg, var(--sf-surface, #fff))`; a colour the merchant set is untouched | done (found in 2b) |
 | 2b | `.sf-cloud-pill .sf-subcategory > a` | 1651 | listing cloud pill (a merchant zone colour) | unset: `var(--sf-cloud-bg, var(--sf-surface, var(--color-white)))` | done (found in 2b) |
 | 2b | `.sf-cloud-site .sf-bv-chip:hover` / `.sf-cloud-pill … :hover` | 1660 | the cloud's colour swap on hover | the swap's second colour follows the same fallbacks | done (found in 2b) |
-| DM-4 | `.sf-cc` | 7148 | cookie banner / dialog (DM-4) | allow-listed in the ratchet until DM-4 | DM-4 |
-| DM-4 | `.sf-cc-center` | 7157 | cookie banner / dialog (DM-4) | allow-listed in the ratchet until DM-4 | DM-4 |
-| DM-4 | `.sf-cc-dialog` | 7174 | cookie banner / dialog (DM-4) | allow-listed in the ratchet until DM-4 | DM-4 |
-| DM-4 | `.sf-cc-bottom .sf-cc-dialog` | 7188 | cookie banner / dialog (DM-4) | allow-listed in the ratchet until DM-4 | DM-4 |
-| DM-4 | `.sf-cc-text, .sf-cc-cat-text` | 7208 | cookie banner / dialog (DM-4) | allow-listed in the ratchet until DM-4 | DM-4 |
-| DM-4 | `.sf-cc-policy` | 7212 | cookie banner / dialog (DM-4) | allow-listed in the ratchet until DM-4 | DM-4 |
-| DM-4 | `.sf-cc-always` | 7306 | cookie banner / dialog (DM-4) | allow-listed in the ratchet until DM-4 | DM-4 |
-| DM-4 | `.sf-cc-switch` | 7316 | cookie banner / dialog (DM-4) | allow-listed in the ratchet until DM-4 | DM-4 |
-| DM-4 | `.sf-cc-switch` | 7318 | cookie banner / dialog (DM-4) | allow-listed in the ratchet until DM-4 | DM-4 |
-| DM-4 | `.sf-cc-switch::after` | 7330 | cookie banner / dialog (DM-4) | allow-listed in the ratchet until DM-4 | DM-4 |
-| DM-4 | `.sf-cc-switch::after` | 7331 | cookie banner / dialog (DM-4) | allow-listed in the ratchet until DM-4 | DM-4 |
+| DM-4 | `.sf-cc` | 7148 | cookie dialog | `--sf-surface` / `--sf-overlay` / the scale (`--sf-n500/n700/n800`, `--sf-surface-2`, `--sf-field-text`) with the OLD literal as the fallback; the three buttons: dark-only rule (ground = the text colour, label = the page colour; a merchant colour stays as set) | done (CC-2) |
+| DM-4 | `.sf-cc-center` | 7157 | cookie dialog | `--sf-surface` / `--sf-overlay` / the scale (`--sf-n500/n700/n800`, `--sf-surface-2`, `--sf-field-text`) with the OLD literal as the fallback; the three buttons: dark-only rule (ground = the text colour, label = the page colour; a merchant colour stays as set) | done (CC-2) |
+| DM-4 | `.sf-cc-dialog` | 7174 | cookie dialog | `--sf-surface` / `--sf-overlay` / the scale (`--sf-n500/n700/n800`, `--sf-surface-2`, `--sf-field-text`) with the OLD literal as the fallback; the three buttons: dark-only rule (ground = the text colour, label = the page colour; a merchant colour stays as set) | done (CC-2) |
+| DM-4 | `.sf-cc-bottom .sf-cc-dialog` | 7188 | cookie dialog | `--sf-surface` / `--sf-overlay` / the scale (`--sf-n500/n700/n800`, `--sf-surface-2`, `--sf-field-text`) with the OLD literal as the fallback; the three buttons: dark-only rule (ground = the text colour, label = the page colour; a merchant colour stays as set) | done (CC-2) |
+| DM-4 | `.sf-cc-text, .sf-cc-cat-text` | 7208 | cookie dialog | `--sf-surface` / `--sf-overlay` / the scale (`--sf-n500/n700/n800`, `--sf-surface-2`, `--sf-field-text`) with the OLD literal as the fallback; the three buttons: dark-only rule (ground = the text colour, label = the page colour; a merchant colour stays as set) | done (CC-2) |
+| DM-4 | `.sf-cc-policy` | 7212 | cookie dialog | `--sf-surface` / `--sf-overlay` / the scale (`--sf-n500/n700/n800`, `--sf-surface-2`, `--sf-field-text`) with the OLD literal as the fallback; the three buttons: dark-only rule (ground = the text colour, label = the page colour; a merchant colour stays as set) | done (CC-2) |
+| DM-4 | `.sf-cc-always` | 7306 | cookie dialog | `--sf-surface` / `--sf-overlay` / the scale (`--sf-n500/n700/n800`, `--sf-surface-2`, `--sf-field-text`) with the OLD literal as the fallback; the three buttons: dark-only rule (ground = the text colour, label = the page colour; a merchant colour stays as set) | done (CC-2) |
+| DM-4 | `.sf-cc-switch` | 7316 | cookie dialog | `--sf-surface` / `--sf-overlay` / the scale (`--sf-n500/n700/n800`, `--sf-surface-2`, `--sf-field-text`) with the OLD literal as the fallback; the three buttons: dark-only rule (ground = the text colour, label = the page colour; a merchant colour stays as set) | done (CC-2) |
+| DM-4 | `.sf-cc-switch` | 7318 | cookie dialog | `--sf-surface` / `--sf-overlay` / the scale (`--sf-n500/n700/n800`, `--sf-surface-2`, `--sf-field-text`) with the OLD literal as the fallback; the three buttons: dark-only rule (ground = the text colour, label = the page colour; a merchant colour stays as set) | done (CC-2) |
+| DM-4 | `.sf-cc-switch::after` | 7330 | cookie dialog | `--sf-surface` / `--sf-overlay` / the scale (`--sf-n500/n700/n800`, `--sf-surface-2`, `--sf-field-text`) with the OLD literal as the fallback; the three buttons: dark-only rule (ground = the text colour, label = the page colour; a merchant colour stays as set) | done (CC-2) |
+| DM-4 | `.sf-cc-switch::after` | 7331 | cookie dialog | `--sf-surface` / `--sf-overlay` / the scale (`--sf-n500/n700/n800`, `--sf-surface-2`, `--sf-field-text`) with the OLD literal as the fallback; the three buttons: dark-only rule (ground = the text colour, label = the page colour; a merchant colour stays as set) | done (CC-2) |
 
 Notes for the next steps: the `.sf-card-sizes` strip and the `.sf-gal-next` disc keep white (above). The status boxes (`bg-red-50 text-red-900 …`) go to the `--sf-status-*` tokens (the technique is under «DM-2d-1»; the checkout ones are 2d-2, the account ones 2e). The variation / picker selects (2c) have NO data-URI chevron: they use the browser's native arrow, which follows `color-scheme: dark`; the sort dropdown (2b) and the filter bar draw their arrow with borders in `currentColor`. Only the checkout / account `select` (`.sf-field select`, `.sf-kind-select`) has a drawn chevron, already light in dark mode since 2a. The hero / HTML-block colour classes (`.sf-pc-*`), the cookie dialog and the menu badges' own colour pairs are DM-4.
 
@@ -373,7 +382,7 @@ Notes for the next steps: the `.sf-card-sizes` strip and the `.sf-gal-next` disc
 
 ## Still missing
 
-- **The browser pass** in both modes (the list of states to look at is in the DM-2e report), then **removing the dev flag** `STOREFRONT_DARK_MODE`.
+- **The browser pass** in both modes (the list of states to look at is in the DM-2e report).
 - **DM-3** — assets: `logo.dark` printed by the storefront, the image-frame rule, payment icons, badges.
 - **DM-4** — merchant-colour components: HTML blocks, hero text colours, header/footer rows, the cookie banner dialog, admin warnings for clashes.
 - **DM-5** — third-party surfaces (none exist today).

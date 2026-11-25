@@ -5,7 +5,7 @@ return [
     'title' => 'We respect your privacy',
     'text' => 'We use cookies to make the shop work, to understand how it is used and – with your consent – to show our own ads on other sites and social networks. By choosing “Accept all” you agree to the ads too. You can choose only the necessary ones.',
     'accept_all' => 'Accept all',
-    'necessary_only' => 'Only necessary',
+    'reject' => 'Reject',
     'settings_link' => 'Settings',
     'layer2_title' => 'Cookie settings',
     'necessary_title' => 'Necessary',
@@ -16,4 +16,6 @@ return [
     'save' => 'Save choice',
     'back' => '← Back',
     'footer_link' => 'Cookie settings',
+    'close' => 'Close',
+    'bar_text' => 'We use cookies. Choose how we may use them.',
 ];
