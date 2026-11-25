@@ -12,7 +12,7 @@ use Tests\TestCase;
 
 /**
  * CC-1 (cookie-consent.md): what the storefront prints. Off: nothing. On: ONE identical block for every visitor (the cookie is never read by the server), two EQUAL choice buttons, nothing
- * pre-ticked, no inline script / style / handler, and no query of its own.
+ * pre-ticked, no inline script / style / handler, and no query of its own. CC-2: THREE equal buttons, a «×» that closes without a choice, and a marker on the policy page.
  */
 class CookieBannerRenderTest extends TestCase
 {
@@ -94,18 +94,24 @@ class CookieBannerRenderTest extends TestCase
         $this->assertStringContainsString('data-version="1"', $banner);
     }
 
-    /** ★ the two choice buttons are ONE class: no accent, no second style */
-    public function test_the_two_choice_buttons_share_one_class_on_both_layers(): void
+    /** ★ CC-2: THREE buttons of equal weight on the first layer, all of ONE class: no accent, no second style, no link-looking third choice */
+    public function test_the_three_choice_buttons_of_the_first_layer_share_one_class(): void
     {
         $this->enable();
         $banner = $this->banner($this->page());
+        $summary = substr($banner, (int) strpos($banner, 'data-sf-cc-layer="summary"'), (int) strpos($banner, 'data-sf-cc-layer="details"') - (int) strpos($banner, 'data-sf-cc-layer="summary"'));
+        $texts = CookieSettings::defaults('bg');
 
+        $this->assertSame(1, preg_match('#<div class="sf-cc-actions">\s*<button type="button" class="sf-cc-btn" data-sf-cc-action="accept">'.preg_quote($texts['accept_all'], '#').'</button>\s*<button type="button" class="sf-cc-btn" data-sf-cc-action="reject">'.preg_quote($texts['reject'], '#').'</button>\s*<button type="button" class="sf-cc-btn" data-sf-cc-action="details">'.preg_quote($texts['settings_link'], '#').'</button>\s*</div>#u', $summary), 'accept all, reject, settings: one class, one row');
+        $this->assertSame(3, substr_count($summary, 'class="sf-cc-btn"'));
+        $this->assertStringNotContainsString('sf-cc-link', $banner, 'no link-looking choice any more');
+        $this->assertSame('Отказвам', $texts['reject']);
+
+        // the second layer: accept and reject share the class too (the one «Запази избора» is the full-width button below)
         $this->assertSame(2, preg_match_all('/<button type="button" class="sf-cc-btn" data-sf-cc-action="accept">/', $banner));
         $this->assertSame(2, preg_match_all('/<button type="button" class="sf-cc-btn" data-sf-cc-action="reject">/', $banner));
         $this->assertStringNotContainsString('accent', $banner);
         $this->assertStringNotContainsString('sf-cc-btn-secondary', $banner);
-        $this->assertStringContainsString(CookieSettings::defaults('bg')['accept_all'], $banner);
-        $this->assertStringContainsString(CookieSettings::defaults('bg')['necessary_only'], $banner);
     }
 
     /** ★ nothing is pre-ticked: the ads switch is OFF in the markup */
@@ -119,19 +125,73 @@ class CookieBannerRenderTest extends TestCase
         $this->assertStringNotContainsString('checked=', str_replace('aria-checked=', '', $banner));
     }
 
-    /** no close button, no inline script / style / handler */
-    public function test_no_close_button_and_nothing_inline(): void
+    /** CC-2: a real «×» button with an accessible name, in the dialog; nothing inline anywhere */
+    public function test_the_close_button_exists_and_nothing_is_inline(): void
     {
         $this->enable();
         $banner = $this->banner($this->page());
+        $close = CookieSettings::defaults('bg')['close'];
 
+        $this->assertSame(1, preg_match('#<button type="button" class="sf-cc-close" data-sf-cc-action="dismiss" aria-label="'.preg_quote($close, '#').'"><span aria-hidden="true">×</span></button>#u', $banner));
+        $this->assertSame('Затвори', $close);
         $this->assertStringNotContainsString('data-sf-cc-action="close"', $banner);
-        $this->assertStringNotContainsString('aria-label="Затвори', $banner);
         $this->assertStringNotContainsString('style=', $banner);
         $this->assertSame(0, preg_match('/\son[a-z]+\s*=/i', $banner), 'no on* attribute');
         $this->assertSame(0, preg_match('/<script(?![^>]*\ssrc=)[^>]*>/i', $banner), 'no inline script');
         $this->assertSame(0, preg_match('/<style/i', $banner), 'no inline style');
         $this->assertSame(0, preg_match('#https?://#i', $banner), 'no third-party (nor any absolute) address');
+    }
+
+    /** ★ CC-2: the policy page carries a marker, no other page does, and the marker is the same for every visitor (it depends on the URL only) */
+    public function test_the_policy_page_carries_the_marker_and_no_other_page_does(): void
+    {
+        $this->enable(['page' => (int) DB::table('pages')->where('slug', 'about')->value('id')]);
+
+        $policy = $this->banner($this->page('/info/about'));
+        $this->assertMatchesRegularExpression('/<div class="sf-cc sf-cc-center"[^>]* data-policy-page="1"/', $policy);
+        $this->assertSame(1, substr_count($policy, 'data-policy-page'));
+        $this->assertStringContainsString('class="sf-cc-short"', $policy, 'the one short line of the thin bar');
+
+        $this->assertStringNotContainsString('data-policy-page', $this->banner($this->page('/')), 'the home page');
+
+        $otherPage = (string) DB::table('pages')->where('slug', '!=', 'about')->value('slug');
+
+        if ($otherPage !== '') {
+            $this->assertStringNotContainsString('data-policy-page', $this->banner($this->page('/info/'.$otherPage)), 'another page');
+        }
+
+        // the same for two different visitors (a cookie, a language header, an agent): the server never looks at any of them
+        $this->fresh();
+        $first = $this->call('GET', '/info/about', [], ['easyco_consent' => 'v=1&ads=0&t=1700000000'])->getContent();
+        $this->fresh();
+        $second = $this->withHeaders(['Accept-Language' => 'en', 'User-Agent' => 'other'])->get('/info/about')->getContent();
+        $this->assertSame($first, $second);
+
+        // and with no policy page picked, no page carries it
+        $this->enable(['page' => null]);
+        $this->assertStringNotContainsString('data-policy-page', $this->banner($this->page('/info/about')));
+    }
+
+    /** ★ CC-2: a payload cached BEFORE the new text keys existed (it lives in the cache across deploys) never breaks the page: the missing keys are the shipped defaults */
+    public function test_a_cached_payload_without_the_new_text_keys_still_renders_with_the_shipped_defaults(): void
+    {
+        $this->enable();
+        $this->page();
+
+        $cached = \Illuminate\Support\Facades\Cache::get(\App\Storefront\Appearance\StorefrontAppearance::CACHE_KEY);
+        $this->assertIsArray($cached);
+
+        foreach (['bg', 'en'] as $locale) {
+            unset($cached['cookies']['texts'][$locale]['reject'], $cached['cookies']['texts'][$locale]['close'], $cached['cookies']['texts'][$locale]['bar_text']);
+        }
+
+        \Illuminate\Support\Facades\Cache::forever(\App\Storefront\Appearance\StorefrontAppearance::CACHE_KEY, $cached);
+        $this->fresh();
+        $banner = $this->banner((string) $this->get('/')->assertOk()->getContent());
+
+        $this->assertStringContainsString('>'.CookieSettings::defaults('bg')['reject'].'</button>', $banner);
+        $this->assertStringContainsString('aria-label="'.CookieSettings::defaults('bg')['close'].'"', $banner);
+        $this->assertStringContainsString('class="sf-cc-short">'.CookieSettings::defaults('bg')['bar_text'].'<', $banner);
     }
 
     /** ★ the same page with and without the cookie: byte-identical HTML, the same headers (the server never reads it) */

@@ -8,11 +8,11 @@ use Tests\TestCase;
  * DM-2 ratchet (dark-mode.md "Areas"): a raw-white BACKGROUND in the storefront stylesheet (`bg-white`, or a plain `background: #fff`) paints a white box on a dark page, so none may be ADDED. A new surface uses
  * `bg-surface` / `var(--sf-surface, #fff)`. The count may only go down, step by step, until only the allow-list is left. Judged on the source, not on a rendered page.
  *
- * Allow-list: the cookie dialog (`.sf-cc*`, until DM-4), and a line marked `dm-keeps-white` (a disc or a frame that must stay light; the payment-icon plates are in a Blade view, not here).
+ * Allow-list: only a line marked `dm-keeps-white` (a disc or a frame that must stay light; the payment-icon plates are in a Blade view, not here). CC-2: the cookie dialog (`.sf-cc*`) is no longer exempt.
  */
 class DarkModeRatchetTest extends TestCase
 {
-    /** Lower this in every DM-2 step; it must reach 0 (the allow-list only). Measured after DM-2e: 0 (DM-2d-2: 10, DM-2d-1: 19, DM-2c: 31, DM-2b: 33, DM-2a: 47). The allow-list (the cookie dialog `.sf-cc*` until DM-4, the `dm-keeps-white` lines) is all that is left. */
+    /** Lower this in every DM-2 step; it must reach 0 (the allow-list only). Measured after DM-2e: 0 (DM-2d-2: 10, DM-2d-1: 19, DM-2c: 31, DM-2b: 33, DM-2a: 47). The allow-list is the `dm-keeps-white` lines only (CC-2 took the cookie dialog off it). */
     private const MAX_RAW_WHITE_BACKGROUNDS = 0;
 
     /** @return list<string> "line: text" of every raw-white background outside the allow-list */
@@ -43,7 +43,7 @@ class DarkModeRatchetTest extends TestCase
             $white = preg_match('/\bbg-white(\/\d+)?\b/', $line) === 1
                 || preg_match('/(^|[;{\s])background(-color)?\s*:\s*#fff(fff)?\s*;/i', $line) === 1;
 
-            if (! $white || isset($marked[$index]) || str_starts_with($selector, '.sf-cc')) {
+            if (! $white || isset($marked[$index])) {
                 continue;
             }
 

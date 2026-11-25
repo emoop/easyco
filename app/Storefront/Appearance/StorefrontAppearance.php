@@ -186,7 +186,7 @@ final class StorefrontAppearance
             'cookies' => \App\Settings\CookieSettings::payload($raw),
             // LOGO-1: the shop's name and the generated icon / logos (validated here and again by the readers); null = today's static files and APP_NAME
             'site' => \App\Settings\SiteLogo::payload($raw),
-            // DM-1: the STORED mode, validated (`light` | `dark`; anything else is light). The dev flag is applied when it is READ (mode()), never here: this entry lives in the cache across deploys
+            // DM-1: the STORED mode, validated (`light` | `dark`; anything else is light)
             'mode' => \App\Settings\AppearanceSettings::storedMode($raw[\App\Settings\AppearanceSettings::MODE] ?? null),
         ];
     }
@@ -781,11 +781,11 @@ final class StorefrontAppearance
     }
 
     /**
-     * DM-1: `dark` or null (light). Dark only while the stored mode is `dark` AND the dev flag `storefront.dark_mode` is on; one value for every visitor (no cookie, no request data), from the cached payload (no query).
+     * DM-1: `dark` or null (light). Dark only while the stored mode is `dark`; one value for every visitor (no cookie, no request data), from the cached payload (no query).
      */
     public function mode(): ?string
     {
-        return \App\Settings\AppearanceSettings::effectiveMode($this->data()['mode'] ?? null) === 'dark' ? 'dark' : null;
+        return \App\Settings\AppearanceSettings::storedMode($this->data()['mode'] ?? null) === 'dark' ? 'dark' : null;
     }
 
     /** @return array{hash: string, fonts: list<string>, body: ?string}|null */
@@ -888,7 +888,9 @@ final class StorefrontAppearance
         }
 
         $locale = app()->getLocale();
-        $payload['texts'] = $payload['texts'][$locale] ?? \App\Settings\CookieSettings::resolveTexts([], $locale);
+        $texts = $payload['texts'][$locale] ?? null;
+        // CC-2: per key, stored else shipped default, ALSO for a cached payload built before a new text key existed (this entry lives in the cache across deploys): a missing key is never an error
+        $payload['texts'] = is_array($texts) ? $texts + \App\Settings\CookieSettings::defaults($locale) : \App\Settings\CookieSettings::resolveTexts([], $locale);
 
         return $payload;
     }
@@ -919,7 +921,7 @@ final class StorefrontAppearance
             'cookies' => $this->cookies(),
             // LOGO-1: the site icon's three files (null = the static SVG tag, byte for byte as before)
             'siteIcon' => $this->siteLogo()['icon'] ?? null,
-            // DM-1: `dark` prints data-theme="dark" on <html>; null (light, or the dev flag off) prints nothing
+            // DM-1: `dark` prints data-theme="dark" on <html>; null (light) prints nothing
             'mode' => $this->mode(),
             // DS-2b: the simplified header of the cart, the checkout and the order-received page; `forced` = the Design screen's preview, which is not one of those routes
             'checkoutHeader' => $this->checkoutHeader(),

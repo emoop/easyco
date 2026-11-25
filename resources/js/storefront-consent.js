@@ -8,7 +8,11 @@
 //   window.EasyCoConsent = { get(), has(category), open(), onChange(fn) }
 //   document event `easyco:consent`, detail {ads, changed}: fired when a choice is made (changed: true) and once on load when a valid choice already exists (changed: false)
 //
-// INVARIANT: before a choice, and after «Само необходими», nothing optional is set or loaded: this file only reads and writes its own cookie.
+// CC-2: three buttons of equal weight (accept all, reject = the same save as «settings» with everything off, settings), a «×» (closes WITHOUT a choice: nothing is saved, no storage is written, the banner is
+// back on the next page) and Escape = the «×». On the policy page (the root carries `data-policy-page`, the same for every visitor of that URL) a visitor with no choice sees a thin NON-modal bar at the bottom
+// (no focus trap, no scroll lock, no inert page) and the page gets the bar's height as bottom padding; «Настройки» turns it into the normal dialog.
+//
+// INVARIANT: before a choice, after «Отказвам» and after «×», nothing optional is set or loaded: this file only reads and writes its own cookie, and only from decide().
 
 const COOKIE = 'easyco_consent';
 const CATEGORIES = ['ads'];
@@ -24,6 +28,7 @@ function init() {
     const months = Math.min(13, Math.max(1, parseInt(root.dataset.months ?? '12', 10) || 12));
     const initialView = root.dataset.view === 'details' ? 'details' : 'summary';
     const modal = root.dataset.modal === '1';
+    const policyPage = root.dataset.policyPage === '1';
     const dialog = root.querySelector('[data-sf-cc-dialog]');
     const bar = document.querySelector('[data-sf-cc-bar]');
     const layers = { summary: root.querySelector('[data-sf-cc-layer="summary"]'), details: root.querySelector('[data-sf-cc-layer="details"]') };
@@ -34,6 +39,8 @@ function init() {
     let layer = 'summary';
     let returnFocus = null;
     let inerted = [];
+    let barMode = false;
+    let barObserver = null;
 
     // ---- the cookie ------------------------------------------------------------------------------------------------------------------
 
@@ -91,8 +98,40 @@ function init() {
         }
     }
 
+    function isModal() {
+        return modal && ! barMode;
+    }
+
+    // the thin bar on the policy page: not modal; the page keeps the bar's height as bottom padding so its last lines stay readable
+    function setBar(on) {
+        barMode = on;
+        root.classList.toggle('sf-cc-is-bar', on);
+        on ? dialog.setAttribute('aria-modal', 'false') : (modal ? dialog.setAttribute('aria-modal', 'true') : dialog.removeAttribute('aria-modal'));
+
+        const html = document.documentElement;
+        barObserver !== null && barObserver.disconnect();
+        barObserver = null;
+
+        if (! on) {
+            html.classList.remove('sf-cc-has-bar');
+            html.style.removeProperty('--sf-cc-bar-h');
+
+            return;
+        }
+
+        const sync = () => html.style.setProperty('--sf-cc-bar-h', `${Math.ceil(dialog.getBoundingClientRect().height)}px`);
+
+        html.classList.add('sf-cc-has-bar');
+        sync();
+
+        if (typeof ResizeObserver === 'function') {
+            barObserver = new ResizeObserver(sync);
+            barObserver.observe(dialog);
+        }
+    }
+
     function lockPage() {
-        if (! modal) {
+        if (! isModal()) {
             return;
         }
 
@@ -107,20 +146,23 @@ function init() {
         inerted = [];
     }
 
-    function open(name, withBack) {
+    function open(name, withBack, asBar = false) {
         returnFocus = document.activeElement instanceof HTMLElement && ! root.contains(document.activeElement) ? document.activeElement : returnFocus;
         showLayer(name, withBack);
         root.hidden = false;
+        setBar(asBar);
         lockPage();
 
-        if (modal) {
-            const first = visibleFocusables()[0] ?? dialog;
+        if (isModal()) {
+            // the first choice, not the «×» (it is first in the DOM order only because it sits in the corner)
+            const first = visibleFocusables().find((el) => ! el.classList.contains('sf-cc-close')) ?? dialog;
             first.focus();
         }
     }
 
     function close() {
         root.hidden = true;
+        setBar(false);
         unlockPage();
 
         if (returnFocus !== null && document.contains(returnFocus)) {
@@ -190,13 +232,23 @@ function init() {
             case 'save':
                 decide(switches.some((toggle) => toggle.dataset.sfCcSwitch === 'ads' && toggle.getAttribute('aria-checked') === 'true'));
                 break;
+            case 'dismiss':
+                // «×»: closes without a choice. Nothing is written (no cookie, no storage): the banner is back on the next page
+                close();
+                break;
             case 'details':
+                // from the thin bar the settings are the normal dialog (the layer needs room)
+                if (barMode) {
+                    setBar(false);
+                    lockPage();
+                }
+
                 showLayer('details', true);
-                modal && visibleFocusables()[0]?.focus();
+                isModal() && visibleFocusables().find((el) => ! el.classList.contains('sf-cc-close'))?.focus();
                 break;
             case 'back':
                 showLayer('summary', false);
-                modal && visibleFocusables()[0]?.focus();
+                isModal() && visibleFocusables().find((el) => ! el.classList.contains('sf-cc-close'))?.focus();
                 break;
             case 'open':
                 // the footer link: layer 2 with the current choice and no «← Назад»
@@ -205,9 +257,16 @@ function init() {
         }
     });
 
-    // keyboard: Tab stays inside a modal dialog; there is NO Escape handling (closing without a choice is not consent)
+    // keyboard: Escape = the «×» (closes without a choice; only while the focus is inside the banner, so the page's own Escape is never taken); Tab stays inside a MODAL dialog (not in the thin bar)
     root.addEventListener('keydown', (event) => {
-        if (event.key !== 'Tab' || ! modal || root.hidden) {
+        if (event.key === 'Escape' && ! root.hidden) {
+            event.preventDefault();
+            close();
+
+            return;
+        }
+
+        if (event.key !== 'Tab' || ! isModal() || root.hidden) {
             return;
         }
 
@@ -247,7 +306,7 @@ function init() {
     bar !== null && (bar.hidden = false);
 
     if (choice === null) {
-        open(initialView, false);
+        open(initialView, false, policyPage && initialView === 'summary');
     } else {
         announce(false);
     }

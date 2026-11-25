@@ -46,6 +46,6 @@
         @yield('content')
     </main>
     {{-- The footer (FT-1): the published footer layout, or the old footer while none is published. --}}
-    @include('storefront.layout.footer')@if (($appearance['cookies'] ?? null) !== null){{-- CC-1: the cookie banner (and the fallback strip) follow the footer on the SAME line, so nothing at all is printed while the banner is off (the page stays byte for byte what it was). One identical block for every visitor; the visitor's cookies are never read here. --}}@include('storefront.partials.cookie-banner', ['cc' => $appearance['cookies'], 'strip' => ! ($appearance['cookieMenuLink'] ?? false)])@endif
+    @include('storefront.layout.footer')@if (($appearance['cookies'] ?? null) !== null){{-- CC-1: the cookie banner (and the fallback strip) follow the footer on the SAME line, so nothing at all is printed while the banner is off (the page stays byte for byte what it was). One identical block for every visitor; the visitor's cookies are never read here. --}}@include('storefront.partials.cookie-banner', ['cc' => $appearance['cookies'], 'strip' => ! ($appearance['cookieMenuLink'] ?? false), 'pageSlug' => trim($__env->yieldContent('sf_page_slug'))])@endif
 </body>
 </html>

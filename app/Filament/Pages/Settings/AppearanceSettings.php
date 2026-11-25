@@ -132,12 +132,11 @@ class AppearanceSettings extends Page
         };
     }
 
-    /** DM-1: the «Тъмен режим» section. Hidden while the dev flag is off: a hidden component is not part of the saved state, so nothing of it is ever written. */
+    /** DM-1: the «Тъмен режим» section (always shown since CC-2: the dev flag is gone). */
     private static function darkSection(): Section
     {
         return Section::make(__('appearance.dark.section'))
             ->description(__('appearance.dark.section_help'))
-            ->visible(static fn (): bool => Appearance::darkModeAvailable())
             ->schema([
                 Toggle::make('dark_mode')
                     ->label(__('appearance.dark.mode'))

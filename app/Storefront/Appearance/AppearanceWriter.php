@@ -70,7 +70,7 @@ final class AppearanceWriter
         // back here so that the stylesheet still holds them, and the banner's own values are not written at all (see the `$ownsBanner` guard below).
         $ownsBanner = array_key_exists('banner_enabled', $data);
 
-        // DM-1: the dark mode's values are edited on the «Облик» page only, and only while the dev flag shows its fields. A save that does not carry them (the flag off, the «Дизайн» screen's
+        // DM-1: the dark mode's values are edited on the «Облик» page only. A save that does not carry them (the «Дизайн» screen's
         // «Топбанер» zone) keeps them as stored. A button colour that IS carried and changed must pass the contrast rules (Contrast::darkButton): nothing at all is written otherwise.
         $carried = array_key_exists('dark_button', $data);
 

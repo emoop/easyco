@@ -245,24 +245,12 @@ final class AppearanceSettings
         };
     }
 
-    /** DM-1: is the dark-mode dev flag on (`storefront.dark_mode`, env STOREFRONT_DARK_MODE)? Removed together with the flag once DM-2 is done. */
-    public static function darkModeAvailable(): bool
-    {
-        return config('storefront.dark_mode') === true;
-    }
-
     /**
-     * DM-1: the stored mode value, validated: `dark` only for the exact value `dark`; anything else (missing, invalid) is `light`. Does NOT look at the flag (see effectiveMode()).
+     * DM-1: the stored mode value, validated: `dark` only for the exact value `dark`; anything else (missing, invalid) is `light`. (CC-2: the dev flag is gone: the stored mode IS the mode shown.)
      */
     public static function storedMode(mixed $value): string
     {
         return $value === 'dark' ? 'dark' : 'light';
-    }
-
-    /** DM-1: the mode the storefront really shows: the stored one, and only while the dev flag is on. A stored `dark` has no effect with the flag off. */
-    public static function effectiveMode(mixed $stored): string
-    {
-        return self::darkModeAvailable() && self::storedMode($stored) === 'dark' ? 'dark' : 'light';
     }
 
     /**

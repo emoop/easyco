@@ -31,7 +31,6 @@ class DarkModeMailTest extends TestCase
         $orderId = $this->placeMailOrder()['order_id'];
         $row = (object) ['related_id' => $orderId, 'locale' => 'en'];
 
-        config(['storefront.dark_mode' => true]);
         $light = app(OrderConfirmationContent::class)->build($row);
 
         AppearanceWriter::save(array_replace(AppearanceWriter::current(), ['dark_mode' => true, 'dark_button' => '#ffffff']));

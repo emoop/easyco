@@ -10,6 +10,9 @@
     $modal = $cc['position'] === 'center';
     $startLayer = $preview ? $previewLayer : ($cc['view'] === 'details' ? 'details' : 'summary');
     $categories = [['id' => 'ads', 'title' => $t['ads_title'], 'text' => $t['ads_text']]];
+    // CC-2: the page the banner links to (the policy page) carries a marker, the SAME for every visitor of that URL (no cookie, no session): the script then shows the banner as a thin bottom bar there
+    // instead of a dialog over the text. `$pageSlug` is the slug of the page being shown (the page view's own section), '' on every other page.
+    $onPolicyPage = ! $preview && $cc['policy'] !== null && ($pageSlug ?? '') === $cc['policy']['slug'];
 @endphp
 {{-- the FALLBACK strip (the footer's bottom bar): printed only while NO menu a guest sees (header, drawer, footer) holds the «Настройки за бисквитки» item; once the merchant adds that item the strip is gone --}}
 @if (! $preview && ($strip ?? true))
@@ -19,19 +22,21 @@
         </div>
     </div>
 @endif
-<div class="sf-cc sf-cc-{{ $cc['position'] }}" data-sf-cc data-version="{{ $cc['version'] }}" data-months="{{ $cc['months'] }}" data-view="{{ $cc['view'] }}" data-modal="{{ $modal ? '1' : '0' }}"@unless ($preview) hidden @endunless>
+<div class="sf-cc sf-cc-{{ $cc['position'] }}" data-sf-cc data-version="{{ $cc['version'] }}" data-months="{{ $cc['months'] }}" data-view="{{ $cc['view'] }}" data-modal="{{ $modal ? '1' : '0' }}"@if ($onPolicyPage) data-policy-page="1"@endif @unless ($preview) hidden @endunless>
     <div class="sf-cc-dialog" role="dialog"@if ($modal) aria-modal="true"@endif aria-labelledby="sf-cc-title-{{ $startLayer }}" tabindex="-1" data-sf-cc-dialog>
+        {{-- CC-2: «×» closes WITHOUT a choice: nothing is saved and no optional cookie is set; the banner comes back on the next page --}}
+        <button type="button" class="sf-cc-close" data-sf-cc-action="dismiss" aria-label="{{ $t['close'] }}"><span aria-hidden="true">×</span></button>
         <div class="sf-cc-layer sf-cc-layer-summary" data-sf-cc-layer="summary"@if ($startLayer !== 'summary') hidden @endif>
             <div class="sf-cc-copy">
                 <h2 class="sf-cc-title" id="sf-cc-title-summary">{{ $t['title'] }}</h2>
                 <p class="sf-cc-text">{{ $t['text'] }}@if ($cc['policy'] !== null) <a class="sf-cc-policy" href="/info/{{ rawurlencode($cc['policy']['slug']) }}">{{ $cc['policy']['title'] }}</a>@endif</p>
+                <p class="sf-cc-short">{{ $t['bar_text'] }}</p>
             </div>
-            <div class="sf-cc-side">
-                <div class="sf-cc-actions">
-                    <button type="button" class="sf-cc-btn" data-sf-cc-action="accept">{{ $t['accept_all'] }}</button>
-                    <button type="button" class="sf-cc-btn" data-sf-cc-action="reject">{{ $t['necessary_only'] }}</button>
-                </div>
-                <button type="button" class="sf-cc-link" data-sf-cc-action="details">{{ $t['settings_link'] }}</button>
+            {{-- CC-2: THREE buttons of equal weight: ONE class, the same size and colour --}}
+            <div class="sf-cc-actions">
+                <button type="button" class="sf-cc-btn" data-sf-cc-action="accept">{{ $t['accept_all'] }}</button>
+                <button type="button" class="sf-cc-btn" data-sf-cc-action="reject">{{ $t['reject'] }}</button>
+                <button type="button" class="sf-cc-btn" data-sf-cc-action="details">{{ $t['settings_link'] }}</button>
             </div>
         </div>
         <div class="sf-cc-layer sf-cc-layer-details" data-sf-cc-layer="details"@if ($startLayer !== 'details') hidden @endif>
@@ -57,7 +62,7 @@
             </ul>
             <div class="sf-cc-actions">
                 <button type="button" class="sf-cc-btn" data-sf-cc-action="accept">{{ $t['accept_all'] }}</button>
-                <button type="button" class="sf-cc-btn" data-sf-cc-action="reject">{{ $t['necessary_only'] }}</button>
+                <button type="button" class="sf-cc-btn" data-sf-cc-action="reject">{{ $t['reject'] }}</button>
             </div>
             <button type="button" class="sf-cc-btn sf-cc-btn-full" data-sf-cc-action="save">{{ $t['save'] }}</button>
         </div>

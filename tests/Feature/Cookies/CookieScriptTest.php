@@ -6,8 +6,8 @@ use PHPUnit\Framework\TestCase;
 
 /**
  * CC-1: the invariants of `resources/js/storefront-consent.js` that a PHP run can pin from its SOURCE (the behaviour itself is measured in a real browser: tests/Browser/cc-1.mjs):
- * the cookie is written only by `writeCookie()`, which only a click handler path (`decide()`) calls; the version is compared; nothing is loaded, fetched or sent; there is no Escape handling;
- * the public API is exactly the documented one.
+ * the cookie is written only by `writeCookie()`, which only a click handler path (`decide()`) calls; the version is compared; nothing is loaded, fetched or sent;
+ * the public API is exactly the documented one. CC-2: «×» and Escape close without a choice; «Отказвам» is the all-off save; the policy page's bar is not modal.
  */
 class CookieScriptTest extends TestCase
 {
@@ -54,12 +54,35 @@ class CookieScriptTest extends TestCase
         $this->assertSame(0, preg_match('#https?://#', $this->js), 'no address of any kind');
     }
 
-    /** closing without a choice is not consent: no Escape handling and no close action */
-    public function test_there_is_no_escape_handling_and_no_close_action(): void
+    /** ★ CC-2: «×» and Escape close WITHOUT a choice: they call close() and nothing else; the one cookie write stays in decide() */
+    public function test_the_close_button_and_escape_close_without_a_choice(): void
     {
-        $this->assertStringNotContainsString('Escape', $this->js);
-        $this->assertStringNotContainsString("case 'close'", $this->js);
-        $this->assertStringNotContainsString('Esc', $this->js);
+        $this->assertSame(1, preg_match("/case 'dismiss':\s*(?:\/\/[^\n]*\n\s*)?close\(\);\s*break;/", $this->js), 'the «×» action only closes');
+        $this->assertSame(1, preg_match("/event\.key === 'Escape' && ! root\.hidden\) \{\s*event\.preventDefault\(\);\s*close\(\);\s*return;/", $this->js), 'Escape is the «×»');
+
+        // no storage is written for a close: still ONE cookie write (in decide()), no localStorage / sessionStorage / second cookie
+        $this->assertSame(1, substr_count($this->js, 'document.cookie ='));
+        $this->assertStringNotContainsString('localStorage', $this->js);
+        $this->assertStringNotContainsString('sessionStorage', $this->js);
+    }
+
+    /** ★ CC-2: «Отказвам» is the SAME save as «Настройки → Запази» with every switch off: both end in decide(false), through the one cookie write */
+    public function test_reject_is_the_settings_save_with_everything_off(): void
+    {
+        $this->assertSame(1, preg_match("/case 'reject':\s*decide\(false\);/", $this->js));
+        $this->assertSame(1, preg_match("/case 'save':\s*decide\(switches\.some\(\(toggle\) => toggle\.dataset\.sfCcSwitch === 'ads' && toggle\.getAttribute\('aria-checked'\) === 'true'\)\);/", $this->js), 'a save with every switch off decides false');
+        $this->assertSame(2, substr_count($this->js, 'writeCookie('), 'no second save path');
+    }
+
+    /** ★ CC-2: on the policy page the banner is a thin NON-modal bar: no lock, no inert page, no focus trap; the page keeps the bar's height as bottom padding */
+    public function test_the_policy_page_bar_is_not_modal_and_the_page_keeps_its_height(): void
+    {
+        $this->assertStringContainsString("root.dataset.policyPage === '1'", $this->js, 'the marker the server prints');
+        $this->assertSame(1, preg_match('/function isModal\(\) \{\s*return modal && ! barMode;/', $this->js));
+        $this->assertSame(1, preg_match('/function lockPage\(\) \{\s*if \(! isModal\(\)\) \{/', $this->js), 'no scroll lock and no inert page in the bar');
+        $this->assertStringContainsString("event.key !== 'Tab' || ! isModal()", $this->js, 'no focus trap in the bar');
+        $this->assertStringContainsString('--sf-cc-bar-h', $this->js);
+        $this->assertStringContainsString("open(initialView, false, policyPage && initialView === 'summary')", $this->js, 'only the automatic opening of a visitor with no choice');
     }
 
     /** the documented API and event, nothing more */

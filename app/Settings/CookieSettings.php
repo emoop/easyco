@@ -62,8 +62,10 @@ final class CookieSettings
 
     /** text key => max length (the closed list of texts) */
     public const TEXT_LIMITS = [
-        'title' => 80, 'text' => 600, 'accept_all' => 30, 'necessary_only' => 30, 'settings_link' => 30, 'layer2_title' => 80,
+        'title' => 80, 'text' => 600, 'accept_all' => 30, 'reject' => 30, 'settings_link' => 30, 'layer2_title' => 80,
         'necessary_title' => 60, 'necessary_text' => 300, 'ads_title' => 60, 'ads_text' => 300, 'always_on' => 40, 'save' => 40, 'back' => 30, 'footer_link' => 40,
+        // CC-2: the accessible name of the «×» that closes the banner without a choice, and the one short line of the thin bar shown on the policy page
+        'close' => 30, 'bar_text' => 200,
     ];
 
     /** The keys the storefront reads (one `getMany`, with the appearance keys): the banner's settings, the derived policy link and the texts of every shop language. */
