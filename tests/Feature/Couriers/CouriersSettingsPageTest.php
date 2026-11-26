@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Couriers;
 
+use App\Couriers\CourierDirectory;
 use App\Couriers\CourierSettings;
 use App\Couriers\SyncCourierPointsJob;
 use App\Filament\Pages\Settings\CouriersSettings;
@@ -22,6 +23,7 @@ use EasyCo\Staff\Staff;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
@@ -321,6 +323,31 @@ class CouriersSettingsPageTest extends TestCase
         $component->assertSee('auth_failed')->assertSee(__('couriers.errors.auth_failed'));
         $this->assertStringNotContainsString('LEAKED-UPSTREAM-BODY', $component->html());
         $this->assertStringNotContainsString('LEAKED-UPSTREAM-BODY', $this->snapshotJson($component));
+    }
+
+    public function test_a_speedy_error_code_is_shown_next_to_the_closed_code_and_its_text_never(): void
+    {
+        $this->actAsPanelAdministrator();
+        $this->enableCourier('speedy', 'fake-speedy-user-for-tests');
+        $this->app->instance(CourierHttp::class, (new FakeCourierHttp)->answer(new CourierResponse(200, '{"error":{"code":7,"id":"X1","message":"LEAKED-TEXT fake-speedy-user-for-tests","context":"LEAKED-CONTEXT"}}')));
+
+        $component = Livewire::test(CouriersSettings::class)->call('checkConnection', 'speedy');
+
+        $this->assertSame(['ok' => false, 'code' => 'courier_error:7'], $component->get('connection.speedy'));
+        $component->assertSee(__('couriers.errors.courier_error_code', ['courier' => CourierDirectory::label('speedy'), 'code' => 7]));
+        $component->assertSee('courier_error:7');
+
+        foreach (['LEAKED-TEXT', 'LEAKED-CONTEXT'] as $text) {
+            $this->assertStringNotContainsString($text, $component->html());
+            $this->assertStringNotContainsString($text, $this->snapshotJson($component));
+        }
+
+        // the same on the last run of the sync, and a code of 1 is still an authentication failure
+        DB::table('courier_sync_runs')->insert(['carrier_code' => 'speedy', 'trigger' => 'manual', 'started_at' => now(), 'finished_at' => now(), 'outcome' => 'failed', 'error_code' => 'courier_error:7']);
+        Livewire::test(CouriersSettings::class)->assertSee(__('couriers.errors.courier_error_code', ['courier' => CourierDirectory::label('speedy'), 'code' => 7]));
+
+        $this->app->instance(CourierHttp::class, (new FakeCourierHttp)->answer(new CourierResponse(200, '{"error":{"code":1,"message":"x"}}')));
+        $this->assertSame(['ok' => false, 'code' => 'auth_failed'], Livewire::test(CouriersSettings::class)->call('checkConnection', 'speedy')->get('connection.speedy'));
     }
 
     public function test_the_connection_test_of_a_disabled_courier_or_with_no_credentials_makes_no_call(): void

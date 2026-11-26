@@ -111,7 +111,9 @@ class ShippingMethodWriterTest extends TestCase
     {
         $method = $this->writer()->create($this->zoneId, $this->input([
             'name' => 'Free', 'kind' => 'free', 'price' => $this->eur(700), 'freeAbove' => $this->eur(5000),
-            'classMode' => 'adjust', 'carrierCode' => 'econt',
+            // COUR-2a: a courier on a FREE method is no longer "left behind": it is the courier whose points the method offers, and is judged
+            // like any other (see ShippingMethodResourceTest); only the price, the threshold and the class mode are stale here
+            'classMode' => 'adjust',
         ]));
 
         $stored = $this->stored((string) $method->id());

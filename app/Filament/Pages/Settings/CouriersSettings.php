@@ -444,12 +444,17 @@ class CouriersSettings extends Page
 
         $closed = (string) $result['code'];
 
-        return new HtmlString('<strong>✗ </strong>'.e(__('couriers.test.failed', ['message' => $this->errorText($closed), 'code' => $closed])));
+        return new HtmlString('<strong>✗ </strong>'.e(__('couriers.test.failed', ['message' => $this->errorText($closed, $code), 'code' => $closed])));
     }
 
     /** The text of a CLOSED code; anything else is «неизвестна грешка», so nothing a courier said can reach the page. */
-    private function errorText(string $code): string
+    private function errorText(string $code, ?string $courier = null): string
     {
+        // `courier_error:7`: the closed code plus the INTEGER a courier sent (never its text): «Грешка от Спиди (код 7)».
+        if (preg_match('/^courier_error:(\d{1,6})$/D', $code, $m) === 1) {
+            return __('couriers.errors.courier_error_code', ['courier' => CourierDirectory::label($courier ?? ''), 'code' => $m[1]]);
+        }
+
         $key = 'couriers.errors.'.$code;
         $text = __($key);
 
@@ -507,7 +512,7 @@ class CouriersSettings extends Page
         $html = $heading.e($text);
 
         if ($run->error_code !== null) {
-            $html .= '<br>'.e(__('couriers.sync.last_error', ['message' => $this->errorText((string) $run->error_code), 'code' => (string) $run->error_code]));
+            $html .= '<br>'.e(__('couriers.sync.last_error', ['message' => $this->errorText((string) $run->error_code, $code), 'code' => (string) $run->error_code]));
         }
 
         return new HtmlString($html);

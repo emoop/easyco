@@ -160,12 +160,19 @@
                     </div>
 
                     <div data-sf-pickup-fields hidden>
-                        {{-- ONE field for the office or locker: the customer types the address, the name or the code, whatever they know (checkout form v2, D3, D14). --}}
-                        <div class="sf-field sf-float">
-                            <label for="sf-pickup-address">{{ __('storefront.checkout_pickup_address') }}</label>
-                            <input id="sf-pickup-address" name="pickup_point_address" type="text" maxlength="255" aria-describedby="sf-pickup-help" data-sf-describedby="sf-pickup-help" placeholder=" ">
-                            <p class="sf-field-help" id="sf-pickup-help">{{ __('storefront.checkout_pickup_help') }}</p>
-                            <p class="sf-field-error" id="sf-err-pickup_point_address" data-sf-error-for="pickup_point_address" hidden></p>
+                        {{-- COUR-2a: for a method whose courier has a list, the script builds the settlement search and the list of points here; it is hidden when the page has no list. --}}
+                        <div data-sf-picker hidden></div>
+                        {{-- ONE field for the office or locker: the customer types the address, the name or the code, whatever they know (checkout form v2, D3, D14).
+                             It stays exactly as it was for a method without a list, and is the fallback when a list is not available. --}}
+                        <div data-sf-pickup-manual>
+                            <p class="sf-field-help" role="status" data-sf-pickup-note hidden></p>
+                            <div class="sf-field sf-float">
+                                <label for="sf-pickup-address">{{ __('storefront.checkout_pickup_address') }}</label>
+                                <input id="sf-pickup-address" name="pickup_point_address" type="text" maxlength="255" aria-describedby="sf-pickup-help" data-sf-describedby="sf-pickup-help" placeholder=" ">
+                                <p class="sf-field-help" id="sf-pickup-help">{{ __('storefront.checkout_pickup_help') }}</p>
+                                <p class="sf-field-error" id="sf-err-pickup_point_address" data-sf-error-for="pickup_point_address" hidden></p>
+                            </div>
+                            <div data-sf-pickup-back></div>
                         </div>
                     </div>
                 </fieldset>

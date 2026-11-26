@@ -11,14 +11,17 @@ use App\Filament\Resources\ShippingMethodResource\Pages\EditShippingMethod;
 use App\Filament\Resources\ShippingMethodResource\Pages\ListShippingMethods;
 use App\Filament\Resources\ShippingZoneResource;
 use App\Filament\Support\HelpLink;
+use App\Services\Exceptions\ShippingMethodInvalidException;
 use App\Services\PriceDisplayFormatter;
 use App\Services\ShippingMethodCopier;
+use App\Services\ShippingMethodInput;
 use App\Services\ShippingMethodReorderer;
 use App\Services\ShippingMethodSummaryReader;
 use App\Services\ShippingMethodWriter;
 use App\Services\ShippingTester;
 use App\Settings\Contracts\SiteSettingsRepository;
 use EasyCo\Pricing\DefaultCurrency;
+use EasyCo\Pricing\Money;
 use EasyCo\Shipping\Contracts\ShippingMethodRepository;
 use EasyCo\Shipping\Enums\ShippingClassMode;
 use EasyCo\Shipping\Enums\ShippingDeliveryType;
@@ -505,6 +508,107 @@ class ShippingMethodResourceTest extends TestCase
             ->call('create')
             ->assertHasFormErrors();
         $this->assertSame(1, DB::table('shipping_methods')->count(), 'only the one made while it was enabled');
+    }
+
+    public function test_a_flat_method_can_name_an_enabled_courier_whose_points_it_offers(): void
+    {
+        $zone = (string) $this->zone('Z', 0)->id();
+        $this->actingAsStaff('Administrator');
+        $settings = app(SiteSettingsRepository::class);
+
+        // nothing enabled: no Select
+        Livewire::test(CreateShippingMethod::class)->fillForm(['kind' => 'flat', 'delivers_to' => 'locker'])->assertFormFieldIsHidden('carrier_code');
+
+        $settings->set('couriers.boxnow.enabled', '1');
+
+        // only the ENABLED courier is a choice (Econt and Speedy are installed but off)
+        $this->assertSame(['boxnow' => 'BOX NOW'], ShippingMethodResource::pickupCarrierOptions());
+
+        $page = Livewire::test(CreateShippingMethod::class)->fillForm(['kind' => 'flat', 'delivers_to' => 'locker'])->assertFormFieldIsVisible('carrier_code');
+        $page->fillForm(['zone_id' => $zone, 'name' => 'BOX NOW locker', 'kind' => 'flat', 'price' => '3', 'delivers_to' => 'locker', 'carrier_code' => 'boxnow'])->call('create')->assertHasNoFormErrors();
+
+        $stored = DB::table('shipping_methods')->first();
+        $this->assertSame(['flat', 'boxnow'], [$stored->kind, $stored->carrier_code], 'a FLAT method with a courier, no live price');
+        $this->assertSame(300, (int) $stored->amount_minor);
+
+        // an address-only method has no courier to name: no Select, so a value forced into the form never reaches the writer ...
+        Livewire::test(CreateShippingMethod::class)->fillForm(['kind' => 'flat', 'delivers_to' => 'address'])->assertFormFieldIsHidden('carrier_code');
+        Livewire::test(CreateShippingMethod::class)
+            ->fillForm(['zone_id' => $zone, 'name' => 'Home', 'kind' => 'flat', 'price' => '3', 'delivers_to' => 'address', 'carrier_code' => 'boxnow'])
+            ->call('create');
+        $this->assertNull(DB::table('shipping_methods')->where('name', 'Home')->value('carrier_code'));
+
+        // ... and the writer refuses it all the same
+        try {
+            app(ShippingMethodWriter::class)->create($zone, new ShippingMethodInput(name: 'Home 2', kind: 'flat', price: Money::fromDecimal('3.00', 'EUR'), carrierCode: 'boxnow', destinationScope: 'address'));
+            $this->fail('an address-only method must not name a courier');
+        } catch (ShippingMethodInvalidException $e) {
+            $this->assertSame([__('shipping.methods.errors.carrier_needs_pickup')], $e->errors['carrier_code']);
+        }
+    }
+
+    public function test_editing_a_method_whose_courier_is_now_disabled_keeps_the_link(): void
+    {
+        $zone = (string) $this->zone('Z', 0)->id();
+        $this->actingAsStaff('Administrator');
+        $settings = app(SiteSettingsRepository::class);
+        $settings->set('couriers.boxnow.enabled', '1');
+        $writer = app(ShippingMethodWriter::class);
+        $input = fn (string $price, ?string $code, string $kind = 'flat') => new \App\Services\ShippingMethodInput(name: 'To point', kind: $kind, price: $kind === 'flat' ? \EasyCo\Pricing\Money::fromDecimal($price, 'EUR') : null, carrierCode: $code, destinationScope: 'pickup');
+        $id = (string) $writer->create($zone, $input('3.00', 'boxnow'))->id();
+        // the courier is switched off: the edit saves, the link stays, the picker is off
+        $settings->set('couriers.boxnow.enabled', '0');
+        $writer->update($id, $input('4.00', 'boxnow'));
+        $this->assertSame(['boxnow', 400], [DB::table('shipping_methods')->where('id', $id)->value('carrier_code'), (int) DB::table('shipping_methods')->where('id', $id)->value('amount_minor')]);
+
+        // the form still shows it, as the current option
+        $this->assertSame(['boxnow' => 'BOX NOW ('.__('couriers.common.disabled_suffix').')'], ShippingMethodResource::pickupCarrierOptions('boxnow'));
+        $this->assertSame([], ShippingMethodResource::pickupCarrierOptions());
+
+        // another disabled courier is still refused, and so is a code that was not there before
+        $settings->set('couriers.econt.enabled', '0');
+        foreach (['econt', 'speedy'] as $other) {
+            try {
+                $writer->update($id, $input('4.00', $other));
+                $this->fail('a changed code needs an enabled courier');
+            } catch (\App\Services\Exceptions\ShippingMethodInvalidException $e) {
+                $this->assertSame([__('shipping.methods.errors.carrier_not_enabled')], $e->errors['carrier_code']);
+            }
+        }
+        $this->assertSame('boxnow', DB::table('shipping_methods')->where('id', $id)->value('carrier_code'));
+
+        $settings->set('couriers.boxnow.enabled', '1');
+
+        // a CARRIER method keeps the COUR-1a.1 rule: a disabled courier is refused on update too
+        $carrierId = (string) $writer->create($zone, new \App\Services\ShippingMethodInput(name: 'Live', kind: 'carrier', carrierCode: 'boxnow', requiresPickupPoint: true))->id();
+        $settings->set('couriers.boxnow.enabled', '0');
+        $this->expectException(\App\Services\Exceptions\ShippingMethodInvalidException::class);
+        $writer->update($carrierId, new \App\Services\ShippingMethodInput(name: 'Live 2', kind: 'carrier', carrierCode: 'boxnow', requiresPickupPoint: true));
+    }
+
+    public function test_a_disabled_or_unknown_courier_is_refused_on_a_flat_method_with_the_same_message_as_for_a_carrier_method(): void
+    {
+        $zone = (string) $this->zone('Z', 0)->id();
+        $writer = app(ShippingMethodWriter::class);
+        $input = fn (string $code) => new ShippingMethodInput(name: 'To point', kind: 'flat', active: true, price: Money::fromDecimal('3.00', 'EUR'), carrierCode: $code, destinationScope: 'pickup');
+        $messageOf = function (string $code) use ($writer, $zone, $input): array {
+            try {
+                $writer->create($zone, $input($code));
+            } catch (ShippingMethodInvalidException $e) {
+                return $e->errors['carrier_code'] ?? [];
+            }
+
+            return [];
+        };
+
+        $this->assertSame([__('shipping.methods.errors.carrier_not_enabled')], $messageOf('boxnow'), 'installed but off');
+        $this->assertSame([__('shipping.methods.errors.carrier_unknown')], $messageOf('nobody'), 'not an installed courier');
+        $this->assertSame([__('shipping.methods.errors.carrier_invalid')], $messageOf('Not A Code'));
+        $this->assertSame(0, DB::table('shipping_methods')->count());
+
+        app(SiteSettingsRepository::class)->set('couriers.boxnow.enabled', '1');
+        $this->assertSame([], $messageOf('boxnow'));
+        $this->assertSame('boxnow', DB::table('shipping_methods')->value('carrier_code'));
     }
 
     public function test_creating_a_flat_and_an_adjusting_method_through_the_form(): void

@@ -191,6 +191,15 @@ class ApiRateLimitersTest extends TestCase
             'routes' => [['POST', 'api/account/verify'], ['POST', 'api/account/password/reset'], ['POST', 'api/account/email/confirm'], ['PUT', 'api/account/password']],
             'inside' => ['POST', 'api/account/password/reset', [], 422],
         ],
+
+        // COUR-2a: the checkout picker's two public reads, the IP alone; a request with no parameters is a 422 after the limiter has counted
+        ApiRateLimits::PICKUP_POINTS => [
+            'config' => 'ratelimits.'.ApiRateLimits::PICKUP_POINTS,
+            'key' => self::KEYED_BY_IP_ALONE,
+            'refusal' => 'rate_limit.too_many_requests',
+            'routes' => [['GET', 'api/shipping/settlements'], ['HEAD', 'api/shipping/settlements'], ['GET', 'api/shipping/pickup-points'], ['HEAD', 'api/shipping/pickup-points']],
+            'inside' => ['GET', 'api/shipping/settlements', [], 422],
+        ],
     ];
 
     protected function setUp(): void

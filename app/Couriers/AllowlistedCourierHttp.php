@@ -74,7 +74,7 @@ final class AllowlistedCourierHttp implements CourierHttp
 
             return $response;
         } catch (CourierHttpException $e) {
-            $code = $e->closedCode;
+            $code = $e->storedCode();
             $status = $e->httpStatus ?? $status;
 
             throw $e;

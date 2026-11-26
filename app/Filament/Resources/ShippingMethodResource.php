@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources;
 
+use App\Couriers\CourierDirectory;
 use App\Filament\Concerns\AuthorizesViaStaffPermission;
 use App\Filament\NavigationGroup;
 use App\Filament\Resources\ShippingMethodResource\Pages\CreateShippingMethod;
@@ -272,6 +273,16 @@ class ShippingMethodResource extends Resource
                 ->label(__('shipping.methods.fields.carrier_code'))
                 ->maxLength(64)
                 ->visible(fn (Get $get): bool => $get('kind') === ShippingMethodKind::CARRIER->value),
+            // COUR-2a (courier-integration-design.md §3.2): the courier whose offices and lockers this method offers in the checkout.
+            // Only ENABLED couriers are choices, and only for a method that can deliver to a point. Empty = the free-text field, as always.
+            Select::make('carrier_code')
+                ->label(__('shipping.methods.fields.pickup_carrier'))
+                ->options(fn (Get $get): array => static::pickupCarrierOptions(is_string($get('carrier_code')) ? $get('carrier_code') : null))
+                ->placeholder(__('shipping.methods.fields.pickup_carrier_none'))
+                ->helperText(__('shipping.methods.facts.pickup_carrier_help'))
+                ->visible(fn (Get $get): bool => $get('kind') !== ShippingMethodKind::CARRIER->value
+                    && array_intersect(array_map(static fn (ShippingDeliveryType $kind): string => $kind->value, static::servedKindsOf(static::deliversTo($get))), ['office', 'locker']) !== []
+                    && static::pickupCarrierOptions(is_string($get('carrier_code')) ? $get('carrier_code') : null) !== []),
             Radio::make('class_mode')
                 ->label(__('shipping.methods.fields.class_mode'))
                 ->options([
@@ -338,6 +349,23 @@ class ShippingMethodResource extends Resource
     // ---- the free-destination set (stage 5g-3, shipping-domain-design.md 9.3.8) ------------------------------
 
     /** The form's "Delivers to" value, as an option key (`any` when missing or unknown) — ONE reader of that state. */
+    /** @return array<string, string> the ENABLED couriers (code => name) plus the one the method already names; any other disabled or uninstalled one is not a choice */
+    public static function pickupCarrierOptions(?string $current = null): array
+    {
+        $options = [];
+
+        foreach (app(CourierDirectory::class)->enabled() as $descriptor) {
+            $options[$descriptor->code()] = CourierDirectory::label($descriptor->code());
+        }
+
+        // COUR-2a.1: the courier the method already names stays visible as the current option while it is off (or gone), so a save never drops it silently
+        if ($current !== null && $current !== '' && ! isset($options[$current])) {
+            $options[$current] = CourierDirectory::label($current).' ('.__('couriers.common.disabled_suffix').')';
+        }
+
+        return $options;
+    }
+
     public static function deliversTo(Get $get): string
     {
         $value = $get('delivers_to');

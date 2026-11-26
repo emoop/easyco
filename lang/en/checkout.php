@@ -32,6 +32,12 @@ return [
     'shipping_method_unavailable' => 'That delivery method is not available for this order. Choose another one.',
     'shipping_quote_expired' => 'The delivery price has expired. Choose the delivery method again to see the current price.',
     'shipping_price_changed' => 'The delivery price has changed. Check the new price and confirm the order again.',
+    // COUR-2a: choosing an office or locker from the courier's list (courier-integration-design.md 4.3, 4.5)
+    'pickup' => [
+        'unavailable_choice' => 'The office or locker you chose is no longer available. Please choose another.',
+        'unavailable' => 'There are no offices or lockers available for this courier.',
+        'bad_request' => 'The request is not valid.',
+    ],
     'shipping_pickup_mismatch' => 'That delivery method does not match the delivery address (office or locker versus home address). Choose another method or address.',
     'terms_not_accepted' => 'Please accept the terms and conditions to place the order.',
     'terms_version_changed' => 'The terms and conditions changed while you were filling in the order. Please read them again and confirm.',

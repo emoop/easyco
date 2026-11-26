@@ -103,6 +103,10 @@ final class ApiRateLimits
     // ACC-2b: PUT / DELETE /api/addresses/{addressId} and POST .../default: a customer managing her address book; IP + the logged-in account
     public const ACCOUNT_ADDRESS = 'account-address';
 
+    // COUR-2a: GET /api/shipping/settlements and /api/shipping/pickup-points (the checkout picker's type-ahead); the IP alone: the answers are
+    // the same for everyone and carry no cart (courier-integration-design.md 4.3)
+    public const PICKUP_POINTS = 'pickup-points';
+
     public const DEFAULT_PER_MINUTE = 30;
 
     /**
@@ -126,10 +130,11 @@ final class ApiRateLimits
         self::ACCOUNT_TOKEN => 'rate_limit.too_many_requests',
         self::ACCOUNT_READ => 'rate_limit.too_many_requests',
         self::ACCOUNT_ADDRESS => 'rate_limit.too_many_requests',
+        self::PICKUP_POINTS => 'rate_limit.too_many_requests',
     ];
 
     /** The limiters keyed by the IP alone — see this class's own docblock, "TWO KEY SHAPES". */
-    private const KEYED_BY_IP_ALONE = [self::REGISTRATION, self::CHECKOUT, self::ADDRESS, self::PROMOTION, self::PASSWORD_FORGOT, self::VERIFY_RESEND, self::EMAIL_CHANGE, self::ACCOUNT_TOKEN];
+    private const KEYED_BY_IP_ALONE = [self::REGISTRATION, self::CHECKOUT, self::ADDRESS, self::PROMOTION, self::PASSWORD_FORGOT, self::VERIFY_RESEND, self::EMAIL_CHANGE, self::ACCOUNT_TOKEN, self::PICKUP_POINTS];
 
     public static function register(): void
     {

@@ -119,7 +119,10 @@ final class ShippingMethodWriter
      */
     public function update(string $id, ShippingMethodInput $input): ShippingMethod
     {
-        $clean = $this->clean($input);
+        // COUR-2a.1: the courier an existing NON-carrier method already names stays acceptable while that courier is off or gone
+        $stored = $this->methods->findById($id);
+        $kept = $stored !== null && $stored->kind() !== ShippingMethodKind::CARRIER ? $stored->carrierCode() : null;
+        $clean = $this->clean($input, $kept);
 
         $result = DB::transaction(function () use ($id, $clean): array {
             $method = $this->methods->findById($id) ?? throw new ShippingMethodNotFoundException;
@@ -261,7 +264,7 @@ final class ShippingMethodWriter
     /**
      * @return array{name: string, kind: ShippingMethodKind, active: bool, price: ?int, free_above: ?int, mode: ShippingClassMode, rates: array<string, int>, pickup: bool, scope: ?ShippingDestinationScope, carrier_code: ?string, courier: ?string, delivery_type: ?ShippingDeliveryType}
      */
-    private function clean(ShippingMethodInput $input): array
+    private function clean(ShippingMethodInput $input, ?string $keptCarrier = null): array
     {
         $errors = [];
         $label = static fn (string $field): string => __('shipping.methods.fields.'.$field);
@@ -365,6 +368,25 @@ final class ShippingMethodWriter
             } else {
                 $carrierCode = $code;
             }
+        } elseif ($input->carrierCode !== null && trim($input->carrierCode) !== '') {
+            // COUR-2a (design §3.2): ANY other kind may name the courier whose points it offers. Only an installed AND enabled courier
+            // is accepted (a disabled one is refused with the same message as a CARRIER method, COUR-1a.1); a code that is not an
+            // installed courier has no points to offer.
+            $code = trim($input->carrierCode);
+
+            if (! ShippingCode::isValid($code)) {
+                $errors['carrier_code'][] = __('shipping.methods.errors.carrier_invalid');
+            } elseif ($keptCarrier !== null && $code === $keptCarrier) {
+                // COUR-2a.1: UNCHANGED on an update: kept even while the courier is disabled or uninstalled (the picker stays off meanwhile;
+                // nothing else depends on it). A NEW or CHANGED code needs an installed and enabled courier, below.
+                $carrierCode = $code;
+            } elseif ($this->couriers->descriptor($code) === null) {
+                $errors['carrier_code'][] = __('shipping.methods.errors.carrier_unknown');
+            } elseif (! $this->couriers->isEnabled($code)) {
+                $errors['carrier_code'][] = __('shipping.methods.errors.carrier_not_enabled');
+            } else {
+                $carrierCode = $code;
+            }
         }
 
         // destination scope — the admin form's "Serves" Select (stage 6d, design 9.2.8). A value the caller sent
@@ -378,6 +400,11 @@ final class ShippingMethodWriter
             if ($scope === null) {
                 $errors['destination_scope'][] = __('shipping.methods.errors.destination_scope_unknown');
             }
+        }
+
+        // A courier's points only make sense for a method that can deliver to a point.
+        if ($carrierCode !== null && $kind !== ShippingMethodKind::CARRIER && ! ($scope ?? self::scopeFromToggle($input->requiresPickupPoint, $deliveryType, null))->serves(true)) {
+            $errors['carrier_code'][] = __('shipping.methods.errors.carrier_needs_pickup');
         }
 
         // free destinations (stage 5g) — the kinds the threshold applies to; null = the caller states none

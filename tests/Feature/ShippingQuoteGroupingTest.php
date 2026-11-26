@@ -243,7 +243,7 @@ class ShippingQuoteGroupingTest extends TestCase
         $old = ['available', 'free_above_minor', 'handle', 'id', 'kind', 'name', 'price', 'remaining_to_free_minor', 'requires_pickup_point', 'service_code', 'unavailable_reason'];
 
         foreach ($json['methods'] as $method) {
-            $this->assertSame($this->sorted(array_merge($old, ['courier', 'delivery_type', 'destination_scope', 'serves_destination'])), $this->sorted(array_keys($method)));
+            $this->assertSame($this->sorted(array_merge($old, ['courier', 'delivery_type', 'destination_scope', 'serves_destination', 'integration'])), $this->sorted(array_keys($method)));
             $this->assertSame([], array_diff($old, array_keys($method)), 'nothing removed or renamed');
         }
 

@@ -151,13 +151,25 @@ class CourierSettlementSyncTest extends TestCase
 
         $this->enableCourier('speedy', 'fake-speedy-user', 'fake-speedy-pass');
         $this->http->answer(new CourierResponse(401, 'fake-speedy-user is not allowed'));             // sites
-        $this->http->answer(new CourierResponse(200, '{"error":{"message":"fake-speedy-pass"}}'));     // offices
+        $this->http->answer(new CourierResponse(200, '{"error":{"code":1,"message":"fake-speedy-pass"}}')); // offices: code 1 is the authentication failure
 
         $run = app(PickupPointSyncer::class)->run('speedy', 'cli');
 
         $this->assertSame(['failed', 'auth_failed'], [$run->outcome, $run->error_code]);
         $this->assertSame(0, DB::table('shipping_pickup_points')->count());
         $this->assertStringNotContainsString('fake-speedy', implode("\n", $logged).json_encode(CourierSyncRun::all()->toArray()));
+    }
+
+    public function test_another_speedy_error_code_is_recorded_with_its_number_and_never_its_text(): void
+    {
+        $this->enableCourier('speedy', 'fake-speedy-user', 'fake-speedy-pass');
+        $this->http->answer(new CourierResponse(200, '{"error":{"code":7,"id":"X","message":"fake-speedy-pass","context":"fake-speedy-user"}}')); // sites
+        $this->http->answer(new CourierResponse(200, '{"error":{"code":7,"id":"X","message":"fake-speedy-pass","context":"fake-speedy-user"}}')); // offices
+
+        $run = app(PickupPointSyncer::class)->run('speedy', 'cli');
+
+        $this->assertSame(['failed', 'courier_error:7'], [$run->outcome, $run->error_code]);
+        $this->assertStringNotContainsString('fake-speedy', json_encode(CourierSyncRun::all()->toArray()));
     }
 
     public function test_boxnow_lockers_map_through_postcode_and_name_and_unknown_ones_are_counted(): void
