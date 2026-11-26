@@ -298,7 +298,7 @@ export function createPickupPicker(host, hooks) {
             return; // an older answer: the customer has typed on
         }
 
-        if (result === null || result.status !== 200 || ! result.data || ! Array.isArray(result.data.data)) {
+        if (result === null || result.status < 200 || result.status >= 300 || ! result.data || ! Array.isArray(result.data.data)) {
             failed();
 
             return;
@@ -342,7 +342,7 @@ export function createPickupPicker(host, hooks) {
             return;
         }
 
-        if (result === null || result.status !== 200 || ! result.data || ! Array.isArray(result.data.data)) {
+        if (result === null || result.status < 200 || result.status >= 300 || ! result.data || ! Array.isArray(result.data.data)) {
             failed();
 
             return;

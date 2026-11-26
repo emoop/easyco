@@ -111,8 +111,12 @@ Route::post('/shipping/quote', [ShippingQuoteController::class, 'store'])
     ->middleware([EnsureAccountSessionIsCurrent::class.':soft', 'cart.cookie:passive', 'throttle:'.ApiRateLimits::SHIPPING_QUOTE]);
 
 // COUR-2a: the checkout picker's two reads of OUR OWN pickup-point tables (no courier is called, no session, the same for everyone).
-Route::get('/shipping/settlements', [PickupPointController::class, 'settlements'])->middleware('throttle:'.ApiRateLimits::PICKUP_POINTS);
-Route::get('/shipping/pickup-points', [PickupPointController::class, 'points'])->middleware('throttle:'.ApiRateLimits::PICKUP_POINTS);
+// Registered like POST /shipping/quote: outside every auth group, with the SOFT session check first (a stale customer session is dropped and the request goes on as a
+// GUEST, never a 401), then their own limiter. No `cart.cookie`: these answers are `public, max-age=300` and must never carry a Set-Cookie.
+Route::get('/shipping/settlements', [PickupPointController::class, 'settlements'])
+    ->middleware([EnsureAccountSessionIsCurrent::class.':soft', 'throttle:'.ApiRateLimits::PICKUP_POINTS]);
+Route::get('/shipping/pickup-points', [PickupPointController::class, 'points'])
+    ->middleware([EnsureAccountSessionIsCurrent::class.':soft', 'throttle:'.ApiRateLimits::PICKUP_POINTS]);
 
 // ─────────────────────────────────────────────────────────────────
 // Merchant surface — everything below requires auth:staff plus a

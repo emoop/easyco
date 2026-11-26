@@ -68,6 +68,9 @@ class MerchantRoutesRequirePermissionTest extends TestCase
         'DELETE api/cart/promotion',
         'POST api/checkout',
         'POST api/shipping/quote',
+        // COUR-2a: public checkout lookups of our own pickup-point tables (limiter pickup-points, no personal data, no cart, no session)
+        'GET api/shipping/settlements',
+        'GET api/shipping/pickup-points',
     ];
 
     public function test_every_merchant_route_requires_auth_staff_and_a_declared_permission(): void

@@ -282,4 +282,38 @@ class PickupPointEndpointsTest extends TestCase
         // and the settlement count follows the same definition
         $this->assertSame(5, $this->search('пло', 'speedy', 'office')[0]['points']);
     }
+
+    /** @return array<string, array{array<string, string>}> */
+    public static function guests(): array
+    {
+        $referer = ['Referer' => 'http://localhost/checkout', 'Origin' => 'http://localhost'];
+
+        return [
+            'no headers at all' => [[]],
+            'Accept: application/json' => [['Accept' => 'application/json']],
+            'a browser on the shop (stateful), no Accept' => [$referer],
+            'a browser on the shop (stateful), Accept: application/json' => [$referer + ['Accept' => 'application/json']],
+        ];
+    }
+
+    /**
+     * A GUEST (no session, no token, no staff, no customer) through the FULL HTTP stack, as a browser on the storefront sends it: the
+     * request is "stateful" (Sanctum's frontend pipeline starts a session) with or without an Accept header. Both endpoints answer 200 JSON.
+     *
+     * @param  array<string, string>  $headers
+     */
+    #[\PHPUnit\Framework\Attributes\DataProvider('guests')]
+    public function test_a_guest_loads_both_lists_with_and_without_an_accept_header(array $headers): void
+    {
+        $id = $this->settlement('Пловдив');
+        $this->point($id);
+
+        $search = $this->withHeaders($headers)->get('/api/shipping/settlements?carrier=boxnow&kind=locker&q=пло');
+        $search->assertOk()->assertJsonPath('data.0.name', 'Пловдив');
+        $this->assertStringContainsString('application/json', (string) $search->headers->get('Content-Type'));
+
+        $points = $this->withHeaders($headers)->get('/api/shipping/pickup-points?carrier=boxnow&kind=locker&settlement='.$id);
+        $points->assertOk()->assertJsonCount(1, 'data');
+        $this->assertStringContainsString('application/json', (string) $points->headers->get('Content-Type'));
+    }
 }

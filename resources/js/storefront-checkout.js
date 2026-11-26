@@ -1285,10 +1285,11 @@ function initCheckout(root) {
         pickupBox.hidden = ! pickup;
 
         setRequired('address_line_1', street);
-        syncPicker();
         PICKUP_FIELDS.forEach(function (name) {
-            setRequired(name, pickup && ! pickerOn());
+            setRequired(name, pickup);
         });
+        // COUR-2a: while the list picker is what the customer fills in, the free-text field is not required (the SAME function decides)
+        syncPicker();
 
         applyRegionMode();
         applyInvoice();
@@ -1356,6 +1357,7 @@ function initCheckout(root) {
 
         picker.configure(integration, pickup ? deliveryKind() : null, selection === null ? '' : selection.id + ':' + selection.kind, fieldValue('city'));
         pickupManual.hidden = picker.available() && picker.active();
+        setRequired('pickup_point_address', pickup && ! pickerOn());
     }
 
     /** The ONE request: every kind of every courier. No place yet = a preview; the pick-up kind is never sent with `all`. */
