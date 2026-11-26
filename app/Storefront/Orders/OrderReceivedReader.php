@@ -19,6 +19,7 @@ use EasyCo\Order\Order;
 use EasyCo\Payment\Contracts\PaymentRepository;
 use EasyCo\Payment\Enums\PaymentStatus;
 use EasyCo\Pricing\Money;
+use Illuminate\Support\Facades\DB;
 
 /**
  * What the order-received page shows, read through the repositories and the shared formatters; it writes nothing and changes
@@ -168,7 +169,8 @@ final class OrderReceivedReader
                 $order->recipientFullName(),
                 $order->pickupPointName(),
                 $order->pickupPointAddress(),
-                $order->settlement(),
+                // COUR-2a: «settlement postcode» from the snapshot of a point chosen from the courier's list (none for a typed one)
+                trim(($order->settlement() ?? '').' '.((string) DB::table('order_pickup_points')->where('order_id', $order->id())->value('postcode'))),
             ], static fn (?string $part): bool => $part !== null && trim($part) !== ''))];
         }
 

@@ -15,6 +15,7 @@
 // with a place it is FINAL. The choice is a (method, kind) pair: first the COURIER, then, if it serves more than one kind, the
 // KIND from a native <select> ("To an office - 3.00 EUR"). Switching among already-quoted options needs no new request.
 import { api, apiMessage, el, formatMoney, hasCartCookie, lineImage, localUrl, message, promotionBox, setCount, t } from './storefront-cart.js';
+import { createPickupPicker } from './storefront-pickup-picker.js';
 
 var DEBOUNCE_MS = 500;
 var STREET_FIELDS = ['postal_code', 'address_line_1', 'address_line_2'];
@@ -105,6 +106,8 @@ function initCheckout(root) {
     var addressBox = root.querySelector('[data-sf-address-fields]');
     var postalBox = root.querySelector('[data-sf-postal-field]');     // the postal code next to the place: shown for a street address and before a kind is chosen
     var pickupBox = root.querySelector('[data-sf-pickup-fields]');
+    var pickerHost = root.querySelector('[data-sf-picker]');           // COUR-2a: the list picker (absent on a page without it)
+    var pickupManual = root.querySelector('[data-sf-pickup-manual]');   // the free-text field's wrapper
     var regionBox = root.querySelector('[data-sf-region-field]');
     var noteCounter = root.querySelector('[data-sf-note-counter]');
     var promoHost = root.querySelector('[data-sf-promo]');
@@ -226,6 +229,10 @@ function initCheckout(root) {
     }
 
     function pointFieldsFilled() {
+        if (pickerOn()) {
+            return picker.chosenId() !== '';
+        }
+
         return PICKUP_FIELDS.every(function (name) {
             return fieldValue(name) !== '';
         });
@@ -358,6 +365,11 @@ function initCheckout(root) {
             }
 
             items.push({ field: field, text: text });
+
+            // the chosen point is no longer offered: forget it and show the list again (the message stands beside the picker)
+            if (name === 'pickup_point_id' && picker !== null) {
+                picker.invalidate(text);
+            }
         });
 
         return items;
@@ -1276,6 +1288,8 @@ function initCheckout(root) {
         PICKUP_FIELDS.forEach(function (name) {
             setRequired(name, pickup);
         });
+        // COUR-2a: while the list picker is what the customer fills in, the free-text field is not required (the SAME function decides)
+        syncPicker();
 
         applyRegionMode();
         applyInvoice();
@@ -1288,6 +1302,62 @@ function initCheckout(root) {
             form.elements[name].value = '';
             clearFieldError(name);
         });
+    }
+
+    // ------------------------------------------------------------------------------------------ the list picker (COUR-2a)
+
+    var picker = null;
+
+    if (pickerHost !== null && pickupManual !== null) {
+        picker = createPickupPicker(pickerHost, {
+            onChange: function () {
+                clearFieldError('pickup_point_id');
+                refreshPlaceOrder();
+            },
+            // the settlement the customer picked is the place the delivery is quoted for: the quote follows it like it follows a typed place
+            onSettlement: function (name) {
+                var city = form.elements.city;
+
+                if (city && city.value.trim().toLowerCase() !== String(name).trim().toLowerCase()) {
+                    city.value = name;
+                    savedAuto = false;
+                    scheduleQuote(false);
+                }
+            },
+            onManual: function (on, note) {
+                pickupManual.hidden = ! on;
+                setRequired('pickup_point_address', on && isPickupKind(deliveryKind()));
+                manualNoteLine.textContent = on && note ? note : '';
+                manualNoteLine.hidden = ! (on && note);
+                refreshPlaceOrder();
+            },
+        });
+    }
+
+    var manualNoteLine = root.querySelector('[data-sf-pickup-note]') || el('p', 'sf-field-help');
+    var manualBackHost = root.querySelector('[data-sf-pickup-back]');
+
+    if (picker !== null && manualBackHost !== null) {
+        manualBackHost.appendChild(picker.backButton);
+    }
+
+    /** The list picker (not the free-text field) is what the customer fills in for the chosen method. */
+    function pickerOn() {
+        return picker !== null && picker.active() && isPickupKind(deliveryKind()) && savedMode !== 'saved';
+    }
+
+    /** Shows the picker or the free-text field for the chosen method; called whenever the destination is toggled. */
+    function syncPicker() {
+        if (picker === null) {
+            return;
+        }
+
+        var pickup = isPickupKind(deliveryKind());
+        var integration = pickup && selection !== null ? selection.integration : null;
+
+        picker.configure(integration, pickup ? deliveryKind() : null, selection === null ? '' : selection.id + ':' + selection.kind, fieldValue('city'));
+        pickupManual.hidden = picker.available() && picker.active();
+        setRequired('pickup_point_address', pickup && ! pickerOn());
     }
 
     /** The ONE request: every kind of every courier. No place yet = a preview; the pick-up kind is never sent with `all`. */
@@ -1533,6 +1603,8 @@ function initCheckout(root) {
             currency: option.price.currency,
             kind: option.kind,
             carrier: courier.name === null ? option.method.name : courier.name,
+            // COUR-2a: the courier whose list this method offers (the quote's `integration`), or null: the free-text field, as always
+            integration: option.method.integration && typeof option.method.integration.carrier === 'string' ? option.method.integration.carrier : null,
             final: ! previewing(),
         };
         preferredCourier = courier.key;
@@ -1771,11 +1843,21 @@ function initCheckout(root) {
             // The kind the customer chose (a client claim until the courier stage; the handle is bound to it).
             body.pickup_point_kind = selection.kind;
 
-            PICKUP_FIELDS.forEach(function (name) {
-                if (fieldValue(name) !== '') {
-                    body[name] = fieldValue(name);
+            if (pickerOn()) {
+                // OUR id of the chosen point and nothing else about it: the server reads the point from its own table
+                body.pickup_point_id = picker.chosenId();
+            } else {
+                PICKUP_FIELDS.forEach(function (name) {
+                    if (fieldValue(name) !== '') {
+                        body[name] = fieldValue(name);
+                    }
+                });
+
+                // the page showed the free-text field although the method has a list (the customer chose it, or a list failed to load)
+                if (picker !== null && picker.available()) {
+                    body.pickup_point_manual = true;
                 }
-            });
+            }
         }
 
         // ACC-3c: a signed-in customer sends no email (the server takes the account's own); a guest sends the typed one.
@@ -1793,7 +1875,7 @@ function initCheckout(root) {
         var unchanged = unchangedSavedRow();
 
         if (unchanged !== null) {
-            ['delivery_type', 'country', 'city', 'postal_code', 'address_line_1', 'address_line_2', 'region', 'settlement', 'carrier_code', 'pickup_point_kind', 'pickup_point_address'].forEach(function (name) {
+            ['delivery_type', 'country', 'city', 'postal_code', 'address_line_1', 'address_line_2', 'region', 'settlement', 'carrier_code', 'pickup_point_kind', 'pickup_point_address', 'pickup_point_id', 'pickup_point_manual'].forEach(function (name) {
                 delete body[name];
             });
             body.address_id = unchanged.id;

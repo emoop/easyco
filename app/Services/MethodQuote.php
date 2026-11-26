@@ -64,13 +64,15 @@ final class MethodQuote
         public readonly ?bool $servesDestination = null,
         public readonly ?array $servedKinds = null,
         public readonly ?array $freeKinds = null,
+        // COUR-2a: the courier whose pickup points this (non-carrier) method offers: the method row's own `carrier_code`; a display fact, never a filter's to change
+        public readonly ?string $integrationCarrier = null,
     ) {
     }
 
     /** @param list<string>|null $servedKinds @param list<string>|null $freeKinds */
-    public static function priced(string $methodId, string $name, string $kind, bool $requiresPickupPoint, string $currency, int $amountMinor, ?string $serviceCode = null, ?int $freeAboveMinor = null, ?int $remainingToFreeMinor = null, ?string $courier = null, ?string $deliveryType = null, ?string $destinationScope = null, ?bool $servesDestination = null, ?array $servedKinds = null, ?array $freeKinds = null): self
+    public static function priced(string $methodId, string $name, string $kind, bool $requiresPickupPoint, string $currency, int $amountMinor, ?string $serviceCode = null, ?int $freeAboveMinor = null, ?int $remainingToFreeMinor = null, ?string $courier = null, ?string $deliveryType = null, ?string $destinationScope = null, ?bool $servesDestination = null, ?array $servedKinds = null, ?array $freeKinds = null, ?string $integrationCarrier = null): self
     {
-        return new self($methodId, $name, $kind, $requiresPickupPoint, $currency, $amountMinor, null, $serviceCode, null, $freeAboveMinor, $remainingToFreeMinor, $courier, $deliveryType, $destinationScope, $servesDestination, $servedKinds, $freeKinds);
+        return new self($methodId, $name, $kind, $requiresPickupPoint, $currency, $amountMinor, null, $serviceCode, null, $freeAboveMinor, $remainingToFreeMinor, $courier, $deliveryType, $destinationScope, $servesDestination, $servedKinds, $freeKinds, $integrationCarrier);
     }
 
     /** @param list<string>|null $servedKinds @param list<string>|null $freeKinds */
@@ -105,9 +107,9 @@ final class MethodQuote
     }
 
     /** The same quote carrying the method's courier group facts (stage 5f): display facts of the method row, never a filter's to change. */
-    public function withGrouping(?string $courier, ?string $deliveryType): self
+    public function withGrouping(?string $courier, ?string $deliveryType, ?string $integrationCarrier = null): self
     {
-        return $this->replicate(['courier' => $courier, 'deliveryType' => $deliveryType]);
+        return $this->replicate(['courier' => $courier, 'deliveryType' => $deliveryType, 'integrationCarrier' => $integrationCarrier]);
     }
 
     /** The same quote carrying the method row's scope and whether it serves this request's destination (stage 6b): facts of the method, never a filter's to change. */

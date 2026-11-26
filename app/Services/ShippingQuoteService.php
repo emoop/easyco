@@ -195,7 +195,7 @@ final class ShippingQuoteService
             }
 
             // The courier group facts and the served / free kinds (5g-2b) are the method row's, whatever a filter rebuilt (stage 5f).
-            $accepted[$item->methodId] = $item->withGrouping($before->courier, $before->deliveryType)->withDestination($before->destinationScope, $before->servesDestination)->withKinds($before->servedKinds, $before->freeKinds);
+            $accepted[$item->methodId] = $item->withGrouping($before->courier, $before->deliveryType, $before->integrationCarrier)->withDestination($before->destinationScope, $before->servesDestination)->withKinds($before->servedKinds, $before->freeKinds);
         }
 
         uasort($accepted, static fn (MethodQuote $a, MethodQuote $b): int => $order[$a->methodId] <=> $order[$b->methodId]);
@@ -330,7 +330,7 @@ final class ShippingQuoteService
                 $rate->methodId, $method->name(), $method->kind()->value, $method->requiresPickupPoint(), $context->currency, $rate->amountMinor(), null,
                 $rate->freeAboveMinor, $rate->remainingToFreeMinor, $method->courier(), $method->deliveryType()?->value,
                 $method->destinationScope()->value, $method->servesKind($destination->kind(), $destination->isPickupPoint()),
-                self::servedKindsOf($method), self::freeKindsOf($method),
+                self::servedKindsOf($method), self::freeKindsOf($method), $method->carrierCode(),
             );
         }
 

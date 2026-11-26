@@ -79,6 +79,11 @@ final class OrderAnonymiser
             'pickup_point_reference' => null, 'pickup_point_name' => null, 'pickup_point_address' => $pickupAddress, 'customer_note' => null,
         ]);
 
+        // COUR-2a: the courier point snapshot (a shop location, but the order's own copies of it are blanked, so this one is too)
+        DB::table('order_pickup_points')->where('order_id', $orderId)->update([
+            'point_id' => null, 'external_ref' => null, 'name' => null, 'address_line' => null, 'settlement_name' => null, 'postcode' => null,
+        ]);
+
         DB::table('order_invoice_details')->where('order_id', $orderId)->update([
             'legal_name' => $placeholder, 'tax_id' => null, 'company_registration_number' => null, 'representative' => null,
             'city' => $placeholder, 'postal_code' => $placeholder, 'address_line_1' => $placeholder, 'address_line_2' => null,

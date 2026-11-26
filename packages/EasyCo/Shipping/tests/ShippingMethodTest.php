@@ -50,11 +50,9 @@ class ShippingMethodTest extends TestCase
         $this->flat(500, ['classRates' => ['bulky' => 900]]);
     }
 
-    public function test_carrier_code_on_flat_method_is_rejected(): void
+    public function test_a_flat_method_may_name_the_courier_whose_points_it_offers(): void
     {
-        $this->expectException(InvalidShippingMethodException::class);
-
-        $this->flat(500, ['carrierCode' => 'econt']);
+        $this->assertSame('econt', $this->flat(500, ['carrierCode' => 'econt'])->carrierCode());
     }
 
     public function test_flat_method_allows_a_free_above_threshold(): void
@@ -92,11 +90,11 @@ class ShippingMethodTest extends TestCase
         ShippingMethod::create('1', 'Free', ShippingMethodKind::FREE, classRates: ['bulky' => 0]);
     }
 
-    public function test_free_method_rejects_a_carrier_code(): void
+    public function test_free_method_may_name_the_courier_whose_points_it_offers(): void
     {
-        $this->expectException(InvalidShippingMethodException::class);
+        $method = ShippingMethod::create('1', 'Free', ShippingMethodKind::FREE, carrierCode: 'econt');
 
-        ShippingMethod::create('1', 'Free', ShippingMethodKind::FREE, carrierCode: 'econt');
+        $this->assertSame('econt', $method->carrierCode());
     }
 
     public function test_a_plain_free_method_is_valid(): void
@@ -151,11 +149,11 @@ class ShippingMethodTest extends TestCase
         ShippingMethod::create('1', 'By class', ShippingMethodKind::PER_CLASS, amountMinor: 500, classRates: ['Bulky Items' => 900]);
     }
 
-    public function test_per_class_method_rejects_a_carrier_code(): void
+    public function test_per_class_method_may_name_the_courier_whose_points_it_offers(): void
     {
-        $this->expectException(InvalidShippingMethodException::class);
+        $method = ShippingMethod::create('1', 'By class', ShippingMethodKind::PER_CLASS, amountMinor: 500, carrierCode: 'econt');
 
-        ShippingMethod::create('1', 'By class', ShippingMethodKind::PER_CLASS, amountMinor: 500, carrierCode: 'econt');
+        $this->assertSame('econt', $method->carrierCode());
     }
 
     public function test_per_class_method_allows_a_free_above_threshold(): void

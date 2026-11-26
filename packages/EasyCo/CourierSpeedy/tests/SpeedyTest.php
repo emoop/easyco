@@ -10,6 +10,7 @@ use EasyCo\Shipping\Carrier\CourierRedactor;
 use EasyCo\Shipping\Carrier\CourierResponse;
 use EasyCo\Shipping\Carrier\PickupPointKind;
 use EasyCo\Shipping\Exceptions\CourierHttpException;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /** The Speedy adapter against fixtures built from the documented shape (not live recordings) and a fake CourierHttp: no network, fake credentials. */
@@ -104,7 +105,7 @@ final class SpeedyTest extends TestCase
 
     public function test_a_csv_without_an_id_or_name_column_or_a_json_error_is_a_closed_code(): void
     {
-        foreach ([["id,region\n1,x\n", 'invalid_response'], ["name,region\nA,x\n", 'invalid_response'], ['', 'invalid_response'], ['{"error":{"message":"bad user '.self::USER.'"}}', 'auth_failed'], ['{"sites": []}', 'invalid_response']] as [$body, $code]) {
+        foreach ([["id,region\n1,x\n", 'invalid_response'], ["name,region\nA,x\n", 'invalid_response'], ['', 'invalid_response'], ['{"error":{"message":"bad user '.self::USER.'"}}', 'courier_error'], ['{"sites": []}', 'invalid_response']] as [$body, $code]) {
             try {
                 (new SpeedyCatalogue((new FakeCourierHttp)->answer(new CourierResponse(200, $body))))->settlements($this->credentials(), 'BG');
                 $this->fail('must fail');
@@ -156,7 +157,7 @@ final class SpeedyTest extends TestCase
 
         $this->assertSame([], $http->calls);
 
-        foreach ([[401, 'x', 'auth_failed'], [200, '{"error":{"message":"bad user '.self::USER.'"}}', 'auth_failed'], [503, 'x', 'courier_unavailable'], [200, '{"offices":"x"}', 'invalid_response']] as [$status, $body, $code]) {
+        foreach ([[401, 'x', 'auth_failed'], [200, '{"error":{"message":"bad user '.self::USER.'"}}', 'courier_error'], [200, '{"error":{"code":1,"message":"bad user '.self::USER.'"}}', 'auth_failed'], [503, 'x', 'courier_unavailable'], [200, '{"offices":"x"}', 'invalid_response']] as [$status, $body, $code]) {
             try {
                 (new SpeedyCatalogue((new FakeCourierHttp)->answer(new CourierResponse($status, $body))))->allPoints($this->credentials(), 'BG');
                 $this->fail('must fail');
@@ -165,6 +166,49 @@ final class SpeedyTest extends TestCase
                 $this->assertStringNotContainsString(self::USER, $e->getMessage().json_encode($e->closedCode));
             }
         }
+    }
+
+    /** @return array<string, array{string, string, ?int}> body, closed code, the courier's integer */
+    public static function errorAnswers(): array
+    {
+        return [
+            'code 1 stays an authentication failure' => ['{"error":{"code":1,"id":"abc","message":"Authentication failed","context":"user fake-user-for-tests"}}', 'auth_failed', null],
+            'another code is a courier error that keeps its number' => ['{"error":{"code":7,"id":"abc","message":"Something about fake-user-for-tests","context":"x"}}', 'courier_error', 7],
+            'a code that came as a string of digits' => ['{"error":{"code":"12","message":"x"}}', 'courier_error', 12],
+            'no code at all' => ['{"error":{"id":"abc","message":"x"}}', 'courier_error', null],
+            'a code that is not a number is not kept' => ['{"error":{"code":"fake-user-for-tests","message":"x"}}', 'courier_error', null],
+            'an error that is not an object' => ['{"error":"fake-user-for-tests"}', 'courier_error', null],
+        ];
+    }
+
+    #[DataProvider('errorAnswers')]
+    public function test_an_error_object_is_judged_by_its_integer_code_only(string $body, string $code, ?int $courierCode): void
+    {
+        $answer = fn () => (new FakeCourierHttp)->answer(new CourierResponse(200, $body));
+
+        // the lists
+        try {
+            (new SpeedyCatalogue($answer()))->allPoints($this->credentials(), 'BG');
+            $this->fail('must fail');
+        } catch (CourierHttpException $e) {
+            $this->assertSame([$code, $courierCode], [$e->closedCode, $e->courierCode]);
+            $this->assertSame($courierCode === null ? $code : $code.':'.$courierCode, $e->storedCode());
+            $this->assertStringNotContainsString(self::USER, $e->getMessage().$e->storedCode(), 'never the text');
+        }
+
+        // the settlements' CSV export answers an error as JSON
+        try {
+            (new SpeedyCatalogue($answer()))->settlements($this->credentials(), 'BG');
+            $this->fail('must fail');
+        } catch (CourierHttpException $e) {
+            $this->assertSame([$code, $courierCode], [$e->closedCode, $e->courierCode]);
+        }
+
+        // «Провери връзката»
+        $check = (new SpeedyDescriptor)->checkConnection($answer(), $this->credentials());
+        $this->assertFalse($check->ok);
+        $this->assertSame($courierCode === null ? $code : $code.':'.$courierCode, $check->code);
+        $this->assertStringNotContainsString(self::USER, (string) $check->code);
     }
 
     public function test_the_connection_check_and_the_redactor_keep_the_credentials_out(): void
@@ -179,7 +223,7 @@ final class SpeedyTest extends TestCase
         $this->assertSame('/v1/client/contract', $http->calls[0]['path']);
 
         $this->assertSame('not_configured', $d->checkConnection(new FakeCourierHttp, $this->credentials(false))->code);
-        $this->assertSame('auth_failed', $d->checkConnection((new FakeCourierHttp)->answer(new CourierResponse(200, '{"error":{"message":"x"}}')), $this->credentials())->code);
+        $this->assertSame('courier_error', $d->checkConnection((new FakeCourierHttp)->answer(new CourierResponse(200, '{"error":{"message":"x"}}')), $this->credentials())->code);
         $this->assertSame('auth_failed', $d->checkConnection((new FakeCourierHttp)->answer(new CourierResponse(403, 'LEAK')), $this->credentials())->code);
         $this->assertSame(['api.speedy.bg'], $d->hosts(CourierEnvironment::PRODUCTION, []));
 

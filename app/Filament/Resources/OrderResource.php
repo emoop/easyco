@@ -1390,8 +1390,10 @@ class OrderResource extends Resource
                 filled($record->pickup_point_address) ? $text(__('orders.fields.pickup_point_address').': '.$record->pickup_point_address) : null,
                 // The KIND that priced the order (stage 5g-2a), display only: the order editor never changes it (an edit does not re-price shipping).
                 $text(__('orders.fields.pickup_point_kind').': '.__('orders.pickup_kind.'.(filled($record->pickup_point_kind) ? $record->pickup_point_kind : 'not_stated'))),
-                // the settlement as stored — no postcode (the courier integrations will bring the office's later)
-                $text($record->settlement ?? $na),
+                // the settlement as stored, with the point's postcode when the order has the snapshot of a point chosen from the courier's list (COUR-2a)
+                $text(trim(($record->settlement ?? $na).' '.((string) DB::table('order_pickup_points')->where('order_id', $record->id)->value('postcode')))),
+                // OUR id of that point (the snapshot's), for support: the courier's reference above is what goes on the waybill
+                ($pointId = DB::table('order_pickup_points')->where('order_id', $record->id)->value('point_id')) !== null ? $text(__('orders.fields.pickup_point_id').': '.$pointId) : null,
                 $geo['region'] !== null ? e($geo['region']).' <span '.$muted.'>'.e(__('orders.geo.derived_suffix')).'</span>' : ($geo['possible'] !== null ? '<span '.$muted.'>'.e(__('orders.geo.possible_regions', ['list' => $geo['possible']])).'</span>' : null),
                 $text($record->country ?? $na),
             ];

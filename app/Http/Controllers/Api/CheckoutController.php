@@ -68,6 +68,7 @@ class CheckoutController extends Controller
         private readonly \App\Settings\CheckoutFormSettings $formSettings,
         private readonly InvoiceSettings $invoiceSettings,
         private readonly InvoiceRequestChecker $invoiceChecker,
+        private readonly \App\Couriers\PickupPointChoice $pickupChoice,
     ) {
     }
 
@@ -203,6 +204,36 @@ class CheckoutController extends Controller
             return $this->refusal('unknown_payment_method', 422);
         }
 
+        // COUR-2a: a point chosen from the courier's list is judged HERE, against our own table, before anything is written. A refusal is a
+        // 422 field error on the picker, no order and no payment are created and the cart stays.
+        $pickupPoint = null;
+
+        if (($validated['delivery_type'] ?? null) === 'pickup_point' && ! isset($validated['address_id'])) {
+            $carrier = $this->pickupChoice->pickerCarrier($validated['shipping_method_id'] ?? null);
+
+            if ($carrier !== null && ! (($validated['pickup_point_manual'] ?? false) && ! isset($validated['pickup_point_id']))) {
+                $pickupPoint = isset($validated['pickup_point_id'])
+                    ? $this->pickupChoice->resolve($carrier, $validated['shipping_method_id'] ?? null, (int) $validated['pickup_point_id'], $validated['pickup_point_kind'] ?? null)
+                    : null;
+
+                if ($pickupPoint === null) {
+                    throw ValidationException::withMessages(['pickup_point_id' => [__('checkout.pickup.unavailable_choice')]]);
+                }
+
+                // What the order records about the point is OURS, read from our table just now; the courier's code is the method's.
+                $validated['carrier_code'] = $pickupPoint['carrier_code'];
+                $validated['pickup_point_reference'] = $pickupPoint['external_ref'];
+                $validated['pickup_point_name'] = $pickupPoint['name'];
+                $validated['pickup_point_address'] = $pickupPoint['address_line'];
+                $validated['pickup_point_kind'] = $pickupPoint['kind'];
+                $validated['settlement'] = $validated['settlement'] ?? $pickupPoint['settlement_name'];
+            } elseif ($carrier === null && trim((string) ($validated['pickup_point_address'] ?? '')) === '') {
+                // COUR-2a.1: no list applies (the courier is off, its points are gone, or the method has none) and nothing was typed: an id alone
+                // never places an order without a point. The page re-quotes and shows the free-text field.
+                throw ValidationException::withMessages(['pickup_point_id' => [__('checkout.pickup.unavailable_choice')]]);
+            }
+        }
+
         $consent = $this->formSettings->newsletterEnabled() && isset($validated['marketing_consent']) ? (bool) $validated['marketing_consent'] : null;
 
         $accountId = Auth::guard('customer')->check() ? (string) Auth::guard('customer')->id() : null;
@@ -247,6 +278,7 @@ class CheckoutController extends Controller
             requestFacts: new CheckoutRequestFacts($request->ip(), $request->userAgent()),
             invoice: $invoice,
             recipientEmail: $validated['recipient_email'] ?? null,
+            pickupPoint: $pickupPoint,
         );
 
         // Each refusal is caught by type and answered with a stable `reason` and a FIXED,
@@ -524,7 +556,7 @@ class CheckoutController extends Controller
             // resolved against a payment adapter above: max:255 keeps an
             // overlong value a 422 field error rather than a 500 from MySQL.
             'payment_method' => 'required|string|max:255',
-            'address_id' => 'nullable|string|prohibits:delivery_type,country,city,postal_code,address_line_1,address_line_2,carrier_code,pickup_point_reference,pickup_point_kind,settlement,region',
+            'address_id' => 'nullable|string|prohibits:delivery_type,country,city,postal_code,address_line_1,address_line_2,carrier_code,pickup_point_reference,pickup_point_kind,pickup_point_id,pickup_point_manual,settlement,region',
             'delivery_type' => 'required_without:address_id|in:street_address,pickup_point',
             // Required whenever the address is typed fresh, for BOTH delivery types (owner
             // decision D1). With address_id the saved address's own country is used and the
@@ -547,7 +579,11 @@ class CheckoutController extends Controller
             // The display snapshot of the chosen office (stage 4f): what the customer saw, required for a NEW pickup address and
             // refused for a street address. Text for people; the reference above is the identifier, and nothing verifies these.
             'pickup_point_name' => ['nullable', 'prohibited_if:delivery_type,street_address', 'string', 'max:255', new PlainText()],
-            'pickup_point_address' => ['required_if:delivery_type,pickup_point', 'prohibited_if:delivery_type,street_address', 'string', 'max:255', new PlainText()],
+            // COUR-2a: a point chosen from the courier's list carries OUR id and no text (the server writes the text); `pickup_point_manual` says
+            // the page showed the free-text field instead (the courier is off, has no points, or a list failed to load): today's behaviour for it.
+            'pickup_point_id' => ['nullable', 'prohibited_if:delivery_type,street_address', 'string', 'regex:/^\d{1,18}$/D'],
+            'pickup_point_manual' => ['nullable', 'prohibited_if:delivery_type,street_address', 'boolean'],
+            'pickup_point_address' => [\Illuminate\Validation\Rule::requiredIf(fn (): bool => request()->input('delivery_type') === 'pickup_point' && trim((string) request()->input('pickup_point_id', '')) === ''), 'nullable', 'prohibited_if:delivery_type,street_address', 'string', 'max:255', new PlainText()],
             'settlement' => ['required_if:delivery_type,pickup_point', 'prohibited_if:delivery_type,street_address', 'string', 'max:255', new PlainText()],
             // The KIND of the pickup point (stage 5g-2a, design 9.3.6): office | locker, OPTIONAL in this stage (a pickup order with none is
             // priced as "kind unspecified", never cheaper than a stated kind). Today a CLAIM, read once through PickupKindSource.

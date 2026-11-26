@@ -87,7 +87,7 @@ final class EcontDescriptor implements CourierDescriptor
                 $headers,
             );
         } catch (CourierHttpException $e) {
-            return ConnectionCheck::failed($e->closedCode);
+            return ConnectionCheck::failed($e->storedCode());
         }
 
         if ($response->successful()) {

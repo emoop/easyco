@@ -59,7 +59,8 @@ class OrderAnonymisationTest extends TestCase
 
     /** tables that must be byte for byte the same */
     /** the pinned cost of the command (measured, then pinned): the fixed part of a run and each order's own queries */
-    private const PINNED_PER_ORDER = 12;
+    // COUR-2a: 13 (was 12): the snapshot of a courier point (`order_pickup_points`) is blanked with the order's other copies, one UPDATE more per order
+    private const PINNED_PER_ORDER = 13;
 
     private const PINNED_FIXED = 6;
 
@@ -228,6 +229,26 @@ class OrderAnonymisationTest extends TestCase
     }
 
     // ---- 2, 3, 4, 5: what is cleared, what is not, the keys, the mail log, the history ------------------------------------------
+
+    public function test_the_courier_point_snapshot_of_an_order_is_blanked_with_its_other_copies(): void
+    {
+        $id = $this->oldOrder('2026-03-06 10:00:00', 'p@example.com', 'cancelled', pickup: true);
+        DB::table('order_pickup_points')->insert([
+            'order_id' => $id, 'point_id' => 5, 'carrier_code' => 'boxnow', 'external_ref' => 'R1', 'kind' => 'locker', 'name' => 'Lidl Пловдив',
+            'address_line' => 'ул. Х 1', 'settlement_name' => 'Пловдив', 'postcode' => '4000', 'created_at' => now(),
+        ]);
+        $this->travelToLocal('2037-03-05 03:10:00');
+
+        $this->assertStringContainsString('Anonymised 1 order(s)', $this->anonymise());
+
+        $row = (array) DB::table('order_pickup_points')->where('order_id', $id)->first();
+
+        foreach (['point_id', 'external_ref', 'name', 'address_line', 'settlement_name', 'postcode'] as $column) {
+            $this->assertNull($row[$column], $column);
+        }
+
+        $this->assertSame(['boxnow', 'locker'], [$row['carrier_code'], $row['kind']], 'the courier and the kind are not personal');
+    }
 
     public function test_every_personal_field_of_every_copy_is_cleared_and_everything_else_is_byte_for_byte_the_same(): void
     {

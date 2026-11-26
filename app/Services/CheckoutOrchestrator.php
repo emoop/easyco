@@ -623,6 +623,11 @@ final class CheckoutOrchestrator
         // Phase 1 takes this row with it, exactly like the Order itself.
         $this->snapshotWriter->write($order, $placedAt);
 
+        // COUR-2a: the chosen courier point, copied at THIS instant (our point id and postcode have no column on the order itself).
+        if ($input->pickupPoint !== null) {
+            \App\Couriers\PickupPointChoice::store($order->id(), $input->pickupPoint);
+        }
+
         // The order's CONTEXT (order-context-design.md 9.6, stage C2-A): the attribution row (always), the invoice row (only when asked) and
         // the `placed` event, INSIDE this transaction and BEFORE the cart claim below. A double submit that loses the claim rolls all of it
         // back and returns the order that already exists, so the replay never inserts a second row and never meets a unique key.

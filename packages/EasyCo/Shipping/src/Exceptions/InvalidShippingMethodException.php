@@ -79,11 +79,6 @@ final class InvalidShippingMethodException extends InvalidArgumentException
         return new self('A CARRIER ShippingMethod requires a carrierCode.');
     }
 
-    public static function carrierCodeNotAllowed(ShippingMethodKind $kind): self
-    {
-        return new self("A {$kind->name} ShippingMethod must not have a carrierCode; only CARRIER does.");
-    }
-
     public static function invalidCarrierCode(string $carrierCode): self
     {
         return new self("ShippingMethod carrierCode \"{$carrierCode}\" is invalid: use lowercase letters and digits with single \"_\" or \"-\" separators, 1 to 64 characters.");

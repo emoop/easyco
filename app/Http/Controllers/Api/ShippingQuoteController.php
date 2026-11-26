@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Couriers\PickupPointChoice;
 use App\Http\Controllers\Controller;
 use App\Rules\KnownCountryCode;
 use App\Services\Exceptions\ShippingQuoteFilterException;
@@ -222,6 +223,17 @@ class ShippingQuoteController extends Controller
         return $token !== null ? $this->carts->findBySessionToken($token) : null;
     }
 
+    /**
+     * COUR-2a (courier-integration-design.md 4.1): the courier whose picker this method shows, or null. Additive; the `shipping.quotes`
+     * filter does not touch it (it is the method row's own fact, read after the filter). `map` is COUR-2b's.
+     *
+     * @return array{carrier: string, map: bool}|null
+     */
+    private function integration(?string $carrier): ?array
+    {
+        return $carrier !== null && app(PickupPointChoice::class)->hasList($carrier) ? ['carrier' => $carrier, 'map' => false] : null;
+    }
+
     /** @return array<string, mixed> */
     private function toArray(ShippingQuoteResult $result): array
     {
@@ -237,7 +249,7 @@ class ShippingQuoteController extends Controller
                 'address' => $result->bucket === 'address' ? ['id' => $result->zoneId, 'name' => $result->zoneName] : null,
                 'pickup' => $result->bucket === 'pickup' ? ['id' => $result->zoneId, 'name' => $result->zoneName] : null,
             ],
-            'methods' => array_map(static fn (MethodQuote $m): array => [
+            'methods' => array_map(fn (MethodQuote $m): array => [
                 'id' => $m->methodId,
                 'name' => $m->name,
                 'kind' => $m->kind,
@@ -253,6 +265,7 @@ class ShippingQuoteController extends Controller
                 'unavailable_reason' => $m->unavailableReason,
                 'courier' => $m->courier,
                 'delivery_type' => $m->deliveryType,
+                'integration' => $this->integration($m->integrationCarrier),
             ], $result->methods),
             'groups' => QuoteGroups::build($result->methods, $result->currency),
             'free_shipping_hint' => $result->freeShippingHint?->toArray(),
@@ -317,6 +330,7 @@ class ShippingQuoteController extends Controller
                 'unavailable_reason' => $availableAny ? null : $reason,
                 'courier' => $first->courier,
                 'delivery_type' => $first->deliveryType,
+                'integration' => $this->integration($first->integrationCarrier),
                 'destinations' => $destinations,
             ];
         }

@@ -112,7 +112,7 @@ final class PickupPointSyncer
 
             return $run;
         } catch (CourierHttpException $e) {
-            return $this->record($carrierCode, $trigger, $started, CourierSyncRun::FAILED, $counts, $e->closedCode);
+            return $this->record($carrierCode, $trigger, $started, CourierSyncRun::FAILED, $counts, $e->storedCode());
         } catch (Throwable $e) {
             // The class only: a message may echo what the courier sent.
             Log::error('Courier points sync failed unexpectedly.', ['carrier' => $carrierCode, 'exception' => $e::class]);

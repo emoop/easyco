@@ -78,6 +78,9 @@ final class CheckoutInput
         public readonly ?CheckoutInvoiceRequest $invoice = null,
         // ACC-3c: the optional delivery-mails-only address (already trimmed, lower-cased and validated by the HTTP layer; Order::create makes it NULL when it equals the buyer).
         public readonly ?string $recipientEmail = null,
+        // COUR-2a: the snapshot of a point chosen from the courier's list, read from OUR table by PickupPointChoice (never from the request);
+        // null for a described point and for every non-pickup order. Written beside the order, inside the placement transaction.
+        public readonly ?array $pickupPoint = null,
     ) {
     }
 }

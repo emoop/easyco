@@ -39,6 +39,7 @@ class StorefrontCheckoutFlowTest extends TestCase
             'promo_box_in_summary', 'promo_apply_requotes_and_keeps_choice', 'promo_changes_delivery_price_rule_a', 'promo_remove_requotes',
             'promo_invalid_and_error', 'promo_does_not_submit_the_form', 'promo_busy_locks_place_order',
             'required_markers', 'promo_compact_box', 'promo_cart_box_unchanged',
+            'picker_list_flow', 'picker_change_and_switching_drop_the_point', 'picker_falls_back_when_a_list_fails', 'picker_server_refusal_drops_the_point',
         ];
 
         return array_combine($names, array_map(fn (string $name): array => [$name], $names));

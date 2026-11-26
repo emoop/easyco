@@ -57,6 +57,15 @@ final class CourierDirectory
         return array_values(array_filter($this->installed(), fn (CourierDescriptor $d): bool => $this->settings->isEnabled($d->code())));
     }
 
+    /** The name a courier is shown under in a choice (a courier without a translated name shows its code). */
+    public static function label(string $code): string
+    {
+        $key = 'couriers.names.'.$code;
+        $text = __($key);
+
+        return $text === $key ? $code : $text;
+    }
+
     public function isEnabled(string $code): bool
     {
         return $this->descriptor($code) !== null && $this->settings->isEnabled($code);

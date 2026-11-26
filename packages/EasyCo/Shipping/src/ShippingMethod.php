@@ -373,9 +373,8 @@ final class ShippingMethod
             throw InvalidShippingMethodException::classRatesNotAllowed($kind);
         }
 
-        if ($kind !== ShippingMethodKind::CARRIER && $carrierCode !== null) {
-            throw InvalidShippingMethodException::carrierCodeNotAllowed($kind);
-        }
+        // COUR-2a (courier-integration-design.md §3.2): a carrierCode is allowed on EVERY kind. On a CARRIER method it is the live-price
+        // courier (required); on any other kind it is "the courier whose points this method offers" and changes no price.
 
         switch ($kind) {
             case ShippingMethodKind::FLAT:

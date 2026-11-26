@@ -16,7 +16,15 @@ return [
         'no_couriers' => 'No courier is installed.',
     ],
 
+    // The names couriers are shown under in a choice (the shipping-method form).
+    'names' => [
+        'econt' => 'Econt',
+        'speedy' => 'Speedy',
+        'boxnow' => 'BOX NOW',
+    ],
+
     'common' => [
+        'disabled_suffix' => 'disabled',
         'enabled' => 'Enabled',
         'enabled_help' => 'Off by default. While it is off, the courier is never scheduled and never called.',
         'environment' => 'Environment',
@@ -54,6 +62,8 @@ return [
         'not_found' => 'the address was not found',
         'rate_limited' => 'the courier asked us to slow down',
         'courier_unavailable' => 'the courier is not available',
+        'courier_error' => 'the courier answered with an error of its own',
+        'courier_error_code' => 'Error from :courier (code :code)',
         'http_error' => 'the courier answered with an error',
         'invalid_response' => 'the answer was not what was expected',
         'host_not_allowed' => 'the address is not allowed',

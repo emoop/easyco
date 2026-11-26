@@ -23,7 +23,8 @@ use Throwable;
  *   sites     `POST /v1/location/site/csv/100`: the FULL list as a UTF-8 CSV. `location/site` is a search (every documented example
  *             passes a `name` or `postCode`), so it is not used for the full list.
  *
- * D (documented in Speedy's API reference, https://services.speedy.bg/api/docs/, read 2026-11-26; NOT yet confirmed live):
+ * D (documented in Speedy's API reference, https://services.speedy.bg/api/docs/, read 2026-11-26), confirmed live 2026-11-26
+ * (P: the owner's sync on dev with a production account: 1,413 points, 0 skipped, 0 without a settlement):
  *   FindOfficeResponse  root `offices`, plus an optional `error` object (an error can come with HTTP 200: it is refused, its text never read)
  *   Office              `id`, `name`, `nameEn`, `siteId`, `type` (`OFFICE` / `APT`), `address`, `pickUpAllowed`, `dropOffAllowed`,
  *                       `cardPaymentAllowed`, `cashPaymentAllowed`, `palletOffice`, `maxParcelWeight`, `validFrom`, `validTo`
@@ -121,7 +122,7 @@ final class SpeedyCatalogue implements PickupPointCatalogue
             // JSON instead of CSV: an `error` object (the text is never read), or something that is not the list.
             $json = $response->json();
 
-            throw new CourierHttpException(is_array($json) && isset($json['error']) ? CourierHttpException::AUTH_FAILED : CourierHttpException::INVALID_RESPONSE, $response->status);
+            throw is_array($json) && isset($json['error']) ? SpeedyDescriptor::errorFrom($json['error'], $response->status) : new CourierHttpException(CourierHttpException::INVALID_RESPONSE, $response->status);
         }
 
         $handle = fopen('php://temp', 'r+');
@@ -195,8 +196,8 @@ final class SpeedyCatalogue implements PickupPointCatalogue
         $json = $response->json();
 
         if (is_array($json) && isset($json['error'])) {
-            // The text of the error is never read: it may echo the request.
-            throw new CourierHttpException(CourierHttpException::AUTH_FAILED, $response->status);
+            // Only the integer code is read, never the text: it may echo the request (SpeedyDescriptor::errorFrom).
+            throw SpeedyDescriptor::errorFrom($json['error'], $response->status);
         }
 
         $items = is_array($json) ? ($json[$root] ?? null) : null;

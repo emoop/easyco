@@ -3162,6 +3162,76 @@ html[data-theme='dark'] {
         color: var(--sf-link, var(--color-sky-800));
     }
 
+    /* COUR-2a: the office / locker picker of the checkout (settlement search, the list of points, the chosen point). Neutral and surface
+       tokens only, so dark mode follows without a rule of its own. */
+    .sf-picker {
+        @apply mb-2;
+    }
+
+    .sf-picker-list {
+        @apply m-0 mt-1 max-h-60 list-none overflow-y-auto rounded-md border border-neutral-300 bg-surface p-0;
+    }
+
+    .sf-picker-option {
+        @apply cursor-pointer px-3 py-3 text-sm text-neutral-900;
+        min-height: 44px;
+    }
+
+    .sf-picker-option-more {
+        @apply text-neutral-700;
+    }
+
+    .sf-picker-option:hover,
+    .sf-picker-option-active {
+        @apply bg-neutral-100;
+    }
+
+    .sf-picker-points {
+        @apply m-0 mt-3 border-0 p-0;
+    }
+
+    .sf-picker-legend {
+        @apply mb-2 p-0 text-sm font-medium text-neutral-800;
+    }
+
+    .sf-picker-radios {
+        @apply max-h-72 overflow-y-auto;
+    }
+
+    .sf-picker-radios .sf-choice {
+        @apply items-start;
+        min-height: 44px;
+    }
+
+    .sf-picker-radios .sf-choice input {
+        @apply mt-1 shrink-0;
+    }
+
+    .sf-picker-point {
+        @apply flex min-w-0 flex-col gap-0.5;
+    }
+
+    .sf-picker-point-address {
+        @apply break-words text-neutral-700;
+    }
+
+    .sf-picker-badge {
+        @apply self-start rounded-full border border-neutral-300 px-2 text-xs text-neutral-700;
+    }
+
+    .sf-picker-summary {
+        @apply mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-neutral-200 p-3 text-sm text-neutral-900;
+    }
+
+    .sf-picker-summary-text {
+        @apply m-0 min-w-0 flex-1 break-words;
+    }
+
+    .sf-picker-manual,
+    .sf-picker-back {
+        @apply mt-2 min-h-11 text-left;
+    }
+
     .sf-login-hint,
     .sf-order-as {
         @apply mb-3 text-sm text-neutral-700;

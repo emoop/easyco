@@ -178,6 +178,8 @@ let promo = null;          // the code applied to the scripted cart: {code, vali
 let promoReply = null;     // a scripted refusal of PUT/DELETE /api/cart/promotion
 let promoDelay = 0;
 let promoValid = true;
+// COUR-2a: the list picker's scripted answers (method 6 offers a list in the `picker_*` scenarios; one scenario's lists fail)
+const pickerFail = scenario === 'picker_falls_back_when_a_list_fails';
 let checkoutResponse = { status: 201, data: { confirmation_url: 'http://shop.test/order/received/5?expires=1&signature=abc' } };
 // ACC-3c: who is signed in, and the account's saved addresses (the API's own shape; `is_default` marks the default).
 const signedIn = scenario.startsWith('acct_');
@@ -250,7 +252,7 @@ function quoteAll(body) {
         { id: 1, name: 'Econt address', courier: 'Еконт', delivery_type: 'address', destinations: { address: dest(preview, 1, 'address', 500) } },
         { id: 4, name: 'Econt office', courier: 'Еконт', delivery_type: 'office', destinations: { office: dest(preview, 4, 'office', 300) } },
         { id: 5, name: 'Econt locker', courier: 'Еконт', delivery_type: 'locker', destinations: { locker: dest(preview, 5, 'locker', 0) } },
-        { id: 6, name: 'Speedy office', courier: 'Спиди', delivery_type: 'office', destinations: { office: dest(preview, 6, 'office', 350) } },
+        { id: 6, name: 'Speedy office', courier: 'Спиди', delivery_type: 'office', destinations: { office: dest(preview, 6, 'office', 350) }, integration: scenario.startsWith('picker_') ? { carrier: 'speedy', map: false } : null },
         { id: 2, name: 'Local courier', courier: null, delivery_type: null, destinations: { address: dest(preview, 2, 'address', 700) } },
     ].filter((m) => ! dropped.includes(m.id));
     const groups = [
@@ -288,6 +290,18 @@ globalThis.fetch = async (path, init = {}) => {
     }
     if (method_ === 'POST' && path === '/api/shipping/quote') result = { status: 200, data: quoteAll(body) };
     if (method_ === 'POST' && path === '/api/checkout') result = checkoutResponse;
+    if (method_ === 'GET' && path.startsWith('/api/shipping/settlements?')) {
+        result = pickerFail ? { status: 500, data: null } : { status: 200, data: { data: [
+            { id: '77', name: 'Пловдив', region: 'Пловдив', postcode: '4000', is_split: false, points: 2 },
+            { id: '78', name: 'Пловдив', region: 'Хасково', postcode: '6300', is_split: false, points: 1 },
+        ] } };
+    }
+    if (method_ === 'GET' && path.startsWith('/api/shipping/pickup-points?')) {
+        result = { status: 200, data: { data: [
+            { id: 501, ref: 'S-1', kind: 'office', name: 'Офис Тракия', address: 'ул. Тракия 1', postcode: '4000', lat: null, lng: null },
+            { id: 502, ref: 'S-2', kind: 'office', name: 'Офис Център', address: 'бул. Христо Ботев 2', postcode: '4000', lat: null, lng: null },
+        ] } };
+    }
     // ACC-3c: the account endpoints. A scenario named `acct_*` is a signed-in customer (until `sessionEnded`); every other scenario is a guest (401).
     if (method_ === 'GET' && path === '/api/account/me') result = signedIn && ! sessionEnded ? { status: 200, data: { id: '7', email: 'me@example.com' } } : { status: 401, data: { message: 'Unauthenticated.' } };
     if (method_ === 'GET' && path === '/api/addresses') result = signedIn && ! sessionEnded ? { status: 200, data: { data: savedAddresses } } : { status: 401, data: { message: 'Unauthenticated.' } };
@@ -403,7 +417,9 @@ const scenarios = {
         assert.ok(q('[data-sf-error-for="recipient_first_name"]') && q('[data-sf-error-for="recipient_last_name"]'), 'own error holders');
         assert.equal(form.elements.pickup_point_reference, undefined, 'no typed code');
         assert.equal(form.elements.pickup_point_name, undefined, 'no typed name');
-        assert.equal(q('[data-sf-pickup-fields]').all().filter((n) => n.tag === 'input').length, 1, 'ONE pick-up input');
+        // COUR-2a: the free-text block still has ONE input; the list picker's own inputs are built by the script, inside its own host
+        assert.equal(q('[data-sf-pickup-manual]').all().filter((n) => n.tag === 'input').length, 1, 'ONE pick-up input');
+        assert.ok(q('[data-sf-picker]'), 'the host of the list picker is on the page');
         assert.equal(form.elements.pickup_point_address.attrs['aria-describedby'], 'sf-pickup-help', 'the help line is linked');
         assert.equal(q('[data-sf-checkout-loading]').hidden, true);
         assert.equal(placeOrder.disabled, true);
@@ -752,6 +768,182 @@ const scenarios = {
         await typeInto('city', 'Varna');
         assert.equal(courierRows()[1].text, `Спиди — ${T('ck_unavailable')}`);
         assert.equal(courierRows()[1].radio.disabled, true);
+    },
+
+    // COUR-2a: a method with a list shows the settlement search instead of the free-text field; keyboard choice, the points, one choice,
+    // the summary; the order carries OUR id and no typed text.
+    async picker_list_flow() {
+        await typeInto('city', 'Sofia');
+        choose(courierRows()[1].radio);
+
+        const host = q('[data-sf-picker]');
+        const search = host.querySelector('[role="combobox"]');
+
+        assert.equal(host.hidden, false, 'the list picker is shown');
+        assert.equal(q('[data-sf-pickup-manual]').hidden, true, 'the free-text field is not');
+        assert.equal(form.elements.pickup_point_address.required, false, 'the free-text field is not required while the list is used');
+        assert.equal(search.attrs['aria-expanded'], 'false');
+        assert.equal(placeOrder.disabled, true, 'no point yet');
+        assert.equal(search.attrs['aria-controls'], host.querySelector('[role="listbox"]').attrs.id);
+
+        fillContact();
+        search.value = 'п';
+        search.dispatch('input');
+        await flush();
+        assert.equal(host.querySelectorAll('[role="option"]').length, 0, 'one character asks nothing');
+        assert.equal(calls.filter((c) => c.path.startsWith('/api/shipping/settlements')).length, 0);
+
+        search.value = 'пло';
+        search.dispatch('input');
+        await flush();
+
+        const options = host.querySelectorAll('[role="option"]');
+        const request = calls.find((c) => c.path.startsWith('/api/shipping/settlements')).path;
+
+        assert.match(request, /carrier=speedy&kind=office&q=/);
+        assert.equal(options.length, 2);
+        assert.equal(search.attrs['aria-expanded'], 'true');
+        assert.ok(options[0].textContent.includes(T('ck_pick_region').replace(':region', 'Пловдив')), 'the oblast is in every suggestion');
+        assert.ok(options[1].textContent.includes(T('ck_pick_region').replace(':region', 'Хасково')));
+
+        // keyboard: down, down, up, Enter chooses the first one; Enter never submits the form
+        const key = (name) => {
+            const event = { type: 'keydown', key: name, defaultPrevented: false, preventDefault() { this.defaultPrevented = true; } };
+            search.listeners.keydown.forEach((fn) => fn(event));
+
+            return event;
+        };
+        key('ArrowDown');
+        key('ArrowDown');
+        key('ArrowUp');
+        assert.equal(search.attrs['aria-activedescendant'], options[0].attrs.id);
+        assert.equal(options[0].attrs['aria-selected'], 'true');
+        assert.equal(key('Enter').defaultPrevented, true);
+        await flush();
+
+        assert.equal(form.elements.city.value, 'Пловдив', 'the quote follows the chosen place');
+        assert.equal(quotePosts().at(-1).body.settlement, 'Пловдив');
+        assert.match(calls.find((c) => c.path.startsWith('/api/shipping/pickup-points')).path, /carrier=speedy&kind=office&settlement=77/);
+
+        const radios = host.querySelectorAll('input').filter((n) => n.attrs.type === 'radio');
+
+        assert.equal(radios.length, 2);
+        assert.equal(placeOrder.disabled, true, 'a place is not a point');
+        radios[1].checked = true;
+        radios[1].dispatch('change');
+        await flush();
+
+        assert.equal(form.elements.pickup_point_id.value, '502');
+        assert.equal(placeOrder.disabled, false);
+        assert.equal(host.querySelector('[data-sf-picker-summary]').hidden, false);
+        assert.ok(host.querySelector('[data-sf-picker-summary-text]').textContent.includes('Офис Център'));
+
+        await submit();
+
+        const body = lastCheckout().body;
+
+        assert.equal(body.pickup_point_id, '502');
+        assert.equal(body.pickup_point_kind, 'office');
+        assert.equal(body.settlement, 'Пловдив');
+        for (const absent of ['pickup_point_address', 'pickup_point_manual', 'pickup_point_name', 'pickup_point_reference']) {
+            assert.equal(absent in body, false, `${absent} is not sent for a chosen point`);
+        }
+    },
+
+    // «Промени» drops the point and shows the list again; another courier or kind drops it for good.
+    async picker_change_and_switching_drop_the_point() {
+        await typeInto('city', 'Sofia');
+        choose(courierRows()[1].radio);
+
+        const host = q('[data-sf-picker]');
+        const search = host.querySelector('[role="combobox"]');
+        const pointRadios = () => host.querySelectorAll('input').filter((n) => n.attrs.type === 'radio');
+
+        search.value = 'пло';
+        search.dispatch('input');
+        await flush();
+        host.querySelectorAll('[role="option"]')[0].dispatch('mousedown');
+        await flush();
+        pointRadios()[0].checked = true;
+        pointRadios()[0].dispatch('change');
+        assert.equal(form.elements.pickup_point_id.value, '501');
+
+        host.querySelector('[data-sf-picker-change]').dispatch('click');
+        assert.equal(form.elements.pickup_point_id.value, '', 'changing drops the point');
+        assert.equal(pointRadios().length, 2, 'the list is shown again');
+
+        pointRadios()[0].checked = true;
+        pointRadios()[0].dispatch('change');
+        assert.equal(form.elements.pickup_point_id.value, '501');
+
+        choose(courierRows()[0].radio);
+        chooseKind('4:office');
+        assert.equal(host.hidden, true, 'a method without a list shows none');
+        assert.equal(q('[data-sf-pickup-manual]').hidden, false);
+
+        choose(courierRows()[1].radio);
+        assert.equal(host.hidden, false);
+        assert.equal(form.elements.pickup_point_id.value, '', 'the old point is gone');
+    },
+
+    // A list that fails to load never blocks the order: the free-text field takes over, and the order says so.
+    async picker_falls_back_when_a_list_fails() {
+        await typeInto('city', 'Sofia');
+        choose(courierRows()[1].radio);
+
+        const host = q('[data-sf-picker]');
+        const search = host.querySelector('[role="combobox"]');
+
+        fillContact();
+        search.value = 'пло';
+        search.dispatch('input');
+        await flush();
+
+        assert.equal(q('[data-sf-pickup-manual]').hidden, false, 'the free-text field is back');
+        assert.equal(q('[data-sf-pickup-note]').hidden, false);
+        assert.equal(q('[data-sf-pickup-note]').textContent, T('ck_pick_failed'));
+        assert.equal(form.elements.pickup_point_address.required, true);
+        assert.equal(placeOrder.disabled, true, 'still needs the typed address');
+
+        fillPoint('S-9');
+        assert.equal(placeOrder.disabled, false);
+        await submit();
+
+        const body = lastCheckout().body;
+
+        assert.equal(body.pickup_point_address, 'S-9 Main St');
+        assert.equal(body.pickup_point_manual, true);
+        assert.equal('pickup_point_id' in body, false);
+    },
+
+    // The server says the chosen point is gone: the point is dropped, the list is shown again, nothing is lost.
+    async picker_server_refusal_drops_the_point() {
+        await typeInto('city', 'Sofia');
+        choose(courierRows()[1].radio);
+        fillContact();
+
+        const host = q('[data-sf-picker]');
+        const search = host.querySelector('[role="combobox"]');
+        const pointRadios = () => host.querySelectorAll('input').filter((n) => n.attrs.type === 'radio');
+
+        search.value = 'пло';
+        search.dispatch('input');
+        await flush();
+        host.querySelectorAll('[role="option"]')[0].dispatch('mousedown');
+        await flush();
+        pointRadios()[0].checked = true;
+        pointRadios()[0].dispatch('change');
+
+        checkoutResponse = { status: 422, data: { message: 'x', errors: { pickup_point_id: ['Gone'] } } };
+        await submit();
+        await flush();
+
+        assert.equal(form.elements.pickup_point_id.value, '', 'the refused point is dropped');
+        assert.equal(host.querySelector('[data-sf-error-for="pickup_point_id"]').hidden, false);
+        assert.equal(host.querySelector('[data-sf-error-for="pickup_point_id"]').textContent, 'Gone');
+        assert.equal(placeOrder.disabled, true, 'a new point is needed');
+        assert.equal(pointRadios().length, 2, 'the list is shown again');
+        assert.equal(form.elements.recipient_first_name.value, 'Ana', 'what was typed is kept');
     },
 
     // A courier-less method is the group "Other"; it is an address method here and sends no carrier_code.

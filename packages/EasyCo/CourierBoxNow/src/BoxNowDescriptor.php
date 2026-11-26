@@ -93,7 +93,7 @@ final class BoxNowDescriptor implements CourierDescriptor
                 'client_secret' => $clientSecret,
             ], HttpCall::read(self::CODE, 'auth_sessions', CallKind::ADMIN));
         } catch (CourierHttpException $e) {
-            return ConnectionCheck::failed($e->closedCode);
+            return ConnectionCheck::failed($e->storedCode());
         }
 
         if ($response->successful()) {
