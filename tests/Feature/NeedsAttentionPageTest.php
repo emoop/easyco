@@ -300,12 +300,13 @@ class NeedsAttentionPageTest extends TestCase
         $this->assertStringNotContainsString(NeedsAttention::getNavigationLabel(), $withheld);
     }
 
-    public function test_the_three_sources_are_registered_under_the_page_s_own_tag_in_the_stated_order(): void
+    public function test_the_sources_are_registered_under_the_page_s_own_tag_in_the_stated_order(): void
     {
         $sources = iterator_to_array(app()->tagged(NeedsAttentionSource::TAG));
 
-        $this->assertCount(3, $sources);
-        $this->assertSame(['owed_refund', 'receipt_mismatch', 'payment_step_unfinished'], array_map(fn (NeedsAttentionSource $source): string => $source->key(), array_values($sources)));
+        // COUR-1a added the fourth, the courier lists that are out of date (not about an order).
+        $this->assertCount(4, $sources);
+        $this->assertSame(['owed_refund', 'receipt_mismatch', 'payment_step_unfinished', 'courier_sync_stale'], array_map(fn (NeedsAttentionSource $source): string => $source->key(), array_values($sources)));
     }
 
     // =====================================================================================================

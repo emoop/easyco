@@ -4,11 +4,13 @@ namespace EasyCo\Shipping\Tests;
 
 use EasyCo\Shipping\Carrier\CallBudget;
 use EasyCo\Shipping\Carrier\PickupPoint;
+use EasyCo\Shipping\Carrier\PickupPointKind;
 use EasyCo\Shipping\Carrier\ShipmentLabel;
 use EasyCo\Shipping\Carrier\ShipmentRequest;
 use EasyCo\Shipping\Carrier\ShippingContext;
 use EasyCo\Shipping\Carrier\ShippingQuote;
 use EasyCo\Shipping\Exceptions\InvalidCarrierDataException;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /** The §6 value objects: validated at construction, nothing normalized, no customer data in a message. */
@@ -33,7 +35,7 @@ final class CarrierValueObjectsTest extends TestCase
     private function point(array $override = []): PickupPoint
     {
         return new PickupPoint(...array_merge([
-            'carrierCode' => 'econt', 'reference' => 'E-123', 'name' => 'Econt Lozenets', 'countryCode' => 'BG', 'settlement' => 'Sofia', 'addressLine' => 'Bul. Bulgaria 10',
+            'carrierCode' => 'econt', 'reference' => 'E-123', 'name' => 'Econt Lozenets', 'countryCode' => 'BG', 'settlement' => 'Sofia', 'addressLine' => 'Bul. Bulgaria 10', 'kind' => PickupPointKind::OFFICE,
         ], $override));
     }
 
@@ -85,7 +87,7 @@ final class CarrierValueObjectsTest extends TestCase
         ];
     }
 
-    #[\PHPUnit\Framework\Attributes\DataProvider('badContexts')]
+    #[DataProvider('badContexts')]
     public function test_a_malformed_context_is_refused(array $override, string $field): void
     {
         try {

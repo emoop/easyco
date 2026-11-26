@@ -75,3 +75,7 @@ Schedule::command('privacy:anonymise-orders')->dailyAt('03:10')->withoutOverlapp
 
 // ACC-4c (acc-4-gdpr-design.md §5): a personal-data export file lives 7 days; the expired ones (and orphan ZIPs older than 8 days) are deleted from the private disk. Idempotent, a cheap no-op.
 Schedule::command('privacy:prune-exports')->dailyAt('03:20');
+
+// COUR-1a (courier-integration-design.md §3.4): the nightly refresh of the couriers' points lists, queued, one job per ENABLED courier. The command is a
+// no-op when no courier is switched on (a disabled courier is never queued and never called). withoutOverlapping: a slow run must not start a second one.
+Schedule::command('couriers:sync')->dailyAt('03:40')->withoutOverlapping();

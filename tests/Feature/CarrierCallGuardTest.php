@@ -8,20 +8,20 @@ use EasyCo\Shipping\Carrier\CarrierCapability;
 use EasyCo\Shipping\Carrier\CarrierRegistration;
 use EasyCo\Shipping\Carrier\CarrierRegistry;
 use EasyCo\Shipping\Carrier\CarrierUnavailableReason;
-use EasyCo\Shipping\Carrier\ShippingContext;
+use EasyCo\Shipping\Carrier\CourierCredentials;
+use EasyCo\Shipping\Carrier\CourierEnvironment;
+use EasyCo\Shipping\Carrier\ShipmentRequest;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
-use Tests\Support\Shipping\Fakes;
-use Tests\Support\Shipping\FakeLabelProvider;
-use Tests\Support\Shipping\FakePickupProvider;
 use Tests\Support\Shipping\FakeRateProvider;
+use Tests\Support\Shipping\Fakes;
+use Tests\Support\Shipping\FakeShipmentGateway;
 use Tests\TestCase;
 
 require_once __DIR__.'/../Support/Shipping/FakeCarrier.php';
 
 /**
- * Shipping stage 3c (shipping-domain-design.md §6, failure tolerance): a rate or
- * pickup-point call never throws into the caller; an exception, an overrun, an
+ * Shipping stage 3c (shipping-domain-design.md §6, failure tolerance): a rate call never throws into the caller; an exception, an overrun, an
  * invalid answer and a configuration fault each become an explicit "unavailable"
  * with a reason, logged WITHOUT personal data. Label creation is not wrapped.
  */
@@ -32,18 +32,13 @@ class CarrierCallGuardTest extends TestCase
         return $this->app->make(CarrierCallGuard::class);
     }
 
-    private function carrier(string $code, ?FakeRateProvider $rate = null, ?FakePickupProvider $pickup = null): void
+    private function carrier(string $code, ?FakeRateProvider $rate = null): void
     {
         $caps = [];
 
         if ($rate !== null) {
             $this->app->instance(CarrierCapability::RATE->containerKey($code), $rate);
             $caps[] = CarrierCapability::RATE;
-        }
-
-        if ($pickup !== null) {
-            $this->app->instance(CarrierCapability::PICKUP->containerKey($code), $pickup);
-            $caps[] = CarrierCapability::PICKUP;
         }
 
         $this->app->make(CarrierRegistry::class)->register(new CarrierRegistration($code, ucfirst($code), $caps));
@@ -117,28 +112,11 @@ class CarrierCallGuardTest extends TestCase
 
         $this->carrier('beta', new FakeRateProvider(fn () => ['not a quote']));
         $this->assertSame(CarrierUnavailableReason::INVALID_RESPONSE, $this->guard()->quotes('beta', Fakes::context(), $this->budget())->reason());
-
-        $this->carrier('gamma', pickup: new FakePickupProvider(fn () => [Fakes::point('gamma', 'RO')]));
-        $this->assertSame(CarrierUnavailableReason::INVALID_RESPONSE, $this->guard()->pickupPoints('gamma', 'BG', 'Sofia', $this->budget())->reason(), 'a point of another country');
     }
 
     public function test_an_unknown_carrier_or_a_missing_capability_is_unavailable_not_an_exception(): void
     {
         $this->assertSame(CarrierUnavailableReason::NOT_CONFIGURED, $this->guard()->quotes('nobody', Fakes::context(), $this->budget())->reason());
-
-        $this->carrier('acme', new FakeRateProvider(fn () => []));
-        $this->assertSame(CarrierUnavailableReason::NOT_CONFIGURED, $this->guard()->pickupPoints('acme', 'BG', 'Sofia', $this->budget())->reason());
-    }
-
-    public function test_pickup_points_are_guarded_the_same_way(): void
-    {
-        $this->carrier('acme', pickup: new FakePickupProvider(fn () => [Fakes::point('acme')]));
-        $ok = $this->guard()->pickupPoints('acme', 'BG', 'Sofia', $this->budget());
-        $this->assertTrue($ok->isAvailable());
-        $this->assertSame('P-1', $ok->items()[0]->reference);
-
-        $this->carrier('beta', pickup: new FakePickupProvider(fn () => throw new RuntimeException('down')));
-        $this->assertSame(CarrierUnavailableReason::PROVIDER_ERROR, $this->guard()->pickupPoints('beta', 'BG', 'Sofia', $this->budget())->reason());
     }
 
     public function test_the_log_has_the_reason_and_no_personal_data(): void
@@ -193,16 +171,17 @@ class CarrierCallGuardTest extends TestCase
         $this->assertFalse(method_exists(CarrierCallGuard::class, 'labels'));
 
         // And the contract's idempotency obligation, as a conforming fake keeps it.
-        $provider = new FakeLabelProvider();
-        $request = new \EasyCo\Shipping\Carrier\ShipmentRequest('42', 1, 'acme', 'office', 'A B', '+359888000000', 'BG', 'Sofia', 'EUR', 100, 'Street 1');
+        $provider = new FakeShipmentGateway;
+        $request = new ShipmentRequest('42', 1, 'acme', 'office', 'A B', '+359888000000', 'BG', 'Sofia', 'EUR', 100, 'Street 1');
 
-        $first = $provider->createLabel($request);
-        $retry = $provider->createLabel($request);
+        $credentials = new CourierCredentials('acme', CourierEnvironment::TEST, []);
+        $first = $provider->create($request, $credentials);
+        $retry = $provider->create($request, $credentials);
 
         $this->assertSame($first, $retry);
         $this->assertSame(1, $provider->shipmentsCreated, 'a retried request never creates a second shipment');
 
-        $second = $provider->createLabel(new \EasyCo\Shipping\Carrier\ShipmentRequest('42', 2, 'acme', 'office', 'A B', '+359888000000', 'BG', 'Sofia', 'EUR', 100, 'Street 1'));
+        $second = $provider->create(new ShipmentRequest('42', 2, 'acme', 'office', 'A B', '+359888000000', 'BG', 'Sofia', 'EUR', 100, 'Street 1'), $credentials);
         $this->assertNotSame($first->trackingNumber, $second->trackingNumber, 'a new attempt number is a deliberate new shipment');
     }
 }
