@@ -125,11 +125,11 @@ class PickupPointOrderTest extends TestCase
         ];
     }
 
-    private function assertRefused(string $cartId, TestResponse $response): void
+    private function assertRefused(string $cartId, TestResponse $response, int $existing = 0): void
     {
         $response->assertStatus(422)->assertJsonValidationErrors('pickup_point_id');
         $this->assertSame('Избраният офис или автомат вече не е наличен. Моля, изберете друг.', $response->json('errors.pickup_point_id.0'));
-        $this->assertSame(['orders' => 0, 'payments' => 0, 'snapshots' => 0, 'transactions' => 0, 'points' => 0], $this->rows(), 'no order and no payment step');
+        $this->assertSame(['orders' => $existing, 'payments' => $existing, 'snapshots' => $existing, 'transactions' => $existing, 'points' => $existing], $this->rows(), 'no order and no payment step');
         $this->assertNull(DB::table('carts')->where('id', $cartId)->value('order_id'), 'the cart stays, unclaimed');
     }
 
@@ -323,6 +323,37 @@ class PickupPointOrderTest extends TestCase
 
         app(SiteSettingsRepository::class)->set('couriers.boxnow.enabled', '1');
         $this->assertSame(['carrier' => 'boxnow', 'map' => false], $integration());
+    }
+
+    public function test_one_method_that_serves_every_destination_places_an_office_and_a_locker_and_refuses_another_couriers_point(): void
+    {
+        $this->enableCourier('speedy');
+        $zone = ShippingZone::create('Any zone', 0, ['BG']);
+        app(ShippingZoneRepository::class)->save($zone);
+        // PER_CLASS, scope ANY, no delivery type: the shop's real setup (one method per courier for address, office and locker)
+        $method = ShippingMethod::create((string) $zone->id(), 'Доставка със Спиди', ShippingMethodKind::PER_CLASS, 0, true, 500, [], null, 'speedy', false, courier: 'Спиди', deliveryType: null, destinationScope: ShippingDestinationScope::ANY);
+        app(ShippingMethodRepository::class)->save($method);
+        $id = (string) $method->id();
+
+        $office = $this->point('speedy', 'office', ['external_ref' => 'SP-O', 'name' => 'Speedy office']);
+        $locker = $this->point('speedy', 'locker', ['external_ref' => 'SP-L', 'name' => 'Speedy locker']);
+        $boxnow = $this->point('boxnow', 'locker');
+
+        foreach (['office' => $office, 'locker' => $locker] as $kind => $pointId) {
+            $cartId = $this->cart();
+            $quoted = $this->quote($kind);
+            $this->assertSame(['carrier' => 'speedy', 'map' => false], $quoted[$id]['integration']);
+
+            $this->postJson('/api/checkout', $this->payload($cartId, $quoted, $id, ['pickup_point_id' => (string) $pointId], $kind))
+                ->assertStatus(201)->assertJsonPath('order.pickup_point_kind', $kind)->assertJsonPath('order.carrier_code', 'speedy');
+        }
+
+        $this->assertSame(['SP-O', 'SP-L'], DB::table('order_pickup_points')->orderBy('id')->pluck('external_ref')->all());
+
+        // another courier's point, and an office id when a locker was chosen
+        $cartId = $this->cart();
+        $this->assertRefused($cartId, $this->postJson('/api/checkout', $this->payload($cartId, $this->quote('locker'), $id, ['pickup_point_id' => (string) $boxnow], 'locker')), 2);
+        $this->assertRefused($cartId, $this->postJson('/api/checkout', $this->payload($cartId, $this->quote('locker'), $id, ['pickup_point_id' => (string) $office], 'locker')), 2);
     }
 
     public function test_an_id_alone_is_refused_when_no_list_applies(): void

@@ -8,6 +8,7 @@ use App\Support\BgPostcodes;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Concerns\EnablesBoxNow;
 use Tests\TestCase;
 
@@ -302,7 +303,7 @@ class PickupPointEndpointsTest extends TestCase
      *
      * @param  array<string, string>  $headers
      */
-    #[\PHPUnit\Framework\Attributes\DataProvider('guests')]
+    #[DataProvider('guests')]
     public function test_a_guest_loads_both_lists_with_and_without_an_accept_header(array $headers): void
     {
         $id = $this->settlement('Пловдив');
@@ -315,5 +316,40 @@ class PickupPointEndpointsTest extends TestCase
         $points = $this->withHeaders($headers)->get('/api/shipping/pickup-points?carrier=boxnow&kind=locker&settlement='.$id);
         $points->assertOk()->assertJsonCount(1, 'data');
         $this->assertStringContainsString('application/json', (string) $points->headers->get('Content-Type'));
+    }
+
+    public function test_a_settlement_is_found_by_postcode_and_an_item_carries_type_name_region_and_postcode(): void
+    {
+        $harmanli = $this->settlement('Харманли', 'HKV', ['6450']);
+        $this->settlement('Хаскова махала', 'HKV', ['6300']);
+        $this->point($harmanli);
+
+        $found = $this->search('6450');
+
+        $this->assertCount(1, $found, 'only a place where the courier has a point of that kind');
+        $this->assertSame(['id', 'is_split', 'name', 'points', 'postcode', 'region', 'type'], collect($found[0])->keys()->sort()->values()->all());
+        $this->assertSame([(string) $harmanli, 'Харманли', 'Хасково', '6450', null], [$found[0]['id'], $found[0]['name'], $found[0]['region'], $found[0]['postcode'], $found[0]['type']], 'type is not stored yet: null');
+        $this->assertSame([], $this->search('6300'), 'no point there');
+        $this->assertSame([], $this->search('64'.'99'));
+    }
+
+    public function test_kind_address_searches_every_settlement_by_name_and_by_postcode_with_no_courier(): void
+    {
+        $harmanli = $this->settlement('Харманли', 'HKV', ['6450']);
+        $this->settlement('Харманли', 'SLV', ['8800']);   // a same-name place elsewhere is another row
+        $this->settlement('Хасково', 'HKV', ['6300']);
+
+        // no point anywhere, no carrier in the request
+        $byName = $this->getJson('/api/shipping/settlements?'.http_build_query(['kind' => 'address', 'q' => 'харм']))->assertOk()->json('data');
+        $this->assertCount(2, $byName);
+        $this->assertEqualsCanonicalizing(['Хасково', 'Сливен'], array_column($byName, 'region'));
+        $this->assertSame([null, null], array_column($byName, 'points'));
+
+        $byPostcode = $this->getJson('/api/shipping/settlements?'.http_build_query(['kind' => 'address', 'q' => '6450']))->assertOk()->json('data');
+        $this->assertSame([(string) $harmanli], array_column($byPostcode, 'id'));
+        $this->assertSame('6450', $byPostcode[0]['postcode']);
+
+        $this->getJson('/api/shipping/settlements?kind=office&q=харм')->assertStatus(422);
+        $this->getJson('/api/shipping/settlements?'.http_build_query(['kind' => 'address', 'q' => 'х']))->assertStatus(422);
     }
 }

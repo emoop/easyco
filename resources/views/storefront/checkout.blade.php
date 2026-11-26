@@ -110,21 +110,6 @@
                         </select>
                         <p class="sf-field-error" id="sf-err-country" data-sf-error-for="country" hidden></p>
                     </div>
-                    {{-- ONE place field: the street address's city, and the settlement a pick-up point is quoted and stored for. The postal code sits NEXT TO it (C1e, G4):
-                         shown for a street address and while no kind is chosen, hidden (and never sent) for an office or a locker. --}}
-                    <div class="sf-field-row sf-place-row">
-                        <div class="sf-field sf-float">
-                            <label for="sf-city">{{ __('storefront.checkout_city') }} <span class="sf-required" aria-hidden="true">*</span></label>
-                            <input id="sf-city" name="city" type="text" autocomplete="address-level2" required aria-required="true" maxlength="255" placeholder=" ">
-                            <p class="sf-field-error" id="sf-err-city" data-sf-error-for="city" hidden></p>
-                        </div>
-                        <div class="sf-field sf-float" data-sf-postal-field>
-                            <label for="sf-postal-code">{{ __('storefront.checkout_postal_code_optional') }}</label>
-                            <input id="sf-postal-code" name="postal_code" type="text" autocomplete="postal-code" inputmode="numeric" maxlength="255" placeholder=" ">
-                            <p class="sf-field-error" id="sf-err-postal_code" data-sf-error-for="postal_code" hidden></p>
-                        </div>
-                    </div>
-
                     <p class="sf-field-note" role="status" aria-live="polite" data-sf-quote-status></p>
                     <p class="sf-shipping-hint" data-sf-shipping-hint hidden></p>
 
@@ -139,6 +124,21 @@
                         <p class="sf-kind-text" data-sf-kind-text hidden></p>
                     </div>
                     <p class="sf-field-error" id="sf-err-shipping_method_id" data-sf-error-for="shipping_method_id" hidden></p>
+
+                    {{-- COUR-2a.4: AFTER the courier and the type (the owner's order). ONE place field: the street address's city, and the settlement a pick-up point is quoted and stored for. The postal code sits NEXT TO it (C1e, G4):
+                         shown for a street address and while no kind is chosen, hidden (and never sent) for an office or a locker. --}}
+                    <div class="sf-field-row sf-place-row">
+                        <div class="sf-field sf-float">
+                            <label for="sf-city">{{ __('storefront.checkout_city') }} <span class="sf-required" aria-hidden="true">*</span></label>
+                            <input id="sf-city" name="city" type="text" autocomplete="address-level2" required aria-required="true" maxlength="255" placeholder=" ">
+                            <p class="sf-field-error" id="sf-err-city" data-sf-error-for="city" hidden></p>
+                        </div>
+                        <div class="sf-field sf-float" data-sf-postal-field>
+                            <label for="sf-postal-code">{{ __('storefront.checkout_postal_code_optional') }}</label>
+                            <input id="sf-postal-code" name="postal_code" type="text" autocomplete="postal-code" inputmode="numeric" maxlength="255" placeholder=" ">
+                            <p class="sf-field-error" id="sf-err-postal_code" data-sf-error-for="postal_code" hidden></p>
+                        </div>
+                    </div>
 
                     <div data-sf-address-fields hidden>
                         <div class="sf-field sf-float">

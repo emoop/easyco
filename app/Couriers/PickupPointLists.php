@@ -28,17 +28,23 @@ final class PickupPointLists
     /**
      * @return list<array{id: string, name: string, region: ?string, postcode: ?string, is_split: bool, points: int}>|null null = the courier is not on, or the kind is unknown
      */
-    public function settlements(string $carrier, string $kind, string $q): ?array
+    public function settlements(?string $carrier, string $kind, string $q): ?array
     {
-        $base = $this->offerable->query($carrier, $kind);
+        // COUR-2a.4: `address` = every settlement (the place of a street address), no courier, no points
+        if ($kind === 'address') {
+            return $this->allSettlements($q);
+        }
+
+        $base = $carrier === null ? null : $this->offerable->query($carrier, $kind);
 
         if ($base === null) {
             return null;
         }
 
-        $key = BgPostcodes::normalise($q);
+        $digits = preg_match('/^\d{2,12}$/D', $q) === 1;
+        $key = $digits ? '' : BgPostcodes::normalise($q);
 
-        if ($key === '') {
+        if (! $digits && $key === '') {
             return [];
         }
 
@@ -46,7 +52,7 @@ final class PickupPointLists
 
         $mapped = (clone $base)
             ->join('shipping_settlements as s', 's.id', '=', 'p.settlement_id')
-            ->where('s.name_key', 'like', $key.'%')
+            ->when($digits, static fn ($query) => $query->where('s.postcodes', 'like', '%"'.$q.'%'), static fn ($query) => $query->where('s.name_key', 'like', $key.'%'))
             ->groupBy('s.id', 's.name', 's.name_key', 's.region_code', 's.postcodes', 's.is_split')
             ->select('s.id', 's.name', 's.name_key', 's.region_code', 's.postcodes', 's.is_split', DB::raw('COUNT(p.id) as points'))
             ->get();
@@ -61,14 +67,15 @@ final class PickupPointLists
                 'region' => $region,
                 'postcode' => is_array($postcodes) && $postcodes !== [] ? (string) reset($postcodes) : null,
                 'is_split' => (bool) $row->is_split,
+                'type' => null,
                 'points' => (int) $row->points,
                 '_key' => (string) $row->name_key,
             ];
         }
 
         // Points with no settlement row are grouped by the name the courier wrote; the names are few, so the prefix test is done here
-        // on the normalised form (the table holds no normalised copy).
-        $names = (clone $base)->whereNull('p.settlement_id')->groupBy('p.settlement_name')->select('p.settlement_name', DB::raw('COUNT(p.id) as points'))->get();
+        // on the normalised form (the table holds no normalised copy). A postcode search never reaches them (they have none).
+        $names = $digits ? [] : (clone $base)->whereNull('p.settlement_id')->groupBy('p.settlement_name')->select('p.settlement_name', DB::raw('COUNT(p.id) as points'))->get();
         $byKey = [];
 
         foreach ($names as $row) {
@@ -83,7 +90,7 @@ final class PickupPointLists
         }
 
         foreach ($byKey as $nameKey => $group) {
-            $items[] = ['id' => 'n:'.$nameKey, 'name' => $group['name'], 'region' => null, 'postcode' => null, 'is_split' => false, 'points' => $group['points'], '_key' => (string) $nameKey];
+            $items[] = ['id' => 'n:'.$nameKey, 'name' => $group['name'], 'region' => null, 'postcode' => null, 'is_split' => false, 'type' => null, 'points' => $group['points'], '_key' => (string) $nameKey];
         }
 
         // exact name first, then the most points, then the name
@@ -94,6 +101,42 @@ final class PickupPointLists
 
             return $item;
         }, array_slice($items, 0, self::MAX_SETTLEMENTS));
+    }
+
+    /**
+     * Every settlement (the place of a street address), by the start of its name or by postcode. `type` («гр.» / «с.») is not stored yet: null.
+     *
+     * @return list<array{id: string, name: string, region: ?string, postcode: ?string, is_split: bool, type: ?string, points: ?int}>
+     */
+    private function allSettlements(string $q): array
+    {
+        $digits = preg_match('/^\d{2,12}$/D', $q) === 1;
+        $key = $digits ? '' : BgPostcodes::normalise($q);
+
+        if (! $digits && $key === '') {
+            return [];
+        }
+
+        $rows = DB::table('shipping_settlements as s')
+            ->when($digits, static fn ($query) => $query->where('s.postcodes', 'like', '%"'.$q.'%'), static fn ($query) => $query->where('s.name_key', 'like', $key.'%'))
+            ->select('s.id', 's.name', 's.name_key', 's.region_code', 's.postcodes', 's.is_split')
+            ->orderByRaw('s.name_key = ? DESC', [$key])->orderBy('s.name')->orderBy('s.id')
+            ->limit(self::MAX_SETTLEMENTS)
+            ->get();
+
+        return $rows->map(static function (object $row): array {
+            $postcodes = json_decode((string) $row->postcodes, true);
+
+            return [
+                'id' => (string) $row->id,
+                'name' => (string) $row->name,
+                'region' => (string) $row->region_code === '' ? null : BgRegions::name((string) $row->region_code),
+                'postcode' => is_array($postcodes) && $postcodes !== [] ? (string) reset($postcodes) : null,
+                'is_split' => (bool) $row->is_split,
+                'type' => null,
+                'points' => null,
+            ];
+        })->all();
     }
 
     /**
