@@ -13,6 +13,10 @@ use EasyCo\Pricing\Money;
  * priority of its own, so this object offers nothing for a later screen to tempt itself with. The
  * only ordering the page can express is the one the rows already carry: age, oldest first.
  *
+ * COUR-1a: a row need not be about an order. A courier row (CourierSyncStaleSource) has NO order and NO amount: `orderId` and
+ * `amount` are then null and `subject` names what it is about (the courier). The page draws the subject in the first column
+ * without a link, and nothing in the privacy retention (OpenMoneyOrders) reads it as an order.
+ *
  * A row is DERIVED, never stored: it has no id of its own, and it can only be as fresh as the read
  * that produced it (§6's own reasoning for why a stored `needs_attention` flag was refused — a flag
  * is a second copy of a fact, and a second copy drifts).
@@ -27,11 +31,11 @@ final class NeedsAttentionItem
 {
     public function __construct(
         public readonly string $sourceKey,
-        public readonly string $orderId,
+        public readonly ?string $orderId,
         public readonly string $fact,
-        public readonly Money $amount,
+        public readonly ?Money $amount,
         public readonly int $ageDays,
         public readonly string $startedOn,
-    ) {
-    }
+        public readonly ?string $subject = null,
+    ) {}
 }

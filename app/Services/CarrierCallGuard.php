@@ -9,7 +9,6 @@ use EasyCo\Shipping\Carrier\CallBudget;
 use EasyCo\Shipping\Carrier\CarrierCallResult;
 use EasyCo\Shipping\Carrier\CarrierCapability;
 use EasyCo\Shipping\Carrier\CarrierUnavailableReason;
-use EasyCo\Shipping\Carrier\PickupPoint;
 use EasyCo\Shipping\Carrier\ShippingContext;
 use EasyCo\Shipping\Carrier\ShippingQuote;
 use Illuminate\Support\Facades\Log;
@@ -41,9 +40,7 @@ use Throwable;
  */
 final class CarrierCallGuard
 {
-    public function __construct(private readonly ShippingProviderResolver $resolver)
-    {
-    }
+    public function __construct(private readonly ShippingProviderResolver $resolver) {}
 
     /** @return CarrierCallResult<ShippingQuote> */
     public function quotes(string $carrierCode, ShippingContext $context, CallBudget $budget): CarrierCallResult
@@ -53,7 +50,7 @@ final class CarrierCallGuard
 
             foreach ($quotes as $quote) {
                 if (! $quote instanceof ShippingQuote || $quote->currency !== $context->currency) {
-                    throw new InvalidCarrierResponseException();
+                    throw new InvalidCarrierResponseException;
                 }
             }
 
@@ -61,25 +58,9 @@ final class CarrierCallGuard
         });
     }
 
-    /** @return CarrierCallResult<PickupPoint> */
-    public function pickupPoints(string $carrierCode, string $countryCode, string $settlement, CallBudget $budget): CarrierCallResult
-    {
-        return $this->guarded($carrierCode, CarrierCapability::PICKUP, $budget, function () use ($carrierCode, $countryCode, $settlement, $budget): array {
-            $points = $this->resolver->pickupPointProvider($carrierCode)->pickupPointsIn($countryCode, $settlement, $budget);
-
-            foreach ($points as $point) {
-                if (! $point instanceof PickupPoint || $point->countryCode !== $countryCode || $point->carrierCode !== $carrierCode) {
-                    throw new InvalidCarrierResponseException();
-                }
-            }
-
-            return $points;
-        });
-    }
-
     /**
-     * @param  callable(): list<ShippingQuote|PickupPoint>  $call
-     * @return CarrierCallResult<ShippingQuote|PickupPoint>
+     * @param  callable(): list<ShippingQuote>  $call
+     * @return CarrierCallResult<ShippingQuote>
      */
     private function guarded(string $carrierCode, CarrierCapability $capability, CallBudget $budget, callable $call): CarrierCallResult
     {

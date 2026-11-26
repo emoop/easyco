@@ -111,7 +111,12 @@ class AppServiceProvider extends ServiceProvider
             OwedRefundSource::class,
             ReceiptMismatchSource::class,
             PaymentStepUnfinishedSource::class,
+            // COUR-1a: not about an order: one row per enabled courier whose points list stopped refreshing
+            \App\NeedsAttention\CourierSyncStaleSource::class,
         ], NeedsAttentionSource::TAG);
+
+        // COUR-1a (courier-integration-design.md §10.2): the ONE outbound client of the couriers' adapters
+        $this->app->bind(\EasyCo\Shipping\Contracts\CourierHttp::class, \App\Couriers\AllowlistedCourierHttp::class);
     }
 
     /**

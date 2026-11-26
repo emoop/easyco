@@ -1,0 +1,63 @@
+{
+    "data": [
+        {
+            "id": "2001",
+            "type": "apm",
+            "name": "APM-2001",
+            "title": "BOX NOW Test Mall Sofia",
+            "image": "https://example.invalid/2001.jpg",
+            "lat": "42.697700",
+            "lng": "23.321900",
+            "addressLine1": "Test Blvd 1",
+            "addressLine2": "1000, Sofia",
+            "postalCode": "1000",
+            "country": "BG",
+            "note": "Next to the main entrance"
+        },
+        {
+            "id": 2002,
+            "type": "apm",
+            "name": "BOX NOW Plovdiv Test",
+            "lat": 42.1354,
+            "lng": 24.7453,
+            "addressLine1": "Test Street 22",
+            "addressLine2": "4000 Plovdiv"
+        },
+        {
+            "id": "2003",
+            "type": "apm",
+            "title": "BOX NOW Varna Test",
+            "lat": "not-a-number",
+            "lng": "27.9147",
+            "addressLine1": "Test Alley 3",
+            "city": "Varna",
+            "postalCode": "9000"
+        },
+        {
+            "type": "apm",
+            "title": "No id at all",
+            "addressLine1": "Test Street 4",
+            "addressLine2": "1000 Sofia"
+        },
+        {
+            "id": "2005",
+            "type": "any-apm",
+            "title": "Any locker",
+            "addressLine1": "-",
+            "addressLine2": "1000 Sofia"
+        },
+        {
+            "id": "2006",
+            "type": "apm",
+            "title": "No address",
+            "addressLine2": "1000 Sofia"
+        },
+        {
+            "id": "bad id!",
+            "type": "apm",
+            "title": "Unsafe id",
+            "addressLine1": "Test Street 7",
+            "addressLine2": "1000 Sofia"
+        }
+    ]
+}

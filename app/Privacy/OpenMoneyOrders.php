@@ -25,6 +25,11 @@ final class OpenMoneyOrders
                 $items = $source->page($page, self::PER_PAGE);
 
                 foreach ($items as $item) {
+                    // A row that is not about an order (a courier row) holds no order back.
+                    if ($item->orderId === null) {
+                        continue;
+                    }
+
                     $ids[(string) $item->orderId] = true;
                 }
 

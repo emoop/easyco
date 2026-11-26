@@ -8,9 +8,9 @@ use App\Services\ShippingProviderResolver;
 use EasyCo\Shipping\Carrier\CarrierCapability;
 use EasyCo\Shipping\Carrier\CarrierRegistration;
 use EasyCo\Shipping\Carrier\CarrierRegistry;
-use Tests\Support\Shipping\FakeLabelProvider;
 use Tests\Support\Shipping\FakePickupProvider;
 use Tests\Support\Shipping\FakeRateProvider;
+use Tests\Support\Shipping\FakeShipmentGateway;
 use Tests\TestCase;
 
 require_once __DIR__.'/../Support/Shipping/FakeCarrier.php';
@@ -36,7 +36,7 @@ class ShippingProviderResolverTest extends TestCase
             $this->app->bind($capability->containerKey($code), fn () => match ($capability) {
                 CarrierCapability::RATE => new FakeRateProvider(fn () => []),
                 CarrierCapability::PICKUP => new FakePickupProvider(fn () => []),
-                CarrierCapability::LABEL => new FakeLabelProvider(),
+                CarrierCapability::LABEL => new FakeShipmentGateway,
             });
         }
 
@@ -45,9 +45,9 @@ class ShippingProviderResolverTest extends TestCase
 
     public function test_core_registers_no_carrier_and_an_unknown_carrier_is_refused_by_name(): void
     {
-        $this->assertSame([], $this->resolver()->carriers(), 'V1 ships no carrier');
+        $this->assertSame([], $this->resolver()->carriers(), 'V1 ships no carrier (BOX NOW is installed but not enabled, so it is not listed)');
 
-        foreach (['rateProvider', 'pickupPointProvider', 'labelProvider'] as $method) {
+        foreach (['rateProvider', 'pickupPointCatalogue', 'shipmentGateway'] as $method) {
             try {
                 $this->resolver()->{$method}('econt');
                 $this->fail("{$method} must refuse an unknown carrier");
@@ -77,7 +77,7 @@ class ShippingProviderResolverTest extends TestCase
 
         $this->assertInstanceOf(FakeRateProvider::class, $this->resolver()->rateProvider('acme'));
 
-        foreach ([['pickupPointProvider', 'pickup'], ['labelProvider', 'label']] as [$method, $capability]) {
+        foreach ([['pickupPointCatalogue', 'pickup'], ['shipmentGateway', 'label']] as [$method, $capability]) {
             try {
                 $this->resolver()->{$method}('acme');
                 $this->fail("{$method} must be refused");
@@ -100,9 +100,9 @@ class ShippingProviderResolverTest extends TestCase
         try {
             $this->resolver()->rateProvider('beta');
         } finally {
-            $this->assertInstanceOf(FakePickupProvider::class, $this->resolver()->pickupPointProvider('beta'));
+            $this->assertInstanceOf(FakePickupProvider::class, $this->resolver()->pickupPointCatalogue('beta'));
             try {
-                $this->resolver()->pickupPointProvider('acme');
+                $this->resolver()->pickupPointCatalogue('acme');
                 $this->fail('acme must not borrow beta\'s pickup provider');
             } catch (CarrierCapabilityNotProvidedException) {
                 $this->addToAssertionCount(1);
@@ -115,7 +115,7 @@ class ShippingProviderResolverTest extends TestCase
         $this->installCarrier('acme', [CarrierCapability::RATE, CarrierCapability::PICKUP], bindOnly: [CarrierCapability::RATE]);
 
         try {
-            $this->resolver()->pickupPointProvider('acme');
+            $this->resolver()->pickupPointCatalogue('acme');
             $this->fail('a declared but unbound capability must be refused');
         } catch (CarrierCapabilityNotProvidedException $e) {
             $this->assertStringContainsString('shipping.carrier.acme.pickup', $e->getMessage());
@@ -133,7 +133,7 @@ class ShippingProviderResolverTest extends TestCase
 
     public function test_a_key_bound_to_something_that_is_not_the_contract_is_refused(): void
     {
-        $this->app->bind('shipping.carrier.acme.rate', fn () => new \stdClass());
+        $this->app->bind('shipping.carrier.acme.rate', fn () => new \stdClass);
         $this->app->make(CarrierRegistry::class)->register(new CarrierRegistration('acme', 'Acme', [CarrierCapability::RATE]));
 
         $this->expectException(CarrierCapabilityNotProvidedException::class);
@@ -149,8 +149,8 @@ class ShippingProviderResolverTest extends TestCase
         $this->assertSame(['acme', 'beta'], array_map(static fn (CarrierRegistration $c): string => $c->code, $this->resolver()->carriers()));
         $this->assertSame(['acme'], array_map(static fn (CarrierRegistration $c): string => $c->code, $this->resolver()->carriersProviding(CarrierCapability::LABEL)));
         $this->assertInstanceOf(FakeRateProvider::class, $this->resolver()->rateProvider('acme'));
-        $this->assertInstanceOf(FakeLabelProvider::class, $this->resolver()->labelProvider('acme'));
-        $this->assertInstanceOf(FakePickupProvider::class, $this->resolver()->pickupPointProvider('beta'));
+        $this->assertInstanceOf(FakeShipmentGateway::class, $this->resolver()->shipmentGateway('acme'));
+        $this->assertInstanceOf(FakePickupProvider::class, $this->resolver()->pickupPointCatalogue('beta'));
     }
 
     public function test_the_registry_is_one_shared_instance(): void

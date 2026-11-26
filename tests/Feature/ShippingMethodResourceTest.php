@@ -2,14 +2,22 @@
 
 namespace Tests\Feature;
 
+use App\Filament\NavigationGroup;
+use App\Filament\Pages\Help;
 use App\Filament\Pages\ShippingOverview;
 use App\Filament\Resources\ShippingMethodResource;
 use App\Filament\Resources\ShippingMethodResource\Pages\CreateShippingMethod;
 use App\Filament\Resources\ShippingMethodResource\Pages\EditShippingMethod;
 use App\Filament\Resources\ShippingMethodResource\Pages\ListShippingMethods;
+use App\Filament\Resources\ShippingZoneResource;
 use App\Filament\Support\HelpLink;
 use App\Services\PriceDisplayFormatter;
+use App\Services\ShippingMethodCopier;
+use App\Services\ShippingMethodReorderer;
 use App\Services\ShippingMethodSummaryReader;
+use App\Services\ShippingMethodWriter;
+use App\Services\ShippingTester;
+use App\Settings\Contracts\SiteSettingsRepository;
 use EasyCo\Pricing\DefaultCurrency;
 use EasyCo\Shipping\Contracts\ShippingMethodRepository;
 use EasyCo\Shipping\Enums\ShippingClassMode;
@@ -17,12 +25,17 @@ use EasyCo\Shipping\Enums\ShippingDeliveryType;
 use EasyCo\Shipping\Enums\ShippingDestinationScope;
 use EasyCo\Shipping\Enums\ShippingMethodKind;
 use EasyCo\Shipping\Persistence\Eloquent\ShippingMethodModel;
+use EasyCo\Shipping\Rating\RateLine;
 use EasyCo\Shipping\ShippingMethod;
 use EasyCo\Staff\Enums\Permission;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\App;
 use Illuminate\Support\Facades\DB;
+use Livewire\Component;
+use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
+use PHPUnit\Framework\AssertionFailedError;
 use Tests\Concerns\BuildsShippingZones;
 use Tests\TestCase;
 
@@ -41,7 +54,7 @@ class ShippingMethodResourceTest extends TestCase
         return ShippingMethodResource::getEloquentQuery()->where('shipping_methods.id', $id)->firstOrFail();
     }
 
-    private function allModels(): \Illuminate\Support\Collection
+    private function allModels(): Collection
     {
         return ShippingMethodResource::getEloquentQuery()->get();
     }
@@ -83,7 +96,7 @@ class ShippingMethodResourceTest extends TestCase
             $this->get(ShippingMethodResource::getUrl('edit', ['record' => $method->id()]))->assertForbidden();
 
             $this->assertFalse(ShippingMethodResource::canAccess());
-            $this->assertStringNotContainsString('/admin/shipping-methods', $this->get(\App\Filament\Pages\Help::getUrl())->assertOk()->getContent());
+            $this->assertStringNotContainsString('/admin/shipping-methods', $this->get(Help::getUrl())->assertOk()->getContent());
         }
     }
 
@@ -98,8 +111,8 @@ class ShippingMethodResourceTest extends TestCase
 
         $this->assertCount(1, ShippingMethodResource::getNavigationItems());
         $this->assertSame(30, ShippingMethodResource::getNavigationSort());
-        $this->assertGreaterThan(\App\Filament\Resources\ShippingZoneResource::getNavigationSort(), ShippingMethodResource::getNavigationSort());
-        $this->assertSame(\App\Filament\NavigationGroup::SHIPPING, ShippingMethodResource::getNavigationGroup());
+        $this->assertGreaterThan(ShippingZoneResource::getNavigationSort(), ShippingMethodResource::getNavigationSort());
+        $this->assertSame(NavigationGroup::SHIPPING, ShippingMethodResource::getNavigationGroup());
         $this->assertSame(0, $queries, 'the navigation item adds no query to any page');
     }
 
@@ -128,8 +141,8 @@ class ShippingMethodResourceTest extends TestCase
             }
         }
 
-        foreach ([\App\Services\ShippingMethodWriter::class, \App\Services\ShippingMethodReorderer::class, \App\Services\ShippingMethodCopier::class] as $service) {
-            $this->assertFalse(is_subclass_of($service, \Livewire\Component::class), "{$service} is not a component");
+        foreach ([ShippingMethodWriter::class, ShippingMethodReorderer::class, ShippingMethodCopier::class] as $service) {
+            $this->assertFalse(is_subclass_of($service, Component::class), "{$service} is not a component");
         }
     }
 
@@ -450,7 +463,7 @@ class ShippingMethodResourceTest extends TestCase
         }
     }
 
-    public function test_the_kind_select_offers_no_carrier_while_none_is_registered(): void
+    public function test_the_kind_select_offers_no_carrier_while_none_is_enabled(): void
     {
         $this->zone('Z', 0);
         $this->actingAsStaff('Administrator');
@@ -465,6 +478,33 @@ class ShippingMethodResourceTest extends TestCase
             ->call('create')
             ->assertHasFormErrors(['kind']);
         $this->assertSame(0, DB::table('shipping_methods')->count());
+    }
+
+    public function test_an_installed_courier_is_offered_only_while_it_is_enabled(): void
+    {
+        $zone = (string) $this->zone('Z', 0)->id();
+        $this->actingAsStaff('Administrator');
+        $settings = app(SiteSettingsRepository::class);
+
+        $this->assertStringNotContainsString('value="carrier"', Livewire::test(CreateShippingMethod::class)->html(), 'BOX NOW is installed but off');
+
+        $settings->set('couriers.boxnow.enabled', '1');
+        $this->assertStringContainsString('value="carrier"', Livewire::test(CreateShippingMethod::class)->html(), 'enabled: offered');
+
+        // The write path refuses the installed courier's code while it is off, and accepts it while it is on.
+        Livewire::test(CreateShippingMethod::class)
+            ->fillForm(['name' => 'BOX NOW', 'kind' => 'carrier', 'carrier_code' => 'boxnow', 'zone_id' => $zone])
+            ->call('create')
+            ->assertHasNoFormErrors();
+
+        $settings->forget('couriers.boxnow.enabled');
+        $this->assertStringNotContainsString('value="carrier"', Livewire::test(CreateShippingMethod::class)->html(), 'disabled again: gone');
+
+        Livewire::test(CreateShippingMethod::class)
+            ->fillForm(['name' => 'BOX NOW 2', 'kind' => 'carrier', 'carrier_code' => 'boxnow', 'zone_id' => $zone])
+            ->call('create')
+            ->assertHasFormErrors();
+        $this->assertSame(1, DB::table('shipping_methods')->count(), 'only the one made while it was enabled');
     }
 
     public function test_creating_a_flat_and_an_adjusting_method_through_the_form(): void
@@ -523,7 +563,7 @@ class ShippingMethodResourceTest extends TestCase
                     ->fillForm(array_merge($base, $override))
                     ->call('create')
                     ->assertHasFormErrors([$field]);
-            } catch (\PHPUnit\Framework\AssertionFailedError $failure) {
+            } catch (AssertionFailedError $failure) {
                 $this->fail("{$label}: no error on {$field} — ".$failure->getMessage());
             }
         }
@@ -601,7 +641,7 @@ class ShippingMethodResourceTest extends TestCase
 
             $page = Livewire::test(CreateShippingMethod::class)->fillForm(['kind' => 'per_class', 'class_mode' => 'replace', 'free_above' => '100']);
             $page->assertSee(__('shipping.methods.facts.mode_replace'));
-            $page->assertSee(__('shipping.methods.facts.free_above', ['amount' => app(\App\Services\PriceDisplayFormatter::class)->format('100.00', \EasyCo\Pricing\DefaultCurrency::get())]));
+            $page->assertSee(__('shipping.methods.facts.free_above', ['amount' => app(PriceDisplayFormatter::class)->format('100.00', DefaultCurrency::get())]));
             $page->assertSee(__('shipping.methods.facts.kind_clears'));
 
             $page->fillForm(['class_mode' => 'adjust'])->assertSee(__('shipping.methods.facts.mode_adjust'));
@@ -613,7 +653,7 @@ class ShippingMethodResourceTest extends TestCase
     // =====================================================================================================
 
     /** @return list<string> the box's option keys as the FORM itself has them right now */
-    private function freeDestinationOptionsOf(\Livewire\Features\SupportTesting\Testable $page): array
+    private function freeDestinationOptionsOf(Testable $page): array
     {
         return (function (): array {
             return array_keys((array) $this->form->getComponent('free_destinations')->getOptions());
@@ -621,7 +661,7 @@ class ShippingMethodResourceTest extends TestCase
     }
 
     /** A create form with a threshold and the box in its ordinary state. */
-    private function freeDestinationsForm(array $state = []): \Livewire\Features\SupportTesting\Testable
+    private function freeDestinationsForm(array $state = []): Testable
     {
         $this->zone('Z', 0);
         $this->actingAsStaff('Administrator');
@@ -979,8 +1019,8 @@ class ShippingMethodResourceTest extends TestCase
         $this->perClassMethod($zone, 'Adjusting', ['heavy' => 2500, 'discount' => -300], ShippingClassMode::ADJUST);
         $this->actingAsStaff('Administrator');
 
-        $result = app(\App\Services\ShippingTester::class)->run('BG', null, null, false, 1000, [
-            new \EasyCo\Shipping\Rating\RateLine('heavy', 1), new \EasyCo\Shipping\Rating\RateLine('discount', 1), new \EasyCo\Shipping\Rating\RateLine(null, 1),
+        $result = app(ShippingTester::class)->run('BG', null, null, false, 1000, [
+            new RateLine('heavy', 1), new RateLine('discount', 1), new RateLine(null, 1),
         ]);
 
         $this->assertSame(2700, $result->methods[0]->amountMinor, 'base 5.00 + 25.00 − 3.00 = 27.00, the owner\'s example');

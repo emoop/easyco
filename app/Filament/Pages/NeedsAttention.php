@@ -196,10 +196,11 @@ class NeedsAttention extends Page
     private function row(NeedsAttentionItem $item): array
     {
         return [
-            'order' => $item->orderId,
-            'url' => OrderResource::getUrl('view', ['record' => $item->orderId]),
+            'order' => $item->orderId ?? (string) $item->subject,
+            // A row that is not about an order (a courier) has no link.
+            'url' => $item->orderId === null ? null : OrderResource::getUrl('view', ['record' => $item->orderId]),
             'fact' => $item->fact,
-            'amount' => $this->amount($item->amount),
+            'amount' => $item->amount === null ? '' : $this->amount($item->amount),
             'waiting' => $this->waiting($item->ageDays),
             // The day it began, kept for the cell's own title attribute: the page counts the days,
             // but a merchant reconciling a bank statement wants the date he saw.

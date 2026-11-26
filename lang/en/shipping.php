@@ -304,6 +304,7 @@ return [
             'delivery_type_unknown' => 'Choose a delivery type from the list, or leave it empty.',
             'destination_scope_unknown' => 'Choose where the method delivers, from the list.',
             'free_destinations_required' => 'Choose at least one kind of delivery the free shipping applies to.',
+            'carrier_not_enabled' => 'This courier is installed but not enabled. Enable it in Couriers first.',
             'carrier_invalid' => 'The carrier code can only hold lowercase letters, digits, "-" and "_" (1 to 64 characters).',
             'copy_none' => 'Choose at least one zone.',
             'copy_too_many' => 'At most :max zones at a time.',

@@ -44,6 +44,12 @@ final class CarrierRegistration
         $this->capabilities = array_values($unique);
     }
 
+    /** The named container key of the courier's CourierDescriptor (an installed courier that can be switched on). */
+    public static function descriptorKey(string $code): string
+    {
+        return 'shipping.carrier.'.$code.'.descriptor';
+    }
+
     public function provides(CarrierCapability $capability): bool
     {
         return in_array($capability, $this->capabilities, true);

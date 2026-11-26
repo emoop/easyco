@@ -2,13 +2,14 @@
 
 namespace App\Services;
 
+use App\Couriers\CourierDirectory;
 use App\Services\Exceptions\CarrierCapabilityNotProvidedException;
 use App\Services\Exceptions\UnknownShippingCarrierException;
 use EasyCo\Shipping\Carrier\CarrierCapability;
 use EasyCo\Shipping\Carrier\CarrierRegistration;
 use EasyCo\Shipping\Carrier\CarrierRegistry;
-use EasyCo\Shipping\Contracts\PickupPointProvider;
-use EasyCo\Shipping\Contracts\ShipmentLabelProvider;
+use EasyCo\Shipping\Contracts\PickupPointCatalogue;
+use EasyCo\Shipping\Contracts\ShipmentGateway;
 use EasyCo\Shipping\Contracts\ShippingRateProvider;
 use EasyCo\Shipping\ShippingCode;
 use Illuminate\Contracts\Container\Container;
@@ -26,6 +27,8 @@ use Illuminate\Contracts\Container\Container;
  *    UnknownShippingCarrierException. A carrier that bound its keys but never
  *    registered is unknown too: it would not be listed, and an unlisted carrier
  *    must not be reachable;
+ *  - an integrated courier (one with a CourierDescriptor) that the merchant has not switched on
+ *    in «Куриери»: unknown as well (COUR-1a);
  *  - a registered carrier that does not offer the capability, or declared it and
  *    bound nothing, or bound something that is not the contract —
  *    CarrierCapabilityNotProvidedException.
@@ -35,8 +38,8 @@ final class ShippingProviderResolver
     public function __construct(
         private readonly Container $container,
         private readonly CarrierRegistry $registry,
-    ) {
-    }
+        private readonly CourierDirectory $couriers,
+    ) {}
 
     /** @throws UnknownShippingCarrierException|CarrierCapabilityNotProvidedException */
     public function rateProvider(string $carrierCode): ShippingRateProvider
@@ -45,32 +48,34 @@ final class ShippingProviderResolver
     }
 
     /** @throws UnknownShippingCarrierException|CarrierCapabilityNotProvidedException */
-    public function pickupPointProvider(string $carrierCode): PickupPointProvider
+    public function pickupPointCatalogue(string $carrierCode): PickupPointCatalogue
     {
-        return $this->resolve($carrierCode, CarrierCapability::PICKUP, PickupPointProvider::class);
+        return $this->resolve($carrierCode, CarrierCapability::PICKUP, PickupPointCatalogue::class);
     }
 
     /** @throws UnknownShippingCarrierException|CarrierCapabilityNotProvidedException */
-    public function labelProvider(string $carrierCode): ShipmentLabelProvider
+    public function shipmentGateway(string $carrierCode): ShipmentGateway
     {
-        return $this->resolve($carrierCode, CarrierCapability::LABEL, ShipmentLabelProvider::class);
+        return $this->resolve($carrierCode, CarrierCapability::LABEL, ShipmentGateway::class);
     }
 
     /**
-     * Every registered carrier, in registration order — what an admin screen or a
-     * method form lists. Read from the registry, never from a list written here.
+     * Every registered carrier that may be used, in registration order — what an admin screen or a
+     * method form lists. Read from the registry, never from a list written here. An installed
+     * integrated courier that is not enabled is NOT listed (the same rule resolve() applies):
+     * it is unreachable from every path, the admin forms included.
      *
      * @return list<CarrierRegistration>
      */
     public function carriers(): array
     {
-        return $this->registry->all();
+        return array_values(array_filter($this->registry->all(), fn (CarrierRegistration $c): bool => $this->couriers->isCallable($c->code)));
     }
 
     /** @return list<CarrierRegistration> the carriers that declare $capability */
     public function carriersProviding(CarrierCapability $capability): array
     {
-        return $this->registry->providing($capability);
+        return array_values(array_filter($this->registry->providing($capability), fn (CarrierRegistration $c): bool => $this->couriers->isCallable($c->code)));
     }
 
     /**
@@ -84,6 +89,12 @@ final class ShippingProviderResolver
         $registration = ShippingCode::isValid($carrierCode) ? $this->registry->find($carrierCode) : null;
 
         if ($registration === null) {
+            throw new UnknownShippingCarrierException($carrierCode);
+        }
+
+        // An INSTALLED but not ENABLED integrated courier is exactly as unknown (courier-integration-design.md §2.2): every
+        // path (checkout quote, sync, a future shipment) goes through here, so a disabled courier is unreachable from all of them.
+        if (! $this->couriers->isCallable($carrierCode)) {
             throw new UnknownShippingCarrierException($carrierCode);
         }
 

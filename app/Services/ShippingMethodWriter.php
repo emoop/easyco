@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Couriers\CourierDirectory;
 use App\Services\Exceptions\ShippingMethodInUseException;
 use App\Services\Exceptions\ShippingMethodInvalidException;
 use App\Services\Exceptions\ShippingMethodNotFoundException;
@@ -67,8 +68,8 @@ final class ShippingMethodWriter
         private readonly ShippingZoneRepository $zones,
         private readonly ShippingClassRepository $classes,
         private readonly ActivityLogger $audit,
-    ) {
-    }
+        private readonly CourierDirectory $couriers,
+    ) {}
 
     /**
      * @throws ShippingMethodInvalidException
@@ -80,7 +81,7 @@ final class ShippingMethodWriter
 
         $method = DB::transaction(function () use ($zoneId, $clean): ShippingMethod {
             if ($this->zones->findById($zoneId) === null) {
-                throw new ShippingMethodNotFoundException();
+                throw new ShippingMethodNotFoundException;
             }
 
             $next = 0;
@@ -121,7 +122,7 @@ final class ShippingMethodWriter
         $clean = $this->clean($input);
 
         $result = DB::transaction(function () use ($id, $clean): array {
-            $method = $this->methods->findById($id) ?? throw new ShippingMethodNotFoundException();
+            $method = $this->methods->findById($id) ?? throw new ShippingMethodNotFoundException;
             $before = self::snapshot($method);
 
             $scope = $clean['scope'] ?? self::scopeFromToggle($clean['pickup'], $clean['delivery_type'], $method->destinationScope());
@@ -167,7 +168,7 @@ final class ShippingMethodWriter
     public function setActive(string $id, bool $active): bool
     {
         $result = DB::transaction(function () use ($id, $active): ?ShippingMethod {
-            $method = $this->methods->findById($id) ?? throw new ShippingMethodNotFoundException();
+            $method = $this->methods->findById($id) ?? throw new ShippingMethodNotFoundException;
 
             if ($method->isActive() === $active) {
                 return null;
@@ -201,7 +202,7 @@ final class ShippingMethodWriter
     public function delete(string $id): void
     {
         $snapshot = DB::transaction(function () use ($id): array {
-            $method = $this->methods->findById($id) ?? throw new ShippingMethodNotFoundException();
+            $method = $this->methods->findById($id) ?? throw new ShippingMethodNotFoundException;
             $snapshot = self::snapshot($method);
 
             try {
@@ -358,6 +359,9 @@ final class ShippingMethodWriter
                 $errors['carrier_code'][] = __('shipping.methods.errors.carrier_required');
             } elseif (! ShippingCode::isValid($code)) {
                 $errors['carrier_code'][] = __('shipping.methods.errors.carrier_invalid');
+            } elseif (! $this->couriers->isCallable($code)) {
+                // An installed courier that the merchant has not enabled (courier-integration-design.md §2.2): not a choice, not a write.
+                $errors['carrier_code'][] = __('shipping.methods.errors.carrier_not_enabled');
             } else {
                 $carrierCode = $code;
             }

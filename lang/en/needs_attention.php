@@ -60,5 +60,10 @@ return [
             'label' => 'Orders whose payment step did not finish',
             'fact' => 'The order is placed but its payment step did not finish',
         ],
+        'courier_sync_stale' => [
+            'label' => 'Courier lists that are out of date',
+            'fact_failed' => 'The last two list updates of :courier failed (:code). The checkout keeps using the old list',
+            'fact_old' => 'The list of :courier has not been updated for more than :hours hours. The checkout keeps using the old list',
+        ],
     ],
 ];

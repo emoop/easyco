@@ -23,7 +23,7 @@ use Closure;
 use EasyCo\Pricing\Currency;
 use EasyCo\Pricing\DefaultCurrency;
 use EasyCo\Pricing\Money;
-use EasyCo\Shipping\Carrier\CarrierRegistry;
+use App\Services\ShippingProviderResolver;
 use EasyCo\Shipping\Contracts\ShippingClassRepository;
 use EasyCo\Shipping\Contracts\ShippingMethodRepository;
 use EasyCo\Shipping\Contracts\ShippingZoneRepository;
@@ -473,12 +473,12 @@ class ShippingMethodResource extends Resource
         };
     }
 
-    /** CARRIER is offered only when a carrier is registered (none is in V1, §6) — or when the method being edited already is one. */
+    /** CARRIER is offered only when a carrier is registered AND usable (an installed courier that is not enabled does not count, COUR-1a.1) — or when the method being edited already is one. */
     private static function kindOptions(?string $currentKind): array
     {
         $kinds = [ShippingMethodKind::FLAT, ShippingMethodKind::FREE, ShippingMethodKind::PER_CLASS];
 
-        if ($currentKind === ShippingMethodKind::CARRIER->value || app(CarrierRegistry::class)->all() !== []) {
+        if ($currentKind === ShippingMethodKind::CARRIER->value || app(ShippingProviderResolver::class)->carriers() !== []) {
             $kinds[] = ShippingMethodKind::CARRIER;
         }
 

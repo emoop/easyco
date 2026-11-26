@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "63a362cf9f3955e6b54699888c8290fb",
+    "content-hash": "94e16cb7f0acf61e0c85ed45efca85b7",
     "packages": [
         {
             "name": "anourvalar/eloquent-serialize",
@@ -1084,6 +1084,47 @@
                 "MIT"
             ],
             "description": "EasyCo Catalog domain package — Product/Variation aggregate, attributes, media and size-guide references shared across Web, POS, Social and AI channels.",
+            "transport-options": {
+                "relative": true
+            }
+        },
+        {
+            "name": "easyco/courier-boxnow",
+            "version": "dev-main",
+            "dist": {
+                "type": "path",
+                "url": "packages/EasyCo/CourierBoxNow",
+                "reference": "9c5b1d0728e821f82323b10a66a068b8e1e49aac"
+            },
+            "require": {
+                "easyco/shipping": "@dev",
+                "php": "^8.3"
+            },
+            "require-dev": {
+                "phpunit/phpunit": "^11.0"
+            },
+            "type": "library",
+            "extra": {
+                "laravel": {
+                    "providers": [
+                        "EasyCo\\CourierBoxNow\\Providers\\CourierBoxNowServiceProvider"
+                    ]
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "EasyCo\\CourierBoxNow\\": "src/"
+                }
+            },
+            "autoload-dev": {
+                "psr-4": {
+                    "EasyCo\\CourierBoxNow\\Tests\\": "tests/"
+                }
+            },
+            "license": [
+                "MIT"
+            ],
+            "description": "EasyCo BOX NOW courier adapter (COUR-1a: the parcel-locker list only). Talks to BOX NOW only through the Shipping package's CourierHttp port.",
             "transport-options": {
                 "relative": true
             }
@@ -11502,6 +11543,7 @@
         "easyco/address": 20,
         "easyco/cart": 20,
         "easyco/catalog": 20,
+        "easyco/courier-boxnow": 20,
         "easyco/extensibility": 20,
         "easyco/inventory": 20,
         "easyco/media": 20,

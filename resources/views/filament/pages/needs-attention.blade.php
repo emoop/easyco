@@ -54,7 +54,13 @@
                         <tbody>
                             @foreach ($section['rows'] as $row)
                                 <tr>
-                                    <td><a class="na-link" href="{{ $row['url'] }}">{{ $row['order'] }}</a></td>
+                                    <td>
+                                        @if ($row['url'] !== null)
+                                            <a class="na-link" href="{{ $row['url'] }}">{{ $row['order'] }}</a>
+                                        @else
+                                            {{ $row['order'] }}
+                                        @endif
+                                    </td>
                                     <td>{{ $row['fact'] }}</td>
                                     <td class="na-right">{{ $row['amount'] }}</td>
                                     <td class="na-right" title="{{ $row['started_on'] }}">{{ $row['waiting'] }}</td>

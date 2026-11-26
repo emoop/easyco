@@ -13,7 +13,7 @@ use EasyCo\Shipping\ShippingCode;
  * THE IDEMPOTENCY REFERENCE. Every request carries one, built from the order id
  * and an attempt number: "<orderId>#<attempt>". It exists so that a retried call
  * (a timeout whose answer was lost, a double click, a queue retry) can never
- * create two paid shipments with the courier. See ShipmentLabelProvider for the
+ * create two paid shipments with the courier. See ShipmentGateway for the
  * obligation this puts on every implementation. A new attempt number is a
  * deliberate new shipment (the first was cancelled or lost), chosen by the
  * merchant's action, never by an automatic retry.
